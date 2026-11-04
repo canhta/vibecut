@@ -132,7 +132,7 @@ secret entry. Custom processors, proxies, lookalike hosts, regional endpoints an
 other version paths are refused in v1 because the retention/training disclosure is
 endpoint-specific. The composition root resolves that entry from `OPENAI_API_KEY` for
 development or the OS keychain for the desktop app, then injects it as
-`openai::ApiKey`; the key is never serialized, logged or printed by `Debug`, and
+`transport::ApiKey`; the key is never serialized, logged or printed by `Debug`, and
 request headers/body are redacted too. The direct transport dependency stays on
 `ureq` 2.12.1 because `sherpa-onnx-sys` pins ureq 2 and one version beats adopting a
 second major (coordinator decision 2026-11-04).
@@ -401,8 +401,8 @@ Changing an ID, source text, context, glossary, style, script, provider or model
 invalidates consent before transport. Text-only composition uses SampleRange [0,1)
 and sample_rate 1 as Scope's non-audio sentinel; these fields do not assign timing.
 
-`openai::OpenAiTranslator` reuses the ASR adapter's ApiKey, HttpTransport,
-UreqTransport, endpoint policy and typed HTTP errors. Its only admitted model is
+`openai::OpenAiTranslator` uses the shared transport's ApiKey, HttpTransport and
+UreqTransport, plus the OpenAI endpoint policy and typed HTTP errors. Its only admitted model is
 `gpt-6.1-sol`, mode `context-window`, with exported TRANSLATION_SETTINGS. Only the
 official OpenAI base URL is admitted. Exact languages are `vi`, `en`, `zh`,
 `zh-Hans`, `zh-Hant` for source; target Chinese must select `zh-Hans` or `zh-Hant`

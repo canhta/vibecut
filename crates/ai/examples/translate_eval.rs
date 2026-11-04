@@ -3,9 +3,9 @@ use ai::{
     Consent, CostEstimate, Location, Money, Operation, ProviderConfig, Request, SampleRange, Scope,
     Translation, TranslationWindow, Translator,
     openai::{
-        ApiKey, BASE_URL, OpenAiTranslator, TRANSLATION_MODE, TRANSLATION_MODEL,
-        TRANSLATION_SETTINGS, UreqTransport,
+        BASE_URL, OpenAiTranslator, TRANSLATION_MODE, TRANSLATION_MODEL, TRANSLATION_SETTINGS,
     },
+    transport::{ApiKey, UreqTransport},
 };
 use std::{io::Read, path::PathBuf, sync::Arc};
 struct Hooks;

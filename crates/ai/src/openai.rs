@@ -14,10 +14,10 @@ use std::fmt;
 use std::sync::Arc;
 pub use translation::*;
 
-pub use crate::transport::{
-    ApiKey, HttpRequest, HttpResponse, HttpTransport, MAX_RESPONSE_BYTES, UreqTransport,
+use crate::transport::{
+    ApiKey, HttpRequest, HttpResponse, HttpTransport, MAX_RESPONSE_BYTES, Multipart, retry_after,
+    wav, wav_bytes,
 };
-use crate::transport::{Multipart, retry_after, wav, wav_bytes};
 
 /// The only production model admitted here. Deprecated transcription models are refused.
 pub const MODEL: &str = "gpt-transcribe";

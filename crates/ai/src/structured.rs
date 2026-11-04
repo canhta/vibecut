@@ -1,7 +1,7 @@
 //! Shared strict Responses JSON parsing; operation owners validate semantic IDs.
 use crate::{
     Error,
-    openai::{HttpResponse, MAX_RESPONSE_BYTES},
+    transport::{HttpResponse, MAX_RESPONSE_BYTES},
 };
 use serde::de::DeserializeOwned;
 use serde_json::{Value, json};

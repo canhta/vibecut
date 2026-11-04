@@ -4,10 +4,8 @@
     clippy::panic,
     clippy::indexing_slicing
 )]
-use ai::openai::{
-    ApiKey, HttpRequest, HttpResponse, HttpTransport, MAX_UPLOAD_BYTES, OpenAiTranscriber,
-    UreqTransport,
-};
+use ai::openai::{MAX_UPLOAD_BYTES, OpenAiTranscriber};
+use ai::transport::{ApiKey, HttpRequest, HttpResponse, HttpTransport, UreqTransport};
 use ai::{
     AudioWindow, Consent, CostEstimate, Error, ExecutionHooks, Location, Money, Operation,
     ProviderConfig, Request, Scope, Stage, TimingUnit, Transcriber,
@@ -664,7 +662,7 @@ fn provider_failures_are_typed_without_response_bodies_and_do_not_retry() {
             headers: Vec::new(),
             body: Vec::new(),
         },
-        FakeTransport::ok(vec![b'x'; ai::openai::MAX_RESPONSE_BYTES + 1]),
+        FakeTransport::ok(vec![b'x'; ai::transport::MAX_RESPONSE_BYTES + 1]),
     ]));
     let provider = config_at(ai::openai::BASE_URL);
     let transcriber = adapter(&fake, provider.clone());

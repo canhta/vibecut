@@ -3,7 +3,11 @@
     clippy::panic,
     reason = "offline fixtures and assertions"
 )]
-use ai::{openai::*, *};
+use ai::{
+    openai::*,
+    transport::{ApiKey, HttpRequest, HttpResponse, HttpTransport, MAX_RESPONSE_BYTES},
+    *,
+};
 use captions::{LanguageTag, NfcText};
 use serde_json::{Value, json};
 use std::sync::{

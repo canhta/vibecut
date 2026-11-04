@@ -1,5 +1,6 @@
 //! Single-attempt OpenAI Responses translation over the existing HTTPS transport.
-use super::{ApiKey, HttpRequest, HttpTransport, official_base_url};
+use super::official_base_url;
+use crate::transport::{ApiKey, HttpRequest, HttpTransport};
 use crate::{
     Capabilities, CostEstimate, Error, Evidence, ExecutionHooks, Location, Money, Operation,
     ProviderConfig, Request, Scope, Stage, Support, Translation, TranslationWindow, Translator,

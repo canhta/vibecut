@@ -4,7 +4,11 @@
     clippy::indexing_slicing,
     reason = "integration fixtures"
 )]
-use ai::{openai::*, *};
+use ai::{
+    openai::*,
+    transport::{ApiKey, HttpRequest, HttpResponse, HttpTransport},
+    *,
+};
 use captions::{Cue, CueText, CueTrack, LanguageTag};
 use engine::{
     ByteBudget, Command, EditError, Session,
