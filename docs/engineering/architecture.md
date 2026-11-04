@@ -9,8 +9,8 @@ The desktop composition root uses egui and wgpu. See [decisions](../adr/README.m
 
 ## Crate map
 
-Planned layout; admit each crate only with its first working ticket (`time` is
-admitted). Table names are Cargo package names. Allowed dependencies are direct
+Planned layout; admit each crate only with its first working ticket (`time` and
+`media` are admitted). Table names are Cargo package names. Allowed dependencies are direct
 workspace edges, including optional, target-specific, build and dev dependencies;
 absence means forbidden.
 External dependencies still require boundary and [license](open-source.md#licensing)
