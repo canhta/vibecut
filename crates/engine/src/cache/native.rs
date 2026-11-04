@@ -317,8 +317,8 @@ impl ArtifactCache {
         let key = model_key(model)?;
         self.prune();
         if !self.entries.contains_key(&key) {
-            if self.entries.len() >= self.max_entries {
-                return Err(EditError::Limit);
+            while self.entries.len() >= self.max_entries {
+                self.evict_one()?;
             }
             let directory = self.path(key);
             // Never overwrite/adopt a foreign directory at this content address.

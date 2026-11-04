@@ -284,6 +284,48 @@ fn terminal(r: &mut JobRunner, id: JobId, clock: &TestClock) -> JobSnapshot {
     }
 }
 #[test]
+fn model_admission_reclaims_an_unpinned_ordinary_entry_at_the_entry_limit() {
+    let dir = tempfile::tempdir().unwrap();
+    let http = Arc::new(Http::default());
+    let (data, model) = specimen(11);
+    http.push(Reply::ok(data, "\"one\""));
+    let budget = ByteBudget::new(512 * 1024).unwrap();
+    let (mut cache, _) = ArtifactCache::open(dir.path(), budget.clone(), 1).unwrap();
+    let ordinary = engine::cache::CacheKey::new(engine::cache::KeyInputs {
+        kind: engine::cache::ArtifactKind::Preview,
+        source: [1; 32],
+        provider: "local",
+        model: "preview",
+        version: "1",
+        settings: b"{}",
+        transcript: [0; 32],
+        cues: [0; 32],
+        clip_range: [0; 32],
+        translation: [0; 32],
+    })
+    .unwrap();
+    cache.put(ordinary, b"preview").unwrap();
+    let store = ModelTransfers::new(cache, http, Io::healthy());
+    let clock = Arc::new(TestClock::default());
+    let mut runner = JobRunner::new(
+        RunnerConfig {
+            concurrency: [1; 3],
+            queue: 1,
+            retained: 1,
+            network_attempts: 1,
+            backoff: Duration::from_millis(1),
+            progress_interval: Duration::from_millis(10),
+        },
+        budget,
+        clock.clone(),
+    )
+    .unwrap();
+    let (id, _) = submit(&store, &mut runner, &model);
+    let result = terminal(&mut runner, id, &clock);
+    assert_eq!(result.state, JobState::Completed, "{:?}", result.error);
+    assert!(store.installed(&model, &NoHooks).unwrap().is_some());
+}
+#[test]
 fn streaming_bundle_is_pinned_reported_exempt_and_removed_only_explicitly() {
     let dir = tempfile::tempdir().unwrap();
     let http = Arc::new(Http::default());
