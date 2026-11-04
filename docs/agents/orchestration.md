@@ -77,6 +77,10 @@ Load `orca skills get orchestration` for CLI details; use handles from receipts.
    lowest number (`.scratch/bin/frontier <assignee>`), up to the spec's maximum.
 5. `worker_done` is at most three sentences (outcomes, report path, follow-ups) with `--report-path`. Then stop.
 
+**Bugs found along the way** (yours or not, any agent):
+- Small or medium and contained (clear cause, fix stays inside one owner, no design change): fix it now in its own commit with a regression test, and list it in your report.
+- Large (data loss, crash, security, cross-owner or design-level): create a ticket right away (`Type: bug`, priority by severity, reproduction included) and name it in `worker_done`; `ask` at once if it blocks your ticket or corrupts user data.
+
 Talk to the coordinator only through `ask` (blocking question) and `worker_done`.
 A blocked ticket gets `Status: blocked` plus the reason, then an escalation.
 
