@@ -104,18 +104,45 @@ fn overlay_project(project_path: &Path, width: u32, height: u32) {
     fs::write(project_path, project::encode(&project, true).unwrap()).unwrap();
 }
 
+fn tool_command(program: &str) -> Command {
+    let mut command = Command::new(program);
+    // Production's shared libraries must not replace the external oracle's.
+    command
+        .env_remove("DYLD_LIBRARY_PATH")
+        .env_remove("LD_LIBRARY_PATH");
+    if let (Some(prefix), Some(paths)) = (std::env::var_os("FFMPEG_DIR"), std::env::var_os("PATH"))
+    {
+        let production = std::path::PathBuf::from(prefix).join("bin");
+        let paths: Vec<_> = std::env::split_paths(&paths)
+            .filter(|path| path != &production)
+            .collect();
+        command.env("PATH", std::env::join_paths(paths).unwrap());
+    }
+    command
+}
+
 fn tools() -> bool {
-    ["ffmpeg", "ffprobe"].iter().all(|tool| {
-        Command::new(tool)
-            .arg("-version")
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .status()
-            .is_ok_and(|status| status.success())
-    })
+    let available = ["ffmpeg", "ffprobe"].iter().all(|tool| {
+        match tool_command(tool).arg("-version").output() {
+            Ok(output) => {
+                assert!(output.status.success(), "found {tool} but it failed");
+                true
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => false,
+            Err(error) => panic!("cannot run {tool}: {error}"),
+        }
+    });
+    if !available {
+        assert!(
+            std::env::var_os("VIBECUT_REQUIRE_ORACLES").is_none(),
+            "required ffmpeg/ffprobe missing"
+        );
+        eprintln!("SKIP CLI oracle: ffmpeg/ffprobe missing");
+    }
+    available
 }
 fn ffmpeg(args: &[&OsStr]) {
-    let status = Command::new("ffmpeg")
+    let status = tool_command("ffmpeg")
         .arg("-v")
         .arg("error")
         .arg("-y")
@@ -471,7 +498,13 @@ fn probe_reports_decoded_stream_metadata() {
         String::from_utf8_lossy(&output.stderr)
     );
     let value = stdout_json(&output);
-    assert_eq!(value["format"], "mp4");
+    assert!(
+        value["format"]
+            .as_str()
+            .unwrap()
+            .split(',')
+            .any(|format| format == "mp4")
+    );
     assert!(value["duration"]["ticks"].as_i64().unwrap() > 0);
     assert!(
         value["streams"]
@@ -534,7 +567,7 @@ fn export_aspect_selects_portrait_geometry() {
         String::from_utf8_lossy(&output.stderr)
     );
     if tools() {
-        let probe = Command::new("ffprobe")
+        let probe = tool_command("ffprobe")
             .args([
                 os("-v"),
                 os("error"),
@@ -678,6 +711,16 @@ fn export_refuses_when_a_source_disappears_mid_job() {
         video.as_os_str(),
     ]);
     media_project(&project, &video, None);
+
+    // A matching single source is stream-copied and never enters Render.
+    let mut data = project::load(&project).unwrap().project.into_data();
+    data.canvas.width = 320;
+    data.canvas.height = 180;
+    fs::write(
+        &project,
+        project::encode(&project::Project::new(data).unwrap(), true).unwrap(),
+    )
+    .unwrap();
 
     let mut child = Command::new(bin())
         .args([
