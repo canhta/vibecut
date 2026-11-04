@@ -47,6 +47,7 @@ README holds the details.
 | Codec interfaces | media | Reference-counted packets and frames, rational time bases, decode/encode/flush, seek |
 | Export execution | render | Project snapshot, range and settings in; progress and cancellation hooks out |
 | Local models | ai + engine | ai owns catalog/download consent/integrity and shared transport; engine owns transfers and native ArtifactCache bundles; see [model transfer contract](../../crates/engine/README.md#local-model-transfers) |
+| Clip boundary adjustment | engine | Ordered source segments in; safe frame-snapped ranges and per-edge deltas out; captions owns speech groups, media owns energy measurements; see [engine contract](../../crates/engine/README.md#clip-boundary-adjustment) |
 | Provider interfaces | ai | Transcriber, Aligner, Translator, ClipSuggester; capabilities per model and language; request-scoped consent |
 
 **Jobs.** Engine wraps all media, render and AI execution in its job runner and

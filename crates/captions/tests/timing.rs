@@ -486,3 +486,30 @@ fn bare_chinese_uses_the_shared_han_character_timing_policy() {
         captions::TimingUnit::Character
     );
 }
+
+#[test]
+fn source_cut_units_keep_unicode_native_groups_and_never_estimate_missing_timing() {
+    let raw = "e\u{302}\u{301} test.";
+    let spans = TimingSpans::new(
+        raw,
+        vec![
+            input(0, 0..5, TimingUnit::Word),
+            input(1, 6..11, TimingUnit::Word),
+        ],
+        None,
+    )
+    .unwrap();
+    let tr = transcript(raw, spans, "en", 2);
+    let units =
+        captions::source_speech_units(&tr, &profile("en"), &LayoutHooks::default()).unwrap();
+    assert_eq!(units.len(), 2);
+    assert_eq!(units[0].range, range(0, 1));
+    assert!(!units[0].sentence_end);
+    assert!(units[1].sentence_end);
+    let mut partial = tr;
+    partial.segments[0].spans = None;
+    let units =
+        captions::source_speech_units(&partial, &profile("en"), &LayoutHooks::default()).unwrap();
+    assert_eq!(units.len(), 1);
+    assert_eq!(units[0].range, range(0, 2));
+}

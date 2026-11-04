@@ -244,3 +244,14 @@ measure pure correspondence/segmentation, not ASR accuracy or speech alignment.
 Build with `cargo test -p captions --release --test timing --no-run`, then run the
 emitted binary under `/usr/bin/time -l` with
 `--exact timing_span_benchmark --ignored --nocapture`. Other hardware is unverified.
+
+## Source cut units
+
+`source_speech_units(transcript, resolved_profile, hooks)` reuses subtitle
+validation, NFC correspondence, word/span grouping and profile punctuation to
+return indivisible SourceSpeechUnits and sentence-end marks for engine boundary
+snapping. Fully measured, text-matching native groups retain their source ranges;
+missing/incomplete/mismatched timing protects the entire source segment. No
+proportional estimated text timing is admitted as a cut boundary. Limits are
+10,000 segments, 500,000 words/output units and the existing 16 MiB segmentation byte cap.
+The caller resolves LanguageProfile once and can inject dictionary word hooks.

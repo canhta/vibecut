@@ -45,6 +45,93 @@ pub struct AudioChunk {
     pub speech_detected: bool,
 }
 
+/// Measured mono 16 kHz energy over at most 20 ms, in source coordinates.
+/// RMS is an amplitude ratio; this is an energy hint, not speech recognition.
+#[derive(Clone, Copy, Debug)]
+pub struct SpeechEnergyWindow {
+    pub range: SourceRange,
+    pub rms: f64,
+}
+
+/// Stream the same decoded/resampled samples used by speech extraction.
+/// Returns at most 360,001 windows (two hours); longer requests are refused.
+/// Checks cancellation between packets/frames; no files are written.
+pub fn analyze_speech_energy(
+    asset: &SourceAsset,
+    range: SourceRange,
+    cancel: Arc<AtomicBool>,
+) -> Result<Vec<SpeechEnergyWindow>> {
+    if range.start() < Tick::ZERO || range.duration() > Tick(7200 * TICKS_PER_SECOND) {
+        return Err(MediaError::TooLarge("speech energy duration"));
+    }
+    let mut windows = Vec::new();
+    let mut pending = Vec::with_capacity(ENERGY_FRAME_SAMPLES);
+    let mut start = None;
+    let mut expected = None;
+    decode_speech(asset, range, &cancel, &mut |mut samples, mut tick| {
+        if expected.is_some_and(|end| end != tick) {
+            return Err(MediaError::Invalid("speech energy clock"));
+        }
+        expected = Some(
+            tick.checked_add(samples_to_ticks(samples.len() as i64)?)
+                .ok_or(MediaError::TooLarge("speech energy clock"))?,
+        );
+        while !samples.is_empty() {
+            start.get_or_insert(tick);
+            let count = (ENERGY_FRAME_SAMPLES - pending.len()).min(samples.len());
+            pending.extend_from_slice(
+                samples
+                    .get(..count)
+                    .ok_or(MediaError::Invalid("speech energy bounds"))?,
+            );
+            tick = tick
+                .checked_add(samples_to_ticks(count as i64)?)
+                .ok_or(MediaError::TooLarge("speech energy clock"))?;
+            samples = samples
+                .get(count..)
+                .ok_or(MediaError::Invalid("speech energy bounds"))?;
+            if pending.len() == ENERGY_FRAME_SAMPLES {
+                append_energy(&mut windows, &mut pending, &mut start)?;
+            }
+        }
+        Ok(())
+    })?;
+    if !pending.is_empty() {
+        append_energy(&mut windows, &mut pending, &mut start)?;
+    }
+    Ok(windows)
+}
+
+fn mean_square(samples: &[f32]) -> f64 {
+    samples.iter().map(|s| f64::from(*s).powi(2)).sum::<f64>() / samples.len() as f64
+}
+
+fn append_energy(
+    windows: &mut Vec<SpeechEnergyWindow>,
+    samples: &mut Vec<f32>,
+    start: &mut Option<Tick>,
+) -> Result<()> {
+    if windows.len() >= 360_001 {
+        return Err(MediaError::TooLarge("speech energy windows"));
+    }
+    let start = start
+        .take()
+        .ok_or(MediaError::Invalid("speech energy start"))?;
+    let end = start
+        .checked_add(samples_to_ticks(samples.len() as i64)?)
+        .ok_or(MediaError::TooLarge("speech energy clock"))?;
+    let rms = mean_square(samples).sqrt();
+    if !rms.is_finite() {
+        return Err(MediaError::Invalid("speech energy samples"));
+    }
+    windows.push(SpeechEnergyWindow {
+        range: SourceRange::new(start, end)?,
+        rms,
+    });
+    samples.clear();
+    Ok(())
+}
+
 /// Bounds for [`extract_speech_audio_with`]. The OpenAI transcription endpoint
 /// accepts at most 25 MB per file, so the default keeps one megabyte of headroom.
 #[derive(Clone, Debug)]
@@ -112,8 +199,22 @@ fn extract(
     settings: &SpeechExtractSettings,
     cancel: Arc<AtomicBool>,
 ) -> Result<Vec<AudioChunk>> {
-    init()?;
     let plan = Plan::new(settings)?;
+    fs::create_dir_all(out_dir)?;
+    let mut chunker = Chunker::new(out_dir, settings, plan);
+    decode_speech(asset, range, &cancel, &mut |samples, tick| {
+        chunker.push(samples, tick)
+    })?;
+    chunker.finish()
+}
+
+fn decode_speech(
+    asset: &SourceAsset,
+    range: SourceRange,
+    cancel: &Arc<AtomicBool>,
+    push: &mut impl FnMut(&[f32], Tick) -> Result<()>,
+) -> Result<()> {
+    init()?;
     if !asset
         .probe()
         .streams
@@ -122,7 +223,6 @@ fn extract(
     {
         return Err(MediaError::NoAudioStream);
     }
-    fs::create_dir_all(out_dir)?;
     let mut reader = PacketReader::open_with_cancel(asset.path(), cancel.clone())?;
     let stream = reader
         .probe()
@@ -151,7 +251,6 @@ fn extract(
             reader = PacketReader::open_with_cancel(asset.path(), cancel.clone())?;
         }
     }
-    let mut chunker = Chunker::new(out_dir, settings, plan);
     let mut state = DecodeState::default();
     let mut reached_end = false;
     'decode: while !reached_end {
@@ -161,7 +260,7 @@ fn extract(
         match reader.next_packet()? {
             Some(packet) if packet.stream() == stream.index => {
                 for frame in decoder.decode(&packet)? {
-                    if decode_frame(frame, &mut state, &mut chunker, range, &cancel)? {
+                    if decode_frame(frame, &mut state, push, range, cancel)? {
                         reached_end = true;
                         break 'decode;
                     }
@@ -170,7 +269,7 @@ fn extract(
             Some(_) => {}
             None => {
                 for frame in decoder.flush()? {
-                    if decode_frame(frame, &mut state, &mut chunker, range, &cancel)? {
+                    if decode_frame(frame, &mut state, push, range, cancel)? {
                         reached_end = true;
                         break;
                     }
@@ -186,13 +285,13 @@ fn extract(
                 if cancel.load(Ordering::Relaxed) {
                     return Err(MediaError::Cancelled);
                 }
-                if push_resampled(frame, &mut state, &mut chunker, range)? {
+                if push_resampled(frame, &mut state, push, range)? {
                     break;
                 }
             }
         }
     }
-    chunker.finish()
+    Ok(())
 }
 
 #[derive(Default)]
@@ -205,7 +304,7 @@ struct DecodeState {
 fn decode_frame(
     frame: AudioFrame,
     state: &mut DecodeState,
-    chunker: &mut Chunker<'_>,
+    push: &mut impl FnMut(&[f32], Tick) -> Result<()>,
     range: SourceRange,
     cancel: &AtomicBool,
 ) -> Result<bool> {
@@ -223,7 +322,7 @@ fn decode_frame(
         if cancel.load(Ordering::Relaxed) {
             return Err(MediaError::Cancelled);
         }
-        if push_resampled(output, state, chunker, range)? {
+        if push_resampled(output, state, push, range)? {
             return Ok(true);
         }
     }
@@ -233,7 +332,7 @@ fn decode_frame(
 fn push_resampled(
     output: AudioFrame,
     state: &mut DecodeState,
-    chunker: &mut Chunker<'_>,
+    push: &mut impl FnMut(&[f32], Tick) -> Result<()>,
     range: SourceRange,
 ) -> Result<bool> {
     let pts = output.pts()?.ok_or(MediaError::Unsupported(
@@ -274,7 +373,7 @@ fn push_resampled(
         let tick = anchor
             .checked_add(samples_to_ticks(keep_start)?)
             .ok_or(MediaError::TooLarge("speech timestamp"))?;
-        chunker.push(samples, tick)?;
+        push(samples, tick)?;
     }
     Ok(end <= frame_end)
 }
@@ -570,11 +669,7 @@ fn choose_split(pending: &[f32], fed: usize, lo: usize, hi: usize) -> Result<usi
         let frame = pending
             .get(position..frame_end)
             .ok_or(MediaError::Invalid("speech energy bounds"))?;
-        let energy = frame
-            .iter()
-            .map(|sample| f64::from(*sample) * f64::from(*sample))
-            .sum::<f64>()
-            / frame.len() as f64;
+        let energy = mean_square(frame);
         if energy <= best_energy {
             best_energy = energy;
             let middle = position + (frame_end - position) / 2;

@@ -112,48 +112,8 @@ pub fn segment_transcript(
 ) -> Result<Segmentation, Error> {
     rules.validate(hooks)?;
     let mut output = Segmentation::default();
-    let mut previous = Tick::ZERO;
-    let mut ids = BTreeSet::new();
-    let mut bytes = 0usize;
+    validate_transcript(transcript)?;
     for segment in &transcript.segments {
-        bytes = bytes
-            .checked_add(segment.id.as_str().len())
-            .ok_or(Error::TooLarge)?;
-        bytes = bytes
-            .checked_add(segment.text.as_str().len())
-            .ok_or(Error::TooLarge)?;
-        for word in &segment.words {
-            bytes = bytes
-                .checked_add(word.text.as_str().len())
-                .ok_or(Error::TooLarge)?;
-        }
-        if let Some(spans) = &segment.spans {
-            bytes = bytes
-                .checked_add(spans.byte_cost())
-                .ok_or(Error::TooLarge)?;
-        }
-        if bytes > 16 * 1024 * 1024 {
-            return Err(Error::TooLarge);
-        }
-        if segment.id.as_str().is_empty()
-            || !ids.insert(segment.id.clone())
-            || segment.range.start() < previous
-        {
-            return Err(Error::Invalid("segment identity or order"));
-        }
-        previous = segment.range.end();
-        let mut word_end = segment.range.start();
-        for word in &segment.words {
-            if let Some(range) = word.range {
-                if range.start() < word_end || range.end() > segment.range.end() {
-                    return Err(Error::Invalid("word range"));
-                }
-                word_end = range.end();
-            }
-        }
-        if let Some(spans) = &segment.spans {
-            spans.validate_segment(&segment.text, segment.range, &transcript.source_lang)?;
-        }
         let normalized = NormalizedText::new(
             segment
                 .spans
@@ -200,6 +160,124 @@ pub fn segment_transcript(
         )?;
     }
     finish(&mut output, rules)?;
+    Ok(output)
+}
+
+fn validate_transcript(transcript: &Transcript) -> Result<(), Error> {
+    let mut previous = Tick::ZERO;
+    let mut ids = BTreeSet::new();
+    let mut bytes = 0usize;
+    for segment in &transcript.segments {
+        bytes = bytes
+            .checked_add(segment.id.as_str().len())
+            .ok_or(Error::TooLarge)?;
+        bytes = bytes
+            .checked_add(segment.text.as_str().len())
+            .ok_or(Error::TooLarge)?;
+        for word in &segment.words {
+            bytes = bytes
+                .checked_add(word.text.as_str().len())
+                .ok_or(Error::TooLarge)?;
+        }
+        if let Some(spans) = &segment.spans {
+            bytes = bytes
+                .checked_add(spans.byte_cost())
+                .ok_or(Error::TooLarge)?;
+        }
+        if bytes > 16 * 1024 * 1024 {
+            return Err(Error::TooLarge);
+        }
+        if segment.id.as_str().is_empty()
+            || !ids.insert(segment.id.clone())
+            || segment.range.start() < previous
+        {
+            return Err(Error::Invalid("segment identity or order"));
+        }
+        previous = segment.range.end();
+        let mut word_end = segment.range.start();
+        for word in &segment.words {
+            if let Some(range) = word.range {
+                if range.start() < word_end || range.end() > segment.range.end() {
+                    return Err(Error::Invalid("word range"));
+                }
+                word_end = range.end();
+            }
+        }
+        if let Some(spans) = &segment.spans {
+            spans.validate_segment(&segment.text, segment.range, &transcript.source_lang)?;
+        }
+    }
+    Ok(())
+}
+
+/// An indivisible measured speech unit, or a whole segment when timings are
+/// missing/incomplete. Sentence punctuation follows the resolved language profile.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct SourceSpeechUnit {
+    pub range: SourceRange,
+    pub sentence_end: bool,
+}
+
+/// Return safe source-cut units using the same word/span grouping as subtitles.
+/// Never derives cut positions from proportionally estimated text timing.
+/// Rejects invalid/overlapping timings and inputs exceeding the segmentation cap.
+pub fn source_speech_units(
+    transcript: &Transcript,
+    profile: &LanguageProfile,
+    hooks: &LayoutHooks<'_>,
+) -> Result<Vec<SourceSpeechUnit>, Error> {
+    if transcript.segments.len() > 10_000
+        || transcript
+            .segments
+            .iter()
+            .map(|s| s.words.len())
+            .try_fold(0usize, usize::checked_add)
+            .is_none_or(|n| n > 500_000)
+    {
+        return Err(Error::TooLarge);
+    }
+    validate_transcript(transcript)?;
+    let mut output = Vec::new();
+    for segment in &transcript.segments {
+        let normalized = NormalizedText::new(
+            segment
+                .spans
+                .as_ref()
+                .map_or(segment.text.as_str(), |s| s.display().as_str()),
+        )?;
+        let boundaries = TextBoundaries::new(&normalized, hooks)?;
+        let units = match &segment.spans {
+            Some(spans) => span_units(spans, profile, &boundaries)?,
+            None => timed_units(
+                normalized.text().as_str(),
+                &segment.words,
+                profile,
+                &boundaries,
+            )?,
+        };
+        match units {
+            Some(units) => {
+                if output.len().saturating_add(units.len()) > 500_000 {
+                    return Err(Error::TooLarge);
+                }
+                for unit in units {
+                    output.push(SourceSpeechUnit {
+                        range: SourceRange::new(unit.range.start, unit.range.end)?,
+                        sentence_end: unit.boundary == 3,
+                    });
+                }
+            }
+            None => {
+                if output.len() >= 500_000 {
+                    return Err(Error::TooLarge);
+                }
+                output.push(SourceSpeechUnit {
+                    range: segment.range,
+                    sentence_end: rank(normalized.text().as_str(), profile) == 3,
+                });
+            }
+        }
+    }
     Ok(output)
 }
 

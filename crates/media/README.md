@@ -207,3 +207,15 @@ frames plus AAC, with maximum decoded color-patch channel error <=6. Intel/Roset
 VM-only fallback and Windows runtime remain unverified. An encoder open rejection
 returns `MediaError::Ffmpeg` with its native cause; `EncoderUnavailable` is reserved
 for an absent explicit software H.264 encoder.
+
+## Speech energy windows
+
+`analyze_speech_energy(asset, source_range, cancel)` exposes the same streaming
+mono 16 kHz decode/resample path used by speech extraction, without AAC encoding
+or file writes. It returns contiguous 20 ms SpeechEnergyWindows (a final partial
+window is retained), with exact source ranges and measured RMS amplitude ratios.
+Requests are capped at two hours/360,001 windows and cancellation is checked
+between packets and frames. Engine clip snapping consumes this measurement;
+there is no separate decoder or voice-activity model. RMS is an energy hint:
+background noise and unvoiced speech need transcript protection. The caller sets
+the quiet threshold when interpreting windows.

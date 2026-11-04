@@ -1,6 +1,7 @@
 //! Headless project commands and bounded, atomic snapshot history.
 mod budget;
 pub mod cache;
+pub mod clip_boundaries;
 mod commands;
 pub mod jobs;
 pub mod models;
@@ -20,6 +21,12 @@ pub use session::{JobTarget, Session};
 /// Safe diagnostic categories: never include parameter values or user text.
 #[derive(Debug, thiserror::Error)]
 pub enum EditError {
+    #[error("clip boundary refused at short {short}, segment {segment}: {reason:?}")]
+    ClipBoundary {
+        short: usize,
+        segment: usize,
+        reason: clip_boundaries::BoundaryFailure,
+    },
     #[error("cache is in use")]
     CacheBusy,
     #[error("model transfer response does not match the requested representation")]
