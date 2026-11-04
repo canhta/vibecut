@@ -13,14 +13,21 @@ Provision FFmpeg with `cargo xtask ffmpeg`. Build with that installation's
 [workspace verification](../../docs/engineering/verification.md).
 The desktop binary is `vibecut`; the headless CLI is `vibecut-cli`.
 `cargo run -p vibecut -- /native/path/to/project.json` acquires the project writer
-lease before loading. With no file it opens the minimal Home new/open entry points. Project listing and
-thumbnail storage belong to the projects-page feature. The shell provides preview
-and timeline display; media import, editing and export controls are integrated by
-their owning feature tickets.
+lease before loading. With no file it opens the minimal Home new/open entry points.
+Project listing and thumbnail storage belong to the projects-page feature. Preview,
+timeline basics and transport are present; media import, text/audio controls and
+export are integrated by their owning feature tickets.
 
-Space toggles playback; K pauses; J/L seek one second backwards/forwards; Home/End
-seek to the timeline ends. Scrubbing uses the same seek path. Two resizable columns
-and a horizontal divider start at the UI design's 25/50/25 and 60/40 proportions.
+The timeline draws tracks, filmstrip/waveform placeholders, bookmarks and the
+playhead; zoom, horizontal/vertical scrolling, frame-snapped ruler seeking,
+single/Cmd-or-Shift multi-selection, drag move, edge trims, split, delete and
+ripple delete all dispatch engine commands. Delete/Backspace removes, Shift+Delete
+ripple-deletes, Cmd/Ctrl+B splits at the playhead and N toggles snapping; Shift
+bypasses snapping during a drag. Cmd/Ctrl+Z undoes and Shift+Cmd/Ctrl+Z or Cmd+Y
+redoes. Space toggles playback; K pauses; J/L seek one second backwards/forwards;
+arrows step one frame; Shift+arrows jump one second; Home/End seek the timeline
+ends. Scrubbing uses the same seek path. Two resizable columns and a horizontal
+divider start at the UI design's 25/50/25 and 60/40 proportions.
 English/Vietnamese, theme and panel proportions use one bounded preference store.
 
 ## Injection and inspection
@@ -28,12 +35,13 @@ English/Vietnamese, theme and panel proportions use one bounded preference store
 `Editor::ui` runs without a window/device. `Playback::new` injects `Sources`, which
 creates render's `SourceProvider`; production uses `FileSources` exactly as export
 does. `AudioPort::fill` accepts a headless device callback for transport tests.
-`Editor::activate` maps stable widget IDs to engine `execute` for undo/redo and to
-app-owned transport/preferences. `inspect` exposes enabled/focus/rect/current view,
-playing and position only. The project remains the Session's immutable snapshot.
-Each interactive first-screen control exposes the same stable `author_id` through
-AccessKit, independent of locale and layout. Headless tests query those IDs and
-click through the real widget/engine path.
+`Editor::activate` maps stable widget IDs to engine `execute` for every project
+edit and to app-owned transport/preferences/selection. `inspect` exposes
+enabled/focus/rect/current view, playing, position, selection, zoom and snapping
+state. The project remains the Session's immutable snapshot. Each interactive
+control, including every timeline item and trim handle, exposes the same stable
+`author_id` through AccessKit, independent of locale and layout. Headless tests
+query those IDs and click or drag through the real widget/engine path.
 
 `Capture::request` queues a fresh GPU readback and `poll` waits without blocking
 for at most five seconds; window and panel rectangles are supported. Unavailable
@@ -84,9 +92,12 @@ layered appearance and clean-host release acceptance require separate evidence.
 The shared FFmpeg dependency is LGPL; see the [distribution and replacement
 rules](../../docs/engineering/open-source.md#ffmpeg-distribution).
 
-`cargo test -p vibecut` covers stable ID accessibility/uniqueness, real undo/redo,
-locale retention, transport/seek/clear, byte refusal and worker shutdown.
-`cargo xtask ci` is the handoff check. The local ticket report records observed
+`cargo test -p vibecut` covers stable ID accessibility/uniqueness, real
+split/trim/move/delete/undo/redo through automation IDs, locale retention,
+transport/seek/clear, byte refusal and worker shutdown. The timeline evidence test
+renders dark/light headless kittest PNGs and an automation-ID geometry receipt into
+`$CARGO_TARGET_DIR/screenshots/` (or `target/screenshots/`); it opens no native
+window. `cargo xtask ci` is the handoff check. The local ticket report records observed
 native screenshots, ten-minute A/V frame lag, underruns and peak RSS separately
 from source-documented API contracts; tests alone establish no device performance.
 `--observe SECONDS OUTPUT_DIR [PROJECT]` records at most 3,601 one-second samples

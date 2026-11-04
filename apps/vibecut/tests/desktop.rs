@@ -63,17 +63,17 @@ fn every_widget_has_unique_locale_stable_id_and_input_reaches_engine() {
         .build_ui_state(|ui, editor: &mut Editor| editor.ui(ui), editor());
     harness.run_steps(3);
     let before = harness.state().inspect().unwrap();
-    let ids: BTreeSet<_> = before.widgets.iter().map(|w| w.id).collect();
+    let ids: BTreeSet<_> = before.widgets.iter().map(|w| w.id.clone()).collect();
     assert_eq!(ids.len(), before.widgets.len());
     assert!(
         ids.contains("edit.undo")
-            && ids.contains("transport.scrub")
+            && ids.contains("timeline.ruler")
             && ids.contains("layout.timeline")
     );
     for id in &ids {
         assert_eq!(
             harness
-                .query_all(By::new().predicate(|n| n.author_id() == Some(*id)))
+                .query_all(By::new().predicate(|n| n.author_id() == Some(id.as_str())))
                 .count(),
             1,
             "id {id}"
@@ -102,7 +102,7 @@ fn every_widget_has_unique_locale_stable_id_and_input_reaches_engine() {
             .unwrap()
             .widgets
             .iter()
-            .map(|w| w.id)
+            .map(|w| w.id.clone())
             .collect::<BTreeSet<_>>(),
         ids
     );
