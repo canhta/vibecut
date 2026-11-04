@@ -19,7 +19,7 @@ with a named consumer.
 | text | crates/text | Unicode shaping and rasterization | - |
 | render | crates/render | CPU compositor, caption overlay, audio mix, export execution | time, media, project, captions, text |
 | ai | crates/ai | Provider interfaces, capabilities, consent and cost, AI adapters | time, media, captions |
-| engine | crates/engine | Session, commands, history, jobs, cache, adapter selection | time, media, project, captions, text, render, ai |
+| engine | crates/engine | Session, commands, history, recovery scheduling, jobs, cache, adapter selection | time, media, project, captions, text, render, ai |
 | vibecut-cli | apps/vibecut-cli | Headless adapter: CLI arguments, typed exit codes, dispatch | engine, media, ai |
 | vibecut | apps/vibecut | Desktop app: UI, playback, wgpu compositor, preferences, app controls and inspection | engine, media, project, captions, text, render, ai |
 
@@ -61,6 +61,8 @@ or closure group is one undo step; continuous drags merge by key or explicit
 gesture begin/commit/cancel. Engine restores project, history and deferred changes
 on refusal or unwind; see the [transaction contract](../../crates/engine/README.md#transactions-gestures-and-changes).
 Presentation state and preferences stay in the app.
+
+**Recovery.** Engine owns unsaved-session scheduling, OS session liveness and revision-bound save acknowledgement; project owns its one snapshot format, atomic writes and rotation. See the [session recovery contract](../../crates/engine/README.md#session-recovery-and-save-acknowledgement). The app presents recovery choices.
 
 **Control.** Engine owns command IDs, schemas, events, revision and idempotency
 rules, and every project mutation; dispatch is transport-neutral. Adapters only

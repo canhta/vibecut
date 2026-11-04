@@ -290,3 +290,66 @@ outputs, reopened/multiple-cache reclamation, global recency, active pins,
 concurrent reclaimers and repair after unlink failure.
 No new media/render algorithm is introduced; throughput, RSS, provider quality and
 Windows runtime behavior remain unverified by these synthetic lifecycle tests.
+
+## Session recovery and save acknowledgement
+
+`recovery::Autosave` composes one Session with persistence. Supply a private root
+under the app data directory, the aggregate ByteBudget, and a monotonic jobs Clock.
+It uses the existing JobRunner for off-thread encoding/IO, with one in-flight job
+and one latest pending snapshot. `session_mut()` dispatches commands/gestures;
+`switch()` is the project-replacement boundary. Each observed committed snapshot
+advances a checked session-local revision; gesture previews are never journaled.
+
+Call `tick()` from the app event loop. `Schedule::default()` uses 800 ms debounce
+and 10 s maximum dirty age, measured from the first unpublished edit, including
+continuous editing. These are scheduling deadlines: event-loop pump latency,
+budget pressure and filesystem latency add to completion time. A write reserves
+40 MiB from the shared budget before encoding bounded project/metadata bytes;
+budget starvation can delay admission. There is no UI toolkit dependency.
+
+One atomically created directory and exclusive std OS file lock identify each
+session. Live sessions (including other windows in one process) are never offered
+by `discover()`. After process death the OS releases the lock; discovery holds it
+until the returned Candidate is dropped/discarded, preventing two instances from
+claiming the same abandoned session. Unsupported locking is a typed error, never
+assumed stale. Scanning is bounded to 10,000 entries; corrupt candidates yield
+retained typed diagnostics, without deleting their files. Names/paths have no
+Debug representation and are never logged.
+
+The journal descriptor has its own version, project id/name, original saved path,
+monotonic revision, BLAKE3 digest, timestamp and canonical snapshot filename.
+Project content uses only project::encode/decode and project::autosave::save,
+with two retained snapshots. The descriptor is committed through the shared atomic
+writer after its snapshot. Any write failure is sticky and prevents further
+rotation; an interrupted/failed descriptor update leaves the previous confirmed
+pair readable. The last published revision survives forced process termination;
+physical power loss and Windows runtime behavior remain unverified.
+
+`Candidate::recover()` returns a Session for never-saved work: construct its
+Autosave with no saved path. `save()` then returns SaveAsRequired. `save_as(path)`
+queues a journal publication followed by an atomic project save on the worker;
+`tick()` acknowledges only the captured Session revision. `saving()` includes a
+request queued behind an earlier journal/cleanup. A stale completion returns
+StaleResult and preserves dirty state; subsequent recovery continues. Successful
+save-as establishes the destination for later save(). Absolute native paths are
+required; saves inside recovery storage are refused. Non-UTF-8 descriptor paths
+are a typed unsupported encoding error, without changing the original file.
+
+`flush()` is an explicit blocking barrier for project-switch/exit; IO still runs
+on the worker. Use `switch()` to flush/acknowledge the pending revision before
+replacing the project; failure retains the old Session. Active gestures/groups
+refuse these boundaries. Drop joins/cancels existing work and does **not** promise
+a flush. Clean saves/undo-to-saved retire obsolete journals on the worker.
+Candidate::discard removes only its descriptor/canonical snapshots, preserving
+original projects and unrelated files. Recovery is never silently discarded.
+Empty session directories/lock files are retained; applications should archive or
+remove empty private session directories during maintenance before the scan cap.
+
+Observed tests cover abrupt subprocess termination, two live processes, exclusive
+candidate claims, stale OS locks, continuous-edit/debounce deadlines, corrupted or
+truncated descriptors/snapshots, digest/path/schema refusal, original-byte
+preservation, save-as promotion, stale save completion, switch barriers, undo to
+saved state, injected StorageFull and worker unwind, and refusal to rotate after
+failure. These are synthetic lifecycle checks, not a storage throughput benchmark.
+The app owns recovery presentation and user choices; project writer leases remain
+a separate project-owner contract.

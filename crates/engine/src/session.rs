@@ -88,6 +88,10 @@ impl Session {
         self.revision = Arc::new(());
         Ok(())
     }
+    pub(crate) fn matches_target(&self, target: &JobTarget) -> bool {
+        Arc::ptr_eq(&self.identity, &target.session)
+            && Arc::ptr_eq(&self.revision, &target.revision)
+    }
     pub fn apply_job_result(&mut self, target: &JobTarget, command: Command) -> Result<Outcome> {
         if !Arc::ptr_eq(&self.identity, &target.session)
             || !Arc::ptr_eq(&self.revision, &target.revision)

@@ -36,6 +36,7 @@ pub enum JobKind {
     Preview,
     Export,
     Import,
+    Persist,
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum JobStage {
@@ -271,7 +272,8 @@ impl JobRunner {
         })
     }
     /// Typed nonblocking queue-full refusal. Closures must have bounded captures,
-    /// obey reserved bytes and cancellation, and perform no publication themselves.
+    /// obey reserved bytes and cancellation. Persist jobs may publish complete atomic
+    /// journal/project files; other jobs must not publish partial files.
     /// Returning bytes cannot promote partial work. Encoded export restart is unsupported.
     pub fn submit(
         &mut self,

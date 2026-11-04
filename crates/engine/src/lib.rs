@@ -3,6 +3,7 @@ mod budget;
 pub mod cache;
 mod commands;
 pub mod jobs;
+pub mod recovery;
 pub use budget::{BudgetSnapshot, ByteBudget, ByteLease, ByteOwner};
 mod edit;
 mod session;
@@ -14,6 +15,14 @@ pub use session::{JobTarget, Session};
 /// Safe diagnostic categories: never include parameter values or user text.
 #[derive(Debug, thiserror::Error)]
 pub enum EditError {
+    #[error("recovery candidate is corrupt or incomplete")]
+    RecoveryCorrupt,
+    #[error("persistence operation is already active")]
+    RecoveryBusy,
+    #[error("recovered or never-saved work requires save-as")]
+    SaveAsRequired,
+    #[error("session persistence failed")]
+    PersistenceFailed(#[source] std::sync::Arc<EditError>),
     #[error("job queue is full")]
     QueueFull,
     #[error("aggregate byte budget is full")]
