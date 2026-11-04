@@ -25,6 +25,7 @@ pub(super) struct Tool {
     name: &'static str,
     path: Option<PathBuf>,
     version: Option<Version>,
+    version_line: Option<String>,
     problem: Option<String>,
 }
 
@@ -76,7 +77,12 @@ pub(super) fn begin(required: bool) -> Result<(), String> {
 fn receipt(tool: &Tool) -> String {
     match (&tool.path, tool.version, &tool.problem) {
         (Some(path), Some(version), None) => {
-            format!("{} path={} version={version}", tool.name, path.display())
+            format!(
+                "{} path={} version={version} reported={}",
+                tool.name,
+                path.display(),
+                tool.version_line.as_deref().unwrap_or("unknown")
+            )
         }
         _ => format!(
             "{} unavailable: {}",
@@ -92,6 +98,7 @@ fn inspect(name: &'static str) -> Tool {
             name,
             path: None,
             version: None,
+            version_line: None,
             problem: Some("not found on PATH".into()),
         };
     };
@@ -108,6 +115,7 @@ fn inspect(name: &'static str) -> Tool {
                 name,
                 path: Some(path),
                 version,
+                version_line: text.lines().next().map(str::to_owned),
                 problem,
             }
         }
@@ -115,12 +123,14 @@ fn inspect(name: &'static str) -> Tool {
             name,
             path: Some(path),
             version: None,
+            version_line: None,
             problem: Some(format!("-version exited {}", output.status)),
         },
         Err(error) => Tool {
             name,
             path: Some(path),
             version: None,
+            version_line: None,
             problem: Some(format!("cannot run: {error}")),
         },
     }
@@ -251,4 +261,22 @@ fn fixture(base: &Path, path: &Path) -> Result<Fixture, String> {
         bytes,
         sha256,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{Tool, Version, receipt};
+    use std::path::PathBuf;
+
+    #[test]
+    fn receipt_retains_the_reported_patch_and_build_version() {
+        let tool = Tool {
+            name: "ffmpeg",
+            path: Some(PathBuf::from("/tools/ffmpeg")),
+            version: Some(Version { major: 9, minor: 0 }),
+            version_line: Some("ffmpeg version 9.0.2-custom Copyright".into()),
+            problem: None,
+        };
+        assert!(receipt(&tool).contains("reported=ffmpeg version 9.0.2-custom Copyright"));
+    }
 }
