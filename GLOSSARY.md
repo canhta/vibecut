@@ -25,11 +25,11 @@ numerator and denominator rather than a floating value.
 **SourceAsset**: A source-media identity and its location, content fingerprint and
 probed stream information; timeline items refer to it without copying its media.
 
-**Transcript**: Source-language speech text with stable segments and available
-word or character timing, plus the provenance of its recognition.
+**Transcript**: Source-language recognition result with stable segments and a
+provider/model/settings fingerprint, owned by `captions`.
 
-**Cue**: A timed subtitle in source coordinates, with source text, per-language
-translations and edit protection for user changes.
+**Cue**: Identified source range with source language and per-language text,
+independent edit flags and translation references.
 
 **EditMapping**: The correspondence between selected source ranges and their
 positions in an output timeline; one source span can appear more than once.
@@ -42,3 +42,9 @@ checkpoint information.
 
 **Session**: The active project together with its command execution and undo/redo
 history.
+
+**Segment**: Stable identified span of transcript text in source-media time.
+
+**Word**: Recognized source text with optional source range, speaker and confidence.
+
+**Track**: A `CueTrack` grouping cues for validation, repair and subtitle export.
