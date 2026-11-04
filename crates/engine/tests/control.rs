@@ -1260,3 +1260,242 @@ fn diagnostic_debug_redacts_request_content_output_paths_and_frame_bytes() {
     };
     assert!(!format!("{frame:?}").contains("private-secret"));
 }
+
+fn assert_integer_candidate_refusal(s: &mut Session, r: &mut JobRunner, id: &str, params: Value) {
+    let before = s.project().clone();
+    let history = s.history_len();
+    let revision = s.revision();
+    let metadata = s.metadata().clone();
+    let mut listener = s.snapshot_and_subscribe(r).unwrap();
+    let req = request(s, id, params, "integer-candidate");
+    let response = s.control_request(req.clone(), caller(&Allow), r).unwrap();
+    error(response.clone(), ErrorCode::InvalidParams);
+    assert_eq!(s.project(), &before);
+    assert_eq!(s.history_len(), history);
+    assert_eq!(s.revision(), revision);
+    assert_eq!(s.metadata(), &metadata);
+    assert!(
+        s.events(&mut listener.cursor)
+            .unwrap()
+            .iter()
+            .all(|e| !matches!(
+                e.payload,
+                Payload::ProjectChanged { .. } | Payload::RevisionChanged
+            ))
+    );
+    assert!(s.take_change().is_none());
+    ok(run(s, r, "inspect", json!({}), "inspect-after-refusal"));
+    assert!(
+        jsonschema::options()
+            .offline()
+            .build(&control::contract_schema()["response"])
+            .unwrap()
+            .is_valid(&serde_json::to_value(&response).unwrap())
+    );
+    s.apply(Command::RenameProject {
+        name: "Later revision".into(),
+    })
+    .unwrap();
+    let after = s.project().clone();
+    let replay = s.control_request(req, caller(&Allow), r).unwrap();
+    assert_eq!(
+        serde_json::to_value(replay).unwrap(),
+        serde_json::to_value(response).unwrap()
+    );
+    assert_eq!(s.project(), &after);
+}
+
+#[test]
+fn review_integer_generated_id_is_refused_atomically_at_safe_limit() {
+    let mut data = session().project().data().clone();
+    data.timeline.tracks.push(Track {
+        id: TrackId(control::MAX_SAFE_INTEGER as u64),
+        name: "Boundary".into(),
+        kind: TrackKind::Overlay,
+        muted: false,
+        hidden: false,
+        locked: false,
+        items: vec![],
+    });
+    let mut s = Session::new(Project::new(data).unwrap(), 10).unwrap();
+    let mut r = runner();
+    ok(run(&mut s, &mut r, "inspect", json!({}), "before"));
+    assert_integer_candidate_refusal(
+        &mut s,
+        &mut r,
+        "add_track",
+        json!({"name":"Next","kind":"overlay"}),
+    );
+}
+
+#[test]
+fn review_integer_derived_source_ticks_and_batch_are_refused_atomically() {
+    for batch in [false, true] {
+        let mut data = session().project().data().clone();
+        data.timeline.tracks.push(Track {
+            id: TrackId(0),
+            name: "Boundary".into(),
+            kind: TrackKind::Overlay,
+            muted: false,
+            hidden: false,
+            locked: false,
+            items: vec![Item {
+                id: ItemId(1),
+                animations: Default::default(),
+                source_asset: None,
+                source_range: SourceRange::new(
+                    Tick(control::MAX_SAFE_INTEGER - 10),
+                    Tick(control::MAX_SAFE_INTEGER),
+                )
+                .unwrap(),
+                start: Tick::ZERO,
+                content: ItemParams::Overlay(OverlayParams {
+                    color: Color([0, 0, 0, 255]),
+                }),
+            }],
+        });
+        let mut s = Session::new(Project::new(data).unwrap(), 10).unwrap();
+        let mut r = runner();
+        ok(run(&mut s, &mut r, "inspect", json!({}), "before"));
+        if batch {
+            assert_integer_candidate_refusal(
+                &mut s,
+                &mut r,
+                "batch",
+                json!({"commands":[{"command":"project.rename","params":{"name":"Must roll back"}},{"command":"add_track","params":{"name":"Must not consume ID","kind":"overlay"}},{"command":"trim_end","params":{"item":1,"at":20}}]}),
+            );
+        } else {
+            assert_integer_candidate_refusal(&mut s, &mut r, "trim_end", json!({"item":1,"at":20}));
+        }
+        if batch {
+            let result = ok(run(
+                &mut s,
+                &mut r,
+                "add_track",
+                json!({"name":"After refusal","kind":"overlay"}),
+                "after-batch",
+            ));
+            assert!(
+                matches!(result,ControlResult::Edit{outcome} if outcome.created==vec![engine::CreatedId::Track(TrackId(2))])
+            );
+        }
+    }
+}
+
+#[test]
+fn review_integer_last_safe_created_id_matches_schema_then_next_id_refuses() {
+    let mut data = session().project().data().clone();
+    data.timeline.tracks.push(Track {
+        id: TrackId(control::MAX_SAFE_INTEGER as u64 - 1),
+        name: "Boundary".into(),
+        kind: TrackKind::Overlay,
+        muted: false,
+        hidden: false,
+        locked: false,
+        items: vec![],
+    });
+    let mut s = Session::new(Project::new(data).unwrap(), 10).unwrap();
+    let mut r = runner();
+    let result = ok(run(
+        &mut s,
+        &mut r,
+        "add_track",
+        json!({"name":"Last safe","kind":"overlay"}),
+        "last-safe",
+    ));
+    assert!(
+        matches!(&result,ControlResult::Edit{outcome} if outcome.created==vec![engine::CreatedId::Track(TrackId(control::MAX_SAFE_INTEGER as u64))])
+    );
+    let schema = &registry()
+        .iter()
+        .find(|spec| spec.id == "add_track")
+        .unwrap()
+        .output_schema;
+    assert!(
+        jsonschema::options()
+            .offline()
+            .build(schema)
+            .unwrap()
+            .is_valid(&serde_json::to_value(result).unwrap())
+    );
+    s.take_change();
+    assert_integer_candidate_refusal(
+        &mut s,
+        &mut r,
+        "add_track",
+        json!({"name":"Unsafe","kind":"overlay"}),
+    );
+}
+
+#[test]
+fn review_integer_derived_keyframe_ticks_refuse_before_commit() {
+    let mut data = seed().project().data().clone();
+    let path = project::AnimationPath::new("opacity").unwrap();
+    data.timeline.tracks[0].items[0]
+        .animations
+        .get_mut(&path)
+        .unwrap()
+        .channel_mut(None)
+        .unwrap()
+        .put(project::Keyframe::new(
+            Tick(control::MAX_SAFE_INTEGER / 2 + 1),
+            project::ParamValue::Scalar(0.5),
+        ))
+        .unwrap();
+    let mut s = Session::new(Project::new(data).unwrap(), 10).unwrap();
+    let mut r = runner();
+    ok(run(&mut s, &mut r, "inspect", json!({}), "before"));
+    assert_integer_candidate_refusal(
+        &mut s,
+        &mut r,
+        "keyframes.scale_time",
+        json!({"item":1,"numerator":2,"denominator":1}),
+    );
+}
+
+#[test]
+fn review_integer_history_destination_and_legacy_json_share_candidate_validation() {
+    let mut data = session().project().data().clone();
+    data.timeline.tracks.push(Track {
+        id: TrackId(0),
+        name: "Boundary".into(),
+        kind: TrackKind::Overlay,
+        muted: false,
+        hidden: false,
+        locked: false,
+        items: vec![Item {
+            id: ItemId(1),
+            animations: Default::default(),
+            source_asset: None,
+            source_range: SourceRange::new(
+                Tick(control::MAX_SAFE_INTEGER - 10),
+                Tick(control::MAX_SAFE_INTEGER),
+            )
+            .unwrap(),
+            start: Tick::ZERO,
+            content: ItemParams::Overlay(OverlayParams {
+                color: Color([0, 0, 0, 255]),
+            }),
+        }],
+    });
+    let mut s = Session::new(Project::new(data).unwrap(), 10).unwrap();
+    let mut r = runner();
+    let before = s.project().clone();
+    let revision = s.revision();
+    assert!(matches!(
+        s.execute("trim_end", json!({"item":1,"at":20})),
+        Err(EditError::InvalidParams)
+    ));
+    assert_eq!(s.project(), &before);
+    assert_eq!(s.revision(), revision);
+    s.apply(Command::TrimEnd {
+        item: ItemId(1),
+        at: Tick(20),
+    })
+    .unwrap();
+    s.undo().unwrap();
+    s.take_change();
+    assert_eq!(s.project(), &before);
+    assert_eq!(s.history_len(), (0, 1));
+    assert_integer_candidate_refusal(&mut s, &mut r, "redo", json!({}));
+}

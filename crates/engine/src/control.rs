@@ -449,6 +449,14 @@ pub(crate) fn close_schema(value: &mut Value) {
     }
 }
 
+/// Validate the actual wire representation of a candidate, including generated
+/// IDs and arithmetic-derived ticks, while the edit is still reversible.
+pub(crate) fn validate_wire<T: Serialize + ?Sized>(value: &T) -> Result<()> {
+    let bytes = bounded_json(value, MAX_RESPONSE_BYTES - 4096)?;
+    let value: Value = serde_json::from_slice(&bytes).map_err(|_| EditError::InvalidParams)?;
+    check_integers(&value)
+}
+
 fn check_integers(value: &Value) -> Result<()> {
     let mut stack = vec![value];
     while let Some(value) = stack.pop() {
@@ -738,10 +746,7 @@ impl Session {
                 if self.transaction_active() {
                     return Err(EditError::TransactionActive);
                 }
-                let bytes = bounded_json(self.project().data(), MAX_RESPONSE_BYTES - 4096)?;
-                let value: Value =
-                    serde_json::from_slice(&bytes).map_err(|_| EditError::InvalidParams)?;
-                check_integers(&value)?;
+                validate_wire(self.project().data())?;
                 Ok(ControlResult::Inspection {
                     project: self.project().data().clone(),
                 })
@@ -825,7 +830,7 @@ impl Session {
                 })
             }
             command => self
-                .apply(command)
+                .apply_control(command)
                 .map(|outcome| ControlResult::Edit { outcome }),
         }
     }

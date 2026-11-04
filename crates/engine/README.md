@@ -62,6 +62,13 @@ its generation and `JobTarget` share the same Arc invalidation boundary. UI edit
 undo/redo, preview lifetimes, transaction rollback/net-zero end, view changes and
 successful save advance it; ordinary no-ops/refusals do not. Effectful control
 requests require `base_rev`. A stale revision refuses before any child of a batch.
+Before publishing an admitted JSON/control edit, Session validates the candidate project's actual serialized
+integers and created IDs, including values produced by allocation or tick/keyframe
+arithmetic. Undo/redo validate their destination snapshot before moving history.
+An invalid candidate returns InvalidParams without consuming IDs, advancing
+revision or emitting a project change; its refusal receipt can be replayed. This
+also applies to legacy JSON execution; typed in-process editing keeps the owner
+types' full integer domain.
 The recovery journal descriptor is version 2 for the same ProjectId encoding;
 older descriptors are refused before model decoding, without deleting their files.
 Session/project lifecycle creation and disk saves retain their existing

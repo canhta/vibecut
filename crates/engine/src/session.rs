@@ -267,7 +267,7 @@ impl Session {
     pub fn execute(&mut self, command_id: &str, params: Value) -> Result<Outcome> {
         self.boundary(|session| {
             let command = crate::control::decode_command(command_id, params)?;
-            session.commit(command, None)
+            session.commit(command, None, true)
         })
     }
     pub fn apply(&mut self, command: Command) -> Result<Outcome> {
@@ -276,7 +276,12 @@ impl Session {
     /// Equal keys coalesce consecutive changed edits. Explicit gestures group all their
     /// commands regardless of key. Refusal/unwind preserves the previous merge state.
     pub fn apply_merged(&mut self, command: Command, key: Option<&str>) -> Result<Outcome> {
-        self.boundary(|session| session.commit(command, key))
+        self.boundary(|session| session.commit(command, key, false))
+    }
+    /// Control and legacy JSON admission share the candidate invariant; typed
+    /// in-process editing retains the owner's full integer domain.
+    pub(crate) fn apply_control(&mut self, command: Command) -> Result<Outcome> {
+        self.boundary(|session| session.commit(command, None, true))
     }
     fn boundary<T>(&mut self, run: impl FnOnce(&mut Self) -> Result<T>) -> Result<T> {
         let before = self.state.clone();
@@ -317,7 +322,7 @@ impl Session {
             }
         }
     }
-    fn commit(&mut self, command: Command, key: Option<&str>) -> Result<Outcome> {
+    fn commit(&mut self, command: Command, key: Option<&str>, wire: bool) -> Result<Outcome> {
         // Keep one generation available to close an active preview lifetime even
         // if its final child reaches exhaustion and the group must roll back.
         let closing = matches!(
@@ -348,6 +353,9 @@ impl Session {
                 if self.transaction_active() {
                     return Err(EditError::TransactionActive);
                 }
+                if wire {
+                    crate::control::validate_wire(self.project().data())?;
+                }
                 let view = project::ViewState {
                     zoom,
                     scroll,
@@ -364,11 +372,26 @@ impl Session {
                     created: Vec::new(),
                 });
             }
-            Command::BeginGesture {} => return self.start_gesture(),
-            Command::CommitGesture {} => return self.finish_gesture(),
-            Command::CancelGesture {} => return self.revert_gesture(),
-            Command::Undo {} => return self.history(false),
-            Command::Redo {} => return self.history(true),
+            Command::BeginGesture {} => {
+                if wire {
+                    crate::control::validate_wire(self.project().data())?;
+                }
+                return self.start_gesture();
+            }
+            Command::CommitGesture {} => {
+                if wire {
+                    crate::control::validate_wire(self.project().data())?;
+                }
+                return self.finish_gesture();
+            }
+            Command::CancelGesture {} => {
+                if wire && let Some(before) = &self.gesture {
+                    crate::control::validate_wire(before.project.data())?;
+                }
+                return self.revert_gesture();
+            }
+            Command::Undo {} => return self.history(false, wire),
+            Command::Redo {} => return self.history(true, wire),
             _ => {}
         }
         edit::check_budget(&command)?;
@@ -383,6 +406,12 @@ impl Session {
             edit::TrimSources::new()
         };
         let next = edit::apply(candidate, command, &mut created, &mut next_id, &mut sources)?;
+        if wire {
+            // The batch is still one local candidate: refuse before publishing,
+            // allocating persistent IDs, changing history or advancing revision.
+            crate::control::validate_wire(next.data())?;
+            crate::control::validate_wire(&created)?;
+        }
         if next == *self.state.project {
             if self.state.merge_key.as_deref() != key {
                 self.end_merge();
@@ -433,9 +462,18 @@ impl Session {
     pub fn redo(&mut self) -> Result<Outcome> {
         self.apply(Command::Redo {})
     }
-    fn history(&mut self, redo: bool) -> Result<Outcome> {
+    fn history(&mut self, redo: bool, wire: bool) -> Result<Outcome> {
         if self.transaction_active() {
             return Err(EditError::TransactionActive);
+        }
+        if wire {
+            let candidate = if redo {
+                self.state.redo.last()
+            } else {
+                self.state.undo.back()
+            }
+            .ok_or(EditError::NoHistory)?;
+            crate::control::validate_wire(candidate.data())?;
         }
         let snapshot = if redo {
             self.state.redo.pop()
@@ -524,6 +562,7 @@ mod tests {
                     kind: project::TrackKind::Overlay,
                 },
                 None,
+                false,
             )?;
             panic!("injected command unwind");
         });
