@@ -25,9 +25,10 @@ use std::{
 enum PickerAction {
     Open,
     Save { leave: bool, close: bool },
+    ImportMedia,
 }
 struct Picker {
-    future: std::pin::Pin<Box<dyn std::future::Future<Output = Option<rfd::FileHandle>>>>,
+    future: std::pin::Pin<Box<dyn std::future::Future<Output = Option<Vec<rfd::FileHandle>>>>>,
     action: PickerAction,
     waker: std::task::Waker,
 }
@@ -220,14 +221,31 @@ impl Workspace {
         if self.busy() {
             return Err(Error::Invalid("project operation in progress"));
         }
-        let dialog = rfd::AsyncFileDialog::new().add_filter("VibeCut", &["vibecut", "json"]);
-        let future: std::pin::Pin<Box<dyn std::future::Future<Output = Option<rfd::FileHandle>>>> =
-            match action {
-                PickerAction::Open => Box::pin(dialog.pick_file()),
-                PickerAction::Save { .. } => {
-                    Box::pin(dialog.set_file_name("project.vibecut").save_file())
-                }
-            };
+        let future: std::pin::Pin<
+            Box<dyn std::future::Future<Output = Option<Vec<rfd::FileHandle>>>>,
+        > = match action {
+            PickerAction::Open => {
+                let dialog =
+                    rfd::AsyncFileDialog::new().add_filter("VibeCut", &["vibecut", "json"]);
+                Box::pin(async move { dialog.pick_file().await.map(|file| vec![file]) })
+            }
+            PickerAction::Save { .. } => {
+                let dialog =
+                    rfd::AsyncFileDialog::new().add_filter("VibeCut", &["vibecut", "json"]);
+                Box::pin(async move {
+                    dialog
+                        .set_file_name("project.vibecut")
+                        .save_file()
+                        .await
+                        .map(|file| vec![file])
+                })
+            }
+            PickerAction::ImportMedia => {
+                let dialog = rfd::AsyncFileDialog::new()
+                    .add_filter("Media", crate::import::MEDIA_EXTENSIONS);
+                Box::pin(dialog.pick_files())
+            }
+        };
         self.picker = Some(Picker {
             future,
             action,
@@ -264,11 +282,27 @@ impl Workspace {
         {
             std::task::Poll::Pending => self.picker = Some(picker),
             std::task::Poll::Ready(None) => {}
-            std::task::Poll::Ready(Some(file)) => {
+            std::task::Poll::Ready(Some(mut files)) => {
                 let result = match picker.action {
-                    PickerAction::Open => self.open(file.path().to_owned()),
-                    PickerAction::Save { leave, close } => {
-                        self.persist(Some(file.path().to_owned()), leave, close, false)
+                    PickerAction::Open => match files.pop() {
+                        Some(file) => self.open(file.path().to_owned()),
+                        None => Ok(()),
+                    },
+                    PickerAction::Save { leave, close } => match files.pop() {
+                        Some(file) => {
+                            self.persist(Some(file.path().to_owned()), leave, close, false)
+                        }
+                        None => Ok(()),
+                    },
+                    PickerAction::ImportMedia => {
+                        let paths = files
+                            .into_iter()
+                            .map(|file| file.path().to_owned())
+                            .collect();
+                        match &mut self.editor {
+                            Some(editor) => editor.start_import(paths),
+                            None => Err(Error::Invalid("no project")),
+                        }
                     }
                 };
                 if let Err(e) = result {
@@ -466,15 +500,16 @@ impl Workspace {
         if let Some(editor) = &mut self.editor {
             editor.ui(ui);
             self.preferences = editor.preferences.clone();
-            if let Some(action) = editor.lifecycle_action.take()
-                && let Err(e) = self.save_from_ui(
-                    ui.ctx(),
-                    action == EditorAction::Leave,
-                    false,
-                    action == EditorAction::SaveAs,
-                )
-            {
-                self.error = Some(e);
+            if let Some(action) = editor.lifecycle_action.take() {
+                let result = match action {
+                    EditorAction::ImportMedia => self.pick(ui.ctx(), PickerAction::ImportMedia),
+                    EditorAction::Leave => self.save_from_ui(ui.ctx(), true, false, false),
+                    EditorAction::SaveAs => self.save_from_ui(ui.ctx(), false, false, true),
+                    EditorAction::Save => self.save_from_ui(ui.ctx(), false, false, false),
+                };
+                if let Err(e) = result {
+                    self.error = Some(e);
+                }
             }
         } else {
             ui.vertical_centered(|ui| {

@@ -15,8 +15,19 @@ The desktop binary is `vibecut`; the headless CLI is `vibecut-cli`.
 `cargo run -p vibecut -- /native/path/to/project.json` acquires the project writer
 lease before loading. With no file it opens the minimal Home new/open entry points.
 Project listing and thumbnail storage belong to the projects-page feature. Preview,
-timeline basics and transport are present; media import, text/audio controls and
-export are integrated by their owning feature tickets.
+timeline basics and transport are present; text/audio controls and export are
+integrated by their owning feature tickets.
+
+Media import uses one native multi-file picker or a file drop. Probing and hashing
+run on an engine import job; each successful file becomes an asset immediately, so a
+later refusal or a cancel keeps earlier assets. The media panel shows the probe
+type/duration/resolution/audio format, multi-select assets, and an "Add to timeline"
+action that inserts only the selected assets in one undo step on compatible tracks.
+While a batch runs, an overlay shows completed/total progress and a 2 px accent bar,
+disables import/insert, and offers Cancel. Partial failures remain listed with their
+typed media reason and close with a toast counting imported and failed files. Insert
+synchronizes playback against the new immutable project snapshot. Image placement,
+full library views/sort and asset deletion remain with their later feature tickets.
 
 The timeline draws tracks, filmstrip/waveform placeholders, bookmarks and the
 playhead; zoom, horizontal/vertical scrolling, frame-snapped ruler seeking,

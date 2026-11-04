@@ -2,13 +2,17 @@ use crate::{
     Error, Result,
     catalog::{self, Locale, Preferences, Text},
     egui::{self, Align2, Color32, FontId, Id, Rect, Vec2},
+    import::{ImportEvent, ImportFailure, ImportProbe, ImportQueue},
     playback::Playback,
 };
-use engine::{Command, CreatedId, Session};
+use engine::{Command, CreatedId, NewItem, Session};
+use media::{AssetId, SourceAsset, StreamKind};
 use project::{ItemId, ItemParams, TrackId, TrackKind};
 use std::{
     collections::{BTreeMap, BTreeSet},
+    path::PathBuf,
     sync::Arc,
+    time::Instant,
 };
 use time::{Rounding, SourceRange, TICKS_PER_SECOND, Tick};
 
@@ -41,6 +45,27 @@ pub struct Inspection {
     pub zoom: f32,
     pub snapping: bool,
     pub ripple: bool,
+    pub importing: bool,
+    pub import_completed: usize,
+    pub import_total: usize,
+    pub import_imported: usize,
+    pub import_cancelled: bool,
+    pub import_failures: Vec<String>,
+    pub import_notice: Option<String>,
+    pub import_toast: Option<String>,
+    pub media_selection: Vec<AssetId>,
+}
+#[derive(Clone, Debug)]
+struct Toast {
+    text: String,
+    detail: Option<String>,
+    until: Instant,
+}
+#[derive(Clone, Debug)]
+struct AssetRow {
+    id: AssetId,
+    name: String,
+    info: String,
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum DragMode {
@@ -160,6 +185,16 @@ pub struct Editor {
     rename: Option<String>,
     rename_focus: bool,
     pub(crate) lifecycle_action: Option<crate::lifecycle::EditorAction>,
+    imports: Option<ImportQueue>,
+    import_total: usize,
+    import_completed: usize,
+    import_imported: usize,
+    import_cancelled: bool,
+    import_failures: Vec<ImportFailure>,
+    import_notice: Option<String>,
+    toast: Option<Toast>,
+    media_selection: BTreeSet<AssetId>,
+    media_anchor: Option<AssetId>,
 }
 impl Editor {
     pub fn new(session: Session, playback: Playback, preferences: Preferences) -> Self {
@@ -203,6 +238,16 @@ impl Editor {
             rename: None,
             rename_focus: false,
             lifecycle_action: None,
+            imports: None,
+            import_total: 0,
+            import_completed: 0,
+            import_imported: 0,
+            import_cancelled: false,
+            import_failures: Vec::new(),
+            import_notice: None,
+            toast: None,
+            media_selection: BTreeSet::new(),
+            media_anchor: None,
         }
     }
     /// Attach the engine autosave owner without duplicating its Session.
@@ -227,11 +272,350 @@ impl Editor {
             zoom: self.zoom,
             snapping: self.snapping,
             ripple: self.ripple,
+            importing: self.importing(),
+            import_completed: self.import_completed,
+            import_total: self.import_total,
+            import_imported: self.import_imported,
+            import_cancelled: self.import_cancelled,
+            import_failures: self
+                .import_failures
+                .iter()
+                .map(|failure| {
+                    format!(
+                        "{}: {}",
+                        failure.path.file_name().map_or_else(
+                            || failure.path.to_string_lossy().into_owned(),
+                            |name| name.to_string_lossy().into_owned()
+                        ),
+                        failure.reason
+                    )
+                })
+                .collect(),
+            import_notice: self.import_notice.clone(),
+            import_toast: self.toast.as_ref().map(|toast| match &toast.detail {
+                Some(detail) => format!("{} · {detail}", toast.text),
+                None => toast.text.clone(),
+            }),
+            media_selection: self.media_selection.iter().copied().collect(),
         })
     }
     /// Last frame submitted by the frontend for presentation, independent of decode-ahead.
     pub fn presented_frame(&self) -> Option<Tick> {
         self.texture_key.map(|(_, at)| at)
+    }
+    /// Replace the media boundary in tests; production keeps the media owner.
+    pub fn set_import_probe(&mut self, probe: Arc<dyn ImportProbe>) -> Result<()> {
+        self.import_queue()?.set_probe(probe);
+        Ok(())
+    }
+    pub fn importing(&self) -> bool {
+        self.imports.as_ref().is_some_and(ImportQueue::active)
+    }
+    /// Accept a native drag-drop batch through the same path as the picker.
+    pub fn drop_files(&mut self, paths: Vec<PathBuf>) -> Result<()> {
+        self.start_import(paths)
+    }
+    pub fn start_import(&mut self, paths: Vec<PathBuf>) -> Result<()> {
+        if self.importing() {
+            return Err(Error::Invalid("import already in progress"));
+        }
+        if paths.is_empty() {
+            return Ok(());
+        }
+        let first = self.next_asset_id();
+        self.import_total = paths.len();
+        self.import_completed = 0;
+        self.import_imported = 0;
+        self.import_cancelled = false;
+        self.import_failures.clear();
+        self.import_notice = None;
+        self.toast = None;
+        let result = self.import_queue()?.start(paths, first);
+        if result.is_err() {
+            self.import_total = 0;
+        }
+        result
+    }
+    fn import_queue(&mut self) -> Result<&mut ImportQueue> {
+        if self.imports.is_none() {
+            self.imports = Some(ImportQueue::new(self.playback.budget().clone())?);
+        }
+        self.imports
+            .as_mut()
+            .ok_or(Error::Invalid("import queue unavailable"))
+    }
+    fn next_asset_id(&self) -> u64 {
+        self.session
+            .project()
+            .data()
+            .assets
+            .iter()
+            .map(|asset| asset.id().0)
+            .max()
+            .map_or(1, |id| id.saturating_add(1))
+    }
+    fn add_imported_asset(&mut self, asset: SourceAsset) -> Result<()> {
+        let next = self.next_asset_id();
+        let asset = if asset.id().0 == next {
+            asset
+        } else {
+            let mut data = media::AssetData::from(asset);
+            data.id = AssetId(next);
+            SourceAsset::try_from(data)
+                .map_err(|error| Error::Engine(engine::EditError::Media(error)))?
+        };
+        self.session.apply(Command::AddAsset { asset })?;
+        Ok(())
+    }
+    fn apply_import_events(&mut self) {
+        let polled = match self.imports.as_mut() {
+            Some(queue) => queue.poll(),
+            None => Ok(Vec::new()),
+        };
+        let events = match polled {
+            Ok(events) => events,
+            Err(error) => {
+                let detail = error_detail(&error);
+                self.import_notice = Some(detail.clone());
+                if let Some(queue) = &self.imports {
+                    queue.cancel();
+                }
+                self.set_toast(self.tr(Text::ImportPartial), Some(detail));
+                return;
+            }
+        };
+        for event in events {
+            match event {
+                ImportEvent::Imported(asset) => {
+                    let path = asset.path().to_owned();
+                    self.import_completed += 1;
+                    if let Err(error) = self.add_imported_asset(asset) {
+                        self.import_failures
+                            .push(ImportFailure::local(path, error_detail(&error)));
+                    } else {
+                        self.import_imported += 1;
+                    }
+                }
+                ImportEvent::Failed(failure) => {
+                    self.import_completed += 1;
+                    self.import_failures.push(failure);
+                }
+                ImportEvent::Done { cancelled, error } => {
+                    self.import_cancelled = cancelled;
+                    if let Some(error) = error {
+                        self.import_notice = Some(error);
+                    }
+                    self.finish_import();
+                }
+            }
+        }
+        self.prune_media_selection();
+    }
+    fn finish_import(&mut self) {
+        let failed = self.import_failures.len();
+        let detail = format!(
+            "{}: {} · {}: {failed}",
+            self.tr(Text::Imported),
+            self.import_imported,
+            self.tr(Text::Failed)
+        );
+        let text = if self.import_cancelled {
+            self.tr(Text::ImportCancelled)
+        } else if failed > 0 {
+            self.tr(Text::ImportPartial)
+        } else {
+            self.tr(Text::ImportComplete)
+        };
+        self.set_toast(text, Some(detail));
+        self.import_total = self.import_total.max(self.import_completed);
+    }
+    fn set_toast(&mut self, text: &str, detail: Option<String>) {
+        self.toast = Some(Toast {
+            text: text.to_owned(),
+            detail,
+            until: Instant::now() + std::time::Duration::from_secs(5),
+        });
+    }
+    fn truncate_toast(&mut self) {
+        if self
+            .toast
+            .as_ref()
+            .is_some_and(|toast| Instant::now() >= toast.until)
+        {
+            self.toast = None;
+        }
+    }
+    fn prune_media_selection(&mut self) {
+        let existing: BTreeSet<AssetId> = self
+            .session
+            .project()
+            .data()
+            .assets
+            .iter()
+            .map(SourceAsset::id)
+            .collect();
+        self.media_selection.retain(|id| existing.contains(id));
+        if self
+            .media_anchor
+            .is_some_and(|anchor| !existing.contains(&anchor))
+        {
+            self.media_anchor = None;
+        }
+    }
+    /// Replace the media selection; tests and agents use the same state as clicks.
+    pub fn select_media(&mut self, ids: impl IntoIterator<Item = AssetId>) {
+        self.media_selection = ids.into_iter().collect();
+        self.media_anchor = self.media_selection.iter().next().copied();
+        self.session.end_merge();
+    }
+    fn select_asset(&mut self, id: AssetId, modifiers: egui::Modifiers) {
+        let ids: Vec<AssetId> = self
+            .session
+            .project()
+            .data()
+            .assets
+            .iter()
+            .map(SourceAsset::id)
+            .collect();
+        if modifiers.shift
+            && let Some(anchor) = self.media_anchor
+            && let (Some(from), Some(to)) = (
+                ids.iter().position(|candidate| *candidate == anchor),
+                ids.iter().position(|candidate| *candidate == id),
+            )
+        {
+            let (from, to) = if from <= to { (from, to) } else { (to, from) };
+            if let Some(range) = ids.get(from..=to) {
+                self.media_selection = range.iter().copied().collect();
+            }
+            self.session.end_merge();
+            return;
+        }
+        if modifiers.command {
+            if !self.media_selection.remove(&id) {
+                self.media_selection.insert(id);
+            }
+        } else {
+            self.media_selection.clear();
+            self.media_selection.insert(id);
+        }
+        self.media_anchor = Some(id);
+        self.session.end_merge();
+    }
+    /// Add only selected assets, in library order, appending after existing
+    /// compatible items so insertion can never overlap or reorder a track.
+    fn insert_selected_assets(&mut self) {
+        let selected: Vec<SourceAsset> = self
+            .session
+            .project()
+            .data()
+            .assets
+            .iter()
+            .filter(|asset| self.media_selection.contains(&asset.id()))
+            .cloned()
+            .collect();
+        if selected.is_empty() {
+            return;
+        }
+        let at = match self.playback.position() {
+            Ok(at) => at,
+            Err(error) => {
+                self.set_toast(self.tr(Text::InsertFailed), Some(error_detail(&error)));
+                return;
+            }
+        };
+        let result = self.session.transaction(|session| {
+            let mut created = Vec::new();
+            for asset in &selected {
+                let kind = asset_kind(asset)?;
+                let duration = asset
+                    .probe()
+                    .duration
+                    .filter(|duration| *duration > Tick::ZERO)
+                    .ok_or(engine::EditError::Unsupported(
+                        "media duration is unavailable",
+                    ))?;
+                let existing = session
+                    .project()
+                    .data()
+                    .timeline
+                    .tracks
+                    .iter()
+                    .find(|track| track.kind == kind && !track.locked)
+                    .map(|track| {
+                        (
+                            track.id,
+                            track
+                                .items
+                                .iter()
+                                .filter_map(|item| item.end().ok())
+                                .max()
+                                .unwrap_or(Tick::ZERO),
+                        )
+                    });
+                let (track, start) = match existing {
+                    Some((track, end)) => (track, at.max(end)),
+                    None => {
+                        let count = session
+                            .project()
+                            .data()
+                            .timeline
+                            .tracks
+                            .iter()
+                            .filter(|track| track.kind == kind)
+                            .count();
+                        let name = match kind {
+                            TrackKind::Video => format!("Video {}", count + 1),
+                            _ => format!("Audio {}", count + 1),
+                        };
+                        let outcome = session.apply(Command::AddTrack {
+                            name: name.into(),
+                            kind,
+                        })?;
+                        let track = match outcome.created.first().copied() {
+                            Some(CreatedId::Track(track)) => track,
+                            _ => {
+                                return Err(engine::EditError::Unsupported("track allocation"));
+                            }
+                        };
+                        (track, at)
+                    }
+                };
+                let item = NewItem {
+                    animations: Default::default(),
+                    source_asset: Some(asset.id()),
+                    source_range: SourceRange::new(Tick::ZERO, duration)?,
+                    start,
+                    content: match kind {
+                        TrackKind::Video => ItemParams::Video(project::VideoParams {
+                            source_audio_enabled: true,
+                        }),
+                        _ => ItemParams::Audio(project::AudioParams {
+                            gain_db: 0.0,
+                            muted: false,
+                        }),
+                    },
+                };
+                let outcome = session.apply(Command::InsertItem { track, item })?;
+                created.extend(outcome.created.into_iter().filter_map(|id| match id {
+                    CreatedId::Item(item) => Some(item),
+                    _ => None,
+                }));
+            }
+            Ok(created)
+        });
+        match result {
+            Ok(created) => {
+                self.selection = created.into_iter().collect();
+                self.import_notice = None;
+                self.session.end_merge();
+            }
+            Err(error) => {
+                let detail = error_detail(&error);
+                self.import_notice = Some(detail.clone());
+                self.set_toast(self.tr(Text::InsertFailed), Some(detail));
+            }
+        }
     }
     fn tr(&self, key: Text) -> &'static str {
         catalog::text(self.preferences.locale, key)
@@ -288,6 +672,19 @@ impl Editor {
                 self.rename = Some(self.session.project().data().name.as_str().to_owned());
                 self.rename_focus = true;
             }
+            "file.import" => {
+                if self.importing() {
+                    self.import_notice = Some("import already in progress".to_owned());
+                } else {
+                    self.lifecycle_action = Some(crate::lifecycle::EditorAction::ImportMedia);
+                }
+            }
+            "media.insert" => self.insert_selected_assets(),
+            "import.cancel" => {
+                if let Some(queue) = &self.imports {
+                    queue.cancel();
+                }
+            }
             "transport.play" => self.playback.seek(
                 if at >= duration { Tick::ZERO } else { at },
                 !playing,
@@ -341,6 +738,7 @@ impl Editor {
             }
             _ => return Err(Error::Unsupported("widget action")),
         }
+        self.prune_media_selection();
         if !Arc::ptr_eq(&before, self.session.project()) {
             self.sync_preview();
         }
@@ -1009,6 +1407,8 @@ impl Editor {
         if let Err(e) = self.playback.poll() {
             self.error = Some(e.to_string());
         }
+        self.apply_import_events();
+        self.truncate_toast();
         if let Err(error) = self.remember_view() {
             self.error = Some(error.to_string());
         }
@@ -1017,6 +1417,22 @@ impl Editor {
         if !self.configured {
             Self::fonts(ui.ctx());
             self.configured = true;
+        }
+        let (dropped, hovering) = ui.ctx().input(|input| {
+            (
+                input
+                    .raw
+                    .dropped_files
+                    .iter()
+                    .map(|file| file.path().to_owned())
+                    .collect::<Vec<_>>(),
+                !input.raw.hovered_files.is_empty(),
+            )
+        });
+        if !dropped.is_empty()
+            && let Err(error) = self.drop_files(dropped)
+        {
+            self.import_notice = Some(error_detail(&error));
         }
         Self::theme(ui.ctx(), self.preferences.dark);
         ui.style_mut().interaction.selectable_labels = false;
@@ -1134,6 +1550,9 @@ impl Editor {
             ui.painter()
                 .line_segment([a, b], egui::Stroke::new(1.0, separator));
         }
+        self.import_overlay(ui.ctx());
+        self.drop_overlay(ui.ctx(), hovering);
+        self.toast(ui.ctx());
         ui.ctx()
             .request_repaint_after(std::time::Duration::from_millis(
                 if self.playback.playing() { 8 } else { 33 },
@@ -1267,19 +1686,104 @@ impl Editor {
                 .size(16.0)
                 .strong(),
         );
-        ui.add_space(16.0);
-        self.button(ui, "file.import", Text::Import, false);
-        ui.add_space(40.0);
-        if self.session.project().data().assets.is_empty() {
+        ui.add_space(8.0);
+        let importing = self.importing();
+        ui.horizontal(|ui| {
+            if self.button(ui, "file.import", Text::Import, !importing) {
+                self.action("file.import");
+            }
+            if self.button(
+                ui,
+                "media.insert",
+                Text::AddToTimeline,
+                !importing && !self.media_selection.is_empty(),
+            ) {
+                self.action("media.insert");
+            }
+        });
+        if !importing && !self.media_selection.is_empty() {
+            ui.label(
+                egui::RichText::new(format!(
+                    "{}: {}",
+                    self.tr(Text::Selected),
+                    self.media_selection.len()
+                ))
+                .small()
+                .color(self.secondary()),
+            );
+        }
+        ui.add_space(12.0);
+        let locale = self.preferences.locale;
+        let rows: Vec<AssetRow> = self
+            .session
+            .project()
+            .data()
+            .assets
+            .iter()
+            .map(|asset| asset_row(asset, locale))
+            .collect();
+        if rows.is_empty() {
             ui.label(self.tr(Text::EmptyMedia));
         } else {
+            let selected = self.media_selection.clone();
             egui::ScrollArea::vertical()
                 .id_salt("media.list")
+                .max_height((ui.available_height() - 120.0).max(80.0))
                 .show(ui, |ui| {
-                    for asset in &self.session.project().data().assets {
-                        ui.label(format!("{:?}", asset.id()));
-                    }
+                    ui.add_enabled_ui(!importing, |ui| {
+                        for row in &rows {
+                            let is_selected = selected.contains(&row.id);
+                            let response = ui
+                                .push_id(("media.asset", row.id.0), |ui| {
+                                    ui.add_sized(
+                                        [ui.available_width(), 46.0],
+                                        egui::Button::new(egui::RichText::new(format!(
+                                            "{}\n{}",
+                                            row.name, row.info
+                                        )))
+                                        .selected(is_selected)
+                                        .wrap_mode(egui::TextWrapMode::Wrap),
+                                    )
+                                })
+                                .inner;
+                            self.remember(format!("media.asset.{}", row.id.0), &response);
+                            if response.clicked() {
+                                let modifiers = ui.ctx().input(|input| input.modifiers);
+                                self.select_asset(row.id, modifiers);
+                            }
+                        }
+                    });
                 });
+            if self.media_selection.is_empty() && !importing {
+                ui.label(
+                    egui::RichText::new(self.tr(Text::SelectAssets))
+                        .small()
+                        .color(self.secondary()),
+                );
+            }
+        }
+        if !self.import_failures.is_empty() {
+            ui.separator();
+            ui.label(
+                egui::RichText::new(self.tr(Text::ImportIssues))
+                    .size(14.0)
+                    .strong(),
+            );
+            for failure in &self.import_failures {
+                ui.label(
+                    egui::RichText::new(format!(
+                        "{}: {}",
+                        file_name(&failure.path),
+                        failure.reason
+                    ))
+                    .small()
+                    .color(self.secondary()),
+                );
+            }
+        }
+        if let Some(notice) = &self.import_notice {
+            ui.separator();
+            ui.label(egui::RichText::new(notice).small().color(self.secondary()));
         }
     }
     fn inspector(&mut self, ui: &mut egui::Ui) {
@@ -1421,6 +1925,124 @@ impl Editor {
                 self.action("preview.retry");
             }
         }
+    }
+    /// Non-modal import overlay over the media panel. Import controls are
+    /// already disabled while the batch runs; cancel remains available.
+    fn import_overlay(&mut self, ctx: &egui::Context) {
+        if !self.importing() {
+            return;
+        }
+        let rect = self
+            .panels
+            .get("media")
+            .copied()
+            .unwrap_or_else(|| Rect::from_min_size(egui::Pos2::ZERO, Vec2::new(320.0, 200.0)));
+        let percent = self
+            .import_completed
+            .saturating_mul(100)
+            .checked_div(self.import_total)
+            .unwrap_or(0)
+            .min(100);
+        egui::Area::new(Id::unique("import.overlay"))
+            .order(egui::Order::Foreground)
+            .fixed_pos(rect.min + Vec2::new(12.0, 12.0))
+            .show(ctx, |ui| {
+                ui.set_max_width((rect.width() - 24.0).clamp(220.0, 360.0));
+                egui::Frame::new()
+                    .fill(self.panel_fill())
+                    .stroke(egui::Stroke::new(1.0, self.border()))
+                    .corner_radius(12)
+                    .inner_margin(16)
+                    .show(ui, |ui| {
+                        ui.label(
+                            egui::RichText::new(self.tr(Text::Importing))
+                                .size(16.0)
+                                .strong(),
+                        );
+                        ui.add_space(10.0);
+                        let (bar, _) = ui.allocate_exact_size(
+                            Vec2::new(ui.available_width(), 2.0),
+                            egui::Sense::hover(),
+                        );
+                        ui.painter().rect_filled(bar, 0.0, self.control_fill());
+                        let filled = Rect::from_min_size(
+                            bar.min,
+                            Vec2::new(bar.width() * percent as f32 / 100.0, bar.height()),
+                        );
+                        ui.painter().rect_filled(filled, 0.0, self.accent());
+                        ui.label(format!("{} {percent}%", self.tr(Text::Processing)));
+                        ui.label(
+                            egui::RichText::new(format!(
+                                "{}: {} / {}",
+                                self.tr(Text::Imported),
+                                self.import_completed,
+                                self.import_total
+                            ))
+                            .small()
+                            .color(self.secondary()),
+                        );
+                        if self.button(ui, "import.cancel", Text::Cancel, true) {
+                            self.action("import.cancel");
+                        }
+                    });
+            });
+    }
+    fn drop_overlay(&self, ctx: &egui::Context, hovering: bool) {
+        if !hovering || self.importing() {
+            return;
+        }
+        let screen = ctx.content_rect();
+        egui::Area::new(Id::unique("import.drop"))
+            .order(egui::Order::Tooltip)
+            .fixed_pos(screen.min)
+            .show(ctx, |ui| {
+                ui.set_width(screen.width());
+                ui.set_height(screen.height());
+                ui.painter().rect_filled(
+                    screen,
+                    0.0,
+                    Color32::from_rgba_unmultiplied(0, 0, 0, 170),
+                );
+                ui.scope_builder(
+                    egui::UiBuilder::new().max_rect(screen.shrink(48.0)).layout(
+                        egui::Layout::centered_and_justified(egui::Direction::TopDown),
+                    ),
+                    |ui| {
+                        ui.label(
+                            egui::RichText::new(self.tr(Text::DropMedia))
+                                .size(18.0)
+                                .color(Color32::WHITE),
+                        );
+                    },
+                );
+            });
+    }
+    fn toast(&self, ctx: &egui::Context) {
+        let Some(toast) = &self.toast else {
+            return;
+        };
+        let text = toast.text.clone();
+        let detail = toast.detail.clone();
+        egui::Area::new(Id::unique("import.toast"))
+            .order(egui::Order::Foreground)
+            .anchor(egui::Align2::RIGHT_BOTTOM, Vec2::new(-16.0, -16.0))
+            .show(ctx, |ui| {
+                egui::Frame::new()
+                    .fill(self.panel_fill())
+                    .stroke(egui::Stroke::new(1.0, self.border()))
+                    .corner_radius(12)
+                    .inner_margin(12)
+                    .show(ui, |ui| {
+                        ui.set_max_width(320.0);
+                        let response = ui.label(egui::RichText::new(text).size(14.0).strong());
+                        response.ctx.accesskit_node_builder(response.id, |node| {
+                            node.set_author_id("import.toast");
+                        });
+                        if let Some(detail) = detail {
+                            ui.label(egui::RichText::new(detail).small().color(self.secondary()));
+                        }
+                    });
+            });
     }
     fn timeline(&mut self, ui: &mut egui::Ui) {
         let layout = TimelineLayout::new(ui.max_rect());
@@ -2029,6 +2651,93 @@ impl Editor {
             Color32::from_rgb(92, 98, 104)
         }
     }
+}
+fn asset_kind(asset: &SourceAsset) -> std::result::Result<TrackKind, engine::EditError> {
+    if asset
+        .probe()
+        .streams
+        .iter()
+        .any(|stream| stream.kind == StreamKind::Video)
+    {
+        Ok(TrackKind::Video)
+    } else if asset
+        .probe()
+        .streams
+        .iter()
+        .any(|stream| stream.kind == StreamKind::Audio)
+    {
+        Ok(TrackKind::Audio)
+    } else {
+        Err(engine::EditError::Unsupported(
+            "media has no video or audio stream",
+        ))
+    }
+}
+fn asset_row(asset: &SourceAsset, locale: Locale) -> AssetRow {
+    let mut info = Vec::new();
+    let video = asset
+        .probe()
+        .streams
+        .iter()
+        .find_map(|stream| stream.video.as_ref());
+    let audio = asset
+        .probe()
+        .streams
+        .iter()
+        .find_map(|stream| stream.audio.as_ref());
+    let kind = if video.is_some() {
+        Text::Video
+    } else if audio.is_some() {
+        Text::Audio
+    } else {
+        Text::Media
+    };
+    info.push(catalog::text(locale, kind).to_owned());
+    info.push(asset.probe().duration.map_or_else(
+        || catalog::text(locale, Text::DurationUnknown).to_owned(),
+        display_time,
+    ));
+    if let Some(video) = video {
+        info.push(format!("{}×{}", video.width, video.height));
+    }
+    if let Some(rate) = asset
+        .probe()
+        .streams
+        .iter()
+        .find_map(|stream| stream.frame_rate)
+    {
+        info.push(if rate.den() == 1 {
+            format!("{} fps", rate.num())
+        } else {
+            format!("{:.3} fps", rate.num() as f64 / rate.den() as f64)
+        });
+    }
+    if let Some(audio) = audio {
+        info.push(format!("{} Hz · {} ch", audio.sample_rate, audio.channels));
+    }
+    AssetRow {
+        id: asset.id(),
+        name: file_name(asset.path()),
+        info: info.join(" · "),
+    }
+}
+fn file_name(path: &std::path::Path) -> String {
+    path.file_name().map_or_else(
+        || path.to_string_lossy().into_owned(),
+        |name| name.to_string_lossy().into_owned(),
+    )
+}
+fn error_detail(error: &dyn std::error::Error) -> String {
+    let mut parts = vec![error.to_string()];
+    let mut source = error.source();
+    for _ in 0..8 {
+        let Some(cause) = source else {
+            break;
+        };
+        parts.push(cause.to_string());
+        source = cause.source();
+    }
+    parts.join(": ")
 }
 fn consume(ctx: &egui::Context, modifiers: egui::Modifiers, key: egui::Key) -> bool {
     ctx.input_mut(|input| input.consume_key(modifiers, key))

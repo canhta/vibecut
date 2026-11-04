@@ -2,6 +2,7 @@
 pub mod capture;
 pub mod catalog;
 mod frontend;
+pub mod import;
 pub mod lifecycle;
 pub mod playback;
 pub mod workspace;
