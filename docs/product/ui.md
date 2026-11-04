@@ -83,7 +83,9 @@ observations do not replace desktop sizes or colours.
 - Text `#E0E0E0`; secondary text `#949494`; separators `#263031` [measured
   desktop, Home shot above: brightest pixels in Home R(54,175,88,184), Management
   R(20,438,88,445), divider sample (20,264)]. Borders remain `#383838`.
-- Accent `#00C1CD` for selection, checked boxes and the primary button.
+- Accent lime `#D1FE17` (brand choice, replacing CapCut's teal) for selection,
+  checked boxes and the primary button; text and checkmarks on a lime fill are
+  `#0F1113` (16.1:1), never white (1.17:1).
 - Video clips use a [proposed] `#0A2A24` teal border around the filmstrip.
 
 ### Light theme
@@ -110,14 +112,14 @@ never enter tracked files.
 | Secondary text | `#949494` | `#5C6268` | 5.91:1 vs panel `#F9FAFB`; 4.59:1 on active tab `#DEDEDE` | [proposed]; reference muted 50% grey fails 4.5:1 on light |
 | Separators | `#263031` | `#DEDEDE` | 1.29:1 vs panel `#F9FAFB` (decorative; WCAG 1.4.11 does not apply) | Observed 1 px lines in E2 |
 | Borders | `#383838` | `#858B91` | 3.10:1 vs field `#F2F3F5`; 3.29:1 vs panel `#F9FAFB` | [proposed]; reference `#DEDEDE` borders are 1.3:1 |
-| Accent: selection, checked boxes, primary button | `#00C1CD` | `#006A74` | 6.06:1 vs panel `#F9FAFB`; 4.71:1 on active tab `#DEDEDE`; 6.34:1 for white label on fill | [proposed] darkened; `#00C1CD` is only 1.99:1 on window, 2.13:1 on panel and 2.21:1 on white |
+| Accent: selection, checked boxes, primary button | `#D1FE17` (16.3:1 on `#0F0F0F`, 11.3:1 on `#303030`) | `#4D6600` | 6.25:1 vs panel `#F9FAFB`; 4.85:1 on active tab `#DEDEDE`; 6.53:1 for white label on fill | [proposed]; `#D1FE17` is 1.12:1 on the light panel |
 | Video clip fill and border | `#0A2A24` | `#E3F7F2` fill, `#0B6B5B` border | 1.07:1 fill vs panel; 5.77:1 border on fill; 15.30:1 primary text on fill | [proposed]; no light timeline clip sample |
 | Error | `#EA1515` [proposed dark] | `#B3261E` | 5.91:1 on error surface `#FFF0F0`; 6.25:1 vs panel `#F9FAFB`; 6.54:1 for white label on fill | [proposed]; E5 error toast uses `#E50000` on `#FFF0F0`, but that is only 4.38:1 |
 
-- **Accent decision.** `#00C1CD` fails even the 3:1 control threshold on light
-  surfaces, so light uses `#006A74` (same teal family) for selection, checked
-  boxes, primary-button fill and active tab text. White checkmarks and labels on
-  that fill are 6.34:1. The dark accent stays `#00C1CD`.
+- **Accent decision.** Lime `#D1FE17` is the brand accent. It fails on light
+  surfaces, so light uses `#4D6600` (same lime hue, darkened) for selection,
+  checked boxes, primary-button fill and active tab text, with white labels on
+  that fill (6.53:1). Dark keeps `#D1FE17` with `#0F1113` labels on its fill.
 - **Surfaces.** Adjacent surface separations are intentionally subtle (1.06–1.29:1);
   the 3:1 requirement applies to text and to control boundaries that identify a
   component, not to decorative 1 px panel separators. Light panels remain lighter
@@ -126,7 +128,7 @@ never enter tracked files.
 - **Lines.** Panel separators keep the observed decorative `#DEDEDE` (1.29:1);
   WCAG 1.4.11 does not require 3:1 for them. Field and control borders that identify
   a component use `#858B91` (3.10:1 on fields, 3.29:1 on panels).
-- **Error and clips.** Import/progress keeps the accent bar `#006A74`; error toasts
+- **Error and clips.** Import/progress keeps the accent bar `#4D6600`; error toasts
   keep the observed pale surface `#FFF0F0` but use `#B3261E` text/icons because the
   reference `#E50000` is 4.38:1 there. Light video clips use a `#E3F7F2` fill,
   `#0B6B5B` 1 px border and primary text; the filmstrip media sits inside them.
@@ -151,7 +153,7 @@ never enter tracked files.
 - Feature toolbar tab [measured desktop, 2x screenshot]: 16 px glyph, 3.5 px
   gap to a 12 px semibold label, 48 px minimum tab width, about 9 px between
   labels, 42 px bar on `#303030`; inactive `#E0E0E0`, selected tab in the accent.
-- Properties tabs are text-only at 14 px; the active tab uses `#00C1CD`.
+- Properties tabs are text-only at 14 px; the active tab uses the accent.
 - Icon-only buttons are 28x28 px with a 16 px icon and a tooltip naming the
   action and its shortcut.
 
@@ -199,7 +201,7 @@ never enter tracked files.
 
 ### States
 
-- Import progress: 2 px `#00C1CD` bar, 14 px `Processing N%`, and a 320 px
+- Import progress: 2 px accent bar, 14 px `Processing N%`, and a 320 px
   bottom-right toast.
 
 ### Gaps
