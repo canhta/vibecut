@@ -145,6 +145,7 @@ pub struct Editor {
     zoom: f32,
     scroll: f32,
     vertical_scroll: f32,
+    last_view: project::ViewState,
     widgets: BTreeMap<String, WidgetState>,
     pub panels: BTreeMap<&'static str, Rect>,
     drag: Option<DragState>,
@@ -187,6 +188,7 @@ impl Editor {
             zoom,
             scroll,
             vertical_scroll: 0.0,
+            last_view: view,
             widgets: BTreeMap::new(),
             panels: BTreeMap::new(),
             drag: None,
@@ -271,6 +273,7 @@ impl Editor {
     /// All control inputs (including tests/agents) use the same action path.
     /// Project edits are engine registry calls; transport/preferences are app state.
     pub fn activate(&mut self, id: &str) -> Result<()> {
+        self.remember_view()?;
         let at = self.playback.position()?;
         let duration = self.session.project().duration();
         let playing = self.playback.playing();
@@ -371,6 +374,21 @@ impl Editor {
         if self.session.transaction_active() {
             return Ok(());
         }
+        let stored = self.session.metadata().view;
+        // Other adapters can issue the engine view command between frontend actions.
+        if stored != self.last_view {
+            self.zoom = (f64::from(DEFAULT_ZOOM) * stored.zoom)
+                .clamp(f64::from(MIN_ZOOM), f64::from(MAX_ZOOM)) as f32;
+            self.scroll = (stored.scroll / f64::from(self.zoom)) as f32;
+            self.playback.seek(
+                stored
+                    .playhead
+                    .clamp(Tick::ZERO, self.session.project().duration()),
+                self.playback.playing(),
+                self.session.project().clone(),
+            )?;
+            self.last_view = stored;
+        }
         let view = project::ViewState {
             zoom: f64::from(self.zoom) / f64::from(DEFAULT_ZOOM),
             scroll: (f64::from(self.scroll) * f64::from(self.zoom)).clamp(0.0, 1e9),
@@ -382,6 +400,7 @@ impl Editor {
                 serde_json::json!({"zoom":view.zoom,"scroll":view.scroll,"playhead":view.playhead}),
             )?;
         }
+        self.last_view = view;
         Ok(())
     }
     fn seek_to(&mut self, at: Tick) {
@@ -989,6 +1008,9 @@ impl Editor {
         }
         if let Err(e) = self.playback.poll() {
             self.error = Some(e.to_string());
+        }
+        if let Err(error) = self.remember_view() {
+            self.error = Some(error.to_string());
         }
     }
     pub fn ui(&mut self, ui: &mut egui::Ui) {

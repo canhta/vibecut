@@ -876,3 +876,37 @@ fn rename_field_suppresses_timeline_edit_shortcuts() {
     harness.run_steps(2);
     assert_eq!(harness.state().session.project(), &before);
 }
+
+#[test]
+fn engine_view_command_is_not_overwritten_by_the_next_editor_action() {
+    let mut fixture = fixture();
+    fixture
+        .editor
+        .session
+        .execute(
+            "project.set_view_state",
+            serde_json::json!({"zoom":2,"scroll":40,"playhead":3 * SECOND}),
+        )
+        .unwrap();
+    fixture.editor.activate("transport.pause").unwrap();
+    assert_eq!(fixture.editor.inspect().unwrap().zoom, 80.0);
+    assert_eq!(
+        fixture.editor.playback.position().unwrap(),
+        Tick(3 * SECOND)
+    );
+    assert_eq!(fixture.editor.session.metadata().view.zoom, 2.0);
+    assert!((fixture.editor.session.metadata().view.scroll - 40.0).abs() < 0.001);
+    fixture
+        .editor
+        .session
+        .execute(
+            "project.set_view_state",
+            serde_json::json!({"zoom":3,"scroll":0,"playhead":0}),
+        )
+        .unwrap();
+    fixture.editor.activate("timeline.zoom_in").unwrap();
+    assert!(
+        (fixture.editor.inspect().unwrap().zoom - 204.0).abs() < 0.001,
+        "a relative UI action starts from the latest engine-issued view"
+    );
+}
