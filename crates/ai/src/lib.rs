@@ -3,6 +3,7 @@
 pub mod alignment;
 pub mod anthropic;
 mod assembly;
+pub mod clips;
 mod contracts;
 pub mod elevenlabs;
 #[cfg(feature = "gipformer")]

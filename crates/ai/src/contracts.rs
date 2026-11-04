@@ -9,6 +9,7 @@ pub enum Operation {
     Transcribe,
     Align,
     Translate,
+    SuggestClips,
 }
 /// Absolute source-audio sample coordinates, half-open and nonnegative.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -127,6 +128,7 @@ pub enum Stage {
     Transcribe,
     Align,
     Translate,
+    SuggestClips,
     Assemble,
 }
 /// Hooks may run on an inference observer thread and must return promptly.

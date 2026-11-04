@@ -33,6 +33,7 @@ impl ResourceClass {
 pub enum JobKind {
     Transcribe,
     Translate,
+    SuggestClips,
     Preview,
     Export,
     Import,
@@ -46,6 +47,7 @@ pub enum JobStage {
     Transcribe,
     Align,
     Translate,
+    SuggestClips,
     Assemble,
     Process,
     Admit,
@@ -235,6 +237,7 @@ impl From<ai::Stage> for JobStage {
             ai::Stage::Transcribe => Self::Transcribe,
             ai::Stage::Align => Self::Align,
             ai::Stage::Translate => Self::Translate,
+            ai::Stage::SuggestClips => Self::SuggestClips,
             ai::Stage::Assemble => Self::Assemble,
         }
     }

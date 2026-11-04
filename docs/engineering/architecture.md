@@ -47,7 +47,7 @@ README holds the details.
 | Codec interfaces | media | Reference-counted packets and frames, rational time bases, decode/encode/flush, seek |
 | Export execution | render | Project snapshot, range and settings in; progress and cancellation hooks out |
 | Local models | ai + engine | ai owns catalog/download consent/integrity and shared transport; engine owns transfers and native ArtifactCache bundles; see [model transfer contract](../../crates/engine/README.md#local-model-transfers) |
-| Provider interfaces | ai | Transcriber, Aligner, Translator; capabilities per model and language; request-scoped consent |
+| Provider interfaces | ai | Transcriber, Aligner, Translator, ClipSuggester; capabilities per model and language; request-scoped consent |
 
 **Jobs.** Engine wraps all media, render and AI execution in its job runner and
 owns scheduling, retries, checkpoints and the aggregate byte policy; see the

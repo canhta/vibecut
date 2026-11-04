@@ -10,8 +10,8 @@ storage/promotion, cue segmentation and user-edit policy.
 
 ## Entry points
 
-Implement `Transcriber`, `Aligner` or `Translator`; call the free `transcribe`,
-`translate` and `assemble` execution functions. Adapter methods are blocking and
+Implement `Transcriber`, `Aligner`, `Translator` or `clips::ClipSuggester`; call the free
+`transcribe`, `translate`, `assemble` and `clips::suggest_clips` execution functions. Adapter methods are blocking and
 object safe; engine runs them on its worker and supplies `ExecutionHooks`.
 Adapters must observe cancellation during expensive work and must not perform IO
 in `config`, `capabilities` or `estimate`. No runtime or engine dependency is
@@ -570,3 +570,65 @@ in [deny.toml](../../deny.toml). Direct dependencies remain latest stable, with 
 third-party patch or downgrade. The repository had no duplicate gate wired into CI;
 this file records the scoped exceptions for cargo-deny rather than adding a new
 unrelated check. Remove each skip when its parent unifies with the workspace version.
+
+## Transcript clip suggestions
+
+`clips::ClipInput` accepts stable transcript IDs, NFC text and nonoverlapping,
+ordered source ranges (`ClipSegment::from(&captions::Segment)`), plus count,
+inclusive min/max duration in ticks, maximum allowed range IoU, language and
+optional keywords. Count is 1..=32; input is at most 10,000 segments / 4 MiB of
+ID/text data. Empty/duplicate IDs, blank text, negative or overlapping ranges,
+nonfinite overlap values and invalid bounds refuse before execution. Languages
+are vi/en/zh/zh-Hans/zh-Hant for all three current adapters.
+
+`ClipInput::windows()` plans overlapping windows capped at 128 segments and 24 KiB
+of canonical JSON, at most 1,024 windows. Overlap covers the configured maximum
+clip duration. A transcript too dense to preserve all admissible boundary-spanning
+ranges in those limits returns Payload; increase segmentation granularity or
+reduce the requested duration explicitly. Plan first, show each window's exact
+`consent_text`, provider policy link and estimate, and reserve an aggregate budget
+in engine. Pass one `Request` per window in the same order to `suggest_clips`.
+Every window's provider/language/settings/payload consent and per-invocation cost
+is checked before any IO. Requests remain independent invocations, never implicit
+retries or job-level budget approvals. Wire JSON is also capped at 64 KiB and by
+the approved byte ceiling; shared transport caps responses and supplies timeouts.
+At most 4,096 proposals including dropped proposals are retained per execution.
+
+`OpenAiClipSuggester` uses the existing shared HTTPS transport, Responses endpoint,
+strict structured output parser, `gpt-6.1-sol`, and `OPENAI_SETTINGS`;
+`AnthropicClipSuggester` reuses `anthropic::MessagesClient` and `message_text`,
+`claude-sonnet-5-5`, and `ANTHROPIC_SETTINGS`. Both require the official provider
+endpoint and exact versioned settings identity through the existing ProviderConfig.
+Their operation-specific disclosure returns the provider name, policy link,
+endpoint/model, exact payload and conservative USD invocation upper bound (input
+wire byte ceiling plus framing allowance, 8,192 output tokens). No SDK, runtime,
+second provider configuration, generic retry or automatic fallback is introduced.
+
+All adapters run through `ClipSuggester` and the same result validation. Only
+segment IDs define clip ranges; unexpected timestamp fields, unknown/reversed
+IDs, blank/oversized metadata, nonfinite or out-of-range scores refuse as Schema.
+Duration violations drop with `Duration`; scores sort descending with deterministic
+source-coordinate ties. Equal ranges or range IoU >= 0.5 with normalized text
+character-bigram Jaccard >= 0.8 deduplicate, retaining the higher score. Other
+ranges exceeding overlap tolerance drop with `Overlap`; candidates beyond count
+also retain a reason. Suggestions carry `source: llm` or `source: heuristic` and
+ranking scores, never a probability claim. Fewer than count, including zero,
+is a valid result. Suggestions remain proposals for user review.
+
+`HeuristicClipSuggester::new()` is an explicitly selected, free local provider.
+It ranks complete segment-edge spans using sentence-ending punctuation, pauses
+of at least 0.5 seconds and user keyword density. It never splits timed segments
+or fabricates word boundaries. It returns at most one best end per start before
+shared validation/merging. On a remote failure the original typed error propagates;
+`clip_recovery_choice(&error)` supplies a `RerunLocally` offer for presentation.
+Only an affirmative user selection starts a fresh local execution. Cancellation
+returns Cancelled and discards partial output, including cancellation after IO.
+
+`cargo test -p ai --test clips` covers both wire formats, hostile/schema/ID/duration
+inputs, exact consent and wire budgets, provider failures, cancellation, duplicate
+and overlap selection, long-window coverage and multilingual heuristic execution.
+The fixed synthetic EN/VI/ZH ranking fixture compares keyword ranking to a
+sentence/pause-only baseline; the broader labelled pipeline harness is separate.
+The ignored `live_clip_providers` test requires `VIBECUT_LIVE_AI=1` and both API
+keys and sends one bounded synthetic request per provider. Offline fixtures and
+live integration prove contracts, not model accuracy or editorial quality.
