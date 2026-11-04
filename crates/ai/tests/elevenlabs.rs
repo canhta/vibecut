@@ -894,3 +894,64 @@ fn live_elevenlabs_transcription_uses_production_transport() {
         spans.spans().len()
     );
 }
+
+#[test]
+fn audio_events_keep_their_own_native_timing() {
+    for words in [
+        serde_json::json!([
+            {"text":"Hello", "start":0.1, "end":0.5, "type":"word"},
+            {"text":" ", "start":0.5, "end":1.0, "type":"spacing"},
+            {"text":"(laughter)", "start":1.0, "end":1.8, "type":"audio_event"}
+        ]),
+        serde_json::json!([
+            {"text":"(laughter)", "start":0.1, "end":0.5, "type":"audio_event"},
+            {"text":" ", "start":0.5, "end":1.0, "type":"spacing"},
+            {"text":"(applause)", "start":1.0, "end":1.8, "type":"audio_event"}
+        ]),
+    ] {
+        let text = words
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|word| word["text"].as_str().unwrap())
+            .collect::<String>();
+        let fake = Arc::new(FakeTransport::new(vec![FakeTransport::ok(
+            serde_json::to_vec(&serde_json::json!({"text":text, "words":words})).unwrap(),
+        )]));
+        let scope = scope(config_at(BASE_URL));
+        let transcriber = adapter(&fake, scope.provider.clone());
+        let approved = consent(&scope);
+        let samples = vec![0.0; 32_000];
+        let recognition = ai::transcribe(
+            &transcriber,
+            AudioWindow {
+                samples: &samples,
+                range: scope.source_samples,
+                sample_rate: scope.sample_rate,
+            },
+            &Request {
+                scope: &scope,
+                consent: Some(&approved),
+            },
+            None,
+            &NoHooks,
+        )
+        .unwrap();
+        let segment = &recognition.segments()[0];
+        assert_eq!(
+            segment.range.unwrap().end(),
+            28_800,
+            "trailing audio event must extend the segment"
+        );
+        assert_eq!(segment.raw_tokens.len(), 2);
+        assert_eq!(
+            segment.raw_tokens[1].range,
+            Some(ai::SampleRange::new(16_000, 28_800).unwrap())
+        );
+        assert_eq!(
+            segment.raw_tokens[1].bytes,
+            words[2]["text"].as_str().unwrap().as_bytes()
+        );
+        assert!(recognition.to_transcript().is_ok());
+    }
+}

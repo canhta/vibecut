@@ -193,8 +193,9 @@ admission and engine chunking bound actual invocations, and responses are capped
 1 MiB. Consent's `max_bytes` bounds the encoded WAV, including its 44-byte header.
 
 Scribe returns word, spacing and audio-event tokens in seconds. The adapter folds
-spacing/audio-event text into the preceding word token, converts each absolute token
-boundary once to source samples with explicit nearest-sample rounding, and emits one
+spacing into the preceding token, preserves audio events as separate timed tokens,
+and converts each absolute token boundary once to source samples with explicit
+nearest-sample rounding, emitting one
 timed segment per invocation with stable window-derived IDs. Word tokens become
 `raw_tokens` and flow through captions' shared `/17` span code, preserving
 raw-to-NFC-correspondence and the provider's per-language token identity; zero-width

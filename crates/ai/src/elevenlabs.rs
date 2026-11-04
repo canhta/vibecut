@@ -346,16 +346,16 @@ fn parse_transcription(
         if word.text.is_empty() {
             continue;
         }
-        if word.kind.as_deref() == Some("word") || groups.is_empty() {
+        if matches!(word.kind.as_deref(), Some("word" | "audio_event")) || groups.is_empty() {
             groups.push(Group {
                 bytes: word.text.clone().into_bytes(),
                 start: word.start,
                 end: word.end,
             });
         } else if let Some(group) = groups.last_mut() {
-            // Spacing/audio-event text stays part of the word's raw token so the
-            // concatenation remains the provider transcript without overlapping
-            // spacing timings.
+            // Spacing stays with the preceding token, preserving the exact text
+            // without importing overlapping spacing timings. Audio events keep
+            // their own native timing instead of inheriting the preceding word.
             group.bytes.extend_from_slice(word.text.as_bytes());
         }
     }
