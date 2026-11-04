@@ -110,7 +110,8 @@ Adding a language adds a profile, fonts and optional UI catalog; core crates nev
 ## Media and time
 
 FFmpeg owns probe, demux, decode, encode, mux, scale/convert and audio resampling.
-`media` is the sole FFI/unsafe boundary. Shared LGPL-only libraries include the
+`media` owns the FFmpeg FFI/unsafe boundary; AI admits only the
+[Whisper callback boundary](../adr/0003-whisper-callback-boundary.md). Shared LGPL-only libraries include the
 platform hardware backends and admitted WebM components. Codec availability is
 queried at runtime; missing hardware/encoders return typed errors or select a
 software implementation at the same requested quality. Keep hardware frames on

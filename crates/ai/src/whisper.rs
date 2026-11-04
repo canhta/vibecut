@@ -220,6 +220,7 @@ impl Whisper {
                 text: text.into(),
                 range: Some(range),
                 timing: Vec::new(),
+                raw_tokens: Vec::new(),
             });
             tokens.push(native_tokens);
         }
