@@ -1,44 +1,83 @@
-<table><tr><td width="120"><img src="docs/brand/logo.svg" width="110" alt="VibeCut logo"></td><td>
+<h1 align="center">
+  <img src="docs/brand/logo.svg" alt="VibeCut" width="64" valign="middle" /> VibeCut
+</h1>
 
-# VibeCut
+<p align="center">
+  <img src="https://img.shields.io/badge/license-MIT-08C?style=flat" alt="License: MIT" />
+  <img src="https://img.shields.io/badge/macOS%20%7C%20Windows-4493F8?style=flat-square" alt="Platforms: macOS and Windows" />
+  <img src="https://img.shields.io/badge/status-pre--alpha-E5A00D?style=flat-square" alt="Status: pre-alpha" />
+</p>
 
-A free, open-source desktop video editor — a CapCut alternative for macOS and Windows.
+<p align="center">
+  <strong>The open-source CapCut alternative.</strong><br/>
+  A fast native video editor with AI subtitles and AI shorts. Your footage stays on your machine.
+</p>
 
-</td></tr></table>
-
-## Why?
-
-- **Privacy:** Edit locally; remote AI uploads require your consent.
-- **Free features:** Editing tools without a feature paywall.
-- **Simple for creators:** Cut footage, add text and audio, and export your video.
+<!-- Hero: docs/assets/readme/hero.jpg (editor with timeline, preview and bilingual subtitles) -->
 
 ## Features
 
-Planned scope:
+<table>
+<tr>
+<td width="50%" valign="middle">
 
-- Multi-track timeline with cut, split and trim
-- Text and audio editing
-- Effects, masks and keyframes
-- MP4 export in 16:9 or 9:16
-- Editable project files
-- Headless CLI
-- AI short clips from long videos
-- Vietnamese, English and Chinese subtitles: auto transcribe, translate between any pair, bilingual, edit, burn-in or SRT/VTT
-- Plugins, scripting and MCP later
+### AI Subtitles
 
-## Status
+Transcribe Vietnamese, English or Chinese, translate between any pair, show two
+languages at once, then burn in or export SRT/VTT.
 
-Pre-alpha, under active development.
+</td>
+<td width="50%"><!-- docs/assets/readme/subtitles.gif --></td>
+</tr>
+<tr>
+<td width="50%" valign="middle">
 
-## Development
+### AI Shorts
 
-Install [rustup](https://rustup.rs/), then run `cargo xtask ci`.
-The pinned toolchain includes rustfmt and Clippy; see [AGENTS.md](AGENTS.md).
+Drop in a long talk or podcast; get ranked vertical clips to review, trim and export.
+
+</td>
+<td width="50%"><!-- docs/assets/readme/shorts.gif --></td>
+</tr>
+<tr>
+<td width="50%" valign="middle">
+
+### Timeline Editing
+
+Multi-track cut, split, trim, text, audio, effects, masks and keyframes, exported
+to 16:9 or 9:16.
+
+</td>
+<td width="50%"><!-- docs/assets/readme/timeline.gif --></td>
+</tr>
+<tr>
+<td width="50%" valign="middle">
+
+### Your AI, Your Choice
+
+Run speech recognition locally, or pick OpenAI, Anthropic or ElevenLabs. Nothing
+leaves your computer until you approve it.
+
+</td>
+<td width="50%"><!-- docs/assets/readme/providers.png --></td>
+</tr>
+</table>
+
+**Also planned:** headless CLI, AI dubbing, plugins, scripting and MCP.
+
+## Install
+
+Pre-alpha: no release yet. Build from source:
+
+```sh
+cargo xtask ffmpeg   # once: builds the latest LGPL FFmpeg
+cargo xtask ci
+```
 
 ## Contributing
 
-Contributions require DCO sign-off (`git commit -s`).
-Read [CONTRIBUTING.md](CONTRIBUTING.md).
+Sign off every commit (`git commit -s`). See [CONTRIBUTING.md](CONTRIBUTING.md);
+agents start at [AGENTS.md](AGENTS.md).
 
 ## License
 
