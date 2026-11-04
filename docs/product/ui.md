@@ -150,7 +150,7 @@ never enter tracked files.
 
 - Cmd/Ctrl+B splits at the playhead.
 - I and O set in and out; Shift+X exports the in/out range.
-- Space or K plays; J and L shuttle; arrows step one frame; Shift plus arrows
+- Space toggles playback; K pauses; J and L seek backwards/forwards one second; arrows step one frame; Shift plus arrows
   jump one second; Home and End go to the ends.
 - Delete and Backspace remove; Cmd/Ctrl+Z undoes; Shift+Cmd/Ctrl+Z redoes;
   Cmd/Ctrl+C, V, D copy, paste, duplicate; N toggles snapping.

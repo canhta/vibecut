@@ -29,7 +29,7 @@ with transparent margins/corners for runtime PNGs and legacy ICNS.
 
 ## Platform wiring
 
-Planned app integration: embed the 512 px macOS PNG and set
+The desktop app embeds the 512 px macOS PNG and sets
 [`ViewportBuilder::with_icon`](https://docs.rs/egui/latest/egui/viewport/struct.ViewportBuilder.html#method.with_icon).
 For a `.app`, copy `vibecut.icns` to Resources and set `CFBundleIconFile` accordingly.
 For native Liquid Glass appearances, compile `AppIcon.icon` with Xcode/actool,
@@ -37,7 +37,7 @@ copy `Assets.car` and merge generated icon plist entries. Apple documents
 [adding the bundle to Xcode](https://developer.apple.com/documentation/xcode/creating-your-app-icon-using-icon-composer).
 Observed locally: the regeneration command compiles the bundle to `Assets.car`
 and ICNS; actual packaged app appearance remains unverified until the app lands.
-Windows wiring is planned: build.rs embeds `vibecut.ico` as an executable resource;
+Windows wiring: the app build.rs embeds `vibecut.ico` as an executable resource;
 the runtime icon covers the window/task switcher. Windows appearance is unverified.
 
 ## Regenerate
@@ -48,4 +48,4 @@ appearance, creates runtime PNG/ICNS/ICO and refreshes brand vector exports toge
 It also writes native catalog/plist inspection output under `target/icons/native/`.
 Edit the bundle's layers and the matching flat vectors together; inspect all outputs
 and attribution before committing. Committed exports let normal builds avoid these
-tools. App packaging integration belongs to the app ticket.
+tools. The desktop app supplies a development bundle script; see [app documentation](../../apps/vibecut/README.md#platforms-and-evidence).

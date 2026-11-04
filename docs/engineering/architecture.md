@@ -21,7 +21,7 @@ with a named consumer.
 | ai | crates/ai | Provider interfaces, capabilities, consent and cost, AI adapters | time, media, captions |
 | engine | crates/engine | Session, commands, history, recovery scheduling, jobs, cache, adapter selection | time, media, project, captions, text, render, ai |
 | vibecut-cli | apps/vibecut-cli | Headless adapter: CLI arguments, typed exit codes, dispatch, project lease composition and export admission | engine, media, project, render, time |
-| vibecut | apps/vibecut | Desktop app: UI, playback, wgpu compositor, preferences, app controls and inspection | engine, media, project, captions, text, render, ai |
+| vibecut | apps/vibecut | Desktop app: UI, playback, wgpu compositor, preferences, app controls and inspection | time, engine, media, project, captions, text, render, ai |
 
 Only `media` links FFmpeg. Render's CPU compositor is the reference shared by preview
 and export; the app owns the optional wgpu adapter behind render's interface. Update

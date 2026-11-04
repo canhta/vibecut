@@ -1,0 +1,84 @@
+# vibecut
+
+Native eframe/egui desktop frontend, using wgpu to present render's shared CPU
+compositor. Owns device IO, the audio transport clock, retained preview frames,
+presentation state, stable automation IDs, screenshots, catalog and preferences.
+Engine owns all project edits, job scheduling and aggregate byte accounting;
+render owns every pixel, audio conversion, sample grid and channel mix rule.
+
+## Run
+
+Provision FFmpeg with `cargo xtask ffmpeg`. Build with that installation's
+`FFMPEG_DIR`, `PKG_CONFIG_PATH` and native library path, as used by
+[workspace verification](../../docs/engineering/verification.md).
+`cargo run -p vibecut -- /native/path/to/project.json` acquires the project writer
+lease before loading. With no file it opens an empty project. This ticket provides
+preview and read-only timeline display; media import, editing and export controls
+are integrated by their owning follow-up tickets.
+
+Space toggles playback; K pauses; J/L seek one second backwards/forwards; Home/End
+seek to the timeline ends. Scrubbing uses the same seek path. Two resizable columns
+and a horizontal divider start at the UI design's 25/50/25 and 60/40 proportions.
+English/Vietnamese, theme and panel proportions use one bounded preference store.
+
+## Injection and inspection
+
+`Editor::ui` runs without a window/device. `Playback::new` injects `Sources`, which
+creates render's `SourceProvider`; production uses `FileSources` exactly as export
+does. `AudioPort::fill` accepts a headless device callback for transport tests.
+`Editor::activate` maps stable widget IDs to engine `execute` for undo/redo and to
+app-owned transport/preferences. `inspect` exposes enabled/focus/rect/current view,
+playing and position only. The project remains the Session's immutable snapshot.
+Each interactive first-screen control exposes the same stable `author_id` through
+AccessKit, independent of locale and layout. Headless tests query those IDs and
+click through the real widget/engine path.
+
+`Capture::request` queues a fresh GPU readback and `poll` waits without blocking
+for at most five seconds; window and panel rectangles are supported. Unavailable
+or timed-out integrations return typed failures. Captures demonstrate presentation,
+never command success; inspect engine state separately. Fully occluded/minimized
+windows may time out rather than return an old framebuffer.
+
+## Playback and limits
+
+Two engine Preview jobs own decode-ahead and audio mixing. They retain no second
+scheduler. Audio's fixed atomic stereo ring is engine-budgeted; the callback only
+copies samples, zero-fills underruns, advances monotonic device sample counters and
+reports callback-to-playback latency. Video follows the latency-corrected audio
+clock and skips past frames under load. An absent, failed or one-second-stalled
+audio device refuses/pauses playback with an unavailable state.
+
+Device negotiation requires stereo f32 at the project's render-owned sample rate
+(default 48 kHz); unsupported devices report unavailable. The app never resamples,
+remaps channels or substitutes a wall clock. Gaps/underruns play silence and retain
+the device timeline; they are counted. Pausing and seeking invalidate old ring
+samples by generation. Shutdown cancels and joins the engine workers.
+
+Preview fits within 640×360, preserving aspect ratio. At most four queued frames,
+one shown frame and the upload's retained frame survive at once. Render leases its
+working buffers; app leases cover its fixed ring, CPU ColorImage/upload/texture
+retention. All leases share the one injected engine budget. The native default is
+768 MiB, including render's conservative concurrent probe/decode allowances; this
+is an admission ceiling, not resident usage. Pressure or a frame larger than the
+available budget returns a typed error before allocation and shows unavailable.
+Retry/clear invalidates queued output while preserving current position/play state;
+old work cannot publish into the new generation. OS codec/driver allocations and
+allocator overhead require separate RSS measurement.
+
+## Platforms and evidence
+
+The runtime PNG supplies the window/Dock icon. Windows build resources embed the
+committed ICO using embed-resource. `packaging/macos-app.sh` creates a development
+`.app` with ICNS and plist wiring; release FFmpeg bundling, signing, notarization,
+Windows runtime and native layered appearance verification belong to packaging.
+The shared FFmpeg dependency is LGPL; see the [distribution and replacement
+rules](../../docs/engineering/open-source.md#ffmpeg-distribution).
+
+`cargo test -p vibecut` covers stable ID accessibility/uniqueness, real undo/redo,
+locale retention, transport/seek/clear, byte refusal and worker shutdown.
+`cargo xtask ci` is the handoff check. The local ticket report records observed
+native screenshots, ten-minute A/V frame lag, underruns and peak RSS separately
+from source-documented API contracts; tests alone establish no device performance.
+`--observe SECONDS OUTPUT_DIR [PROJECT]` records at most 3,600 one-second samples
+and one fresh window screenshot, then closes. It exercises the production device,
+engine jobs, renderer and frontend; it never sends media remotely.

@@ -529,6 +529,27 @@ mod tests {
         )
         .unwrap();
         layers(&ws.0).unwrap();
+        // Narrow this fixture's app contract explicitly: the real app now admits
+        // every production core owner, including its integer transport clock.
+        let architecture = ws.0.join("docs/engineering/architecture.md");
+        let policy = fs::read_to_string(&architecture).unwrap();
+        let narrowed = policy
+            .lines()
+            .map(|line| {
+                if line.starts_with("| vibecut |") {
+                    let mut cells: Vec<_> = line.split('|').collect();
+                    if let Some(edges) = cells.get_mut(4) {
+                        *edges = " engine ";
+                    }
+                    cells.join("|")
+                } else {
+                    line.to_owned()
+                }
+            })
+            .collect::<Vec<_>>()
+            .join("\n");
+        fs::write(architecture, narrowed).unwrap();
+
         fs::write(
             &manifest,
             "[package]\nname = \"vibecut\"\nversion = \"0.1.0\"\nedition = \"2024\"\n\n[dependencies]\ntime = { path = \"../../crates/time\" }\n",
