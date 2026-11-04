@@ -110,7 +110,13 @@ Hardware preference uses VideoToolbox on macOS and D3D11VA/QSV on Windows.
 Encoding tries platform hardware and then the platform software path (VideoToolbox
 `allow_sw`, or Media Foundation software), retaining requested settings. Missing
 capability is an error. `EncodePreference::Software` requires the platform software
-path (VideoToolbox `require_sw` on macOS), without changing quality settings.
+path (VideoToolbox `require_sw` on macOS), retaining the requested bitrate.
+VideoToolbox attempts QSCALE only on FFmpeg-supported arm64, with `allow_sw=0`
+to require hardware; a successful open proves that encoder accepts Quality. On
+rejection it opens a fresh bitrate-mode session with `allow_sw=1`. Intel and
+explicit software use bitrate mode directly. No Quality property is sent to a
+software encoder, and the bitrate target is never reduced. Other backends retain
+their existing native quality mappings.
 Windows device/quality behavior and live device-loss
 recovery remain unverified; they require the Windows hardware ticket.
 
@@ -192,8 +198,12 @@ hardware scheduling affect results; these two samples are not a general latency
 or quality guarantee. Fixture generation: ffmpeg `testsrc2`, 60 s at 1080p30,
 libx264 ultrafast CRF 18, yuv420p with BT.709 tags. No media is committed.
 
-Observed on the task /09 M1 Pro: explicit software H.264 cannot open a
-VideoToolbox software encoder. This returns `media::MediaError::EncoderUnavailable`
-with the native source retained and leaves existing output intact. Software
-quality is unverified on this machine. Software H.264 fallback requires separate
-codec/licence admission; selecting software never silently selects hardware.
+The task /09 software H.264 failure was caused by sending QSCALE/Quality to
+VideoToolbox's software encoder, rather than an absent codec (corrected by /31).
+Explicit software export uses the platform encoder with `require_sw=1` and the
+requested bitrate; it never silently selects hardware or requires another codec.
+Observed on Apple M1 Pro/macOS 27.2: the real export regression produces 30 H.264
+frames plus AAC, with maximum decoded color-patch channel error <=6. Intel/Rosetta,
+VM-only fallback and Windows runtime remain unverified. An encoder open rejection
+returns `MediaError::Ffmpeg` with its native cause; `EncoderUnavailable` is reserved
+for an absent explicit software H.264 encoder.

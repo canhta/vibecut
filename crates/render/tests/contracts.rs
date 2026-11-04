@@ -225,6 +225,7 @@ fn encoded_color_patch_uses_same_compositor_and_has_valid_audio_video() {
     s.encoder = media::EncodePreference::Software;
     let software = root().join("color-patch-software.mp4");
     std::fs::write(&software, b"software-original").unwrap();
+    let started = std::time::Instant::now();
     match export(
         &p,
         TimeRange::new(Tick::ZERO, tick(1, 1)).unwrap(),
@@ -232,7 +233,13 @@ fn encoded_color_patch_uses_same_compositor_and_has_valid_audio_video() {
         &software,
         &Hooks::default(),
     ) {
-        Ok(_) => {
+        Ok(receipt) => {
+            let elapsed = started.elapsed();
+            assert_eq!(receipt.video_frames, 30);
+            assert_eq!(receipt.audio_samples, 48000);
+            let info = probe(&software);
+            assert_eq!(info["streams"][0]["codec_name"], "h264");
+            assert_eq!(info["streams"][1]["codec_name"], "aac");
             let decoded = rgba(&software);
             assert_eq!(decoded.len(), expected.bytes.len());
             let max = decoded
@@ -242,8 +249,13 @@ fn encoded_color_patch_uses_same_compositor_and_has_valid_audio_video() {
                 .max()
                 .unwrap();
             assert!(max <= 6, "software encoded pixel max error {max}");
+            eprintln!(
+                "OBSERVED software export: 30 frames, 48000 samples, max channel error {max}, elapsed {elapsed:?}"
+            );
         }
-        Err(Error::Media(media::MediaError::EncoderUnavailable { .. })) => {
+        Err(Error::Media(media::MediaError::EncoderUnavailable { .. }))
+            if !cfg!(target_os = "macos") =>
+        {
             assert_eq!(std::fs::read(&software).unwrap(), b"software-original");
             eprintln!(
                 "OBSERVED software H.264 unavailable; pixel quality unverified on this platform"

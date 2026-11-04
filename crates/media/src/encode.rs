@@ -37,6 +37,28 @@ impl VideoEncoderSettings {
         }
     }
 }
+// FFmpeg gates QSCALE by architecture; opening a hardware-only session tests
+// the selected encoder's Quality property. A fresh bitrate attempt permits the
+// platform software fallback without sending it an unsupported property.
+fn videotoolbox_quality_attempts(qscale_supported: bool, software: bool) -> &'static [bool] {
+    if qscale_supported && !software {
+        &[true, false]
+    } else {
+        &[false]
+    }
+}
+
+fn video_open_error(last: Option<ff::Error>, software_h264: bool) -> MediaError {
+    match last {
+        Some(source) => MediaError::Ffmpeg {
+            operation: "open video encoder",
+            source,
+        },
+        None if software_h264 => MediaError::EncoderUnavailable { source: None },
+        None => MediaError::Unsupported("no available encoder for target quality"),
+    }
+}
+
 pub struct VideoEncoder {
     encoder: ff::encoder::Video,
     time_base: TimeBase,
@@ -106,121 +128,128 @@ impl VideoEncoder {
             let Some(codec) = ff::encoder::find_by_name(name) else {
                 continue;
             };
-            let mut encoder = ff::codec::context::Context::new_with_codec(codec)
-                .encoder()
-                .video()
-                .map_err(error("create video encoder"))?;
-            encoder.set_width(settings.width);
-            encoder.set_height(settings.height);
-            encoder.set_time_base(time_base.rational());
-            encoder.set_frame_rate(Some((time_base.denominator(), time_base.numerator())));
-            encoder.set_bit_rate(settings.bit_rate);
-            encoder.set_gop(60);
-            encoder.set_max_b_frames(0);
-            encoder.set_flags(ff::codec::Flags::GLOBAL_HEADER);
-            encoder.set_format(
-                if !settings.webm
-                    && first.is_hardware()
-                    && first.width() == settings.width
-                    && first.height() == settings.height
-                    && codec
-                        .video()
-                        .ok()
-                        .and_then(|v| v.formats())
-                        .is_some_and(|mut formats| {
-                            formats.any(|format| format == first.inner.format())
-                        })
-                {
-                    ff::format::Pixel::VIDEOTOOLBOX
-                } else if settings.webm {
-                    ff::format::Pixel::YUV420P
-                } else {
-                    ff::format::Pixel::NV12
-                },
-            );
-            if first.is_hardware() && encoder.format() == first.inner.format() {
-                ffi::share_hardware_frames(&mut encoder, &first.inner)?;
-            }
-            settings.color = settings.color.resolved_sdr();
-            if settings.color != first.color().resolved_sdr() {
-                return Err(MediaError::Unsupported(
-                    "color conversion must be explicit before encoding",
-                ));
-            }
-            ffi::encoder_color(&mut encoder, settings.color)?;
-            let mut options = ff::Dictionary::new();
-            match name {
-                "h264_videotoolbox" => {
-                    options.set("allow_sw", "1");
-                    if matches!(preference, EncodePreference::Software) {
-                        options.set("require_sw", "1");
+            let attempts = if name == "h264_videotoolbox" {
+                videotoolbox_quality_attempts(
+                    cfg!(target_arch = "aarch64"),
+                    matches!(preference, EncodePreference::Software),
+                )
+            } else {
+                &[false]
+            };
+            for &quality_mode in attempts {
+                let mut encoder = ff::codec::context::Context::new_with_codec(codec)
+                    .encoder()
+                    .video()
+                    .map_err(error("create video encoder"))?;
+                encoder.set_width(settings.width);
+                encoder.set_height(settings.height);
+                encoder.set_time_base(time_base.rational());
+                encoder.set_frame_rate(Some((time_base.denominator(), time_base.numerator())));
+                encoder.set_bit_rate(settings.bit_rate);
+                encoder.set_gop(60);
+                encoder.set_max_b_frames(0);
+                encoder.set_flags(ff::codec::Flags::GLOBAL_HEADER);
+                encoder.set_format(
+                    if !settings.webm
+                        && first.is_hardware()
+                        && first.width() == settings.width
+                        && first.height() == settings.height
+                        && codec.video().ok().and_then(|v| v.formats()).is_some_and(
+                            |mut formats| formats.any(|format| format == first.inner.format()),
+                        )
+                    {
+                        ff::format::Pixel::VIDEOTOOLBOX
+                    } else if settings.webm {
+                        ff::format::Pixel::YUV420P
+                    } else {
+                        ff::format::Pixel::NV12
+                    },
+                );
+                if first.is_hardware() && encoder.format() == first.inner.format() {
+                    ffi::share_hardware_frames(&mut encoder, &first.inner)?;
+                }
+                settings.color = settings.color.resolved_sdr();
+                if settings.color != first.color().resolved_sdr() {
+                    return Err(MediaError::Unsupported(
+                        "color conversion must be explicit before encoding",
+                    ));
+                }
+                ffi::encoder_color(&mut encoder, settings.color)?;
+                let mut options = ff::Dictionary::new();
+                match name {
+                    "h264_videotoolbox" => {
+                        options.set("allow_sw", if quality_mode { "0" } else { "1" });
+                        if matches!(preference, EncodePreference::Software) {
+                            options.set("require_sw", "1");
+                        }
+                        if quality_mode {
+                            encoder.set_quality(usize::from(settings.quality) * 118);
+                            encoder.set_flags(
+                                ff::codec::Flags::GLOBAL_HEADER | ff::codec::Flags::QSCALE,
+                            );
+                        }
                     }
-                    encoder.set_quality(usize::from(settings.quality) * 118);
-                    encoder.set_flags(ff::codec::Flags::GLOBAL_HEADER | ff::codec::Flags::QSCALE);
+                    "h264_nvenc" => {
+                        options.set("preset", "p6");
+                        options.set("rc", "vbr");
+                        options.set(
+                            "cq",
+                            &((100 - u32::from(settings.quality)) * 51 / 100).to_string(),
+                        );
+                    }
+                    "h264_qsv" => {
+                        options.set("preset", "slow");
+                        options.set(
+                            "global_quality",
+                            &((100 - u32::from(settings.quality)) * 51 / 100).to_string(),
+                        );
+                    }
+                    "h264_amf" => {
+                        options.set("quality", "quality");
+                        options.set("rc", "qvbr");
+                        options.set(
+                            "qvbr_quality_level",
+                            &((100 - u32::from(settings.quality)) * 51 / 100).to_string(),
+                        );
+                    }
+                    "h264_mf" => {
+                        options.set("hw_encoding", if hardware { "1" } else { "0" });
+                        options.set("rate_control", "quality");
+                        options.set("quality", &settings.quality.to_string());
+                    }
+                    "libvpx-vp9" => {
+                        options.set(
+                            "crf",
+                            &((100 - u32::from(settings.quality)) * 63 / 100).to_string(),
+                        );
+                        options.set("deadline", "good");
+                        options.set("cpu-used", "2");
+                    }
+                    _ => {}
                 }
-                "h264_nvenc" => {
-                    options.set("preset", "p6");
-                    options.set("rc", "vbr");
-                    options.set(
-                        "cq",
-                        &((100 - u32::from(settings.quality)) * 51 / 100).to_string(),
-                    );
+                match encoder.open_with(options) {
+                    Ok(encoder) => {
+                        return Ok(Self {
+                            encoder,
+                            time_base,
+                            settings,
+                            scaler: None,
+                            finished: false,
+                            last_pts: None,
+                            name: if hardware && !matches!(preference, EncodePreference::Software) {
+                                name.to_owned()
+                            } else {
+                                format!("{name} (software)")
+                            },
+                        });
+                    }
+                    Err(e) => last = Some(e),
                 }
-                "h264_qsv" => {
-                    options.set("preset", "slow");
-                    options.set(
-                        "global_quality",
-                        &((100 - u32::from(settings.quality)) * 51 / 100).to_string(),
-                    );
-                }
-                "h264_amf" => {
-                    options.set("quality", "quality");
-                    options.set("rc", "qvbr");
-                    options.set(
-                        "qvbr_quality_level",
-                        &((100 - u32::from(settings.quality)) * 51 / 100).to_string(),
-                    );
-                }
-                "h264_mf" => {
-                    options.set("hw_encoding", if hardware { "1" } else { "0" });
-                    options.set("rate_control", "quality");
-                    options.set("quality", &settings.quality.to_string());
-                }
-                "libvpx-vp9" => {
-                    options.set(
-                        "crf",
-                        &((100 - u32::from(settings.quality)) * 63 / 100).to_string(),
-                    );
-                    options.set("deadline", "good");
-                    options.set("cpu-used", "2");
-                }
-                _ => {}
-            }
-            match encoder.open_with(options) {
-                Ok(encoder) => {
-                    return Ok(Self {
-                        encoder,
-                        time_base,
-                        settings,
-                        scaler: None,
-                        finished: false,
-                        last_pts: None,
-                        name: if hardware && !matches!(preference, EncodePreference::Software) {
-                            name.to_owned()
-                        } else {
-                            format!("{name} (software)")
-                        },
-                    });
-                }
-                Err(e) => last = Some(e),
             }
         }
-        if !settings.webm && matches!(preference, EncodePreference::Software) {
-            return Err(MediaError::EncoderUnavailable { source: last });
-        }
-        Err(last.map_or(
-            MediaError::Unsupported("no available encoder for target quality"),
-            error("open video encoder"),
+        Err(video_open_error(
+            last,
+            !settings.webm && matches!(preference, EncodePreference::Software),
         ))
     }
     pub fn name(&self) -> &str {
@@ -525,5 +554,39 @@ impl AudioEncoder {
             .map_err(error("flush audio encoder"))?;
         packets.extend(self.receive()?);
         Ok(packets)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn videotoolbox_quality_requires_ffmpeg_support_and_hardware_then_retries_bitrate() {
+        assert_eq!(videotoolbox_quality_attempts(true, false), &[true, false]);
+        assert_eq!(videotoolbox_quality_attempts(true, true), &[false]);
+        assert_eq!(videotoolbox_quality_attempts(false, false), &[false]);
+        assert_eq!(videotoolbox_quality_attempts(false, true), &[false]);
+    }
+
+    #[test]
+    fn rejected_settings_keep_native_cause_instead_of_claiming_encoder_absence() {
+        for software in [true, false] {
+            for source in [ff::Error::External, ff::Error::InvalidData] {
+                assert!(matches!(
+                    video_open_error(Some(source), software),
+                    MediaError::Ffmpeg { operation: "open video encoder", source: actual }
+                        if actual == source
+                ));
+            }
+        }
+        assert!(matches!(
+            video_open_error(None, true),
+            MediaError::EncoderUnavailable { source: None }
+        ));
+        assert!(matches!(
+            video_open_error(None, false),
+            MediaError::Unsupported(_)
+        ));
     }
 }

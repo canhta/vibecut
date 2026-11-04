@@ -162,11 +162,13 @@ fails. External FFmpeg shares codec algorithms, so it is a pipeline oracle rathe
 than an independent codec implementation. Fixtures are generated under target;
 none are distributed. Windows runtime and QuickTime playback remain unverified.
 
-Observed on the task /09 M1 Pro: explicit software H.264 cannot open a
-VideoToolbox software encoder. This returns `media::MediaError::EncoderUnavailable`
-with the native source retained and leaves existing output intact. Software
-quality is unverified on this machine. Software H.264 fallback requires separate
-codec/licence admission; selecting software never silently selects hardware.
+Task /31 corrects the /09 software H.264 failure: the platform software encoder
+exists and the rejected QSCALE setting caused the earlier open failure. Encoder
+selection, rate-control fallback and typed errors follow the
+[media contract](../media/README.md#input-and-quality-boundaries).
+Observed on Apple M1 Pro/macOS 27.2: the real software-export regression produces
+30 H.264 frames plus AAC with maximum decoded color-patch channel error <=6.
+Intel/Rosetta, VM-only fallback and Windows runtime remain unverified.
 
 Observed for task /28 on Apple M1 Pro, 16 GiB, macOS 27.2, release profile,
 two alternating warm fresh-process runs of the production engine benchmark:

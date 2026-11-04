@@ -622,3 +622,21 @@ fn source_asset_import_retains_native_path_and_persistable_probe() {
     assert_eq!(audio.audio.as_ref().unwrap().sample_rate, 48000);
     assert!(!format!("{asset:?}").contains("nguồn"));
 }
+
+#[cfg(target_os = "macos")]
+#[test]
+fn software_h264_open_rejection_reports_the_native_failure() {
+    let color = media::ColorInfo::default();
+    let first = media::VideoFrame::from_rgba8(2, 2, Tick::ZERO, color, &[0; 16]).unwrap();
+    let mut settings = VideoEncoderSettings::h264(64, 64, time::FrameRate::FPS_30, color);
+    // The native signed bitrate field rejects this value during codec open.
+    settings.bit_rate = usize::MAX;
+    let result = VideoEncoder::with_preference(settings, &first, media::EncodePreference::Software);
+    assert!(matches!(
+        result,
+        Err(media::MediaError::Ffmpeg {
+            operation: "open video encoder",
+            ..
+        })
+    ));
+}
