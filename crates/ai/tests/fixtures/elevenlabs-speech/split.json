@@ -1,0 +1,12 @@
+{
+  "model": "eleven_multilingual_v2",
+  "model_limit": 10000,
+  "prefix_letter": "a",
+  "prefix_count": 9000,
+  "separator": "\n",
+  "suffix_letter": "b",
+  "suffix_count": 2000,
+  "expected_chunks": 2,
+  "first_chunk_keeps_newline": true,
+  "continuity_characters": 1000
+}

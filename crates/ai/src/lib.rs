@@ -6,6 +6,7 @@ mod assembly;
 pub mod clips;
 mod contracts;
 pub mod elevenlabs;
+pub mod elevenlabs_speech;
 #[cfg(feature = "gipformer")]
 pub mod gipformer;
 pub mod models;

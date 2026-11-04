@@ -1,0 +1,7 @@
+{
+  "multilingual_v2_supports": ["en", "zh"],
+  "multilingual_v2_rejects": ["vi"],
+  "flash_v2_5_supports": ["en", "vi", "zh"],
+  "both_reject": ["fr", "ja"],
+  "note": "Multilingual v2 returned HTTP 200 with garbled Vietnamese audio, so the gate is client-side."
+}

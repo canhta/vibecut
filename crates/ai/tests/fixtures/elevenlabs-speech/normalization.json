@@ -1,0 +1,15 @@
+{
+  "apply_text_normalization": "auto",
+  "language_code_models": ["eleven_flash_v2_5"],
+  "language_code_unsupported_models": ["eleven_multilingual_v2"],
+  "fingerprint_fields": [
+    "model",
+    "voice",
+    "language",
+    "format",
+    "normalization",
+    "speed",
+    "logging",
+    "continuity"
+  ]
+}

@@ -72,6 +72,20 @@ impl fmt::Debug for HttpResponse {
 /// must not retry; the engine job runner owns the attempt budget and backoff.
 pub trait HttpTransport: Send + Sync {
     fn send(&self, request: HttpRequest) -> Result<HttpResponse, Error>;
+    /// Send with an operation-specific response ceiling. Audio responses can exceed
+    /// the small JSON envelope ceiling, so adapters pass the bound derived from the
+    /// approved duration. The production transport enforces it while reading; a
+    /// simple implementation may check after buffering.
+    fn send_bounded(&self, request: HttpRequest, max_bytes: usize) -> Result<HttpResponse, Error> {
+        if max_bytes == 0 {
+            return Err(Error::Payload);
+        }
+        let response = self.send(request)?;
+        if response.body.len() > max_bytes {
+            return Err(Error::Payload);
+        }
+        Ok(response)
+    }
 }
 
 /// Streaming GET response; the caller owns byte limits, cancellation and retries.
@@ -131,7 +145,10 @@ impl UreqTransport {
                 .build(),
         }
     }
-    fn read_response(response: ureq::Response) -> Result<HttpResponse, Error> {
+    fn read_response(response: ureq::Response, max_bytes: usize) -> Result<HttpResponse, Error> {
+        if max_bytes == 0 {
+            return Err(Error::Payload);
+        }
         let status = response.status();
         let mut headers = Vec::new();
         for name in response.headers_names() {
@@ -142,10 +159,10 @@ impl UreqTransport {
         let mut body = Vec::new();
         response
             .into_reader()
-            .take(MAX_RESPONSE_BYTES as u64 + 1)
+            .take(max_bytes as u64 + 1)
             .read_to_end(&mut body)
             .map_err(|_| Error::Network)?;
-        if body.len() > MAX_RESPONSE_BYTES {
+        if body.len() > max_bytes {
             return Err(Error::Payload);
         }
         Ok(HttpResponse {
@@ -194,12 +211,17 @@ impl Default for UreqTransport {
 }
 impl HttpTransport for UreqTransport {
     fn send(&self, request: HttpRequest) -> Result<HttpResponse, Error> {
+        self.send_bounded(request, MAX_RESPONSE_BYTES)
+    }
+    fn send_bounded(&self, request: HttpRequest, max_bytes: usize) -> Result<HttpResponse, Error> {
         let mut outbound = self.agent.request(request.method, &request.url);
         for (name, value) in &request.headers {
             outbound = outbound.set(name, value);
         }
         match outbound.send_bytes(&request.body) {
-            Ok(response) | Err(ureq::Error::Status(_, response)) => Self::read_response(response),
+            Ok(response) | Err(ureq::Error::Status(_, response)) => {
+                Self::read_response(response, max_bytes)
+            }
             Err(ureq::Error::Transport(_)) => Err(Error::Network),
         }
     }

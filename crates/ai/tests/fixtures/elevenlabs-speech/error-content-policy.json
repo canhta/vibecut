@@ -1,0 +1,4 @@
+{
+  "status": 400,
+  "detail": {"status": "content_policy_violation", "message": "Request blocked"}
+}

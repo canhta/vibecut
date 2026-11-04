@@ -1,0 +1,5 @@
+{
+  "chunks": 2,
+  "expected_calls_before_cancel": 1,
+  "note": "Cancellation is observed between chunks; in-flight transport work runs to its timeout and its audio is discarded."
+}

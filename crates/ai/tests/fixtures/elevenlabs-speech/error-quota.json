@@ -1,0 +1,4 @@
+{
+  "status": 402,
+  "detail": {"status": "payment_required", "message": "Quota exceeded"}
+}

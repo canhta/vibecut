@@ -1,0 +1,12 @@
+{
+  "currency": "USD",
+  "flash_micros_per_character": 40,
+  "multilingual_micros_per_character": 80,
+  "minimum_characters": 1,
+  "header": "character-cost",
+  "examples": [
+    {"text": "A", "model": "eleven_flash_v2_5", "micros": 40},
+    {"text": "A", "model": "eleven_multilingual_v2", "micros": 80},
+    {"text": "Xin chào 👩🏽‍💻", "model": "eleven_flash_v2_5", "scalars": 13, "utf16": 16, "graphemes": 10, "micros": 520, "upper_bound_micros": 640}
+  ]
+}

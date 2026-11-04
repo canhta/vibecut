@@ -1,0 +1,5 @@
+{
+  "status": 429,
+  "retry_after": "7",
+  "detail": {"status": "rate_limited", "message": "Too many requests"}
+}
