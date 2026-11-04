@@ -408,22 +408,40 @@ pub fn run_native() -> Result<(), Error> {
 }
 
 #[cfg(all(test, unix))]
-#[allow(clippy::unwrap_used, reason = "offline process fixture constructors")]
+#[allow(
+    clippy::unwrap_used,
+    clippy::panic,
+    reason = "offline process fixture constructors"
+)]
 mod tests {
     use super::*;
     use std::os::unix::fs::PermissionsExt;
     struct Temp(PathBuf);
     impl Temp {
         fn new(script: &str) -> (Self, PathBuf) {
-            let root = std::env::temp_dir().join(format!(
-                "vibecut asr ế 中-{}-{}",
-                std::process::id(),
+            Self::at(
+                script,
                 std::time::SystemTime::now()
                     .duration_since(std::time::UNIX_EPOCH)
                     .unwrap()
-                    .as_nanos()
-            ));
-            std::fs::create_dir(&root).unwrap();
+                    .as_nanos(),
+            )
+        }
+        fn at(script: &str, stamp: u128) -> (Self, PathBuf) {
+            // Clock readings can repeat across parallel tests, even with nanosecond units.
+            static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+            let root = loop {
+                let sequence = NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                let root = std::env::temp_dir().join(format!(
+                    "vibecut asr ế 中-{}-{stamp}-{sequence}",
+                    std::process::id()
+                ));
+                match std::fs::create_dir(&root) {
+                    Ok(()) => break root,
+                    Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => continue,
+                    Err(error) => panic!("fixture directory: {error}"),
+                }
+            };
             let runner = root.join("runner");
             std::fs::write(&runner, format!("#!/bin/sh\n{script}\n")).unwrap();
             std::fs::set_permissions(&runner, std::fs::Permissions::from_mode(0o700)).unwrap();
@@ -434,6 +452,20 @@ mod tests {
         fn drop(&mut self) {
             let _ = std::fs::remove_dir_all(&self.0);
         }
+    }
+    #[test]
+    fn process_fixtures_are_unique_even_with_an_identical_clock_reading() {
+        let (first, first_runner) = Temp::at("exit 0", 0);
+        let (second, second_runner) = Temp::at("exit 1", 0);
+        assert_ne!(first.0, second.0);
+        assert_eq!(
+            std::fs::read_to_string(&first_runner).unwrap(),
+            "#!/bin/sh\nexit 0\n"
+        );
+        assert_eq!(
+            std::fs::read_to_string(&second_runner).unwrap(),
+            "#!/bin/sh\nexit 1\n"
+        );
     }
     struct Hooks {
         start: std::time::Instant,
