@@ -1029,3 +1029,76 @@ fn windowed_sources_preserve_full_compositor_pixels_and_blur_reduction_fallbacks
         }
     }
 }
+
+#[test]
+fn opacity_animation_disables_video_stream_copy() {
+    if !tools() {
+        return;
+    }
+    let dir = tempfile::tempdir().unwrap();
+    let input = dir.path().join("white.mp4");
+    generate(
+        &input,
+        &[
+            "-f",
+            "lavfi",
+            "-i",
+            "color=white:size=64x64:rate=30:duration=1.2",
+            "-c:v",
+            "libx264",
+            "-pix_fmt",
+            "yuv420p",
+            "-color_primaries",
+            "bt709",
+            "-color_trc",
+            "bt709",
+            "-colorspace",
+            "bt709",
+        ],
+    );
+    let data = video_project(&input).into_data();
+    let channel = project::Channel::new(
+        project::ParamValue::Scalar(0.0),
+        vec![
+            project::Keyframe::new(Tick::ZERO, project::ParamValue::Scalar(0.0)),
+            project::Keyframe::new(tick(1, 1), project::ParamValue::Scalar(1.0)),
+        ],
+        project::Extrapolation::Hold,
+        project::Extrapolation::Hold,
+    )
+    .unwrap();
+    for param in [
+        project::Param::Value(channel),
+        project::Param::new(project::ParamValue::Scalar(0.0)).unwrap(),
+    ] {
+        let mut candidate = data.clone();
+        candidate.timeline.tracks[0].items[0]
+            .animations
+            .set(project::AnimationPath::new("opacity").unwrap(), param)
+            .unwrap();
+        let p = project::Project::new(candidate).unwrap();
+        let range = TimeRange::new(Tick::ZERO, p.duration()).unwrap();
+        let mut settings = ExportSettings::from_project(&p);
+        settings.include_audio = false;
+        let output = dir.path().join("auto.mp4");
+        settings.overwrite = project::atomic::Overwrite::Replace;
+        let receipt = export(&p, range, &settings, &output, &Hooks::default()).unwrap();
+        assert!(
+            !receipt.stream_copied,
+            "Auto copied video without applying opacity"
+        );
+        let pixels = rgba(&output);
+        assert!(
+            pixels[0] <= 12,
+            "first frame must be black, got {}",
+            pixels[0]
+        );
+        settings.mode = ExportMode::StreamCopy;
+        let forced = dir.path().join("forced.mp4");
+        assert!(matches!(
+            export(&p, range, &settings, &forced, &Hooks::default()),
+            Err(Error::Unsupported(_))
+        ));
+        assert!(!forced.exists());
+    }
+}

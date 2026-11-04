@@ -166,7 +166,8 @@ non-keyframe cuts seek to a preceding keyframe and decode forward. Audio uses th
 same absolute sample grid as preview. AAC delay/padding remain FFmpeg-owned.
 
 Auto copies unchanged video when a single visible source covers the output with
-no pixel changes. It copies compatible unchanged audio, or reencodes the exact
+no pixel changes. An opacity override (including a channel with no keys) disables
+video copy; Auto encodes it and forced stream copy refuses it. It copies compatible unchanged audio, or reencodes the exact
 mixed/resampled audio window while retaining video packet bytes. Only the first
 video/audio stream selected by decode is published. An explicitly accepted
 keyframe cut additionally requires exact start/end keys (or source EOF), regular
