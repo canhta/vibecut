@@ -460,12 +460,11 @@ IDs; thinking blocks are ignored. Schema joins transport transients as
 engine-retryable; refusals, incomplete results, auth/quota/consent/cost failures do
 not retry and no provider fallback is automatic.
 
-The Anthropic disclosure is separate from OpenAI and transcription: Anthropic states
-retained data is never used for training without express permission, prompts/outputs
-are not retained by default except Covered Models (30 days; Sonnet 5.5 is not one),
-structured-output schemas are cached up to 24 hours, and ZDR is an organization-level
-arrangement enabled on request. Account-specific retention/ZDR status is unknown to
-this adapter and must be shown honestly. Sources checked 2026-11-04:
+The Anthropic disclosure names Anthropic and links its official data-retention
+policy instead of restating retention or training terms; provider and model choice
+belong to the user, and account-specific ZDR, retention and training settings remain
+outside this adapter. Users must review the linked policy before granting consent.
+Sources checked 2026-11-04:
 [Messages](https://platform.claude.com/docs/en/api/messages),
 [structured outputs](https://platform.claude.com/docs/en/build-with-claude/structured-outputs),
 [data retention](https://platform.claude.com/docs/en/manage-claude/api-and-data-retention),

@@ -222,15 +222,11 @@ fn six_directions_use_strict_messages_schema_and_context() {
         assert_eq!(input["target_language"], target);
         assert_eq!(input["before"][0], "earlier context");
         let disclosure = translator.disclosure(&scope).unwrap();
-        assert!(
-            disclosure
-                .training
-                .contains("never used for model training")
-        );
-        assert!(disclosure.retention.contains("not retained by default"));
-        assert!(disclosure.zero_retention.contains("organization-level"));
-        assert!(!disclosure.retention.contains("OpenAI"));
+        assert_eq!(disclosure.provider, "Anthropic");
+        assert_eq!(disclosure.model, MODEL);
+        assert_eq!(disclosure.endpoint, ENDPOINT);
         assert_eq!(disclosure.policy_url, ai::anthropic::POLICY_URL);
+        assert!(disclosure.policy_url.contains("claude.com"));
         assert_eq!(disclosure.pricing_url, ai::anthropic::PRICING_URL);
     }
 }
