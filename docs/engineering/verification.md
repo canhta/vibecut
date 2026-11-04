@@ -2,12 +2,27 @@
 
 ## Checks
 
-`cargo xtask ffmpeg` once, then `cargo xtask ci` before every commit: fmt, Clippy
-(warnings denied), tests, crate layers, asset sidecars and the name gate. Commit
-only green. `cargo xtask --help` lists the rest.
+Run the smallest check that covers what changed; commit only green.
+
+| Changed | Run |
+|---|---|
+| Markdown, tickets, assets only | `cargo xtask docs` (crate layers, asset sidecars, name gate; ~1 s) |
+| Rust inside one crate, while iterating | `cargo test -p <crate>` and `cargo clippy -p <crate> --all-targets` |
+| Any Rust, `Cargo.toml`, `xtask`, before handoff or merge | `cargo xtask ci` once (fmt, Clippy, all tests, layers, assets, name gate) |
+| Media, render or other hot path | the above plus the benchmark its ticket names |
+
+Run `cargo xtask ffmpeg` once per machine before the first Rust build. Merging after
+a rebase reruns `cargo xtask ci` only when the commits added to `main` since your run
+touched Rust, manifests or `xtask`. A reviewer runs CI once on the SHA it merges.
 
 The name gate reads local regexes from `.scratch/forbidden-names.txt` and rejects
 matches in tracked files and branch commit messages.
+
+## When to write tests
+
+- Every behaviour change: a test at the public interface that fails without the change.
+- Every bug or crash fix: the reproduction first, as a regression test.
+- Refactors that keep behaviour, docs and ticket edits: no new tests.
 
 ## Test selection
 

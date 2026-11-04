@@ -14,7 +14,7 @@
 4. **Implement** one ticket. Reuse the existing owner of any logic; re-read shared
    files right before editing them and keep other workers' changes intact. Update the
    owning docs in the same change.
-5. **Verify**: focused tests, `cargo fmt --all`, `cargo xtask ci`, then the evidence
+5. **Verify** with the [smallest covering check](verification.md#checks), then the evidence
    [verification](verification.md) asks for. Done when every Verify item has a
    command and a result.
 

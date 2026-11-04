@@ -276,6 +276,11 @@ fn run() -> Result<(), String> {
         ["ffmpeg", "--target", target] => ffmpeg::provision(Some(target)),
         ["layers"] => layers(root),
         ["assets"] => assets(root),
+        ["docs"] => {
+            layers(root)?;
+            assets(root)?;
+            names(root)
+        }
         ["new-crate", name] => new_crate(root, name),
         ["ci"] => {
             layers(root)?;
@@ -305,7 +310,7 @@ fn run() -> Result<(), String> {
             Ok(())
         }
         _ => Err(
-            "usage: cargo xtask <ffmpeg [--target PLATFORM]|media-bench|ci|layers|assets|new-crate NAME>"
+            "usage: cargo xtask <ffmpeg [--target PLATFORM]|media-bench|ci|docs|layers|assets|new-crate NAME>"
                 .into(),
         ),
     }

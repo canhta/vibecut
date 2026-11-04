@@ -83,7 +83,8 @@ A blocked ticket gets `Status: blocked` plus the reason, then an escalation.
 ## Review and merge
 
 **Self-merge** T1 tickets once every Verify item holds: rebase on `origin/main`, run
-`cargo xtask ci`, push fast-forward to `main`. T2–T4 tickets go to review.
+the [smallest covering check](../engineering/verification.md#checks), push
+fast-forward to `main`. T2–T4 tickets go to review.
 
 **Review** the frozen SHA in a separate Codex dispatch. Write the review to
 `/Users/canh/Startup/VibeCut/.scratch/<milestone>/reviews/NN-<sha7>.md` using the
