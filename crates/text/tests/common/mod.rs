@@ -1,6 +1,18 @@
-//! Deterministic PNG encoding for render goldens.
+//! Deterministic PNG encoding and pixel checksums for render goldens.
 
 use text::Image;
+
+/// FNV-1a over the premultiplied RGBA8 buffer. The tests pin this value so a renderer change
+/// needs an explicit, explained re-bless.
+#[allow(dead_code)]
+pub fn checksum(image: &Image) -> u64 {
+    let mut hash = 0xcbf2_9ce4_8422_2325u64;
+    for byte in &image.pixels {
+        hash ^= u64::from(*byte);
+        hash = hash.wrapping_mul(0x0000_0100_0000_01b3);
+    }
+    hash
+}
 
 /// Encode a premultiplied RGBA8 image as a PNG with uncompressed deflate blocks.
 pub fn encode(image: &Image) -> Vec<u8> {

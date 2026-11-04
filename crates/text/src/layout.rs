@@ -5,6 +5,7 @@
 //! baseline sits at the first line's ascent. Text is laid out left to right; bidirectional
 //! reordering is not part of this crate's contract.
 
+use std::collections::VecDeque;
 use std::ops::Range;
 
 use harfrust::{Buffer, Direction, ShapeOptions, ShaperFont, shape};
@@ -124,22 +125,28 @@ pub struct Layout {
 /// Invalid layout input or a shaping failure.
 #[derive(Debug, thiserror::Error)]
 pub enum TextError {
-    #[error("font size must be finite and greater than zero")]
+    #[error("font size must be finite, greater than zero and at most {MAX_FONT_SIZE} pixels")]
     InvalidSize,
     #[error("maximum width must be finite and greater than zero")]
     InvalidWidth,
-    #[error("line height must be finite and not negative")]
+    #[error("line height must be finite, not negative and at most {MAX_LINE_HEIGHT} pixels")]
     InvalidLineHeight,
     #[error("maximum lines must be greater than zero")]
     InvalidMaxLines,
     #[error("text exceeds the supported length of {limit} bytes")]
     TextTooLarge { limit: usize },
+    #[error("layout produced a non-finite coordinate")]
+    CoordinateOverflow,
     #[error("shaping failed")]
     Shaping(#[from] harfrust::ShapeError),
 }
 
 /// The largest accepted input, bounding cluster and prefix allocations.
 const MAX_TEXT_BYTES: usize = 16 << 20;
+/// The largest font size accepted; larger values only risk non-finite geometry.
+const MAX_FONT_SIZE: f32 = 4096.0;
+/// The largest explicit baseline distance accepted.
+const MAX_LINE_HEIGHT: f32 = 16_384.0;
 
 #[derive(Clone, Copy, Debug)]
 struct ShapedGlyph {
@@ -155,13 +162,16 @@ struct ShapedGlyph {
 
 /// Shape and position a paragraph of text.
 pub fn layout(text: &str, options: &LayoutOptions<'_>) -> Result<Layout, TextError> {
-    if !(options.size.is_finite() && options.size > 0.0) {
+    if !(options.size.is_finite() && options.size > 0.0 && options.size <= MAX_FONT_SIZE) {
         return Err(TextError::InvalidSize);
     }
     if !(options.max_width.is_finite() && options.max_width > 0.0) {
         return Err(TextError::InvalidWidth);
     }
-    if !(options.line_height.is_finite() && options.line_height >= 0.0) {
+    if !(options.line_height.is_finite()
+        && options.line_height >= 0.0
+        && options.line_height <= MAX_LINE_HEIGHT)
+    {
         return Err(TextError::InvalidLineHeight);
     }
     if options.max_lines == Some(0) {
@@ -173,7 +183,7 @@ pub fn layout(text: &str, options: &LayoutOptions<'_>) -> Result<Layout, TextErr
         });
     }
 
-    let normalized: String = text.nfc().collect();
+    let normalized = canonical_text(text);
     if normalized.len() > MAX_TEXT_BYTES {
         return Err(TextError::TextTooLarge {
             limit: MAX_TEXT_BYTES,
@@ -204,7 +214,7 @@ pub fn layout(text: &str, options: &LayoutOptions<'_>) -> Result<Layout, TextErr
         if index > 0 && paragraph_start >= source.len() {
             break;
         }
-        let paragraph = part.strip_suffix('\r').unwrap_or(part);
+        let paragraph = part;
         let paragraph_overflow =
             append_paragraph(&mut layout, paragraph, paragraph_start, &mut context)?;
         layout.overflow |= paragraph_overflow;
@@ -244,30 +254,32 @@ fn append_paragraph(
     context: &mut ParagraphContext<'_, '_>,
 ) -> Result<bool, TextError> {
     let options = context.options;
-    let shaped = shape_paragraph(
+    let remaining = options
+        .max_lines
+        .map(|max_lines| max_lines.saturating_sub(layout.lines.len()));
+    if remaining == Some(0) {
+        return Ok(true);
+    }
+
+    // The paragraph-wide shape supplies break measurements; every emitted line is reshaped on
+    // its own span so a ligature can never straddle a line boundary.
+    let measured = shape_paragraph(
         paragraph,
         base,
         context.primary,
         options.size,
         context.fallbacks,
     )?;
-    let advances = advance_prefix(paragraph, &shaped, base);
+    let advances = advance_prefix(paragraph, &measured, base);
     let boundaries = grapheme_boundaries(paragraph);
-    let mut ranges = line_ranges(
+    let (ranges, mut overflow) = line_ranges(
         paragraph,
         options.max_width,
         &advances,
         &boundaries,
         options.line_break,
+        remaining,
     );
-    let mut overflow = false;
-    if let Some(max_lines) = options.max_lines {
-        let remaining = max_lines.saturating_sub(layout.lines.len());
-        if ranges.len() > remaining {
-            ranges.truncate(remaining);
-            overflow = true;
-        }
-    }
     if ranges.is_empty() {
         return Ok(overflow);
     }
@@ -279,39 +291,146 @@ fn append_paragraph(
     } else {
         natural_step.max(options.size * 0.5)
     };
+    if !step.is_finite() || step <= 0.0 {
+        return Err(TextError::CoordinateOverflow);
+    }
 
-    for range in ranges {
-        let start = base + range.start;
-        let end = base + range.end;
-        let content_end = base + trim_end(paragraph, range.start, range.end);
-        let content_width = range_width(
-            &advances,
-            range.start,
-            trim_end(paragraph, range.start, range.end),
-        );
+    let mut pending: VecDeque<Range<usize>> = ranges.into();
+    let mut glyph_cursor = 0usize;
+    let mut span_end = vec![base + paragraph.len(); measured.len()];
+    let mut group_start = 0usize;
+    while group_start < measured.len() {
+        let Some(cluster) = measured.get(group_start).map(|glyph| glyph.cluster) else {
+            break;
+        };
+        let mut group_end = group_start + 1;
+        while measured
+            .get(group_end)
+            .is_some_and(|glyph| glyph.cluster == cluster)
+        {
+            group_end += 1;
+        }
+        let span = measured
+            .get(group_end)
+            .map_or(base + paragraph.len(), |glyph| glyph.cluster);
+        for index in group_start..group_end {
+            if let Some(slot) = span_end.get_mut(index) {
+                *slot = span;
+            }
+        }
+        group_start = group_end;
+    }
+
+    while let Some(range) = pending.pop_front() {
+        if options
+            .max_lines
+            .is_some_and(|max_lines| layout.lines.len() >= max_lines)
+        {
+            overflow = true;
+            break;
+        }
+        while measured
+            .get(glyph_cursor)
+            .is_some_and(|glyph| glyph.cluster < base + range.start)
+        {
+            glyph_cursor += 1;
+        }
+        let mut measured_end = glyph_cursor;
+        while measured
+            .get(measured_end)
+            .is_some_and(|glyph| glyph.cluster < base + range.end)
+        {
+            measured_end += 1;
+        }
+        let start_crosses = glyph_cursor > 0
+            && span_end
+                .get(glyph_cursor.saturating_sub(1))
+                .is_some_and(|end| *end > base + range.start);
+        let end_crosses = measured_end > glyph_cursor
+            && span_end
+                .get(measured_end.saturating_sub(1))
+                .is_some_and(|end| *end > base + range.end);
+        let reshape = start_crosses || end_crosses;
+
+        let Some(line_text) = paragraph.get(range.clone()) else {
+            return Err(TextError::CoordinateOverflow);
+        };
+        let line_base = base + range.start;
+        let content_end_local = trim_end(line_text, 0, line_text.len());
+        let content_end = line_base + content_end_local;
+        let reshaped;
+        let line_glyphs: &[ShapedGlyph] = if reshape {
+            reshaped = shape_paragraph(
+                line_text,
+                line_base,
+                context.primary,
+                options.size,
+                context.fallbacks,
+            )?;
+            &reshaped
+        } else {
+            measured.get(glyph_cursor..measured_end).unwrap_or(&[])
+        };
+        let content_width = if reshape {
+            let line_advances = advance_prefix(line_text, line_glyphs, line_base);
+            range_width(&line_advances, 0, content_end_local)
+        } else {
+            range_width(
+                &advances,
+                range.start,
+                range.start.saturating_add(content_end_local),
+            )
+        };
+        if !content_width.is_finite() {
+            return Err(TextError::CoordinateOverflow);
+        }
+        if content_width > options.max_width + 0.01 && line_text.graphemes(true).count() > 1 {
+            let boundary_index = boundaries.partition_point(|boundary| *boundary < range.end);
+            if let Some(previous) = boundary_index
+                .checked_sub(1)
+                .and_then(|index| boundaries.get(index))
+                .copied()
+                .filter(|previous| *previous > range.start)
+            {
+                pending.push_front(previous..range.end);
+                continue;
+            }
+        }
+
         let shift = match options.align {
             Align::Left => 0.0,
             Align::Center => (options.max_width - content_width).max(0.0) / 2.0,
             Align::Right => (options.max_width - content_width).max(0.0),
         };
-        let (ascent, descent) = line_metrics(&shaped, start..end, context.primary, options.size);
+        let (ascent, descent) = line_metrics(line_glyphs, context.primary, options.size);
+        if !ascent.is_finite() || !descent.is_finite() {
+            return Err(TextError::CoordinateOverflow);
+        }
         if context.first_line {
             context.baseline = ascent;
             context.first_line = false;
         } else {
             context.baseline += step;
         }
+        if !context.baseline.is_finite() || !shift.is_finite() {
+            return Err(TextError::CoordinateOverflow);
+        }
         let glyph_start = layout.glyphs.len();
         let mut pen = 0.0f32;
-        for glyph in shaped
+        for glyph in line_glyphs
             .iter()
-            .filter(|g| g.cluster >= start && g.cluster < content_end)
+            .filter(|glyph| glyph.cluster < content_end)
         {
+            let x = shift + pen + glyph.offset_x;
+            let y = context.baseline - glyph.offset_y;
+            if !x.is_finite() || !y.is_finite() {
+                return Err(TextError::CoordinateOverflow);
+            }
             layout.glyphs.push(Glyph {
                 face: glyph.face,
                 id: glyph.id,
-                x: shift + pen + glyph.offset_x,
-                y: context.baseline - glyph.offset_y,
+                x,
+                y,
                 size: options.size,
                 cluster: glyph.cluster,
                 synth_bold: glyph.synth_bold,
@@ -319,8 +438,11 @@ fn append_paragraph(
             });
             pen += glyph.advance;
         }
+        if !pen.is_finite() {
+            return Err(TextError::CoordinateOverflow);
+        }
         layout.lines.push(Line {
-            range: start..end,
+            range: line_base..line_base + line_text.len(),
             baseline: context.baseline,
             x: shift,
             width: content_width,
@@ -328,6 +450,7 @@ fn append_paragraph(
             descent,
             glyphs: glyph_start..layout.glyphs.len(),
         });
+        glyph_cursor = measured_end;
     }
     Ok(overflow)
 }
@@ -449,15 +572,18 @@ fn trim_end(text: &str, start: usize, end: usize) -> usize {
     trimmed
 }
 
+/// Line ranges with monotonic cursors. `limit` bounds the work as well as the output: once the
+/// requested number of lines exists, the remaining text only sets the overflow flag.
 fn line_ranges(
     text: &str,
     max_width: f32,
     advances: &[f32],
     boundaries: &[usize],
     mode: LineBreak,
-) -> Vec<Range<usize>> {
+    limit: Option<usize>,
+) -> (Vec<Range<usize>>, bool) {
     if text.is_empty() {
-        return std::iter::once(0..0).collect();
+        return (std::iter::once(0..0).collect(), false);
     }
     let mut breaks: Vec<usize> = match mode {
         LineBreak::Unicode => linebreaks(text)
@@ -474,64 +600,86 @@ fn line_ranges(
 
     let mut ranges = Vec::new();
     let mut start = 0usize;
+    let mut break_cursor = 0usize;
+    let mut boundary_cursor = 0usize;
     while start < text.len() {
-        let mut best = None;
-        for candidate in breaks
-            .iter()
-            .copied()
-            .filter(|candidate| *candidate > start)
+        if limit.is_some_and(|limit| ranges.len() >= limit) {
+            return (ranges, true);
+        }
+        while breaks
+            .get(break_cursor)
+            .is_some_and(|candidate| *candidate <= start)
         {
-            let content_end = trim_end(text, start, candidate);
-            if range_width(advances, start, content_end) <= max_width + 0.001 {
-                best = Some(candidate);
+            break_cursor += 1;
+        }
+        let mut best = None;
+        let mut probe = break_cursor;
+        while let Some(&candidate) = breaks.get(probe) {
+            if candidate <= start {
+                probe += 1;
+                continue;
+            }
+            let full = range_width(advances, start, candidate);
+            let fits = if full <= max_width + 0.001 {
+                true
+            } else {
+                let content_end = trim_end(text, start, candidate);
+                content_end > start
+                    && range_width(advances, start, content_end) <= max_width + 0.001
+            };
+            if fits {
+                best = Some((candidate, probe));
                 if candidate == text.len() {
                     break;
                 }
+                probe += 1;
             } else {
                 break;
             }
         }
         let end = match best {
-            Some(end) => end,
+            Some((candidate, _)) => candidate,
             None => {
-                let mut cut = None;
-                for boundary in boundaries
-                    .iter()
-                    .copied()
-                    .filter(|boundary| *boundary > start)
+                while boundaries
+                    .get(boundary_cursor)
+                    .is_some_and(|boundary| *boundary <= start)
                 {
+                    boundary_cursor += 1;
+                }
+                let mut cut = None;
+                let mut probe = boundary_cursor;
+                while let Some(&boundary) = boundaries.get(probe) {
+                    if boundary <= start {
+                        probe += 1;
+                        continue;
+                    }
                     if range_width(advances, start, boundary) <= max_width + 0.001 {
                         cut = Some(boundary);
+                        probe += 1;
                     } else {
                         break;
                     }
                 }
-                cut.or_else(|| {
+                cut.unwrap_or_else(|| {
                     boundaries
-                        .iter()
+                        .get(boundary_cursor)
                         .copied()
-                        .find(|boundary| *boundary > start)
+                        .unwrap_or(text.len())
                 })
-                .unwrap_or(text.len())
             }
         };
         let end = end.max(start.saturating_add(1)).min(text.len());
         ranges.push(start..end);
         start = end;
     }
-    ranges
+    (ranges, false)
 }
 
-fn line_metrics(
-    glyphs: &[ShapedGlyph],
-    range: Range<usize>,
-    primary: Resolved,
-    size: f32,
-) -> (f32, f32) {
+fn line_metrics(glyphs: &[ShapedGlyph], primary: Resolved, size: f32) -> (f32, f32) {
     let metrics = fonts::face(primary.face).metrics(size);
     let mut ascent = metrics.ascent;
     let mut descent = metrics.descent;
-    for glyph in glyphs.iter().filter(|glyph| range.contains(&glyph.cluster)) {
+    for glyph in glyphs {
         if glyph.face != primary.face {
             let fallback = fonts::face(glyph.face).metrics(size);
             ascent = ascent.max(fallback.ascent);
@@ -539,6 +687,27 @@ fn line_metrics(
         }
     }
     (ascent, descent)
+}
+
+/// Canonical line separators become LF, then the text is normalized to NFC.
+fn canonical_text(text: &str) -> String {
+    let mut canonical = String::with_capacity(text.len());
+    let mut chars = text.chars().peekable();
+    while let Some(c) = chars.next() {
+        match c {
+            '\r' => {
+                if chars.peek() == Some(&'\n') {
+                    chars.next();
+                }
+                canonical.push('\n');
+            }
+            '\n' | '\u{000B}' | '\u{000C}' | '\u{0085}' | '\u{2028}' | '\u{2029}' => {
+                canonical.push('\n');
+            }
+            _ => canonical.push(c),
+        }
+    }
+    canonical.nfc().collect()
 }
 
 fn content_bounds(lines: &[Line]) -> Bounds {
@@ -562,6 +731,8 @@ fn content_bounds(lines: &[Line]) -> Bounds {
 
 #[cfg(test)]
 mod tests {
+    use std::time::{Duration, Instant};
+
     use super::*;
 
     fn boundaries_of(text: &str) -> Vec<usize> {
@@ -651,6 +822,131 @@ mod tests {
                 .get(..2)
                 .map(<[Line]>::to_vec)
                 .unwrap_or_default()
+        );
+    }
+
+    #[test]
+    fn ligatures_are_reshaped_per_line_and_never_straddle_a_break() {
+        for width in [20.0, 12.0] {
+            let text = "office";
+            let laid_out = layout(
+                text,
+                &LayoutOptions {
+                    family: "Noto Serif",
+                    size: 40.0,
+                    max_width: width,
+                    ..LayoutOptions::default()
+                },
+            )
+            .expect("layout");
+            assert!(laid_out.lines.len() > 1);
+            for line in &laid_out.lines {
+                for glyph in laid_out.glyphs.get(line.glyphs.clone()).unwrap_or_default() {
+                    assert!(
+                        glyph.cluster >= line.range.start && glyph.cluster < line.range.end,
+                        "line {:?} owns foreign glyph {glyph:?}",
+                        line.range
+                    );
+                }
+                let graphemes = text
+                    .get(line.range.clone())
+                    .map(|span| span.graphemes(true).count())
+                    .unwrap_or(0);
+                if graphemes > 1 {
+                    assert!(line.width <= width + 0.01, "{line:?}");
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn mandatory_unicode_separators_become_lines_without_tofu() {
+        for input in [
+            "ab\r\ncd",
+            "ab\rcd",
+            "ab\u{0085}cd",
+            "ab\u{2028}cd",
+            "ab\u{2029}cd",
+            "ab\u{000B}cd",
+            "ab\u{000C}cd",
+        ] {
+            let laid_out = layout(input, &options(400.0)).expect("layout");
+            assert_eq!(laid_out.lines.len(), 2, "{input:?}");
+            assert_eq!(laid_out.text, "ab\ncd", "{input:?}");
+            assert!(
+                laid_out.glyphs.iter().all(|glyph| glyph.id != 0),
+                "{input:?} produced tofu"
+            );
+        }
+    }
+
+    #[test]
+    fn extreme_finite_sizes_are_rejected_instead_of_producing_infinities() {
+        let text = "AA\nAA";
+        assert!(matches!(
+            layout(
+                text,
+                &LayoutOptions {
+                    size: f32::MAX,
+                    ..options(1000.0)
+                }
+            ),
+            Err(TextError::InvalidSize)
+        ));
+        assert!(matches!(
+            layout(
+                text,
+                &LayoutOptions {
+                    line_height: f32::MAX,
+                    ..options(1000.0)
+                }
+            ),
+            Err(TextError::InvalidLineHeight)
+        ));
+        let laid_out = layout(
+            text,
+            &LayoutOptions {
+                size: MAX_FONT_SIZE,
+                ..options(10_000.0)
+            },
+        )
+        .expect("bounded size");
+        assert!(
+            laid_out
+                .glyphs
+                .iter()
+                .all(|glyph| glyph.x.is_finite() && glyph.y.is_finite())
+        );
+        assert!(laid_out.bounds.x0.is_finite() && laid_out.bounds.y1.is_finite());
+    }
+
+    #[test]
+    fn narrow_wrapping_is_bounded_by_max_lines_and_scales_linearly() {
+        let text = "a".repeat(8_000);
+        let started = Instant::now();
+        let clipped = layout(
+            &text,
+            &LayoutOptions {
+                max_lines: Some(2),
+                ..options(1.0)
+            },
+        )
+        .expect("clipped layout");
+        assert_eq!(clipped.lines.len(), 2);
+        assert!(clipped.overflow);
+        assert!(
+            started.elapsed() < Duration::from_secs(5),
+            "{:?}",
+            started.elapsed()
+        );
+
+        let started = Instant::now();
+        let full = layout(&text, &options(1.0)).expect("full layout");
+        assert_eq!(full.lines.len(), text.len());
+        assert!(
+            started.elapsed() < Duration::from_secs(5),
+            "{:?}",
+            started.elapsed()
         );
     }
 

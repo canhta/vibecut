@@ -7,6 +7,8 @@ use text::{
     Align, Canvas, Color, LayoutOptions, LineBreak, Outline, Paint, StrokeKind, layout, render,
 };
 
+const ZH_GOLDEN: u64 = 481282238247508613;
+
 const SIMPLIFIED: &str = "越南语、英语和中文三种语言的视频都可以转录、翻译并制作双语字幕。";
 const TRADITIONAL: &str = "越南語、英語和中文三種語言的影片都可以轉錄、翻譯並製作雙語字幕。";
 
@@ -91,6 +93,12 @@ fn simplified_and_traditional_chinese_wrap_and_render() -> Result<(), Box<dyn Er
         height: 420,
     };
     let image = render(&simplified, canvas, (30.0, 40.0), &paint)?;
+    assert_eq!(
+        common::checksum(&image),
+        ZH_GOLDEN,
+        "re-bless only after visual inspection"
+    );
+
     let target = target_dir();
     fs::create_dir_all(&target)?;
     fs::write(target.join("text-zh.png"), common::encode(&image))?;

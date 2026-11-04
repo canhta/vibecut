@@ -1,8 +1,8 @@
 asset: VibeCutSansCJK-Regular.otf
 title: VibeCut Sans CJK Regular (common Chinese subset)
 author: The Noto Project Authors (subset maintained by VibeCut)
-source: https://github.com/notofonts/noto-cjk/releases/tag/Sans2.004
+source: https://github.com/notofonts/noto-cjk/releases/tag/Sans2.004 (18_NotoSansSC.zip, NotoSansSC-Regular.otf)
 license: OFL-1.1
 license-file: assets/fonts/OFL-NotoSansSC.txt
 added: p0-core-04-text
-notes: Modified subset of NotoSansSC-Regular.otf covering GB2312, Big5 level 1, ASCII, CJK punctuation and fullwidth forms (9,804 characters); renamed to VibeCut Sans CJK. Generated with fontTools 4.68.0 pyftsubset (--no-hinting, layout features kern/liga/clig/vert/vrt2).
+notes: Modified subset of NotoSansSC-Regular.otf covering GB2312, Big5 level 1, ASCII, CJK punctuation and fullwidth forms (9,804 characters); renamed to VibeCut Sans CJK. Regenerate with tools/subset-cjk-font.py and fontTools 4.68.0; source archive sha256 4d107c09ada479d3e48b6e78c83835773cbd9214bf6e12cdb7b60f8e068292ec, source OTF sha256 faa6c9df652116dde789d351359f3d7e5d2285a2b2a1f04a2d7244df706d5ea9, output sha256 ad6c0e9b2a8c442c8022ed3d98e51d5fca76148a45d25f2970142003ab3c4bf6.

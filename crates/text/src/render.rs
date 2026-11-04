@@ -336,6 +336,67 @@ mod tests {
     }
 
     #[test]
+    fn outer_outline_adds_coverage_outside_the_fill() {
+        let laid_out = layout(
+            "H",
+            &LayoutOptions {
+                size: 80.0,
+                max_width: 400.0,
+                ..LayoutOptions::default()
+            },
+        )
+        .expect("layout");
+        let canvas = Canvas {
+            width: 240,
+            height: 160,
+        };
+        let fill = render(
+            &laid_out,
+            canvas,
+            (20.0, 30.0),
+            &Paint {
+                fill: Color::WHITE,
+                outline: None,
+                background: None,
+            },
+        )
+        .expect("fill");
+        let outlined = render(
+            &laid_out,
+            canvas,
+            (20.0, 30.0),
+            &Paint {
+                fill: Color::WHITE,
+                outline: Some(Outline {
+                    color: Color::BLACK,
+                    width: 8.0,
+                    kind: StrokeKind::Outer,
+                }),
+                background: None,
+            },
+        )
+        .expect("outline");
+        let mut outline_only = 0usize;
+        let mut filled = 0usize;
+        for (fill_pixel, outline_pixel) in fill
+            .pixels
+            .as_chunks::<4>()
+            .0
+            .iter()
+            .zip(outlined.pixels.as_chunks::<4>().0)
+        {
+            if fill_pixel[3] > 0 {
+                filled += 1;
+            }
+            if fill_pixel[3] == 0 && outline_pixel[3] > 0 {
+                outline_only += 1;
+            }
+        }
+        assert!(filled > 100, "{filled}");
+        assert!(outline_only > 100, "{outline_only}");
+    }
+
+    #[test]
     fn rejects_invalid_canvas_and_outline() {
         let laid_out = layout("x", &LayoutOptions::default()).expect("layout");
         assert!(matches!(

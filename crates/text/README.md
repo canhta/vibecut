@@ -16,8 +16,8 @@ an optional rounded background box. Rendering uses no GPU, clock, network or fil
 
 Public entry points: `layout`, `render`, `resolve`, `fallback_chain`, `fallback_for`, `face`,
 `families`, `Layout`, `Line`, `Glyph`, `LayoutOptions`, `Align`, `LineBreak`, `TextError`,
-`Paint`, `Outline`, `StrokeKind`, `Rectangle`, `Canvas`, `Image`, `RenderError`, `Color`,
-`Mask`, `Path` and `Xform`.
+`Paint`, `Outline`, `StrokeKind`, `Rectangle`, `Canvas`, `Image`, `RenderError` and `Color`.
+Mask and path internals are private; callers paint through `render`.
 
 ## Language data
 
@@ -41,6 +41,11 @@ Characters outside the subset resolve deterministically to the preferred face an
 missing glyph. A full-font or downloadable-font follow-up can extend coverage without changing
 layout logic. Every asset has a licence and attribution sidecar under `assets/fonts/`.
 
+`tools/subset-cjk-font.py` reproduces the subset from the pinned Sans2.004 archive with
+fontTools 4.68.0. It checks the source OTF and output SHA-256 values recorded in the attribution
+sidecar, so a regeneration mismatch is a hard failure. The source archive and OTF hashes are
+also recorded there.
+
 Fallback is deterministic: the preferred face wins when it covers the character; otherwise the
 profile chain is searched in order, then the bundled table order. Whitespace and control
 characters stay on the preferred face.
@@ -49,25 +54,35 @@ characters stay on the preferred face.
 
 - Left-to-right text only; bidirectional reordering and vertical layout are excluded.
 - No hyphenation, OpenType feature toggles, variable-font axes, colour emoji or hinting.
-- Input text is capped at 16 MiB; canvases at 64 M pixels (256 MiB of RGBA8).
-- A single grapheme wider than the wrap width occupies its own line.
+- Input text is capped at 16 MiB; canvases at 64 M pixels (256 MiB of RGBA8); font size at
+  4096 px and explicit line height at 16,384 px.
+- CR, CRLF, NEL, line separator, paragraph separator, vertical tab and form feed become LF before
+  shaping; mandatory breaks therefore never reach the shaper as tofu.
+- Lines are reshaped on their own span, so a ligature cannot straddle a line boundary. A
+  multi-grapheme line that still exceeds the width is split further; a single grapheme wider than
+  the wrap width occupies its own line.
 
 ## Tests and goldens
 
 `cargo test -p text` covers raster coverage, strokes, metrics, fallback order, wrapping, long
-unbreakable words, alignment, truncation and input validation. Integration tests cover:
+unbreakable words, ligature-safe per-line reshaping, mandatory separators, bounded extreme
+sizes, narrow-wrap scaling, alignment, truncation and input validation. Integration tests cover:
 
 - the Vietnamese stress string in NFC and NFD: identical glyph runs, no missing glyphs and
   identical rendered pixels;
 - Simplified and Traditional Chinese: CJK fallback, no-space wrapping and grapheme-safe breaks;
 - deterministic fallback for a character the requested face lacks;
 - a 1080×1920 two-line Vietnamese overlay with a 4 px outline, written to `target/text-vi.png`;
-- a Chinese overlay written to `target/text-zh.png`.
+- a Chinese overlay written to `target/text-zh.png`;
+- clipping at canvas edges, outline coverage outside the fill, glyph-only coverage, and pinned
+  FNV-1a checksums of the full rendered buffers.
 
 The tests write PNGs under the repository `target/` and compare repeated renders byte for byte
-and NFC/NFD pixels exactly. They are CPU-only and deterministic on a given build.
+and NFC/NFD pixels exactly. The pinned checksums are regression goldens: changing them requires
+visual inspection and an explained re-bless, never automatic acceptance.
 
 ## Performance
 
-No benchmark is recorded yet; performance is unverified beyond the test suite completing on the
-development machine.
+No release-mode benchmark is recorded. A debug test lays out 8,000 single-character lines and a
+two-line window over the same input under a five-second bound, which guards the former
+quadratic wrapping behavior but is not a production benchmark.

@@ -6,6 +6,8 @@ use text::{
     Align, Canvas, Color, LayoutOptions, Outline, Paint, Rectangle, StrokeKind, layout, render,
 };
 
+const VI_GOLDEN: u64 = 2654565656580623616;
+
 const LINES: &str = "Người Việt ưỡn ngực, quyết định\nđặt hàng ở Đà Nẵng: Ữ Ỵ Ặ ẫ ợ ự";
 
 fn target_dir() -> std::path::PathBuf {
@@ -67,6 +69,47 @@ fn two_line_vietnamese_frame_overlay_is_a_repeatable_golden() {
     assert!(covered > 50_000, "visible overlay coverage: {covered}");
     for pixel in image.pixels.as_chunks::<4>().0 {
         assert!(pixel[0] <= pixel[3] && pixel[1] <= pixel[3] && pixel[2] <= pixel[3]);
+    }
+
+    assert_eq!(
+        common::checksum(&image),
+        VI_GOLDEN,
+        "re-bless only after visual inspection"
+    );
+
+    let bare = render(
+        &laid_out,
+        canvas,
+        (20.0, 820.0),
+        &Paint {
+            fill: Color::WHITE,
+            outline: None,
+            background: None,
+        },
+    )
+    .expect("text-only render");
+    let bare_covered = bare
+        .pixels
+        .as_chunks::<4>()
+        .0
+        .iter()
+        .filter(|pixel| pixel[3] > 0)
+        .count();
+    assert!(bare_covered > 10_000, "glyph-only coverage: {bare_covered}");
+    assert!(
+        covered > bare_covered,
+        "outline and box add coverage: {covered} vs {bare_covered}"
+    );
+    let clip_canvas = Canvas {
+        width: 400,
+        height: 300,
+    };
+    for origin in [(-200.0, 0.0), (350.0, 0.0), (0.0, -200.0)] {
+        let clipped = render(&laid_out, clip_canvas, origin, &paint).expect("clipped render");
+        assert_eq!(clipped.pixels.len(), 400 * 300 * 4);
+        for pixel in clipped.pixels.as_chunks::<4>().0 {
+            assert!(pixel[0] <= pixel[3] && pixel[1] <= pixel[3] && pixel[2] <= pixel[3]);
+        }
     }
 
     let target = target_dir();

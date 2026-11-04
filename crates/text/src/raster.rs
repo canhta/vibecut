@@ -7,9 +7,12 @@
 /// Vertical sub-samples per pixel row.
 pub const SUB: usize = 5;
 
+/// Largest mask allocation accepted by [`Mask::try_new`], the same bound as the renderer's canvas.
+pub(crate) const MAX_MASK_PIXELS: usize = 64 << 20;
+
 /// A 2×3 affine transform `(x, y) → (a x + c y + e, b x + d y + f)`.
 #[derive(Clone, Copy, Debug, PartialEq)]
-pub struct Xform {
+pub(crate) struct Xform {
     pub a: f32,
     pub b: f32,
     pub c: f32,
@@ -19,52 +22,18 @@ pub struct Xform {
 }
 
 impl Xform {
-    pub const IDENTITY: Self = Self {
-        a: 1.0,
-        b: 0.0,
-        c: 0.0,
-        d: 1.0,
-        e: 0.0,
-        f: 0.0,
-    };
-
-    pub const fn translate(x: f32, y: f32) -> Self {
-        Self {
-            e: x,
-            f: y,
-            ..Self::IDENTITY
-        }
-    }
-
     /// Apply this transform to a point.
-    pub fn apply(&self, x: f32, y: f32) -> (f32, f32) {
+    pub(crate) fn apply(&self, x: f32, y: f32) -> (f32, f32) {
         (
             self.a * x + self.c * y + self.e,
             self.b * x + self.d * y + self.f,
         )
     }
-
-    /// `self ∘ other`: apply `other` first, then `self`.
-    pub fn compose(&self, other: &Self) -> Self {
-        Self {
-            a: self.a * other.a + self.c * other.b,
-            b: self.b * other.a + self.d * other.b,
-            c: self.a * other.c + self.c * other.d,
-            d: self.b * other.c + self.d * other.d,
-            e: self.a * other.e + self.c * other.f + self.e,
-            f: self.b * other.e + self.d * other.f + self.f,
-        }
-    }
-
-    /// Average linear scale, used for flattening tolerances and synthetic emboldening.
-    pub fn scale(&self) -> f32 {
-        (self.a * self.d - self.b * self.c).abs().sqrt()
-    }
 }
 
 /// A flattened path: closed contours of points in pixel space, y down.
 #[derive(Clone, Debug, Default)]
-pub struct Path {
+pub(crate) struct Path {
     pub contours: Vec<Vec<(f32, f32)>>,
     current: (f32, f32),
     open: bool,
@@ -150,17 +119,8 @@ impl Path {
         self.open = false;
     }
 
-    /// Append every contour of `other`.
-    pub fn extend(&mut self, other: &Path) {
-        self.close();
-        self.contours.extend(other.contours.iter().cloned());
-    }
-
-    pub fn is_empty(&self) -> bool {
-        self.contours.is_empty()
-    }
-
     /// Bounding box `(x0, y0, x1, y1)` of all points.
+    #[cfg(test)]
     pub fn bounds(&self) -> Option<(f32, f32, f32, f32)> {
         let mut points = self.contours.iter().flatten();
         let first = points.next()?;
@@ -275,23 +235,35 @@ fn normal(p0: (f32, f32), p1: (f32, f32), sign: f32) -> (f32, f32) {
 
 /// Coverage mask in `0..=1`, row-major.
 #[derive(Clone, Debug, Default, PartialEq)]
-pub struct Mask {
+pub(crate) struct Mask {
     pub w: usize,
     pub h: usize,
     pub a: Vec<f32>,
 }
 
 impl Mask {
-    pub fn new(w: usize, h: usize) -> Self {
-        Self {
+    /// Allocate a mask when the dimensions fit the documented cap.
+    pub(crate) fn try_new(w: usize, h: usize) -> Option<Self> {
+        let pixels = w.checked_mul(h)?;
+        (pixels <= MAX_MASK_PIXELS).then(|| Self {
             w,
             h,
-            a: vec![0.0; w.saturating_mul(h)],
-        }
+            a: vec![0.0; pixels],
+        })
+    }
+
+    /// Allocate a mask for an already validated canvas.
+    pub(crate) fn new(w: usize, h: usize) -> Self {
+        Self::try_new(w, h).unwrap_or(Self {
+            w: 0,
+            h: 0,
+            a: Vec::new(),
+        })
     }
 
     /// Coverage at a pixel; out-of-range coordinates read as zero.
-    pub fn get(&self, x: usize, y: usize) -> f32 {
+    #[cfg(test)]
+    pub(crate) fn get(&self, x: usize, y: usize) -> f32 {
         y.checked_mul(self.w)
             .and_then(|row| row.checked_add(x))
             .and_then(|i| self.a.get(i))
@@ -299,26 +271,34 @@ impl Mask {
             .unwrap_or(0.0)
     }
 
-    /// Add `src` placed at `(ox, oy)`, saturating at 1.
-    pub fn add(&mut self, src: &Mask, ox: i32, oy: i32) {
+    /// Add `src` placed at `(ox, oy)`, saturating at 1. Offsets use wide arithmetic so the full
+    /// `i32` range is safe.
+    #[cfg(test)]
+    pub(crate) fn add(&mut self, src: &Mask, ox: i32, oy: i32) {
+        let ox = i64::from(ox);
+        let oy = i64::from(oy);
         for y in 0..src.h {
-            let Some(ty) = oy.checked_add(y as i32) else {
-                continue;
-            };
-            if ty < 0 || ty >= self.h as i32 {
+            let ty = oy + y as i64;
+            if ty < 0 || ty >= self.h as i64 {
                 continue;
             }
             let x0 = (-ox).max(0) as usize;
-            let x1 = src.w.min((self.w as i32 - ox).max(0) as usize);
+            let x1 = src
+                .w
+                .min((self.w as i64 - ox).clamp(0, i64::from(u32::MAX)) as usize);
             if x0 >= x1 {
                 continue;
             }
             let Some(src_row) = src.a.get(y * src.w + x0..y * src.w + x1) else {
                 continue;
             };
+            let dest_x = ox + x0 as i64;
+            if dest_x < 0 {
+                continue;
+            }
             let Some(d0) = (ty as usize)
                 .checked_mul(self.w)
-                .and_then(|row| row.checked_add((ox + x0 as i32).max(0) as usize))
+                .and_then(|row| row.checked_add(dest_x as usize))
             else {
                 continue;
             };
@@ -330,18 +310,11 @@ impl Mask {
             }
         }
     }
-
-    /// Per-pixel maximum with `other` (the masks must have the same size).
-    pub fn max_with(&mut self, other: &Mask) {
-        for (a, b) in self.a.iter_mut().zip(&other.a) {
-            *a = a.max(*b);
-        }
-    }
 }
 
 /// Fill `path` with the non-zero winding rule into a `w`×`h` mask.
 #[cfg(test)]
-pub fn fill(path: &Path, w: usize, h: usize, dx: f32, dy: f32) -> Mask {
+pub(crate) fn fill(path: &Path, w: usize, h: usize, dx: f32, dy: f32) -> Mask {
     let mut mask = Mask::new(w, h);
     fill_into(path, &mut mask, dx, dy);
     mask
@@ -356,7 +329,7 @@ struct Edge {
 }
 
 /// Fill `path` into `mask`, adding coverage (saturating at 1).
-pub fn fill_into(path: &Path, mask: &mut Mask, dx: f32, dy: f32) {
+pub(crate) fn fill_into(path: &Path, mask: &mut Mask, dx: f32, dy: f32) {
     let (w, h) = (mask.w, mask.h);
     if w == 0 || h == 0 {
         return;
@@ -538,17 +511,19 @@ mod tests {
     }
 
     #[test]
-    fn transforms_compose() {
-        let scale = Xform {
-            a: 2.0,
-            b: 0.0,
-            c: 0.0,
-            d: 2.0,
-            e: 0.0,
-            f: 0.0,
-        };
-        let transform = scale.compose(&Xform::translate(3.0, 4.0));
-        assert_eq!(transform.apply(1.0, 1.0), (8.0, 10.0));
-        assert!((transform.scale() - 2.0).abs() < 1e-6);
+    fn oversized_mask_dimensions_are_rejected() {
+        assert!(Mask::try_new(usize::MAX, 2).is_none());
+        assert!(Mask::try_new(MAX_MASK_PIXELS + 1, 1).is_none());
+        assert!(Mask::try_new(4, 4).is_some());
+    }
+
+    #[test]
+    fn extreme_add_offsets_do_not_overflow() {
+        let mut mask = Mask::new(2, 2);
+        let src = Mask::new(2, 2);
+        mask.add(&src, i32::MIN, i32::MIN);
+        mask.add(&src, i32::MAX, i32::MAX);
+        mask.add(&src, i32::MIN, i32::MAX);
+        assert_eq!(mask.a.len(), 4);
     }
 }

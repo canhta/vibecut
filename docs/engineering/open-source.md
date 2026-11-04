@@ -12,7 +12,9 @@ Keep media, model weights and large binaries out of Git. Admitted small assets
 carry `<file>.attribution` sidecars with nonempty `asset`, `title`, `author`, `source`,
 `license`, `license-file`, `added` and `notes` fields; READMEs and sidecars are exempt.
 `added` identifies the admitting task, not a date. License paths are repository-relative.
-Project-owned brand/icon sources and committed exports are admitted small assets;
+Admitted font assets may use OFL-1.1; ship the OFL text, attribution sidecar and, for a modified
+subset, the pinned regeneration procedure and hashes. Project-owned brand/icon sources and
+committed exports are admitted small assets;
 MIT applies. App/window icons use
 [assets/app-icon](../../assets/app-icon/README.md); [brand vectors](../brand/logo.svg)
 serve documentation. Regeneration and planned platform wiring live in the icon README.
