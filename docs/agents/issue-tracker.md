@@ -1,41 +1,39 @@
 # Issue tracker: local markdown
 
-Issues live as markdown files in `.scratch/` (git-ignored, never pushed). No GitHub Issues.
+Tickets live in git-ignored `.scratch/` in the main checkout.
 
 ## Layout
 
-- One feature per directory: `.scratch/<feature-slug>/`
-- Spec: `.scratch/<feature-slug>/spec.md`
-- One ticket per file: `.scratch/<feature-slug>/issues/NN-<slug>.md`, numbered from `01`
+```
+.scratch/<milestone>/spec.md            scope
+.scratch/<milestone>/map.md             one line per decision
+.scratch/<milestone>/issues/NN-slug.md  one ticket
+.scratch/<milestone>/reviews/           review reports
+.scratch/agents.md                      implementer tiers and track record
+```
 
 ## Ticket header
 
-The first lines of every ticket, one per line, exact spelling, so agents can grep them:
+First lines, exact spelling:
 
 ```
 Status: open | claimed | blocked | resolved | wontfix
 Type: task | research | bug
 Priority: P0 | P1 | P2
-Assignee: <assigned role or person> | -
-Blocked by: NN, <milestone>/NN        # omit when none
+Assignee: opencode | codex | human | -
+Blocked by: NN, <milestone>/NN
 ```
 
-Bare dependency numbers refer to this milestone; `<milestone>/NN` refers to another.
-[Orchestration](orchestration.md) owns role routing and the claim/review/merge loop.
-
-Body follows. Discussion appends under `## Comments`; the outcome goes under `## Answer`.
+Bare numbers mean the same milestone. Omit `Blocked by` when empty. The body follows;
+the outcome goes under `## Answer`. A ticket is **unblocked** when every blocker is
+`resolved`. The **frontier** is open, unblocked tickets, lowest number first.
+`wontfix` carries its reason.
 
 ## Queries
 
-- Open work: `grep -l '^Status: open' .scratch/*/issues/*.md`
-- P0 open: `grep -l '^Priority: P0' $(grep -l '^Status: open' .scratch/*/issues/*.md)`
-- What blocks NN: `grep -H '^Blocked by:' .scratch/<feature>/issues/*.md`
+```sh
+grep -l '^Status: open' .scratch/*/issues/*.md
+grep -H '^Blocked by:' .scratch/<milestone>/issues/*.md
+```
 
-A ticket is unblocked when every ticket in its `Blocked by:` line is `resolved`. Frontier: open, unblocked, lowest number first.
-
-## Operations
-
-- **Create**: create the file under `.scratch/<feature-slug>/issues/` with the header above.
-- **Fetch**: read the path or number the user gives.
-- **Claim**: set `Status: claimed` and save before starting.
-- **Resolve**: write `## Answer`, set `Status: resolved`, and add a one-line pointer in `.scratch/<feature-slug>/map.md` under `Decisions`.
+Claiming, resolving and routing follow [orchestration](orchestration.md).

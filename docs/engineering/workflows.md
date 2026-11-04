@@ -2,62 +2,56 @@
 
 ## Development loop
 
-1. Read `AGENTS.md`, the glossary, relevant ADRs, ticket/spec and owning crate README.
-   Claim the ticket under the [tracker](../agents/issue-tracker.md); follow
-   [orchestration](../agents/orchestration.md) for placement, branching and review.
-2. Research before deciding. Query Context7 first for any library, crate, FFmpeg or
-   API question; fall back to web lookup, then reading upstream source, only when
-   Context7 lacks the answer. Cite checked sources in local
-   evidence; label unavailable facts unverified. Ask the coordinator when a missing
-   fact blocks correctness rather than inventing APIs, versions, limits or results.
-3. Learn core/structure patterns and UX/feature behavior from the maintainer-provided
-   local references listed in the ticket. Inspect consumers, implement one authorized slice and reconcile its owner docs.
-   Freshly read shared files before editing; preserve unrelated changes and keep
-   manifests valid throughout. Admit structure under [standards](standards.md#structural-admission).
-4. Run focused checks, `cargo fmt --all`, then `cargo xtask ci`. Record evidence using
-   [verification](verification.md#reports); obtain independent substantive review
-   and fix findings before delivery. A green build is not runtime acceptance.
+1. **Read** the ticket, its milestone `map.md`, the glossary, ADRs for the area and
+   the README of every crate you touch. Done when you can name the owner of each
+   piece you will change.
+2. **Research** every API, crate, codec or provider fact you rely on: Context7 first,
+   then official docs, then upstream source. Cite sources in your report; ask the
+   coordinator when a missing fact blocks correctness.
+3. **Learn from references** in `.spikes/repos/` (main checkout): structure and core
+   from the core reference, UI/UX and features from the editor references the ticket
+   names. Copy useful code under [copy imports](#copy-imports).
+4. **Implement** one ticket. Reuse the existing owner of any logic; re-read shared
+   files right before editing them and keep other workers' changes intact. Update the
+   owning docs in the same change.
+5. **Verify**: focused tests, `cargo fmt --all`, `cargo xtask ci`, then the evidence
+   [verification](verification.md) asks for. Done when every Verify item has a
+   command and a result.
 
-## Delivery
-
-[Orchestration](../agents/orchestration.md) owns ticket sizing, review and merge steps.
-Use conventional commit subjects and DCO sign-off (`git commit -s`). Merges follow
-[orchestration](../agents/orchestration.md#review-and-merge): self-merge for simple
-tickets, otherwise reviewer merges; fast-forward only. Hosted CI is
-optional and manual-only while private. Before public contributions, add a
-`pull_request` trigger and require signed-off PRs; this grants no visibility change.
+Commits: conventional subject, `git commit -s`.
 
 ## Copy imports
 
-Copy only the ticket's required files from a read-only source. The import commit
-is mechanical: rename our identifiers, remove unused features and provenance/history
-comments, preserve logic. Adapt behavior in separate commits. Both stages pass
-[verification](verification.md#checks), including the local name gate. Do not add
-source notices, names or provenance anywhere; the maintainer clears licensing for
-maintainer-provided references directly with their owners.
+Copy only the files the ticket needs from a read-only reference. First commit:
+mechanical import with our names, unused features removed and provenance comments
+dropped. Later commits: adaptations. Both pass `cargo xtask ci`, including the name
+gate. Copied code carries no source names or notices; the maintainer settles
+licensing with the owners directly.
 
 ## Upgrade policy
 
-Use the latest stable Rust, direct crates, Actions, APIs/models and OS SDK bindings.
-When adding or touching one, look up the current stable release through its official
-registry/releases/docs (`cargo search`, `cargo info`, crates.io, GitHub releases,
-`rustup check`); upgrade copied dependencies too. Record versions in manifests,
-lockfiles, toolchain/workflow configuration, not prose. Report source and result
-under [completion evidence](verification.md#reports). Offline builds cannot prove
-freshness; a lockfile-only `cargo update --verbose` cannot prove direct requirements
-are current. Do not install an extra freshness tool just for CI.
+Use the latest stable Rust, crates, Actions, APIs and models. When adding or
+touching a dependency, look up its current release (`cargo info`, crates.io,
+official releases) and record the lookup in the report; versions live in manifests
+and lockfiles.
 
-`cargo xtask ffmpeg` resolves the latest stable LGPL backend at invocation, logs
-the resolved version and verifies published source checksums when available.
-Do not commit an FFmpeg version/hash manifest. This makes builds non-reproducible;
-retain the resolved sources and build receipt with each distributed binary.
-Security backports follow [ADR 0002](../adr/0002-desktop-media-and-time.md).
-Windows source builds require MSYS2 CLANG64 (x64) or CLANGARM64 (arm64), Bash,
-Make, CMake, Ninja, pkg-config, NASM and the matching Clang/LLVM tools on PATH;
-run provisioning on the matching Windows architecture. Rust retains its MSVC
-application toolchain; provisioning installs compatible import libraries.
+Replace in place: one version of every path, superseded code deleted in the same
+change. A persisted-format change bumps the schema version and refuses older files
+with a typed error; user data is never deleted.
 
-Choose the best current design and replace in place. Remove superseded paths;
-keep no dual versions, legacy shims, deprecated paths or backward compatibility.
-For pre-release persisted-format changes, bump the schema version and refuse
-older stores with a typed error. Never delete user data to resolve incompatibility.
+Accepted third-party limitations are documented, not patched. The one exception is
+an upstream crash or security fix not yet released: backport it as a removable
+patch per [ADR 0002](../adr/0002-desktop-media-and-time.md).
+
+## FFmpeg provisioning
+
+`cargo xtask ffmpeg` builds the latest stable LGPL FFmpeg from verified source and
+logs the resolved version; keep the sources and receipt with every distributed
+binary. Windows builds need MSYS2 CLANG64 (x64) or CLANGARM64 (arm64) with Bash,
+Make, CMake, Ninja, pkg-config, NASM and matching Clang/LLVM, run on the matching
+architecture; Rust keeps its MSVC toolchain.
+
+## Hosted CI
+
+Manual-only while the repo is private. Before accepting public contributions, add a
+`pull_request` trigger and require signed-off PRs.

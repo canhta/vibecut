@@ -1,19 +1,16 @@
 # Documentation
 
-| Need | Authoritative owner |
+| Owner | Facts |
 |---|---|
-| Scope and priorities | [Requirements](product/requirements.md) |
-| Crate map, dependencies and contracts | [Architecture](engineering/architecture.md) |
-| Source safety, timing and structure | [Standards](engineering/standards.md) |
-| Checks, fixtures and evidence | [Verification](engineering/verification.md) |
-| Development, copy imports and upgrades | [Workflows](engineering/workflows.md) |
-| Licensing, assets and privacy | [Open-source policy](engineering/open-source.md) |
-| Product vocabulary | [Glossary](../GLOSSARY.md) |
-| Decision rationale | [ADRs](adr/README.md) |
-| Multi-agent roles, placement, dispatch, review and merge | [Orchestration](agents/orchestration.md) |
-| Local tasks | [Issue tracker](agents/issue-tracker.md) |
-| Domain documentation conventions | [Domain docs](agents/domain.md) |
+| [Requirements](product/requirements.md) | Principles, scope, providers, languages |
+| [Architecture](engineering/architecture.md) | Crates, dependency edges, contracts, media and time |
+| [Standards](engineering/standards.md) | Rust safety, structure, errors, logging, time and text |
+| [Workflows](engineering/workflows.md) | Ticket loop, research, copy imports, upgrades, commits |
+| [Verification](engineering/verification.md) | Checks, tests, fixtures, evidence, reports |
+| [Open-source policy](engineering/open-source.md) | Licences, FFmpeg distribution, assets, model weights, privacy |
+| [Orchestration](agents/orchestration.md) | Agent roles, tiers, dispatch, review, merge, cleanup |
+| [Issue tracker](agents/issue-tracker.md) | Ticket files, header, queries |
+| [Glossary](../GLOSSARY.md), [ADRs](adr/README.md) | Domain terms; decision rationale |
 
-Each fact has one owner: change it there and link elsewhere. Write terse English;
-omit dates, history, status and changelog prose from owner docs. Edit in place or
-delete obsolete content. ADRs retain rationale; owner docs define current contracts.
+Owner docs state current contracts in terse English: change a fact at its owner and
+link to it elsewhere. Rationale and history belong in ADRs.

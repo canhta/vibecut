@@ -1,130 +1,83 @@
 # Architecture
 
-## Boundaries
-
-The core runs headless: no window, display server, UI toolkit or direct platform
-API is needed for editing, tests or CLI execution. Apps assemble concrete adapters;
-`media` alone owns FFmpeg FFI. AI adapters obey [privacy](open-source.md#privacy).
-The desktop composition root uses egui and wgpu. See [decisions](../adr/README.md).
-
 ## Crate map
 
-Planned layout; admit each crate only with its first working ticket. Cargo metadata
-records admitted members; table names are Cargo package names. Allowed
-dependencies are direct workspace edges, including optional, target-specific,
-build and dev dependencies;
-absence means forbidden.
-External dependencies still require boundary and [license](open-source.md#licensing)
-review. `cargo xtask layers` reads this table, rejects unknown members and edges,
-and passes with only `xtask`. `xtask` is tooling, with no product dependencies.
+The core runs headless: editing, tests and the CLI need no window or UI toolkit.
+Apps compose concrete adapters; the desktop app uses egui and wgpu. Admit each crate
+with its first working ticket. `cargo xtask layers` enforces this table: an edge not
+listed is forbidden (all dependency kinds count).
 
-| Package | Path | Responsibility | Allowed workspace dependencies |
+| Package | Path | Owns | May depend on |
 |---|---|---|---|
-| time | crates/time | Tick time, rational rates, source ranges | - |
-| media | crates/media | Safe FFmpeg media I/O, probe, demux/mux, decode/encode, hardware acceleration, conversion and speech-audio preparation | time |
-| project | crates/project | Timeline model, validation and project persistence | time, media, captions |
-| captions | crates/captions | Transcript/cue model, segmentation, mapping, SRT/VTT | time |
+| time | crates/time | Ticks, rational rates, source ranges | - |
+| media | crates/media | Safe FFmpeg I/O: probe, demux/mux, decode/encode, hardware acceleration, conversion, speech-audio preparation | time |
+| project | crates/project | Timeline model, validation, persistence, atomic file writes | time, media, captions |
+| captions | crates/captions | Transcript and cue model, segmentation, mapping, language profiles, SRT/VTT | time |
 | text | crates/text | Unicode shaping and rasterization | - |
-| render | crates/render | CPU compositor, caption overlay, audio mix and export execution; injected codecs | time, media, project, captions, text |
-| ai | crates/ai | Provider interfaces, capabilities, consent/cost policy and transcription/alignment/translation adapters | time, media, captions |
-| engine | crates/engine | Session, commands, history, jobs/cache and processing orchestration; adapter selection | time, media, project, captions, text, render, ai |
-| vibecut-cli | apps/vibecut-cli | Headless command adapter and composition | engine, media, ai |
-| vibecut | apps/vibecut | Desktop UI, device playback, GPU adapter, presentation/preferences and composition | engine, media, project, captions, text, render, ai |
+| render | crates/render | CPU compositor, caption overlay, audio mix, export execution | time, media, project, captions, text |
+| ai | crates/ai | Provider interfaces, capabilities, consent and cost, AI adapters | time, media, captions |
+| engine | crates/engine | Session, commands, history, jobs, cache, adapter selection | time, media, project, captions, text, render, ai |
+| vibecut-cli | apps/vibecut-cli | Headless command adapter | engine, media, ai |
+| vibecut | apps/vibecut | Desktop UI, playback, wgpu compositor, preferences | engine, media, project, captions, text, render, ai |
 
-Dependencies point from apps through engine to domain/processing crates and time.
-`media` owns the FFmpeg backend and exposes safe packet, frame, decoder, encoder
-and muxing interfaces. Render consumes those interfaces. The desktop app owns the
-optional wgpu compositor adapter; render owns its device-free interface and CPU
-reference, shared by preview and export. Domain crates exclude egui/wgpu and
-platform/codec dependencies; only `media` admits FFmpeg and codec FFI. Update this table
-in the same change as an admitted responsibility or edge. App tickets add actual
-app members to the root manifest; do not create empty app crates in advance.
+Only `media` links FFmpeg. Render's CPU compositor is the reference shared by preview
+and export; the app owns the optional wgpu adapter behind render's interface. Update
+this table in the same change that adds a responsibility or edge.
 
-## Contracts and commands
+## Contracts
 
-Planned public contracts; implementation tickets reconcile final names here and
-in the [glossary](../../GLOSSARY.md), without creating a second model owner.
+Names here and in the [glossary](../../GLOSSARY.md) match the code; the owner crate's
+README holds the details.
 
-| Contract | Owner | Required meaning |
+| Contract | Owner | Meaning |
 |---|---|---|
-| SourceAsset | media | Validated source identity, absolute path, full-content hash and persistable probe; see [media contract](../../crates/media/README.md#source-identity) |
-| Project | project | Immutable validated timeline snapshot and candidate commit seam, versioned persistence and atomic-file writer; see [project contract](../../crates/project/README.md) |
+| SourceAsset | media | Validated source identity, path, content hash, persistable probe |
+| Project | project | Immutable validated timeline snapshot, versioned persistence |
 | SourceRange | time | Nonempty half-open `[start, end)` in source ticks |
-| Transcript | captions | Stable segments, optional word ranges/confidence and identified source-unit spans with raw/NFC/display correspondence; provider/model/settings fingerprint |
-| Cue | captions | Source range, source-language text and per-language text with per-language edit flags and translation reference; preserve user edits unless explicitly commanded |
-| EditMapping | captions | Pure source-to-output segments; a range may yield several intersections; preserve source identity/edit flags with deterministic fragment identity; rebuild from source |
-| Job | engine | Identity, kind, input fingerprint, bounded progress/stage, cancellation, typed failure and checkpoint |
-| Session / commands | engine | Own Project/history; typed interface plus `execute(command_id, params) -> Result<Outcome>` |
-| Codec interfaces | media | Reference-counted packets/frames, rational time bases, decode/encode/flush, seek and typed unsupported input; FFmpeg owns codec selection and priming |
-| ExportSettings / execution | render | Immutable project snapshot, output range/settings and injected codecs/compositor; execution reports progress/cancellation without owning an engine Job |
-| Provider interfaces | ai | Transcriber, Aligner and Translator; capabilities per model/mode/language, validated results, request-scoped consent and cost estimate |
-| LanguageProfile | captions | Language data lookup with generic fallback; callers pass resolved rules/fonts to processing modules |
+| Transcript | captions | Stable segments, optional word and token timing with raw/NFC/display correspondence, provider fingerprint |
+| Cue | captions | Source range and per-language text with edit flags; user edits survive unless a command overrides them |
+| EditMapping | captions | Pure source-to-output segments; one source range may appear several times |
+| LanguageProfile | captions | Per-language segmentation, punctuation and font fallback data |
+| Job | engine | Identity, input fingerprint, progress, cancellation, typed failure, checkpoint |
+| Session, commands | engine | Owns Project and history; `execute(command_id, params) -> Result<Outcome>` |
+| Codec interfaces | media | Reference-counted packets and frames, rational time bases, decode/encode/flush, seek |
+| Export execution | render | Project snapshot, range and settings in; progress and cancellation hooks out |
+| Provider interfaces | ai | Transcriber, Aligner, Translator; capabilities per model and language; request-scoped consent |
 
-`engine` wraps render/AI/media execution in its Job runner; processing crates
-never import engine or create competing Job, retry, checkpoint or cache protocols.
-Pass cancellation/progress hooks into execution; engine retains scheduling, retry
-budgets and promotion of completed outputs. Apps inject concrete adapters;
-media selects codec implementations by capability, preferring hardware with software fallback.
-An absent encoder returns `Unsupported`; decoding support does not imply encoding support.
-The project persistence module owns reusable atomic-file writes; app preferences
-reuse that implementation while retaining their own schema. Desktop composition
-may consume captions profiles and text font resolution directly; these dependencies
-do not move processing or command policy into widgets.
+**Jobs.** Engine wraps all media, render and AI execution in its job runner and
+owns scheduling, retries, checkpoints and caches. Processing crates receive
+progress and cancellation hooks and never build their own.
 
-AI's offline execution seam is documented in [its crate contract](../../crates/ai/README.md).
-It accepts absolute source-sample audio windows, returns validated recognition with
-explicit missing timing, and converts timed segments to captions' Transcript. Captions owns validated
-raw/NFC/display correspondence and source unit identity; AI converts source samples
-once and retains character, syllable, grapheme and token layers, including raw UTF-8
-subword fragments and missing unit timing. Same-language display variants use
-explicit phrase correspondence; translations never reuse source word timing. Configuration is versioned and location-tagged; consent binds the
-provider, operation, content, languages, text and source window. Cost bounds are
-per invocation; engine retains aggregate retry/chunk budget accounting.
+**Commands.** Every project edit is an engine command with a stable ID, label,
+parameter schema and enabled predicate. UI, CLI, MCP and plugins all dispatch
+through the same registry. Commands validate, then commit all-or-nothing; a batch
+is one undo step and continuous drags merge. Presentation state and preferences
+stay in the app.
 
-AI owns upload consent, estimates and provider/model capability validation once;
-transcription, translation and clip suggestion adapters reuse that policy. Consent
-covers the provider, payload and operation; retries/chunks stay within that scope.
-LanguageProfile lookup and caption-text normalization belong to captions; text consumes
-plain layout/font inputs without depending on captions. Text still validates its
-own public input; validation of a different trust seam is not duplicate logic.
-
-Everything that edits a project is a command. UI, CLI and future MCP/plugins use
-the same engine registry: stable ID, label, parameter schema and enabled predicate.
-Validate before committing; commands are all-or-nothing. A batch is one undo step;
-continuous drags merge by key. UI-local presentation state stays in the app.
-The app action registry maps gestures
-to engine command IDs or app-local actions; command schemas and enabled predicates
-remain engine-owned. App preferences have one app-owned store, separate from Project
-and project undo history. Headless callers need no widget, device or preference state.
+**AI.** `ai` owns consent, cost estimates and capability checks once for every
+operation; consent binds provider, operation, content and languages, and retries
+stay inside it. Captions owns text correspondence and unit identity; translations
+never reuse source word timing. Details: [ai README](../../crates/ai/README.md).
 
 ## Languages
 
-Languages are data, not code paths. Identify them with BCP 47 tags (`vi`, `en`,
-`zh-Hans`, `zh-Hant`). Each supported language has one language profile owned by
-`captions`: segmentation rules (grapheme or character limits, reading speed, line
-breaking, optional word segmenter), punctuation, and default font fallback chain
-consumed by `text`. Provider adapters declare supported languages as capabilities and own
-provider-specific decode settings as language-profile data.
-Adding a language adds a profile, fonts and optional UI catalog; core crates never
-`match` on a fixed language list. Unknown tags fall back to a generic profile.
+Languages are data. Tags are BCP 47 (`vi`, `en`, `zh-Hans`, `zh-Hant`); each has one
+LanguageProfile in `captions` (segmentation limits, reading speed, line breaking,
+punctuation, font fallback). Provider adapters declare language capabilities and
+keep per-language decode settings as profile data. Adding a language adds a
+profile, fonts and an optional UI catalog; unknown tags use the generic profile.
 
 ## Media and time
 
-FFmpeg owns probe, demux, decode, encode, mux, scale/convert and audio resampling.
-`media` owns the FFmpeg FFI/unsafe boundary; AI admits only the
-[Whisper callback boundary](../adr/0003-whisper-callback-boundary.md). Shared LGPL-only libraries include the
-platform hardware backends and admitted WebM components. Codec availability is
-queried at runtime; missing hardware/encoders return typed errors or select a
-software implementation at the same requested quality. Keep hardware frames on
-the GPU until CPU pixels are required, enable frame/slice threading, and process
-bounded streaming buffers. Seek to a preceding keyframe and decode forward for
-frame-accurate cuts. Use stream copy when the requested operation permits it.
+FFmpeg does probe, demux, decode, encode, mux, scaling and resampling. Codec
+availability is queried at runtime; a missing encoder returns `Unsupported` or a
+same-quality software path. Hardware frames stay on the GPU until CPU pixels are
+needed. Frame-accurate cuts seek to the preceding keyframe and decode forward;
+stream copy is used whenever the operation allows it.
 
-Probe reports the detected format, presentation duration when known, rational
-stream time bases, codec parameters (including priming), and optional frame
-counts/VFR evidence. FFmpeg applies container edits once; demuxed packet and frame
-PTS are presentation coordinates in those time bases. Unknown metadata stays
-unknown rather than being inferred from a filename or nominal frame rate.
+Probe reports format, duration when known, rational time bases, codec parameters
+including priming, and frame-count or VFR evidence; unknown stays unknown. Packet
+and frame PTS are presentation coordinates.
 
-Time uses 254_016_000_000 integer ticks per second, exact for admitted rational
-frame and audio sample rates. [Standards](standards.md#time-and-text) own conversions.
+Time is 254_016_000_000 integer ticks per second, exact for admitted frame and
+sample rates; conversions follow [standards](standards.md#time-and-text).
