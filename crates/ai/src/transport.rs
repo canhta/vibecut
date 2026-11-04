@@ -133,7 +133,7 @@ impl Default for UreqTransport {
 }
 impl HttpTransport for UreqTransport {
     fn send(&self, request: HttpRequest) -> Result<HttpResponse, Error> {
-        let mut outbound = self.agent.post(&request.url);
+        let mut outbound = self.agent.request(request.method, &request.url);
         for (name, value) in &request.headers {
             outbound = outbound.set(name, value);
         }
