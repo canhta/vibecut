@@ -76,9 +76,10 @@ allocator overhead require separate RSS measurement.
 ## Platforms and evidence
 
 The runtime PNG supplies the window/Dock icon. Windows build resources embed the
-committed ICO using embed-resource. `packaging/macos-app.sh` creates a development
-`.app` with ICNS and plist wiring; release FFmpeg bundling, signing, notarization,
-Windows runtime and native layered appearance verification belong to packaging.
+committed ICO using embed-resource. `packaging/macos-app.sh` stages a macOS installer with ICNS, plist wiring and
+bundled FFmpeg; [native distribution](../../packaging/README.md) owns both OS
+installers, source receipts, signing, replacement and runtime verification. Native
+layered appearance and clean-host release acceptance require separate evidence.
 The shared FFmpeg dependency is LGPL; see the [distribution and replacement
 rules](../../docs/engineering/open-source.md#ffmpeg-distribution).
 
