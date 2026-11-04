@@ -19,6 +19,17 @@
 
 ## Design language
 
+### Screens
+
+Separate screens, not panels of one editor:
+
+- **Home:** create project, entry cards for the AI flows (long video to shorts,
+  agent prompt), projects grid; left rail with library.
+- **Editor:** the layout below; the agent chat opens as a docked panel at the
+  bottom right, beside the timeline.
+- **Long video to shorts:** its own window: upload or pick a video, review the
+  suggested clips, then export them or open one in the editor.
+
 ### Layout grid
 
 - Baseline window 1440x900; minimum 1280x800.
