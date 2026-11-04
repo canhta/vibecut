@@ -5,7 +5,6 @@
 <p align="center">
   <img src="https://img.shields.io/badge/license-MIT-08C?style=flat" alt="License: MIT" />
   <img src="https://img.shields.io/badge/macOS%20%7C%20Windows-4493F8?style=flat-square" alt="Platforms: macOS and Windows" />
-  <img src="https://img.shields.io/badge/status-pre--alpha-E5A00D?style=flat-square" alt="Status: pre-alpha" />
 </p>
 
 <p align="center">
@@ -93,17 +92,21 @@ hardware-accelerated encoding.
 - **Text-based editing:** remove pauses and filler words, cut by editing the transcript.
 - **Your choice of AI:** local models, or OpenAI, Anthropic and ElevenLabs; nothing is uploaded until you approve.
 
-**Also in the box:** autosave and crash recovery, proxy editing, keyboard shortcuts,
-English and Vietnamese UI, headless CLI. Later: dubbing, plugins, scripting, and MCP
-so coding agents can drive the editor.
+**Also in the box:** autosave and crash recovery, proxy editing, customizable
+keyboard shortcuts, English and Vietnamese UI, AI dubbing, a headless CLI, plugins
+and scripting, and an MCP server plus agent skill so Claude Code, Codex and other
+coding agents can drive the editor.
 
 ## Install
 
-Pre-alpha: no release yet. Build from source:
+Download the latest macOS or Windows build from
+[Releases](https://github.com/canhta/vibecut/releases/latest).
+
+Build from source:
 
 ```sh
-cargo xtask ffmpeg   # once: builds the latest LGPL FFmpeg
-cargo xtask ci
+cargo xtask ffmpeg   # builds the latest LGPL FFmpeg
+cargo run --release -p vibecut
 ```
 
 ## Contributing
