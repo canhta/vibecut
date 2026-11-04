@@ -705,9 +705,11 @@ fn submit_clip(
                 mark_video(&published)?;
             }
             for (index, stage) in staged {
-                context.progress(JobStage::Publish, 1.0)?;
-                stage.publish()?;
-                mark_subtitle(&published, index)?;
+                // A retry may skip render and its publication fence entirely.
+                context.commit_publication(|| {
+                    stage.publish()?;
+                    mark_subtitle(&published, index)
+                })?;
             }
             Ok(Vec::new())
         },

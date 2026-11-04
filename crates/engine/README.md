@@ -629,7 +629,8 @@ this short already published (checking that they still exist), republishes only
 missing ones under the original overwrite policy, and re-renders the MP4 when it
 is gone. It never treats an artifact this batch did not publish as skippable, so a
 sidecar failure after the MP4 retries without deleting the MP4 or granting blanket
-overwrite permission.
+overwrite permission. Sidecar-only retries seal cancellation through the same
+job publication fence: a late cancel cannot relabel committed output as Cancelled.
 
 Missing or changed sources return render's typed `Unavailable` entries per job; the
 batch does not silently degrade without `allow_degraded`. Storage exhaustion and

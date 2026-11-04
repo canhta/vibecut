@@ -1186,6 +1186,15 @@ fn retry_resumes_after_sidecar_publication_failure_without_overwrite() {
     let previous = batch.job_id(0);
     let retried = batch.retry(&mut runner, 0).unwrap();
     assert_ne!(Some(retried), previous);
+    // Pump once to launch the sidecar-only retry, then wait without harvesting
+    // completion. A cancel after publication must not relabel it Cancelled.
+    runner.tick().unwrap();
+    let deadline = Instant::now() + Duration::from_secs(120);
+    while !subtitle.is_file() {
+        assert!(Instant::now() < deadline, "retry sidecar was not published");
+        std::thread::sleep(Duration::from_millis(1));
+    }
+    batch.cancel(0).unwrap();
     let snapshots = wait(&batch, &mut runner);
     assert_eq!(
         snapshots[0].state,
