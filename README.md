@@ -23,7 +23,7 @@ Planned scope:
 - Editable project files
 - Headless CLI
 - AI short clips from long videos
-- English → Vietnamese / bilingual subtitles (auto transcribe, translate, edit, burn-in or SRT/VTT)
+- Vietnamese, English and Chinese subtitles: auto transcribe, translate between any pair, bilingual, edit, burn-in or SRT/VTT
 - Plugins, scripting and MCP later
 
 ## Status

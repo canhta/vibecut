@@ -47,7 +47,7 @@ in the [glossary](../../GLOSSARY.md), without creating a second model owner.
 | SourceAsset | media | Identity, path, content hash and probe: duration, codec/size/rational rate/VFR and audio rate/channels/start offset |
 | SourceRange | time | Nonempty half-open `[start, end)` in source ticks |
 | Transcript | captions | Stable segments and optional word ranges/confidence; provider/model/settings fingerprint |
-| Cue | captions | Source range, EN/VI text, edit flags and translation reference; preserve user edits unless explicitly commanded |
+| Cue | captions | Source range, source-language text and per-language text with per-language edit flags and translation reference; preserve user edits unless explicitly commanded |
 | EditMapping | captions | Pure source-to-output segments; drop outside cues, clamp intersections, preserve identity/edit flags; rebuild from source |
 | Job | engine | Identity, kind, input fingerprint, bounded progress/stage, cancellation, typed failure and checkpoint |
 | Session / commands | engine | Own Project/history; typed API plus `execute(command_id, params) -> Result<Outcome>` |
