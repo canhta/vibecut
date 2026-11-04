@@ -37,9 +37,19 @@ impl std::fmt::Debug for SaveReceipt {
 /// against arbitrary applications that race the final check and replacement.
 pub struct WriterLease {
     path: PathBuf,
-    _lock: File,
+    _lock: WriterLock,
     identity: LockIdentity,
     baseline: Option<ContentHash>,
+}
+
+struct WriterLock(File);
+impl Drop for WriterLock {
+    fn drop(&mut self) {
+        // Closing alone retains flock while another thread's spawned child has
+        // an inherited descriptor open before exec. Release at the owner boundary,
+        // including acquisition failures after the lock succeeds.
+        let _ = self.0.unlock();
+    }
 }
 impl WriterLease {
     /// Nonblocking acquisition, including a not-yet-created save-as destination.
@@ -95,13 +105,13 @@ impl WriterLease {
             return Err(Error::Unsupported("writer lock is not a regular file"));
         }
         let mut first_attempt = true;
-        loop {
+        let lock = loop {
             if cancelled() || (!first_attempt && Instant::now() >= deadline) {
                 return Err(Error::Busy);
             }
             first_attempt = false;
             match lock.try_lock() {
-                Ok(()) => break,
+                Ok(()) => break WriterLock(lock),
                 Err(TryLockError::WouldBlock) if Instant::now() < deadline => {
                     std::thread::sleep(
                         deadline
@@ -112,11 +122,11 @@ impl WriterLease {
                 Err(TryLockError::WouldBlock) => return Err(Error::Busy),
                 Err(TryLockError::Error(error)) => return Err(Error::LockUnavailable(error)),
             }
-        }
+        };
         if cancelled() {
             return Err(Error::Busy);
         }
-        let identity = held_identity(&lock, &lock_path).map_err(Error::LockUnavailable)?;
+        let identity = held_identity(&lock.0, &lock_path).map_err(Error::LockUnavailable)?;
         let mut writer = Self {
             path,
             _lock: lock,
@@ -284,4 +294,31 @@ fn held_identity(_: &File, _: &Path) -> std::io::Result<LockIdentity> {
 #[cfg(not(any(unix, windows)))]
 fn named_identity(_: &Path, _: &fs::Metadata) -> std::io::Result<LockIdentity> {
     Err(std::io::ErrorKind::Unsupported.into())
+}
+
+#[cfg(all(test, unix))]
+mod tests {
+    #[test]
+    #[allow(clippy::unwrap_used, reason = "synthetic lease descriptor fixture")]
+    fn dropping_lease_releases_lock_while_duplicate_descriptor_remains_open() {
+        let root = tempfile::tempdir().unwrap();
+        let path = root.path().join("project.vibecut");
+        let writer = super::WriterLease::acquire(&path).unwrap();
+        // A subprocess spawned on another thread can inherit this same open
+        // file description until exec. Clone pins it deterministically here.
+        let inherited = writer._lock.0.try_clone().unwrap();
+        assert!(matches!(
+            super::WriterLease::acquire(&path),
+            Err(crate::Error::Busy)
+        ));
+        drop(writer);
+        let replacement = super::WriterLease::acquire(&path).unwrap();
+        drop(inherited);
+        assert!(matches!(
+            super::WriterLease::acquire(&path),
+            Err(crate::Error::Busy)
+        ));
+        drop(replacement);
+        assert!(super::WriterLease::acquire(&path).is_ok());
+    }
 }

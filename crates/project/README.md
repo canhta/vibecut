@@ -136,7 +136,9 @@ runtime behavior remain unverified. Callers serialize writes to one target.
 
 `WriterLease::acquire(path)` takes an exclusive OS lock on the stable adjacent
 `.FILENAME.lock` before reading project bytes. Retain the lease from load through
-editing and saving. `WriterLease::load` refuses a changed baseline; use standalone
+editing and saving. Dropping the lease explicitly unlocks before closing its
+handle, so descriptors inherited during concurrent subprocess creation cannot
+extend its lock lifetime. `WriterLease::load` refuses a changed baseline; use standalone
 `load` only for read-only ingestion. `acquire_wait(path, duration, cancelled)` polls
 contention and returns `Busy` on timeout/cancellation. Native filesystem calls are
 not interruptible, so cancellation is checked between them. Unsupported lock paths,
