@@ -5,6 +5,13 @@ use crate::{
 use ffmpeg_next as ff;
 use time::{FrameRate, Rounding};
 
+#[derive(Clone, Copy, Debug, Default)]
+pub enum EncodePreference {
+    #[default]
+    Hardware,
+    Software,
+}
+
 #[derive(Clone, Debug)]
 pub struct VideoEncoderSettings {
     pub width: u32,
@@ -40,7 +47,14 @@ pub struct VideoEncoder {
     last_pts: Option<i64>,
 }
 impl VideoEncoder {
-    pub fn new(mut settings: VideoEncoderSettings, first: &VideoFrame) -> Result<Self> {
+    pub fn new(settings: VideoEncoderSettings, first: &VideoFrame) -> Result<Self> {
+        Self::with_preference(settings, first, EncodePreference::Hardware)
+    }
+    pub fn with_preference(
+        mut settings: VideoEncoderSettings,
+        first: &VideoFrame,
+        preference: EncodePreference,
+    ) -> Result<Self> {
         init()?;
         if settings.width == 0
             || settings.height == 0
@@ -82,6 +96,13 @@ impl VideoEncoder {
         };
         let mut last = None;
         for &(name, hardware) in candidates {
+            if matches!(preference, EncodePreference::Software)
+                && hardware
+                && name != "h264_videotoolbox"
+                && !settings.webm
+            {
+                continue;
+            }
             let Some(codec) = ff::encoder::find_by_name(name) else {
                 continue;
             };
@@ -131,6 +152,9 @@ impl VideoEncoder {
             match name {
                 "h264_videotoolbox" => {
                     options.set("allow_sw", "1");
+                    if matches!(preference, EncodePreference::Software) {
+                        options.set("require_sw", "1");
+                    }
                     encoder.set_quality(usize::from(settings.quality) * 118);
                     encoder.set_flags(ff::codec::Flags::GLOBAL_HEADER | ff::codec::Flags::QSCALE);
                 }
@@ -181,7 +205,7 @@ impl VideoEncoder {
                         scaler: None,
                         finished: false,
                         last_pts: None,
-                        name: if hardware {
+                        name: if hardware && !matches!(preference, EncodePreference::Software) {
                             name.to_owned()
                         } else {
                             format!("{name} (software)")
@@ -190,6 +214,9 @@ impl VideoEncoder {
                 }
                 Err(e) => last = Some(e),
             }
+        }
+        if !settings.webm && matches!(preference, EncodePreference::Software) {
+            return Err(MediaError::EncoderUnavailable { source: last });
         }
         Err(last.map_or(
             MediaError::Unsupported("no available encoder for target quality"),

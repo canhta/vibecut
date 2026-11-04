@@ -222,7 +222,8 @@ finite 0..=1 and accepts at most one update per configured interval (minimum 10 
 including stage changes); `tick` forwards only changed snapshots. Terminal and
 cancelling states bypass this progress limit. Slow consumers cannot block workers.
 Cancellation is checked before execution and again before promoting success;
-late partial success is discarded. Failure never yields a JobOutput.
+late partial success is discarded, except after an explicit publication fence.
+Failure never yields a JobOutput.
 
 Only Transcribe/Translate jobs in the Network class retry NetworkTransient or an
 `ai::Error` whose `is_transient` is true (network, provider server, rate limit or structured schema failure); an
@@ -300,9 +301,8 @@ reuses valid chunks, computes missing ones and assembles a final output only aft
 all chunks succeed. The public-job crash test commits chunk one, unwinds before
 whole-result completion, reopens the cache and proves only chunk two executes.
 This establishes checkpoint mechanics with synthetic bytes, not speech-boundary
-quality for long recordings. Encoded-export resume is unsupported here; /09 owns
-independently finalized segments, manifest/codec/source identity and timestamp
-validation. No partial encoded file is treated as a reusable artifact.
+quality for long recordings. Encoded-export resume returns a typed refusal in render; independently finalized
+segments and manifest/codec/source identity would be required before admitting it. No partial encoded file is treated as a reusable artifact.
 
 Observed verification: `tests/jobs.rs` exercises actual submission with controlled
 cancellation, failure, unwind, oversized results, deterministic retry/backoff,
@@ -451,3 +451,21 @@ schema repair on the selected provider, shared attempt limits, exact selection a
 context, protected and force-retranslated targets, unselected cue preservation,
 atomic hostile-ID refusal, undo and stale-result rejection. These establish the
 execution contract, not human translation quality or actual cloud billing.
+
+## Render execution
+
+`submit_export` submits an immutable Project snapshot to the real runner's export
+resource class. JobContext implements render's ExecutionHooks, leasing actual
+buffers from the shared ByteBudget under decoded/compositor/export owners rather
+than declaring a second whole-job charge. Render owns pixels/audio/output policy;
+the job never applies editing commands. Completion returns an empty JobOutput
+after the complete file has been atomically published.
+
+Stages expose admission, rendering, mixing, encoding, finalization and publication.
+`begin_publish` atomically changes running to publication, or refuses an earlier
+cancel. Publishing is visible without progress throttling. A late cancel cannot
+turn a committed output into Cancelled; shutdown joins that publication. Before
+the fence, cancellation/unwind drops staging and preserves the existing file.
+`tests/export_jobs.rs` verifies both sides of the fence with real production
+render hooks, worker unwind, persistent-cache reclamation and oversized-frame
+refusal before allocation. This does not establish crash/power-loss durability.

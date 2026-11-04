@@ -78,6 +78,23 @@ pub(super) fn thread_and_limits(ctx: &mut ff::codec::context::Context) {
     }
 }
 
+pub(super) fn decoder_bounds(
+    context: &mut ff::codec::context::Context,
+    pixels: Option<u64>,
+    samples: Option<u64>,
+) {
+    // SAFETY: exclusively borrowed unopened codec context. Callers validate these
+    // small positive bounds; FFmpeg checks them before allocating decoded storage.
+    unsafe {
+        if let Some(pixels) = pixels {
+            (*context.as_mut_ptr()).max_pixels = pixels as i64;
+        }
+        if let Some(samples) = samples {
+            (*context.as_mut_ptr()).max_samples = samples as i64;
+        }
+    }
+}
+
 pub(super) fn frame_color(f: &ff::frame::Video) -> ColorInfo {
     // SAFETY: the owned frame is live; only initialized scalar metadata is read.
     unsafe {
@@ -92,6 +109,10 @@ pub(super) fn frame_color(f: &ff::frame::Video) -> ColorInfo {
     }
 }
 
+pub(super) fn premultiplied_alpha(frame: &ff::frame::Video) -> bool {
+    // SAFETY: owned live frame; read initialized scalar alpha metadata only.
+    unsafe { (*frame.as_ptr()).alpha_mode == ff::ffi::AVAlphaMode::AVALPHA_MODE_PREMULTIPLIED }
+}
 pub(super) fn is_hardware(f: &ff::frame::Video) -> bool {
     // SAFETY: the frame owns its buffer references. No GPU plane is dereferenced.
     unsafe { !(*f.as_ptr()).hw_frames_ctx.is_null() }
@@ -381,6 +402,25 @@ impl Scaler {
             Ok(result)
         }
     }
+    pub fn rgba(&mut self, source: &ff::frame::Video) -> Result<ff::frame::Video> {
+        let mut output = ff::frame::Video::empty();
+        output.set_width(source.width());
+        output.set_height(source.height());
+        output.set_format(ff::format::Pixel::RGBA);
+        copy_props(source, &mut output)?;
+        // SAFETY: distinct live frames, source dimensions were admitted by decode;
+        // swscale allocates checked output and reads source color/range/chroma tags.
+        unsafe {
+            (*output.as_mut_ptr()).colorspace = ff::ffi::AVColorSpace::AVCOL_SPC_RGB;
+            (*output.as_mut_ptr()).color_range = ff::ffi::AVColorRange::AVCOL_RANGE_JPEG;
+            let result =
+                ff::ffi::sws_scale_frame(self.0.as_ptr(), output.as_mut_ptr(), source.as_ptr());
+            if result < 0 {
+                return Err(error("convert straight RGBA")(ff::Error::from(result)));
+            }
+        }
+        Ok(output)
+    }
     pub fn scale(
         &mut self,
         source: &ff::frame::Video,
@@ -622,4 +662,71 @@ pub(super) fn resample_chunks(
         count = 0;
     }
     Ok(frames)
+}
+
+pub(super) fn rgba_buffer(width: u32, height: u32, color: ColorInfo) -> Result<ff::frame::Video> {
+    let mut frame = ff::frame::Video::empty();
+    frame.set_width(width);
+    frame.set_height(height);
+    frame.set_format(ff::format::Pixel::RGBA);
+    let mut context = ff::codec::context::Context::new();
+    encoder_color(&mut context, color)?;
+    encoder_frame_metadata(&context, &mut frame);
+    // SAFETY: positive bounded dimensions checked by caller, new uniquely owned
+    // frame. Check allocation before using safe slice helpers that assume success.
+    unsafe {
+        if frame.as_ptr().is_null() {
+            return Err(MediaError::TooLarge("RGBA frame"));
+        }
+        (*frame.as_mut_ptr()).alpha_mode = ff::ffi::AVAlphaMode::AVALPHA_MODE_STRAIGHT;
+        let status = av_frame_get_buffer(frame.as_mut_ptr(), 32);
+        if status < 0 {
+            return Err(error("allocate RGBA frame")(ff::Error::from(status)));
+        }
+    }
+    Ok(frame)
+}
+
+pub(super) fn display_transform_required(parameters: &ff::codec::Parameters) -> Result<bool> {
+    // SAFETY: Parameters retains its codec metadata and side-data buffers for this
+    // borrow. Validate counts, pointers and the fixed 9*i32 matrix size before
+    // reading, and never expose an FFI pointer to the compositor.
+    unsafe {
+        let pointer = parameters.as_ptr();
+        if pointer.is_null() {
+            return Err(MediaError::Invalid("codec parameters"));
+        }
+        let p = &*pointer;
+        let ratio = p.sample_aspect_ratio;
+        if ratio.num < 0
+            || ratio.den < 0
+            || (ratio.num > 0 && (ratio.den == 0 || ratio.num != ratio.den))
+        {
+            return Ok(true);
+        }
+        if p.nb_coded_side_data < 0
+            || p.nb_coded_side_data > 256
+            || (p.nb_coded_side_data > 0 && p.coded_side_data.is_null())
+        {
+            return Err(MediaError::TooLarge("codec side data"));
+        }
+        let data = ff::ffi::av_packet_side_data_get(
+            p.coded_side_data,
+            p.nb_coded_side_data,
+            ff::ffi::AVPacketSideDataType::AV_PKT_DATA_DISPLAYMATRIX,
+        );
+        if data.is_null() {
+            return Ok(false);
+        }
+        if (*data).data.is_null() || (*data).size < 36 {
+            return Err(MediaError::Invalid("display matrix"));
+        }
+        let identity = [65536i32, 0, 0, 0, 65536, 0, 0, 0, 1073741824];
+        for (index, expected) in identity.into_iter().enumerate() {
+            if (*data).data.add(index * 4).cast::<i32>().read_unaligned() != expected {
+                return Ok(true);
+            }
+        }
+        Ok(false)
+    }
 }

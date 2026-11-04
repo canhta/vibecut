@@ -1,6 +1,7 @@
 use crate::{CodecParameters, MediaError, Packet, Result, StreamInfo, TimeBase, error, init};
 use ffmpeg_next as ff;
 use std::fs::File;
+use std::io::{Seek, Write};
 use std::path::Path;
 
 #[derive(Clone, Copy, Debug)]
@@ -30,9 +31,9 @@ impl Muxer {
     pub fn create(path: impl AsRef<Path>, container: Container) -> Result<Self> {
         Self::new(File::create(path)?, container)
     }
-    pub fn new(writer: File, container: Container) -> Result<Self> {
+    pub fn new(writer: impl MuxSink + 'static, container: Container) -> Result<Self> {
         init()?;
-        let sink = writer.try_clone()?;
+        let sink = writer.sync_file()?;
         let io = ff::format::context::StreamIo::from_write_seek(writer)
             .map_err(error("allocate output I/O"))?;
         let output = ff::format::output_to_stream(io, None, Some(container.name()))
@@ -118,5 +119,16 @@ impl Muxer {
             .map_err(error("write container trailer"))?;
         self.sink.sync_all()?;
         Ok(())
+    }
+}
+
+/// Seekable output supplied by the publication owner. The returned File is used
+/// only to sync after FFmpeg has finalized the trailer; writes use this sink.
+pub trait MuxSink: Write + Seek + Send {
+    fn sync_file(&self) -> std::io::Result<File>;
+}
+impl MuxSink for File {
+    fn sync_file(&self) -> std::io::Result<File> {
+        self.try_clone()
     }
 }

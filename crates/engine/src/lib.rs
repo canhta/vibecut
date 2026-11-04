@@ -7,10 +7,12 @@ pub mod recovery;
 pub mod translation;
 pub use budget::{BudgetSnapshot, ByteBudget, ByteLease, ByteOwner};
 mod edit;
+mod rendering;
 mod session;
 pub use commands::{
     Command, CommandSpec, CreatedId, FieldSchema, Move, NewItem, Outcome, registry,
 };
+pub use rendering::submit_export;
 pub use session::{JobTarget, Session};
 
 /// Safe diagnostic categories: never include parameter values or user text.
@@ -42,6 +44,8 @@ pub enum EditError {
     StaleResult,
     #[error("corrupt cache entry skipped")]
     CacheCorrupt,
+    #[error("render execution failed")]
+    Render(#[from] render::Error),
     #[error("AI execution failed")]
     Ai(#[from] ai::Error),
     #[error("job/cache IO failed")]

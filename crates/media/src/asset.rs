@@ -5,6 +5,7 @@ use std::{
     collections::BTreeSet,
     fmt,
     fs::File,
+    io::Read,
     path::{Path, PathBuf},
 };
 use time::{FrameRate, Tick};
@@ -28,8 +29,34 @@ impl ContentHash {
         Self(*blake3::hash(bytes).as_bytes())
     }
     pub fn read(path: &Path) -> Result<Self> {
+        Self::read_with_cancel(path, || false)
+    }
+    /// Stream the content identity in 64 KiB chunks, checking cancellation before
+    /// every read and before returning the complete digest.
+    pub fn read_with_cancel(path: &Path, cancelled: impl Fn() -> bool) -> Result<Self> {
+        if cancelled() {
+            return Err(MediaError::Cancelled);
+        }
         let mut hasher = blake3::Hasher::new();
-        hasher.update_reader(File::open(path)?)?;
+        let mut file = File::open(path)?;
+        let mut bytes = [0u8; 65536];
+        loop {
+            if cancelled() {
+                return Err(MediaError::Cancelled);
+            }
+            let count = file.read(&mut bytes)?;
+            if count == 0 {
+                break;
+            }
+            hasher.update(
+                bytes
+                    .get(..count)
+                    .ok_or(MediaError::Invalid("hash read size"))?,
+            );
+        }
+        if cancelled() {
+            return Err(MediaError::Cancelled);
+        }
         Ok(Self(*hasher.finalize().as_bytes()))
     }
 }

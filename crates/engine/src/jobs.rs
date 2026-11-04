@@ -6,7 +6,7 @@ use std::{
     panic::{AssertUnwindSafe, catch_unwind},
     sync::{
         Arc, Mutex,
-        atomic::{AtomicBool, Ordering},
+        atomic::{AtomicU8, Ordering},
     },
     thread::{self, JoinHandle},
     time::{Duration, Instant},
@@ -47,6 +47,12 @@ pub enum JobStage {
     Translate,
     Assemble,
     Process,
+    Admit,
+    Render,
+    Mix,
+    Encode,
+    Finalize,
+    Publish,
     Backoff,
     Complete,
 }
@@ -55,6 +61,7 @@ pub enum JobState {
     Queued,
     Running,
     Cancelling,
+    Publishing,
     Backoff,
     Completed,
     Cancelled,
@@ -76,13 +83,15 @@ impl Clock for SystemClock {
     }
 }
 #[derive(Clone, Default)]
-pub struct CancelToken(Arc<AtomicBool>);
+pub struct CancelToken(Arc<AtomicU8>);
 impl CancelToken {
     pub fn cancel(&self) {
-        self.0.store(true, Ordering::Release);
+        let _ = self
+            .0
+            .compare_exchange(0, 1, Ordering::AcqRel, Ordering::Acquire);
     }
     pub fn cancelled(&self) -> bool {
-        self.0.load(Ordering::Acquire)
+        self.0.load(Ordering::Acquire) == 1
     }
 }
 #[derive(Clone)]
@@ -132,12 +141,32 @@ struct Progress {
 }
 #[derive(Clone)]
 pub struct JobContext {
+    budget: ByteBudget,
     cancel: CancelToken,
     progress: Arc<Mutex<Progress>>,
     clock: Arc<dyn Clock>,
     interval: Duration,
 }
 impl JobContext {
+    pub(crate) fn memory_budget(&self) -> &ByteBudget {
+        &self.budget
+    }
+    /// Whether an irreversible publication has closed the cancellation window.
+    pub fn publication_started(&self) -> bool {
+        self.cancel.0.load(Ordering::Acquire) == 2
+    }
+    /// Atomically close cancellation before one irreversible output publication.
+    /// Late cancel requests are ignored; failed publication still returns its error.
+    pub fn begin_publication(&self) -> Result<(), EditError> {
+        match self
+            .cancel
+            .0
+            .compare_exchange(0, 2, Ordering::AcqRel, Ordering::Acquire)
+        {
+            Ok(_) | Err(2) => Ok(()),
+            _ => Err(EditError::Cancelled),
+        }
+    }
     pub fn cancelled(&self) -> bool {
         self.cancel.cancelled()
     }
@@ -315,6 +344,7 @@ impl JobRunner {
         let id = JobId(self.next);
         self.next = self.next.checked_add(1).ok_or(EditError::IdExhausted)?;
         let context = JobContext {
+            budget: self.budget.clone(),
             cancel: CancelToken::default(),
             progress: Arc::new(Mutex::new(Progress {
                 stage: JobStage::Starting,
@@ -414,11 +444,17 @@ impl JobRunner {
                 .lock()
                 .map_err(|_| EditError::JobPoisoned)?;
             let s = &mut running.pending.snapshot;
+            if running.pending.context.publication_started() && s.state != JobState::Publishing {
+                s.state = JobState::Publishing;
+                s.stage = JobStage::Publish;
+                s.progress = 1.0;
+                self.events.insert(s.id, s.clone());
+            }
             if running.pending.context.cancelled() && s.state != JobState::Cancelling {
                 s.state = JobState::Cancelling;
                 self.events.insert(s.id, s.clone());
             }
-            if s.stage != p.stage || s.progress != p.value {
+            if s.state != JobState::Publishing && (s.stage != p.stage || s.progress != p.value) {
                 s.stage = p.stage;
                 s.progress = p.value;
                 self.events.insert(s.id, s.clone());

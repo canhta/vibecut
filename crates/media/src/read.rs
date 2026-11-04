@@ -202,7 +202,6 @@ pub struct VideoReader {
     packets: PacketReader,
     decoder: crate::VideoDecoder,
     stream: StreamInfo,
-    pending: std::collections::VecDeque<crate::VideoFrame>,
     last_pts: Option<Tick>,
     minimum: Option<Tick>,
     recovering: bool,
@@ -224,7 +223,6 @@ impl VideoReader {
             packets,
             decoder,
             stream,
-            pending: std::collections::VecDeque::new(),
             last_pts: None,
             minimum: None,
             recovering: false,
@@ -238,50 +236,59 @@ impl VideoReader {
     pub fn seek(&mut self, target: Tick) -> Result<()> {
         self.packets.seek(target)?;
         self.decoder.reset();
-        self.pending.clear();
         self.minimum = Some(target);
         self.last_pts = None;
         self.recovering = false;
         self.finished = false;
         Ok(())
     }
+    /// Decode from the preceding keyframe without suppressing earlier PTS. The
+    /// compositor selects the frame whose presentation interval contains target.
+    pub fn seek_keyframe(&mut self, target: Tick) -> Result<()> {
+        self.seek(target)?;
+        self.minimum = None;
+        Ok(())
+    }
     pub fn next_frame(&mut self) -> Result<Option<crate::VideoFrame>> {
         loop {
-            if let Some(frame) = self.pending.pop_front() {
-                let pts = frame.pts()?.ok_or(MediaError::Unsupported(
-                    "video presentation timestamp unavailable",
-                ))?;
-                if self.minimum.is_some_and(|min| pts < min)
-                    || (self.recovering && self.last_pts.is_some_and(|last| pts <= last))
-                {
-                    continue;
+            let result = (|| {
+                if let Some(frame) = self.decoder.pull_frame()? {
+                    let pts = frame.pts()?.ok_or(MediaError::Unsupported(
+                        "video presentation timestamp unavailable",
+                    ))?;
+                    if self.minimum.is_some_and(|min| pts < min)
+                        || (self.recovering && self.last_pts.is_some_and(|last| pts <= last))
+                    {
+                        return Ok(None);
+                    }
+                    self.last_pts = Some(pts);
+                    self.minimum = None;
+                    self.recovering = false;
+                    return Ok(Some(Some(frame)));
                 }
-                self.last_pts = Some(pts);
-                self.minimum = None;
-                self.recovering = false;
-                return Ok(Some(frame));
-            }
-            if self.finished {
-                return Ok(None);
-            }
-            let result = match self.packets.next_packet()? {
-                Some(packet) if packet.stream() == self.stream.index => {
-                    self.decoder.decode(&packet)
+                if self.finished {
+                    return Ok(Some(None));
                 }
-                Some(_) => continue,
-                None => {
-                    self.finished = true;
-                    self.decoder.flush()
+                match self.packets.next_packet()? {
+                    Some(packet) if packet.stream() == self.stream.index => {
+                        self.decoder.push_packet(&packet)?
+                    }
+                    Some(_) => {}
+                    None => {
+                        self.finished = true;
+                        self.decoder.finish_input()?;
+                    }
                 }
-            };
+                Ok(None)
+            })();
             match result {
-                Ok(frames) => self.pending.extend(frames),
+                Ok(Some(frame)) => return Ok(frame),
+                Ok(None) => {}
                 Err(_) if !self.software => {
                     let target = self.last_pts.or(self.minimum).unwrap_or(Tick::ZERO);
                     self.packets.seek(target)?;
                     self.decoder =
                         crate::VideoDecoder::new(&self.stream, crate::DecodePreference::Software)?;
-                    self.pending.clear();
                     self.software = true;
                     self.finished = false;
                     self.recovering = true;

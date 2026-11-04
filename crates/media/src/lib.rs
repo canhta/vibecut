@@ -19,14 +19,18 @@ pub use audio_extract::{
     AudioChunk, SPEECH_SAMPLE_RATE, SpeechExtractSettings, extract_speech_audio,
     extract_speech_audio_with, extract_speech_audio_with_cancel,
 };
-pub use decode::{AudioDecoder, AudioFrame, DecodePreference, VideoDecoder, VideoFrame};
-pub use encode::{AudioEncoder, AudioEncoderSettings, VideoEncoder, VideoEncoderSettings};
+pub use decode::{
+    AudioDecoder, AudioFrame, DecodePreference, RgbaConverter, VideoDecoder, VideoFrame,
+};
+pub use encode::{
+    AudioEncoder, AudioEncoderSettings, EncodePreference, VideoEncoder, VideoEncoderSettings,
+};
 pub use ffmpeg_next::format::Pixel as PixelFormat;
 pub use model::{
     AudioInfo, CodecParameters, ColorInfo, Packet, Probe, StreamInfo, StreamKind, TimeBase,
     VideoInfo,
 };
-pub use mux::{Container, Muxer};
+pub use mux::{Container, MuxSink, Muxer};
 pub use read::{PacketReader, VideoReader, probe};
 pub use resample::{AudioResampler, AudioSampleFormat};
 
@@ -42,6 +46,11 @@ pub enum MediaError {
     NoAudioStream,
     #[error("unsupported media capability: {0}")]
     Unsupported(&'static str),
+    #[error("requested software H.264 encoder is unavailable")]
+    EncoderUnavailable {
+        #[source]
+        source: Option<ffmpeg_next::Error>,
+    },
     #[error("media limit exceeded: {0}")]
     TooLarge(&'static str),
     #[error("media operation cancelled")]

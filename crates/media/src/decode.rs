@@ -19,6 +19,42 @@ pub struct VideoFrame {
     presentation: Option<Tick>,
 }
 impl VideoFrame {
+    /// Straight RGBA8 at the caller's explicit transfer/color and output PTS.
+    /// Positive dimensions, at most 2^26 pixels; exactly width*height*4 bytes.
+    pub fn from_rgba8(
+        width: u32,
+        height: u32,
+        pts: Tick,
+        color: ColorInfo,
+        pixels: &[u8],
+    ) -> Result<Self> {
+        init()?;
+        let count = u64::from(width) * u64::from(height);
+        if width == 0
+            || height == 0
+            || count > 1 << 26
+            || count.checked_mul(4) != Some(pixels.len() as u64)
+        {
+            return Err(MediaError::Invalid("RGBA geometry"));
+        }
+        let mut inner = ffi::rgba_buffer(width, height, color)?;
+        let stride = ffi::cpu_stride(&inner, 0)?;
+        let row = width as usize * 4;
+        for (dst, src) in inner
+            .data_mut(0)
+            .chunks_mut(stride)
+            .zip(pixels.chunks_exact(row))
+        {
+            dst.get_mut(..row)
+                .ok_or(MediaError::Invalid("RGBA stride"))?
+                .copy_from_slice(src);
+        }
+        Ok(Self {
+            inner,
+            time_base: TimeBase::new(1, 1)?,
+            presentation: Some(pts),
+        })
+    }
     pub fn pts(&self) -> Result<Option<Tick>> {
         if let Some(pts) = self.presentation {
             return Ok(Some(pts));
@@ -48,6 +84,9 @@ impl VideoFrame {
     }
     pub fn bit_depth(&self) -> Option<u8> {
         ffi::frame_bit_depth(&self.inner)
+    }
+    pub fn premultiplied_alpha(&self) -> bool {
+        ffi::premultiplied_alpha(&self.inner)
     }
     pub fn color(&self) -> ColorInfo {
         ffi::frame_color(&self.inner)
@@ -109,6 +148,18 @@ impl VideoDecoder {
         let mut context = ff::codec::context::Context::from_parameters(stream.parameters.0.clone())
             .map_err(error("create video decoder"))?;
         ffi::thread_and_limits(&mut context);
+        let info = stream
+            .video
+            .as_ref()
+            .ok_or(MediaError::Invalid("video metadata"))?;
+        let area = u64::from(info.width) * u64::from(info.height);
+        if area == 0 || area > 1 << 26 {
+            return Err(MediaError::TooLarge("video dimensions"));
+        }
+        let pixels =
+            (u64::from(info.width).div_ceil(64) * 64 * u64::from(info.height).div_ceil(64) * 64)
+                .min(1 << 26);
+        ffi::decoder_bounds(&mut context, Some(pixels), None);
         // Hardware setup is added at the narrow FFI seam; initialization failures
         // return to this same decoder's software path without changing timing.
         if preference == DecodePreference::Hardware {
@@ -123,6 +174,7 @@ impl VideoDecoder {
                     ff::codec::context::Context::from_parameters(stream.parameters.0.clone())
                         .map_err(error("create software decoder"))?;
                 ffi::thread_and_limits(&mut software);
+                ffi::decoder_bounds(&mut software, Some(pixels), None);
                 let mut builder = software.decoder();
                 builder.set_packet_time_base(stream.time_base.rational());
                 builder.video().map_err(error("open software decoder"))?
@@ -136,46 +188,57 @@ impl VideoDecoder {
             finished: false,
         })
     }
-    pub fn decode(&mut self, packet: &Packet) -> Result<Vec<VideoFrame>> {
+    /// Send one access unit after draining pull_frame to None. This pull seam
+    /// lets sequential consumers retain only their actual look-ahead frames.
+    pub fn push_packet(&mut self, packet: &Packet) -> Result<()> {
         if self.finished || packet.stream() != self.stream {
             return Err(MediaError::Invalid("decoder state or stream"));
         }
         self.decoder
             .send_packet(&packet.inner)
-            .map_err(error("send video packet"))?;
-        self.receive()
+            .map_err(error("send video packet"))
     }
-    fn receive(&mut self) -> Result<Vec<VideoFrame>> {
-        let mut frames = Vec::new();
-        loop {
-            let mut f = ff::frame::Video::empty();
-            match self.decoder.receive_frame(&mut f) {
-                Ok(()) => {
-                    if f.width() == 0
-                        || f.height() == 0
-                        || u64::from(f.width()) * u64::from(f.height()) > 1 << 26
-                    {
-                        return Err(MediaError::TooLarge("decoded video dimensions"));
-                    }
-                    if frames.len() >= 64 {
-                        return Err(MediaError::TooLarge("frames per access unit"));
-                    }
-                    frames.push(VideoFrame::from_inner(f, self.time_base));
+    pub fn pull_frame(&mut self) -> Result<Option<VideoFrame>> {
+        let mut frame = ff::frame::Video::empty();
+        match self.decoder.receive_frame(&mut frame) {
+            Ok(()) => {
+                if frame.width() == 0
+                    || frame.height() == 0
+                    || u64::from(frame.width()) * u64::from(frame.height()) > 1 << 26
+                {
+                    return Err(MediaError::TooLarge("decoded video dimensions"));
                 }
-                Err(e) if drained(e) => break,
-                Err(e) => return Err(error("receive video frame")(e)),
+                Ok(Some(VideoFrame::from_inner(frame, self.time_base)))
             }
+            Err(e) if drained(e) => Ok(None),
+            Err(e) => Err(error("receive video frame")(e)),
         }
-        Ok(frames)
     }
-    pub fn flush(&mut self) -> Result<Vec<VideoFrame>> {
+    pub fn finish_input(&mut self) -> Result<()> {
         if self.finished {
-            return Ok(Vec::new());
+            return Ok(());
         }
         self.finished = true;
         self.decoder
             .send_eof()
-            .map_err(error("flush video decoder"))?;
+            .map_err(error("flush video decoder"))
+    }
+    pub fn decode(&mut self, packet: &Packet) -> Result<Vec<VideoFrame>> {
+        self.push_packet(packet)?;
+        self.receive()
+    }
+    fn receive(&mut self) -> Result<Vec<VideoFrame>> {
+        let mut frames = Vec::new();
+        while let Some(frame) = self.pull_frame()? {
+            if frames.len() >= 64 {
+                return Err(MediaError::TooLarge("frames per access unit"));
+            }
+            frames.push(frame);
+        }
+        Ok(frames)
+    }
+    pub fn flush(&mut self) -> Result<Vec<VideoFrame>> {
+        self.finish_input()?;
         self.receive()
     }
     pub fn reset(&mut self) {
@@ -279,6 +342,15 @@ impl AudioDecoder {
         let mut context = ff::codec::context::Context::from_parameters(stream.parameters.0.clone())
             .map_err(error("create audio decoder"))?;
         ffi::thread_and_limits(&mut context);
+        let channels = stream
+            .audio
+            .as_ref()
+            .ok_or(MediaError::Invalid("audio metadata"))?
+            .channels;
+        if channels == 0 || channels > 32 {
+            return Err(MediaError::TooLarge("audio channels"));
+        }
+        ffi::decoder_bounds(&mut context, None, Some(65536 * u64::from(channels)));
         let mut builder = context.decoder();
         builder.set_packet_time_base(stream.time_base.rational());
         Ok(Self {
@@ -288,48 +360,82 @@ impl AudioDecoder {
             finished: false,
         })
     }
-    pub fn decode(&mut self, packet: &Packet) -> Result<Vec<AudioFrame>> {
+    pub fn push_packet(&mut self, packet: &Packet) -> Result<()> {
         if self.finished || packet.stream() != self.stream {
             return Err(MediaError::Invalid("decoder state or stream"));
         }
         self.decoder
             .send_packet(&packet.inner)
-            .map_err(error("send audio packet"))?;
-        self.receive()
+            .map_err(error("send audio packet"))
     }
-    fn receive(&mut self) -> Result<Vec<AudioFrame>> {
-        let mut frames = Vec::new();
-        loop {
-            let mut inner = ff::frame::Audio::empty();
-            match self.decoder.receive_frame(&mut inner) {
-                Ok(()) => {
-                    if inner.samples() > 65_536 || inner.channels() > 32 || frames.len() >= 64 {
-                        return Err(MediaError::TooLarge("audio output"));
-                    }
-                    frames.push(AudioFrame {
-                        inner,
-                        time_base: self.time_base,
-                        presentation: None,
-                    });
+    pub fn pull_frame(&mut self) -> Result<Option<AudioFrame>> {
+        let mut inner = ff::frame::Audio::empty();
+        match self.decoder.receive_frame(&mut inner) {
+            Ok(()) => {
+                if inner.samples() > 65536 || inner.channels() > 32 {
+                    return Err(MediaError::TooLarge("audio output"));
                 }
-                Err(e) if drained(e) => break,
-                Err(e) => return Err(error("receive audio frame")(e)),
+                Ok(Some(AudioFrame {
+                    inner,
+                    time_base: self.time_base,
+                    presentation: None,
+                }))
             }
+            Err(e) if drained(e) => Ok(None),
+            Err(e) => Err(error("receive audio frame")(e)),
         }
-        Ok(frames)
     }
-    pub fn flush(&mut self) -> Result<Vec<AudioFrame>> {
+    pub fn finish_input(&mut self) -> Result<()> {
         if self.finished {
-            return Ok(Vec::new());
+            return Ok(());
         }
         self.finished = true;
         self.decoder
             .send_eof()
-            .map_err(error("flush audio decoder"))?;
+            .map_err(error("flush audio decoder"))
+    }
+    pub fn decode(&mut self, packet: &Packet) -> Result<Vec<AudioFrame>> {
+        self.push_packet(packet)?;
+        self.receive()
+    }
+    fn receive(&mut self) -> Result<Vec<AudioFrame>> {
+        let mut frames = Vec::new();
+        while let Some(frame) = self.pull_frame()? {
+            if frames.len() >= 64 {
+                return Err(MediaError::TooLarge("audio output"));
+            }
+            frames.push(frame);
+        }
+        Ok(frames)
+    }
+    pub fn flush(&mut self) -> Result<Vec<AudioFrame>> {
+        self.finish_input()?;
         self.receive()
     }
     pub fn reset(&mut self) {
         self.decoder.flush();
         self.finished = false;
+    }
+}
+
+/// Reusable frame-aware conversion; produces CPU RGBA, retaining the alpha convention and without changing
+/// transfer or primaries. Render owns conversion into its linear working space.
+pub struct RgbaConverter {
+    scaler: ffi::Scaler,
+}
+impl RgbaConverter {
+    pub fn new() -> Result<Self> {
+        init()?;
+        Ok(Self {
+            scaler: ffi::Scaler::new()?,
+        })
+    }
+    pub fn convert(&mut self, frame: &VideoFrame) -> Result<VideoFrame> {
+        let cpu = frame.download()?;
+        Ok(VideoFrame {
+            inner: self.scaler.rgba(&cpu.inner)?,
+            time_base: frame.time_base,
+            presentation: frame.presentation,
+        })
     }
 }

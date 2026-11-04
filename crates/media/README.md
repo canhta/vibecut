@@ -21,7 +21,9 @@ state, not a malformed project. `relink` accepts a new absolute path only if its
 full content hash matches, preserving asset identity and probed metadata.
 `ContentHash::from_bytes` hashes already bounded content using the same BLAKE3
 identity as `ContentHash::read`, reused by project publication receipts.
-Presence alone does not prove unchanged content. Project persistence retains
+Presence alone does not prove unchanged content. `ContentHash::read_with_cancel`
+checks cooperative cancellation throughout streaming full-content hashing.
+Project persistence retains
 these media-owned contracts; it does not recreate probe or asset models.
 
 ## Entry points and timing
@@ -33,15 +35,23 @@ these media-owned contracts; it does not recreate probe or asset models.
 - `TimeBase`: positive rational seconds per unit, converted through `time` with
   checked integer arithmetic and explicit rounding. FFmpeg applies container
   edits, codec priming and packet/frame reordering once. Never reapply an offset.
-- `Packet`: retained FFmpeg buffers with original PTS/DTS/duration. `try_clone`
-  retains buffers without copying payloads. `CodecParameters` owns its extradata.
+- `Packet`: `shifted` rebases checked timestamps without changing payloads;
+  retained FFmpeg buffers with original PTS/DTS/duration. `try_clone`
+  retains buffers without copying payloads. `CodecParameters` owns its extradata;
+  `display_transform_required` checks sample aspect ratio and display matrix so a
+  pixel consumer can refuse unsupported presentation instead of losing it.
 - `VideoDecoder` / `AudioDecoder`: whole access units in decode order; drain with
-  `flush`. Source-rate audio retains its channel layout and presentation clock.
+  `flush`. `push_packet`, `pull_frame` and `finish_input` support single-frame
+  consumption without collecting a decoder burst. Batch APIs retain the 64-frame
+  cap. Decoder native image/sample ceilings are installed before opening codecs.
+  Source-rate audio retains its channel layout and presentation clock.
 - `VideoReader`: hardware-preferred sequential frames, preceding-keyframe seek
   plus decode-forward selection, and one software recovery after a decode error.
   Recovery seeks and suppresses already emitted PTS rather than duplicating frames.
 - `VideoFrame`: retains CPU/GPU buffers; CPU access requires explicit `download`.
-  `with_pts` assigns an output tick without copying pixels. `PixelFormat` describes
+  `with_pts` assigns an output tick without copying pixels. `from_rgba8` checks
+  allocation and assigns straight-alpha metadata; `RgbaConverter` preserves frame
+  transfer/primaries/alpha convention for the compositor boundary. `PixelFormat` describes
   layout, and plane access supplies checked indexes/strides. Negative strides
   require normalization. No raw hardware pointers leave the crate.
 - `VideoEncoder`: constant-rate frames on the requested output grid, explicit
@@ -55,7 +65,8 @@ these media-owned contracts; it does not recreate probe or asset models.
   the filter. A discontinuity requires a new converter. `AudioEncoder` retains source rate,
   converts sample format, and uses a bounded FFmpeg FIFO for AAC/Opus frame sizes.
   FFmpeg owns codec delay and final padding.
-- `Muxer`: MP4/MOV/WebM over a seekable file, stream-copy parameters or encoded
+- `Muxer`: MP4/MOV/WebM over a seekable `MuxSink` (plain File or the project's
+  bounded streaming writer), stream-copy parameters or encoded
   parameters, timestamp rescaling and trailer/fsync error propagation. Use a
   temporary output and promote it only after successful `finish`; render/engine
   own cancellation, final-file replacement and restart policy.
@@ -98,7 +109,9 @@ Those mappings are not evidence of equal perceptual quality across platforms.
 Hardware preference uses VideoToolbox on macOS and D3D11VA/QSV on Windows.
 Encoding tries platform hardware and then the platform software path (VideoToolbox
 `allow_sw`, or Media Foundation software), retaining requested settings. Missing
-capability is an error. Windows device/quality behavior and live device-loss
+capability is an error. `EncodePreference::Software` requires the platform software
+path (VideoToolbox `require_sw` on macOS), without changing quality settings.
+Windows device/quality behavior and live device-loss
 recovery remain unverified; they require the Windows hardware ticket.
 
 ## Speech upload chunks
@@ -178,3 +191,9 @@ time excludes decoding/mux time; export wall time includes both. Cache state and
 hardware scheduling affect results; these two samples are not a general latency
 or quality guarantee. Fixture generation: ffmpeg `testsrc2`, 60 s at 1080p30,
 libx264 ultrafast CRF 18, yuv420p with BT.709 tags. No media is committed.
+
+Observed on the task /09 M1 Pro: explicit software H.264 cannot open a
+VideoToolbox software encoder. This returns `media::MediaError::EncoderUnavailable`
+with the native source retained and leaves existing output intact. Software
+quality is unverified on this machine. Software H.264 fallback requires separate
+codec/licence admission; selecting software never silently selects hardware.

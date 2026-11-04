@@ -203,6 +203,27 @@ returned while the complete new snapshot remains. Autosave directories cannot
 be symlinks. A crash can leave a temporary file, an extra complete snapshot, or
 an incomplete pruning pass; no partial snapshot is promoted.
 
+## Streaming output
+
+`atomic::StreamingStage::new(destination, overwrite, max_bytes)` creates a private
+same-directory `.vibecut-export-*` temporary file. `writer()` yields the sole
+bounded seekable `StreamingWriter`, including media's mux-sink interface. Writes
+and seeks reject positions beyond the authorized maximum before touching bytes.
+`finalize()` syncs and restores prior permissions, yielding `FinalizedStage`;
+only that type exposes `publish()`. `Overwrite::Refuse` uses atomic no-clobber
+publication, including a competing destination created after admission.
+`Replace` is explicit authorization to replace the target at publication.
+
+Dropping or failing a stage removes its temporary file and leaves existing bytes
+untouched. `AtomicFs` injects sync/publication failure for boundary tests. A crash
+may leave an orphan temporary file; it is never promoted, reused or automatically
+swept. The caller may present cleanup after restart. Destination symlinks and
+nonregular files are refused. Callers serialize writes and close their mux writer
+before finalizing; cancellation arbitration belongs to their execution owner.
+Parent-directory sync remains best effort after commit: there is no fallible
+post-publication result. Hardware power loss, racing parent replacement and
+Windows runtime behavior remain unverified.
+
 ## Verification
 
 `cargo xtask ci` runs model/invariant tables, serde and file round trips across

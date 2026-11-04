@@ -53,6 +53,13 @@ impl TimeBase {
 /// Owned codec parameters including extradata and codec priming; never a borrowed
 /// stream pointer. Used unchanged for stream copy or to construct a codec.
 pub struct CodecParameters(pub(crate) ff::codec::Parameters);
+impl CodecParameters {
+    /// True for non-square pixels or a nonidentity display matrix. Consumers must
+    /// apply that transform or explicitly refuse compositing; stream copy retains it.
+    pub fn display_transform_required(&self) -> Result<bool> {
+        crate::ffi::display_transform_required(&self.0)
+    }
+}
 impl Clone for CodecParameters {
     fn clone(&self) -> Self {
         Self(self.0.clone())
@@ -166,6 +173,23 @@ impl Packet {
             inner: crate::ffi::reference_packet(&self.inner)?,
             time_base: self.time_base,
         })
+    }
+    /// Retain encoded bytes and shift presentation/decode timestamps by exact
+    /// ticks. Used only after the export owner validates safe keyframe boundaries.
+    pub fn shifted(&self, delta: Tick) -> Result<Self> {
+        let offset = self.time_base.units(delta, Rounding::Nearest)?;
+        let shift = |value: Option<i64>| {
+            value
+                .map(|v| {
+                    v.checked_add(offset)
+                        .ok_or(MediaError::TooLarge("packet timestamp shift"))
+                })
+                .transpose()
+        };
+        let mut packet = self.try_clone()?;
+        packet.inner.set_pts(shift(self.inner.pts())?);
+        packet.inner.set_dts(shift(self.inner.dts())?);
+        Ok(packet)
     }
     pub fn stream(&self) -> usize {
         self.inner.stream()

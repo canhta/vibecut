@@ -1,0 +1,879 @@
+#![allow(clippy::unwrap_used, clippy::panic, clippy::indexing_slicing)]
+mod common;
+use common::*;
+use render::*;
+use std::{
+    ffi::OsStr,
+    path::Path,
+    sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+    },
+};
+use time::{Tick, TimeRange};
+fn generate(path: &Path, args: &[&str]) {
+    let mut all: Vec<&OsStr> = args.iter().map(OsStr::new).collect();
+    all.push(path.as_os_str());
+    ffmpeg(&all);
+}
+fn video_project(path: &Path) -> project::Project {
+    let asset = media::SourceAsset::import(media::AssetId(1), path.to_owned()).unwrap();
+    let mut d = project::Project::empty(project::ProjectId(0), "".into())
+        .unwrap()
+        .into_data();
+    let s = asset
+        .probe()
+        .streams
+        .iter()
+        .find_map(|s| s.video.as_ref())
+        .unwrap();
+    d.canvas.width = s.width;
+    d.canvas.height = s.height;
+    d.canvas.fps = asset
+        .probe()
+        .streams
+        .iter()
+        .find_map(|s| s.frame_rate)
+        .unwrap();
+    let duration = asset.probe().duration.unwrap();
+    d.assets.push(asset);
+    d.timeline.tracks.push(project::Track {
+        id: project::TrackId(0),
+        name: "".into(),
+        kind: project::TrackKind::Video,
+        muted: false,
+        hidden: false,
+        locked: false,
+        items: vec![project::Item {
+            id: project::ItemId(0),
+            source_asset: Some(media::AssetId(1)),
+            source_range: TimeRange::new(Tick::ZERO, duration).unwrap(),
+            start: Tick::ZERO,
+            content: project::ItemParams::Video(project::VideoParams {
+                source_audio_enabled: true,
+            }),
+        }],
+    });
+    project::Project::new(d).unwrap()
+}
+fn av_fixture(path: &Path) {
+    generate(
+        path,
+        &[
+            "-f",
+            "lavfi",
+            "-i",
+            "testsrc2=size=128x96:rate=30:duration=1",
+            "-f",
+            "lavfi",
+            "-i",
+            "sine=frequency=997:sample_rate=44100:duration=1",
+            "-c:v",
+            "libx264",
+            "-pix_fmt",
+            "yuv420p",
+            "-g",
+            "30",
+            "-bf",
+            "2",
+            "-color_primaries",
+            "bt709",
+            "-color_trc",
+            "bt709",
+            "-colorspace",
+            "bt709",
+            "-c:a",
+            "aac",
+            "-ac",
+            "1",
+            "-shortest",
+        ],
+    );
+}
+fn pcm(path: &Path, filter: Option<&str>) -> Vec<f32> {
+    let mut command = tool_command("ffmpeg");
+    command.args(["-v", "error", "-i"]).arg(path);
+    let filter = filter.map_or_else(
+        || "pan=mono|c0=c0".to_owned(),
+        |f| format!("{f},pan=mono|c0=c0"),
+    );
+    command.args(["-af", &filter]);
+    let out = command
+        .args(["-f", "f32le", "-ar", "48000", "-ac", "1", "-"])
+        .output()
+        .unwrap();
+    assert!(out.status.success());
+    out.stdout
+        .as_chunks::<4>()
+        .0
+        .iter()
+        .map(|b| f32::from_le_bytes(*b))
+        .collect()
+}
+#[test]
+fn exact_non_keyframe_cut_preserves_pcm_sync_and_frame_bounds() {
+    if !tools() {
+        return;
+    }
+    let dir = tempfile::tempdir().unwrap();
+    let input = dir.path().join("源 video.mp4");
+    av_fixture(&input);
+    let p = video_project(&input);
+    let h = Hooks::default();
+    let range = TimeRange::new(tick(12, 30), tick(24, 30)).unwrap();
+    let mut settings = ExportSettings::from_project(&p);
+    settings.mode = ExportMode::Encode;
+    settings.audio_block = 1031;
+    let output = root().join("non-keyframe-cut.mp4");
+    settings.overwrite = project::atomic::Overwrite::Replace;
+    let receipt = export(&p, range, &settings, &output, &h).unwrap();
+    assert_eq!(receipt.video_frames, 12);
+    assert_eq!(receipt.audio_samples, 19200);
+    let info = probe(&output);
+    let duration: f64 = info["format"]["duration"]
+        .as_str()
+        .unwrap()
+        .parse()
+        .unwrap();
+    assert!((duration - 0.4).abs() < 1.0 / 30.0 + 0.0001);
+    let reference = pcm(
+        &input,
+        Some("aresample=48000,atrim=start_sample=19200:end_sample=38400"),
+    );
+    let actual = pcm(&output, None);
+    assert!(actual.len().abs_diff(reference.len()) < 1024);
+    let common = actual.len().min(reference.len());
+    let mut best = (f64::INFINITY, 0i32);
+    for lag in -128i32..=128 {
+        let mut error = 0.0;
+        let mut count = 0;
+        for (n, sample) in reference
+            .iter()
+            .enumerate()
+            .take(common.saturating_sub(256))
+            .skip(256)
+        {
+            let at = n as i64 + i64::from(lag);
+            if at >= 0 && at < actual.len() as i64 {
+                error += f64::from(actual[at as usize] - *sample).powi(2);
+                count += 1;
+            }
+        }
+        let mse = error / count.max(1) as f64;
+        if mse < best.0 {
+            best = (mse, lag);
+        }
+    }
+    assert!(best.1.abs() < 16, "audio offset {} samples", best.1);
+    assert!(best.0 < 0.0002, "PCM MSE {}", best.0);
+    let raw = tool_command("ffmpeg")
+        .args(["-v", "error", "-i"])
+        .arg(&input)
+        .args([
+            "-vf",
+            "select=eq(n\\,12)",
+            "-frames:v",
+            "1",
+            "-f",
+            "rawvideo",
+            "-pix_fmt",
+            "rgba",
+            "-",
+        ])
+        .output()
+        .unwrap();
+    assert!(raw.status.success());
+    let decoded = rgba(&output);
+    assert_eq!(raw.stdout.len(), decoded.len());
+    let mse = raw
+        .stdout
+        .iter()
+        .zip(decoded)
+        .map(|(a, b)| (f64::from(*a) - f64::from(b)).powi(2))
+        .sum::<f64>()
+        / raw.stdout.len() as f64;
+    assert!(mse < 150.0, "first decoded frame MSE {mse}");
+}
+#[test]
+fn resampling_split_trim_offset_and_irregular_blocks_are_identical() {
+    if !tools() {
+        return;
+    }
+    let dir = tempfile::tempdir().unwrap();
+    let mut d = project::Project::empty(project::ProjectId(0), "".into())
+        .unwrap()
+        .into_data();
+    for (n, rate) in [(1, 44100), (2, 48000)] {
+        let path = dir.path().join(format!("impulses-{rate}.wav"));
+        let signal = format!(
+            "aevalsrc=if(eq(n\\,0)+eq(n\\,{})+eq(n\\,24000)\\,0.5\\,0):s={rate}:d=1",
+            rate / 2
+        );
+        generate(&path, &["-f", "lavfi", "-i", &signal, "-c:a", "pcm_f32le"]);
+        d.assets
+            .push(media::SourceAsset::import(media::AssetId(n), path).unwrap());
+        let offset = if n == 1 { tick(103, 48000) } else { Tick::ZERO };
+        let source_in = if n == 1 { tick(123, 44100) } else { Tick::ZERO };
+        let end = tick(1, 1) - source_in;
+        let mut items = vec![project::Item {
+            id: project::ItemId(n * 10),
+            source_asset: Some(media::AssetId(n)),
+            source_range: TimeRange::new(source_in, tick(1, 1)).unwrap(),
+            start: offset,
+            content: project::ItemParams::Audio(project::AudioParams {
+                gain_db: -3.0,
+                muted: false,
+            }),
+        }];
+        if n == 2 {
+            items[0].source_range = TimeRange::new(Tick::ZERO, tick(1, 2)).unwrap();
+            items.push(project::Item {
+                id: project::ItemId(21),
+                source_asset: Some(media::AssetId(2)),
+                source_range: TimeRange::new(tick(1, 2), tick(1, 1)).unwrap(),
+                start: tick(1, 2),
+                content: project::ItemParams::Audio(project::AudioParams {
+                    gain_db: -3.0,
+                    muted: false,
+                }),
+            });
+        }
+        assert!(end > Tick::ZERO);
+        d.timeline.tracks.push(project::Track {
+            id: project::TrackId(n),
+            name: "".into(),
+            kind: project::TrackKind::Audio,
+            muted: false,
+            hidden: false,
+            locked: false,
+            items,
+        });
+    }
+    let p = project::Project::new(d).unwrap();
+    let h = Hooks::default();
+    let mut source = FileSources::default();
+    let whole = mix_audio(&p, 0, 48000, 2, &mut source, &h).unwrap();
+    let mut parts = vec![Vec::new(), Vec::new()];
+    let pattern = [1, 7, 1031, 4093, 5, 23999];
+    let mut at = 0usize;
+    let mut index = 0;
+    while at < 48000 {
+        let n = pattern[index % pattern.len()].min(48000 - at);
+        let b = mix_audio(&p, at as i64, n, 2, &mut source, &h).unwrap();
+        for (dst, src) in parts.iter_mut().zip(b.planes()) {
+            dst.extend_from_slice(src);
+        }
+        at += n;
+        index += 1;
+    }
+    assert_eq!(whole.planes(), parts);
+    assert!(whole.planes()[0].iter().any(|v| *v != 0.0));
+    assert_eq!(whole.planes()[0], whole.planes()[1]);
+}
+#[test]
+fn portrait_center_and_manual_crop_and_missing_source_admission() {
+    if !tools() {
+        return;
+    }
+    let dir = tempfile::tempdir().unwrap();
+    let input = dir.path().join("color bands.mp4");
+    generate(
+        &input,
+        &[
+            "-f",
+            "lavfi",
+            "-i",
+            "color=red:s=192x108:r=30:d=1,drawbox=x=64:y=0:w=64:h=108:color=green:t=fill,drawbox=x=128:y=0:w=64:h=108:color=blue:t=fill",
+            "-c:v",
+            "libx264",
+            "-pix_fmt",
+            "yuv420p",
+            "-color_primaries",
+            "bt709",
+            "-color_trc",
+            "bt709",
+            "-colorspace",
+            "bt709",
+        ],
+    );
+    let p = video_project(&input);
+    let mut s = ExportSettings::from_project(&p);
+    s.render.width = 72;
+    s.render.height = 128;
+    s.include_audio = false;
+    s.overwrite = project::atomic::Overwrite::Replace;
+    let h = Hooks::default();
+    let center = root().join("portrait-center.mp4");
+    export(
+        &p,
+        TimeRange::new(Tick::ZERO, tick(1, 1)).unwrap(),
+        &s,
+        &center,
+        &h,
+    )
+    .unwrap();
+    let bytes = rgba(&center);
+    let pixel = &bytes[(64 * 72 + 36) * 4..][..3];
+    assert!(
+        pixel[1] > pixel[0] * 2 && pixel[1] > pixel[2] * 2,
+        "center {pixel:?}"
+    );
+    s.render.placements.insert(
+        project::ItemId(0),
+        Placement {
+            crop: Rect {
+                x: 2.0 / 3.0,
+                y: 0.0,
+                width: 1.0 / 3.0,
+                height: 1.0,
+            },
+            ..Default::default()
+        },
+    );
+    let manual = root().join("portrait-manual.mp4");
+    export(
+        &p,
+        TimeRange::new(Tick::ZERO, tick(1, 1)).unwrap(),
+        &s,
+        &manual,
+        &Hooks::default(),
+    )
+    .unwrap();
+    let bytes = rgba(&manual);
+    let pixel = &bytes[(64 * 72 + 36) * 4..][..3];
+    assert!(
+        pixel[2] > 200 && pixel[0] < 20 && pixel[1] < 20,
+        "manual {pixel:?}"
+    );
+    let output = dir.path().join("preserve.mp4");
+    std::fs::write(&output, b"previous").unwrap();
+    std::fs::remove_file(&input).unwrap();
+    assert!(matches!(
+        export(
+            &p,
+            TimeRange::new(Tick::ZERO, tick(1, 1)).unwrap(),
+            &s,
+            &output,
+            &Hooks::default()
+        ),
+        Err(Error::Unavailable(_))
+    ));
+    assert_eq!(std::fs::read(&output).unwrap(), b"previous");
+    s.allow_degraded = true;
+    let receipt = export(
+        &p,
+        TimeRange::new(Tick::ZERO, tick(1, 1)).unwrap(),
+        &s,
+        &output,
+        &Hooks::default(),
+    )
+    .unwrap();
+    assert!(!receipt.degraded.is_empty());
+}
+#[test]
+fn changed_hash_and_mid_job_disappearance_refuse_publication() {
+    if !tools() {
+        return;
+    }
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("input.mp4");
+    av_fixture(&path);
+    let p = video_project(&path);
+    let output = dir.path().join("out.mp4");
+    std::fs::write(&output, b"previous").unwrap();
+    let mut s = ExportSettings::from_project(&p);
+    s.mode = ExportMode::Encode;
+    s.overwrite = project::atomic::Overwrite::Replace;
+    let once = Arc::new(AtomicBool::new(false));
+    let input = path.clone();
+    let h = Hooks {
+        event: Some(Arc::new(move |stage| {
+            if stage == Stage::Render && !once.swap(true, Ordering::SeqCst) {
+                std::fs::remove_file(&input)?;
+            }
+            Ok(())
+        })),
+        ..Default::default()
+    };
+    assert!(matches!(
+        export(
+            &p,
+            TimeRange::new(Tick::ZERO, tick(1, 1)).unwrap(),
+            &s,
+            &output,
+            &h
+        ),
+        Err(Error::Unavailable(_))
+    ));
+    assert_eq!(std::fs::read(&output).unwrap(), b"previous");
+    assert_eq!(h.used.load(Ordering::SeqCst), 0);
+    av_fixture(&path);
+    let mut file = std::fs::OpenOptions::new()
+        .append(true)
+        .open(&path)
+        .unwrap();
+    std::io::Write::write_all(&mut file, b"changed content").unwrap();
+    assert!(
+        matches!(export(&p,TimeRange::new(Tick::ZERO,tick(1,1)).unwrap(),&s,&output,&Hooks::default()),Err(Error::Unavailable(v)) if v.iter().any(|e|e.reason==UnavailableReason::Changed))
+    );
+    assert_eq!(std::fs::read(&output).unwrap(), b"previous");
+}
+#[test]
+fn hdr_passthrough_retains_tags_and_unmodified_sdr_video_avoids_encode() {
+    if !tools() {
+        return;
+    }
+    let dir = tempfile::tempdir().unwrap();
+    let hdr = dir.path().join("hdr.mp4");
+    generate(
+        &hdr,
+        &[
+            "-f",
+            "lavfi",
+            "-i",
+            "testsrc2=size=64x48:rate=25",
+            "-frames:v",
+            "3",
+            "-an",
+            "-c:v",
+            "libx265",
+            "-pix_fmt",
+            "yuv420p10le",
+            "-x265-params",
+            "log-level=error:colorprim=9:transfer=16:colormatrix=9",
+            "-color_primaries",
+            "bt2020",
+            "-color_trc",
+            "smpte2084",
+            "-colorspace",
+            "bt2020nc",
+        ],
+    );
+    let p = video_project(&hdr);
+    let range = TimeRange::new(Tick::ZERO, p.duration()).unwrap();
+    let mut s = ExportSettings::from_project(&p);
+    s.include_audio = false;
+    let output = root().join("hdr-passthrough.mp4");
+    s.overwrite = project::atomic::Overwrite::Replace;
+    assert!(matches!(
+        export(&p, range, &s, &output, &Hooks::default()),
+        Err(Error::Unsupported(_))
+    ));
+    s.hdr = HdrPolicy::Passthrough;
+    let result = export(&p, range, &s, &output, &Hooks::default()).unwrap();
+    assert!(result.stream_copied);
+    let info = probe(&output);
+    assert_eq!(info["streams"][0]["color_transfer"], "smpte2084");
+    assert_eq!(info["streams"][0]["pix_fmt"], "yuv420p10le");
+    let input = dir.path().join("sdr.mp4");
+    av_fixture(&input);
+    let p = video_project(&input);
+    let mut s = ExportSettings::from_project(&p);
+    s.overwrite = project::atomic::Overwrite::Replace;
+    let output = root().join("hybrid-copy-video-mix-audio.mp4");
+    let result = export(
+        &p,
+        TimeRange::new(Tick::ZERO, p.duration()).unwrap(),
+        &s,
+        &output,
+        &Hooks::default(),
+    )
+    .unwrap();
+    assert!(result.stream_copied);
+    let info = probe(&output);
+    assert_eq!(info["streams"][1]["sample_rate"], "48000");
+    assert_eq!(info["streams"][1]["channels"], 2);
+    let a = tool_command("ffmpeg")
+        .args(["-v", "error", "-i"])
+        .arg(&input)
+        .args(["-map", "0:v", "-c", "copy", "-f", "hash", "-"])
+        .output()
+        .unwrap();
+    let b = tool_command("ffmpeg")
+        .args(["-v", "error", "-i"])
+        .arg(&output)
+        .args(["-map", "0:v", "-c", "copy", "-f", "hash", "-"])
+        .output()
+        .unwrap();
+    assert!(a.status.success() && b.status.success());
+    assert_eq!(a.stdout, b.stdout);
+}
+#[test]
+fn missing_audio_only_is_required_only_when_audio_is_requested() {
+    if !tools() {
+        return;
+    }
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("audio.wav");
+    generate(
+        &path,
+        &[
+            "-f",
+            "lavfi",
+            "-i",
+            "sine=frequency=440:sample_rate=48000:duration=1",
+            "-c:a",
+            "pcm_f32le",
+        ],
+    );
+    let asset = media::SourceAsset::import(media::AssetId(3), path.clone()).unwrap();
+    let mut d = solid_project(1, 64, 64, [20, 60, 90, 255]).into_data();
+    d.assets.push(asset);
+    d.timeline.tracks.push(project::Track {
+        id: project::TrackId(1),
+        name: "".into(),
+        kind: project::TrackKind::Audio,
+        muted: false,
+        hidden: false,
+        locked: false,
+        items: vec![project::Item {
+            id: project::ItemId(1),
+            source_asset: Some(media::AssetId(3)),
+            source_range: TimeRange::new(Tick::ZERO, tick(1, 1)).unwrap(),
+            start: Tick::ZERO,
+            content: project::ItemParams::Audio(project::AudioParams {
+                gain_db: 0.0,
+                muted: false,
+            }),
+        }],
+    });
+    let p = project::Project::new(d).unwrap();
+    std::fs::remove_file(path).unwrap();
+    let range = TimeRange::new(Tick::ZERO, tick(1, 1)).unwrap();
+    let output = dir.path().join("out.mp4");
+    std::fs::write(&output, b"previous").unwrap();
+    let mut settings = ExportSettings::from_project(&p);
+    settings.overwrite = project::atomic::Overwrite::Replace;
+    assert!(
+        matches!(export(&p,range,&settings,&output,&Hooks::default()),Err(Error::Unavailable(v)) if v.iter().all(|u|u.asset==media::AssetId(3)))
+    );
+    assert_eq!(std::fs::read(&output).unwrap(), b"previous");
+    settings.include_audio = false;
+    assert!(export(&p, range, &settings, &output, &Hooks::default()).is_ok());
+}
+#[test]
+fn display_transform_is_preserved_by_passthrough_and_refused_for_new_pixels() {
+    if !tools() {
+        return;
+    }
+    let dir = tempfile::tempdir().unwrap();
+    let source = dir.path().join("anamorphic.mp4");
+    generate(
+        &source,
+        &[
+            "-f",
+            "lavfi",
+            "-i",
+            "testsrc2=size=128x96:rate=30:duration=1,setsar=4/3",
+            "-c:v",
+            "libx264",
+            "-pix_fmt",
+            "yuv420p",
+        ],
+    );
+    let p = video_project(&source);
+    let range = TimeRange::new(Tick::ZERO, p.duration()).unwrap();
+    let output = root().join("anamorphic-passthrough.mp4");
+    let mut settings = ExportSettings::from_project(&p);
+    settings.include_audio = false;
+    settings.overwrite = project::atomic::Overwrite::Replace;
+    assert!(
+        export(&p, range, &settings, &output, &Hooks::default())
+            .unwrap()
+            .stream_copied
+    );
+    assert_eq!(probe(&output)["streams"][0]["sample_aspect_ratio"], "4:3");
+    settings.mode = ExportMode::Encode;
+    assert!(matches!(
+        export(
+            &p,
+            range,
+            &settings,
+            &dir.path().join("refused.mp4"),
+            &Hooks::default()
+        ),
+        Err(Error::Unsupported(_))
+    ));
+    let square = dir.path().join("square.mp4");
+    av_fixture(&square);
+    let rotated = dir.path().join("rotated.mp4");
+    let args: Vec<&OsStr> = vec![
+        "-display_rotation:v:0".as_ref(),
+        "90".as_ref(),
+        "-i".as_ref(),
+        square.as_os_str(),
+        "-map".as_ref(),
+        "0:v".as_ref(),
+        "-an".as_ref(),
+        "-c".as_ref(),
+        "copy".as_ref(),
+        rotated.as_os_str(),
+    ];
+    ffmpeg(&args);
+    let p = video_project(&rotated);
+    let mut settings = ExportSettings::from_project(&p);
+    settings.overwrite = project::atomic::Overwrite::Replace;
+    settings.include_audio = false;
+    let copied = root().join("rotation-passthrough.mp4");
+    assert!(
+        export(&p, range, &settings, &copied, &Hooks::default())
+            .unwrap()
+            .stream_copied
+    );
+    assert!(
+        probe(&copied)["streams"][0]["side_data_list"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|s| s["rotation"].as_i64().is_some_and(|n| n.abs() == 90))
+    );
+    settings.mode = ExportMode::Encode;
+    settings.include_audio = false;
+    assert!(matches!(
+        export(
+            &p,
+            range,
+            &settings,
+            &dir.path().join("rotation-refused.mp4"),
+            &Hooks::default()
+        ),
+        Err(Error::Unsupported(_))
+    ));
+}
+#[test]
+fn explicitly_accepted_keyframe_cut_copies_video_and_reencodes_exact_audio_window() {
+    if !tools() {
+        return;
+    }
+    let dir = tempfile::tempdir().unwrap();
+    let source = dir.path().join("closed-gop.mp4");
+    generate(
+        &source,
+        &[
+            "-f",
+            "lavfi",
+            "-i",
+            "testsrc2=size=128x96:rate=30:duration=1",
+            "-f",
+            "lavfi",
+            "-i",
+            "sine=frequency=440:sample_rate=48000:duration=1",
+            "-c:v",
+            "libx264",
+            "-bf",
+            "0",
+            "-g",
+            "15",
+            "-pix_fmt",
+            "yuv420p",
+            "-color_primaries",
+            "bt709",
+            "-color_trc",
+            "bt709",
+            "-colorspace",
+            "bt709",
+            "-c:a",
+            "aac",
+            "-ac",
+            "2",
+            "-shortest",
+        ],
+    );
+    let p = video_project(&source);
+    let range = TimeRange::new(tick(1, 2), tick(1, 1)).unwrap();
+    let mut settings = ExportSettings::from_project(&p);
+    settings.mode = ExportMode::StreamCopy;
+    settings.accept_keyframe_cuts = true;
+    settings.overwrite = project::atomic::Overwrite::Replace;
+    let output = root().join("accepted-keyframe-cut.mp4");
+    let receipt = export(&p, range, &settings, &output, &Hooks::default()).unwrap();
+    assert!(receipt.stream_copied);
+    assert_eq!(receipt.video_frames, 15);
+    assert_eq!(receipt.audio_samples, 24000);
+    let mut before = media::PacketReader::open(&source).unwrap();
+    let mut expected = Vec::new();
+    while let Some(packet) = before.next_packet().unwrap() {
+        if packet.stream() == 0 && packet.pts().unwrap().is_some_and(|t| range.contains(t)) {
+            expected.push(packet.data().to_vec());
+        }
+    }
+    let mut after = media::PacketReader::open(&output).unwrap();
+    let mut copied = Vec::new();
+    while let Some(packet) = after.next_packet().unwrap() {
+        if packet.stream() == 0 {
+            copied.push(packet.data().to_vec());
+        }
+    }
+    assert_eq!(expected, copied);
+    let original = pcm(&source, Some("atrim=start_sample=24000:end_sample=48000"));
+    let result = pcm(&output, None);
+    let n = result.len().min(original.len());
+    let mse = result
+        .iter()
+        .take(n)
+        .zip(&original)
+        .map(|(a, b)| f64::from(a - b).powi(2))
+        .sum::<f64>()
+        / n as f64;
+    assert!(mse < 0.0002, "key-cut PCM MSE {mse}");
+    settings.accept_keyframe_cuts = false;
+    assert!(matches!(
+        export(
+            &p,
+            range,
+            &settings,
+            &dir.path().join("unaccepted.mp4"),
+            &Hooks::default()
+        ),
+        Err(Error::Unsupported(_))
+    ));
+    settings.accept_keyframe_cuts = true;
+    assert!(matches!(
+        export(
+            &p,
+            TimeRange::new(tick(4, 10), tick(8, 10)).unwrap(),
+            &settings,
+            &dir.path().join("non-key.mp4"),
+            &Hooks::default()
+        ),
+        Err(Error::Unsupported(_))
+    ));
+}
+
+#[test]
+fn copy_publishes_only_the_streams_selected_by_decode() {
+    if !tools() {
+        return;
+    }
+    let input = root().join("alternate-streams.mp4");
+    generate(
+        &input,
+        &[
+            "-f",
+            "lavfi",
+            "-i",
+            "color=red:size=64x64:rate=30:duration=1",
+            "-f",
+            "lavfi",
+            "-i",
+            "color=blue:size=64x64:rate=30:duration=1",
+            "-f",
+            "lavfi",
+            "-i",
+            "sine=frequency=997:sample_rate=48000:duration=1",
+            "-f",
+            "lavfi",
+            "-i",
+            "sine=frequency=443:sample_rate=48000:duration=1",
+            "-map",
+            "0:v",
+            "-map",
+            "1:v",
+            "-map",
+            "2:a",
+            "-map",
+            "3:a",
+            "-c:v",
+            "libx264",
+            "-pix_fmt",
+            "yuv420p",
+            "-c:a",
+            "aac",
+            "-ac",
+            "2",
+        ],
+    );
+    let p = video_project(&input);
+    let mut settings = ExportSettings::from_project(&p);
+    settings.mode = ExportMode::StreamCopy;
+    settings.overwrite = project::atomic::Overwrite::Replace;
+    let output = root().join("selected-streams.mp4");
+    let receipt = export(
+        &p,
+        TimeRange::new(Tick::ZERO, p.duration()).unwrap(),
+        &settings,
+        &output,
+        &Hooks::default(),
+    )
+    .unwrap();
+    assert!(receipt.stream_copied);
+    assert_eq!(receipt.video_frames, 30);
+    let info = probe(&output);
+    assert_eq!(info["streams"].as_array().unwrap().len(), 2);
+    let pixel = rgba(&output);
+    assert!(pixel[0] > 200 && pixel[2] < 10);
+    let payloads = |path: &Path, stream: usize| {
+        let mut r = media::PacketReader::open(path).unwrap();
+        let mut packets = Vec::new();
+        while let Some(p) = r.next_packet().unwrap() {
+            if p.stream() == stream {
+                packets.push(p.data().to_vec());
+            }
+        }
+        packets
+    };
+    assert_eq!(payloads(&input, 0), payloads(&output, 0));
+    assert_eq!(payloads(&input, 2), payloads(&output, 1));
+}
+
+#[test]
+fn stereo_policy_keeps_headroom_and_export_refuses_overload() {
+    if !tools() {
+        return;
+    }
+    let input = root().join("stereo-policy.wav");
+    generate(
+        &input,
+        &[
+            "-f",
+            "lavfi",
+            "-i",
+            "aevalsrc=0.75|0.25:s=48000:d=1",
+            "-c:a",
+            "pcm_f32le",
+        ],
+    );
+    let asset = media::SourceAsset::import(media::AssetId(7), input).unwrap();
+    let mut d = solid_project(1, 64, 64, [0, 0, 0, 255]).into_data();
+    d.assets.push(asset);
+    d.timeline.tracks.push(project::Track {
+        id: project::TrackId(7),
+        name: "".into(),
+        kind: project::TrackKind::Audio,
+        muted: false,
+        hidden: false,
+        locked: false,
+        items: vec![project::Item {
+            id: project::ItemId(7),
+            source_asset: Some(media::AssetId(7)),
+            source_range: TimeRange::new(Tick::ZERO, tick(1, 1)).unwrap(),
+            start: Tick::ZERO,
+            content: project::ItemParams::Audio(project::AudioParams {
+                gain_db: 0.0,
+                muted: false,
+            }),
+        }],
+    });
+    let p = project::Project::new(d.clone()).unwrap();
+    let h = Hooks::default();
+    let stereo = mix_audio(&p, 0, 32, 2, &mut FileSources::default(), &h).unwrap();
+    assert_eq!(stereo.planes()[0], [0.75; 32]);
+    assert_eq!(stereo.planes()[1], [0.25; 32]);
+    let mono = mix_audio(&p, 0, 32, 1, &mut FileSources::default(), &h).unwrap();
+    assert_eq!(mono.planes()[0], [0.5; 32]);
+    let mut extra = d.timeline.tracks.last().unwrap().clone();
+    extra.id = project::TrackId(8);
+    extra.items[0].id = project::ItemId(8);
+    d.timeline.tracks.push(extra);
+    let p = project::Project::new(d).unwrap();
+    let mixed = mix_audio(&p, 0, 32, 2, &mut FileSources::default(), &h).unwrap();
+    assert_eq!(mixed.peak(), 1.5);
+    let output = root().join("overload-preserved.mp4");
+    std::fs::write(&output, b"existing").unwrap();
+    let mut s = ExportSettings::from_project(&p);
+    s.overwrite = project::atomic::Overwrite::Replace;
+    assert!(
+        matches!(export(&p,TimeRange::new(Tick::ZERO,tick(1,1)).unwrap(),&s,&output,&h),Err(Error::AudioOverload{peak}) if peak == 1.5)
+    );
+    assert_eq!(std::fs::read(output).unwrap(), b"existing");
+}
