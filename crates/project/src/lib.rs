@@ -4,12 +4,20 @@ pub mod autosave;
 mod bounds;
 mod model;
 mod persistence;
+mod writer;
 pub use atomic::atomic_write;
 pub use model::*;
-pub use persistence::{FORMAT_ID, Loaded, SCHEMA_VERSION, decode, encode, load, save};
+pub use persistence::{FORMAT_ID, Loaded, SCHEMA_VERSION, decode, encode, load};
+pub use writer::{SaveReceipt, WriterLease};
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
+    #[error("project writer is busy or acquisition was cancelled")]
+    Busy,
+    #[error("project changed on disk since the writer acquired it")]
+    Conflict,
+    #[error("project filesystem cannot provide a writer lease")]
+    LockUnavailable(#[source] std::io::Error),
     #[error("invalid project: {0}")]
     Invalid(&'static str),
     #[error("project limit exceeded: {0}")]

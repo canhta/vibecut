@@ -90,16 +90,19 @@ pub fn decode(bytes: &[u8]) -> Result<Loaded> {
         generator: header.generator,
     })
 }
+/// Read-only ingestion. Writers acquire WriterLease before loading/editing.
 pub fn load(path: &Path) -> Result<Loaded> {
+    decode(&read_bytes(path)?)
+}
+pub(crate) fn read_bytes(path: &Path) -> Result<Vec<u8>> {
     let mut bytes = Vec::new();
     File::open(path)?
         .take((bounds::MAX_BYTES + 1) as u64)
         .read_to_end(&mut bytes)?;
-    decode(&bytes)
-}
-pub fn save(path: &Path, project: &Project) -> Result<()> {
-    let bytes = encode(project, true)?;
-    crate::atomic_write(path, &bytes)
+    if bytes.len() > bounds::MAX_BYTES {
+        return Err(Error::TooLarge("project file"));
+    }
+    Ok(bytes)
 }
 
 impl std::fmt::Debug for Loaded {

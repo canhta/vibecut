@@ -35,7 +35,7 @@ README holds the details.
 | Contract | Owner | Meaning |
 |---|---|---|
 | SourceAsset | media | Validated source identity, path, content hash, persistable probe |
-| Project | project | Immutable validated timeline snapshot, versioned persistence |
+| Project | project | Immutable validated timeline snapshot, versioned persistence and writer lease; see [project contract](../../crates/project/README.md#writer-lease-and-save-acknowledgement) |
 | SourceRange | time | Nonempty half-open `[start, end)` in source ticks |
 | Transcript | captions | Stable segments, optional word and token timing with raw/NFC/display correspondence, provider fingerprint |
 | Cue | captions | Source range and per-language text with edit flags; user edits survive unless a command overrides them |

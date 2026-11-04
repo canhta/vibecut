@@ -19,6 +19,8 @@ stable while probing/hashing; this is not a filesystem snapshot operation.
 `availability` checks file presence without hashing; missing media is a relink
 state, not a malformed project. `relink` accepts a new absolute path only if its
 full content hash matches, preserving asset identity and probed metadata.
+`ContentHash::from_bytes` hashes already bounded content using the same BLAKE3
+identity as `ContentHash::read`, reused by project publication receipts.
 Presence alone does not prove unchanged content. Project persistence retains
 these media-owned contracts; it does not recreate probe or asset models.
 

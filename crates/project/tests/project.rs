@@ -8,6 +8,9 @@ use project::*;
 use std::{collections::BTreeMap, fs, path::PathBuf};
 use time::{FrameRate, SourceRange, Tick};
 
+fn save_fixture(path: &std::path::Path, project: &Project) -> project::Result<SaveReceipt> {
+    WriterLease::acquire(path)?.save(project)
+}
 fn range(start: i64, end: i64) -> SourceRange {
     SourceRange::new(Tick(start), Tick(end)).unwrap()
 }
@@ -173,7 +176,7 @@ fn all_kinds_roundtrip_missing_unicode_media_and_caption_identity() {
         );
     }
     let path = dir.path().join("dự án của tôi.vibecut");
-    save(&path, &project).unwrap();
+    save_fixture(&path, &project).unwrap();
     assert_eq!(load(&path).unwrap().project, project);
 }
 #[test]
@@ -326,9 +329,9 @@ fn save_replacement_and_rotation_preserve_unrelated_files() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("Một dự án.vibecut");
     let initial = empty();
-    save(&path, &initial).unwrap();
+    save_fixture(&path, &initial).unwrap();
     let updated = Project::empty(ProjectId(2), "New".into()).unwrap();
-    save(&path, &updated).unwrap();
+    save_fixture(&path, &updated).unwrap();
     assert_eq!(load(&path).unwrap().project, updated);
     let a = autosave::save(&path, &initial, 2).unwrap();
     let recovery = autosave::directory(&path);
@@ -342,7 +345,7 @@ fn save_replacement_and_rotation_preserve_unrelated_files() {
     assert_eq!(autosave::list(&path).unwrap(), vec![b, c]);
     assert_eq!(fs::read(recovery.join("leave.txt")).unwrap(), b"keep");
     assert!(autosave::save(&path, &initial, 0).is_err());
-    assert_eq!(fs::read_dir(dir.path()).unwrap().count(), 2);
+    assert_eq!(fs::read_dir(dir.path()).unwrap().count(), 3);
 }
 #[test]
 fn failed_publication_keeps_existing_directory_and_cleans_staging() {
@@ -350,7 +353,7 @@ fn failed_publication_keeps_existing_directory_and_cleans_staging() {
     let target = dir.path().join("target");
     fs::create_dir(&target).unwrap();
     fs::write(target.join("child"), b"good").unwrap();
-    assert!(save(&target, &empty()).is_err());
+    assert!(save_fixture(&target, &empty()).is_err());
     assert_eq!(fs::read(target.join("child")).unwrap(), b"good");
     assert_eq!(fs::read_dir(dir.path()).unwrap().count(), 1);
 }
@@ -365,14 +368,14 @@ fn permissions_symlinks_and_unrepresentable_paths() {
     let path = dir.path().join("private.vibecut");
     fs::write(&path, b"old").unwrap();
     fs::set_permissions(&path, fs::Permissions::from_mode(0o600)).unwrap();
-    save(&path, &empty()).unwrap();
+    save_fixture(&path, &empty()).unwrap();
     assert_eq!(
         fs::metadata(&path).unwrap().permissions().mode() & 0o777,
         0o600
     );
     let link = dir.path().join("link");
     symlink(&path, &link).unwrap();
-    assert!(save(&link, &empty()).is_err());
+    assert!(atomic_write(&link, b"refused").is_err());
     assert!(fs::symlink_metadata(link).unwrap().file_type().is_symlink());
     let bad = dir.path().join(std::ffi::OsString::from_vec(vec![0xff]));
     let data = AssetData {
@@ -431,7 +434,7 @@ fn encoding_limit_failure_never_replaces_saved_project_or_rotates_snapshots() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("project.vibecut");
     let initial = empty();
-    save(&path, &initial).unwrap();
+    save_fixture(&path, &initial).unwrap();
     let recovery = autosave::save(&path, &initial, 1).unwrap();
     let mut data = initial.clone().into_data();
     for id in 0..20 {
@@ -441,9 +444,12 @@ fn encoding_limit_failure_never_replaces_saved_project_or_rotates_snapshots() {
         data.timeline.tracks.push(track);
     }
     let oversized = Project::new(data).unwrap();
-    assert!(matches!(save(&path, &oversized), Err(Error::TooLarge(_))));
+    assert!(matches!(
+        save_fixture(&path, &oversized),
+        Err(Error::TooLarge(_))
+    ));
     assert!(autosave::save(&path, &oversized, 1).is_err());
     assert_eq!(load(&path).unwrap().project, initial);
     assert_eq!(autosave::list(&path).unwrap(), vec![recovery]);
-    assert_eq!(fs::read_dir(dir.path()).unwrap().count(), 2);
+    assert_eq!(fs::read_dir(dir.path()).unwrap().count(), 3);
 }

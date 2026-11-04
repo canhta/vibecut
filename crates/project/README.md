@@ -43,8 +43,8 @@ Typed invalid/unsupported/limit errors refuse a whole candidate.
 `encode`/`decode` use one JSON envelope: `format`, `schema_version`, `generator`,
 `project`. Older schemas return `TooOld`, newer schemas `TooNew`; there are no
 migration or compatibility paths. Unknown current-schema project/envelope fields
-are refused. `save` serializes completely before touching the destination;
-`load` reads at most 16 MiB + 1 byte, including when a file grows while reading.
+are refused. `WriterLease::save` serializes completely before touching the destination;
+read-only `load` reads at most 16 MiB + 1 byte, including when a file grows while reading.
 
 Ingestion and serialization cap JSON at 16 MiB, nesting at 64, individual raw
 JSON strings at 1 MiB and combined comma/colon separators at 200,000, including
@@ -62,6 +62,44 @@ sync after publication is best effort. It does not preserve ownership, ACLs,
 extended attributes or hard links. Hardware power-loss durability and Windows
 runtime behavior remain unverified. Callers serialize writes to one target.
 
+## Writer lease and save acknowledgement
+
+`WriterLease::acquire(path)` takes an exclusive OS lock on the stable adjacent
+`.FILENAME.lock` before reading project bytes. Retain the lease from load through
+editing and saving. `WriterLease::load` refuses a changed baseline; use standalone
+`load` only for read-only ingestion. `acquire_wait(path, duration, cancelled)` polls
+contention and returns `Busy` on timeout/cancellation. Native filesystem calls are
+not interruptible, so cancellation is checked between them. Unsupported lock paths,
+permissions or OS locking return typed errors and never authorize an unlocked save.
+
+`save(&mut self, project)` compares the current bounded file's full BLAKE3 content
+with the acquired/last-saved baseline, then publishes through `atomic_write`.
+A changed, removed or unexpectedly created file returns `Conflict`; failed saves
+retain the baseline and issue no receipt. A successful `SaveReceipt` contains the
+canonical native path and hash of the exact envelope bytes published. Engine binds
+its own saved revision and still-current path to that receipt before acknowledging
+clean state; revision tracking/journal scheduling remain engine-owned. Schema and
+JSON envelope are unchanged; leases, hashes and receipts are not persisted in it.
+
+`save_as` acquires the destination while retaining the source lease, publishes,
+then replaces the held lease only on success. Busy/failure preserves source path
+and both files. Existing symlinks resolve to the target, including symlinked parent
+directories; relative paths resolve once. Case/Unicode aliases follow the native
+filesystem's name rules, including for adjacent lock files. Native `OsStr` names
+are retained without lossy conversion. Filesystem-rejected names return typed
+errors; the lock name adds six native characters, so near-limit filenames can be
+refused rather than truncated into colliding locks.
+
+The lock file is private on Unix, is never truncated or removed, and contains no
+project data. Dropping the lease or killing its process releases the OS lock; the
+empty file remains safe to reuse. All cooperating writers must keep that namespace
+stable. Locks are advisory: content checks detect external edits present before
+publication, but are not an atomic compare-and-swap against another application
+racing the final check and rename, or against concurrent lock-file/directory
+replacement. Hard-link preservation remains outside the atomic writer contract.
+macOS local-filesystem behavior is observed; Windows and remote filesystem locking
+remain unverified.
+
 `autosave::save(path, project, keep)` writes into `<path>.autosave`, with increasing
 20-digit snapshot numbers and no clock dependency. Retention admits 1..=1000.
 Only canonical regular snapshot files participate; unrelated files, symlinks
@@ -76,7 +114,9 @@ an incomplete pruning pass; no partial snapshot is promoted.
 `cargo xtask ci` runs model/invariant tables, serde and file round trips across
 all item kinds and NTSC rates, hostile/deep/oversized JSON, NFC/Unicode paths,
 missing-media state, hash-verified relink, save failure/cleanup, permissions,
-symlinks and autosave retention. Property tests generate adjacent integer-tick
+symlinks and autosave retention. Public writer tests cover concurrent threads and
+real processes, abrupt process death, stale-content refusal, save-as acquisition,
+wait/cancel, receipts, relative/symlink/case aliases and native path refusal. Property tests generate adjacent integer-tick
 items and rational common rates and check exact persistence without drift.
 A unit test injects failure after a partial staging write to verify original
 bytes and cleanup. This establishes application-level behavior on the tested

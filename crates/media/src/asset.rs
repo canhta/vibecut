@@ -23,6 +23,10 @@ impl fmt::Debug for ContentHash {
     }
 }
 impl ContentHash {
+    /// Hash already bounded in-memory content with the same full-byte identity as read.
+    pub fn from_bytes(bytes: &[u8]) -> Self {
+        Self(*blake3::hash(bytes).as_bytes())
+    }
     pub fn read(path: &Path) -> Result<Self> {
         let mut hasher = blake3::Hasher::new();
         hasher.update_reader(File::open(path)?)?;
