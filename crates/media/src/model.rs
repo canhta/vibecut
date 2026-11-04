@@ -5,7 +5,7 @@ use std::fmt;
 use time::{FrameRate, Rounding, Tick};
 
 /// Exact positive seconds per container timestamp unit.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(try_from = "(i32, i32)", into = "(i32, i32)")]
 pub struct TimeBase {
     numerator: i32,
@@ -73,14 +73,14 @@ impl fmt::Debug for CodecParameters {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 pub enum StreamKind {
     Video,
     Audio,
     Other,
 }
 /// ITU-T H.273 color code points, preserved without guessing at HDR conversion.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct ColorInfo {
     pub primaries: u32,
     pub transfer: u32,
@@ -123,14 +123,14 @@ impl ColorInfo {
         matches!(self.transfer, 16 | 18)
     }
 }
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct VideoInfo {
     pub width: u32,
     pub height: u32,
     pub color: ColorInfo,
     pub bit_depth: Option<u8>,
 }
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct AudioInfo {
     pub sample_rate: u32,
     pub channels: u16,

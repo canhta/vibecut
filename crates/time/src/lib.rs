@@ -23,7 +23,18 @@ pub const TICKS_PER_SECOND: i64 = 254_016_000_000;
 /// Operator arithmetic saturates at the `i64` limits; use the checked methods when
 /// overflow must be reported.
 #[derive(
-    Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize,
+    Clone,
+    Copy,
+    Debug,
+    Default,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Serialize,
+    Deserialize,
+    schemars::JsonSchema,
 )]
 #[serde(transparent)]
 pub struct Tick(pub i64);
@@ -284,7 +295,7 @@ impl fmt::Display for TimeError {
 impl std::error::Error for TimeError {}
 
 /// A frame rate as an exact rational `num / den` frames per second.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(try_from = "FrameRateWire")]
 pub struct FrameRate {
     num: i64,
@@ -487,7 +498,7 @@ impl fmt::Display for FrameRate {
 /// Empty selections are represented by absence (`Option::None`), never by an
 /// inverted or zero-length range. Use [`SourceRange`] when the coordinates refer
 /// to source media.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(try_from = "TimeRangeWire")]
 pub struct TimeRange {
     start: Tick,
@@ -607,7 +618,7 @@ fn gcd(mut left: u64, mut right: u64) -> u64 {
 const I64_MIN_AS_F64: f64 = -9_223_372_036_854_775_808.0;
 const I64_MAX_EXCLUSIVE_AS_F64: f64 = 9_223_372_036_854_775_808.0;
 
-#[derive(Deserialize)]
+#[derive(Deserialize, schemars::JsonSchema)]
 struct FrameRateWire {
     num: i64,
     den: i64,
@@ -621,7 +632,7 @@ impl TryFrom<FrameRateWire> for FrameRate {
     }
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, schemars::JsonSchema)]
 struct TimeRangeWire {
     start: Tick,
     end: Tick,

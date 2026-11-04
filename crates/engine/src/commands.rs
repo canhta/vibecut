@@ -4,18 +4,44 @@ use project::{BookmarkId, Color, ItemId, ItemParams, TrackId, TrackKind};
 use serde::{Deserialize, Serialize};
 use time::{SourceRange, Tick};
 
-/// Required parameter field and its Rust/Serde wire type; not JSON Schema.
-#[derive(Clone, Copy, Debug, Serialize)]
-pub struct FieldSchema {
-    pub name: &'static str,
-    pub wire_type: &'static str,
+/// Effects are engine metadata; adapters must never infer permission from names.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, schemars::JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum Effect {
+    Edit,
+    SessionControl,
+    FilePublish,
+    Read,
+    JobControl,
 }
-/// Registry metadata uses the same declaration as typed commands and JSON dispatch.
-#[derive(Clone, Copy, Debug, Serialize)]
+
+/// Generated from the typed registry, including closed nested model schemas.
+#[derive(Clone, Debug, Serialize, schemars::JsonSchema)]
 pub struct CommandSpec {
     pub id: &'static str,
     pub label: &'static str,
-    pub params_schema: &'static [FieldSchema],
+    pub effect: Effect,
+    pub limits: crate::control::Limits,
+    pub params_schema: serde_json::Value,
+    pub output_schema: serde_json::Value,
+    pub example: Example,
+}
+/// Fixture requirements are registry data; conformance consumers never switch on IDs.
+#[derive(Clone, Copy, Debug, Serialize, schemars::JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum Fixture {
+    Timeline,
+    History,
+    Redo,
+    Gesture,
+    Job,
+    Create,
+    Save,
+}
+#[derive(Clone, Debug, Serialize, schemars::JsonSchema)]
+pub struct Example {
+    pub fixture: Fixture,
+    pub params: serde_json::Value,
 }
 impl CommandSpec {
     /// Coarse session availability. Target/parameter validation occurs at execution.
@@ -67,24 +93,39 @@ impl CommandSpec {
     }
 }
 macro_rules! commands {
-    ($($variant:ident, $id:literal, $label:literal { $($(#[$attr:meta])* $field:ident : $ty:ty),* $(,)? });* $(;)?) => {
+    ($($variant:ident, $id:literal, $label:literal, $effect:ident { $($(#[$attr:meta])* $field:ident : $ty:ty),* $(,)? } => $fixture:ident, $example:expr);* $(;)?) => {
         /// Registered edits, session controls and export requests. Unknown fields are refused.
-        #[derive(Clone, Debug, Serialize, Deserialize)]
+        #[derive(Clone, Debug, Serialize, Deserialize, schemars::JsonSchema)]
         #[serde(tag = "command", content = "params", deny_unknown_fields)]
         pub enum Command {
             $(#[serde(rename = $id)] $variant { $($(#[$attr])* $field: $ty),* }),*
         }
-        static REGISTRY: &[CommandSpec] = &[
-            $(CommandSpec { id: $id, label: $label, params_schema: &[
-                $(FieldSchema { name: stringify!($field), wire_type: stringify!($ty) }),*
-            ] }),*
-        ];
+        fn declarations() -> Vec<(&'static str, &'static str, Effect, Example)> {
+            vec![$(($id, $label, Effect::$effect, Example { fixture:Fixture::$fixture, params:$example })),*]
+        }
         impl Command {
+            pub fn effect(&self) -> Effect {
+                match self { $(Self::$variant { .. } => Effect::$effect),* }
+            }
             pub fn id(&self) -> &'static str {
                 match self { $(Self::$variant { .. } => $id),* }
             }
         }
     };
+}
+// A required nullable field differs from an omittable Option. This wrapper
+// describes exactly the deserialize_with contract without changing owner types.
+struct RequiredNullable<T>(std::marker::PhantomData<T>);
+impl<T: schemars::JsonSchema> schemars::JsonSchema for RequiredNullable<T> {
+    fn schema_name() -> std::borrow::Cow<'static, str> {
+        format!("RequiredNullable_{}", T::schema_name()).into()
+    }
+    fn inline_schema() -> bool {
+        true
+    }
+    fn json_schema(generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
+        generator.subschema_for::<Option<T>>()
+    }
 }
 // Option allows explicit null, but command fields must still be present.
 fn required_option<'de, D: serde::Deserializer<'de>, T: Deserialize<'de>>(
@@ -93,46 +134,129 @@ fn required_option<'de, D: serde::Deserializer<'de>, T: Deserialize<'de>>(
     Option::<T>::deserialize(d)
 }
 commands! {
-    CreateProject, "project.create", "Create project" { id: project::ProjectId, name: NfcText };
-    RenameProject, "project.rename", "Rename project" { name: NfcText };
-    SaveProject, "project.save", "Save project" {};
-    SetViewState, "project.set_view_state", "Set timeline view" { zoom: f64, scroll: f64, playhead: Tick };
-    ExportSubtitles, "export_subtitles", "Export subtitle file" { track: TrackId, format: captions::Format, languages: Vec<captions::LanguageTag>, path: std::path::PathBuf, overwrite: bool };
-    BurnSubtitles, "burn_subtitles", "Burn subtitles into MP4" { range: time::TimeRange, languages: Vec<captions::LanguageTag>, style: render::CaptionStyle, portrait: bool, path: std::path::PathBuf, overwrite: bool };
-    AddAsset, "add_asset", "Add asset" { asset: SourceAsset };
-    AddTrack, "add_track", "Add track" { name: NfcText, kind: TrackKind };
-    RemoveTrack, "remove_track", "Remove track" { track: TrackId };
-    SetTrackFlags, "set_track_flags", "Set track flags" { track: TrackId, muted: bool, hidden: bool, locked: bool };
-    InsertItem, "insert_item", "Insert item" { track: TrackId, item: NewItem };
-    MoveItem, "move_item", "Move item" { item: ItemId, track: TrackId, start: Tick };
-    MoveItems, "move_items", "Move items" { moves: Vec<Move> };
-    SplitAt, "split_at", "Split item" { item: ItemId, at: Tick };
-    TrimStart, "trim_start", "Trim start" { item: ItemId, at: Tick };
-    TrimEnd, "trim_end", "Trim end" { item: ItemId, at: Tick };
-    Delete, "delete", "Delete items" { items: Vec<ItemId> };
-    RippleDelete, "ripple_delete", "Ripple delete" { item: ItemId };
-    SetItemParam, "set_item_param", "Set item parameters" { item: ItemId, content: ItemParams };
-    SetAnimatedParam, "keyframes.set_param", "Set animated parameter" { item: ItemId, path: project::AnimationPath, param: project::Param };
-    AddKeyframe, "keyframes.add", "Add keyframe" { item: ItemId, path: project::AnimationPath, #[serde(deserialize_with = "required_option")] component: Option<project::ColorComponent>, key: project::Keyframe };
-    RemoveKeyframe, "keyframes.remove", "Remove keyframe" { item: ItemId, path: project::AnimationPath, #[serde(deserialize_with = "required_option")] component: Option<project::ColorComponent>, time: Tick };
-    RetimeKeyframe, "keyframes.retime", "Move keyframe" { item: ItemId, path: project::AnimationPath, #[serde(deserialize_with = "required_option")] component: Option<project::ColorComponent>, from: Tick, to: Tick };
-    SetKeyframeHandle, "keyframes.set_handle", "Set keyframe handle" { item: ItemId, path: project::AnimationPath, #[serde(deserialize_with = "required_option")] component: Option<project::ColorComponent>, time: Tick, side: project::HandleSide, #[serde(deserialize_with = "required_option")] handle: Option<project::CurveHandle>, tangent: project::TangentMode };
-    ScaleKeyframeTime, "keyframes.scale_time", "Stretch animation time" { item: ItemId, numerator: i64, denominator: i64 };
-    Retranslate, "retranslate", "Apply selected cue translations" { item: ItemId, target_language: captions::LanguageTag, texts: std::collections::BTreeMap<NfcText, NfcText>, translation_ref: NfcText, force: bool };
-    AddBookmark, "add_bookmark", "Add bookmark" { start: Tick, duration: Tick, note: NfcText, color: Color };
-    Batch, "batch", "Batch edit" { commands: Vec<Command> };
-    BeginGesture, "begin_gesture", "Begin gesture" {};
-    CommitGesture, "commit_gesture", "Commit gesture" {};
-    CancelGesture, "cancel_gesture", "Cancel gesture" {};
-    Undo, "undo", "Undo" {};
-    Redo, "redo", "Redo" {};
+    CreateProject, "project.create", "Create project", SessionControl { id: project::ProjectId, name: NfcText } => Create, serde_json::json!({"id":"18446744073709551615","name":"Created"});
+    RenameProject, "project.rename", "Rename project", Edit { name: NfcText } => Timeline, serde_json::json!({"name":"Renamed"});
+    SaveProject, "project.save", "Save project", SessionControl {} => Save, serde_json::json!({});
+    SetViewState, "project.set_view_state", "Set timeline view", SessionControl { zoom: f64, scroll: f64, playhead: Tick } => Timeline, serde_json::json!({"zoom":2.0,"scroll":10.0,"playhead":0});
+    ExportSubtitles, "export_subtitles", "Export subtitle file", FilePublish { track: TrackId, format: captions::Format, languages: Vec<captions::LanguageTag>, path: std::path::PathBuf, overwrite: bool } => Timeline, serde_json::json!({"track":3,"format":"srt","languages":["en"],"path":"$output/subtitles.srt","overwrite":false});
+    BurnSubtitles, "burn_subtitles", "Burn subtitles into MP4", FilePublish { range: time::TimeRange, languages: Vec<captions::LanguageTag>, style: render::CaptionStyle, portrait: bool, path: std::path::PathBuf, overwrite: bool } => Timeline, serde_json::json!({"range":{"start":0,"end":8467200000_i64},"languages":["en"],"style":{"font":"Inter","font_style":"SemiBold","size":48.0,"color":[255,255,255,255],"outline":null,"background":null,"position":"bottom","safe_area_percent":5.0,"max_lines":2},"portrait":false,"path":"$output/burn.mp4","overwrite":false});
+    AddAsset, "add_asset", "Add asset", Edit { asset: SourceAsset } => Timeline, serde_json::json!({"asset":{"id":99,"path":"$output/offline.mp4","content_hash":[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],"probe":{"format":"mp4","duration":null,"streams":[]}}});
+    AddTrack, "add_track", "Add track", Edit { name: NfcText, kind: TrackKind } => Timeline, serde_json::json!({"name":"Added","kind":"overlay"});
+    RemoveTrack, "remove_track", "Remove track", Edit { track: TrackId } => Timeline, serde_json::json!({"track":2});
+    SetTrackFlags, "set_track_flags", "Set track flags", Edit { track: TrackId, muted: bool, hidden: bool, locked: bool } => Timeline, serde_json::json!({"track":2,"muted":true,"hidden":false,"locked":false});
+    InsertItem, "insert_item", "Insert item", Edit { track: TrackId, item: NewItem } => Timeline, serde_json::json!({"track":2,"item":{"animations":{},"source_asset":null,"source_range":{"start":0,"end":8467200000_i64},"start":0,"content":{"kind":"overlay","params":{"color":[255,0,0,255]}}}});
+    MoveItem, "move_item", "Move item", Edit { item: ItemId, track: TrackId, start: Tick } => Timeline, serde_json::json!({"item":1,"track":2,"start":0});
+    MoveItems, "move_items", "Move items", Edit { moves: Vec<Move> } => Timeline, serde_json::json!({"moves":[{"item":1,"track":2,"start":0}]});
+    SplitAt, "split_at", "Split item", Edit { item: ItemId, at: Tick } => Timeline, serde_json::json!({"item":1,"at":8467200000_i64});
+    TrimStart, "trim_start", "Trim start", Edit { item: ItemId, at: Tick } => Timeline, serde_json::json!({"item":1,"at":8467200000_i64});
+    TrimEnd, "trim_end", "Trim end", Edit { item: ItemId, at: Tick } => Timeline, serde_json::json!({"item":1,"at":8467200000_i64});
+    Delete, "delete", "Delete items", Edit { items: Vec<ItemId> } => Timeline, serde_json::json!({"items":[1]});
+    RippleDelete, "ripple_delete", "Ripple delete", Edit { item: ItemId } => Timeline, serde_json::json!({"item":1});
+    SetItemParam, "set_item_param", "Set item parameters", Edit { item: ItemId, content: ItemParams } => Timeline, serde_json::json!({"item":1,"content":{"kind":"overlay","params":{"color":[255,255,0,255]}}});
+    SetAnimatedParam, "keyframes.set_param", "Set animated parameter", Edit { item: ItemId, path: project::AnimationPath, param: project::Param } => Timeline, serde_json::json!({"item":1,"path":"opacity","param":{"kind":"value","channels":{"value":{"kind":"scalar","value":0.5},"keys":[],"before":"hold","after":"hold"}}});
+    AddKeyframe, "keyframes.add", "Add keyframe", Edit { item: ItemId, path: project::AnimationPath, #[serde(deserialize_with = "required_option")] #[schemars(with = "RequiredNullable<project::ColorComponent>")] component: Option<project::ColorComponent>, key: project::Keyframe } => Timeline, serde_json::json!({"item":1,"path":"opacity","component":null,"key":{"time":8467200000_i64,"value":{"kind":"scalar","value":0.5},"segment":"linear","tangent":"broken","incoming":null,"outgoing":null}});
+    RemoveKeyframe, "keyframes.remove", "Remove keyframe", Edit { item: ItemId, path: project::AnimationPath, #[serde(deserialize_with = "required_option")] #[schemars(with = "RequiredNullable<project::ColorComponent>")] component: Option<project::ColorComponent>, time: Tick } => Timeline, serde_json::json!({"item":1,"path":"opacity","component":null,"time":0});
+    RetimeKeyframe, "keyframes.retime", "Move keyframe", Edit { item: ItemId, path: project::AnimationPath, #[serde(deserialize_with = "required_option")] #[schemars(with = "RequiredNullable<project::ColorComponent>")] component: Option<project::ColorComponent>, from: Tick, to: Tick } => Timeline, serde_json::json!({"item":1,"path":"opacity","component":null,"from":0,"to":1});
+    SetKeyframeHandle, "keyframes.set_handle", "Set keyframe handle", Edit { item: ItemId, path: project::AnimationPath, #[serde(deserialize_with = "required_option")] #[schemars(with = "RequiredNullable<project::ColorComponent>")] component: Option<project::ColorComponent>, time: Tick, side: project::HandleSide, #[serde(deserialize_with = "required_option")] #[schemars(with = "RequiredNullable<project::CurveHandle>")] handle: Option<project::CurveHandle>, tangent: project::TangentMode } => Timeline, serde_json::json!({"item":1,"path":"opacity","component":null,"time":0,"side":"out","handle":null,"tangent":"broken"});
+    ScaleKeyframeTime, "keyframes.scale_time", "Stretch animation time", Edit { item: ItemId, numerator: i64, denominator: i64 } => Timeline, serde_json::json!({"item":1,"numerator":2,"denominator":1});
+    Retranslate, "retranslate", "Apply selected cue translations", Edit { item: ItemId, target_language: captions::LanguageTag, texts: std::collections::BTreeMap<NfcText, NfcText>, translation_ref: NfcText, force: bool } => Timeline, serde_json::json!({"item":4,"target_language":"vi","texts":{"cue-1":"Xin chào"},"translation_ref":"example","force":true});
+    AddBookmark, "add_bookmark", "Add bookmark", Edit { start: Tick, duration: Tick, note: NfcText, color: Color } => Timeline, serde_json::json!({"start":0,"duration":0,"note":"Mark","color":[255,255,0,255]});
+    Batch, "batch", "Batch edit", Edit { commands: Vec<Command> } => Timeline, serde_json::json!({"commands":[{"command":"add_track","params":{"name":"Batch","kind":"overlay"}}]});
+    BeginGesture, "begin_gesture", "Begin gesture", SessionControl {} => Timeline, serde_json::json!({});
+    CommitGesture, "commit_gesture", "Commit gesture", SessionControl {} => Gesture, serde_json::json!({});
+    CancelGesture, "cancel_gesture", "Cancel gesture", SessionControl {} => Gesture, serde_json::json!({});
+    Undo, "undo", "Undo", SessionControl {} => History, serde_json::json!({});
+    Redo, "redo", "Redo", SessionControl {} => Redo, serde_json::json!({});
+    Inspect, "inspect", "Inspect project", Read {} => Timeline, serde_json::json!({});
+    Preview, "preview", "Preview frames", JobControl { frames: Vec<i64> } => Timeline, serde_json::json!({"frames":[0]});
+    Export, "export", "Export video", FilePublish { range: time::TimeRange, path: std::path::PathBuf, overwrite: bool } => Timeline, serde_json::json!({"range":{"start":0,"end":8467200000_i64},"path":"$output/export.mp4","overwrite":false});
+    JobStatus, "job_status", "Inspect job", Read { job: crate::jobs::JobId } => Job, serde_json::json!({"job":0});
+    JobCancel, "job_cancel", "Cancel job", JobControl { job: crate::jobs::JobId } => Job, serde_json::json!({"job":0});
+    Catalog, "catalog", "Command catalog", Read {} => Timeline, serde_json::json!({});
+    ProviderCatalog, "provider_catalog", "Provider catalog", Read {} => Timeline, serde_json::json!({});
 }
+
 pub fn registry() -> &'static [CommandSpec] {
-    REGISTRY
+    static REGISTRY: std::sync::OnceLock<Vec<CommandSpec>> = std::sync::OnceLock::new();
+    REGISTRY.get_or_init(|| {
+        let mut schema = schemars::schema_for!(Command).to_value();
+        crate::control::close_schema(&mut schema);
+        // Recursive Command refs were relative to the enum root. Each standalone
+        // params document must retain that root under the same local definition.
+        fn rebase(value: &mut serde_json::Value) {
+            if let Some(object) = value.as_object_mut() {
+                if object.get("$ref").is_some_and(|v| v == "#") {
+                    object.insert("$ref".into(), serde_json::json!("#/$defs/CommandRoot"));
+                }
+                for v in object.values_mut() {
+                    rebase(v);
+                }
+            } else if let Some(array) = value.as_array_mut() {
+                for v in array {
+                    rebase(v);
+                }
+            }
+        }
+        rebase(&mut schema);
+        let mut command_root = schema.clone();
+        if let Some(object) = command_root.as_object_mut() {
+            object.remove("$defs");
+            object.remove("$schema");
+        }
+        if let Some(defs) = schema
+            .get_mut("$defs")
+            .and_then(serde_json::Value::as_object_mut)
+        {
+            defs.insert("CommandRoot".into(), command_root);
+        }
+        let mut output = schemars::generate::SchemaSettings::draft2020_12()
+            .for_serialize()
+            .into_generator()
+            .into_root_schema_for::<crate::control::ControlResult>()
+            .to_value();
+        crate::control::close_schema(&mut output);
+        declarations()
+            .into_iter()
+            .map(|(id, label, effect, example)| {
+                let mut params = schema
+                    .get("oneOf")
+                    .or_else(|| schema.get("anyOf"))
+                    .and_then(serde_json::Value::as_array)
+                    .and_then(|variants| {
+                        variants.iter().find(|v| {
+                            v.pointer("/properties/command/const")
+                                .and_then(serde_json::Value::as_str)
+                                == Some(id)
+                        })
+                    })
+                    .and_then(|v| v.pointer("/properties/params"))
+                    .cloned()
+                    .unwrap_or(serde_json::json!({"type":"object", "additionalProperties":false}));
+                if let Some(object) = params.as_object_mut() {
+                    object.insert(
+                        "$schema".into(),
+                        serde_json::json!("https://json-schema.org/draft/2020-12/schema"),
+                    );
+                    if let Some(defs) = schema.get("$defs") {
+                        object.insert("$defs".into(), defs.clone());
+                    }
+                }
+                CommandSpec {
+                    id,
+                    label,
+                    effect,
+                    limits: crate::control::LIMITS,
+                    params_schema: params,
+                    output_schema: output.clone(),
+                    example,
+                }
+            })
+            .collect()
+    })
 }
 
 /// Item input; the engine allocates its identity only on successful commit.
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct NewItem {
     pub animations: project::Animations,
@@ -142,21 +266,21 @@ pub struct NewItem {
     pub content: ItemParams,
 }
 /// Absolute output destination for a simultaneous move.
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct Move {
     pub item: ItemId,
     pub track: TrackId,
     pub start: Tick,
 }
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, schemars::JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum CreatedId {
     Track(TrackId),
     Item(ItemId),
     Bookmark(BookmarkId),
 }
-#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, schemars::JsonSchema)]
 pub struct Outcome {
     pub changed: bool,
     pub created: Vec<CreatedId>,

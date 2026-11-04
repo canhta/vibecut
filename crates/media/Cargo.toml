@@ -21,6 +21,7 @@ dbg_macro = "deny"
 wildcard_imports = "warn"
 
 [dependencies]
+schemars = "1.2.3"
 ffmpeg-next = { version = "9", default-features = false, features = ["codec", "format", "software-resampling", "software-scaling"] }
 thiserror = "2.0.21"
 time = { path = "../time" }

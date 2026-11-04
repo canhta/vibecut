@@ -341,7 +341,7 @@ fn project_new_and_info_round_trip_unicode_space_path() {
     assert_eq!(value["name"], "Untitled");
     assert_eq!(value["canvas"]["width"], 1920);
     assert_eq!(value["canvas"]["height"], 1080);
-    assert_eq!(value["schema_version"], 2);
+    assert_eq!(value["schema_version"], project::SCHEMA_VERSION);
     assert_eq!(value["tracks"], 0);
 
     let second = cli(&[os("project"), os("new"), project.as_os_str()]);
@@ -547,7 +547,10 @@ fn commands_prints_the_generated_registry() {
         .iter()
         .find(|entry| entry["id"] == "add_track")
         .unwrap();
-    assert_eq!(add_track["params_schema"][0]["name"], "name");
+    assert_eq!(
+        add_track["params_schema"]["$defs"]["NfcText"]["type"],
+        "string"
+    );
     assert!(entries.iter().any(|entry| entry["id"] == "batch"));
 }
 

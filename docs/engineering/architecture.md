@@ -76,7 +76,10 @@ under the WriterLease; see [project metadata](../../crates/project/README.md#opt
 **Recovery.** Engine owns unsaved-session scheduling, OS session liveness and revision-bound save acknowledgement; project owns its one snapshot format, atomic writes and rotation. See the [session recovery contract](../../crates/engine/README.md#session-recovery-and-save-acknowledgement). The app presents recovery choices.
 
 **Control.** Engine owns command IDs, schemas, events, revision and idempotency
-rules, and every project mutation; dispatch is transport-neutral. Adapters only
+rules, and every project mutation; dispatch is transport-neutral. Generated
+2020-12 schemas, strict admission, revision-bound no-eviction Session receipts and
+bounded snapshot-resync events share the existing registry/JobTarget/JobRunner
+owners; see the [engine control contract](../../crates/engine/README.md#control-admission-revisions-and-receipts). Adapters only
 translate: the CLI parses arguments and maps typed exit codes, MCP maps tools and
 transports, the app maps widgets and preferences. All dispatch through the one
 registry, never a second command catalog, and none mutates the project directly.

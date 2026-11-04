@@ -310,14 +310,14 @@ fn scale_time_preserves_handles_values_serde_and_clean_undo() {
     let bytes = encode(s.project(), true).unwrap();
     let loaded = decode(&bytes).unwrap();
     assert_eq!(&loaded.project, s.project().as_ref());
-    assert_eq!(loaded.schema_version, 2);
+    assert_eq!(loaded.schema_version, project::SCHEMA_VERSION);
     let mut old: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
     old["schema_version"] = json!(1);
     assert!(matches!(
         decode(&serde_json::to_vec(&old).unwrap()),
         Err(Error::TooOld {
             found: 1,
-            supported: 2
+            supported: project::SCHEMA_VERSION
         })
     ));
     s.undo().unwrap();

@@ -82,7 +82,7 @@ printed. Credential absence is a `setup` refusal before media or network work.
 ## Commands and schemas
 
 `vibecut-cli commands --json` is the authoritative generated schema: every command
-ID, label and required parameter field with its wire type. It comes from the same
+ID, label, effect, JSON Schema 2020-12 input/output shapes and fixture examples. It comes from the same
 single declaration as typed and JSON dispatch, so do not maintain a second command
 list. `exec` takes that command ID and its `params` object:
 

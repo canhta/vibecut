@@ -7,17 +7,44 @@ use time::{FrameRate, SourceRange, Tick};
 
 macro_rules! id {
     ($($name:ident),+) => {$ (
-        #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+        #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize, schemars::JsonSchema)]
         #[serde(transparent)]
         pub struct $name(pub u64);
     )+};
 }
-id!(ProjectId, TrackId, ItemId, BookmarkId);
+id!(TrackId, ItemId, BookmarkId);
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+/// Decimal-string identity, including on disk, so control clients retain every bit.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, schemars::JsonSchema)]
+#[schemars(with = "String")]
+pub struct ProjectId(pub u64);
+impl Serialize for ProjectId {
+    fn serialize<S: serde::Serializer>(
+        &self,
+        serializer: S,
+    ) -> std::result::Result<S::Ok, S::Error> {
+        serializer.serialize_str(&self.0.to_string())
+    }
+}
+impl<'de> Deserialize<'de> for ProjectId {
+    fn deserialize<D: serde::Deserializer<'de>>(
+        deserializer: D,
+    ) -> std::result::Result<Self, D::Error> {
+        let value = String::deserialize(deserializer)?;
+        let id = value
+            .parse::<u64>()
+            .map_err(|_| serde::de::Error::custom("invalid project identity"))?;
+        if id.to_string() != value {
+            return Err(serde::de::Error::custom("noncanonical project identity"));
+        }
+        Ok(Self(id))
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(transparent)]
 pub struct Color(pub [u8; 4]);
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct Canvas {
     pub width: u32,
@@ -36,7 +63,7 @@ impl Default for Canvas {
     }
 }
 /// Output sample rate; presentation preferences stay in the app.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct Settings {
     pub audio_sample_rate: u32,
@@ -48,7 +75,7 @@ impl Default for Settings {
         }
     }
 }
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct Bookmark {
     pub id: BookmarkId,
@@ -57,7 +84,7 @@ pub struct Bookmark {
     pub note: NfcText,
     pub color: Color,
 }
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum TrackKind {
     Video,
@@ -66,7 +93,7 @@ pub enum TrackKind {
     Caption,
     Overlay,
 }
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct Track {
     pub id: TrackId,
@@ -77,42 +104,42 @@ pub struct Track {
     pub locked: bool,
     pub items: Vec<Item>,
 }
-#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct Timeline {
     pub tracks: Vec<Track>,
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct VideoParams {
     pub source_audio_enabled: bool,
 }
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct AudioParams {
     pub gain_db: f32,
     pub muted: bool,
 }
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct TextParams {
     pub content: NfcText,
     pub font_size: f32,
     pub color: Color,
 }
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct CaptionParams {
     pub cues: CueTrack,
 }
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct OverlayParams {
     pub color: Color,
 }
 /// Typed parameters determine item kind; no unvalidated arbitrary parameter bag.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(
     tag = "kind",
     content = "params",
@@ -137,7 +164,7 @@ impl ItemParams {
         }
     }
 }
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct Item {
     pub animations: crate::Animations,
@@ -158,7 +185,7 @@ impl Item {
 }
 
 /// Editable candidate data; committing through `Project::new` validates the whole snapshot.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct ProjectData {
     pub id: ProjectId,
@@ -170,7 +197,7 @@ pub struct ProjectData {
     pub settings: Settings,
 }
 /// An immutable validated snapshot. Commands build a candidate and commit once.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(try_from = "ProjectData")]
 pub struct Project(ProjectData);
 impl TryFrom<ProjectData> for Project {

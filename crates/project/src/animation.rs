@@ -13,7 +13,9 @@ pub const MAX_ANIMATION_PATHS: usize = 64;
 pub const MAX_PROJECT_KEYS: usize = 100_000;
 const MAX_VALUE: f64 = 1.0e12;
 
-#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[derive(
+    Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, schemars::JsonSchema,
+)]
 #[serde(try_from = "String")]
 pub struct AnimationPath(String);
 impl TryFrom<String> for AnimationPath {
@@ -85,7 +87,7 @@ impl AnimationPath {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(
     tag = "kind",
     content = "value",
@@ -123,7 +125,7 @@ impl ParamValue {
         }
     }
 }
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum Segment {
     Step,
@@ -131,7 +133,7 @@ pub enum Segment {
     Bezier,
 }
 /// Persisted source labels only; they do not synthesize or modify handles.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum TangentMode {
     Auto,
@@ -139,26 +141,26 @@ pub enum TangentMode {
     Broken,
     Flat,
 }
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum Extrapolation {
     Hold,
     Linear,
 }
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum HandleSide {
     In,
     Out,
 }
-#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct CurveHandle {
     /// Signed relative ticks: incoming <= 0, outgoing >= 0; clamped to segment span at evaluation.
     pub dt: Tick,
     pub dv: f64,
 }
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct Keyframe {
     /// Relative to item start; negative/out-of-window keys retain trimmed curves.
@@ -202,7 +204,7 @@ impl Keyframe {
         Ok(())
     }
 }
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(try_from = "ChannelData")]
 pub struct Channel {
     value: ParamValue,
@@ -210,7 +212,7 @@ pub struct Channel {
     before: Extrapolation,
     after: Extrapolation,
 }
-#[derive(Deserialize)]
+#[derive(Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 struct ChannelData {
     value: ParamValue,
@@ -461,7 +463,7 @@ fn lerp(a: f64, b: f64, x: f64) -> f64 {
     a + (b - a) * x
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum ColorComponent {
     R,
@@ -479,7 +481,7 @@ impl ColorComponent {
         }
     }
 }
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(
     tag = "kind",
     content = "channels",
@@ -491,7 +493,7 @@ pub enum Param {
     Value(Channel),
     Color(Box<[Channel; 4]>),
 }
-#[derive(Deserialize)]
+#[derive(Deserialize, schemars::JsonSchema)]
 #[serde(
     tag = "kind",
     content = "channels",
@@ -583,7 +585,7 @@ impl Param {
         Ok(())
     }
 }
-#[derive(Clone, Debug, Default, PartialEq, Serialize)]
+#[derive(Clone, Debug, Default, PartialEq, Serialize, schemars::JsonSchema)]
 #[serde(transparent)]
 pub struct Animations(BTreeMap<AnimationPath, Param>);
 impl<'de> Deserialize<'de> for Animations {

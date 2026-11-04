@@ -13,19 +13,31 @@ pub(crate) fn check_budget(command: &Command) -> Result<()> {
     let mut count = 0;
     while let Some((command, depth)) = stack.pop() {
         count += 1;
-        if count > 1024 || depth > 16 {
+        if count > crate::control::MAX_BATCH_COMMANDS || depth > crate::control::MAX_BATCH_DEPTH {
             return Err(EditError::Limit);
         }
         match command {
             Command::Batch { commands } => {
-                if commands.len() > 1024 {
+                if commands.len() > crate::control::MAX_BATCH_COMMANDS {
                     return Err(EditError::Limit);
                 }
                 stack.extend(commands.iter().map(|c| (c, depth + 1)));
             }
-            Command::MoveItems { moves } if moves.len() > 100_000 => return Err(EditError::Limit),
-            Command::Delete { items } if items.len() > 100_000 => return Err(EditError::Limit),
-            Command::ExportSubtitles { .. } | Command::BurnSubtitles { .. } => {
+            Command::MoveItems { moves } if moves.len() > crate::control::MAX_COLLECTION => {
+                return Err(EditError::Limit);
+            }
+            Command::Delete { items } if items.len() > crate::control::MAX_COLLECTION => {
+                return Err(EditError::Limit);
+            }
+            Command::Inspect {}
+            | Command::Preview { .. }
+            | Command::Export { .. }
+            | Command::JobStatus { .. }
+            | Command::JobCancel { .. }
+            | Command::Catalog {}
+            | Command::ProviderCatalog {}
+            | Command::ExportSubtitles { .. }
+            | Command::BurnSubtitles { .. } => {
                 return Err(EditError::Invalid("export commands require job submission"));
             }
             Command::CreateProject { .. }
@@ -420,7 +432,15 @@ pub(crate) fn apply(
                 data = apply(data, command, created, next, sources)?.into_data();
             }
         }
-        Command::ExportSubtitles { .. } | Command::BurnSubtitles { .. } => {
+        Command::Inspect {}
+        | Command::Preview { .. }
+        | Command::Export { .. }
+        | Command::JobStatus { .. }
+        | Command::JobCancel { .. }
+        | Command::Catalog {}
+        | Command::ProviderCatalog {}
+        | Command::ExportSubtitles { .. }
+        | Command::BurnSubtitles { .. } => {
             return Err(EditError::Invalid("export commands require job submission"));
         }
         Command::CreateProject { .. }

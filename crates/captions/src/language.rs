@@ -3,7 +3,9 @@ use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
 /// Syntactically well-formed BCP 47 tag with standardized casing; unknown tags are allowed.
-#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[derive(
+    Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize, schemars::JsonSchema,
+)]
 #[serde(try_from = "String", into = "String")]
 pub struct LanguageTag(String);
 impl LanguageTag {

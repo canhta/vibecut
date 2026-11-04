@@ -21,18 +21,15 @@ History eviction removes the oldest undo snapshot; it never splits a batch.
 A changed edit clears redo; failures and no-ops preserve redo. Undo/redo move
 existing snapshots, preserving exact integer timing and media/caption identity.
 
-`registry()` owns stable IDs, labels, required parameter fields/Serde wire type
-names and `CommandSpec::enabled(session)`. These are engine-owned descriptive
-schemas, not JSON Schema. They are generated alongside `Command` from a single
-declaration. Command fields are required; extra command/parameter/NewItem/Move fields
-are refused. Model field shapes are the Serde shapes in their owning crates.
-`Tick` is signed i64 ticks, IDs are u64 integers, NfcText is an NFC string,
-TrackKind is a snake-case string, Color is four u8 channels, Vec is an array,
-and optional values are null or their wrapped value. `NewItem.source_asset` may
-also be omitted (None). Nested batch
-entries use `{"command":"<id>","params":{...}}`. `NewItem` and `Move` expose
-all their fields in the typed API. Enabled predicates advertise coarse state
-availability; execution always validates exact targets and candidates.
+`registry()` derives JSON Schema 2020-12 input schemas, output schemas, effects,
+labels and executable examples alongside `Command` from one declaration. Leaf
+shapes come from the owning types; fixed objects are closed recursively, including
+empty params and nested batches. Domain constructors still validate invariants.
+`CommandSpec::enabled(session)` describes coarse availability. Required nullable
+keyframe fields remain required; `NewItem.source_asset` may be omitted or null.
+JSON integer admission is limited to ±(2^53−1), including nested values. ProjectId
+has one decimal-string encoding at its owner, including project persistence;
+other IDs and Tick remain numbers. No adapter-specific encoding exists.
 
 For example, `execute("add_track", {"name":"Video", "kind":"video"})`
 returns `Outcome { changed, created }`. `created` lists engine-allocated typed
@@ -45,6 +42,99 @@ does not perform probe/hash IO. A failed command/batch consumes no IDs; successf
 preview/group children retire their IDs even when their outer operation rolls back. ID exhaustion returns
 a typed error. Reloading a project starts a new Session/identity lifetime.
 
+## Control admission, revisions and receipts
+
+`control::{Request, Caller, Policy, Response}` is the transport-neutral boundary.
+`Session::control_json` parses at most 8 MiB of UTF-8 with duplicate-key refusal,
+32 nested levels, 200,000 nodes, 100,000 members per collection and 4 MiB aggregate
+text. `control_request` also bounds already-allocated requests. Unknown commands,
+wrong types/fields and nested batch publications refuse before effects. Validators
+compile only generated local schemas with network/file resolution disabled.
+API version 1 is independent of the project file schema. The BLAKE3 catalog digest
+covers schemas, static effects/examples and limits, excluding enabled/session state.
+Effectful calls require the exact digest and version; catalog reads need no digest.
+[Generated commands](../../docs/engineering/commands.md) and `catalog.digest` regenerate
+with `cargo run -p engine --example control_catalog`; the conformance test checks
+both against current registry output in CI.
+
+Every Session starts with an OS-random epoch. `revision()` is an opaque string;
+its generation and `JobTarget` share the same Arc invalidation boundary. UI edits,
+undo/redo, preview lifetimes, transaction rollback/net-zero end, view changes and
+successful save advance it; ordinary no-ops/refusals do not. Effectful control
+requests require `base_rev`. A stale revision refuses before any child of a batch.
+The recovery journal descriptor is version 2 for the same ProjectId encoding;
+older descriptors are refused before model decoding, without deleting their files.
+Session/project lifecycle creation and disk saves retain their existing
+`Session::create`/`Autosave` ownership; direct Session edit/control execution returns
+a typed refusal for those commands. Their registry examples declare those routes.
+
+The composition root supplies `Caller` and a mandatory trusted `Policy`, outside
+client JSON. Engine invokes it on the command and every batch child before effects
+and before receipt replay. It must enforce source/destination/overwrite and provider
+consent through their owners; it is not an authenticated transport implementation.
+External callers cannot begin/commit/cancel gestures, including through generic
+run or batches. External mutations refuse while the UI holds a gesture. Agents use
+atomic batches and undo. Reads do not expose uncommitted gesture snapshots.
+
+Effectful requests require a 1..=128-byte idempotency key. Receipts are scoped by
+trusted principal, Session and key; the fingerprint covers command, params,
+base revision and contract identity, excluding transport/request correlation.
+Replay returns the original revision/result even after later edits; conflicting
+semantics refuse. Mutable Session ownership serializes concurrent callers. The
+ledger retains at most 4096 receipts and 32 MiB without eviction until Session end;
+new effects reserve 128 KiB of available ledger capacity before execution. Mutation
+results have at most 1024 created IDs; returned publication paths are capped at
+4096 encoded bytes. Request IDs and principals are 1..=128 bytes. Refusals before
+reservation do not occupy a key; accepted execution errors do. A new Session refuses
+the old epoch rather than rerunning an uncertain mutation.
+
+Inspection/catalog responses are capped at 8 MiB; oversize reads refuse instead of
+truncating or mixing revisions. Safe wire error codes omit paths, user text,
+provider bodies and Rust Debug. `bounded_json` is the adapter's bounded response
+serializer. No transport, filesystem grant store, CLI persistent Session or MCP
+runtime is introduced here; their composition belongs to the consumers.
+
+`inspect`, `catalog`, `provider_catalog`, `preview`, general `export`, `job_status`
+and `job_cancel` share the existing declaration. Export starts the production
+render job against its admitted immutable snapshot and returns job ID/revision and
+paths. Preview starts a CPU job through the same runner; job_status returns its
+retained inline JPEG result without consuming it. Up to four exact output frames
+are rendered at a maximum 640-pixel edge, JPEG quality 80, with frame/active clip IDs
+burned in through the production text compositor. At most 16 active clips are
+admitted per preview frame; larger label sets refuse. Labels that cannot fit at 14 output pixels within half
+the image also refuse rather than clipping. Preview results retain their
+captured revision; missing sources fail rather than invent picture evidence.
+Images never enter receipts or event queues. Cancel requests obey the runner's
+publication fence. Absent/evicted jobs return JobNotRetained; replaying their start
+receipt never submits another job. Applications keep ticking app-owned jobs after
+a listener disconnects; process shutdown retains JobRunner's cancel/join behavior.
+
+## Control events and resynchronization
+
+One typed `Payload` set covers command result/error, committed project change,
+revision change and job snapshots. Envelopes include API/catalog/session identity,
+revision and string sequence number. Command replies/receipts remain authoritative;
+large read/image results stay on the response path. Project changes require a full
+snapshot rather than pretending created IDs form a complete diff. Gesture previews
+and cancellation emit revision changes, never committed project changes.
+
+`snapshot_and_subscribe(&runner)` captures committed project, revision, current jobs
+and a cursor while Session ownership is held. The owning loop calls `observe_jobs`
+after runner ticks/accepted responses; it uses retained snapshots without draining
+other consumers. Acceptance is visible before job lifecycle events. At most 128
+small live events are retained for every listener together; cursors hold no queue.
+A slow or foreign cursor gets ResyncRequired and must install a fresh snapshot.
+No durable replay or exhaustive transition log is promised; progress can coalesce.
+Terminal snapshots follow the existing runner/publication fence, and repeated polls
+do not duplicate unchanged terminal events. Dropping a cursor never cancels work.
+
+The control tests enumerate registry-owned examples and fixture requirements,
+validate closed schemas, exercise real export/preview jobs, stale requests,
+receipt replay/conflict/exhaustion, hostile parser/integer inputs, policy refusal,
+gesture ownership and snapshot pressure. Measurements and acceptance limitations
+are recorded in the local /07 done report; a build alone proves none of the
+transport or installed-client behavior.
+
 ## Transactions, gestures and changes
 
 `begin_gesture`, `commit_gesture` and `cancel_gesture` are registered commands and
@@ -53,7 +143,7 @@ preview snapshots, while original undo/redo and pending committed changes remain
 untouched. Commit adds one undo step, evicting at most one oldest step; cancel
 restores the entry snapshot and pending event without adding undo/redo. Starting
 or ending a gesture breaks merge continuity. A no-op gesture preserves redo and
-emits no event. A refused preview command leaves the prior preview/gesture intact.
+emits no committed-project event; its closed preview lifetime advances the control revision. A refused preview command leaves the prior preview/gesture intact.
 
 `transaction(|session| -> Result<T>)` stages several commands with the same
 history/event rules. Success commits one step; error or unwind restores its entry
@@ -82,7 +172,7 @@ publishing one snapshot. Failure leaves project, history and allocation untouche
 Each batch child must also yield a valid project; a failed child rolls back the
 whole batch. Typed commands admit at most 1024 commands and nesting depth 16.
 JSON dispatch additionally caps depth at 32, nodes at 200,000, each collection at
-100,000 entries and aggregate string/key bytes at 16 MiB before deserialization.
+100,000 entries and aggregate string/key bytes at 4 MiB before deserialization.
 The caller already owns the Value; these caps bound added processing, not its
 initial allocation. Project and source constructors retain their own limits.
 

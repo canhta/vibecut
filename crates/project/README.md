@@ -110,8 +110,9 @@ or renderer output claim is made.
 ## Persistence and limits
 
 `encode`/`decode` use one JSON envelope: `format`, `schema_version`, `generator`,
-`project`. Current schema 2 adds item animations; schema 1 is refused rather than
-migrated or silently defaulted. Older schemas return `TooOld`, newer schemas `TooNew`; there are no
+`project`. Current schema 3 stores ProjectId as a canonical decimal string, preserving
+all u64 identity bits for control clients; other IDs remain numeric. Schemas 1 and 2
+are refused rather than migrated or silently defaulted. Older schemas return `TooOld`, newer schemas `TooNew`; there are no
 migration or compatibility paths. Unknown current-schema project/envelope fields
 are refused. `WriterLease::save` serializes completely before touching the destination;
 read-only `load` reads at most 16 MiB + 1 byte, including when a file grows while reading.

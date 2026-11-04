@@ -136,9 +136,7 @@ fn all_commands_share_registry_and_strict_json_dispatch() {
     for spec in registry() {
         assert!(!spec.label.is_empty());
         assert_eq!(registry().iter().filter(|r| r.id == spec.id).count(), 1);
-        for field in spec.params_schema {
-            assert!(!field.name.is_empty() && !field.wire_type.is_empty());
-        }
+        assert_eq!(spec.params_schema["type"], "object");
     }
     let undo = registry().iter().find(|r| r.id == "undo").unwrap();
     assert!(undo.enabled(&s));

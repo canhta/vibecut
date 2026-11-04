@@ -9,6 +9,7 @@ publish = false
 workspace = true
 
 [dependencies]
+schemars = "1.2.3"
 serde = { version = "1.0.229", features = ["derive"] }
 
 [dev-dependencies]

@@ -35,7 +35,9 @@ pub enum Error {
     Time(#[from] time::TimeError),
 }
 /// Normalized stored text; construction and deserialization always apply NFC.
-#[derive(Clone, Default, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[derive(
+    Clone, Default, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, schemars::JsonSchema,
+)]
 #[serde(from = "String", into = "String")]
 pub struct NfcText(String);
 impl From<String> for NfcText {
@@ -112,13 +114,13 @@ pub struct Transcript {
     pub segments: Vec<Segment>,
 }
 /// Per-language text and its independent edit/translation provenance.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct CueText {
     pub text: NfcText,
     pub edited: bool,
     pub translation_ref: Option<NfcText>,
 }
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct Cue {
     pub id: NfcText,
     pub range: SourceRange,
@@ -135,7 +137,7 @@ impl Cue {
         true
     }
 }
-#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct CueTrack {
     pub cues: Vec<Cue>,
 }

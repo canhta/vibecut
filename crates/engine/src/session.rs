@@ -1,4 +1,4 @@
-use crate::{Command, EditError, Outcome, Result, edit, registry};
+use crate::{Command, EditError, Outcome, Result, edit};
 use project::Project;
 use serde_json::Value;
 use std::{
@@ -20,14 +20,16 @@ struct State {
 /// Opaque identity for exactly one Session revision, including save boundaries.
 #[derive(Clone)]
 pub struct JobTarget {
-    session: Arc<()>,
-    revision: Arc<()>,
+    session: Arc<crate::control::Revision>,
+    revision: Arc<crate::control::Revision>,
 }
 /// Owns project editing, bounded history, deferred changes and gesture lifecycle.
 pub struct Session {
     metadata: project::Metadata,
-    identity: Arc<()>,
-    revision: Arc<()>,
+    pub(crate) identity: Arc<crate::control::Revision>,
+    pub(crate) revision: Arc<crate::control::Revision>,
+    pub(crate) generation: u64,
+    pub(crate) control: crate::control::State,
     state: State,
     limit: usize,
     gesture: Option<State>,
@@ -55,10 +57,17 @@ impl Session {
             .chain(data.bookmarks.iter().map(|b| b.id.0))
             .max()
             .map_or(Some(0), |id| id.checked_add(1));
+        let mut entropy = [0u8; 32];
+        getrandom::fill(&mut entropy).map_err(|_| EditError::ControlIdentity)?;
+        let identity = Arc::new(crate::control::Revision(
+            blake3::hash(&entropy).to_hex().to_string(),
+        ));
         Ok(Self {
             metadata: project::Metadata::default(),
-            identity: Arc::new(()),
-            revision: Arc::new(()),
+            revision: Arc::new(crate::control::Revision(format!("{}:0", identity.0))),
+            identity,
+            generation: 0,
+            control: crate::control::State::default(),
             state: State {
                 project: Arc::new(project),
                 undo: VecDeque::new(),
@@ -107,8 +116,9 @@ impl Session {
         if self.transaction_active() {
             return Err(EditError::TransactionActive);
         }
+        self.generation.checked_add(1).ok_or(EditError::Limit)?;
         self.end_merge();
-        self.revision = Arc::new(());
+        self.invalidate_revision(false)?;
         Ok(())
     }
     pub(crate) fn matches_target(&self, target: &JobTarget) -> bool {
@@ -183,7 +193,7 @@ impl Session {
     }
     fn finish_gesture(&mut self) -> Result<Outcome> {
         let before = self.gesture.take().ok_or(EditError::NoGesture)?;
-        Ok(self.squash(before))
+        self.squash(before)
     }
     /// Restore project, history and deferred event to gesture entry. Preview IDs are
     /// retired so stale preview references cannot alias future items.
@@ -197,6 +207,7 @@ impl Session {
         self.state = before;
         self.state.next_id = next_id;
         self.end_merge();
+        self.invalidate_revision(false)?;
         Ok(Outcome {
             changed,
             created: Vec::new(),
@@ -209,6 +220,7 @@ impl Session {
         if self.transaction_active() {
             return Err(EditError::TransactionActive);
         }
+        self.generation.checked_add(1).ok_or(EditError::Limit)?;
         let before = self.state.clone();
         self.state.trim_sources.clear();
         self.grouping = true;
@@ -216,12 +228,12 @@ impl Session {
         self.grouping = false;
         match result {
             Ok(Ok(value)) => {
-                self.squash(before);
+                self.squash(before)?;
                 Ok(value)
             }
             failed => {
                 // Targets captured by child commands belong to discarded previews.
-                self.revision = Arc::new(());
+                self.invalidate_revision(false)?;
                 let next_id = self.state.next_id;
                 self.state = before;
                 self.state.next_id = next_id;
@@ -232,9 +244,9 @@ impl Session {
             }
         }
     }
-    fn squash(&mut self, before: State) -> Outcome {
+    fn squash(&mut self, before: State) -> Result<Outcome> {
         // Close the preview lifetime even for a net-zero group/gesture.
-        self.revision = Arc::new(());
+        self.generation.checked_add(1).ok_or(EditError::Limit)?;
         let project = self.state.project.clone();
         let next_id = self.state.next_id;
         let changed = *project != *before.project;
@@ -244,22 +256,17 @@ impl Session {
         if changed {
             self.publish(project, None);
         }
-        Outcome {
+        self.invalidate_revision(changed)?;
+        Ok(Outcome {
             changed,
             created: Vec::new(),
-        }
+        })
     }
     /// Strict JSON dispatch. All timing values are integer ticks; malformed/oversized
     /// parameters fail without leaking user text or changing transaction state.
     pub fn execute(&mut self, command_id: &str, params: Value) -> Result<Outcome> {
         self.boundary(|session| {
-            if !registry().iter().any(|s| s.id == command_id) {
-                return Err(EditError::UnknownCommand);
-            }
-            budget(&params)?;
-            let command =
-                serde_json::from_value(serde_json::json!({"command":command_id,"params":params}))
-                    .map_err(|_| EditError::InvalidParams)?;
+            let command = crate::control::decode_command(command_id, params)?;
             session.commit(command, None)
         })
     }
@@ -274,26 +281,56 @@ impl Session {
     fn boundary<T>(&mut self, run: impl FnOnce(&mut Self) -> Result<T>) -> Result<T> {
         let before = self.state.clone();
         let gesture = self.gesture.clone();
+        let revision = self.revision.clone();
+        let event_mark = self.control_mark();
+        let metadata = self.metadata.clone();
         match catch_unwind(AssertUnwindSafe(|| run(self))) {
             Ok(Ok(value)) => {
-                if !Arc::ptr_eq(&before.project, &self.state.project) {
-                    self.revision = Arc::new(());
+                if Arc::ptr_eq(&revision, &self.revision)
+                    && !Arc::ptr_eq(&before.project, &self.state.project)
+                    && let Err(error) = self.invalidate_revision(!self.transaction_active())
+                {
+                    self.state = before;
+                    self.gesture = gesture;
+                    self.metadata = metadata;
+                    self.revision = revision;
+                    self.restore_control_mark(event_mark);
+                    return Err(error);
                 }
                 Ok(value)
             }
             Ok(Err(error)) => {
                 self.state = before;
                 self.gesture = gesture;
+                self.metadata = metadata;
+                self.revision = revision;
+                self.restore_control_mark(event_mark);
                 Err(error)
             }
             Err(_) => {
                 self.state = before;
                 self.gesture = gesture;
+                self.metadata = metadata;
+                self.revision = revision;
+                self.restore_control_mark(event_mark);
                 Err(EditError::Panicked)
             }
         }
     }
     fn commit(&mut self, command: Command, key: Option<&str>) -> Result<Outcome> {
+        // Keep one generation available to close an active preview lifetime even
+        // if its final child reaches exhaustion and the group must roll back.
+        let closing = matches!(
+            command,
+            Command::CommitGesture {} | Command::CancelGesture {}
+        );
+        self.generation
+            .checked_add(if self.transaction_active() && !closing {
+                2
+            } else {
+                1
+            })
+            .ok_or(EditError::Limit)?;
         if key.is_some_and(|k| k.is_empty() || k.len() > 256) {
             return Err(EditError::InvalidParams);
         }
@@ -319,6 +356,9 @@ impl Session {
                 view.validate()?;
                 let changed = self.metadata.view != view;
                 self.metadata.view = view;
+                if changed {
+                    self.invalidate_revision(false)?;
+                }
                 return Ok(Outcome {
                     changed,
                     created: Vec::new(),
@@ -424,18 +464,22 @@ pub(crate) fn budget(value: &Value) -> Result<()> {
     let mut bytes = 0usize;
     while let Some((value, depth)) = stack.pop() {
         nodes += 1;
-        if nodes > 200_000 || depth > 32 {
+        if nodes > crate::control::MAX_NODES || depth > crate::control::MAX_DEPTH {
             return Err(EditError::Limit);
         }
         match value {
             Value::Array(a) => {
-                if a.len() > 100_000 || nodes + stack.len() + a.len() > 200_000 {
+                if a.len() > crate::control::MAX_COLLECTION
+                    || nodes + stack.len() + a.len() > crate::control::MAX_NODES
+                {
                     return Err(EditError::Limit);
                 }
                 stack.extend(a.iter().map(|v| (v, depth + 1)));
             }
             Value::Object(o) => {
-                if o.len() > 100_000 || nodes + stack.len() + o.len() > 200_000 {
+                if o.len() > crate::control::MAX_COLLECTION
+                    || nodes + stack.len() + o.len() > crate::control::MAX_NODES
+                {
                     return Err(EditError::Limit);
                 }
                 for (k, v) in o {
@@ -443,10 +487,22 @@ pub(crate) fn budget(value: &Value) -> Result<()> {
                     stack.push((v, depth + 1));
                 }
             }
+            Value::Number(n)
+                if n.as_i64().is_some_and(|v| {
+                    !(-crate::control::MAX_SAFE_INTEGER..=crate::control::MAX_SAFE_INTEGER)
+                        .contains(&v)
+                }) || n
+                    .as_u64()
+                    .is_some_and(|v| v > crate::control::MAX_SAFE_INTEGER as u64)
+                    || n.as_f64()
+                        .is_some_and(|v| v.abs() > crate::control::MAX_SAFE_INTEGER as f64) =>
+            {
+                return Err(EditError::InvalidParams);
+            }
             Value::String(s) => bytes = bytes.saturating_add(s.len()),
             _ => {}
         }
-        if bytes > 16 * 1024 * 1024 {
+        if bytes > crate::control::MAX_TEXT_BYTES {
             return Err(EditError::Limit);
         }
     }

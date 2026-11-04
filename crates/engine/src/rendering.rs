@@ -302,13 +302,7 @@ impl crate::Session {
         command_id: &str,
         params: serde_json::Value,
     ) -> Result<(JobId, CancelToken), EditError> {
-        if !crate::registry().iter().any(|s| s.id == command_id) {
-            return Err(EditError::UnknownCommand);
-        }
-        crate::session::budget(&params)?;
-        let command =
-            serde_json::from_value(serde_json::json!({"command":command_id,"params":params}))
-                .map_err(|_| EditError::InvalidParams)?;
+        let command = crate::control::decode_command(command_id, params)?;
         self.submit_export_command(runner, input, command)
     }
 }

@@ -12,7 +12,19 @@ use std::{
     time::{Duration, Instant},
 };
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(
+    Clone,
+    Copy,
+    Debug,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    serde::Serialize,
+    serde::Deserialize,
+    schemars::JsonSchema,
+)]
+#[serde(rename_all = "snake_case")]
 pub struct JobId(pub u64);
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ResourceClass {
@@ -29,7 +41,10 @@ impl ResourceClass {
         }
     }
 }
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(
+    Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize, schemars::JsonSchema,
+)]
+#[serde(rename_all = "snake_case")]
 pub enum JobKind {
     Transcribe,
     Translate,
@@ -40,7 +55,10 @@ pub enum JobKind {
     Persist,
     DownloadModel,
 }
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(
+    Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize, schemars::JsonSchema,
+)]
+#[serde(rename_all = "snake_case")]
 pub enum JobStage {
     Queued,
     Starting,
@@ -61,7 +79,10 @@ pub enum JobStage {
     Backoff,
     Complete,
 }
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(
+    Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize, schemars::JsonSchema,
+)]
+#[serde(rename_all = "snake_case")]
 pub enum JobState {
     Queued,
     Running,
@@ -631,6 +652,31 @@ impl JobRunner {
             }
         }
     }
+    /// Current retained truth, without draining another consumer's events.
+    pub fn snapshots(&self) -> Vec<JobSnapshot> {
+        self.queue
+            .iter()
+            .map(|p| p.snapshot.clone())
+            .chain(self.running.iter().map(|r| r.pending.snapshot.clone()))
+            .chain(self.finished.iter().map(|f| f.snapshot.clone()))
+            .collect()
+    }
+    /// Cancellation is a request; the existing publication fence can win.
+    pub fn cancel_job(&mut self, id: JobId) -> Result<(), EditError> {
+        if let Some(p) = self
+            .queue
+            .iter()
+            .chain(self.running.iter().map(|r| &r.pending))
+            .find(|p| p.snapshot.id == id)
+        {
+            p.context.cancel.cancel();
+            return Ok(());
+        }
+        if self.finished.iter().any(|f| f.snapshot.id == id) {
+            return Ok(());
+        }
+        Err(EditError::JobNotRetained)
+    }
     pub fn snapshot(&self, id: JobId) -> Option<JobSnapshot> {
         self.queue
             .iter()
@@ -644,6 +690,15 @@ impl JobRunner {
     /// consumers never block workers or accumulate a progress-event history.
     pub fn drain_events(&mut self) -> Vec<JobSnapshot> {
         std::mem::take(&mut self.events).into_values().collect()
+    }
+    /// Non-consuming view while the existing bounded job retention holds it.
+    pub fn output_bytes(&self, id: JobId) -> Option<&[u8]> {
+        self.finished
+            .iter()
+            .find(|f| f.snapshot.id == id)?
+            .output
+            .as_ref()
+            .map(JobOutput::bytes)
     }
     pub fn take_output(&mut self, id: JobId) -> Option<JobOutput> {
         self.finished

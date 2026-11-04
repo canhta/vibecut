@@ -305,7 +305,8 @@ fn corrupt_truncated_hash_mismatch_and_schema_are_diagnosed_without_deletion() {
             }
             _ => {
                 let mut json: serde_json::Value = serde_json::from_slice(&original).unwrap();
-                json["version"] = serde_json::json!(2);
+                json["version"] = serde_json::json!(1);
+                json["project_id"] = serde_json::json!(1);
                 fs::write(&meta, serde_json::to_vec(&json).unwrap()).unwrap();
             }
         }

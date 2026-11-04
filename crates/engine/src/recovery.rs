@@ -18,6 +18,7 @@ const MAX_PROJECT: u64 = 16 * 1024 * 1024;
 const MAX_META: u64 = 2 * 1024 * 1024;
 const WORK_BYTES: u64 = 40 * 1024 * 1024;
 const JOURNAL: &str = "journal.json";
+const JOURNAL_VERSION: u32 = 2;
 
 /// Event-loop deadlines; the caller must tick at least as often as its desired latency.
 #[derive(Clone, Copy)]
@@ -104,11 +105,16 @@ fn read_bounded(path: &Path, max: u64) -> Result<Vec<u8>> {
 }
 fn candidate(directory: PathBuf, file: File) -> Result<Candidate> {
     let bytes = read_bounded(&directory.join(JOURNAL), MAX_META)?;
-    let journal: Journal =
-        serde_json::from_slice(&bytes).map_err(|_| EditError::RecoveryCorrupt)?;
-    if journal.version != 1 {
+    #[derive(Deserialize)]
+    struct Version {
+        version: u32,
+    }
+    let header: Version = serde_json::from_slice(&bytes).map_err(|_| EditError::RecoveryCorrupt)?;
+    if header.version != JOURNAL_VERSION {
         return Err(EditError::Unsupported("journal schema"));
     }
+    let journal: Journal =
+        serde_json::from_slice(&bytes).map_err(|_| EditError::RecoveryCorrupt)?;
     if journal.revision == 0 {
         return Err(EditError::RecoveryCorrupt);
     }
@@ -197,7 +203,7 @@ fn publish(
     let path = project::autosave::save(&directory.join("project"), project, 2)?;
     let bytes = read_bounded(&path, MAX_PROJECT)?;
     let journal = Journal {
-        version: 1,
+        version: JOURNAL_VERSION,
         project_id: project.data().id,
         name: project.data().name.as_str().to_owned(),
         saved_path,

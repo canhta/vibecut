@@ -2,7 +2,19 @@ use crate::{Error, Result};
 use serde::{Deserialize, Serialize};
 
 /// Vertical anchor inside the caption destination after its safe-area inset.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[derive(
+    Clone,
+    Copy,
+    Debug,
+    Default,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Serialize,
+    Deserialize,
+    schemars::JsonSchema,
+)]
 #[serde(rename_all = "snake_case")]
 pub enum CaptionPosition {
     Top,
@@ -10,14 +22,14 @@ pub enum CaptionPosition {
     #[default]
     Bottom,
 }
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct CaptionOutline {
     pub color: [u8; 4],
     /// Pixels at 1080 output lines, scaled with output height.
     pub width: f32,
 }
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct CaptionBackground {
     pub color: [u8; 4],
@@ -26,7 +38,7 @@ pub struct CaptionBackground {
     pub radius: f32,
 }
 /// Transient render settings, never a second persisted cue/style schema.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct CaptionStyle {
     pub font: String,

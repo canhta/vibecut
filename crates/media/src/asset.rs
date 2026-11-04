@@ -14,12 +14,24 @@ use std::{
 };
 use time::{FrameRate, Tick};
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[derive(
+    Clone,
+    Copy,
+    Debug,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Serialize,
+    Deserialize,
+    schemars::JsonSchema,
+)]
 #[serde(transparent)]
 pub struct AssetId(pub u64);
 
 /// BLAKE3 of all file bytes; never a path or timestamp fingerprint.
-#[derive(Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Copy, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(transparent)]
 pub struct ContentHash(pub [u8; 32]);
 impl fmt::Debug for ContentHash {
@@ -66,7 +78,7 @@ impl ContentHash {
 }
 
 /// Persisted stream metadata; codec parameters remain runtime-only in `Probe`.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct SourceStream {
     pub index: usize,
@@ -81,7 +93,7 @@ pub struct SourceStream {
     pub video: Option<VideoInfo>,
     pub audio: Option<AudioInfo>,
 }
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct SourceProbe {
     pub format: String,
@@ -114,10 +126,10 @@ impl From<&Probe> for SourceProbe {
     }
 }
 
-#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(try_from = "AssetData")]
 pub struct SourceAsset(AssetData);
-#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct AssetData {
     pub id: AssetId,

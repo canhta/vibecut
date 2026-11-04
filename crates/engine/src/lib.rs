@@ -4,6 +4,8 @@ pub mod cache;
 pub mod clip_boundaries;
 mod clip_export;
 mod commands;
+pub mod control;
+mod control_preview;
 pub mod jobs;
 pub mod models;
 pub mod providers;
@@ -19,7 +21,7 @@ mod edit;
 mod rendering;
 mod session;
 pub use commands::{
-    Command, CommandSpec, CreatedId, FieldSchema, Move, NewItem, Outcome, registry,
+    Command, CommandSpec, CreatedId, Effect, Example, Fixture, Move, NewItem, Outcome, registry,
 };
 pub use rendering::{submit_export, subtitle_file};
 pub use session::{JobTarget, Session};
@@ -27,6 +29,25 @@ pub use session::{JobTarget, Session};
 /// Safe diagnostic categories: never include parameter values or user text.
 #[derive(Debug, thiserror::Error)]
 pub enum EditError {
+    #[error("control schema version or catalog differs")]
+    SchemaMismatch,
+    #[error("session epoch differs")]
+    SessionGone,
+    #[error("project revision differs")]
+    StaleRevision,
+    #[error("control permission refused")]
+    Permission,
+    #[error("idempotency key conflicts")]
+    IdempotencyConflict,
+    #[error("session receipt capacity exhausted")]
+    ReceiptCapacity,
+    #[error("event cursor requires a new snapshot")]
+    ResyncRequired,
+    #[error("job is absent or no longer retained")]
+    JobNotRetained,
+    #[error("control identity unavailable")]
+    ControlIdentity,
+
     #[error("clip boundary refused at short {short}, segment {segment}: {reason:?}")]
     ClipBoundary {
         short: usize,

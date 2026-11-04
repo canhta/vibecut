@@ -9,6 +9,7 @@ publish = false
 workspace = true
 
 [dependencies]
+schemars = "1.2.3"
 time = { path = "../time" }
 media = { path = "../media" }
 captions = { path = "../captions" }

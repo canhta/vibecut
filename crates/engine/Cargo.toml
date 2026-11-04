@@ -15,6 +15,10 @@ gipformer = ["ai/gipformer"]
 candle-align = ["ai/candle-align"]
 
 [dependencies]
+getrandom = "0.4.3"
+jsonschema = { version = "0.60.2", default-features = false }
+image = { version = "0.25.10", default-features = false, features = ["jpeg"] }
+schemars = "1.2.3"
 ai = { path = "../ai", default-features = false }
 project = { path = "../project" }
 time = { path = "../time" }

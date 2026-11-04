@@ -1384,10 +1384,10 @@ fn commands(args: Vec<OsString>) -> Result<Output, CliError> {
         .map(|spec| {
             let fields = spec
                 .params_schema
-                .iter()
-                .map(|field| format!("{}: {}", field.name, field.wire_type))
-                .collect::<Vec<_>>()
-                .join(", ");
+                .get("properties")
+                .and_then(serde_json::Value::as_object)
+                .map(|fields| fields.keys().cloned().collect::<Vec<_>>().join(", "))
+                .unwrap_or_default();
             if fields.is_empty() {
                 format!("{} - {}", spec.id, spec.label)
             } else {
