@@ -37,6 +37,8 @@ matches in tracked files and branch commit messages.
   and any prompt, heuristic or ranking we own): measured, because we improve it. Its
   eval names a fixed labelled set, a metric and a baseline, and every change to that
   logic reports the metric against the baseline.
+- **Live runs** (smokes, evals): prefer OpenAI; pure LLM calls (text in, text out) use
+  only `gpt-6-luna`; other services (ASR, TTS, vision) may use any admitted provider.
 
 ## When to write tests
 
