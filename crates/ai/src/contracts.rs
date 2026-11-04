@@ -52,15 +52,7 @@ impl From<SampleRange> for [u64; 2] {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum TimingUnit {
-    Segment,
-    Word,
-    Character,
-    Grapheme,
-    Token,
-}
+pub use captions::TimingUnit;
 /// Conditional/unknown features are refused until the adapter resolves the condition
 /// for the exact request. Capability presence does not establish timing accuracy.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]

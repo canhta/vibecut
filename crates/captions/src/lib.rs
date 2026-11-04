@@ -4,6 +4,7 @@ mod language;
 mod mapping;
 mod segment;
 mod span;
+mod timing;
 pub use io::{Export, Format, Import, export, parse};
 pub use language::{LanguageProfile, LanguageRegistry, LanguageTag};
 pub use mapping::{CueFragmentId, EditMapping, MappedRange, MappedTick};
@@ -15,6 +16,10 @@ use serde::{Deserialize, Serialize};
 pub use span::{NormalizedText, TextSpan};
 use std::{collections::BTreeMap, fmt};
 use time::{SourceRange, Tick};
+pub use timing::{
+    DisplayReplacement, DisplayVariant, MappedTiming, SpanTiming, TimingGroup, TimingProvenance,
+    TimingSpans, TimingUnit,
+};
 use unicode_normalization::UnicodeNormalization;
 
 /// Actionable failures; diagnostics never contain subtitle text.
@@ -91,6 +96,7 @@ pub struct Segment {
     pub range: SourceRange,
     pub text: NfcText,
     pub words: Vec<Word>,
+    pub spans: Option<TimingSpans>,
 }
 /// Provider, model and settings identity used to invalidate derived work.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]

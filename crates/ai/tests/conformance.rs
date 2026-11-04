@@ -69,7 +69,12 @@ fn caps(scope: &Scope) -> Capabilities {
             LanguageTag::parse("zz-ZZ").unwrap(),
         ],
         target_languages: vec![LanguageTag::parse("en").unwrap()],
-        timing: BTreeSet::from([TimingUnit::Segment, TimingUnit::Word, TimingUnit::Character]),
+        timing: BTreeSet::from([
+            TimingUnit::Segment,
+            TimingUnit::Word,
+            TimingUnit::Character,
+            TimingUnit::Token,
+        ]),
         diarization: Support::Unknown,
         live_audio_input: Support::Unsupported,
         file_result_stream: Support::Unsupported,
@@ -311,7 +316,7 @@ fn unsupported_aligner_leaves_text_only_and_never_runs() {
                 scope: &align_scope,
                 consent: None,
             },
-            unit: TimingUnit::Token,
+            unit: TimingUnit::Grapheme,
         }),
         &Hooks::new(),
     )
@@ -765,7 +770,16 @@ fn character_layers_remain_explicit_and_never_become_words() {
     )
     .unwrap();
     assert_eq!(result.segments()[1].timing[0].unit, TimingUnit::Character);
-    assert!(matches!(result.to_transcript(), Err(Error::Unsupported)));
+    let transcript = result.to_transcript().unwrap();
+    assert!(transcript.segments[1].words.is_empty());
+    let spans = transcript.segments[1].spans.as_ref().unwrap();
+    assert_eq!(spans.spans().len(), 2);
+    assert!(
+        spans
+            .spans()
+            .iter()
+            .all(|s| s.input().unit == TimingUnit::Character)
+    );
 }
 #[test]
 fn alignment_preserves_existing_native_unit_layers() {
@@ -1018,4 +1032,269 @@ fn review_same_text_repetition_at_disjoint_times_keeps_both_events() {
     .unwrap();
     assert_eq!(result.segments().len(), 2);
     assert_eq!(result.segments()[1].range.unwrap().end(), 48000);
+}
+
+#[allow(clippy::unwrap_used, reason = "offline raw token fixture")]
+fn raw_result(raw: &str) -> RecognitionSegment {
+    RecognitionSegment {
+        id: "raw-segment".into(),
+        text: raw.into(),
+        range: Some(SampleRange::new(16000, 16000 + raw.len() as u64 * 100).unwrap()),
+        timing: vec![],
+        raw_tokens: raw
+            .bytes()
+            .enumerate()
+            .map(|(i, b)| RawToken {
+                bytes: vec![b],
+                range: Some(
+                    SampleRange::new(16000 + i as u64 * 100, 16100 + i as u64 * 100).unwrap(),
+                ),
+                provenance: Provenance::Native,
+                confidence: Some(captions::Confidence::try_from(0.9).unwrap()),
+            })
+            .collect(),
+    }
+}
+#[test]
+fn raw_tokens_through_public_execution_retain_utf8_correspondence_and_source_samples() {
+    let scope = scope(config(false), Operation::Transcribe);
+    let raw = "e\u{302}\u{301}中👩🏽‍💻";
+    let segment = raw_result(raw);
+    let mut fake = Fake::new(scope.provider.clone(), TEXT);
+    fake.result = vec![segment.clone()];
+    let pcm = vec![0.0; 32000];
+    let recognition = transcribe(
+        &fake,
+        audio(&pcm, &scope),
+        &Request {
+            scope: &scope,
+            consent: None,
+        },
+        None,
+        &Hooks::new(),
+    )
+    .unwrap();
+    assert_eq!(recognition.segments()[0].raw_tokens, segment.raw_tokens);
+    let merged = assemble(
+        vec![recognition.clone(), recognition.clone()],
+        &Hooks::new(),
+    )
+    .unwrap();
+    assert_eq!(merged.segments().len(), 1);
+    let transcript = merged.to_transcript().unwrap();
+    let segment = &transcript.segments[0];
+    assert!(segment.words.is_empty());
+    let spans = segment.spans.as_ref().unwrap();
+    assert_eq!(spans.raw(), raw);
+    assert_eq!(spans.normalized().text().as_str(), "ế中👩🏽‍💻");
+    assert_eq!(spans.spans().len(), raw.len());
+    for (i, span) in spans.spans().iter().enumerate() {
+        assert_eq!(span.input().index, i);
+        assert_eq!(span.input().unit, TimingUnit::Token);
+        assert_eq!(span.input().provenance, Provenance::Native);
+        assert_eq!(span.input().raw, i..i + 1);
+        assert_eq!(
+            span.input().range.unwrap().start(),
+            time::Tick::from_units(16000 + i as i64 * 100, 16000, time::Rounding::Floor).unwrap()
+        );
+        assert_eq!(f32::from(span.input().confidence.unwrap()), 0.9);
+    }
+    assert_eq!(spans.spans()[0].normalized(), spans.spans()[4].normalized());
+    assert_eq!(segment.range.start(), time::Tick(time::TICKS_PER_SECOND));
+    let roundtrip: captions::Transcript =
+        serde_json::from_str(&serde_json::to_string(&transcript).unwrap()).unwrap();
+    assert_eq!(roundtrip, transcript);
+    let profile = captions::LanguageRegistry::standard()
+        .unwrap()
+        .profile(&scope.source_language)
+        .clone();
+    let rules = captions::SegmentRules::from_profile(&profile, time::FrameRate::FPS_24).unwrap();
+    let generated = captions::segment_transcript(
+        &transcript,
+        &profile,
+        &rules,
+        &captions::LayoutHooks::default(),
+    )
+    .unwrap();
+    assert!(
+        generated
+            .cues
+            .iter()
+            .all(|c| c.timing == captions::TimingKind::SourceSpans)
+    );
+    assert_eq!(generated.cues[0].cue.range.start(), segment.range.start());
+    assert_eq!(
+        generated.cues.last().unwrap().cue.range.end(),
+        segment.range.end()
+    );
+    // Token metadata is part of overlap identity, not disposable adapter detail.
+    fake.result[0].raw_tokens[0].confidence = None;
+    let changed = transcribe(
+        &fake,
+        audio(&pcm, &scope),
+        &Request {
+            scope: &scope,
+            consent: None,
+        },
+        None,
+        &Hooks::new(),
+    )
+    .unwrap();
+    assert!(assemble(vec![recognition, changed], &Hooks::new()).is_err());
+}
+#[test]
+fn raw_tokens_missing_timing_and_character_layers_survive_conversion_without_fake_words() {
+    let scope = scope(config(false), Operation::Transcribe);
+    let mut fake = Fake::new(scope.provider.clone(), TEXT);
+    let mut native = raw_result("e\u{302}\u{301}中");
+    native.raw_tokens[1].range = None;
+    native.timing = vec![TimedText {
+        text: "ế".into(),
+        unit: TimingUnit::Character,
+        range: SampleRange::new(16000, 16500).unwrap(),
+        provenance: Provenance::Native,
+        speaker: Some("speaker".into()),
+        confidence: None,
+    }];
+    fake.result = vec![native];
+    let pcm = vec![0.0; 32000];
+    let result = transcribe(
+        &fake,
+        audio(&pcm, &scope),
+        &Request {
+            scope: &scope,
+            consent: None,
+        },
+        None,
+        &Hooks::new(),
+    )
+    .unwrap()
+    .to_transcript()
+    .unwrap();
+    let spans = result.segments[0].spans.as_ref().unwrap();
+    assert!(spans.spans()[1].input().range.is_none());
+    let character = spans.spans().last().unwrap();
+    assert_eq!(character.input().unit, TimingUnit::Character);
+    assert_eq!(character.input().raw, 0..5);
+    assert_eq!(
+        character.input().speaker.as_ref().unwrap().as_str(),
+        "speaker"
+    );
+    assert!(result.segments[0].words.is_empty());
+}
+#[test]
+fn hostile_raw_tokens_fail_through_public_execution_without_lossy_decoding() {
+    let scope = scope(config(false), Operation::Transcribe);
+    let mut fake = Fake::new(scope.provider.clone(), TEXT);
+    let native = raw_result("中");
+    let pcm = vec![0.0; 32000];
+    for case in 0..8 {
+        let mut invalid = native.clone();
+        match case {
+            0 => invalid.raw_tokens.pop().map(|_| ()).unwrap(),
+            1 => invalid.raw_tokens[0].bytes.clear(),
+            2 => invalid.raw_tokens[0].range = Some(SampleRange::new(0, 1).unwrap()),
+            3 => invalid.raw_tokens[1].range = invalid.raw_tokens[0].range,
+            4 => invalid.raw_tokens[0].provenance = Provenance::Forced,
+            5 => invalid.text = "other".into(),
+            6 => invalid.range = None,
+            _ => invalid.timing.push(TimedText {
+                text: "中".into(),
+                unit: TimingUnit::Token,
+                range: invalid.range.unwrap(),
+                provenance: Provenance::Native,
+                speaker: None,
+                confidence: None,
+            }),
+        }
+        fake.result = vec![invalid];
+        assert!(
+            transcribe(
+                &fake,
+                audio(&pcm, &scope),
+                &Request {
+                    scope: &scope,
+                    consent: None
+                },
+                None,
+                &Hooks::new()
+            )
+            .is_err(),
+            "case {case}"
+        );
+    }
+    assert!(!format!("{:?}", native.raw_tokens[0]).contains("bytes"));
+}
+
+#[test]
+fn alignment_preserves_native_token_layer_in_either_transport_representation() {
+    for native_raw in [false, true] {
+        let scope = scope(config(false), Operation::Transcribe);
+        let mut native = raw_result("Xin chào");
+        native.id = "one".into();
+        native.range = Some(SampleRange::new(16000, 32000).unwrap());
+        if !native_raw {
+            native.raw_tokens.clear();
+            native.timing.push(TimedText {
+                text: native.text.clone(),
+                unit: TimingUnit::Token,
+                range: native.range.unwrap(),
+                provenance: Provenance::Native,
+                speaker: None,
+                confidence: None,
+            });
+        }
+        let mut fake = Fake::new(scope.provider.clone(), TEXT);
+        fake.result = vec![native.clone()];
+        let mut align_scope = scope.clone();
+        align_scope.operation = Operation::Align;
+        align_scope.texts = vec![native.text.clone()];
+        let mut aligner = Fake::new(align_scope.provider.clone(), TEXT);
+        aligner.result = forced();
+        aligner.result[0].raw_tokens = raw_result("Xin chào")
+            .raw_tokens
+            .into_iter()
+            .map(|mut t| {
+                t.provenance = Provenance::Forced;
+                t
+            })
+            .collect();
+        let pcm = vec![0.0; 32000];
+        let result = transcribe(
+            &fake,
+            audio(&pcm, &scope),
+            &Request {
+                scope: &scope,
+                consent: None,
+            },
+            Some(Alignment {
+                provider: &aligner,
+                request: Request {
+                    scope: &align_scope,
+                    consent: None,
+                },
+                unit: TimingUnit::Word,
+            }),
+            &Hooks::new(),
+        )
+        .unwrap();
+        if native_raw {
+            assert_eq!(result.segments()[0].raw_tokens, native.raw_tokens);
+        } else {
+            assert!(result.segments()[0].raw_tokens.is_empty());
+            assert!(result.segments()[0].timing.contains(&native.timing[0]));
+        }
+        let transcript = result.to_transcript().unwrap();
+        assert_eq!(transcript.segments[0].words.len(), 2);
+        assert!(
+            transcript.segments[0]
+                .spans
+                .as_ref()
+                .unwrap()
+                .spans()
+                .iter()
+                .filter(|s| s.input().unit == TimingUnit::Token)
+                .all(|s| s.input().provenance == Provenance::Native)
+        );
+    }
 }

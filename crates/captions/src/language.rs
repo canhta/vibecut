@@ -30,6 +30,7 @@ impl From<LanguageTag> for String {
 /// Segmentation/layout policy data. Fonts are family preferences, not bundled assets.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct LanguageProfile {
+    pub timing_unit: crate::TimingUnit,
     pub max_graphemes: u32,
     pub graphemes_per_second: u32,
     pub line_breaking: crate::NfcText,
@@ -65,6 +66,7 @@ impl LanguageRegistry {
 }
 fn standard_profiles() -> Result<LanguageRegistry, Error> {
     let generic = LanguageProfile {
+        timing_unit: crate::TimingUnit::Word,
         max_graphemes: 42,
         graphemes_per_second: 20,
         line_breaking: "unicode".into(),
@@ -73,15 +75,37 @@ fn standard_profiles() -> Result<LanguageRegistry, Error> {
         font_fallback: vec!["sans-serif".into()],
     };
     let mut profiles = BTreeMap::new();
-    for (tag, limit, speed, punctuation, font) in [
-        ("vi", 42, 17, ".!?…", "Noto Sans"),
-        ("en", 42, 20, ".!?…", "Noto Sans"),
-        ("zh-Hans", 16, 9, "。！？…", "Noto Sans CJK SC"),
-        ("zh-Hant", 16, 9, "。！？…", "Noto Sans CJK TC"),
+    for (tag, unit, limit, speed, punctuation, font) in [
+        (
+            "vi",
+            crate::TimingUnit::Syllable,
+            42,
+            17,
+            ".!?…",
+            "Noto Sans",
+        ),
+        ("en", crate::TimingUnit::Word, 42, 20, ".!?…", "Noto Sans"),
+        (
+            "zh-Hans",
+            crate::TimingUnit::Character,
+            16,
+            9,
+            "。！？…",
+            "Noto Sans CJK SC",
+        ),
+        (
+            "zh-Hant",
+            crate::TimingUnit::Character,
+            16,
+            9,
+            "。！？…",
+            "Noto Sans CJK TC",
+        ),
     ] {
         profiles.insert(
             LanguageTag::parse(tag)?,
             LanguageProfile {
+                timing_unit: unit,
                 max_graphemes: limit,
                 graphemes_per_second: speed,
                 punctuation: punctuation.into(),

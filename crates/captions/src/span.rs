@@ -13,7 +13,7 @@ pub struct TextSpan {
 
 /// Captions-owned normalization and grapheme correspondence, reusable by adapters.
 /// Input is capped at 16 MiB. Debug redacts text; maps contain byte offsets only.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct NormalizedText {
     text: NfcText,
     spans: Vec<TextSpan>,
@@ -29,6 +29,9 @@ impl NormalizedText {
             let normalized = NfcText::from(grapheme);
             let offset = text.len();
             text.push_str(normalized.as_str());
+            if (spans.len() + 1) * std::mem::size_of::<TextSpan>() > 16 * 1024 * 1024 {
+                return Err(Error::TooLarge);
+            }
             spans.push(TextSpan {
                 raw: start..start + grapheme.len(),
                 normalized: offset..text.len(),
@@ -44,6 +47,20 @@ impl NormalizedText {
     }
     pub fn spans(&self) -> &[TextSpan] {
         &self.spans
+    }
+    /// Enclosing NFC graphemes for nonempty raw byte spans. Provider tokens may
+    /// split UTF-8 scalars, so byte-interior endpoints are deliberately accepted.
+    pub fn normalized_range(&self, raw: Range<usize>) -> Option<Range<usize>> {
+        let len = self.spans.last()?.raw.end;
+        if raw.start >= raw.end || raw.end > len {
+            return None;
+        }
+        let start = self.spans.partition_point(|s| s.raw.end <= raw.start);
+        let end = self.spans.partition_point(|s| s.raw.start < raw.end);
+        Some(
+            self.spans.get(start)?.normalized.start
+                ..self.spans.get(end.checked_sub(1)?)?.normalized.end,
+        )
     }
     /// Enclosing raw graphemes for a nonempty normalized byte range. Invalid,
     /// empty and out-of-bounds ranges return None; partial graphemes expand.

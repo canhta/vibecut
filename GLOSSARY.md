@@ -45,6 +45,12 @@ history.
 
 **Segment**: Stable identified span of transcript text in source-media time.
 
+**Timing unit**: Unit of recognized speech timing: segment, word, syllable,
+character, grapheme or token. A token can be part of a character or word.
+
+**Display variant**: Same-language spelling or script rendering of recognized
+text, retaining its source speech timing.
+
 **Word**: Recognized source text with optional source range, speaker and confidence.
 
 **CueTrack**: A collection of timed cues for subtitle validation and export.

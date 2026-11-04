@@ -45,6 +45,7 @@ fn transcript(text: &str, tag: &str) -> Transcript {
             range: range(0, TICKS_PER_SECOND * 6),
             text: text.into(),
             words: vec![],
+            spans: None,
         }],
     }
 }

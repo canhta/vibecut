@@ -241,6 +241,7 @@ fn transcript_wire_and_export_safety() {
             id: "segment-1".into(),
             range,
             text: "e\u{301}".into(),
+            spans: None,
             words: vec![Word {
                 text: "e\u{301}".into(),
                 range: Some(range),

@@ -76,6 +76,7 @@ pub struct LayoutHooks<'a> {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum TimingKind {
     SourceWords,
+    SourceSpans,
     SourceSegment,
     Estimated,
 }
@@ -126,6 +127,11 @@ pub fn segment_transcript(
                 .checked_add(word.text.as_str().len())
                 .ok_or(Error::TooLarge)?;
         }
+        if let Some(spans) = &segment.spans {
+            bytes = bytes
+                .checked_add(spans.byte_cost())
+                .ok_or(Error::TooLarge)?;
+        }
         if bytes > 16 * 1024 * 1024 {
             return Err(Error::TooLarge);
         }
@@ -145,13 +151,24 @@ pub fn segment_transcript(
                 word_end = range.end();
             }
         }
-        let normalized = NormalizedText::new(segment.text.as_str())?;
+        if let Some(spans) = &segment.spans {
+            spans.validate_segment(&segment.text, segment.range, &transcript.source_lang)?;
+        }
+        let normalized = NormalizedText::new(
+            segment
+                .spans
+                .as_ref()
+                .map_or(segment.text.as_str(), |s| s.display().as_str()),
+        )?;
         let text = normalized.text().as_str();
         if text.trim().is_empty() {
             continue;
         }
         let boundaries = TextBoundaries::new(&normalized, hooks)?;
-        let timed = timed_units(text, &segment.words, profile, &boundaries)?;
+        let timed = match &segment.spans {
+            Some(spans) => span_units(spans, profile, &boundaries)?,
+            None => timed_units(text, &segment.words, profile, &boundaries)?,
+        };
         let units = match timed {
             Some(units) => units,
             None => text_units(
@@ -159,7 +176,7 @@ pub fn segment_transcript(
                 segment.range,
                 profile,
                 &boundaries,
-                if segment.words.is_empty() {
+                if segment.words.is_empty() && segment.spans.is_none() {
                     TimingKind::SourceSegment
                 } else {
                     TimingKind::Estimated
@@ -171,7 +188,11 @@ pub fn segment_transcript(
             &units,
             &segment.id,
             &transcript.source_lang,
-            &transcript.source_lang,
+            segment
+                .spans
+                .as_ref()
+                .and_then(|s| s.display_language())
+                .unwrap_or(&transcript.source_lang),
             None,
             false,
             rules,
@@ -251,6 +272,58 @@ fn rank(text: &str, profile: &LanguageProfile) -> u8 {
         2
     } else {
         0
+    }
+}
+
+fn span_units(
+    spans: &crate::TimingSpans,
+    profile: &LanguageProfile,
+    boundaries: &TextBoundaries,
+) -> Result<Option<Vec<Unit>>, Error> {
+    let text = spans.display().as_str();
+    let mut units: Vec<Unit> = Vec::new();
+    let mut offset = 0;
+    for group in spans.groups(profile)? {
+        let value = text
+            .get(group.display.clone())
+            .ok_or(Error::Invalid("timing group text"))?;
+        if value.trim().is_empty() {
+            continue;
+        }
+        let Some(range) = group.range else {
+            return Ok(None);
+        };
+        let start = group.display.start + value.len() - value.trim_start().len();
+        let value = text
+            .get(offset..group.display.end)
+            .ok_or(Error::Invalid("timing group text"))?;
+        if let Some(last) = units
+            .last_mut()
+            .filter(|_| !boundaries.breaks.contains(&start))
+        {
+            last.text.push_str(value);
+            last.range.end = range.end();
+            last.boundary = rank(&last.text, profile);
+        } else {
+            units.push(Unit {
+                text: value.to_owned(),
+                range: range.start()..range.end(),
+                timing: TimingKind::SourceSpans,
+                boundary: rank(value, profile),
+                speaker: group.speaker,
+            });
+        }
+        offset = group.display.end;
+    }
+    if let Some(last) = units.last_mut() {
+        last.text.push_str(
+            text.get(offset..)
+                .ok_or(Error::Invalid("timing group tail"))?,
+        );
+        last.boundary = rank(&last.text, profile);
+        Ok(Some(units))
+    } else {
+        Ok(None)
     }
 }
 
@@ -535,6 +608,8 @@ fn append_groups(
         let (text, overflow) = layout(slice, rules, hooks)?;
         let timing = if slice.iter().all(|u| u.timing == TimingKind::SourceWords) {
             TimingKind::SourceWords
+        } else if slice.iter().all(|u| u.timing == TimingKind::SourceSpans) {
+            TimingKind::SourceSpans
         } else if start == 0
             && end == units.len()
             && slice.iter().all(|u| u.timing != TimingKind::Estimated)
@@ -612,8 +687,10 @@ fn finish(output: &mut Segmentation, rules: &SegmentRules) -> Result<(), Error> 
         let mut end = entry.cue.range.end();
         // Source word cues may borrow only actual following silence, with no
         // invented last-cue extension. Estimated/segment cues stay inside input.
-        if entry.timing == TimingKind::SourceWords
-            && end - start < rules.min_duration
+        if matches!(
+            entry.timing,
+            TimingKind::SourceWords | TimingKind::SourceSpans
+        ) && end - start < rules.min_duration
             && let Some(next) = next_start
         {
             let desired = start

@@ -50,7 +50,7 @@ in the [glossary](../../GLOSSARY.md), without creating a second model owner.
 |---|---|---|
 | SourceAsset | media | Identity, path, content hash and probe: duration, codec/size/rational rate/VFR and audio rate/channels/start offset |
 | SourceRange | time | Nonempty half-open `[start, end)` in source ticks |
-| Transcript | captions | Stable segments and optional word ranges/confidence; provider/model/settings fingerprint |
+| Transcript | captions | Stable segments, optional word ranges/confidence and identified source-unit spans with raw/NFC/display correspondence; provider/model/settings fingerprint |
 | Cue | captions | Source range, source-language text and per-language text with per-language edit flags and translation reference; preserve user edits unless explicitly commanded |
 | EditMapping | captions | Pure source-to-output segments; a range may yield several intersections; preserve source identity/edit flags with deterministic fragment identity; rebuild from source |
 | Job | engine | Identity, kind, input fingerprint, bounded progress/stage, cancellation, typed failure and checkpoint |
@@ -73,9 +73,11 @@ do not move processing or command policy into widgets.
 
 AI's offline execution seam is documented in [its crate contract](../../crates/ai/README.md).
 It accepts absolute source-sample audio windows, returns validated recognition with
-explicit missing timing, and converts fully word/segment-timed results to captions'
-Transcript. Character/token layers remain explicit transport data until captions
-admits them. Configuration is versioned and location-tagged; consent binds the
+explicit missing timing, and converts timed segments to captions' Transcript. Captions owns validated
+raw/NFC/display correspondence and source unit identity; AI converts source samples
+once and retains character, syllable, grapheme and token layers, including raw UTF-8
+subword fragments and missing unit timing. Same-language display variants use
+explicit phrase correspondence; translations never reuse source word timing. Configuration is versioned and location-tagged; consent binds the
 provider, operation, content, languages, text and source window. Cost bounds are
 per invocation; engine retains aggregate retry/chunk budget accounting.
 

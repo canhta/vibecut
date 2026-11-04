@@ -8,7 +8,9 @@ translation providers and subtitle rendering.
 ## Entry points and persistence
 
 `Transcript` owns stable `Segment` IDs, optional source `Word` ranges, speaker and
-validated confidence, and provider/model/settings `Fingerprint`. `Cue` owns a
+validated confidence, optional `TimingSpans`, and provider/model/settings
+`Fingerprint`. Timing spans retain source unit identity and provenance; tokens,
+characters and syllables never become fake words. `Cue` owns a
 stable ID, validated `SourceRange`, source language, and language-keyed `CueText`
 with independent edit flags and translation references. `set_text` protects edits
 unless explicitly overridden. `CueTrack` groups cues; all models support serde.
@@ -18,6 +20,10 @@ language allowlist. No project store/schema is introduced here.
 
 `LanguageRegistry::standard` provides editable profiles for vi, en, zh-Hans and
 zh-Hant. Lookup tries progressively shorter tag prefixes then the generic profile.
+The profile's `timing_unit` selects preferred source grouping: English/generic
+words, Vietnamese syllables, and Han characters. UAX #29 keeps mixed Latin and
+full-width letter runs together while separating Han; dictionary-protected spans
+still constrain cue breaks. Profiles select policy without language branches.
 Limits are grapheme counts/rates, not byte counts; policies and font preferences
 are initial defaults, not measured reading-speed or font-coverage guarantees.
 
@@ -92,7 +98,11 @@ weights (including input spaces) and integer floor offsets in the input range,
 without cumulative rounding drift. Fragments are marked `TimingKind::Estimated`;
 an unsplit result uses `SourceSegment`. Split segment-only source text is also
 estimated, and mismatched/partially timed word lists always warn as estimated.
-Source word results use `SourceWords`. These marks are explicit generation
+Source word results use `SourceWords`; complete source-span results use
+`SourceSpans`, retaining the chosen layer's exact source endpoints. Missing timing
+or visible coverage in the selected span layer makes segmentation explicitly
+estimated; the persisted source ranges stay absent. Both source timing kinds may
+borrow following silence under the same rule. These marks are explicit generation
 metadata on `SegmentedCue`, not additions to persisted `Cue` or SRT/VTT formats.
 Target fragments retain the edit flag and translation reference (defaulting to
 source ID) and contain target text only; source text remains on the input cue.
@@ -106,11 +116,41 @@ forced. Timing too short to represent a nonempty fragment returns a typed error.
 Consumers can form a `CueTrack` from the generated cues for interchange while
 retaining the timing metadata separately for review.
 
-`NormalizedText` owns reusable raw-to-NFC `TextSpan` correspondence at whole
-extended-grapheme granularity. Spans are byte ranges, including many-to-one
-combining sequences; `raw_range` expands partial normalized graphemes. Offsets
-are not source/target word alignments. Script-aware timing grouping belongs to
-its extension ticket.
+`NormalizedText` owns raw-to-NFC `TextSpan` correspondence at whole extended
+grapheme granularity. `raw_range` and `normalized_range` expand partial byte
+spans to enclosing graphemes, including tokens splitting UTF-8 scalars. Input and
+map overhead each have a 16 MiB ceiling. Spans are correspondence, never a
+source/target word alignment.
+
+`TimingSpans::new` validates ordered, independently timed layers of `SpanTiming`
+with ordinal identity, raw byte spans, optional source range, native/forced
+provenance, speaker and confidence. Different layers and normalized grapheme
+correspondences can overlap; each layer's source time and byte endpoints remain
+monotonic. Token fragments can cover the same NFC grapheme without losing their
+individual raw endpoints. Serialization stores the original raw text and inputs,
+then reconstructs and validates maps on read. Original provider text is retained
+only as explicit raw correspondence data; normalized and display text use NFC.
+Debug redacts all text and raw bytes. Total text, map and span overhead is capped
+at 16 MiB, including aggregate input to segmentation.
+
+`with_display(DisplayVariant)` rebuilds from the original raw source using
+caller-resolved NFC `DisplayReplacement` phrase ranges, permitting many-to-many
+Han orthography changes without shifting timestamps by bytes. The variant records
+its language; segmentation refuses a change of primary language (translations
+must use `segment_translation`) and emits the selected display language while
+retaining the recognition language as cue source. No conversion lexicon or
+automatic Han choice is bundled. Replacement endpoints must preserve graphemes,
+and replacements cannot be empty or compose across their neighbors. A phrase
+whose graphemes change together must be supplied as one correspondence.
+
+`groups(profile)` selects the preferred available layer, then tokens, graphemes,
+characters, syllables, words or segments. Grouping keeps Latin runs intact and
+joins candidate boundaries crossed by provider spans or converted display phrases;
+it never divides an existing source range into finer timestamps. Token grouping
+uses whole display graphemes protected by actual token boundaries. Uncovered
+visible raw bytes or missing native ranges yield an untimed group. Segmentation
+reuses its existing UAX #14/dictionary boundary policy on these groups; translation
+execution never accepts these source timing spans.
 
 Defaults use adult interlingual guidelines: [Vietnamese](https://partnerhelp.netflixstudios.com/hc/en-us/articles/220447048-Vietnamese-Timed-Text-Style-Guide)
 42 graphemes/line and 17 CPS; [English](https://partnerhelp.netflixstudios.com/hc/en-us/articles/217350977-English-USA-Timed-Text-Style-Guide)
@@ -187,3 +227,18 @@ the emitted executable with `--exact segmentation_benchmark --ignored --nocaptur
 under `/usr/bin/time -l` to measure without including compilation. No pixel metric
 applies to this pure text/timing operation; other hardware and font callbacks are
 unverified.
+
+## Span timing performance
+
+Observed on Apple M1 Pro, 16 GiB RAM, macOS 27.2, release profile: the ignored
+`timing_span_benchmark` creates raw/NFC/display maps and segments 11,600 raw bytes
+into 400 cues using 11,600 one-byte provider tokens, including NFD Vietnamese,
+Han/Latin, full-width text and emoji. Twenty same-process calls preserved all
+visible NFC text and had zero visible end-tick drift. First call: 4.944 ms;
+19 warm calls: 4.335–6.520 ms (median 5.116 ms); process peak RSS: 11,927,552 bytes.
+The synthetic token clock is one millisecond per byte; the final formatting space
+is retained in the transcript but excluded from visible cue timing. These figures
+measure pure correspondence/segmentation, not ASR accuracy or speech alignment.
+Build with `cargo test -p captions --release --test timing --no-run`, then run the
+emitted binary under `/usr/bin/time -l` with
+`--exact timing_span_benchmark --ignored --nocapture`. Other hardware is unverified.

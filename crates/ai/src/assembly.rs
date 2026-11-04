@@ -3,7 +3,10 @@ use crate::{
     Aligner, AudioWindow, Error, ExecutionHooks, Operation, Request, SampleRange, Stage,
     TimingUnit, Transcriber,
 };
-use captions::{Fingerprint, LanguageTag, NfcText, Segment, Transcript, Word};
+use captions::{
+    Fingerprint, LanguageTag, NfcText, NormalizedText, Segment, SpanTiming, TimingSpans,
+    Transcript, Word,
+};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 use time::{Rounding, SourceRange, Tick};
@@ -22,11 +25,23 @@ pub struct TimedText {
     #[serde(default)]
     pub confidence: Option<captions::Confidence>,
 }
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum Provenance {
-    Native,
-    Forced,
+pub use captions::TimingProvenance as Provenance;
+/// Provider-agnostic subword transport. Bytes can split UTF-8 scalars; decode
+/// only their complete concatenation through captions' shared span primitive.
+#[derive(Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct RawToken {
+    pub bytes: Vec<u8>,
+    pub range: Option<SampleRange>,
+    pub provenance: Provenance,
+    pub confidence: Option<captions::Confidence>,
+}
+impl std::fmt::Debug for RawToken {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("RawToken")
+            .field("range", &self.range)
+            .finish_non_exhaustive()
+    }
 }
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -35,6 +50,8 @@ pub struct RecognitionSegment {
     pub text: NfcText,
     pub range: Option<SampleRange>,
     pub timing: Vec<TimedText>,
+    #[serde(default)]
+    pub raw_tokens: Vec<RawToken>,
 }
 impl RecognitionSegment {
     fn validate(&self, window: SampleRange) -> Result<(), Error> {
@@ -42,8 +59,47 @@ impl RecognitionSegment {
         if self.range.is_some_and(|r| !window.contains(r)) {
             return Err(Error::Invalid("segment outside audio"));
         }
-        if self.range.is_none() && !self.timing.is_empty() {
+        if self.range.is_none() && (!self.timing.is_empty() || !self.raw_tokens.is_empty()) {
             return Err(Error::Invalid("unit timing without segment timing"));
+        }
+        if self
+            .raw_tokens
+            .len()
+            .checked_mul(std::mem::size_of::<RawToken>())
+            .is_none_or(|n| n > 16 * 1024 * 1024)
+        {
+            return Err(Error::Payload);
+        }
+        let mut previous = None;
+        let mut size = 0usize;
+        for token in &self.raw_tokens {
+            size = size.checked_add(token.bytes.len()).ok_or(Error::Payload)?;
+            if size > 16 * 1024 * 1024 || token.bytes.is_empty() {
+                return Err(Error::Payload);
+            }
+            if token.range.is_some_and(|r| {
+                !self.range.is_some_and(|s| s.contains(r))
+                    || previous.is_some_and(|p| r.start() < p)
+            }) {
+                return Err(Error::Invalid("raw token timing"));
+            }
+            if let Some(range) = token.range {
+                previous = Some(range.end());
+            }
+        }
+        if !self.raw_tokens.is_empty() {
+            if self.timing.iter().any(|s| s.unit == TimingUnit::Token) {
+                return Err(Error::Invalid("duplicate token layer"));
+            }
+            let raw: Vec<u8> = self
+                .raw_tokens
+                .iter()
+                .flat_map(|t| t.bytes.iter().copied())
+                .collect();
+            let raw = std::str::from_utf8(&raw).map_err(|_| Error::Invalid("raw token UTF-8"))?;
+            if NormalizedText::new(raw)?.text() != &self.text {
+                return Err(Error::Invalid("raw token text differs from recognition"));
+            }
         }
         let mut cursors = BTreeMap::new();
         for span in &self.timing {
@@ -70,6 +126,68 @@ impl RecognitionSegment {
             *previous = Some(span.range.end());
         }
         Ok(())
+    }
+}
+impl RecognitionSegment {
+    fn caption_spans(&self, rate: u32) -> Result<Option<TimingSpans>, Error> {
+        if self.raw_tokens.is_empty() && self.timing.iter().all(|s| s.unit == TimingUnit::Word) {
+            return Ok(None);
+        }
+        let bytes: Vec<u8> = self
+            .raw_tokens
+            .iter()
+            .flat_map(|t| t.bytes.iter().copied())
+            .collect();
+        let raw = if self.raw_tokens.is_empty() {
+            self.text.as_str()
+        } else {
+            std::str::from_utf8(&bytes).map_err(|_| Error::Invalid("raw token UTF-8"))?
+        };
+        let normalized = NormalizedText::new(raw)?;
+        let mut inputs = Vec::new();
+        let mut offset = 0;
+        for (index, token) in self.raw_tokens.iter().enumerate() {
+            let end = offset + token.bytes.len();
+            inputs.push(SpanTiming {
+                index,
+                unit: TimingUnit::Token,
+                raw: offset..end,
+                range: token.range.map(|r| ticks(r, rate)).transpose()?,
+                provenance: token.provenance,
+                speaker: None,
+                confidence: token.confidence,
+            });
+            offset = end;
+        }
+        let mut cursors = BTreeMap::new();
+        for span in &self.timing {
+            let (cursor, index) = cursors.entry(span.unit).or_insert((0, 0));
+            let remaining = self
+                .text
+                .as_str()
+                .get(*cursor..)
+                .ok_or(Error::Invalid("text boundary"))?;
+            let start = *cursor
+                + remaining
+                    .find(span.text.as_str())
+                    .ok_or(Error::Invalid("unit text differs from recognition"))?;
+            let end = start + span.text.as_str().len();
+            let raw = normalized
+                .raw_range(start..end)
+                .ok_or(Error::Invalid("unit text boundary"))?;
+            inputs.push(SpanTiming {
+                index: *index,
+                unit: span.unit,
+                raw,
+                range: Some(ticks(span.range, rate)?),
+                provenance: span.provenance,
+                speaker: span.speaker.clone(),
+                confidence: span.confidence,
+            });
+            *cursor = end;
+            *index += 1;
+        }
+        Ok(Some(TimingSpans::new(raw, inputs, None)?))
     }
 }
 /// Validated source-sample recognition. An untimed segment remains text-only;
@@ -106,8 +224,8 @@ impl Recognition {
     pub fn is_text_only(&self) -> bool {
         self.segments.iter().any(|s| s.range.is_none())
     }
-    /// Captions only has word storage today; character/token spans remain available
-    /// via segments(). Unsupported units are not silently lost in conversion.
+    /// Retain source unit identity, optional raw-token timing and raw/NFC span
+    /// correspondence. Source samples floor once into ticks; tokens remain tokens.
     pub fn to_transcript(&self) -> Result<Transcript, Error> {
         let mut segments = Vec::with_capacity(self.segments.len());
         for segment in &self.segments {
@@ -118,7 +236,7 @@ impl Recognition {
             let mut words = Vec::new();
             for span in &segment.timing {
                 if span.unit != TimingUnit::Word {
-                    return Err(Error::Unsupported);
+                    continue;
                 }
                 words.push(Word {
                     text: span.text.clone(),
@@ -132,6 +250,7 @@ impl Recognition {
                 text: segment.text.clone(),
                 range,
                 words,
+                spans: segment.caption_spans(self.sample_rate)?,
             });
         }
         let mut fingerprint = self.fingerprint.clone();
@@ -210,6 +329,11 @@ pub fn transcribe(
         if segment.range.is_some() && !caps.timing.contains(&TimingUnit::Segment) {
             return Err(Error::Invalid("unadvertised segment timing"));
         }
+        if segment.raw_tokens.iter().any(|t| {
+            !caps.timing.contains(&TimingUnit::Token) || t.provenance != Provenance::Native
+        }) {
+            return Err(Error::Invalid("unadvertised native tokens"));
+        }
         if segment
             .timing
             .iter()
@@ -225,7 +349,8 @@ pub fn transcribe(
             .filter(|s| {
                 s.range.is_none()
                     || (align.unit != TimingUnit::Segment
-                        && !s.timing.iter().any(|t| t.unit == align.unit))
+                        && !s.timing.iter().any(|t| t.unit == align.unit)
+                        && !(align.unit == TimingUnit::Token && !s.raw_tokens.is_empty()))
             })
             .cloned()
             .collect();
@@ -270,7 +395,12 @@ pub fn transcribe(
                         || original.text != aligned.text
                         || aligned.range.is_none()
                         || (align.unit != TimingUnit::Segment
-                            && !aligned.timing.iter().any(|t| t.unit == align.unit))
+                            && !aligned.timing.iter().any(|t| t.unit == align.unit)
+                            && !(align.unit == TimingUnit::Token && !aligned.raw_tokens.is_empty()))
+                        || aligned.raw_tokens.iter().any(|t| {
+                            t.provenance != Provenance::Forced
+                                || !ac.timing.contains(&TimingUnit::Token)
+                        })
                         || aligned.timing.iter().any(|t| {
                             t.provenance != Provenance::Forced || !ac.timing.contains(&t.unit)
                         })
@@ -291,6 +421,14 @@ pub fn transcribe(
                         .timing
                         .retain(|s| !native_units.contains(&s.unit));
                     replacement.timing.extend(original.timing.clone());
+                    if !original.raw_tokens.is_empty() {
+                        replacement.raw_tokens = original.raw_tokens.clone();
+                    }
+                    if native_units.contains(&TimingUnit::Token) {
+                        replacement.raw_tokens.clear();
+                    } else if !replacement.raw_tokens.is_empty() {
+                        replacement.timing.retain(|s| s.unit != TimingUnit::Token);
+                    }
                     replacement.validate(audio.range)?;
                     *target = replacement;
                 }

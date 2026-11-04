@@ -67,6 +67,13 @@ records, not persisted project models. Every stored text uses captions' `NfcText
 IDs are unique, timings are contained in the input window and segment, and each
 unit layer is ordered by time and matching source text. Different timing layers
 may describe the same audio; tokens and characters never become fake words.
+`RecognitionSegment::raw_tokens` additionally carries provider-agnostic subword
+bytes with optional absolute sample ranges, provenance and validated confidence.
+Individual tokens may split UTF-8; only their full concatenation is decoded and
+must normalize to the authoritative segment text. Tokens retain their per-segment
+ordinal identity. Empty tokens, malformed/truncated UTF-8, duplicate token layers,
+nonmonotonic/out-of-segment ranges and unadvertised token capabilities are errors.
+Token byte and record sizes are capped at 16 MiB per segment before assembly.
 
 `transcribe` validates native timings, then calls an explicitly supplied admissible
 aligner for segments missing segment timing or the requested timing unit. Alignment
@@ -80,9 +87,13 @@ acceptance for a particular aligner remains adapter-specific.
 
 `Recognition::is_text_only` indicates any missing segment timing. `to_transcript`
 returns captions' existing `Transcript`, or `TimingUnavailable` when any segment
-is untimed. Non-word unit layers return `Unsupported` during conversion; callers
-retain them through `segments()` pending captions' character-span work. No layer
-is silently relabelled or dropped. Source samples convert once to ticks using
+is untimed. Non-word and raw-token layers become captions-owned `TimingSpans`, preserving
+raw-to-NFC many-to-many correspondence, ordinal IDs, unit identity, provenance,
+confidence, speaker and missing timing. Existing word-only output keeps `Word`
+storage; when spans coexist with words, the complete layers also remain available
+in the span owner. No layer is silently relabelled or dropped. Captions owns
+script grouping and same-language display conversion; no native Whisper wiring
+or language conversion table is introduced by this generic seam. Source samples convert once to ticks using
 floor for both absolute boundaries and checked arithmetic. Native fingerprint and
 optional alignment fingerprint are available separately; engine must include both
 in its job/cache key. The captions conversion preserves the recognizer provider/model and combines the
@@ -94,7 +105,7 @@ fingerprints. Native-only chunks can merge with chunks using forced alignment;
 the merged result retains the actual aligner identity. Two different nonempty
 aligner fingerprints are incompatible. Fully timed segments sort by source start;
 only completely identical observations (same segment ID, text, source range,
-timing layers and metadata) deduplicate. Every other overlap, including equal-text
+timing layers, raw-token bytes/timing/confidence and metadata) deduplicate. Every other overlap, including equal-text
 speech with different IDs or ranges, returns a typed ambiguity error, leaving chunk-boundary
 reconciliation for an explicit retry/user policy. Untimed segments retain chunk
 order and cannot be deduplicated by invented coordinates. There is no fuzzy text
@@ -105,7 +116,9 @@ matching or splitting of words at chunk boundaries.
 `cargo test -p ai` exercises JSON native-timed and text-only fixtures through fake
 adapters using the production seams: NFC Vietnamese, source offsets, missing-span
 alignment, text-only refusal, capabilities/limits, consent/cost, malformed response,
-translation, overlap ambiguity, redaction, typed failure and cancellation.
+translation, overlap ambiguity, raw-token public execution/serialization,
+UTF-8-split NFD/Han/emoji correspondence, explicit missing timing, hostile token
+responses, redaction, typed failure and cancellation.
 `cargo xtask ci` also checks architecture, formatting and Clippy.
 
 Observed evidence covers offline contract behavior only. No model accuracy, timing
