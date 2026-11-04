@@ -23,6 +23,7 @@ Start with [documentation owners](docs/README.md), [terms](GLOSSARY.md) and [dec
 - Preserve unrelated work; freshly read shared files before editing them.
 - Label evidence observed, source-documented, inferred, proposed or unverified. Plans and passing builds do not prove runtime behavior.
 - Keep reports local and hand over paths. Never publish an Artifact.
+- Coordinating other agents: follow [orchestration](docs/agents/orchestration.md) exactly: one-line dispatch specs, worker pull loops, workers self-merge, read report TL;DRs only, batch messages, ask the maintainer when unclear.
 
 ## Agent skills
 
