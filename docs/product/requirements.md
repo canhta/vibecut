@@ -1,5 +1,13 @@
 # Requirements
 
+## Principles
+
+1. **Quality and stability first.** Correct output (picture, sound, timing,
+   subtitles) and an editor that never crashes or loses work decide whether people
+   use VibeCut. Never trade them for features or speed.
+2. **Light and fast.** The reason for a Rust-native desktop app: small install,
+   low memory, quick startup, fast preview and export.
+
 ## Scope
 
 VibeCut is a local-first desktop video editor for macOS and Windows.
