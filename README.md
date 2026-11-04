@@ -105,14 +105,13 @@ Download the latest macOS or Windows build from
 Build from source:
 
 ```sh
-cargo xtask ffmpeg   # builds the latest LGPL FFmpeg
+cargo xtask ffmpeg
 cargo run --release -p vibecut
 ```
 
 ## Contributing
 
-Sign off every commit (`git commit -s`). See [CONTRIBUTING.md](CONTRIBUTING.md);
-agents start at [AGENTS.md](AGENTS.md).
+See [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## License
 
