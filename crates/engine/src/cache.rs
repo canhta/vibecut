@@ -5,7 +5,10 @@ use std::{
     fs,
     io::Read,
     path::{Path, PathBuf},
-    sync::Arc,
+    sync::{
+        Arc, Mutex,
+        atomic::{AtomicU64, AtomicUsize, Ordering},
+    },
 };
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -77,27 +80,95 @@ impl CacheKey {
     }
 }
 const HEADER: usize = 72;
-struct Entry {
-    charge: Arc<ByteLease>,
+const EVICTING: usize = usize::MAX;
+const REMOVED: usize = usize::MAX - 1;
+/// An engine-owned persistent artifact registered weakly with the aggregate
+/// budget. Atomic pins serialize readers against reclaimers without an IO lock.
+pub(crate) struct StoredArtifact {
+    path: PathBuf,
+    charge: Mutex<Option<ByteLease>>,
     len: u64,
-    pin: Arc<()>,
-    stamp: u64,
+    pins: AtomicUsize,
+    stamp: AtomicU64,
+}
+impl StoredArtifact {
+    pub(crate) fn removed(&self) -> bool {
+        self.pins.load(Ordering::Acquire) == REMOVED
+    }
+    pub(crate) fn stamp(&self) -> u64 {
+        self.stamp.load(Ordering::Relaxed)
+    }
+    fn pinned(&self) -> bool {
+        self.pins.load(Ordering::Acquire) != 0
+    }
+    fn pin(self: &Arc<Self>) -> Result<Option<ArtifactPin>, EditError> {
+        let mut pins = self.pins.load(Ordering::Acquire);
+        loop {
+            if pins == REMOVED {
+                return Ok(None);
+            }
+            if pins >= REMOVED - 1 {
+                return Err(EditError::BudgetFull);
+            }
+            match self.pins.compare_exchange_weak(
+                pins,
+                pins + 1,
+                Ordering::AcqRel,
+                Ordering::Acquire,
+            ) {
+                Ok(_) => return Ok(Some(ArtifactPin(self.clone()))),
+                Err(current) => pins = current,
+            }
+        }
+    }
+    /// Only the successful 0 -> EVICTING owner performs IO and releases accounting.
+    /// A concurrent read/reclaim sees temporary pressure, never a missing live pin.
+    pub(crate) fn evict(&self) -> Result<bool, EditError> {
+        if self
+            .pins
+            .compare_exchange(0, EVICTING, Ordering::AcqRel, Ordering::Acquire)
+            .is_err()
+        {
+            return Ok(false);
+        }
+        match fs::remove_file(&self.path) {
+            Ok(()) => {}
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+            Err(e) => {
+                self.pins.store(0, Ordering::Release);
+                return Err(e.into());
+            }
+        }
+        let charge = {
+            self.charge
+                .lock()
+                .map_err(|_| EditError::JobPoisoned)?
+                .take()
+        };
+        self.pins.store(REMOVED, Ordering::Release);
+        drop(charge);
+        Ok(true)
+    }
+}
+struct ArtifactPin(Arc<StoredArtifact>);
+impl Drop for ArtifactPin {
+    fn drop(&mut self) {
+        self.0.pins.fetch_sub(1, Ordering::AcqRel);
+    }
 }
 /// Single writer, exclusively owned directory. Methods serialize IO through &mut self.
 /// Files are untrusted, size capped before reads and digest checked before reuse.
 pub struct ArtifactCache {
     root: PathBuf,
     budget: ByteBudget,
-    entries: BTreeMap<CacheKey, Entry>,
+    entries: BTreeMap<CacheKey, Arc<StoredArtifact>>,
     max_entries: usize,
-    stamp: u64,
 }
 /// Explicit pin: eviction/clear skips this entry until all leases are dropped.
 /// Bytes remain charged separately from disk for the entire reader lifetime.
 pub struct ArtifactLease {
     bytes: Vec<u8>,
-    _pin: Arc<()>,
-    _disk: Arc<ByteLease>,
+    _pin: ArtifactPin,
     _charge: ByteLease,
 }
 impl ArtifactLease {
@@ -123,7 +194,6 @@ impl ArtifactCache {
             budget,
             entries: BTreeMap::new(),
             max_entries,
-            stamp: 0,
         };
         let mut corrupt = 0usize;
         for file in fs::read_dir(root)? {
@@ -161,10 +231,11 @@ impl ArtifactCache {
                 fs::remove_file(file.path())?;
                 continue;
             }
+            cache.prune();
             while cache.entries.len() >= max_entries {
                 cache.evict_one()?;
             }
-            let charge = match cache.make_room(len) {
+            let charge = match cache.budget.reserve(ByteOwner::PersistentCache, len) {
                 Ok(charge) => charge,
                 Err(EditError::ArtifactTooLarge | EditError::BudgetFull) => {
                     fs::remove_file(file.path())?;
@@ -172,53 +243,58 @@ impl ArtifactCache {
                 }
                 Err(e) => return Err(e),
             };
-            cache.entries.insert(
-                key,
-                Entry {
-                    charge: Arc::new(charge),
-                    len,
-                    pin: Arc::new(()),
-                    stamp: 0,
-                },
-            );
+            cache.insert(key, charge, len)?;
         }
         Ok((cache, corrupt))
     }
     pub fn len(&self) -> usize {
-        self.entries.len()
+        self.entries
+            .values()
+            .filter(|entry| !entry.removed())
+            .count()
     }
     pub fn is_empty(&self) -> bool {
-        self.entries.is_empty()
+        self.len() == 0
+    }
+    fn prune(&mut self) {
+        self.entries.retain(|_, entry| !entry.removed());
+    }
+    fn insert(&mut self, key: CacheKey, charge: ByteLease, len: u64) -> Result<(), EditError> {
+        self.prune();
+        let artifact = Arc::new(StoredArtifact {
+            path: self.path(key),
+            charge: Mutex::new(Some(charge)),
+            len,
+            pins: AtomicUsize::new(0),
+            stamp: AtomicU64::new(self.budget.stamp()),
+        });
+        self.budget.register(&artifact)?;
+        self.entries.insert(key, artifact);
+        Ok(())
     }
     fn path(&self, key: CacheKey) -> PathBuf {
         self.root.join(key.filename())
     }
     fn remove(&mut self, key: CacheKey) -> Result<(), EditError> {
-        match fs::remove_file(self.path(key)) {
-            Ok(()) => {}
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
-            Err(e) => return Err(e.into()),
+        if let Some(entry) = self.entries.get(&key)
+            && !entry.removed()
+            && !entry.evict()?
+        {
+            return Err(EditError::BudgetFull);
         }
         self.entries.remove(&key);
         Ok(())
     }
     fn evict_one(&mut self) -> Result<(), EditError> {
+        self.prune();
         let key = self
             .entries
             .iter()
-            .filter(|(_, e)| Arc::strong_count(&e.pin) == 1)
-            .min_by_key(|(_, e)| e.stamp)
+            .filter(|(_, e)| !e.pinned())
+            .min_by_key(|(_, e)| e.stamp())
             .map(|(key, _)| *key)
             .ok_or(EditError::BudgetFull)?;
         self.remove(key)
-    }
-    fn make_room(&mut self, bytes: u64) -> Result<ByteLease, EditError> {
-        loop {
-            match self.budget.reserve(ByteOwner::PersistentCache, bytes) {
-                Err(EditError::BudgetFull) if !self.entries.is_empty() => self.evict_one()?,
-                result => return result,
-            }
-        }
     }
     /// Commit only a complete artifact. Jobs call this only after successful finish;
     /// ASR may commit each complete chunk separately, keyed by its exact source range.
@@ -231,8 +307,9 @@ impl ArtifactCache {
         if len > self.budget.snapshot()?.limit / 2 {
             return Err(EditError::ArtifactTooLarge);
         }
+        self.prune();
         if let Some(entry) = self.entries.get(&key) {
-            if Arc::strong_count(&entry.pin) > 1 {
+            if entry.pinned() {
                 return Err(EditError::BudgetFull);
             }
             self.remove(key)?;
@@ -240,14 +317,8 @@ impl ArtifactCache {
         while self.entries.len() >= self.max_entries {
             self.evict_one()?;
         }
-        let disk = self.make_room(len)?;
-        let _staging = loop {
-            match self.budget.reserve(ByteOwner::CacheReads, len) {
-                Ok(v) => break v,
-                Err(EditError::BudgetFull) => self.evict_one()?,
-                Err(e) => return Err(e),
-            }
-        };
+        let disk = self.budget.reserve(ByteOwner::PersistentCache, len)?;
+        let _staging = self.budget.reserve(ByteOwner::CacheReads, len)?;
         let mut envelope =
             Vec::with_capacity(usize::try_from(len).map_err(|_| EditError::ArtifactTooLarge)?);
         envelope.extend_from_slice(b"VCACHE01");
@@ -255,25 +326,19 @@ impl ArtifactCache {
         envelope.extend_from_slice(blake3::hash(bytes).as_bytes());
         envelope.extend_from_slice(bytes);
         project::atomic_write(&self.path(key), &envelope)?;
-        self.stamp = self.stamp.saturating_add(1);
-        self.entries.insert(
-            key,
-            Entry {
-                charge: Arc::new(disk),
-                len,
-                pin: Arc::new(()),
-                stamp: self.stamp,
-            },
-        );
-        Ok(())
+        self.insert(key, disk, len)
     }
-    /// Corrupt/missing entries are removed and reported once, never returned as hits.
+    /// Corrupt/missing entries are never hits. Removal of corrupt files waits
+    /// for any earlier reader pins; callers receive CacheCorrupt on each failed read.
     pub fn get(&mut self, key: CacheKey) -> Result<Option<ArtifactLease>, EditError> {
+        self.prune();
         let Some(entry) = self.entries.get(&key) else {
             return Ok(None);
         };
-        let pin = entry.pin.clone();
-        let disk = entry.charge.clone();
+        let Some(pin) = entry.pin()? else {
+            self.entries.remove(&key);
+            return Ok(None);
+        };
         let expected_len = entry.len;
         let path = self.path(key);
         let result = (|| {
@@ -311,20 +376,23 @@ impl ArtifactCache {
             Ok(ArtifactLease {
                 bytes,
                 _pin: pin,
-                _disk: disk,
                 _charge,
             })
         })();
         match result {
             Ok(lease) => {
-                self.stamp = self.stamp.saturating_add(1);
-                if let Some(e) = self.entries.get_mut(&key) {
-                    e.stamp = self.stamp;
+                if let Some(e) = self.entries.get(&key) {
+                    e.stamp.store(self.budget.stamp(), Ordering::Relaxed);
                 }
                 Ok(Some(lease))
             }
             Err(EditError::CacheCorrupt) => {
-                self.remove(key)?;
+                // Existing reader pins retain their immutable bytes. Reclaim the
+                // corrupt file after their release; preserve the corruption diagnostic.
+                match self.remove(key) {
+                    Ok(()) | Err(EditError::BudgetFull) => {}
+                    Err(e) => return Err(e),
+                }
                 Err(EditError::CacheCorrupt)
             }
             Err(EditError::Io(e)) if e.kind() == std::io::ErrorKind::NotFound => {
@@ -336,10 +404,11 @@ impl ArtifactCache {
     }
     /// Remove unpinned entries; return how many are still explicitly in use.
     pub fn clear(&mut self) -> Result<usize, EditError> {
+        self.prune();
         let keys: Vec<_> = self
             .entries
             .iter()
-            .filter(|(_, e)| Arc::strong_count(&e.pin) == 1)
+            .filter(|(_, e)| !e.pinned())
             .map(|(k, _)| *k)
             .collect();
         for key in keys {

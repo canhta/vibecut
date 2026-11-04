@@ -505,3 +505,273 @@ fn fully_pinned_cache_refuses_pressure_and_repeated_inserts_remain_bounded() {
     cache.clear().unwrap();
     assert_eq!(budget.snapshot().unwrap().used, 0);
 }
+#[test]
+fn every_group_exit_invalidates_captured_preview_targets_and_submitted_outputs() {
+    for mode in 0..4 {
+        let mut session = Session::new(
+            project::Project::empty(project::ProjectId(0), "".into()).unwrap(),
+            10,
+        )
+        .unwrap();
+        let budget = ByteBudget::new(1000).unwrap();
+        let (mut r, _) = runner(&budget);
+        let mut target = None;
+        let mut job = None;
+        let add = || Command::AddTrack {
+            name: "".into(),
+            kind: project::TrackKind::Overlay,
+        };
+        let result: Result<(), EditError> = session.transaction(|s| {
+            s.apply(add())?;
+            target = Some(s.job_target());
+            job = Some(
+                r.submit_for_session(s, spec(ResourceClass::Cpu), |_| Ok(vec![1]))?
+                    .0,
+            );
+            match mode {
+                0 => Err(EditError::Cancelled),
+                1 => panic!("unwind after preview target capture"),
+                2 => {
+                    let track = s.project().data().timeline.tracks[0].id;
+                    s.apply(Command::RemoveTrack { track })?;
+                    Ok(())
+                }
+                _ => Ok(()),
+            }
+        });
+        if mode < 2 {
+            assert!(result.is_err());
+        } else {
+            result.unwrap();
+        }
+        assert!(matches!(
+            session.apply_job_result(&target.unwrap(), add()),
+            Err(EditError::StaleResult)
+        ));
+        let id = job.unwrap();
+        assert_eq!(pump(&mut r, id).state, JobState::Completed);
+        assert!(matches!(
+            r.take_output(id).unwrap().apply(&mut session, add()),
+            Err(EditError::StaleResult)
+        ));
+        assert!(
+            session
+                .apply_job_result(&session.job_target(), add())
+                .is_ok()
+        );
+    }
+    // Net-zero explicit gestures also discard their internal preview identity.
+    for cancel in [false, true] {
+        let mut s = Session::new(
+            project::Project::empty(project::ProjectId(0), "".into()).unwrap(),
+            10,
+        )
+        .unwrap();
+        s.begin_gesture().unwrap();
+        s.apply(Command::AddTrack {
+            name: "".into(),
+            kind: project::TrackKind::Overlay,
+        })
+        .unwrap();
+        let track = s.project().data().timeline.tracks[0].id;
+        s.apply(Command::RemoveTrack { track }).unwrap();
+        let target = s.job_target();
+        if cancel {
+            s.cancel_gesture().unwrap();
+        } else {
+            s.commit_gesture().unwrap();
+        }
+        assert!(matches!(
+            s.apply_job_result(
+                &target,
+                Command::AddTrack {
+                    name: "".into(),
+                    kind: project::TrackKind::Overlay
+                }
+            ),
+            Err(EditError::StaleResult)
+        ));
+    }
+}
+#[test]
+fn reopened_cache_admits_large_work_and_protects_pinned_readers() {
+    let dir = tempfile::tempdir().unwrap();
+    let budget = ByteBudget::new(1000).unwrap();
+    {
+        let (mut cache, _) = ArtifactCache::open(dir.path(), budget.clone(), 10).unwrap();
+        for n in 0..9 {
+            cache.put(key(n), &[n; 28]).unwrap();
+        }
+    }
+    let (mut cache, _) = ArtifactCache::open(dir.path(), budget.clone(), 10).unwrap();
+    assert_eq!(budget.snapshot().unwrap().used, 900);
+    assert!(matches!(
+        budget.reserve(ByteOwner::Export, 1001),
+        Err(EditError::ArtifactTooLarge)
+    ));
+    assert_eq!(budget.snapshot().unwrap().used, 900);
+    let pinned = cache.get(key(0)).unwrap().unwrap(); // 1000, request itself cannot be evicted
+    let (mut r, _) = runner(&budget);
+    let mut request = spec(ResourceClass::Cpu);
+    request.bytes = JobBytes {
+        compositor: 800,
+        ..Default::default()
+    };
+    let (id, _) = r.submit(request, |_| Ok(vec![])).unwrap();
+    assert_eq!(pump(&mut r, id).state, JobState::Completed);
+    assert_eq!(pinned.bytes(), [0; 28]);
+    assert!(cache.get(key(0)).unwrap().is_some());
+    assert!(cache.len() <= 2);
+    drop(pinned);
+    cache.clear().unwrap();
+    assert_eq!(budget.snapshot().unwrap().used, 0);
+    // Truly oversized work is rejected at admission; active pins are temporary pressure.
+    request.bytes.compositor = 1001;
+    assert!(matches!(
+        r.submit(request, |_| Ok(vec![])),
+        Err(EditError::ArtifactTooLarge)
+    ));
+    let (mut cache, _) = ArtifactCache::open(dir.path(), budget.clone(), 10).unwrap();
+    cache.put(key(1), &[1; 328]).unwrap();
+    let pin = cache.get(key(1)).unwrap().unwrap();
+    request.bytes.compositor = 300;
+    let (id, _) = r.submit(request, |_| Ok(vec![])).unwrap();
+    r.tick().unwrap();
+    assert_eq!(r.snapshot(id).unwrap().state, JobState::Queued);
+    assert_eq!(pin.bytes(), [1; 328]);
+    drop(pin);
+    assert_eq!(pump(&mut r, id).state, JobState::Completed);
+}
+#[test]
+fn read_reclaims_other_caches_by_global_recency_and_refuses_all_pinned_pressure() {
+    let first = tempfile::tempdir().unwrap();
+    let second = tempfile::tempdir().unwrap();
+    let budget = ByteBudget::new(1000).unwrap();
+    let (mut a, _) = ArtifactCache::open(first.path(), budget.clone(), 10).unwrap();
+    let (mut b, _) = ArtifactCache::open(second.path(), budget.clone(), 10).unwrap();
+    a.put(key(0), &[0; 328]).unwrap();
+    for n in 1..=5 {
+        b.put(key(n), &[n; 28]).unwrap();
+    }
+    let touched = b.get(key(1)).unwrap().unwrap();
+    drop(touched);
+    let large = a.get(key(0)).unwrap().unwrap();
+    assert_eq!(large.bytes(), [0; 328]);
+    assert!(b.get(key(2)).unwrap().is_none());
+    assert!(b.get(key(1)).unwrap().is_some());
+    drop(large);
+    a.clear().unwrap();
+    b.clear().unwrap();
+    // Reopened heterogeneous reads use the same reclaimer, not a per-cache workaround.
+    a.put(key(0), &[0; 328]).unwrap();
+    for n in 1..=5 {
+        a.put(key(n), &[n; 28]).unwrap();
+    }
+    drop(a);
+    let (mut a, _) = ArtifactCache::open(first.path(), budget.clone(), 10).unwrap();
+    assert_eq!(a.get(key(0)).unwrap().unwrap().bytes(), [0; 328]);
+    a.clear().unwrap();
+    a.put(key(1), &[1; 328]).unwrap();
+    b.put(key(2), &[2; 128]).unwrap();
+    let other = b.get(key(2)).unwrap().unwrap(); // 600 disk + 200 pin: only 200 free
+    assert!(matches!(a.get(key(1)), Err(EditError::BudgetFull)));
+    assert_eq!(other.bytes(), [2; 128]);
+    drop(other);
+    assert_eq!(a.get(key(1)).unwrap().unwrap().bytes(), [1; 328]);
+}
+#[test]
+fn concurrent_reclaimers_preserve_live_pins_and_accounting() {
+    let dir = tempfile::tempdir().unwrap();
+    let budget = ByteBudget::new(1000).unwrap();
+    let (mut cache, _) = ArtifactCache::open(dir.path(), budget.clone(), 10).unwrap();
+    cache.put(key(0), &[0; 28]).unwrap();
+    let pinned = cache.get(key(0)).unwrap().unwrap();
+    for _ in 0..30 {
+        for n in 1..=7 {
+            cache.put(key(n), &[n; 28]).unwrap();
+        }
+        let start = Arc::new(std::sync::Barrier::new(3));
+        let release = Arc::new(std::sync::Barrier::new(3));
+        let (tx, rx) = mpsc::sync_channel(2);
+        std::thread::scope(|scope| {
+            for _ in 0..2 {
+                let budget = budget.clone();
+                let start = start.clone();
+                let release = release.clone();
+                let tx = tx.clone();
+                scope.spawn(move || {
+                    start.wait();
+                    let result = budget.reserve(ByteOwner::Compositor, 400);
+                    tx.send(
+                        result
+                            .as_ref()
+                            .map(|_| ())
+                            .map_err(|e| matches!(e, EditError::BudgetFull)),
+                    )
+                    .unwrap();
+                    release.wait();
+                    drop(result);
+                });
+            }
+            start.wait();
+            let results = [
+                rx.recv_timeout(Duration::from_secs(10)).unwrap(),
+                rx.recv_timeout(Duration::from_secs(10)).unwrap(),
+            ];
+            let snapshot = budget.snapshot().unwrap();
+            release.wait();
+            assert!(results.iter().any(Result::is_ok));
+            assert!(results.iter().all(|r| matches!(r, Ok(()) | Err(true))));
+            assert!(snapshot.used <= snapshot.limit);
+            assert_eq!(snapshot.owners.iter().sum::<u64>(), snapshot.used);
+        });
+        assert_eq!(pinned.bytes(), [0; 28]);
+        assert!(cache.len() <= 8);
+        assert_eq!(budget.snapshot().unwrap().owners[1], 0);
+    }
+    drop(pinned);
+    cache.clear().unwrap();
+    assert_eq!(budget.snapshot().unwrap().used, 0);
+}
+#[test]
+fn reclaim_io_failure_preserves_charge_and_can_retry_after_repair() {
+    let dir = tempfile::tempdir().unwrap();
+    let budget = ByteBudget::new(1000).unwrap();
+    let (mut cache, _) = ArtifactCache::open(dir.path(), budget.clone(), 10).unwrap();
+    cache.put(key(0), &[0; 328]).unwrap();
+    let path = dir.path().join(key(0).filename());
+    let bytes = std::fs::read(&path).unwrap();
+    std::fs::remove_file(&path).unwrap();
+    std::fs::create_dir(&path).unwrap();
+    assert!(matches!(
+        budget.reserve(ByteOwner::Export, 700),
+        Err(EditError::Io(_))
+    ));
+    assert_eq!(budget.snapshot().unwrap().used, 400);
+    std::fs::remove_dir(&path).unwrap();
+    std::fs::write(&path, bytes).unwrap();
+    let work = budget.reserve(ByteOwner::Export, 700).unwrap();
+    assert_eq!(budget.snapshot().unwrap().used, 700);
+    assert!(cache.get(key(0)).unwrap().is_none());
+    drop(work);
+    assert_eq!(budget.snapshot().unwrap().used, 0);
+}
+#[test]
+fn corrupt_read_preserves_existing_pin_and_removes_entry_after_release() {
+    let dir = tempfile::tempdir().unwrap();
+    let budget = ByteBudget::new(1000).unwrap();
+    let (mut cache, _) = ArtifactCache::open(dir.path(), budget.clone(), 10).unwrap();
+    cache.put(key(1), &[1; 28]).unwrap();
+    let original = cache.get(key(1)).unwrap().unwrap();
+    let path = dir.path().join(key(1).filename());
+    let mut bytes = std::fs::read(&path).unwrap();
+    bytes[72] ^= 1;
+    std::fs::write(&path, bytes).unwrap();
+    assert!(matches!(cache.get(key(1)), Err(EditError::CacheCorrupt)));
+    assert_eq!(original.bytes(), [1; 28]);
+    assert_eq!(cache.clear().unwrap(), 1);
+    drop(original);
+    assert!(matches!(cache.get(key(1)), Err(EditError::CacheCorrupt)));
+    assert!(cache.get(key(1)).unwrap().is_none());
+    assert_eq!(budget.snapshot().unwrap().used, 0);
+}

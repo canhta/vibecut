@@ -165,6 +165,17 @@ in-flight export, persistent artifacts, cache readers/staging and job results.
 `reserve(owner, bytes)` returns a lifetime-bound lease; owners reserve **before**
 allocating, including both overlapping batches and actual pixel storage. The
 engine defines policy; frame/glyph inner loops stay in their data-owning crates.
+On byte pressure, every reservation reclaims unpinned persistent artifacts in
+one aggregate LRU order, including artifacts owned by other open caches. Reopened
+entries register with the same policy. Cache storage alone cannot permanently
+starve an admitted job. Oversized reservations fail before eviction; pressure from
+active work/readers can still defer queued jobs until their leases release.
+Reclamation performs synchronous file unlinking outside accounting/registry locks;
+reserve before execution, never in an audio callback. Unlink failures return typed
+IO errors and leave charges intact for a later retry. Atomic reader pins exclude
+in-use files and a read's requested entry from reclamation; competing reclaimers
+can yield temporary BudgetFull. Removed cache metadata is pruned on the next owner
+operation and weak registry entries are compacted on registration/pressure.
 Reservations are declared allocation ceilings, not an allocator sandbox or RSS
 measurement. Captured task data is caller-owned and must be bounded; submission
 cannot inspect arbitrary closures. The same reservation must not be charged a
@@ -204,7 +215,10 @@ Jobs submitted without a Session cannot apply edits through this method.
 `Session::job_target()` also captures the identity for externally adapted work. `apply_job_result(target, command)` refuses stale identity and active
 previews/groups, then uses the normal atomic command boundary. Every changed edit,
 undo/redo and changed preview invalidates older targets, even if undo restores
-equal content. Failed transactions may conservatively invalidate them too.
+equal content. Every group/gesture squash, including a net-zero group, and
+transaction rollback or unwind invalidates targets captured inside its preview
+lifetime. Group exit
+conservatively invalidates targets even when final content is equal.
 Call `saved()` after a successful save; it refuses an active transaction and
 invalidates pre-save targets. Opening another Session gives a new identity.
 A valid old artifact may remain cached without being applied.
@@ -235,8 +249,9 @@ canonical entries with a diagnostic count. Unrecognized files are skipped and
 never deleted; they are outside cache accounting. Directory scanning streams metadata;
 excess entries evict without reading their payloads. Headers bind the canonical
 key; `get` checks admitted size, header and payload digest before returning a hit.
-Corruption/missing files return `CacheCorrupt` and remove the entry, so a caller can
-record the typed diagnostic and recompute. Other IO errors retain their source.
+Corruption/missing files return `CacheCorrupt`; corrupt-file removal waits for any
+older reader pins to release, so a caller can record the typed diagnostic and
+recompute. Other IO errors retain their source.
 
 `put` commits a complete artifact through project's synced atomic-file writer.
 The 72-byte envelope is charged along with payload, so even empty entries consume
@@ -244,8 +259,10 @@ budget. The shared budget covers persistent bytes and the temporary envelope/rea
 allocation; put refuses an artifact whose envelope exceeds half the aggregate
 limit (`ArtifactTooLarge`), because staging and disk must fit together. Pressure
 evicts least-recently-used unpinned entries by bytes; max_entries also bounds
-metadata. Reopen resets recency. A read returns an explicit ArtifactLease pin,
-with separately charged read memory. Eviction and `clear` skip pinned files;
+metadata. Reopen resets recency. A read first pins its requested entry, then uses
+the shared reservation/reclamation path for read memory, evicting unrelated
+unpinned files as needed. A read returns an explicit ArtifactLease pin, with
+separately charged read memory. Eviction and `clear` skip pinned files;
 clear returns the count still in use and a later clear removes them after release.
 Put cannot replace a pinned key. Dropping the cache keeps outstanding reader bytes
 and disk charges alive through their leases; closed, unleased directories are
@@ -266,6 +283,10 @@ Observed verification: `tests/jobs.rs` exercises actual submission with controll
 cancellation, failure, unwind, oversized results, deterministic retry/backoff,
 resource/queue pressure, 200 completions with stable entry/charged-byte bounds,
 semantic key invalidation, restart checkpoints, corruption, byte eviction, pinning,
-clear during use and stale results after edit/undo/save/Session switch.
+clear during use and stale results after edit/undo/save/Session switch. Retained
+review regressions cover discarded transaction targets, cache-starved processing and read pressure.
+Additional boundary tests cover failed/unwinding/net-zero groups and submitted
+outputs, reopened/multiple-cache reclamation, global recency, active pins,
+concurrent reclaimers and repair after unlink failure.
 No new media/render algorithm is introduced; throughput, RSS, provider quality and
 Windows runtime behavior remain unverified by these synthetic lifecycle tests.

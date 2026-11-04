@@ -193,6 +193,8 @@ impl Session {
                 Ok(value)
             }
             failed => {
+                // Targets captured by child commands belong to discarded previews.
+                self.revision = Arc::new(());
                 let next_id = self.state.next_id;
                 self.state = before;
                 self.state.next_id = next_id;
@@ -204,6 +206,8 @@ impl Session {
         }
     }
     fn squash(&mut self, before: State) -> Outcome {
+        // Close the preview lifetime even for a net-zero group/gesture.
+        self.revision = Arc::new(());
         let project = self.state.project.clone();
         let next_id = self.state.next_id;
         let changed = *project != *before.project;
