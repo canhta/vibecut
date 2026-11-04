@@ -97,7 +97,12 @@ initial allocation. Project and source constructors retain their own limits.
   Known media handles bound extension; generated content has no media endpoint.
   Caption mapping clips retained cues through captions' mapping owner, preserving
   source cue IDs, languages, text, translation references and edit flags. A trim
-  commits retained cue content; extending it cannot recover discarded cues.
+  commits retained cue content; a later independent extension cannot recover
+  discarded cues. Gesture, closure-group, batch and equal-key merged trims rebuild
+  each preview from retained entry cues rather than the previous clipped preview.
+  An explicit `set_item_param` replaces that retained content; splitting establishes
+  separate retained content for each piece. Refusal rolls back retained content
+  with the candidate. Retention ends at commit/cancel or a merge boundary.
   Undo restores the original snapshot and all its cue content.
 - `delete` lifts identified items leaving gaps. `ripple_delete` removes one item
   and shifts later items on that track left by its duration, preserving earlier

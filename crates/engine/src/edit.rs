@@ -1,7 +1,12 @@
 use crate::{Command, CreatedId, EditError, Move, Result};
 use project::{Bookmark, BookmarkId, Item, ItemId, ItemParams, ProjectData, Track, TrackId};
-use std::collections::BTreeSet;
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    sync::Arc,
+};
 use time::{SourceRange, Tick};
+
+pub(crate) type TrimSources = BTreeMap<ItemId, Arc<captions::CueTrack>>;
 
 pub(crate) fn check_budget(command: &Command) -> Result<()> {
     let mut stack = vec![(command, 0)];
@@ -81,11 +86,14 @@ fn sub(a: Tick, b: Tick) -> Result<Tick> {
 }
 
 /// Keep caption clipping with its mapping owner, retaining source cue identity and text.
-/// This commits only retained source content; undo restores the full original item.
-fn set_range(item: &mut Item, range: SourceRange) -> Result<()> {
+/// The caller supplies authoritative cues, never a previously clipped preview.
+fn set_range(item: &mut Item, range: SourceRange, sources: &mut TrimSources) -> Result<()> {
     if let ItemParams::Caption(p) = &mut item.content {
         let mapping = captions::EditMapping::new(vec![(range, range.start())])?;
-        let mut cues = mapping.map_cues(&p.cues)?;
+        let source = sources
+            .entry(item.id)
+            .or_insert_with(|| Arc::new(p.cues.clone()));
+        let mut cues = mapping.map_cues(source)?;
         for cue in &mut cues.cues {
             cue.id = captions::CueFragmentId::from_id(&cue.id)?.source_id;
         }
@@ -117,6 +125,7 @@ pub(crate) fn apply(
     command: Command,
     created: &mut Vec<CreatedId>,
     next: &mut Option<u64>,
+    sources: &mut TrimSources,
 ) -> Result<project::Project> {
     match command {
         Command::AddAsset { asset } => data.assets.push(asset),
@@ -176,10 +185,21 @@ pub(crate) fn apply(
             let cut = add(left.source_range.start(), sub(at, left.start)?)?;
             let mut right = left.clone();
             let end = left.source_range.end();
-            set_range(left, SourceRange::new(left.source_range.start(), cut)?)?;
-            set_range(&mut right, SourceRange::new(cut, end)?)?;
+            set_range(
+                left,
+                SourceRange::new(left.source_range.start(), cut)?,
+                sources,
+            )?;
+            set_range(&mut right, SourceRange::new(cut, end)?, sources)?;
+            // A split establishes independent retained content for both new pieces.
+            if let ItemParams::Caption(p) = &left.content {
+                sources.insert(left.id, Arc::new(p.cues.clone()));
+            }
             right.id = ItemId(alloc(next)?);
             right.start = at;
+            if let ItemParams::Caption(p) = &right.content {
+                sources.insert(right.id, Arc::new(p.cues.clone()));
+            }
             created.push(CreatedId::Item(right.id));
             let t = data
                 .timeline
@@ -193,13 +213,17 @@ pub(crate) fn apply(
             let item = item(&mut data, id)?;
             let source = add(item.source_range.start(), sub(at, item.start)?)?;
             let range = SourceRange::new(source, item.source_range.end())?;
-            set_range(item, range)?;
+            set_range(item, range, sources)?;
             item.start = at;
         }
         Command::TrimEnd { item: id, at } => {
             let item = item(&mut data, id)?;
             let end = add(item.source_range.start(), sub(at, item.start)?)?;
-            set_range(item, SourceRange::new(item.source_range.start(), end)?)?;
+            set_range(
+                item,
+                SourceRange::new(item.source_range.start(), end)?,
+                sources,
+            )?;
         }
         Command::Delete { items } => {
             let mut ids = BTreeSet::new();
@@ -231,7 +255,11 @@ pub(crate) fn apply(
                 }
             }
         }
-        Command::SetItemParam { item: id, content } => item(&mut data, id)?.content = content,
+        Command::SetItemParam { item: id, content } => {
+            item(&mut data, id)?.content = content;
+            // Explicit content replacement becomes authoritative for later previews.
+            sources.remove(&id);
+        }
         Command::AddBookmark {
             start,
             duration,
@@ -252,7 +280,7 @@ pub(crate) fn apply(
             for command in commands {
                 // Consume each candidate before applying the next child; validation must
                 // not clone an unvalidated allocation or publish a partial batch.
-                data = apply(data, command, created, next)?.into_data();
+                data = apply(data, command, created, next, sources)?.into_data();
             }
         }
         Command::Undo {}

@@ -13,6 +13,7 @@ struct State {
     undo: VecDeque<Arc<Project>>,
     redo: Vec<Arc<Project>>,
     merge_key: Option<String>,
+    trim_sources: edit::TrimSources,
     next_id: Option<u64>,
     change: Option<Arc<Project>>,
 }
@@ -51,6 +52,7 @@ impl Session {
                 undo: VecDeque::new(),
                 redo: Vec::new(),
                 merge_key: None,
+                trim_sources: edit::TrimSources::new(),
                 next_id,
                 change: None,
             },
@@ -82,6 +84,9 @@ impl Session {
     /// gesture before saving its preview or changing the selection it edits.
     pub fn end_merge(&mut self) {
         self.state.merge_key = None;
+        if !self.transaction_active() {
+            self.state.trim_sources.clear();
+        }
     }
     /// Drain the latest committed project change. One slot coalesces slow consumers;
     /// previews/groups defer notification until commit and cannot drain older events.
@@ -140,6 +145,7 @@ impl Session {
             return Err(EditError::TransactionActive);
         }
         let before = self.state.clone();
+        self.state.trim_sources.clear();
         self.grouping = true;
         let result = catch_unwind(AssertUnwindSafe(|| run(self)));
         self.grouping = false;
@@ -229,10 +235,22 @@ impl Session {
         let candidate = self.state.project.data().clone();
         let mut created = Vec::new();
         let mut next_id = self.state.next_id;
-        let next = edit::apply(candidate, command, &mut created, &mut next_id)?;
+        let mut sources = if self.transaction_active()
+            || (key.is_some() && self.state.merge_key.as_deref() == key)
+        {
+            self.state.trim_sources.clone()
+        } else {
+            edit::TrimSources::new()
+        };
+        let next = edit::apply(candidate, command, &mut created, &mut next_id, &mut sources)?;
         if next == *self.state.project {
             if self.state.merge_key.as_deref() != key {
                 self.end_merge();
+            }
+            if self.transaction_active() || key.is_some() {
+                self.state.trim_sources = sources;
+            } else {
+                self.state.trim_sources.clear();
             }
             return Ok(Outcome {
                 changed: false,
@@ -245,6 +263,11 @@ impl Session {
             self.end_merge();
         } else {
             self.publish(next, key);
+        }
+        if self.transaction_active() || key.is_some() {
+            self.state.trim_sources = sources;
+        } else {
+            self.state.trim_sources.clear();
         }
         self.state.next_id = next_id;
         Ok(Outcome {
