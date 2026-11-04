@@ -20,6 +20,8 @@ pub struct Model {
     pub license: String,
     pub license_url: String,
     pub source: String,
+    /// Supported languages for language-bound weights. Empty means
+    /// language-neutral model metadata, never "supports every language".
     pub languages: Vec<captions::LanguageTag>,
     pub files: Vec<ModelFile>,
 }
@@ -85,7 +87,6 @@ impl Model {
                 .try_fold(0u64, |sum, f| sum.checked_add(f.size))
                 .is_none_or(|sum| sum > (64 << 30))
             || self.files.is_empty()
-            || self.languages.is_empty()
         {
             return Err(Error::Invalid("model metadata"));
         }
@@ -97,6 +98,26 @@ impl Model {
             }
         }
         Ok(())
+    }
+    /// Empty metadata marks language-neutral weights such as vision detectors.
+    /// Operation support remains an adapter contract; this only describes scope.
+    pub fn language_neutral(&self) -> bool {
+        self.languages.is_empty()
+    }
+    /// Exact or primary-subtag language match. A language-neutral model never
+    /// matches a language selection, so speech pickers cannot treat `[]` as all.
+    pub fn matches_language(&self, language: &captions::LanguageTag) -> bool {
+        let wanted = language.as_str();
+        self.languages.iter().any(|tag| {
+            let tag = tag.as_str();
+            tag == wanted
+                || wanted
+                    .strip_prefix(tag)
+                    .is_some_and(|rest| rest.starts_with('-'))
+                || tag
+                    .strip_prefix(wanted)
+                    .is_some_and(|rest| rest.starts_with('-'))
+        })
     }
     /// Only these weight licences are eligible for a suggested default.
     /// Every download, including defaults, still requires explicit approval.
@@ -229,6 +250,41 @@ pub fn catalog() -> Result<Vec<Model>, Error> {
         ],
     });
     models.push(alignment_model()?);
+    models.push(Model {
+        id: "yunet-2026may".into(), license: "MIT".into(),
+        license_url: "https://raw.githubusercontent.com/opencv/opencv_zoo/48b10fa505aeb51fbd127fc60a5c660040e823b7/models/face_detection_yunet/LICENSE".into(),
+        source: "https://github.com/opencv/opencv_zoo/tree/48b10fa505aeb51fbd127fc60a5c660040e823b7/models/face_detection_yunet".into(),
+        languages: Vec::new(),
+        files: vec![ModelFile {
+            name: "face_detection_yunet_2026may.onnx".into(),
+            url: "https://media.githubusercontent.com/media/opencv/opencv_zoo/48b10fa505aeb51fbd127fc60a5c660040e823b7/models/face_detection_yunet/face_detection_yunet_2026may.onnx".into(),
+            sha256: "ebafce4e3c118d6554634be5c27ab333b4c047a9a8c3faf1d7cf93101c22f0f0".into(),
+            size: 229_738,
+        }],
+    });
+    models.push(Model {
+        id: "clip-vit-base-patch32".into(), license: "MIT".into(),
+        license_url: "https://raw.githubusercontent.com/openai/CLIP/d05afc436d78f1c48dc0dbf8e5980a9d471f35f6/LICENSE".into(),
+        source: "https://huggingface.co/Xenova/clip-vit-base-patch32/tree/6b7c523703ae26e39be4b03774966f8571c7f523".into(),
+        languages: Vec::new(),
+        files: vec![
+            ModelFile { name: "vision_model.onnx".into(),
+                url: "https://huggingface.co/Xenova/clip-vit-base-patch32/resolve/6b7c523703ae26e39be4b03774966f8571c7f523/onnx/vision_model.onnx".into(),
+                sha256: "fd6e1402a588279d1723c7534d4bcba5bc0b14b47dfab0e46f8c47b8270d7d40".into(), size: 351_685_709 },
+            ModelFile { name: "text_model.onnx".into(),
+                url: "https://huggingface.co/Xenova/clip-vit-base-patch32/resolve/6b7c523703ae26e39be4b03774966f8571c7f523/onnx/text_model.onnx".into(),
+                sha256: "3f6571f5bad13a97c469c1622e1cfc4d9aef78b79fdbfcff804ca357bfada8cc".into(), size: 254_058_553 },
+            ModelFile { name: "tokenizer.json".into(),
+                url: "https://huggingface.co/Xenova/clip-vit-base-patch32/resolve/6b7c523703ae26e39be4b03774966f8571c7f523/tokenizer.json".into(),
+                sha256: "f7f3b7af117d467b58374797691a6438d3e6b9e9cef800dfd5dced7f697a90cd".into(), size: 2_224_119 },
+            ModelFile { name: "config.json".into(),
+                url: "https://huggingface.co/Xenova/clip-vit-base-patch32/resolve/6b7c523703ae26e39be4b03774966f8571c7f523/config.json".into(),
+                sha256: "493ef57ff783e42d1530c91b53469b7fdf8db8a9c1408e86998fcb7899a4f495".into(), size: 4_524 },
+            ModelFile { name: "preprocessor_config.json".into(),
+                url: "https://huggingface.co/Xenova/clip-vit-base-patch32/resolve/6b7c523703ae26e39be4b03774966f8571c7f523/preprocessor_config.json".into(),
+                sha256: "6f638fb9401a6d6296feff533ee7efe657b787c49f954f82f5906b36ef2a1b1f".into(), size: 520 },
+        ],
+    });
     for model in &models {
         model.validate()?;
     }
@@ -245,7 +301,7 @@ pub fn suggested_transcriber(language: &captions::LanguageTag) -> Result<Model, 
         .map_or("whisper-large-v3-turbo", |(_, id)| *id);
     catalog()?
         .into_iter()
-        .find(|m| m.id == id && m.default_eligible())
+        .find(|m| m.id == id && m.default_eligible() && m.matches_language(language))
         .ok_or(Error::Unsupported)
 }
 

@@ -235,13 +235,80 @@ adapters using the production seams: NFC Vietnamese, source offsets, missing-spa
 alignment, text-only refusal, capabilities/limits, consent/cost, malformed response,
 translation, overlap ambiguity, raw-token public execution/serialization,
 UTF-8-split NFD/Han/emoji correspondence, explicit missing timing, hostile token
-responses, redaction, typed failure and cancellation.
+responses, redaction, typed failure and cancellation. Model-catalog tests cover
+language-neutral metadata, non-match of neutral weights in speech selection,
+unchanged language-bound entries, pinned vision file hashes and refused
+truncated/mismatched bytes.
 `cargo xtask ci` also checks architecture, formatting and Clippy.
 
 Observed evidence covers offline contract behavior only. No model accuracy, timing
 fidelity, network adapter, real billing, live streaming, native runtime performance
 or platform behavior is established here. Adapters own response-parser allocation
 caps before constructing transport records; engine owns job-level memory budgets.
+
+## Model catalog and language-neutral weights
+
+`models::catalog` is metadata only: identity, licence, licence URL, source, exact
+files with pinned HTTPS URLs, sizes and SHA-256. Downloads remain engine-owned,
+user-initiated, consented and integrity-verified; weights are never bundled.
+
+`Model::languages` describes supported language scope. An empty list is
+**language-neutral** metadata for weights that do not read or produce language,
+such as vision detectors. Validation accepts that empty list instead of rejecting
+it, and `Model::language_neutral()` exposes the distinction. It never means
+"supports every language": `Model::matches_language` returns false for neutral
+weights, and `suggested_transcriber` requires a real language match, so a vision
+entry can never be selected as an ASR model. Existing entries keep their concrete
+lists (`whisper-large-v3-turbo`: vi, en, zh; `gipformer-68m-rnnt-int8`: vi;
+`whisper-small-dtw`: vi, en, zh, zh-Hans, zh-Hant).
+
+Vision entries added by p1-clips/14, both MIT and both language-neutral:
+
+| Model id | Upstream source | Files |
+|---|---|---|
+| `yunet-2026may` | `opencv/opencv_zoo` `48b10fa505aeb51fbd127fc60a5c660040e823b7`, `models/face_detection_yunet` | `face_detection_yunet_2026may.onnx`, 229,738 B, `ebafce4e3c118d6554634be5c27ab333b4c047a9a8c3faf1d7cf93101c22f0f0` |
+| `clip-vit-base-patch32` | `Xenova/clip-vit-base-patch32` `6b7c523703ae26e39be4b03774966f8571c7f523`; weights derived from MIT OpenAI CLIP | `vision_model.onnx` 351,685,709 B `fd6e1402a588279d1723c7534d4bcba5bc0b14b47dfab0e46f8c47b8270d7d40`; `text_model.onnx` 254,058,553 B `3f6571f5bad13a97c469c1622e1cfc4d9aef78b79fdbfcff804ca357bfada8cc`; `tokenizer.json` 2,224,119 B `f7f3b7af117d467b58374797691a6438d3e6b9e9cef800dfd5dced7f697a90cd`; `config.json` 4,524 B `493ef57ff783e42d1530c91b53469b7fdf8db8a9c1408e86998fcb7899a4f495`; `preprocessor_config.json` 520 B `6f638fb9401a6d6296feff533ee7efe657b787c49f954f82f5906b36ef2a1b1f` |
+
+The CLIP text tower is registered so fixed prompt embeddings are reproducible,
+not to run text inference per frame. No derived embedding file is downloaded,
+shipped or bundled: compute the two fixed prompts once on first use, keyed and
+cached by text-model hash + tokenizer hash + exact prompt text. Tokenize with the
+pinned `tokenizer.json`, pad or truncate with id 49,407 to 77 ids, run
+`text_model.onnx` with `input_ids` `[N,77]` int64, and L2-normalize each projected
+embedding. The prompts are `a screenshot of a computer screen` and
+`a photograph of a person`; image embeddings come from `vision_model.onnx` with
+the pinned 224x224 RGB mean/std; screen probability uses `14.3 * (image · text)`
+and a 0.5 threshold. The p1-clips/15 adapter owns that wiring; this crate only
+publishes metadata.
+
+### Light-ASD export recipe (entry intentionally absent)
+
+`light-asd-ava` has no catalog entry until a project-controlled immutable HTTPS
+host for its converted graphs is approved; `ModelFile` admits no local or derived
+path. The upstream source is `Junhua-Liao/Light-ASD`
+`ed38c232de5efe0261dbd68627c0ade7cdfe14eb`, MIT repository notice (the repository
+has no separate weight-licence file; record the maintainer decision before any
+default), `weight/pretrain_AVA_CVPR.model`, 4,175,289 B, SHA-256
+`d44bc3ea7baa8e0946fa3921311714a630ed8b90a1928fab0dbe30d918909317`.
+
+Production export, from p1-clips/13: split the checkpoint into audio, visual and
+backend graphs; export with corrected three-second inputs `[1,300,13]` audio and
+`[1,75,112,112]` video, opset 17, PyTorch's default exporter, input names
+`audio`/`video`/`embedA`,`embedV` and output `output`; keep each `.onnx.data`
+beside its `.onnx`. Derived hashes observed in p1-clips/12 and /13:
+
+| Graph | Dynamic export | Corrected static export | External data |
+|---|---|---|---|
+| audio | 99,776 B `335dd4f221fbe90330761209c1acd8637fd67399003d69b79031a7d75c820318` | 98,852 B `999b5298ab7be0339af5fd6029247752baa3ba1f3af06eed530e2ab6091dd2e0` | 1,105,408 B `b440a45f84af5e34890f48573b1e164587c690191f7a2c22d902ad5edb61f152` |
+| visual | 19,002 B `4bcec1cc985eea8416540ab481e198e611b4125b26c124408cd89442bf4def4e` | 16,267 B `c9af879254be989f7523929e2296aa6cd44310bdc555bd515cf68f7bd17bd4a4` | 2,173,696 B `4400bdaa0925a73bc0486fd569be5223fc8b9cb5e2c6c2d8c487b288d4b1e267` |
+| backend | 9,393 B `f3d2b8b2ac81888e1a023e0bb1b3d9b764a151bf309d2510ae1357fbecd58084` | 8,095 B `fdcf28c59ec42162a779b15466a5df6f93bfb851e49190e4c86db4c13ed43ecb` | 794,112 B `960c75126082846b34623606a9aff56baa6f092f1dbb7d37d59a2096105af9a0` |
+
+For bounded chunk lengths other than 75 frames, apply the /13 metadata
+specialisation at load: validate input names/types/ranks/limits and the exact 4:1
+audio-to-video frame ratio, clear symbolic input/output annotations and stale
+`value_info`, bind the concrete length, and cache plans by model hash, length,
+dimensions, runtime revision and thread count. Never pad a short tail to satisfy
+an export. /15 owns the runtime and its parity fixtures.
 
 ## Local Whisper
 
