@@ -1,7 +1,10 @@
 //! Offline provider policy and validated transcription/alignment/translation execution.
 mod assembly;
 mod contracts;
+pub mod models;
 mod policy;
+#[cfg(feature = "whisper")]
+pub mod whisper;
 pub use assembly::*;
 pub use contracts::*;
 pub use policy::*;
@@ -31,6 +34,14 @@ pub enum Error {
     Cost,
     #[error("operation cancelled")]
     Cancelled,
+    #[error("model file failed size or SHA-256 verification")]
+    ModelIntegrity,
+    #[error("model storage is full")]
+    StorageFull,
+    #[error("model storage failed: {0:?}")]
+    ModelStorage(std::io::ErrorKind),
+    #[error("local inference failed")]
+    Inference,
     #[error("AI timing conversion failed")]
     Time(#[from] time::TimeError),
     #[error("invalid caption output")]

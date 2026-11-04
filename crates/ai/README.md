@@ -1,10 +1,11 @@
 # ai
 
-Offline contracts and execution policy for transcription, forced alignment and
-translation. Owns provider configuration, capability lookup, scoped upload
-consent, invocation cost bounds and recognition assembly. Excludes networking,
-model loading/downloads, audio decoding, job scheduling, retries, checkpoints,
-cache storage, cue segmentation and user-edit policy.
+Provider contracts, execution policy and local whisper.cpp transcription. Owns
+provider configuration, capability lookup, scoped upload consent, invocation cost
+bounds, recognition assembly, model metadata, download-consent tokens, streaming
+integrity verification and verified model loading. Excludes networking/download
+execution, audio decoding, job scheduling, retries, checkpoints, cache
+storage/promotion, cue segmentation and user-edit policy.
 
 ## Entry points
 
@@ -131,3 +132,66 @@ Observed evidence covers offline contract behavior only. No model accuracy, timi
 fidelity, network adapter, real billing, live streaming, native runtime performance
 or platform behavior is established here. Adapters own response-parser allocation
 caps before constructing transport records; engine owns job-level memory budgets.
+
+## Local Whisper
+
+The default `whisper` feature uses safe whisper-rs bindings, with Metal on macOS
+and CPU elsewhere. `whisper-vulkan` enables Vulkan (requires the Vulkan SDK).
+`--no-default-features` retains offline contracts/model policy without native builds.
+No workspace unsafe exception is used. `whisper::Whisper::load` verifies the pinned
+model's exact size and SHA-256 with a fixed 64 KiB buffer before native loading;
+callers must keep the cache path immutable during loading/use. Models are never
+bundled. The multilingual default is `whisper-large-v3-turbo`, with admitted
+`vi`, `en`, `zh` capability data. No implicit language/script fallback is applied.
+
+`models::catalog` exposes source, licence URL, size and pinned download metadata.
+Composition shows those fields and obtains a user download click before granting
+`models::DownloadConsent`; this is distinct from upload consent. Authorize against
+the complete catalog record before any transfer, including resumption. Other
+weight licences remain opt-in and ineligible as defaults. `models::verify_file`
+rejects truncation, excess bytes and hash mismatches, checks cancellation between
+reads, and never writes/promotes files. `models::storage_error` maps disk-full and
+other storage failures to safe typed categories. `models::cache_dir` resolves macOS
+`~/Library/Caches/VibeCut/models` or Windows `%LOCALAPPDATA%/VibeCut/models`, without
+creating directories. Engine owns downloads, scheduling, resume/retry/checkpoints,
+cache identity/storage/promotion and model-manager wiring; these are not implemented
+by this crate.
+
+Whisper accepts finite mono 16 kHz PCM windows of at most 30 seconds, with absolute
+source sample offsets. Engine supplies chunk windows and owns reconciliation.
+Model loading and each native inference call are synchronous and noninterruptible;
+cancellation is checked before/after each call and between result segments, and
+cancelled work returns no output. Upstream's safe abort callback is deliberately
+unused: its 0.16.0 implementation erases a boxed closure but casts it back to its
+original concrete type, and does not reclaim that allocation. CPU selection is
+explicit; engine owns fallback instead of silently retrying a failed GPU call.
+The adapter disables native path/text diagnostics process-wide through the
+binding's logging hooks, without enabling its logging backend features.
+
+`ai::transcribe` returns validated segment timing and converts through the shared
+`Recognition::to_transcript` sample-to-tick path. `Whisper::recognize_tokens`
+additionally retains original subword bytes and optional token ranges: tokens may
+split UTF-8, missing/invalid/zero-width token timestamps stay absent, and tokens are
+never relabelled as words. Complete segment text is normalized once by captions.
+Captions' script-aware span mapping/persisted token timing is still required to
+turn those raw byte fragments into stored token/character spans. Token capability
+is therefore not advertised through the segment-only Transcriber interface.
+
+`cargo run -p ai --example local_whisper -- MODEL MONO-16KHZ-F32LE LANGUAGE [cpu]`
+is an explicit local smoke/benchmark command using an already downloaded model;
+it exercises public execution and transcript conversion on bounded windows.
+Its JSON output is recognition data deliberately requested by the caller, not logs.
+Native tests and benchmarks require external weights/audio and are opt-in; ordinary
+unit tests are offline. Windows native runtime and Vulkan remain unverified.
+
+Observed on M1 Pro (16 GiB, macOS 27.2), release build, four inference threads,
+requested Metal, pinned turbo weights, consecutive non-overlapping 30 s windows:
+JFK/Reagan pooled WER 1.59%, Vietnamese FLEURS WER 9.97%, Chinese FLEURS CER 9.73%.
+One 840.228 s JFK run took 69.039 s inference (RTF 0.0822), peak RSS 2.026 GB;
+model hash/load took 1.468 s separately. One final run per sample; filesystem/model
+cache was warm and other IDE activity was not isolated. These are small benchmark
+samples, not production accuracy guarantees. The earlier full-file CLI benchmark
+has better VI/ZH error rates (8.21%/8.60%) and RTF (0.055); native version, settings
+and chunking differ, so parity is unverified. Engine chunk-boundary reconciliation
+and corpus evaluation remain required. Flash attention is disabled: an observed
+VI WER regression from 9.97% to 26.98% outweighs its speed improvement.

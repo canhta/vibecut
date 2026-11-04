@@ -3,7 +3,7 @@
 ## Licensing
 
 Project contributions use [MIT](../../LICENSE). Admit dependencies licensed under
-MIT, Apache-2.0, BSD, ISC, Zlib or Unicode, WTFPL or unmodified MPL-2.0; LGPL-2.1-or-later shared FFmpeg is admitted under the distribution rules below;
+MIT, Apache-2.0, BSD, ISC, Zlib, Unicode, Unlicense, WTFPL or unmodified MPL-2.0; LGPL-2.1-or-later shared FFmpeg is admitted under the distribution rules below;
 any other license requires an ADR. Review license metadata when changing dependencies.
 
 ## FFmpeg distribution

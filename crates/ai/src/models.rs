@@ -1,0 +1,192 @@
+//! Model metadata and integrity policy. Engine owns transfers and cache promotion.
+use crate::{Error, ExecutionHooks};
+use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
+use std::{io::Read, path::PathBuf};
+
+/// Public catalog data, validated before consent or IO. No local path is admitted.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ModelFile {
+    pub name: String,
+    pub url: String,
+    pub sha256: String,
+    pub size: u64,
+}
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Model {
+    pub id: String,
+    pub license: String,
+    pub license_url: String,
+    pub source: String,
+    pub languages: Vec<captions::LanguageTag>,
+    pub files: Vec<ModelFile>,
+}
+fn https(value: &str) -> bool {
+    url::Url::parse(value).is_ok_and(|u| {
+        u.scheme() == "https"
+            && u.host_str().is_some()
+            && u.username().is_empty()
+            && u.password().is_none()
+            && u.query().is_none()
+            && u.fragment().is_none()
+    })
+}
+impl ModelFile {
+    pub fn validate(&self) -> Result<(), Error> {
+        if self.name.is_empty()
+            || self.name == "."
+            || self.name == ".."
+            || !self
+                .name
+                .bytes()
+                .all(|b| b.is_ascii_alphanumeric() || b"-_.".contains(&b))
+            || !https(&self.url)
+            || self.size == 0
+            || self.sha256.len() != 64
+            || !self
+                .sha256
+                .bytes()
+                .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
+        {
+            return Err(Error::Invalid("model file metadata"));
+        }
+        Ok(())
+    }
+}
+impl Model {
+    pub fn validate(&self) -> Result<(), Error> {
+        if self.id.trim().is_empty()
+            || self.license.trim().is_empty()
+            || !https(&self.license_url)
+            || !https(&self.source)
+            || self.files.is_empty()
+            || self.languages.is_empty()
+        {
+            return Err(Error::Invalid("model metadata"));
+        }
+        let mut names = std::collections::BTreeSet::new();
+        for file in &self.files {
+            file.validate()?;
+            if !names.insert(&file.name) {
+                return Err(Error::Invalid("duplicate model file"));
+            }
+        }
+        Ok(())
+    }
+    /// Only these weight licences are eligible for a suggested default.
+    /// Every download, including defaults, still requires explicit approval.
+    pub fn default_eligible(&self) -> bool {
+        matches!(
+            self.license.as_str(),
+            "MIT" | "Apache-2.0" | "BSD-2-Clause" | "BSD-3-Clause"
+        )
+    }
+}
+/// Separate from upload Consent. Composition calls grant only after a user click
+/// showing the exact model licence/source/files/bytes; never serialize this token.
+#[derive(Clone)]
+pub struct DownloadConsent(Model);
+impl std::fmt::Debug for DownloadConsent {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("DownloadConsent([redacted])")
+    }
+}
+impl DownloadConsent {
+    pub fn grant(model: &Model) -> Result<Self, Error> {
+        model.validate()?;
+        Ok(Self(model.clone()))
+    }
+    pub fn authorize(&self, model: &Model) -> Result<(), Error> {
+        model.validate()?;
+        if self.0 != *model {
+            return Err(Error::ConsentRequired);
+        }
+        Ok(())
+    }
+}
+/// Read and hash with a fixed 64 KiB buffer, at most expected size + one byte.
+/// Engine must call before atomic promotion and keep promoted files immutable.
+/// On error no bytes are promoted here; callers retain their own resume checkpoint.
+pub fn verify_file(
+    reader: &mut dyn Read,
+    file: &ModelFile,
+    hooks: &dyn ExecutionHooks,
+) -> Result<(), Error> {
+    file.validate()?;
+    let mut hash = Sha256::new();
+    let mut bytes = 0u64;
+    let mut buffer = [0u8; 65536];
+    loop {
+        if hooks.cancelled() {
+            return Err(Error::Cancelled);
+        }
+        let remaining = file.size.saturating_sub(bytes).saturating_add(1);
+        let count =
+            usize::try_from(remaining.min(buffer.len() as u64)).map_err(|_| Error::Payload)?;
+        let n = match reader.read(buffer.get_mut(..count).ok_or(Error::Payload)?) {
+            Err(e) if e.kind() == std::io::ErrorKind::Interrupted => continue,
+            r => r.map_err(storage_error)?,
+        };
+        if n == 0 {
+            break;
+        }
+        bytes = bytes.checked_add(n as u64).ok_or(Error::Payload)?;
+        if bytes > file.size {
+            return Err(Error::ModelIntegrity);
+        }
+        hash.update(buffer.get(..n).ok_or(Error::Payload)?);
+    }
+    if hooks.cancelled() {
+        return Err(Error::Cancelled);
+    }
+    let digest: String = hash
+        .finalize()
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect();
+    if bytes != file.size || digest != file.sha256 {
+        return Err(Error::ModelIntegrity);
+    }
+    Ok(())
+}
+/// Safe storage categories: never include paths or arbitrary OS diagnostics.
+pub fn storage_error(error: std::io::Error) -> Error {
+    if error.kind() == std::io::ErrorKind::StorageFull {
+        Error::StorageFull
+    } else {
+        Error::ModelStorage(error.kind())
+    }
+}
+/// OS cache location only. Does not create directories, download, or evict files.
+pub fn cache_dir() -> Result<PathBuf, Error> {
+    #[cfg(target_os = "macos")]
+    let base = std::env::var_os("HOME").map(|p| PathBuf::from(p).join("Library/Caches"));
+    #[cfg(target_os = "windows")]
+    let base = std::env::var_os("LOCALAPPDATA").map(PathBuf::from);
+    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+    let base: Option<PathBuf> = None;
+    let base = base.filter(|p| p.is_absolute()).ok_or(Error::Unsupported)?;
+    Ok(base.join("VibeCut").join("models"))
+}
+/// Pinned multilingual default; metadata is data, never an automatic download.
+pub fn catalog() -> Result<Vec<Model>, Error> {
+    let models = vec![Model {
+        id: "whisper-large-v3-turbo".into(), license: "MIT".into(),
+        license_url: "https://github.com/openai/whisper/blob/main/LICENSE".into(),
+        source: "https://huggingface.co/ggerganov/whisper.cpp".into(),
+        languages: ["vi", "en", "zh"].into_iter().map(captions::LanguageTag::parse)
+            .collect::<Result<_, _>>()?,
+        files: vec![ModelFile {
+            name: "ggml-large-v3-turbo.bin".into(),
+            url: "https://huggingface.co/ggerganov/whisper.cpp/resolve/5359861c739e955e79d9a303bcbc70fb988958b1/ggml-large-v3-turbo.bin".into(),
+            sha256: "1fc70f774d38eb169993ac391eea357ef47c88757ef72ee5943879b7e8e2bc69".into(),
+            size: 1_624_555_275,
+        }],
+    }];
+    for model in &models {
+        model.validate()?;
+    }
+    Ok(models)
+}
