@@ -142,9 +142,19 @@ never enter tracked files.
 
 ### Iconography
 
-- One outline set at 16, 20 and 24 px; 1.5 px stroke.
+- Phosphor, embedded SVG: `regular` everywhere, `fill` only for the selected
+  state; no second icon set. Every button carries an icon; text-only buttons are
+  limited to modal footers and the properties tabs.
+- Sizes are boxes (glyph is about 80% of the box): 16 px in dense rows and
+  timeline headers, 20 px in toolbars, 24 px for empty states. At 20 px the
+  regular stroke is 1.25 px, matching CapCut's ~1.2 px.
+- Feature toolbar tab [measured desktop, 2x screenshot]: 16 px glyph, 3.5 px
+  gap to a 12 px semibold label, 48 px minimum tab width, about 9 px between
+  labels, 42 px bar on `#303030`; inactive `#E0E0E0`, selected tab uses the
+  fill icon and accent label.
 - Properties tabs are text-only at 14 px; the active tab uses `#00C1CD`.
-- Icon-only buttons are 28x28 px.
+- Icon-only buttons are 28x28 px with a 16 px icon and a tooltip naming the
+  action and its shortcut.
 
 ### Motion
 
