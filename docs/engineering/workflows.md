@@ -5,8 +5,9 @@
 1. Read `AGENTS.md`, the glossary, relevant ADRs, ticket/spec and owning crate README.
    Claim the ticket under the [tracker](../agents/issue-tracker.md); follow
    [orchestration](../agents/orchestration.md) for placement, branching and review.
-2. Research actual source and official documentation before deciding. Use Context7
-   when available and web lookup for current APIs. Cite checked sources in local
+2. Research before deciding. Query Context7 first for any library, crate, FFmpeg or
+   API question; fall back to web lookup, then reading upstream source, only when
+   Context7 lacks the answer. Cite checked sources in local
    evidence; label unavailable facts unverified. Ask the coordinator when a missing
    fact blocks correctness rather than inventing APIs, versions, limits or results.
 3. Learn core/structure patterns and UX/feature behavior from the maintainer-provided
