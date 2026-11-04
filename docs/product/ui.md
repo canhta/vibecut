@@ -86,6 +86,10 @@ observations do not replace desktop sizes or colours.
 - Accent lime `#D1FE17` (brand choice, replacing CapCut's teal) for selection,
   checked boxes and the primary button; text and checkmarks on a lime fill are
   `#0F1113` (16.1:1), never white (1.17:1).
+- Highlight pink `#ED1572` (light `#C0105C`), used sparingly: at most one
+  pink mark per view, for AI-feature markers and new/attention badges. It is
+  never selection, a primary button or an error. On dark it is text-safe (4.52:1
+  on `#0F0F0F`); as a fill it carries no text (white 4.24:1), only an icon or dot.
 - Video clips use a [proposed] `#0A2A24` teal border around the filmstrip.
 
 ### Light theme
@@ -113,6 +117,7 @@ never enter tracked files.
 | Separators | `#263031` | `#DEDEDE` | 1.29:1 vs panel `#F9FAFB` (decorative; WCAG 1.4.11 does not apply) | Observed 1 px lines in E2 |
 | Borders | `#383838` | `#858B91` | 3.10:1 vs field `#F2F3F5`; 3.29:1 vs panel `#F9FAFB` | [proposed]; reference `#DEDEDE` borders are 1.3:1 |
 | Accent: selection, checked boxes, primary button | `#D1FE17` (16.3:1 on `#0F0F0F`, 11.3:1 on `#303030`) | `#4D6600` | 6.25:1 vs panel `#F9FAFB`; 4.85:1 on active tab `#DEDEDE`; 6.53:1 for white label on fill | [proposed]; `#D1FE17` is 1.12:1 on the light panel |
+| Highlight (AI markers, badges) | `#ED1572` | `#C0105C` | 5.79:1 vs panel `#F9FAFB`; 6.05:1 for white on fill | [proposed]; brand choice |
 | Video clip fill and border | `#0A2A24` | `#E3F7F2` fill, `#0B6B5B` border | 1.07:1 fill vs panel; 5.77:1 border on fill; 15.30:1 primary text on fill | [proposed]; no light timeline clip sample |
 | Error | `#EA1515` [proposed dark] | `#B3261E` | 5.91:1 on error surface `#FFF0F0`; 6.25:1 vs panel `#F9FAFB`; 6.54:1 for white label on fill | [proposed]; E5 error toast uses `#E50000` on `#FFF0F0`, but that is only 4.38:1 |
 
