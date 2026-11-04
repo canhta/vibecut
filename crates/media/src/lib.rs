@@ -2,6 +2,7 @@
 //! FFmpeg owns codec parameters, demux presentation timing, priming and reordering.
 
 mod asset;
+mod audio_extract;
 mod decode;
 mod encode;
 #[allow(unsafe_code)]
@@ -13,6 +14,10 @@ mod resample;
 
 pub use asset::{
     AssetAvailability, AssetData, AssetId, ContentHash, SourceAsset, SourceProbe, SourceStream,
+};
+pub use audio_extract::{
+    AudioChunk, SPEECH_SAMPLE_RATE, SpeechExtractSettings, extract_speech_audio,
+    extract_speech_audio_with, extract_speech_audio_with_cancel,
 };
 pub use decode::{AudioDecoder, AudioFrame, DecodePreference, VideoDecoder, VideoFrame};
 pub use encode::{AudioEncoder, AudioEncoderSettings, VideoEncoder, VideoEncoderSettings};
@@ -33,6 +38,8 @@ pub enum MediaError {
     Io(#[from] std::io::Error),
     #[error("invalid media input: {0}")]
     Invalid(&'static str),
+    #[error("media input has no audio stream")]
+    NoAudioStream,
     #[error("unsupported media capability: {0}")]
     Unsupported(&'static str),
     #[error("media limit exceeded: {0}")]

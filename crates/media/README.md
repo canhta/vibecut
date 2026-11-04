@@ -57,6 +57,11 @@ these media-owned contracts; it does not recreate probe or asset models.
   parameters, timestamp rescaling and trailer/fsync error propagation. Use a
   temporary output and promote it only after successful `finish`; render/engine
   own cancellation, final-file replacement and restart policy.
+- `extract_speech_audio`: decodes a `SourceRange` from a `SourceAsset`, resamples to mono 16 kHz and
+  writes AAC-LC m4a chunks for transcription upload. Bounds every file by bytes
+  and duration, overlaps adjacent chunks, prefers low-energy split frames and
+  reports exact source ticks plus an energy-based `speech_detected` hint. Input
+  without an audio stream returns `MediaError::NoAudioStream`.
 
 All errors use `MediaError`; logs omit paths and media/user text. FFmpeg's default
 logger is disabled because it can disclose filenames. After a codec/mux error,
@@ -78,6 +83,7 @@ conditional; no AV1 software decoder is promised by this build recipe.
 | WebM VP9 | Lanczos resize, BT.709 tags, mux and CLI decode |
 | WebM Opus | AAC-to-Opus frame-size conversion, padding/duration and CLI decode |
 | MOV | FFmpeg muxer admitted; dedicated runtime fixture remains unverified |
+| M4A AAC speech | 16 kHz mono chunk extraction, exact tick tiling, silence hint and per-chunk ffprobe |
 
 Unknown SDR color tags resolve to the project's BT.709 limited-range default.
 Known color/range/chroma tags are retained. SDR encoding refuses HDR, high bit
@@ -92,6 +98,28 @@ Encoding tries platform hardware and then the platform software path (VideoToolb
 `allow_sw`, or Media Foundation software), retaining requested settings. Missing
 capability is an error. Windows device/quality behavior and live device-loss
 recovery remain unverified; they require the Windows hardware ticket.
+
+## Speech upload chunks
+
+`extract_speech_audio` takes a `SourceAsset`; it and the `_with`/`_with_cancel`
+variants default to 24 MB, 10 minutes, 2 s overlap and 48 kb/s mono AAC-LC. The
+[OpenAI speech-to-text guide](https://developers.openai.com/api/docs/guides/speech-to-text)
+(source-documented 2026-11-04) accepts files up to 25 MB in `mp3`, `mp4`, `mpeg`,
+`mpga`, `m4a`, `wav` or `webm`, so m4a is admissible and the default leaves 1 MB
+of decimal headroom. Chunk boundaries are quantized to the 16 kHz output sample
+grid; each `AudioChunk` reports the exact source ticks and the ticks shared with
+the preceding chunk. Files use chunk-local timestamps starting at zero and are
+promoted from a temporary file only after a successful trailer. Splits search
+the last 2 s before the duration target for the lowest-energy 20 ms frame, so
+both the byte and duration bounds hold. `speech_detected` is an RMS energy hint,
+not voice-activity detection; silent input still produces chunks. Decoding is
+streaming: only the confirmed prefix plus a few seconds of PCM stay buffered,
+independent of input length.
+
+Observed on Apple M1 Pro, 16 GiB, macOS 27.2 with the debug test binary and a
+generated 2 h 48 kHz stereo AAC fixture: 13 chunks covering 7200.000 s in 26.5 s
+of extraction and 45.7–47.2 MB maximum RSS across runs. This covers extraction
+only; provider upload and transcription remain unverified.
 
 ## Bounds and verification
 
