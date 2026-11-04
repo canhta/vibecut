@@ -105,6 +105,7 @@ fn text_benchmark(
         hidden: false,
         locked: false,
         items: vec![project::Item {
+            animations: Default::default(),
             id: project::ItemId(0),
             source_asset: None,
             source_range: TimeRange::new(Tick::ZERO, Tick(time::TICKS_PER_SECOND))?,
@@ -195,6 +196,7 @@ fn export_benchmark(hooks: &engine::jobs::JobContext) -> Result<serde_json::Valu
         hidden: false,
         locked: false,
         items: vec![project::Item {
+            animations: Default::default(),
             id: project::ItemId(0),
             source_asset: Some(media::AssetId(0)),
             source_range: TimeRange::new(Tick::ZERO, duration)?,

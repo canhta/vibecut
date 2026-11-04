@@ -110,6 +110,7 @@ fn scene() -> project::Project {
             hidden: false,
             locked: false,
             items: vec![project::Item {
+                animations: Default::default(),
                 id: project::ItemId(id),
                 source_asset,
                 source_range: TimeRange::new(Tick::ZERO, tick(1, 1)).unwrap(),
@@ -237,6 +238,7 @@ fn blur_background_stays_below_lower_timeline_layers() {
             hidden: false,
             locked: false,
             items: vec![project::Item {
+                animations: Default::default(),
                 id: project::ItemId(2),
                 source_asset: None,
                 source_range: TimeRange::new(Tick::ZERO, tick(1, 1)).unwrap(),

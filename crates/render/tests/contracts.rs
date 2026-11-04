@@ -45,6 +45,7 @@ fn track_order_half_opacity_and_half_open_frames() {
         hidden: false,
         locked: false,
         items: vec![project::Item {
+            animations: Default::default(),
             id: project::ItemId(1),
             source_asset: None,
             source_range: TimeRange::new(Tick::ZERO, tick(1, 1)).unwrap(),
@@ -267,6 +268,7 @@ fn immutable_text_reuse_is_bounded_invalidates_and_matches_uncached_pixels() {
         .into_iter()
         .enumerate()
         .map(|(n, (content, font_size, color))| project::Item {
+            animations: Default::default(),
             id: project::ItemId(n as u64 + 1),
             source_asset: None,
             source_range: TimeRange::new(Tick::ZERO, frame).unwrap(),
@@ -337,6 +339,7 @@ fn text_cache_releases_inactive_entries_under_new_frame_pressure() {
         .into_iter()
         .enumerate()
         .map(|(n, font_size)| project::Item {
+            animations: Default::default(),
             id: project::ItemId(n as u64 + 1),
             source_asset: None,
             source_range: TimeRange::new(Tick::ZERO, dt).unwrap(),
@@ -415,6 +418,7 @@ fn caption_expansion_is_refused_before_raster_allocation() {
         hidden: false,
         locked: false,
         items: vec![project::Item {
+            animations: Default::default(),
             id: project::ItemId(0),
             source_asset: Some(media::AssetId(0)),
             source_range: range,

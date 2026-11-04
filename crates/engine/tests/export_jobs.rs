@@ -38,6 +38,7 @@ fn project() -> Arc<project::Project> {
         hidden: false,
         locked: false,
         items: vec![project::Item {
+            animations: Default::default(),
             id: project::ItemId(0),
             source_asset: None,
             source_range: time::TimeRange::new(
