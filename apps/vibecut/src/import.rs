@@ -295,7 +295,11 @@ impl ImportQueue {
             job.finished = true;
             events.push(ImportEvent::Done {
                 cancelled: snapshot.state == JobState::Cancelled,
-                error: snapshot.error,
+                error: if snapshot.state == JobState::Failed {
+                    snapshot.error
+                } else {
+                    None
+                },
             });
         }
         if job.finished

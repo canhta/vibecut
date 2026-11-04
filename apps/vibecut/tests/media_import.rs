@@ -444,6 +444,23 @@ fn cancel_interrupts_the_current_probe_and_shutdown_joins_it() {
 }
 
 #[test]
+fn cancel_before_worker_starts_reports_cancellation_without_failure() {
+    let mut editor = editor();
+    editor.set_import_probe(Arc::new(Probe::default())).unwrap();
+    editor
+        .start_import(vec!["/tmp/vibecut-import/cancel-before-start.mp4".into()])
+        .unwrap();
+    editor.activate("import.cancel").unwrap();
+    let inspection = wait_import(&mut editor);
+    assert!(inspection.import_cancelled);
+    assert_eq!(inspection.import_unfinished, 1);
+    assert!(inspection.import_error.is_none());
+    let toast = inspection.import_toast.unwrap();
+    assert!(toast.contains("cancelled"), "{toast}");
+    assert!(!toast.contains("Import failed"), "{toast}");
+}
+
+#[test]
 fn worker_panic_is_a_typed_failure_not_complete() {
     struct PanicProbe;
     impl ImportProbe for PanicProbe {
