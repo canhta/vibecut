@@ -6,9 +6,9 @@ Start with [documentation owners](docs/README.md), [terms](GLOSSARY.md) and [dec
 
 | Task | Read |
 |---|---|
-| Scope or acceptance | [Requirements](docs/product/requirements.md#scope) |
+| Product principles, scope or acceptance | [Requirements](docs/product/requirements.md#principles) |
 | Dependencies, contracts or headless work | [Architecture](docs/engineering/architecture.md#crate-map) |
-| Source structure, safety, timing or reuse | [Standards](docs/engineering/standards.md#safety), [structural admission](docs/engineering/standards.md#structural-admission) and [minimal solutions](docs/engineering/standards.md#minimal-solutions) |
+| Source structure, safety, timing, reuse or performance | [Standards](docs/engineering/standards.md#safety), [structural admission](docs/engineering/standards.md#structural-admission) and [minimal solutions](docs/engineering/standards.md#minimal-solutions) and [quality and speed](docs/engineering/standards.md#quality-and-speed) |
 | Working in this repo, tasks or delivery | [Development loop](docs/engineering/workflows.md#development-loop), then the README of any crate you touch |
 | Adding/upgrading dependencies or persisted data | [Upgrade policy](docs/engineering/workflows.md#upgrade-policy) |
 | Multi-agent work, dispatch, review, merge | [Orchestration](docs/agents/orchestration.md) |

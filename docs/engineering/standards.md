@@ -40,6 +40,17 @@ For a deliberate simplification with a known ceiling, write
 `// ponytail: <ceiling>, <upgrade path>`. Preserve hostile-input validation,
 data-loss handling, security and accessibility at every option.
 
+## Quality and speed
+
+Prefer hardware acceleration with software fallback by capability. Avoid needless
+frame, audio and text-raster copies/conversions; stream bounded buffers instead
+of loading whole inputs. Schedule parallel work through the engine job runner and
+reuse its content-keyed caches ([contracts](architecture.md#contracts-and-commands)).
+Every hot-path change reports observed speed and output quality under the
+[benchmark evidence rules](verification.md#evidence): hardware, input, command,
+repetitions and numbers, with a relevant metric (video VMAF/SSIM, audio loudness/peaks,
+raster pixel diff or exact timing drift). Never trade visible quality for speed silently.
+
 ## Errors and concurrency
 
 Product crates expose one typed error enum each (derive with `thiserror` when useful),
