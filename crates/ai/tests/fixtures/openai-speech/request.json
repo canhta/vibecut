@@ -1,0 +1,25 @@
+{
+  "method": "POST",
+  "url": "https://api.openai.com/v1/chat/completions",
+  "model": "gpt-audio-1.5",
+  "modalities": [
+    "text",
+    "audio"
+  ],
+  "audio": {
+    "voice": "marin",
+    "format": "wav"
+  },
+  "store": false,
+  "max_completion_tokens": 240,
+  "messages": [
+    {
+      "role": "system",
+      "content": "You are a text-to-speech engine. Read the user's text exactly as written, in its language, with natural pacing. Do not add, omit, translate, or explain anything."
+    },
+    {
+      "role": "user",
+      "content": "Xin chào, đây là một câu kiểm tra giọng nói."
+    }
+  ]
+}

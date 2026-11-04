@@ -1,0 +1,37 @@
+{
+  "id": "chatcmpl-fixture",
+  "object": "chat.completion",
+  "created": 0,
+  "model": "gpt-audio-1.5",
+  "choices": [
+    {
+      "index": 0,
+      "finish_reason": "stop",
+      "message": {
+        "role": "assistant",
+        "content": null,
+        "audio": {
+          "id": "audio-fixture",
+          "data": "UklGRv////9XQVZFZm10IBAAAAA=",
+          "expires_at": 0,
+          "transcript": "Xin chào"
+        }
+      }
+    }
+  ],
+  "usage": {
+    "prompt_tokens": 24,
+    "completion_tokens": 10,
+    "total_tokens": 34,
+    "prompt_tokens_details": {
+      "text_tokens": 24,
+      "audio_tokens": 0,
+      "cached_tokens": 0
+    },
+    "completion_tokens_details": {
+      "audio_tokens": 5,
+      "text_tokens": 5,
+      "reasoning_tokens": 0
+    }
+  }
+}

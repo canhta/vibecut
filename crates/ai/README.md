@@ -399,8 +399,11 @@ by this crate.
 
 The existing `transport::UreqTransport` also implements `DownloadTransport` for
 streaming GET responses, retaining duplicate response headers for strict engine
-validation. It uses the same agent/timeouts; provider responses keep their 1 MiB
-buffer cap. `download_redirect` resolves only bounded HTTPS URLs without embedded
+validation. It uses the same agent/timeouts; text provider responses keep their
+1 MiB buffer cap. Large media responses opt in through `send_bounded`, which reads
+at most the caller's byte ceiling; the trait default checks an already-buffered
+response for in-memory test transports. `download_redirect` resolves only bounded
+HTTPS URLs without embedded
 credentials or fragments. The engine owns redirect limits and Range/ETag policy.
 Catalog validation admits bounded portable raw filenames, rejects device names,
 case-folded duplicates and unsafe paths, and caps file/aggregate sizes before IO.
@@ -832,8 +835,9 @@ object safe and single attempt with an explicit `SynthesisConsent` and shared
 before/after adapter execution and output validation. Adapters also call
 `prepare_synthesis` before IO when directly invoked, observe cancellation during
 long work, bound network/decoder allocation and reject malformed/truncated wire
-audio. This slice introduces no provider adapter, network calls, voice-listing
-operation, UI, job stage, fallback, timeline placement or mixing. A future optional
+audio. The contract slice introduced no provider adapter; p2-dubbing/06 adds the
+OpenAI adapter below. There is still no voice-listing operation, UI, job stage,
+fallback, timeline placement or mixing. A future optional
 voice listing operation must be separate from the IO-free capability path and
 must obtain its own operation-specific disclosure/approval.
 
@@ -958,3 +962,54 @@ Sources checked 2026-11-05:
 [models](https://elevenlabs.io/docs/overview/models),
 [zero retention](https://elevenlabs.io/docs/eleven-api/resources/zero-retention-mode),
 [pricing](https://elevenlabs.io/pricing/api).
+
+### OpenAI speech adapter
+
+`openai::OpenAiSpeechSynthesizer` is the OpenAI provider adapter for this contract
+(p2-dubbing/06). It admits only `gpt-audio-1.5` over `POST /v1/chat/completions`
+on the official OpenAI base URL, with `modalities: ["text", "audio"]`,
+`audio: {voice, format: "wav"}`, `store: false` and a system instruction to read
+the user text verbatim. Only the 13 built-in voice IDs are advertised; custom
+voice objects and `/v1/audio/voices` are refused as voice cloning. Exact
+language/script pairs are `vi`/`Latn`, `en`/`Latn` and `zh`/`Hans`; any other
+pair returns `UnsupportedLanguage` before IO.
+
+Text is NFC and at most the contract's 64 KiB. The returned transcript is
+NFC-normalized and compared exactly, so a paraphrase, truncation or missing
+transcript is `OutputRejected` and never placed. A valid `finish_reason` of
+`stop` is required; `length` and unknown/missing statuses are `OutputRejected`
+and `content_filter` is `ContentPolicy`. The completion ceiling is
+`ceil(max_duration_micros * 20 / 1_000_000) + text_utf8_bytes + 64`, capped at
+the model's 16,384 output tokens; a larger request returns `Payload` before IO.
+The per-invocation estimate uses text UTF-8 bytes (a byte-BPE token represents
+at least one byte, so this is an upper bound; graphemes are not) plus a fixed
+framing allowance for input, and prices every completion token at the audio
+rate. Actual cost is reconciled from reported prompt/completion token details,
+including text output tokens, and must stay inside the approved quote.
+
+The adapter accepts only mono 24 kHz 16-bit PCM WAV. It derives length from the
+body when OpenAI writes the observed `0xFFFFFFFF` RIFF/data placeholders, but a
+finite RIFF size must exactly cover the received body: larger is wire truncation
+and smaller leaves trailing data, both `OutputRejected`. It rejects wrong
+channels, rate, bit depth, odd or truncated chunk data. Decoded samples are
+bounded by both the approved duration and the shared 64-MiB PCM cap. A base64
+audio response can
+exceed the 1 MiB text-response ceiling, so the shared transport exposes
+`HttpTransport::send_bounded`; `UreqTransport` reads at most the requested byte
+cap while other transports inherit a checked default. The injected transport
+owns the call timeout (the shared `UreqTransport` uses 120 s; composition can
+call `with_timeout`). Cancellation is checked before transport, after transport
+and after decoding; there is no retry, provider fallback, project edit or
+voice-listing call.
+
+The consent policy names no training, abuse-monitoring logs up to 30 days,
+Chat Completions audio application state up to 1 hour, organization-approved
+Zero Data Retention and AI-generated voice disclosure; it never claims zero
+retention. Offline `tests/openai_speech.rs` replays a recorded success fixture
+and covers exact wire fields, NFC input, client-side language/voice gates,
+transcript mismatch, incomplete/filtered/missing finish status, broken or
+truncated WAV containers (including finite RIFF boundaries), Unicode byte-bound
+quotes, payload/cost bounds, auth/quota/rate-limit/content-policy/invalid-voice/
+server failures, redaction, cancellation and the bounded transport. The ignored
+`live_openai_speech_uses_production_transport` requires `VIBECUT_LIVE_AI=1` and
+`OPENAI_API_KEY` and sends three bounded synthetic VI/EN/ZH sentences.

@@ -34,6 +34,7 @@ path = "src/bin/local_asr.rs"
 required-features = ["gipformer"]
 
 [dependencies]
+base64 = "0.22.1"
 prost = { version = "0.14.4", optional = true }
 tract-onnx = { version = "=0.23.9", default-features = false, optional = true }
 tract-linalg = { version = "=0.23.9", features = ["multithread-mm"], optional = true }

@@ -1,5 +1,6 @@
-//! OpenAI file transcription: consent-gated HTTPS transport, typed failures and
-//! text-only recognition. Timing requires an explicitly selected aligner.
+//! OpenAI providers: consent-gated HTTPS transport, typed failures, text-only file
+//! recognition, contextual translation and Chat Completions speech synthesis.
+mod speech;
 mod translation;
 use crate::contracts::checkpoint;
 use crate::{
@@ -9,6 +10,7 @@ use crate::{
 };
 use captions::{LanguageTag, NfcText};
 use serde::Deserialize;
+pub use speech::*;
 use std::collections::BTreeSet;
 use std::fmt;
 use std::sync::Arc;
