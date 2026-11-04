@@ -5,7 +5,7 @@
 Treat media, project files, CLI parameters and AI responses as hostile: `get()`,
 checked arithmetic, nonzero divisors, input-capped allocations, bounded recursion.
 Return actionable `Result` errors; Clippy denies panic shortcuts outside tests.
-Every crash fix adds the input that crashed as a regression test.
+Every crash fix adds the input that crashed as a case in the existing test for that behaviour ([when to write tests](verification.md#when-to-write-tests)).
 
 `unsafe` is forbidden except in `media` (the FFmpeg boundary) and the
 [Whisper callback module](../adr/0003-whisper-callback-boundary.md). There it sits in

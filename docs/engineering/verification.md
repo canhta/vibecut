@@ -44,9 +44,30 @@ matches in tracked files and branch commit messages.
 
 ## When to write tests
 
-- Every behaviour change: a test at the public interface that fails without the change.
-- Every bug or crash fix: the reproduction first, as a regression test.
-- Refactors that keep behaviour, docs and ticket edits: no new tests.
+A test earns its place only if a plausible bug would make it fail and no other test
+would. Coverage is not a goal; tests are code that slows every build and change.
+
+Write one when:
+- A behaviour changes: one test at the public interface that fails without the change.
+- A bug or crash is fixed: the reproduction becomes a case in the existing test for
+  that behaviour (a table row), not a new test or a `review_*`/`regressions` file.
+- A risk has no cover yet: boundaries, hostile input, cancellation, failure paths.
+
+Do not write one for:
+- What the compiler or type system already guarantees, getters, constructors,
+  plumbing, `Debug`/`Display`, or a third-party crate's behaviour.
+- The same behaviour again at another layer: test it where it is decided; callers
+  test only their own decisions.
+- Private helpers: test through the public interface.
+- Refactors that keep behaviour, docs and ticket edits.
+
+Shape:
+- One behaviour per test, its inputs as a table; name tests and files after the
+  behaviour (`trim_refuses_past_source_end`), never after where a case came from.
+- Prefer extending an existing test's table to adding a test; delete tests a change
+  makes redundant in the same commit.
+- A reviewer flags a redundant, duplicate or implementation-coupled test as a
+  `changes` finding, the same as a missing one.
 
 ## Test selection
 
