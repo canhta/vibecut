@@ -8,7 +8,7 @@ use std::process::{Command, Output, Stdio};
 use time::{Tick, TimeRange};
 
 fn bin() -> &'static str {
-    env!("CARGO_BIN_EXE_vibecut")
+    env!("CARGO_BIN_EXE_vibecut-cli")
 }
 fn os(value: &str) -> &OsStr {
     OsStr::new(value)

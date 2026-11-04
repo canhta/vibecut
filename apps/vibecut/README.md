@@ -11,7 +11,7 @@ render owns every pixel, audio conversion, sample grid and channel mix rule.
 Provision FFmpeg with `cargo xtask ffmpeg`. Build with that installation's
 `FFMPEG_DIR`, `PKG_CONFIG_PATH` and native library path, as used by
 [workspace verification](../../docs/engineering/verification.md).
-The desktop binary is `vibecut-desktop`; the headless CLI owns the `vibecut` command.
+The desktop binary is `vibecut`; the headless CLI is `vibecut-cli`.
 `cargo run -p vibecut -- /native/path/to/project.json` acquires the project writer
 lease before loading. With no file it opens an empty project. This ticket provides
 preview and read-only timeline display; media import, editing and export controls

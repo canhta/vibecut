@@ -1,6 +1,6 @@
 # vibecut-cli
 
-Headless `vibecut` process adapter. Parses native command-line arguments, dispatches
+Headless `vibecut-cli` process adapter. Parses native command-line arguments, dispatches
 edits through the engine registry, composes project writer leases and engine export
 jobs, and maps typed results to stdout/stderr and stable exit codes. It owns no
 timeline, codec, export-admission or provider logic and has no UI dependencies.

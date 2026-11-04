@@ -1,25 +1,25 @@
 # CLI
 
-`vibecut` is the headless adapter over the engine command registry. It opens
+`vibecut-cli` is the headless adapter over the engine command registry. It opens
 projects, runs editor commands, probes media and exports MP4 without a window,
 UI toolkit or audio device. The same command IDs and parameters serve the
 desktop app, MCP and plugins; see [control](../engineering/architecture.md#contracts).
 
-Build it with `cargo build -p vibecut-cli`; the binary is `target/<profile>/vibecut`.
+Build it with `cargo build -p vibecut-cli`; the binary is `target/<profile>/vibecut-cli`.
 
 ## Commands
 
 | Command | Does |
 |---|---|
-| `vibecut probe <file>` | Probe a media file and report format, duration and streams |
-| `vibecut project new <path>` | Create an empty project, refusing to replace an existing file |
-| `vibecut project info <path>` | Read-only summary of a saved project |
-| `vibecut exec <project> <command_id> <json>` | Run one engine command and save the result |
-| `vibecut export <project> --out <mp4>` | Export the saved timeline to MP4 |
-| `vibecut subtitle <in> --to <lang>` | Transcribe, translate and export SRT/burned subtitles |
-| `vibecut providers` | List transcription/translation providers and capabilities offline |
-| `vibecut model list\|info\|download` | Inspect or install pinned local model files |
-| `vibecut commands` | Print the generated command registry |
+| `vibecut-cli probe <file>` | Probe a media file and report format, duration and streams |
+| `vibecut-cli project new <path>` | Create an empty project, refusing to replace an existing file |
+| `vibecut-cli project info <path>` | Read-only summary of a saved project |
+| `vibecut-cli exec <project> <command_id> <json>` | Run one engine command and save the result |
+| `vibecut-cli export <project> --out <mp4>` | Export the saved timeline to MP4 |
+| `vibecut-cli subtitle <in> --to <lang>` | Transcribe, translate and export SRT/burned subtitles |
+| `vibecut-cli providers` | List transcription/translation providers and capabilities offline |
+| `vibecut-cli model list\|info\|download` | Inspect or install pinned local model files |
+| `vibecut-cli commands` | Print the generated command registry |
 
 Add `--json` to any command for a machine-readable result on stdout. Without it,
 results are human-readable on stdout. Progress and diagnostics are always on
@@ -32,7 +32,7 @@ existing output. `--allow-degraded` is the explicit consent described below.
 
 ## Subtitles
 
-`vibecut subtitle <in> [--from vi|en|zh|auto] --to vi|en|zh [--bilingual]
+`vibecut-cli subtitle <in> [--from vi|en|zh|auto] --to vi|en|zh [--bilingual]
 [--srt out.srt] [--burn out.mp4] [--aspect 9:16] [--provider <id>] [--model <id>]
 [--translate-provider openai|anthropic] [--translate-model <id>] [--yes-upload]
 [--overwrite]` runs the engine subtitle workflow: speech extraction, selected ASR,
@@ -46,7 +46,7 @@ Providers and models are explicit and are never switched automatically. `auto`
 language detection requires the local `whisper.cpp` provider and resolves the
 source before deciding whether a translator is needed; a same-language local run
 therefore needs no cloud translation credentials. A different-language run still
-requires the explicitly selected translation provider and its key. `vibecut providers
+requires the explicitly selected translation provider and its key. `vibecut-cli providers
 --operation transcribe|translate --language <tag>` lists offline capability data;
 `--model` must be one of the listed models. Local defaults are
 `whisper-large-v3-turbo` (vi/en/zh) and `gipformer-68m-rnnt-int8` (vi); cloud
@@ -69,7 +69,7 @@ alignment is retried next run. The engine workflow also exposes an operation-wid
 cooperative cancellation token connected to extraction, active jobs, translation
 and export; the CLI has no signal-driven cancel gesture, so process interruption
 remains crash semantics. Local weights are separate from checkpoints and are never downloaded
-implicitly: `vibecut model download <id> --yes-download` prints licence, source,
+implicitly: `vibecut-cli model download <id> --yes-download` prints licence, source,
 size, every file SHA-256 and requires the explicit flag. A missing model returns
 an actionable `setup` error naming the download command.
 
@@ -81,19 +81,19 @@ printed. Credential absence is a `setup` refusal before media or network work.
 
 ## Commands and schemas
 
-`vibecut commands --json` is the authoritative generated schema: every command
+`vibecut-cli commands --json` is the authoritative generated schema: every command
 ID, label and required parameter field with its wire type. It comes from the same
 single declaration as typed and JSON dispatch, so do not maintain a second command
 list. `exec` takes that command ID and its `params` object:
 
 ```sh
-vibecut project new demo.vibecut
-vibecut exec demo.vibecut add_track '{"name":"Video","kind":"video"}'
-vibecut exec demo.vibecut batch '{"commands":[
+vibecut-cli project new demo.vibecut
+vibecut-cli exec demo.vibecut add_track '{"name":"Video","kind":"video"}'
+vibecut-cli exec demo.vibecut batch '{"commands":[
   {"command":"add_track","params":{"name":"Overlay","kind":"overlay"}},
   {"command":"add_bookmark","params":{"start":0,"duration":1,"note":"intro","color":[0,0,0,255]}}
 ]}'
-vibecut project info demo.vibecut --json
+vibecut-cli project info demo.vibecut --json
 ```
 
 Fields are required; unknown command, parameter and model fields are refused.

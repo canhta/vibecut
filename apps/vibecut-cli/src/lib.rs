@@ -18,31 +18,31 @@ use std::time::Duration;
 use time::{FrameRate, Tick, TimeRange};
 
 const HELP: &str = "\
-vibecut - headless VibeCut control
+vibecut-cli - headless VibeCut control
 
 Usage:
-  vibecut probe <file>
-  vibecut project new <path>
-  vibecut project info <path>
-  vibecut exec <project> <command_id> <json>
-  vibecut export <project> --out <mp4> [--aspect 9:16] [--allow-degraded] [--overwrite]
-  vibecut subtitle <in> [--from vi|en|zh|auto] --to vi|en|zh [--bilingual]
+  vibecut-cli probe <file>
+  vibecut-cli project new <path>
+  vibecut-cli project info <path>
+  vibecut-cli exec <project> <command_id> <json>
+  vibecut-cli export <project> --out <mp4> [--aspect 9:16] [--allow-degraded] [--overwrite]
+  vibecut-cli subtitle <in> [--from vi|en|zh|auto] --to vi|en|zh [--bilingual]
                    [--srt <out>] [--burn <out.mp4>] [--aspect 9:16]
                    [--provider <id>] [--model <id>] [--translate-provider <id>]
                    [--translate-model <id>] [--yes-upload] [--overwrite]
-  vibecut providers [--operation transcribe|translate] [--language <tag>]
-  vibecut model list
-  vibecut model info <id>
-  vibecut model download <id> --yes-download
-  vibecut commands
-  vibecut --help
-  vibecut --version
+  vibecut-cli providers [--operation transcribe|translate] [--language <tag>]
+  vibecut-cli model list
+  vibecut-cli model info <id>
+  vibecut-cli model download <id> --yes-download
+  vibecut-cli commands
+  vibecut-cli --help
+  vibecut-cli --version
 
 Global:
   --json  print a JSON result on stdout; progress and errors go to stderr
 
 Commands mutate projects only through the engine registry. Run
-`vibecut commands --json` for the generated command and parameter schema.";
+`vibecut-cli commands --json` for the generated command and parameter schema.";
 
 /// One command result. Both forms are always built so `--json` never re-runs work.
 pub struct Output {
@@ -197,7 +197,7 @@ pub fn run(args: Vec<OsString>) -> Result<Output, CliError> {
     let mut args = args.into_iter();
     let Some(command) = args.next() else {
         return Err(CliError::Usage(
-            "missing subcommand; run `vibecut --help`".into(),
+            "missing subcommand; run `vibecut-cli --help`".into(),
         ));
     };
     let rest: Vec<OsString> = args.collect();
@@ -209,7 +209,7 @@ pub fn run(args: Vec<OsString>) -> Result<Output, CliError> {
         }),
         "--version" | "-V" => Ok(Output {
             value: json!({"version": env!("CARGO_PKG_VERSION")}),
-            human: format!("vibecut {}", env!("CARGO_PKG_VERSION")),
+            human: format!("vibecut-cli {}", env!("CARGO_PKG_VERSION")),
         }),
         "probe" => probe(rest),
         "project" => project(rest),
@@ -224,7 +224,7 @@ pub fn run(args: Vec<OsString>) -> Result<Output, CliError> {
 }
 
 fn probe(args: Vec<OsString>) -> Result<Output, CliError> {
-    let path = one_path(args, "usage: vibecut probe <file>")?;
+    let path = one_path(args, "usage: vibecut-cli probe <file>")?;
     let probe = media::probe(&path)?;
     let streams: Vec<Value> = probe.streams.iter().map(stream_json).collect();
     let value = json!({
@@ -322,12 +322,12 @@ fn project(args: Vec<OsString>) -> Result<Output, CliError> {
     let mut args = args.into_iter();
     let action = args
         .next()
-        .ok_or_else(|| CliError::Usage("usage: vibecut project new|info <path>".into()))?;
+        .ok_or_else(|| CliError::Usage("usage: vibecut-cli project new|info <path>".into()))?;
     let action = utf8(&action, "project action")?;
     let rest: Vec<OsString> = args.collect();
     match action {
-        "new" => project_new(one_path(rest, "usage: vibecut project new <path>")?),
-        "info" => project_info(one_path(rest, "usage: vibecut project info <path>")?),
+        "new" => project_new(one_path(rest, "usage: vibecut-cli project new <path>")?),
+        "info" => project_info(one_path(rest, "usage: vibecut-cli project info <path>")?),
         other => Err(CliError::Usage(format!(
             "unknown project action: {other}; expected new or info"
         ))),
@@ -437,7 +437,7 @@ fn exec(args: Vec<OsString>) -> Result<Output, CliError> {
 }
 
 fn exec_usage() -> CliError {
-    CliError::Usage("usage: vibecut exec <project> <command_id> <json>".into())
+    CliError::Usage("usage: vibecut-cli exec <project> <command_id> <json>".into())
 }
 
 fn outcome_human(outcome: &engine::Outcome) -> String {
@@ -499,7 +499,7 @@ fn export(args: Vec<OsString>) -> Result<Output, CliError> {
 
 fn export_usage() -> CliError {
     CliError::Usage(
-        "usage: vibecut export <project> --out <mp4> [--aspect 9:16] [--allow-degraded] [--overwrite]"
+        "usage: vibecut-cli export <project> --out <mp4> [--aspect 9:16] [--allow-degraded] [--overwrite]"
             .into(),
     )
 }
@@ -948,7 +948,7 @@ fn translation_required(source: &LanguageTag, target: &LanguageTag, bilingual: b
 }
 
 fn subtitle_usage() -> &'static str {
-    "usage: vibecut subtitle <in> [--from vi|en|zh|auto] --to vi|en|zh [--bilingual]\n\
+    "usage: vibecut-cli subtitle <in> [--from vi|en|zh|auto] --to vi|en|zh [--bilingual]\n\
                      [--srt <out>] [--burn <out.mp4>] [--aspect 9:16]\n\
                      [--provider <id>] [--model <id>] [--translate-provider <id>]\n\
                      [--translate-model <id>] [--yes-upload] [--overwrite]"
@@ -1206,13 +1206,13 @@ fn model(args: Vec<OsString>) -> Result<Output, CliError> {
     let mut args = args.into_iter();
     let action = args
         .next()
-        .ok_or_else(|| CliError::Usage("usage: vibecut model list|info|download".into()))?;
+        .ok_or_else(|| CliError::Usage("usage: vibecut-cli model list|info|download".into()))?;
     let action = utf8(&action, "model action")?;
     let rest: Vec<OsString> = args.collect();
     match action {
         "list" => {
             if !rest.is_empty() {
-                return Err(CliError::Usage("usage: vibecut model list".into()));
+                return Err(CliError::Usage("usage: vibecut-cli model list".into()));
             }
             let models = subtitles::model_infos()?;
             let value: Vec<Value> = models.iter().map(model_json).collect();
@@ -1236,7 +1236,7 @@ fn model(args: Vec<OsString>) -> Result<Output, CliError> {
             })
         }
         "info" => {
-            let id = one_utf8(rest, "usage: vibecut model info <id>")?;
+            let id = one_utf8(rest, "usage: vibecut-cli model info <id>")?;
             let model = subtitles::model_info(&id)?;
             Ok(Output {
                 value: model_json(&model),
@@ -1252,7 +1252,7 @@ fn model(args: Vec<OsString>) -> Result<Output, CliError> {
 fn model_download(args: Vec<OsString>) -> Result<Output, CliError> {
     let mut args = args.into_iter();
     let id = args.next().ok_or_else(|| {
-        CliError::Usage("usage: vibecut model download <id> --yes-download".into())
+        CliError::Usage("usage: vibecut-cli model download <id> --yes-download".into())
     })?;
     let id = utf8(&id, "model id")?.to_owned();
     let mut accepted = false;
@@ -1347,7 +1347,7 @@ fn one_utf8(args: Vec<OsString>, usage: &str) -> Result<String, CliError> {
 
 fn commands(args: Vec<OsString>) -> Result<Output, CliError> {
     if !args.is_empty() {
-        return Err(CliError::Usage("usage: vibecut commands".into()));
+        return Err(CliError::Usage("usage: vibecut-cli commands".into()));
     }
     let registry = engine::registry();
     let value = serde_json::to_value(registry)?;

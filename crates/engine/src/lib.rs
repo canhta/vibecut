@@ -69,7 +69,7 @@ pub enum EditError {
     Media(#[from] media::MediaError),
     #[error("AI execution failed")]
     Ai(#[from] ai::Error),
-    #[error("local model {0} is not installed; run `vibecut model download {0}`")]
+    #[error("local model {0} is not installed; run `vibecut-cli model download {0}`")]
     ModelMissing(&'static str),
     #[error("local Gipformer runner is not installed")]
     RunnerMissing,

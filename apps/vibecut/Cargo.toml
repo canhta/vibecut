@@ -6,7 +6,7 @@ license.workspace = true
 publish = false
 
 [[bin]]
-name = "vibecut-desktop"
+name = "vibecut"
 path = "src/main.rs"
 
 [lints]
