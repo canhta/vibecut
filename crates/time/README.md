@@ -7,9 +7,9 @@ nonempty source ranges.
 
 Owns `Tick` at 254 016 000 000 ticks per second, `FrameRate`, `TimeRange` and the
 `SourceRange` alias, plus conversions between ticks, floating seconds, audio
-samples, rational container timebases and frame indices.
+samples, rational container timebases, frame indices and DF/NDF editor timecode.
 
-Excludes media probing, variable-frame-rate policy, drop-frame timecode display,
+Excludes media probing, variable-frame-rate policy, binary LTC/VITC encoding,
 project persistence and every platform dependency.
 
 ## Public entry points
@@ -20,6 +20,8 @@ project persistence and every platform dependency.
   `frame_at`, `tick_of`, `snap` and `snap_nearest`.
 - `TimeRange::new`, `from_start_duration`, `contains`, `overlaps` and `intersect`;
   `SourceRange` names the same nonempty half-open range in source coordinates.
+- `format_timecode` and `parse_timecode` convert between ticks and absolute signed
+  frame labels, with explicit DF/NDF mode and typed invalid-label errors.
 - `Rounding` selects floor, ceiling or nearest (ties away from zero).
 - `TimeError` reports non-finite seconds, invalid rates, empty ranges, overflow and
   out-of-range results. No public operation panics on hostile input.
@@ -44,3 +46,23 @@ is not an integer number of ticks. Operator arithmetic on `Tick` saturates; use
 rounding ties, range boundaries, hostile rates and overflow paths, plus property
 tests for random frames, extreme rational rates and rounding bounds. There is no
 external oracle: expected values derive from the exact rational arithmetic.
+
+## Timecode
+
+Labels use `[-]HH:MM:SS:FF` for NDF and `[-]HH:MM:SS;FF` for DF. Supported
+rates are 23.976, 24, 25, 29.97, 30, 48, 50, 59.94 and 60 fps; other rates
+return `Unsupported`. DF is accepted only at 29.97 and 59.94, skipping labels
+00–01 or 00–03 respectively at each minute except every tenth minute. At 59.94,
+FF identifies individual frames (00–59), rather than binary timecode frame pairs.
+
+Formatting floors to the containing signed frame; parsing returns its start tick.
+For example, a tick just before zero formats as frame -1. Hours extend beyond 23,
+with no day wrap; parsing requires at least two hour digits, two digits per other
+field, exact separators and no whitespace or leading plus. Skipped DF labels and
+invalid fields are refused. Negative zero normalizes to zero. A frame boundary
+outside the tick range returns `OutOfRange`, including the frame containing the
+minimum tick when its boundary is earlier than that tick.
+
+Timecode tests cover rollover tables, signed round trips, hostile inputs, tick
+limits and an independent successive-label counter spanning ten minutes at both
+DF rates. These editor labels do not represent wire-level LTC/VITC addresses.

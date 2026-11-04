@@ -7,6 +7,10 @@
 //!
 //! Fallible operations report [`TimeError`]; hostile input never panics.
 
+mod timecode;
+
+pub use timecode::{format_timecode, parse_timecode};
+
 use serde::{Deserialize, Serialize};
 use std::fmt;
 use std::ops::{Add, AddAssign, Neg, Sub, SubAssign};
@@ -231,6 +235,10 @@ pub enum Rounding {
 /// Failure from a time conversion or range constructor.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum TimeError {
+    /// The frame rate or timecode mode is unsupported.
+    Unsupported,
+    /// A timecode label is malformed, out of bounds or skipped in DF counting.
+    InvalidTimecode,
     /// Floating seconds were NaN or infinite.
     NonFiniteSeconds,
     /// A rate, denominator or timebase was zero or negative.
@@ -246,6 +254,8 @@ pub enum TimeError {
 impl fmt::Display for TimeError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         let message = match self {
+            Self::Unsupported => "unsupported timecode rate or mode",
+            Self::InvalidTimecode => "invalid or skipped timecode label",
             Self::NonFiniteSeconds => "seconds must be finite",
             Self::InvalidRate => "rate must be positive",
             Self::EmptyRange => "range end must be greater than start",
