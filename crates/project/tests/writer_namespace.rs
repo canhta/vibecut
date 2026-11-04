@@ -332,3 +332,54 @@ fn windows_normalized_and_stream_names_cannot_create_an_alias_lease() {
     }
     assert_eq!(fs::read_dir(root.path()).unwrap().count(), 0);
 }
+
+#[test]
+fn save_to_retains_source_and_destination_leases_until_the_caller_adopts() {
+    let root = tempfile::tempdir().unwrap();
+    let source = root.path().join("source.vibecut");
+    let destination = root.path().join("destination.vibecut");
+    seed(&source, "source");
+    let before = fs::read(&source).unwrap();
+    let source_writer = WriterLease::acquire(&source).unwrap();
+    let mut destination_writer = WriterLease::acquire(&destination).unwrap();
+    let receipt = source_writer
+        .save_to(&mut destination_writer, &project("copy"))
+        .unwrap();
+    assert_eq!(receipt.path(), destination_writer.path());
+    assert_eq!(source_writer.path(), source.canonicalize().unwrap());
+    assert!(matches!(WriterLease::acquire(&source), Err(Error::Busy)));
+    assert!(matches!(
+        WriterLease::acquire(&destination),
+        Err(Error::Busy)
+    ));
+    assert_eq!(fs::read(&source).unwrap(), before);
+    destination_writer.save(&project("next")).unwrap();
+    assert_eq!(
+        project::load(&destination).unwrap().project,
+        project("next")
+    );
+}
+#[cfg(unix)]
+#[test]
+fn invalidated_source_cannot_save_to_an_already_acquired_destination() {
+    let root = tempfile::tempdir().unwrap();
+    let source = root.path().join("source.vibecut");
+    let destination = root.path().join("destination.vibecut");
+    seed(&source, "source");
+    seed(&destination, "destination");
+    let source_writer = WriterLease::acquire(&source).unwrap();
+    let mut destination_writer = WriterLease::acquire(&destination).unwrap();
+    let replacement = root.path().join("foreign");
+    fs::write(&replacement, b"").unwrap();
+    fs::rename(&replacement, root.path().join(".source.vibecut.lock")).unwrap();
+    let before = fs::read(&destination).unwrap();
+    assert!(matches!(
+        source_writer.save_to(&mut destination_writer, &project("refused")),
+        Err(Error::Conflict)
+    ));
+    assert_eq!(fs::read(&destination).unwrap(), before);
+    assert_eq!(
+        destination_writer.load().unwrap().project,
+        project("destination")
+    );
+}

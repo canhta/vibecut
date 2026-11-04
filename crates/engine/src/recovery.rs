@@ -4,13 +4,13 @@ use crate::jobs::{
     Clock, JobBytes, JobId, JobKind, JobRunner, JobSpec, JobState, ResourceClass, RunnerConfig,
 };
 use crate::{ByteBudget, EditError, JobTarget, Result, Session};
-use project::Project;
+use project::{Project, SaveReceipt, WriterLease};
 use serde::{Deserialize, Serialize};
 use std::{
     fs::{self, File, TryLockError},
     io::Read,
     path::{Path, PathBuf},
-    sync::Arc,
+    sync::{Arc, Mutex},
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
@@ -224,12 +224,53 @@ fn publish(
     project::atomic_write(&directory.join(JOURNAL), &bytes)?;
     Ok(())
 }
+// The runner accepts reusable Fn tasks. Take ownership for IO, returning it on
+// success, error or unwind without holding a state mutex across filesystem calls.
+struct SaveWork {
+    source: Option<WriterLease>,
+    writer: WriterLease,
+    receipt: Option<SaveReceipt>,
+}
+type SaveSlot = Arc<Mutex<Option<SaveWork>>>;
+struct WorkingSave {
+    slot: SaveSlot,
+    work: Option<SaveWork>,
+}
+impl Drop for WorkingSave {
+    fn drop(&mut self) {
+        if let Ok(mut slot) = self.slot.lock() {
+            *slot = self.work.take();
+        }
+    }
+}
+fn save_on_worker(slot: &SaveSlot, project: &Project) -> Result<()> {
+    let work = slot
+        .lock()
+        .map_err(|_| EditError::JobPoisoned)?
+        .take()
+        .ok_or(EditError::RecoveryBusy)?;
+    let mut active = WorkingSave {
+        slot: slot.clone(),
+        work: Some(work),
+    };
+    let work = active.work.as_mut().ok_or(EditError::RecoveryBusy)?;
+    work.receipt = Some(if let Some(source) = &work.source {
+        source.save_to(&mut work.writer, project)?
+    } else {
+        work.writer.save(project)?
+    });
+    Ok(())
+}
+struct SaveFlight {
+    slot: SaveSlot,
+    in_place: bool,
+}
 struct Flight {
     id: JobId,
     target: JobTarget,
     revision: u64,
     snapshot: Arc<Project>,
-    save_path: Option<PathBuf>,
+    save: Option<SaveFlight>,
     clear: bool,
 }
 /// One active Session, one journal, one in-flight persistence job and one latest
@@ -243,7 +284,9 @@ pub struct Autosave {
     _lock: File,
     clock: Arc<dyn Clock>,
     schedule: Schedule,
+    writer: Option<WriterLease>,
     saved_path: Option<PathBuf>,
+    saved_receipt: Option<SaveReceipt>,
     saved: Option<Arc<Project>>,
     observed: Arc<Project>,
     revision: u64,
@@ -257,17 +300,41 @@ pub struct Autosave {
     fault: Option<fn() -> Result<()>>,
 }
 impl Autosave {
-    /// `saved_path` means the initial snapshot was loaded/successfully saved there.
-    /// Use None for never-saved/recovered work. Root is supplied by the app's data
-    /// directory policy; no project file lock or writer lease is acquired here.
+    /// Never-saved or recovered work; save() requires an explicit save-as.
+    /// Root follows the app's private data-directory policy.
     pub fn new(
         root: &Path,
         session: Session,
-        saved_path: Option<PathBuf>,
         budget: ByteBudget,
         clock: Arc<dyn Clock>,
         schedule: Schedule,
     ) -> Result<Self> {
+        Self::with_writer(root, session, None, budget, clock, schedule)
+    }
+    /// Acquire the project's writer lease before load and retain it through edits,
+    /// background publication and acknowledgement. Busy/failed acquisition never
+    /// exposes an editable Session. IO here is blocking; open off the UI thread.
+    pub fn open(
+        root: &Path,
+        path: &Path,
+        history_limit: usize,
+        budget: ByteBudget,
+        clock: Arc<dyn Clock>,
+        schedule: Schedule,
+    ) -> Result<Self> {
+        let writer = WriterLease::acquire(path)?;
+        let session = Session::new(writer.load()?.project, history_limit)?;
+        Self::with_writer(root, session, Some(writer), budget, clock, schedule)
+    }
+    fn with_writer(
+        root: &Path,
+        session: Session,
+        writer: Option<WriterLease>,
+        budget: ByteBudget,
+        clock: Arc<dyn Clock>,
+        schedule: Schedule,
+    ) -> Result<Self> {
+        let saved_path = writer.as_ref().map(|w| w.path().to_owned());
         if schedule.debounce.is_zero()
             || schedule.max_dirty_age < schedule.debounce
             || schedule.max_dirty_age > Duration::from_secs(600)
@@ -325,7 +392,9 @@ impl Autosave {
             _lock: file,
             clock,
             schedule,
+            writer,
             saved_path,
+            saved_receipt: None,
             saved,
             observed,
             revision: 1,
@@ -349,6 +418,10 @@ impl Autosave {
     pub fn saved_path(&self) -> Option<&Path> {
         self.saved_path.as_deref()
     }
+    /// Receipt of the last acknowledged save, absent after open or stale completion.
+    pub fn saved_receipt(&self) -> Option<&SaveReceipt> {
+        self.saved_receipt.as_ref()
+    }
     pub fn revision(&self) -> u64 {
         self.revision
     }
@@ -361,7 +434,7 @@ impl Autosave {
             .is_none_or(|s| !Arc::ptr_eq(s, self.session.project()))
     }
     pub fn saving(&self) -> bool {
-        self.pending_save.is_some() || self.flight.as_ref().is_some_and(|f| f.save_path.is_some())
+        self.pending_save.is_some() || self.flight.as_ref().is_some_and(|f| f.save.is_some())
     }
     fn observe(&mut self) -> Result<()> {
         if self.session.transaction_active() {
@@ -427,14 +500,33 @@ impl Autosave {
                     if self.revision == f.revision {
                         self.first_dirty = None;
                     }
-                    if let Some(path) = f.save_path {
+                    if let Some(save) = f.save {
+                        let mut work = save
+                            .slot
+                            .lock()
+                            .map_err(|_| EditError::JobPoisoned)?
+                            .take()
+                            .ok_or(EditError::WorkerPanicked)?;
+                        let receipt = work.receipt.take().ok_or(EditError::WorkerPanicked)?;
+                        if receipt.path() != work.writer.path() {
+                            return Err(EditError::StaleResult);
+                        }
+                        // An in-place save advances the held baseline even if the
+                        // edited revision is now stale. Save-as retains its source
+                        // lease until this revision can adopt the new destination.
+                        let current = self.session.matches_target(&f.target)
+                            && !self.session.transaction_active();
+                        if save.in_place || current {
+                            self.writer = Some(work.writer);
+                        } else {
+                            self.writer = work.source;
+                        }
                         // Revision identity includes gesture rollback/save boundaries,
                         // not just equal content or a matching numeric revision.
-                        if self.session.matches_target(&f.target)
-                            && !self.session.transaction_active()
-                        {
+                        if current {
                             self.session.saved()?;
-                            self.saved_path = Some(path);
+                            self.saved_path = Some(receipt.path().to_owned());
+                            self.saved_receipt = Some(receipt);
                             self.saved = Some(f.snapshot);
                         } else {
                             // The destination was written even though this revision
@@ -443,6 +535,7 @@ impl Autosave {
                             // all stale destinations conservatively (including path
                             // aliases); only a fresh save may reestablish cleanliness.
                             self.saved = None;
+                            self.saved_receipt = None;
                             return Err(EditError::StaleResult);
                         }
                     }
@@ -494,7 +587,7 @@ impl Autosave {
         let project = snapshot.clone();
         let directory = self.directory.clone();
         let old_path = self.saved_path.clone();
-        let destination = save_path.clone();
+
         let revision = self.revision;
         let input = CacheKey::new(KeyInputs {
             kind: ArtifactKind::Preview,
@@ -510,7 +603,31 @@ impl Autosave {
         })?;
         #[cfg(test)]
         let fault = self.fault;
-        let (id, _) = self.runner.submit(
+        let save = if let Some(path) = save_path {
+            // Only explicit save-as acquires a new destination. Existing project
+            // saves reuse the lease acquired before load; aliases follow its path.
+            let in_place = self.writer.as_ref().is_some_and(|writer| {
+                fs::canonicalize(&path).is_ok_and(|path| path == writer.path())
+                    || path == writer.path()
+            });
+            let writer = if in_place {
+                self.writer.take().ok_or(EditError::RecoveryBusy)?
+            } else {
+                WriterLease::acquire(&path)?
+            };
+            Some(SaveFlight {
+                slot: Arc::new(Mutex::new(Some(SaveWork {
+                    source: if in_place { None } else { self.writer.take() },
+                    writer,
+                    receipt: None,
+                }))),
+                in_place,
+            })
+        } else {
+            None
+        };
+        let slot = save.as_ref().map(|save| save.slot.clone());
+        let submitted = self.runner.submit(
             JobSpec {
                 kind: JobKind::Persist,
                 class: ResourceClass::Cpu,
@@ -531,26 +648,46 @@ impl Autosave {
                 } else {
                     publish(&directory, &project, old_path.clone(), revision)?;
                 }
-                if let Some(path) = &destination {
-                    project::save(path, &project)?;
+                if let Some(slot) = &slot {
+                    save_on_worker(slot, &project)?;
                 }
                 Ok(Vec::new())
             },
-        )?;
+        );
+        let (id, _) = match submitted {
+            Ok(submitted) => submitted,
+            Err(error) => {
+                if let Some(save) = save {
+                    let work = save
+                        .slot
+                        .lock()
+                        .map_err(|_| EditError::JobPoisoned)?
+                        .take()
+                        .ok_or(EditError::WorkerPanicked)?;
+                    self.writer = if save.in_place {
+                        Some(work.writer)
+                    } else {
+                        work.source
+                    };
+                }
+                return Err(error);
+            }
+        };
         self.flight = Some(Flight {
             id,
             target: self.session.job_target(),
             revision,
             snapshot,
-            save_path,
+            save,
             clear: clear_journal,
         });
         self.first_dirty = None;
         self.runner.tick()?;
         Ok(())
     }
-    /// Start save-as off-thread. Publication of the pending journal precedes the
-    /// original-file write. Poll tick until saving() is false; leaving before that
+    /// Reserve the destination, then queue journal/project publication off-thread.
+    /// Native path resolution/lease acquisition can block this caller. The journal
+    /// precedes the project write. Poll tick until saving() is false; leaving before
     /// acknowledgement is not a successful save boundary.
     pub fn save_as(&mut self, path: PathBuf) -> Result<()> {
         if !path.is_absolute() {
@@ -586,13 +723,12 @@ impl Autosave {
     }
     /// Acknowledge the old pending revision before replacing the active project.
     /// On failure this retains the current Session and refuses the switch.
-    pub fn switch(&mut self, session: Session, saved_path: Option<PathBuf>) -> Result<()> {
+    pub fn switch(&mut self, session: Session) -> Result<()> {
         self.flush()?;
         let root = self.directory.parent().ok_or(EditError::RecoveryCorrupt)?;
         let next = Self::new(
             root,
             session,
-            saved_path,
             self.budget.clone(),
             self.clock.clone(),
             self.schedule,
@@ -640,12 +776,38 @@ mod tests {
                 10,
             )
             .unwrap(),
-            None,
             ByteBudget::new(64 * 1024 * 1024).unwrap(),
             Arc::new(SystemClock::default()),
             Schedule::default(),
         )
         .unwrap()
+    }
+    #[test]
+    fn worker_lease_transfer_survives_unwind_without_poisoning_the_slot() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("project.vibecut");
+        let writer = WriterLease::acquire(&path).unwrap();
+        let slot = Arc::new(Mutex::new(Some(SaveWork {
+            source: None,
+            writer,
+            receipt: None,
+        })));
+        let unwound = std::panic::catch_unwind(|| {
+            let work = slot.lock().unwrap().take();
+            let _active = WorkingSave {
+                slot: slot.clone(),
+                work,
+            };
+            panic!("injected after lease transfer");
+        });
+        assert!(unwound.is_err());
+        assert!(slot.lock().unwrap().is_some());
+        assert!(matches!(
+            WriterLease::acquire(&path),
+            Err(project::Error::Busy)
+        ));
+        drop(slot);
+        assert!(WriterLease::acquire(&path).is_ok());
     }
     #[test]
     fn disk_full_and_worker_unwind_remain_typed_and_preserve_published_work() {
@@ -680,8 +842,7 @@ mod tests {
                         Project::empty(project::ProjectId(2), "".into()).unwrap(),
                         10
                     )
-                    .unwrap(),
-                    None
+                    .unwrap()
                 )
                 .is_err()
             );

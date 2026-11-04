@@ -102,7 +102,10 @@ clean state; revision tracking/journal scheduling remain engine-owned. Schema an
 JSON envelope are unchanged; leases, hashes and receipts are not persisted in it.
 
 `save_as` acquires the destination while retaining the source lease, publishes,
-then replaces the held lease only on success. Busy/failure preserves source path
+then replaces the held lease only on success. `save_to(&self, &mut destination,
+project)` publishes to an already acquired destination while retaining the source;
+engine uses it to defer lease adoption until revision/receipt acknowledgement. Both
+paths refuse an invalidated source lease. Busy/failure preserves source path
 and both files. Existing symlinks resolve to the target, including symlinked parent
 directories; relative paths resolve once. Case/Unicode aliases follow the native
 filesystem's name rules, including for adjacent lock files. Native `OsStr` names

@@ -167,10 +167,17 @@ impl WriterLease {
             return self.save(project);
         }
         let mut destination = Self::acquire(destination)?;
-        self.check_identity()?;
-        let receipt = destination.save(project)?;
+        let receipt = self.save_to(&mut destination, project)?;
         *self = destination;
         Ok(receipt)
+    }
+
+    /// Publish to an already acquired distinct destination while retaining this
+    /// source lease. Background consumers adopt/drop the destination only after
+    /// acknowledging its receipt; an invalidated source cannot authorize a copy.
+    pub fn save_to(&self, destination: &mut Self, project: &Project) -> Result<SaveReceipt> {
+        self.check_identity()?;
+        destination.save(project)
     }
 
     fn checked_current(&self) -> Result<Option<Vec<u8>>> {
