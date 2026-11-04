@@ -14,6 +14,7 @@ mod policy;
 pub mod structured;
 mod translation;
 pub mod transport;
+pub mod vision;
 pub use translation::*;
 #[cfg(feature = "whisper")]
 pub mod whisper;
@@ -64,6 +65,12 @@ pub enum Error {
     StorageFull,
     #[error("model storage failed: {0:?}")]
     ModelStorage(std::io::ErrorKind),
+    #[error("vision tensor shape or bounded input is invalid")]
+    VisionShape,
+    #[error("vision model cannot be loaded or specialised")]
+    VisionLoad,
+    #[error("vision tensor contains non-finite or degenerate values")]
+    VisionNonFinite,
     #[error("local inference failed")]
     Inference,
     #[error("AI timing conversion failed")]

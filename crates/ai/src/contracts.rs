@@ -129,6 +129,7 @@ pub enum Stage {
     Align,
     Translate,
     SuggestClips,
+    Vision,
     Assemble,
 }
 /// Hooks may run on an inference observer thread and must return promptly.

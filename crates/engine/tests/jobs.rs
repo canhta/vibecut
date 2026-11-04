@@ -834,3 +834,8 @@ fn corrupt_read_preserves_existing_pin_and_removes_entry_after_release() {
     assert!(cache.get(key(1)).unwrap().is_none());
     assert_eq!(budget.snapshot().unwrap().used, 0);
 }
+
+#[test]
+fn vision_inference_uses_the_existing_process_job_stage() {
+    assert_eq!(JobStage::from(ai::Stage::Vision), JobStage::Process);
+}

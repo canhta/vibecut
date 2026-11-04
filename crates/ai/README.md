@@ -2,7 +2,7 @@
 
 Provider contracts, execution policy, consent-gated OpenAI and ElevenLabs file
 transcription and local Whisper/Gipformer transcription. Owns provider configuration,
-capability lookup, scoped upload consent, invocation cost bounds, recognition
+capability lookup, bounded local vision inference, scoped upload consent, invocation cost bounds, recognition
 assembly, model metadata, download-consent tokens, streaming integrity verification,
 verified model loading and the shared HTTPS transport. Excludes model download
 execution, audio decoding, job scheduling/retries/checkpoints, cache
@@ -241,10 +241,11 @@ unchanged language-bound entries, pinned vision file hashes and refused
 truncated/mismatched bytes.
 `cargo xtask ci` also checks architecture, formatting and Clippy.
 
-Observed evidence covers offline contract behavior only. No model accuracy, timing
-fidelity, network adapter, real billing, live streaming, native runtime performance
-or platform behavior is established here. Adapters own response-parser allocation
-caps before constructing transport records; engine owns job-level memory budgets.
+The generic provider fixtures establish offline contract behavior. Adapter-specific
+live and local runtime evidence is documented below; these fixtures do not
+establish general model accuracy, timing fidelity, billing, live streaming or
+cross-platform behavior. Adapters own response-parser allocation caps before
+constructing transport records; engine owns job-level memory budgets.
 
 ## Model catalog and language-neutral weights
 
@@ -291,24 +292,84 @@ has no separate weight-licence file; record the maintainer decision before any
 default), `weight/pretrain_AVA_CVPR.model`, 4,175,289 B, SHA-256
 `d44bc3ea7baa8e0946fa3921311714a630ed8b90a1928fab0dbe30d918909317`.
 
-Production export, from p1-clips/13: split the checkpoint into audio, visual and
-backend graphs; export with corrected three-second inputs `[1,300,13]` audio and
-`[1,75,112,112]` video, opset 17, PyTorch's default exporter, input names
-`audio`/`video`/`embedA`,`embedV` and output `output`; keep each `.onnx.data`
-beside its `.onnx`. Derived hashes observed in p1-clips/12 and /13:
+The canonical runtime bundle is the **original dynamic export** triplet from
+p1-clips/13, selected by the coordinator for /15. Static exports and per-length
+files are not admitted. Supply these six local files explicitly (no automatic
+transfer, catalog entry or default-model exposure until hosting is approved):
 
-| Graph | Dynamic export | Corrected static export | External data |
-|---|---|---|---|
-| audio | 99,776 B `335dd4f221fbe90330761209c1acd8637fd67399003d69b79031a7d75c820318` | 98,852 B `999b5298ab7be0339af5fd6029247752baa3ba1f3af06eed530e2ab6091dd2e0` | 1,105,408 B `b440a45f84af5e34890f48573b1e164587c690191f7a2c22d902ad5edb61f152` |
-| visual | 19,002 B `4bcec1cc985eea8416540ab481e198e611b4125b26c124408cd89442bf4def4e` | 16,267 B `c9af879254be989f7523929e2296aa6cd44310bdc555bd515cf68f7bd17bd4a4` | 2,173,696 B `4400bdaa0925a73bc0486fd569be5223fc8b9cb5e2c6c2d8c487b288d4b1e267` |
-| backend | 9,393 B `f3d2b8b2ac81888e1a023e0bb1b3d9b764a151bf309d2510ae1357fbecd58084` | 8,095 B `fdcf28c59ec42162a779b15466a5df6f93bfb851e49190e4c86db4c13ed43ecb` | 794,112 B `960c75126082846b34623606a9aff56baa6f092f1dbb7d37d59a2096105af9a0` |
+| File | Bytes | SHA-256 |
+|---|---:|---|
+| `lightasd_audio.onnx` | 99,776 | `335dd4f221fbe90330761209c1acd8637fd67399003d69b79031a7d75c820318` |
+| `lightasd_audio.onnx.data` | 1,105,408 | `b440a45f84af5e34890f48573b1e164587c690191f7a2c22d902ad5edb61f152` |
+| `lightasd_visual.onnx` | 19,002 | `4bcec1cc985eea8416540ab481e198e611b4125b26c124408cd89442bf4def4e` |
+| `lightasd_visual.onnx.data` | 2,173,696 | `4400bdaa0925a73bc0486fd569be5223fc8b9cb5e2c6c2d8c487b288d4b1e267` |
+| `lightasd_backend.onnx` | 9,393 | `f3d2b8b2ac81888e1a023e0bb1b3d9b764a151bf309d2510ae1357fbecd58084` |
+| `lightasd_backend.onnx.data` | 794,112 | `960c75126082846b34623606a9aff56baa6f092f1dbb7d37d59a2096105af9a0` |
 
-For bounded chunk lengths other than 75 frames, apply the /13 metadata
-specialisation at load: validate input names/types/ranks/limits and the exact 4:1
-audio-to-video frame ratio, clear symbolic input/output annotations and stale
-`value_info`, bind the concrete length, and cache plans by model hash, length,
-dimensions, runtime revision and thread count. Never pad a short tail to satisfy
-an export. /15 owns the runtime and its parity fixtures.
+## Local vision detectors
+
+`vision::VisionDetector` is a blocking, object-safe local inference seam;
+`vision::TractVision::load(VisionPaths, threads, capacity, hooks)` implements it
+with stable tract 0.23.9 (default `vision` feature). The contracts and decision
+functions remain available without that feature. No engine/media dependency or
+new scheduling runtime is introduced.
+
+Media supplies borrowed, finite prepared tensors through validated constructors:
+
+- `FaceFrame`: `[1,3,384,640]` CHW BGR, pixel values 0..=255, bottom/right
+  letterbox. Returned boxes use prepared pixels, may extend past the frame, and
+  are not silently clipped. YuNet score threshold 0.6, IoU NMS threshold 0.3,
+  top 5000 candidates, at most 256 returned boxes (excess is a typed failure).
+- `SceneFrame`: `[1,3,224,224]` RGB, CLIP normalized. Media owns resize/crop and
+  pinned mean/std. CLIP's two fixed prompts above are derived from the pinned
+  text tower/tokenizer once per loaded bundle, kept in memory and fingerprinted;
+  neither tower nor prompt plan is retained afterwards. No text inference per frame.
+- `SpeakerChunk`: exact 25..=75 25-fps 112x112 grayscale frames at 0..=255 and
+  exactly four 13-coefficient MFCC frames per video frame, 100 Hz. MFCC absolute
+  values are capped at 1e6. Media owns the /12 crop/MFCC recipe; no padding,
+  tracking, decoding or timestamp conversion happens in ai.
+
+The adapter verifies and owns the exact bytes it parses, including each external
+data file. It decodes directly from the verified byte slice without a second
+whole-file reader buffer, and inlines verified external slices before ONNX loading; no ONNX path
+resolver or mutable mmap accesses weights. For ASD it checks input names, f32
+and ranks, clears input dimension annotations, output shapes and stale
+`value_info`, then binds concrete input facts without changing learned weights or
+operators. The bounded LRU holds 3..=12 plans, keyed by graph+external-data hashes,
+exact frame count, input dimensions, runtime revision and threads. Thread count
+is 1..=4 with an instance-owned executor; global runtime settings are untouched.
+`fingerprint` binds all weights, tokenizer, exact prompts, preprocessing/decision
+recipe, runtime and threads; engine uses it in its persistent analysis artifact
+keys. AI's cache stores only concrete inference plans and fixed prompt vectors.
+
+`faces`, `speaker` and `scene` observe `ExecutionHooks` at every load/compile/run
+boundary using `Stage::Vision` (engine maps this to its existing `Process` job
+stage). A running tract call cannot be interrupted; it
+drains and its output is discarded if cancellation was requested. No partial
+result is returned. Size/hash failures use `ModelIntegrity`, invalid inputs or
+output shapes use `VisionShape`, ONNX/plan failures use `VisionLoad`, nonfinite
+or zero-norm outputs use `VisionNonFinite`, inference failures use `Inference`;
+tract panics are caught at its boundary and reduced to those safe categories.
+
+`aggregate_speakers` combines shot-local track chunk probabilities, averages
+overlap, smooths +/-2 observed frames and chooses the highest track mean at
+>=0.4, else `NoVisibleSpeaker`. Ties choose the lowest track ID. It caps a shot
+at 64 tracks, 512 distinct chunks and 9000 frame coordinates, rejects duplicate
+chunk identities and never fills gaps. `SceneResult::unknown()` records absent
+classification explicitly; model errors propagate instead of becoming unknown.
+`ShotResult::new` validates bounded boxes, visible-speaker probability and scene
+consistency; it exposes face count, boxes, active speaker and scene. Engine owns
+shot boundaries, track identity, cross-shot persistence and job/result caching.
+
+`cargo test -p ai --test vision` covers hostile sizes, finite values, missing
+speaker evidence, overlap, cancellation, invalid bundles and output consistency.
+The ignored `real_model_parity_and_exact_tails` additionally requires
+`VIBECUT_VISION_MODELS` (the catalog-named YuNet/CLIP files plus six ASD files)
+and `VIBECUT_VISION_CORPUS` (private /13 tensors and ORT references). It checks
+30/30 face counts, 30/30 speaker shot verdicts across 121 chunks, 50/50 CLIP
+labels, and every exact tail 37..=75; see the local /15 report for commands,
+results and measurements. Windows execution remains deferred to p0-core/14.
+No general accuracy, auto-layout integration or packaging claim follows.
 
 ## Local Whisper
 

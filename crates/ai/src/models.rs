@@ -159,6 +159,14 @@ pub fn verify_file(
     hooks: &dyn ExecutionHooks,
 ) -> Result<(), Error> {
     file.validate()?;
+    verify_content(reader, file.size, &file.sha256, hooks)
+}
+fn verify_content(
+    reader: &mut dyn Read,
+    size: u64,
+    sha256: &str,
+    hooks: &dyn ExecutionHooks,
+) -> Result<(), Error> {
     let mut hash = Sha256::new();
     let mut bytes = 0u64;
     let mut buffer = [0u8; 65536];
@@ -166,7 +174,7 @@ pub fn verify_file(
         if hooks.cancelled() {
             return Err(Error::Cancelled);
         }
-        let remaining = file.size.saturating_sub(bytes).saturating_add(1);
+        let remaining = size.saturating_sub(bytes).saturating_add(1);
         let count =
             usize::try_from(remaining.min(buffer.len() as u64)).map_err(|_| Error::Payload)?;
         let n = match reader.read(buffer.get_mut(..count).ok_or(Error::Payload)?) {
@@ -177,7 +185,7 @@ pub fn verify_file(
             break;
         }
         bytes = bytes.checked_add(n as u64).ok_or(Error::Payload)?;
-        if bytes > file.size {
+        if bytes > size {
             return Err(Error::ModelIntegrity);
         }
         hash.update(buffer.get(..n).ok_or(Error::Payload)?);
@@ -190,7 +198,7 @@ pub fn verify_file(
         .iter()
         .map(|byte| format!("{byte:02x}"))
         .collect();
-    if bytes != file.size || digest != file.sha256 {
+    if bytes != size || digest != sha256 {
         return Err(Error::ModelIntegrity);
     }
     Ok(())
@@ -319,4 +327,38 @@ pub fn alignment_model() -> Result<Model, Error> {
             ModelFile { name: "model.safetensors".into(), url: "https://huggingface.co/openai/whisper-small/resolve/973afd24965f72e36ca33b3055d56a652f456b4d/model.safetensors".into(), sha256: "1d7734884874f1a1513ed9aa760a4f8e97aaa02fd6d93a3a85d27b2ae9ca596b".into(), size: 966995080 },
         ],
     })
+}
+
+// Keep the exact verified bytes for parsers: no second path read or mutable mmap.
+#[cfg(feature = "vision")]
+pub(crate) fn read_verified(
+    reader: &mut dyn Read,
+    size: u64,
+    sha256: &str,
+    hooks: &dyn ExecutionHooks,
+) -> Result<Vec<u8>, Error> {
+    struct Capture<'a> {
+        reader: &'a mut dyn Read,
+        bytes: Vec<u8>,
+    }
+    impl Read for Capture<'_> {
+        fn read(&mut self, buffer: &mut [u8]) -> std::io::Result<usize> {
+            let n = self.reader.read(buffer)?;
+            if let Some(chunk) = buffer.get(..n) {
+                self.bytes.extend_from_slice(chunk);
+            }
+            Ok(n)
+        }
+    }
+    let capacity = usize::try_from(size)
+        .ok()
+        .and_then(|n| n.checked_add(1))
+        .ok_or(Error::Payload)?;
+    let mut bytes = Vec::new();
+    bytes
+        .try_reserve_exact(capacity)
+        .map_err(|_| Error::Payload)?;
+    let mut capture = Capture { reader, bytes };
+    verify_content(&mut capture, size, sha256, hooks)?;
+    Ok(capture.bytes)
 }
