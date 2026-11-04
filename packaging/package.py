@@ -36,8 +36,8 @@ def sha(path):
 
 
 def manifest(directory):
-    return {p.relative_to(directory).as_posix(): sha(p)
-            for p in sorted(directory.rglob('*')) if p.is_file()}
+    return {p.relative_to(directory).as_posix(): ({'symlink': os.readlink(p)} if p.is_symlink() else sha(p))
+            for p in sorted(directory.rglob('*')) if p.is_file() or p.is_symlink()}
 
 
 def compliance(prefix, destination):
@@ -50,6 +50,9 @@ def compliance(prefix, destination):
         matches = list(licenses.glob(pattern))
         if not matches or any(not p.stat().st_size for p in matches):
             raise ValueError(f'Missing licence text: {pattern}')
+    for name, digest in re.findall(r'^backport: (.+) sha256: ([a-f0-9]{64})$', receipt, re.M):
+        if sha(licenses / 'patches' / Path(name).name) != digest:
+            raise ValueError('FFmpeg backport checksum mismatch')
     shutil.copytree(licenses, destination)
     shutil.copy2(prefix / 'BUILD.txt', destination)
     shutil.copy2(ROOT / 'xtask/src/ffmpeg.rs', destination / 'build-recipe.rs')

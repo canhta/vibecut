@@ -30,6 +30,12 @@ class PackagingTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, 'source checksum mismatch'):
                 package.compliance(prefix, base / 'out')
 
+    def test_manifest_records_symlink_without_reading_external_target(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / 'cli').symlink_to('/missing/app/Contents/MacOS/vibecut-cli')
+            self.assertEqual(package.manifest(root), {'cli': {'symlink': '/missing/app/Contents/MacOS/vibecut-cli'}})
+
     def test_missing_licence_is_refused(self):
         with tempfile.TemporaryDirectory() as directory:
             prefix = Path(directory)
