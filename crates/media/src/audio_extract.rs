@@ -700,11 +700,7 @@ impl OutputFile {
     }
 
     fn commit(mut self) -> Result<PathBuf> {
-        match fs::remove_file(&self.final_path) {
-            Ok(()) => {}
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
-            Err(error) => return Err(error.into()),
-        }
+        // Same-directory rename replaces atomically and preserves the old file on failure.
         fs::rename(&self.temp, &self.final_path)?;
         self.committed = true;
         Ok(self.final_path.clone())
@@ -720,11 +716,25 @@ impl Drop for OutputFile {
 
 #[cfg(test)]
 mod tests {
-    use super::{Plan, SpeechExtractSettings, choose_split};
+    use super::{OutputFile, Plan, SpeechExtractSettings, choose_split};
     use time::{Rounding, Tick};
 
     fn seconds(value: i64) -> Tick {
         Tick::from_units(value, 1, Rounding::Nearest).unwrap()
+    }
+
+    #[test]
+    fn failed_publication_preserves_existing_chunk() {
+        let directory =
+            std::env::temp_dir().join(format!("vibecut-speech-publication-{}", std::process::id()));
+        std::fs::create_dir_all(&directory).unwrap();
+        let output = OutputFile::new(&directory, 0).unwrap();
+        std::fs::write(&output.final_path, b"previous chunk").unwrap();
+        let final_path = output.final_path.clone();
+        // A staging file lost before publication must not delete an older result.
+        assert!(output.commit().is_err());
+        assert_eq!(std::fs::read(&final_path).unwrap(), b"previous chunk");
+        std::fs::remove_dir_all(directory).unwrap();
     }
 
     #[test]
