@@ -57,7 +57,8 @@ hash-verified.
 ## Privacy
 
 Local-first by default. Remote AI runs only after explicit consent that shows what
-is sent, estimated cost and the provider's retention and training policy. Keys,
+is sent, to which provider (linking its own policy page) and estimated cost;
+the provider and model are the user's choice, so we do not restate their terms. Keys,
 transcripts and user text never reach logs. Keys and every other non-public project
 file (private datasets, recordings, account notes) live in git-ignored `.privates/`
 (keys in `.privates/.env`); their contents stay out of reports, logs and commits.
