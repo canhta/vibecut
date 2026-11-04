@@ -321,9 +321,6 @@ impl Editor {
             ));
     }
     fn keyboard(&mut self, ctx: &egui::Context) {
-        if ctx.memory(|m| m.focused().is_some()) {
-            return;
-        }
         for (key, id) in [
             (egui::Key::Space, "transport.play"),
             (egui::Key::K, "transport.pause"),
@@ -332,7 +329,7 @@ impl Editor {
             (egui::Key::Home, "transport.start"),
             (egui::Key::End, "transport.end"),
         ] {
-            if ctx.input(|i| i.key_pressed(key)) {
+            if ctx.input_mut(|i| i.consume_key(egui::Modifiers::NONE, key)) {
                 self.action(id);
             }
         }

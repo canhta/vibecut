@@ -319,3 +319,88 @@ fn empty_player_keeps_its_accessible_instruction_after_a_black_frame_is_ready() 
     harness.get_by_label("Add media to the timeline to begin");
     assert!(harness.state().presented_frame().is_none());
 }
+
+#[test]
+fn transport_k_pauses_with_keyboard_focus_on_a_control() {
+    let mut harness = Harness::builder()
+        .with_size(egui::vec2(1440.0, 900.0))
+        .build_ui_state(|ui, editor: &mut Editor| editor.ui(ui), editor());
+    harness.run_steps(3);
+    harness
+        .get(By::new().predicate(|n| n.author_id() == Some("transport.play")))
+        .click();
+    harness.run_steps(2);
+    assert!(harness.state().playback.playing());
+    harness.key_press(egui::Key::Tab);
+    harness.run_steps(2);
+    assert!(
+        harness
+            .state()
+            .inspect()
+            .unwrap()
+            .widgets
+            .iter()
+            .any(|w| w.focused)
+    );
+    harness.key_press(egui::Key::K);
+    harness.run_steps(2);
+    assert!(
+        !harness.state().playback.playing(),
+        "K must pause while a non-text control has keyboard focus"
+    );
+    harness.key_press(egui::Key::Space);
+    harness.run_steps(2);
+    assert!(harness.state().playback.playing());
+}
+
+struct Hooks;
+struct Lease;
+impl render::Reservation for Lease {}
+impl render::ExecutionHooks for Hooks {
+    fn cancelled(&self) -> bool {
+        false
+    }
+    fn reserve(
+        &self,
+        _: render::MemoryKind,
+        _: u64,
+    ) -> render::Result<Box<dyn render::Reservation>> {
+        Ok(Box::new(Lease))
+    }
+}
+#[test]
+fn transparent_canvas_preview_matches_black_backed_render() {
+    let mut data = session().project().as_ref().clone().into_data();
+    data.canvas.background = Color([0, 0, 0, 0]);
+    data.timeline.tracks[0].items[0].content = ItemParams::Overlay(OverlayParams {
+        color: Color([255, 0, 0, 128]),
+    });
+    let project = Project::new(data).unwrap();
+    let session = Session::new(project, 10).unwrap();
+    let mut playback = Playback::new(
+        &session,
+        ByteBudget::new(64 << 20).unwrap(),
+        Arc::new(Files),
+    )
+    .unwrap();
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while playback.frame().is_none() {
+        playback.poll().unwrap();
+        assert!(Instant::now() < deadline);
+        std::thread::sleep(Duration::from_millis(2));
+    }
+    let mut settings = render::RenderSettings::from_project(session.project());
+    settings.width = 640;
+    settings.height = 360;
+    let mut renderer = render::Renderer::new(session.project(), settings).unwrap();
+    let image = renderer
+        .render_frame(Tick::ZERO, &mut render::FileSources::default(), &Hooks)
+        .unwrap();
+    let opaque = image.video_rgba8(13, &Hooks).unwrap();
+    let preview = playback.frame().unwrap().image.pixels[0];
+    assert_eq!(
+        preview.r(),
+        opaque.bytes[0],
+        "preview over black must match render's black-backed pixels"
+    );
+}

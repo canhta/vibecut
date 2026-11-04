@@ -483,7 +483,9 @@ fn video_loop(
                 ByteOwner::DecodedFrames,
                 u64::from(image.width()) * u64::from(image.height()) * 12,
             )?;
-            let rgba = image.rgba8(13, hooks)?;
+            // The player paints over black; composite there in linear light before
+            // egui applies its transfer-encoded alpha blending.
+            let rgba = image.video_rgba8(13, hooks)?;
             let frame = Arc::new(Frame {
                 epoch,
                 at,
