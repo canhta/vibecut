@@ -117,7 +117,8 @@ contracts, persistence formats, AI providers) never self-merge.
 
 **Reviewed.** Otherwise review the frozen SHA independently in a separate reviewer
 dispatch: Codex reviews opencode work; a fresh Codex reviewer reviews Codex work. The reviewer writes
-`.scratch/<milestone>/reviews/NN-<sha7>.md` using the
+`.scratch/<milestone>/reviews/NN-<sha7>.md` in the main checkout (absolute path
+`<repo root>/.scratch/...`, never a worktree copy) using the
 [review template](../engineering/verification.md#reports) and fixes a finding on the
 ticket branch (signed-off commit) only when it is small and clear: obvious fix,
 full context, no change to responsibilities or design. Larger or design-level findings: verdict `changes`, `worker_done` with the
