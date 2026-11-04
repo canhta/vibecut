@@ -347,6 +347,49 @@ pub(crate) fn apply(
             });
             created.push(CreatedId::Bookmark(id));
         }
+        Command::Retranslate {
+            item: id,
+            target_language,
+            texts,
+            translation_ref,
+            force,
+        } => {
+            if texts.is_empty()
+                || texts.len() > ai::MAX_SEGMENTS
+                || translation_ref.as_str().trim().is_empty()
+                || translation_ref.as_str().len() > 256
+            {
+                return Err(EditError::Invalid("translation application"));
+            }
+            let item = item(&mut data, id)?;
+            let ItemParams::Caption(params) = &mut item.content else {
+                return Err(EditError::Invalid("translation requires caption item"));
+            };
+            if texts
+                .keys()
+                .any(|id| !params.cues.cues.iter().any(|c| &c.id == id))
+                || texts.values().any(|t| t.as_str().trim().is_empty())
+            {
+                return Err(EditError::Invalid("translation cue ids or text"));
+            }
+            for cue in &mut params.cues.cues {
+                if let Some(text) = texts.get(&cue.id) {
+                    if cue.source_lang == target_language {
+                        return Err(EditError::Invalid("cannot replace source with translation"));
+                    }
+                    cue.set_text(
+                        target_language.clone(),
+                        captions::CueText {
+                            text: text.clone(),
+                            edited: false,
+                            translation_ref: Some(translation_ref.clone()),
+                        },
+                        force,
+                    );
+                }
+            }
+            sources.remove(&id);
+        }
         Command::Batch { commands } => {
             for command in commands {
                 // Consume each candidate before applying the next child; validation must

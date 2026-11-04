@@ -1,5 +1,6 @@
 //! OpenAI file transcription: consent-gated HTTPS transport, typed failures and
 //! text-only recognition. Timing requires an explicitly selected aligner.
+mod translation;
 use crate::contracts::checkpoint;
 use crate::{
     AudioWindow, Capabilities, CostEstimate, Error, Evidence, ExecutionHooks, Location, Money,
@@ -14,6 +15,7 @@ use std::io::Read;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
+pub use translation::*;
 
 /// The only production model admitted here. Deprecated transcription models are refused.
 pub const MODEL: &str = "gpt-transcribe";
@@ -571,7 +573,7 @@ struct ErrorDetail {
     kind: Option<String>,
 }
 
-fn status_error(response: &HttpResponse) -> Error {
+pub(crate) fn status_error(response: &HttpResponse) -> Error {
     match response.status {
         401 | 403 => Error::Auth,
         413 => Error::Payload,

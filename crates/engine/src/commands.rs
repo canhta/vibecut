@@ -41,6 +41,7 @@ impl CommandSpec {
             | "delete"
             | "ripple_delete"
             | "set_item_param"
+            | "retranslate"
             | "keyframes.set_param"
             | "keyframes.add"
             | "keyframes.remove"
@@ -103,6 +104,7 @@ commands! {
     RetimeKeyframe, "keyframes.retime", "Move keyframe" { item: ItemId, path: project::AnimationPath, #[serde(deserialize_with = "required_option")] component: Option<project::ColorComponent>, from: Tick, to: Tick };
     SetKeyframeHandle, "keyframes.set_handle", "Set keyframe handle" { item: ItemId, path: project::AnimationPath, #[serde(deserialize_with = "required_option")] component: Option<project::ColorComponent>, time: Tick, side: project::HandleSide, #[serde(deserialize_with = "required_option")] handle: Option<project::CurveHandle>, tangent: project::TangentMode };
     ScaleKeyframeTime, "keyframes.scale_time", "Stretch animation time" { item: ItemId, numerator: i64, denominator: i64 };
+    Retranslate, "retranslate", "Apply selected cue translations" { item: ItemId, target_language: captions::LanguageTag, texts: std::collections::BTreeMap<NfcText, NfcText>, translation_ref: NfcText, force: bool };
     AddBookmark, "add_bookmark", "Add bookmark" { start: Tick, duration: Tick, note: NfcText, color: Color };
     Batch, "batch", "Batch edit" { commands: Vec<Command> };
     BeginGesture, "begin_gesture", "Begin gesture" {};

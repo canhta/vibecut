@@ -223,7 +223,7 @@ Cancellation is checked before execution and again before promoting success;
 late partial success is discarded. Failure never yields a JobOutput.
 
 Only Transcribe/Translate jobs in the Network class retry NetworkTransient or an
-`ai::Error` whose `is_transient` is true (network, provider server, rate limit); an
+`ai::Error` whose `is_transient` is true (network, provider server, rate limit or structured schema failure); an
 `ai` rate limit carrying `Retry-After` raises that attempt's backoff to at least the
 provider delay, capped at five minutes. Auth, quota, payload, invalid, cancelled and all other errors, plus
 local/preview/export/import jobs, run once. Retry attempts are bounded to 1..=10, with
@@ -404,3 +404,43 @@ project-owned and are composed here without a second lock protocol. Additional
 integration tests cover before-load Busy refusal, retained leases across edits and
 receipt acknowledgement, external edit conflict before first save, busy/stale and
 acknowledged Save As, aliases, queued cancellation and worker transfer unwind.
+
+## Translation selection and application
+
+`translation::window` selects cue IDs from one caption item, includes two source
+context cues on each side, and skips target texts with edited=true unless force
+is explicit. Unknown/duplicate IDs, no eligible source cues, missing source text
+and mixed source languages are typed refusals. Selection and context are bound
+in ai's canonical TranslationWindow; source timing remains untouched.
+
+`TranslationRun::new` takes a TranslationTarget (Session and caption item), validates
+that every selected ID/text still matches its source, and captures that revision
+before retaining the selected provider, complete window, Scope and Consent. It preflights the per-attempt estimate against an explicit aggregate Money
+budget for 1..=10 attempts. `submit(runner, session)` uses the existing shared job
+runner and refuses a changed Session/revision before submission, including edits
+during consent preparation. Each invocation atomically consumes
+one operation-wide attempt, including schema and transport retries; retrying or
+resubmitting the same run never resets that allowance. Every attempt revalidates
+consent. The runner alone owns backoff and retry admission; Schema is retryable,
+while refusal, auth/quota, payload/consent/cost and incomplete responses stop.
+Schema repair retries the complete window; no partial output is applied or silently
+switched to another provider. Four MiB work plus one MiB result is reserved from
+the aggregate budget before execution. The content key includes the whole window,
+source/target scripts and exact provider/model/settings identity.
+
+Deserialize completed output bytes as ai::Translation and apply through
+`JobOutput::apply(session, Command::Retranslate { item, target_language, texts,
+translation_ref, force })`. The command's registered JSON ID is `retranslate`;
+its required fields are those same typed fields, with force explicitly boolean.
+Only returned/selected IDs participate, and unknown IDs or blank text refuse the
+whole command. Existing edited targets are preserved unless force=true, including
+when called directly through JSON. Source-language text cannot be replaced by a
+translation. A successful command is one undo step with translation provenance;
+locked items and stale Session outputs are refused through existing owners.
+Digit warnings travel in the AI result for presentation; no provider edits Project.
+
+Offline integration tests exercise actual OpenAI/fake-transport job submission,
+schema repair on the selected provider, shared attempt limits, exact selection and
+context, protected and force-retranslated targets, unselected cue preservation,
+atomic hostile-ID refusal, undo and stale-result rejection. These establish the
+execution contract, not human translation quality or actual cloud billing.

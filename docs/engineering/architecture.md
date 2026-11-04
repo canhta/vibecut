@@ -73,6 +73,8 @@ registry, never a second command catalog, and none mutates the project directly.
 A shared control library is admitted only with working CLI and MCP consumers;
 until then the first adapter owns the shared code.
 
+**Translation.** AI owns one contextual TranslationWindow contract and structured response validation; engine selects cues, budgets/retries work and applies the registered `retranslate` command with edit protection. See [AI translation](../../crates/ai/README.md#contextual-text-translation) and [engine application](../../crates/engine/README.md#translation-selection-and-application).
+
 **AI.** `ai` owns consent, cost estimates and capability checks once for every
 operation; consent binds provider, operation, content and languages, and retries
 stay inside it. Captions owns text correspondence and unit identity; translations

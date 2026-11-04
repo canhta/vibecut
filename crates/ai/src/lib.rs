@@ -6,6 +6,9 @@ pub mod gipformer;
 pub mod models;
 pub mod openai;
 mod policy;
+pub mod structured;
+mod translation;
+pub use translation::*;
 #[cfg(feature = "whisper")]
 pub mod whisper;
 pub use assembly::*;
@@ -15,6 +18,12 @@ pub use policy::*;
 /// Safe categories only: adapters must not attach response bodies or credentials.
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
+    #[error("structured output failed schema or semantic validation")]
+    Schema,
+    #[error("provider refused the operation")]
+    Refused,
+    #[error("provider response is incomplete")]
+    Incomplete,
     #[error("invalid AI input: {0}")]
     Invalid(&'static str),
     #[error("unsupported AI capability")]
@@ -59,6 +68,9 @@ impl Error {
     /// Conditions the engine job runner may retry with its own bounded budget.
     /// Adapters never retry a request themselves.
     pub fn is_transient(&self) -> bool {
-        matches!(self, Self::Network | Self::Server | Self::RateLimit { .. })
+        matches!(
+            self,
+            Self::Network | Self::Server | Self::RateLimit { .. } | Self::Schema
+        )
     }
 }

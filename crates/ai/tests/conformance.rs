@@ -178,7 +178,7 @@ impl Translator for Fake {
     }
     fn translate(
         &self,
-        _: &NfcText,
+        window: &TranslationWindow,
         request: &Request<'_>,
         _: &dyn ExecutionHooks,
     ) -> Result<Translation, Error> {
@@ -186,7 +186,8 @@ impl Translator for Fake {
         Ok(Translation {
             source_language: request.scope.source_language.clone(),
             target_language: LanguageTag::parse("en").unwrap(),
-            text: "Hello".into(),
+            texts: [(window.segments.first().unwrap().id.clone(), "Hello".into())].into(),
+            number_warnings: vec![],
         })
     }
 }
@@ -594,12 +595,24 @@ fn exact_model_mode_locale_and_payload_limits_are_enforced() {
 fn translation_reuses_policy_binds_exact_text_and_never_returns_timing() {
     let mut scope = scope(config(true), Operation::Translate);
     scope.target_language = Some(LanguageTag::parse("en").unwrap());
-    scope.texts = vec!["Xin chào".into()];
+    let window = TranslationWindow {
+        source_language: scope.source_language.clone(),
+        target_language: scope.target_language.clone().unwrap(),
+        segments: vec![TranslationSegment {
+            id: "1".into(),
+            text: "Xin chào".into(),
+        }],
+        before: vec![],
+        after: vec![],
+        glossary: vec![],
+        style: "".into(),
+    };
+    scope.texts = vec![window.consent_text().unwrap()];
     let token = Consent::grant(scope.clone(), Money::new("USD", 0).unwrap()).unwrap();
     let fake = Fake::new(scope.provider.clone(), TEXT);
     let result = translate(
         &fake,
-        &"Xin chào".into(),
+        &window,
         &Request {
             scope: &scope,
             consent: Some(&token),
@@ -607,11 +620,16 @@ fn translation_reuses_policy_binds_exact_text_and_never_returns_timing() {
         &Hooks::new(),
     )
     .unwrap();
-    assert_eq!(result.text.as_str(), "Hello");
+    assert_eq!(
+        result.texts.get(&NfcText::from("1")).unwrap().as_str(),
+        "Hello"
+    );
+    let mut other = window.clone();
+    other.style = "Other private text".into();
     assert!(matches!(
         translate(
             &fake,
-            &"Other private text".into(),
+            &other,
             &Request {
                 scope: &scope,
                 consent: Some(&token)
