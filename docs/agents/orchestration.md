@@ -32,8 +32,10 @@ found design-level or robustness defects go to Codex until the profile changes.
 ## Tickets
 
 Write each ticket so it can finish without a mid-ticket ownership question: every
-piece it reuses either exists on `main` or is listed in `Blocked by`; every quality
-claim names its baseline and metric. Split a critical-path ticket that blocks many
+piece it reuses either exists on `main` or is listed in `Blocked by`; metrics appear only where
+[verification](../engineering/verification.md) asks for them (performance, our own AI
+logic), each with its baseline. Every ticket ships working behaviour; research,
+benchmarks and audits exist only when a decision waits on them. Split a critical-path ticket that blocks many
 others into a contract-first slice that merges early and follow-ups.
 
 One ticket = one cohesive responsibility (a crate, contract or user-facing feature)
@@ -64,7 +66,7 @@ code is settled by [copy imports](../engineering/workflows.md#copy-imports).
 2. End the turn; Orca wakes you for mail. Read the `worker_done` summary and the report TL;DR only. On every wake also run `orca orchestration worker-list` and `git worktree list`: a worker idle without mail, or waiting on something that will not come soon, is stopped and its worktree cleaned (save untracked outputs first).
 3. Answer questions with one batched reply; send no acknowledgements.
 4. Return work to the dispatch that already holds its context: re-reviews to the same reviewer's dispatch (`orca orchestration send` reopens a finished worker). Once an implementer's work is frozen for review, stop it and remove its worktree, keeping the branch; review `changes` then start a new worker on that branch.
-5. After a merge, clean up with `.scratch/bin/cleanup <dispatch-id> <worktree-name>...`. Keep the implementer and a `changes` reviewer (dispatch and worktree) until the ticket merges.
+5. After a merge, clean up with `.scratch/bin/cleanup <dispatch-id> <worktree-name>...`. Keep a `changes` reviewer's dispatch until the ticket merges.
 6. Dispatch what `.scratch/bin/frontier` lists, opencode first, critical path first.
 7. Anything outward-facing (posting upstream, changing repo visibility, publishing) needs the maintainer's explicit yes first.
 
@@ -76,7 +78,7 @@ Load `orca skills get orchestration` for CLI details; use handles from receipts.
 2. Implement per the [development loop](../engineering/workflows.md#development-loop).
    Before handing to review, attack your own branch the way a reviewer will: hostile
    and boundary inputs, cancellation mid-operation, gesture reversal, and every
-   quality metric against its recorded baseline (no language, format or backend may
+   metric the ticket names against its recorded baseline (no language, format or backend may
    regress). Fix what you find first.
 3. Finish the ticket on one of the two [merge paths](#review-and-merge). A ticket
    that needs review ends the turn right away with `worker_done`, so its review starts
@@ -107,6 +109,8 @@ fast-forward to `main`. T2–T4 tickets go to review.
 - Dual versions, legacy shims, deprecated paths and backward-compatibility code are `changes` findings.
 - Approved: merge immediately like a self-merge (regenerate `Cargo.lock` on conflict).
 - A re-review checks the earlier findings and the fix diff, not the whole ticket again.
+- A finding that turns on product scope or policy the docs do not settle is an `ask` to the coordinator, not a `changes` verdict; it never counts against the implementer's tier.
+- A failure called "known" cites its ticket; with none, the reviewer files a `Type: bug` ticket first.
 
 After either path the merger writes `## Answer` (SHA, evidence path), sets
 `Status: resolved` and adds one decision line to the milestone `map.md`.
