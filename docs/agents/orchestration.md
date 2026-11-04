@@ -31,7 +31,7 @@ Use runtime-issued handles/IDs from receipts, not guessed values. An open, unblo
 [ticket](issue-tracker.md#ticket-header) may be dispatched with a complete spec:
 
 ```sh
-orca orchestration worker-start --agent codex --worktree new-top-level --repo "path:$PWD" --name p0-core-01-time --base-branch main --spec 'Follow .scratch/p0-core/issues/01-time-crate.md and docs/agents/orchestration.md; use branch t/p0-core-01-time; commit -s; report evidence; do not push main'
+orca orchestration worker-start --agent codex --worktree new-top-level --repo "path:$PWD" --name p0-core-01-time --base-branch main --spec 'Follow .scratch/p0-core/issues/01-time-crate.md and docs/agents/orchestration.md; use branch t/p0-core-01-time; commit -s; report evidence; merge per review-and-merge'
 orca orchestration worker-list --json
 ```
 
