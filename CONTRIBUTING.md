@@ -2,8 +2,8 @@
 
 Read [AGENTS.md](AGENTS.md) and follow the [development and delivery workflow](docs/engineering/workflows.md).
 Install [rustup](https://rustup.rs/); the pinned toolchain supplies rustfmt and
-Clippy. Run `cargo xtask ci` before each commit and provide focused validation
-and independent review evidence.
+Clippy. Run the [check that covers your change](docs/engineering/verification.md#checks)
+before each commit.
 
 Contributions use [MIT](LICENSE). Every contributed commit requires DCO sign-off:
 `git commit -s` certifies the [Developer Certificate of Origin 1.1](https://developercertificate.org/).

@@ -18,12 +18,12 @@ Open-source CapCut alternative: a Rust desktop video editor for macOS and Window
 ## Rules
 
 - Quality and stability first, then light and fast.
-- Research with Context7 first, then official docs; mark anything unchecked unverified.
-- Use the latest stable versions. Replace in place: one version of everything, superseded code deleted in the same change.
+- Research before deciding, Context7 first: [development loop](docs/engineering/workflows.md#development-loop).
+- Latest versions, replaced in place, one version of everything: [upgrade policy](docs/engineering/workflows.md#upgrade-policy).
 - One owner per fact; link to it elsewhere.
 - Label claims observed, source-documented, inferred, proposed or unverified. A green build proves only the build.
 - Keep reports local and hand over paths.
-- Secrets and private files live in git-ignored `.privates/`; their contents stay out of output, logs and commits.
+- Secrets and private files: [privacy](docs/engineering/open-source.md#privacy).
 
 ## Agent skills
 

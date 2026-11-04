@@ -24,7 +24,7 @@ Commits: conventional subject, `git commit -s`.
 
 Copy only the files the ticket needs from a read-only reference. First commit:
 mechanical import with our names, unused features removed and provenance comments
-dropped. Later commits: adaptations. Both pass `cargo xtask ci`, including the name
+dropped. Later commits: adaptations. Both pass [checks](verification.md#checks), including the name
 gate. Copied code carries no source names or notices; the maintainer settles
 licensing with the owners directly.
 

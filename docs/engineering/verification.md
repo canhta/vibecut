@@ -46,7 +46,6 @@ the command and tool version. Missing ffmpeg/ffprobe skips with a message;
 `VIBECUT_REQUIRE_ORACLES=1` makes it a failure, and a skipped oracle never counts as
 acceptance. Goldens use fixed canvas, rate, fonts and CPU rendering; actual and diff
 images go under `target/`; re-blessing needs visual inspection and a reason.
-Recordings, media and weights stay out of Git.
 
 Live provider tests need `VIBECUT_LIVE_AI=1` plus keys, are `#[ignore]`d, never run
 in CI, and use synthetic input with bounded cost.
