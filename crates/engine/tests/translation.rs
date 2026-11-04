@@ -79,6 +79,7 @@ fn session() -> Session {
             source_asset: Some(media::AssetId(1)),
             source_range: SourceRange::new(Tick(0), Tick(40)).unwrap(),
             start: Tick(0),
+            animations: Default::default(),
             content: ItemParams::Caption(CaptionParams {
                 cues: CueTrack { cues },
             }),
@@ -343,4 +344,263 @@ fn consent_preparation_cannot_rebind_old_source_to_a_new_session_revision() {
         Err(EditError::StaleResult)
     ));
     assert_eq!(transport.calls.load(Ordering::Relaxed), 0);
+}
+
+#[test]
+fn review_retranslate_during_trim_must_retain_unselected_hidden_cues() {
+    let mut s = session();
+    s.begin_gesture().unwrap();
+    s.apply(Command::TrimEnd {
+        item: ItemId(0),
+        at: Tick(20),
+    })
+    .unwrap();
+    assert_eq!(cues(&s).len(), 2);
+    s.apply(Command::Retranslate {
+        item: ItemId(0),
+        target_language: lang("en"),
+        texts: [("cue-0".into(), "new translation".into())].into(),
+        translation_ref: "review".into(),
+        force: false,
+    })
+    .unwrap();
+    s.apply(Command::TrimEnd {
+        item: ItemId(0),
+        at: Tick(40),
+    })
+    .unwrap();
+    assert_eq!(
+        cues(&s).len(),
+        4,
+        "reversing trim must restore unrelated source cues"
+    );
+    assert_eq!(
+        cues(&s)[0].texts[&lang("en")].text.as_str(),
+        "new translation"
+    );
+}
+
+fn translate_cue(id: &str, force: bool) -> Command {
+    Command::Retranslate {
+        item: ItemId(0),
+        target_language: lang("en"),
+        texts: [(id.into(), "selected translation".into())].into(),
+        translation_ref: "retained-translation".into(),
+        force,
+    }
+}
+
+#[test]
+fn translation_preserves_partial_and_hidden_cues_across_every_trim_retention_lifetime() {
+    for mode in ["gesture", "group", "batch", "merged"] {
+        for (start, edge, cue_index) in
+            [(false, 15, 1), (false, 25, 2), (true, 15, 1), (true, 25, 2)]
+        {
+            for force in [false, true] {
+                let mut s = session();
+                let original = s.project().clone();
+                let original_cues = cues(&s).to_vec();
+                let mut expected = original_cues.clone();
+                let id = expected[cue_index].id.as_str().to_owned();
+                expected[cue_index].set_text(
+                    lang("en"),
+                    CueText {
+                        text: "selected translation".into(),
+                        edited: false,
+                        translation_ref: Some("retained-translation".into()),
+                    },
+                    force,
+                );
+                let trim = |at| {
+                    if start {
+                        Command::TrimStart {
+                            item: ItemId(0),
+                            at: Tick(at),
+                        }
+                    } else {
+                        Command::TrimEnd {
+                            item: ItemId(0),
+                            at: Tick(at),
+                        }
+                    }
+                };
+                let commands = vec![
+                    trim(edge),
+                    translate_cue(&id, force),
+                    trim(if start { edge + 3 } else { edge - 3 }),
+                    trim(if start { 0 } else { 40 }),
+                ];
+                match mode {
+                    "gesture" => {
+                        s.begin_gesture().unwrap();
+                        for command in commands {
+                            s.apply(command).unwrap();
+                        }
+                        s.commit_gesture().unwrap();
+                    }
+                    "group" => s
+                        .transaction(|s| {
+                            for command in commands {
+                                s.apply(command)?;
+                            }
+                            Ok(())
+                        })
+                        .unwrap(),
+                    "batch" => {
+                        s.apply(Command::Batch { commands }).unwrap();
+                    }
+                    "merged" => {
+                        for command in commands {
+                            s.apply_merged(command, Some("trim-and-translate")).unwrap();
+                        }
+                        s.end_merge();
+                    }
+                    _ => panic!("unknown fixture mode"),
+                }
+                assert_eq!(
+                    cues(&s),
+                    expected,
+                    "{mode} start={start} edge={edge} force={force}"
+                );
+                let item = &s.project().data().timeline.tracks[0].items[0];
+                assert_eq!(item.start, Tick(0));
+                assert_eq!(
+                    item.source_range,
+                    SourceRange::new(Tick(0), Tick(40)).unwrap()
+                );
+                if expected != original_cues {
+                    assert_eq!(s.history_len(), (1, 0));
+                }
+                if s.can_undo() {
+                    s.undo().unwrap();
+                    assert_eq!(s.project(), &original);
+                    s.redo().unwrap();
+                    assert_eq!(cues(&s), expected);
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn translation_trim_cancel_and_failed_commands_restore_retained_content() {
+    for force in [false, true] {
+        let mut s = session();
+        let original = s.project().clone();
+        s.begin_gesture().unwrap();
+        s.apply(Command::TrimEnd {
+            item: ItemId(0),
+            at: Tick(15),
+        })
+        .unwrap();
+        s.apply(translate_cue("cue-1", force)).unwrap();
+        s.cancel_gesture().unwrap();
+        assert_eq!(s.project(), &original);
+        assert_eq!(s.history_len(), (0, 0));
+
+        s.begin_gesture().unwrap();
+        s.apply(Command::TrimEnd {
+            item: ItemId(0),
+            at: Tick(15),
+        })
+        .unwrap();
+        let preview = s.project().clone();
+        assert!(
+            s.apply(translate_cue("cue-3", force)).is_err(),
+            "hidden IDs are not selected visible cues"
+        );
+        assert!(Arc::ptr_eq(s.project(), &preview));
+        assert!(
+            s.apply(Command::Batch {
+                commands: vec![
+                    translate_cue("cue-0", force),
+                    Command::Delete {
+                        items: vec![ItemId(999)]
+                    }
+                ]
+            })
+            .is_err()
+        );
+        assert!(Arc::ptr_eq(s.project(), &preview));
+        s.apply(Command::TrimEnd {
+            item: ItemId(0),
+            at: Tick(40),
+        })
+        .unwrap();
+        assert_eq!(
+            s.project(),
+            &original,
+            "failed batch must also roll back retained translations"
+        );
+        s.cancel_gesture().unwrap();
+
+        let result: Result<(), EditError> = s.transaction(|s| {
+            s.apply(Command::TrimStart {
+                item: ItemId(0),
+                at: Tick(15),
+            })?;
+            s.apply(translate_cue("cue-1", force))?;
+            Err(EditError::Invalid("test rollback"))
+        });
+        assert!(result.is_err());
+        assert_eq!(s.project(), &original);
+    }
+}
+
+#[test]
+fn an_edited_partial_cue_can_be_hidden_then_restored_after_another_translation() {
+    for start in [false, true] {
+        for force in [false, true] {
+            let mut s = session();
+            let mut expected = cues(&s).to_vec();
+            for (index, allow) in [(1, force), (if start { 3 } else { 0 }, false)] {
+                expected[index].set_text(
+                    lang("en"),
+                    CueText {
+                        text: "selected translation".into(),
+                        edited: false,
+                        translation_ref: Some("retained-translation".into()),
+                    },
+                    allow,
+                );
+            }
+            let trim = |at| {
+                if start {
+                    Command::TrimStart {
+                        item: ItemId(0),
+                        at: Tick(at),
+                    }
+                } else {
+                    Command::TrimEnd {
+                        item: ItemId(0),
+                        at: Tick(at),
+                    }
+                }
+            };
+            s.begin_gesture().unwrap();
+            s.apply(trim(15)).unwrap();
+            s.apply(translate_cue("cue-1", force)).unwrap();
+            assert_eq!(
+                cues(&s)
+                    .iter()
+                    .find(|c| c.id.as_str() == "cue-1")
+                    .unwrap()
+                    .range
+                    .duration(),
+                Tick(5)
+            );
+            s.apply(trim(if start { 25 } else { 5 })).unwrap();
+            assert!(!cues(&s).iter().any(|c| c.id.as_str() == "cue-1"));
+            s.apply(translate_cue(if start { "cue-3" } else { "cue-0" }, false))
+                .unwrap();
+            s.apply(trim(if start { 0 } else { 40 })).unwrap();
+            assert_eq!(cues(&s), expected);
+            s.commit_gesture().unwrap();
+            assert_eq!(cues(&s), expected);
+            s.undo().unwrap();
+            assert_eq!(cues(&s), cues(&session()));
+            s.redo().unwrap();
+            assert_eq!(cues(&s), expected);
+        }
+    }
 }

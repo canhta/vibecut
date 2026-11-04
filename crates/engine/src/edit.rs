@@ -372,7 +372,21 @@ pub(crate) fn apply(
             {
                 return Err(EditError::Invalid("translation cue ids or text"));
             }
-            for cue in &mut params.cues.cues {
+            // A selected text edit does not replace the full caption content.
+            // Update the retained track, then let the mapping owner rebuild the
+            // clipped view so reversal can restore hidden cues and original ranges.
+            let retained = sources.contains_key(&id);
+            let cues = match sources.get_mut(&id) {
+                Some(source) => Arc::make_mut(source),
+                None => &mut params.cues,
+            };
+            if texts
+                .keys()
+                .any(|id| !cues.cues.iter().any(|cue| &cue.id == id))
+            {
+                return Err(EditError::Invalid("missing retained translation cue"));
+            }
+            for cue in &mut cues.cues {
                 if let Some(text) = texts.get(&cue.id) {
                     if cue.source_lang == target_language {
                         return Err(EditError::Invalid("cannot replace source with translation"));
@@ -388,7 +402,9 @@ pub(crate) fn apply(
                     );
                 }
             }
-            sources.remove(&id);
+            if retained {
+                set_range(item, item.source_range, sources)?;
+            }
         }
         Command::Batch { commands } => {
             for command in commands {

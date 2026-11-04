@@ -100,8 +100,10 @@ initial allocation. Project and source constructors retain their own limits.
   commits retained cue content; a later independent extension cannot recover
   discarded cues. Gesture, closure-group, batch and equal-key merged trims rebuild
   each preview from retained entry cues rather than the previous clipped preview.
-  An explicit `set_item_param` replaces that retained content; splitting establishes
-  separate retained content for each piece. Refusal rolls back retained content
+  Selected `retranslate` target edits update that retained content and remap the
+  visible view, preserving hidden/unselected cues and unclipped source ranges.
+  An explicit `set_item_param` replaces the full retained content; splitting
+  establishes separate retained content for each piece. Refusal rolls back retained content
   with the candidate. Retention ends at commit/cancel or a merge boundary.
   Undo restores the original snapshot and all its cue content.
 - `delete` lifts identified items leaving gaps. `ripple_delete` removes one item
@@ -437,7 +439,12 @@ whole command. Existing edited targets are preserved unless force=true, includin
 when called directly through JSON. Source-language text cannot be replaced by a
 translation. A successful command is one undo step with translation provenance;
 locked items and stale Session outputs are refused through existing owners.
-Digit warnings travel in the AI result for presentation; no provider edits Project.
+During retained trim gestures/groups/batches/merged edits, selected translations
+update the authoritative cue track before remapping the visible range. Hidden
+unselected content, source timings and all other language metadata survive inward
+and outward reversal; protected no-ops preserve retention as well. Cancel/refusal
+rolls these changes back with the candidate. Digit warnings travel in the AI result
+for presentation; no provider edits Project.
 
 Offline integration tests exercise actual OpenAI/fake-transport job submission,
 schema repair on the selected provider, shared attempt limits, exact selection and
