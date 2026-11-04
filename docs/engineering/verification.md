@@ -12,8 +12,8 @@ Run the smallest check that covers what changed; commit only green.
 | Media, render or other hot path | the above plus the benchmark its ticket names |
 
 Run `cargo xtask ffmpeg` once per machine before the first Rust build. Merging after
-a rebase reruns `cargo xtask ci` only when the commits added to `main` since your run
-touched Rust, manifests or `xtask`. A reviewer runs CI once on the SHA it merges.
+a rebase reruns CI only when both your branch and the commits added to `main` since
+your run touched Rust, manifests or `xtask`; each side alone was already tested. A reviewer runs CI once on the SHA it merges.
 
 Media, render and release acceptance additionally run
 `cargo xtask ci --require-oracles`: it fails when external `ffmpeg`/`ffprobe` are

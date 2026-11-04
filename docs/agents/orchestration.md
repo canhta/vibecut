@@ -121,7 +121,7 @@ fast-forward to `main`. T2–T4 tickets go to review.
 
 **Merging.** An approved branch merges as soon as it is ready: rebase on
 `origin/main`; if the [rebase rule](../engineering/verification.md#checks) needs no
-CI rerun (nothing added to `main` since your run touched Rust, manifests or `xtask`),
+CI rerun (not both sides touched Rust, manifests or `xtask`),
 push fast-forward at once; a rejected push means rebase and repeat. Ask the
 coordinator for a merge window only when two ready branches both change Rust, or
 share a persistent format, schema version or contract: the coordinator orders those
