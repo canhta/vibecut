@@ -1,12 +1,12 @@
 # ai
 
-Provider contracts, execution policy, consent-gated OpenAI file transcription and
-local Whisper/Gipformer transcription. Owns provider configuration, capability
-lookup, scoped upload consent, invocation cost bounds, recognition assembly, model
-metadata, download-consent tokens, streaming integrity verification, verified model
-loading and the OpenAI HTTPS transport. Excludes model download execution, audio
-decoding, job scheduling/retries/checkpoints, cache storage/promotion, cue
-segmentation and user-edit policy.
+Provider contracts, execution policy, consent-gated OpenAI and ElevenLabs file
+transcription and local Whisper/Gipformer transcription. Owns provider configuration,
+capability lookup, scoped upload consent, invocation cost bounds, recognition
+assembly, model metadata, download-consent tokens, streaming integrity verification,
+verified model loading and the shared HTTPS transport. Excludes model download
+execution, audio decoding, job scheduling/retries/checkpoints, cache
+storage/promotion, cue segmentation and user-edit policy.
 
 ## Entry points
 
@@ -176,6 +176,45 @@ response handling. The ignored `live_openai_transcription_uses_production_transp
 requires `VIBECUT_LIVE_AI=1` and `OPENAI_API_KEY`, uploads a bounded synthetic-speech
 probe and asserts nonempty text plus nine spoken anchors; see the fixture README for
 the reproduction command. It is the only test that reaches the network.
+
+## ElevenLabs Scribe transcription
+
+`elevenlabs::ElevenLabsTranscriber` admits only `scribe_v2`, backend `elevenlabs` and
+the official base URL `https://api.elevenlabs.io/v1`; proxies, lookalike hosts and
+other version paths are refused because the disclosure is endpoint/account specific.
+The composition root resolves `ELEVENLABS_API_KEY` for development or the OS keychain
+entry, then injects it as `transport::ApiKey`; the key is sent as `xi-api-key` and is
+never serialized or logged.
+
+Uploads are multipart PCM16 WAV with `model_id=scribe_v2`, the exact `language_code`
+(`vi`, `en` or `zh`, no implicit fallback) and `timestamps_granularity=word`. The
+documented limits are 3 GB and 10 hours in standard mode; the shared 64 MiB PCM
+admission and engine chunking bound actual invocations, and responses are capped at
+1 MiB. Consent's `max_bytes` bounds the encoded WAV, including its 44-byte header.
+
+Scribe returns word, spacing and audio-event tokens in seconds. The adapter folds
+spacing/audio-event text into the preceding word token, converts each absolute token
+boundary once to source samples with explicit nearest-sample rounding, and emits one
+timed segment per invocation with stable window-derived IDs. Word tokens become
+`raw_tokens` and flow through captions' shared `/17` span code, preserving
+raw-to-NFC-correspondence and the provider's per-language token identity; zero-width
+punctuation stays explicitly untimed. No cue segmentation, timestamp interpolation
+or provider fallback happens here.
+
+`disclosure(scope)` states the ElevenLabs default retention, account-dependent
+training opt-out, Enterprise default exclusion and enterprise-only Zero Retention
+Mode with source links. The adapter uses default logging, does not send
+`enable_logging=false`, and does not assume the account is Enterprise or has opted
+out; the composition root must show that uncertainty before consent. The OpenAI
+endpoint policy is never reused.
+
+Typed failures cover auth, payment/quota, rate limit, payload, server and network;
+the adapter never retries, and the engine owns the bounded network retry policy.
+`cargo test -p ai --test elevenlabs` runs offline against recorded English,
+Vietnamese and Chinese responses plus synthetic errors, consent and disclosure
+tests. The ignored live test uses the same bounded synthetic-speech probe as OpenAI;
+a separate consented run on the `/16` English corpus sample is recorded in the
+ticket report.
 
 ## Verification and limits
 

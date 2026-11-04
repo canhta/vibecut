@@ -1,0 +1,14 @@
+{
+  "method": "POST",
+  "url": "https://api.elevenlabs.io/v1/speech-to-text",
+  "fields": [
+    ["model_id", "scribe_v2"],
+    ["language_code", "vi"],
+    ["timestamps_granularity", "word"]
+  ],
+  "file": {
+    "name": "file",
+    "filename": "audio.wav",
+    "content_type": "audio/wav"
+  }
+}

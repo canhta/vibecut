@@ -1,6 +1,7 @@
 //! Offline provider policy and validated transcription/alignment/translation execution.
 mod assembly;
 mod contracts;
+pub mod elevenlabs;
 #[cfg(feature = "gipformer")]
 pub mod gipformer;
 pub mod models;

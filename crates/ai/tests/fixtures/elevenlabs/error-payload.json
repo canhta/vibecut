@@ -1,0 +1,1 @@
+{"detail":{"type":"validation_error","code":"file_too_large","message":"File exceeds the maximum size","status":"file_too_large","request_id":"req_secret","param":"file"}}

@@ -1,0 +1,1 @@
+{"detail":{"type":"rate_limit_error","code":"rate_limit_exceeded","message":"Too many requests","status":"rate_limit_exceeded","request_id":"req_secret","param":null}}
