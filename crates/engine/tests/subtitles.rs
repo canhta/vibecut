@@ -46,6 +46,8 @@ fn fixture() -> Option<PathBuf> {
                 return Some(path);
             }
             let output = std::process::Command::new("ffmpeg")
+                .env_remove("DYLD_LIBRARY_PATH")
+                .env_remove("LD_LIBRARY_PATH")
                 .args([
                     "-y",
                     "-hide_banner",
