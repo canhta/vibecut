@@ -115,8 +115,10 @@ load failures retain typed errors and Retry/Back controls. New/Open/Save As use
 rfd's asynchronous native picker so the event loop keeps autosave ticking; paths stay native through the writer lease.
 
 Header rename commits on Enter and cancels on Esc through `project.rename`.
-The shared `project.set_view_state` stores zoom/scroll outside edit history for
-timeline navigation to expose; playhead is restored through the existing seek path. Save/exit wait off-thread for engine acknowledgement; an error retains the
+The timeline restores its scale multiplier and logical-pixel horizontal scroll
+through `project.set_view_state`, outside edit history; seeking and navigation save
+the current view, deferring metadata writes until an active edit gesture finishes.
+Playhead is restored through the existing seek path. Save/exit wait off-thread for engine acknowledgement; an error retains the
 active editor. A window close is intercepted with `CancelClose`: save and close,
 keep a flushed recovery copy and close, or cancel. New/recovered work requires
 Save As. Loading can be cancelled without accepting its eventual result.

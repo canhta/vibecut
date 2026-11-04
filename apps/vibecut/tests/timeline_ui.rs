@@ -808,3 +808,71 @@ fn escape_rolls_back_the_drag_and_restarts_preview() {
     harness.run_steps(2);
     assert_eq!(item(harness.state(), id).start, Tick(6 * SECOND));
 }
+
+#[test]
+fn lifecycle_view_state_restores_and_tracks_timeline_navigation() {
+    let mut fixture = fixture();
+    fixture
+        .editor
+        .session
+        .execute(
+            "project.set_view_state",
+            serde_json::json!({"zoom":5,"scroll":80,"playhead":0}),
+        )
+        .unwrap();
+    let vibecut::lifecycle::EditorSession::Memory(session) = fixture.editor.session else {
+        panic!("memory fixture")
+    };
+    let editor = Editor::new(
+        *session,
+        fixture.editor.playback,
+        fixture.editor.preferences,
+    );
+    assert_eq!(editor.inspect().unwrap().zoom, 200.0);
+    let mut harness = harness(editor);
+    harness.run_steps(3);
+    let view = harness.state().session.metadata().view;
+    assert_eq!(view.zoom, 5.0);
+    assert!((view.scroll - 80.0).abs() < 0.001);
+    harness.state_mut().activate("timeline.zoom_in").unwrap();
+    harness.run_steps(2);
+    let zoom = harness.state().inspect().unwrap().zoom;
+    assert!((harness.state().session.metadata().view.zoom - f64::from(zoom) / 40.0).abs() < 1e-6);
+    let scrollbar = widget(&harness, "timeline.scroll_h");
+    click_at(&mut harness, scrollbar.center());
+    assert!(harness.state().session.metadata().view.scroll > 80.0);
+    harness.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::Z);
+    harness.run_steps(2);
+    assert_eq!(
+        harness.state().inspect().unwrap().zoom,
+        zoom,
+        "navigation stays outside edit history"
+    );
+}
+
+#[test]
+fn rename_field_suppresses_timeline_edit_shortcuts() {
+    let mut fixture = fixture();
+    fixture.editor.selection.insert(fixture.video_a);
+    fixture
+        .editor
+        .playback
+        .seek(
+            Tick(3 * SECOND),
+            false,
+            fixture.editor.session.project().clone(),
+        )
+        .unwrap();
+    let mut harness = harness(fixture.editor);
+    harness.run_steps(3);
+    harness.state_mut().activate("project.rename").unwrap();
+    harness.run_steps(2);
+    let before = harness.state().session.project().clone();
+    harness.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::B);
+    harness.key_press(egui::Key::Delete);
+    harness.run_steps(2);
+    assert_eq!(harness.state().session.project(), &before);
+    harness.key_press(egui::Key::Escape);
+    harness.run_steps(2);
+    assert_eq!(harness.state().session.project(), &before);
+}

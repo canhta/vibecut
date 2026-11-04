@@ -173,6 +173,10 @@ impl Editor {
         playback: Playback,
         preferences: Preferences,
     ) -> Self {
+        let view = session.metadata().view;
+        let zoom = (f64::from(DEFAULT_ZOOM) * view.zoom)
+            .clamp(f64::from(MIN_ZOOM), f64::from(MAX_ZOOM)) as f32;
+        let scroll = (view.scroll / f64::from(zoom)) as f32;
         Self {
             session,
             playback,
@@ -180,8 +184,8 @@ impl Editor {
             selection: BTreeSet::new(),
             snapping: true,
             ripple: false,
-            zoom: DEFAULT_ZOOM,
-            scroll: 0.0,
+            zoom,
+            scroll,
             vertical_scroll: 0.0,
             widgets: BTreeMap::new(),
             panels: BTreeMap::new(),
@@ -337,6 +341,7 @@ impl Editor {
         if !Arc::ptr_eq(&before, self.session.project()) {
             self.sync_preview();
         }
+        self.remember_view()?;
         Ok(())
     }
     /// Restart preview/audio work against the current immutable project snapshot.
@@ -360,11 +365,23 @@ impl Editor {
     fn seek(&mut self, at: Tick) -> Result<()> {
         self.playback
             .seek(at, self.playback.playing(), self.session.project().clone())?;
-        let view = self.session.metadata().view;
-        self.session.execute(
-            "project.set_view_state",
-            serde_json::json!({"zoom":view.zoom,"scroll":view.scroll,"playhead":at}),
-        )?;
+        self.remember_view()
+    }
+    fn remember_view(&mut self) -> Result<()> {
+        if self.session.transaction_active() {
+            return Ok(());
+        }
+        let view = project::ViewState {
+            zoom: f64::from(self.zoom) / f64::from(DEFAULT_ZOOM),
+            scroll: (f64::from(self.scroll) * f64::from(self.zoom)).clamp(0.0, 1e9),
+            playhead: self.playback.position()?,
+        };
+        if self.session.metadata().view != view {
+            self.session.execute(
+                "project.set_view_state",
+                serde_json::json!({"zoom":view.zoom,"scroll":view.scroll,"playhead":view.playhead}),
+            )?;
+        }
         Ok(())
     }
     fn seek_to(&mut self, at: Tick) {
@@ -1394,6 +1411,9 @@ impl Editor {
         self.paint_playhead(ui, &layout);
         self.timeline_playhead_interaction(ui, &layout);
         self.timeline_scrollbars(ui, &layout, duration, &rows);
+        if let Err(error) = self.remember_view() {
+            self.error = Some(error.to_string());
+        }
         if items.is_empty() && !rows.is_empty() {
             let empty = self.tr(Text::EmptyTimeline);
             ui.painter().text(
