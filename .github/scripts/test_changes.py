@@ -23,6 +23,19 @@ class ChangesTest(unittest.TestCase):
         self.assertEqual(changes.changed_paths({'before': '0' * 40}, 'push'), [])
         self.assertEqual(changes.changed_paths({}, 'workflow_dispatch'), [])
 
+    def test_pr_signoffs_are_required(self):
+        event = {'pull_request': {'base': {'sha': 'base'}, 'head': {'sha': 'head'}}}
+        for trailer, passes in [('Signed-off-by: Contributor <contributor@example.invalid>', True),
+                                ('signed-off-by: Contributor <contributor@example.invalid>', True),
+                                ('', False), ('Signed-off-by: missing email', False)]:
+            with self.subTest(trailer=trailer), patch.object(changes.subprocess, 'check_output',
+                    side_effect=[b'1234\n', ('message\n\n' + trailer + '\n').encode()]):
+                if passes:
+                    changes.require_signoffs(event)
+                else:
+                    with self.assertRaises(SystemExit):
+                        changes.require_signoffs(event)
+
     def test_real_diff_preserves_deleted_renamed_and_hostile_paths(self):
         with tempfile.TemporaryDirectory() as folder:
             def git(*args):
@@ -42,19 +55,17 @@ class ChangesTest(unittest.TestCase):
             git('add', '-A')
             git('commit', '-qm', 'move')
             head = git('rev-parse', 'HEAD')
-            with patch('os.getcwd', return_value=folder):
-                # Run classifier against an actual repository without changing process cwd.
-                original = subprocess.check_output
-                def output(args):
-                    return original(args, cwd=folder)
-                with patch.object(changes.subprocess, 'check_output', side_effect=output):
-                    paths = changes.changed_paths({'before': base, 'after': head}, 'push')
-                    self.assertIn('code.rs', paths)
-                    self.assertIn('removed.rs', paths)
-                    self.assertIn('docs/hostile\nname.md', paths)
-                    self.assertFalse(changes.docs_only(paths))
-                    pr = {'pull_request': {'base': {'sha': base}, 'head': {'sha': head}}}
-                    self.assertEqual(set(paths), set(changes.changed_paths(pr, 'pull_request')))
+            original = subprocess.check_output
+            def output(args):
+                return original(args, cwd=folder)
+            with patch.object(changes.subprocess, 'check_output', side_effect=output):
+                paths = changes.changed_paths({'before': base, 'after': head}, 'push')
+                self.assertIn('code.rs', paths)
+                self.assertIn('removed.rs', paths)
+                self.assertIn('docs/hostile\nname.md', paths)
+                self.assertFalse(changes.docs_only(paths))
+                pr = {'pull_request': {'base': {'sha': base}, 'head': {'sha': head}}}
+                self.assertEqual(set(paths), set(changes.changed_paths(pr, 'pull_request')))
 
 
 if __name__ == '__main__':

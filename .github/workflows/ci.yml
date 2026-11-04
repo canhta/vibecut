@@ -29,6 +29,8 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: false
+      - name: Check workflow boundary behavior
+        run: python3 -m unittest discover -s .github/scripts -p 'test_*.py' -v
       - id: paths
         run: python3 .github/scripts/changes.py
 

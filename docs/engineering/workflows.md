@@ -58,9 +58,40 @@ architecture; Rust keeps its MSVC toolchain.
 
 ## Hosted CI
 
-Manual-only while the repo is private. Before accepting public contributions, add a
-`pull_request` trigger and require signed-off PRs.
+Pushes to `main` and pull requests run CI with read-only repository permissions.
+Require the stable `CI gate` status in branch protection: it selects the docs gate
+for Markdown/`docs/`-only diffs and the Apple Silicon `macos-latest` Rust gate
+otherwise. Windows runs as an advisory check until its runtime is in scope.
+Superseded PR runs cancel; main pushes finish. Fork PRs use `pull_request`, never
+`pull_request_target`, and receive no release secrets. The PR gate requires a Signed-off-by trailer on every submitted commit,
+as described in [contributing](../../CONTRIBUTING.md).
+
+The shared native setup caches Rust and LGPL FFmpeg (recipe/patch/toolchain and
+platform keyed, refreshed daily). Provisioning always resolves stable upstream tags,
+including after a cache hit. The manual media-dependencies workflow warms the same
+cache and retains source/recipe archives.
 
 Release and media/render dispatches set the `require-oracles` input: CI installs
 external FFmpeg and runs the required mode from [verification](verification.md#checks).
 The ordinary dispatch keeps the fast/offline checks.
+
+A `v*` tag matching the workspace version in this repository starts the macOS
+Apple Silicon release workflow. It requires `MACOS_CERT_P12` (base64),
+`MACOS_CERT_PASSWORD`, `APPLE_API_KEY_P8` (raw P8), `APPLE_API_KEY_ID`,
+`APPLE_API_ISSUER` and `APPLE_TEAM_ID`; absent secrets fail before building.
+A temporary keychain is removed on success/failure, with an unconditional cleanup
+step for cancellation. No signing credentials or tool output reach logs. The
+[packaging owner](../../packaging/README.md) defines nested signing, notarization,
+stapling, platform verification and failure recovery. Only the signed DMG moves
+on to a separate fresh hosted macOS VM, which installs it and runs app/CLI smoke
+without restoring build/media caches. Only then does the workflow attach the DMG
+to a **draft** GitHub release; existing published releases and assets are refused.
+Publishing the draft and pushing release tags require maintainer approval.
+
+For an act-free local release dry run, provision the native dependencies, run
+`cargo xtask ci --require-oracles`, build with `packaging/build.py`, and stage with
+`packaging/package.py` without signing/notary environment variables, using a fresh
+output directory each time. This stops at ad-hoc staging before Developer ID
+signing; it proves neither notarization nor clean-host acceptance. Run
+`python3 -m unittest discover -s .github/scripts -p 'test_*.py' -v` and `actionlint`
+for workflow boundary and syntax checks. Do not push a test tag.

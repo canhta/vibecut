@@ -1,6 +1,7 @@
 """Classify the complete event diff, including deleted and renamed paths."""
 import json
 import os
+import re
 import subprocess
 
 
@@ -27,9 +28,21 @@ def changed_paths(event, name):
     return result.decode('utf-8', errors='surrogateescape').rstrip('\0').split('\0') if result else []
 
 
+def require_signoffs(event):
+    base = event['pull_request']['base']['sha']
+    head = event['pull_request']['head']['sha']
+    commits = subprocess.check_output(['git', 'rev-list', f'{base}..{head}']).decode().splitlines()
+    for commit in commits:
+        message = subprocess.check_output(['git', 'show', '-s', '--format=%B', commit]).decode()
+        if not re.search(r'^Signed-off-by: .+ <[^<>\s]+@[^<>\s]+>$', message, re.M | re.I):
+            raise SystemExit(f'Commit {commit} needs a Signed-off-by trailer (git commit -s)')
+
+
 if __name__ == '__main__':
     with open(os.environ['GITHUB_EVENT_PATH']) as stream:
         event = json.load(stream)
+    if os.environ['GITHUB_EVENT_NAME'] == 'pull_request':
+        require_signoffs(event)
     value = str(docs_only(changed_paths(event, os.environ['GITHUB_EVENT_NAME']))).lower()
     with open(os.environ['GITHUB_OUTPUT'], 'a') as stream:
         stream.write(f'docs-only={value}\n')
