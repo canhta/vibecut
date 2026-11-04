@@ -67,9 +67,6 @@ impl Tick {
     /// [`TimeError::Overflow`] or [`TimeError::OutOfRange`] when the result cannot
     /// be represented.
     pub fn from_units(units: i64, per_second: i64, rounding: Rounding) -> Result<Self, TimeError> {
-        if per_second <= 0 {
-            return Err(TimeError::InvalidRate);
-        }
         Self::from_rational(units, 1, per_second, rounding)
     }
 
@@ -81,9 +78,6 @@ impl Tick {
     /// [`TimeError::Overflow`] or [`TimeError::OutOfRange`] when the result cannot
     /// be represented.
     pub fn to_units(self, per_second: i64, rounding: Rounding) -> Result<i64, TimeError> {
-        if per_second <= 0 {
-            return Err(TimeError::InvalidRate);
-        }
         self.to_rational(1, per_second, rounding)
     }
 
@@ -381,7 +375,7 @@ impl FrameRate {
         let numerator = i128::from(TICKS_PER_SECOND)
             .checked_mul(i128::from(self.den))
             .ok_or(TimeError::Overflow)?;
-        let value = numerator.div_euclid(i128::from(self.num));
+        let value = divide_rounded(numerator, i128::from(self.num), Rounding::Floor)?;
         i64::try_from(value)
             .map(Tick)
             .map_err(|_| TimeError::OutOfRange)
@@ -400,7 +394,7 @@ impl FrameRate {
         let denominator = i128::from(TICKS_PER_SECOND)
             .checked_mul(i128::from(self.den))
             .ok_or(TimeError::Overflow)?;
-        let value = numerator.div_euclid(denominator);
+        let value = divide_rounded(numerator, denominator, Rounding::Floor)?;
         i64::try_from(value).map_err(|_| TimeError::OutOfRange)
     }
 
@@ -417,8 +411,7 @@ impl FrameRate {
             .and_then(|value| value.checked_mul(i128::from(self.den)))
             .ok_or(TimeError::Overflow)?;
         let denominator = i128::from(self.num);
-        let quotient = numerator.div_euclid(denominator);
-        let boundary = quotient + i128::from(numerator.rem_euclid(denominator) != 0);
+        let boundary = divide_rounded(numerator, denominator, Rounding::Ceil)?;
         i64::try_from(boundary)
             .map(Tick)
             .map_err(|_| TimeError::OutOfRange)
@@ -446,7 +439,7 @@ impl FrameRate {
         let after = self.tick_of(after_frame)?;
         let time = i128::from(time.0);
         Ok(
-            if time - i128::from(before.0) <= i128::from(after.0) - time {
+            if time - i128::from(before.0) < i128::from(after.0) - time {
                 before
             } else {
                 after
@@ -843,6 +836,21 @@ mod tests {
         assert_eq!(FrameRate::default(), FrameRate::FPS_23_976);
         assert_eq!(FrameRate::FPS_23_976.label(), "23.976");
         assert_eq!(FrameRate::FPS_24.label(), "24");
+    }
+
+    #[test]
+    fn nearest_frame_ties_choose_the_later_boundary() {
+        let rate = FrameRate::FPS_25;
+        let duration = rate.frame_duration().unwrap().0;
+        for frame in [-2, -1, 0, 1] {
+            let start = rate.tick_of(frame).unwrap();
+            let midpoint = start.checked_add(Tick(duration / 2)).unwrap();
+            assert_eq!(
+                rate.snap_nearest(midpoint).unwrap(),
+                rate.tick_of(frame + 1).unwrap()
+            );
+            assert_eq!(rate.snap_nearest(midpoint - Tick(1)).unwrap(), start);
+        }
     }
 
     #[test]
