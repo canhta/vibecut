@@ -37,14 +37,16 @@ impl std::fmt::Debug for SaveReceipt {
 /// against arbitrary applications that race the final check and replacement.
 pub struct WriterLease {
     path: PathBuf,
-    lock: File,
+    _lock: File,
+    identity: LockIdentity,
     baseline: Option<ContentHash>,
 }
 impl WriterLease {
     /// Nonblocking acquisition, including a not-yet-created save-as destination.
     /// Existing symlinks resolve to their target; a missing file resolves through
     /// its canonical parent. Native case/Unicode alias rules apply to the lock.
-    /// Busy, unsupported/open/lock failures never permit an unlocked save.
+    /// Reserved writer-control names are refused, including canonical aliases.
+    /// Busy, unsupported/open/lock/identity failures never permit an unlocked save.
     pub fn acquire(path: &Path) -> Result<Self> {
         Self::acquire_wait(path, Duration::ZERO, &|| false)
     }
@@ -75,6 +77,13 @@ impl WriterLease {
         {
             use std::os::unix::fs::OpenOptionsExt;
             options.mode(0o600);
+        }
+        #[cfg(windows)]
+        {
+            use std::os::windows::fs::OpenOptionsExt;
+            // FILE_SHARE_READ | FILE_SHARE_WRITE; omit FILE_SHARE_DELETE so the
+            // open sidecar cannot be renamed/replaced while its identity is read.
+            options.share_mode(0x00000001 | 0x00000002);
         }
         let lock = options.open(&lock_path).map_err(Error::LockUnavailable)?;
         if !fs::symlink_metadata(&lock_path)
@@ -107,13 +116,18 @@ impl WriterLease {
         if cancelled() {
             return Err(Error::Busy);
         }
-        // No target bytes are read until the exclusive lease is held.
-        let baseline = current(&path)?.map(|bytes| ContentHash::from_bytes(&bytes));
-        Ok(Self {
+        let identity = held_identity(&lock, &lock_path).map_err(Error::LockUnavailable)?;
+        let mut writer = Self {
             path,
-            lock,
-            baseline,
-        })
+            _lock: lock,
+            identity,
+            baseline: None,
+        };
+        writer.check_identity()?;
+        // No target bytes are read until the exclusive, correctly named lease is held.
+        writer.baseline = current(&writer.path)?.map(|bytes| ContentHash::from_bytes(&bytes));
+        writer.check_identity()?;
+        Ok(writer)
     }
 
     pub fn path(&self) -> &Path {
@@ -134,7 +148,9 @@ impl WriterLease {
     pub fn save(&mut self, project: &Project) -> Result<SaveReceipt> {
         let bytes = crate::encode(project, true)?;
         self.checked_current()?;
-        crate::atomic_write(&self.path, &bytes)?;
+        crate::atomic::atomic_write_checked(&self.path, &bytes, || {
+            self.checked_current().map(|_| ())
+        })?;
         let hash = ContentHash::from_bytes(&bytes);
         self.baseline = Some(hash);
         Ok(SaveReceipt {
@@ -146,29 +162,35 @@ impl WriterLease {
     /// Acquire the destination before any save-as write. Failure retains this
     /// lease/path and source bytes. Success retains the destination lease instead.
     pub fn save_as(&mut self, destination: &Path, project: &Project) -> Result<SaveReceipt> {
+        self.check_identity()?;
         if resolve(destination)? == self.path {
             return self.save(project);
         }
         let mut destination = Self::acquire(destination)?;
+        self.check_identity()?;
         let receipt = destination.save(project)?;
         *self = destination;
         Ok(receipt)
     }
 
     fn checked_current(&self) -> Result<Option<Vec<u8>>> {
-        // A removed lock path is never recreated while this lease is held.
-        if !fs::symlink_metadata(lock_path(&self.path)?)?
-            .file_type()
-            .is_file()
-            || !self.lock.metadata()?.is_file()
-        {
-            return Err(Error::Conflict);
-        }
+        self.check_identity()?;
         let bytes = current(&self.path)?;
         if bytes.as_ref().map(|bytes| ContentHash::from_bytes(bytes)) != self.baseline {
             return Err(Error::Conflict);
         }
+        self.check_identity()?;
         Ok(bytes)
+    }
+    fn check_identity(&self) -> Result<()> {
+        let path = lock_path(&self.path)?;
+        let metadata = fs::symlink_metadata(&path).map_err(|_| Error::Conflict)?;
+        if !metadata.file_type().is_file()
+            || named_identity(&path, &metadata).map_err(|_| Error::Conflict)? != self.identity
+        {
+            return Err(Error::Conflict);
+        }
+        Ok(())
     }
 }
 impl std::fmt::Debug for WriterLease {
@@ -179,8 +201,10 @@ impl std::fmt::Debug for WriterLease {
     }
 }
 fn resolve(path: &Path) -> Result<PathBuf> {
+    crate::atomic::admit_destination(path)?;
     match fs::canonicalize(path) {
         Ok(path) => {
+            crate::atomic::admit_destination(&path)?;
             if !path.is_file() {
                 return Err(Error::Unsupported(
                     "writer destination is not a regular file",
@@ -216,4 +240,41 @@ fn current(path: &Path) -> Result<Option<Vec<u8>>> {
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
         Err(error) => Err(error.into()),
     }
+}
+
+#[cfg(unix)]
+type LockIdentity = (u64, u64);
+#[cfg(windows)]
+type LockIdentity = file_id::FileId;
+#[cfg(not(any(unix, windows)))]
+type LockIdentity = ();
+
+#[cfg(unix)]
+fn held_identity(file: &File, _: &Path) -> std::io::Result<LockIdentity> {
+    use std::os::unix::fs::MetadataExt;
+    let metadata = file.metadata()?;
+    Ok((metadata.dev(), metadata.ino()))
+}
+#[cfg(unix)]
+fn named_identity(_: &Path, metadata: &fs::Metadata) -> std::io::Result<LockIdentity> {
+    use std::os::unix::fs::MetadataExt;
+    Ok((metadata.dev(), metadata.ino()))
+}
+#[cfg(windows)]
+fn held_identity(_: &File, path: &Path) -> std::io::Result<LockIdentity> {
+    // The file is already open without delete sharing. Do not degrade to 64-bit
+    // IDs: those do not establish object identity on ReFS.
+    file_id::get_high_res_file_id(path)
+}
+#[cfg(windows)]
+fn named_identity(path: &Path, _: &fs::Metadata) -> std::io::Result<LockIdentity> {
+    file_id::get_high_res_file_id(path)
+}
+#[cfg(not(any(unix, windows)))]
+fn held_identity(_: &File, _: &Path) -> std::io::Result<LockIdentity> {
+    Err(std::io::ErrorKind::Unsupported.into())
+}
+#[cfg(not(any(unix, windows)))]
+fn named_identity(_: &Path, _: &fs::Metadata) -> std::io::Result<LockIdentity> {
+    Err(std::io::ErrorKind::Unsupported.into())
 }

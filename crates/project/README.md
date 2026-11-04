@@ -72,8 +72,28 @@ contention and returns `Busy` on timeout/cancellation. Native filesystem calls a
 not interruptible, so cancellation is checked between them. Unsupported lock paths,
 permissions or OS locking return typed errors and never authorize an unlocked save.
 
+Project data and permanent writer control files have disjoint namespaces. All
+atomic publication and writer acquire/save-as paths refuse a basename beginning
+with `.` and ending with `.lock` (ASCII case-insensitive), including reusable or
+not-yet-created sidecars. Admission checks both supplied and canonical names, so
+symlinks and directory/case aliases cannot publish project bytes over a lease.
+Windows also refuses trailing spaces/dots and alternate-stream names before
+creation, preventing different spellings from acquiring separate sidecars.
+Existing project files with reserved names remain readable; save them to an
+admitted destination rather than rewriting the control namespace.
+
+A lease retains its original lock object and verifies the current sidecar identity
+at acquisition and before/after bounded reads. Unix compares device/inode with
+metadata from the held descriptor. Windows opens without delete sharing and uses
+full 128-bit file IDs; unavailable identity support refuses the lease instead of
+falling back to ambiguous 64-bit IDs. A missing, replaced, symlinked or differently
+identified sidecar returns `Conflict`, including when both objects are regular
+files with identical bytes. Invalidated leases cannot load, save or save-as.
+
 `save(&mut self, project)` compares the current bounded file's full BLAKE3 content
-with the acquired/last-saved baseline, then publishes through `atomic_write`.
+with the acquired/last-saved baseline, then stages through the existing atomic
+writer. After staging/sync it rechecks both content and lease identity immediately before publication; a refused final
+precondition cleans staging and returns no receipt.
 A changed, removed or unexpectedly created file returns `Conflict`; failed saves
 retain the baseline and issue no receipt. A successful `SaveReceipt` contains the
 canonical native path and hash of the exact envelope bytes published. Engine binds
@@ -92,11 +112,12 @@ refused rather than truncated into colliding locks.
 
 The lock file is private on Unix, is never truncated or removed, and contains no
 project data. Dropping the lease or killing its process releases the OS lock; the
-empty file remains safe to reuse. All cooperating writers must keep that namespace
-stable. Locks are advisory: content checks detect external edits present before
-publication, but are not an atomic compare-and-swap against another application
-racing the final check and rename, or against concurrent lock-file/directory
-replacement. Hard-link preservation remains outside the atomic writer contract.
+empty file remains safe to reuse. The shared atomic publisher enforces the control
+namespace too. Locks are advisory: content checks detect external edits present
+before publication, but do not provide atomic compare-and-swap against another
+application racing the final check and rename. Lock-file/directory replacement
+observed at a validation boundary invalidates the lease. Hard-link preservation
+remains outside the atomic writer contract.
 macOS local-filesystem behavior is observed; Windows and remote filesystem locking
 remain unverified.
 
@@ -116,8 +137,11 @@ all item kinds and NTSC rates, hostile/deep/oversized JSON, NFC/Unicode paths,
 missing-media state, hash-verified relink, save failure/cleanup, permissions,
 symlinks and autosave retention. Public writer tests cover concurrent threads and
 real processes, abrupt process death, stale-content refusal, save-as acquisition,
-wait/cancel, receipts, relative/symlink/case aliases and native path refusal. Property tests generate adjacent integer-tick
-items and rational common rates and check exact persistence without drift.
+wait/cancel, receipts, relative/symlink/case aliases and native path refusal.
+Namespace regressions retain the public Save As lost-edit reproduction, all ASCII
+suffix case variants, aliased publication targets, same-byte sidecar replacement,
+parent replacement, stale save-as refusal and hard-link alias noninterference.
+Property tests generate adjacent integer-tick items and rational common rates and check exact persistence without drift.
 A unit test injects failure after a partial staging write to verify original
 bytes and cleanup. This establishes application-level behavior on the tested
 filesystem, not survival of physical power loss. No performance claim is made.

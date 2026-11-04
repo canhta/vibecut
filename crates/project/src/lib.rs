@@ -14,7 +14,7 @@ pub use writer::{SaveReceipt, WriterLease};
 pub enum Error {
     #[error("project writer is busy or acquisition was cancelled")]
     Busy,
-    #[error("project changed on disk since the writer acquired it")]
+    #[error("project data or writer lease changed on disk")]
     Conflict,
     #[error("project filesystem cannot provide a writer lease")]
     LockUnavailable(#[source] std::io::Error),

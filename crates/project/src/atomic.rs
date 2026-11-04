@@ -14,14 +14,24 @@ fn parent(path: &Path) -> &Path {
 /// Replace a file using a privately created, synced same-directory staging file.
 /// Failed staging/publication preserves the destination. Parent sync after commit
 /// is best effort; ownership, ACLs, extended attributes and hard links are not kept.
-/// A destination symlink is refused. Callers serialize writes to a given target.
+/// Destination symlinks and the reserved writer-control namespace are refused.
+/// Callers serialize writes to a given target.
 pub fn atomic_write(path: &Path, bytes: &[u8]) -> Result<()> {
-    atomic_write_with(path, |file| file.write_all(bytes))
+    atomic_write_checked(path, bytes, || Ok(()))
+}
+pub(crate) fn atomic_write_checked(
+    path: &Path,
+    bytes: &[u8],
+    before_publish: impl FnOnce() -> Result<()>,
+) -> Result<()> {
+    atomic_write_with(path, |file| file.write_all(bytes), before_publish)
 }
 fn atomic_write_with(
     path: &Path,
     write: impl FnOnce(&mut File) -> std::io::Result<()>,
+    before_publish: impl FnOnce() -> Result<()>,
 ) -> Result<()> {
+    admit_destination(path)?;
     let permissions = match fs::symlink_metadata(path) {
         Ok(meta) if meta.file_type().is_symlink() => {
             return Err(Error::Invalid("save destination is a symlink"));
@@ -38,11 +48,13 @@ fn atomic_write_with(
         staged.as_file().set_permissions(permissions)?;
     }
     staged.as_file().sync_all()?;
+    before_publish()?;
     staged.persist(path).map_err(|e| Error::Io(e.error))?;
     sync_parent(path);
     Ok(())
 }
 pub(crate) fn atomic_write_new(path: &Path, bytes: &[u8]) -> Result<()> {
+    admit_destination(path)?;
     let mut staged = tempfile::Builder::new()
         .prefix(".vibecut-")
         .tempfile_in(parent(path))?;
@@ -54,6 +66,43 @@ pub(crate) fn atomic_write_new(path: &Path, bytes: &[u8]) -> Result<()> {
     sync_parent(path);
     Ok(())
 }
+// Data publication and permanent lock control files have disjoint namespaces.
+// Inspect native ASCII markers without converting/normalizing the filename.
+pub(crate) fn admit_destination(path: &Path) -> Result<()> {
+    fn name(path: &Path) -> Result<()> {
+        let bytes = path
+            .file_name()
+            .ok_or(Error::Invalid("publication filename"))?
+            .as_encoded_bytes();
+        #[cfg(windows)]
+        admit_windows_name(bytes)?;
+        if bytes.starts_with(b".")
+            && bytes
+                .get(bytes.len().saturating_sub(5)..)
+                .is_some_and(|suffix| suffix.eq_ignore_ascii_case(b".lock"))
+        {
+            return Err(Error::Unsupported(
+                "destination uses the writer-lock namespace",
+            ));
+        }
+        Ok(())
+    }
+    name(path)?;
+    match fs::canonicalize(path) {
+        Ok(canonical) => name(&canonical),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(error) => Err(error.into()),
+    }
+}
+// Win32 normalized spellings and alternate streams must not acquire distinct
+// sidecars for the same destination, even before that destination exists.
+#[cfg(any(windows, test))]
+fn admit_windows_name(bytes: &[u8]) -> Result<()> {
+    if bytes.contains(&b':') || matches!(bytes.last(), Some(b'.' | b' ')) {
+        return Err(Error::Unsupported("ambiguous Windows publication filename"));
+    }
+    Ok(())
+}
 fn sync_parent(path: &Path) {
     if let Ok(dir) = File::open(parent(path)) {
         let _ = dir.sync_all();
@@ -63,17 +112,49 @@ fn sync_parent(path: &Path) {
 mod tests {
     use super::*;
     #[test]
+    fn windows_name_admission_refuses_normalized_and_stream_aliases() {
+        for name in [
+            b".target.lock.".as_slice(),
+            b".target.lock ",
+            b".target.lock::$DATA",
+            b"project:stream",
+        ] {
+            assert!(matches!(
+                admit_windows_name(name),
+                Err(Error::Unsupported(_))
+            ));
+        }
+        assert!(admit_windows_name(b"project.vibecut").is_ok());
+        assert!(admit_windows_name(b".draft.vibecut").is_ok());
+    }
+    #[test]
     fn failed_staging_preserves_original_and_removes_temporary() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("project.vibecut");
         fs::write(&path, b"old").unwrap();
         assert!(
-            atomic_write_with(&path, |file| {
-                file.write_all(b"partial")?;
-                Err(std::io::Error::other("full disk"))
-            })
+            atomic_write_with(
+                &path,
+                |file| {
+                    file.write_all(b"partial")?;
+                    Err(std::io::Error::other("full disk"))
+                },
+                || Ok(())
+            )
             .is_err()
         );
+        assert_eq!(fs::read(&path).unwrap(), b"old");
+        assert_eq!(fs::read_dir(dir.path()).unwrap().count(), 1);
+    }
+    #[test]
+    fn failed_publication_precondition_preserves_destination_and_cleans_staging() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("project.vibecut");
+        fs::write(&path, b"old").unwrap();
+        assert!(matches!(
+            atomic_write_checked(&path, b"new", || Err(Error::Conflict)),
+            Err(Error::Conflict)
+        ));
         assert_eq!(fs::read(&path).unwrap(), b"old");
         assert_eq!(fs::read_dir(dir.path()).unwrap().count(), 1);
     }
