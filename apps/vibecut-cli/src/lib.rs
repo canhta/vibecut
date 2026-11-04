@@ -659,6 +659,8 @@ fn stage_name(stage: JobStage) -> &'static str {
         JobStage::Mix => "mix",
         JobStage::Encode => "encode",
         JobStage::Finalize => "finalize",
+        JobStage::Download => "download",
+        JobStage::Verify => "verify",
         JobStage::Publish => "publish",
         JobStage::Backoff => "backoff",
         JobStage::Complete => "complete",
