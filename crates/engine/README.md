@@ -201,10 +201,12 @@ cancelling states bypass this progress limit. Slow consumers cannot block worker
 Cancellation is checked before execution and again before promoting success;
 late partial success is discarded. Failure never yields a JobOutput.
 
-Only Transcribe/Translate jobs in the Network class retry NetworkTransient;
-all other errors and local/preview/export/import jobs run once. Retry attempts are
-bounded to 1..=10, with configured exponential backoff through an injected monotonic
-Clock. Workers/bytes release during backoff. If the pending queue filled while the
+Only Transcribe/Translate jobs in the Network class retry NetworkTransient or an
+`ai::Error` whose `is_transient` is true (network, provider server, rate limit); an
+`ai` rate limit carrying `Retry-After` raises that attempt's backoff to at least the
+provider delay, capped at five minutes. Auth, quota, payload, invalid, cancelled and all other errors, plus
+local/preview/export/import jobs, run once. Retry attempts are bounded to 1..=10, with
+configured exponential backoff through an injected monotonic Clock. Workers/bytes release during backoff. If the pending queue filled while the
 attempt ran, retry is refused by retaining the typed transient failure. The closure
 must revalidate request consent and aggregate monetary authorization on every
 attempt; the runner never grants consent or performs automatic provider fallback.

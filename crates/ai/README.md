@@ -1,11 +1,12 @@
 # ai
 
-Provider contracts, execution policy and local Whisper/Gipformer transcription. Owns
-provider configuration, capability lookup, scoped upload consent, invocation cost
-bounds, recognition assembly, model metadata, download-consent tokens, streaming
-integrity verification and verified model loading. Excludes networking/download
-execution, audio decoding, job scheduling, retries, checkpoints, cache
-storage/promotion, cue segmentation and user-edit policy.
+Provider contracts, execution policy, consent-gated OpenAI file transcription and
+local Whisper/Gipformer transcription. Owns provider configuration, capability
+lookup, scoped upload consent, invocation cost bounds, recognition assembly, model
+metadata, download-consent tokens, streaming integrity verification, verified model
+loading and the OpenAI HTTPS transport. Excludes model download execution, audio
+decoding, job scheduling/retries/checkpoints, cache storage/promotion, cue
+segmentation and user-edit policy.
 
 ## Entry points
 
@@ -120,6 +121,52 @@ speech with different IDs or ranges, returns a typed ambiguity error, leaving ch
 reconciliation for an explicit retry/user policy. Untimed segments retain chunk
 order and cannot be deduplicated by invented coordinates. There is no fuzzy text
 matching or splitting of words at chunk boundaries.
+
+## OpenAI file transcription
+
+`openai::OpenAiTranscriber` is the cloud file adapter. Only `gpt-transcribe` is
+admitted; the deprecated `whisper-1` and other models are refused at construction.
+The tagged provider config must be `Location::Remote` with backend `openai`, an HTTPS
+`base_url` including the API version path (for example
+`https://api.openai.com/v1`), and an `auth_ref` naming the external secret entry. The
+composition root resolves that entry from `OPENAI_API_KEY` for development or the OS
+keychain for the desktop app, then injects it as `openai::ApiKey`; the key is never
+serialized, logged or printed by `Debug`, and request headers/body are redacted too.
+`keyring` 4.2.0 is MIT OR Apache-2.0 and its native stores cover macOS Keychain and
+Windows Credential Manager; key storage remains app/CLI composition, not this crate.
+
+`disclosure(scope)` returns the exact endpoint, language, audio format, duration in
+microseconds, PCM16 WAV upload bytes, the per-invocation USD upper bound and the current
+transcription-specific training/retention statements with source links. Consent must
+be granted for that complete scope; a changed payload fingerprint, provider, model,
+endpoint, language, mode, byte ceiling or operation refuses before transport. An
+`AuthorizedUpload` value is created only after capability, audio and consent checks,
+so no request can be built without a token. Uploads are multipart WAV (mono PCM16),
+`model=gpt-transcribe`, `response_format=json` and a `languages[]` hint. Files are
+limited to 25 MB and responses to 1 MiB; neither is a duration guarantee.
+
+`gpt-transcribe` returns text and detected languages but no timestamps. The adapter
+therefore advertises no timing units, returns one untimed segment per invocation with
+a stable window-derived ID, and leaves `Recognition::to_transcript` unavailable until
+an explicitly selected aligner supplies timing. Chunk overlap reconciliation is the
+shared `assemble` contract after alignment; the adapter never invents coordinates or
+switches providers. Empty speech returns no segments.
+
+Transport timeouts are bounded and redirects are disabled. Cancellation is checked
+before the upload, before parsing and before returning; a blocking request already in
+flight runs to its timeout or response and its result is discarded. The adapter never
+retries;
+typed `Network`, `Server`, `RateLimit` (with optional `Retry-After`), `Auth`, `Quota`,
+`Payload` and invalid-response failures propagate to the engine. `Error::is_transient`
+identifies the retryable set, and the engine's Transcribe/Translate network policy owns
+the attempt budget and backoff; auth, quota and payload failures are never retried.
+
+`cargo test -p ai --test openai` runs offline against a recorded success response,
+typed error envelopes, a malformed body and an injected fake transport. It covers
+consent refusal before network, payload/provider consent invalidation, multipart and
+WAV shape, stable IDs, disclosure fields, error categories, redaction and bounded
+response handling. The ignored `live_openai_transcription_uses_production_transport`
+requires `VIBECUT_LIVE_AI=1` and `OPENAI_API_KEY` and performs one paid request.
 
 ## Verification and limits
 

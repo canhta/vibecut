@@ -4,6 +4,7 @@ mod contracts;
 #[cfg(feature = "gipformer")]
 pub mod gipformer;
 pub mod models;
+pub mod openai;
 mod policy;
 #[cfg(feature = "whisper")]
 pub mod whisper;
@@ -28,6 +29,10 @@ pub enum Error {
     Quota,
     #[error("rate limited; retry after {retry_after_seconds:?} seconds")]
     RateLimit { retry_after_seconds: Option<u32> },
+    #[error("network request failed")]
+    Network,
+    #[error("provider server failed")]
+    Server,
     #[error("payload exceeds capability limits")]
     Payload,
     #[error("explicit consent required for this scope")]
@@ -48,4 +53,12 @@ pub enum Error {
     Time(#[from] time::TimeError),
     #[error("invalid caption output")]
     Captions(#[from] captions::Error),
+}
+
+impl Error {
+    /// Conditions the engine job runner may retry with its own bounded budget.
+    /// Adapters never retry a request themselves.
+    pub fn is_transient(&self) -> bool {
+        matches!(self, Self::Network | Self::Server | Self::RateLimit { .. })
+    }
 }

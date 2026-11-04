@@ -370,18 +370,32 @@ impl JobRunner {
             } else {
                 outcome
             };
-            let retry = matches!(outcome, Err(EditError::NetworkTransient))
+            let transient = match &outcome {
+                Err(EditError::NetworkTransient) => true,
+                Err(EditError::Ai(error)) => error.is_transient(),
+                _ => false,
+            };
+            let retry = transient
                 && pending.spec.class == ResourceClass::Network
                 && matches!(pending.spec.kind, JobKind::Transcribe | JobKind::Translate)
                 && pending.snapshot.attempts < self.config.network_attempts;
             // A retry must occupy one bounded pending slot. If that slot filled
             // while running, retain the typed failure instead of growing the queue.
             if retry && self.queue.len() < self.config.queue {
-                pending.ready = now.saturating_add(
-                    self.config
-                        .backoff
-                        .saturating_mul(1u32 << (pending.snapshot.attempts - 1)),
-                );
+                let backoff = self
+                    .config
+                    .backoff
+                    .saturating_mul(1u32 << (pending.snapshot.attempts - 1));
+                // Provider delays are advisory and never allowed to park a job for
+                // an unbounded time; the runner's attempt budget still applies.
+                let retry_after = match &outcome {
+                    Err(EditError::Ai(ai::Error::RateLimit {
+                        retry_after_seconds: Some(seconds),
+                    })) => Some(Duration::from_secs(u64::from(*seconds).min(300))),
+                    _ => None,
+                };
+                pending.ready =
+                    now.saturating_add(retry_after.map_or(backoff, |at| backoff.max(at)));
                 pending.snapshot.state = JobState::Backoff;
                 pending.snapshot.stage = JobStage::Backoff;
                 self.events
