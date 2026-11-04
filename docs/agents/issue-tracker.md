@@ -16,8 +16,12 @@ The first lines of every ticket, one per line, exact spelling, so agents can gre
 Status: open | claimed | blocked | resolved | wontfix
 Type: task | research | bug
 Priority: P0 | P1 | P2
-Blocked by: NN, NN        # omit when none
+Assignee: <assigned role or person> | -
+Blocked by: NN, <milestone>/NN        # omit when none
 ```
+
+Bare dependency numbers refer to this milestone; `<milestone>/NN` refers to another.
+[Orchestration](orchestration.md) owns role routing and the claim/review/merge loop.
 
 Body follows. Discussion appends under `## Comments`; the outcome goes under `## Answer`.
 
@@ -31,7 +35,7 @@ A ticket is unblocked when every ticket in its `Blocked by:` line is `resolved`.
 
 ## Operations
 
-- **Publish**: create the file under `.scratch/<feature-slug>/issues/` with the header above.
+- **Create**: create the file under `.scratch/<feature-slug>/issues/` with the header above.
 - **Fetch**: read the path or number the user gives.
 - **Claim**: set `Status: claimed` and save before starting.
 - **Resolve**: write `## Answer`, set `Status: resolved`, and add a one-line pointer in `.scratch/<feature-slug>/map.md` under `Decisions`.
