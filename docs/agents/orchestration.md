@@ -25,6 +25,11 @@ coordinator records tier and track record in `.scratch/agents.md` on every verdi
 
 ## Tickets
 
+Write each ticket so it can finish without a mid-ticket ownership question: every
+piece it reuses either exists on `main` or is listed in `Blocked by`; every quality
+claim names its baseline and metric. Split a critical-path ticket that blocks many
+others into a contract-first slice that merges early and follow-ups.
+
 One ticket = one cohesive responsibility (a crate, contract or user-facing feature)
 under [structural admission](../engineering/standards.md#structural-admission).
 Split a ticket that mixes responsibilities; merge pieces that cannot be tested or
@@ -47,11 +52,13 @@ code is settled by [copy imports](../engineering/workflows.md#copy-imports).
 1. Dispatch with a one-line spec; the rest lives in this file:
    - `Agent loop: <assignee> <slot> max <n> start: <milestone>/NN`
    - `Review: <milestone>/NN <branch>@<sha7> <slot>`
-   Longer briefs go in a spec file (`--spec-file`). Reviewers get a fresh worktree.
+   Longer briefs go in a spec file (`--spec-file`). Reviewers get their own new worktree, never the implementer's.
 2. End the turn; Orca wakes you for mail. Read the `worker_done` summary and the report TL;DR only.
 3. Answer questions with one batched reply; send no acknowledgements.
-4. After a merge, clean up: `orca orchestration worker-release --dispatch <id>`, then `orca worktree rm --worktree path:<worktree> --delete-branch`. Keep a worktree only while its ticket awaits review or fixes.
-5. Dispatch whatever the merge unblocked, opencode first.
+4. Return work to the dispatch that already holds its context: review `changes` go to the implementer's dispatch, re-reviews to the same reviewer's dispatch (`orca orchestration send` reopens a finished worker). Start a new worker only when that dispatch is gone.
+5. After a merge, clean up with `.scratch/bin/cleanup <dispatch-id> <worktree-name>...`. Keep a worktree only while its ticket awaits review or fixes.
+6. Dispatch what `.scratch/bin/frontier` lists, opencode first, critical path first.
+7. Anything outward-facing (posting upstream, changing repo visibility, publishing) needs the maintainer's explicit yes first.
 
 Load `orca skills get orchestration` for CLI details; use handles from receipts.
 
@@ -59,6 +66,10 @@ Load `orca skills get orchestration` for CLI details; use handles from receipts.
 
 1. Claim: re-read the ticket in the main checkout, skip it unless `open`, set `Status: claimed`.
 2. Implement per the [development loop](../engineering/workflows.md#development-loop).
+   Before handing to review, attack your own branch the way a reviewer will: hostile
+   and boundary inputs, cancellation mid-operation, gesture reversal, and every
+   quality metric against its recorded baseline (no language, format or backend may
+   regress). Fix what you find first.
 3. Finish the ticket on one of the two [merge paths](#review-and-merge).
 4. Claim the next frontier ticket with your `Assignee`, up to the spec's maximum.
 5. Send one `worker_done` for the whole loop: at most three sentences (outcomes, report path, follow-ups) with `--report-path`. Then stop.
