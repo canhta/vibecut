@@ -22,6 +22,7 @@ fn synthetic_set_runs_end_to_end_and_writes_both_reports() {
         baseline: None,
         write_baseline: None,
         baseline_revision: None,
+        auto_baseline: false,
     })
     .unwrap();
     assert_eq!(output.report.videos.len(), 2);

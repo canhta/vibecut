@@ -7,7 +7,7 @@ use std::path::{Path, PathBuf};
 use time::{FrameRate, Rounding, TICKS_PER_SECOND, Tick};
 
 /// One human-picked short: ordered source segments, gaps allowed.
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct LabelledClip {
     pub id: String,
@@ -15,14 +15,14 @@ pub struct LabelledClip {
     pub segments: Vec<LabelSegment>,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Priority {
     Must,
     Nice,
 }
 
-#[derive(Clone, Copy, Debug, Deserialize)]
+#[derive(Clone, Copy, Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct LabelSegment {
     pub start: Tick,

@@ -38,6 +38,7 @@ fn run() -> Result<(), String> {
     let mut baseline = None;
     let mut write_baseline = None;
     let mut baseline_revision = None;
+    let mut auto_baseline = true;
     let mut index = 0;
     while index < args.len() {
         let arg = args.get(index).ok_or("missing argument")?;
@@ -82,6 +83,7 @@ fn run() -> Result<(), String> {
                 out = Some(PathBuf::from(args.get(index).ok_or("--out needs a path")?));
             }
             "--no-energy" => energy = false,
+            "--no-baseline" => auto_baseline = false,
             "--transcribe" => transcribe = true,
             "--baseline" => {
                 index += 1;
@@ -132,6 +134,7 @@ fn run() -> Result<(), String> {
         baseline,
         write_baseline,
         baseline_revision,
+        auto_baseline,
     };
     let output = clip_eval::run(&options).map_err(|error| error.to_string())?;
     println!(
@@ -149,4 +152,4 @@ fn run() -> Result<(), String> {
     Ok(())
 }
 
-const USAGE: &str = "usage: cargo xtask clip-eval <set> [--labels DIR] [--provider heuristic|gpt-6-luna] [--live] [--transcribe] [--baseline PATH] [--write-baseline PATH] [--baseline-revision SHA] [--max-cost-usd N] [--k N] [--out DIR] [--no-energy]";
+const USAGE: &str = "usage: cargo xtask clip-eval <set> [--labels DIR] [--provider heuristic|gpt-6-luna] [--live] [--transcribe] [--baseline PATH] [--write-baseline PATH] [--baseline-revision SHA] [--no-baseline] [--max-cost-usd N] [--k N] [--out DIR] [--no-energy]";

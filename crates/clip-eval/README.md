@@ -49,12 +49,14 @@ transcript. It requires `ELEVENLABS_API_KEY` and the same cumulative budget. ASR
 is not an LLM call, so the Luna-only rule does not apply.
 
 A main-revision baseline is an explicit pinned file, never candidate metrics
-relabelled. `--write-baseline` records the heuristic metrics plus source,
-transcript and settings hashes; run it on the pinned main revision. `--baseline`
-loads and validates that file, rejecting a mismatched label set or input
-fingerprint. A `baseline.json` beside the labels is loaded automatically; the
-synthetic fixtures ship one. When no baseline is present the report says the main
-baseline was not measured.
+relabelled. `--write-baseline` records the heuristic metrics plus the complete
+metric identity: source, transcript, resolved pipeline settings, ordered picks
+and priorities, `k`, language and energy mode. Run it on the pinned main
+revision. `--baseline` loads and validates that file, rejecting a mismatched
+label set or any identity mismatch as a typed refusal. A `baseline.json` beside
+the labels is loaded automatically; the synthetic fixtures ship one. Use
+`--no-baseline` to ignore it. When no baseline is present the report says the
+main baseline was not measured. The persisted baseline schema is 2.
 
 ## Label format
 
@@ -137,8 +139,9 @@ overlapping envelopes, overlapping suggestions, boundary word/sentence cuts,
 stable synthetic WAV generation, typed missing/mismatched label hashes, untimed
 ASR punctuation attachment, the extracted-chunk sample grid, cumulative
 ASR+LLM budget reservations, a second video refused by one run budget, pinned
-baseline comparison where candidate and main metrics differ, and baseline input
-mismatch refusal. `cargo xtask ci` runs the workspace suite. The synthetic set has
+baseline comparison where candidate and main metrics differ, and baseline identity
+refusal for changed picks, changed `k`, changed energy mode and a changed source
+hash. `cargo xtask ci` runs the workspace suite. The synthetic set has
 two fixtures plus a pinned baseline and is the acceptance path before maintainer
 labels exist.
 

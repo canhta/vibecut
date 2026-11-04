@@ -11,7 +11,10 @@ pub struct BaselineInput {
     pub source_sha256: String,
     pub transcript_sha256: String,
     pub settings_sha256: String,
+    pub labels_sha256: String,
     pub language: String,
+    pub k: usize,
+    pub energy: bool,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -40,22 +43,33 @@ impl Baseline {
     }
 
     pub fn validate(&self) -> Result<()> {
-        if self.schema != 1
+        if self.schema != 2
             || self.provider != "heuristic"
             || self.revision.trim().is_empty()
             || self.inputs.len() != self.videos.len()
         {
             return Err(Error::BaselineInvalid);
         }
+        let mut k = None;
+        let mut energy = None;
         for (label, input) in &self.inputs {
             if !self.videos.contains_key(label)
                 || input.source_sha256.len() != 64
                 || input.transcript_sha256.len() != 64
                 || input.settings_sha256.len() != 64
+                || input.labels_sha256.len() != 64
                 || input.language.trim().is_empty()
+                || input.k == 0
             {
                 return Err(Error::BaselineInvalid);
             }
+            if k.is_some_and(|value| value != input.k)
+                || energy.is_some_and(|value| value != input.energy)
+            {
+                return Err(Error::BaselineInvalid);
+            }
+            k = Some(input.k);
+            energy = Some(input.energy);
         }
         Ok(())
     }

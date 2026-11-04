@@ -60,6 +60,7 @@ pub struct Options {
     pub baseline: Option<PathBuf>,
     pub write_baseline: Option<PathBuf>,
     pub baseline_revision: Option<String>,
+    pub auto_baseline: bool,
 }
 
 impl Options {
@@ -204,6 +205,9 @@ pub fn run(options: &Options) -> Result<RunOutput> {
     let stems: Vec<String> = paths.iter().map(|path| file_stem(path)).collect();
 
     let baseline_path = options.baseline.clone().or_else(|| {
+        if !options.auto_baseline {
+            return None;
+        }
         let auto = labels_dir.join("baseline.json");
         auto.exists().then_some(auto)
     });
@@ -263,7 +267,15 @@ pub fn run(options: &Options) -> Result<RunOutput> {
         let profile = registry.profile(&language);
         let settings = label.settings.resolve().map_err(Error::Options)?;
         let input = build_input(&cached.transcript, profile, &settings, &language)?;
-        let fingerprints = baseline_input(&source_sha, &cached, &settings, &language)?;
+        let fingerprints = baseline_input(
+            &source_sha,
+            &cached,
+            &settings,
+            &label,
+            &language,
+            options.k,
+            options.energy,
+        )?;
         let main_metrics = if let Some(baseline) = &baseline {
             baseline.validate_input(stem, &fingerprints)?;
             Some(baseline.metrics(stem)?.clone())
@@ -381,7 +393,7 @@ pub fn run(options: &Options) -> Result<RunOutput> {
             .clone()
             .unwrap_or_else(|| revision.clone());
         let written = Baseline {
-            schema: 1,
+            schema: 2,
             revision: baseline_revision,
             provider: "heuristic".into(),
             note: "Pinned 01 heuristic + 02 snapping baseline; regenerate with --write-baseline when pipeline logic changes.".into(),
@@ -524,13 +536,19 @@ fn baseline_input(
     source_sha: &str,
     cached: &transcript::CachedTranscript,
     settings: &ResolvedSettings,
+    label: &LabelFile,
     language: &LanguageTag,
+    k: usize,
+    energy: bool,
 ) -> Result<BaselineInput> {
     Ok(BaselineInput {
         source_sha256: source_sha.to_owned(),
         transcript_sha256: sha256_file(&cached.cache_path)?,
         settings_sha256: sha256_bytes(&serde_json::to_vec(settings)?),
+        labels_sha256: sha256_bytes(&serde_json::to_vec(&label.clips)?),
         language: language.as_str().to_owned(),
+        k,
+        energy,
     })
 }
 
