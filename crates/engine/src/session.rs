@@ -369,7 +369,7 @@ impl Session {
     }
 }
 // The caller already owns Value; this caps additional processing, not its creation.
-fn budget(value: &Value) -> Result<()> {
+pub(crate) fn budget(value: &Value) -> Result<()> {
     let mut stack = vec![(value, 0)];
     let mut nodes = 0usize;
     let mut bytes = 0usize;

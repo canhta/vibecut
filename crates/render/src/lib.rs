@@ -1,5 +1,7 @@
 //! Shared CPU pixels, absolute-sample audio, and finalized export execution.
 mod audio;
+mod caption;
+pub use caption::{CaptionBackground, CaptionOutline, CaptionPosition, CaptionStyle};
 mod export;
 mod image;
 mod scene;
@@ -7,6 +9,7 @@ mod sources;
 pub use audio::{AudioBlock, mix_audio};
 pub use export::{
     ExportMode, ExportReceipt, ExportSettings, HdrPolicy, export, export_with_sources,
+    validate_output_path,
 };
 pub use image::Image;
 use media::AssetId;

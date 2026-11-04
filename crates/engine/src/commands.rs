@@ -21,6 +21,14 @@ impl CommandSpec {
     /// Coarse session availability. Target/parameter validation occurs at execution.
     pub fn enabled(&self, session: &crate::Session) -> bool {
         match self.id {
+            "export_subtitles" | "burn_subtitles" => {
+                !session.transaction_active()
+                    && session.project().data().timeline.tracks.iter().any(|t| {
+                        t.items
+                            .iter()
+                            .any(|i| matches!(i.content, ItemParams::Caption(_)))
+                    })
+            }
             "begin_gesture" => !session.transaction_active(),
             "commit_gesture" | "cancel_gesture" => session.gesture_active(),
             "undo" => session.can_undo(),
@@ -60,7 +68,7 @@ impl CommandSpec {
 }
 macro_rules! commands {
     ($($variant:ident, $id:literal, $label:literal { $($(#[$attr:meta])* $field:ident : $ty:ty),* $(,)? });* $(;)?) => {
-        /// All project mutations. Fields are required; unknown JSON fields are refused.
+        /// Registered edits, session controls and export requests. Unknown fields are refused.
         #[derive(Clone, Debug, Serialize, Deserialize)]
         #[serde(tag = "command", content = "params", deny_unknown_fields)]
         pub enum Command {
@@ -85,6 +93,8 @@ fn required_option<'de, D: serde::Deserializer<'de>, T: Deserialize<'de>>(
     Option::<T>::deserialize(d)
 }
 commands! {
+    ExportSubtitles, "export_subtitles", "Export subtitle file" { track: TrackId, format: captions::Format, languages: Vec<captions::LanguageTag>, path: std::path::PathBuf, overwrite: bool };
+    BurnSubtitles, "burn_subtitles", "Burn subtitles into MP4" { range: time::TimeRange, languages: Vec<captions::LanguageTag>, style: render::CaptionStyle, portrait: bool, path: std::path::PathBuf, overwrite: bool };
     AddAsset, "add_asset", "Add asset" { asset: SourceAsset };
     AddTrack, "add_track", "Add track" { name: NfcText, kind: TrackKind };
     RemoveTrack, "remove_track", "Remove track" { track: TrackId };

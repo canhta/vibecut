@@ -48,6 +48,36 @@ pressure clears idle entries before one retry. `text_cache_stats` reports hits,
 misses, bytes and entries; `clear_text_cache` releases them. Observed repeat-frame
 benefit and cached/uncached pixel equality are recorded in the ticket report.
 
+## Subtitle styling and burn-in
+
+`RenderSettings::caption_style` controls bundled font family/style, RGBA fill,
+outer outline, rounded background box, top/middle/bottom position, safe area and
+maximum total lines. Size, outline and box dimensions are pixels at 1080 output
+lines and scale with output height in every aspect ratio. The safe area is a
+0–40 percent inset on each canvas edge; the default is 5 percent. An explicit
+item placement overrides that default destination. Caption geometry uses a
+bounded line-height band inside the safe rectangle rather than a full-frame
+raster. Settings are transient and do not change the project persistence schema.
+
+Selected language payloads join in display order with a mandatory line break.
+Unicode UAX #14 wrapping and bundled CJK fallback handle both Han scripts without
+inserted spaces; the text owner normalizes NFC and keeps graphemes intact. Empty
+payloads do not paint a box. Missing requested languages, a line-count overflow,
+or text that cannot fit its destination return typed refusals; output never
+silently drops the second language. Cue activity uses half-open source ranges,
+so gaps have no caption pixels. Both `preview_frame` and `render_frame` call the
+same overlay path. Outline, box, font, size, position, line limit, text and pixel
+geometry participate in the existing bounded raster cache; there is no second
+caption cache or colour conversion.
+
+`tests/captions.rs` pins visually inspected Vietnamese/English and Hans/Hant
+portrait goldens, NFC/NFD equality, safe-area clipping, gap boundaries, cached
+versus uncached equality and zero preview/export pixel difference. Its encoded
+MP4 test measures decoded pixel error and writes `caption-burn-decoded.png` under
+`target/fixtures/render/`. The ignored `caption_frame_benchmark` measures the same
+public renderer with and without raster reuse at 1080×1920; measurements and host
+limits live in the ticket's local evidence report.
+
 ## Audio clock and headroom
 
 `mix_audio(project, absolute_start_sample, frames, channels, sources, hooks)` is

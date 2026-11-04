@@ -13,7 +13,7 @@ mod session;
 pub use commands::{
     Command, CommandSpec, CreatedId, FieldSchema, Move, NewItem, Outcome, registry,
 };
-pub use rendering::submit_export;
+pub use rendering::{submit_export, subtitle_file};
 pub use session::{JobTarget, Session};
 
 /// Safe diagnostic categories: never include parameter values or user text.

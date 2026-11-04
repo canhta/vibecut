@@ -1,6 +1,6 @@
 use crate::{
-    Error, ExecutionHooks, Image, MemoryKind, Result, SourceProvider, Unavailable, check,
-    image::color,
+    CaptionPosition, CaptionStyle, Error, ExecutionHooks, Image, MemoryKind, Result,
+    SourceProvider, Unavailable, check, image::color,
 };
 use project::{Item, ItemId, ItemParams, Project};
 use std::{collections::BTreeMap, sync::Arc};
@@ -77,6 +77,7 @@ pub struct RenderSettings {
     pub text_cache_bytes: u64,
     pub text_cache_entries: usize,
     pub caption_languages: Vec<captions::LanguageTag>,
+    pub caption_style: CaptionStyle,
 }
 impl RenderSettings {
     pub fn from_project(project: &Project) -> Self {
@@ -88,6 +89,7 @@ impl RenderSettings {
             text_cache_bytes: 8 << 20,
             text_cache_entries: 4,
             caption_languages: Vec::new(),
+            caption_style: CaptionStyle::default(),
         }
     }
     pub fn portrait(project: &Project) -> Self {
@@ -98,6 +100,7 @@ impl RenderSettings {
     }
     fn validate(&self, project: &Project) -> Result<()> {
         Image::bytes(self.width, self.height)?;
+        self.caption_style.validate()?;
         if self.background_blur.is_some_and(|r| r > 64)
             || self.placements.len() > 100000
             || self.text_cache_bytes > 256 << 20
@@ -140,9 +143,12 @@ struct TextKey {
     fill: [u8; 4],
     width: u32,
     height: u32,
-    font: &'static str,
-    style: &'static str,
-    fallbacks: &'static str,
+    font: String,
+    style: String,
+    outline: Option<(u32, [u8; 4])>,
+    background: Option<(u32, u32, [u8; 4])>,
+    position: CaptionPosition,
+    max_lines: Option<usize>,
 }
 struct TextEntry {
     image: Arc<Image>,
@@ -199,7 +205,35 @@ impl<'a> Renderer<'a> {
             .get(&item.id)
             .copied()
             .unwrap_or_else(|| {
-                if matches!(item.content, ItemParams::Text(_) | ItemParams::Caption(_)) {
+                if matches!(item.content, ItemParams::Caption(_)) {
+                    let style = &self.settings.caption_style;
+                    let inset = f64::from(style.safe_area_percent) / 100.0;
+                    let decoration = style
+                        .outline
+                        .as_ref()
+                        .map_or(0.0, |o| o.width)
+                        .max(style.background.as_ref().map_or(0.0, |b| b.padding));
+                    let height = ((f64::from(style.size) * style.max_lines as f64 * 2.0
+                        + f64::from(decoration) * 2.0
+                        + 4.0)
+                        / 1080.0)
+                        .min(1.0 - 2.0 * inset);
+                    let y = match style.position {
+                        CaptionPosition::Top => inset,
+                        CaptionPosition::Middle => (1.0 - height) / 2.0,
+                        CaptionPosition::Bottom => 1.0 - inset - height,
+                    };
+                    Placement {
+                        destination: Rect {
+                            x: inset,
+                            y,
+                            width: 1.0 - 2.0 * inset,
+                            height,
+                        },
+                        fit: Fit::Stretch,
+                        ..Default::default()
+                    }
+                } else if matches!(item.content, ItemParams::Text(_)) {
                     Placement {
                         destination: Rect {
                             x: 0.1,
@@ -330,8 +364,14 @@ impl<'a> Renderer<'a> {
                     }
                 }
                 ItemParams::Text(p) => {
-                    let image =
-                        self.text(p.content.as_str(), p.font_size, p.color.0, placement, hooks)?;
+                    let image = self.text(
+                        p.content.as_str(),
+                        p.font_size,
+                        p.color.0,
+                        placement,
+                        None,
+                        hooks,
+                    )?;
                     draw(&mut out, &image, placement, hooks)?;
                 }
                 ItemParams::Caption(p) => {
@@ -341,7 +381,7 @@ impl<'a> Renderer<'a> {
                         .iter()
                         .filter(|c| c.range.start() <= source_at && source_at < c.range.end())
                     {
-                        let selected: Vec<_> = if self.settings.caption_languages.is_empty() {
+                        let mut selected: Vec<_> = if self.settings.caption_languages.is_empty() {
                             cue.texts
                                 .get(&cue.source_lang)
                                 .or_else(|| cue.texts.values().next())
@@ -358,6 +398,7 @@ impl<'a> Renderer<'a> {
                                 })
                                 .collect::<Result<Vec<_>>>()?
                         };
+                        selected.retain(|text| !text.text.as_str().trim().is_empty());
                         let bytes = selected
                             .iter()
                             .try_fold(0usize, |sum, text| {
@@ -377,8 +418,15 @@ impl<'a> Renderer<'a> {
                                 }
                                 value.push_str(text.text.as_str());
                             }
-                            let size = self.project.data().canvas.height as f32 * 0.06;
-                            let image = self.text(&value, size, [255; 4], placement, hooks)?;
+                            let style = self.settings.caption_style.clone();
+                            let image = self.text(
+                                &value,
+                                style.size,
+                                style.color,
+                                placement,
+                                Some(&style),
+                                hooks,
+                            )?;
                             draw(&mut out, &image, placement, hooks)?;
                         }
                     }
@@ -422,6 +470,7 @@ impl<'a> Renderer<'a> {
         size: f32,
         fill: [u8; 4],
         placement: Placement,
+        caption: Option<&CaptionStyle>,
         hooks: &dyn ExecutionHooks,
     ) -> Result<Arc<Image>> {
         if value.len() > 16384 {
@@ -433,8 +482,15 @@ impl<'a> Renderer<'a> {
         let h = (f64::from(self.settings.height) * placement.destination.height)
             .round()
             .max(1.0) as u32;
-        let size = size * self.settings.width as f32 / self.project.data().canvas.width as f32;
-        let key_bytes = value.len() as u64 + 256;
+        let scale = if caption.is_some() {
+            self.settings.height as f32 / 1080.0
+        } else {
+            self.settings.width as f32 / self.project.data().canvas.width as f32
+        };
+        let size = size * scale;
+        let font = caption.map_or("Inter", |s| s.font.as_str());
+        let font_style = caption.map_or("Regular", |s| s.font_style.as_str());
+        let key_bytes = (value.len() + font.len() + font_style.len()) as u64 + 512;
         let key_lease = match hooks.reserve(MemoryKind::Compositor, key_bytes) {
             Err(Error::Budget { .. }) if !self.text_cache.is_empty() => {
                 self.clear_text_cache();
@@ -442,16 +498,26 @@ impl<'a> Renderer<'a> {
             }
             result => result?,
         };
-        let defaults = text::LayoutOptions::default();
         let key = TextKey {
             value: value.to_owned(),
             size: size.to_bits(),
             fill,
             width: w,
             height: h,
-            font: defaults.family,
-            style: defaults.style,
-            fallbacks: "bundled-default-v1",
+            font: font.into(),
+            style: font_style.into(),
+            outline: caption
+                .and_then(|s| s.outline.as_ref())
+                .map(|o| ((o.width * scale).to_bits(), o.color)),
+            background: caption.and_then(|s| s.background.as_ref()).map(|b| {
+                (
+                    (b.padding * scale).to_bits(),
+                    (b.radius * scale).to_bits(),
+                    b.color,
+                )
+            }),
+            position: caption.map_or(CaptionPosition::Top, |s| s.position),
+            max_lines: caption.map(|s| s.max_lines),
         };
         self.cache_clock = self.cache_clock.saturating_add(1);
         if let Some(entry) = self.text_cache.get_mut(&key) {
@@ -460,10 +526,10 @@ impl<'a> Renderer<'a> {
             return Ok(entry.image.clone());
         }
         self.cache_stats.misses = self.cache_stats.misses.saturating_add(1);
-        let image = match raster_text(value, size, fill, w, h, hooks) {
+        let image = match raster_text(&key, hooks) {
             Err(Error::Budget { .. }) if !self.text_cache.is_empty() => {
                 self.clear_text_cache();
-                raster_text(value, size, fill, w, h, hooks)?
+                raster_text(&key, hooks)?
             }
             result => result?,
         };
@@ -510,47 +576,88 @@ fn source_time(item: &Item, at: Tick) -> Result<Tick> {
         )
         .ok_or(Error::Invalid("item source overflow"))
 }
-fn raster_text(
-    value: &str,
-    size: f32,
-    fill: [u8; 4],
-    w: u32,
-    h: u32,
-    hooks: &dyn ExecutionHooks,
-) -> Result<Image> {
+fn raster_text(key: &TextKey, hooks: &dyn ExecutionHooks) -> Result<Image> {
+    let (w, h, size) = (key.width, key.height, f32::from_bits(key.size));
+    if !size.is_finite() || size <= 0.0 || size > 4096.0 {
+        return Err(Error::Invalid("scaled font size"));
+    }
     let bytes = Image::bytes(w, h)?;
+    let outline = key.outline.map(|(width, color)| text::Outline {
+        width: f32::from_bits(width),
+        color: rgba(color),
+        kind: text::StrokeKind::Outer,
+    });
+    let background = key
+        .background
+        .map(|(padding, radius, color)| text::Rectangle {
+            padding: f32::from_bits(padding),
+            radius: f32::from_bits(radius),
+            color: rgba(color),
+        });
+    let pad = outline
+        .map_or(0.0, |o| o.width)
+        .max(background.map_or(0.0, |b| b.padding))
+        .ceil();
+    if w as f32 <= pad * 2.0 || h as f32 <= pad * 2.0 {
+        return Err(Error::Invalid("caption decoration exceeds destination"));
+    }
     let _scratch = hooks.reserve(
         MemoryKind::Compositor,
-        bytes * 2 + value.len() as u64 * 512 + (f64::from(size).powi(2) * 32.0).ceil() as u64,
+        bytes * 2 + key.value.len() as u64 * 512 + (f64::from(size).powi(2) * 32.0).ceil() as u64,
     )?;
     let layout = text::layout(
-        value,
+        &key.value,
         &text::LayoutOptions {
+            family: &key.font,
+            style: &key.style,
             size,
-            max_width: w as f32,
+            max_width: w as f32 - pad * 2.0,
             align: text::Align::Center,
+            max_lines: key.max_lines,
             ..Default::default()
         },
     )?;
+    let b = layout.bounds;
+    if key.max_lines.is_some()
+        && (layout.overflow
+            || b.x0 < 0.0
+            || b.x1 > w as f32 - 2.0 * pad
+            || b.y1 - b.y0 > h as f32 - pad * 2.0)
+    {
+        return Err(Error::Unsupported(
+            "caption exceeds line or destination limits",
+        ));
+    }
+    let y = if key.max_lines.is_none() {
+        0.0
+    } else {
+        match key.position {
+            CaptionPosition::Top => pad - b.y0,
+            CaptionPosition::Middle => (h as f32 - (b.y1 - b.y0)) / 2.0 - b.y0,
+            CaptionPosition::Bottom => h as f32 - pad - b.y1,
+        }
+    };
+    check(hooks)?;
     let image = text::render(
         &layout,
         text::Canvas {
             width: w,
             height: h,
         },
-        (0.0, 0.0),
+        (pad, y),
         &text::Paint {
-            fill: text::Color::rgba(
-                fill.first().copied().unwrap_or(0),
-                fill.get(1).copied().unwrap_or(0),
-                fill.get(2).copied().unwrap_or(0),
-                fill.get(3).copied().unwrap_or(0),
-            ),
-            ..Default::default()
+            fill: rgba(key.fill),
+            outline,
+            background,
         },
     )?;
     Image::from_rgba8(w, h, &image.pixels, true, 13, hooks)
 }
+fn rgba(value: [u8; 4]) -> text::Color {
+    let [r, g, b, a] = value;
+    text::Color::rgba(r, g, b, a)
+}
+
 fn over(destination: &mut [f32; 4], source: [f32; 4], opacity: f32) {
     let inverse = 1.0 - source.get(3).copied().unwrap_or(0.0) * opacity;
     for (d, s) in destination.iter_mut().zip(source) {

@@ -25,6 +25,9 @@ pub(crate) fn check_budget(command: &Command) -> Result<()> {
             }
             Command::MoveItems { moves } if moves.len() > 100_000 => return Err(EditError::Limit),
             Command::Delete { items } if items.len() > 100_000 => return Err(EditError::Limit),
+            Command::ExportSubtitles { .. } | Command::BurnSubtitles { .. } => {
+                return Err(EditError::Invalid("export commands require job submission"));
+            }
             Command::Undo {}
             | Command::Redo {}
             | Command::BeginGesture {}
@@ -412,6 +415,9 @@ pub(crate) fn apply(
                 // not clone an unvalidated allocation or publish a partial batch.
                 data = apply(data, command, created, next, sources)?.into_data();
             }
+        }
+        Command::ExportSubtitles { .. } | Command::BurnSubtitles { .. } => {
+            return Err(EditError::Invalid("export commands require job submission"));
         }
         Command::Undo {}
         | Command::Redo {}

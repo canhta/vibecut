@@ -526,3 +526,35 @@ the fence, cancellation/unwind drops staging and preserves the existing file.
 `tests/export_jobs.rs` verifies both sides of the fence with real production
 render hooks, worker unwind, persistent-cache reclamation and oversized-frame
 refusal before allocation. This does not establish crash/power-loss durability.
+
+## Subtitle export commands
+
+The existing `registry()` also declares `export_subtitles` and `burn_subtitles`.
+They publish files without editing the Session or undo history. Dispatch their
+strict JSON parameters with `Session::execute_export(runner, input, id, params)`
+or their typed `Command` with `submit_export_command`; ordinary edit execution,
+batches and active transactions refuse file publication. Both execute against a
+captured immutable project snapshot in the existing JobRunner.
+
+`export_subtitles` takes `track` (caption TrackId), `format` (`srt` or `web_vtt`),
+`languages` (one tag or two distinct tags in display order), native `path`, and
+`overwrite` (bool). `subtitle_file` exposes the same serialization plus captions'
+typed repair warnings for preflight presentation. Each caption item's source
+window maps to its output start through captions' EditMapping, preserving cuts,
+repeated occurrences and timeline gaps. Captions owns the only SRT/VTT serializer.
+This path opens no media and works with an offline source. Jobs reserve bounded
+mapping/serialization scratch, write through project's StreamingStage, finalize,
+then fence cancellation before atomic publication. Existing files survive refusal
+or cancellation; source path aliases are refused through render's shared output
+admission. Job output contains no transcript text.
+
+`burn_subtitles` takes `range` (integer ticks), `languages`, `style` (render's
+CaptionStyle), `portrait` (bool), native `path` and `overwrite` (bool). Portrait
+selects 1080×1920; otherwise the project canvas is retained. It requires a visible
+caption item intersecting the range and forces encoding through the production
+render export path. Render owns pixel styling, media admission, encoding and
+atomic finalization; missing/changed required video or audio returns its typed
+asset/range diagnostics and preserves the previous destination. Advanced codec,
+canvas and placement choices remain available through `submit_export` with
+render's ExportSettings. UI/CLI adapters consume these engine APIs; they do not
+implement their own overlay or serializer.

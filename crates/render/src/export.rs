@@ -140,38 +140,7 @@ pub fn export_with_sources(
         return Err(Error::Unavailable(unavailable));
     }
     let omitted: BTreeSet<_> = unavailable.iter().map(|u| u.asset).collect();
-    // Refuse direct/symlink/hard-link aliases of every project source. Missing
-    // destinations are normalized through their existing parent before staging.
-    let normalized = if path.exists() {
-        std::fs::canonicalize(path)?
-    } else {
-        let parent = path
-            .parent()
-            .filter(|p| !p.as_os_str().is_empty())
-            .unwrap_or(Path::new("."));
-        std::fs::canonicalize(parent)?
-            .join(path.file_name().ok_or(Error::Invalid("output filename"))?)
-    };
-    for asset in &project.data().assets {
-        if normalized == asset.path() {
-            return Err(Error::Invalid("output aliases a source"));
-        }
-        #[cfg(unix)]
-        if let (Ok(output), Ok(source)) = (std::fs::metadata(path), std::fs::metadata(asset.path()))
-        {
-            use std::os::unix::fs::MetadataExt;
-            if output.dev() == source.dev() && output.ino() == source.ino() {
-                return Err(Error::Invalid("output hard-links a source"));
-            }
-        }
-        #[cfg(not(unix))]
-        if path.exists()
-            && media::ContentHash::read_with_cancel(path, || hooks.cancelled())?
-                == asset.content_hash()
-        {
-            return Err(Error::Invalid("output may alias source content"));
-        }
-    }
+    validate_output_path(project, path, hooks)?;
     let copy = if settings.mode != ExportMode::Encode {
         copy_plan(project, range, settings, hooks)?
             .filter(|plan| !omitted.contains(&plan.asset.id()))
@@ -913,4 +882,54 @@ impl SourceProvider for OmittedSources<'_> {
             self.inner.audio(a, id, start, count, rate, h)
         }
     }
+}
+
+/// Refuse destination aliases of source media before staging any exported file.
+pub fn validate_output_path(
+    project: &Project,
+    path: &Path,
+    hooks: &dyn ExecutionHooks,
+) -> Result<()> {
+    check(hooks)?;
+    // Refuse direct/symlink/hard-link aliases of every project source. Missing
+    // destinations are normalized through their existing parent before staging.
+    let normalized = if path.exists() {
+        std::fs::canonicalize(path)?
+    } else {
+        let parent = path
+            .parent()
+            .filter(|p| !p.as_os_str().is_empty())
+            .unwrap_or(Path::new("."));
+        std::fs::canonicalize(parent)?
+            .join(path.file_name().ok_or(Error::Invalid("output filename"))?)
+    };
+    for asset in &project.data().assets {
+        let source = std::fs::canonicalize(asset.path()).or_else(|_| {
+            let parent = asset.path().parent().unwrap_or(Path::new("."));
+            std::fs::canonicalize(parent)
+                .map(|parent| parent.join(asset.path().file_name().unwrap_or_default()))
+        });
+        if path == asset.path()
+            || normalized == asset.path()
+            || source.is_ok_and(|source| normalized == source)
+        {
+            return Err(Error::Invalid("output aliases a source"));
+        }
+        #[cfg(unix)]
+        if let (Ok(output), Ok(source)) = (std::fs::metadata(path), std::fs::metadata(asset.path()))
+        {
+            use std::os::unix::fs::MetadataExt;
+            if output.dev() == source.dev() && output.ino() == source.ino() {
+                return Err(Error::Invalid("output hard-links a source"));
+            }
+        }
+        #[cfg(not(unix))]
+        if path.exists()
+            && media::ContentHash::read_with_cancel(path, || hooks.cancelled())?
+                == asset.content_hash()
+        {
+            return Err(Error::Invalid("output may alias source content"));
+        }
+    }
+    Ok(())
 }

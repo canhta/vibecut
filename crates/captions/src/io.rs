@@ -3,7 +3,8 @@ use encoding_rs::{UTF_8, UTF_16BE, UTF_16LE, WINDOWS_1252};
 use std::collections::BTreeMap;
 use time::{Rounding, SourceRange, Tick};
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum Format {
     Srt,
     WebVtt,

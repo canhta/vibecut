@@ -185,6 +185,7 @@ Repair positions refer to sorted cue ordinals; import syntax positions are lines
 position zero means a document-wide warning. IDs and language edit flags survive
 track repair. Repair can return an error after modifying earlier cues.
 
+`Format` serializes as `srt` or `web_vtt` for engine command dispatch.
 `export(track, format, languages)` selects one tag or two distinct tags in display
 order; missing/empty language text warns and is omitted. Output uses UTF-8/LF;
 blank payload lines are removed with a warning to prevent block splitting. SRT
