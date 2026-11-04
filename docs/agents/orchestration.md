@@ -69,9 +69,12 @@ code is settled by [copy imports](../engineering/workflows.md#copy-imports).
    evidence is missing, dispatch research and decide from it. Bring the maintainer
    only what the Maintainer row owns.
 4. Return work to the dispatch that already holds its context: re-reviews to the same reviewer's dispatch (`orca orchestration send` reopens a finished worker). Review `changes` go to the implementer's dispatch; start a new worker on the branch only when that dispatch is gone.
-5. After a merge, clean up with `.scratch/bin/cleanup <dispatch-id> <worktree-name>...`. Keep the implementer and reviewer (dispatch and worktree) until the ticket merges or is dropped; only then are they removed.
+5. After a merge, clean up with `.scratch/bin/cleanup <dispatch-id>... <worktree-name>...` (releases every dispatch of the ticket, closes their terminals, removes worktrees). A message to a finished dispatch may open a new dispatch id: address follow-ups to the id `worker-list` shows for that worktree. Keep the implementer and reviewer (dispatch and worktree) until the ticket merges or is dropped; only then are they removed.
 6. Dispatch what `.scratch/bin/frontier` lists, opencode first, critical path first.
-7. Anything outward-facing (posting upstream, changing repo visibility, publishing) needs the maintainer's explicit yes first.
+7. Only the coordinator pauses or resumes workers, by message. A pause also kills
+   any app, `osascript` or build the worker started; workers never infer a pause from
+   other text.
+8. Anything outward-facing (posting upstream, changing repo visibility, publishing) needs the maintainer's explicit yes first.
 
 Load `orca skills get orchestration` for CLI details; use handles from receipts.
 
@@ -91,7 +94,8 @@ Load `orca skills get orchestration` for CLI details; use handles from receipts.
 5. `worker_done` is at most three sentences (outcomes, report path, follow-ups) with `--report-path`. Then stop.
 
 **Bugs found outside the ticket at hand** (any agent; a defect in the ticket under review stays a review finding):
-- Small or medium and contained (clear cause, fix stays inside one owner, no design change): fix it now in its own commit with a regression test, and list it in your report.
+- Small or medium and contained (clear cause, fix stays inside one owner, no design change): fix it now, without asking, in its own commit with a regression test, and list it in your report.
+- A failure that does not reproduce on a local and a hosted attempt is closed as unreproduced (run ids recorded) and reopened when it fails again; no diagnostic campaigns.
 - Large (data loss, crash, security, cross-owner or design-level): create a ticket right away (`Type: bug`, priority by severity, reproduction included) and name it in `worker_done`; `ask` at once if it blocks your ticket or corrupts user data.
 
 Talk to the coordinator only through `ask` (blocking question) and `worker_done`.
@@ -114,6 +118,12 @@ fast-forward to `main`. T2–T4 tickets go to review.
 - A re-review checks the earlier findings and the fix diff, not the whole ticket again.
 - A finding that turns on product scope or policy the docs do not settle is an `ask` to the coordinator, not a `changes` verdict; it never counts against the implementer's tier.
 - A failure called "known" cites its ticket; with none, the reviewer files a `Type: bug` ticket first.
+
+**Merge queue.** One merge into `main` at a time. An approved reviewer asks the
+coordinator for the merge window; the coordinator grants windows in order and holds
+everyone else, its own docs commits included. While waiting, rebase onto the queued
+candidate and run CI there, so the window needs only the rebase rule in
+[checks](../engineering/verification.md#checks).
 
 After either path the merger writes `## Answer` (SHA, evidence path), sets
 `Status: resolved` and adds one decision line to the milestone `map.md`.

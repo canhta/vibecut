@@ -61,7 +61,8 @@ matches in tracked files and branch commit messages.
 | Provider adapters | Offline fixtures for schema, errors, retry, consent; separate live test |
 
 Tests exercise public interfaces with injected codec and provider adapters,
-including cancellation and failure.
+including cancellation and failure. Concurrency tests order events with gates or
+channels the test controls, never with sleeps or timing margins.
 
 ## Fixtures
 

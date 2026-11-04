@@ -14,6 +14,10 @@
   into the real command path, read engine project state plus app-owned widget state,
   and capture a window or panel screenshot that waits for a presented frame and
   returns a typed unavailable or timeout failure.
+- **Decide visually, from source values.** Choose an icon set, colour or layout
+  from a side-by-side render at matched size against the reference, never from a
+  library's reputation; take colour values from the reference's source tokens
+  (CSS or design tokens), not from screenshot pixels.
 - **Two languages from day one.** All strings come from the English and Vietnamese
   catalogs; layouts survive the longer string.
 
