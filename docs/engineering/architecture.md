@@ -13,7 +13,7 @@ with a named consumer.
 | Package | Path | Owns | May depend on |
 |---|---|---|---|
 | time | crates/time | Ticks, rational rates, source ranges | - |
-| media | crates/media | Safe FFmpeg I/O: probe, demux/mux, decode/encode, hardware acceleration, conversion, speech-audio preparation | time |
+| media | crates/media | Safe FFmpeg I/O: probe, demux/mux, decode/encode, hardware acceleration, conversion, speech and vision media preparation | time |
 | project | crates/project | Timeline/animation model, validation/evaluation, persistence, atomic file writes | time, media, captions |
 | captions | crates/captions | Transcript and cue model, segmentation, mapping, language profiles, SRT/VTT | time |
 | text | crates/text | Unicode shaping and rasterization | - |
@@ -46,6 +46,7 @@ README holds the details.
 | Job | engine | Identity, input fingerprint, progress, cancellation, typed failure, checkpoint |
 | Session, commands | engine | Owns immutable Arc<Project> snapshots and bounded history; typed Command and `execute(command_id, params) -> Result<Outcome>`; see [engine contract](../../crates/engine/README.md) |
 | Codec interfaces | media | Reference-counted packets and frames, rational time bases, decode/encode/flush, seek |
+| Vision preparation | media | Bounded exact-time shot frames, face crops and 16 kHz MFCC grid; detector inference and tracking stay with their owners; see [media vision preparation](../../crates/media/README.md#vision-preparation) |
 | Export execution | render | Project snapshot, range and settings in; progress and cancellation hooks out |
 | Clip batch export | engine | One job per accepted ordered-segment short, with output naming, cue mapping, per-short cancel/retry; see [engine contract](../../crates/engine/README.md#clip-batch-export) |
 | Local models | ai + engine | ai owns catalog/download consent/integrity and shared transport; engine owns transfers and native ArtifactCache bundles; see [model transfer contract](../../crates/engine/README.md#local-model-transfers) |

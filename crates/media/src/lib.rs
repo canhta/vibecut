@@ -11,6 +11,7 @@ mod model;
 mod mux;
 mod read;
 mod resample;
+mod vision_prep;
 
 pub use asset::{
     AssetAvailability, AssetData, AssetId, ContentHash, SourceAsset, SourceProbe, SourceStream,
@@ -34,6 +35,10 @@ pub use model::{
 pub use mux::{Container, MuxSink, Muxer};
 pub use read::{PacketReader, VideoReader, probe};
 pub use resample::{AudioResampler, AudioSampleFormat};
+pub use vision_prep::{
+    FACE_CROP_SIZE, FaceBox, FaceCrop, MFCC_COEFFICIENTS, MfccFrame, VISION_SAMPLE_RATE,
+    VisionFrame, VisionPrepLimits, decode_frame_at, decode_shot_frames, mfcc_range,
+};
 
 /// Typed failures from the media boundary. Provider paths and media text are not
 /// included in error messages; the FFmpeg source retains the numeric error category.

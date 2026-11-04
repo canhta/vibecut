@@ -274,3 +274,43 @@ between packets and frames. Engine clip snapping consumes this measurement;
 there is no separate decoder or voice-activity model. RMS is an energy hint:
 background noise and unvoiced speech need transcript protection. The caller sets
 the quiet threshold when interpreting windows.
+
+## Vision preparation
+
+`vision_prep` is the media half of local vision analysis; detector inference,
+shot tracking and job orchestration are other owners. `decode_frame_at` returns
+the frame whose presentation interval contains an exact source tick.
+`decode_shot_frames` streams the frames intersecting a source range in
+presentation order, including the frame covering the range start (its PTS may
+precede that start). Variable-frame-rate sources are selected by decoded PTS,
+not by a nominal rate. Frames are converted to packed straight RGBA8 only when
+downloaded; no GPU pointer escapes. Cancellation is checked before every decoded
+frame and callback, so interruption latency is at most one frame.
+
+`VisionFrame::face_crop` applies the `p1-clips/12` Light-ASD recipe: expand the
+box by 0.40, pad pixels outside the decoded frame with gray 110, convert to raw
+0–255 grayscale, resize to 224x224 with linear interpolation and keep the centre
+112x112. A crop that extends past the frame is valid. Crop coordinates, area and
+geometry are checked; hostile boxes return typed errors.
+
+`mfcc_range` emits 13-coefficient MFCC frames from mono 16 kHz audio with a
+25 ms window and 10 ms hop, 26 mel filters, a 512-point FFT, pre-emphasis 0.97,
+cepstral lifter 22 and `c0` equal to log frame energy. The analysis grid is
+anchored at the start of the source audio stream, so a subrange is the exact
+suffix of a full-range call and pre-emphasis uses the sample before the first
+window. Samples are interpreted as 16-bit full-scale PCM. Only windows starting
+inside the requested range are emitted; source-end windows are zero-padded like
+the reference recipe, and a range shorter than one window still yields the
+windows that start inside it.
+
+`VisionPrepLimits` bounds one request to ten minutes, 100,000 video frames,
+60,001 MFCC frames and a 16 Mi-pixel face-crop rectangle by default; callers may
+tighten these. The same packet/frame cancellation and native allocation ceilings
+as the rest of this crate apply. Observed on the `p1-clips/12` 180 s excerpt:
+all 17,999 MFCC frames were bit-exact in f32 against `python_speech_features`;
+face crops matched the saved reference tensors with a mean absolute difference of
+1.84 gray levels (maximum 9) in the final 112x112 crop, because the production
+FFmpeg hardware decode/color conversion is not OpenCV `VideoCapture`'s decode
+path. With identical input pixels the committed synthetic crop fixture matches
+within two levels; OpenCV's one-channel 8-bit `INTER_LINEAR` path is not
+bit-exact fixed-point interpolation.
