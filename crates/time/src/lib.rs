@@ -435,6 +435,9 @@ impl FrameRate {
     pub fn snap_nearest(self, time: Tick) -> Result<Tick, TimeError> {
         let frame = self.frame_at(time)?;
         let before = self.tick_of(frame)?;
+        if before == time {
+            return Ok(before);
+        }
         let after_frame = frame.checked_add(1).ok_or(TimeError::Overflow)?;
         let after = self.tick_of(after_frame)?;
         let time = i128::from(time.0);
@@ -851,6 +854,24 @@ mod tests {
             );
             assert_eq!(rate.snap_nearest(midpoint - Tick(1)).unwrap(), start);
         }
+    }
+
+    #[test]
+    fn exact_frame_snap_does_not_require_a_later_representable_frame() {
+        let one_tick = FrameRate::new(TICKS_PER_SECOND, 1).unwrap();
+        for time in [
+            Tick(i64::MIN),
+            Tick(-1),
+            Tick::ZERO,
+            Tick(1),
+            Tick(i64::MAX),
+        ] {
+            assert_eq!(one_tick.snap_nearest(time), Ok(time));
+        }
+        let rate = FrameRate::FPS_25;
+        let last_frame = rate.frame_at(Tick(i64::MAX)).unwrap();
+        let last_start = rate.tick_of(last_frame).unwrap();
+        assert_eq!(rate.snap_nearest(last_start), Ok(last_start));
     }
 
     #[test]
