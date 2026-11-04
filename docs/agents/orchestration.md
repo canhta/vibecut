@@ -11,7 +11,8 @@
 
 When unsure, route ambiguous correctness work to Codex; explicit recipes to opencode.
 One ticket owns one feature or crate, about 600 changed lines maximum excluding a
-mechanical import. Split larger work before starting unless explicitly authorized.
+mechanical import. Split larger work before starting unless explicitly authorized; one cohesive new
+crate or feature may exceed the cap without asking (note it in `worker_done`).
 Stop and ask for conflicting contracts, missing acceptance, unavailable required
 hardware/credentials, license ambiguity or destructive/out-of-scope action. Continue
 independent authorized work while a nonblocking answer is pending.
