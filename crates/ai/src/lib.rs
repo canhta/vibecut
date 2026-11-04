@@ -8,6 +8,7 @@ pub mod openai;
 mod policy;
 pub mod structured;
 mod translation;
+pub mod transport;
 pub use translation::*;
 #[cfg(feature = "whisper")]
 pub mod whisper;

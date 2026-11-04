@@ -11,11 +11,13 @@ use captions::{LanguageTag, NfcText};
 use serde::Deserialize;
 use std::collections::BTreeSet;
 use std::fmt;
-use std::io::Read;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicU64, Ordering};
-use std::time::Duration;
 pub use translation::*;
+
+pub use crate::transport::{
+    ApiKey, HttpRequest, HttpResponse, HttpTransport, MAX_RESPONSE_BYTES, UreqTransport,
+};
+use crate::transport::{Multipart, retry_after, wav, wav_bytes};
 
 /// The only production model admitted here. Deprecated transcription models are refused.
 pub const MODEL: &str = "gpt-transcribe";
@@ -23,15 +25,12 @@ pub const MODEL: &str = "gpt-transcribe";
 pub const BACKEND: &str = "openai";
 /// Current documented file limit for `/v1/audio/transcriptions` (25 MB decimal).
 pub const MAX_UPLOAD_BYTES: u64 = 25_000_000;
-/// Successful transcripts and error envelopes are small; cap hostile responses.
-pub const MAX_RESPONSE_BYTES: usize = 1024 * 1024;
 /// The only admitted provider base URL in v1; no proxies or custom processors.
 pub const BASE_URL: &str = "https://api.openai.com/v1";
 /// The only admitted transcription endpoint.
 pub const ENDPOINT: &str = "https://api.openai.com/v1/audio/transcriptions";
 /// Published list price, integer micro-USD per audio second ($0.0045/min).
 const PRICE_MICROS_PER_SECOND: u64 = 75;
-const REQUEST_TIMEOUT: Duration = Duration::from_secs(120);
 const POLICY_URL: &str = "https://developers.openai.com/api/docs/guides/your-data";
 const DOCS_URL: &str = "https://developers.openai.com/api/docs/guides/speech-to-text";
 const TRAINING_DISCLOSURE: &str = "OpenAI documents that data sent to /v1/audio/transcriptions is not used for training unless the account explicitly opts in (checked 2026-11-04).";
@@ -43,140 +42,6 @@ const LANGUAGES: [&str; 3] = ["vi", "en", "zh"];
 /// Settings identity for composition-owned cache keys.
 pub const SETTINGS_FINGERPRINT: &str =
     "openai-transport-v1;model=gpt-transcribe;format=json;wav=pcm16;languages=vi,en,zh";
-
-/// In-memory API key injected by the composition root. Never serialized or logged.
-#[derive(Clone)]
-pub struct ApiKey(String);
-impl ApiKey {
-    /// Validates a printable ASCII key of at most 4096 bytes; Debug always redacts it.
-    pub fn new(value: impl Into<String>) -> Result<Self, Error> {
-        let value = value.into();
-        if value.is_empty() || value.trim() != value || !value.is_ascii() || value.len() > 4096 {
-            return Err(Error::Invalid("API key"));
-        }
-        Ok(Self(value))
-    }
-    fn expose(&self) -> &str {
-        &self.0
-    }
-}
-impl fmt::Debug for ApiKey {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter.write_str("ApiKey([redacted])")
-    }
-}
-
-/// Transport request; Debug never prints headers (authorization) or the body (audio).
-pub struct HttpRequest {
-    pub method: &'static str,
-    pub url: String,
-    pub headers: Vec<(String, String)>,
-    pub body: Vec<u8>,
-}
-impl fmt::Debug for HttpRequest {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter
-            .debug_struct("HttpRequest")
-            .field("method", &self.method)
-            .field("url", &self.url)
-            .field("headers", &"[redacted]")
-            .field("body_bytes", &self.body.len())
-            .finish()
-    }
-}
-
-/// Provider response; Debug never prints the body (transcript or error text).
-pub struct HttpResponse {
-    pub status: u16,
-    pub headers: Vec<(String, String)>,
-    pub body: Vec<u8>,
-}
-impl fmt::Debug for HttpResponse {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter
-            .debug_struct("HttpResponse")
-            .field("status", &self.status)
-            .field("headers", &"[redacted]")
-            .field("body_bytes", &self.body.len())
-            .finish()
-    }
-}
-
-/// Blocking HTTPS seam. Implementations must bound connect/read/write time and
-/// must not retry; the engine job runner owns the attempt budget and backoff.
-pub trait HttpTransport: Send + Sync {
-    fn send(&self, request: HttpRequest) -> Result<HttpResponse, Error>;
-}
-
-/// Production transport with connect/read/write/total timeouts and redirects disabled
-/// so an authorization header can never follow a redirect to another host.
-pub struct UreqTransport {
-    agent: ureq::Agent,
-}
-impl UreqTransport {
-    /// Uses a 120 s total/read/write timeout, a 10 s connect timeout and no redirects.
-    pub fn new() -> Self {
-        Self::agent(REQUEST_TIMEOUT)
-    }
-    /// Same policy with an explicit nonzero total/read/write timeout.
-    pub fn with_timeout(timeout: Duration) -> Result<Self, Error> {
-        if timeout.is_zero() {
-            return Err(Error::Invalid("transport timeout"));
-        }
-        Ok(Self::agent(timeout))
-    }
-    fn agent(timeout: Duration) -> Self {
-        Self {
-            agent: ureq::AgentBuilder::new()
-                .timeout_connect(timeout.min(Duration::from_secs(10)))
-                .timeout_read(timeout)
-                .timeout_write(timeout)
-                .timeout(timeout)
-                .redirects(0)
-                .build(),
-        }
-    }
-    fn read_response(response: ureq::Response) -> Result<HttpResponse, Error> {
-        let status = response.status();
-        let mut headers = Vec::new();
-        for name in response.headers_names() {
-            if let Some(value) = response.header(&name) {
-                headers.push((name, value.to_owned()));
-            }
-        }
-        let mut body = Vec::new();
-        response
-            .into_reader()
-            .take(MAX_RESPONSE_BYTES as u64 + 1)
-            .read_to_end(&mut body)
-            .map_err(|_| Error::Network)?;
-        if body.len() > MAX_RESPONSE_BYTES {
-            return Err(Error::Payload);
-        }
-        Ok(HttpResponse {
-            status,
-            headers,
-            body,
-        })
-    }
-}
-impl Default for UreqTransport {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-impl HttpTransport for UreqTransport {
-    fn send(&self, request: HttpRequest) -> Result<HttpResponse, Error> {
-        let mut outbound = self.agent.post(&request.url);
-        for (name, value) in &request.headers {
-            outbound = outbound.set(name, value);
-        }
-        match outbound.send_bytes(&request.body) {
-            Ok(response) | Err(ureq::Error::Status(_, response)) => Self::read_response(response),
-            Err(ureq::Error::Transport(_)) => Err(Error::Network),
-        }
-    }
-}
 
 /// What the composition root must show before granting upload consent.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -404,12 +269,7 @@ fn rounded_up_seconds(scope: &Scope) -> Option<u64> {
 }
 
 fn encoded_bytes(scope: &Scope) -> Result<u64, Error> {
-    let bytes = scope
-        .source_samples
-        .len()
-        .checked_mul(2)
-        .and_then(|data| data.checked_add(44))
-        .ok_or(Error::Payload)?;
+    let bytes = wav_bytes(scope.source_samples.len())?;
     if bytes > MAX_UPLOAD_BYTES {
         return Err(Error::Payload);
     }
@@ -420,19 +280,16 @@ fn build_request(
     upload: &AuthorizedUpload<'_>,
     audio: AudioWindow<'_>,
 ) -> Result<HttpRequest, Error> {
-    let wav = encode_wav(&audio)?;
-    let boundary = boundary(&wav)?;
-    let mut body = Vec::new();
-    field(&mut body, &boundary, "model", MODEL);
-    field(&mut body, &boundary, "response_format", "json");
-    field(
-        &mut body,
-        &boundary,
-        "languages[]",
-        upload.scope.source_language.as_str(),
-    );
-    file(&mut body, &boundary, "audio.wav", &wav);
-    body.extend_from_slice(format!("--{boundary}--\r\n").as_bytes());
+    let audio = wav(&audio)?;
+    if u64::try_from(audio.len()).map_err(|_| Error::Payload)? > MAX_UPLOAD_BYTES {
+        return Err(Error::Payload);
+    }
+    let mut form = Multipart::new(&audio)?;
+    form.field("model", MODEL);
+    form.field("response_format", "json");
+    form.field("languages[]", upload.scope.source_language.as_str());
+    form.file("audio.wav", "audio/wav", &audio);
+    let (content_type, body) = form.finish();
     Ok(HttpRequest {
         method: "POST",
         url: ENDPOINT.into(),
@@ -441,85 +298,11 @@ fn build_request(
                 "Authorization".into(),
                 format!("Bearer {}", upload.key.expose()),
             ),
-            (
-                "Content-Type".into(),
-                format!("multipart/form-data; boundary={boundary}"),
-            ),
+            ("Content-Type".into(), content_type),
             ("Accept".into(), "application/json".into()),
         ],
         body,
     })
-}
-
-fn content_disposition(name: &str) -> String {
-    format!("Content-Disposition: form-data; name=\"{name}\"")
-}
-
-fn field(body: &mut Vec<u8>, boundary: &str, name: &str, value: &str) {
-    body.extend_from_slice(format!("--{boundary}\r\n").as_bytes());
-    body.extend_from_slice(content_disposition(name).as_bytes());
-    body.extend_from_slice(b"\r\n\r\n");
-    body.extend_from_slice(value.as_bytes());
-    body.extend_from_slice(b"\r\n");
-}
-
-fn file(body: &mut Vec<u8>, boundary: &str, filename: &str, bytes: &[u8]) {
-    body.extend_from_slice(format!("--{boundary}\r\n").as_bytes());
-    body.extend_from_slice(
-        format!("Content-Disposition: form-data; name=\"file\"; filename=\"{filename}\"")
-            .as_bytes(),
-    );
-    body.extend_from_slice(b"\r\nContent-Type: audio/wav\r\n\r\n");
-    body.extend_from_slice(bytes);
-    body.extend_from_slice(b"\r\n");
-}
-
-fn boundary(payload: &[u8]) -> Result<String, Error> {
-    static NEXT: AtomicU64 = AtomicU64::new(0);
-    for _ in 0..8 {
-        let candidate = format!(
-            "vibecut-{:x}-{:x}",
-            std::process::id(),
-            NEXT.fetch_add(1, Ordering::Relaxed)
-        );
-        if !payload
-            .windows(candidate.len())
-            .any(|window| window == candidate.as_bytes())
-        {
-            return Ok(candidate);
-        }
-    }
-    Err(Error::Invalid("multipart boundary"))
-}
-
-/// Mono 16-bit PCM WAV. Input is already validated finite mono f32.
-fn encode_wav(audio: &AudioWindow<'_>) -> Result<Vec<u8>, Error> {
-    let data_bytes = audio.samples.len().checked_mul(2).ok_or(Error::Payload)?;
-    let total = data_bytes.checked_add(44).ok_or(Error::Payload)?;
-    if u64::try_from(total).map_err(|_| Error::Payload)? > MAX_UPLOAD_BYTES {
-        return Err(Error::Payload);
-    }
-    let data_len = u32::try_from(data_bytes).map_err(|_| Error::Payload)?;
-    let riff_len = data_len.checked_add(36).ok_or(Error::Payload)?;
-    let byte_rate = audio.sample_rate.checked_mul(2).ok_or(Error::Payload)?;
-    let mut wav = Vec::with_capacity(total);
-    wav.extend_from_slice(b"RIFF");
-    wav.extend_from_slice(&riff_len.to_le_bytes());
-    wav.extend_from_slice(b"WAVEfmt ");
-    wav.extend_from_slice(&16u32.to_le_bytes());
-    wav.extend_from_slice(&1u16.to_le_bytes());
-    wav.extend_from_slice(&1u16.to_le_bytes());
-    wav.extend_from_slice(&audio.sample_rate.to_le_bytes());
-    wav.extend_from_slice(&byte_rate.to_le_bytes());
-    wav.extend_from_slice(&2u16.to_le_bytes());
-    wav.extend_from_slice(&16u16.to_le_bytes());
-    wav.extend_from_slice(b"data");
-    wav.extend_from_slice(&data_len.to_le_bytes());
-    for sample in audio.samples {
-        let value = (sample.clamp(-1.0, 1.0) * 32767.0).round() as i16;
-        wav.extend_from_slice(&value.to_le_bytes());
-    }
-    Ok(wav)
 }
 
 #[derive(Deserialize)]
@@ -601,11 +384,4 @@ fn quota_error(body: &[u8]) -> bool {
                 value.contains("quota") || value.contains("billing")
             })
     })
-}
-
-fn retry_after(headers: &[(String, String)]) -> Option<u32> {
-    headers
-        .iter()
-        .find(|(name, _)| name.eq_ignore_ascii_case("retry-after"))
-        .and_then(|(_, value)| value.trim().parse().ok())
 }
