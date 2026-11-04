@@ -157,10 +157,15 @@ creating directories. Engine owns downloads, scheduling, resume/retry/checkpoint
 cache identity/storage/promotion and model-manager wiring; these are not implemented
 by this crate.
 
-Whisper accepts finite mono 16 kHz PCM windows of at most 30 seconds, with absolute
-source sample offsets. Engine supplies chunk windows and owns reconciliation.
-Model loading and each native inference call are synchronous and noninterruptible;
-cancellation is checked before/after each call and between result segments, and
+Whisper accepts finite mono 16 kHz PCM windows of at most five minutes, with absolute
+source sample offsets. Whisper chooses timestamp-based decode boundaries within
+each call; do not cut
+continuous speech into independent 30 s calls. Engine chooses speech-safe invocation
+boundaries and owns reconciliation for longer recordings. The five-minute bound
+caps input buffering at 19.2 MB of f32 PCM; it is a safety ceiling, not evidence that
+hard cuts at five minutes preserve speech.
+Model loading and each native inference call (up to five minutes of audio) are
+synchronous and noninterruptible; cancellation is checked before/after each call and between result segments, and
 cancelled work returns no output. Upstream's safe abort callback is deliberately
 unused: its 0.16.0 implementation erases a boxed closure but casts it back to its
 original concrete type, and does not reclaim that allocation. CPU selection is
@@ -173,25 +178,23 @@ binding's logging hooks, without enabling its logging backend features.
 additionally retains original subword bytes and optional token ranges: tokens may
 split UTF-8, missing/invalid/zero-width token timestamps stay absent, and tokens are
 never relabelled as words. Complete segment text is normalized once by captions.
-Captions' script-aware span mapping/persisted token timing is still required to
-turn those raw byte fragments into stored token/character spans. Token capability
+Captions owns script-aware span mapping and persisted token timing (/17). Its
+integration turns those raw byte fragments into stored token/character spans. Token capability
 is therefore not advertised through the segment-only Transcriber interface.
 
 `cargo run -p ai --example local_whisper -- MODEL MONO-16KHZ-F32LE LANGUAGE [cpu]`
 is an explicit local smoke/benchmark command using an already downloaded model;
-it exercises public execution and transcript conversion on bounded windows.
+it exercises public execution and transcript conversion on a continuous window.
+It refuses inputs above the invocation ceiling instead of silently cutting speech.
 Its JSON output is recognition data deliberately requested by the caller, not logs.
 Native tests and benchmarks require external weights/audio and are opt-in; ordinary
 unit tests are offline. Windows native runtime and Vulkan remain unverified.
 
-Observed on M1 Pro (16 GiB, macOS 27.2), release build, four inference threads,
-requested Metal, pinned turbo weights, consecutive non-overlapping 30 s windows:
-JFK/Reagan pooled WER 1.59%, Vietnamese FLEURS WER 9.97%, Chinese FLEURS CER 9.73%.
-One 840.228 s JFK run took 69.039 s inference (RTF 0.0822), peak RSS 2.026 GB;
-model hash/load took 1.468 s separately. One final run per sample; filesystem/model
-cache was warm and other IDE activity was not isolated. These are small benchmark
-samples, not production accuracy guarantees. The earlier full-file CLI benchmark
-has better VI/ZH error rates (8.21%/8.60%) and RTF (0.055); native version, settings
-and chunking differ, so parity is unverified. Engine chunk-boundary reconciliation
-and corpus evaluation remain required. Flash attention is disabled: an observed
-VI WER regression from 9.97% to 26.98% outweighs its speed improvement.
+Quality evidence for the continuous-window policy is recorded in the local /15
+fix report against all 17 /16 samples. The former independent 30 s policy is
+superseded: it produced VI WER 24.91% on that corpus and 36.42% on the south sample.
+Holding model, language, decoding and native runtime fixed, a single continuous
+south invocation recovers 1.85% WER; restoring temperature fallback alone does not.
+Flash attention remains explicitly disabled after an earlier observed VI regression.
+Windows/Vulkan, human timing accuracy, and speech-boundary reconciliation for inputs
+longer than the invocation ceiling remain unverified.

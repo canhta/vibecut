@@ -10,7 +10,9 @@ use std::{collections::BTreeSet, path::Path, sync::Once};
 use whisper_rs::{FullParams, SamplingStrategy, WhisperContext, WhisperContextParameters};
 
 pub const SAMPLE_RATE: u32 = 16_000;
-pub const MAX_SAMPLES: u64 = 30 * SAMPLE_RATE as u64;
+/// Five-minute invocation ceiling, not a recommended hard chunk boundary.
+/// Whisper chooses its own timestamp boundaries inside this window.
+pub const MAX_SAMPLES: u64 = 300 * SAMPLE_RATE as u64;
 /// Explicit device choice. Engine selects software fallback; adapter never retries.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Device {
@@ -49,7 +51,7 @@ pub struct Whisper {
 }
 impl Whisper {
     /// The caller supplies an immutable cache file. Verify size/hash before native
-    /// loading, without buffering the model. Loading and each <=30 s inference call
+    /// loading, without buffering the model. Loading and each <=5 min inference call
     /// are synchronous and noninterruptible; check cancellation around those calls.
     /// Device GPU requires macOS Metal or the explicit whisper-vulkan build feature.
     pub fn load(
@@ -77,6 +79,7 @@ impl Whisper {
         LOGGING.call_once(whisper_rs::install_logging_hooks);
         let mut params = WhisperContextParameters::default();
         params.use_gpu(device == Device::Gpu);
+        params.flash_attn(false);
         let context =
             WhisperContext::new_with_params(path, params).map_err(|_| Error::Inference)?;
         checkpoint(hooks, Stage::Transcribe)?;
@@ -84,7 +87,7 @@ impl Whisper {
             "local-whisper".into(),
             model.id.as_str().into(),
             format!(
-                "whisper-rs-0.16.0:cpp{}:{}:beam5:temperature0:tokens-v1:threads{threads}:{device:?}",
+                "whisper-rs-0.16.0:cpp{}:{}:beam5:temperature0:fallback0:context-per-call:no-prompt:flash0:max300s:tokens-v1:threads{threads}:{device:?}",
                 whisper_rs::WHISPER_CPP_VERSION, file.sha256
             )
             .into(),
@@ -227,7 +230,7 @@ impl Transcriber for Whisper {
             live_audio_input: Support::Unsupported,
             file_result_stream: Support::Unsupported,
             max_upload_bytes: Some(MAX_SAMPLES * 4),
-            max_duration_micros: Some(30_000_000),
+            max_duration_micros: Some(MAX_SAMPLES * 1_000_000 / u64::from(SAMPLE_RATE)),
             evidence: Evidence::Advertised,
             revision: "whisper-rs-0.16.0".into(),
         }
