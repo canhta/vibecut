@@ -107,6 +107,36 @@ fn policy(root: &Path) -> Result<BTreeMap<String, (String, Vec<String>)>, String
     Ok(rules)
 }
 
+/// Crates only apps may use, grouped by the capability they bring in. Add a
+/// crate only with a named consumer; the architecture table stays the internal
+/// edge authority.
+const APP_ONLY_CRATES: &[(&str, &str)] = &[
+    ("accesskit", "accessibility"), // apps/vibecut, ticket 11
+    ("cpal", "audio-device"),       // apps/vibecut, ticket 11
+    ("eframe", "ui"),               // apps/vibecut, ticket 11
+    ("egui", "ui"),                 // apps/vibecut, ticket 11
+    ("egui_kittest", "ui"),         // apps/vibecut, ticket 11
+    ("winit", "window"),            // apps/vibecut, ticket 11
+];
+
+fn forbidden_app_only(package: &str, dependency: &Value) -> Option<String> {
+    let name = dependency["name"].as_str()?;
+    let class = APP_ONLY_CRATES
+        .iter()
+        .find_map(|(crate_name, class)| (*crate_name == name).then_some(*class))?;
+    let kind = dependency["kind"].as_str().unwrap_or("normal");
+    let mut detail = format!("kind {kind}");
+    if let Some(target) = dependency["target"].as_str() {
+        detail.push_str(&format!(", target {target}"));
+    }
+    if let Some(rename) = dependency["rename"].as_str() {
+        detail.push_str(&format!(", renamed {rename}"));
+    }
+    Some(format!(
+        "forbidden app-only {class} crate: package `{package}` dependency `{name}` ({detail})"
+    ))
+}
+
 fn layers(root: &Path) -> Result<(), String> {
     let rules = policy(root)?;
     let bytes = checked(
@@ -135,8 +165,8 @@ fn layers(root: &Path) -> Result<(), String> {
         let deps = p["dependencies"]
             .as_array()
             .ok_or("package has no dependency array")?;
-        let allowed = if name == "xtask" {
-            Vec::new()
+        let (path, allowed) = if name == "xtask" {
+            ("xtask".to_owned(), Vec::new())
         } else {
             let (path, allowed) = rules
                 .get(name)
@@ -145,8 +175,11 @@ fn layers(root: &Path) -> Result<(), String> {
             if manifest != root.join(path).join("Cargo.toml") {
                 errors.push(format!("{name}: expected {path}/Cargo.toml"));
             }
-            allowed.clone()
+            (path.clone(), allowed.clone())
         };
+        if !path.starts_with("apps/") {
+            errors.extend(deps.iter().filter_map(|d| forbidden_app_only(name, d)));
+        }
         for d in deps {
             let dep = d["name"].as_str().ok_or("dependency has no name")?;
             // Cargo reports the package name even when a dependency is renamed.
@@ -355,6 +388,8 @@ mod tests {
             fs::create_dir_all(dir.join("docs/engineering")).unwrap();
             fs::create_dir_all(dir.join("crates")).unwrap();
             fs::write(dir.join("crates/.gitkeep"), "").unwrap();
+            fs::create_dir_all(dir.join("apps")).unwrap();
+            fs::write(dir.join("apps/.gitkeep"), "").unwrap();
             fs::copy(
                 Path::new(env!("CARGO_MANIFEST_DIR"))
                     .parent()
@@ -363,7 +398,7 @@ mod tests {
                 dir.join("docs/engineering/architecture.md"),
             )
             .unwrap();
-            fs::write(dir.join("Cargo.toml"), "[workspace]\nmembers = [\"crates/*\", \"xtask\"]\nresolver = \"3\"\n[workspace.package]\nversion = \"0.1.0\"\nedition = \"2024\"\nlicense = \"MIT\"\n[workspace.lints.rust]\nunsafe_code = \"forbid\"\n").unwrap();
+            fs::write(dir.join("Cargo.toml"), "[workspace]\nmembers = [\"crates/*\", \"apps/*\", \"xtask\"]\nexclude = [\"vendor\"]\nresolver = \"3\"\n[workspace.package]\nversion = \"0.1.0\"\nedition = \"2024\"\nlicense = \"MIT\"\n[workspace.lints.rust]\nunsafe_code = \"forbid\"\n").unwrap();
             fs::create_dir_all(dir.join("xtask/src")).unwrap();
             fs::write(
                 dir.join("xtask/Cargo.toml"),
@@ -372,6 +407,17 @@ mod tests {
             .unwrap();
             fs::write(dir.join("xtask/src/lib.rs"), "//! Tooling fixture.\n").unwrap();
             Self(dir)
+        }
+
+        fn stub_crate(&self, name: &str) {
+            let dir = self.0.join("vendor").join(name);
+            fs::create_dir_all(dir.join("src")).unwrap();
+            fs::write(
+                dir.join("Cargo.toml"),
+                format!("[package]\nname = \"{name}\"\nversion = \"0.1.0\"\nedition = \"2024\"\n"),
+            )
+            .unwrap();
+            fs::write(dir.join("src/lib.rs"), "").unwrap();
         }
     }
     impl Drop for Workspace {
@@ -400,6 +446,101 @@ mod tests {
             fs::write(&time, format!("{original}\n[{table}]\nrenamed = {{ package = \"media\", path = \"../media\" }}\n")).unwrap();
             assert!(layers(&ws.0).unwrap_err().contains("time -> media"));
         }
+    }
+
+    #[test]
+    fn app_only_crates_are_denied_below_apps_in_every_dependency_kind() {
+        let ws = Workspace::new();
+        let denied = [
+            ("egui", "ui"),
+            ("eframe", "ui"),
+            ("egui_kittest", "ui"),
+            ("winit", "window"),
+            ("cpal", "audio-device"),
+            ("accesskit", "accessibility"),
+        ];
+        for (name, _) in denied {
+            ws.stub_crate(name);
+        }
+        new_crate(&ws.0, "render").unwrap();
+        let manifest = ws.0.join("crates/render/Cargo.toml");
+        let original = fs::read_to_string(&manifest).unwrap();
+        for (table, detail) in [
+            ("dependencies", "kind normal"),
+            ("dev-dependencies", "kind dev"),
+            ("build-dependencies", "kind build"),
+            (
+                "target.'cfg(windows)'.dependencies",
+                "kind normal, target cfg(windows)",
+            ),
+        ] {
+            fs::write(
+                &manifest,
+                format!("{original}\n[{table}]\negui = {{ path = \"../../vendor/egui\" }}\n"),
+            )
+            .unwrap();
+            let error = layers(&ws.0).unwrap_err();
+            for expected in [
+                "forbidden app-only ui crate",
+                "package `render`",
+                "dependency `egui`",
+                detail,
+            ] {
+                assert!(error.contains(expected), "{expected}: {error}");
+            }
+        }
+        for (name, class) in denied {
+            fs::write(
+                &manifest,
+                format!(
+                    "{original}\n[dependencies]\n{name} = {{ path = \"../../vendor/{name}\" }}\n"
+                ),
+            )
+            .unwrap();
+            let error = layers(&ws.0).unwrap_err();
+            assert!(
+                error.contains(&format!("forbidden app-only {class} crate")),
+                "{error}"
+            );
+            assert!(error.contains(&format!("dependency `{name}`")), "{error}");
+        }
+        fs::write(
+            &manifest,
+            format!("{original}\n[dependencies]\ngui = {{ package = \"egui\", path = \"../../vendor/egui\" }}\n"),
+        )
+        .unwrap();
+        let error = layers(&ws.0).unwrap_err();
+        assert!(error.contains("dependency `egui`"), "{error}");
+        assert!(error.contains("renamed gui"), "{error}");
+    }
+
+    #[test]
+    fn app_members_may_use_app_only_crates_and_continue_to_follow_the_table() {
+        let ws = Workspace::new();
+        ws.stub_crate("egui");
+        ws.stub_crate("egui_kittest");
+        new_crate(&ws.0, "engine").unwrap();
+        new_crate(&ws.0, "time").unwrap();
+        let app = ws.0.join("apps/vibecut");
+        fs::create_dir_all(app.join("src")).unwrap();
+        fs::write(app.join("src/main.rs"), "fn main() {}\n").unwrap();
+        let manifest = app.join("Cargo.toml");
+        fs::write(
+            &manifest,
+            "[package]\nname = \"vibecut\"\nversion = \"0.1.0\"\nedition = \"2024\"\n\n[dependencies]\negui = { path = \"../../vendor/egui\" }\nengine = { path = \"../../crates/engine\" }\n\n[dev-dependencies]\negui_kittest = { path = \"../../vendor/egui_kittest\" }\n",
+        )
+        .unwrap();
+        layers(&ws.0).unwrap();
+        fs::write(
+            &manifest,
+            "[package]\nname = \"vibecut\"\nversion = \"0.1.0\"\nedition = \"2024\"\n\n[dependencies]\ntime = { path = \"../../crates/time\" }\n",
+        )
+        .unwrap();
+        assert!(
+            layers(&ws.0)
+                .unwrap_err()
+                .contains("forbidden workspace edge: vibecut -> time")
+        );
     }
 
     #[test]
