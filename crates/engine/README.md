@@ -592,3 +592,6 @@ registered edit command. There is no desktop settings UI in this crate.
 provider failures, renewed approval before any fallback upload, rejection of
 primary-token reuse, refusal/cost/cancellation and exact provenance. Offline
 injected adapters establish execution policy, not third-party model quality.
+
+Clip provider outputs preserve AI-owned ordered source segments, resolved source-order
+ranks and summed duration; consumers use the [AI clip contract](../ai/README.md#transcript-clip-suggestions).

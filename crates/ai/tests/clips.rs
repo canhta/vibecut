@@ -44,6 +44,8 @@ fn input(language: &str, n: usize) -> ClipInput {
             })
             .collect(),
         settings: ClipSettings {
+            max_segments: 4,
+            min_segment_duration: Tick(TICKS_PER_SECOND),
             count: 3,
             min_duration: tick(4),
             max_duration: tick(15),
@@ -96,7 +98,7 @@ fn scope(w: &ClipInput, p: &dyn ClipSuggester) -> Scope {
     }
 }
 fn proposal(a: &str, b: &str, score: f64) -> Value {
-    json!({"start_segment_id":a,"end_segment_id":b,"title":"Time saving","hook":"Try this","reason":"Complete useful thought","score":score})
+    json!({"segments":[{"start_segment_id":a,"end_segment_id":b,"role":"payoff"}],"title":"Time saving","hook_text":"Try this","reason":"Complete useful thought","score":score})
 }
 fn response(anthropic: bool, clips: Value) -> HttpResponse {
     let text = json!({"clips":clips}).to_string();
@@ -176,7 +178,7 @@ fn remote_contracts_share_id_duration_dedupe_and_wire_validation() {
         assert_eq!(r.clips.len(), 1);
         assert_eq!(r.clips[0].proposal.score, 0.9);
         assert_eq!(
-            r.clips[0].range,
+            r.clips[0].segments[0].range,
             SourceRange::new(tick(0), tick(9)).unwrap()
         );
         assert_eq!(r.clips[0].source, ClipSource::Llm);
@@ -208,12 +210,7 @@ fn remote_contracts_share_id_duration_dedupe_and_wire_validation() {
 #[test]
 fn hostile_schema_ids_scores_and_timestamps_are_refused() {
     for a in [false, true] {
-        for mut v in [
-            proposal("missing", "s1", 0.5),
-            proposal("s2", "s1", 0.5),
-            proposal("s0", "s1", -0.1),
-            proposal("s0", "s1", 1.1),
-        ] {
+        for mut v in [proposal("s0", "s1", -0.1), proposal("s0", "s1", 1.1)] {
             let (p, _) = provider(a, response(a, json!([v.clone()])));
             assert!(matches!(
                 run(p.as_ref(), &input("en", 3)),
@@ -365,10 +362,14 @@ fn heuristic_is_explicit_free_and_multilingual_with_exact_source_edges() {
             assert!(
                 w.segments
                     .iter()
-                    .any(|s| s.range.start() == c.range.start())
+                    .any(|s| s.range.start() == c.segments[0].range.start())
             );
-            assert!(w.segments.iter().any(|s| s.range.end() == c.range.end()));
-            assert!((tick(4)..=tick(15)).contains(&c.range.duration()));
+            assert!(
+                w.segments
+                    .iter()
+                    .any(|s| s.range.end() == c.segments[0].range.end())
+            );
+            assert!((tick(4)..=tick(15)).contains(&c.segments[0].range.duration()));
         }
     }
 }
@@ -455,45 +456,53 @@ fn provider_failures_are_typed() {
     }
 }
 #[test]
-#[ignore = "requires VIBECUT_LIVE_AI=1 and both API keys; one bounded synthetic request per provider"]
+#[ignore = "requires VIBECUT_LIVE_AI=1 and OPENAI_API_KEY; one bounded gpt-6-luna request"]
 fn live_clip_providers() {
     assert_eq!(std::env::var("VIBECUT_LIVE_AI").as_deref(), Ok("1"));
-    for a in [false, true] {
-        let key = ApiKey::new(
-            std::env::var(if a {
-                "ANTHROPIC_API_KEY"
-            } else {
-                "OPENAI_API_KEY"
-            })
-            .unwrap(),
+    let cfg = ProviderConfig::new(
+        "clips".into(),
+        OPENAI_LUNA_MODEL.into(),
+        OPENAI_SETTINGS.into(),
+        Location::Remote {
+            backend: "openai".into(),
+            base_url: ai::openai::BASE_URL.into(),
+            auth_ref: "secret-store".into(),
+        },
+    )
+    .unwrap();
+    let p = OpenAiClipSuggester::new(
+        cfg,
+        ApiKey::new(std::env::var("OPENAI_API_KEY").unwrap()).unwrap(),
+        Arc::new(UreqTransport::new()),
+    )
+    .unwrap();
+    let mut w = if let Some(path) = std::env::var_os("VIBECUT_CLIP_SMOKE_INPUT") {
+        serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap()
+    } else {
+        input("en", 3)
+    };
+    w.settings.count = 1;
+    assert_eq!(
+        w.windows().unwrap().len(),
+        1,
+        "live smoke must stay one bounded invocation"
+    );
+    let r = run(&p, &w).unwrap();
+    assert!(!r.clips.is_empty());
+    if let Some(dir) = std::env::var_os("VIBECUT_CLIP_SMOKE_OUTPUT_DIR") {
+        let dir = std::path::PathBuf::from(dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(
+            dir.join("openai.json"),
+            serde_json::to_vec_pretty(&r).unwrap(),
         )
         .unwrap();
-        let t = Arc::new(UreqTransport::new());
-        let p: Box<dyn ClipSuggester> = if a {
-            Box::new(AnthropicClipSuggester::new(config(a), key, t).unwrap())
-        } else {
-            Box::new(OpenAiClipSuggester::new(config(a), key, t).unwrap())
-        };
-        let mut w = input("en", 3);
-        w.settings.count = 1;
-        let r = run(p.as_ref(), &w).unwrap();
-        assert!(!r.clips.is_empty());
-        if let Some(dir) = std::env::var_os("VIBECUT_CLIP_SMOKE_OUTPUT_DIR") {
-            let dir = std::path::PathBuf::from(dir);
-            std::fs::create_dir_all(&dir).unwrap();
-            std::fs::write(
-                dir.join(if a { "anthropic.json" } else { "openai.json" }),
-                serde_json::to_vec_pretty(&r).unwrap(),
-            )
-            .unwrap();
-        }
-
-        eprintln!(
-            "{}: {} validated synthetic clips",
-            if a { "Anthropic" } else { "OpenAI" },
-            r.clips.len()
-        );
     }
+    eprintln!(
+        "gpt-6-luna: {} validated clips, {} source pieces",
+        r.clips.len(),
+        r.clips[0].segments.len()
+    );
 }
 
 #[test]
@@ -522,11 +531,21 @@ fn fixed_synthetic_ranking_baseline_en_vi_zh() {
         w.segments[1].text = text.into();
         w.segments[2].text = "Goodbye. See you.".into();
         let baseline = run(&p, &w).unwrap();
-        baseline_hits += usize::from(baseline.clips[0].proposal.start_segment_id.as_str() == "s1");
+        baseline_hits += usize::from(
+            baseline.clips[0].proposal.segments[0]
+                .start_segment_id
+                .as_str()
+                == "s1",
+        );
         w.settings.keywords = vec![keyword.into()];
         let ranked = run(&p, &w).unwrap();
-        keyword_hits += usize::from(ranked.clips[0].proposal.start_segment_id.as_str() == "s1");
-        assert_eq!(ranked.clips[0].range.duration(), tick(4));
+        keyword_hits += usize::from(
+            ranked.clips[0].proposal.segments[0]
+                .start_segment_id
+                .as_str()
+                == "s1",
+        );
+        assert_eq!(ranked.clips[0].segments[0].range.duration(), tick(4));
     }
     assert_eq!(baseline_hits, 0);
     assert_eq!(keyword_hits, 3);
@@ -595,7 +614,7 @@ fn review_dense_long_local_input() {
     assert_eq!(result.clips.len(), 1);
     assert_eq!(result.clips[0].source, ClipSource::Heuristic);
     assert_eq!(
-        result.clips[0].range,
+        result.clips[0].segments[0].range,
         SourceRange::new(tick(0), tick(4)).unwrap()
     );
     assert!(result.dropped.len() <= 4096);
@@ -654,4 +673,468 @@ fn repeated_window_observations_keep_highest_score_first_tie_and_bounded_diagnos
             1
         );
     }
+}
+
+fn assembled(pieces: &[(&str, &str, &str)], score: f64) -> Value {
+    let mut p = proposal("s0", "s0", score);
+    p["segments"] = pieces
+        .iter()
+        .map(|(a, b, role)| json!({"start_segment_id":a,"end_segment_id":b,"role":role}))
+        .collect();
+    p
+}
+
+#[test]
+fn assembled_play_order_retains_source_order_and_serializes_without_enclosing_range() {
+    for a in [false, true] {
+        let w = input("en", 8);
+        let (p, _) = provider(
+            a,
+            response(
+                a,
+                json!([assembled(
+                    &[
+                        ("s6", "s6", "hook"),
+                        ("s0", "s0", "context"),
+                        ("s3", "s3", "payoff")
+                    ],
+                    0.9
+                )]),
+            ),
+        );
+        let r = run(p.as_ref(), &w).unwrap();
+        let c = &r.clips[0];
+        assert_eq!(c.duration, tick(12));
+        assert_eq!(
+            c.segments
+                .iter()
+                .map(|s| s.source_order)
+                .collect::<Vec<_>>(),
+            [2, 0, 1]
+        );
+        assert_eq!(
+            c.segments
+                .iter()
+                .map(|s| s.range.start())
+                .collect::<Vec<_>>(),
+            [tick(30), tick(0), tick(15)]
+        );
+        assert_eq!(c.proposal.segments[0].role, ClipRole::Hook);
+        let json = serde_json::to_value(c).unwrap();
+        assert!(json.get("range").is_none());
+        assert_eq!(json["proposal"]["hook_text"], "Try this");
+        assert_eq!(json["segments"][0]["source_order"], 2);
+    }
+}
+
+#[test]
+fn invalid_assemblies_drop_individually_with_typed_reasons() {
+    for a in [false, true] {
+        let mut w = input("en", 8);
+        w.settings.max_duration = tick(12);
+        let cases = [
+            (assembled(&[], 0.9), ClipDropReason::SegmentCount),
+            (
+                assembled(&[("s0", "s0", "payoff"), ("s1", "s1", "hook")], 0.9),
+                ClipDropReason::HookOrder,
+            ),
+            (
+                assembled(&[("s0", "s0", "hook"), ("s1", "s1", "hook")], 0.9),
+                ClipDropReason::HookOrder,
+            ),
+            (
+                assembled(&[("s0", "s1", "hook"), ("s1", "s2", "payoff")], 0.9),
+                ClipDropReason::SegmentOverlap,
+            ),
+            (
+                assembled(&[("s0", "s0", "hook"), ("s0", "s0", "payoff")], 0.9),
+                ClipDropReason::SegmentOverlap,
+            ),
+            (
+                assembled(&[("missing", "s1", "payoff")], 0.9),
+                ClipDropReason::UnknownId,
+            ),
+            (
+                assembled(&[("s2", "s1", "payoff")], 0.9),
+                ClipDropReason::ReversedRange,
+            ),
+            (
+                assembled(
+                    &[
+                        ("s0", "s0", "payoff"),
+                        ("s1", "s1", "context"),
+                        ("s2", "s2", "payoff"),
+                        ("s3", "s3", "payoff"),
+                        ("s4", "s4", "payoff"),
+                    ],
+                    0.9,
+                ),
+                ClipDropReason::SegmentCount,
+            ),
+            (
+                assembled(&[("s0", "s0", "hook"), ("s2", "s3", "payoff")], 0.9),
+                ClipDropReason::Duration,
+            ),
+        ];
+        for (bad, reason) in cases {
+            let (p, _) = provider(a, response(a, json!([bad, proposal("s7", "s7", 0.8)])));
+            let r = run(p.as_ref(), &w).unwrap();
+            assert_eq!(r.clips.len(), 1, "{reason:?}");
+            assert_eq!(r.dropped.len(), 1, "{reason:?}");
+            assert_eq!(r.dropped[0].reason, reason);
+        }
+        for role in ["unknown", "Hook", ""] {
+            let (p, _) = provider(
+                a,
+                response(a, json!([assembled(&[("s0", "s0", role)], 0.5)])),
+            );
+            assert!(matches!(run(p.as_ref(), &w), Err(Error::Schema)));
+        }
+        let mut old = proposal("s0", "s1", 0.5);
+        old.as_object_mut().unwrap().remove("segments");
+        old["start_segment_id"] = json!("s0");
+        old["end_segment_id"] = json!("s1");
+        let (p, _) = provider(a, response(a, json!([old])));
+        assert!(matches!(run(p.as_ref(), &w), Err(Error::Schema)));
+    }
+}
+
+#[test]
+fn adjacency_merges_only_touching_consecutive_play_pieces_with_first_role() {
+    for a in [false, true] {
+        let mut w = input("en", 4);
+        w.segments[1].range = SourceRange::new(tick(4), tick(8)).unwrap();
+        let cases = [
+            (vec![("s0", "s0", "hook"), ("s1", "s1", "payoff")], 1),
+            (vec![("s1", "s1", "hook"), ("s0", "s0", "payoff")], 2),
+            (
+                vec![
+                    ("s0", "s0", "hook"),
+                    ("s3", "s3", "context"),
+                    ("s1", "s1", "payoff"),
+                ],
+                3,
+            ),
+            (vec![("s1", "s1", "hook"), ("s2", "s2", "payoff")], 2),
+        ];
+        for (pieces, count) in cases {
+            let (p, _) = provider(a, response(a, json!([assembled(&pieces, 0.9)])));
+            let r = run(p.as_ref(), &w).unwrap();
+            assert_eq!(r.clips[0].segments.len(), count);
+            assert_eq!(r.clips[0].proposal.segments.len(), count);
+            assert_eq!(r.clips[0].segments[0].role, ClipRole::Hook);
+            if count == 1 {
+                assert_eq!(r.clips[0].duration, tick(8));
+                assert_eq!(
+                    r.clips[0].segments[0].repair,
+                    Some(ClipRepairReason::AdjacentMerged)
+                );
+                assert_eq!(
+                    r.clips[0].proposal.segments[0].end_segment_id.as_str(),
+                    "s1"
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn canonical_piece_minimum_and_summed_duration_bounds_are_inclusive() {
+    for a in [false, true] {
+        let mut w = input("en", 4);
+        w.settings.min_duration = tick(8);
+        w.settings.max_duration = tick(8);
+        w.settings.min_segment_duration = tick(4);
+        let (p, _) = provider(
+            a,
+            response(
+                a,
+                json!([assembled(
+                    &[("s3", "s3", "hook"), ("s0", "s0", "payoff")],
+                    0.9
+                )]),
+            ),
+        );
+        assert_eq!(run(p.as_ref(), &w).unwrap().clips[0].duration, tick(8));
+        w.settings.min_segment_duration = tick(4 + 1);
+        let (p, _) = provider(
+            a,
+            response(
+                a,
+                json!([assembled(
+                    &[("s3", "s3", "hook"), ("s0", "s0", "payoff")],
+                    0.9
+                )]),
+            ),
+        );
+        assert_eq!(
+            run(p.as_ref(), &w).unwrap().dropped[0].reason,
+            ClipDropReason::SegmentDuration
+        );
+        w.settings.min_segment_duration = tick(1);
+        let (p, _) = provider(a, response(a, json!([proposal("s0", "s0", 0.9)])));
+        assert_eq!(
+            run(p.as_ref(), &w).unwrap().dropped[0].reason,
+            ClipDropReason::Duration
+        );
+        // Touching sub-minimum pieces are judged after canonical adjacency repair.
+        w.segments[0].range = SourceRange::new(tick(0), tick(4)).unwrap();
+        w.segments[1].range = SourceRange::new(tick(4), tick(8)).unwrap();
+        w.settings.min_segment_duration = tick(8);
+        let (p, _) = provider(
+            a,
+            response(
+                a,
+                json!([assembled(
+                    &[("s0", "s0", "hook"), ("s1", "s1", "context")],
+                    0.9
+                )]),
+            ),
+        );
+        assert_eq!(run(p.as_ref(), &w).unwrap().clips[0].segments.len(), 1);
+    }
+}
+
+#[test]
+fn multisource_dedupe_uses_summed_overlap_excluding_gaps_and_play_order() {
+    for a in [false, true] {
+        let mut w = input("en", 8);
+        w.settings.overlap_tolerance = 0.2;
+        let (p, _) = provider(
+            a,
+            response(
+                a,
+                json!([
+                    assembled(&[("s7", "s7", "hook"), ("s0", "s0", "payoff")], 0.9),
+                    assembled(&[("s0", "s0", "hook"), ("s7", "s7", "payoff")], 0.8),
+                    assembled(&[("s2", "s2", "hook"), ("s5", "s5", "payoff")], 0.7),
+                    assembled(&[("s0", "s0", "hook"), ("s3", "s3", "payoff")], 0.6)
+                ]),
+            ),
+        );
+        let r = run(p.as_ref(), &w).unwrap();
+        assert_eq!(r.clips.len(), 2); // enclosing envelopes overlap, actual source does not
+        assert_eq!(
+            r.dropped
+                .iter()
+                .filter(|d| d.reason == ClipDropReason::Duplicate)
+                .count(),
+            1
+        );
+        assert_eq!(
+            r.dropped
+                .iter()
+                .filter(|d| d.reason == ClipDropReason::Overlap)
+                .count(),
+            1
+        );
+        // Same text plus >= 0.5 summed IoU is a near-duplicate, even with different pieces.
+        w.settings.overlap_tolerance = 1.0;
+        let (p, _) = provider(
+            a,
+            response(
+                a,
+                json!([
+                    assembled(
+                        &[
+                            ("s0", "s0", "hook"),
+                            ("s3", "s3", "context"),
+                            ("s7", "s7", "payoff")
+                        ],
+                        0.9
+                    ),
+                    assembled(&[("s3", "s3", "hook"), ("s7", "s7", "payoff")], 0.7)
+                ]),
+            ),
+        );
+        let r = run(p.as_ref(), &w).unwrap();
+        assert_eq!(r.clips.len(), 1);
+        assert_eq!(r.dropped[0].reason, ClipDropReason::Duplicate);
+    }
+}
+
+#[test]
+fn settings_default_maximum_and_hostile_limits() {
+    let w = input("en", 3);
+    let mut json = serde_json::to_value(&w).unwrap();
+    json["settings"]
+        .as_object_mut()
+        .unwrap()
+        .remove("max_segments");
+    let parsed: ClipInput = serde_json::from_value(json).unwrap();
+    assert_eq!(parsed.settings.max_segments, 4);
+    for n in [0, 33, usize::MAX] {
+        let mut bad = w.clone();
+        bad.settings.max_segments = n;
+        assert!(bad.validate().is_err());
+    }
+    for minimum in [Tick::ZERO, Tick(-1), tick(16)] {
+        let mut bad = w.clone();
+        bad.settings.min_segment_duration = minimum;
+        assert!(bad.validate().is_err());
+    }
+}
+
+#[test]
+fn fixed_multilingual_assembly_contract_baseline() {
+    let mut accepted = 0;
+    for lang in ["en", "vi", "zh"] {
+        let w = input(lang, 8);
+        let (p, _) = provider(
+            false,
+            response(
+                false,
+                json!([assembled(
+                    &[
+                        ("s6", "s6", "hook"),
+                        ("s0", "s0", "context"),
+                        ("s3", "s3", "payoff")
+                    ],
+                    0.9
+                )]),
+            ),
+        );
+        let r = run(p.as_ref(), &w).unwrap();
+        let c = &r.clips[0];
+        accepted += usize::from(
+            c.duration == tick(12) && c.segments.iter().map(|s| s.source_order).eq([2, 0, 1]),
+        );
+    }
+    assert_eq!(accepted, 3);
+    eprintln!(
+        "fixed EN/VI/ZH assembly contract acceptance: {accepted}/3; single-range contract baseline 0/3 (cannot represent reordered disjoint pieces)"
+    );
+}
+
+#[test]
+fn heuristic_respects_piece_minimum_when_it_exceeds_total_minimum() {
+    let mut w = input("vi", 3);
+    w.settings.min_segment_duration = tick(9);
+    let p = HeuristicClipSuggester::new().unwrap();
+    let r = run(&p, &w).unwrap();
+    assert!(!r.clips.is_empty());
+    for c in r.clips {
+        assert_eq!(c.segments.len(), 1);
+        assert_eq!(c.segments[0].role, ClipRole::Payoff);
+        assert!(c.duration >= tick(9));
+    }
+}
+
+#[test]
+fn luna_model_selection_disclosure_and_nested_schema_match_the_wire() {
+    let w = input("en", 3);
+    let t = Arc::new(Transport {
+        response: Mutex::new(Some(response(false, json!([proposal("s0", "s0", 0.9)])))),
+        calls: AtomicUsize::new(0),
+        requests: Mutex::new(vec![]),
+        cancel: None,
+        fail: false,
+    });
+    let cfg = ProviderConfig::new(
+        "clips".into(),
+        OPENAI_LUNA_MODEL.into(),
+        OPENAI_SETTINGS.into(),
+        Location::Remote {
+            backend: "openai".into(),
+            base_url: ai::openai::BASE_URL.into(),
+            auth_ref: "secret-store".into(),
+        },
+    )
+    .unwrap();
+    let p =
+        OpenAiClipSuggester::new(cfg, ApiKey::new("synthetic-key").unwrap(), t.clone()).unwrap();
+    let s = scope(&w, &p);
+    assert_eq!(
+        p.disclosure(&w, &s).unwrap().model.as_str(),
+        OPENAI_LUNA_MODEL
+    );
+    assert_eq!(run(&p, &w).unwrap().clips.len(), 1);
+    let requests = t.requests.lock().unwrap();
+    let wire: Value = serde_json::from_slice(&requests[0].body).unwrap();
+    assert_eq!(wire["model"], OPENAI_LUNA_MODEL);
+    let item = &wire["text"]["format"]["schema"]["properties"]["clips"]["items"];
+    assert!(item["properties"].get("start_segment_id").is_none());
+    assert_eq!(
+        item["properties"]["segments"]["items"]["properties"]["role"]["enum"],
+        json!(["hook", "context", "payoff"])
+    );
+    assert!(
+        wire["instructions"]
+            .as_str()
+            .unwrap()
+            .contains("PLAY order")
+    );
+}
+
+#[test]
+fn invalid_window_observation_cannot_replace_valid_metadata_or_score() {
+    struct CrossWindow {
+        calls: AtomicUsize,
+        invalid_first: bool,
+    }
+    impl HttpTransport for CrossWindow {
+        fn send(&self, _: HttpRequest) -> Result<HttpResponse, Error> {
+            let call = self.calls.fetch_add(1, Ordering::Relaxed);
+            let invalid = if self.invalid_first {
+                call == 0
+            } else {
+                call == 1
+            };
+            let id = if self.invalid_first { "s130" } else { "s0" };
+            let mut p = proposal(id, id, if invalid { 1.0 } else { 0.5 });
+            p["title"] = json!(if invalid {
+                "invalid window"
+            } else {
+                "valid window"
+            });
+            Ok(response(false, json!([p])))
+        }
+    }
+    for invalid_first in [false, true] {
+        let t = Arc::new(CrossWindow {
+            calls: AtomicUsize::new(0),
+            invalid_first,
+        });
+        let p = remote(false, t.clone());
+        let w = input("en", 150);
+        assert_eq!(w.windows().unwrap().len(), 2);
+        let r = run(p.as_ref(), &w).unwrap();
+        assert_eq!(r.clips.len(), 1);
+        assert_eq!(r.clips[0].proposal.score, 0.5);
+        assert_eq!(r.clips[0].proposal.title.as_str(), "valid window");
+    }
+}
+
+#[test]
+fn configured_piece_limit_is_inclusive_and_total_sums_near_tick_limit() {
+    let mut w = input("en", 64);
+    w.settings.max_segments = 32;
+    w.settings.max_duration = tick(128);
+    let pieces: Vec<_> = (0..32)
+        .map(|i| (format!("s{}", i * 2), format!("s{}", i * 2)))
+        .collect();
+    let refs: Vec<_> = pieces
+        .iter()
+        .map(|(a, b)| (a.as_str(), b.as_str(), "payoff"))
+        .collect();
+    let (p, _) = provider(false, response(false, json!([assembled(&refs, 0.9)])));
+    let r = run(p.as_ref(), &w).unwrap();
+    assert_eq!(r.clips[0].segments.len(), 32);
+    assert_eq!(r.clips[0].duration, tick(128));
+    let mut w = input("en", 2);
+    w.segments[0].range = SourceRange::new(Tick::ZERO, Tick(i64::MAX / 2)).unwrap();
+    w.segments[1].range = SourceRange::new(Tick(i64::MAX / 2 + 1), Tick(i64::MAX)).unwrap();
+    w.settings.max_duration = Tick(i64::MAX);
+    let (p, _) = provider(
+        false,
+        response(
+            false,
+            json!([assembled(
+                &[("s1", "s1", "hook"), ("s0", "s0", "payoff")],
+                0.9
+            )]),
+        ),
+    );
+    let r = run(p.as_ref(), &w).unwrap();
+    assert_eq!(r.clips[0].duration, Tick(i64::MAX - 1));
 }

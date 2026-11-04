@@ -1,4 +1,4 @@
-//! Ranked continuous source ranges. Engine owns scheduling, retries and aggregate budgets.
+//! Ranked shorts assembled from ordered source segments. Engine owns scheduling, retries and aggregate budgets.
 mod heuristic;
 mod remote;
 use crate::{
@@ -7,7 +7,7 @@ use crate::{
 };
 use captions::{LanguageTag, NfcText};
 pub use heuristic::HeuristicClipSuggester;
-pub use remote::{AnthropicClipSuggester, ClipDisclosure, OpenAiClipSuggester};
+pub use remote::{AnthropicClipSuggester, ClipDisclosure, OPENAI_LUNA_MODEL, OpenAiClipSuggester};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 use time::{SourceRange, Tick};
@@ -18,11 +18,11 @@ pub const MAX_WINDOW_BYTES: usize = 24 * 1024;
 pub const MAX_WIRE: u64 = 64 * 1024;
 const MAX_WINDOWS: usize = 1024;
 const MAX_OBSERVATIONS: usize = 4096;
-pub const HEURISTIC_SETTINGS: &str = "clips-heuristic-v1;sentence-pause-keyword;char-bigram-dedupe";
+pub const HEURISTIC_SETTINGS: &str = "clips-heuristic-v2;sentence-pause-keyword;char-bigram-dedupe";
 pub const OPENAI_SETTINGS: &str =
-    "clips-openai-v1;responses;strict;store=false;max_output=8192;char-bigram-dedupe";
+    "clips-openai-v2;responses;strict;store=false;max_output=8192;char-bigram-dedupe";
 pub const ANTHROPIC_SETTINGS: &str =
-    "clips-anthropic-v1;messages;json_schema;max_output=8192;char-bigram-dedupe";
+    "clips-anthropic-v2;messages;json_schema;max_output=8192;char-bigram-dedupe";
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -48,12 +48,21 @@ pub struct ClipSettings {
     /// Positive duration bounds in source ticks, inclusive.
     pub min_duration: Tick,
     pub max_duration: Tick,
-    /// Maximum range intersection-over-union allowed between returned candidates.
+    /// Maximum pieces per short, 1..=32; defaults to four in JSON.
+    #[serde(default = "default_max_segments")]
+    pub max_segments: usize,
+    /// Minimum duration of each canonical piece in source ticks (positive).
+    pub min_segment_duration: Tick,
+    /// Maximum summed source intersection-over-union between returned candidates.
     pub overlap_tolerance: f64,
     pub language: LanguageTag,
     /// Exact NFC keywords for local density ranking; also included in remote input.
     pub keywords: Vec<NfcText>,
 }
+fn default_max_segments() -> usize {
+    4
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ClipInput {
@@ -64,6 +73,9 @@ impl ClipInput {
     pub fn validate(&self) -> Result<(), Error> {
         let s = &self.settings;
         if !(1..=32).contains(&s.count)
+            || !(1..=32).contains(&s.max_segments)
+            || s.min_segment_duration <= Tick::ZERO
+            || s.min_segment_duration > s.max_duration
             || s.min_duration <= Tick::ZERO
             || s.max_duration < s.min_duration
             || !s.overlap_tolerance.is_finite()
@@ -113,7 +125,8 @@ impl ClipInput {
         Ok(text.into())
     }
     /// Plan bounded overlapping windows before requesting consent or reserving costs.
-    /// Overlap covers max_duration so every admissible cross-window range is visible.
+    /// Overlap covers max_duration so every admissible contiguous cross-window range is visible.
+    /// Noncontiguous assembly uses only IDs present together in one window.
     /// Refuses density too high to preserve this guarantee within the wire bounds.
     pub fn windows(&self) -> Result<Vec<Self>, Error> {
         self.validate()?;
@@ -164,16 +177,46 @@ impl ClipInput {
         Ok(windows)
     }
 }
+/// Editorial role; play order may differ from source order.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ClipRole {
+    Hook,
+    Context,
+    Payoff,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ClipPiece {
+    pub start_segment_id: NfcText,
+    pub end_segment_id: NfcText,
+    pub role: ClipRole,
+}
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ClipProposal {
-    pub start_segment_id: NfcText,
-    pub end_segment_id: NfcText,
+    /// Pieces in playback order. IDs within each piece are in source order.
+    pub segments: Vec<ClipPiece>,
     pub title: NfcText,
-    pub hook: NfcText,
+    pub hook_text: NfcText,
     pub reason: NfcText,
     /// Ranking score only, never a probability.
     pub score: f64,
+}
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+pub enum ClipRepairReason {
+    AdjacentMerged,
+}
+/// Resolved piece in playback order; source_order is its zero-based source rank.
+#[derive(Clone, Debug, Serialize)]
+pub struct ClipSourceSegment {
+    pub range: SourceRange,
+    pub role: ClipRole,
+    pub source_order: usize,
+    /// Present when canonicalization merged touching pieces into this segment.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub repair: Option<ClipRepairReason>,
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -184,12 +227,20 @@ pub enum ClipSource {
 #[derive(Clone, Debug, Serialize)]
 pub struct ClipSuggestion {
     pub proposal: ClipProposal,
-    pub range: SourceRange,
+    pub segments: Vec<ClipSourceSegment>,
+    /// Sum of piece durations, excluding gaps, in ticks.
+    pub duration: Tick,
     pub source: ClipSource,
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
 pub enum ClipDropReason {
     Duration,
+    SegmentDuration,
+    SegmentCount,
+    UnknownId,
+    ReversedRange,
+    HookOrder,
+    SegmentOverlap,
     Duplicate,
     Overlap,
     CountLimit,
@@ -265,26 +316,32 @@ pub fn suggest_clips(
         let proposals = provider.suggest(w, r, hooks)?;
         let validated = validate(w, proposals, provider.source())?;
         for clip in validated.clips {
-            observe(&mut observations, clip.proposal, Some(clip.range))?;
+            observe(
+                &mut observations,
+                clip.proposal,
+                Some(clip.segments),
+                ClipDropReason::Duration,
+            )?;
         }
         for drop in validated.dropped {
-            observe(&mut observations, drop.proposal, None)?;
+            observe(&mut observations, drop.proposal, None, drop.reason)?;
         }
     }
     crate::contracts::checkpoint(hooks, Stage::SuggestClips)?;
     let mut all = Vec::new();
     let mut dropped = Vec::new();
     for observation in observations.into_values() {
-        if let Some(range) = observation.range {
+        if let Some(segments) = observation.segments {
             all.push(ClipSuggestion {
                 proposal: observation.proposal,
-                range,
+                duration: duration(&segments)?,
+                segments,
                 source: provider.source(),
             });
         } else {
             dropped.push(DroppedClip {
                 proposal: observation.proposal,
-                reason: ClipDropReason::Duration,
+                reason: observation.reason,
             });
         }
         if let Some(proposal) = observation.duplicate {
@@ -299,29 +356,45 @@ pub fn suggest_clips(
 
 struct WindowObservation {
     proposal: ClipProposal,
-    // The same endpoint IDs always resolve to the same source range and duration
-    // verdict, regardless of which overlapping window observed them.
-    range: Option<SourceRange>,
+    segments: Option<Vec<ClipSourceSegment>>,
+    reason: ClipDropReason,
     duplicate: Option<ClipProposal>,
 }
 fn observe(
-    observations: &mut BTreeMap<(NfcText, NfcText), WindowObservation>,
+    observations: &mut BTreeMap<Vec<(NfcText, NfcText, ClipRole)>, WindowObservation>,
     proposal: ClipProposal,
-    range: Option<SourceRange>,
+    segments: Option<Vec<ClipSourceSegment>>,
+    reason: ClipDropReason,
 ) -> Result<(), Error> {
-    let key = (
-        proposal.start_segment_id.clone(),
-        proposal.end_segment_id.clone(),
-    );
+    let key = proposal
+        .segments
+        .iter()
+        .map(|s| (s.start_segment_id.clone(), s.end_segment_id.clone(), s.role))
+        .collect();
     if let Some(previous) = observations.get_mut(&key) {
+        // A hallucinated out-of-window ID can be valid in a later window. Only
+        // validated observations may supply the score/metadata of an accepted short.
+        if previous.segments.is_none() && segments.is_some() {
+            *previous = WindowObservation {
+                proposal,
+                segments,
+                reason,
+                duplicate: None,
+            };
+            return Ok(());
+        }
+        if previous.segments.is_some() && segments.is_none() {
+            return Ok(());
+        }
         // Strict comparison retains the first observation on score ties, matching
         // the stable final sort. Duplicate diagnostics retain one example per pair.
         let discarded = if proposal.score.total_cmp(&previous.proposal.score).is_gt() {
+            previous.segments = segments;
             std::mem::replace(&mut previous.proposal, proposal)
         } else {
             proposal
         };
-        if previous.range.is_some() && previous.duplicate.is_none() {
+        if previous.segments.is_some() && previous.duplicate.is_none() {
             previous.duplicate = Some(discarded);
         }
     } else {
@@ -332,7 +405,8 @@ fn observe(
             key,
             WindowObservation {
                 proposal,
-                range,
+                segments,
+                reason,
                 duplicate: None,
             },
         );
@@ -357,38 +431,120 @@ fn validate(
         clips: Vec::new(),
         dropped: Vec::new(),
     };
-    for p in proposals {
+    for mut p in proposals {
         if !p.score.is_finite()
             || !(0.0..=1.0).contains(&p.score)
-            || [&p.title, &p.hook, &p.reason]
+            || [&p.title, &p.hook_text, &p.reason]
                 .iter()
                 .any(|s| s.as_str().trim().is_empty() || s.as_str().len() > 2048)
+            || p.segments.len() > MAX_WINDOW_SEGMENTS
+            || p.segments.iter().any(|s| {
+                s.start_segment_id.as_str().len() > 256 || s.end_segment_id.as_str().len() > 256
+            })
         {
             return Err(Error::Schema);
         }
-        let (a, first) = ids.get(&p.start_segment_id).ok_or(Error::Schema)?;
-        let (b, last) = ids.get(&p.end_segment_id).ok_or(Error::Schema)?;
-        if a > b {
-            return Err(Error::Schema);
-        }
-        let range = SourceRange::new(first.range.start(), last.range.end())?;
-        if range.duration() < input.settings.min_duration
-            || range.duration() > input.settings.max_duration
-        {
-            result.dropped.push(DroppedClip {
+        match resolve(input, &ids, &mut p) {
+            Ok(segments) => result.clips.push(ClipSuggestion {
+                duration: duration(&segments)?,
                 proposal: p,
-                reason: ClipDropReason::Duration,
-            });
-        } else {
-            result.clips.push(ClipSuggestion {
-                proposal: p,
-                range,
+                segments,
                 source,
-            });
+            }),
+            Err(reason) => result.dropped.push(DroppedClip {
+                proposal: p,
+                reason,
+            }),
         }
     }
     Ok(result)
 }
+fn duration(segments: &[ClipSourceSegment]) -> Result<Tick, Error> {
+    segments.iter().try_fold(Tick::ZERO, |sum, s| {
+        sum.0
+            .checked_add(s.range.duration().0)
+            .map(Tick)
+            .ok_or(Error::Payload)
+    })
+}
+fn resolve(
+    input: &ClipInput,
+    ids: &BTreeMap<&NfcText, (usize, &ClipSegment)>,
+    proposal: &mut ClipProposal,
+) -> Result<Vec<ClipSourceSegment>, ClipDropReason> {
+    if proposal.segments.is_empty() || proposal.segments.len() > input.settings.max_segments {
+        return Err(ClipDropReason::SegmentCount);
+    }
+    let hooks = proposal
+        .segments
+        .iter()
+        .filter(|s| s.role == ClipRole::Hook)
+        .count();
+    if hooks > 0
+        && (hooks != 1
+            || proposal
+                .segments
+                .first()
+                .is_none_or(|s| s.role != ClipRole::Hook))
+    {
+        return Err(ClipDropReason::HookOrder);
+    }
+    let mut pieces: Vec<ClipPiece> = Vec::new();
+    let mut resolved: Vec<ClipSourceSegment> = Vec::new();
+    for piece in &proposal.segments {
+        let (a, first) = ids
+            .get(&piece.start_segment_id)
+            .ok_or(ClipDropReason::UnknownId)?;
+        let (b, last) = ids
+            .get(&piece.end_segment_id)
+            .ok_or(ClipDropReason::UnknownId)?;
+        if a > b {
+            return Err(ClipDropReason::ReversedRange);
+        }
+        let range = SourceRange::new(first.range.start(), last.range.end())
+            .map_err(|_| ClipDropReason::ReversedRange)?;
+        if resolved.iter().any(|s| s.range.overlaps(range)) {
+            return Err(ClipDropReason::SegmentOverlap);
+        }
+        if let (Some(previous), Some(previous_piece)) = (resolved.last_mut(), pieces.last_mut())
+            && previous.range.end() == range.start()
+        {
+            // Canonical adjacency retains the opening piece's editorial role.
+            previous.range = SourceRange::new(previous.range.start(), range.end())
+                .map_err(|_| ClipDropReason::ReversedRange)?;
+            previous_piece.end_segment_id = piece.end_segment_id.clone();
+            previous.repair = Some(ClipRepairReason::AdjacentMerged);
+            continue;
+        }
+        pieces.push(piece.clone());
+        resolved.push(ClipSourceSegment {
+            range,
+            role: piece.role,
+            source_order: 0,
+            repair: None,
+        });
+    }
+    if resolved
+        .iter()
+        .any(|s| s.range.duration() < input.settings.min_segment_duration)
+    {
+        return Err(ClipDropReason::SegmentDuration);
+    }
+    let total = duration(&resolved).map_err(|_| ClipDropReason::Duration)?;
+    if total < input.settings.min_duration || total > input.settings.max_duration {
+        return Err(ClipDropReason::Duration);
+    }
+    let mut order: Vec<_> = (0..resolved.len()).collect();
+    order.sort_by_key(|i| resolved.get(*i).map(|s| s.range.start()));
+    for (rank, index) in order.into_iter().enumerate() {
+        if let Some(s) = resolved.get_mut(index) {
+            s.source_order = rank;
+        }
+    }
+    proposal.segments = pieces;
+    Ok(resolved)
+}
+
 fn merge(
     input: &ClipInput,
     mut all: Vec<ClipSuggestion>,
@@ -396,28 +552,38 @@ fn merge(
     hooks: &dyn ExecutionHooks,
 ) -> Result<ClipSuggestions, Error> {
     all.sort_by(|a, b| {
-        b.proposal
-            .score
-            .total_cmp(&a.proposal.score)
-            .then(a.range.start().cmp(&b.range.start()))
-            .then(a.range.end().cmp(&b.range.end()))
+        b.proposal.score.total_cmp(&a.proposal.score).then_with(|| {
+            a.segments
+                .iter()
+                .map(|s| (s.range.start(), s.range.end()))
+                .cmp(b.segments.iter().map(|s| (s.range.start(), s.range.end())))
+        })
     });
     let mut kept: Vec<(ClipSuggestion, BTreeSet<(char, char)>)> = Vec::new();
     for clip in all {
         crate::contracts::checkpoint(hooks, Stage::SuggestClips)?;
-        let text = bigrams(input, clip.range);
+        let text = bigrams(input, &clip.segments);
         let mut reason = None;
         for (other, other_text) in &kept {
-            let intersection = clip
-                .range
-                .intersect(other.range)
-                .map_or(0, |r| r.duration().0);
-            let union = i128::from(clip.range.duration().0) + i128::from(other.range.duration().0)
-                - i128::from(intersection);
+            let intersection: i128 = clip
+                .segments
+                .iter()
+                .flat_map(|s| {
+                    other
+                        .segments
+                        .iter()
+                        .filter_map(move |o| s.range.intersect(o.range))
+                })
+                .map(|r| i128::from(r.duration().0))
+                .sum();
+            let union = i128::from(clip.duration.0) + i128::from(other.duration.0) - intersection;
             let iou = intersection as f64 / union as f64;
             let similarity = text.intersection(other_text).count() as f64
                 / text.union(other_text).count().max(1) as f64;
-            if clip.range == other.range || (iou >= 0.5 && similarity >= 0.8) {
+            if (intersection == i128::from(clip.duration.0)
+                && intersection == i128::from(other.duration.0))
+                || (iou >= 0.5 && similarity >= 0.8)
+            {
                 reason = Some(ClipDropReason::Duplicate);
                 break;
             }
@@ -443,11 +609,11 @@ fn merge(
         dropped,
     })
 }
-fn bigrams(input: &ClipInput, range: SourceRange) -> BTreeSet<(char, char)> {
+fn bigrams(input: &ClipInput, segments: &[ClipSourceSegment]) -> BTreeSet<(char, char)> {
     let chars: Vec<_> = input
         .segments
         .iter()
-        .filter(|s| range.overlaps(s.range))
+        .filter(|s| segments.iter().any(|piece| piece.range.overlaps(s.range)))
         .flat_map(|s| s.text.as_str().chars())
         .flat_map(char::to_lowercase)
         .filter(|c| c.is_alphanumeric())

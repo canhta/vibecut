@@ -93,3 +93,10 @@ With `--json`, an error is `{"status":"error","error":{"code":"busy","message":"
 "exit_code":3,"unavailable":[…]}}`; `unavailable` appears only for source
 admission failures. Messages never contain project text, media text or provider
 payloads.
+
+## Clip suggestions
+
+The `suggest_clips` progress stage is recognized. Provider execution and clip-result
+rendering are not yet CLI commands. The serialized engine result uses the
+[AI ordered-segment contract](../../crates/ai/README.md#transcript-clip-suggestions);
+future presentation must preserve its play order and source-order ranks.

@@ -513,6 +513,8 @@ fn clips_use_local_heuristics_only_when_explicitly_configured() {
             range: SourceRange::new(Tick::ZERO, Tick(4 * TICKS_PER_SECOND)).unwrap(),
         }],
         settings: ClipSettings {
+            max_segments: 4,
+            min_segment_duration: Tick(TICKS_PER_SECOND),
             count: 1,
             min_duration: Tick(TICKS_PER_SECOND),
             max_duration: Tick(5 * TICKS_PER_SECOND),

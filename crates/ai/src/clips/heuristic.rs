@@ -1,4 +1,7 @@
-use super::{ClipInput, ClipProposal, ClipSource, ClipSuggester, HEURISTIC_SETTINGS, prepare};
+use super::{
+    ClipInput, ClipPiece, ClipProposal, ClipRole, ClipSource, ClipSuggester, HEURISTIC_SETTINGS,
+    prepare,
+};
 use crate::Location;
 use crate::{
     Capabilities, CostEstimate, Error, ExecutionHooks, ProviderConfig, Request, Scope, Stage,
@@ -56,7 +59,13 @@ impl ClipSuggester for HeuristicClipSuggester {
                 }
                 text.push_str(last.text.as_str());
                 text.push(' ');
-                if duration < window.settings.min_duration.0 {
+                if duration
+                    < window
+                        .settings
+                        .min_duration
+                        .0
+                        .max(window.settings.min_segment_duration.0)
+                {
                     continue;
                 }
                 let sentence_end = sentence(last.text.as_str());
@@ -89,10 +98,13 @@ impl ClipSuggester for HeuristicClipSuggester {
                         "Local clip"
                     };
                     best = Some(ClipProposal {
-                        start_segment_id: first.id.clone(),
-                        end_segment_id: last.id.clone(),
+                        segments: vec![ClipPiece {
+                            start_segment_id: first.id.clone(),
+                            end_segment_id: last.id.clone(),
+                            role: ClipRole::Payoff,
+                        }],
                         title: title.into(),
-                        hook: title.into(),
+                        hook_text: title.into(),
                         reason:
                             "Local sentence boundaries, pauses and keyword density; ranking only"
                                 .into(),
