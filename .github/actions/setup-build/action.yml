@@ -1,0 +1,42 @@
+name: Native build dependencies
+description: Install Rust and reuse the current source-built LGPL FFmpeg
+runs:
+  using: composite
+  steps:
+    - name: Install pinned Rust toolchain
+      shell: bash
+      run: rustup toolchain install
+    - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+      with:
+        save-if: ${{ github.event_name != 'pull_request' }}
+    - name: Install macOS media build tools
+      if: runner.os == 'macOS'
+      shell: bash
+      run: brew install cmake pkgconf nasm
+    - name: Install Windows source build tools
+      if: runner.os == 'Windows'
+      uses: msys2/setup-msys2@ec48f7c5447b3140e2b088413ae3a55687bccb6e # v2.33.0
+      with:
+        msystem: ${{ runner.arch == 'ARM64' && 'CLANGARM64' || 'CLANG64' }}
+        path-type: inherit
+        install: make diffutils git tar
+        pacboy: clang:p llvm:p lld:p cmake:p ninja:p pkgconf:p nasm:p
+    - name: Media cache epoch
+      id: epoch
+      shell: bash
+      run: echo "day=$(date -u +%Y-%m-%d)" >> "$GITHUB_OUTPUT"
+    - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: ~/.cache/vibecut/ffmpeg
+        key: media-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('xtask/src/ffmpeg.rs', 'xtask/patches/**', 'rust-toolchain.toml') }}-${{ steps.epoch.outputs.day }}
+        restore-keys: |
+          media-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('xtask/src/ffmpeg.rs', 'xtask/patches/**', 'rust-toolchain.toml') }}-
+    - name: Resolve and provision current LGPL media libraries (macOS)
+      # Always resolve stable upstream tags, even after a cache hit.
+      if: runner.os == 'macOS'
+      shell: bash
+      run: cargo xtask ffmpeg
+    - name: Resolve and provision current LGPL media libraries (Windows)
+      if: runner.os == 'Windows'
+      shell: msys2 {0}
+      run: cargo xtask ffmpeg

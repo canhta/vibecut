@@ -1,6 +1,9 @@
 name: CI
 
 on:
+  push:
+    branches: [main]
+  pull_request:
   workflow_dispatch:
     inputs:
       require-oracles:
@@ -12,49 +15,97 @@ permissions:
   contents: read
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  group: ci-${{ github.event_name == 'pull_request' && github.ref || github.run_id }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
-  ci:
+  changes:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      docs-only: ${{ steps.paths.outputs.docs-only }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - id: paths
+        run: python3 .github/scripts/changes.py
+
+  docs:
+    needs: changes
+    if: needs.changes.outputs.docs-only == 'true'
+    runs-on: macos-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - run: rustup toolchain install
+      - run: cargo xtask docs
+
+  rust:
     name: Rust (${{ matrix.os }})
+    needs: changes
+    if: needs.changes.outputs.docs-only != 'true'
     strategy:
       fail-fast: false
       matrix:
         os: [macos-latest, windows-latest]
     runs-on: ${{ matrix.os }}
+    continue-on-error: ${{ matrix.os == 'windows-latest' }}
+    timeout-minutes: 90
     steps:
-      - uses: actions/checkout@v7
-      - name: Install pinned Rust toolchain
-        run: rustup toolchain install
-      - uses: Swatinem/rust-cache@v2
-      - name: Install macOS media build tools
-        if: runner.os == 'macOS'
-        run: brew install cmake pkgconf nasm
-      - name: Install Windows source build tools
-        if: runner.os == 'Windows'
-        uses: msys2/setup-msys2@v2
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          msystem: ${{ runner.arch == 'ARM64' && 'CLANGARM64' || 'CLANG64' }}
-          path-type: inherit
-          install: >-
-            make diffutils git tar
-          pacboy: >-
-            clang:p llvm:p lld:p cmake:p ninja:p pkgconf:p nasm:p
-      - name: Provision current LGPL media libraries
-        shell: ${{ runner.os == 'Windows' && 'msys2 {0}' || 'bash' }}
-        run: cargo xtask ffmpeg
+          persist-credentials: false
+      - uses: ./.github/actions/setup-build
       - name: Install required media oracles (macOS)
         if: runner.os == 'macOS' && inputs.require-oracles
         run: brew install ffmpeg
       - name: Install required media oracles (Windows)
         if: runner.os == 'Windows' && inputs.require-oracles
         run: choco install ffmpeg -y --no-progress
-      - name: Check workspace
-        if: ${{ !inputs.require-oracles }}
-        shell: ${{ runner.os == 'Windows' && 'msys2 {0}' || 'bash' }}
-        run: cargo xtask ci
-      - name: Check workspace with required media oracles
-        if: ${{ inputs.require-oracles }}
-        shell: ${{ runner.os == 'Windows' && 'msys2 {0}' || 'bash' }}
-        run: cargo xtask ci --require-oracles
+      - name: Check workspace (macOS)
+        if: runner.os == 'macOS'
+        shell: bash
+        env:
+          REQUIRE_ORACLES: ${{ inputs.require-oracles }}
+        run: |
+          if [ "$REQUIRE_ORACLES" = true ]; then
+            cargo xtask ci --require-oracles
+          else
+            cargo xtask ci
+          fi
+      - name: Check workspace (Windows, advisory)
+        if: runner.os == 'Windows'
+        shell: msys2 {0}
+        env:
+          REQUIRE_ORACLES: ${{ inputs.require-oracles }}
+        run: |
+          if [ "$REQUIRE_ORACLES" = true ]; then
+            cargo xtask ci --require-oracles
+          else
+            cargo xtask ci
+          fi
+
+  gate:
+    name: CI gate
+    if: always()
+    needs: [changes, docs, rust]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Require the selected check
+        env:
+          CHANGES: ${{ needs.changes.result }}
+          DOCS_ONLY: ${{ needs.changes.outputs.docs-only }}
+          DOCS: ${{ needs.docs.result }}
+          RUST: ${{ needs.rust.result }}
+        run: |
+          test "$CHANGES" = success
+          if [ "$DOCS_ONLY" = true ]; then
+            test "$DOCS" = success
+          else
+            test "$RUST" = success
+          fi
