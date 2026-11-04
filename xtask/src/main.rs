@@ -1,5 +1,6 @@
 //! Workspace checks and admitted crate scaffolding.
 mod benchmark;
+mod clip_eval;
 mod ffmpeg;
 mod oracles;
 
@@ -346,6 +347,7 @@ fn run() -> Result<(), String> {
         .as_slice()
     {
         ["media-bench"] => benchmark::media(root),
+        ["clip-eval", ..] => clip_eval::run(root, args.get(1..).unwrap_or(&[])),
         ["ffmpeg"] => ffmpeg::provision(None),
         ["ffmpeg", "--target", target] => ffmpeg::provision(Some(target)),
         ["layers"] => layers(root),
@@ -359,7 +361,7 @@ fn run() -> Result<(), String> {
         ["ci"] => ci(root, false),
         ["ci", "--require-oracles"] => ci(root, true),
         _ => Err(
-            "usage: cargo xtask <ffmpeg [--target PLATFORM]|media-bench|ci [--require-oracles]|docs|layers|assets|new-crate NAME>"
+            "usage: cargo xtask <ffmpeg [--target PLATFORM]|media-bench|clip-eval SET [OPTIONS]|ci [--require-oracles]|docs|layers|assets|new-crate NAME>"
                 .into(),
         ),
     }

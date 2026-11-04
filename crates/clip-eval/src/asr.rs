@@ -1,0 +1,382 @@
+//! Opt-in ElevenLabs Scribe preparation of a real transcript.
+//!
+//! This is upstream of the clip pipeline: it decodes bounded speech chunks,
+//! transcribes each with the already-admitted Scribe adapter, assembles absolute
+//! source coordinates and caches the resulting captions transcript.
+use crate::{Error, Result};
+use ai::elevenlabs::{BACKEND, BASE_URL, ElevenLabsTranscriber, MODEL, SETTINGS_FINGERPRINT};
+use ai::transport::{ApiKey, UreqTransport};
+use ai::{
+    AudioWindow, Consent, CostEstimate, ExecutionHooks, Location, Money, Operation, ProviderConfig,
+    Request, SampleRange, Scope, Stage, Transcriber,
+};
+use captions::{
+    LanguageProfile, LanguageRegistry, LanguageTag, NfcText, TimingSpans, Transcript, Word,
+};
+use media::{
+    AssetId, AudioDecoder, PacketReader, SourceAsset, SpeechExtractSettings,
+    extract_speech_audio_with,
+};
+use std::path::{Path, PathBuf};
+use std::sync::Arc;
+use std::time::Instant;
+use time::{Rounding, SourceRange, TICKS_PER_SECOND, Tick};
+
+const SAMPLE_RATE: u32 = 16_000;
+const MAX_PCM_BYTES: u64 = 64 * 1024 * 1024;
+const CHUNK_SECONDS: i64 = 15 * 60;
+const BIT_RATE: usize = 64_000;
+
+struct NoHooks;
+impl ExecutionHooks for NoHooks {
+    fn cancelled(&self) -> bool {
+        false
+    }
+    fn stage(&self, _: Stage) {}
+}
+
+pub struct Prepared {
+    pub transcript: Transcript,
+    pub cost_micros: u64,
+    pub wall_ms: u64,
+    pub chunks: usize,
+    pub notes: Vec<String>,
+}
+
+/// Transcribe a source video into a captions transcript. Caller supplies the
+/// exact language, source content hash and cost cap; this never retries or falls
+/// back to another provider.
+pub fn prepare(
+    source: &Path,
+    language: &LanguageTag,
+    source_sha: &str,
+    out_dir: &Path,
+    max_cost_micros: u64,
+) -> Result<Prepared> {
+    let started = Instant::now();
+    let key =
+        std::env::var("ELEVENLABS_API_KEY").map_err(|_| Error::MissingKey("ELEVENLABS_API_KEY"))?;
+    let key = ApiKey::new(key).map_err(|_| Error::MissingKey("ELEVENLABS_API_KEY"))?;
+    let config = ProviderConfig::new(
+        "asr".into(),
+        MODEL.into(),
+        SETTINGS_FINGERPRINT.into(),
+        Location::Remote {
+            backend: BACKEND.into(),
+            base_url: BASE_URL.into(),
+            auth_ref: "env:ELEVENLABS_API_KEY".into(),
+        },
+    )?;
+    let transcriber = ElevenLabsTranscriber::new(config, key, Arc::new(UreqTransport::new()))?;
+    let asset = SourceAsset::import(AssetId(1), source.to_path_buf())?;
+    let duration = asset
+        .probe()
+        .duration
+        .ok_or_else(|| Error::Options("source duration is unknown".into()))?;
+    let range = SourceRange::new(Tick::ZERO, duration)?;
+    let settings = SpeechExtractSettings {
+        max_bytes: 24_000_000,
+        max_duration: Tick(CHUNK_SECONDS * TICKS_PER_SECOND),
+        overlap: Tick::ZERO,
+        bit_rate: BIT_RATE,
+    };
+    let chunk_dir = out_dir
+        .join("cache/asr")
+        .join(source_sha.get(..16).unwrap_or(source_sha));
+    let chunks = extract_speech_audio_with(&asset, range, &chunk_dir, &settings)?;
+    let mut recognitions = Vec::with_capacity(chunks.len());
+    let mut cost_micros = 0u64;
+    let mut notes = Vec::new();
+    for chunk in &chunks {
+        let decoded = decode_chunk(&chunk.path)?;
+        let expected = expected_samples(chunk.source_range)?;
+        let samples = fit_samples(decoded, expected, &mut notes);
+        let start = samples_from_tick(chunk.source_range.start())?;
+        let end = start
+            .checked_add(u64::try_from(samples.len()).map_err(|_| Error::Payload)?)
+            .ok_or(Error::Payload)?;
+        let sample_range = SampleRange::new(start, end)?;
+        if sample_range.len().saturating_mul(4) > MAX_PCM_BYTES {
+            return Err(Error::Payload);
+        }
+        let scope = Scope {
+            provider: transcriber.config().clone(),
+            operation: Operation::Transcribe,
+            payload_fingerprint: format!("asr:{source_sha}").into(),
+            mode: "file".into(),
+            texts: Vec::new(),
+            source_language: language.clone(),
+            target_language: None,
+            source_samples: sample_range,
+            sample_rate: SAMPLE_RATE,
+            max_bytes: sample_range
+                .len()
+                .checked_mul(2)
+                .and_then(|bytes| bytes.checked_add(44))
+                .ok_or(Error::Payload)?,
+        };
+        let estimate = estimate_micros(&transcriber.estimate(&scope))?;
+        cost_micros = cost_micros.saturating_add(estimate);
+        if cost_micros > max_cost_micros {
+            return Err(Error::CostCap {
+                estimate: cost_micros,
+                cap: max_cost_micros,
+            });
+        }
+        let consent = Consent::grant(scope.clone(), Money::new("USD", estimate)?)?;
+        let request = Request {
+            scope: &scope,
+            consent: Some(&consent),
+        };
+        let audio = AudioWindow {
+            samples: &samples,
+            range: sample_range,
+            sample_rate: SAMPLE_RATE,
+        };
+        recognitions.push(ai::transcribe(
+            &transcriber,
+            audio,
+            &request,
+            None,
+            &NoHooks,
+        )?);
+    }
+    let recognition = ai::assemble(recognitions, &NoHooks)?;
+    let mut transcript = recognition.to_transcript()?;
+    let registry = LanguageRegistry::standard()?;
+    let profile = registry.profile(language);
+    for segment in &mut transcript.segments {
+        if let Some(spans) = &segment.spans {
+            match span_words(spans, profile) {
+                Ok(Some(words)) => {
+                    segment.words = words;
+                    segment.spans = None;
+                }
+                Ok(None) => notes.push("ASR spans could not be reduced to timed words".into()),
+                Err(error) => notes.push(format!("ASR span grouping failed: {error}")),
+            }
+        }
+    }
+    Ok(Prepared {
+        transcript,
+        cost_micros,
+        wall_ms: u64::try_from(started.elapsed().as_millis()).unwrap_or(u64::MAX),
+        chunks: chunks.len(),
+        notes,
+    })
+}
+
+fn span_words(spans: &TimingSpans, profile: &LanguageProfile) -> Result<Option<Vec<Word>>> {
+    let display = spans.display().as_str();
+    let groups = spans.groups(profile)?;
+    let mut merged: Vec<(usize, usize, time::SourceRange, Option<NfcText>)> = Vec::new();
+    for group in groups {
+        let slice = display
+            .get(group.display.clone())
+            .ok_or(captions::Error::Invalid("timing group text"))?;
+        if slice.trim().is_empty() {
+            continue;
+        }
+        match group.range {
+            Some(range) => {
+                let leading = slice.len() - slice.trim_start().len();
+                let trailing = slice.len() - slice.trim_end().len();
+                let start = group.display.start.saturating_add(leading);
+                let end = group.display.end.saturating_sub(trailing);
+                if start >= end {
+                    continue;
+                }
+                merged.push((start, end, range, group.speaker));
+            }
+            None => {
+                if let Some(previous) = merged.last_mut() {
+                    previous.1 = group.display.end;
+                }
+            }
+        }
+    }
+    if merged.is_empty() {
+        return Ok(None);
+    }
+    let mut words = Vec::with_capacity(merged.len());
+    for (start, end, range, speaker) in merged {
+        let text = display
+            .get(start..end)
+            .ok_or(captions::Error::Invalid("timing word text"))?;
+        if text.trim().is_empty() {
+            continue;
+        }
+        words.push(Word {
+            text: NfcText::from(text),
+            range: Some(range),
+            speaker,
+            confidence: None,
+        });
+    }
+    if words.is_empty() {
+        Ok(None)
+    } else {
+        Ok(Some(words))
+    }
+}
+
+fn decode_chunk(path: &Path) -> Result<Vec<f32>> {
+    let mut reader = PacketReader::open(path)?;
+    let stream = reader
+        .probe()
+        .streams
+        .iter()
+        .find(|stream| stream.kind == media::StreamKind::Audio)
+        .cloned()
+        .ok_or(media::MediaError::NoAudioStream)?;
+    let mut decoder = AudioDecoder::new(&stream)?;
+    let mut samples = Vec::new();
+    while let Some(packet) = reader.next_packet()? {
+        for frame in decoder.decode(&packet)? {
+            append(&frame, &mut samples)?;
+        }
+    }
+    for frame in decoder.flush()? {
+        append(&frame, &mut samples)?;
+    }
+    Ok(samples)
+}
+
+fn append(frame: &media::AudioFrame, samples: &mut Vec<f32>) -> Result<()> {
+    if frame.sample_rate() != SAMPLE_RATE || frame.channels() != 1 {
+        return Err(Error::Options("ASR chunk is not mono 16 kHz".into()));
+    }
+    let planes = frame.planar_f32()?;
+    let mono = planes
+        .first()
+        .ok_or_else(|| Error::Options("ASR chunk has no samples".into()))?;
+    samples.extend_from_slice(mono);
+    Ok(())
+}
+
+fn expected_samples(range: SourceRange) -> Result<usize> {
+    let count = range
+        .duration()
+        .to_units(i64::from(SAMPLE_RATE), Rounding::Nearest)?;
+    usize::try_from(count).map_err(|_| Error::Payload)
+}
+
+fn fit_samples(mut samples: Vec<f32>, expected: usize, notes: &mut Vec<String>) -> Vec<f32> {
+    if samples.len() > expected {
+        notes.push(format!(
+            "ASR chunk trimmed {} trailing samples",
+            samples.len() - expected
+        ));
+        samples.truncate(expected);
+    } else if samples.len() < expected {
+        notes.push(format!(
+            "ASR chunk padded {} missing samples",
+            expected - samples.len()
+        ));
+        samples.resize(expected, 0.0);
+    }
+    samples
+}
+
+fn samples_from_tick(tick: Tick) -> Result<u64> {
+    let samples = tick.to_units(i64::from(SAMPLE_RATE), Rounding::Nearest)?;
+    u64::try_from(samples).map_err(|_| Error::Payload)
+}
+
+fn estimate_micros(estimate: &CostEstimate) -> Result<u64> {
+    match estimate {
+        CostEstimate::Free => Ok(0),
+        CostEstimate::UpperBound(money) => Ok(money.micros()),
+        CostEstimate::Unknown => Err(Error::UnknownCost),
+    }
+}
+
+/// Cache path for a source whose transcript was prepared by Scribe.
+pub fn cache_path(out_dir: &Path, source_sha: &str) -> PathBuf {
+    out_dir
+        .join("cache/transcripts")
+        .join(format!("{source_sha}-elevenlabs-{MODEL}.json"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn sample_fit_is_exact_and_records_repairs() {
+        let mut notes = Vec::new();
+        assert_eq!(fit_samples(vec![0.0; 3], 5, &mut notes), vec![0.0; 5]);
+        assert_eq!(notes.len(), 1);
+        let mut notes = Vec::new();
+        assert_eq!(fit_samples(vec![0.0; 7], 5, &mut notes), vec![0.0; 5]);
+        assert_eq!(notes.len(), 1);
+        let mut notes = Vec::new();
+        assert_eq!(fit_samples(vec![0.0; 5], 5, &mut notes), vec![0.0; 5]);
+        assert!(notes.is_empty());
+    }
+
+    #[test]
+    fn untimed_punctuation_attaches_to_the_previous_word() {
+        use captions::{SpanTiming, TimingProvenance, TimingUnit};
+        let range = SourceRange::new(Tick::ZERO, Tick(TICKS_PER_SECOND)).unwrap();
+        let spans = TimingSpans::new(
+            "Hello!",
+            vec![
+                SpanTiming {
+                    index: 0,
+                    unit: TimingUnit::Token,
+                    raw: 0..5,
+                    range: Some(range),
+                    provenance: TimingProvenance::Native,
+                    speaker: None,
+                    confidence: None,
+                },
+                SpanTiming {
+                    index: 1,
+                    unit: TimingUnit::Token,
+                    raw: 5..6,
+                    range: None,
+                    provenance: TimingProvenance::Native,
+                    speaker: None,
+                    confidence: None,
+                },
+            ],
+            None,
+        )
+        .unwrap();
+        let registry = LanguageRegistry::standard().unwrap();
+        let profile = registry.profile(&LanguageTag::parse("en").unwrap());
+        let words = span_words(&spans, profile).unwrap().unwrap();
+        assert_eq!(words.len(), 1);
+        assert_eq!(words[0].text.as_str(), "Hello!");
+        assert_eq!(words[0].range, Some(range));
+    }
+
+    #[test]
+    fn extracted_chunk_decodes_to_the_requested_sample_grid() {
+        let dir = tempfile::tempdir().unwrap();
+        let source = dir.path().join("speech.wav");
+        crate::label::write_synthetic_wav(&source, 3.0).unwrap();
+        if media::probe(&source).is_err() {
+            eprintln!("skipping: ffmpeg is unavailable");
+            return;
+        }
+        let asset = SourceAsset::import(AssetId(1), source).unwrap();
+        let range = SourceRange::new(Tick::ZERO, Tick(3 * TICKS_PER_SECOND)).unwrap();
+        let settings = SpeechExtractSettings {
+            max_bytes: 1_000_000,
+            max_duration: Tick(3 * TICKS_PER_SECOND),
+            overlap: Tick::ZERO,
+            bit_rate: BIT_RATE,
+        };
+        let chunks = extract_speech_audio_with(&asset, range, dir.path(), &settings).unwrap();
+        assert_eq!(chunks.len(), 1);
+        let chunk = chunks.first().unwrap();
+        let decoded = decode_chunk(&chunk.path).unwrap();
+        let expected = expected_samples(chunk.source_range).unwrap();
+        let mut notes = Vec::new();
+        let fitted = fit_samples(decoded, expected, &mut notes);
+        assert_eq!(fitted.len(), expected);
+        assert!(fitted.iter().all(|sample| sample.is_finite()));
+    }
+}

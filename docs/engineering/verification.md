@@ -36,7 +36,9 @@ matches in tracked files and branch commit messages.
 - **Our own AI logic** (the agentic clip pipeline: selection, boundaries, reframe,
   and any prompt, heuristic or ranking we own): measured, because we improve it. Its
   eval names a fixed labelled set, a metric and a baseline, and every change to that
-  logic reports the metric against the baseline.
+  logic reports the metric against the baseline. The clip pipeline harness is
+  `cargo xtask clip-eval <set>`; see the
+  [clip-eval contract](../../crates/clip-eval/README.md).
 - **Live runs** (smokes, evals): prefer OpenAI; pure LLM calls (text in, text out) use
   only `gpt-6-luna`; other services (ASR, TTS, vision) may use any admitted provider.
 

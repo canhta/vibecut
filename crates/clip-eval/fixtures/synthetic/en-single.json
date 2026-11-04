@@ -1,0 +1,43 @@
+{
+  "version": 1,
+  "sha256": "fb19b2753db92f55e39848fbc5e5e8afcabb8e4285bee0e778ab2b3bc8bd9ac7",
+  "language": "en",
+  "transcript": "en-single.transcript.json",
+  "synthetic": {
+    "duration_seconds": 41.0
+  },
+  "settings": {
+    "count": 3,
+    "min_duration_seconds": 8.0,
+    "max_duration_seconds": 15.0,
+    "min_segment_duration_seconds": 2.0,
+    "max_segments": 4,
+    "overlap_tolerance": 0.5,
+    "frame_rate": 30.0,
+    "snap_tolerance_seconds": 1.0,
+    "silence_rms": 0.01,
+    "keywords": []
+  },
+  "clips": [
+    {
+      "id": "en-focus",
+      "priority": "must",
+      "segments": [
+        {
+          "start": 1727308800000,
+          "end": 4216665600000
+        }
+      ]
+    },
+    {
+      "id": "en-morning",
+      "priority": "nice",
+      "segments": [
+        {
+          "start": 7772889600000,
+          "end": 9398592000000
+        }
+      ]
+    }
+  ]
+}

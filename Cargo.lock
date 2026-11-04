@@ -901,6 +901,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "clip-eval"
+version = "0.1.0"
+dependencies = [
+ "ai",
+ "captions",
+ "engine",
+ "media",
+ "serde",
+ "serde_json",
+ "sha2",
+ "tempfile",
+ "thiserror 2.0.21",
+ "time 0.1.0",
+]
+
+[[package]]
 name = "clipboard-win"
 version = "5.4.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"

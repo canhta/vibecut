@@ -1,0 +1,1312 @@
+{
+  "source_lang": "vi",
+  "fingerprint": {
+    "provider": "synthetic",
+    "model": "fixture",
+    "settings": "clip-eval-v1"
+  },
+  "segments": [
+    {
+      "id": "s0",
+      "range": {
+        "start": 0,
+        "end": 762048000000
+      },
+      "text": "Tôi từng nghĩ rằng tập trung là nói có với mọi thứ.",
+      "words": [
+        {
+          "text": "Tôi",
+          "range": {
+            "start": 0,
+            "end": 57153600000
+          },
+          "speaker": null,
+          "confidence": null
+        },
+        {
+          "text": "từng",
+          "range": {
+            "start": 57153600000,
+            "end": 133358400000
+          },
+          "speaker": null,
+          "confidence": null
+        },
+        {
+          "text": "nghĩ",
+          "range": {
+            "start": 133358400000,
+            "end": 209563200000
+          },
+          "speaker": null,
+          "confidence": null
+        },
+        {
+          "text": "rằng",
+          "range": {
+            "start": 209563200000,
+            "end": 285768000000
+          },
+          "speaker": null,
+          "confidence": null
+        },
+        {
+          "text": "tập",
+          "range": {
+            "start": 285768000000,
+            "end": 342921600000
+          },
+          "speaker": null,
+          "confidence": null
+        },
+        {
+          "text": "trung",
+          "range": {
+            "start": 342921600000,
+            "end": 438177600000
+          },
+          "speaker": null,
+          "confidence": null
+        },
+        {
+          "text": "là",
+          "range": {
+            "start": 438177600000,
+            "end": 476280000000
+          },
+          "speaker": null,
+          "confidence": null
+        },
+        {
+          "text": "nói",
+          "range": {
+            "start": 476280000000,
+            "end": 533433600000
+          },
+          "speaker": null,
+          "confidence": null
+        },
+        {
+          "text": "có",
+          "range": {
+            "start": 533433600000,
+            "end": 571536000000
+          },
+          "speaker": null,
+          "confidence": null
+        },
+        {
+          "text": "với",
+          "range": {
+            "start": 571536000000,
+            "end": 628689600000
+          },
+          "speaker": null,
+          "confidence": null
+        },
+        {
+          "text": "mọi",
+          "range": {
+            "start": 628689600000,
+            "end": 685843200000
+          },
+          "speaker": null,
+          "confidence": null
+        },
+        {
+          "text": "thứ.",
+          "range": {
+            "start": 685843200000,
+            "end": 762048000000
+          },
+          "speaker": null,
+          "confidence": null
+        }
+      ],
+      "spans": null
+    },
+    {
+      "id": "s1",
+      "range": {
+        "start": 863654400000,
+        "end": 1625702400000
+      },
+      "text": "Rồi tôi học được rằng tập trung thật sự là nói không.",
+      "words": [
+        {
+          "text": "Rồi",
+          "range": {
+            "start": 863654400000,
+            "end": 918086400000
+          },
+          "speaker": null,
+          "confidence": null
+        },
+        {
+          "text": "tôi",
+          "range": {
+            "start": 918086400000,
+            "end": 972518400000
+          },
+          "speaker": null,
+          "confidence": null
+        },
+        {
+          "text": "học",
+          "range": {
+            "start": 972518400000,
+            "end": 1026950400000
+          },
+          "speaker": null,
+          "confidence": null
+        },
+        {
+          "text": "được",
+          "range": {
+            "start": 1026950400000,
+            "end": 1099526400000
+          },
+          "speaker": null,
+          "confidence": null
+        },
+        {
+          "text": "rằng",
+          "range": {
+            "start": 1099526400000,
+            "end": 1172102400000
+          },
+          "speaker": null,
+          "confidence": null
+        },
+        {
+          "text": "tập",
+          "range": {
+            "start": 1172102400000,
+            "end": 1226534400000
+          },
+          "speaker": null,
+          "confidence": null
+        },
+        {
+          "text": "trung",
+          "range": {
+            "start": 1226534400000,
+            "end": 1317254400000
+          },
+          "speaker": null,
+          "confidence": null
+        },
+        {
+          "text": "thật",
+          "range": {
+            "start": 1317254400000,
+            "end": 1389830400000
+          },
+          "speaker": null,
+          "confidence": null
+        },
+        {
+          "text": "sự",
+          "range": {
+            "start": 1389830400000,
+            "end": 1426118400000
+          },
+          "speaker": null,
+          "confidence": null
+        },
+        {
+          "text": "là",
+          "range": {
+            "start": 1426118400000,
+            "end": 1462406400000
+          },
+          "speaker": null,
+          "confidence": null
+        },
+        {
+          "text": "nói",
+          "range": {
+            "start": 1462406400000,
+            "end": 1516838400000
+          },
+          "speaker": null,
+          "confidence": null
+        },
+        {
+          "text": "không.",
+          "range": {
+            "start": 1516838400000,
+            "end": 1625702400000
+          },
+          "speaker": null,
+          "confidence": null
+        }
+      ],
+      "spans": null
+    },
+    {
+      "id": "s2",
+      "range": {
+        "start": 1727308800000,
+        "end": 2489356800000
+      },
+      "text": "Công việc tốt nhất đến khi bạn bảo vệ sự chú ý của mình.",
+      "words": [
+        {
+          "text": "Công",
+          "range": {
+            "start": 1727308800000,
+            "end": 1798196986047
+          },
+          "speaker": null,
+          "confidence": null
+        },
+        {
+          "text": "việc",
+          "range": {
+            "start": 1798196986047,
+            "end": 1869085172093
+          },
+          "speaker": null,
+          "confidence": null
+        },
+        {
+          "text": "tốt",
+          "range": {
+            "start": 1869085172093,
+            "end": 1922251311628
+          },
+          "speaker": null,
+          "confidence": null
+        },
+        {
+          "text": "nhất",
+          "range": {
+            "start": 1922251311628,
+            "end": 1993139497674
+          },
+          "speaker": null,
+          "confidence": null
+        },
+        {
+          "text": "đến",
+          "range": {
+            "start": 1993139497674,
+            "end": 2046305637209
+          },
+          "speaker": null,
+          "confidence": null
+        },
+        {
+          "text": "khi",
+          "range": {
+            "start": 2046305637209,
+            "end": 2099471776744
+          },
+          "speaker": null,
+          "confidence": null
+        },
+        {
+          "text": "bạn",
+          "range": {
+            "start": 2099471776744,
+            "end": 2152637916279
+          },
+          "speaker": null,
+          "confidence": null
+        },
+        {
+          "text": "bảo",
+          "range": {
+            "start": 2152637916279,
+            "end": 2205804055814
+          },
+          "speaker": null,
+          "confidence": null
+        },
+        {
+          "text": "vệ",
+          "range": {
+            "start": 2205804055814,
+            "end": 2241248148837
+          },
+          "speaker": null,
+          "confidence": null
+        },
+        {
+          "text": "sự",
+          "range": {
+            "start": 2241248148837,
+            "end": 2276692241860
+          },
+          "speaker": null,
+          "confidence": null
+        },
+        {
+          "text": "chú",
+          "range": {
+            "start": 2276692241860,
+            "end": 2329858381395
+          },
+          "speaker": null,
+          "confidence": null
+        },
+        {
+          "text": "ý",
+          "range": {
+            "start": 2329858381395,
+            "end": 2347580427907
+          },
+          "speaker": null,
+          "confidence": null
+        },
+        {
+          "text": "của",
+          "range": {
+            "start": 2347580427907,
+            "end": 2400746567442
+          },
+          "speaker": null,
+          "confidence": null
+        },
+        {
+          "text": "mình.",
+          "range": {
+            "start": 2400746567442,
+            "end": 2489356800000
+          },
+          "speaker": null,
+          "confidence": null
+        }
+      ],
+      "spans": null
+    },
+    {
+      "id": "s3",
+      "range": {
+        "start": 2590963200000,
+        "end": 3353011200000
+      },
+      "text": "Chỉ một thay đổi đó làm buổi sáng của tôi bình yên hơn.",
+      "words": [
+        {
+          "text": "Chỉ",
+          "range": {
+            "start": 2590963200000,
+            "end": 2644129339535
+          },
+          "speaker": null,
+          "confidence": null
+        },
+        {
+          "text": "một",
+          "range": {
+            "start": 2644129339535,
+            "end": 2697295479070
+          },
+          "speaker": null,
+          "confidence": null
+        },
+        {
+          "text": "thay",
+          "range": {
+            "start": 2697295479070,
+            "end": 2768183665116
+          },
+          "speaker": null,
+          "confidence": null
+        },
+        {
+          "text": "đổi",
+          "range": {
+            "start": 2768183665116,
+            "end": 2821349804651
+          },
+          "speaker": null,
+          "confidence": null
+        },
+        {
+          "text": "đó",
+          "range": {
+            "start": 2821349804651,
+            "end": 2856793897674
+          },
+          "speaker": null,
+          "confidence": null
+        },
+        {
+          "text": "làm",
+          "range": {
+            "start": 2856793897674,
+            "end": 2909960037209
+          },
+          "speaker": null,
+          "confidence": null
+        },
+        {
+          "text": "buổi",
+          "range": {
+            "start": 2909960037209,
+            "end": 2980848223256
+          },
+          "speaker": null,
+          "confidence": null
+        },
+        {
+          "text": "sáng",
+          "range": {
+            "start": 2980848223256,
+            "end": 3051736409302
+          },
+          "speaker": null,
+          "confidence": null
+        },
+        {
+          "text": "của",
+          "range": {
+            "start": 3051736409302,
+            "end": 3104902548837
+          },
+          "speaker": null,
+          "confidence": null
+        },
+        {
+          "text": "tôi",
+          "range": {
+            "start": 3104902548837,
+            "end": 3158068688372
+          },
+          "speaker": null,
+          "confidence": null
+        },
+        {
+          "text": "bình",
+          "range": {
+            "start": 3158068688372,
+            "end": 3228956874419
+          },
+          "speaker": null,
+          "confidence": null
+        },
+        {
+          "text": "yên",
+          "range": {
+            "start": 3228956874419,
+            "end": 3282123013953
+          },
+          "speaker": null,
+          "confidence": null
+        },
+        {
+          "text": "hơn.",
+          "range": {
+            "start": 3282123013953,
+            "end": 3353011200000
+          },
+          "speaker": null,
+          "confidence": null
+        }
+      ],
+      "spans": null
+    },
+    {
+      "id": "s4",
+      "range": {
+        "start": 3454617600000,
+        "end": 4216665600000
+      },
+      "text": "Tôi ngừng kiểm tra tin nhắn trước khi viết bất cứ điều gì.",
+      "words": [
+        {
+          "text": "Tôi",
+          "range": {
+            "start": 3454617600000,
+            "end": 3504316382609
+          },
+          "speaker": null,
+          "confidence": null
+        },
+        {
+          "text": "ngừng",
+          "range": {
+            "start": 3504316382609,
+            "end": 3587147686957
+          },
+          "speaker": null,
+          "confidence": null
+        },
+        {
+          "text": "kiểm",
+          "range": {
+            "start": 3587147686957,
+            "end": 3653412730435
+          },
+          "speaker": null,
+          "confidence": null
+        },
+        {
+          "text": "tra",
+          "range": {
+            "start": 3653412730435,
+            "end": 3703111513043
+          },
+          "speaker": null,
+          "confidence": null
+        },
+        {
+          "text": "tin",
+          "range": {
+            "start": 3703111513043,
+            "end": 3752810295652
+          },
+          "speaker": null,
+          "confidence": null
+        },
+        {
+          "text": "nhắn",
+          "range": {
+            "start": 3752810295652,
+            "end": 3819075339130
+          },
+          "speaker": null,
+          "confidence": null
+        },
+        {
+          "text": "trước",
+          "range": {
+            "start": 3819075339130,
+            "end": 3901906643478
+          },
+          "speaker": null,
+          "confidence": null
+        },
+        {
+          "text": "khi",
+          "range": {
+            "start": 3901906643478,
+            "end": 3951605426087
+          },
+          "speaker": null,
+          "confidence": null
+        },
+        {
+          "text": "viết",
+          "range": {
+            "start": 3951605426087,
+            "end": 4017870469565
+          },
+          "speaker": null,
+          "confidence": null
+        },
+        {
+          "text": "bất",
+          "range": {
+            "start": 4017870469565,
+            "end": 4067569252174
+          },
+          "speaker": null,
+          "confidence": null
+        },
+        {
+          "text": "cứ",
+          "range": {
+            "start": 4067569252174,
+            "end": 4100701773913
+          },
+          "speaker": null,
+          "confidence": null
+        },
+        {
+          "text": "điều",
+          "range": {
+            "start": 4100701773913,
+            "end": 4166966817391
+          },
+          "speaker": null,
+          "confidence": null
+        },
+        {
+          "text": "gì.",
+          "range": {
+            "start": 4166966817391,
+            "end": 4216665600000
+          },
+          "speaker": null,
+          "confidence": null
+        }
+      ],
+      "spans": null
+    },
+    {
+      "id": "s5",
+      "range": {
+        "start": 4318272000000,
+        "end": 5080320000000
+      },
+      "text": "Viết trước đã trở thành thói quen mạnh nhất của tôi.",
+      "words": [
+        {
+          "text": "Viết",
+          "range": {
+            "start": 4318272000000,
+            "end": 4390848000000
+          },
+          "speaker": null,
+          "confidence": null
+        },
+        {
+          "text": "trước",
+          "range": {
+            "start": 4390848000000,
+            "end": 4481568000000
+          },
+          "speaker": null,
+          "confidence": null
+        },
+        {
+          "text": "đã",
+          "range": {
+            "start": 4481568000000,
+            "end": 4517856000000
+          },
+          "speaker": null,
+          "confidence": null
+        },
+        {
+          "text": "trở",
+          "range": {
+            "start": 4517856000000,
+            "end": 4572288000000
+          },
+          "speaker": null,
+          "confidence": null
+        },
+        {
+          "text": "thành",
+          "range": {
+            "start": 4572288000000,
+            "end": 4663008000000
+          },
+          "speaker": null,
+          "confidence": null
+        },
+        {
+          "text": "thói",
+          "range": {
+            "start": 4663008000000,
+            "end": 4735584000000
+          },
+          "speaker": null,
+          "confidence": null
+        },
+        {
+          "text": "quen",
+          "range": {
+            "start": 4735584000000,
+            "end": 4808160000000
+          },
+          "speaker": null,
+          "confidence": null
+        },
+        {
+          "text": "mạnh",
+          "range": {
+            "start": 4808160000000,
+            "end": 4880736000000
+          },
+          "speaker": null,
+          "confidence": null
+        },
+        {
+          "text": "nhất",
+          "range": {
+            "start": 4880736000000,
+            "end": 4953312000000
+          },
+          "speaker": null,
+          "confidence": null
+        },
+        {
+          "text": "của",
+          "range": {
+            "start": 4953312000000,
+            "end": 5007744000000
+          },
+          "speaker": null,
+          "confidence": null
+        },
+        {
+          "text": "tôi.",
+          "range": {
+            "start": 5007744000000,
+            "end": 5080320000000
+          },
+          "speaker": null,
+          "confidence": null
+        }
+      ],
+      "spans": null
+    },
+    {
+      "id": "s6",
+      "range": {
+        "start": 5181926400000,
+        "end": 5943974400000
+      },
+      "text": "Bạn không cần thêm giờ trong ngày.",
+      "words": [
+        {
+          "text": "Bạn",
+          "range": {
+            "start": 5181926400000,
+            "end": 5263574400000
+          },
+          "speaker": null,
+          "confidence": null
+        },
+        {
+          "text": "không",
+          "range": {
+            "start": 5263574400000,
+            "end": 5399654400000
+          },
+          "speaker": null,
+          "confidence": null
+        },
+        {
+          "text": "cần",
+          "range": {
+            "start": 5399654400000,
+            "end": 5481302400000
+          },
+          "speaker": null,
+          "confidence": null
+        },
+        {
+          "text": "thêm",
+          "range": {
+            "start": 5481302400000,
+            "end": 5590166400000
+          },
+          "speaker": null,
+          "confidence": null
+        },
+        {
+          "text": "giờ",
+          "range": {
+            "start": 5590166400000,
+            "end": 5671814400000
+          },
+          "speaker": null,
+          "confidence": null
+        },
+        {
+          "text": "trong",
+          "range": {
+            "start": 5671814400000,
+            "end": 5807894400000
+          },
+          "speaker": null,
+          "confidence": null
+        },
+        {
+          "text": "ngày.",
+          "range": {
+            "start": 5807894400000,
+            "end": 5943974400000
+          },
+          "speaker": null,
+          "confidence": null
+        }
+      ],
+      "spans": null
+    },
+    {
+      "id": "s7",
+      "range": {
+        "start": 6045580800000,
+        "end": 6807628800000
+      },
+      "text": "Bạn cần ít vòng lặp mở trong đầu hơn.",
+      "words": [
+        {
+          "text": "Bạn",
+          "range": {
+            "start": 6045580800000,
+            "end": 6124413351724
+          },
+          "speaker": null,
+          "confidence": null
+        },
+        {
+          "text": "cần",
+          "range": {
+            "start": 6124413351724,
+            "end": 6203245903448
+          },
+          "speaker": null,
+          "confidence": null
+        },
+        {
+          "text": "ít",
+          "range": {
+            "start": 6203245903448,
+            "end": 6255800937931
+          },
+          "speaker": null,
+          "confidence": null
+        },
+        {
+          "text": "vòng",
+          "range": {
+            "start": 6255800937931,
+            "end": 6360911006897
+          },
+          "speaker": null,
+          "confidence": null
+        },
+        {
+          "text": "lặp",
+          "range": {
+            "start": 6360911006897,
+            "end": 6439743558621
+          },
+          "speaker": null,
+          "confidence": null
+        },
+        {
+          "text": "mở",
+          "range": {
+            "start": 6439743558621,
+            "end": 6492298593103
+          },
+          "speaker": null,
+          "confidence": null
+        },
+        {
+          "text": "trong",
+          "range": {
+            "start": 6492298593103,
+            "end": 6623686179310
+          },
+          "speaker": null,
+          "confidence": null
+        },
+        {
+          "text": "đầu",
+          "range": {
+            "start": 6623686179310,
+            "end": 6702518731034
+          },
+          "speaker": null,
+          "confidence": null
+        },
+        {
+          "text": "hơn.",
+          "range": {
+            "start": 6702518731034,
+            "end": 6807628800000
+          },
+          "speaker": null,
+          "confidence": null
+        }
+      ],
+      "spans": null
+    },
+    {
+      "id": "s8",
+      "range": {
+        "start": 6909235200000,
+        "end": 7671283200000
+      },
+      "text": "Đóng các tab, đóng các vòng lặp, và bắt đầu.",
+      "words": [
+        {
+          "text": "Đóng",
+          "range": {
+            "start": 6909235200000,
+            "end": 6996326400000
+          },
+          "speaker": null,
+          "confidence": null
+        },
+        {
+          "text": "các",
+          "range": {
+            "start": 6996326400000,
+            "end": 7061644800000
+          },
+          "speaker": null,
+          "confidence": null
+        },
+        {
+          "text": "tab,",
+          "range": {
+            "start": 7061644800000,
+            "end": 7148736000000
+          },
+          "speaker": null,
+          "confidence": null
+        },
+        {
+          "text": "đóng",
+          "range": {
+            "start": 7148736000000,
+            "end": 7235827200000
+          },
+          "speaker": null,
+          "confidence": null
+        },
+        {
+          "text": "các",
+          "range": {
+            "start": 7235827200000,
+            "end": 7301145600000
+          },
+          "speaker": null,
+          "confidence": null
+        },
+        {
+          "text": "vòng",
+          "range": {
+            "start": 7301145600000,
+            "end": 7388236800000
+          },
+          "speaker": null,
+          "confidence": null
+        },
+        {
+          "text": "lặp,",
+          "range": {
+            "start": 7388236800000,
+            "end": 7475328000000
+          },
+          "speaker": null,
+          "confidence": null
+        },
+        {
+          "text": "và",
+          "range": {
+            "start": 7475328000000,
+            "end": 7518873600000
+          },
+          "speaker": null,
+          "confidence": null
+        },
+        {
+          "text": "bắt",
+          "range": {
+            "start": 7518873600000,
+            "end": 7584192000000
+          },
+          "speaker": null,
+          "confidence": null
+        },
+        {
+          "text": "đầu.",
+          "range": {
+            "start": 7584192000000,
+            "end": 7671283200000
+          },
+          "speaker": null,
+          "confidence": null
+        }
+      ],
+      "spans": null
+    },
+    {
+      "id": "s9",
+      "range": {
+        "start": 7772889600000,
+        "end": 8534937600000
+      },
+      "text": "Công việc vẫn sẽ ở đó vào ngày mai.",
+      "words": [
+        {
+          "text": "Công",
+          "range": {
+            "start": 7772889600000,
+            "end": 7885785600000
+          },
+          "speaker": null,
+          "confidence": null
+        },
+        {
+          "text": "việc",
+          "range": {
+            "start": 7885785600000,
+            "end": 7998681600000
+          },
+          "speaker": null,
+          "confidence": null
+        },
+        {
+          "text": "vẫn",
+          "range": {
+            "start": 7998681600000,
+            "end": 8083353600000
+          },
+          "speaker": null,
+          "confidence": null
+        },
+        {
+          "text": "sẽ",
+          "range": {
+            "start": 8083353600000,
+            "end": 8139801600000
+          },
+          "speaker": null,
+          "confidence": null
+        },
+        {
+          "text": "ở",
+          "range": {
+            "start": 8139801600000,
+            "end": 8168025600000
+          },
+          "speaker": null,
+          "confidence": null
+        },
+        {
+          "text": "đó",
+          "range": {
+            "start": 8168025600000,
+            "end": 8224473600000
+          },
+          "speaker": null,
+          "confidence": null
+        },
+        {
+          "text": "vào",
+          "range": {
+            "start": 8224473600000,
+            "end": 8309145600000
+          },
+          "speaker": null,
+          "confidence": null
+        },
+        {
+          "text": "ngày",
+          "range": {
+            "start": 8309145600000,
+            "end": 8422041600000
+          },
+          "speaker": null,
+          "confidence": null
+        },
+        {
+          "text": "mai.",
+          "range": {
+            "start": 8422041600000,
+            "end": 8534937600000
+          },
+          "speaker": null,
+          "confidence": null
+        }
+      ],
+      "spans": null
+    },
+    {
+      "id": "s10",
+      "range": {
+        "start": 8636544000000,
+        "end": 9398592000000
+      },
+      "text": "Nhưng năng lượng bạn tiết kiệm hôm nay sẽ cộng dồn.",
+      "words": [
+        {
+          "text": "Nhưng",
+          "range": {
+            "start": 8636544000000,
+            "end": 8729476682927
+          },
+          "speaker": null,
+          "confidence": null
+        },
+        {
+          "text": "năng",
+          "range": {
+            "start": 8729476682927,
+            "end": 8803822829268
+          },
+          "speaker": null,
+          "confidence": null
+        },
+        {
+          "text": "lượng",
+          "range": {
+            "start": 8803822829268,
+            "end": 8896755512195
+          },
+          "speaker": null,
+          "confidence": null
+        },
+        {
+          "text": "bạn",
+          "range": {
+            "start": 8896755512195,
+            "end": 8952515121951
+          },
+          "speaker": null,
+          "confidence": null
+        },
+        {
+          "text": "tiết",
+          "range": {
+            "start": 8952515121951,
+            "end": 9026861268293
+          },
+          "speaker": null,
+          "confidence": null
+        },
+        {
+          "text": "kiệm",
+          "range": {
+            "start": 9026861268293,
+            "end": 9101207414634
+          },
+          "speaker": null,
+          "confidence": null
+        },
+        {
+          "text": "hôm",
+          "range": {
+            "start": 9101207414634,
+            "end": 9156967024390
+          },
+          "speaker": null,
+          "confidence": null
+        },
+        {
+          "text": "nay",
+          "range": {
+            "start": 9156967024390,
+            "end": 9212726634146
+          },
+          "speaker": null,
+          "confidence": null
+        },
+        {
+          "text": "sẽ",
+          "range": {
+            "start": 9212726634146,
+            "end": 9249899707317
+          },
+          "speaker": null,
+          "confidence": null
+        },
+        {
+          "text": "cộng",
+          "range": {
+            "start": 9249899707317,
+            "end": 9324245853659
+          },
+          "speaker": null,
+          "confidence": null
+        },
+        {
+          "text": "dồn.",
+          "range": {
+            "start": 9324245853659,
+            "end": 9398592000000
+          },
+          "speaker": null,
+          "confidence": null
+        }
+      ],
+      "spans": null
+    },
+    {
+      "id": "s11",
+      "range": {
+        "start": 9500198400000,
+        "end": 10262246400000
+      },
+      "text": "Đó là toàn bộ mẹo, và thế là đủ.",
+      "words": [
+        {
+          "text": "Đó",
+          "range": {
+            "start": 9500198400000,
+            "end": 9563702400000
+          },
+          "speaker": null,
+          "confidence": null
+        },
+        {
+          "text": "là",
+          "range": {
+            "start": 9563702400000,
+            "end": 9627206400000
+          },
+          "speaker": null,
+          "confidence": null
+        },
+        {
+          "text": "toàn",
+          "range": {
+            "start": 9627206400000,
+            "end": 9754214400000
+          },
+          "speaker": null,
+          "confidence": null
+        },
+        {
+          "text": "bộ",
+          "range": {
+            "start": 9754214400000,
+            "end": 9817718400000
+          },
+          "speaker": null,
+          "confidence": null
+        },
+        {
+          "text": "mẹo,",
+          "range": {
+            "start": 9817718400000,
+            "end": 9944726400000
+          },
+          "speaker": null,
+          "confidence": null
+        },
+        {
+          "text": "và",
+          "range": {
+            "start": 9944726400000,
+            "end": 10008230400000
+          },
+          "speaker": null,
+          "confidence": null
+        },
+        {
+          "text": "thế",
+          "range": {
+            "start": 10008230400000,
+            "end": 10103486400000
+          },
+          "speaker": null,
+          "confidence": null
+        },
+        {
+          "text": "là",
+          "range": {
+            "start": 10103486400000,
+            "end": 10166990400000
+          },
+          "speaker": null,
+          "confidence": null
+        },
+        {
+          "text": "đủ.",
+          "range": {
+            "start": 10166990400000,
+            "end": 10262246400000
+          },
+          "speaker": null,
+          "confidence": null
+        }
+      ],
+      "spans": null
+    }
+  ]
+}

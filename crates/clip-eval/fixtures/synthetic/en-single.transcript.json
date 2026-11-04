@@ -1,0 +1,1024 @@
+{
+  "source_lang": "en",
+  "fingerprint": {
+    "provider": "synthetic",
+    "model": "fixture",
+    "settings": "clip-eval-v1"
+  },
+  "segments": [
+    {
+      "id": "s0",
+      "range": {
+        "start": 0,
+        "end": 762048000000
+      },
+      "text": "I used to think focus meant saying yes to everything.",
+      "words": [
+        {
+          "text": "I",
+          "range": {
+            "start": 0,
+            "end": 17319272727
+          },
+          "speaker": null,
+          "confidence": null
+        },
+        {
+          "text": "used",
+          "range": {
+            "start": 17319272727,
+            "end": 86596363636
+          },
+          "speaker": null,
+          "confidence": null
+        },
+        {
+          "text": "to",
+          "range": {
+            "start": 86596363636,
+            "end": 121234909091
+          },
+          "speaker": null,
+          "confidence": null
+        },
+        {
+          "text": "think",
+          "range": {
+            "start": 121234909091,
+            "end": 207831272727
+          },
+          "speaker": null,
+          "confidence": null
+        },
+        {
+          "text": "focus",
+          "range": {
+            "start": 207831272727,
+            "end": 294427636364
+          },
+          "speaker": null,
+          "confidence": null
+        },
+        {
+          "text": "meant",
+          "range": {
+            "start": 294427636364,
+            "end": 381024000000
+          },
+          "speaker": null,
+          "confidence": null
+        },
+        {
+          "text": "saying",
+          "range": {
+            "start": 381024000000,
+            "end": 484939636364
+          },
+          "speaker": null,
+          "confidence": null
+        },
+        {
+          "text": "yes",
+          "range": {
+            "start": 484939636364,
+            "end": 536897454545
+          },
+          "speaker": null,
+          "confidence": null
+        },
+        {
+          "text": "to",
+          "range": {
+            "start": 536897454545,
+            "end": 571536000000
+          },
+          "speaker": null,
+          "confidence": null
+        },
+        {
+          "text": "everything.",
+          "range": {
+            "start": 571536000000,
+            "end": 762048000000
+          },
+          "speaker": null,
+          "confidence": null
+        }
+      ],
+      "spans": null
+    },
+    {
+      "id": "s1",
+      "range": {
+        "start": 863654400000,
+        "end": 1625702400000
+      },
+      "text": "Then I learned that real focus is saying no.",
+      "words": [
+        {
+          "text": "Then",
+          "range": {
+            "start": 863654400000,
+            "end": 948326400000
+          },
+          "speaker": null,
+          "confidence": null
+        },
+        {
+          "text": "I",
+          "range": {
+            "start": 948326400000,
+            "end": 969494400000
+          },
+          "speaker": null,
+          "confidence": null
+        },
+        {
+          "text": "learned",
+          "range": {
+            "start": 969494400000,
+            "end": 1117670400000
+          },
+          "speaker": null,
+          "confidence": null
+        },
+        {
+          "text": "that",
+          "range": {
+            "start": 1117670400000,
+            "end": 1202342400000
+          },
+          "speaker": null,
+          "confidence": null
+        },
+        {
+          "text": "real",
+          "range": {
+            "start": 1202342400000,
+            "end": 1287014400000
+          },
+          "speaker": null,
+          "confidence": null
+        },
+        {
+          "text": "focus",
+          "range": {
+            "start": 1287014400000,
+            "end": 1392854400000
+          },
+          "speaker": null,
+          "confidence": null
+        },
+        {
+          "text": "is",
+          "range": {
+            "start": 1392854400000,
+            "end": 1435190400000
+          },
+          "speaker": null,
+          "confidence": null
+        },
+        {
+          "text": "saying",
+          "range": {
+            "start": 1435190400000,
+            "end": 1562198400000
+          },
+          "speaker": null,
+          "confidence": null
+        },
+        {
+          "text": "no.",
+          "range": {
+            "start": 1562198400000,
+            "end": 1625702400000
+          },
+          "speaker": null,
+          "confidence": null
+        }
+      ],
+      "spans": null
+    },
+    {
+      "id": "s2",
+      "range": {
+        "start": 1727308800000,
+        "end": 2489356800000
+      },
+      "text": "The best work happens when you protect your attention.",
+      "words": [
+        {
+          "text": "The",
+          "range": {
+            "start": 1727308800000,
+            "end": 1777007582609
+          },
+          "speaker": null,
+          "confidence": null
+        },
+        {
+          "text": "best",
+          "range": {
+            "start": 1777007582609,
+            "end": 1843272626087
+          },
+          "speaker": null,
+          "confidence": null
+        },
+        {
+          "text": "work",
+          "range": {
+            "start": 1843272626087,
+            "end": 1909537669565
+          },
+          "speaker": null,
+          "confidence": null
+        },
+        {
+          "text": "happens",
+          "range": {
+            "start": 1909537669565,
+            "end": 2025501495652
+          },
+          "speaker": null,
+          "confidence": null
+        },
+        {
+          "text": "when",
+          "range": {
+            "start": 2025501495652,
+            "end": 2091766539130
+          },
+          "speaker": null,
+          "confidence": null
+        },
+        {
+          "text": "you",
+          "range": {
+            "start": 2091766539130,
+            "end": 2141465321739
+          },
+          "speaker": null,
+          "confidence": null
+        },
+        {
+          "text": "protect",
+          "range": {
+            "start": 2141465321739,
+            "end": 2257429147826
+          },
+          "speaker": null,
+          "confidence": null
+        },
+        {
+          "text": "your",
+          "range": {
+            "start": 2257429147826,
+            "end": 2323694191304
+          },
+          "speaker": null,
+          "confidence": null
+        },
+        {
+          "text": "attention.",
+          "range": {
+            "start": 2323694191304,
+            "end": 2489356800000
+          },
+          "speaker": null,
+          "confidence": null
+        }
+      ],
+      "spans": null
+    },
+    {
+      "id": "s3",
+      "range": {
+        "start": 2590963200000,
+        "end": 3353011200000
+      },
+      "text": "That single change made my mornings calmer.",
+      "words": [
+        {
+          "text": "That",
+          "range": {
+            "start": 2590963200000,
+            "end": 2673346767568
+          },
+          "speaker": null,
+          "confidence": null
+        },
+        {
+          "text": "single",
+          "range": {
+            "start": 2673346767568,
+            "end": 2796922118919
+          },
+          "speaker": null,
+          "confidence": null
+        },
+        {
+          "text": "change",
+          "range": {
+            "start": 2796922118919,
+            "end": 2920497470270
+          },
+          "speaker": null,
+          "confidence": null
+        },
+        {
+          "text": "made",
+          "range": {
+            "start": 2920497470270,
+            "end": 3002881037838
+          },
+          "speaker": null,
+          "confidence": null
+        },
+        {
+          "text": "my",
+          "range": {
+            "start": 3002881037838,
+            "end": 3044072821622
+          },
+          "speaker": null,
+          "confidence": null
+        },
+        {
+          "text": "mornings",
+          "range": {
+            "start": 3044072821622,
+            "end": 3208839956757
+          },
+          "speaker": null,
+          "confidence": null
+        },
+        {
+          "text": "calmer.",
+          "range": {
+            "start": 3208839956757,
+            "end": 3353011200000
+          },
+          "speaker": null,
+          "confidence": null
+        }
+      ],
+      "spans": null
+    },
+    {
+      "id": "s4",
+      "range": {
+        "start": 3454617600000,
+        "end": 4216665600000
+      },
+      "text": "I stopped checking messages before I wrote anything.",
+      "words": [
+        {
+          "text": "I",
+          "range": {
+            "start": 3454617600000,
+            "end": 3471552000000
+          },
+          "speaker": null,
+          "confidence": null
+        },
+        {
+          "text": "stopped",
+          "range": {
+            "start": 3471552000000,
+            "end": 3590092800000
+          },
+          "speaker": null,
+          "confidence": null
+        },
+        {
+          "text": "checking",
+          "range": {
+            "start": 3590092800000,
+            "end": 3725568000000
+          },
+          "speaker": null,
+          "confidence": null
+        },
+        {
+          "text": "messages",
+          "range": {
+            "start": 3725568000000,
+            "end": 3861043200000
+          },
+          "speaker": null,
+          "confidence": null
+        },
+        {
+          "text": "before",
+          "range": {
+            "start": 3861043200000,
+            "end": 3962649600000
+          },
+          "speaker": null,
+          "confidence": null
+        },
+        {
+          "text": "I",
+          "range": {
+            "start": 3962649600000,
+            "end": 3979584000000
+          },
+          "speaker": null,
+          "confidence": null
+        },
+        {
+          "text": "wrote",
+          "range": {
+            "start": 3979584000000,
+            "end": 4064256000000
+          },
+          "speaker": null,
+          "confidence": null
+        },
+        {
+          "text": "anything.",
+          "range": {
+            "start": 4064256000000,
+            "end": 4216665600000
+          },
+          "speaker": null,
+          "confidence": null
+        }
+      ],
+      "spans": null
+    },
+    {
+      "id": "s5",
+      "range": {
+        "start": 4318272000000,
+        "end": 5080320000000
+      },
+      "text": "Writing first turned into my strongest habit.",
+      "words": [
+        {
+          "text": "Writing",
+          "range": {
+            "start": 4318272000000,
+            "end": 4455049846154
+          },
+          "speaker": null,
+          "confidence": null
+        },
+        {
+          "text": "first",
+          "range": {
+            "start": 4455049846154,
+            "end": 4552748307692
+          },
+          "speaker": null,
+          "confidence": null
+        },
+        {
+          "text": "turned",
+          "range": {
+            "start": 4552748307692,
+            "end": 4669986461538
+          },
+          "speaker": null,
+          "confidence": null
+        },
+        {
+          "text": "into",
+          "range": {
+            "start": 4669986461538,
+            "end": 4748145230769
+          },
+          "speaker": null,
+          "confidence": null
+        },
+        {
+          "text": "my",
+          "range": {
+            "start": 4748145230769,
+            "end": 4787224615385
+          },
+          "speaker": null,
+          "confidence": null
+        },
+        {
+          "text": "strongest",
+          "range": {
+            "start": 4787224615385,
+            "end": 4963081846154
+          },
+          "speaker": null,
+          "confidence": null
+        },
+        {
+          "text": "habit.",
+          "range": {
+            "start": 4963081846154,
+            "end": 5080320000000
+          },
+          "speaker": null,
+          "confidence": null
+        }
+      ],
+      "spans": null
+    },
+    {
+      "id": "s6",
+      "range": {
+        "start": 5181926400000,
+        "end": 5943974400000
+      },
+      "text": "You do not need more hours in the day.",
+      "words": [
+        {
+          "text": "You",
+          "range": {
+            "start": 5181926400000,
+            "end": 5258131200000
+          },
+          "speaker": null,
+          "confidence": null
+        },
+        {
+          "text": "do",
+          "range": {
+            "start": 5258131200000,
+            "end": 5308934400000
+          },
+          "speaker": null,
+          "confidence": null
+        },
+        {
+          "text": "not",
+          "range": {
+            "start": 5308934400000,
+            "end": 5385139200000
+          },
+          "speaker": null,
+          "confidence": null
+        },
+        {
+          "text": "need",
+          "range": {
+            "start": 5385139200000,
+            "end": 5486745600000
+          },
+          "speaker": null,
+          "confidence": null
+        },
+        {
+          "text": "more",
+          "range": {
+            "start": 5486745600000,
+            "end": 5588352000000
+          },
+          "speaker": null,
+          "confidence": null
+        },
+        {
+          "text": "hours",
+          "range": {
+            "start": 5588352000000,
+            "end": 5715360000000
+          },
+          "speaker": null,
+          "confidence": null
+        },
+        {
+          "text": "in",
+          "range": {
+            "start": 5715360000000,
+            "end": 5766163200000
+          },
+          "speaker": null,
+          "confidence": null
+        },
+        {
+          "text": "the",
+          "range": {
+            "start": 5766163200000,
+            "end": 5842368000000
+          },
+          "speaker": null,
+          "confidence": null
+        },
+        {
+          "text": "day.",
+          "range": {
+            "start": 5842368000000,
+            "end": 5943974400000
+          },
+          "speaker": null,
+          "confidence": null
+        }
+      ],
+      "spans": null
+    },
+    {
+      "id": "s7",
+      "range": {
+        "start": 6045580800000,
+        "end": 6807628800000
+      },
+      "text": "You need fewer open loops in your head.",
+      "words": [
+        {
+          "text": "You",
+          "range": {
+            "start": 6045580800000,
+            "end": 6117022800000
+          },
+          "speaker": null,
+          "confidence": null
+        },
+        {
+          "text": "need",
+          "range": {
+            "start": 6117022800000,
+            "end": 6212278800000
+          },
+          "speaker": null,
+          "confidence": null
+        },
+        {
+          "text": "fewer",
+          "range": {
+            "start": 6212278800000,
+            "end": 6331348800000
+          },
+          "speaker": null,
+          "confidence": null
+        },
+        {
+          "text": "open",
+          "range": {
+            "start": 6331348800000,
+            "end": 6426604800000
+          },
+          "speaker": null,
+          "confidence": null
+        },
+        {
+          "text": "loops",
+          "range": {
+            "start": 6426604800000,
+            "end": 6545674800000
+          },
+          "speaker": null,
+          "confidence": null
+        },
+        {
+          "text": "in",
+          "range": {
+            "start": 6545674800000,
+            "end": 6593302800000
+          },
+          "speaker": null,
+          "confidence": null
+        },
+        {
+          "text": "your",
+          "range": {
+            "start": 6593302800000,
+            "end": 6688558800000
+          },
+          "speaker": null,
+          "confidence": null
+        },
+        {
+          "text": "head.",
+          "range": {
+            "start": 6688558800000,
+            "end": 6807628800000
+          },
+          "speaker": null,
+          "confidence": null
+        }
+      ],
+      "spans": null
+    },
+    {
+      "id": "s8",
+      "range": {
+        "start": 6909235200000,
+        "end": 7671283200000
+      },
+      "text": "Close the tabs, close the loops, and start.",
+      "words": [
+        {
+          "text": "Close",
+          "range": {
+            "start": 6909235200000,
+            "end": 7015075200000
+          },
+          "speaker": null,
+          "confidence": null
+        },
+        {
+          "text": "the",
+          "range": {
+            "start": 7015075200000,
+            "end": 7078579200000
+          },
+          "speaker": null,
+          "confidence": null
+        },
+        {
+          "text": "tabs,",
+          "range": {
+            "start": 7078579200000,
+            "end": 7184419200000
+          },
+          "speaker": null,
+          "confidence": null
+        },
+        {
+          "text": "close",
+          "range": {
+            "start": 7184419200000,
+            "end": 7290259200000
+          },
+          "speaker": null,
+          "confidence": null
+        },
+        {
+          "text": "the",
+          "range": {
+            "start": 7290259200000,
+            "end": 7353763200000
+          },
+          "speaker": null,
+          "confidence": null
+        },
+        {
+          "text": "loops,",
+          "range": {
+            "start": 7353763200000,
+            "end": 7480771200000
+          },
+          "speaker": null,
+          "confidence": null
+        },
+        {
+          "text": "and",
+          "range": {
+            "start": 7480771200000,
+            "end": 7544275200000
+          },
+          "speaker": null,
+          "confidence": null
+        },
+        {
+          "text": "start.",
+          "range": {
+            "start": 7544275200000,
+            "end": 7671283200000
+          },
+          "speaker": null,
+          "confidence": null
+        }
+      ],
+      "spans": null
+    },
+    {
+      "id": "s9",
+      "range": {
+        "start": 7772889600000,
+        "end": 8534937600000
+      },
+      "text": "The work will still be there tomorrow.",
+      "words": [
+        {
+          "text": "The",
+          "range": {
+            "start": 7772889600000,
+            "end": 7844331600000
+          },
+          "speaker": null,
+          "confidence": null
+        },
+        {
+          "text": "work",
+          "range": {
+            "start": 7844331600000,
+            "end": 7939587600000
+          },
+          "speaker": null,
+          "confidence": null
+        },
+        {
+          "text": "will",
+          "range": {
+            "start": 7939587600000,
+            "end": 8034843600000
+          },
+          "speaker": null,
+          "confidence": null
+        },
+        {
+          "text": "still",
+          "range": {
+            "start": 8034843600000,
+            "end": 8153913600000
+          },
+          "speaker": null,
+          "confidence": null
+        },
+        {
+          "text": "be",
+          "range": {
+            "start": 8153913600000,
+            "end": 8201541600000
+          },
+          "speaker": null,
+          "confidence": null
+        },
+        {
+          "text": "there",
+          "range": {
+            "start": 8201541600000,
+            "end": 8320611600000
+          },
+          "speaker": null,
+          "confidence": null
+        },
+        {
+          "text": "tomorrow.",
+          "range": {
+            "start": 8320611600000,
+            "end": 8534937600000
+          },
+          "speaker": null,
+          "confidence": null
+        }
+      ],
+      "spans": null
+    },
+    {
+      "id": "s10",
+      "range": {
+        "start": 8636544000000,
+        "end": 9398592000000
+      },
+      "text": "But the energy you save today compounds.",
+      "words": [
+        {
+          "text": "But",
+          "range": {
+            "start": 8636544000000,
+            "end": 8703783529412
+          },
+          "speaker": null,
+          "confidence": null
+        },
+        {
+          "text": "the",
+          "range": {
+            "start": 8703783529412,
+            "end": 8771023058824
+          },
+          "speaker": null,
+          "confidence": null
+        },
+        {
+          "text": "energy",
+          "range": {
+            "start": 8771023058824,
+            "end": 8905502117647
+          },
+          "speaker": null,
+          "confidence": null
+        },
+        {
+          "text": "you",
+          "range": {
+            "start": 8905502117647,
+            "end": 8972741647059
+          },
+          "speaker": null,
+          "confidence": null
+        },
+        {
+          "text": "save",
+          "range": {
+            "start": 8972741647059,
+            "end": 9062394352941
+          },
+          "speaker": null,
+          "confidence": null
+        },
+        {
+          "text": "today",
+          "range": {
+            "start": 9062394352941,
+            "end": 9174460235294
+          },
+          "speaker": null,
+          "confidence": null
+        },
+        {
+          "text": "compounds.",
+          "range": {
+            "start": 9174460235294,
+            "end": 9398592000000
+          },
+          "speaker": null,
+          "confidence": null
+        }
+      ],
+      "spans": null
+    },
+    {
+      "id": "s11",
+      "range": {
+        "start": 9500198400000,
+        "end": 10262246400000
+      },
+      "text": "That is the whole trick, and it is enough.",
+      "words": [
+        {
+          "text": "That",
+          "range": {
+            "start": 9500198400000,
+            "end": 9589851105882
+          },
+          "speaker": null,
+          "confidence": null
+        },
+        {
+          "text": "is",
+          "range": {
+            "start": 9589851105882,
+            "end": 9634677458824
+          },
+          "speaker": null,
+          "confidence": null
+        },
+        {
+          "text": "the",
+          "range": {
+            "start": 9634677458824,
+            "end": 9701916988235
+          },
+          "speaker": null,
+          "confidence": null
+        },
+        {
+          "text": "whole",
+          "range": {
+            "start": 9701916988235,
+            "end": 9813982870588
+          },
+          "speaker": null,
+          "confidence": null
+        },
+        {
+          "text": "trick,",
+          "range": {
+            "start": 9813982870588,
+            "end": 9948461929412
+          },
+          "speaker": null,
+          "confidence": null
+        },
+        {
+          "text": "and",
+          "range": {
+            "start": 9948461929412,
+            "end": 10015701458824
+          },
+          "speaker": null,
+          "confidence": null
+        },
+        {
+          "text": "it",
+          "range": {
+            "start": 10015701458824,
+            "end": 10060527811765
+          },
+          "speaker": null,
+          "confidence": null
+        },
+        {
+          "text": "is",
+          "range": {
+            "start": 10060527811765,
+            "end": 10105354164706
+          },
+          "speaker": null,
+          "confidence": null
+        },
+        {
+          "text": "enough.",
+          "range": {
+            "start": 10105354164706,
+            "end": 10262246400000
+          },
+          "speaker": null,
+          "confidence": null
+        }
+      ],
+      "spans": null
+    }
+  ]
+}
