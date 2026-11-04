@@ -9,9 +9,10 @@ The desktop composition root uses egui and wgpu. See [decisions](../adr/README.m
 
 ## Crate map
 
-Planned layout; admit each crate only with its first working ticket. Table names
-are Cargo package names. Allowed dependencies are direct workspace edges, including
-optional, target-specific, build and dev dependencies; absence means forbidden.
+Planned layout; admit each crate only with its first working ticket (`time` is
+admitted). Table names are Cargo package names. Allowed dependencies are direct
+workspace edges, including optional, target-specific, build and dev dependencies;
+absence means forbidden.
 External dependencies still require boundary and [license](open-source.md#licensing)
 review. `cargo xtask layers` reads this table, rejects unknown members and edges,
 and passes with only `xtask`. `xtask` is tooling, with no product dependencies.

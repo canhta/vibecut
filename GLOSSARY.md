@@ -13,3 +13,11 @@ remote AI processing requires explicit consent.
 
 **Explicit consent**: The user's affirmative approval to send specified media or
 transcripts to a remote provider.
+
+**Tick**: An integer time unit at 254_016_000_000 ticks per second, exact for
+admitted rational frame rates and audio sample rates.
+
+**FrameRate**: An exact rational frames-per-second rate, stored as a positive
+numerator and denominator rather than a floating value.
+
+**SourceRange**: A nonempty half-open `[start, end)` range in source-media ticks.
