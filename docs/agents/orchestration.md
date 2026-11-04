@@ -70,9 +70,12 @@ Load `orca skills get orchestration` for CLI details; use handles from receipts.
    and boundary inputs, cancellation mid-operation, gesture reversal, and every
    quality metric against its recorded baseline (no language, format or backend may
    regress). Fix what you find first.
-3. Finish the ticket on one of the two [merge paths](#review-and-merge).
-4. Claim the next frontier ticket with your `Assignee`, up to the spec's maximum.
-5. Send one `worker_done` for the whole loop: at most three sentences (outcomes, report path, follow-ups) with `--report-path`. Then stop.
+3. Finish the ticket on one of the two [merge paths](#review-and-merge). A ticket
+   that needs review ends the turn right away with `worker_done`, so its review starts
+   while you wait; the coordinator sends `continue` to resume the loop.
+4. Claim the next frontier ticket with your `Assignee`: highest priority first, then
+   lowest number (`.scratch/bin/frontier <assignee>`), up to the spec's maximum.
+5. `worker_done` is at most three sentences (outcomes, report path, follow-ups) with `--report-path`. Then stop.
 
 Talk to the coordinator only through `ask` (blocking question) and `worker_done`.
 A blocked ticket gets `Status: blocked` plus the reason, then an escalation.
@@ -90,6 +93,7 @@ A blocked ticket gets `Status: blocked` plus the reason, then an escalation.
 - Larger or design-level finding: verdict `changes`; the coordinator returns it to the implementer, who fixes and resubmits a new frozen SHA.
 - Dual versions, legacy shims, deprecated paths and backward-compatibility code are `changes` findings.
 - Approved: merge immediately like a self-merge (regenerate `Cargo.lock` on conflict).
+- A re-review checks the earlier findings and the fix diff, not the whole ticket again.
 
 After either path the merger writes `## Answer` (SHA, evidence path), sets
 `Status: resolved` and adds one decision line to the milestone `map.md`.
