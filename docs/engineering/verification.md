@@ -22,8 +22,8 @@ jobs count toward that queue limit; an API failure is not fallback permission.
 
 Merge requires hosted green on the exact SHA that will land on `main`. After a
 rebase, rerun full hosted CI when intervening `main` commits touched Rust,
-manifests or `xtask`; otherwise the docs check on the rebased SHA plus the earlier
-hosted green and an unchanged code diff cover that SHA. Record both receipts.
+manifests or `xtask`; otherwise the docs check suffices locally, but push the rebased SHA and obtain
+hosted green before merging. Record the exact merged-SHA run URL.
 Local full `cargo xtask ci --require-oracles` substitutes only after the helper's
 queue timeout, or when a test needs local hardware (benchmarks, native smoke).
 Keep benchmarks and GPU parity runs local.

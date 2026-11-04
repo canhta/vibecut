@@ -1,4 +1,6 @@
 import importlib.util
+import json
+import os
 from pathlib import Path
 import subprocess
 import tempfile
@@ -35,6 +37,32 @@ class ChangesTest(unittest.TestCase):
                 else:
                     with self.assertRaises(SystemExit):
                         changes.require_signoffs(event)
+
+    def test_ticket_docs_push_runs_full_gate(self):
+        script = Path(__file__).with_name('changes.py').resolve()
+        with tempfile.TemporaryDirectory() as folder:
+            def git(*args):
+                return subprocess.check_output(['git', '-C', folder, *args]).decode().strip()
+            git('init', '-q')
+            git('config', 'user.name', 'test')
+            git('config', 'user.email', 'test@example.invalid')
+            Path(folder, 'README.md').write_text('before')
+            git('add', '.')
+            git('commit', '-qm', 'before')
+            before = git('rev-parse', 'HEAD')
+            Path(folder, 'README.md').write_text('after')
+            git('commit', '-qam', 'after')
+            event = Path(folder, 'event.json')
+            event.write_text(json.dumps({'before': before, 'after': git('rev-parse', 'HEAD')}))
+            output = Path(folder, 'output')
+            for branch, expected in [('main', 'true'), ('canhta/ticket', 'false'),
+                                     ('feat/nested/ticket', 'false')]:
+                with self.subTest(branch=branch):
+                    output.write_text('')
+                    subprocess.run(['python3', str(script)], cwd=folder, check=True, env={
+                        **os.environ, 'GITHUB_EVENT_PATH': str(event), 'GITHUB_EVENT_NAME': 'push',
+                        'GITHUB_REF': 'refs/heads/' + branch, 'GITHUB_OUTPUT': str(output)})
+                    self.assertEqual(output.read_text(), f'docs-only={expected}\n')
 
     def test_real_diff_preserves_deleted_renamed_and_hostile_paths(self):
         with tempfile.TemporaryDirectory() as folder:
