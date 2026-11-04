@@ -2,10 +2,17 @@
 mod io;
 mod language;
 mod mapping;
+mod segment;
+mod span;
 pub use io::{Export, Format, Import, export, parse};
 pub use language::{LanguageProfile, LanguageRegistry, LanguageTag};
 pub use mapping::{CueFragmentId, EditMapping, MappedRange, MappedTick};
+pub use segment::{
+    LayoutHooks, LineLimit, SegmentRules, Segmentation, SegmentedCue, TimingKind,
+    segment_transcript, segment_translation,
+};
 use serde::{Deserialize, Serialize};
+pub use span::{NormalizedText, TextSpan};
 use std::{collections::BTreeMap, fmt};
 use time::{SourceRange, Tick};
 use unicode_normalization::UnicodeNormalization;
@@ -17,7 +24,7 @@ pub enum Error {
     Language(#[source] language_tags::ParseError),
     #[error("invalid subtitle input: {0}")]
     Invalid(&'static str),
-    #[error("subtitle input exceeds 16 MiB")]
+    #[error("subtitle input or generated output exceeds 16 MiB")]
     TooLarge,
     #[error("subtitle time cannot be represented")]
     Time(#[from] time::TimeError),
@@ -149,6 +156,9 @@ pub enum WarningKind {
     MissingLanguage,
     RoundedDuration,
     TextLayout,
+    ReadingSpeed,
+    MinimumGap,
+    EstimatedTiming,
 }
 impl CueTrack {
     /// Stable-sort by start, clamp negative starts, then shift overlaps preserving duration.

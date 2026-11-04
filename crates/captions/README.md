@@ -1,8 +1,8 @@
 # captions
 
 Headless source-timed transcript and multilingual cue storage, BCP 47 language
-profiles, pure source-to-output edit mapping and SRT/WebVTT interchange.
-Excludes segmentation,
+profiles, readable cue segmentation, pure source-to-output edit mapping and
+SRT/WebVTT interchange. Excludes
 translation providers and subtitle rendering.
 
 ## Entry points and persistence
@@ -52,6 +52,71 @@ existing time crate conversions; retiming, media IO and project commands belong
 to their respective consumers. Overlapping/negative output cues remain exact here;
 interchange export separately applies its documented repair policy below.
 
+## Segmentation
+
+`segment_transcript` accepts a transcript, one caller-resolved `LanguageProfile`,
+`SegmentRules` and `LayoutHooks`. It returns `Segmentation` containing fresh
+`SegmentedCue` values and positioned warnings; it never mutates the input.
+`SegmentRules::from_profile` uses profile line length/CPS, two lines, 5/6..7 seconds,
+a two-frame gap at the supplied rational rate and a one-second pause threshold.
+`LineLimit` selects grapheme or caller-measured pixel width; callbacks return typed
+errors and measurements must be finite/nonnegative. There is no font dependency.
+
+Complete timed words are indivisible and retain source ranges. They must match
+the segment text apart from whitespace. Missing/inconsistent word text falls back
+to the authoritative segment text; invalid/out-of-order/out-of-segment word times
+are errors. Segment IDs must be unique and nonempty; source segments must be
+nonnegative, ordered and disjoint. Aggregate segment IDs and segment/word text are capped at 16 MiB.
+Generated cue payloads and accounted cue/warning overhead also have a 16 MiB
+budget, including repeated IDs/references. Empty/whitespace segments yield no cues. Formatting whitespace is collapsed at
+line boundaries; visible text, punctuation and grapheme clusters are retained.
+
+Untimed text uses Unicode UAX #14 opportunities, with extended-grapheme safety.
+Chinese has no inserted spaces; Latin runs stay intact. An optional dictionary
+callback returns sorted nonoverlapping NFC byte ranges, protecting word interiors
+from line/cue breaks. Callers resolve a profile's optional segmenter name to this
+callback. No dictionary is bundled. Capacity/duration boundaries prefer sentence
+end, then clause punctuation, then pause, then a legal word boundary; speaker
+changes and pauses also force a split. Indivisible words wider/longer than limits
+remain intact and warn. Layout is greedy within each cue, without syntactic parsing.
+
+`segment_translation` takes one source cue/sentence group and translated `CueText`;
+it never accepts source word timestamps. Split times use cumulative grapheme
+weights (including input spaces) and integer floor offsets in the input range,
+without cumulative rounding drift. Fragments are marked `TimingKind::Estimated`;
+an unsplit result uses `SourceSegment`. Split segment-only source text is also
+estimated, and mismatched/partially timed word lists always warn as estimated.
+Source word results use `SourceWords`. These marks are explicit generation
+metadata on `SegmentedCue`, not additions to persisted `Cue` or SRT/VTT formats.
+Target fragments retain the edit flag and translation reference (defaulting to
+source ID) and contain target text only; source text remains on the input cue.
+IDs deterministically encode source identity, language and fragment ordinal.
+
+CPS, duration, gap and layout conflicts warn instead of truncating text or moving
+speech. A short timed-word cue may extend only into following silence before the
+next cue minus the requested gap. The last cue and segment/estimated timings are
+never extended. Gaps that require cutting speech warn; they are not silently
+forced. Timing too short to represent a nonempty fragment returns a typed error.
+Consumers can form a `CueTrack` from the generated cues for interchange while
+retaining the timing metadata separately for review.
+
+`NormalizedText` owns reusable raw-to-NFC `TextSpan` correspondence at whole
+extended-grapheme granularity. Spans are byte ranges, including many-to-one
+combining sequences; `raw_range` expands partial normalized graphemes. Offsets
+are not source/target word alignments. Script-aware timing grouping belongs to
+its extension ticket.
+
+Defaults use adult interlingual guidelines: [Vietnamese](https://partnerhelp.netflixstudios.com/hc/en-us/articles/220447048-Vietnamese-Timed-Text-Style-Guide)
+42 graphemes/line and 17 CPS; [English](https://partnerhelp.netflixstudios.com/hc/en-us/articles/217350977-English-USA-Timed-Text-Style-Guide)
+42/20; [Simplified Chinese](https://partnerhelp.netflixstudios.com/hc/en-us/articles/215986007-Chinese-Simplified-Timed-Text-Style-Guide)
+and [Traditional Chinese](https://partnerhelp.netflixstudios.com/hc/en-us/articles/215994807-Chinese-Traditional-Timed-Text-Style-Guide)
+16/9. [General requirements](https://partnerhelp.netflixstudios.com/hc/en-us/articles/215758617-Timed-Text-Style-Guide-General-Requirements)
+supply two lines and 5/6..7 seconds; [timing guidelines](https://partnerhelp.netflixstudios.com/hc/en-us/articles/360051554394-Timed-Text-Style-Guide-Subtitle-Timing-Guidelines)
+supply the two-frame gap. These are editable defaults, not a certification of
+Netflix delivery compliance: our counts use graphemes, and no shot analysis,
+linguistic reduction or children's/SDH preset is implied.
+
+
 ## Interchange and deterministic repairs
 
 `parse(bytes, format, source_lang)` accepts up to 16 MiB: UTF-8, UTF-8 BOM,
@@ -87,9 +152,28 @@ source precision and file formatting/metadata are not preserved.
 
 `cargo test -p captions` exercises model persistence/NFC/edit protection, language
 fallback, bilingual ordering, decoding, timing repair and malformed/overflow
-inputs. Property tests cover canonical interchange stability and hostile bytes.
-Mapping tests exercise cut boundaries, repeated occurrences, disjoint fragments,
+inputs. Mapping tests exercise cut boundaries, repeated occurrences, disjoint fragments,
 rebuild from source, 29.97 frame cuts, one-time audio offset normalization, extreme
 ticks, source identity/edit preservation and SRT accuracy within 1 ms. Property
 tests verify exact inverses for each retained occurrence and no inverse for gaps.
+Segmentation tables cover diacritics, mixed Han/Latin/emoji, long words,
+long sentences, caller measurements/dictionary spans, warning conflicts and target
+timing provenance. Property tests cover canonical interchange stability, hostile
+bytes and segmentation text/timing preservation. The ignored
+`segmentation_benchmark` test runs a deterministic Vietnamese corpus in release
+mode and checks exact visible-text preservation and zero end-tick drift.
+
 No media, network provider or renderer oracle is needed for this pure crate.
+
+## Segmentation performance
+
+Observed on Apple M1 Pro, 16 GiB RAM, macOS 27.2, release profile: the deterministic
+63,000-byte Vietnamese NFD corpus (41,000 normalized graphemes over 600 source
+seconds) generated 500 cues with exact visible-text preservation and zero end-tick
+drift. Across 20 same-process calls, the first took 27.472 ms; 19 warm calls took
+13.568–17.613 ms (median 14.073 ms). The test process peaked at 13,271,040 bytes RSS.
+Run `cargo test -p captions --release --test segmentation --no-run`, then invoke
+the emitted executable with `--exact segmentation_benchmark --ignored --nocapture`
+under `/usr/bin/time -l` to measure without including compilation. No pixel metric
+applies to this pure text/timing operation; other hardware and font callbacks are
+unverified.

@@ -106,7 +106,9 @@ dependencies = [
  "serde_json",
  "thiserror",
  "time",
+ "unicode-linebreak",
  "unicode-normalization",
+ "unicode-segmentation",
 ]
 
 [[package]]

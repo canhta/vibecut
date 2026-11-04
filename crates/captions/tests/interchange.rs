@@ -57,7 +57,7 @@ fn extensible_profiles_and_tag_keys() {
     }
     assert!(serde_json::from_str::<LanguageTag>("\"en_US\"").is_err());
     let mut registry = LanguageRegistry::standard().unwrap();
-    assert_eq!(registry.profile(&lang("zh-Hant-TW")).max_graphemes, 20);
+    assert_eq!(registry.profile(&lang("zh-Hant-TW")).max_graphemes, 16);
     assert_eq!(registry.profile(&lang("fr")), &registry.generic);
     let mut custom = registry.generic.clone();
     custom.max_graphemes = 31;

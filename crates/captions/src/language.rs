@@ -74,10 +74,10 @@ fn standard_profiles() -> Result<LanguageRegistry, Error> {
     };
     let mut profiles = BTreeMap::new();
     for (tag, limit, speed, punctuation, font) in [
-        ("vi", 42, 20, ".!?…", "Noto Sans"),
+        ("vi", 42, 17, ".!?…", "Noto Sans"),
         ("en", 42, 20, ".!?…", "Noto Sans"),
-        ("zh-Hans", 20, 10, "。！？…", "Noto Sans CJK SC"),
-        ("zh-Hant", 20, 10, "。！？…", "Noto Sans CJK TC"),
+        ("zh-Hans", 16, 9, "。！？…", "Noto Sans CJK SC"),
+        ("zh-Hant", 16, 9, "。！？…", "Noto Sans CJK TC"),
     ] {
         profiles.insert(
             LanguageTag::parse(tag)?,
