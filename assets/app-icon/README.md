@@ -4,10 +4,10 @@ Original artwork by the VibeCut maintainer, MIT (see [LICENSE](../../LICENSE)).
 
 ## Palette and geometry
 
-A 1024-unit square with a charcoal `#222522` background and lime `#D3F45B`
+A 1024-unit square with a near-black `#0F1113` (the UI's label-on-lime colour) background and lime `#D1FE17`
 foreground. Two curved pieces form a right-facing play mark, scaled 1.2 around
 the center. The flat app tile is full bleed; the web favicon has a 224-unit radius.
-The macOS source uses extended-sRGB background `(0.13333, 0.14510, 0.13333)`;
+The macOS source uses extended-sRGB background `(0.05882, 0.06667, 0.07451)`;
 its two layers have neutral shadow opacity 0.25 and translucency 0.15. Icon Composer
 owns Liquid Glass appearance settings. The script places the native macOS export on Apple's 824/1024 optical grid
 with transparent margins/corners for runtime PNGs and legacy ICNS.
