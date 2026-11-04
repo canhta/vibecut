@@ -898,3 +898,44 @@ fn subtitle_remote_provider_without_key_refuses_before_upload() {
             .contains("OPENAI_API_KEY")
     );
 }
+
+#[test]
+fn auto_detection_does_not_require_cloud_translation_credentials() {
+    let directory = tempfile::tempdir().unwrap();
+    let home = directory.path().join("home");
+    fs::create_dir_all(&home).unwrap();
+    let input = directory.path().join("input.mp4");
+    fs::write(&input, b"not read before model setup").unwrap();
+    let output = Command::new(bin())
+        .args([
+            os("subtitle"),
+            input.as_os_str(),
+            os("--from"),
+            os("auto"),
+            os("--to"),
+            os("en"),
+            os("--provider"),
+            os("whisper.cpp"),
+            os("--srt"),
+            directory.path().join("out.srt").as_os_str(),
+            os("--json"),
+        ])
+        .env("HOME", &home)
+        .env_remove("OPENAI_API_KEY")
+        .env_remove("ANTHROPIC_API_KEY")
+        .env_remove("ELEVENLABS_API_KEY")
+        .output()
+        .unwrap();
+    assert_eq!(
+        code(&output),
+        4,
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let error = error_json(&output);
+    assert_eq!(error["error"]["code"], "setup");
+    let message = error["error"]["message"].as_str().unwrap();
+    assert!(message.contains("whisper-large-v3-turbo"), "{message}");
+    assert!(!message.contains("OPENAI_API_KEY"), "{message}");
+    assert!(!message.contains("ANTHROPIC_API_KEY"), "{message}");
+}

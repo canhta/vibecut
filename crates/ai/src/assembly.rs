@@ -1,7 +1,7 @@
 use crate::contracts::checkpoint;
 use crate::{
-    Aligner, AudioWindow, Error, ExecutionHooks, Operation, Request, SampleRange, Stage,
-    TimingUnit, Transcriber,
+    Aligner, AudioWindow, Consent, Error, ExecutionHooks, Operation, Request, SampleRange, Scope,
+    Stage, TimingUnit, Transcriber,
 };
 use captions::{
     Fingerprint, LanguageTag, NfcText, NormalizedText, Segment, SpanTiming, TimingSpans,
@@ -233,6 +233,12 @@ impl Recognition {
     pub fn alignment_fingerprint(&self) -> Option<&Fingerprint> {
         self.alignment.as_ref()
     }
+    /// Whether any retained segment lacks the requested timing layer.
+    pub fn needs_timing(&self, unit: TimingUnit) -> bool {
+        self.segments
+            .iter()
+            .any(|segment| !segment.has_timing(unit))
+    }
     pub fn is_text_only(&self) -> bool {
         self.segments.iter().any(|s| s.range.is_none())
     }
@@ -333,7 +339,7 @@ pub fn transcribe(
         &provider.estimate(request.scope),
         Operation::Transcribe,
     )?;
-    let mut segments = provider.transcribe(audio, request, hooks)?;
+    let segments = provider.transcribe(audio, request, hooks)?;
     validate_ids(&segments)?;
     checkpoint(hooks, Stage::Assemble)?;
     for segment in &segments {
@@ -355,117 +361,6 @@ pub fn transcribe(
             return Err(Error::Invalid("unadvertised native timing"));
         }
     }
-    let mut alignment_fingerprint = None;
-    if let Some(align) = alignment {
-        let missing: Vec<_> = segments
-            .iter()
-            .filter(|s| !s.has_timing(align.unit))
-            .cloned()
-            .collect();
-        if !missing.is_empty() {
-            checkpoint(hooks, Stage::Align)?;
-            let scope = align.request.scope;
-            if align.provider.config() != &scope.provider
-                || scope.source_samples != audio.range
-                || scope.sample_rate != audio.sample_rate
-                || scope.payload_fingerprint != request.scope.payload_fingerprint
-                || scope.source_language != request.scope.source_language
-            {
-                return Err(Error::Invalid("alignment request mismatch"));
-            }
-            let ac = align.provider.capabilities(scope);
-            // Unsupported languages/timing are expected absence, not failed jobs.
-            let admissible = ac.timing.contains(&align.unit)
-                && match ac.check(scope) {
-                    Ok(()) => true,
-                    Err(Error::Unsupported | Error::UnsupportedLanguage) => false,
-                    Err(error) => return Err(error),
-                };
-            if admissible {
-                let expected: Vec<_> = missing.iter().map(|s| s.text.clone()).collect();
-                if scope.texts != expected {
-                    return Err(Error::ConsentRequired);
-                }
-                audio.validate(scope)?;
-                align
-                    .request
-                    .prepare(&ac, &align.provider.estimate(scope), Operation::Align)?;
-                let aligned = align
-                    .provider
-                    .align(audio, &missing, &align.request, hooks)?;
-                checkpoint(hooks, Stage::Assemble)?;
-                if aligned.len() != missing.len() {
-                    return Err(Error::Invalid("alignment span count"));
-                }
-                for (original, aligned) in missing.iter().zip(aligned) {
-                    aligned.validate(audio.range)?;
-                    if original.id != aligned.id
-                        || original.text != aligned.text
-                        || !aligned.has_timing(align.unit)
-                        || aligned.raw_tokens.iter().any(|t| {
-                            t.provenance != Provenance::Forced
-                                || !ac.timing.contains(&TimingUnit::Token)
-                        })
-                        || aligned.timing.iter().any(|t| {
-                            t.provenance != Provenance::Forced || !ac.timing.contains(&t.unit)
-                        })
-                    {
-                        return Err(Error::Invalid("alignment changed text or omitted timing"));
-                    }
-                    let target = segments
-                        .iter_mut()
-                        .find(|s| s.id == original.id)
-                        .ok_or(Error::Invalid("alignment identity"))?;
-                    // Native segment ranges are authoritative; forced unit ranges
-                    // must fit, rather than shifting the original speech interval.
-                    let mut replacement = aligned;
-                    replacement.range = original.range.or(replacement.range);
-                    let native_units: BTreeSet<_> =
-                        original.timing.iter().map(|s| s.unit).collect();
-                    replacement
-                        .timing
-                        .retain(|s| !native_units.contains(&s.unit));
-                    replacement.timing.extend(original.timing.clone());
-                    if !original.raw_tokens.is_empty() {
-                        let forced_tokens = &replacement.raw_tokens;
-                        let fill_missing = original.raw_tokens.iter().any(|t| t.range.is_none())
-                            && !forced_tokens.is_empty();
-                        if fill_missing
-                            && (original.raw_tokens.len() != forced_tokens.len()
-                                || original
-                                    .raw_tokens
-                                    .iter()
-                                    .zip(forced_tokens)
-                                    .any(|(native, forced)| native.bytes != forced.bytes))
-                        {
-                            return Err(Error::Invalid("alignment changed token identity"));
-                        }
-                        let mut tokens = original.raw_tokens.clone();
-                        if fill_missing {
-                            for (native, forced) in tokens.iter_mut().zip(forced_tokens) {
-                                if native.range.is_none() && forced.range.is_some() {
-                                    native.range = forced.range;
-                                    native.provenance = Provenance::Forced;
-                                }
-                            }
-                        }
-                        replacement.raw_tokens = tokens;
-                    }
-                    if native_units.contains(&TimingUnit::Token) {
-                        replacement.raw_tokens.clear();
-                    } else if !replacement.raw_tokens.is_empty() {
-                        replacement.timing.retain(|s| s.unit != TimingUnit::Token);
-                    }
-                    replacement.validate(audio.range)?;
-                    if !replacement.has_timing(align.unit) {
-                        return Err(Error::Invalid("alignment omitted requested timing"));
-                    }
-                    *target = replacement;
-                }
-                alignment_fingerprint = Some(fingerprint(align.provider.config()));
-            }
-        }
-    }
     validate_ids(&segments)?;
     let result = Recognition {
         language: request.scope.source_language.clone(),
@@ -474,10 +369,176 @@ pub fn transcribe(
         payload_fingerprint: request.scope.payload_fingerprint.clone(),
         window: audio.range,
         segments,
-        alignment: alignment_fingerprint,
+        alignment: None,
+    };
+    let result = match alignment {
+        Some(alignment) => align(
+            result,
+            alignment.provider,
+            audio,
+            alignment.request.scope,
+            alignment.request.consent,
+            alignment.unit,
+            hooks,
+        )?,
+        None => result,
     };
     assemble(vec![result], hooks)
 }
+
+/// Apply one explicitly selected aligner to an already validated recognition.
+/// A local aligner may receive a template scope with empty texts; this function
+/// binds the exact missing segment texts before validation and execution. A remote
+/// aligner must already have its text-bound scope/consent. Existing provider,
+/// model, source fingerprint, sample coordinates and native timing provenance are
+/// retained; no timing is fabricated when the aligner is inadmissible.
+#[allow(clippy::too_many_arguments)]
+pub fn align(
+    mut recognition: Recognition,
+    provider: &dyn Aligner,
+    audio: AudioWindow<'_>,
+    scope: &Scope,
+    consent: Option<&Consent>,
+    unit: TimingUnit,
+    hooks: &dyn ExecutionHooks,
+) -> Result<Recognition, Error> {
+    checkpoint(hooks, Stage::Align)?;
+    if provider.config() != &scope.provider
+        || scope.operation != Operation::Align
+        || scope.source_samples != audio.range
+        || scope.sample_rate != audio.sample_rate
+        || scope.payload_fingerprint != recognition.payload_fingerprint
+        || scope.source_language != recognition.language
+    {
+        return Err(Error::Invalid("alignment request mismatch"));
+    }
+    let missing: Vec<_> = recognition
+        .segments
+        .iter()
+        .filter(|segment| !segment.has_timing(unit))
+        .cloned()
+        .collect();
+    if missing.is_empty() {
+        return Ok(recognition);
+    }
+    let capabilities = provider.capabilities(scope);
+    let admissible = capabilities.timing.contains(&unit)
+        && match capabilities.check(scope) {
+            Ok(()) => true,
+            Err(Error::Unsupported | Error::UnsupportedLanguage) => false,
+            Err(error) => return Err(error),
+        };
+    if !admissible {
+        return Ok(recognition);
+    }
+    let expected: Vec<_> = missing.iter().map(|segment| segment.text.clone()).collect();
+    let bound;
+    let bound_scope = if scope.texts.is_empty() {
+        if provider.config().is_remote() {
+            return Err(Error::Invalid(
+                "remote alignment requires a text-bound scope",
+            ));
+        }
+        bound = Scope {
+            texts: expected.clone(),
+            ..scope.clone()
+        };
+        &bound
+    } else {
+        if scope.texts != expected {
+            return Err(Error::ConsentRequired);
+        }
+        scope
+    };
+    audio.validate(bound_scope)?;
+    let capabilities = provider.capabilities(bound_scope);
+    let request = Request {
+        scope: bound_scope,
+        consent,
+    };
+    request.prepare(
+        &capabilities,
+        &provider.estimate(bound_scope),
+        Operation::Align,
+    )?;
+    let aligned = provider.align(audio, &missing, &request, hooks)?;
+    checkpoint(hooks, Stage::Assemble)?;
+    if aligned.len() != missing.len() {
+        return Err(Error::Invalid("alignment span count"));
+    }
+    for (original, aligned) in missing.iter().zip(aligned) {
+        aligned.validate(audio.range)?;
+        if original.id != aligned.id
+            || original.text != aligned.text
+            || !aligned.has_timing(unit)
+            || aligned.raw_tokens.iter().any(|token| {
+                token.provenance != Provenance::Forced
+                    || !capabilities.timing.contains(&TimingUnit::Token)
+            })
+            || aligned.timing.iter().any(|timing| {
+                timing.provenance != Provenance::Forced
+                    || !capabilities.timing.contains(&timing.unit)
+            })
+        {
+            return Err(Error::Invalid("alignment changed text or omitted timing"));
+        }
+        let target = recognition
+            .segments
+            .iter_mut()
+            .find(|segment| segment.id == original.id)
+            .ok_or(Error::Invalid("alignment identity"))?;
+        let mut replacement = aligned;
+        replacement.range = original.range.or(replacement.range);
+        let native_units: BTreeSet<_> = original.timing.iter().map(|timing| timing.unit).collect();
+        replacement
+            .timing
+            .retain(|timing| !native_units.contains(&timing.unit));
+        replacement.timing.extend(original.timing.clone());
+        if !original.raw_tokens.is_empty() {
+            let forced_tokens = &replacement.raw_tokens;
+            let fill_missing = original
+                .raw_tokens
+                .iter()
+                .any(|token| token.range.is_none())
+                && !forced_tokens.is_empty();
+            if fill_missing
+                && (original.raw_tokens.len() != forced_tokens.len()
+                    || original
+                        .raw_tokens
+                        .iter()
+                        .zip(forced_tokens)
+                        .any(|(native, forced)| native.bytes != forced.bytes))
+            {
+                return Err(Error::Invalid("alignment changed token identity"));
+            }
+            let mut tokens = original.raw_tokens.clone();
+            if fill_missing {
+                for (native, forced) in tokens.iter_mut().zip(forced_tokens) {
+                    if native.range.is_none() && forced.range.is_some() {
+                        native.range = forced.range;
+                        native.provenance = Provenance::Forced;
+                    }
+                }
+            }
+            replacement.raw_tokens = tokens;
+        }
+        if native_units.contains(&TimingUnit::Token) {
+            replacement.raw_tokens.clear();
+        } else if !replacement.raw_tokens.is_empty() {
+            replacement
+                .timing
+                .retain(|timing| timing.unit != TimingUnit::Token);
+        }
+        replacement.validate(audio.range)?;
+        if !replacement.has_timing(unit) {
+            return Err(Error::Invalid("alignment omitted requested timing"));
+        }
+        *target = replacement;
+    }
+    recognition.alignment = Some(fingerprint(provider.config()));
+    Ok(recognition)
+}
+
 fn validate_ids(segments: &[RecognitionSegment]) -> Result<(), Error> {
     let mut ids = BTreeSet::new();
     if segments.iter().any(|s| !ids.insert(s.id.clone())) {

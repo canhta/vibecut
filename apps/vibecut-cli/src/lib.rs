@@ -2,8 +2,8 @@
 use engine::cache::{ArtifactCache, ArtifactKind, CacheKey, KeyInputs};
 use engine::jobs::{JobId, JobRunner, JobSnapshot, JobStage, JobState, RunnerConfig, SystemClock};
 use engine::subtitles::{
-    self, CatalogOperation, ConsentPrompt, Cost, Progress, ProviderOption, Stage, SubtitleOutcome,
-    SubtitleRequest, UploadRequest,
+    self, CatalogOperation, ConsentPrompt, Cost, LanguageTag, Progress, ProviderOption, Stage,
+    SubtitleOutcome, SubtitleRequest, UploadRequest,
 };
 use engine::{ByteBudget, CreatedId, EditError, Session};
 use project::atomic::Overwrite;
@@ -845,19 +845,7 @@ fn subtitle(args: Vec<OsString>) -> Result<Output, CliError> {
             "--bilingual requires --from and --to to differ".into(),
         ));
     }
-    let translation_needed = source_language
-        .as_ref()
-        .is_none_or(|source| source != &target_language)
-        || bilingual;
     let transcription = subtitles::choose_transcription(&provider, model.as_deref())?;
-    let translation = if translation_needed {
-        Some(subtitles::choose_translation(
-            &translate_provider,
-            translate_model.as_deref(),
-        )?)
-    } else {
-        None
-    };
     let credentials = subtitles::Credentials::new(
         std::env::var("OPENAI_API_KEY").ok(),
         std::env::var("ELEVENLABS_API_KEY").ok(),
@@ -882,13 +870,36 @@ fn subtitle(args: Vec<OsString>) -> Result<Output, CliError> {
     let budget = ByteBudget::new(CLI_MEMORY_LIMIT)?;
     let root = subtitles::default_cache_root()?;
     let (mut cache, _diagnostics) = ArtifactCache::open(&root, budget.clone(), 128)?;
-    let providers = subtitles::Providers::open(
+    let cancellation = subtitles::Cancellation::new();
+    let mut source_language = source_language;
+    let translation = match &source_language {
+        Some(source) if translation_required(source, &target_language, bilingual) => Some(
+            subtitles::choose_translation(&translate_provider, translate_model.as_deref())?,
+        ),
+        _ => None,
+    };
+    let mut providers = subtitles::Providers::open(
         transcription,
         translation,
         &mut cache,
         &credentials,
         &runtime,
     )?;
+    if source_language.is_none() {
+        let detected = providers.detect_language_for(&input, &cancellation)?;
+        if bilingual && detected == target_language {
+            return Err(CliError::Usage(
+                "--bilingual requires the detected source and --to to differ".into(),
+            ));
+        }
+        if translation_required(&detected, &target_language, bilingual) {
+            providers = providers.with_translation(
+                subtitles::choose_translation(&translate_provider, translate_model.as_deref())?,
+                &credentials,
+            )?;
+        }
+        source_language = Some(detected);
+    }
     let mut runner = JobRunner::new(
         RunnerConfig {
             concurrency: [1, 1, 2],
@@ -922,6 +933,7 @@ fn subtitle(args: Vec<OsString>) -> Result<Output, CliError> {
         &mut cache,
         &consent,
         &progress,
+        &cancellation,
     )?;
     runner.shutdown();
     let value = outcome_json(&outcome, &input)?;
@@ -929,6 +941,10 @@ fn subtitle(args: Vec<OsString>) -> Result<Output, CliError> {
         value,
         human: outcome_human_subtitle(&outcome),
     })
+}
+
+fn translation_required(source: &LanguageTag, target: &LanguageTag, bilingual: bool) -> bool {
+    bilingual || source != target
 }
 
 fn subtitle_usage() -> &'static str {
@@ -1456,6 +1472,15 @@ mod tests {
             6
         );
         assert_eq!(CliError::Io(io::Error::other("")).exit_code(), 7);
+    }
+
+    #[test]
+    fn translation_is_needed_only_for_different_languages_or_bilingual() {
+        let vi = LanguageTag::parse("vi").unwrap();
+        let en = LanguageTag::parse("en").unwrap();
+        assert!(!translation_required(&vi, &vi, false));
+        assert!(translation_required(&vi, &en, false));
+        assert!(translation_required(&vi, &vi, true));
     }
 
     #[test]

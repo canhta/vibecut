@@ -43,7 +43,10 @@ and `16:9` selects 1920×1080; without it the source geometry is used. At least 
 of `--srt` and `--burn` is required.
 
 Providers and models are explicit and are never switched automatically. `auto`
-language detection requires the local `whisper.cpp` provider. `vibecut providers
+language detection requires the local `whisper.cpp` provider and resolves the
+source before deciding whether a translator is needed; a same-language local run
+therefore needs no cloud translation credentials. A different-language run still
+requires the explicitly selected translation provider and its key. `vibecut providers
 --operation transcribe|translate --language <tag>` lists offline capability data;
 `--model` must be one of the listed models. Local defaults are
 `whisper-large-v3-turbo` (vi/en/zh) and `gipformer-68m-rnnt-int8` (vi); cloud
@@ -61,7 +64,11 @@ provider. Local providers need no upload consent.
 ASR checkpoints are content-addressed complete windows in the default model cache.
 A restarted command reuses valid windows and executes only missing ones; the
 outcome reports the reused count. Checksum failure or an incomplete window is
-recomputed. Local weights are separate from checkpoints and are never downloaded
+recomputed; an alignment failure keeps the completed recognition checkpoint and
+alignment is retried next run. The engine workflow also exposes an operation-wide
+cooperative cancellation token connected to extraction, active jobs, translation
+and export; the CLI has no signal-driven cancel gesture, so process interruption
+remains crash semantics. Local weights are separate from checkpoints and are never downloaded
 implicitly: `vibecut model download <id> --yes-download` prints licence, source,
 size, every file SHA-256 and requires the explicit flag. A missing model returns
 an actionable `setup` error naming the download command.

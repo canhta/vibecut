@@ -86,7 +86,14 @@ raw text alone does not advertise or establish recognition timing.
 Token byte and record sizes are capped at 16 MiB per segment before assembly.
 
 `transcribe` validates native timings, then calls an explicitly supplied admissible
-aligner for segments missing segment timing or the requested timing unit. Alignment
+aligner for segments missing segment timing or the requested timing unit. Missing
+timing can also be applied later through `align(recognition, provider, ...)`: this
+reuses the same validation/replacement owner, keeps the recognition provider/model
+and payload fingerprint, retains native unit layers and accepts a local aligner's
+empty-text template scope by binding the exact missing segment texts before
+execution. A remote aligner must receive an already text-bound scope and its own
+consent; a template never authorizes an upload. `Recognition::needs_timing(unit)`
+reports whether alignment is required without exposing timing internals. Alignment
 is at segment granularity; providers can omit punctuation spans. Existing native
 unit layers and segment boundaries remain authoritative. The aligner must preserve
 text, IDs and ordering, return every requested segment and declare forced timing.

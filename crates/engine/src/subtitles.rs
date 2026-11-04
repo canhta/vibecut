@@ -3,12 +3,13 @@
 //! consent, cost, chunk merging and checkpoint state are not reimplemented by them.
 use crate::cache::{ArtifactCache, ArtifactKind, CacheKey, KeyInputs, ModelLease};
 use crate::jobs::{
-    JobBytes, JobId, JobKind, JobOutput, JobRunner, JobSnapshot, JobSpec, JobState, ResourceClass,
+    CancelToken, JobBytes, JobId, JobKind, JobOutput, JobRunner, JobSnapshot, JobSpec, JobState,
+    ResourceClass,
 };
 use crate::models::ModelTransfers;
 use crate::{ByteBudget, Command, EditError, NewItem, Outcome, Session};
 use ai::transport::{ApiKey, UreqTransport};
-use ai::{Alignment, CostEstimate, ExecutionHooks, Location, Money, Request, SampleRange, Scope};
+use ai::{CostEstimate, ExecutionHooks, Location, Money, Request, SampleRange, Scope};
 pub use captions::LanguageTag;
 use captions::{
     Cue, CueTrack, LanguageProfile, LanguageRegistry, NfcText, SegmentRules, SegmentedCue,
@@ -562,47 +563,9 @@ impl Providers {
         };
         let (translator, translation_mode) = match &translation {
             None => (None, None),
-            Some(TranslationProvider::OpenAi { model }) => {
-                let config = ai::ProviderConfig::new(
-                    "openai".into(),
-                    model.as_str().into(),
-                    ai::openai::TRANSLATION_SETTINGS.into(),
-                    Location::Remote {
-                        backend: ai::openai::BACKEND.into(),
-                        base_url: ai::openai::BASE_URL.into(),
-                        auth_ref: "OPENAI_API_KEY".into(),
-                    },
-                )?;
-                let value = ai::openai::OpenAiTranslator::new(
-                    config,
-                    credentials.openai()?.clone(),
-                    Arc::new(UreqTransport::new()),
-                )?;
-                (
-                    Some(TranslatorKind::OpenAi(Arc::new(value))),
-                    Some(ai::openai::TRANSLATION_MODE.into()),
-                )
-            }
-            Some(TranslationProvider::Anthropic { model }) => {
-                let config = ai::ProviderConfig::new(
-                    "anthropic".into(),
-                    model.as_str().into(),
-                    ai::anthropic::TRANSLATION_SETTINGS.into(),
-                    Location::Remote {
-                        backend: ai::anthropic::BACKEND.into(),
-                        base_url: ai::anthropic::BASE_URL.into(),
-                        auth_ref: "ANTHROPIC_API_KEY".into(),
-                    },
-                )?;
-                let value = ai::anthropic::AnthropicTranslator::new(
-                    config,
-                    credentials.anthropic()?.clone(),
-                    Arc::new(UreqTransport::new()),
-                )?;
-                (
-                    Some(TranslatorKind::Anthropic(Arc::new(value))),
-                    Some(ai::anthropic::TRANSLATION_MODE.into()),
-                )
+            Some(value) => {
+                let (kind, mode) = build_translator(value, credentials)?;
+                (Some(kind), Some(mode))
             }
         };
         Ok(Self {
@@ -616,6 +579,21 @@ impl Providers {
             needs_alignment,
             _leases: leases,
         })
+    }
+
+    /// Attach a translator after an operation has already resolved its source
+    /// language. This keeps same-language auto detection from requiring unrelated
+    /// cloud credentials while preserving explicit provider choice.
+    pub fn with_translation(
+        mut self,
+        translation: TranslationProvider,
+        credentials: &Credentials,
+    ) -> Result<Self, EditError> {
+        let (translator, mode) = build_translator(&translation, credentials)?;
+        self.translator = Some(translator);
+        self.translation = Some(translation);
+        self.translation_mode = Some(mode);
+        Ok(self)
     }
 
     /// Test/application composition with already built adapters.
@@ -753,6 +731,56 @@ impl Providers {
     }
 }
 
+fn build_translator(
+    translation: &TranslationProvider,
+    credentials: &Credentials,
+) -> Result<(TranslatorKind, NfcText), EditError> {
+    match translation {
+        TranslationProvider::OpenAi { model } => {
+            let config = ai::ProviderConfig::new(
+                "openai".into(),
+                model.as_str().into(),
+                ai::openai::TRANSLATION_SETTINGS.into(),
+                Location::Remote {
+                    backend: ai::openai::BACKEND.into(),
+                    base_url: ai::openai::BASE_URL.into(),
+                    auth_ref: "OPENAI_API_KEY".into(),
+                },
+            )?;
+            let value = ai::openai::OpenAiTranslator::new(
+                config,
+                credentials.openai()?.clone(),
+                Arc::new(UreqTransport::new()),
+            )?;
+            Ok((
+                TranslatorKind::OpenAi(Arc::new(value)),
+                ai::openai::TRANSLATION_MODE.into(),
+            ))
+        }
+        TranslationProvider::Anthropic { model } => {
+            let config = ai::ProviderConfig::new(
+                "anthropic".into(),
+                model.as_str().into(),
+                ai::anthropic::TRANSLATION_SETTINGS.into(),
+                Location::Remote {
+                    backend: ai::anthropic::BACKEND.into(),
+                    base_url: ai::anthropic::BASE_URL.into(),
+                    auth_ref: "ANTHROPIC_API_KEY".into(),
+                },
+            )?;
+            let value = ai::anthropic::AnthropicTranslator::new(
+                config,
+                credentials.anthropic()?.clone(),
+                Arc::new(UreqTransport::new()),
+            )?;
+            Ok((
+                TranslatorKind::Anthropic(Arc::new(value)),
+                ai::anthropic::TRANSLATION_MODE.into(),
+            ))
+        }
+    }
+}
+
 fn load_aligner(
     cache: &mut ArtifactCache,
     leases: &mut Vec<ModelLease>,
@@ -850,6 +878,34 @@ impl ConsentPrompt for AllowAll {
     }
 }
 
+/// Operation-wide cooperative cancellation shared by extraction, every submitted
+/// job and the later assembly/translation/export stages.
+#[derive(Clone, Default)]
+pub struct Cancellation {
+    flag: Arc<AtomicBool>,
+}
+impl Cancellation {
+    pub fn new() -> Self {
+        Self::default()
+    }
+    pub fn cancel(&self) {
+        self.flag.store(true, std::sync::atomic::Ordering::Release);
+    }
+    pub fn cancelled(&self) -> bool {
+        self.flag.load(std::sync::atomic::Ordering::Acquire)
+    }
+    pub(crate) fn media_flag(&self) -> Arc<AtomicBool> {
+        self.flag.clone()
+    }
+    fn checkpoint(&self) -> Result<(), EditError> {
+        if self.cancelled() {
+            Err(EditError::Cancelled)
+        } else {
+            Ok(())
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Stage {
     Extract,
@@ -913,8 +969,10 @@ pub fn run(
     cache: &mut ArtifactCache,
     consent: &dyn ConsentPrompt,
     progress: &dyn Progress,
+    cancel: &Cancellation,
 ) -> Result<SubtitleOutcome, EditError> {
     let started = Instant::now();
+    cancel.checkpoint()?;
     if request.srt.is_none() && request.burn.is_none() {
         return Err(EditError::Invalid("no subtitle output requested"));
     }
@@ -938,7 +996,7 @@ pub fn run(
     let duration = media_duration(&asset)?;
     let source_language = match &request.source_language {
         Some(language) => language.clone(),
-        None => providers.detect_language(&asset, duration, progress)?,
+        None => providers.detect_language(&asset, duration, cancel)?,
     };
     if !["vi", "en", "zh"]
         .iter()
@@ -985,13 +1043,17 @@ pub fn run(
     let mut checkpoints = 0usize;
     let mut transcription_cost = Cost::Free;
     let mut failure = None;
+    cancel.checkpoint()?;
     progress.stage(Stage::Extract);
     let extraction = media::extract_speech_windows_with_cancel(
         &asset,
         full_range,
         &speech_settings,
-        Arc::new(AtomicBool::new(false)),
+        cancel.media_flag(),
         |window| {
+            if cancel.cancelled() {
+                return Err(media::MediaError::Cancelled);
+            }
             if !window.speech_detected {
                 return Ok(());
             }
@@ -1002,6 +1064,7 @@ pub fn run(
                 cache,
                 consent,
                 progress,
+                cancel,
                 &source_language,
                 &fingerprint,
                 window,
@@ -1022,14 +1085,21 @@ pub fn run(
     if let Some(error) = failure {
         return Err(error);
     }
-    extraction?;
+    match extraction {
+        Ok(()) => {}
+        Err(media::MediaError::Cancelled) => return Err(EditError::Cancelled),
+        Err(error) => return Err(error.into()),
+    }
+    cancel.checkpoint()?;
     if recognitions.is_empty() {
         return Err(EditError::Unsupported("no speech detected"));
     }
 
+    cancel.checkpoint()?;
     progress.stage(Stage::Assemble);
     let recognition = ai::assemble(recognitions, &IdleHooks)?;
     let transcript = recognition.to_transcript()?;
+    cancel.checkpoint()?;
     let segments = transcript.segments.len();
     progress.stage(Stage::Segment);
     let rules = SegmentRules::from_profile(&profile, FrameRate::FPS_30)?;
@@ -1047,6 +1117,7 @@ pub fn run(
     if cues.is_empty() {
         return Err(EditError::Unsupported("no subtitle cues generated"));
     }
+    cancel.checkpoint()?;
     let mut session = build_session(
         &asset,
         &cues,
@@ -1065,6 +1136,7 @@ pub fn run(
             runner,
             consent,
             progress,
+            cancel,
             &source_language,
             &target_language,
             &fingerprint,
@@ -1085,6 +1157,7 @@ pub fn run(
     let srt = match &request.srt {
         Some(path) => {
             ensure_distinct(&request.input, path)?;
+            cancel.checkpoint()?;
             progress.stage(Stage::ExportSrt);
             export_subtitles(
                 &session,
@@ -1095,6 +1168,7 @@ pub fn run(
                 &output_languages,
                 path,
                 request.overwrite,
+                cancel,
             )?;
             Some(path.clone())
         }
@@ -1103,6 +1177,7 @@ pub fn run(
     let burn = match &request.burn {
         Some(path) => {
             ensure_distinct(&request.input, path)?;
+            cancel.checkpoint()?;
             progress.stage(Stage::ExportBurn);
             burn_subtitles(
                 &session,
@@ -1114,6 +1189,7 @@ pub fn run(
                 path,
                 request.portrait,
                 request.overwrite,
+                cancel,
             )?;
             Some(path.clone())
         }
@@ -1136,12 +1212,27 @@ pub fn run(
 }
 
 impl Providers {
+    /// Import a media path and detect the spoken language without opening a
+    /// translator. Composition roots use this to decide whether translation (and
+    /// its credentials) is required at all.
+    pub fn detect_language_for(
+        &self,
+        input: &Path,
+        cancel: &Cancellation,
+    ) -> Result<LanguageTag, EditError> {
+        cancel.checkpoint()?;
+        let asset = SourceAsset::import(media::AssetId(1), input.to_path_buf())?;
+        let duration = media_duration(&asset)?;
+        self.detect_language(&asset, duration, cancel)
+    }
+
     fn detect_language(
         &self,
         asset: &SourceAsset,
         duration: Tick,
-        _progress: &dyn Progress,
+        cancel: &Cancellation,
     ) -> Result<LanguageTag, EditError> {
+        cancel.checkpoint()?;
         let whisper = self
             .transcriber
             .whisper()
@@ -1163,33 +1254,43 @@ impl Providers {
             asset,
             range,
             &settings,
-            Arc::new(AtomicBool::new(false)),
-            |window| match detection_window(&window).and_then(|(samples, range)| {
-                whisper
-                    .detect_language(
-                        ai::AudioWindow {
-                            samples,
-                            range,
-                            sample_rate: media::SPEECH_SAMPLE_RATE,
-                        },
-                        &IdleHooks,
-                    )
-                    .map_err(EditError::Ai)
-            }) {
-                Ok(language) => {
-                    detected = Some(language);
-                    Ok(())
+            cancel.media_flag(),
+            |window| {
+                if cancel.cancelled() {
+                    return Err(media::MediaError::Cancelled);
                 }
-                Err(error) => {
-                    failure = Some(error);
-                    Err(media::MediaError::Cancelled)
+                match detection_window(&window).and_then(|(samples, range)| {
+                    whisper
+                        .detect_language(
+                            ai::AudioWindow {
+                                samples,
+                                range,
+                                sample_rate: media::SPEECH_SAMPLE_RATE,
+                            },
+                            &IdleHooks,
+                        )
+                        .map_err(EditError::Ai)
+                }) {
+                    Ok(language) => {
+                        detected = Some(language);
+                        Ok(())
+                    }
+                    Err(error) => {
+                        failure = Some(error);
+                        Err(media::MediaError::Cancelled)
+                    }
                 }
             },
         );
         if let Some(error) = failure {
             return Err(error);
         }
-        result?;
+        match result {
+            Ok(()) => {}
+            Err(media::MediaError::Cancelled) => return Err(EditError::Cancelled),
+            Err(error) => return Err(error.into()),
+        }
+        cancel.checkpoint()?;
         detected.ok_or(EditError::Unsupported(
             "no speech detected for language detection",
         ))
@@ -1235,29 +1336,20 @@ fn transcribe_window(
     cache: &mut ArtifactCache,
     consent: &dyn ConsentPrompt,
     progress: &dyn Progress,
+    cancel: &Cancellation,
     language: &LanguageTag,
     fingerprint: &NfcText,
     window: SpeechWindow,
     cost: &mut Cost,
     checkpoints: &mut usize,
 ) -> Result<ai::Recognition, EditError> {
+    cancel.checkpoint()?;
     let (start, end) = sample_range(&window)?;
     let samples = SampleRange::new(start, end)?;
     let sample_count = u64::try_from(window.samples.len()).map_err(|_| EditError::Limit)?;
+    let samples_pcm = Arc::new(window.samples);
     let scope = providers.transcription_scope(language, samples, sample_count, fingerprint, 0)?;
     let config = providers.transcriber().config();
-    let alignment_identity = providers
-        .aligner
-        .as_ref()
-        .map_or_else(String::new, |value| {
-            let config = value.config();
-            format!(
-                ";align={}:{}:{}",
-                config.id().as_str(),
-                config.model().as_str(),
-                config.settings_fingerprint().as_str()
-            )
-        });
     let key = CacheKey::new(KeyInputs {
         kind: ArtifactKind::AsrChunk,
         source: *blake3::hash(
@@ -1267,53 +1359,155 @@ fn transcribe_window(
         provider: config.id().as_str(),
         model: config.model().as_str(),
         version: config.settings_fingerprint().as_str(),
-        settings: format!(
-            "language={};samples={start}..{end}{alignment_identity}",
-            language.as_str()
-        )
-        .as_bytes(),
+        settings: format!("language={};samples={start}..{end}", language.as_str()).as_bytes(),
         transcript: [0; 32],
         cues: [0; 32],
         clip_range: [0; 32],
         translation: [0; 32],
     })?;
-    match cache.get(key) {
-        Ok(Some(lease)) => {
-            *checkpoints = checkpoints.saturating_add(1);
-            return serde_json::from_slice(lease.bytes())
-                .map_err(|_| EditError::Invalid("cached recognition is malformed"));
-        }
-        Ok(None) => {}
-        Err(EditError::CacheCorrupt) => {}
+    let cached = match cache.get(key) {
+        Ok(value) => value,
+        Err(EditError::CacheCorrupt) => None,
         Err(error) => return Err(error),
-    }
-    let estimate = providers.transcriber().estimate(&scope);
-    cost.add(&estimate);
-    let consent_token = if providers.transcription().is_remote() {
-        let request = providers.upload_request(scope.clone())?;
-        consent.approve(&request)?;
-        Some(ai::Consent::grant(
-            scope.clone(),
-            estimate_money(&estimate)?,
-        )?)
-    } else {
-        None
     };
-    let provider = providers.transcriber_arc();
-    let aligner = providers.aligner_arc();
+    let raw = match cached {
+        Some(lease) => {
+            *checkpoints = checkpoints.saturating_add(1);
+            serde_json::from_slice(lease.bytes())
+                .map_err(|_| EditError::Invalid("cached recognition is malformed"))?
+        }
+        None => {
+            let estimate = providers.transcriber().estimate(&scope);
+            cost.add(&estimate);
+            let consent_token = if providers.transcription().is_remote() {
+                let request = providers.upload_request(scope.clone())?;
+                consent.approve(&request)?;
+                Some(ai::Consent::grant(
+                    scope.clone(),
+                    estimate_money(&estimate)?,
+                )?)
+            } else {
+                None
+            };
+            let provider = providers.transcriber_arc();
+            let job_scope = scope.clone();
+            let job_samples = samples_pcm.clone();
+            let (id, token) = runner.submit(
+                JobSpec {
+                    kind: JobKind::Transcribe,
+                    class: ResourceClass::Network,
+                    input: key,
+                    bytes: JobBytes {
+                        compositor: WORK_BYTES,
+                        result: 16 * 1024 * 1024,
+                        ..Default::default()
+                    },
+                },
+                move |hooks| {
+                    let audio = ai::AudioWindow {
+                        samples: job_samples.as_slice(),
+                        range: job_scope.source_samples,
+                        sample_rate: job_scope.sample_rate,
+                    };
+                    let request = Request {
+                        scope: &job_scope,
+                        consent: consent_token.as_ref(),
+                    };
+                    let recognition =
+                        ai::transcribe(provider.as_ref(), audio, &request, None, hooks)?;
+                    serde_json::to_vec(&recognition)
+                        .map_err(|_| EditError::Invalid("recognition serialization"))
+                },
+            )?;
+            let output = wait_for_job(runner, id, &token, progress, cancel)?;
+            let bytes = output.bytes().to_vec();
+            let recognition: ai::Recognition = serde_json::from_slice(&bytes)
+                .map_err(|_| EditError::Invalid("recognition response is malformed"))?;
+            match cache.put(key, &bytes) {
+                Ok(()) => {}
+                // A checkpoint that cannot be stored must not discard a valid recognition.
+                Err(EditError::BudgetFull | EditError::ArtifactTooLarge) => {}
+                Err(error) => return Err(error),
+            }
+            if cancel.cancelled() {
+                return Err(EditError::Cancelled);
+            }
+            return align_recognition(
+                providers,
+                runner,
+                progress,
+                cancel,
+                language,
+                fingerprint,
+                &samples_pcm,
+                samples,
+                recognition,
+            );
+        }
+    };
+    align_recognition(
+        providers,
+        runner,
+        progress,
+        cancel,
+        language,
+        fingerprint,
+        &samples_pcm,
+        samples,
+        raw,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn align_recognition(
+    providers: &Providers,
+    runner: &mut JobRunner,
+    progress: &dyn Progress,
+    cancel: &Cancellation,
+    language: &LanguageTag,
+    fingerprint: &NfcText,
+    samples_pcm: &Arc<Vec<f32>>,
+    samples: SampleRange,
+    recognition: ai::Recognition,
+) -> Result<ai::Recognition, EditError> {
+    let Some(aligner) = providers.aligner_arc() else {
+        return Ok(recognition);
+    };
     let unit = providers.language_profile(language)?.timing_unit;
-    let align_scope = if aligner.is_some() {
-        Some(providers.alignment_scope(language, samples, fingerprint)?)
-    } else {
-        None
-    };
-    let job_scope = scope.clone();
-    let samples_owned = window.samples;
-    let (id, _cancel) = runner.submit(
+    if !recognition.needs_timing(unit) {
+        return Ok(recognition);
+    }
+    cancel.checkpoint()?;
+    progress.stage(Stage::Align);
+    let scope = providers.alignment_scope(language, samples, fingerprint)?;
+    let samples_pcm = samples_pcm.clone();
+    let aligner_job = aligner.clone();
+    let scope_job = scope.clone();
+    let (id, token) = runner.submit(
         JobSpec {
             kind: JobKind::Transcribe,
-            class: ResourceClass::Network,
-            input: key,
+            class: ResourceClass::Cpu,
+            input: CacheKey::new(KeyInputs {
+                kind: ArtifactKind::AsrChunk,
+                source: *blake3::hash(
+                    format!(
+                        "align:{}:{}:{}",
+                        fingerprint.as_str(),
+                        samples.start(),
+                        samples.end()
+                    )
+                    .as_bytes(),
+                )
+                .as_bytes(),
+                provider: aligner.config().id().as_str(),
+                model: aligner.config().model().as_str(),
+                version: aligner.config().settings_fingerprint().as_str(),
+                settings: format!("language={}", language.as_str()).as_bytes(),
+                transcript: [0; 32],
+                cues: [0; 32],
+                clip_range: [0; 32],
+                translation: [0; 32],
+            })?,
             bytes: JobBytes {
                 compositor: WORK_BYTES,
                 result: 16 * 1024 * 1024,
@@ -1322,42 +1516,29 @@ fn transcribe_window(
         },
         move |hooks| {
             let audio = ai::AudioWindow {
-                samples: &samples_owned,
-                range: job_scope.source_samples,
-                sample_rate: job_scope.sample_rate,
+                samples: samples_pcm.as_slice(),
+                range: scope_job.source_samples,
+                sample_rate: scope_job.sample_rate,
             };
-            let request = Request {
-                scope: &job_scope,
-                consent: consent_token.as_ref(),
-            };
-            let alignment = match (aligner.as_ref(), align_scope.as_ref()) {
-                (Some(value), Some(scope)) => Some(Alignment {
-                    provider: value.as_ref(),
-                    request: Request {
-                        scope,
-                        consent: None,
-                    },
-                    unit,
-                }),
-                (None, None) => None,
-                _ => return Err(EditError::Invalid("missing alignment scope")),
-            };
-            let recognition = ai::transcribe(provider.as_ref(), audio, &request, alignment, hooks)?;
-            serde_json::to_vec(&recognition)
-                .map_err(|_| EditError::Invalid("recognition serialization"))
+            let aligned = ai::align(
+                recognition.clone(),
+                aligner_job.as_ref(),
+                audio,
+                &scope_job,
+                None,
+                unit,
+                hooks,
+            )?;
+            serde_json::to_vec(&aligned)
+                .map_err(|_| EditError::Invalid("aligned recognition serialization"))
         },
     )?;
-    let output = wait_for_job(runner, id, progress)?;
-    let bytes = output.bytes().to_vec();
-    let recognition: ai::Recognition = serde_json::from_slice(&bytes)
-        .map_err(|_| EditError::Invalid("recognition response is malformed"))?;
-    match cache.put(key, &bytes) {
-        Ok(()) => {}
-        // A checkpoint that cannot be stored must not discard a valid recognition.
-        Err(EditError::BudgetFull | EditError::ArtifactTooLarge) => {}
-        Err(error) => return Err(error),
+    let output = wait_for_job(runner, id, &token, progress, cancel)?;
+    if cancel.cancelled() {
+        return Err(EditError::Cancelled);
     }
-    Ok(recognition)
+    serde_json::from_slice(output.bytes())
+        .map_err(|_| EditError::Invalid("aligned recognition is malformed"))
 }
 
 impl Providers {
@@ -1495,9 +1676,14 @@ impl Providers {
 fn wait_for_job(
     runner: &mut JobRunner,
     id: JobId,
+    token: &CancelToken,
     progress: &dyn Progress,
+    cancel: &Cancellation,
 ) -> Result<JobOutput, EditError> {
     loop {
+        if cancel.cancelled() {
+            token.cancel();
+        }
         runner.tick()?;
         for event in runner.drain_events() {
             if event.id == id {
@@ -1506,6 +1692,8 @@ fn wait_for_job(
         }
         let snapshot = runner.snapshot(id).ok_or(EditError::StaleResult)?;
         match snapshot.state {
+            // A completed job is returned even if cancellation arrived during its
+            // publication fence; callers decide whether later stages may proceed.
             JobState::Completed => return runner.take_output(id).ok_or(EditError::StaleResult),
             JobState::Failed => {
                 return Err(match snapshot.error {
@@ -1514,7 +1702,12 @@ fn wait_for_job(
                 });
             }
             JobState::Cancelled => return Err(EditError::Cancelled),
-            _ => std::thread::sleep(Duration::from_millis(5)),
+            _ => {
+                if cancel.cancelled() {
+                    token.cancel();
+                }
+                std::thread::sleep(Duration::from_millis(5));
+            }
         }
     }
 }
@@ -1633,6 +1826,7 @@ fn translate_cues(
     runner: &mut JobRunner,
     consent: &dyn ConsentPrompt,
     progress: &dyn Progress,
+    cancel: &Cancellation,
     source: &LanguageTag,
     target: &LanguageTag,
     fingerprint: &NfcText,
@@ -1658,6 +1852,7 @@ fn translate_cues(
         .translator()
         .ok_or(EditError::Unsupported("missing translator"))?;
     for chunk in ids.chunks(ai::MAX_SEGMENTS.min(64)) {
+        cancel.checkpoint()?;
         let window = crate::translation::window(
             session,
             item,
@@ -1694,8 +1889,9 @@ fn translate_cues(
                 )?
             },
         )?;
-        let (id, _cancel) = run.submit(runner, session)?;
-        let output = wait_for_job(runner, id, progress)?;
+        let (id, token) = run.submit(runner, session)?;
+        let output = wait_for_job(runner, id, &token, progress, cancel)?;
+        cancel.checkpoint()?;
         let translation: ai::Translation = serde_json::from_slice(output.bytes())
             .map_err(|_| EditError::Invalid("translation response is malformed"))?;
         output.apply(
@@ -1735,9 +1931,11 @@ fn export_subtitles(
     languages: &[LanguageTag],
     path: &Path,
     overwrite: bool,
+    cancel: &Cancellation,
 ) -> Result<(), EditError> {
+    cancel.checkpoint()?;
     let key = export_key(asset, "srt")?;
-    let (id, _cancel) = session.submit_export_command(
+    let (id, token) = session.submit_export_command(
         runner,
         key,
         Command::ExportSubtitles {
@@ -1748,7 +1946,7 @@ fn export_subtitles(
             overwrite,
         },
     )?;
-    let _ = wait_for_job(runner, id, progress)?;
+    let _ = wait_for_job(runner, id, &token, progress, cancel)?;
     Ok(())
 }
 
@@ -1763,10 +1961,12 @@ fn burn_subtitles(
     path: &Path,
     portrait: Option<bool>,
     overwrite: bool,
+    cancel: &Cancellation,
 ) -> Result<(), EditError> {
+    cancel.checkpoint()?;
     let key = export_key(asset, "burn")?;
     let range = TimeRange::new(Tick::ZERO, duration)?;
-    let (id, _cancel) = session.submit_export_command(
+    let (id, token) = session.submit_export_command(
         runner,
         key,
         Command::BurnSubtitles {
@@ -1778,7 +1978,7 @@ fn burn_subtitles(
             overwrite,
         },
     )?;
-    let _ = wait_for_job(runner, id, progress)?;
+    let _ = wait_for_job(runner, id, &token, progress, cancel)?;
     Ok(())
 }
 

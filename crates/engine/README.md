@@ -653,16 +653,33 @@ adapter lifetime; text-only ASR additionally loads the pinned `whisper-small-dtw
 Candle aligner. Missing weights return `ModelMissing`, a missing runner
 `RunnerMissing`, and missing credentials `CredentialMissing`. Remote adapters use
 the official endpoints, shared `ureq` transport and their own disclosures.
+`with_translation` attaches the explicitly selected translator only after an
+auto-detected source language is known, so a same-language local run never requires
+unrelated cloud credentials.
 
-`run(request, providers, runner, cache, consent, progress)` imports the input,
-extracts mono 16 kHz windows at speech-safe boundaries, reuses complete
-`AsrChunk` cache entries keyed by source content, exact sample range, language,
-provider/model/settings and aligner identity, executes missing windows as
-Transcribe jobs, assembles with `ai::assemble`, converts and segments through
-captions, applies translation windows through the existing `TranslationRun`, and
-dispatches `export_subtitles`/`burn_subtitles` through the real job runner. Silent
-windows are skipped; no speech, unknown duration and burn without video return
-typed refusals. No project file is written.
+`run(request, providers, runner, cache, consent, progress, cancellation)` imports
+the input, extracts mono 16 kHz windows at speech-safe boundaries, reuses complete
+raw `AsrChunk` cache entries keyed by source content, exact sample range, language
+and provider/model/settings, executes missing windows as Transcribe jobs, then
+applies the selected local aligner as a separate CPU job when the recognition is
+text-only. Raw recognition is committed to the checkpoint cache before alignment,
+so an alignment failure preserves completed ASR work; alignment is recomputed on
+the next run and its request is bound to the exact recognized text by
+`ai::align`. The workflow then assembles with `ai::assemble`, converts and
+segments through captions, applies translation windows through the existing
+`TranslationRun`, and dispatches `export_subtitles`/`burn_subtitles` through the
+real job runner. Silent windows are skipped; no speech, unknown duration and burn
+without video return typed refusals. No project file is written.
+
+`Cancellation` is the operation-wide cooperative signal. `run` passes its media
+flag to extraction, checks it at every stage/window boundary, and cancels the
+active submitted job; `wait_for_job` joins that job before returning. Cancellation
+after a completed ASR window keeps the checkpoint. Export keeps render's existing
+publication fence: once publication is sealed a late cancel cannot turn the
+completed file into `Cancelled`, and cancellation before the fence preserves the
+existing destination. The CLI currently exposes no signal-driven cancel gesture,
+so process interruption remains crash semantics; UI/CLI callers that do have a
+gesture pass the shared token.
 
 Remote upload scopes are prompted through `ConsentPrompt` before every request;
 `DenyUploads` is the default test refusal and `AllowAll` is the explicit test
