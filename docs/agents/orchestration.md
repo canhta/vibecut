@@ -56,7 +56,7 @@ code is settled by [copy imports](../engineering/workflows.md#copy-imports).
 2. End the turn; Orca wakes you for mail. Read the `worker_done` summary and the report TL;DR only.
 3. Answer questions with one batched reply; send no acknowledgements.
 4. Return work to the dispatch that already holds its context: review `changes` go to the implementer's dispatch, re-reviews to the same reviewer's dispatch (`orca orchestration send` reopens a finished worker). Start a new worker only when that dispatch is gone.
-5. After a merge, clean up with `.scratch/bin/cleanup <dispatch-id> <worktree-name>...`. Keep a worktree only while its ticket awaits review or fixes.
+5. After a merge, clean up with `.scratch/bin/cleanup <dispatch-id> <worktree-name>...`. Keep the implementer and a `changes` reviewer (dispatch and worktree) until the ticket merges.
 6. Dispatch what `.scratch/bin/frontier` lists, opencode first, critical path first.
 7. Anything outward-facing (posting upstream, changing repo visibility, publishing) needs the maintainer's explicit yes first.
 
