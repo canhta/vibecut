@@ -66,6 +66,9 @@ pub fn generate(test: &str, name: &str, args: &[&str]) -> Option<PathBuf> {
     if !require_oracles(test) {
         return None;
     }
+    // Parallel tests reuse filenames; readers must wait for the mux trailer.
+    static GENERATION: std::sync::Mutex<()> = std::sync::Mutex::new(());
+    let _generation = GENERATION.lock().expect("fixture generation lock");
     let dir = fixtures_dir();
     std::fs::create_dir_all(&dir).expect("fixture directory");
     let path = dir.join(name);
