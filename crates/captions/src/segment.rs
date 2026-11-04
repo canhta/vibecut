@@ -150,14 +150,15 @@ pub fn segment_transcript(
         if text.trim().is_empty() {
             continue;
         }
-        let timed = timed_units(text, &segment.words, profile)?;
+        let boundaries = TextBoundaries::new(&normalized, hooks)?;
+        let timed = timed_units(text, &segment.words, profile, &boundaries)?;
         let units = match timed {
             Some(units) => units,
             None => text_units(
                 text,
                 segment.range,
                 profile,
-                hooks,
+                &boundaries,
                 if segment.words.is_empty() {
                     TimingKind::SourceSegment
                 } else {
@@ -209,11 +210,12 @@ pub fn segment_translation(
         }
     }
     let normalized = NormalizedText::new(translation.text.as_str())?;
+    let boundaries = TextBoundaries::new(&normalized, hooks)?;
     let units = text_units(
         normalized.text().as_str(),
         source.range,
         profile,
-        hooks,
+        &boundaries,
         TimingKind::SourceSegment,
     )?;
     let mut output = Segmentation::default();
@@ -256,6 +258,7 @@ fn timed_units(
     text: &str,
     words: &[crate::Word],
     profile: &LanguageProfile,
+    boundaries: &TextBoundaries,
 ) -> Result<Option<Vec<Unit>>, Error> {
     if words.is_empty()
         || words
@@ -264,12 +267,7 @@ fn timed_units(
     {
         return Ok(None);
     }
-    let boundaries: BTreeSet<_> = text
-        .grapheme_indices(true)
-        .map(|(offset, _)| offset)
-        .chain(std::iter::once(text.len()))
-        .collect();
-    let mut units = Vec::new();
+    let mut units: Vec<Unit> = Vec::new();
     let mut offset = 0;
     for word in words {
         let suffix = text
@@ -280,24 +278,35 @@ fn timed_units(
         let start = offset + skipped;
         let end = start + value.len();
         if text.get(start..end) != Some(value)
-            || !boundaries.contains(&start)
-            || !boundaries.contains(&end)
+            || !boundaries.graphemes.contains(&start)
+            || !boundaries.graphemes.contains(&end)
         {
             return Ok(None);
         }
         let Some(range) = word.range else {
             return Ok(None);
         };
-        units.push(Unit {
-            text: text
-                .get(offset..end)
-                .ok_or(Error::Invalid("word text offset"))?
-                .to_owned(),
-            range: range.start()..range.end(),
-            timing: TimingKind::SourceWords,
-            boundary: rank(value, profile),
-            speaker: word.speaker.clone(),
-        });
+        let value = text
+            .get(offset..end)
+            .ok_or(Error::Invalid("word text offset"))?;
+        // UAX #14 places whitespace-separated breaks after the whitespace.
+        // Timing tokens can end before it, so test the next visible start.
+        if let Some(last) = units
+            .last_mut()
+            .filter(|_| !boundaries.breaks.contains(&start))
+        {
+            last.text.push_str(value);
+            last.range.end = range.end();
+            last.boundary = rank(&last.text, profile);
+        } else {
+            units.push(Unit {
+                text: value.to_owned(),
+                range: range.start()..range.end(),
+                timing: TimingKind::SourceWords,
+                boundary: rank(value, profile),
+                speaker: word.speaker.clone(),
+            });
+        }
         offset = end;
     }
     if !text.get(offset..).is_some_and(|s| s.trim().is_empty()) {
@@ -306,46 +315,60 @@ fn timed_units(
     Ok(Some(units))
 }
 
+struct TextBoundaries {
+    graphemes: BTreeSet<usize>,
+    breaks: BTreeSet<usize>,
+    total: usize,
+}
+impl TextBoundaries {
+    fn new(map: &NormalizedText, hooks: &LayoutHooks<'_>) -> Result<Self, Error> {
+        let text = map.text().as_str();
+        let boundaries: BTreeSet<_> = std::iter::once(0)
+            .chain(map.spans().iter().map(|s| s.normalized.end))
+            .collect();
+        let protected = match hooks.words {
+            Some(words) => words(text)?,
+            None => Vec::new(),
+        };
+        let mut previous = 0;
+        for span in &protected {
+            if span.start < previous
+                || span.start >= span.end
+                || !boundaries.contains(&span.start)
+                || !boundaries.contains(&span.end)
+            {
+                return Err(Error::Invalid("word segmenter spans"));
+            }
+            previous = span.end;
+        }
+        let breaks: BTreeSet<_> = unicode_linebreak::linebreaks(text)
+            .map(|(end, _)| end)
+            .filter(|end| {
+                boundaries.contains(end)
+                    && !protected
+                        .get(protected.partition_point(|s| s.end <= *end))
+                        .is_some_and(|s| s.start < *end && *end < s.end)
+            })
+            .collect();
+        Ok(Self {
+            graphemes: boundaries,
+            breaks,
+            total: map.spans().len(),
+        })
+    }
+}
+
 fn text_units(
     text: &str,
     range: SourceRange,
     profile: &LanguageProfile,
-    hooks: &LayoutHooks<'_>,
+    boundaries: &TextBoundaries,
     timing: TimingKind,
 ) -> Result<Vec<Unit>, Error> {
-    let map = NormalizedText::new(text)?;
-    let boundaries: BTreeSet<_> = std::iter::once(0)
-        .chain(map.spans().iter().map(|s| s.normalized.end))
-        .collect();
-    let protected = match hooks.words {
-        Some(words) => words(text)?,
-        None => Vec::new(),
-    };
-    let mut previous = 0;
-    for span in &protected {
-        if span.start < previous
-            || span.start >= span.end
-            || !boundaries.contains(&span.start)
-            || !boundaries.contains(&span.end)
-        {
-            return Err(Error::Invalid("word segmenter spans"));
-        }
-        previous = span.end;
-    }
-    let breaks: Vec<_> = unicode_linebreak::linebreaks(text)
-        .map(|(end, _)| end)
-        .filter(|end| {
-            boundaries.contains(end)
-                && !protected
-                    .get(protected.partition_point(|s| s.end <= *end))
-                    .is_some_and(|s| s.start < *end && *end < s.end)
-        })
-        .collect();
-    let total = map.spans().len();
     let mut units = Vec::new();
     let mut start = 0;
     let mut count = 0;
-    for end in breaks {
+    for &end in &boundaries.breaks {
         let value = text
             .get(start..end)
             .ok_or(Error::Invalid("line break offset"))?;
@@ -353,7 +376,8 @@ fn text_units(
         if !value.trim().is_empty() {
             units.push(Unit {
                 text: value.to_owned(),
-                range: proportional(range, count, total)?..proportional(range, next, total)?,
+                range: proportional(range, count, boundaries.total)?
+                    ..proportional(range, next, boundaries.total)?,
                 timing,
                 boundary: rank(value, profile),
                 speaker: None,

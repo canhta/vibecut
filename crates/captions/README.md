@@ -62,7 +62,10 @@ a two-frame gap at the supplied rational rate and a one-second pause threshold.
 `LineLimit` selects grapheme or caller-measured pixel width; callbacks return typed
 errors and measurements must be finite/nonnegative. There is no font dependency.
 
-Complete timed words are indivisible and retain source ranges. They must match
+Complete timed words are indivisible and retain source ranges. Adjacent timed
+words separated by a forbidden UAX #14 or dictionary boundary form one
+indivisible unit with the first word start and last word end, including silence
+between them; timing remains `SourceWords`. They must match
 the segment text apart from whitespace. Missing/inconsistent word text falls back
 to the authoritative segment text; invalid/out-of-order/out-of-segment word times
 are errors. Segment IDs must be unique and nonempty; source segments must be
@@ -75,9 +78,12 @@ Untimed text uses Unicode UAX #14 opportunities, with extended-grapheme safety.
 Chinese has no inserted spaces; Latin runs stay intact. An optional dictionary
 callback returns sorted nonoverlapping NFC byte ranges, protecting word interiors
 from line/cue breaks. Callers resolve a profile's optional segmenter name to this
-callback. No dictionary is bundled. Capacity/duration boundaries prefer sentence
+callback. The same validated boundary policy applies before choosing timed-word
+or segment timing, including callback errors and invalid spans. No dictionary is bundled. Capacity/duration boundaries prefer sentence
 end, then clause punctuation, then pause, then a legal word boundary; speaker
-changes and pauses also force a split. Indivisible words wider/longer than limits
+changes and pauses also force a split at legal text boundaries. Text protection
+takes precedence when a speaker change or pause falls inside an indivisible unit;
+the unit retains its first speaker for grouping with neighbors. Indivisible words wider/longer than limits
 remain intact and warn. Layout is greedy within each cue, without syntactic parsing.
 
 `segment_translation` takes one source cue/sentence group and translated `CueText`;
@@ -170,8 +176,12 @@ No media, network provider or renderer oracle is needed for this pure crate.
 Observed on Apple M1 Pro, 16 GiB RAM, macOS 27.2, release profile: the deterministic
 63,000-byte Vietnamese NFD corpus (41,000 normalized graphemes over 600 source
 seconds) generated 500 cues with exact visible-text preservation and zero end-tick
-drift. Across 20 same-process calls, the first took 27.472 ms; 19 warm calls took
-13.568–17.613 ms (median 14.073 ms). The test process peaked at 13,271,040 bytes RSS.
+drift in both segment-only and fully timed-word modes. Each mode ran 20 same-process
+calls. Segment-only: first 9.992 ms, 19 warm calls 9.368–13.728 ms (median 9.534 ms).
+Timed words: first 9.852 ms, 19 warm calls 9.674–11.484 ms (median 9.873 ms).
+The combined test process peaked at 11,075,584 bytes RSS. Timed fixtures use
+whitespace-delimited words with uniform source ranges; dictionary callbacks are
+not benchmarked.
 Run `cargo test -p captions --release --test segmentation --no-run`, then invoke
 the emitted executable with `--exact segmentation_benchmark --ignored --nocapture`
 under `/usr/bin/time -l` to measure without including compilation. No pixel metric

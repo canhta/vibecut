@@ -495,24 +495,43 @@ fn segmentation_benchmark() {
     let p = profile("vi");
     let policy = SegmentRules::from_profile(&p, FrameRate::FPS_24).unwrap();
     let expected = compact(NfcText::from(text.as_str()).as_str());
-    for iteration in 0..20 {
-        let begin = std::time::Instant::now();
-        let output = segment_transcript(&input, &p, &policy, &LayoutHooks::default()).unwrap();
-        let elapsed = begin.elapsed();
-        assert_eq!(compact(&contents(&output, "vi")), expected);
-        let drift = output.cues.last().unwrap().cue.range.end() - expected_end;
-        assert_eq!(drift, Tick::ZERO);
-        println!(
-            "iteration={iteration} input_bytes={} graphemes={} cues={} elapsed_us={} drift_ticks={}",
-            text.len(),
-            NfcText::from(text.as_str())
-                .as_str()
-                .graphemes(true)
-                .count(),
-            output.cues.len(),
-            elapsed.as_micros(),
-            drift.0
-        );
+    for timed in [false, true] {
+        if timed {
+            let segment = input.segments.first_mut().unwrap();
+            let tokens: Vec<_> = segment.text.as_str().split_whitespace().collect();
+            segment.words = tokens
+                .iter()
+                .enumerate()
+                .map(|(i, token)| Word {
+                    text: (*token).into(),
+                    range: Some(range(
+                        i as i64 * TICKS_PER_SECOND * 600 / tokens.len() as i64,
+                        (i as i64 + 1) * TICKS_PER_SECOND * 600 / tokens.len() as i64,
+                    )),
+                    speaker: None,
+                    confidence: None,
+                })
+                .collect();
+        }
+        for iteration in 0..20 {
+            let begin = std::time::Instant::now();
+            let output = segment_transcript(&input, &p, &policy, &LayoutHooks::default()).unwrap();
+            let elapsed = begin.elapsed();
+            assert_eq!(compact(&contents(&output, "vi")), expected);
+            let drift = output.cues.last().unwrap().cue.range.end() - expected_end;
+            assert_eq!(drift, Tick::ZERO);
+            println!(
+                "timed={timed} iteration={iteration} input_bytes={} graphemes={} cues={} elapsed_us={} drift_ticks={}",
+                text.len(),
+                NfcText::from(text.as_str())
+                    .as_str()
+                    .graphemes(true)
+                    .count(),
+                output.cues.len(),
+                elapsed.as_micros(),
+                drift.0
+            );
+        }
     }
 }
 
@@ -721,4 +740,155 @@ fn subunit_tick_rounding_only_rejects_empty_final_cues() {
         )
         .is_err()
     );
+}
+
+#[allow(clippy::unwrap_used, reason = "validated test fixture")]
+fn timed_transcript(text: &str, tokens: &[&str]) -> Transcript {
+    let mut input = transcript(text, "zh-Hans");
+    input.segments.first_mut().unwrap().words = tokens
+        .iter()
+        .enumerate()
+        .map(|(i, token)| Word {
+            text: (*token).into(),
+            range: Some(range(
+                i as i64 * TICKS_PER_SECOND,
+                (i as i64 + 1) * TICKS_PER_SECOND,
+            )),
+            speaker: None,
+            confidence: None,
+        })
+        .collect();
+    input
+}
+
+#[test]
+fn timed_boundaries_share_dictionary_and_uax_policy_for_lines_and_cues() {
+    for max_lines in [1, 2] {
+        for (text, tokens, protected, width) in [
+            ("北京", vec!["北", "京"], 0..6, 1),
+            ("甲北京乙", vec!["甲", "北", "京", "乙"], 3..9, 2),
+        ] {
+            let calls = std::cell::Cell::new(0);
+            let dictionary = |_: &str| {
+                calls.set(calls.get() + 1);
+                Ok(std::iter::once(protected.clone()).collect())
+            };
+            let mut limits = rules("zh-Hans", width);
+            limits.max_lines = max_lines;
+            let input = timed_transcript(text, &tokens);
+            let output = segment_transcript(
+                &input,
+                &profile("zh-Hans"),
+                &limits,
+                &LayoutHooks {
+                    words: Some(&dictionary),
+                    measure: None,
+                },
+            )
+            .unwrap();
+            assert_eq!(calls.get(), 1);
+            assert_preserved(text, "zh-Hans", &output);
+            let rendered = contents(&output, "zh-Hans");
+            assert!(rendered.contains("北京"));
+            assert!(
+                output
+                    .cues
+                    .iter()
+                    .all(|c| c.timing == TimingKind::SourceWords)
+            );
+            if text == "北京" {
+                assert_eq!(output.cues.len(), 1);
+                assert_eq!(output.cues[0].cue.range, range(0, 2 * TICKS_PER_SECOND));
+                assert!(has(&output, WarningKind::TextLayout));
+            }
+        }
+        let mut limits = rules("zh-Hans", 2);
+        limits.max_lines = max_lines;
+        let output = segment_transcript(
+            &timed_transcript("你好，世界", &["你好", "，", "世界"]),
+            &profile("zh-Hans"),
+            &limits,
+            &LayoutHooks::default(),
+        )
+        .unwrap();
+        assert_preserved("你好，世界", "zh-Hans", &output);
+        assert!(
+            contents(&output, "zh-Hans")
+                .lines()
+                .all(|s| !s.trim_start().starts_with('，'))
+        );
+        assert_eq!(
+            output.cues[0].cue.texts[&lang("zh-Hans")].text.as_str(),
+            "你好，"
+        );
+        assert_eq!(output.cues[0].cue.range, range(0, 2 * TICKS_PER_SECOND));
+        assert!(has(&output, WarningKind::TextLayout));
+    }
+}
+
+#[test]
+fn fully_timed_input_validates_dictionary_errors_and_spans() {
+    let input = timed_transcript("北京", &["北", "京"]);
+    for spans in [
+        std::iter::once(0..1).collect(),
+        std::iter::once(0..9).collect(),
+        std::iter::once(3..3).collect(),
+        vec![3..6, 0..3],
+        vec![0..6, 3..6],
+    ] {
+        let dictionary = |_: &str| Ok(spans.clone());
+        assert!(matches!(
+            segment_transcript(
+                &input,
+                &profile("zh-Hans"),
+                &rules("zh-Hans", 1),
+                &LayoutHooks {
+                    words: Some(&dictionary),
+                    measure: None
+                }
+            ),
+            Err(captions::Error::Invalid("word segmenter spans"))
+        ));
+    }
+    let dictionary = |_: &str| Err(captions::Error::Invalid("dictionary failure"));
+    assert!(matches!(
+        segment_transcript(
+            &input,
+            &profile("zh-Hans"),
+            &rules("zh-Hans", 1),
+            &LayoutHooks {
+                words: Some(&dictionary),
+                measure: None
+            }
+        ),
+        Err(captions::Error::Invalid("dictionary failure"))
+    ));
+}
+
+#[test]
+fn protected_timed_unit_takes_precedence_over_speaker_pause_and_duration() {
+    let mut input = timed_transcript("北京", &["北", "京"]);
+    let words = &mut input.segments[0].words;
+    words[0].speaker = Some("a".into());
+    words[1].speaker = Some("b".into());
+    words[1].range = Some(range(3 * TICKS_PER_SECOND, 4 * TICKS_PER_SECOND));
+    let dictionary = |_: &str| Ok(std::iter::once(0..6).collect());
+    let mut limits = rules("zh-Hans", 1);
+    limits.max_duration = Tick(TICKS_PER_SECOND);
+    let output = segment_transcript(
+        &input,
+        &profile("zh-Hans"),
+        &limits,
+        &LayoutHooks {
+            words: Some(&dictionary),
+            measure: None,
+        },
+    )
+    .unwrap();
+    assert_eq!(output.cues.len(), 1);
+    assert_eq!(contents(&output, "zh-Hans"), "北京");
+    assert_eq!(output.cues[0].cue.range, range(0, 4 * TICKS_PER_SECOND));
+    assert_eq!(output.cues[0].timing, TimingKind::SourceWords);
+    assert!(has(&output, WarningKind::TextLayout));
+    assert!(has(&output, WarningKind::Duration));
 }
