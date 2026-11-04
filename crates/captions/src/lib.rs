@@ -1,8 +1,10 @@
 //! Source-timed transcripts, multilingual cues and forgiving subtitle interchange.
 mod io;
 mod language;
+mod mapping;
 pub use io::{Export, Format, Import, export, parse};
 pub use language::{LanguageProfile, LanguageRegistry, LanguageTag};
+pub use mapping::{CueFragmentId, EditMapping, MappedRange, MappedTick};
 use serde::{Deserialize, Serialize};
 use std::{collections::BTreeMap, fmt};
 use time::{SourceRange, Tick};
