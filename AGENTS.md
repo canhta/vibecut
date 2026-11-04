@@ -18,7 +18,6 @@ Start with [documentation owners](docs/README.md), [terms](GLOSSARY.md) and [dec
 ## Rules
 
 - Research before deciding; follow the [research rule](docs/engineering/workflows.md#development-loop).
-
 - Prefer the best current design; replace in place under the [upgrade policy](docs/engineering/workflows.md#upgrade-policy).
 - Give each fact one authoritative owner; link elsewhere and reconcile its owner in the same change.
 - Preserve unrelated work; freshly read shared files before editing them.

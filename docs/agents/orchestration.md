@@ -79,6 +79,8 @@ The body/report contains branch, SHAs, diff stat, exact commands/results, CI tai
 each Verify item, observed/unverified limits and proposed follow-ups. Use
 `--outcome failed` for incomplete work; omit optional file/report flags unless real.
 Once confirmed, end the turn and stop edits. Do not poll or start other work.
+Send no status or acknowledgement messages: only `ask` for blocking questions and
+one `worker_done`. The coordinator batches instructions into few `send` messages.
 `worker_done` hands off for review; it does not resolve the markdown ticket.
 
 ## Review and merge
@@ -89,7 +91,7 @@ Review the frozen SHA independently; write findings in
 Codex work; Codex reviews opencode work. Send changes to the same dispatch, repeat
 checks and review substantive fixes. Only an approved revision advances.
 
-The maintainer rebases the approved ticket branch on `main`, resolves conflicts,
+The coordinator rebases the approved ticket branch on `main`, resolves conflicts,
 reruns `cargo xtask ci` including local name patterns, and reviews changed conflict
 resolutions before merging and pushing `main`. Preserve other workers' worktrees.
 Record the merged SHA/evidence under `## Answer`, set `Status: resolved`, and add

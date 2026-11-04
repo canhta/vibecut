@@ -21,7 +21,7 @@
 
 [Orchestration](../agents/orchestration.md) owns slice limits, review and merge steps.
 Use conventional commit subjects and DCO sign-off (`git commit -s`). Implementers
-hand over branch/SHAs; only the maintainer merges and pushes `main`. Hosted CI is
+hand over branch/SHAs; only the coordinator merges and pushes `main`. Hosted CI is
 optional and manual-only while private. Before public contributions, add a
 `pull_request` trigger and require signed-off PRs; this grants no visibility change.
 
