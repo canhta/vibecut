@@ -286,6 +286,101 @@ fn mfcc_range_is_globally_anchored() {
         ),
         Err(MediaError::TooLarge(_))
     ));
+
+    for (name, path, tolerance, id) in [
+        (
+            "44.1 kHz PCM",
+            common::generate(
+                "vision mfcc 44k",
+                "vision_mfcc_44100.wav",
+                &[
+                    "-f",
+                    "lavfi",
+                    "-i",
+                    "sine=frequency=440:sample_rate=44100:duration=8",
+                    "-c:a",
+                    "pcm_s16le",
+                ],
+            ),
+            1.0e-4,
+            20,
+        ),
+        (
+            "44.1 kHz AAC",
+            common::generate(
+                "vision mfcc compressed seek",
+                "vision_mfcc_44100.m4a",
+                &[
+                    "-f",
+                    "lavfi",
+                    "-i",
+                    "sine=frequency=440:sample_rate=44100:duration=8",
+                    "-c:a",
+                    "aac",
+                    "-b:a",
+                    "128k",
+                ],
+            ),
+            1.0e-3,
+            21,
+        ),
+    ] {
+        let Some(path) = path else {
+            return;
+        };
+        let source = asset(&path, id);
+        let full = collect_mfcc(
+            &source,
+            SourceRange::new(Tick::ZERO, seconds(8.0)).unwrap(),
+            &VisionPrepLimits::default(),
+            cancel(),
+        );
+        let part = collect_mfcc(
+            &source,
+            SourceRange::new(seconds(5.0), seconds(6.0)).unwrap(),
+            &VisionPrepLimits::default(),
+            cancel(),
+        );
+        assert_eq!(part.len(), 100, "{name}");
+        let mut max = 0.0f32;
+        for (actual, expected) in part.iter().zip(full[500..].iter()) {
+            for (left, right) in actual.coefficients.iter().zip(expected.coefficients.iter()) {
+                max = max.max((left - right).abs());
+            }
+        }
+        assert!(max < tolerance, "{name}: late-seek coefficient delta {max}");
+    }
+
+    let Some(path) = common::generate(
+        "vision mfcc unknown duration",
+        "vision_unknown_duration.mkv",
+        &[
+            "-f",
+            "lavfi",
+            "-i",
+            "sine=frequency=440:sample_rate=16000:duration=1",
+            "-c:a",
+            "pcm_s16le",
+        ],
+    ) else {
+        return;
+    };
+    let source = asset(&path, 22);
+    let frames = collect_mfcc(
+        &source,
+        SourceRange::new(Tick::ZERO, seconds(5.0)).unwrap(),
+        &VisionPrepLimits::default(),
+        cancel(),
+    );
+    assert_eq!(frames.len(), 99, "synthetic windows past EOF");
+    assert!(frames.last().unwrap().source_start < seconds(1.0));
+    let after = collect_mfcc(
+        &source,
+        SourceRange::new(seconds(2.0), seconds(3.0)).unwrap(),
+        &VisionPrepLimits::default(),
+        cancel(),
+    );
+    assert!(after.is_empty(), "windows invented after the audio ended");
 }
 
 #[test]
@@ -320,6 +415,32 @@ fn video_source() -> Option<PathBuf> {
             "0",
             "-g",
             "10",
+            "-pix_fmt",
+            "yuv420p",
+            "-an",
+        ],
+    )
+}
+
+fn long_gop_source() -> Option<PathBuf> {
+    common::generate(
+        "vision long gop",
+        "vision_long_gop.mp4",
+        &[
+            "-f",
+            "lavfi",
+            "-i",
+            "testsrc2=size=64x48:rate=25:duration=10",
+            "-c:v",
+            "libx264",
+            "-bf",
+            "0",
+            "-g",
+            "250",
+            "-keyint_min",
+            "250",
+            "-sc_threshold",
+            "0",
             "-pix_fmt",
             "yuv420p",
             "-an",
@@ -374,7 +495,13 @@ fn shot_frames_select_exact_source_times() {
     for (index, time) in times.iter().enumerate() {
         assert_eq!(*time, seconds(0.2 + index as f64 * 0.04));
     }
-    let at = decode_frame_at(&source, seconds(0.21), cancel()).unwrap();
+    let at = decode_frame_at(
+        &source,
+        seconds(0.21),
+        &VisionPrepLimits::default(),
+        cancel(),
+    )
+    .unwrap();
     assert_eq!(at.source_pts(), seconds(0.2));
 }
 
@@ -400,7 +527,13 @@ fn sub_frame_shot_uses_the_covering_frame() {
     assert_eq!(times, vec![seconds(0.2)]);
     // SourceRange is nonempty by contract; a caller with a zero-duration shot
     // asks for its single source time instead.
-    let zero = decode_frame_at(&source, seconds(0.2), cancel()).unwrap();
+    let zero = decode_frame_at(
+        &source,
+        seconds(0.2),
+        &VisionPrepLimits::default(),
+        cancel(),
+    )
+    .unwrap();
     assert_eq!(zero.source_pts(), seconds(0.2));
 }
 
@@ -427,23 +560,28 @@ fn variable_frame_rate_queries_return_the_covering_frame() {
     for pair in times.windows(2) {
         let inside = seconds_tick(pair[0], 1);
         assert_eq!(
-            decode_frame_at(&source, inside, cancel())
+            decode_frame_at(&source, inside, &VisionPrepLimits::default(), cancel())
                 .unwrap()
                 .source_pts(),
             pair[0]
         );
         let before_next = seconds_tick(pair[1], -1);
         assert_eq!(
-            decode_frame_at(&source, before_next, cancel())
+            decode_frame_at(&source, before_next, &VisionPrepLimits::default(), cancel())
                 .unwrap()
                 .source_pts(),
             pair[0]
         );
     }
     assert_eq!(
-        decode_frame_at(&source, *times.last().unwrap(), cancel())
-            .unwrap()
-            .source_pts(),
+        decode_frame_at(
+            &source,
+            *times.last().unwrap(),
+            &VisionPrepLimits::default(),
+            cancel()
+        )
+        .unwrap()
+        .source_pts(),
         *times.last().unwrap()
     );
 }
@@ -510,6 +648,30 @@ fn frame_decode_cancels_and_refuses_hostile_limits() {
             cancel(),
             |_| Ok(()),
         ),
+        Err(MediaError::TooLarge(_))
+    ));
+
+    // A one-frame budget must also cover the long-GOP keyframe preroll.
+    let Some(path) = long_gop_source() else {
+        return;
+    };
+    let source = asset(&path, 8);
+    let limits = VisionPrepLimits {
+        max_frames: 1,
+        ..VisionPrepLimits::default()
+    };
+    assert!(matches!(
+        decode_shot_frames(
+            &source,
+            SourceRange::new(seconds(9.201), seconds(9.202)).unwrap(),
+            &limits,
+            cancel(),
+            |_| Ok(()),
+        ),
+        Err(MediaError::TooLarge(_))
+    ));
+    assert!(matches!(
+        decode_frame_at(&source, seconds(9.201), &limits, cancel()),
         Err(MediaError::TooLarge(_))
     ));
 }

@@ -285,7 +285,9 @@ presentation order, including the frame covering the range start (its PTS may
 precede that start). Variable-frame-rate sources are selected by decoded PTS,
 not by a nominal rate. Frames are converted to packed straight RGBA8 only when
 downloaded; no GPU pointer escapes. Cancellation is checked before every decoded
-frame and callback, so interruption latency is at most one frame.
+frame and callback, so interruption latency is at most one frame. The decoded
+frame budget covers the keyframe preroll and any replay, not just emitted
+frames.
 
 `VisionFrame::face_crop` applies the `p1-clips/12` Light-ASD recipe: expand the
 box by 0.40, pad pixels outside the decoded frame with gray 110, convert to raw
@@ -298,14 +300,18 @@ geometry are checked; hostile boxes return typed errors.
 cepstral lifter 22 and `c0` equal to log frame energy. The analysis grid is
 anchored at the start of the source audio stream, so a subrange is the exact
 suffix of a full-range call and pre-emphasis uses the sample before the first
-window. Samples are interpreted as 16-bit full-scale PCM. Only windows starting
-inside the requested range are emitted; source-end windows are zero-padded like
-the reference recipe, and a range shorter than one window still yields the
-windows that start inside it.
+window. Samples are interpreted as 16-bit full-scale PCM. A seek starts the
+resampler on an input sample whose phase matches the stream-global 16 kHz grid
+and runs at least one second before the first requested window, preserving the
+full-range coefficients for ordinary 44.1/48 kHz sources. At end of input the
+final window count comes from the actual received samples, so unknown-duration
+audio is padded only at its real last window, never extended with synthetic
+windows. Only windows starting inside the requested range are emitted; a range
+shorter than one window still yields the windows that start inside it.
 
-`VisionPrepLimits` bounds one request to ten minutes, 100,000 video frames,
-60,001 MFCC frames and a 16 Mi-pixel face-crop rectangle by default; callers may
-tighten these. The same packet/frame cancellation and native allocation ceilings
+`VisionPrepLimits` bounds one request to ten minutes, 100,000 decoded video
+frames (including seek preroll and replay), 60,001 MFCC frames and a 16 Mi-pixel
+face-crop rectangle by default; callers may tighten these. The same packet/frame cancellation and native allocation ceilings
 as the rest of this crate apply. Observed on the `p1-clips/12` 180 s excerpt:
 all 17,999 MFCC frames were bit-exact in f32 against `python_speech_features`;
 face crops matched the saved reference tensors with a mean absolute difference of

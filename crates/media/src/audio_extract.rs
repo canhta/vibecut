@@ -261,7 +261,7 @@ fn extract_windows(
     chunker.finish()
 }
 
-pub(crate) fn decode_speech(
+fn decode_speech(
     asset: &SourceAsset,
     range: SourceRange,
     cancel: &Arc<AtomicBool>,

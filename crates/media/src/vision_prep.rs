@@ -7,14 +7,14 @@
 //! owners; this module only prepares media.
 
 use crate::{
-    MediaError, PixelFormat, Result, RgbaConverter, SourceAsset, StreamKind, VideoFrame,
-    VideoReader, init,
+    AudioDecoder, AudioFrame, AudioResampler, AudioSampleFormat, MediaError, PacketReader,
+    PixelFormat, Result, RgbaConverter, SourceAsset, StreamKind, VideoFrame, VideoReader, init,
 };
 use std::sync::{
     Arc,
     atomic::{AtomicBool, Ordering},
 };
-use time::{Rounding, SourceRange, TICKS_PER_SECOND, Tick};
+use time::{SourceRange, TICKS_PER_SECOND, Tick};
 
 /// Mono sample rate used by the vision models.
 pub const VISION_SAMPLE_RATE: u32 = 16_000;
@@ -31,6 +31,7 @@ const MFCC_PREEMPHASIS: f64 = 0.97;
 const MFCC_CEP_LIFTER: f64 = 22.0;
 const TICKS_PER_MFCC_SAMPLE: i64 = TICKS_PER_SECOND / VISION_SAMPLE_RATE as i64;
 const TICKS_PER_MFCC_HOP: i64 = TICKS_PER_MFCC_SAMPLE * MFCC_HOP_SAMPLES;
+const MFCC_AUDIO_PREROLL: Tick = Tick(TICKS_PER_SECOND);
 const FACE_CROP_RESIZE: u32 = 224;
 const FACE_CROP_INSET: u32 = 56;
 const FACE_CROP_EXPANSION: f64 = 0.40;
@@ -47,7 +48,8 @@ const RGBA_GRAY_ROUND: u32 = 1 << 15;
 pub struct VisionPrepLimits {
     /// Longest shot or audio range admitted by one call.
     pub max_shot_duration: Tick,
-    /// Maximum number of decoded video frames emitted by one call.
+    /// Maximum video frames decoded by one call, including seek preroll and
+    /// replayed frames; emitted frames are a subset of this budget.
     pub max_frames: usize,
     /// Maximum number of MFCC frames emitted by one call.
     pub max_mfcc_frames: usize,
@@ -230,13 +232,17 @@ pub struct MfccFrame {
 ///
 /// The returned frame may have a PTS at or before `at`. A time after the last
 /// decoded frame returns that frame; a time before the first decoded frame or a
-/// source without a video stream is an error. Cancellation is checked between
-/// decoded frames, so at most one frame of decode latency remains.
+/// source without a video stream is an error. `limits.max_frames` bounds every
+/// frame decoded from the preceding keyframe, not just the returned frame.
+/// Cancellation is checked between decoded frames, so at most one frame of
+/// decode latency remains.
 pub fn decode_frame_at(
     asset: &SourceAsset,
     at: Tick,
+    limits: &VisionPrepLimits,
     cancel: Arc<AtomicBool>,
 ) -> Result<VisionFrame> {
+    let limits = limits.validate()?;
     if cancel.load(Ordering::Relaxed) {
         return Err(MediaError::Cancelled);
     }
@@ -244,6 +250,7 @@ pub fn decode_frame_at(
     reader.seek_keyframe(at)?;
     let mut converter = RgbaConverter::new()?;
     let mut selected = None;
+    let mut decoded = 0usize;
     loop {
         if cancel.load(Ordering::Relaxed) {
             return Err(MediaError::Cancelled);
@@ -254,6 +261,12 @@ pub fn decode_frame_at(
                 .transpose()?
                 .ok_or(MediaError::Invalid("frame time outside video stream"));
         };
+        decoded = decoded
+            .checked_add(1)
+            .ok_or(MediaError::TooLarge("vision decoded frames"))?;
+        if decoded > limits.max_frames {
+            return Err(MediaError::TooLarge("vision decoded frames"));
+        }
         let pts = frame.pts()?.ok_or(MediaError::Unsupported(
             "video presentation timestamp unavailable",
         ))?;
@@ -274,7 +287,8 @@ pub fn decode_frame_at(
 /// `range.start`, whose PTS may precede the range. A range containing no frame
 /// interval emits nothing. The callback runs before the next frame is decoded;
 /// cancellation is checked before every frame and every callback. The range
-/// duration and emitted frame count are bounded by `limits`.
+/// duration and every decoded frame (seek preroll, replay and output) are
+/// bounded by `limits`.
 pub fn decode_shot_frames(
     asset: &SourceAsset,
     range: SourceRange,
@@ -304,18 +318,12 @@ pub fn decode_shot_frames(
     reader.seek_keyframe(range.start())?;
     let mut converter = RgbaConverter::new()?;
     let mut candidate: Option<VideoFrame> = None;
-    let mut emitted = 0usize;
-    let mut emit = |raw: VideoFrame, emitted: &mut usize| -> Result<()> {
-        if *emitted >= limits.max_frames {
-            return Err(MediaError::TooLarge("vision shot frames"));
-        }
+    let mut decoded = 0usize;
+    let mut emit = |raw: VideoFrame| -> Result<()> {
         if cancel.load(Ordering::Relaxed) {
             return Err(MediaError::Cancelled);
         }
         let packed = pack_frame(raw, &mut converter)?;
-        *emitted = emitted
-            .checked_add(1)
-            .ok_or(MediaError::TooLarge("vision shot frames"))?;
         frame(packed)
     };
     loop {
@@ -326,10 +334,16 @@ pub fn decode_shot_frames(
             if let Some(raw) = candidate.take()
                 && video_end.is_none_or(|end| range.start() < end)
             {
-                emit(raw, &mut emitted)?;
+                emit(raw)?;
             }
             return Ok(());
         };
+        decoded = decoded
+            .checked_add(1)
+            .ok_or(MediaError::TooLarge("vision decoded frames"))?;
+        if decoded > limits.max_frames {
+            return Err(MediaError::TooLarge("vision decoded frames"));
+        }
         let pts = raw.pts()?.ok_or(MediaError::Unsupported(
             "video presentation timestamp unavailable",
         ))?;
@@ -340,12 +354,12 @@ pub fn decode_shot_frames(
         if let Some(raw) = candidate.take()
             && pts > range.start()
         {
-            emit(raw, &mut emitted)?;
+            emit(raw)?;
         }
         if pts >= range.end() {
             return Ok(());
         }
-        emit(raw, &mut emitted)?;
+        emit(raw)?;
     }
 }
 
@@ -360,8 +374,11 @@ pub fn decode_shot_frames(
 ///
 /// Only frames whose window starts inside `range` are emitted. A window that
 /// extends past the range but still has source audio is computed from the real
-/// source samples; windows past the end of the source are zero-padded like the
-/// reference. A sub-chunk range still yields the frames that start inside it.
+/// source samples; only the source's real final window is zero-padded like the
+/// reference. A seek starts resampling on the stream-global grid phase and keeps
+/// at least one second of preroll, so a late subrange keeps full-range
+/// coefficients for ordinary resampled sources. A sub-chunk range still yields
+/// the frames that start inside it.
 pub fn mfcc_range(
     asset: &SourceAsset,
     range: SourceRange,
@@ -387,11 +404,8 @@ pub fn mfcc_range(
     let audio_end = stream
         .duration
         .and_then(|duration| origin.checked_add(duration));
-    if range.end() <= origin {
-        return Err(MediaError::Invalid("audio range outside stream"));
-    }
-    if audio_end.is_some_and(|end| range.start() >= end) {
-        return Err(MediaError::Invalid("audio range outside stream"));
+    if range.end() <= origin || audio_end.is_some_and(|end| range.start() >= end) {
+        return Ok(());
     }
     let from = range.start().max(origin);
     let first_frame = ceil_div(
@@ -400,7 +414,7 @@ pub fn mfcc_range(
             .0,
         TICKS_PER_MFCC_HOP,
     )?;
-    let mut end_frame = ceil_div(
+    let end_frame = ceil_div(
         range
             .end()
             .checked_sub(origin)
@@ -408,12 +422,6 @@ pub fn mfcc_range(
             .0,
         TICKS_PER_MFCC_HOP,
     )?;
-    if let Some(total_frames) = audio_end
-        .map(|end| total_mfcc_frames(end, origin))
-        .transpose()?
-    {
-        end_frame = end_frame.min(total_frames);
-    }
     if end_frame <= first_frame {
         return Ok(());
     }
@@ -434,9 +442,6 @@ pub fn mfcc_range(
         .and_then(|value| value.checked_mul(MFCC_HOP_SAMPLES))
         .and_then(|value| value.checked_add(MFCC_WINDOW_SAMPLES as i64))
         .ok_or(MediaError::TooLarge("vision MFCC samples"))?;
-    let decode_start = sample_tick(origin, first_sample)?;
-    let decode_end = sample_tick(origin, last_sample)?;
-    let decode_range = SourceRange::new(decode_start, decode_end)?;
     let mut plan = MfccPlan::new()?;
     let mut sink = MfccSink {
         plan: &mut plan,
@@ -451,10 +456,13 @@ pub fn mfcc_range(
         cancel: &cancel,
         frame,
     };
-    let result =
-        crate::audio_extract::decode_speech(asset, decode_range, &cancel, &mut |samples, tick| {
-            sink.push(samples, tick)
-        });
+    let result = decode_mfcc_audio(
+        asset,
+        first_sample,
+        last_sample,
+        &cancel,
+        &mut |samples, start| sink.push(samples, start),
+    );
     if let Err(error) = result {
         if cancel.load(Ordering::Relaxed) {
             return Err(MediaError::Cancelled);
@@ -462,7 +470,7 @@ pub fn mfcc_range(
         return Err(error);
     }
     if !sink.received_any {
-        return Err(MediaError::Invalid("no audio samples in range"));
+        return Ok(());
     }
     sink.finish()
 }
@@ -481,11 +489,10 @@ struct MfccSink<'a, F> {
     frame: F,
 }
 impl<F: FnMut(MfccFrame) -> Result<()>> MfccSink<'_, F> {
-    fn push(&mut self, samples: &[f32], tick: Tick) -> Result<()> {
+    fn push(&mut self, samples: &[f32], start: i64) -> Result<()> {
         if samples.is_empty() {
             return Ok(());
         }
-        let start = sample_index(self.origin, tick)?;
         if self.received_any && start != self.received_end {
             return Err(MediaError::Invalid("MFCC audio discontinuity"));
         }
@@ -504,6 +511,8 @@ impl<F: FnMut(MfccFrame) -> Result<()>> MfccSink<'_, F> {
     }
     fn finish(&mut self) -> Result<()> {
         self.finished = true;
+        let legal = total_mfcc_frames_from_samples(self.received_end)?;
+        self.end_frame = self.end_frame.min(legal);
         self.emit(true)
     }
     fn emit(&mut self, finished: bool) -> Result<()> {
@@ -593,33 +602,292 @@ impl<F: FnMut(MfccFrame) -> Result<()>> MfccSink<'_, F> {
     }
 }
 
-fn sample_index(origin: Tick, tick: Tick) -> Result<i64> {
+fn sample_index_for(origin: Tick, tick: Tick, ticks_per_sample: i64) -> Result<i64> {
+    if ticks_per_sample <= 0 {
+        return Err(MediaError::Invalid("audio sample clock"));
+    }
     let delta = tick
         .checked_sub(origin)
-        .ok_or(MediaError::Invalid("MFCC sample clock"))?
+        .ok_or(MediaError::Invalid("audio sample clock"))?
         .0;
-    if delta % TICKS_PER_MFCC_SAMPLE != 0 {
-        return Err(MediaError::Invalid("MFCC sample clock"));
+    if delta < 0 || delta % ticks_per_sample != 0 {
+        return Err(MediaError::Invalid("audio sample clock"));
     }
-    Ok(delta / TICKS_PER_MFCC_SAMPLE)
+    Ok(delta / ticks_per_sample)
 }
-fn sample_tick(origin: Tick, index: i64) -> Result<Tick> {
+fn sample_tick_for(origin: Tick, index: i64, ticks_per_sample: i64) -> Result<Tick> {
     let delta = index
-        .checked_mul(TICKS_PER_MFCC_SAMPLE)
-        .ok_or(MediaError::TooLarge("MFCC sample clock"))?;
+        .checked_mul(ticks_per_sample)
+        .ok_or(MediaError::TooLarge("audio sample clock"))?;
     origin
         .checked_add(Tick(delta))
-        .ok_or(MediaError::TooLarge("MFCC sample clock"))
+        .ok_or(MediaError::TooLarge("audio sample clock"))
 }
-fn total_mfcc_frames(audio_end: Tick, origin: Tick) -> Result<i64> {
-    let samples = audio_end
-        .checked_sub(origin)
-        .ok_or(MediaError::Invalid("MFCC audio duration"))?
-        .to_units(i64::from(VISION_SAMPLE_RATE), Rounding::Floor)?;
+fn sample_tick(origin: Tick, index: i64) -> Result<Tick> {
+    sample_tick_for(origin, index, TICKS_PER_MFCC_SAMPLE)
+}
+fn total_mfcc_frames_from_samples(samples: i64) -> Result<i64> {
+    if samples <= 0 {
+        return Err(MediaError::Invalid("no audio samples"));
+    }
     if samples <= MFCC_WINDOW_SAMPLES as i64 {
         return Ok(1);
     }
-    Ok(1 + (samples - MFCC_WINDOW_SAMPLES as i64 + MFCC_HOP_SAMPLES - 1) / MFCC_HOP_SAMPLES)
+    Ok(1 + ceil_div(samples - MFCC_WINDOW_SAMPLES as i64, MFCC_HOP_SAMPLES)?)
+}
+fn gcd(mut left: u32, mut right: u32) -> u32 {
+    while right != 0 {
+        let remainder = left % right;
+        left = right;
+        right = remainder;
+    }
+    left.max(1)
+}
+fn round_up(value: i64, step: i64) -> Result<i64> {
+    if step <= 0 {
+        return Err(MediaError::Invalid("audio sample step"));
+    }
+    if value <= 0 {
+        return Ok(0);
+    }
+    let remainder = value % step;
+    if remainder == 0 {
+        return Ok(value);
+    }
+    value
+        .checked_add(step - remainder)
+        .ok_or(MediaError::TooLarge("audio sample index"))
+}
+fn output_sample_index(input_index: i64, input_rate: u32) -> Result<i64> {
+    let value = i128::from(input_index) * i128::from(VISION_SAMPLE_RATE);
+    let value = value / i128::from(input_rate);
+    i64::try_from(value).map_err(|_| MediaError::TooLarge("audio sample index"))
+}
+fn emit_mfcc_audio(
+    frame: &AudioFrame,
+    index: &mut i64,
+    push: &mut impl FnMut(&[f32], i64) -> Result<()>,
+) -> Result<()> {
+    let planes = frame.planar_f32()?;
+    let mono = planes
+        .first()
+        .ok_or(MediaError::Invalid("audio output channels"))?;
+    if mono.is_empty() {
+        return Ok(());
+    }
+    push(mono, *index)?;
+    *index = index
+        .checked_add(i64::try_from(mono.len()).map_err(|_| MediaError::TooLarge("audio samples"))?)
+        .ok_or(MediaError::TooLarge("audio samples"))?;
+    Ok(())
+}
+
+/// Decode source audio and resample it to the global 16 kHz grid.
+///
+/// A fresh `AudioResampler` starts on an input sample whose phase matches the
+/// stream-global output grid, then runs for at least one second before the
+/// first requested window. That removes the seek-time phase error without
+/// decoding from the start of a long source. `push` receives contiguous
+/// absolute 16 kHz sample indexes; the caller caps the final window count from
+/// the actual received extent, so an unknown-duration EOF never fabricates
+/// windows.
+fn decode_mfcc_audio(
+    asset: &SourceAsset,
+    first_sample: i64,
+    last_sample: i64,
+    cancel: &Arc<AtomicBool>,
+    push: &mut impl FnMut(&[f32], i64) -> Result<()>,
+) -> Result<()> {
+    init()?;
+    let mut reader = PacketReader::open_with_cancel(asset.path(), cancel.clone())?;
+    let stream = reader
+        .probe()
+        .streams
+        .iter()
+        .find(|stream| stream.kind == StreamKind::Audio)
+        .cloned()
+        .ok_or(MediaError::NoAudioStream)?;
+    let input_rate = stream
+        .audio
+        .as_ref()
+        .ok_or(MediaError::NoAudioStream)?
+        .sample_rate;
+    if input_rate == 0 {
+        return Err(MediaError::Invalid("audio sample rate"));
+    }
+    if TICKS_PER_SECOND % i64::from(input_rate) != 0 {
+        return Err(MediaError::Unsupported("audio sample clock"));
+    }
+    let ticks_per_input = TICKS_PER_SECOND / i64::from(input_rate);
+    let origin = stream.start.unwrap_or(Tick::ZERO);
+    let first_tick = sample_tick_for(origin, first_sample, TICKS_PER_MFCC_SAMPLE)?;
+    let target_tick = first_tick
+        .checked_sub(MFCC_AUDIO_PREROLL)
+        .unwrap_or(Tick::ZERO)
+        .max(origin);
+    if target_tick > origin && reader.seek(target_tick).is_err() {
+        reader = PacketReader::open_with_cancel(asset.path(), cancel.clone())?;
+    }
+    let mut decoder = AudioDecoder::new(&stream)?;
+    let step = i64::from(input_rate / gcd(input_rate, VISION_SAMPLE_RATE));
+    let target_index = ceil_div(
+        target_tick
+            .checked_sub(origin)
+            .ok_or(MediaError::Invalid("audio sample clock"))?
+            .0,
+        ticks_per_input,
+    )?;
+    let mut state = MfccAudioState {
+        origin,
+        input_rate,
+        ticks_per_input,
+        step,
+        aligned_index: round_up(target_index, step)?,
+        last_sample,
+        resampler: None,
+        out_index: 0,
+        cancel,
+        push,
+    };
+    let mut source_converter: Option<AudioResampler> = None;
+    loop {
+        if cancel.load(Ordering::Relaxed) {
+            return Err(MediaError::Cancelled);
+        }
+        let packet = reader.next_packet()?;
+        let (frames, reached_end) = match packet {
+            Some(packet) if packet.stream() == stream.index => (decoder.decode(&packet)?, false),
+            Some(_) => continue,
+            None => (decoder.flush()?, true),
+        };
+        for frame in frames {
+            if cancel.load(Ordering::Relaxed) {
+                return Err(MediaError::Cancelled);
+            }
+            if source_converter.is_none() {
+                let rate = frame.sample_rate();
+                if rate != input_rate {
+                    return Err(MediaError::Unsupported("audio sample rate changed"));
+                }
+                let channels = frame.channels().min(8);
+                if channels == 0 {
+                    return Err(MediaError::Invalid("audio channels"));
+                }
+                source_converter = Some(AudioResampler::new(
+                    &frame,
+                    rate,
+                    channels,
+                    AudioSampleFormat::PlanarF32,
+                )?);
+            }
+            let converter = source_converter
+                .as_mut()
+                .ok_or(MediaError::Invalid("audio source converter"))?;
+            for output in converter.convert(&frame)? {
+                if state.feed(output)? {
+                    return Ok(());
+                }
+            }
+        }
+        if reached_end {
+            if let Some(mut converter) = source_converter.take() {
+                while let Some(output) = converter.flush()? {
+                    if state.feed(output)? {
+                        return Ok(());
+                    }
+                }
+            }
+            state.finish()?;
+            return Ok(());
+        }
+    }
+}
+
+struct MfccAudioState<'a, F> {
+    origin: Tick,
+    input_rate: u32,
+    ticks_per_input: i64,
+    step: i64,
+    aligned_index: i64,
+    last_sample: i64,
+    resampler: Option<AudioResampler>,
+    out_index: i64,
+    cancel: &'a AtomicBool,
+    push: &'a mut F,
+}
+impl<F: FnMut(&[f32], i64) -> Result<()>> MfccAudioState<'_, F> {
+    fn feed(&mut self, frame: AudioFrame) -> Result<bool> {
+        if let Some(active) = self.resampler.as_mut() {
+            for output in active.convert(&frame)? {
+                emit_mfcc_audio(&output, &mut self.out_index, &mut *self.push)?;
+                if self.out_index >= self.last_sample {
+                    return Ok(true);
+                }
+            }
+            return Ok(false);
+        }
+        let pts = frame
+            .pts()?
+            .ok_or(MediaError::Unsupported("audio timestamp unavailable"))?;
+        let start_index = sample_index_for(self.origin, pts, self.ticks_per_input)?;
+        let samples =
+            i64::try_from(frame.samples()).map_err(|_| MediaError::TooLarge("audio samples"))?;
+        if start_index
+            .checked_add(samples)
+            .is_none_or(|end| end <= self.aligned_index)
+        {
+            return Ok(false);
+        }
+        if start_index > self.aligned_index {
+            self.aligned_index = round_up(start_index, self.step)?;
+        }
+        let skip = usize::try_from(self.aligned_index - start_index)
+            .map_err(|_| MediaError::Invalid("audio sample trim"))?;
+        if skip >= frame.samples() {
+            return Ok(false);
+        }
+        let planes = frame.planar_f32()?;
+        let mut trimmed = Vec::with_capacity(planes.len());
+        for plane in planes {
+            let remainder = plane
+                .get(skip..)
+                .ok_or(MediaError::Invalid("audio sample trim"))?;
+            trimmed.push(remainder.to_vec());
+        }
+        if trimmed.first().is_none_or(|plane| plane.is_empty()) {
+            return Ok(false);
+        }
+        let aligned_tick = sample_tick_for(self.origin, self.aligned_index, self.ticks_per_input)?;
+        let first = AudioFrame::from_planar_f32(aligned_tick, self.input_rate, &trimmed)?;
+        let mut active =
+            AudioResampler::new(&first, VISION_SAMPLE_RATE, 1, AudioSampleFormat::PlanarF32)?;
+        self.out_index = output_sample_index(self.aligned_index, self.input_rate)?;
+        for output in active.convert(&first)? {
+            emit_mfcc_audio(&output, &mut self.out_index, &mut *self.push)?;
+            if self.out_index >= self.last_sample {
+                return Ok(true);
+            }
+        }
+        self.resampler = Some(active);
+        Ok(false)
+    }
+    fn finish(&mut self) -> Result<()> {
+        if self.out_index >= self.last_sample {
+            return Ok(());
+        }
+        if let Some(active) = self.resampler.as_mut() {
+            while let Some(output) = active.flush()? {
+                if self.cancel.load(Ordering::Relaxed) {
+                    return Err(MediaError::Cancelled);
+                }
+                emit_mfcc_audio(&output, &mut self.out_index, &mut *self.push)?;
+                if self.out_index >= self.last_sample {
+                    break;
+                }
+            }
+        }
+        Ok(())
+    }
 }
 
 fn ceil_div(value: i64, divisor: i64) -> Result<i64> {
