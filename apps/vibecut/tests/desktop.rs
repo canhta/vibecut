@@ -295,3 +295,27 @@ fn vietnamese_light_controls_fit_the_minimum_window() {
         );
     }
 }
+
+#[test]
+fn empty_player_keeps_its_accessible_instruction_after_a_black_frame_is_ready() {
+    let session = Session::new(Project::empty(ProjectId(2), "Empty".into()).unwrap(), 10).unwrap();
+    let mut playback = Playback::new(
+        &session,
+        ByteBudget::new(64 << 20).unwrap(),
+        Arc::new(Files),
+    )
+    .unwrap();
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while playback.frame().is_none() {
+        playback.poll().unwrap();
+        assert!(Instant::now() < deadline);
+        std::thread::sleep(Duration::from_millis(2));
+    }
+    let editor = Editor::new(session, playback, Preferences::default());
+    let mut harness = Harness::builder()
+        .with_size(egui::vec2(1280.0, 800.0))
+        .build_ui_state(|ui, editor: &mut Editor| editor.ui(ui), editor);
+    harness.run_steps(3);
+    harness.get_by_label("Add media to the timeline to begin");
+    assert!(harness.state().presented_frame().is_none());
+}

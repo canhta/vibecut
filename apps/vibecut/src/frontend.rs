@@ -416,7 +416,11 @@ impl Editor {
             ),
         );
         ui.painter().rect_filled(area, 0.0, Color32::BLACK);
-        if let Some(frame) = self.playback.frame() {
+        if let Some(frame) = self
+            .playback
+            .frame()
+            .filter(|_| self.session.project().duration() > Tick::ZERO)
+        {
             let key = (frame.epoch, frame.at);
             if self.texture_key != Some(key) {
                 if let Some(texture) = &mut self.texture {
@@ -452,12 +456,19 @@ impl Editor {
             } else {
                 Text::Loading
             };
-            ui.painter().text(
-                area.center(),
-                egui::Align2::CENTER_CENTER,
-                self.tr(label),
-                egui::FontId::proportional(14.0),
-                Color32::from_rgb(229, 229, 229),
+            ui.scope_builder(
+                egui::UiBuilder::new()
+                    .max_rect(area)
+                    .layout(egui::Layout::centered_and_justified(
+                        egui::Direction::TopDown,
+                    )),
+                |ui| {
+                    ui.label(
+                        egui::RichText::new(self.tr(label))
+                            .size(14.0)
+                            .color(Color32::from_rgb(229, 229, 229)),
+                    );
+                },
             );
         }
         ui.advance_cursor_after_rect(area);
