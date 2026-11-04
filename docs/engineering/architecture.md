@@ -50,7 +50,7 @@ README holds the details.
 | Local models | ai + engine | ai owns catalog/download consent/integrity and shared transport; engine owns transfers and native ArtifactCache bundles; see [model transfer contract](../../crates/engine/README.md#local-model-transfers) |
 | Clip boundary adjustment | engine | Ordered source segments in; safe frame-snapped ranges and per-edge deltas out; captions owns speech groups, media owns energy measurements; see [engine contract](../../crates/engine/README.md#clip-boundary-adjustment) |
 | Vision detectors | ai | Bounded prepared tensors and shot results, tract inference, in-memory shape-plan cache; [vision contract](../../crates/ai/README.md#local-vision-detectors) |
-| Provider interfaces | ai | Transcriber, Aligner, Translator, ClipSuggester; capabilities per model and language; request-scoped consent |
+| Provider interfaces | ai | Transcriber, Aligner, Translator, ClipSuggester, SpeechSynthesizer; capabilities per model and language; request-scoped consent |
 
 **Jobs.** Engine wraps all media, render and AI execution in its job runner and
 owns scheduling, retries, checkpoints and the aggregate byte policy; see the
@@ -83,6 +83,12 @@ A shared control library is admitted only with working CLI and MCP consumers;
 until then the first adapter owns the shared code.
 
 **Translation.** AI owns one contextual TranslationWindow contract and structured response validation; engine selects cues, budgets/retries work and applies the registered `retranslate` command with edit protection. See [AI translation](../../crates/ai/README.md#contextual-text-translation) and [engine application](../../crates/engine/README.md#translation-selection-and-application).
+
+**Speech synthesis.** `ai::speech` owns the blocking `SpeechSynthesizer` contract,
+IO-free exact voice/language capabilities and quotes, immutable NFC requests,
+policy-bound `SynthesisConsent`, and mono PCM/result validation. Engine owns
+provider selection, retry budgets, jobs and placement; synthesis never edits a
+project or selects a fallback. See [speech contract](../../crates/ai/README.md#speech-synthesis).
 
 **AI.** `ai` owns consent, cost estimates and capability checks once for every
 operation; consent binds provider, operation, content and languages, and retries

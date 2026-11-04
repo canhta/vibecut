@@ -10,6 +10,7 @@ pub enum Operation {
     Align,
     Translate,
     SuggestClips,
+    Synthesize,
 }
 /// Absolute source-audio sample coordinates, half-open and nonnegative.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]

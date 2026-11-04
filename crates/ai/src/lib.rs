@@ -11,6 +11,7 @@ pub mod gipformer;
 pub mod models;
 pub mod openai;
 mod policy;
+pub mod speech;
 pub mod structured;
 mod translation;
 pub mod transport;
@@ -37,6 +38,14 @@ pub enum Error {
     Invalid(&'static str),
     #[error("unsupported AI capability")]
     Unsupported,
+    #[error("unsupported voice")]
+    UnsupportedVoice,
+    #[error("speech output rejected")]
+    OutputRejected,
+    #[error("provider content policy refused the request")]
+    ContentPolicy,
+    #[error("provider request timed out")]
+    Timeout,
     #[error("unsupported language")]
     UnsupportedLanguage,
     #[error("timing unavailable")]
@@ -85,7 +94,7 @@ impl Error {
     pub fn is_transient(&self) -> bool {
         matches!(
             self,
-            Self::Network | Self::Server | Self::RateLimit { .. } | Self::Schema
+            Self::Network | Self::Timeout | Self::Server | Self::RateLimit { .. } | Self::Schema
         )
     }
 }
