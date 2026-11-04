@@ -69,7 +69,7 @@ never enter tracked files.
 | Active tab | `#3B3B3B` | `#DEDEDE` | 1.29:1 fill vs panel `#F9FAFB`; 4.71:1 accent text on fill | Observed in E2 |
 | Text | `#E5E5E5` | `#1C1C1C` | 16.31:1 vs panel `#F9FAFB` | Observed text colour in E1 and E2 |
 | Secondary text | `#9A9A9A` | `#5C6268` | 5.91:1 vs panel `#F9FAFB`; 4.59:1 on active tab `#DEDEDE` | [proposed]; reference muted 50% grey fails 4.5:1 on light |
-| Separators | `#1F1F1F` | `#878D93` | 3.21:1 vs panel `#F9FAFB`; 3.02:1 vs window `#F2F3F5` | [proposed]; reference `#DEDEDE` lines are 1.3:1 |
+| Separators | `#1F1F1F` | `#DEDEDE` | 1.29:1 vs panel `#F9FAFB` (decorative; WCAG 1.4.11 does not apply) | Observed 1 px lines in E2 |
 | Borders | `#383838` | `#858B91` | 3.10:1 vs field `#F2F3F5`; 3.29:1 vs panel `#F9FAFB` | [proposed]; reference `#DEDEDE` borders are 1.3:1 |
 | Accent: selection, checked boxes, primary button | `#00C1CD` | `#006A74` | 6.06:1 vs panel `#F9FAFB`; 4.71:1 on active tab `#DEDEDE`; 6.34:1 for white label on fill | [proposed] darkened; `#00C1CD` is only 1.99:1 on window, 2.13:1 on panel and 2.21:1 on white |
 | Video clip fill and border | `#0A2A24` | `#E3F7F2` fill, `#0B6B5B` border | 1.07:1 fill vs panel; 5.77:1 border on fill; 15.30:1 primary text on fill | [proposed]; no light timeline clip sample |
@@ -80,12 +80,12 @@ never enter tracked files.
   boxes, primary-button fill and active tab text. White checkmarks and labels on
   that fill are 6.34:1. The dark accent stays `#00C1CD`.
 - **Surfaces.** Adjacent surface separations are intentionally subtle (1.06–1.29:1);
-  the 3:1 requirement applies to text and to control/separator boundaries, not to
-  blocks that are also separated by 1 px lines. Dark's "panels are not lighter than
-  the window" inverts to "panels are not darker than the window" on light.
-- **Lines.** The sampled reference lines (`#DEDEDE`) are decorative-light, not
-  control boundaries; light therefore darkens separators and borders to
-  `#878D93`/`#858B91` to meet 3:1.
+  the 3:1 requirement applies to text and to control boundaries that identify a
+  component, not to decorative 1 px panel separators. Dark's "panels are not lighter
+  than the window" inverts to "panels are not darker than the window" on light.
+- **Lines.** Panel separators keep the observed decorative `#DEDEDE` (1.29:1);
+  WCAG 1.4.11 does not require 3:1 for them. Field and control borders that identify
+  a component use `#858B91` (3.10:1 on fields, 3.29:1 on panels).
 - **Error and clips.** Import/progress keeps the accent bar `#006A74`; error toasts
   keep the observed pale surface `#FFF0F0` but use `#B3261E` text/icons because the
   reference `#E50000` is 4.38:1 there. Light video clips use a `#E3F7F2` fill,
