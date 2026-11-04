@@ -83,19 +83,29 @@ hardware-accelerated encoding.
 </td>
 <td width="50%"><!-- docs/assets/readme/export.gif --></td>
 </tr>
+<tr>
+<td width="50%" valign="middle">
+
+### AI Captions
+
+Captions in Vietnamese, English and Chinese, translated to any pair, shown bilingual.
+
+</td>
+<td width="50%"><!-- docs/assets/readme/captions.gif --></td>
+</tr>
+<tr>
+<td width="50%" valign="middle">
+
+### AI Shorts
+
+Long video in, vertical clips out.
+
+</td>
+<td width="50%"><!-- docs/assets/readme/shorts.gif --></td>
+</tr>
 </table>
 
-**AI built in, local first:**
-
-- **Auto captions** in Vietnamese, English and Chinese, translation between any pair, bilingual subtitles, word highlight.
-- **AI shorts:** ranked vertical clips from long videos, reframed to the speaker.
-- **Text-based editing:** remove pauses and filler words, cut by editing the transcript.
-- **Your choice of AI:** local models, or OpenAI, Anthropic and ElevenLabs; nothing is uploaded until you approve.
-
-**Also in the box:** autosave and crash recovery, proxy editing, customizable
-keyboard shortcuts, English and Vietnamese UI, AI dubbing, a headless CLI, plugins
-and scripting, and an MCP server plus agent skill so Claude Code, Codex and other
-coding agents can drive the editor.
+**Also in the box:** crash recovery · proxy editing · custom shortcuts · CLI · MCP for coding agents
 
 ## Install
 
