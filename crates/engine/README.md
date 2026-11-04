@@ -624,19 +624,31 @@ cancellation therefore leaves no new artifact, and every published file is
 complete. A publication failure after the MP4 is reported but cannot roll back the
 already complete MP4 or an existing MP4, which is preserved.
 
+Each short retains publication progress across retries. `retry` skips artifacts
+this short already published (checking that they still exist), republishes only
+missing ones under the original overwrite policy, and re-renders the MP4 when it
+is gone. It never treats an artifact this batch did not publish as skippable, so a
+sidecar failure after the MP4 retries without deleting the MP4 or granting blanket
+overwrite permission.
+
 Missing or changed sources return render's typed `Unavailable` entries per job; the
 batch does not silently degrade without `allow_degraded`. Storage exhaustion and
 the byte ceiling surface as typed IO/project failures from the bounded stages,
-leaving previous destinations and no staging orphan. Output aliases of source media
-are refused through render's shared admission. Retry reuses the prepared snapshot,
-so relinking a source requires preparing a new batch.
+leaving previous destinations and no staging orphan. Every artifact path is
+validated through render's shared output admission against the retained immutable
+original project, not only the selected source, so exporting into any original
+project source path or hard link is refused even with overwrite permission.
+Retry reuses the prepared snapshot, so relinking a source requires preparing a new
+batch.
 
 `cargo test -p engine --test clip_export` covers play-order joining, gap exclusion,
 one concatenated mapping against `subtitle_file`, bilingual cue ordering, portrait
 crop placement, Unicode/bounded/unique names, hostile ranges/languages/formats,
 missing sources per short, cancel mid-batch with neighbour completion and retry,
-and storage ceilings for sidecars and the MP4. Oracle tests generate a synthetic
-FFmpeg fixture and probe the exported 1080x1920 MP4 and both sidecars.
+storage ceilings for sidecars and the MP4, refusal of an unselected video or sidecar
+source alias under overwrite, and retry after a sidecar publication failure without
+manual deletion. Oracle tests generate a synthetic FFmpeg fixture and probe the
+exported 1080x1920 MP4 and both sidecars.
 
 ## Provider selection and fallback
 

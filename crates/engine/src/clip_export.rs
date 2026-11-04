@@ -18,7 +18,7 @@ use std::{
     collections::BTreeSet,
     io::Write,
     path::{Path, PathBuf},
-    sync::Arc,
+    sync::{Arc, Mutex},
 };
 use time::{Tick, TimeRange};
 use unicode_segmentation::UnicodeSegmentation;
@@ -117,6 +117,12 @@ pub struct ClipPaths {
     pub subtitles: Vec<ClipSubtitlePath>,
 }
 
+/// Artifacts this prepared short already published, retained across retries.
+#[derive(Default)]
+struct Published {
+    video: bool,
+    subtitles: Vec<bool>,
+}
 struct PreparedClip {
     project: Arc<Project>,
     settings: render::ExportSettings,
@@ -128,6 +134,10 @@ struct PreparedClip {
     sidecar_bytes: u64,
     overwrite: bool,
     max_output_bytes: u64,
+    published: Arc<Mutex<Published>>,
+    /// Immutable original snapshot; only its asset identities are read, to keep
+    /// output admission protecting every original project source.
+    sources: Arc<Project>,
 }
 struct ClipJob {
     id: JobId,
@@ -169,6 +179,7 @@ impl ClipBatch {
             allow_degraded: request.allow_degraded,
             max_output_bytes: request.max_output_bytes,
         };
+        let sources = Arc::new(source.clone());
         let mut names = NameSet::default();
         let mut cue_bytes = 0u64;
         let mut clips = Vec::new();
@@ -178,6 +189,7 @@ impl ClipBatch {
         for (index, short) in request.shorts.iter().enumerate() {
             clips.push(prepare_clip(
                 source,
+                &sources,
                 &options,
                 short,
                 index,
@@ -325,6 +337,7 @@ fn validate_request(request: &ClipBatchRequest) -> Result<(), EditError> {
 
 fn prepare_clip(
     source: &Project,
+    sources: &Arc<Project>,
     options: &Options<'_>,
     short: &ClipShort,
     index: usize,
@@ -517,6 +530,10 @@ fn prepare_clip(
         })
         .collect();
     let input = job_key(&project, cursor, &settings, short.crop, options)?;
+    let published = Arc::new(Mutex::new(Published {
+        video: false,
+        subtitles: vec![false; options.formats.len()],
+    }));
     Ok(PreparedClip {
         project: Arc::new(project),
         settings,
@@ -528,6 +545,8 @@ fn prepare_clip(
         sidecar_bytes,
         overwrite: options.overwrite,
         max_output_bytes: options.max_output_bytes,
+        published,
+        sources: sources.clone(),
     })
 }
 
@@ -616,12 +635,13 @@ fn submit_clip(
 ) -> Result<(JobId, CancelToken), EditError> {
     let project = clip.project.clone();
     let settings = clip.settings.clone();
-    let video = clip.paths.video.clone();
-    let subtitles = clip.paths.subtitles.clone();
+    let paths = clip.paths.clone();
     let caption_track = clip.caption_track;
     let languages = clip.languages.clone();
     let overwrite = clip.overwrite;
     let max_output_bytes = clip.max_output_bytes;
+    let published = clip.published.clone();
+    let sources = clip.sources.clone();
     let range = TimeRange::new(Tick::ZERO, clip.duration)?;
     runner.submit(
         JobSpec {
@@ -640,16 +660,31 @@ fn submit_clip(
             } else {
                 project::atomic::Overwrite::Refuse
             };
+            // Resume only missing artifacts; an artifact this short already
+            // published is never overwritten again.
+            let (video_done, subtitles_done) = reconcile_published(&published, &paths)?;
             // Refuse aliases and occupied destinations before staging or encoding.
-            for subtitle in &subtitles {
-                render::validate_output_path(&project, &subtitle.path, context)?;
+            // Validate against the original snapshot, not the reduced derived
+            // timeline, so every project source stays protected.
+            for (index, subtitle) in paths.subtitles.iter().enumerate() {
+                if subtitles_done.get(index).copied().unwrap_or(false) {
+                    continue;
+                }
+                render::validate_output_path(&sources, &subtitle.path, context)?;
             }
-            // Stage sidecars first: a later MP4 refusal leaves no subtitle artifact.
+            if !video_done {
+                render::validate_output_path(&sources, &paths.video, context)?;
+            }
+            // Stage unpublished sidecars first: a later MP4 refusal leaves no
+            // subtitle artifact.
             let mut staged = Vec::new();
             staged
-                .try_reserve_exact(subtitles.len())
+                .try_reserve_exact(paths.subtitles.len())
                 .map_err(|_| EditError::Limit)?;
-            for subtitle in &subtitles {
+            for (index, subtitle) in paths.subtitles.iter().enumerate() {
+                if subtitles_done.get(index).copied().unwrap_or(false) {
+                    continue;
+                }
                 context.check_cancelled()?;
                 let track = caption_track.ok_or(EditError::Invalid("clip subtitle track"))?;
                 let export = subtitle_file(&project, track, subtitle.format, &languages)?;
@@ -662,13 +697,17 @@ fn submit_clip(
                         writer.write_all(chunk)?;
                     }
                 }
-                staged.push(stage.finalize()?);
+                staged.push((index, stage.finalize()?));
             }
             // The MP4 is the primary artifact and publishes through render's fence.
-            render::export(&project, range, &settings, &video, context)?;
-            for stage in staged {
+            if !video_done {
+                render::export(&project, range, &settings, &paths.video, context)?;
+                mark_video(&published)?;
+            }
+            for (index, stage) in staged {
                 context.progress(JobStage::Publish, 1.0)?;
                 stage.publish()?;
+                mark_subtitle(&published, index)?;
             }
             Ok(Vec::new())
         },
@@ -770,4 +809,51 @@ fn reserved_name(base: &str) -> bool {
         && bytes
             .get(3)
             .is_some_and(|digit| matches!(*digit, b'1'..=b'9'))
+}
+
+fn artifact_present(path: &Path) -> bool {
+    std::fs::metadata(path).is_ok_and(|metadata| metadata.is_file())
+}
+
+/// Drop publication marks whose artifact disappeared; keep every artifact that
+/// still exists so a retry does not overwrite its own completed output. Reads the
+/// marks before touching the filesystem and holds no lock across that IO.
+fn reconcile_published(
+    published: &Mutex<Published>,
+    paths: &ClipPaths,
+) -> Result<(bool, Vec<bool>), EditError> {
+    let (video, mut subtitles) = {
+        let state = published.lock().map_err(|_| EditError::JobPoisoned)?;
+        (state.video, state.subtitles.clone())
+    };
+    let video = video && artifact_present(&paths.video);
+    for (index, subtitle) in paths.subtitles.iter().enumerate() {
+        if subtitles.get(index).copied().unwrap_or(false)
+            && !artifact_present(&subtitle.path)
+            && let Some(done) = subtitles.get_mut(index)
+        {
+            *done = false;
+        }
+    }
+    {
+        let mut state = published.lock().map_err(|_| EditError::JobPoisoned)?;
+        state.video = video;
+        state.subtitles.clone_from(&subtitles);
+    }
+    Ok((video, subtitles))
+}
+
+fn mark_video(published: &Mutex<Published>) -> Result<(), EditError> {
+    published.lock().map_err(|_| EditError::JobPoisoned)?.video = true;
+    Ok(())
+}
+
+fn mark_subtitle(published: &Mutex<Published>, index: usize) -> Result<(), EditError> {
+    let mut state = published.lock().map_err(|_| EditError::JobPoisoned)?;
+    let done = state
+        .subtitles
+        .get_mut(index)
+        .ok_or(EditError::Invalid("clip artifact index"))?;
+    *done = true;
+    Ok(())
 }

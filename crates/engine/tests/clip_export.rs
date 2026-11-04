@@ -1021,3 +1021,179 @@ fn video_storage_ceiling_preserves_previous_output() {
     assert_eq!(std::fs::read_dir(&out).unwrap().count(), 1);
     assert_eq!(temporary_files(&out), 0);
 }
+
+fn short_segment(start: i64, end: i64) -> ClipSourceSegment {
+    ClipSourceSegment {
+        range: short_range(start, end),
+        role: ClipRole::Payoff,
+        source_order: 0,
+        repair: None,
+    }
+}
+fn imported_copy(source: &Path, destination: &Path, id: u64) -> SourceAsset {
+    std::fs::copy(source, destination).unwrap();
+    SourceAsset::import(AssetId(id), destination.to_owned()).unwrap()
+}
+fn project_with_assets(assets: Vec<SourceAsset>) -> Project {
+    let mut data = project::Project::empty(ProjectId(0), "source".into())
+        .unwrap()
+        .into_data();
+    data.assets = assets;
+    Project::new(data).unwrap()
+}
+
+#[test]
+fn source_sidecar_alias_is_refused_before_publication() {
+    let dir = tempfile::tempdir().unwrap();
+    let out = output_directory(dir.path());
+    let other = out.join("Sidecar.srt");
+    std::fs::write(&other, b"original source bytes").unwrap();
+    let source = project_with_assets(vec![
+        asset(1, dir.path().join("missing-source.mp4"), 10),
+        asset(2, other.clone(), 10),
+    ]);
+    let request = ClipBatchRequest {
+        languages: vec![lang("vi")],
+        subtitle_formats: vec![Format::Srt],
+        overwrite: true,
+        ..batch(
+            1,
+            vec![ClipShort::new("Sidecar", vec![short_segment(1, 3)])],
+            CueTrack::default(),
+            &out,
+        )
+    };
+    let mut batch = ClipBatch::prepare(&source, request).unwrap();
+    let video = batch.paths(0).unwrap().video.clone();
+    let mut runner = runner(1);
+    batch.submit(&mut runner).unwrap();
+    let snapshots = wait(&batch, &mut runner);
+    assert_eq!(snapshots[0].state, JobState::Failed);
+    assert!(
+        matches!(
+            snapshots[0].error.as_deref(),
+            Some(EditError::Render(render::Error::Invalid(
+                "output aliases a source"
+            )))
+        ),
+        "{:?}",
+        snapshots[0].error
+    );
+    assert_eq!(std::fs::read(&other).unwrap(), b"original source bytes");
+    assert!(!video.exists());
+    assert_eq!(std::fs::read_dir(&out).unwrap().count(), 1);
+    assert_eq!(temporary_files(&out), 0);
+}
+
+#[test]
+fn source_video_alias_is_refused_even_with_overwrite() {
+    if !oracles() {
+        return;
+    }
+    let dir = tempfile::tempdir().unwrap();
+    let out = output_directory(dir.path());
+    let fixture = fixture(dir.path(), 1);
+    let first = imported_copy(&fixture, &dir.path().join("first.mp4"), 1);
+    let other = out.join("Other.mp4");
+    let second = imported_copy(&fixture, &other, 2);
+    let source = project_with_assets(vec![first, second]);
+    let before = std::fs::read(&other).unwrap();
+    let request = ClipBatchRequest {
+        overwrite: true,
+        ..batch(
+            1,
+            vec![ClipShort::new("Other", vec![short_segment(1, 3)])],
+            CueTrack::default(),
+            &out,
+        )
+    };
+    let mut batch = ClipBatch::prepare(&source, request).unwrap();
+    let mut runner = runner(1);
+    batch.submit(&mut runner).unwrap();
+    let snapshots = wait(&batch, &mut runner);
+    assert_eq!(snapshots[0].state, JobState::Failed);
+    assert!(
+        matches!(
+            snapshots[0].error.as_deref(),
+            Some(EditError::Render(render::Error::Invalid(
+                "output aliases a source"
+            )))
+        ),
+        "{:?}",
+        snapshots[0].error
+    );
+    assert_eq!(std::fs::read(&other).unwrap(), before);
+    assert_eq!(std::fs::read_dir(&out).unwrap().count(), 1);
+    assert_eq!(temporary_files(&out), 0);
+}
+
+#[test]
+fn retry_resumes_after_sidecar_publication_failure_without_overwrite() {
+    if !oracles() {
+        return;
+    }
+    let dir = tempfile::tempdir().unwrap();
+    let out = output_directory(dir.path());
+    let fixture = fixture(dir.path(), 1);
+    let source = project(SourceAsset::import(AssetId(1), fixture).unwrap());
+    let request = ClipBatchRequest {
+        languages: vec![lang("vi")],
+        subtitle_formats: vec![Format::Srt],
+        ..batch(
+            1,
+            vec![ClipShort::new("Resume", vec![short_segment(1, 3)])],
+            CueTrack {
+                cues: vec![Cue {
+                    id: "speech".into(),
+                    range: short_range(1, 3),
+                    source_lang: lang("vi"),
+                    texts: [("vi", "Xin chào")]
+                        .into_iter()
+                        .map(|(language, value)| (lang(language), text(value)))
+                        .collect(),
+                }],
+            },
+            &out,
+        )
+    };
+    let mut batch = ClipBatch::prepare(&source, request).unwrap();
+    let video = batch.paths(0).unwrap().video.clone();
+    let subtitle = batch.paths(0).unwrap().subtitles[0].path.clone();
+    let mut runner = runner(1);
+    batch.submit(&mut runner).unwrap();
+    // Both private stages exist during rendering: the sidecar was finalized and
+    // the MP4 stage is open. Obstruction now survives staging but fails publish.
+    let deadline = Instant::now() + Duration::from_secs(120);
+    loop {
+        runner.tick().unwrap();
+        if temporary_files(&out) >= 2 {
+            break;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "MP4 stage did not appear during rendering"
+        );
+        std::thread::sleep(Duration::from_millis(1));
+    }
+    assert!(!subtitle.exists());
+    std::fs::create_dir(&subtitle).unwrap();
+    let snapshots = wait(&batch, &mut runner);
+    assert_eq!(snapshots[0].state, JobState::Failed);
+    assert!(video.exists());
+    assert!(subtitle.is_dir());
+    let video_bytes = std::fs::read(&video).unwrap();
+    std::fs::remove_dir(&subtitle).unwrap();
+    let previous = batch.job_id(0);
+    let retried = batch.retry(&mut runner, 0).unwrap();
+    assert_ne!(Some(retried), previous);
+    let snapshots = wait(&batch, &mut runner);
+    assert_eq!(
+        snapshots[0].state,
+        JobState::Completed,
+        "{:?}",
+        snapshots[0].error
+    );
+    assert!(subtitle.is_file());
+    assert_eq!(std::fs::read(&video).unwrap(), video_bytes);
+    assert_eq!(temporary_files(&out), 0);
+}
