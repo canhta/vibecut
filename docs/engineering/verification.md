@@ -67,6 +67,9 @@ Keep reports local and hand over paths; never publish an Artifact.
 
 ## Reports
 
+Every report starts with `## TL;DR`: at most 10 lines (outcome, merged SHA or
+blocker, decisions needed, follow-ups). Details follow below it.
+
 Done report fields (omit none; use an explicit reason when not applicable):
 
 - Ticket, branch, commit SHAs and diff stat.

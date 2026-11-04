@@ -20,10 +20,29 @@ Use one worktree per ticket, created by Orca. Shared placement needs explicit
 coordinator assignment of disjoint files; never switch another worker's branch.
 Branch: `t/<milestone>-NN-<slug>`. For a fresh worktree starting on its base branch:
 `git checkout -b t/p0-core-01-time`. If Orca already created the ticket branch, use it.
-Set `CARGO_TARGET_DIR=target/agent-<worker-name>` for every Rust command. At most
-three concurrent Rust builds on a 16 GB machine: two implementers plus one reviewer.
+Share build caches by slot, outside worktrees: `CARGO_TARGET_DIR=$HOME/.cache/vibecut/target/<slot>`
+with slot `codex-1`, `opencode-1`, `opencode-2` or `review-1` given in the dispatch spec;
+one live worker per slot. At most three concurrent Rust builds on a 16 GB machine.
+After merging, remove your worktree (`git worktree remove`) unless told to keep it.
 
 ## Coordinator loop
+
+Token budget matters: the coordinator dispatches, answers product questions and
+reads only report TL;DRs. Batch instructions; never send piecemeal addenda.
+
+Dispatch spec template (one line; everything else lives in this file):
+`Agent loop: <assignee> <slot> [max 5 tickets] [start: <milestone>/NN]` or
+`Review: <milestone>/NN <branch>@<sha7> <slot>`.
+
+Implementers run a pull loop: after merging (or handing to review) a ticket, claim
+the next frontier ticket with the same `Assignee` (open, unblocked, lowest number;
+`.scratch/README.md` query), up to the spec's maximum, then send one `worker_done`
+listing each ticket outcome. Stop early on a blocker that needs the coordinator.
+Claim race: re-read the ticket in the main checkout immediately before setting
+`Status: claimed`; skip it if it is no longer open. Each ticket starts a fresh
+branch from `origin/main` in the same worktree. Hard tickets end their loop entry
+at "needs review"; the coordinator dispatches reviewers for those items from the
+final `worker_done`.
 
 Load `orca skills get orchestration` and command `--help` before using new flags;
 use the session's configured CLI executable instead of `orca` when applicable.
