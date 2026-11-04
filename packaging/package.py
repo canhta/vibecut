@@ -18,15 +18,25 @@ ROOT = Path(__file__).resolve().parent.parent
 COMMANDS = []
 
 
+def redact(value):
+    secrets = [v for k, v in os.environ.items()
+               if k.startswith(('VIBECUT_MAC_', 'VIBECUT_NOTARY_')) and v]
+    # Platform tools can print the team separately from the signing identity.
+    for identity in secrets.copy():
+        secrets.extend(re.findall(r'\(([A-Z0-9]{10})\)', identity))
+    for secret in sorted(set(secrets), key=len, reverse=True):
+        value = value.replace(secret, '<maintainer Developer ID>')
+    return value
+
+
 def run(*args, env=None):
     args = [str(a) for a in args]
-    redactions = [v for k, v in os.environ.items() if k.startswith(('VIBECUT_MAC_', 'VIBECUT_NOTARY_')) and v]
-    safe = ['<maintainer Developer ID>' if a in redactions else a for a in args]
+    safe = [redact(a) for a in args]
     COMMANDS.append(safe)
     print('+', json.dumps(safe), flush=True)
     result = subprocess.run(args, check=True, capture_output=True, text=True, env=env)
     if result.stdout:
-        print(result.stdout, end='')
+        print(redact(result.stdout), end='')
     return result.stdout
 
 
@@ -331,11 +341,7 @@ if __name__ == '__main__':
     except (ValueError, OSError, subprocess.CalledProcessError, KeyError) as error:
         print('Packaging failed; inspect the local receipt and tool diagnostics.', file=sys.stderr)
         if isinstance(error, subprocess.CalledProcessError):
-            detail = error.stderr or ''
-            for key, value in os.environ.items():
-                if key.startswith(('VIBECUT_MAC_', 'VIBECUT_NOTARY_')) and value:
-                    detail = detail.replace(value, '<maintainer Developer ID>')
-            print(detail, file=sys.stderr)
+            print(redact(error.stderr or ''), file=sys.stderr)
         else:
             print(str(error), file=sys.stderr)
         sys.exit(1)

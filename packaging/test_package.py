@@ -87,6 +87,18 @@ class PackagingTests(unittest.TestCase):
         self.assertNotIn('secret-fixture-id', output.getvalue())
         self.assertNotIn('secret-fixture-id', str(package.COMMANDS))
 
+    def test_successful_tool_output_redacts_credentials_and_team(self):
+        identity = 'Developer ID Application: Test (TESTTEAM42)'
+        values = {'VIBECUT_MAC_SIGN_IDENTITY': identity,
+                  'VIBECUT_NOTARY_KEY_ID': 'synthetic-key-id'}
+        tool_output = identity + '\nTeam: TESTTEAM42\nsynthetic-key-id\n'
+        with patch.dict(package.os.environ, values):
+            with patch.object(package.subprocess, 'run', return_value=type('Output', (), {'stdout': tool_output})()):
+                with contextlib.redirect_stdout(io.StringIO()) as output:
+                    self.assertEqual(package.run('tool'), tool_output)
+        for private in (identity, 'TESTTEAM42', 'synthetic-key-id'):
+            self.assertNotIn(private, output.getvalue())
+
 
 if __name__ == '__main__':
     unittest.main()
