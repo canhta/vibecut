@@ -24,37 +24,65 @@
 | Screen | Reference A (desktop) | Reference B (web) | Ours |
 |---|---|---|---|
 | Home | Rail: Home, Templates; "Create with AI" (generative studios); Library, Spaces. Content: `Create project` tile, agent prompt card ("Create and edit in one flow") beside AI tool cards, AI suite cards (incl. `Long video to shorts`), then `Projects` with search, view, trash | Projects page: breadcrumb, view toggle, search, `New project`, grid; no rail | Rail: Home, Library. Content: `Create project` tile, `Long video to shorts` card, agent prompt card once the agent is in scope, then `Projects` (search, sort, grid/list, multi-select). Generative studio, image/video generation and ad-maker cards are out of scope |
-| Editor | Tool tabs, preview, properties, timeline; `EditPilot` button bottom-right opens the agent chat docked bottom-right beside the timeline | Same four panels; header holds logo menu (back to projects), name, Export | Layout below; header back-to-Home and project name; agent chat docked bottom-right |
+| Editor | Tool tabs, preview, properties, timeline; agent button bottom-right opens the agent chat docked bottom-right beside the timeline | Same four panels; header holds logo menu (back to projects), name, Export | Layout below; header back-to-Home and project name; agent chat docked bottom-right |
 | Long video to shorts | Own window from its Home card: upload (10 GB / 180 min, minutes quota shown), then results | none | Own window from its Home card: pick a local video (no upload, no quota), review suggestions, export them or open one in the editor |
 
 Evidence: `.spikes/ui-reference/screens-2026-11-04/`, `01-project-list/`,
 `02-editor-shell/`.
 
+### Measured desktop reference
+
+[measured] Home values below use logical pixels (native screenshot pixels ÷ 2).
+Source: `.spikes/ui-reference/live/02-home-settings/shots/02-home-overview-01.png`
+(3456×2060 native pixels, 1728×1030 logical). Samples and bounds are recorded in
+`.spikes/ui-reference/live/tokens.md`; unresolved measurements stay in Gaps.
+Desktop measurements take precedence over earlier proposed values. Web-only
+observations do not replace desktop sizes or colours.
+
+- Rail: 240 px wide; selected item 176×32 px at x=20; adjacent row pitch 44 px.
+- Create-project banner: bounds (240,44)–(1668,187.5), size 1428×143.5 px.
+  Its gradient samples are `#83D4E1` at (250,60), `#80D3DF` at (250,110),
+  `#7DD1DF` at (250,170), and `#53AECC` at (1650,110).
+- Home project thumbnails: 124 px wide, with 22 px gaps in the nine-card capture.
+  Card count varies between captures; nine columns are not a fixed layout rule.
+- Home background `#090909` at (300,690); rail gradient `#06171A` at (10,100)
+  to `#080F10` at (10,400); selected row `#162326` at (100,180).
+- Heading `#FAFAFA`, card title `#CCD3DA`, metadata `#7A7A7A` are sampled from
+  their text bounds in that shot. Text bounds establish rendered glyph size,
+  not a font size; radii and avatar/icon bounds remain unmeasured.
+
 ### Layout grid
 
-- Baseline window 1440x900; minimum 1280x800.
+- Baseline window 1728×1030 logical px [measured desktop capture above]; minimum
+  1280×800 remains [proposed], not verified by resizing this capture.
 - Top bar 52 px; panel header 44 px; properties tab row 40 px; timeline toolbar
   40 px.
 - Columns 25 / 50 / 25 percent: tools, preview, properties.
 - Rows 60 / 40 percent: main content, timeline.
-- Separators are 1 px `#1F1F1F`; there is no gutter between panels.
+- Separators are 1 px `#263031` [measured desktop rail at (20,264) in the
+  Home shot above]; application to editor panel separators remains [proposed].
+  There is no gutter between panels.
 - Radii: 0 px on editor panels, 4 px on fields, 12 px on modals.
 - Panel dividers are draggable; the 25/50/25 split is the reset value.
 - Export is a 120x26 px button at the top-right of the top bar.
-- The library uses a 270 px left rail and 240 px project cards; columns fill the
-  remaining width.
+- Home/Library uses the measured 240 px left rail. Home project thumbnails are
+  124 px wide with a 22 px gap in the measured grid; columns fill available width.
+  This does not establish asset-card geometry inside Library.
 
 ### Theme and tokens
 
-- Dark and light both ship in v1. Dark: window and editor chrome `#0F0F0F`;
-  top bar `#131313`.
+- Dark and light both ship in v1. Dark window/Home background is `#090909`
+  [measured desktop, Home shot above]. Editor chrome stays `#0F0F0F` and top bar
+  `#131313`; the current live capture does not remeasure those editor surfaces.
 - Light theme tokens are in [Light theme](#light-theme); same geometry, type and
   density as dark.
-- Editor panels use `#0F0F0F`; they are not lighter than the window.
+- Editor panels and editor chrome use `#0F0F0F`; Home has the measured
+  `#090909` background above.
 - Export modal `#262626`, fields `#303034`; settings modal `#141414`, controls
   `#262626`, active tab `#3B3B3B`.
-- Text `#E5E5E5`; secondary text `#9A9A9A`; separators `#1F1F1F`; borders
-  `#383838`.
+- Text `#E0E0E0`; secondary text `#949494`; separators `#263031` [measured
+  desktop, Home shot above: brightest pixels in Home R(54,175,88,184), Management
+  R(20,438,88,445), divider sample (20,264)]. Borders remain `#383838`.
 - Accent `#00C1CD` for selection, checked boxes and the primary button.
 - Video clips use a [proposed] `#0A2A24` teal border around the filmstrip.
 
@@ -70,7 +98,7 @@ never enter tracked files.
 
 | Token | Dark | Light | Ratios against surface (and label) | Evidence |
 |---|---|---|---|---|
-| Window and editor chrome | `#0F0F0F` | `#F2F3F5` | 1.11:1 vs top bar `#FFFFFF` | [proposed]; E6 light-pane samples `#EDF3F3`/`#FDFDFD` |
+| Window (editor chrome stays `#0F0F0F`) | `#090909` | `#F2F3F5` | 1.11:1 vs top bar `#FFFFFF` | [proposed]; E6 light-pane samples `#EDF3F3`/`#FDFDFD` |
 | Top bar | `#131313` | `#FFFFFF` | 1.11:1 vs window `#F2F3F5` | Observed in E1 and E2 |
 | Editor panels | `#0F0F0F` | `#F9FAFB` | 1.06:1 vs window `#F2F3F5` | Observed panel fill in E2 |
 | Export modal | `#262626` | `#FFFFFF` | 1.11:1 vs window `#F2F3F5` | Observed white popover surface in E3 |
@@ -78,9 +106,9 @@ never enter tracked files.
 | Settings modal | `#141414` | `#FFFFFF` | 1.11:1 vs window `#F2F3F5` | Observed white settings panel in E4 |
 | Controls | `#262626` | `#EEEFF0` | 1.10:1 fill vs panel `#F9FAFB`; 3.10:1 boundary via border `#858B91` | Observed control fills in E2 |
 | Active tab | `#3B3B3B` | `#DEDEDE` | 1.29:1 fill vs panel `#F9FAFB`; 4.71:1 accent text on fill | Observed in E2 |
-| Text | `#E5E5E5` | `#1C1C1C` | 16.31:1 vs panel `#F9FAFB` | Observed text colour in E1 and E2 |
-| Secondary text | `#9A9A9A` | `#5C6268` | 5.91:1 vs panel `#F9FAFB`; 4.59:1 on active tab `#DEDEDE` | [proposed]; reference muted 50% grey fails 4.5:1 on light |
-| Separators | `#1F1F1F` | `#DEDEDE` | 1.29:1 vs panel `#F9FAFB` (decorative; WCAG 1.4.11 does not apply) | Observed 1 px lines in E2 |
+| Text | `#E0E0E0` | `#1C1C1C` | 16.31:1 vs panel `#F9FAFB` | Observed text colour in E1 and E2 |
+| Secondary text | `#949494` | `#5C6268` | 5.91:1 vs panel `#F9FAFB`; 4.59:1 on active tab `#DEDEDE` | [proposed]; reference muted 50% grey fails 4.5:1 on light |
+| Separators | `#263031` | `#DEDEDE` | 1.29:1 vs panel `#F9FAFB` (decorative; WCAG 1.4.11 does not apply) | Observed 1 px lines in E2 |
 | Borders | `#383838` | `#858B91` | 3.10:1 vs field `#F2F3F5`; 3.29:1 vs panel `#F9FAFB` | [proposed]; reference `#DEDEDE` borders are 1.3:1 |
 | Accent: selection, checked boxes, primary button | `#00C1CD` | `#006A74` | 6.06:1 vs panel `#F9FAFB`; 4.71:1 on active tab `#DEDEDE`; 6.34:1 for white label on fill | [proposed] darkened; `#00C1CD` is only 1.99:1 on window, 2.13:1 on panel and 2.21:1 on white |
 | Video clip fill and border | `#0A2A24` | `#E3F7F2` fill, `#0B6B5B` border | 1.07:1 fill vs panel; 5.77:1 border on fill; 15.30:1 primary text on fill | [proposed]; no light timeline clip sample |
@@ -92,8 +120,9 @@ never enter tracked files.
   that fill are 6.34:1. The dark accent stays `#00C1CD`.
 - **Surfaces.** Adjacent surface separations are intentionally subtle (1.06–1.29:1);
   the 3:1 requirement applies to text and to control boundaries that identify a
-  component, not to decorative 1 px panel separators. Dark's "panels are not lighter
-  than the window" inverts to "panels are not darker than the window" on light.
+  component, not to decorative 1 px panel separators. Light panels remain lighter
+  than the light window; the measured dark Home
+  background does not establish desktop editor-panel contrast.
 - **Lines.** Panel separators keep the observed decorative `#DEDEDE` (1.29:1);
   WCAG 1.4.11 does not require 3:1 for them. Field and control borders that identify
   a component use `#858B91` (3.10:1 on fields, 3.29:1 on panels).
@@ -126,7 +155,8 @@ never enter tracked files.
 ### Density
 
 - Row pitch 48 px; field height 26 px; settings tab bar 34 px; properties tab
-  row 40 px; library nav row 46 px; top bar 52 px.
+  row 40 px; Home/Library nav pitch 44 px with 32 px selected-item height
+  [measured desktop, Home shot above]; top bar 52 px.
 - Top-bar primary buttons 26 px high; modal footer buttons 34 px high; icon
   buttons 28x28 px.
 - Timeline: 22 px ruler, 65 px video track, 50 px audio track, 25 px text track,
@@ -167,14 +197,22 @@ never enter tracked files.
 
 A UI ticket that hits a gap captures a real desktop screenshot first.
 
-- Error, offline and import-failure states: no real desktop screenshot; no card
-  size, colour or action is fixed.
+- Desktop error/offline/import-failure states remain uncaptured. A web-only
+  empty-project Export tooltip reads `Project is empty and cannot be exported`
+  (`.spikes/ui-reference/live/09-export-errors/shots/web/09-web-export-empty-blocked.png`).
+  It proves no desktop error UI, actual export, progress/done or file-failure handling.
 - Audio and text clip colours: only a video clip has been sampled.
 - Multi-track timeline geometry: only one video track has been sampled.
 - Motion: no durations or easing have been measured.
-- Shortcut dialog: keys are documented; layout, search and conflict UI are
-  unmeasured.
+- Desktop shortcut-dialog layout/search/rebinding/conflict remains unmeasured.
+  Web-only stills show a read-only three-column, 45-row list (17 Globe, 11 Timeline,
+  17 Canvas; directions counted separately):
+  `.spikes/ui-reference/live/02-home-settings/shots/web/02-web-editor-shortcuts-1.png`
+  and `02-web-editor-shortcuts-2.png`. This does not change the desktop shortcuts above.
 - Panel min/max sizes: only one size per screenshot has been observed.
+- The live capture has no desktop editor/timeline/player/properties/export frames
+  for areas 03–09. Their web-only tokens cannot confirm or replace existing desktop
+  geometry. Home card radii, type sizes and detailed icon bounds also remain gaps.
 
 ## Evidence
 
