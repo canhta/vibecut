@@ -471,3 +471,18 @@ fn timing_span_benchmark() {
         );
     }
 }
+
+#[test]
+fn bare_chinese_uses_the_shared_han_character_timing_policy() {
+    let registry = captions::LanguageRegistry::standard().unwrap();
+    let language = captions::LanguageTag::parse("zh").unwrap();
+    assert_eq!(
+        registry.profile(&language).timing_unit,
+        captions::TimingUnit::Character
+    );
+    let regional = captions::LanguageTag::parse("zh-CN").unwrap();
+    assert_eq!(
+        registry.profile(&regional).timing_unit,
+        captions::TimingUnit::Character
+    );
+}

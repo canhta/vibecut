@@ -1,4 +1,6 @@
 //! Offline provider policy and validated transcription/alignment/translation execution.
+#[cfg(feature = "candle-align")]
+pub mod alignment;
 pub mod anthropic;
 mod assembly;
 mod contracts;
@@ -21,6 +23,8 @@ pub use policy::*;
 /// Safe categories only: adapters must not attach response bodies or credentials.
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
+    #[error("alignment attention is unavailable or degenerate")]
+    AttentionUnavailable,
     #[error("structured output failed schema or semantic validation")]
     Schema,
     #[error("provider refused the operation")]

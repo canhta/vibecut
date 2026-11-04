@@ -205,6 +205,7 @@ pub fn catalog() -> Result<Vec<Model>, Error> {
                 sha256: "f536d03c2e95ebd2930cf0abec88e823bd17d3c1933da7ae6a82db3b80605e15".into(), size: 25847 },
         ],
     });
+    models.push(alignment_model()?);
     for model in &models {
         model.validate()?;
     }
@@ -223,4 +224,20 @@ pub fn suggested_transcriber(language: &captions::LanguageTag) -> Result<Model, 
         .into_iter()
         .find(|m| m.id == id && m.default_eligible())
         .ok_or(Error::Unsupported)
+}
+
+/// Pinned multilingual Candle alignment checkpoint; metadata never starts a transfer.
+pub fn alignment_model() -> Result<Model, Error> {
+    Ok(Model {
+        id: "whisper-small-dtw".into(), license: "Apache-2.0".into(),
+        license_url: "https://huggingface.co/openai/whisper-small/blob/973afd24965f72e36ca33b3055d56a652f456b4d/README.md".into(),
+        source: "https://huggingface.co/openai/whisper-small".into(),
+        languages: ["vi", "en", "zh", "zh-Hans", "zh-Hant"].into_iter().map(captions::LanguageTag::parse).collect::<Result<_,_>>()?,
+        files: vec![
+            ModelFile { name: "config.json".into(), url: "https://huggingface.co/openai/whisper-small/resolve/973afd24965f72e36ca33b3055d56a652f456b4d/config.json".into(), sha256: "e6a2b489da1b5aed65a8eb8d1e7466fa867ad5643a8bc138ba708bd56b2875c4".into(), size: 1967 },
+            ModelFile { name: "generation_config.json".into(), url: "https://huggingface.co/openai/whisper-small/resolve/973afd24965f72e36ca33b3055d56a652f456b4d/generation_config.json".into(), sha256: "71565b8ef50d0bf7a1193ed4bbed195b94e70c18894d81bba2f1233dcec3ab53".into(), size: 3868 },
+            ModelFile { name: "tokenizer.json".into(), url: "https://huggingface.co/openai/whisper-small/resolve/973afd24965f72e36ca33b3055d56a652f456b4d/tokenizer.json".into(), sha256: "27fc476bfe7f17299480be2273fc0608e4d5a99aba2ab5dec5374b4482d1a566".into(), size: 2480466 },
+            ModelFile { name: "model.safetensors".into(), url: "https://huggingface.co/openai/whisper-small/resolve/973afd24965f72e36ca33b3055d56a652f456b4d/model.safetensors".into(), sha256: "1d7734884874f1a1513ed9aa760a4f8e97aaa02fd6d93a3a85d27b2ae9ca596b".into(), size: 966995080 },
+        ],
+    })
 }

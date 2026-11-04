@@ -24,8 +24,6 @@ struct Attention {
     v: Linear,
     out: Linear,
     heads: usize,
-    /// cached keys/values (self-attention: grows; cross-attention: the audio's, computed once)
-    cache: Option<(Tensor, Tensor)>,
 }
 
 impl Attention {
@@ -46,7 +44,6 @@ impl Attention {
             v: candle_nn::linear(d, d, vb.pp("v_proj"))?,
             out: candle_nn::linear(d, d, vb.pp("out_proj"))?,
             heads,
-            cache: None,
         })
     }
 
@@ -57,46 +54,19 @@ impl Attention {
             .contiguous()
     }
 
-    /// `x`: queries (b, t, d). `kv`: None = self-attention on `x` (appending to the cache when
-    /// `cached`), Some(audio) = cross-attention (keys/values cached after the first call when
-    /// `cached`). Returns the output and the attention logits (b, heads, t, tk).
+    /// Queries (b,t,d), optional audio keys/values; returns output and QK logits.
     fn forward(
         &mut self,
         x: &Tensor,
         kv: Option<&Tensor>,
         mask: Option<&Tensor>,
-        cached: bool,
     ) -> Result<(Tensor, Tensor)> {
         let (_, t, d) = x.dims3()?;
         let dh = d / self.heads;
         let q = (self.split(&self.q.forward(x)?)? * (dh as f64).powf(-0.5))?;
-        let (k, v) = match kv {
-            None => {
-                let k = self.split(&self.k.forward(x)?)?;
-                let v = self.split(&self.v.forward(x)?)?;
-                if cached {
-                    let (k, v) = match &self.cache {
-                        Some((pk, pv)) => (Tensor::cat(&[pk, &k], 2)?, Tensor::cat(&[pv, &v], 2)?),
-                        None => (k, v),
-                    };
-                    self.cache = Some((k.clone(), v.clone()));
-                    (k, v)
-                } else {
-                    (k, v)
-                }
-            }
-            Some(xa) => match (&self.cache, cached) {
-                (Some((k, v)), true) => (k.clone(), v.clone()),
-                _ => {
-                    let k = self.split(&self.k.forward(xa)?)?;
-                    let v = self.split(&self.v.forward(xa)?)?;
-                    if cached {
-                        self.cache = Some((k.clone(), v.clone()));
-                    }
-                    (k, v)
-                }
-            },
-        };
+        let source = kv.unwrap_or(x);
+        let k = self.split(&self.k.forward(source)?)?;
+        let v = self.split(&self.v.forward(source)?)?;
         let mut qk = q.matmul(&k.transpose(2, 3)?.contiguous()?)?;
         if let Some(m) = mask {
             qk = qk.broadcast_add(m)?;
@@ -142,15 +112,12 @@ impl Block {
         x: &Tensor,
         xa: Option<&Tensor>,
         mask: Option<&Tensor>,
-        cached: bool,
     ) -> Result<(Tensor, Option<Tensor>)> {
-        let (a, _) = self
-            .attn
-            .forward(&self.attn_ln.forward(x)?, None, mask, cached)?;
+        let (a, _) = self.attn.forward(&self.attn_ln.forward(x)?, None, mask)?;
         let mut x = (x + a)?;
         let mut qk = None;
         if let (Some((c, ln)), Some(xa)) = (&mut self.cross, xa) {
-            let (a, w) = c.forward(&ln.forward(&x)?, Some(xa), None, cached)?;
+            let (a, w) = c.forward(&ln.forward(&x)?, Some(xa), None)?;
             x = (x + a)?;
             qk = Some(w);
         }
@@ -158,13 +125,6 @@ impl Block {
             .fc2
             .forward(&self.fc1.forward(&self.mlp_ln.forward(&x)?)?.gelu_erf()?)?;
         Ok(((x + h)?, qk))
-    }
-
-    fn reset(&mut self) {
-        self.attn.cache = None;
-        if let Some((c, _)) = &mut self.cross {
-            c.cache = None;
-        }
     }
 }
 
@@ -208,14 +168,17 @@ impl Encoder {
     }
 
     /// `mel`: (1, n_mels, 3000) → (1, 1500, d).
-    pub fn forward(&mut self, mel: &Tensor) -> Result<Tensor> {
+    pub fn forward(&mut self, mel: &Tensor, hooks: &dyn crate::ExecutionHooks) -> Result<Tensor> {
         let x = self.conv1.forward(mel)?.gelu_erf()?;
         let x = self.conv2.forward(&x)?.gelu_erf()?;
         let x = x.transpose(1, 2)?;
         let t = x.dim(1)?;
         let mut x = x.broadcast_add(&self.pos.narrow(0, 0, t)?)?;
         for b in &mut self.blocks {
-            x = b.forward(&x, None, None, false)?.0;
+            if hooks.cancelled() {
+                candle_core::bail!("cancelled");
+            }
+            x = b.forward(&x, None, None)?.0;
         }
         self.ln.forward(&x)
     }
@@ -223,13 +186,8 @@ impl Encoder {
 
 pub struct Decoder {
     tok: Embedding,
-    /// The token embedding transposed (d, vocab), contiguous: the output projection.
-    tok_t: Tensor,
     pos: Tensor,
     blocks: Vec<Block>,
-    ln: LayerNorm,
-    /// tokens already in the self-attention cache
-    offset: usize,
 }
 
 impl Decoder {
@@ -237,7 +195,6 @@ impl Decoder {
         let d = cfg.d_model;
         let tok = candle_nn::embedding(cfg.vocab_size, d, vb.pp("embed_tokens"))?;
         Ok(Self {
-            tok_t: tok.embeddings().t()?.contiguous()?,
             tok,
             pos: vb.get((cfg.max_target_positions, d), "embed_positions.weight")?,
             blocks: (0..cfg.decoder_layers)
@@ -250,59 +207,42 @@ impl Decoder {
                     )
                 })
                 .collect::<Result<_>>()?,
-            ln: candle_nn::layer_norm(d, 1e-5, vb.pp("layer_norm"))?,
-            offset: 0,
         })
     }
 
-    /// Forget the cached keys/values (new audio window or new token sequence).
-    pub fn reset(&mut self) {
-        self.offset = 0;
-        for b in &mut self.blocks {
-            b.reset();
-        }
-    }
-
-    fn mask(t: usize, offset: usize, dev: &Device) -> Result<Tensor> {
+    fn mask(t: usize, dev: &Device) -> Result<Tensor> {
         let m: Vec<f32> = (0..t)
-            .flat_map(|i| {
-                (0..offset + t).map(move |j| {
-                    if j > offset + i {
-                        f32::NEG_INFINITY
-                    } else {
-                        0.0
-                    }
-                })
-            })
+            .flat_map(|i| (0..t).map(move |j| if j > i { f32::NEG_INFINITY } else { 0.0 }))
             .collect();
-        Tensor::from_vec(m, (t, offset + t), dev)
+        Tensor::from_vec(m, (t, t), dev)
     }
 
-    /// Logits (1, t, vocab) for `tokens` appended to the cache. With `qk_heads`, also returns the
-    /// cross-attention logits of those (layer, head) pairs: (heads, t, audio frames).
+    /// Teacher-forced selected cross-attention logits (heads,t,audio frames).
     pub fn forward(
         &mut self,
         tokens: &[u32],
         xa: &Tensor,
-        cached: bool,
         qk_heads: Option<&[(usize, usize)]>,
-    ) -> Result<(Tensor, Option<Tensor>)> {
+        hooks: &dyn crate::ExecutionHooks,
+    ) -> Result<Option<Tensor>> {
         let dev = xa.device();
         let t = tokens.len();
-        let offset = if cached { self.offset } else { 0 };
         let ids = Tensor::new(tokens, dev)?.unsqueeze(0)?;
         let mut x = self
             .tok
             .forward(&ids)?
-            .broadcast_add(&self.pos.narrow(0, offset, t)?)?;
+            .broadcast_add(&self.pos.narrow(0, 0, t)?)?;
         let mask = if t > 1 {
-            Some(Self::mask(t, offset, dev)?)
+            Some(Self::mask(t, dev)?)
         } else {
             None
         };
         let mut picked = Vec::new();
         for (li, b) in self.blocks.iter_mut().enumerate() {
-            let (y, qk) = b.forward(&x, Some(xa), mask.as_ref(), cached)?;
+            if hooks.cancelled() {
+                candle_core::bail!("cancelled");
+            }
+            let (y, qk) = b.forward(&x, Some(xa), mask.as_ref())?;
             x = y;
             if let (Some(heads), Some(qk)) = (qk_heads, qk) {
                 for &(l, h) in heads {
@@ -312,17 +252,12 @@ impl Decoder {
                 }
             }
         }
-        if cached {
-            self.offset += t;
-        }
-        let x = self.ln.forward(&x)?;
-        let logits = x.broadcast_matmul(&self.tok_t)?;
         let qk = if picked.is_empty() {
             None
         } else {
             Some(Tensor::stack(&picked, 0)?)
         };
-        Ok((logits, qk))
+        Ok(qk)
     }
 }
 

@@ -86,6 +86,14 @@ fn standard_profiles() -> Result<LanguageRegistry, Error> {
         ),
         ("en", crate::TimingUnit::Word, 42, 20, ".!?…", "Noto Sans"),
         (
+            "zh",
+            crate::TimingUnit::Character,
+            16,
+            9,
+            "。！？…",
+            "Noto Sans CJK SC",
+        ),
+        (
             "zh-Hans",
             crate::TimingUnit::Character,
             16,

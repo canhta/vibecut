@@ -1,0 +1,26 @@
+[bans]
+# Scoped library limits approved 2026-11-04; direct dependencies stay latest stable.
+# No downgrades or third-party patches. Remove each skip when its listed parent
+# adopts the version already used by the rest of the workspace.
+skip = [
+    # candle-core 0.11.1 / tokenizers 0.23.2 / half / float8 use rand 0.9;
+    # proptest 1.12 is dev-only and uses rand 0.10. Remove when Candle unifies on 0.10.
+    { name = "rand", version = "=0.9.5" },
+    { name = "rand_core", version = "=0.9.5" },
+    # rand 0.9 -> rand_core 0.9 -> getrandom 0.3 -> r-efi 5.
+    { name = "getrandom", version = "=0.3.4" },
+    { name = "r-efi", version = "=5.3.0" },
+    # tokenizers -> spm_precompiled 0.1.4; remove when it adopts base64 0.22.
+    { name = "base64", version = "=0.13.1" },
+    # tokenizers -> fancy-regex 0.17; remove when its bit-set/bit-vec match proptest.
+    { name = "bit-set", version = "=0.8.0" },
+    { name = "bit-vec", version = "=0.8.0" },
+    # candle-core/nn -> safetensors 0.8 -> hashbrown 0.16; remove on 0.17 adoption.
+    { name = "hashbrown", version = "=0.16.1" },
+    # existing whisper-rs -> bindgen 0.72 uses 0.13, Candle/tokenizers add 0.14;
+    # remove when the existing bindgen line adopts itertools 0.14.
+    { name = "itertools", version = "=0.13.0" },
+    # candle-core -> gemm-common 0.19 -> sysctl 0.6 (macOS); remove on thiserror 2 adoption.
+    { name = "thiserror", version = "=1.0.69" },
+    { name = "thiserror-impl", version = "=1.0.69" },
+]

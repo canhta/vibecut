@@ -18,8 +18,9 @@ unless explicitly overridden. `CueTrack` groups cues; all models support serde.
 is redacted. BCP 47 tags validate syntax and standardize casing without a fixed
 language allowlist. No project store/schema is introduced here.
 
-`LanguageRegistry::standard` provides editable profiles for vi, en, zh-Hans and
-zh-Hant. Lookup tries progressively shorter tag prefixes then the generic profile.
+`LanguageRegistry::standard` provides editable profiles for vi, en, bare zh, zh-Hans and
+zh-Hant. Bare zh uses the Han-character policy as well; no locale fallback to
+English word timing is implied. Lookup tries progressively shorter tag prefixes then the generic profile.
 The profile's `timing_unit` selects preferred source grouping: English/generic
 words, Vietnamese syllables, and Han characters. UAX #29 keeps mixed Latin and
 full-width letter runs together while separating Han; dictionary-protected spans
