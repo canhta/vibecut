@@ -31,8 +31,9 @@ optional and manual-only while private. Before public contributions, add a
 Copy only the ticket's required files from a read-only source. The import commit
 is mechanical: rename our identifiers, remove unused features and provenance/history
 comments, preserve logic. Adapt behavior in separate commits. Both stages pass
-[verification](verification.md#checks); retain license notices required by
-[policy](open-source.md#licensing), without source-project commentary in code.
+[verification](verification.md#checks), including the local name gate. Do not add
+source notices, names or provenance anywhere; the maintainer clears licensing for
+maintainer-provided references directly with their owners.
 
 ## Upgrade policy
 
