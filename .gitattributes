@@ -1,0 +1,2 @@
+# Upstream source archives use LF; Git must not rewrite security patch contexts.
+xtask/patches/*.patch text eol=lf
