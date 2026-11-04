@@ -1,10 +1,12 @@
 use crate::{MediaError, Result};
 use ffmpeg_next as ff;
+use serde::{Deserialize, Serialize};
 use std::fmt;
 use time::{FrameRate, Rounding, Tick};
 
 /// Exact positive seconds per container timestamp unit.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(try_from = "(i32, i32)", into = "(i32, i32)")]
 pub struct TimeBase {
     numerator: i32,
     denominator: i32,
@@ -64,14 +66,14 @@ impl fmt::Debug for CodecParameters {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum StreamKind {
     Video,
     Audio,
     Other,
 }
 /// ITU-T H.273 color code points, preserved without guessing at HDR conversion.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ColorInfo {
     pub primaries: u32,
     pub transfer: u32,
@@ -114,14 +116,14 @@ impl ColorInfo {
         matches!(self.transfer, 16 | 18)
     }
 }
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct VideoInfo {
     pub width: u32,
     pub height: u32,
     pub color: ColorInfo,
     pub bit_depth: Option<u8>,
 }
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct AudioInfo {
     pub sample_rate: u32,
     pub channels: u16,
@@ -199,5 +201,17 @@ impl fmt::Debug for Packet {
             .field("stream", &self.stream())
             .field("size", &self.inner.size())
             .finish_non_exhaustive()
+    }
+}
+
+impl TryFrom<(i32, i32)> for TimeBase {
+    type Error = MediaError;
+    fn try_from(v: (i32, i32)) -> Result<Self> {
+        Self::new(v.0, v.1)
+    }
+}
+impl From<TimeBase> for (i32, i32) {
+    fn from(v: TimeBase) -> Self {
+        (v.numerator, v.denominator)
     }
 }

@@ -5,6 +5,23 @@ probe, demux, codec parameters, decode/encode, hardware selection, conversion,
 resampling and muxing. Rust timeline semantics, compositing, captions, text,
 provider policy, jobs and output promotion belong to their respective owners.
 
+## Source identity
+
+`SourceAsset::import` probes an absolute native path and streams its complete
+bytes through BLAKE3. `AssetData` validates persistable identity/path/hash and
+`SourceProbe` metadata, without serializing runtime codec handles. Metadata
+retains rational time bases/rates, optional duration/count/VFR evidence, audio
+start offsets/priming and video color/bit depth. Stream indexes are unique and
+capped at 256; paths require lossless Unicode serialization. Paths/hashes are
+redacted in asset debug output. Callers schedule imports and keep source files
+stable while probing/hashing; this is not a filesystem snapshot operation.
+
+`availability` checks file presence without hashing; missing media is a relink
+state, not a malformed project. `relink` accepts a new absolute path only if its
+full content hash matches, preserving asset identity and probed metadata.
+Presence alone does not prove unchanged content. Project persistence retains
+these media-owned contracts; it does not recreate probe or asset models.
+
 ## Entry points and timing
 
 - `probe(path)` / `PacketReader`: native `File` paths through seekable AVIO,

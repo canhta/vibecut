@@ -1,6 +1,7 @@
 //! Headless streaming media I/O through one dynamically linked LGPL FFmpeg backend.
 //! FFmpeg owns codec parameters, demux presentation timing, priming and reordering.
 
+mod asset;
 mod decode;
 mod encode;
 #[allow(unsafe_code)]
@@ -10,6 +11,9 @@ mod mux;
 mod read;
 mod resample;
 
+pub use asset::{
+    AssetAvailability, AssetData, AssetId, ContentHash, SourceAsset, SourceProbe, SourceStream,
+};
 pub use decode::{AudioDecoder, AudioFrame, DecodePreference, VideoDecoder, VideoFrame};
 pub use encode::{AudioEncoder, AudioEncoderSettings, VideoEncoder, VideoEncoderSettings};
 pub use ffmpeg_next::format::Pixel as PixelFormat;

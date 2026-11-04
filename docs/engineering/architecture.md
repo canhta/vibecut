@@ -47,7 +47,8 @@ in the [glossary](../../GLOSSARY.md), without creating a second model owner.
 
 | Contract | Owner | Required meaning |
 |---|---|---|
-| SourceAsset | media | Identity, path, content hash and probe: duration, codec/size/rational rate/VFR and audio rate/channels/start offset |
+| SourceAsset | media | Validated source identity, absolute path, full-content hash and persistable probe; see [media contract](../../crates/media/README.md#source-identity) |
+| Project | project | Immutable validated timeline snapshot and candidate commit seam, versioned persistence and atomic-file writer; see [project contract](../../crates/project/README.md) |
 | SourceRange | time | Nonempty half-open `[start, end)` in source ticks |
 | Transcript | captions | Stable segments, optional word ranges/confidence and identified source-unit spans with raw/NFC/display correspondence; provider/model/settings fingerprint |
 | Cue | captions | Source range, source-language text and per-language text with per-language edit flags and translation reference; preserve user edits unless explicitly commanded |

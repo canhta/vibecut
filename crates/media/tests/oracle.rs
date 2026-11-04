@@ -586,3 +586,39 @@ fn maximum_audio_frames_resample_without_loss() {
         assert!(converter.flush().unwrap().is_none());
     }
 }
+
+#[test]
+fn source_asset_import_retains_native_path_and_persistable_probe() {
+    let Some(original) = source() else {
+        return;
+    };
+    let path = common::fixtures_dir().join("nguồn phim dự án.mp4");
+    std::fs::copy(original, &path).unwrap();
+    let asset = media::SourceAsset::import(media::AssetId(42), path.clone()).unwrap();
+    assert_eq!(asset.path(), std::fs::canonicalize(&path).unwrap());
+    assert_eq!(
+        asset.content_hash(),
+        media::ContentHash::read(&path).unwrap()
+    );
+    assert_eq!(
+        asset.availability().unwrap(),
+        media::AssetAvailability::Present
+    );
+    assert!(asset.probe().duration.is_some());
+    let video = asset
+        .probe()
+        .streams
+        .iter()
+        .find(|s| s.kind == StreamKind::Video)
+        .unwrap();
+    assert_eq!(video.frame_rate, Some(time::FrameRate::FPS_29_97));
+    assert_eq!(video.video.as_ref().unwrap().width, 128);
+    let audio = asset
+        .probe()
+        .streams
+        .iter()
+        .find(|s| s.kind == StreamKind::Audio)
+        .unwrap();
+    assert_eq!(audio.audio.as_ref().unwrap().sample_rate, 48000);
+    assert!(!format!("{asset:?}").contains("nguồn"));
+}

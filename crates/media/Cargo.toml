@@ -24,3 +24,5 @@ wildcard_imports = "warn"
 ffmpeg-next = { version = "9", default-features = false, features = ["codec", "format", "software-resampling", "software-scaling"] }
 thiserror = "2.0.21"
 time = { path = "../time" }
+serde = { version = "1.0.229", features = ["derive"] }
+blake3 = "1.8.7"
