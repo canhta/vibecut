@@ -49,6 +49,11 @@ English/Vietnamese, theme and panel proportions use one bounded preference store
 
 ## Injection and inspection
 
+`Workspace::import_picked_files` applies native picker result paths through the
+same import queue as drops; kittests inject at this boundary without opening a
+dialog, then use real library/insert widgets. Import shutdown keeps its probe/work
+allowance reserved until the cancelled worker has joined.
+
 `Editor::ui` runs without a window/device. `Playback::new` injects `Sources`, which
 creates render's `SourceProvider`; production uses `FileSources` exactly as export
 does. `AudioPort::fill` accepts a headless device callback for transport tests.

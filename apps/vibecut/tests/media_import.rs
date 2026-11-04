@@ -294,6 +294,77 @@ fn drag_drop_imports_good_files_and_reports_typed_partial_failure() {
 }
 
 #[test]
+fn picker_result_imports_through_workspace_and_real_editor_widgets() {
+    use vibecut::workspace::Workspace;
+    let root = tempfile::tempdir().unwrap();
+    let mut app =
+        Workspace::new(root.path().join("recovery"), Preferences::default(), None).unwrap();
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while app.busy() {
+        app.tick();
+        assert!(Instant::now() < deadline);
+        std::thread::sleep(Duration::from_millis(2));
+    }
+    app.create().unwrap();
+    while app.busy() {
+        app.tick();
+        assert!(Instant::now() < deadline);
+        std::thread::sleep(Duration::from_millis(2));
+    }
+    app.editor
+        .as_mut()
+        .unwrap()
+        .set_import_probe(Arc::new(Probe::default()))
+        .unwrap();
+    let mut harness = Harness::builder()
+        .with_size(egui::vec2(1440.0, 900.0))
+        .build_ui_state(|ui, app: &mut Workspace| app.ui(ui), app);
+    harness.run_steps(2);
+    // Inject the OS picker's returned paths at the production result seam.
+    harness
+        .state_mut()
+        .import_picked_files(vec![
+            "/tmp/vibecut-import/picker-video.mp4".into(),
+            "/tmp/vibecut-import/picker-bad.mp4".into(),
+        ])
+        .unwrap();
+    loop {
+        harness.run_steps(1);
+        if !harness.state().editor.as_ref().unwrap().importing() {
+            break;
+        }
+        assert!(Instant::now() < deadline);
+        std::thread::sleep(Duration::from_millis(2));
+    }
+    let inspection = harness.state().editor.as_ref().unwrap().inspect().unwrap();
+    assert_eq!(inspection.import_imported, 1);
+    assert_eq!(inspection.import_failures.len(), 1);
+    assert_eq!(inspection.import_unfinished, 0);
+    assert!(inspection.import_failures[0].contains("test codec"));
+    harness
+        .get(By::new().predicate(|node| node.author_id() == Some("media.asset.1")))
+        .click();
+    harness.run_steps(2);
+    harness
+        .get(By::new().predicate(|node| node.author_id() == Some("media.insert")))
+        .click();
+    harness.run_steps(2);
+    let data = harness
+        .state()
+        .editor
+        .as_ref()
+        .unwrap()
+        .session
+        .project()
+        .data();
+    assert_eq!(data.assets.len(), 1);
+    assert_eq!(
+        data.timeline.tracks[0].items[0].source_asset,
+        Some(AssetId(1))
+    );
+}
+
+#[test]
 fn cancel_mid_batch_keeps_completed_assets_and_stops_the_rest() {
     let mut editor = editor();
     editor
@@ -458,6 +529,62 @@ fn cancel_before_worker_starts_reports_cancellation_without_failure() {
     let toast = inspection.import_toast.unwrap();
     assert!(toast.contains("cancelled"), "{toast}");
     assert!(!toast.contains("Import failed"), "{toast}");
+}
+
+#[test]
+fn shutdown_keeps_work_allowance_until_probe_exits() {
+    use std::sync::mpsc;
+    struct ExitingProbe {
+        started: mpsc::SyncSender<()>,
+        cancelled: mpsc::SyncSender<()>,
+        release: Mutex<mpsc::Receiver<()>>,
+    }
+    impl ImportProbe for ExitingProbe {
+        fn import(
+            &self,
+            _: AssetId,
+            _: PathBuf,
+            cancelled: Arc<AtomicBool>,
+        ) -> media::Result<SourceAsset> {
+            self.started.send(()).unwrap();
+            while !cancelled.load(Ordering::Acquire) {
+                std::thread::sleep(Duration::from_millis(1));
+            }
+            self.cancelled.send(()).unwrap();
+            self.release.lock().unwrap().recv().unwrap();
+            Err(MediaError::Cancelled)
+        }
+    }
+    let (started_send, started_receive) = mpsc::sync_channel(1);
+    let (cancelled_send, cancelled_receive) = mpsc::sync_channel(1);
+    let (release_send, release_receive) = mpsc::sync_channel(1);
+    let budget = ByteBudget::new(512 << 20).unwrap();
+    let mut queue = ImportQueue::new(budget.clone()).unwrap();
+    queue.set_probe(Arc::new(ExitingProbe {
+        started: started_send,
+        cancelled: cancelled_send,
+        release: Mutex::new(release_receive),
+    }));
+    queue
+        .start(vec!["/tmp/vibecut-import/shutdown-lease.mp4".into()], 1)
+        .unwrap();
+    queue.poll().unwrap();
+    started_receive
+        .recv_timeout(Duration::from_secs(5))
+        .unwrap();
+    let shutdown = std::thread::spawn(move || drop(queue));
+    cancelled_receive
+        .recv_timeout(Duration::from_secs(5))
+        .unwrap();
+    std::thread::sleep(Duration::from_millis(20));
+    let during_shutdown = budget.snapshot().unwrap().used;
+    release_send.send(()).unwrap();
+    shutdown.join().unwrap();
+    assert!(
+        during_shutdown >= 256 << 20,
+        "probe still running but allowance was released: {during_shutdown}"
+    );
+    assert_eq!(budget.snapshot().unwrap().used, 0);
 }
 
 #[test]

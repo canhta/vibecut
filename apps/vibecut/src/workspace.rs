@@ -271,6 +271,14 @@ impl Workspace {
             self.persist(None, leave, close, false)
         }
     }
+    /// Apply native picker result paths through the same import path as drops.
+    /// This OS boundary accepts injected results without opening a native dialog.
+    pub fn import_picked_files(&mut self, paths: Vec<PathBuf>) -> Result<()> {
+        self.editor
+            .as_mut()
+            .ok_or(Error::Invalid("no project"))?
+            .start_import(paths)
+    }
     fn poll_picker(&mut self) {
         let Some(mut picker) = self.picker.take() else {
             return;
@@ -299,10 +307,7 @@ impl Workspace {
                             .into_iter()
                             .map(|file| file.path().to_owned())
                             .collect();
-                        match &mut self.editor {
-                            Some(editor) => editor.start_import(paths),
-                            None => Err(Error::Invalid("no project")),
-                        }
+                        self.import_picked_files(paths)
                     }
                 };
                 if let Err(e) = result {

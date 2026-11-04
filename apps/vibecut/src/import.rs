@@ -124,9 +124,14 @@ pub struct ImportQueue {
 }
 impl Drop for ImportQueue {
     fn drop(&mut self) {
-        if let Some(job) = &self.job {
+        if let Some(job) = self.job.take() {
             job.cancelled.store(true, Ordering::Release);
             job.cancel.cancel();
+            let Job { receive, _work, .. } = job;
+            // Release a blocked sender, but keep its allowance until it exits.
+            drop(receive);
+            self.runner.shutdown();
+            drop(_work);
         }
     }
 }
