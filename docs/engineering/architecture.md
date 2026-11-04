@@ -39,7 +39,7 @@ README holds the details.
 | EditMapping | captions | Pure source-to-output segments; one source range may appear several times |
 | LanguageProfile | captions | Per-language segmentation, punctuation and font fallback data |
 | Job | engine | Identity, input fingerprint, progress, cancellation, typed failure, checkpoint |
-| Session, commands | engine | Owns Project and history; `execute(command_id, params) -> Result<Outcome>` |
+| Session, commands | engine | Owns immutable Arc<Project> snapshots and bounded history; typed Command and `execute(command_id, params) -> Result<Outcome>`; see [engine contract](../../crates/engine/README.md) |
 | Codec interfaces | media | Reference-counted packets and frames, rational time bases, decode/encode/flush, seek |
 | Export execution | render | Project snapshot, range and settings in; progress and cancellation hooks out |
 | Provider interfaces | ai | Transcriber, Aligner, Translator; capabilities per model and language; request-scoped consent |
@@ -51,8 +51,10 @@ progress and cancellation hooks and never build their own.
 **Commands.** Every project edit is an engine command with a stable ID, label,
 parameter schema and enabled predicate. UI, CLI, MCP and plugins all dispatch
 through the same registry. Commands validate, then commit all-or-nothing; a batch
-is one undo step and continuous drags merge. Presentation state and preferences
-stay in the app.
+or closure group is one undo step; continuous drags merge by key or explicit
+gesture begin/commit/cancel. Engine restores project, history and deferred changes
+on refusal or unwind; see the [transaction contract](../../crates/engine/README.md#transactions-gestures-and-changes).
+Presentation state and preferences stay in the app.
 
 **AI.** `ai` owns consent, cost estimates and capability checks once for every
 operation; consent binds provider, operation, content and languages, and retries
