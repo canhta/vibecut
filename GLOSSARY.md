@@ -21,3 +21,24 @@ admitted rational frame rates and audio sample rates.
 numerator and denominator rather than a floating value.
 
 **SourceRange**: A nonempty half-open `[start, end)` range in source-media ticks.
+
+**SourceAsset**: A source-media identity and its location, content fingerprint and
+probed stream information; timeline items refer to it without copying its media.
+
+**Transcript**: Source-language speech text with stable segments and available
+word or character timing, plus the provenance of its recognition.
+
+**Cue**: A timed subtitle in source coordinates, with source text, per-language
+translations and edit protection for user changes.
+
+**EditMapping**: The correspondence between selected source ranges and their
+positions in an output timeline; one source span can appear more than once.
+
+**LanguageProfile**: Segmentation, reading-speed, punctuation and font-fallback
+rules for a content language, with a generic fallback for unknown tags.
+
+**Job**: A tracked editing operation with progress, cancellation, failure and
+checkpoint information.
+
+**Session**: The active project together with its command execution and undo/redo
+history.

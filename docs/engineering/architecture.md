@@ -20,20 +20,22 @@ and passes with only `xtask`. `xtask` is tooling, with no product dependencies.
 | Package | Path | Responsibility | Allowed workspace dependencies |
 |---|---|---|---|
 | time | crates/time | Tick time, rational rates, source ranges | - |
-| media | crates/media | Probe, source assets, pure Rust demux/mux/decode and codec traits | time |
+| media | crates/media | Source assets, probe, demux/mux, codec interfaces, software decode and speech-audio preparation | time |
 | oscodec | crates/oscodec | Safe hardware codec adapter over platform FFI | time, media |
 | project | crates/project | Timeline model, validation and project persistence | time, media, captions |
 | captions | crates/captions | Transcript/cue model, segmentation, mapping, SRT/VTT | time |
 | text | crates/text | Unicode shaping and rasterization | - |
-| render | crates/render | Reference compositor, audio mix and export; injected codec traits | time, media, project, captions, text |
-| ai | crates/ai | Provider contracts, consent-aware transcription/translation adapters | time, media, captions |
-| engine | crates/engine | Session, commands, history, jobs and cache; adapter wiring | time, media, oscodec, project, captions, text, render, ai |
-| vibecut-cli | apps/vibecut-cli | Headless command adapter and composition | engine, oscodec |
-| vibecut | apps/vibecut | Desktop UI and composition | engine, oscodec |
+| render | crates/render | CPU compositor, caption overlay, audio mix and export execution; injected codecs | time, media, project, captions, text |
+| ai | crates/ai | Provider interfaces, capabilities, consent/cost policy and transcription/alignment/translation adapters | time, media, captions |
+| engine | crates/engine | Session, commands, history, jobs/cache and processing orchestration; adapter selection | time, media, oscodec, project, captions, text, render, ai |
+| vibecut-cli | apps/vibecut-cli | Headless command adapter and composition | engine, oscodec, media, ai |
+| vibecut | apps/vibecut | Desktop UI, device playback, GPU adapter, presentation/preferences and composition | engine, oscodec, media, render, ai |
 
 Dependencies point from apps through engine to domain/processing crates and time.
 `media` defines codec traits; engine/apps inject `oscodec`. Render consumes those
-traits, never the concrete platform adapter. Core crates exclude egui/wgpu and
+traits, never the concrete platform adapter. The desktop app owns the optional
+wgpu compositor adapter; render owns its device-free interface and CPU reference,
+shared by preview and export. Core crates exclude egui/wgpu and
 platform bindings; `oscodec` admits platform codec bindings only. Update this table
 in the same change as an admitted responsibility or edge. App tickets add actual
 app members to the root manifest; do not create empty app crates in advance.
@@ -49,14 +51,35 @@ in the [glossary](../../GLOSSARY.md), without creating a second model owner.
 | SourceRange | time | Nonempty half-open `[start, end)` in source ticks |
 | Transcript | captions | Stable segments and optional word ranges/confidence; provider/model/settings fingerprint |
 | Cue | captions | Source range, source-language text and per-language text with per-language edit flags and translation reference; preserve user edits unless explicitly commanded |
-| EditMapping | captions | Pure source-to-output segments; drop outside cues, clamp intersections, preserve identity/edit flags; rebuild from source |
+| EditMapping | captions | Pure source-to-output segments; a range may yield several intersections; preserve source identity/edit flags with deterministic fragment identity; rebuild from source |
 | Job | engine | Identity, kind, input fingerprint, bounded progress/stage, cancellation, typed failure and checkpoint |
-| Session / commands | engine | Own Project/history; typed API plus `execute(command_id, params) -> Result<Outcome>` |
+| Session / commands | engine | Own Project/history; typed interface plus `execute(command_id, params) -> Result<Outcome>` |
+| Codec interfaces | media | Packet/frame metadata, capabilities, decode/encode/flush and typed unsupported input; software and OS-codec adapters use the same interface |
+| ExportSettings / execution | render | Immutable project snapshot, output range/settings and injected codecs/compositor; execution reports progress/cancellation without owning an engine Job |
+| Provider interfaces | ai | Transcriber, Aligner and Translator; capabilities per model/mode/language, validated results, request-scoped consent and cost estimate |
+| LanguageProfile | captions | Language data lookup with generic fallback; callers pass resolved rules/fonts to processing modules |
+
+`engine` wraps render/AI/media execution in its Job runner; processing crates
+never import engine or create competing Job, retry, checkpoint or cache protocols.
+Pass cancellation/progress hooks into execution; engine retains scheduling, retry
+budgets and promotion of completed outputs. Apps inject concrete adapters;
+engine selects them by capability and applies software decode fallback once.
+An absent encoder returns `Unsupported`; software decode is not software encode.
+
+AI owns upload consent, estimates and provider/model capability validation once;
+transcription, translation and clip suggestion adapters reuse that policy. Consent
+covers the provider, payload and operation; retries/chunks stay within that scope.
+LanguageProfile lookup and text normalization belong to captions; text consumes
+plain layout/font inputs without depending on captions. Text still validates its
+own public input; validation of a different trust seam is not duplicate logic.
 
 Everything that edits a project is a command. UI, CLI and future MCP/plugins use
 the same engine registry: stable ID, label, parameter schema and enabled predicate.
 Validate before committing; commands are all-or-nothing. A batch is one undo step;
-continuous drags merge by key. UI-local presentation state may stay in the app.
+continuous drags merge by key. UI-local presentation state stays in the app. The app action registry maps gestures
+to engine command IDs or app-local actions; command schemas and enabled predicates
+remain engine-owned. App preferences have one app-owned store, separate from Project
+and project undo history. Headless callers need no widget, device or preference state.
 
 ## Languages
 

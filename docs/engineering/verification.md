@@ -45,7 +45,11 @@ Fixture helpers skip with an explicit message when ffmpeg/ffprobe is absent;
 is a failure, not a skip. Never commit recordings, media or model weights.
 
 Goldens use generated inputs or [licensed small assets](open-source.md#assets),
-fixed canvas/rate/font/settings and deterministic CPU rendering. Pin test fonts and
+fixed canvas/rate/font/settings and deterministic CPU rendering. Keep fixture
+generation/probe helpers dev-only with media, and raster comparison helpers
+dev-only with their rendering owner; reuse them when a second test needs them.
+Tests exercise public execution interfaces with injected codec/provider adapters,
+including cancellation and failure, rather than bypassing them for helper tests. Pin test fonts and
 avoid machine-dependent font fallback. Keep small expected PNGs with attribution;
 write actual/diff images under `target/`. Changes require visual inspection and an
 explained re-bless, never automatic acceptance. Record dimensions and pixel tolerance.
