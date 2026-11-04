@@ -12,7 +12,7 @@ use std::{
 use time::{Tick, TimeRange};
 fn main() {
     if let Err(error) = run() {
-        eprintln!("benchmark failed: {error}");
+        eprintln!("benchmark failed: {error:?}");
         std::process::exit(1);
     }
 }
@@ -61,7 +61,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             let output = if mode.starts_with("text") {
                 text_benchmark(hooks, mode == "text-uncached")?
             } else {
-                export_benchmark(hooks)?
+                export_benchmark(hooks, mode == "blur")?
             };
             serde_json::to_vec(&output).map_err(|_| EditError::InvalidParams)
         },
@@ -80,10 +80,10 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 break;
             }
             if matches!(s.state, JobState::Failed | JobState::Cancelled) {
-                return Err(s
-                    .error
-                    .map_or_else(|| "job failure".to_owned(), |e| e.to_string())
-                    .into());
+                return match s.error {
+                    Some(error) => Err(Box::new(error)),
+                    None => Err("job failure".into()),
+                };
             }
         }
         std::thread::sleep(Duration::from_millis(1));
@@ -105,6 +105,7 @@ fn text_benchmark(
         hidden: false,
         locked: false,
         items: vec![project::Item {
+            effects: Vec::new(),
             animations: Default::default(),
             id: project::ItemId(0),
             source_asset: None,
@@ -141,7 +142,10 @@ fn text_benchmark(
         serde_json::json!({"cache_enabled":!uncached,"cache_entries":stats.entries,"cache_bytes":stats.bytes,"cache_hits":stats.hits,"cache_misses":stats.misses,"mode":"text","canvas":[640,360],"font":"Inter Regular 40px with bundled CJK fallback","cold_ms":cold.as_secs_f64()*1000.0,"warm_100_ms":elapsed.as_secs_f64()*1000.0,"warm_mean_ms":elapsed.as_secs_f64()*10.0,"pixel_equality":true}),
     )
 }
-fn export_benchmark(hooks: &engine::jobs::JobContext) -> Result<serde_json::Value, EditError> {
+fn export_benchmark(
+    hooks: &engine::jobs::JobContext,
+    blur: bool,
+) -> Result<serde_json::Value, EditError> {
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../target/fixtures/render");
     std::fs::create_dir_all(&root)?;
     let input = root.join("benchmark-60s-1080p.mp4");
@@ -196,6 +200,7 @@ fn export_benchmark(hooks: &engine::jobs::JobContext) -> Result<serde_json::Valu
         hidden: false,
         locked: false,
         items: vec![project::Item {
+            effects: Vec::new(),
             animations: Default::default(),
             id: project::ItemId(0),
             source_asset: Some(media::AssetId(0)),
@@ -206,13 +211,34 @@ fn export_benchmark(hooks: &engine::jobs::JobContext) -> Result<serde_json::Valu
             }),
         }],
     });
+    if blur
+        && let Some(item) = d
+            .timeline
+            .tracks
+            .first_mut()
+            .and_then(|t| t.items.first_mut())
+    {
+        item.effects.push(project::EffectInstance {
+            id: "blur".into(),
+            enabled: true,
+            params: Default::default(),
+        });
+    }
     let p = project::Project::new(d)?;
     let mut settings = render::ExportSettings::from_project(&p);
-    settings.render = render::RenderSettings::portrait(&p);
+    settings.render = if blur {
+        render::RenderSettings::from_project(&p)
+    } else {
+        render::RenderSettings::portrait(&p)
+    };
     settings.include_audio = false;
     settings.mode = render::ExportMode::Encode;
     settings.overwrite = project::atomic::Overwrite::Replace;
-    let output = root.join("benchmark-60s-portrait.mp4");
+    let output = root.join(if blur {
+        "benchmark-60s-blur.mp4"
+    } else {
+        "benchmark-60s-portrait.mp4"
+    });
     let start = Instant::now();
     let receipt = render::export(
         &p,
@@ -223,6 +249,6 @@ fn export_benchmark(hooks: &engine::jobs::JobContext) -> Result<serde_json::Valu
     )?;
     let elapsed = start.elapsed();
     Ok(
-        serde_json::json!({"mode":"export","input_seconds":duration.seconds(),"input_canvas":[1920,1080],"output_canvas":[1080,1920],"frames":receipt.video_frames,"elapsed_seconds":elapsed.as_secs_f64(),"fps":receipt.video_frames as f64/elapsed.as_secs_f64(),"working_frame_bytes":render::Image::bytes(1080,1920)?}),
+        serde_json::json!({"mode":if blur { "blur" } else { "export" },"input_seconds":duration.seconds(),"input_canvas":[1920,1080],"output_canvas":[settings.render.width,settings.render.height],"frames":receipt.video_frames,"elapsed_seconds":elapsed.as_secs_f64(),"fps":receipt.video_frames as f64/elapsed.as_secs_f64(),"working_frame_bytes":render::Image::bytes(settings.render.width,settings.render.height)?}),
     )
 }

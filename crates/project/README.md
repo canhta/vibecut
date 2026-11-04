@@ -110,8 +110,8 @@ or renderer output claim is made.
 ## Persistence and limits
 
 `encode`/`decode` use one JSON envelope: `format`, `schema_version`, `generator`,
-`project`. Current schema 3 stores ProjectId as a canonical decimal string, preserving
-all u64 identity bits for control clients; other IDs remain numeric. Schemas 1 and 2
+`project`. Current schema 4 stores ProjectId as a canonical decimal string, preserving
+all u64 identity bits for control clients; other IDs remain numeric. Schemas 1–3
 are refused rather than migrated or silently defaulted. Older schemas return `TooOld`, newer schemas `TooNew`; there are no
 migration or compatibility paths. Unknown current-schema project/envelope fields
 are refused. `WriterLease::save` serializes completely before touching the destination;
@@ -261,3 +261,16 @@ project's metadata. A sidecar write error is returned; it does not roll back a
 previously successful project publication. Callers acknowledge a save only after
 both writes succeed. `tests/metadata.rs` covers bounds, fallback, native paths,
 symlink refusal, external project replacement and round-trip independence.
+
+## Item effects
+
+`effect_definitions()` exposes the admitted effect names and scalar parameter bounds,
+defaults and animation capability for UI consumers. `Item.effects` is an ordered stack of at most 64 visual `EffectInstance`s. Instance
+IDs are item-local ASCII animation identifiers (1–64 bytes); duplicates refuse.
+`EffectParams::Blur` stores finite intensity 0–100 (default 15); `enabled` bypasses
+an instance. Audio items refuse visual effects. Evaluation/device work belongs to
+render/the desktop app. Animated overrides use the existing `Animations` map and
+`Param` storage at `effects.<instance-id>.params.intensity`, with scalar channels
+only. No second keyframe store is introduced. Removing an effect removes its
+animation paths; undo restores both. Schema 4 adds the required stack and refuses
+older envelopes through the existing typed version errors.

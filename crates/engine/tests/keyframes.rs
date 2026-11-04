@@ -52,6 +52,7 @@ fn session() -> Session {
         hidden: false,
         locked: false,
         items: vec![Item {
+            effects: Vec::new(),
             id: ItemId(2),
             source_asset: None,
             source_range: SourceRange::new(frame(50), frame(650)).unwrap(),

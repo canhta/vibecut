@@ -45,6 +45,7 @@ fn track_order_half_opacity_and_half_open_frames() {
         hidden: false,
         locked: false,
         items: vec![project::Item {
+            effects: Vec::new(),
             animations: Default::default(),
             id: project::ItemId(1),
             source_asset: None,
@@ -104,6 +105,7 @@ fn animated_overlay_project(
         hidden: false,
         locked: false,
         items: vec![project::Item {
+            effects: Vec::new(),
             animations,
             id: project::ItemId(0),
             source_asset: None,
@@ -374,6 +376,7 @@ fn immutable_text_reuse_is_bounded_invalidates_and_matches_uncached_pixels() {
         .into_iter()
         .enumerate()
         .map(|(n, (content, font_size, color))| project::Item {
+            effects: Vec::new(),
             animations: Default::default(),
             id: project::ItemId(n as u64 + 1),
             source_asset: None,
@@ -445,6 +448,7 @@ fn text_cache_releases_inactive_entries_under_new_frame_pressure() {
         .into_iter()
         .enumerate()
         .map(|(n, font_size)| project::Item {
+            effects: Vec::new(),
             animations: Default::default(),
             id: project::ItemId(n as u64 + 1),
             source_asset: None,
@@ -524,6 +528,7 @@ fn caption_expansion_is_refused_before_raster_allocation() {
         hidden: false,
         locked: false,
         items: vec![project::Item {
+            effects: Vec::new(),
             animations: Default::default(),
             id: project::ItemId(0),
             source_asset: Some(media::AssetId(0)),

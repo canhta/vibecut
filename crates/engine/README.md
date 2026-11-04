@@ -904,3 +904,13 @@ a persistence job starts (including Busy, unsupported names and lease IO errors)
 return their typed error without poisoning the active autosave owner; choosing a
 different destination can succeed. Once a job is admitted, publication and worker
 failures retain the sticky error policy.
+
+## Effect commands
+
+`effects.add { item, effect }`, `effects.remove { item, effect: instance_id }` and
+`effects.update_params { item, effect: instance_id, params }` mutate the project
+stack through normal atomic history. Locked/missing items, duplicate IDs, unknown
+instances, wrong types and out-of-range intensity refuse. Add stores enabled state
+and static parameters; scalar animation overrides use `keyframes.set_param` at
+`effects.<id>.params.intensity`. Remove deletes those animation paths in the same
+undo step. CLI `exec` consumes these same registered commands before export.

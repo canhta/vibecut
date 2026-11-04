@@ -100,6 +100,7 @@ fn overlay_project_color(
         hidden: false,
         locked: false,
         items: vec![project::Item {
+            effects: Vec::new(),
             animations: Default::default(),
             id: project::ItemId(0),
             source_asset: None,
@@ -282,6 +283,7 @@ fn media_project(project_path: &Path, video: &Path, audio: Option<&Path>) {
         hidden: false,
         locked: false,
         items: vec![project::Item {
+            effects: Vec::new(),
             animations: Default::default(),
             id: project::ItemId(0),
             source_asset: Some(media::AssetId(1)),
@@ -304,6 +306,7 @@ fn media_project(project_path: &Path, video: &Path, audio: Option<&Path>) {
             hidden: false,
             locked: false,
             items: vec![project::Item {
+                effects: Vec::new(),
                 animations: Default::default(),
                 id: project::ItemId(1),
                 source_asset: Some(media::AssetId(2)),
@@ -1127,4 +1130,44 @@ fn view_state_persists_in_optional_metadata_without_rewriting_project() {
     assert_eq!(code(&busy), 3);
     assert_eq!(error_json(&busy)["error"]["code"], "busy");
     drop(lease);
+}
+
+#[test]
+fn cli_blur_executes_and_export_encodes_instead_of_copying() {
+    if !tools() {
+        return;
+    }
+    let dir = tempfile::tempdir().unwrap();
+    let video = dir.path().join("input.mp4");
+    let project = dir.path().join("blur.vibecut");
+    let output_path = dir.path().join("blur.mp4");
+    generate_av(&video);
+    media_project(&project, &video, None);
+    exec(
+        &project,
+        "effects.add",
+        json!({"item":0,"effect":{"id":"blur","enabled":true,"params":{"kind":"blur","intensity":100.0}}}),
+    );
+    let output = cli(&[
+        os("export"),
+        project.as_os_str(),
+        os("--out"),
+        output_path.as_os_str(),
+        os("--json"),
+    ]);
+    assert_eq!(
+        code(&output),
+        0,
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert_eq!(stdout_json(&output)["status"], "completed");
+    let source = decoded_rgb(&video, 128, 96, &[0]);
+    let actual = decoded_rgb(&output_path, 128, 96, &[0]);
+    let difference: u64 = source[0]
+        .iter()
+        .zip(&actual[0])
+        .map(|(a, b)| u64::from(a.abs_diff(*b)))
+        .sum();
+    assert!(difference > 10000, "blur was bypassed: {difference}");
 }

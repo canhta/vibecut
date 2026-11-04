@@ -1,5 +1,9 @@
 //! Validated headless timeline snapshots and versioned project persistence.
 mod animation;
+mod effects;
+pub use effects::{
+    EffectDefinition, EffectInstance, EffectParamDefinition, EffectParams, effect_definitions,
+};
 pub mod atomic;
 pub mod autosave;
 mod bezier;

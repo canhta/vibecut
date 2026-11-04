@@ -676,6 +676,7 @@ fn project_aggregate_key_budget_and_item_schema_are_enforced() {
         locked: false,
         items: (0..2)
             .map(|i| Item {
+                effects: Vec::new(),
                 id: ItemId(i),
                 source_asset: None,
                 start: Tick(i as i64 * 10),

@@ -2,6 +2,7 @@
 mod audio;
 mod caption;
 pub use caption::{CaptionBackground, CaptionOutline, CaptionPosition, CaptionStyle};
+pub mod effects;
 mod export;
 mod image;
 mod scene;

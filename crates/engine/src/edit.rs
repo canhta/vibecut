@@ -186,6 +186,7 @@ pub(crate) fn apply(
             unlocked(t)?;
             let id = ItemId(alloc(next)?);
             t.items.push(Item {
+                effects: Vec::new(),
                 animations: new.animations,
                 id,
                 source_asset: new.source_asset,
@@ -281,6 +282,41 @@ pub(crate) fn apply(
             item(&mut data, id)?.content = content;
             // Explicit content replacement becomes authoritative for later previews.
             sources.remove(&id);
+        }
+        Command::AddEffect { item: id, effect } => {
+            let item = item(&mut data, id)?;
+            item.effects.push(effect);
+        }
+        Command::RemoveEffect { item: id, effect } => {
+            let item = item(&mut data, id)?;
+            let index = item
+                .effects
+                .iter()
+                .position(|e| e.id == effect)
+                .ok_or(EditError::Invalid("missing effect"))?;
+            item.effects.remove(index);
+            let prefix = format!("effects.{effect}.params.");
+            let paths: Vec<_> = item
+                .animations
+                .iter()
+                .filter(|(p, _)| p.as_str().starts_with(&prefix))
+                .map(|(p, _)| p.clone())
+                .collect();
+            for path in paths {
+                item.animations.remove(&path);
+            }
+        }
+        Command::UpdateEffectParams {
+            item: id,
+            effect,
+            params,
+        } => {
+            let item = item(&mut data, id)?;
+            item.effects
+                .iter_mut()
+                .find(|e| e.id == effect)
+                .ok_or(EditError::Invalid("missing effect"))?
+                .params = params;
         }
         Command::SetAnimatedParam {
             item: id,

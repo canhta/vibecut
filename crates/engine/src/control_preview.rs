@@ -131,6 +131,7 @@ pub(crate) fn preview(
                     hidden: false,
                     locked: false,
                     items: vec![project::Item {
+                        effects: Vec::new(),
                         animations: Default::default(),
                         id: background_id,
                         source_asset: None,
@@ -161,6 +162,7 @@ pub(crate) fn preview(
                     hidden: false,
                     locked: false,
                     items: vec![project::Item {
+                        effects: Vec::new(),
                         animations: Default::default(),
                         id: label_id,
                         source_asset: None,

@@ -138,6 +138,11 @@ fn seed() -> Session {
             hidden: false,
             locked: false,
             items: vec![Item {
+                effects: vec![project::EffectInstance {
+                    id: "blur1".into(),
+                    enabled: true,
+                    params: Default::default(),
+                }],
                 id: ItemId(1),
                 animations,
                 source_asset: None,
@@ -165,6 +170,7 @@ fn seed() -> Session {
             hidden: false,
             locked: false,
             items: vec![Item {
+                effects: Vec::new(),
                 id: ItemId(4),
                 animations: Default::default(),
                 source_asset: Some(media::AssetId(0)),
@@ -1340,6 +1346,7 @@ fn review_integer_derived_source_ticks_and_batch_are_refused_atomically() {
             hidden: false,
             locked: false,
             items: vec![Item {
+                effects: Vec::new(),
                 id: ItemId(1),
                 animations: Default::default(),
                 source_asset: None,
@@ -1464,6 +1471,7 @@ fn review_integer_history_destination_and_legacy_json_share_candidate_validation
         hidden: false,
         locked: false,
         items: vec![Item {
+            effects: Vec::new(),
             id: ItemId(1),
             animations: Default::default(),
             source_asset: None,

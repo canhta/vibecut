@@ -5826,6 +5826,7 @@ dependencies = [
  "engine",
  "image",
  "media",
+ "pollster",
  "project",
  "render",
  "rfd",

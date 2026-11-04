@@ -1,6 +1,7 @@
 //! Native editor frontend. Device creation and window ownership stay in main.
 pub mod capture;
 pub mod catalog;
+pub mod effects;
 mod frontend;
 pub mod import;
 pub mod lifecycle;

@@ -52,6 +52,7 @@ fn audio(port: Arc<AudioPort>, rate: u32) -> Result<cpal::Stream> {
 }
 struct Native {
     workspace: Workspace,
+    effects: Option<Arc<vibecut::effects::GpuEffects>>,
     store: PreferenceStore,
     _stream: Option<cpal::Stream>,
     audio_port: Option<Arc<AudioPort>>,
@@ -80,6 +81,15 @@ impl eframe::App for Native {
         }
         if let Some(editor) = &mut self.workspace.editor {
             let port = editor.playback.audio_port();
+            if self
+                .audio_port
+                .as_ref()
+                .is_none_or(|old| !Arc::ptr_eq(old, &port))
+                && let Some(effects) = &self.effects
+                && let Err(error) = editor.playback.set_effects(effects.clone())
+            {
+                tracing::warn!(category = "effects_unavailable", error = %error, "GPU effects unavailable");
+            }
             if self
                 .audio_port
                 .as_ref()
@@ -259,9 +269,16 @@ fn run() -> Result<()> {
     eframe::run_native(
         "VibeCut",
         options,
-        Box::new(move |_| {
+        Box::new(move |cc| {
+            let effects = cc.wgpu_render_state.as_ref().and_then(|state| {
+                match pollster::block_on(vibecut::effects::GpuEffects::new(state.device.clone(), state.queue.clone())) {
+                    Ok(adapter) => Some(Arc::new(adapter)),
+                    Err(error) => { tracing::warn!(category = "effects_unavailable", error = %error, "CPU effects fallback"); None }
+                }
+            });
             Ok(Box::new(Native {
                 workspace,
+                effects,
                 store,
                 _stream: None,
                 audio_port: None,

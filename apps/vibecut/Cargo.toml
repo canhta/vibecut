@@ -13,6 +13,7 @@ path = "src/main.rs"
 workspace = true
 
 [dependencies]
+pollster = "1.0.1"
 rfd = { version = "0.17.2", default-features = false }
 eframe = { version = "0.37.0", default-features = false, features = ["wgpu", "accesskit", "x11", "wayland"] }
 cpal = "0.18.2"

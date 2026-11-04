@@ -72,6 +72,7 @@ impl Default for Placement {
 pub struct RenderSettings {
     pub width: u32,
     pub height: u32,
+    pub effects: Option<Arc<dyn crate::effects::EffectCompositor>>,
     pub placements: BTreeMap<ItemId, Placement>,
     pub background_blur: Option<u32>,
     pub text_cache_bytes: u64,
@@ -84,6 +85,7 @@ impl RenderSettings {
         Self {
             width: project.data().canvas.width,
             height: project.data().canvas.height,
+            effects: None,
             placements: BTreeMap::new(),
             background_blur: None,
             text_cache_bytes: 8 << 20,
@@ -359,6 +361,23 @@ impl<'a> Renderer<'a> {
             let local = local_time(item, at)?;
             let placement = self.placement_at(item, local)?;
             let source_at = source_time(item, at)?;
+            let _plan = if item.effects.iter().any(|effect| effect.enabled) {
+                Some(hooks.reserve(
+                    MemoryKind::Compositor,
+                    item.effects.len() as u64
+                        * 512
+                        * (std::mem::size_of::<crate::effects::EffectPass>() as u64 + 49 * 4),
+                )?)
+            } else {
+                None
+            };
+            let passes = crate::effects::evaluate(item, local, out.width, out.height)?;
+            let below = if passes.is_empty() {
+                None
+            } else {
+                let layer = Image::new(out.width, out.height, [0.0; 4], hooks)?;
+                Some(std::mem::replace(&mut out, layer))
+            };
             match &item.content {
                 ItemParams::Video(_) => {
                     let image = if prepared.as_ref().is_some_and(|(id, _)| *id == item.id) {
@@ -457,6 +476,33 @@ impl<'a> Renderer<'a> {
                     }
                 }
                 ItemParams::Audio(_) => {}
+            }
+            if let Some(mut below) = below {
+                use crate::effects::{CpuEffects, EffectCompositor, EffectInputs};
+                let inputs = || EffectInputs {
+                    coverage: None,
+                    below: &below,
+                };
+                let cpu = CpuEffects;
+                let adapter = self.settings.effects.as_deref().unwrap_or(&cpu);
+                let filtered = match adapter.apply(&out, &passes, inputs(), hooks) {
+                    Err(Error::Unsupported(_)) => cpu.apply(&out, &passes, inputs(), hooks)?,
+                    result => result?,
+                };
+                if filtered.width != below.width || filtered.height != below.height {
+                    return Err(Error::Invalid("effect output dimensions"));
+                }
+                for (destination, source) in below
+                    .pixels
+                    .chunks_mut(below.width as usize)
+                    .zip(filtered.pixels.chunks(filtered.width as usize))
+                {
+                    check(hooks)?;
+                    for (dst, src) in destination.iter_mut().zip(source) {
+                        over(dst, *src, 1.0);
+                    }
+                }
+                out = below;
             }
         }
         Ok(out)

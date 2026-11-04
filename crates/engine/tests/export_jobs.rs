@@ -38,6 +38,7 @@ fn project() -> Arc<project::Project> {
         hidden: false,
         locked: false,
         items: vec![project::Item {
+            effects: Vec::new(),
             animations: Default::default(),
             id: project::ItemId(0),
             source_asset: None,
@@ -351,6 +352,7 @@ fn caption_project() -> project::Project {
             .into_iter()
             .enumerate()
             .map(|(n, at)| Item {
+                effects: Vec::new(),
                 id: ItemId(n as u64 + 1),
                 animations: Default::default(),
                 source_asset: Some(media::AssetId(1)),

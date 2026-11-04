@@ -167,6 +167,7 @@ impl ItemParams {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct Item {
+    pub effects: Vec<crate::EffectInstance>,
     pub animations: crate::Animations,
     pub id: ItemId,
     pub source_asset: Option<AssetId>,
@@ -286,6 +287,24 @@ fn validate(data: &ProjectData) -> Result<()> {
         }
         let mut end = Tick::ZERO;
         for item in &track.items {
+            if !item.effects.is_empty() && matches!(item.content, ItemParams::Audio(_)) {
+                return Err(Error::Invalid("visual effect on audio item"));
+            }
+            if item.effects.len() > 64 {
+                return Err(Error::TooLarge("item effects"));
+            }
+            let mut effect_ids = BTreeSet::new();
+            for effect in &item.effects {
+                effect.validate()?;
+                if !effect_ids.insert(&effect.id) {
+                    return Err(Error::Invalid("duplicate effect id"));
+                }
+                if let Some(param) = item.animations.get(&effect.intensity_path()?)
+                    && !matches!(param.value_at(Tick::ZERO)?, crate::ParamValue::Scalar(_))
+                {
+                    return Err(Error::Invalid("blur animation must be scalar"));
+                }
+            }
             item.animations.validate()?;
             keys = keys
                 .checked_add(item.animations.key_count())

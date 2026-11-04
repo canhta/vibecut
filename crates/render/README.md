@@ -3,7 +3,7 @@
 CPU reference compositor, shared sample-window mixer and bounded MP4 export.
 Consumes immutable project snapshots; media owns codecs/conversion/mux, text owns
 shaping/rasterization, project owns atomic publication, engine owns scheduling and
-aggregate byte policy. No UI, effects graph or persisted render state; it evaluates
+aggregate byte policy. No UI, device or persisted render state; it evaluates
 project-owned keyframed opacity.
 
 ## Working pixels and scene
@@ -223,3 +223,30 @@ exactly (SSIM 1, PSNR infinity); external-reference SSIM is 0.994169 and PSNR
 38.998035 dB. Preview/export pixels, fractional crops and linear premultiplied
 math are shared. These observations cover this fixture and host, not other
 canvases, hardware, formats or guaranteed latency under concurrent workloads.
+
+## Effects and desktop adapter
+
+`effects::EffectCompositor` receives a working item image, evaluated ordered pass
+list, optional item/mask coverage and the already-composited track-below image.
+`CpuEffects` is the reference and CLI/export default; `RenderSettings.effects`
+optionally injects the desktop adapter. Unsupported GPU capability falls back to
+CPU; cancellation, budget and invalid-data failures propagate. The renderer paints
+an effected item into a transparent output-sized layer, filters it, then composites
+it over the unchanged below image. Effects disable video stream copy.
+
+Blur intensity uses the static project value unless its scalar `Param` override
+exists. Evaluation uses project item-local time; animated overshoot clamps to
+0–100. Sigma is intensity/5 times min(output width/1920, output height/1080).
+The normalized separable Gaussian clamps edge taps and processes all RGBA channels
+in premultiplied linear f32, without colour/alpha conversion. Sigma <=0.01 output
+pixels is an identity. Above sigma 8, n=ceil((sigma/8)^2) iterations use sigma/sqrt(n)
+per axis, capped at 256 iterations and 49 taps per pass. Independent finite kernels
+approximate the untruncated Gaussian; they do not claim source bit identity.
+
+The desktop WGSL adapter consumes the same pass weights/entry names and admits
+maximum absolute CPU/GPU working-channel error 2e-5. Deterministic mixed-alpha
+fixtures at 1x/2x and a repeated-pass fixture exercise the interface in desktop
+tests; render tests pin sigma at 1080p/4K, channel energy, transparent coverage,
+animated overrides, budget refusal and cancellation. A missing native GPU is a
+labelled skip in offline CI and a failure in required-oracle mode. Measurements
+and benchmark commands live in the ticket's local report.

@@ -123,6 +123,7 @@ impl AudioPort {
 }
 #[derive(Clone)]
 struct Request {
+    effects: Option<Arc<dyn render::effects::EffectCompositor>>,
     epoch: u64,
     project: Arc<project::Project>,
     start: Tick,
@@ -181,9 +182,19 @@ pub struct Playback {
     device_available: bool,
 }
 impl Playback {
+    /// Attach the desktop device adapter before the first visible preview.
+    pub fn set_effects(
+        &mut self,
+        effects: Arc<dyn render::effects::EffectCompositor>,
+    ) -> Result<()> {
+        self.request.lock().map_err(|_| Error::Poisoned)?.effects = Some(effects);
+        let request = read_request(&self.request)?;
+        self.seek(request.start, request.playing, request.project)
+    }
     pub fn new(session: &Session, budget: ByteBudget, sources: Arc<dyn Sources>) -> Result<Self> {
         let port = Arc::new(AudioPort::new(&budget)?);
         let request = Arc::new(Mutex::new(Request {
+            effects: None,
             epoch: 1,
             project: session.project().clone(),
             start: Tick::ZERO,
@@ -372,6 +383,7 @@ impl Playback {
             .checked_add(1)
             .ok_or(Error::Invalid("preview generation exhausted"))?;
         *request = Request {
+            effects: request.effects.clone(),
             epoch,
             project,
             start: at,
@@ -552,6 +564,7 @@ fn video_loop(
             .min(1.0);
         settings.width = (f64::from(settings.width) * scale).round().max(1.0) as u32;
         settings.height = (f64::from(settings.height) * scale).round().max(1.0) as u32;
+        settings.effects = r.effects.clone();
         let mut renderer = render::Renderer::new(&r.project, settings)?;
         while !hooks.cancelled() && port.epoch.load(Ordering::Acquire) == epoch {
             let current = fps.frame_at(r.at(port.audible.load(Ordering::Acquire))?)?;

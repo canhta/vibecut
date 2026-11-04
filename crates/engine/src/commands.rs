@@ -67,6 +67,14 @@ impl CommandSpec {
                 .tracks
                 .iter()
                 .any(|t| !t.locked),
+            "effects.add" | "effects.remove" | "effects.update_params" => {
+                session.project().data().timeline.tracks.iter().any(|t| {
+                    !t.locked
+                        && t.items
+                            .iter()
+                            .any(|i| !matches!(i.content, ItemParams::Audio(_)))
+                })
+            }
             "move_item"
             | "move_items"
             | "split_at"
@@ -153,6 +161,9 @@ commands! {
     Delete, "delete", "Delete items", Edit { items: Vec<ItemId> } => Timeline, serde_json::json!({"items":[1]});
     RippleDelete, "ripple_delete", "Ripple delete", Edit { item: ItemId } => Timeline, serde_json::json!({"item":1});
     SetItemParam, "set_item_param", "Set item parameters", Edit { item: ItemId, content: ItemParams } => Timeline, serde_json::json!({"item":1,"content":{"kind":"overlay","params":{"color":[255,255,0,255]}}});
+    AddEffect, "effects.add", "Add effect", Edit { item: ItemId, effect: project::EffectInstance } => Timeline, serde_json::json!({"item":1,"effect":{"id":"blur2","enabled":true,"params":{"kind":"blur","intensity":15.0}}});
+    RemoveEffect, "effects.remove", "Remove effect", Edit { item: ItemId, effect: String } => Timeline, serde_json::json!({"item":1,"effect":"blur1"});
+    UpdateEffectParams, "effects.update_params", "Update effect parameters", Edit { item: ItemId, effect: String, params: project::EffectParams } => Timeline, serde_json::json!({"item":1,"effect":"blur1","params":{"kind":"blur","intensity":30.0}});
     SetAnimatedParam, "keyframes.set_param", "Set animated parameter", Edit { item: ItemId, path: project::AnimationPath, param: project::Param } => Timeline, serde_json::json!({"item":1,"path":"opacity","param":{"kind":"value","channels":{"value":{"kind":"scalar","value":0.5},"keys":[],"before":"hold","after":"hold"}}});
     AddKeyframe, "keyframes.add", "Add keyframe", Edit { item: ItemId, path: project::AnimationPath, #[serde(deserialize_with = "required_option")] #[schemars(with = "RequiredNullable<project::ColorComponent>")] component: Option<project::ColorComponent>, key: project::Keyframe } => Timeline, serde_json::json!({"item":1,"path":"opacity","component":null,"key":{"time":8467200000_i64,"value":{"kind":"scalar","value":0.5},"segment":"linear","tangent":"broken","incoming":null,"outgoing":null}});
     RemoveKeyframe, "keyframes.remove", "Remove keyframe", Edit { item: ItemId, path: project::AnimationPath, #[serde(deserialize_with = "required_option")] #[schemars(with = "RequiredNullable<project::ColorComponent>")] component: Option<project::ColorComponent>, time: Tick } => Timeline, serde_json::json!({"item":1,"path":"opacity","component":null,"time":0});

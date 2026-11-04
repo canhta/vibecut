@@ -617,6 +617,9 @@ impl Animations {
     pub fn iter(&self) -> impl Iterator<Item = (&AnimationPath, &Param)> {
         self.0.iter()
     }
+    pub fn remove(&mut self, path: &AnimationPath) -> Option<Param> {
+        self.0.remove(path)
+    }
     pub fn get(&self, path: &AnimationPath) -> Option<&Param> {
         self.0.get(path)
     }

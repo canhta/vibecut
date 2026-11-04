@@ -168,6 +168,7 @@ pub fn solid_project(seconds: i64, width: u32, height: u32, color: [u8; 4]) -> p
         hidden: false,
         locked: false,
         items: vec![project::Item {
+            effects: Vec::new(),
             animations: Default::default(),
             id: project::ItemId(0),
             source_asset: None,

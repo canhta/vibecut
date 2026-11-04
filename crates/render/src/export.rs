@@ -351,7 +351,8 @@ fn copy_plan<'a>(
     let Some(&(track, item)) = items.first() else {
         return Ok(None);
     };
-    if items.len() != 1
+    if !item.effects.is_empty()
+        || items.len() != 1
         || item.start > range.start()
         || item.end()? < range.end()
         || item
