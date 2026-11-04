@@ -3,11 +3,11 @@
 ## Crate map
 
 The core runs headless: editing, tests and the CLI need no window or UI toolkit;
-only `apps/*` may depend on UI, windowing, audio-device or accessibility crates. Apps
-compose concrete adapters; the desktop app uses egui and wgpu. Admit each crate with
+only `apps/*` may depend on UI, native window/dialog, audio-device or accessibility
+crates, including the app-owned wgpu adapter. Apps compose concrete adapters; the desktop app uses egui and wgpu. Admit each crate with
 its first working ticket. `cargo xtask layers` enforces this table: an edge not listed
 is forbidden (all dependency kinds count), and outside `apps/*` it denies the app-only
-UI, windowing, audio-device and accessibility crates, admitting one to that list only
+UI/GPU, native window/dialog, audio-device and accessibility crates, admitting one to that list only
 with a named consumer.
 
 | Package | Path | Owns | May depend on |

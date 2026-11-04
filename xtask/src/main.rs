@@ -116,6 +116,9 @@ const APP_ONLY_CRATES: &[(&str, &str)] = &[
     ("eframe", "ui"),               // apps/vibecut, ticket 11
     ("egui", "ui"),                 // apps/vibecut, ticket 11
     ("egui_kittest", "ui"),         // apps/vibecut, ticket 11
+    ("native-dialog", "window"),    // apps/vibecut file dialogs, ticket 13
+    ("rfd", "window"),              // apps/vibecut file dialogs, ticket 13
+    ("wgpu", "gpu"),                // apps/vibecut adapter, ticket 11
     ("winit", "window"),            // apps/vibecut, ticket 11
 ];
 
@@ -458,6 +461,9 @@ mod tests {
             ("winit", "window"),
             ("cpal", "audio-device"),
             ("accesskit", "accessibility"),
+            ("wgpu", "gpu"),
+            ("rfd", "window"),
+            ("native-dialog", "window"),
         ];
         for (name, _) in denied {
             ws.stub_crate(name);
@@ -474,35 +480,24 @@ mod tests {
                 "kind normal, target cfg(windows)",
             ),
         ] {
-            fs::write(
-                &manifest,
-                format!("{original}\n[{table}]\negui = {{ path = \"../../vendor/egui\" }}\n"),
-            )
-            .unwrap();
-            let error = layers(&ws.0).unwrap_err();
-            for expected in [
-                "forbidden app-only ui crate",
-                "package `render`",
-                "dependency `egui`",
-                detail,
-            ] {
-                assert!(error.contains(expected), "{expected}: {error}");
+            for (name, class) in denied {
+                fs::write(
+                    &manifest,
+                    format!(
+                        "{original}\n[{table}]\n{name} = {{ path = \"../../vendor/{name}\" }}\n"
+                    ),
+                )
+                .unwrap();
+                let error = layers(&ws.0).unwrap_err();
+                for expected in [
+                    format!("forbidden app-only {class} crate"),
+                    "package `render`".to_owned(),
+                    format!("dependency `{name}`"),
+                    detail.to_owned(),
+                ] {
+                    assert!(error.contains(&expected), "{expected}: {error}");
+                }
             }
-        }
-        for (name, class) in denied {
-            fs::write(
-                &manifest,
-                format!(
-                    "{original}\n[dependencies]\n{name} = {{ path = \"../../vendor/{name}\" }}\n"
-                ),
-            )
-            .unwrap();
-            let error = layers(&ws.0).unwrap_err();
-            assert!(
-                error.contains(&format!("forbidden app-only {class} crate")),
-                "{error}"
-            );
-            assert!(error.contains(&format!("dependency `{name}`")), "{error}");
         }
         fs::write(
             &manifest,
@@ -519,6 +514,9 @@ mod tests {
         let ws = Workspace::new();
         ws.stub_crate("egui");
         ws.stub_crate("egui_kittest");
+        for name in ["wgpu", "rfd", "native-dialog"] {
+            ws.stub_crate(name);
+        }
         new_crate(&ws.0, "engine").unwrap();
         new_crate(&ws.0, "time").unwrap();
         let app = ws.0.join("apps/vibecut");
@@ -527,7 +525,7 @@ mod tests {
         let manifest = app.join("Cargo.toml");
         fs::write(
             &manifest,
-            "[package]\nname = \"vibecut\"\nversion = \"0.1.0\"\nedition = \"2024\"\n\n[dependencies]\negui = { path = \"../../vendor/egui\" }\nengine = { path = \"../../crates/engine\" }\n\n[dev-dependencies]\negui_kittest = { path = \"../../vendor/egui_kittest\" }\n",
+            "[package]\nname = \"vibecut\"\nversion = \"0.1.0\"\nedition = \"2024\"\n\n[dependencies]\negui = { path = \"../../vendor/egui\" }\nwgpu = { path = \"../../vendor/wgpu\" }\nrfd = { path = \"../../vendor/rfd\" }\nnative-dialog = { path = \"../../vendor/native-dialog\" }\nengine = { path = \"../../crates/engine\" }\n\n[dev-dependencies]\negui_kittest = { path = \"../../vendor/egui_kittest\" }\n",
         )
         .unwrap();
         layers(&ws.0).unwrap();
