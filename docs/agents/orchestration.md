@@ -119,11 +119,13 @@ fast-forward to `main`. T2–T4 tickets go to review.
 - A finding that turns on product scope or policy the docs do not settle is an `ask` to the coordinator, not a `changes` verdict; it never counts against the implementer's tier.
 - A failure called "known" cites its ticket; with none, the reviewer files a `Type: bug` ticket first.
 
-**Merge queue.** One merge into `main` at a time. An approved reviewer asks the
-coordinator for the merge window; the coordinator grants windows in order and holds
-everyone else, its own docs commits included. While waiting, rebase onto the queued
-candidate and run CI there, so the window needs only the rebase rule in
-[checks](../engineering/verification.md#checks).
+**Merging.** An approved branch merges as soon as it is ready: rebase on
+`origin/main`; if the [rebase rule](../engineering/verification.md#checks) needs no
+CI rerun (nothing added to `main` since your run touched Rust, manifests or `xtask`),
+push fast-forward at once; a rejected push means rebase and repeat. Ask the
+coordinator for a merge window only when two ready branches both change Rust, or
+share a persistent format, schema version or contract: the coordinator orders those
+and the later one runs CI on the earlier one's candidate while it waits.
 
 After either path the merger writes `## Answer` (SHA, evidence path), sets
 `Status: resolved` and adds one decision line to the milestone `map.md`.
