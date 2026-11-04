@@ -490,7 +490,9 @@ fn tool_runpaths(prefix: &Path) -> Result<(), String> {
 }
 
 fn patches() -> Result<Vec<PathBuf>, String> {
-    let mut patches = fs::read_dir(Path::new(env!("CARGO_MANIFEST_DIR")).join("patches"))
+    // Shared target directories can reuse this binary after its build worktree is gone.
+    let manifest = env::var_os("CARGO_MANIFEST_DIR").ok_or("run via cargo xtask")?;
+    let mut patches = fs::read_dir(Path::new(&manifest).join("patches"))
         .map_err(|e| e.to_string())?
         .map(|entry| entry.map(|e| e.path()).map_err(|e| e.to_string()))
         .collect::<Result<Vec<_>, _>>()?;
@@ -534,4 +536,38 @@ fn record_patches(prefix: &Path, patches: &[PathBuf]) -> Result<(), String> {
         .map_err(|e| e.to_string())?;
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn patch_discovery_uses_the_invoking_worktrees_manifest() {
+        const CHILD: &str = "VIBECUT_PATCH_DISCOVERY_CHILD";
+        if env::var_os(CHILD).is_some() {
+            let manifest = PathBuf::from(env::var_os("CARGO_MANIFEST_DIR").unwrap());
+            assert_eq!(
+                patches().unwrap(),
+                vec![manifest.join("patches/runtime.patch")]
+            );
+            return;
+        }
+        let directory =
+            env::temp_dir().join(format!("vibecut-runtime-patches-{}", std::process::id()));
+        fs::create_dir_all(directory.join("patches")).unwrap();
+        fs::write(directory.join("patches/runtime.patch"), b"runtime fixture").unwrap();
+        let status = Command::new(env::current_exe().unwrap())
+            .args([
+                "--exact",
+                "ffmpeg::tests::patch_discovery_uses_the_invoking_worktrees_manifest",
+                "--nocapture",
+            ])
+            .env(CHILD, "1")
+            .env("CARGO_MANIFEST_DIR", &directory)
+            .status()
+            .unwrap();
+        fs::remove_dir_all(directory).unwrap();
+        assert!(status.success());
+    }
 }
