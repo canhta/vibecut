@@ -4,12 +4,19 @@
 
 | Role | Responsibility |
 |---|---|
-| opencode implementer | Clear/mechanical work and resource-heavy inventories, builds, benchmarks and fixtures |
-| Codex implementer/reviewer | Hard design, FFI, concurrency, jobs, render/sync, model/provider contracts; review every opencode branch |
+| opencode implementer | Default implementer (cheaper): every ticket its current trust tier allows, plus resource-heavy inventories, builds, benchmarks and fixtures |
+| Codex implementer/reviewer | Tickets above opencode's tier; reviews every opencode code branch |
 | Claude coordinator | Plan, ticket, dispatch implementers and reviewers, answer product questions; does not review or merge |
 | Human | Product decisions, credentials, Windows hardware and license decisions |
 
-When unsure, route ambiguous correctness work to Codex; explicit recipes to opencode.
+Route to opencode first to cut cost; Codex takes only work above opencode's tier.
+Tiers: T1 mechanical, docs, research, benchmarks, fixtures. T2 features and adapters
+that follow an existing pattern, UI on settled contracts. T3 new contracts, pipelines,
+persistence formats. T4 unsafe/FFI, concurrency and job engine, render/A-V sync core.
+Promote opencode one tier after two consecutive reviewed code tickets at its tier
+merge with no design-level `changes` verdict; demote one tier after a design-level
+`changes` verdict or a reverted merge. T4 stays Codex. The coordinator keeps the
+tier and track record in `.scratch/agents.md` and updates it on every review verdict.
 Size a ticket by responsibility, never by line count: one ticket delivers one
 cohesive responsibility (a crate, contract or user-facing feature) with clear
 ownership under [structural admission](../engineering/standards.md#structural-admission).
