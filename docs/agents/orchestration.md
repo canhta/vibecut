@@ -116,9 +116,12 @@ contracts, persistence formats, AI providers) never self-merge.
 **Reviewed.** Otherwise review the frozen SHA independently in a separate reviewer
 dispatch: Codex reviews opencode work; a fresh Codex reviewer reviews Codex work. The reviewer writes
 `.scratch/<milestone>/reviews/NN-<sha7>.md` using the
-[review template](../engineering/verification.md#reports) and fixes findings
-directly on the ticket branch (signed-off commits) instead of bouncing them back;
-only findings needing a product decision go back to the coordinator. When approved,
+[review template](../engineering/verification.md#reports) and fixes small findings
+directly on the ticket branch (signed-off commits; roughly <= 100 changed lines, no
+redesign). Larger or design-level findings: verdict `changes`, `worker_done` with the
+review path; the coordinator sends the review to the original implementer dispatch
+(`send` reopens a finished worker), which fixes and returns to the same reviewer
+flow. Findings needing a product decision go to the coordinator. When approved,
 the reviewer merges exactly as in self-merge.
 
 Workers and reviewers merge and close tickets themselves; the coordinator only
