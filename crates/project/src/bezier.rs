@@ -7,18 +7,25 @@ pub(crate) fn progress_for_x(x1: f64, x2: f64, x: f64) -> f64 {
             + 3.0 * s * s * (1.0 - x2)
     };
     let mut s = x;
+    let mut bisect = false;
     for _ in 0..8 {
+        if bx(s) == x {
+            return s;
+        }
         let d = dbx(s);
         if d.abs() < 1e-9 {
+            // A small time residual does not bound value error at a stationary point.
+            bisect = true;
             break;
         }
         let ns = s - (bx(s) - x) / d;
         if !(0.0..=1.0).contains(&ns) {
+            bisect = true;
             break;
         }
         s = ns;
     }
-    if (bx(s) - x).abs() > 1e-12 {
+    if bisect || (bx(s) - x).abs() > 1e-12 {
         let (mut lo, mut hi) = (0.0, 1.0);
         for _ in 0..60 {
             s = (lo + hi) / 2.0;

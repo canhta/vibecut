@@ -740,3 +740,28 @@ fn adjacent_large_tick_anchors_and_hostile_composite_wires_keep_invariants() {
     wire["keys"][0]["outgoing"] = serde_json::json!({"dt":1,"dv":null});
     assert!(serde_json::from_value::<Channel>(wire).is_err());
 }
+
+#[test]
+fn crossed_handles_resolve_single_ticks_near_stationary_time_midpoint() {
+    let span = 2_540_160_000_000i64;
+    let mut a = key(0, 0.0, Segment::Bezier);
+    a.outgoing = Some(CurveHandle {
+        dt: Tick(span),
+        dv: 0.0,
+    });
+    let mut b = key(span, 1.0, Segment::Linear);
+    b.incoming = Some(CurveHandle {
+        dt: Tick(-span),
+        dv: 0.0,
+    });
+    let c = channel(vec![a, b], Extrapolation::Hold, Extrapolation::Hold);
+    assert_eq!(c.value_at(Tick(span / 2)), scalar(0.5));
+    for offset in [-1, 1] {
+        let t = Tick(span / 2 + offset);
+        // For crossed time controls (1, 0), x = 1/2 + 4*(s - 1/2)^3.
+        let s = 0.5 + (offset as f64 / span as f64 / 4.0).cbrt();
+        let expected = 3.0 * s * s - 2.0 * s * s * s;
+        let actual = value(c.value_at(t));
+        assert!((actual - expected).abs() < 2e-8, "{actual} != {expected}");
+    }
+}
