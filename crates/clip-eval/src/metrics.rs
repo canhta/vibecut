@@ -2,7 +2,7 @@
 use crate::label::{LabelledClip, Priority, ResolvedSettings};
 use ai::clips::ClipSourceSegment;
 use captions::{LanguageProfile, Transcript, source_speech_units};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use time::{SourceRange, Tick};
 
 /// Summed source-segment IoU: pairwise intersections over summed source
@@ -49,7 +49,7 @@ pub fn is_match(iou: f64) -> bool {
     iou >= 0.5
 }
 
-#[derive(Clone, Debug, Default, Serialize)]
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct Metrics {
     pub suggestions: usize,
     pub must_total: usize,

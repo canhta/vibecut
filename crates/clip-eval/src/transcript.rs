@@ -1,4 +1,5 @@
 //! Transcript cache: the clip pipeline's fixed input, keyed by source content.
+use crate::budget::Budget;
 use crate::label::{LabelFile, sha256_bytes};
 use crate::{Error, Result, asr};
 use captions::{LanguageTag, Transcript};
@@ -23,13 +24,12 @@ pub struct LoadContext<'a> {
     pub source: &'a Path,
     pub language: &'a LanguageTag,
     pub transcribe: bool,
-    pub max_cost_micros: u64,
 }
 
 /// Load a label-provided transcript, an existing prepared cache, or opt-in live
 /// ASR. The cache is keyed by both source content and transcript content so a
 /// rerun cannot silently measure a different transcript.
-pub fn load(context: &LoadContext<'_>) -> Result<CachedTranscript> {
+pub fn load(context: &LoadContext<'_>, budget: &mut Budget) -> Result<CachedTranscript> {
     let LoadContext {
         label,
         label_dir,
@@ -38,7 +38,6 @@ pub fn load(context: &LoadContext<'_>) -> Result<CachedTranscript> {
         source,
         language,
         transcribe,
-        max_cost_micros,
     } = *context;
     let cache_dir = out_dir.join("cache/transcripts");
     if let Some(path) = label.transcript_path(label_dir) {
@@ -74,7 +73,7 @@ pub fn load(context: &LoadContext<'_>) -> Result<CachedTranscript> {
         return Ok(cached(transcript, asr_path, true, "cache"));
     }
     if transcribe {
-        let prepared = asr::prepare(source, language, source_sha, out_dir, max_cost_micros)?;
+        let prepared = asr::prepare(source, language, source_sha, out_dir, budget)?;
         let cache_path = asr::cache_path(out_dir, source_sha);
         write_cache(&cache_path, &prepared.transcript)?;
         return Ok(CachedTranscript {
@@ -187,12 +186,12 @@ mod tests {
             source: &source,
             language: &language,
             transcribe: false,
-            max_cost_micros: 0,
         };
-        let first = load(&context).unwrap();
+        let mut budget = Budget::new(0);
+        let first = load(&context, &mut budget).unwrap();
         assert!(!first.cache_hit);
         assert_eq!(first.source, "label");
-        let second = load(&context).unwrap();
+        let second = load(&context, &mut budget).unwrap();
         assert!(second.cache_hit);
         assert_eq!(second.source, "cache");
     }

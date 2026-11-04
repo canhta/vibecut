@@ -19,6 +19,9 @@ fn synthetic_set_runs_end_to_end_and_writes_both_reports() {
         repo_root: root.to_path_buf(),
         energy: false,
         transcribe: false,
+        baseline: None,
+        write_baseline: None,
+        baseline_revision: None,
     })
     .unwrap();
     assert_eq!(output.report.videos.len(), 2);
@@ -43,5 +46,6 @@ fn synthetic_set_runs_end_to_end_and_writes_both_reports() {
     assert!(output.markdown_path.exists());
     let markdown = std::fs::read_to_string(&output.markdown_path).unwrap();
     assert!(markdown.contains("## TL;DR"));
-    assert!(markdown.contains("Baseline (heuristic)"));
+    assert!(markdown.contains("Heuristic baseline"));
+    assert!(markdown.contains("Main baseline"));
 }

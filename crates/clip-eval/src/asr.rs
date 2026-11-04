@@ -3,6 +3,7 @@
 //! This is upstream of the clip pipeline: it decodes bounded speech chunks,
 //! transcribes each with the already-admitted Scribe adapter, assembles absolute
 //! source coordinates and caches the resulting captions transcript.
+use crate::budget::Budget;
 use crate::{Error, Result};
 use ai::elevenlabs::{BACKEND, BASE_URL, ElevenLabsTranscriber, MODEL, SETTINGS_FINGERPRINT};
 use ai::transport::{ApiKey, UreqTransport};
@@ -51,7 +52,7 @@ pub fn prepare(
     language: &LanguageTag,
     source_sha: &str,
     out_dir: &Path,
-    max_cost_micros: u64,
+    budget: &mut Budget,
 ) -> Result<Prepared> {
     let started = Instant::now();
     let key =
@@ -116,13 +117,8 @@ pub fn prepare(
                 .ok_or(Error::Payload)?,
         };
         let estimate = estimate_micros(&transcriber.estimate(&scope))?;
+        budget.reserve(estimate)?;
         cost_micros = cost_micros.saturating_add(estimate);
-        if cost_micros > max_cost_micros {
-            return Err(Error::CostCap {
-                estimate: cost_micros,
-                cap: max_cost_micros,
-            });
-        }
         let consent = Consent::grant(scope.clone(), Money::new("USD", estimate)?)?;
         let request = Request {
             scope: &scope,

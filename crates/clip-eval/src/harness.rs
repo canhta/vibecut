@@ -1,5 +1,7 @@
 //! Evaluation runner: labels in, ranked shorts out, metrics and report written.
-use crate::label::{LabelFile, ResolvedSettings, verify_hash};
+use crate::baseline::{Baseline, BaselineInput};
+use crate::budget::Budget;
+use crate::label::{LabelFile, ResolvedSettings, sha256_bytes, sha256_file, verify_hash};
 use crate::metrics::{Evaluation, Metrics, evaluate};
 use crate::transcript;
 use crate::{Error, Result};
@@ -55,6 +57,9 @@ pub struct Options {
     pub repo_root: PathBuf,
     pub energy: bool,
     pub transcribe: bool,
+    pub baseline: Option<PathBuf>,
+    pub write_baseline: Option<PathBuf>,
+    pub baseline_revision: Option<String>,
 }
 
 impl Options {
@@ -125,6 +130,7 @@ pub struct VideoReport {
     pub transcript_cache_hit: bool,
     pub current: Metrics,
     pub baseline: Metrics,
+    pub main_baseline: Option<Metrics>,
     pub suggestions: Vec<SuggestionReport>,
     pub notes: Vec<String>,
 }
@@ -134,6 +140,7 @@ pub struct Aggregate {
     pub videos: usize,
     pub current: Metrics,
     pub baseline: Metrics,
+    pub main_baseline: Option<Metrics>,
     pub current_cost_micros: u64,
     pub baseline_cost_micros: u64,
     pub wall_ms: u64,
@@ -147,15 +154,16 @@ pub struct Report {
     pub live: bool,
     pub k: usize,
     pub revision: String,
-    pub main_revision: String,
     pub baseline: String,
     pub baseline_revision: String,
+    pub main_baseline_revision: Option<String>,
     pub max_cost_micros: u64,
     pub aggregate: Aggregate,
     pub videos: Vec<VideoReport>,
     pub notes: Vec<String>,
 }
 
+#[derive(Debug)]
 pub struct RunOutput {
     pub report: Report,
     pub json_path: PathBuf,
@@ -186,30 +194,43 @@ pub fn run(options: &Options) -> Result<RunOutput> {
             !path
                 .file_name()
                 .and_then(|name| name.to_str())
-                .is_some_and(|name| name.ends_with(".transcript.json"))
+                .is_some_and(|name| name.ends_with(".transcript.json") || name == "baseline.json")
         })
         .collect();
     paths.sort();
     if paths.is_empty() {
         return Err(Error::EmptySet(labels_dir.display().to_string()));
     }
+    let stems: Vec<String> = paths.iter().map(|path| file_stem(path)).collect();
+
+    let baseline_path = options.baseline.clone().or_else(|| {
+        let auto = labels_dir.join("baseline.json");
+        auto.exists().then_some(auto)
+    });
+    let baseline = baseline_path.as_deref().map(Baseline::load).transpose()?;
+    if let Some(baseline) = &baseline {
+        baseline.validate_labels(&stems)?;
+    }
 
     let (provider, provider_label) = make_provider(options)?;
+    let mut budget = Budget::new(options.max_cost_micros);
     let mut videos = Vec::new();
     let mut aggregate = Aggregate {
         videos: 0,
         current: Metrics::default(),
         baseline: Metrics::default(),
+        main_baseline: None,
         current_cost_micros: 0,
         baseline_cost_micros: 0,
         wall_ms: 0,
     };
     let mut notes = Vec::new();
-    for path in &paths {
+    let mut baseline_inputs = std::collections::BTreeMap::new();
+    let mut baseline_videos = std::collections::BTreeMap::new();
+    for (path, stem) in paths.iter().zip(&stems) {
         let started = Instant::now();
         let (label, label_dir) = LabelFile::load(path)?;
-        let stem = file_stem(path);
-        let source = label.source_path(&label_dir, &options.out_dir.join("synthetic"), &stem)?;
+        let source = label.source_path(&label_dir, &options.out_dir.join("synthetic"), stem)?;
         if label.synthetic.is_some() && !source.exists() {
             let duration = label
                 .synthetic
@@ -220,16 +241,18 @@ pub fn run(options: &Options) -> Result<RunOutput> {
         }
         let source_sha = verify_hash(&label, &source)?;
         let language = LanguageTag::parse(&label.language)?;
-        let cached = transcript::load(&transcript::LoadContext {
-            label: &label,
-            label_dir: &label_dir,
-            source_sha: &source_sha,
-            out_dir: &options.out_dir,
-            source: &source,
-            language: &language,
-            transcribe: options.transcribe,
-            max_cost_micros: options.max_cost_micros,
-        })?;
+        let cached = transcript::load(
+            &transcript::LoadContext {
+                label: &label,
+                label_dir: &label_dir,
+                source_sha: &source_sha,
+                out_dir: &options.out_dir,
+                source: &source,
+                language: &language,
+                transcribe: options.transcribe,
+            },
+            &mut budget,
+        )?;
         if cached.transcript.source_lang != language {
             return Err(Error::TranscriptLanguage {
                 expected: label.language.clone(),
@@ -240,19 +263,21 @@ pub fn run(options: &Options) -> Result<RunOutput> {
         let profile = registry.profile(&language);
         let settings = label.settings.resolve().map_err(Error::Options)?;
         let input = build_input(&cached.transcript, profile, &settings, &language)?;
+        let fingerprints = baseline_input(&source_sha, &cached, &settings, &language)?;
+        let main_metrics = if let Some(baseline) = &baseline {
+            baseline.validate_input(stem, &fingerprints)?;
+            Some(baseline.metrics(stem)?.clone())
+        } else {
+            None
+        };
         let estimate = estimate_provider(provider.as_ref(), &input, &source_sha)?;
-        if estimate > options.max_cost_micros {
-            return Err(Error::CostCap {
-                estimate,
-                cap: options.max_cost_micros,
-            });
-        }
         eprintln!(
-            "{}: provider {} estimated cost USD {:.6} (cap USD {:.6})",
-            file_stem(path),
+            "{}: provider {} estimated cost USD {:.6}; remaining USD {:.6} of cap USD {:.6}",
+            stem,
             provider_label,
             micros(estimate),
-            micros(options.max_cost_micros)
+            micros(budget.remaining()),
+            micros(budget.limit())
         );
 
         let mut video_notes = Vec::new();
@@ -268,7 +293,7 @@ pub fn run(options: &Options) -> Result<RunOutput> {
             source: &source,
             energy: options.energy,
         };
-        let current = run_provider(&context, &mut video_notes)?;
+        let current = run_provider(&context, &mut video_notes, estimate, &mut budget)?;
         let current_wall = millis(current_started.elapsed());
         let current_metrics = evaluate(&Evaluation {
             labels: &label.clips,
@@ -293,21 +318,26 @@ pub fn run(options: &Options) -> Result<RunOutput> {
                 provider: &heuristic,
                 ..context
             };
-            let baseline = run_provider(&baseline_context, &mut video_notes)?;
+            let baseline_run = run_provider(&baseline_context, &mut video_notes, 0, &mut budget)?;
             let baseline_wall = millis(baseline_started.elapsed());
             let metrics = evaluate(&Evaluation {
                 labels: &label.clips,
-                suggestions: &baseline.shorts,
+                suggestions: &baseline_run.shorts,
                 transcript: &cached.transcript,
                 profile,
                 settings: &settings,
                 k: options.k,
                 cost_micros: 0,
                 wall_ms: baseline_wall,
-                snap_failures: baseline.snap_failures,
+                snap_failures: baseline_run.snap_failures,
             })?;
             (metrics, 0)
         };
+
+        if options.write_baseline.is_some() {
+            baseline_inputs.insert(stem.clone(), fingerprints);
+            baseline_videos.insert(stem.clone(), baseline_metrics.clone());
+        }
 
         aggregate.videos = aggregate.videos.saturating_add(1);
         aggregate.current.merge(&current_metrics);
@@ -320,7 +350,7 @@ pub fn run(options: &Options) -> Result<RunOutput> {
         aggregate.wall_ms = aggregate.wall_ms.saturating_add(millis(started.elapsed()));
 
         videos.push(VideoReport {
-            label: stem,
+            label: stem.clone(),
             source: file_name(&source),
             sha256: source_sha,
             language: label.language.clone(),
@@ -328,29 +358,75 @@ pub fn run(options: &Options) -> Result<RunOutput> {
             transcript_cache_hit: cached.cache_hit,
             current: current_metrics,
             baseline: baseline_metrics,
+            main_baseline: main_metrics,
             suggestions: current.report,
             notes: video_notes,
         });
     }
 
+    if baseline.is_some() {
+        let mut main = Metrics::default();
+        for video in &videos {
+            if let Some(metrics) = &video.main_baseline {
+                main.merge(metrics);
+            }
+        }
+        aggregate.main_baseline = Some(main);
+    }
+
+    let revision = git_rev(&options.repo_root, "HEAD");
+    if let Some(path) = &options.write_baseline {
+        let baseline_revision = options
+            .baseline_revision
+            .clone()
+            .unwrap_or_else(|| revision.clone());
+        let written = Baseline {
+            schema: 1,
+            revision: baseline_revision,
+            provider: "heuristic".into(),
+            note: "Pinned 01 heuristic + 02 snapping baseline; regenerate with --write-baseline when pipeline logic changes.".into(),
+            inputs: baseline_inputs,
+            videos: baseline_videos,
+        };
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+        std::fs::write(path, serde_json::to_vec_pretty(&written)?)?;
+        notes.push(format!(
+            "wrote pinned heuristic baseline to {}",
+            path.display()
+        ));
+    }
+
     notes.push(format!(
-        "baseline is the 01 heuristic on the same cached transcripts; main revision {} is recorded. Run this command on main to pin the baseline when pipeline logic changes",
-        main_revision_for(&options.repo_root)
+        "heuristic baseline is the 01 mode at evaluated revision {revision}"
     ));
+    match &baseline {
+        Some(baseline) => notes.push(format!(
+            "main baseline loaded from {} at revision {}",
+            baseline_path
+                .as_deref()
+                .map_or_else(|| "baseline.json".into(), |path| path.display().to_string()),
+            baseline.revision
+        )),
+        None => notes.push(
+            "main baseline not measured; pass --baseline PATH or place baseline.json next to the labels"
+                .into(),
+        ),
+    }
     notes.push(
         "cost is the provider's per-invocation upper-bound estimate, not measured billing".into(),
     );
-    let main_revision = main_revision_for(&options.repo_root);
     let report = Report {
         schema: 1,
         set: options.set.clone(),
         provider: provider_label,
         live: options.live,
         k: options.k,
-        revision: git_rev(&options.repo_root, "HEAD"),
-        main_revision: main_revision.clone(),
+        revision: revision.clone(),
         baseline: "source:heuristic".into(),
-        baseline_revision: main_revision,
+        baseline_revision: revision,
+        main_baseline_revision: baseline.as_ref().map(|baseline| baseline.revision.clone()),
         max_cost_micros: options.max_cost_micros,
         aggregate,
         videos,
@@ -444,6 +520,20 @@ fn build_input(
     Ok(input)
 }
 
+fn baseline_input(
+    source_sha: &str,
+    cached: &transcript::CachedTranscript,
+    settings: &ResolvedSettings,
+    language: &LanguageTag,
+) -> Result<BaselineInput> {
+    Ok(BaselineInput {
+        source_sha256: source_sha.to_owned(),
+        transcript_sha256: sha256_file(&cached.cache_path)?,
+        settings_sha256: sha256_bytes(&serde_json::to_vec(settings)?),
+        language: language.as_str().to_owned(),
+    })
+}
+
 fn scope_for(provider: &dyn ClipSuggester, window: &ClipInput, source_sha: &str) -> Result<Scope> {
     Ok(Scope {
         provider: provider.config().clone(),
@@ -493,7 +583,12 @@ struct RunContext<'a> {
     energy: bool,
 }
 
-fn run_provider(context: &RunContext<'_>, notes: &mut Vec<String>) -> Result<ProviderRun> {
+fn run_provider(
+    context: &RunContext<'_>,
+    notes: &mut Vec<String>,
+    estimate: u64,
+    budget: &mut Budget,
+) -> Result<ProviderRun> {
     let RunContext {
         provider,
         input,
@@ -504,6 +599,7 @@ fn run_provider(context: &RunContext<'_>, notes: &mut Vec<String>) -> Result<Pro
         source,
         energy: energy_enabled,
     } = *context;
+    budget.reserve(estimate)?;
     let windows = input.windows()?;
     let mut scopes = Vec::with_capacity(windows.len());
     for window in &windows {
@@ -686,58 +782,97 @@ fn markdown(report: &Report) -> String {
         report.aggregate.wall_ms
     ));
     out.push_str(&format!(
-        "- Revision `{}`, main `{}`; baseline is `source: heuristic`.\n",
-        report.revision, report.main_revision
+        "- Revision `{}`; heuristic baseline at `{}`; main baseline {}.\n",
+        report.revision,
+        report.baseline_revision,
+        report.main_baseline_revision.as_deref().map_or_else(
+            || "not measured".to_owned(),
+            |revision| format!("`{revision}`")
+        )
     ));
     out.push_str("\n## Aggregate\n\n");
-    out.push_str("| Metric | Current | Baseline (heuristic) |\n|---|---:|---:|\n");
+    out.push_str(
+        "| Metric | Current | Heuristic baseline | Main baseline |\n|---|---:|---:|---:|\n",
+    );
+    let main = report.aggregate.main_baseline.as_ref();
     out.push_str(&format!(
-        "| Must hit rate | {:.3} ({}/{}) | {:.3} ({}/{}) |\n",
+        "| Must hit rate | {:.3} ({}/{}) | {:.3} ({}/{}) | {} |\n",
         report.aggregate.current.hit_rate,
         report.aggregate.current.must_hit,
         report.aggregate.current.must_total,
         report.aggregate.baseline.hit_rate,
         report.aggregate.baseline.must_hit,
-        report.aggregate.baseline.must_total
+        report.aggregate.baseline.must_total,
+        main.map_or_else(
+            || "n/a".into(),
+            |metrics| format!(
+                "{:.3} ({}/{})",
+                metrics.hit_rate, metrics.must_hit, metrics.must_total
+            )
+        )
     ));
     out.push_str(&format!(
-        "| Precision@{} | {:.3} ({}/{}) | {:.3} ({}/{}) |\n",
+        "| Precision@{} | {:.3} ({}/{}) | {:.3} ({}/{}) | {} |\n",
         report.k,
         report.aggregate.current.precision_at_k,
         report.aggregate.current.precision_matches,
         report.aggregate.current.precision_k,
         report.aggregate.baseline.precision_at_k,
         report.aggregate.baseline.precision_matches,
-        report.aggregate.baseline.precision_k
+        report.aggregate.baseline.precision_k,
+        main.map_or_else(
+            || "n/a".into(),
+            |metrics| format!(
+                "{:.3} ({}/{})",
+                metrics.precision_at_k, metrics.precision_matches, metrics.precision_k
+            )
+        )
     ));
     out.push_str(&format!(
-        "| Boundary quality | {} | {} |\n",
+        "| Boundary quality | {} | {} | {} |\n",
         percent(report.aggregate.current.boundary_quality),
-        percent(report.aggregate.baseline.boundary_quality)
+        percent(report.aggregate.baseline.boundary_quality),
+        main.map_or_else(|| "n/a".into(), |metrics| percent(metrics.boundary_quality))
     ));
     out.push_str(&format!(
-        "| Duration compliance | {:.3} | {:.3} |\n",
-        report.aggregate.current.duration_compliance, report.aggregate.baseline.duration_compliance
+        "| Duration compliance | {:.3} | {:.3} | {} |\n",
+        report.aggregate.current.duration_compliance,
+        report.aggregate.baseline.duration_compliance,
+        main.map_or_else(
+            || "n/a".into(),
+            |metrics| format!("{:.3}", metrics.duration_compliance)
+        )
     ));
     out.push_str(&format!(
-        "| Snap failures | {} | {} |\n",
-        report.aggregate.current.snap_failures, report.aggregate.baseline.snap_failures
+        "| Snap failures | {} | {} | {} |\n",
+        report.aggregate.current.snap_failures,
+        report.aggregate.baseline.snap_failures,
+        main.map_or_else(|| "n/a".into(), |metrics| metrics.snap_failures.to_string())
     ));
     out.push_str(&format!(
-        "| Cost (USD, upper bound) | {:.6} | {:.6} |\n",
+        "| Cost (USD, upper bound) | {:.6} | {:.6} | {} |\n",
         micros(report.aggregate.current_cost_micros),
-        micros(report.aggregate.baseline_cost_micros)
+        micros(report.aggregate.baseline_cost_micros),
+        main.map_or_else(
+            || "n/a".into(),
+            |metrics| format!("{:.6}", micros(metrics.cost_micros))
+        )
     ));
     out.push_str(&format!(
-        "| Wall time (ms) | {} | {} |\n",
-        report.aggregate.current.wall_ms, report.aggregate.baseline.wall_ms
+        "| Wall time (ms) | {} | {} | {} |\n",
+        report.aggregate.current.wall_ms,
+        report.aggregate.baseline.wall_ms,
+        main.map_or_else(|| "n/a".into(), |metrics| metrics.wall_ms.to_string())
     ));
     out.push_str("\n## Videos\n\n");
-    out.push_str("| Video | Hit cur | Hit base | P@k cur | P@k base | Boundary cur | Boundary base | Duration cur | Duration base | Suggestions | Cost USD | Wall ms |\n");
-    out.push_str("|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|\n");
+    out.push_str("| Video | Hit cur | Hit heuristic | Hit main | P@k cur | P@k heuristic | P@k main | Boundary cur | Boundary heuristic | Boundary main | Duration cur | Duration heuristic | Duration main | Suggestions | Cost USD | Wall ms |\n");
+    out.push_str(
+        "|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|\n",
+    );
     for video in &report.videos {
+        let main = video.main_baseline.as_ref();
         out.push_str(&format!(
-            "| `{}` | {:.3} ({}/{}) | {:.3} ({}/{}) | {:.3} | {:.3} | {} | {} | {:.3} | {:.3} | {} | {:.6} | {} |\n",
+            "| `{}` | {:.3} ({}/{}) | {:.3} ({}/{}) | {} | {:.3} | {:.3} | {} | {} | {} | {} | {:.3} | {:.3} | {} | {} | {:.6} | {} |\n",
             video.label,
             video.current.hit_rate,
             video.current.must_hit,
@@ -745,12 +880,31 @@ fn markdown(report: &Report) -> String {
             video.baseline.hit_rate,
             video.baseline.must_hit,
             video.baseline.must_total,
+            main.map_or_else(
+                || "n/a".into(),
+                |metrics| format!(
+                    "{:.3} ({}/{})",
+                    metrics.hit_rate, metrics.must_hit, metrics.must_total
+                )
+            ),
             video.current.precision_at_k,
             video.baseline.precision_at_k,
+            main.map_or_else(
+                || "n/a".into(),
+                |metrics| format!("{:.3}", metrics.precision_at_k)
+            ),
             percent(video.current.boundary_quality),
             percent(video.baseline.boundary_quality),
+            main.map_or_else(
+                || "n/a".into(),
+                |metrics| percent(metrics.boundary_quality)
+            ),
             video.current.duration_compliance,
             video.baseline.duration_compliance,
+            main.map_or_else(
+                || "n/a".into(),
+                |metrics| format!("{:.3}", metrics.duration_compliance)
+            ),
             video.current.suggestions,
             micros(video.current.cost_micros),
             video.current.wall_ms
@@ -810,10 +964,6 @@ fn millis(duration: std::time::Duration) -> u64 {
     u64::try_from(duration.as_millis()).unwrap_or(u64::MAX)
 }
 
-fn main_revision_for(root: &Path) -> String {
-    git_rev(root, "main")
-}
-
 fn git_rev(root: &Path, reference: &str) -> String {
     std::process::Command::new("git")
         .args(["rev-parse", reference])
@@ -839,6 +989,124 @@ mod tests {
         let first = crate::label::sha256_file(&path).unwrap();
         crate::label::write_synthetic_wav(&path, 2.0).unwrap();
         assert_eq!(first, crate::label::sha256_file(&path).unwrap());
+    }
+
+    struct FakeProvider {
+        config: ProviderConfig,
+        estimate: u64,
+    }
+
+    impl ClipSuggester for FakeProvider {
+        fn config(&self) -> &ProviderConfig {
+            &self.config
+        }
+        fn capabilities(&self, _: &Scope) -> ai::Capabilities {
+            ai::Capabilities {
+                model: "fake-model".into(),
+                mode: MODE.into(),
+                operation: Operation::SuggestClips,
+                languages: vec![LanguageTag::parse("en").unwrap()],
+                target_languages: Vec::new(),
+                timing: std::collections::BTreeSet::new(),
+                diarization: ai::Support::Unsupported,
+                live_audio_input: ai::Support::Unsupported,
+                file_result_stream: ai::Support::Unsupported,
+                max_upload_bytes: Some(MAX_WIRE),
+                max_duration_micros: None,
+                evidence: ai::Evidence::FixtureVerified,
+                revision: "test".into(),
+            }
+        }
+        fn estimate(&self, _: &Scope) -> CostEstimate {
+            CostEstimate::UpperBound(Money::new("USD", self.estimate).unwrap())
+        }
+        fn source(&self) -> ClipSource {
+            ClipSource::Llm
+        }
+        fn suggest(
+            &self,
+            _: &ClipInput,
+            _: &Request<'_>,
+            _: &dyn ExecutionHooks,
+        ) -> std::result::Result<Vec<ai::clips::ClipProposal>, ai::Error> {
+            Ok(Vec::new())
+        }
+    }
+
+    #[test]
+    fn second_video_is_refused_by_the_cumulative_run_budget() {
+        use captions::{Fingerprint, NfcText, Segment, Word};
+        let transcript = Transcript {
+            source_lang: LanguageTag::parse("en").unwrap(),
+            fingerprint: Fingerprint {
+                provider: "fixture".into(),
+                model: "fixture".into(),
+                settings: "fixture".into(),
+            },
+            segments: vec![Segment {
+                id: "s0".into(),
+                range: SourceRange::new(Tick::ZERO, Tick(4 * time::TICKS_PER_SECOND)).unwrap(),
+                text: NfcText::from("One."),
+                words: vec![Word {
+                    text: NfcText::from("One."),
+                    range: Some(
+                        SourceRange::new(Tick::ZERO, Tick(4 * time::TICKS_PER_SECOND)).unwrap(),
+                    ),
+                    speaker: None,
+                    confidence: None,
+                }],
+                spans: None,
+            }],
+        };
+        let settings = crate::label::Settings {
+            count: 1,
+            min_duration_seconds: 1.0,
+            max_duration_seconds: 10.0,
+            min_segment_duration_seconds: 1.0,
+            ..crate::label::Settings::default()
+        }
+        .resolve()
+        .unwrap();
+        let registry = LanguageRegistry::standard().unwrap();
+        let language = LanguageTag::parse("en").unwrap();
+        let profile = registry.profile(&language);
+        let input = build_input(&transcript, profile, &settings, &language).unwrap();
+        let provider = FakeProvider {
+            config: ProviderConfig::new(
+                "fake".into(),
+                "fake-model".into(),
+                "fake-settings".into(),
+                Location::Remote {
+                    backend: "fake".into(),
+                    base_url: "https://example.invalid".into(),
+                    auth_ref: "test".into(),
+                },
+            )
+            .unwrap(),
+            estimate: 344_064,
+        };
+        let estimate = estimate_provider(&provider, &input, "sha").unwrap();
+        assert_eq!(estimate, 344_064);
+        let context = RunContext {
+            provider: &provider,
+            input: &input,
+            transcript: &transcript,
+            profile,
+            settings: &settings,
+            source_sha: "sha",
+            source: Path::new("unused"),
+            energy: false,
+        };
+        let mut budget = Budget::new(350_000);
+        let mut notes = Vec::new();
+        run_provider(&context, &mut notes, estimate, &mut budget).unwrap();
+        assert!(matches!(
+            run_provider(&context, &mut notes, estimate, &mut budget),
+            Err(Error::CostCap {
+                estimate: 688_128,
+                cap: 350_000
+            })
+        ));
     }
 
     #[test]

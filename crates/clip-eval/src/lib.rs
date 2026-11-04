@@ -1,6 +1,8 @@
 //! Fixed labelled evaluation of the clip pipeline (selection + boundary snapping).
 //! Reports are local artifacts under `target/clip-eval/`.
 pub mod asr;
+pub mod baseline;
+pub mod budget;
 pub mod harness;
 pub mod label;
 pub mod metrics;
@@ -48,4 +50,12 @@ pub enum Error {
     CostCap { estimate: u64, cap: u64 },
     #[error("payload exceeds a bound")]
     Payload,
+    #[error("pinned baseline is missing: {0}")]
+    BaselineMissing(String),
+    #[error("pinned baseline is invalid")]
+    BaselineInvalid,
+    #[error("pinned baseline does not cover this label set")]
+    BaselineVideoSet,
+    #[error("pinned baseline input differs for label {0}")]
+    BaselineMismatch(String),
 }

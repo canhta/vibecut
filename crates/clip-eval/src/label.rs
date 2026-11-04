@@ -1,5 +1,5 @@
 //! Label files: one JSON document per source video, plus synthetic fixture sources.
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::fs::File;
 use std::io::Read;
@@ -70,7 +70,7 @@ impl Default for Settings {
 }
 
 /// Validated settings in ticks and rates.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize)]
 pub struct ResolvedSettings {
     pub count: usize,
     pub min_duration: Tick,
