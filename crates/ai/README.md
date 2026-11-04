@@ -89,10 +89,13 @@ in its job/cache key. The captions conversion preserves the recognizer provider/
 recognizer settings and complete aligner fingerprint with length-prefixed fields,
 so changing alignment also changes the derived transcript fingerprint.
 
-`assemble` requires matching source content, sample rate, language, recognition
-and alignment fingerprints. Fully timed segments sort by source start; overlapping
-identical NFC segment text keeps the first complete segment in source order.
-Different overlapping speech returns a typed ambiguity error, leaving chunk-boundary
+`assemble` requires matching source content, sample rate, language and recognition
+fingerprints. Native-only chunks can merge with chunks using forced alignment;
+the merged result retains the actual aligner identity. Two different nonempty
+aligner fingerprints are incompatible. Fully timed segments sort by source start;
+only completely identical observations (same segment ID, text, source range,
+timing layers and metadata) deduplicate. Every other overlap, including equal-text
+speech with different IDs or ranges, returns a typed ambiguity error, leaving chunk-boundary
 reconciliation for an explicit retry/user policy. Untimed segments retain chunk
 order and cannot be deduplicated by invented coordinates. There is no fuzzy text
 matching or splitting of words at chunk boundaries.

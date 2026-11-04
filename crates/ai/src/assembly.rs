@@ -317,9 +317,9 @@ fn validate_ids(segments: &[RecognitionSegment]) -> Result<(), Error> {
     }
     Ok(())
 }
-/// Merge chunk output in absolute sample coordinates. Exact text duplicates with
-/// overlapping timed ranges keep the first chunk's complete segment. Conflicting
-/// overlaps return a typed error; never silently discard different speech.
+/// Merge chunk output in absolute sample coordinates. Only identical identified
+/// observations (including ranges, timing layers and metadata) are deduplicated.
+/// All other overlaps return a typed error, including equal-text repetitions.
 /// Untimed chunks cannot be deduplicated by guessed positions.
 pub fn assemble(
     chunks: Vec<Recognition>,
@@ -337,9 +337,18 @@ pub fn assemble(
             || chunk.language != result.language
             || chunk.sample_rate != result.sample_rate
             || chunk.fingerprint != result.fingerprint
-            || chunk.alignment != result.alignment
         {
             return Err(Error::Invalid("incompatible recognition chunks"));
+        }
+        if let Some(alignment) = chunk.alignment {
+            if result
+                .alignment
+                .as_ref()
+                .is_some_and(|used| used != &alignment)
+            {
+                return Err(Error::Invalid("incompatible alignment fingerprints"));
+            }
+            result.alignment = Some(alignment);
         }
         result.window = SampleRange::new(
             result.window.start().min(chunk.window.start()),
@@ -357,7 +366,7 @@ pub fn assemble(
                 && let (Some(a), Some(b)) = (previous.range, segment.range)
                 && b.start() < a.end()
             {
-                if previous.text == segment.text {
+                if *previous == segment {
                     continue;
                 }
                 return Err(Error::Invalid("ambiguous overlapping recognition"));

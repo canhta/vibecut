@@ -815,3 +815,207 @@ fn alignment_preserves_existing_native_unit_layers() {
         2
     );
 }
+
+#[test]
+fn review_mixed_native_and_aligned_chunks_can_assemble() {
+    let first_scope = scope(config(false), Operation::Transcribe);
+    let native = Fake::new(first_scope.provider.clone(), NATIVE);
+    let pcm = vec![0.0; 32000];
+    let hooks = Hooks::new();
+    let first = transcribe(
+        &native,
+        audio(&pcm, &first_scope),
+        &Request {
+            scope: &first_scope,
+            consent: None,
+        },
+        None,
+        &hooks,
+    )
+    .unwrap();
+    let mut second_scope = first_scope.clone();
+    second_scope.source_samples = SampleRange::new(48000, 80000).unwrap();
+    let mut second_fake = Fake::new(second_scope.provider.clone(), TEXT);
+    second_fake.result[0].id = "second-chunk".into();
+    let mut align_scope = second_scope.clone();
+    align_scope.operation = Operation::Align;
+    align_scope.texts = vec!["Xin chào".into()];
+    let mut aligner = Fake::new(align_scope.provider.clone(), TEXT);
+    aligner.result = forced();
+    aligner.result[0].id = "second-chunk".into();
+    aligner.result[0].range = Some(SampleRange::new(48000, 64000).unwrap());
+    for span in &mut aligner.result[0].timing {
+        span.range =
+            SampleRange::new(span.range.start() + 32000, span.range.end() + 32000).unwrap();
+    }
+    let second = transcribe(
+        &second_fake,
+        audio(&pcm, &second_scope),
+        &Request {
+            scope: &second_scope,
+            consent: None,
+        },
+        Some(Alignment {
+            provider: &aligner,
+            request: Request {
+                scope: &align_scope,
+                consent: None,
+            },
+            unit: TimingUnit::Word,
+        }),
+        &hooks,
+    )
+    .unwrap();
+    let alignment = second.alignment_fingerprint().unwrap().clone();
+    assert!(first.alignment_fingerprint().is_none());
+    for chunks in [
+        vec![first.clone(), second.clone()],
+        vec![second.clone(), first.clone()],
+    ] {
+        let merged = assemble(chunks, &hooks).unwrap();
+        assert_eq!(merged.segments().len(), 3);
+        assert_eq!(merged.window(), SampleRange::new(16000, 80000).unwrap());
+        assert_eq!(merged.alignment_fingerprint(), Some(&alignment));
+        assert_eq!(merged.to_transcript().unwrap().segments.len(), 3);
+        assert_ne!(
+            merged.to_transcript().unwrap().fingerprint.settings,
+            *first_scope.provider.settings_fingerprint()
+        );
+    }
+    let mut other_align_scope = align_scope.clone();
+    other_align_scope.provider = ProviderConfig::new(
+        "another-aligner".into(),
+        "fixture".into(),
+        "settings-v2".into(),
+        align_scope.provider.location().clone(),
+    )
+    .unwrap();
+    let mut other_aligner = Fake::new(other_align_scope.provider.clone(), TEXT);
+    other_aligner.result = aligner.result.clone();
+    let conflicting = transcribe(
+        &second_fake,
+        audio(&pcm, &second_scope),
+        &Request {
+            scope: &second_scope,
+            consent: None,
+        },
+        Some(Alignment {
+            provider: &other_aligner,
+            request: Request {
+                scope: &other_align_scope,
+                consent: None,
+            },
+            unit: TimingUnit::Word,
+        }),
+        &hooks,
+    )
+    .unwrap();
+    assert!(matches!(
+        assemble(vec![second, conflicting], &hooks),
+        Err(Error::Invalid("incompatible alignment fingerprints"))
+    ));
+}
+
+#[test]
+fn review_single_response_does_not_discard_distinct_equal_text_speech() {
+    let scope = scope(config(false), Operation::Transcribe);
+    let mut fake = Fake::new(scope.provider.clone(), NATIVE);
+    fake.result[0].text = "Yes".into();
+    fake.result[0].timing.clear();
+    fake.result[0].range = Some(SampleRange::new(16000, 40000).unwrap());
+    fake.result[1].text = "Yes".into();
+    fake.result[1].timing.clear();
+    fake.result[1].range = Some(SampleRange::new(32000, 48000).unwrap());
+    let pcm = vec![0.0; 32000];
+    let result = transcribe(
+        &fake,
+        audio(&pcm, &scope),
+        &Request {
+            scope: &scope,
+            consent: None,
+        },
+        None,
+        &Hooks::new(),
+    );
+    assert!(
+        result.as_ref().is_err() || result.as_ref().unwrap().segments().len() == 2,
+        "distinct IDs and speech ranges must not silently lose a segment"
+    );
+}
+
+#[test]
+fn review_equal_text_overlap_requires_identical_event_identity_and_all_metadata() {
+    let scope = scope(config(false), Operation::Transcribe);
+    let pcm = vec![0.0; 32000];
+    let hooks = Hooks::new();
+    let mut fake = Fake::new(scope.provider.clone(), NATIVE);
+    fake.result.truncate(1);
+    let first = transcribe(
+        &fake,
+        audio(&pcm, &scope),
+        &Request {
+            scope: &scope,
+            consent: None,
+        },
+        None,
+        &hooks,
+    )
+    .unwrap();
+    for variant in 0..4 {
+        let mut changed = Fake::new(scope.provider.clone(), NATIVE);
+        changed.result.truncate(1);
+        match variant {
+            0 => changed.result[0].id = "another-event".into(),
+            1 => {
+                changed.result[0].range = Some(SampleRange::new(24000, 40000).unwrap());
+                changed.result[0].timing.clear();
+            }
+            2 => changed.result[0].timing[0].speaker = Some("another-speaker".into()),
+            _ => {
+                changed.result[0].timing[0].confidence =
+                    Some(captions::Confidence::try_from(0.5).unwrap())
+            }
+        }
+        let second = transcribe(
+            &changed,
+            audio(&pcm, &scope),
+            &Request {
+                scope: &scope,
+                consent: None,
+            },
+            None,
+            &hooks,
+        )
+        .unwrap();
+        assert!(matches!(
+            assemble(vec![first.clone(), second], &hooks),
+            Err(Error::Invalid("ambiguous overlapping recognition"))
+        ));
+    }
+    let identical = assemble(vec![first.clone(), first], &hooks).unwrap();
+    assert_eq!(identical.segments().len(), 1);
+}
+
+#[test]
+fn review_same_text_repetition_at_disjoint_times_keeps_both_events() {
+    let scope = scope(config(false), Operation::Transcribe);
+    let mut fake = Fake::new(scope.provider.clone(), NATIVE);
+    for segment in &mut fake.result {
+        segment.text = "Yes".into();
+        segment.timing.clear();
+    }
+    let pcm = vec![0.0; 32000];
+    let result = transcribe(
+        &fake,
+        audio(&pcm, &scope),
+        &Request {
+            scope: &scope,
+            consent: None,
+        },
+        None,
+        &Hooks::new(),
+    )
+    .unwrap();
+    assert_eq!(result.segments().len(), 2);
+    assert_eq!(result.segments()[1].range.unwrap().end(), 48000);
+}
