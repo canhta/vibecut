@@ -13,19 +13,19 @@ def gh(*args):
     return json.loads(subprocess.check_output(['gh', *args], timeout=60))
 
 
-def wait(sha, query=gh, now=time.monotonic, sleep=time.sleep):
+def wait(sha):
     queued = 0
-    previous = now()
+    previous = time.monotonic()
     waiting = True
     url = '(run not registered yet)'
     while True:
-        runs = query('run', 'list', '--workflow', 'ci.yml', '--event', 'push',
+        runs = gh('run', 'list', '--workflow', 'ci.yml', '--event', 'push',
                      '--commit', sha, '--limit', '100', '--json',
                      'databaseId,headSha,status,conclusion,url')
         # Never accept a prefix match or an older attempt when a newer run exists.
         runs = [run for run in runs if run['headSha'] == sha]
         run = max(runs, key=lambda run: run['databaseId']) if runs else None
-        current = now()
+        current = time.monotonic()
         if waiting:
             queued += current - previous
         previous = current
@@ -35,7 +35,7 @@ def wait(sha, query=gh, now=time.monotonic, sleep=time.sleep):
                 passed = run['conclusion'] == 'success'
                 print(f"{'pass' if passed else 'fail'}: {sha} ({run['conclusion']}) {url}")
                 return 0 if passed else 1
-            jobs = query('run', 'view', str(run['databaseId']), '--json', 'jobs')['jobs']
+            jobs = gh('run', 'view', str(run['databaseId']), '--json', 'jobs')['jobs']
             # Workflow status can be in_progress while the macOS runner is queued.
             waiting = not any(job['name'] == 'Rust (macos-latest)' and
                               job['status'] in ('in_progress', 'completed') for job in jobs)
@@ -44,7 +44,7 @@ def wait(sha, query=gh, now=time.monotonic, sleep=time.sleep):
         if waiting and queued >= QUEUE_LIMIT:
             print(f'fail: {sha} queued for 45 min {url}; fallback: run locally')
             return 2
-        sleep(POLL)
+        time.sleep(POLL)
 
 
 def main():

@@ -1,5 +1,7 @@
 import importlib.util
+import json
 from pathlib import Path
+import subprocess
 import unittest
 from unittest.mock import patch
 
@@ -15,41 +17,45 @@ def run(conclusion='', status='completed', sha=SHA, ident=1):
 
 
 class HostedCiTest(unittest.TestCase):
-    def test_terminal_conclusions_and_url(self):
-        for conclusion in ('success', 'failure', 'cancelled', 'timed_out', 'skipped', 'neutral'):
-            with self.subTest(conclusion=conclusion), patch('builtins.print') as output:
-                self.assertEqual(ci.wait(SHA, query=lambda *args: [run(conclusion)]),
-                                 0 if conclusion == 'success' else 1)
-                self.assertIn('https://example.invalid/1', output.call_args.args[0])
-
-    def test_exact_sha_and_newest_run(self):
-        query = lambda *args: [run('success', sha='b' * 40, ident=9),
-                               run('success'), run('failure', ident=2)]
-        with patch('builtins.print'):
-            self.assertEqual(ci.wait(SHA, query=query), 1)
-
-    def test_missing_run_and_queued_macos_time_out(self):
-        for runs in ([], [run(status='queued')], [run(status='in_progress')],
-                     [run('success', sha='b' * 40)]):
-            with self.subTest(runs=runs), patch('builtins.print') as output:
-                ticks = iter([0, ci.QUEUE_LIMIT])
-                def query(*args):
-                    return runs if args[1] == 'list' else {'jobs': [
-                        {'name': 'Rust (macos-latest)', 'status': 'queued'}]}
-                self.assertEqual(ci.wait(SHA, query=query, now=lambda: next(ticks)), 2)
-                self.assertIn('fallback: run locally', output.call_args.args[0])
-
-    def test_running_macos_is_not_queue_time(self):
-        calls = 0
-        def query(*args):
-            nonlocal calls
-            if args[1] == 'view':
-                return {'jobs': [{'name': 'Rust (macos-latest)', 'status': 'in_progress'}]}
-            calls += 1
-            return [run('success')] if calls == 3 else [run(status='in_progress')]
-        ticks = iter([0, 0, ci.QUEUE_LIMIT + 1, ci.QUEUE_LIMIT + 2])
-        with patch('builtins.print'):
-            self.assertEqual(ci.wait(SHA, query=query, now=lambda: next(ticks), sleep=lambda _: None), 0)
+    def test_cli_results(self):
+        cases = [(conclusion, [[run(conclusion)]], [0, 0], 0 if conclusion == 'success' else 1,
+                  conclusion, 'https://example.invalid/1')
+                 for conclusion in ('success', 'failure', 'cancelled', 'timed_out', 'skipped', 'neutral')]
+        cases += [
+            ('exact SHA and newest run', [[run('success', sha='b' * 40, ident=9),
+                                          run('success'), run('failure', ident=2)]],
+             [0, 0], 1, 'failure', 'https://example.invalid/2'),
+            ('missing run', [[]], [0, ci.QUEUE_LIMIT], 2, 'fallback: run locally', 'not registered'),
+            ('wrong SHA only', [[run('success', sha='b' * 40)]],
+             [0, ci.QUEUE_LIMIT], 2, 'fallback: run locally', 'not registered'),
+            ('queued workflow', [[run(status='queued')]],
+             [0, ci.QUEUE_LIMIT], 2, 'fallback: run locally', 'https://example.invalid/1'),
+            ('queued macOS', [[run(status='in_progress')]],
+             [0, ci.QUEUE_LIMIT], 2, 'fallback: run locally', 'https://example.invalid/1'),
+            ('running macOS', [[run(status='in_progress')], [run(status='in_progress')], [run('success')]],
+             [0, 0, ci.QUEUE_LIMIT + 1, ci.QUEUE_LIMIT + 2], 0, 'pass:', 'https://example.invalid/1'),
+            ('API error', None, [0], 1, 'cannot inspect hosted CI', ''),
+        ]
+        for name, responses, ticks, expected, message, url in cases:
+            with self.subTest(name=name):
+                responses = iter(responses) if responses is not None else None
+                def output(command, **kwargs):
+                    if command[0] == 'git':
+                        return SHA + '\n'
+                    if responses is None:
+                        raise subprocess.CalledProcessError(1, command)
+                    if command[2] == 'list':
+                        self.assertEqual(command[command.index('--commit') + 1], SHA)
+                        return json.dumps(next(responses))
+                    return json.dumps({'jobs': [{'name': 'Rust (macos-latest)',
+                                      'status': 'in_progress' if name == 'running macOS' else 'queued'}]})
+                with patch.object(ci.sys, 'argv', ['hosted-ci', SHA]), \
+                     patch.object(ci.subprocess, 'check_output', side_effect=output), \
+                     patch.object(ci.time, 'monotonic', side_effect=ticks), \
+                     patch.object(ci.time, 'sleep'), patch('builtins.print') as printed:
+                    self.assertEqual(ci.main(), expected)
+                    self.assertIn(message, printed.call_args.args[0])
+                    self.assertIn(url, printed.call_args.args[0])
 
 
 if __name__ == '__main__':
