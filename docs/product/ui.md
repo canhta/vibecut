@@ -23,15 +23,12 @@
 
 | Screen | Reference A (desktop) | Reference B (web) | Ours |
 |---|---|---|---|
-| Library | Dashboard: create tile, AI tool cards, projects grid below; left rail | Standalone page: breadcrumb, view toggle, search, `New project`, grid; no rail | Rail plus projects grid first: always-visible `New project`, search, sort, grid/list, multi-select. AI flows are rail entries, not hero or tool cards [proposed] |
-| Editor | Tool tabs, preview, properties, timeline; agent chat docks bottom-right | Same four panels; header holds logo menu (back to projects), name, Export | Layout below; header back-to-library and project name; agent chat docks bottom-right beside the timeline |
-| Long video to shorts | Own window from Home: upload (size/length limits shown), then results | none | Own window from the library rail: pick a video, review suggestions, export them or open one in the editor |
+| Home | Rail: Home, Templates; "Create with AI" (generative studios); Library, Spaces. Content: `Create project` tile, agent prompt card ("Create and edit in one flow") beside AI tool cards, AI suite cards (incl. `Long video to shorts`), then `Projects` with search, view, trash | Projects page: breadcrumb, view toggle, search, `New project`, grid; no rail | Rail: Home, Library. Content: `Create project` tile, `Long video to shorts` card, agent prompt card once the agent is in scope, then `Projects` (search, sort, grid/list, multi-select). Generative studio, image/video generation and ad-maker cards are out of scope |
+| Editor | Tool tabs, preview, properties, timeline; `EditPilot` button bottom-right opens the agent chat docked bottom-right beside the timeline | Same four panels; header holds logo menu (back to projects), name, Export | Layout below; header back-to-Home and project name; agent chat docked bottom-right |
+| Long video to shorts | Own window from its Home card: upload (10 GB / 180 min, minutes quota shown), then results | none | Own window from its Home card: pick a local video (no upload, no quota), review suggestions, export them or open one in the editor |
 
-Why: the library's repeated action is opening a project, so projects come first
-(Reference B); the dashboard layer adds marketing surface to a desktop editor.
-The shorts flow is a different task with its own input and output, so it gets its
-own window (Reference A). Evidence: `.spikes/ui-reference/01-project-list/`,
-`02-editor-shell/`, `screens-2026-11-04/`.
+Evidence: `.spikes/ui-reference/screens-2026-11-04/`, `01-project-list/`,
+`02-editor-shell/`.
 
 ### Layout grid
 
