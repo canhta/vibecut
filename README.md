@@ -10,10 +10,10 @@
 
 <p align="center">
   <strong>The open-source CapCut alternative.</strong><br/>
-  A fast native video editor with AI subtitles and AI shorts. Your footage stays on your machine.
+  A free, fast, native video editor for macOS and Windows. No paywall, no watermark, your footage stays on your machine.
 </p>
 
-<!-- Hero: docs/assets/readme/hero.jpg (editor with timeline, preview and bilingual subtitles) -->
+<!-- Hero: docs/assets/readme/hero.jpg (editor: media panel, preview, timeline, properties) -->
 
 ## Features
 
@@ -21,31 +21,10 @@
 <tr>
 <td width="50%" valign="middle">
 
-### AI Subtitles
+### Multi-track Timeline
 
-Transcribe Vietnamese, English or Chinese, translate between any pair, show two
-languages at once, then burn in or export SRT/VTT.
-
-</td>
-<td width="50%"><!-- docs/assets/readme/subtitles.gif --></td>
-</tr>
-<tr>
-<td width="50%" valign="middle">
-
-### AI Shorts
-
-Drop in a long talk or podcast; get ranked vertical clips to review, trim and export.
-
-</td>
-<td width="50%"><!-- docs/assets/readme/shorts.gif --></td>
-</tr>
-<tr>
-<td width="50%" valign="middle">
-
-### Timeline Editing
-
-Multi-track cut, split, trim, text, audio, effects, masks and keyframes, exported
-to 16:9 or 9:16.
+Cut, split, trim, ripple, snap and group clips across video, audio, text and
+sticker tracks, with full undo.
 
 </td>
 <td width="50%"><!-- docs/assets/readme/timeline.gif --></td>
@@ -53,17 +32,70 @@ to 16:9 or 9:16.
 <tr>
 <td width="50%" valign="middle">
 
-### Your AI, Your Choice
+### Text, Stickers and Graphics
 
-Run speech recognition locally, or pick OpenAI, Anthropic or ElevenLabs. Nothing
-leaves your computer until you approve it.
+Styled titles with presets and animations, stickers, shapes and backgrounds, edited
+directly on the preview.
 
 </td>
-<td width="50%"><!-- docs/assets/readme/providers.png --></td>
+<td width="50%"><!-- docs/assets/readme/text.gif --></td>
+</tr>
+<tr>
+<td width="50%" valign="middle">
+
+### Effects, Transitions and Keyframes
+
+Animate any property, add transitions, blend modes, masks, chroma key and effect
+layers.
+
+</td>
+<td width="50%"><!-- docs/assets/readme/effects.gif --></td>
+</tr>
+<tr>
+<td width="50%" valign="middle">
+
+### Speed and Color
+
+Constant speed, speed ramps, reverse and freeze frame; color adjustments, curves
+and LUTs.
+
+</td>
+<td width="50%"><!-- docs/assets/readme/color.gif --></td>
+</tr>
+<tr>
+<td width="50%" valign="middle">
+
+### Audio
+
+Volume, fades, multi-track mix, voiceover recording, noise reduction and loudness
+normalization.
+
+</td>
+<td width="50%"><!-- docs/assets/readme/audio.gif --></td>
+</tr>
+<tr>
+<td width="50%" valign="middle">
+
+### Export Anywhere
+
+MP4, WebM, GIF, image sequence or audio only, in 16:9, 9:16 or any canvas, with
+hardware-accelerated encoding.
+
+</td>
+<td width="50%"><!-- docs/assets/readme/export.gif --></td>
 </tr>
 </table>
 
-**Also planned:** headless CLI, AI dubbing, plugins, scripting and MCP.
+**AI built in, local first:**
+
+- **Auto captions** in Vietnamese, English and Chinese, translation between any pair, bilingual subtitles, word highlight.
+- **AI shorts:** ranked vertical clips from long videos, reframed to the speaker.
+- **Text-based editing:** remove pauses and filler words, cut by editing the transcript.
+- **Your choice of AI:** local models, or OpenAI, Anthropic and ElevenLabs; nothing is uploaded until you approve.
+
+**Also in the box:** autosave and crash recovery, proxy editing, keyboard shortcuts,
+English and Vietnamese UI, headless CLI. Later: dubbing, plugins, scripting, and MCP
+so coding agents can drive the editor.
 
 ## Install
 
