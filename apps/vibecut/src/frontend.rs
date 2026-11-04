@@ -6,7 +6,10 @@ use crate::{
 };
 use engine::{Command, CreatedId, Session};
 use project::{ItemId, ItemParams, TrackId, TrackKind};
-use std::collections::{BTreeMap, BTreeSet};
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    sync::Arc,
+};
 use time::{Rounding, SourceRange, TICKS_PER_SECOND, Tick};
 
 const TOOLBAR_HEIGHT: f32 = 40.0;
@@ -267,6 +270,7 @@ impl Editor {
         let at = self.playback.position()?;
         let duration = self.session.project().duration();
         let playing = self.playback.playing();
+        let before = self.session.project().clone();
         match id {
             "project.save" => self.lifecycle_action = Some(crate::lifecycle::EditorAction::Save),
             "project.save_as" => {
@@ -297,7 +301,6 @@ impl Editor {
                     serde_json::json!({}),
                 )?;
                 self.prune_selection();
-                self.seek(at.min(self.session.project().duration()))?;
             }
             "timeline.split" => self.split_at_playhead()?,
             "timeline.delete" => self.delete_selected(self.ripple)?,
@@ -331,7 +334,28 @@ impl Editor {
             }
             _ => return Err(Error::Unsupported("widget action")),
         }
+        if !Arc::ptr_eq(&before, self.session.project()) {
+            self.sync_preview();
+        }
         Ok(())
+    }
+    /// Restart preview/audio work against the current immutable project snapshot.
+    /// Old generations are fenced by `Playback::seek`; the position is clamped when
+    /// an edit shortens the timeline and the transport state is preserved when able.
+    fn sync_preview(&mut self) {
+        let project = self.session.project().clone();
+        let duration = project.duration();
+        let at = self
+            .playback
+            .position()
+            .unwrap_or(Tick::ZERO)
+            .clamp(Tick::ZERO, duration);
+        let playing = self.playback.playing();
+        if self.playback.seek(at, playing, project.clone()).is_err()
+            && let Err(error) = self.playback.seek(at, false, project)
+        {
+            self.error = Some(error.to_string());
+        }
     }
     fn seek(&mut self, at: Tick) -> Result<()> {
         self.playback
@@ -433,7 +457,9 @@ impl Editor {
                 }
             }
         }
-        let targets = if selected_under.is_empty() {
+        // A nonempty selection owns the edit even when no selected item crosses the
+        // playhead: splitting then is a no-op, never a fallback to unrelated clips.
+        let targets = if self.selection.is_empty() {
             under
         } else {
             selected_under
@@ -561,17 +587,30 @@ impl Editor {
             moved: false,
         });
     }
-    fn update_drag(&mut self, ui: &egui::Ui, item: ItemId, body_left: f32) {
+    /// Drive the active gesture from global pointer state. Release and update do not
+    /// depend on the item or handle still being visible or hit-testable this frame.
+    fn advance_drag(&mut self, ui: &egui::Ui, body_left: f32) {
+        if self.drag.is_none() {
+            return;
+        }
+        let (pointer, bypass, down) = ui.ctx().input(|input| {
+            (
+                input.pointer.interact_pos(),
+                input.modifiers.shift,
+                input.pointer.primary_down(),
+            )
+        });
+        if let Some(pointer) = pointer {
+            self.update_drag(pointer, body_left, bypass);
+        }
+        if !down {
+            self.finish_drag();
+        }
+    }
+    fn update_drag(&mut self, pointer: egui::Pos2, body_left: f32, bypass: bool) {
         let Some(mut drag) = self.drag.clone() else {
             return;
         };
-        if drag.item != item {
-            return;
-        }
-        let Some(pointer) = ui.ctx().input(|input| input.pointer.interact_pos()) else {
-            return;
-        };
-        let bypass = ui.ctx().input(|input| input.modifiers.shift);
         let result = match drag.mode {
             DragMode::Move => self.apply_drag_move(&drag, pointer.x, bypass),
             DragMode::TrimStart => {
@@ -581,11 +620,18 @@ impl Editor {
                 self.apply_drag_trim(&drag, pointer.x, body_left, bypass, DragMode::TrimEnd)
             }
         };
-        match result {
-            Ok(changed) => drag.moved |= changed,
-            Err(error) => self.error = Some(error.to_string()),
-        }
+        let changed = match result {
+            Ok(changed) => changed,
+            Err(error) => {
+                self.error = Some(error.to_string());
+                false
+            }
+        };
+        drag.moved |= changed;
         self.drag = Some(drag);
+        if changed {
+            self.sync_preview();
+        }
     }
     fn apply_drag_move(&mut self, drag: &DragState, pointer_x: f32, bypass: bool) -> Result<bool> {
         let raw = Tick::from_seconds_f64(
@@ -596,16 +642,15 @@ impl Editor {
         let (low, high) = self.move_bounds(&drag.origins);
         let delta = snapped.clamp(low, high);
         self.snap_indicator = indicator;
-        if delta == Tick::ZERO {
-            return Ok(false);
-        }
+        // Always target the origin plus this delta. A return to the press point must
+        // restore the gesture-entry positions rather than leave an earlier preview.
         let moves = drag
             .origins
             .iter()
             .map(|origin| engine::Move {
                 item: origin.item,
                 track: origin.track,
-                start: (origin.start + delta).max(Tick::ZERO),
+                start: origin.start + delta,
             })
             .collect();
         Ok(self.session.apply(Command::MoveItems { moves })?.changed)
@@ -644,8 +689,10 @@ impl Editor {
         let Some(drag) = self.drag.take() else {
             return;
         };
+        let mut edited = false;
         if self.session.gesture_active() {
             let outcome = if drag.moved {
+                edited = true;
                 self.session.commit_gesture()
             } else {
                 self.session.cancel_gesture()
@@ -654,15 +701,21 @@ impl Editor {
                 self.error = Some(error.to_string());
             }
         }
+        if edited {
+            self.sync_preview();
+        }
         self.snap_indicator = None;
         self.prune_selection();
     }
     fn cancel_interaction(&mut self) {
-        if self.drag.take().is_some() {
+        if let Some(drag) = self.drag.take() {
             if self.session.gesture_active()
                 && let Err(error) = self.session.cancel_gesture()
             {
                 self.error = Some(error.to_string());
+            }
+            if drag.moved {
+                self.sync_preview();
             }
             self.snap_indicator = None;
         } else {
@@ -673,7 +726,13 @@ impl Editor {
     fn move_bounds(&self, origins: &[DragOrigin]) -> (Tick, Tick) {
         let tracks: BTreeSet<TrackId> = origins.iter().map(|origin| origin.track).collect();
         let selected: BTreeSet<ItemId> = origins.iter().map(|origin| origin.item).collect();
-        let mut low = Tick(i64::MIN / 4);
+        let earliest = origins
+            .iter()
+            .map(|origin| origin.start)
+            .min()
+            .unwrap_or(Tick::ZERO);
+        // One shared delta keeps the selected group rigid at the timeline zero edge.
+        let mut low = Tick(earliest.0.saturating_neg());
         let mut high = Tick(i64::MAX / 4);
         for track in &self.session.project().data().timeline.tracks {
             if !tracks.contains(&track.id) {
@@ -1331,6 +1390,7 @@ impl Editor {
         let (rows, items, duration, bookmarks) = self.timeline_views(&layout);
         self.paint_ruler(ui, &layout, bookmarks.as_slice());
         self.paint_tracks(ui, &layout, &rows, &items);
+        self.advance_drag(ui, layout.body.left());
         self.paint_playhead(ui, &layout);
         self.timeline_playhead_interaction(ui, &layout);
         self.timeline_scrollbars(ui, &layout, duration, &rows);
@@ -1741,12 +1801,6 @@ impl Editor {
                 if response.drag_started() && self.drag.is_none() {
                     self.begin_drag(item.id, mode, ui);
                 }
-                if response.dragged() {
-                    self.update_drag(ui, item.id, layout.body.left());
-                }
-                if response.drag_stopped() {
-                    self.finish_drag();
-                }
             }
         }
         if response.clicked() {
@@ -1754,12 +1808,6 @@ impl Editor {
         }
         if !item.locked && self.drag.is_none() && response.drag_started() {
             self.begin_drag(item.id, DragMode::Move, ui);
-        }
-        if response.dragged() {
-            self.update_drag(ui, item.id, layout.body.left());
-        }
-        if response.drag_stopped() {
-            self.finish_drag();
         }
     }
     fn paint_playhead(&self, ui: &egui::Ui, layout: &TimelineLayout) {

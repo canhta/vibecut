@@ -572,3 +572,239 @@ fn timeline_screenshot_proof_after_automation_id_edits() {
         light_path.display()
     );
 }
+
+fn text_item_id(editor: &Editor) -> ItemId {
+    editor
+        .session
+        .project()
+        .data()
+        .timeline
+        .tracks
+        .iter()
+        .flat_map(|track| track.items.iter())
+        .find(|item| matches!(item.content, ItemParams::Text(_)))
+        .unwrap()
+        .id
+}
+
+#[test]
+fn review_delete_invalidates_preview_and_clamps_playhead() {
+    let mut session = Session::new(
+        Project::empty(ProjectId(123), "Preview".into()).unwrap(),
+        20,
+    )
+    .unwrap();
+    let overlay = track(&mut session, "Overlay", TrackKind::Overlay);
+    let item_id = insert(
+        &mut session,
+        overlay,
+        Tick::ZERO,
+        SourceRange::new(Tick::ZERO, Tick(10 * SECOND)).unwrap(),
+        None,
+        ItemParams::Overlay(project::OverlayParams {
+            color: Color([255, 0, 0, 255]),
+        }),
+    );
+    let mut playback = Playback::new(
+        &session,
+        ByteBudget::new(64 << 20).unwrap(),
+        Arc::new(Files),
+    )
+    .unwrap();
+    playback.set_device_available(true);
+    playback
+        .seek(Tick(5 * SECOND), false, session.project().clone())
+        .unwrap();
+    let mut editor = Editor::new(session, playback, Preferences::default());
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+    while editor.playback.frame().is_none() {
+        editor.tick();
+        assert!(std::time::Instant::now() < deadline);
+        std::thread::sleep(std::time::Duration::from_millis(2));
+    }
+    editor.selection.insert(item_id);
+    editor.activate("timeline.delete").unwrap();
+    assert_eq!(editor.session.project().duration(), Tick::ZERO);
+    assert_eq!(
+        editor.playback.position().unwrap(),
+        Tick::ZERO,
+        "delete must clamp the old 5 s playhead to the new duration"
+    );
+    assert!(
+        editor.playback.frame().is_none(),
+        "delete must invalidate frames from the previous project snapshot"
+    );
+}
+
+#[test]
+fn review_offscreen_drop_closes_gesture() {
+    let fixture = fixture();
+    let id = fixture.video_b;
+    let mut harness = harness(fixture.editor);
+    harness.run_steps(3);
+    let from = widget(&harness, &format!("timeline.item.{}", id.0)).center();
+    drag(&mut harness, from, from + egui::vec2(1600.0, 0.0));
+    assert!(
+        !harness.state().session.gesture_active(),
+        "drop must close the gesture even when the item is offscreen"
+    );
+}
+
+#[test]
+fn review_group_move_preserves_spacing_at_zero() {
+    let fixture = fixture();
+    let text = text_item_id(&fixture.editor);
+    let mut editor = fixture.editor;
+    editor
+        .session
+        .apply(Command::Delete {
+            items: vec![fixture.video_a],
+        })
+        .unwrap();
+    editor.selection = [fixture.video_b, text].into_iter().collect();
+    let id = fixture.video_b;
+    let mut harness = harness(editor);
+    harness.run_steps(3);
+    let from = widget(&harness, &format!("timeline.item.{}", id.0)).center();
+    drag(&mut harness, from, from - egui::vec2(160.0, 0.0));
+    assert_eq!(
+        item(harness.state(), id).start - item(harness.state(), text).start,
+        Tick(4 * SECOND),
+        "group spacing must survive reaching timeline zero"
+    );
+}
+
+#[test]
+fn review_move_back_to_origin_restores_position() {
+    for snapping in [true, false] {
+        let fixture = fixture();
+        let id = fixture.video_b;
+        let mut editor = fixture.editor;
+        editor.snapping = snapping;
+        let mut harness = harness(editor);
+        harness.run_steps(3);
+        let body = widget(&harness, &format!("timeline.item.{}", id.0));
+        let from = body.center();
+        harness.drag_at(from);
+        harness.run_steps(1);
+        harness.hover_at(from + egui::vec2(40.0, 0.0));
+        harness.run_steps(2);
+        assert_eq!(item(harness.state(), id).start, Tick(7 * SECOND));
+        harness.hover_at(from);
+        harness.run_steps(2);
+        harness.drop_at(from);
+        harness.run_steps(2);
+        assert_eq!(
+            item(harness.state(), id).start,
+            Tick(6 * SECOND),
+            "returning to the press point restores the entry position (snapping {snapping})"
+        );
+    }
+}
+
+#[test]
+fn review_trim_release_survives_its_handle_becoming_narrow() {
+    let fixture = fixture();
+    let id = fixture.video_a;
+    let mut harness = harness(fixture.editor);
+    harness.run_steps(3);
+    let zoom = harness.state().inspect().unwrap().zoom;
+    let timeline = harness.state().panels["timeline"];
+    let body_left = timeline.left() + 12.0 + 112.0;
+    let handle = widget(&harness, &format!("timeline.item.{}.trim_end", id.0));
+    drag(
+        &mut harness,
+        handle.center(),
+        egui::pos2(body_left + 0.05 * zoom, handle.center().y),
+    );
+    assert!(!harness.state().session.gesture_active());
+    let trimmed = item(harness.state(), id);
+    assert!(trimmed.end().unwrap() > trimmed.start);
+    assert!(
+        trimmed.end().unwrap() < Tick(SECOND),
+        "trim handle must close its gesture after the clip becomes too narrow to hit-test"
+    );
+}
+
+#[test]
+fn review_split_respects_selection_outside_playhead() {
+    let fixture = fixture();
+    let text = text_item_id(&fixture.editor);
+    let mut editor = fixture.editor;
+    editor.selection.insert(text);
+    editor
+        .playback
+        .seek(Tick(7 * SECOND), false, editor.session.project().clone())
+        .unwrap();
+    let before = editor.session.project().clone();
+    editor.activate("timeline.split").unwrap();
+    assert_eq!(
+        editor.session.project(),
+        &before,
+        "selected 2-5 s text must prevent splitting unrelated video/audio at 7 s"
+    );
+}
+
+#[test]
+fn edits_while_playing_restart_preview_and_pause_at_the_new_end() {
+    let mut session = Session::new(
+        Project::empty(ProjectId(124), "Playing".into()).unwrap(),
+        20,
+    )
+    .unwrap();
+    let overlay = track(&mut session, "Overlay", TrackKind::Overlay);
+    let item_id = insert(
+        &mut session,
+        overlay,
+        Tick::ZERO,
+        SourceRange::new(Tick::ZERO, Tick(10 * SECOND)).unwrap(),
+        None,
+        ItemParams::Overlay(project::OverlayParams {
+            color: Color([255, 0, 0, 255]),
+        }),
+    );
+    let mut playback = Playback::new(
+        &session,
+        ByteBudget::new(64 << 20).unwrap(),
+        Arc::new(Files),
+    )
+    .unwrap();
+    playback.set_device_available(true);
+    let mut editor = Editor::new(session, playback, Preferences::default());
+    editor.activate("transport.play").unwrap();
+    let port = editor.playback.audio_port();
+    for _ in 0..25 {
+        port.fill(&mut [0.0; 960], 0);
+        editor.tick();
+    }
+    assert!(editor.playback.position().unwrap() > Tick::ZERO);
+    editor.selection.insert(item_id);
+    editor.activate("timeline.delete").unwrap();
+    assert_eq!(editor.session.project().duration(), Tick::ZERO);
+    assert!(editor.playback.frame().is_none());
+    editor.tick();
+    assert!(!editor.playback.playing());
+    assert_eq!(editor.playback.position().unwrap(), Tick::ZERO);
+}
+
+#[test]
+fn escape_rolls_back_the_drag_and_restarts_preview() {
+    let fixture = fixture();
+    let id = fixture.video_b;
+    let mut harness = harness(fixture.editor);
+    harness.run_steps(3);
+    let body = widget(&harness, &format!("timeline.item.{}", id.0));
+    let from = body.center();
+    harness.drag_at(from);
+    harness.run_steps(1);
+    harness.hover_at(from + egui::vec2(40.0, 0.0));
+    harness.run_steps(2);
+    assert_eq!(item(harness.state(), id).start, Tick(7 * SECOND));
+    harness.key_press(egui::Key::Escape);
+    harness.run_steps(2);
+    assert_eq!(item(harness.state(), id).start, Tick(6 * SECOND));
+    assert!(!harness.state().session.gesture_active());
+    harness.drop_at(from);
+    harness.run_steps(2);
+    assert_eq!(item(harness.state(), id).start, Tick(6 * SECOND));
+}
