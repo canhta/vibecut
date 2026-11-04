@@ -8,8 +8,14 @@ requires an ADR. Review license metadata when changing dependencies.
 
 ## Assets
 
-Keep media, model weights and large binaries out of Git. Any admitted small asset
-must be openly licensed and have its source and license recorded beside it.
+Keep media, model weights and large binaries out of Git. Admitted small assets
+carry `<file>.attribution` sidecars with nonempty `asset`, `title`, `author`, `source`,
+`license`, `license-file`, `added` and `notes` fields; READMEs and sidecars are exempt.
+`added` identifies the admitting task, not a date. License paths are repository-relative.
+Project-owned brand/icon sources and committed exports are admitted small assets;
+MIT applies. App/window icons use
+[assets/app-icon](../../assets/app-icon/README.md); [brand vectors](../brand/logo.svg)
+serve documentation. Regeneration and planned platform wiring live in the icon README.
 [Verification](verification.md#checks) owns generated fixture placement.
 
 ## Privacy

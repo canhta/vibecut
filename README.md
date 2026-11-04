@@ -1,20 +1,45 @@
+<table><tr><td width="120"><img src="docs/brand/logo.svg" width="110" alt="VibeCut logo"></td><td>
+
 # VibeCut
 
-VibeCut is an open-source CapCut alternative: a Rust-first, local-first desktop
-video editor for macOS and Windows.
-It aims to turn long-form English talking videos into AI-suggested vertical short
-clips that you review, trim and export, and to transcribe, translate and edit
-English-to-Vietnamese or bilingual subtitles for burn-in MP4 or SRT/VTT export.
-Vietnamese dubbing may follow later. Status: **pre-alpha, design phase**; this
-repository contains only the project skeleton.
+A free, open-source desktop video editor — a CapCut alternative for macOS and Windows.
 
-AI is opt-in: media is uploaded only with explicit consent. OpenAI is the first
-planned provider; local models and Linux support come later.
+</td></tr></table>
+
+## Why?
+
+- **Privacy:** Edit locally; remote AI uploads require your consent.
+- **Free features:** Editing tools without a feature paywall.
+- **Simple for creators:** Cut footage, add text and audio, and export your video.
+
+## Features
+
+Planned scope:
+
+- Multi-track timeline with cut, split and trim
+- Text and audio editing
+- Effects, masks and keyframes
+- MP4 export in 16:9 or 9:16
+- Editable project files
+- Headless CLI
+- AI short clips from long videos
+- English → Vietnamese / bilingual subtitles (auto transcribe, translate, edit, burn-in or SRT/VTT)
+- Plugins, scripting and MCP later
+
+## Status
+
+Pre-alpha, under active development.
 
 ## Development
 
 Install [rustup](https://rustup.rs/), then run `cargo xtask ci`.
-The toolchain file pins Rust and installs rustfmt and Clippy.
+The pinned toolchain includes rustfmt and Clippy; see [AGENTS.md](AGENTS.md).
 
-See [CONTRIBUTING.md](CONTRIBUTING.md), [GLOSSARY.md](GLOSSARY.md) and the
-[initial decisions](docs/adr/0001-project-foundations.md). Licensed under [MIT](LICENSE).
+## Contributing
+
+Contributions require DCO sign-off (`git commit -s`).
+Read [CONTRIBUTING.md](CONTRIBUTING.md).
+
+## License
+
+[MIT](LICENSE)
