@@ -43,8 +43,7 @@ data-loss handling, security and accessibility at every option.
 ## Errors and concurrency
 
 Product crates expose one typed error enum each (derive with `thiserror` when useful),
-with variants for
-invalid input, unsupported input/capability (`Unsupported`) and cancellation
+with variants for invalid input, unsupported input/capability (`Unsupported`) and cancellation
 (`Cancelled`) where applicable. Keep source errors with `#[source]`/`#[from]` and
 safe operation/asset-ID context. Public APIs return typed errors, never `String`,
 opaque boxed errors or provider response bodies. The xtask executable may use

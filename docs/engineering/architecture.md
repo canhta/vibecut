@@ -30,7 +30,7 @@ and passes with only `xtask`. `xtask` is tooling, with no product dependencies.
 | ai | crates/ai | Provider interfaces, capabilities, consent/cost policy and transcription/alignment/translation adapters | time, media, captions |
 | engine | crates/engine | Session, commands, history, jobs/cache and processing orchestration; adapter selection | time, media, oscodec, project, captions, text, render, ai |
 | vibecut-cli | apps/vibecut-cli | Headless command adapter and composition | engine, oscodec, media, ai |
-| vibecut | apps/vibecut | Desktop UI, device playback, GPU adapter, presentation/preferences and composition | engine, oscodec, media, render, ai |
+| vibecut | apps/vibecut | Desktop UI, device playback, GPU adapter, presentation/preferences and composition | engine, oscodec, media, project, captions, text, render, ai |
 
 Dependencies point from apps through engine to domain/processing crates and time.
 `media` defines codec traits; engine/apps inject `oscodec`. Render consumes those
@@ -66,18 +66,23 @@ Pass cancellation/progress hooks into execution; engine retains scheduling, retr
 budgets and promotion of completed outputs. Apps inject concrete adapters;
 engine selects them by capability and applies software decode fallback once.
 An absent encoder returns `Unsupported`; software decode is not software encode.
+The project persistence module owns reusable atomic-file writes; app preferences
+reuse that implementation while retaining their own schema. Desktop composition
+may consume captions profiles and text font resolution directly; these dependencies
+do not move processing or command policy into widgets.
 
 AI owns upload consent, estimates and provider/model capability validation once;
 transcription, translation and clip suggestion adapters reuse that policy. Consent
 covers the provider, payload and operation; retries/chunks stay within that scope.
-LanguageProfile lookup and text normalization belong to captions; text consumes
+LanguageProfile lookup and caption-text normalization belong to captions; text consumes
 plain layout/font inputs without depending on captions. Text still validates its
 own public input; validation of a different trust seam is not duplicate logic.
 
 Everything that edits a project is a command. UI, CLI and future MCP/plugins use
 the same engine registry: stable ID, label, parameter schema and enabled predicate.
 Validate before committing; commands are all-or-nothing. A batch is one undo step;
-continuous drags merge by key. UI-local presentation state stays in the app. The app action registry maps gestures
+continuous drags merge by key. UI-local presentation state stays in the app.
+The app action registry maps gestures
 to engine command IDs or app-local actions; command schemas and enabled predicates
 remain engine-owned. App preferences have one app-owned store, separate from Project
 and project undo history. Headless callers need no widget, device or preference state.

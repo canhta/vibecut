@@ -26,7 +26,7 @@ numerator and denominator rather than a floating value.
 probed stream information; timeline items refer to it without copying its media.
 
 **Transcript**: Source-language recognition result with stable segments and a
-provider/model/settings fingerprint, owned by `captions`.
+provider/model/settings fingerprint.
 
 **Cue**: Identified source range with source language and per-language text,
 independent edit flags and translation references.
@@ -47,4 +47,4 @@ history.
 
 **Word**: Recognized source text with optional source range, speaker and confidence.
 
-**Track**: A `CueTrack` grouping cues for validation, repair and subtitle export.
+**CueTrack**: A collection of timed cues for subtitle validation and export.
