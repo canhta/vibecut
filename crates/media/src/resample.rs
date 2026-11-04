@@ -34,6 +34,10 @@ impl AudioResampler {
         if !(8_000..=192_000).contains(&output_rate) || channels == 0 || channels > 8 {
             return Err(MediaError::Invalid("resampler output format"));
         }
+        // Bound the total returned PCM as well as each individual frame.
+        if u64::from(output_rate) > u64::from(first.sample_rate()) * 24 {
+            return Err(MediaError::Unsupported("resampling expansion exceeds 24x"));
+        }
         let context = ff::software::resampling::Context::get(
             first.inner.format(),
             first.inner.channel_layout(),
@@ -51,7 +55,8 @@ impl AudioResampler {
             finished: false,
         })
     }
-    pub fn convert(&mut self, input: &AudioFrame) -> Result<AudioFrame> {
+    /// Returns bounded output frames; retains only the filter delay between calls.
+    pub fn convert(&mut self, input: &AudioFrame) -> Result<Vec<AudioFrame>> {
         if self.finished {
             return Err(MediaError::Invalid("resampler finished"));
         }
@@ -83,24 +88,12 @@ impl AudioResampler {
                 )?)
                 .ok_or(MediaError::TooLarge("audio timestamp"))?,
         );
-        let output = self.context.output();
-        let capacity = (input.samples() as u64)
-            .checked_mul(u64::from(output.rate))
-            .ok_or(MediaError::TooLarge("resampling ratio"))?
-            .div_ceil(u64::from(input.sample_rate()))
-            .checked_add(256)
-            .ok_or(MediaError::TooLarge("resampling capacity"))?;
-        let mut frame = ffi::audio_buffer(
-            output.format,
-            usize::try_from(capacity).map_err(|_| MediaError::TooLarge("resampling capacity"))?,
-            output.channel_layout,
-            output.rate,
-        )?;
-        self.context
-            .run(&input.inner, &mut frame)
-            .map_err(error("resample audio"))?;
-        self.output(frame)
+        ffi::resample_chunks(&mut self.context, &input.inner)?
+            .into_iter()
+            .map(|frame| self.output(frame))
+            .collect()
     }
+
     pub fn flush(&mut self) -> Result<Option<AudioFrame>> {
         if self.finished {
             return Ok(None);

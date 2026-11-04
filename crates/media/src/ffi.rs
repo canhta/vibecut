@@ -572,3 +572,54 @@ pub(super) fn allocation_limit() {
         ff::ffi::av_max_alloc(256 << 20);
     }
 }
+
+pub(super) fn clear_codec_tag(stream: &mut ff::StreamMut<'_>) {
+    // SAFETY: exclusive output stream with owned codec parameters. A source
+    // container's fourcc is not portable; let the destination muxer choose it.
+    unsafe {
+        (*(*stream.as_mut_ptr()).codecpar).codec_tag = 0;
+    }
+}
+
+pub(super) fn resample_chunks(
+    context: &mut ff::software::resampling::Context,
+    input: &ff::frame::Audio,
+) -> Result<Vec<ff::frame::Audio>> {
+    let output = *context.output();
+    let mut frames = Vec::new();
+    let mut count = input.samples();
+    loop {
+        // SAFETY: live initialized context, bounded input sample count. This is
+        // an upper bound, not a request to grow FFmpeg's internal input buffer.
+        let bound = unsafe { ff::ffi::swr_get_out_samples(context.as_mut_ptr(), count as i32) };
+        if bound < 0 {
+            return Err(error("resampling capacity")(ff::Error::from(bound)));
+        }
+        let capacity = (bound as usize).clamp(1, 65_536);
+        let mut frame = audio_buffer(output.format, capacity, output.channel_layout, output.rate)?;
+        // SAFETY: live uniquely owned resampler and bounded initialized frames.
+        // A non-null input array with zero samples drains buffered output without
+        // signaling end-of-stream; only flush passes a null input array.
+        let produced = unsafe {
+            ff::ffi::swr_convert(
+                context.as_mut_ptr(),
+                (*frame.as_mut_ptr()).extended_data,
+                capacity as i32,
+                (*input.as_ptr()).extended_data.cast(),
+                count as i32,
+            )
+        };
+        if produced < 0 {
+            return Err(error("resample audio")(ff::Error::from(produced)));
+        }
+        frame.set_samples(produced as usize);
+        if produced > 0 {
+            frames.push(frame);
+        }
+        if (produced as usize) < capacity {
+            break;
+        }
+        count = 0;
+    }
+    Ok(frames)
+}

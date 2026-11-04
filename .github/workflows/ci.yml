@@ -26,7 +26,19 @@ jobs:
       - name: Install macOS media build tools
         if: runner.os == 'macOS'
         run: brew install cmake pkgconf nasm
+      - name: Install Windows source build tools
+        if: runner.os == 'Windows'
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: ${{ runner.arch == 'ARM64' && 'CLANGARM64' || 'CLANG64' }}
+          path-type: inherit
+          install: >-
+            make diffutils git tar
+          pacboy: >-
+            clang:p llvm:p lld:p cmake:p ninja:p pkgconf:p nasm:p
       - name: Provision current LGPL media libraries
+        shell: ${{ runner.os == 'Windows' && 'msys2 {0}' || 'bash' }}
         run: cargo xtask ffmpeg
       - name: Check workspace
+        shell: ${{ runner.os == 'Windows' && 'msys2 {0}' || 'bash' }}
         run: cargo xtask ci

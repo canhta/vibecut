@@ -26,6 +26,13 @@ pub fn cache() -> Result<PathBuf, String> {
 }
 
 fn run(command: &mut Command) -> Result<(), String> {
+    if cfg!(windows) {
+        command
+            .env("CC", "clang")
+            .env("CXX", "clang++")
+            .env("AR", "llvm-ar")
+            .env("NM", "llvm-nm");
+    }
     let result = command.status().map_err(|e| e.to_string())?;
     if result.success() {
         Ok(())
@@ -139,7 +146,13 @@ pub fn prefix() -> Result<PathBuf, String> {
     let path = fs::read_to_string(&pointer)
         .map_err(|_| "run cargo xtask ffmpeg before building media".to_owned())?;
     let prefix = PathBuf::from(path.trim());
-    if !prefix.join("BUILD.txt").is_file() {
+    let expected_patch_id = patch_id(&patches()?)?;
+    if !prefix.join("BUILD.txt").is_file()
+        || !prefix
+            .file_name()
+            .and_then(|n| n.to_str())
+            .is_some_and(|n| n.ends_with(&expected_patch_id))
+    {
         return Err("FFmpeg cache is incomplete; rerun cargo xtask ffmpeg".into());
     }
     Ok(prefix)
@@ -200,13 +213,8 @@ pub fn provision(target: Option<&str>) -> Result<(), String> {
     {
         return Err(format!("unsupported FFmpeg target {target}"));
     }
-    // Windows builds use the shared LGPL distributions; macOS builds use source
-    // because a complete LGPL shared SDK is not published by the upstream project.
-    if target.starts_with("windows-") {
-        return windows(target);
-    }
-    if !cfg!(target_os = "macos") {
-        return Err("macOS FFmpeg builds require a Mac and Xcode command line tools".into());
+    if target.starts_with("windows-") && target != host {
+        return Err("source provisioning must run on the target host/architecture".into());
     }
     let version = stable_tag("https://github.com/FFmpeg/FFmpeg.git", "n")?;
     let opus = stable_tag("https://github.com/xiph/opus.git", "v")?;
@@ -218,22 +226,27 @@ pub fn provision(target: Option<&str>) -> Result<(), String> {
         .create_new(true)
         .open(base.join("building.lock"))
         .map_err(|e| format!("FFmpeg provision already running or stale building.lock: {e}"))?;
-    let result = build_macos(&base, target, &version, &opus, &vpx);
+    let result = build_source(&base, target, &version, &opus, &vpx);
     drop(lock);
     fs::remove_file(base.join("building.lock")).map_err(|e| e.to_string())?;
     result
 }
 
-fn build_macos(
+fn build_source(
     base: &Path,
     target: &str,
     version: &str,
     opus: &str,
     vpx: &str,
 ) -> Result<(), String> {
-    let prefix = base.join(format!("{version}-opus{opus}-vpx{vpx}"));
+    let patches = patches()?;
+    let patch_id = patch_id(&patches)?;
+    let prefix = base.join(format!("{version}-opus{opus}-vpx{vpx}-{patch_id}"));
     if prefix.join("BUILD.txt").exists() {
-        tool_runpaths(&prefix)?;
+        record_patches(&prefix, &patches)?;
+        if cfg!(target_os = "macos") {
+            tool_runpaths(&prefix)?;
+        }
         fs::write(base.join("current"), prefix.as_os_str().as_encoded_bytes())
             .map_err(|e| e.to_string())?;
         println!("FFmpeg {version}: {}", prefix.display());
@@ -242,13 +255,39 @@ fn build_macos(
     let mut receipt = format!("FFmpeg LGPL shared build for {target}\n\n");
     let sources = base.join("sources");
     fs::create_dir_all(&sources).map_err(|e| e.to_string())?;
-    let ff = source(
+    let _pristine = source(
         &sources,
         "ffmpeg",
         version,
         &format!("https://ffmpeg.org/releases/ffmpeg-{version}.tar.xz"),
         &mut receipt,
     )?;
+    // Patch a fresh extraction, never mutate the shared pristine source cache.
+    let patched = sources.join(format!("ffmpeg-{version}-{patch_id}"));
+    if patched.exists() {
+        fs::remove_dir_all(&patched).map_err(|e| e.to_string())?;
+    }
+    fs::create_dir(&patched).map_err(|e| e.to_string())?;
+    run(Command::new("tar")
+        .arg("-xf")
+        .arg(sources.join(format!("ffmpeg-{version}.archive")))
+        .arg("--strip-components=1")
+        .arg("-C")
+        .arg(&patched))?;
+    for patch in &patches {
+        run(Command::new("git").args(["apply", "--check"]).arg(patch).current_dir(&patched))
+            .map_err(|e| format!("FFmpeg security backport no longer applies; review/delete it when stable includes it: {e}"))?;
+        run(Command::new("git")
+            .arg("apply")
+            .arg(patch)
+            .current_dir(&patched))?;
+        receipt.push_str(&format!(
+            "backport: {} sha256: {}\n",
+            patch.display(),
+            sha256(patch)?
+        ));
+    }
+    let ff = patched;
     let op = source(
         &sources,
         "opus",
@@ -282,9 +321,20 @@ fn build_macos(
             "-DOPUS_BUILD_TESTING=OFF",
             "-DOPUS_BUILD_PROGRAMS=OFF",
             "-DOPUS_DNN=OFF",
-            "-DCMAKE_OSX_DEPLOYMENT_TARGET=11.0",
         ])
-        .arg(format!("-DCMAKE_OSX_ARCHITECTURES={arch}")))?;
+        .args(if cfg!(target_os = "macos") {
+            vec![
+                format!("-DCMAKE_OSX_ARCHITECTURES={arch}"),
+                "-DCMAKE_OSX_DEPLOYMENT_TARGET=11.0".into(),
+            ]
+        } else {
+            vec![
+                "-G".into(),
+                "Ninja".into(),
+                "-DCMAKE_C_COMPILER=clang".into(),
+                "-DCMAKE_CXX_COMPILER=clang++".into(),
+            ]
+        }))?;
     run(Command::new("cmake")
         .arg("--build")
         .arg(op.join(target))
@@ -293,8 +343,18 @@ fn build_macos(
     let vpbuild = vp.join(target);
     fs::create_dir_all(&vpbuild).map_err(|e| e.to_string())?;
     let vpflags = [
-        format!("--prefix={}", prefix.display()),
-        format!("--target={arch}-darwin20-gcc"),
+        format!("--prefix={}", shell_path(&prefix)?),
+        format!(
+            "--target={}",
+            if cfg!(windows) {
+                format!(
+                    "{}-win64-gcc",
+                    if arch == "arm64" { "arm64" } else { "x86_64" }
+                )
+            } else {
+                format!("{arch}-darwin20-gcc")
+            }
+        ),
         "--disable-shared".into(),
         "--enable-pic".into(),
         "--disable-examples".into(),
@@ -302,15 +362,16 @@ fn build_macos(
         "--disable-unit-tests".into(),
         "--disable-docs".into(),
     ];
-    run(Command::new(vp.join("configure"))
+    run(Command::new("bash")
+        .arg(shell_path(&vp.join("configure"))?)
         .current_dir(&vpbuild)
         .args(&vpflags))?;
     run(Command::new("make").current_dir(&vpbuild).args(["-j3"]))?;
     run(Command::new("make").current_dir(&vpbuild).arg("install"))?;
     let ffbuild = ff.join(target);
     fs::create_dir_all(&ffbuild).map_err(|e| e.to_string())?;
-    let flags = vec![
-        format!("--prefix={}", prefix.display()),
+    let mut flags = vec![
+        format!("--prefix={}", shell_path(&prefix)?),
         "--enable-shared".into(),
         "--disable-static".into(),
         "--disable-gpl".into(),
@@ -323,22 +384,65 @@ fn build_macos(
         "--disable-ffplay".into(),
         "--enable-libvpx".into(),
         "--enable-libopus".into(),
-        "--enable-videotoolbox".into(),
-        "--enable-audiotoolbox".into(),
-        "--install-name-dir=@rpath".into(),
-        "--enable-cross-compile".into(),
-        "--target-os=darwin".into(),
-        format!("--arch={arch}"),
-        format!("--extra-cflags=-arch {arch} -mmacosx-version-min=11.0"),
-        format!("--extra-ldflags=-arch {arch} -mmacosx-version-min=11.0 -Wl,-rpath,@loader_path"),
     ];
-    run(Command::new(ff.join("configure"))
+    if cfg!(target_os = "macos") {
+        flags.extend([
+            "--enable-videotoolbox".into(),
+            "--enable-audiotoolbox".into(),
+            "--install-name-dir=@rpath".into(),
+            "--enable-cross-compile".into(),
+            "--target-os=darwin".into(),
+            format!("--arch={arch}"),
+            format!("--extra-cflags=-arch {arch} -mmacosx-version-min=11.0"),
+            format!(
+                "--extra-ldflags=-arch {arch} -mmacosx-version-min=11.0 -Wl,-rpath,@loader_path"
+            ),
+        ]);
+    } else {
+        flags.extend([
+            "--target-os=mingw32".into(),
+            "--cc=clang".into(),
+            "--cxx=clang++".into(),
+            "--ld=clang".into(),
+            "--ar=llvm-ar".into(),
+            "--nm=llvm-nm".into(),
+            "--dlltool=llvm-dlltool".into(),
+            format!("--arch={arch}"),
+            "--enable-d3d11va".into(),
+            "--enable-dxva2".into(),
+            "--enable-mediafoundation".into(),
+        ]);
+    }
+    run(Command::new("bash")
+        .arg(shell_path(&ff.join("configure"))?)
         .current_dir(&ffbuild)
         .args(&flags)
-        .env("PKG_CONFIG_LIBDIR", prefix.join("lib/pkgconfig")))?;
+        .env(
+            "PKG_CONFIG_LIBDIR",
+            shell_path(&prefix.join("lib/pkgconfig"))?,
+        ))?;
     run(Command::new("make").current_dir(&ffbuild).args(["-j3"]))?;
     run(Command::new("make").current_dir(&ffbuild).arg("install"))?;
-    tool_runpaths(&prefix)?;
+    if cfg!(windows) {
+        // FFmpeg's MinGW recipe also emits MSVC-compatible import libraries.
+        for library in [
+            "avcodec",
+            "avformat",
+            "avutil",
+            "swresample",
+            "swscale",
+            "avfilter",
+        ] {
+            fs::copy(
+                ffbuild.join(format!("lib{library}/{library}.lib")),
+                prefix.join(format!("lib/{library}.lib")),
+            )
+            .map_err(|e| e.to_string())?;
+        }
+    }
+    if cfg!(target_os = "macos") {
+        tool_runpaths(&prefix)?;
+    }
     let license = fs::read_to_string(ffbuild.join("config.h")).map_err(|e| e.to_string())?;
     if !license.contains("#define CONFIG_GPL 0") || !license.contains("#define CONFIG_NONFREE 0") {
         return Err("FFmpeg build failed LGPL admission".into());
@@ -360,6 +464,7 @@ fn build_macos(
         )
         .map_err(|e| e.to_string())?;
     }
+    record_patches(&prefix, &patches)?;
     receipt.push_str(&format!("opus flags: static PIC, DNN off, architecture {arch}\nlibvpx flags: {vpflags:?}\nFFmpeg configure: {flags:?}\n"));
     fs::write(prefix.join("BUILD.txt"), receipt).map_err(|e| e.to_string())?;
     fs::write(base.join("current"), prefix.as_os_str().as_encoded_bytes())
@@ -384,99 +489,49 @@ fn tool_runpaths(prefix: &Path) -> Result<(), String> {
     Ok(())
 }
 
-fn windows(target: &str) -> Result<(), String> {
-    let base = cache()?.join(target);
-    fs::create_dir_all(&base).map_err(|e| e.to_string())?;
-    let lock = fs::OpenOptions::new()
-        .write(true)
-        .create_new(true)
-        .open(base.join("building.lock"))
-        .map_err(|e| format!("FFmpeg provisioning lock: {e}"))?;
-    let result = windows_install(target);
-    drop(lock);
-    fs::remove_file(base.join("building.lock")).map_err(|e| e.to_string())?;
-    result
+fn patches() -> Result<Vec<PathBuf>, String> {
+    let mut patches = fs::read_dir(Path::new(env!("CARGO_MANIFEST_DIR")).join("patches"))
+        .map_err(|e| e.to_string())?
+        .map(|entry| entry.map(|e| e.path()).map_err(|e| e.to_string()))
+        .collect::<Result<Vec<_>, _>>()?;
+    patches.retain(|p| p.extension().is_some_and(|e| e == "patch"));
+    patches.sort();
+    Ok(patches)
+}
+fn patch_id(patches: &[PathBuf]) -> Result<String, String> {
+    let mut hash = Sha256::new();
+    for patch in patches {
+        hash.update(fs::read(patch).map_err(|e| e.to_string())?);
+    }
+    Ok(hash
+        .finalize()
+        .iter()
+        .take(8)
+        .map(|b| format!("{b:02x}"))
+        .collect())
 }
 
-fn windows_install(target: &str) -> Result<(), String> {
-    let release: serde_json::Value = serde_json::from_str(&capture(Command::new("curl").args([
-        "-fsSL",
-        "--max-time",
-        "60",
-        "https://api.github.com/repos/BtbN/FFmpeg-Builds/releases/latest",
-    ]))?)
-    .map_err(|e| e.to_string())?;
-    let architecture = if target.ends_with("aarch64") {
-        "winarm64"
+fn shell_path(path: &Path) -> Result<String, String> {
+    if cfg!(windows) {
+        Ok(capture(Command::new("cygpath").arg("-u").arg(path))?
+            .trim()
+            .to_owned())
     } else {
-        "win64"
-    };
-    let assets = release
-        .get("assets")
-        .and_then(serde_json::Value::as_array)
-        .ok_or("release has no assets")?;
-    let asset = assets
-        .iter()
-        .filter_map(|a| {
-            let name = a.get("name")?.as_str()?;
-            if !name.contains(architecture)
-                || !name.contains("lgpl-shared")
-                || !name.ends_with(".zip")
-            {
-                return None;
-            }
-            let version = name.strip_prefix("ffmpeg-n")?.split('-').next()?;
-            let parts: Option<Vec<u64>> = version.split('.').map(|p| p.parse().ok()).collect();
-            Some((parts?, a))
-        })
-        .max_by(|a, b| a.0.cmp(&b.0))
-        .map(|(_, a)| a)
-        .ok_or("no stable LGPL shared build for this target")?;
-    let name = asset
-        .get("name")
-        .and_then(serde_json::Value::as_str)
-        .ok_or("asset name")?;
-    let url = asset
-        .get("browser_download_url")
-        .and_then(serde_json::Value::as_str)
-        .ok_or("asset URL")?;
-    let base = cache()?.join(target);
-    fs::create_dir_all(&base).map_err(|e| e.to_string())?;
-    let archive = base.join(name);
-    let expected = asset
-        .get("digest")
-        .and_then(serde_json::Value::as_str)
-        .ok_or("asset source did not publish a SHA-256 digest")?;
-    if !archive.exists() || expected != format!("sha256:{}", sha256(&archive)?) {
-        fetch(url, &archive)?;
+        path.to_str()
+            .map(str::to_owned)
+            .ok_or("native build path must be UTF-8".into())
     }
-    let digest = sha256(&archive)?;
-    let published = asset
-        .get("digest")
-        .and_then(serde_json::Value::as_str)
-        .ok_or("asset source did not publish a SHA-256 digest")?;
-    if published != format!("sha256:{digest}") {
-        return Err("FFmpeg published checksum mismatch".into());
-    }
-    let dir = base.join(format!("{}-{digest}", name.trim_end_matches(".zip")));
-    if !dir.exists() {
-        let staging = base.join(format!("extract-{digest}"));
-        fs::create_dir(&staging).map_err(|e| e.to_string())?;
-        let result = run(Command::new("tar")
-            .arg("-xf")
-            .arg(&archive)
-            .arg("--strip-components=1")
-            .arg("-C")
-            .arg(&staging));
-        if let Err(error) = result {
-            fs::remove_dir_all(&staging).map_err(|e| e.to_string())?;
-            return Err(error);
-        }
-        fs::rename(staging, &dir).map_err(|e| e.to_string())?;
-    }
-    fs::write(dir.join("BUILD.txt"),format!("Resolved {name}\nsource: {url}\nsha256: {digest}\nPublished source digest verified.\nBuild recipe: https://github.com/BtbN/FFmpeg-Builds/tree/{}\n",release.get("tag_name").and_then(serde_json::Value::as_str).ok_or("release tag")?)).map_err(|e|e.to_string())?;
-    fs::write(base.join("current"), dir.as_os_str().as_encoded_bytes())
+}
+
+fn record_patches(prefix: &Path, patches: &[PathBuf]) -> Result<(), String> {
+    let backports = prefix.join("compliance/patches");
+    fs::create_dir_all(&backports).map_err(|e| e.to_string())?;
+    for patch in patches {
+        fs::copy(
+            patch,
+            backports.join(patch.file_name().ok_or("patch filename")?),
+        )
         .map_err(|e| e.to_string())?;
-    println!("FFmpeg resolved {name}: {}", dir.display());
+    }
     Ok(())
 }

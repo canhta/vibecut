@@ -262,12 +262,13 @@ fn audio_encode_and_resample_preserve_clock_and_sample_counts() {
                     .unwrap(),
             );
         }
-        let converted = resampler.as_mut().unwrap().convert(&frame).unwrap();
-        assert_eq!(
-            converted.pts().unwrap(),
-            Some(Tick::from_units(mono.len() as i64, 16_000, time::Rounding::Nearest).unwrap())
-        );
-        mono.extend(converted.planar_f32().unwrap().into_iter().next().unwrap());
+        for converted in resampler.as_mut().unwrap().convert(&frame).unwrap() {
+            assert_eq!(
+                converted.pts().unwrap(),
+                Some(Tick::from_units(mono.len() as i64, 16_000, time::Rounding::Nearest).unwrap())
+            );
+            mono.extend(converted.planar_f32().unwrap().into_iter().next().unwrap());
+        }
     };
     while let Some(packet) = reader.next_packet().unwrap() {
         if packet.stream() == stream.index {
@@ -517,5 +518,71 @@ fn speech_pcm_constructor_and_short_final_aac_frame() {
             "short final AAC frame",
         );
         assert!(common::decodes(&path));
+    }
+}
+
+#[test]
+fn cross_container_codec_tags() {
+    let Some(path) = common::generate(
+        "AVI stream copy",
+        "codec-tag.avi",
+        &[
+            "-f",
+            "lavfi",
+            "-i",
+            "testsrc2=size=64x48:rate=25:duration=0.2",
+            "-c:v",
+            "libx264",
+            "-bf",
+            "0",
+            "-an",
+        ],
+    ) else {
+        return;
+    };
+    let mut reader = PacketReader::open(path).unwrap();
+    let output = common::fixtures_dir().join("codec-tag.mp4");
+    let mut mux = Muxer::create(&output, Container::Mp4).unwrap();
+    mux.add_stream(&reader.probe().streams[0]).unwrap();
+    while let Some(packet) = reader.next_packet().unwrap() {
+        mux.write_packet(0, &packet).unwrap();
+    }
+    mux.finish().unwrap();
+    assert_eq!(common::decoded_frames(&output, "v:0"), 5);
+    assert!(common::decodes(&output));
+}
+
+#[test]
+fn maximum_audio_frames_resample_without_loss() {
+    for (source_rate, rate) in [(48_000, 48_000), (48_000, 192_000), (8_000, 192_000)] {
+        let mut converter = None;
+        let mut samples = 0;
+        for index in 0..3 {
+            let input = media::AudioFrame::from_planar_f32(
+                Tick::from_units(index * 65_536, source_rate, time::Rounding::Nearest).unwrap(),
+                source_rate as u32,
+                &[vec![0.25; 65_536]],
+            )
+            .unwrap();
+            let converter = converter.get_or_insert_with(|| {
+                media::AudioResampler::new(&input, rate, 1, media::AudioSampleFormat::PlanarF32)
+                    .unwrap()
+            });
+            for output in converter.convert(&input).unwrap() {
+                assert!(output.samples() <= 65_536);
+                assert_eq!(
+                    output.pts().unwrap().unwrap(),
+                    Tick::from_units(samples, i64::from(rate), time::Rounding::Nearest).unwrap()
+                );
+                samples += output.samples() as i64;
+            }
+        }
+        let converter = converter.as_mut().unwrap();
+        while let Some(output) = converter.flush().unwrap() {
+            assert!(output.samples() <= 65_536);
+            samples += output.samples() as i64;
+        }
+        assert_eq!(samples, 3 * 65_536 * i64::from(rate / source_rate as u32));
+        assert!(converter.flush().unwrap().is_none());
     }
 }

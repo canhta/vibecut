@@ -63,6 +63,7 @@ impl Muxer {
             .add_stream(ff::encoder::find(ff::codec::Id::None))
             .map_err(error("add mux stream"))?;
         stream.set_parameters(parameters.0.clone());
+        crate::ffi::clear_codec_tag(&mut stream);
         stream.set_time_base(time_base.rational());
         let index = stream.index();
         self.time_bases.push(time_base);

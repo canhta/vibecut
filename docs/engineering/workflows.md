@@ -51,6 +51,11 @@ are current. Do not install an extra freshness tool just for CI.
 the resolved version and verifies published source checksums when available.
 Do not commit an FFmpeg version/hash manifest. This makes builds non-reproducible;
 retain the resolved sources and build receipt with each distributed binary.
+Security backports follow [ADR 0002](../adr/0002-desktop-media-and-time.md).
+Windows source builds require MSYS2 CLANG64 (x64) or CLANGARM64 (arm64), Bash,
+Make, CMake, Ninja, pkg-config, NASM and the matching Clang/LLVM tools on PATH;
+run provisioning on the matching Windows architecture. Rust retains its MSVC
+application toolchain; provisioning installs compatible import libraries.
 
 Choose the best current design and replace in place. Remove superseded paths;
 keep no dual versions, legacy shims, deprecated paths or backward compatibility.

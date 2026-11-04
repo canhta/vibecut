@@ -13,9 +13,9 @@ jobs:
       matrix:
         include:
           - { runner: macos-15, platform: macos-aarch64 }
-          - { runner: macos-15, platform: macos-x86_64 }
+          - { runner: macos-15-intel, platform: macos-x86_64 }
           - { runner: windows-latest, platform: windows-x86_64 }
-          - { runner: windows-latest, platform: windows-aarch64 }
+          - { runner: windows-11-arm, platform: windows-aarch64 }
     runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v7
@@ -24,7 +24,18 @@ jobs:
       - name: Install macOS build tools
         if: runner.os == 'macOS'
         run: brew install cmake pkgconf nasm
+      - name: Install Windows source build tools
+        if: runner.os == 'Windows'
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: ${{ runner.arch == 'ARM64' && 'CLANGARM64' || 'CLANG64' }}
+          path-type: inherit
+          install: >-
+            make diffutils git tar
+          pacboy: >-
+            clang:p llvm:p lld:p cmake:p ninja:p pkgconf:p nasm:p
       - name: Resolve current LGPL libraries
+        shell: ${{ runner.os == 'Windows' && 'msys2 {0}' || 'bash' }}
         run: cargo xtask ffmpeg --target ${{ matrix.platform }}
       - name: Package cache with recipes and corresponding sources
         shell: bash

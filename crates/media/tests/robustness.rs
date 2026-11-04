@@ -125,3 +125,82 @@ fn truncated_and_mutated_inputs_return_without_rust_panics() {
     ));
     std::fs::remove_file(path).unwrap();
 }
+
+#[test]
+fn hostile_pssh_is_bounded_on_small_worker_stack() {
+    // Run native parsing in a subprocess: a stack abort must fail this test,
+    // rather than take down the rest of the regression suite.
+    const CHILD: &str = "VIBECUT_PSSH_CHILD";
+    if let Some(path) = std::env::var_os(CHILD) {
+        let thread = std::thread::Builder::new()
+            .stack_size(512 * 1024)
+            .spawn(move || {
+                assert!(probe(path).is_ok());
+            })
+            .unwrap();
+        thread.join().unwrap();
+        let path = std::env::var_os(CHILD).unwrap();
+        let cancel = Arc::new(AtomicBool::new(false));
+        let token = cancel.clone();
+        let trigger = std::thread::spawn(move || {
+            std::thread::sleep(std::time::Duration::from_millis(1));
+            token.store(true, Ordering::Relaxed);
+        });
+        let result = PacketReader::open_with_cancel(path, cancel.clone());
+        trigger.join().unwrap();
+        match result {
+            Err(MediaError::Cancelled) => {}
+            Ok(mut reader) => assert!(matches!(reader.next_packet(), Err(MediaError::Cancelled))),
+            Err(error) => panic!("unexpected cancellation failure: {error}"),
+        }
+        return;
+    }
+    let Some(seed) = source() else {
+        return;
+    };
+    let mut bytes = std::fs::read(seed).unwrap();
+    let mut index = 0;
+    while &bytes[index + 4..index + 8] != b"moov" {
+        index += u32::from_be_bytes(bytes[index..index + 4].try_into().unwrap()) as usize;
+    }
+    let size = u32::from_be_bytes(bytes[index..index + 4].try_into().unwrap()) as usize;
+    let mut box_bytes = 32u32.to_be_bytes().to_vec();
+    box_bytes.extend_from_slice(b"pssh");
+    box_bytes.extend_from_slice(&[0; 24]);
+    let addition = box_bytes.repeat(20_000);
+    bytes[index..index + 4].copy_from_slice(&((size + addition.len()) as u32).to_be_bytes());
+    bytes.splice(index + size..index + size, addition);
+    let path = common::fixtures_dir().join("hostile-20000-pssh.mp4");
+    std::fs::write(&path, bytes).unwrap();
+    let mut child = std::process::Command::new(std::env::current_exe().unwrap())
+        .args([
+            "--exact",
+            "hostile_pssh_is_bounded_on_small_worker_stack",
+            "--nocapture",
+        ])
+        .env(CHILD, &path)
+        .spawn()
+        .unwrap();
+    let start = std::time::Instant::now();
+    loop {
+        if let Some(status) = child.try_wait().unwrap() {
+            assert!(status.success(), "hostile PSSH child: {status}");
+            println!(
+                "20,000 PSSH boxes, 512 KiB stack and active cancellation: {:?}",
+                start.elapsed()
+            );
+            break;
+        }
+        if start.elapsed() > std::time::Duration::from_secs(5) {
+            child.kill().unwrap();
+            child.wait().unwrap();
+            panic!("hostile PSSH probe exceeded five seconds");
+        }
+        std::thread::sleep(std::time::Duration::from_millis(10));
+    }
+    let cancel = Arc::new(AtomicBool::new(true));
+    assert!(matches!(
+        PacketReader::open_with_cancel(&path, cancel),
+        Err(MediaError::Cancelled)
+    ));
+}

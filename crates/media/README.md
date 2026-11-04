@@ -31,8 +31,9 @@ provider policy, jobs and output promotion belong to their respective owners.
   transfer/conversion is explicit in the encoder. Frame-aware swscale uses Lanczos,
   accurate rounding and frame color/chroma metadata when conversion is required.
 - `AudioResampler`: explicit continuous-span rate/layout/sample-format conversion.
-  Keeps the source origin and counts output samples in integer time; drain `flush`.
-  A discontinuity requires a new converter. `AudioEncoder` retains source rate,
+  Admits output rates of 8–192 kHz and up to 24× expansion. Keeps the source origin and counts output samples in integer time; drain `flush`.
+  `convert` returns bounded frames and drains buffered output without finalizing
+  the filter. A discontinuity requires a new converter. `AudioEncoder` retains source rate,
   converts sample format, and uses a bounded FFmpeg FIFO for AAC/Opus frame sizes.
   FFmpeg owns codec delay and final padding.
 - `Muxer`: MP4/MOV/WebM over a seekable file, stream-copy parameters or encoded
@@ -83,7 +84,12 @@ AVIO uses 32 KiB buffers; probing reads at most 32 MiB. Stream count is capped a
 audio frames at 65,536 samples/channel and 32 channels, and one receive batch at
 64 frames. Audio encoding admits up to eight channels and caps its FIFO at
 131,072 samples/channel. Native FFmpeg allocation/codec limits still apply;
-these checks do not establish safety for every hostile C-library input.
+these checks do not establish safety for every hostile C-library input. The native
+build backports upstream PSSH iterative cleanup and linear append fixes under
+[ADR 0002](../../docs/adr/0002-desktop-media-and-time.md). A generated 20,000-box
+PSSH regression probes on a 512 KiB worker stack in a subprocess with a five-second
+deadline. Full-size same-rate and upsampled PCM and AVI-to-MP4 H.264 stream copy
+have dedicated public API regressions.
 
 `cargo xtask ffmpeg` resolves/builds the current LGPL SDK in the external user
 cache. `cargo xtask ci` configures that SDK for workspace checks. Direct Cargo

@@ -11,7 +11,12 @@ Use the maintained `ffmpeg-next` safe wrapper and its matching system bindings.
 The permissive WTFPL dependency license is admitted for these wrappers. Keep any
 necessary direct FFI inside narrowly allowed modules of `media`, behind safe
 `Result` APIs; do not own a second bindings layer. Provision current stable shared
-LGPL builds; exclude GPL/nonfree components. Distribution rules live in
+LGPL builds; exclude GPL/nonfree components. Backport verified upstream security
+fixes as patch files citing their upstream commits, applied by `cargo xtask ffmpeg`
+on every platform. Fail provisioning when a patch no longer applies; review and
+delete it once a stable release contains the fix. Build Windows from the same
+patched source, never an unpatched prebuilt. Cache identity includes the patch
+contents so an older SDK cannot bypass a new security fix. Distribution rules live in
 [open-source policy](../engineering/open-source.md#ffmpeg-distribution).
 
 Integer ticks at 254,016,000,000 per second preserve admitted video and audio
