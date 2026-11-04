@@ -54,6 +54,15 @@ pub struct RecognitionSegment {
     pub raw_tokens: Vec<RawToken>,
 }
 impl RecognitionSegment {
+    fn has_timing(&self, unit: TimingUnit) -> bool {
+        self.range.is_some()
+            && (unit == TimingUnit::Segment
+                || self.timing.iter().any(|t| t.unit == unit)
+                || (unit == TimingUnit::Token
+                    && !self.raw_tokens.is_empty()
+                    && self.raw_tokens.iter().all(|t| t.range.is_some())))
+    }
+
     fn validate(&self, window: SampleRange) -> Result<(), Error> {
         crate::policy::nonempty(&self.id)?;
         if self.range.is_some_and(|r| !window.contains(r)) {
@@ -346,12 +355,7 @@ pub fn transcribe(
     if let Some(align) = alignment {
         let missing: Vec<_> = segments
             .iter()
-            .filter(|s| {
-                s.range.is_none()
-                    || (align.unit != TimingUnit::Segment
-                        && !s.timing.iter().any(|t| t.unit == align.unit)
-                        && !(align.unit == TimingUnit::Token && !s.raw_tokens.is_empty()))
-            })
+            .filter(|s| !s.has_timing(align.unit))
             .cloned()
             .collect();
         if !missing.is_empty() {
@@ -393,10 +397,7 @@ pub fn transcribe(
                     aligned.validate(audio.range)?;
                     if original.id != aligned.id
                         || original.text != aligned.text
-                        || aligned.range.is_none()
-                        || (align.unit != TimingUnit::Segment
-                            && !aligned.timing.iter().any(|t| t.unit == align.unit)
-                            && !(align.unit == TimingUnit::Token && !aligned.raw_tokens.is_empty()))
+                        || !aligned.has_timing(align.unit)
                         || aligned.raw_tokens.iter().any(|t| {
                             t.provenance != Provenance::Forced
                                 || !ac.timing.contains(&TimingUnit::Token)
@@ -422,7 +423,29 @@ pub fn transcribe(
                         .retain(|s| !native_units.contains(&s.unit));
                     replacement.timing.extend(original.timing.clone());
                     if !original.raw_tokens.is_empty() {
-                        replacement.raw_tokens = original.raw_tokens.clone();
+                        let forced_tokens = &replacement.raw_tokens;
+                        let fill_missing = original.raw_tokens.iter().any(|t| t.range.is_none())
+                            && !forced_tokens.is_empty();
+                        if fill_missing
+                            && (original.raw_tokens.len() != forced_tokens.len()
+                                || original
+                                    .raw_tokens
+                                    .iter()
+                                    .zip(forced_tokens)
+                                    .any(|(native, forced)| native.bytes != forced.bytes))
+                        {
+                            return Err(Error::Invalid("alignment changed token identity"));
+                        }
+                        let mut tokens = original.raw_tokens.clone();
+                        if fill_missing {
+                            for (native, forced) in tokens.iter_mut().zip(forced_tokens) {
+                                if native.range.is_none() && forced.range.is_some() {
+                                    native.range = forced.range;
+                                    native.provenance = Provenance::Forced;
+                                }
+                            }
+                        }
+                        replacement.raw_tokens = tokens;
                     }
                     if native_units.contains(&TimingUnit::Token) {
                         replacement.raw_tokens.clear();
@@ -430,6 +453,9 @@ pub fn transcribe(
                         replacement.timing.retain(|s| s.unit != TimingUnit::Token);
                     }
                     replacement.validate(audio.range)?;
+                    if !replacement.has_timing(align.unit) {
+                        return Err(Error::Invalid("alignment omitted requested timing"));
+                    }
                     *target = replacement;
                 }
                 alignment_fingerprint = Some(fingerprint(align.provider.config()));

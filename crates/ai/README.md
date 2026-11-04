@@ -82,8 +82,14 @@ unit layers and segment boundaries remain authoritative. The aligner must preser
 text, IDs and ordering, return every requested segment and declare forced timing.
 Wrong-language/unsupported aligners leave missing timing absent; malformed output,
 consent/auth/quota/payload failures propagate. No timestamp interpolation occurs.
-An advertised unit layer is treated as available when present; quality/coverage
-acceptance for a particular aligner remains adapter-specific.
+A raw-token layer satisfies requested token timing only when every token has a
+range; absent or partially timed raw tokens request alignment. Forced token timing
+fills missing native ranges only with identical token counts and bytes at each
+ordinal. Native bytes, confidence and existing ranges remain authoritative; filled
+ranges carry forced provenance. Retokenized output, incomplete requested timing
+and conflicts with retained native boundaries fail with a typed error. Other
+unit layers are available when present; providers may omit punctuation, and
+quality/coverage acceptance for those layers remains adapter-specific.
 
 `Recognition::is_text_only` indicates any missing segment timing. `to_transcript`
 returns captions' existing `Transcript`, or `TimingUnavailable` when any segment

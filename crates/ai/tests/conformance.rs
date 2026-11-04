@@ -1298,3 +1298,206 @@ fn alignment_preserves_native_token_layer_in_either_transport_representation() {
         );
     }
 }
+
+#[test]
+fn review_requested_token_alignment_fills_missing_token_ranges() {
+    let scope = scope(config(false), Operation::Transcribe);
+    let mut native = Fake::new(scope.provider.clone(), TEXT);
+    native.result = vec![raw_result("ab")];
+    for t in &mut native.result[0].raw_tokens {
+        t.range = None;
+    }
+    let mut align_scope = scope.clone();
+    align_scope.operation = Operation::Align;
+    align_scope.texts = vec!["ab".into()];
+    let mut aligner = Fake::new(align_scope.provider.clone(), TEXT);
+    aligner.result = vec![raw_result("ab")];
+    for t in &mut aligner.result[0].raw_tokens {
+        t.provenance = Provenance::Forced;
+    }
+    let pcm = vec![0.0; 32000];
+    let result = transcribe(
+        &native,
+        audio(&pcm, &scope),
+        &Request {
+            scope: &scope,
+            consent: None,
+        },
+        Some(Alignment {
+            provider: &aligner,
+            request: Request {
+                scope: &align_scope,
+                consent: None,
+            },
+            unit: TimingUnit::Token,
+        }),
+        &Hooks::new(),
+    )
+    .unwrap();
+    assert_eq!(
+        aligner.calls.load(Ordering::Relaxed),
+        1,
+        "explicit token aligner must run for absent token times"
+    );
+    assert!(
+        result.segments()[0]
+            .raw_tokens
+            .iter()
+            .all(|t| t.range.is_some())
+    );
+}
+
+#[test]
+fn review_requested_token_alignment_rejects_untimed_output() {
+    let scope = scope(config(false), Operation::Transcribe);
+    let mut native = Fake::new(scope.provider.clone(), TEXT);
+    native.result = vec![raw_result("ab")];
+    native.result[0].raw_tokens.clear();
+    let mut align_scope = scope.clone();
+    align_scope.operation = Operation::Align;
+    align_scope.texts = vec!["ab".into()];
+    let mut aligner = Fake::new(align_scope.provider.clone(), TEXT);
+    aligner.result = vec![raw_result("ab")];
+    for t in &mut aligner.result[0].raw_tokens {
+        t.provenance = Provenance::Forced;
+        t.range = None;
+    }
+    let pcm = vec![0.0; 32000];
+    let result = transcribe(
+        &native,
+        audio(&pcm, &scope),
+        &Request {
+            scope: &scope,
+            consent: None,
+        },
+        Some(Alignment {
+            provider: &aligner,
+            request: Request {
+                scope: &align_scope,
+                consent: None,
+            },
+            unit: TimingUnit::Token,
+        }),
+        &Hooks::new(),
+    );
+    assert_eq!(aligner.calls.load(Ordering::Relaxed), 1);
+    assert!(
+        result.is_err(),
+        "requested token alignment must not succeed with every token timestamp absent"
+    );
+}
+
+#[test]
+fn token_alignment_reconciles_only_matching_ordinals_and_preserves_native_evidence() {
+    for case in 0..9 {
+        let scope = scope(config(false), Operation::Transcribe);
+        let mut original = raw_result("abcd");
+        if case != 0 {
+            original.raw_tokens[1].range = None;
+            original.raw_tokens[3].range = None;
+        }
+        if case == 4 {
+            original.raw_tokens[1].bytes = b"bc".to_vec();
+            original.raw_tokens.remove(2);
+        }
+        let mut native = Fake::new(scope.provider.clone(), TEXT);
+        native.result = vec![original.clone()];
+        let mut align_scope = scope.clone();
+        align_scope.operation = Operation::Align;
+        align_scope.texts = vec![original.text.clone()];
+        let mut aligned = raw_result("abcd");
+        for token in &mut aligned.raw_tokens {
+            token.provenance = Provenance::Forced;
+            token.confidence = None;
+        }
+        // A different forced range for an already timed token must not replace it.
+        aligned.raw_tokens[0].range = Some(SampleRange::new(16000, 16050).unwrap());
+        match case {
+            2 => aligned.raw_tokens[1].range = None,
+            3 => {
+                // Equal concatenated text is insufficient: token ordinals changed.
+                aligned.raw_tokens[0].bytes.extend(b"b");
+                aligned.raw_tokens.remove(1);
+            }
+            4 => {
+                // Same count and concatenated text, different byte boundaries.
+                aligned.raw_tokens[0].bytes = b"ab".to_vec();
+                aligned.raw_tokens.remove(1);
+            }
+            5 => {
+                aligned.raw_tokens.clear();
+                aligned.timing.push(TimedText {
+                    text: aligned.text.clone(),
+                    unit: TimingUnit::Token,
+                    range: aligned.range.unwrap(),
+                    provenance: Provenance::Forced,
+                    confidence: None,
+                    speaker: None,
+                });
+            }
+            6 => {
+                // Both inputs are valid independently, but the filled range
+                // overlaps a retained native timestamp.
+                aligned.raw_tokens[1].range = Some(SampleRange::new(16050, 16200).unwrap());
+            }
+            7 => aligned.range = Some(SampleRange::new(16000, 17000).unwrap()),
+            8 => {
+                aligned.range = Some(SampleRange::new(16000, 17000).unwrap());
+                aligned.raw_tokens[3].range = Some(SampleRange::new(16400, 16500).unwrap());
+            }
+            _ => {}
+        }
+        let mut aligner = Fake::new(align_scope.provider.clone(), TEXT);
+        aligner.result = vec![aligned.clone()];
+        let pcm = vec![0.0; 32000];
+        let result = transcribe(
+            &native,
+            audio(&pcm, &scope),
+            &Request {
+                scope: &scope,
+                consent: None,
+            },
+            Some(Alignment {
+                provider: &aligner,
+                request: Request {
+                    scope: &align_scope,
+                    consent: None,
+                },
+                unit: TimingUnit::Token,
+            }),
+            &Hooks::new(),
+        );
+        assert_eq!(
+            aligner.calls.load(Ordering::Relaxed),
+            usize::from(case != 0),
+            "case {case}"
+        );
+        if matches!(case, 2..=6 | 8) {
+            assert!(
+                matches!(result, Err(Error::Invalid(_))),
+                "case {case}: {result:?}"
+            );
+            continue;
+        }
+        let result = result.unwrap();
+        let segment = &result.segments()[0];
+        assert_eq!(segment.range, original.range);
+        assert_eq!(result.alignment_fingerprint().is_some(), case != 0);
+        for (i, token) in segment.raw_tokens.iter().enumerate() {
+            let mut expected = original.raw_tokens[i].clone();
+            if expected.range.is_none() {
+                expected.range = aligned.raw_tokens[i].range;
+                expected.provenance = Provenance::Forced;
+            }
+            assert_eq!(token, &expected, "case {case}, token {i}");
+        }
+        let transcript = result.to_transcript().unwrap();
+        let spans = transcript.segments[0].spans.as_ref().unwrap().spans();
+        for (i, span) in spans.iter().enumerate() {
+            assert_eq!(span.input().index, i);
+            assert_eq!(span.input().raw, i..i + 1);
+            assert!(span.input().range.is_some());
+            assert_eq!(span.input().provenance, segment.raw_tokens[i].provenance);
+        }
+    }
+}
