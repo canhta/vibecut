@@ -2,7 +2,7 @@ use crate::{
     CaptionPosition, CaptionStyle, Error, ExecutionHooks, Image, MemoryKind, Result,
     SourceProvider, Unavailable, check, image::color,
 };
-use project::{Item, ItemId, ItemParams, Project};
+use project::{AnimationPath, Item, ItemId, ItemParams, ParamValue, Project};
 use std::{collections::BTreeMap, sync::Arc};
 use time::Tick;
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -162,6 +162,7 @@ pub struct Renderer<'a> {
     text_cache: BTreeMap<TextKey, TextEntry>,
     cache_stats: RasterCacheStats,
     cache_clock: u64,
+    opacity_path: AnimationPath,
 }
 impl<'a> Renderer<'a> {
     pub fn new(project: &'a Project, settings: RenderSettings) -> Result<Self> {
@@ -172,6 +173,8 @@ impl<'a> Renderer<'a> {
             text_cache: BTreeMap::new(),
             cache_stats: RasterCacheStats::default(),
             cache_clock: 0,
+            opacity_path: AnimationPath::new("opacity")
+                .map_err(|_| Error::Invalid("opacity animation path"))?,
         })
     }
     pub fn text_cache_stats(&self) -> RasterCacheStats {
@@ -198,6 +201,22 @@ impl<'a> Renderer<'a> {
         hooks: &dyn ExecutionHooks,
     ) -> Result<Image> {
         self.frame(at, sources, hooks, true)
+    }
+    /// Static placement with project-owned keyframed opacity applied at `local`.
+    fn placement_at(&self, item: &Item, local: Tick) -> Result<Placement> {
+        let mut placement = self.placement(item);
+        let Some(value) = item.animations.value_at(&self.opacity_path, local)? else {
+            return Ok(placement);
+        };
+        let ParamValue::Scalar(opacity) = value else {
+            return Err(Error::Invalid("opacity animation value"));
+        };
+        if !opacity.is_finite() {
+            return Err(Error::Invalid("opacity animation value"));
+        }
+        // The compositor's source-over contract admits only 0..=1 opacity.
+        placement.opacity = opacity.clamp(0.0, 1.0) as f32;
+        Ok(placement)
     }
     fn placement(&self, item: &Item) -> Placement {
         self.settings
@@ -337,7 +356,8 @@ impl<'a> Renderer<'a> {
         }
         for item in active {
             check(hooks)?;
-            let placement = self.placement(item);
+            let local = local_time(item, at)?;
+            let placement = self.placement_at(item, local)?;
             let source_at = source_time(item, at)?;
             match &item.content {
                 ItemParams::Video(_) => {
@@ -597,11 +617,12 @@ impl<'a> Renderer<'a> {
 fn source_time(item: &Item, at: Tick) -> Result<Tick> {
     item.source_range
         .start()
-        .checked_add(
-            at.checked_sub(item.start)
-                .ok_or(Error::Invalid("item source mapping"))?,
-        )
+        .checked_add(local_time(item, at)?)
         .ok_or(Error::Invalid("item source overflow"))
+}
+fn local_time(item: &Item, at: Tick) -> Result<Tick> {
+    at.checked_sub(item.start)
+        .ok_or(Error::Invalid("item source mapping"))
 }
 fn raster_text(key: &TextKey, hooks: &dyn ExecutionHooks) -> Result<Image> {
     let (w, h, size) = (key.width, key.height, f32::from_bits(key.size));

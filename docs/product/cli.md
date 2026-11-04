@@ -104,6 +104,12 @@ uses the registered creation command; `exec` refuses creation inside an existing
 session. Project info and edits refuse a busy writer instead of reading stale
 state or overwriting another session.
 
+Keyframed item parameters are ordinary registry commands: `keyframes.set_param`,
+`keyframes.add`, `keyframes.remove`, `keyframes.retime`, `keyframes.set_handle`
+and `keyframes.scale_time` accept the project animation shapes. `export` evaluates
+the saved curves through render's single project evaluator; for example an
+`opacity` channel animates a clip in the exported frames.
+
 Fields are required; unknown command, parameter and model fields are refused.
 Model wire types are the Serde shapes owned by their crates; the
 [engine contract](../../crates/engine/README.md#public-entry-points) describes the

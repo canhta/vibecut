@@ -3,7 +3,8 @@
 CPU reference compositor, shared sample-window mixer and bounded MP4 export.
 Consumes immutable project snapshots; media owns codecs/conversion/mux, text owns
 shaping/rasterization, project owns atomic publication, engine owns scheduling and
-aggregate byte policy. No UI, effects graph, keyframes or persisted render state.
+aggregate byte policy. No UI, effects graph or persisted render state; it evaluates
+project-owned keyframed opacity.
 
 ## Working pixels and scene
 
@@ -15,6 +16,12 @@ no pixels. Position maps at unit speed to the item's source range. Cover uses a
 center crop, Contain letterboxes, and Stretch maps the selected crop. Background
 blur renders behind every timeline layer. Selected caption languages admit up to
 two languages; default selects the source language or the first available text.
+
+An item's `opacity` animation overrides its static `Placement.opacity`. Evaluation
+calls project's `Animations::value_at` with item-local ticks, the same evaluator the
+engine uses; render adds no interpolation path. Values are clamped to the
+compositor's 0..=1 range. Missing opacity data keeps the static placement, and
+other animation paths stay unconsumed until their owning feature lands.
 
 Every working pixel is **RGBA, premultiplied alpha, linear-light f32**, finite
 0..1 with RGB <= alpha. Compositing is Porter–Duff source-over. Bilinear sampling

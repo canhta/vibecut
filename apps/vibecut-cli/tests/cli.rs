@@ -76,7 +76,17 @@ fn info(project: &Path) -> Value {
     );
     stdout_json(&output)
 }
-fn overlay_project(project_path: &Path, width: u32, height: u32) {
+fn overlay_project(project_path: &Path, width: u32, height: u32, duration: Tick) {
+    overlay_project_color(project_path, width, height, duration, [30, 160, 90, 255]);
+}
+
+fn overlay_project_color(
+    project_path: &Path,
+    width: u32,
+    height: u32,
+    duration: Tick,
+    color: [u8; 4],
+) {
     let mut data = project::Project::empty(project::ProjectId(0), "overlay".into())
         .unwrap()
         .into_data();
@@ -93,15 +103,74 @@ fn overlay_project(project_path: &Path, width: u32, height: u32) {
             animations: Default::default(),
             id: project::ItemId(0),
             source_asset: None,
-            source_range: TimeRange::new(Tick::ZERO, Tick(time::TICKS_PER_SECOND)).unwrap(),
+            source_range: TimeRange::new(Tick::ZERO, duration).unwrap(),
             start: Tick::ZERO,
             content: project::ItemParams::Overlay(project::OverlayParams {
-                color: project::Color([30, 160, 90, 255]),
+                color: project::Color(color),
             }),
         }],
     });
     let project = project::Project::new(data).unwrap();
     fs::write(project_path, project::encode(&project, true).unwrap()).unwrap();
+}
+
+fn exec(project: &Path, command: &str, params: Value) -> Value {
+    let params = params.to_string();
+    let output = cli(&[
+        os("exec"),
+        project.as_os_str(),
+        OsStr::new(command),
+        OsStr::new(&params),
+        os("--json"),
+    ]);
+    assert_eq!(
+        code(&output),
+        0,
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    stdout_json(&output)
+}
+
+fn decoded_rgb(path: &Path, width: u32, height: u32, frames: &[usize]) -> Vec<Vec<u8>> {
+    let select = frames
+        .iter()
+        .map(|frame| format!("eq(n\\,{frame})"))
+        .collect::<Vec<_>>()
+        .join("+");
+    let output = tool_command("ffmpeg")
+        .args(["-v", "error", "-i"])
+        .arg(path)
+        .args([
+            "-vf",
+            &format!("select='{select}'"),
+            "-fps_mode",
+            "passthrough",
+            "-f",
+            "rawvideo",
+            "-pix_fmt",
+            "rgb24",
+            "-",
+        ])
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let bytes = width as usize * height as usize * 3;
+    assert_eq!(output.stdout.len(), bytes * frames.len());
+    output.stdout.chunks(bytes).map(<[u8]>::to_vec).collect()
+}
+
+/// BT.709 OETF used by render's opaque video packing.
+fn video_oetf(value: f64) -> f64 {
+    if value < 0.018 {
+        4.5 * value
+    } else {
+        1.099 * value.powf(0.45) - 0.099
+    }
 }
 
 fn tool_command(program: &str) -> Command {
@@ -527,7 +596,7 @@ fn export_writes_a_completed_file_and_keeps_progress_on_stderr() {
     let dir = tempfile::tempdir().unwrap();
     let project = dir.path().join("overlay.vibecut");
     let output_path = dir.path().join("export.mp4");
-    overlay_project(&project, 64, 64);
+    overlay_project(&project, 64, 64, Tick(time::TICKS_PER_SECOND));
     let output = cli(&[
         os("export"),
         project.as_os_str(),
@@ -551,7 +620,7 @@ fn export_aspect_selects_portrait_geometry() {
     let dir = tempfile::tempdir().unwrap();
     let project = dir.path().join("aspect.vibecut");
     let output_path = dir.path().join("portrait.mp4");
-    overlay_project(&project, 64, 64);
+    overlay_project(&project, 64, 64, Tick(time::TICKS_PER_SECOND));
     let output = cli(&[
         os("export"),
         project.as_os_str(),
@@ -583,6 +652,81 @@ fn export_aspect_selects_portrait_geometry() {
             .unwrap();
         assert!(probe.status.success());
         assert_eq!(String::from_utf8_lossy(&probe.stdout).trim(), "1080,1920");
+    }
+}
+
+#[test]
+fn cli_animates_opacity_and_exported_frames_follow_the_curve() {
+    let dir = tempfile::tempdir().unwrap();
+    let project = dir.path().join("animated.vibecut");
+    let output_path = dir.path().join("animated.mp4");
+    // The animation covers one second; the extra 0.2 s makes the 1.0 s key
+    // land exactly on an exported frame.
+    let duration = Tick(time::TICKS_PER_SECOND * 6 / 5);
+    overlay_project_color(&project, 64, 64, duration, [255, 255, 255, 255]);
+    let key = |time: i64, value: f64| {
+        json!({
+            "time": time,
+            "value": {"kind": "scalar", "value": value},
+            "segment": "linear",
+            "tangent": "flat",
+            "incoming": null,
+            "outgoing": null,
+        })
+    };
+    exec(
+        &project,
+        "keyframes.set_param",
+        json!({
+            "item": 0,
+            "path": "opacity",
+            "param": {
+                "kind": "value",
+                "channels": {
+                    "value": {"kind": "scalar", "value": 0.0},
+                    "keys": [key(0, 0.0)],
+                    "before": "hold",
+                    "after": "hold",
+                },
+            },
+        }),
+    );
+    exec(
+        &project,
+        "keyframes.add",
+        json!({
+            "item": 0,
+            "path": "opacity",
+            "component": null,
+            "key": key(time::TICKS_PER_SECOND, 1.0),
+        }),
+    );
+    let output = cli(&[
+        os("export"),
+        project.as_os_str(),
+        os("--out"),
+        output_path.as_os_str(),
+        os("--json"),
+    ]);
+    assert_eq!(
+        code(&output),
+        0,
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert_eq!(stdout_json(&output)["status"], "completed");
+    if !tools() {
+        return;
+    }
+    let frames = decoded_rgb(&output_path, 64, 64, &[0, 15, 30]);
+    for (frame, opacity) in frames.iter().zip([0.0, 0.5, 1.0]) {
+        let expected = (video_oetf(opacity) * 255.0).round() as i32;
+        for channel in &frame[..3] {
+            assert!(
+                (i32::from(*channel) - expected).abs() <= 12,
+                "decoded {channel} != expected {expected} for opacity {opacity}"
+            );
+        }
     }
 }
 

@@ -70,6 +70,100 @@ fn track_order_half_opacity_and_half_open_frames() {
         .unwrap();
     assert_eq!(after.pixels()[0], [0.0, 0.0, 0.0, 1.0]);
 }
+fn animated_overlay_project(
+    start: Tick,
+    duration: Tick,
+    keys: Vec<(Tick, f64)>,
+) -> project::Project {
+    let mut data = project::Project::empty(project::ProjectId(0), "".into())
+        .unwrap()
+        .into_data();
+    data.canvas.width = 64;
+    data.canvas.height = 64;
+    let path = project::AnimationPath::new("opacity").unwrap();
+    let keyframes = keys
+        .into_iter()
+        .map(|(time, value)| project::Keyframe::new(time, project::ParamValue::Scalar(value)))
+        .collect();
+    let channel = project::Channel::new(
+        project::ParamValue::Scalar(0.0),
+        keyframes,
+        project::Extrapolation::Hold,
+        project::Extrapolation::Hold,
+    )
+    .unwrap();
+    let mut animations = project::Animations::default();
+    animations
+        .set(path, project::Param::Value(channel))
+        .unwrap();
+    data.timeline.tracks.push(project::Track {
+        id: project::TrackId(0),
+        name: "".into(),
+        kind: project::TrackKind::Overlay,
+        muted: false,
+        hidden: false,
+        locked: false,
+        items: vec![project::Item {
+            animations,
+            id: project::ItemId(0),
+            source_asset: None,
+            source_range: time::SourceRange::new(Tick::ZERO, duration).unwrap(),
+            start,
+            content: project::ItemParams::Overlay(project::OverlayParams {
+                color: project::Color([255, 255, 255, 255]),
+            }),
+        }],
+    });
+    project::Project::new(data).unwrap()
+}
+
+#[test]
+fn keyframed_opacity_uses_item_local_time_and_overrides_static_placement() {
+    let start = tick(1, 2);
+    let project = animated_overlay_project(
+        start,
+        tick(3, 2),
+        vec![(Tick::ZERO, 0.0), (tick(1, 1), 1.0)],
+    );
+    let hooks = Hooks::default();
+    let mut settings = RenderSettings::from_project(&project);
+    settings.placements.insert(
+        project::ItemId(0),
+        Placement {
+            opacity: 0.25,
+            ..Default::default()
+        },
+    );
+    let mut renderer = Renderer::new(&project, settings).unwrap();
+    for (at, opacity) in [(start, 0.0), (tick(1, 1), 0.5), (tick(3, 2), 1.0)] {
+        let image = renderer.render_frame(at, &mut Empty, &hooks).unwrap();
+        let pixel = image.pixels()[0];
+        for channel in &pixel[..3] {
+            assert!((channel - opacity as f32).abs() < 1e-6, "{at:?}: {pixel:?}");
+        }
+        assert_eq!(pixel[3], 1.0);
+    }
+}
+
+#[test]
+fn keyframed_opacity_clamps_to_the_compositor_range() {
+    let project = animated_overlay_project(
+        Tick::ZERO,
+        tick(3, 1),
+        vec![(Tick::ZERO, 2.0), (tick(2, 1), -1.0)],
+    );
+    let hooks = Hooks::default();
+    let mut renderer = Renderer::new(&project, RenderSettings::from_project(&project)).unwrap();
+    let bright = renderer
+        .render_frame(Tick::ZERO, &mut Empty, &hooks)
+        .unwrap();
+    assert_eq!(bright.pixels()[0], [1.0, 1.0, 1.0, 1.0]);
+    let clear = renderer
+        .render_frame(tick(2, 1), &mut Empty, &hooks)
+        .unwrap();
+    assert_eq!(clear.pixels()[0], [0.0, 0.0, 0.0, 1.0]);
+}
+
 #[test]
 fn empty_audio_is_exact_silence_for_any_block_partition() {
     let p = project::Project::empty(project::ProjectId(0), "".into()).unwrap();

@@ -47,7 +47,7 @@ owns its explicit base value and keys, including when no keys remain; editing
 static item content does not rewrite this independent override. `Param::new(value)`
 creates a static override. Validate edited candidate data through `Project::new`.
 `Animations::value_at(path, local_tick)` is the shared evaluation entry point for
-engine, future rendering, audio automation and graph consumers. None means absent,
+engine, rendering, audio automation and graph consumers. None means absent,
 not zero. No render/CLI execution is introduced by this data contract.
 
 `AnimationPath::new` admits `transform.positionX/Y`, `transform.scaleX/Y`,
