@@ -15,6 +15,7 @@ pub enum Locale {
 pub enum Text {
     Media,
     Preview,
+    Playhead,
     Inspector,
     Timeline,
     EmptyMedia,
@@ -45,6 +46,8 @@ pub fn text(locale: Locale, key: Text) -> &'static str {
     match (locale, key) {
         (Locale::En, Media) => "Media",
         (Locale::Vi, Media) => "Tư liệu",
+        (Locale::En, Playhead) => "Playhead",
+        (Locale::Vi, Playhead) => "Đầu phát",
         (Locale::En, Preview) => "Player",
         (Locale::Vi, Preview) => "Trình phát",
         (Locale::En, Inspector) => "Properties",

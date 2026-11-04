@@ -200,6 +200,7 @@ impl Editor {
             self.configured = true;
         }
         self.theme(ui.ctx());
+        ui.style_mut().interaction.selectable_labels = false;
         self.widgets.clear();
         self.panels.clear();
         self.tick();
@@ -505,7 +506,7 @@ impl Editor {
         ui.add_space(12.0);
         let duration = self.session.project().duration();
         let mut seconds = self.playback.position().unwrap_or(Tick::ZERO).seconds();
-        ui.spacing_mut().slider_width = (ui.available_width() - 20.0).max(100.0);
+        ui.spacing_mut().slider_width = (ui.available_width() - 120.0).max(100.0);
         let response = ui
             .push_id("transport.scrub", |ui| {
                 ui.add_enabled(
@@ -513,7 +514,7 @@ impl Editor {
                     egui::Slider::new(&mut seconds, 0.0..=duration.seconds().max(0.001))
                         .show_value(false)
                         .trailing_fill(true)
-                        .text(self.tr(Text::Preview)),
+                        .text(self.tr(Text::Playhead)),
                 )
             })
             .inner;

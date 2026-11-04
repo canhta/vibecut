@@ -79,6 +79,6 @@ locale retention, transport/seek/clear, byte refusal and worker shutdown.
 `cargo xtask ci` is the handoff check. The local ticket report records observed
 native screenshots, ten-minute A/V frame lag, underruns and peak RSS separately
 from source-documented API contracts; tests alone establish no device performance.
-`--observe SECONDS OUTPUT_DIR [PROJECT]` records at most 3,600 one-second samples
-and one fresh window screenshot, then closes. It exercises the production device,
+`--observe SECONDS OUTPUT_DIR [PROJECT]` records at most 3,601 one-second samples
+and requests one fresh window screenshot, then closes. It exercises the production device,
 engine jobs, renderer and frontend; it never sends media remotely.

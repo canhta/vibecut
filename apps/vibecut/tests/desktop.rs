@@ -272,3 +272,26 @@ fn repeated_forward_backward_seeks_and_clears_retain_no_unbounded_frames() {
     drop(editor);
     assert_eq!(budget.snapshot().unwrap().used, 0);
 }
+
+#[test]
+fn vietnamese_light_controls_fit_the_minimum_window() {
+    let mut state = editor();
+    state.preferences.locale = Locale::Vi;
+    state.preferences.dark = false;
+    let mut harness = Harness::builder()
+        .with_size(egui::vec2(1280.0, 800.0))
+        .build_ui_state(|ui, editor: &mut Editor| editor.ui(ui), state);
+    harness.run_steps(3);
+    for widget in harness.state().inspect().unwrap().widgets {
+        assert!(widget.rect.is_finite());
+        assert!(
+            widget.rect.min.x >= 0.0
+                && widget.rect.min.y >= 0.0
+                && widget.rect.max.x <= 1280.0
+                && widget.rect.max.y <= 800.0,
+            "{}: {:?}",
+            widget.id,
+            widget.rect
+        );
+    }
+}

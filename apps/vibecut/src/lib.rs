@@ -36,6 +36,8 @@ pub enum Error {
     Io(#[from] std::io::Error),
     #[error("preferences could not be read")]
     Preferences(#[from] serde_json::Error),
+    #[error("native window or GPU failed")]
+    Window(#[from] eframe::Error),
     #[error("audio device failed")]
     Audio(#[from] cpal::Error),
     #[error("image operation failed")]

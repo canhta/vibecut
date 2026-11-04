@@ -71,6 +71,7 @@ impl eframe::App for Native {
         self.editor.tick();
         ctx.request_repaint_after(Duration::from_millis(8));
         if let Some(smoke) = &mut self.smoke {
+            ctx.send_viewport_cmd(egui::ViewportCommand::RequestPaintWhileHidden);
             let elapsed = smoke.started.elapsed().as_secs();
             if ctx.input(|input| input.viewport().close_requested()) {
                 smoke.close_request_at = Some(elapsed);
@@ -80,12 +81,14 @@ impl eframe::App for Native {
                 let position = self.editor.playback.position().unwrap_or(time::Tick::ZERO);
                 let frame = self.editor.presented_frame();
                 let budget = self.editor.playback.budget().snapshot().ok();
-                smoke.samples.push(serde_json::json!({"elapsed_seconds":elapsed,"audio_tick":position.0,"video_tick":frame.map(|f|f.0),"video_lag_ticks":frame.map(|f|position.0-f.0),"budget_used":budget.as_ref().map(|b|b.used),"budget_limit":budget.as_ref().map(|b|b.limit),"underrun_frames":self.editor.playback.audio_port().underrun_frames(),"playing":self.editor.playback.playing(),"audio_device_failed":self.editor.playback.audio_port().failed(),"occluded":ctx.input(|input|input.viewport().occluded),"error":self.editor.playback.error().map(|e| format!("{e:?}"))}));
+                smoke.samples.push(serde_json::json!({"elapsed_seconds":elapsed,"audio_tick":position.0,"video_tick":frame.map(|f|f.0),"decoded_video_tick":self.editor.playback.frame().map(|f|f.at.0),"video_lag_ticks":frame.map(|f|position.0-f.0),"budget_used":budget.as_ref().map(|b|b.used),"budget_limit":budget.as_ref().map(|b|b.limit),"underrun_frames":self.editor.playback.audio_port().underrun_frames(),"playing":self.editor.playback.playing(),"audio_device_failed":self.editor.playback.audio_port().failed(),"occluded":ctx.input(|input|input.viewport().occluded),"error":self.editor.playback.error().map(|e| format!("{e:?}"))}));
             }
             if elapsed >= 5 && !smoke.saved && self.capture.is_none() {
                 match Capture::request(ctx, None, Duration::from_secs(3)) {
                     Ok(capture) => self.capture = Some(capture),
-                    Err(e) => eprintln!("capture: {e}"),
+                    Err(e) => {
+                        tracing::warn!(category = "capture_unavailable", error = %e, "Capture unavailable")
+                    }
                 }
             }
             if let Some(capture) = &self.capture {
@@ -100,13 +103,13 @@ impl eframe::App for Native {
                             image.height() as u32,
                             image::ColorType::Rgba8,
                         ) {
-                            eprintln!("capture save: {e}");
+                            tracing::warn!(category = "capture_save_failed", kind = ?e, "Capture save failed");
                         }
                         smoke.saved = true;
                         self.capture = None;
                     }
                     Err(e) => {
-                        eprintln!("capture: {e}");
+                        tracing::warn!(category = "capture_unavailable", error = %e, "Capture unavailable");
                         smoke.saved = true;
                         self.capture = None;
                     }
@@ -117,7 +120,7 @@ impl eframe::App for Native {
                 if let Ok(bytes) = serde_json::to_vec_pretty(&smoke.samples)
                     && let Err(e) = std::fs::write(smoke.output.join("playback.json"), bytes)
                 {
-                    eprintln!("evidence write: {e}");
+                    tracing::warn!(category = "evidence_write_failed", kind = ?e.kind(), "Evidence write failed");
                 }
                 ctx.send_viewport_cmd(egui::ViewportCommand::Close);
             }
@@ -140,12 +143,12 @@ impl eframe::App for Native {
                 if let Ok(bytes) = serde_json::to_vec_pretty(&value)
                     && let Err(error) = std::fs::write(smoke.output.join(name), bytes)
                 {
-                    eprintln!("observation receipt: {error}");
+                    tracing::warn!(category = "receipt_write_failed", kind = ?error.kind(), "Observation receipt write failed");
                 }
             }
         }
         if let Err(e) = self.store.save(&self.editor.preferences) {
-            eprintln!("preferences: {e}");
+            tracing::warn!(category = "preference_save_failed", error = %e, "Preferences could not be saved");
         }
     }
 }
@@ -198,7 +201,7 @@ fn run() -> Result<()> {
             Some(stream)
         }
         Err(e) => {
-            eprintln!("audio unavailable: {e}");
+            tracing::warn!(category = "audio_unavailable", error = %e, "Audio output unavailable");
             None
         }
     };
@@ -212,7 +215,7 @@ fn run() -> Result<()> {
     let preferences = match store.load() {
         Ok(p) => p,
         Err(e) => {
-            eprintln!("preferences unavailable: {e}");
+            tracing::warn!(category = "preference_load_failed", error = %e, "Preferences unavailable");
             Preferences::default()
         }
     };
@@ -232,7 +235,12 @@ fn run() -> Result<()> {
         viewport: egui::ViewportBuilder::default()
             .with_inner_size([1440.0, 900.0])
             .with_min_inner_size([1280.0, 800.0])
-            .with_icon(Arc::new(icon)),
+            .with_icon(Arc::new(icon))
+            .with_window_level(if smoke.is_some() {
+                egui::WindowLevel::AlwaysOnTop
+            } else {
+                egui::WindowLevel::Normal
+            }),
         ..Default::default()
     };
     eframe::run_native(
@@ -248,13 +256,16 @@ fn run() -> Result<()> {
                 capture: None,
             }))
         }),
-    )
-    .map_err(|_| Error::Unsupported("native window or GPU"))?;
+    )?;
     Ok(())
 }
 fn main() {
+    let _ = tracing_subscriber::fmt()
+        .with_max_level(tracing::Level::INFO)
+        .with_writer(std::io::stderr)
+        .try_init();
     if let Err(error) = run() {
-        eprintln!("VibeCut: {error}");
+        tracing::error!(category = "startup_failed", error = %error, "VibeCut could not start");
         std::process::exit(1);
     }
 }
