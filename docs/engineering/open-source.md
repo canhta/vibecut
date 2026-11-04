@@ -18,6 +18,13 @@ MIT applies. App/window icons use
 serve documentation. Regeneration and planned platform wiring live in the icon README.
 [Verification](verification.md#checks) owns generated fixture placement.
 
+## Model weights
+
+Bundle or default only to model weights under MIT, Apache-2.0 or BSD licences.
+Users may opt in to download other weights (CC-BY, custom or non-commercial):
+show the exact licence, source and restrictions such as "non-commercial" before
+download, verify the pinned hash, and never redistribute them with the app.
+
 ## Privacy
 
 Local-first is the default. Remote AI is opt-in: obtain explicit consent before
