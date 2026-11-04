@@ -19,6 +19,7 @@ fn content() -> ItemParams {
 }
 fn new_item(start: i64, duration: i64) -> NewItem {
     NewItem {
+        animations: Default::default(),
         source_asset: None,
         source_range: range(100, 100 + duration),
         start: Tick(start),
@@ -42,6 +43,7 @@ fn project() -> Project {
     }
     data.timeline.tracks.first_mut().unwrap().items = vec![
         Item {
+            animations: Default::default(),
             id: ItemId(10),
             source_asset: None,
             source_range: range(100, 140),
@@ -49,6 +51,7 @@ fn project() -> Project {
             content: content(),
         },
         Item {
+            animations: Default::default(),
             id: ItemId(11),
             source_asset: None,
             source_range: range(200, 240),
@@ -530,6 +533,7 @@ fn media_handles_and_typed_parameter_validation_are_atomic() {
         .apply(Command::InsertItem {
             track: TrackId(0),
             item: NewItem {
+                animations: Default::default(),
                 source_asset: Some(AssetId(1)),
                 source_range: range(200, 300),
                 start: Tick(100),
@@ -576,6 +580,7 @@ fn media_handles_and_typed_parameter_validation_are_atomic() {
         Command::InsertItem {
             track: TrackId(1),
             item: NewItem {
+                animations: Default::default(),
                 source_asset: Some(AssetId(99)),
                 source_range: range(0, 10),
                 start: Tick(0),
@@ -588,6 +593,7 @@ fn media_handles_and_typed_parameter_validation_are_atomic() {
         Command::InsertItem {
             track: TrackId(1),
             item: NewItem {
+                animations: Default::default(),
                 source_asset: Some(AssetId(1)),
                 source_range: range(0, 10),
                 start: Tick(0),
@@ -685,6 +691,7 @@ fn measure_large_project_gesture() {
     let track = data.timeline.tracks.first_mut().unwrap();
     track.items = (0..10000)
         .map(|n| Item {
+            animations: Default::default(),
             id: ItemId(n + 10),
             source_asset: None,
             source_range: range(0, 10),
@@ -1022,6 +1029,7 @@ fn caption_project() -> Project {
         hidden: false,
         locked: false,
         items: vec![Item {
+            animations: Default::default(),
             id: ItemId(1),
             source_asset: Some(AssetId(1)),
             source_range: range(100, 200),

@@ -69,6 +69,7 @@ fn source(path: PathBuf) -> SourceAsset {
 }
 fn item(id: u64, start: i64) -> Item {
     Item {
+        animations: Default::default(),
         id: ItemId(id),
         source_asset: None,
         source_range: range(0, 10),
@@ -138,6 +139,7 @@ fn populated(path: PathBuf) -> Project {
             hidden: true,
             locked: true,
             items: vec![Item {
+                animations: Default::default(),
                 id: ItemId(i as u64),
                 source_asset,
                 source_range: range(0, 10),

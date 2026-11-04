@@ -14,7 +14,7 @@ with a named consumer.
 |---|---|---|---|
 | time | crates/time | Ticks, rational rates, source ranges | - |
 | media | crates/media | Safe FFmpeg I/O: probe, demux/mux, decode/encode, hardware acceleration, conversion, speech-audio preparation | time |
-| project | crates/project | Timeline model, validation, persistence, atomic file writes | time, media, captions |
+| project | crates/project | Timeline/animation model, validation/evaluation, persistence, atomic file writes | time, media, captions |
 | captions | crates/captions | Transcript and cue model, segmentation, mapping, language profiles, SRT/VTT | time |
 | text | crates/text | Unicode shaping and rasterization | - |
 | render | crates/render | CPU compositor, caption overlay, audio mix, export execution | time, media, project, captions, text |
@@ -36,6 +36,7 @@ README holds the details.
 |---|---|---|
 | SourceAsset | media | Validated source identity, path, content hash, persistable probe |
 | Project | project | Immutable validated timeline snapshot, versioned persistence and writer lease; see [project contract](../../crates/project/README.md#writer-lease-and-save-acknowledgement) |
+| Param, keyframes | project | Item-relative parameter paths, validated channels, interpolation and time propagation; see [animation contract](../../crates/project/README.md#animated-parameters) |
 | SourceRange | time | Nonempty half-open `[start, end)` in source ticks |
 | Transcript | captions | Stable segments, optional word and token timing with raw/NFC/display correspondence, provider fingerprint |
 | Cue | captions | Source range and per-language text with edit flags; user edits survive unless a command overrides them |

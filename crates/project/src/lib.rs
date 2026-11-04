@@ -1,9 +1,14 @@
 //! Validated headless timeline snapshots and versioned project persistence.
+mod animation;
 pub mod atomic;
 pub mod autosave;
 mod bezier;
 mod bounds;
-pub use bezier::cubic_bezier_y_for_x;
+pub use animation::{
+    AnimationPath, Animations, Channel, ColorComponent, CurveHandle, Extrapolation, HandleSide,
+    Keyframe, MAX_ANIMATION_PATHS, MAX_CHANNEL_KEYS, MAX_PROJECT_KEYS, Param, ParamValue, Segment,
+    TangentMode,
+};
 mod model;
 mod persistence;
 mod writer;

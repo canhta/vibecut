@@ -118,6 +118,27 @@ Errors are typed `EditError` categories with safe IDs/static diagnostics and
 retained project/time/caption sources. No raw JSON diagnostics or parameter text is
 returned. Commands perform no IO or retries; processing lifecycle is described below.
 
+## Keyframe commands
+
+Project owns the [parameter model and evaluator](../project/README.md#animated-parameters).
+Engine adds the registered `keyframes.set_param`, `keyframes.add`,
+`keyframes.remove`, `keyframes.retime`, `keyframes.set_handle` and
+`keyframes.scale_time` commands. The registry owns their exact required fields and
+wire types. `set_param` installs/replaces a validated static/animated override;
+add/remove/move/handle edits select its path and an optional RGBA component.
+For scalar/discrete params the component is null; RGBA requires r/g/b/a.
+`retime` moves one key between exact local ticks and refuses an occupied time;
+`scale_time` stretches all item channels/handle times by a positive rational,
+without changing media playback or item duration. Missing paths/keys, invalid
+handles, locks and failed budgets preserve the entire candidate/history.
+
+Commands share existing typed/JSON dispatch, batches, undo/redo and gestures.
+Begin/commit one gesture for a drag; previews commit one history step and cancel
+restores the original curves. Range edits call project's checked translation,
+retaining out-of-window keys; no second interpolation or tangent algorithm.
+`NewItem.animations` carries explicit animation data on insertion. Rendering and
+CLI property/export wiring are separate consumers of the project evaluator.
+
 ## Verification and performance
 
 `cargo xtask ci` exercises public JSON and typed commands, atomic failing batches,

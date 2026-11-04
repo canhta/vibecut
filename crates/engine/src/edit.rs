@@ -99,6 +99,8 @@ fn set_range(item: &mut Item, range: SourceRange, sources: &mut TrimSources) -> 
         }
         p.cues = cues;
     }
+    let shift = sub(item.source_range.start(), range.start())?;
+    item.animations.shift(shift)?;
     item.source_range = range;
     Ok(())
 }
@@ -165,6 +167,7 @@ pub(crate) fn apply(
             unlocked(t)?;
             let id = ItemId(alloc(next)?);
             t.items.push(Item {
+                animations: new.animations,
                 id,
                 source_asset: new.source_asset,
                 source_range: new.source_range,
@@ -259,6 +262,74 @@ pub(crate) fn apply(
             item(&mut data, id)?.content = content;
             // Explicit content replacement becomes authoritative for later previews.
             sources.remove(&id);
+        }
+        Command::SetAnimatedParam {
+            item: id,
+            path,
+            param,
+        } => {
+            item(&mut data, id)?.animations.set(path, param)?;
+        }
+        Command::AddKeyframe {
+            item: id,
+            path,
+            component,
+            key,
+        } => {
+            item(&mut data, id)?
+                .animations
+                .get_mut(&path)?
+                .channel_mut(component)?
+                .put(key)?;
+        }
+        Command::RemoveKeyframe {
+            item: id,
+            path,
+            component,
+            time,
+        } => {
+            item(&mut data, id)?
+                .animations
+                .get_mut(&path)?
+                .channel_mut(component)?
+                .remove(time)?;
+        }
+        Command::RetimeKeyframe {
+            item: id,
+            path,
+            component,
+            from,
+            to,
+        } => {
+            item(&mut data, id)?
+                .animations
+                .get_mut(&path)?
+                .channel_mut(component)?
+                .retime_key(from, to)?;
+        }
+        Command::SetKeyframeHandle {
+            item: id,
+            path,
+            component,
+            time,
+            side,
+            handle,
+            tangent,
+        } => {
+            item(&mut data, id)?
+                .animations
+                .get_mut(&path)?
+                .channel_mut(component)?
+                .set_handle(time, side, handle, tangent)?;
+        }
+        Command::ScaleKeyframeTime {
+            item: id,
+            numerator,
+            denominator,
+        } => {
+            item(&mut data, id)?
+                .animations
+                .retime(numerator, denominator)?;
         }
         Command::AddBookmark {
             start,

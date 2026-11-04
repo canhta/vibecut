@@ -140,6 +140,7 @@ impl ItemParams {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Item {
+    pub animations: crate::Animations,
     pub id: ItemId,
     pub source_asset: Option<AssetId>,
     /// Source ticks for media/captions; local content ticks for generated items.
@@ -250,6 +251,7 @@ fn validate(data: &ProjectData) -> Result<()> {
     }
     let mut track_ids = BTreeSet::new();
     let mut item_ids = BTreeSet::new();
+    let mut keys = 0usize;
     for track in &data.timeline.tracks {
         text(&track.name)?;
         if !track_ids.insert(track.id) {
@@ -257,6 +259,13 @@ fn validate(data: &ProjectData) -> Result<()> {
         }
         let mut end = Tick::ZERO;
         for item in &track.items {
+            item.animations.validate()?;
+            keys = keys
+                .checked_add(item.animations.key_count())
+                .ok_or(Error::TooLarge("project keys"))?;
+            if keys > crate::MAX_PROJECT_KEYS {
+                return Err(Error::TooLarge("project keys"));
+            }
             if !item_ids.insert(item.id) {
                 return Err(Error::Invalid("duplicate item ID"));
             }

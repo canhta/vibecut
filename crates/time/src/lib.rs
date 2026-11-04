@@ -134,6 +134,21 @@ impl Tick {
         i64::try_from(value).map_err(|_| TimeError::OutOfRange)
     }
 
+    /// Scale a tick count by a positive rational, using the shared integer rounding policy.
+    pub fn checked_scale(self, num: i64, den: i64, rounding: Rounding) -> Result<Self, TimeError> {
+        if num <= 0 || den <= 0 {
+            return Err(TimeError::InvalidRate);
+        }
+        let value = divide_rounded(
+            i128::from(self.0) * i128::from(num),
+            i128::from(den),
+            rounding,
+        )?;
+        i64::try_from(value)
+            .map(Self)
+            .map_err(|_| TimeError::OutOfRange)
+    }
+
     /// Checked addition.
     pub fn checked_add(self, other: Self) -> Option<Self> {
         self.0.checked_add(other.0).map(Self)
@@ -923,6 +938,35 @@ mod tests {
         );
         let source: SourceRange = range;
         assert_eq!(source, range);
+    }
+
+    #[test]
+    fn tick_scale_rounding_ties_overflow_and_invalid_ratios() {
+        for (tick, expected) in [(1, 1), (-1, -1), (3, 2), (-3, -2)] {
+            assert_eq!(
+                Tick(tick).checked_scale(1, 2, Rounding::Nearest).unwrap(),
+                Tick(expected)
+            );
+        }
+        assert_eq!(
+            Tick(i64::MIN)
+                .checked_scale(1, 1, Rounding::Nearest)
+                .unwrap(),
+            Tick(i64::MIN)
+        );
+        assert_eq!(
+            Tick(i64::MAX)
+                .checked_scale(1, 1, Rounding::Nearest)
+                .unwrap(),
+            Tick(i64::MAX)
+        );
+        assert!(
+            Tick(i64::MAX)
+                .checked_scale(2, 1, Rounding::Nearest)
+                .is_err()
+        );
+        assert!(Tick(0).checked_scale(1, 0, Rounding::Nearest).is_err());
+        assert!(Tick(0).checked_scale(-1, 1, Rounding::Nearest).is_err());
     }
 
     proptest! {

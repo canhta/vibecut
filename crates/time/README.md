@@ -22,6 +22,8 @@ project persistence and every platform dependency.
   `SourceRange` names the same nonempty half-open range in source coordinates.
 - `format_timecode` and `parse_timecode` convert between ticks and absolute signed
   frame labels, with explicit DF/NDF mode and typed invalid-label errors.
+- `Tick::checked_scale(num, den, rounding)` scales by a positive rational with
+  checked i128 intermediate arithmetic and the same explicit rounding policy.
 - `Rounding` selects floor, ceiling or nearest (ties away from zero).
 - `TimeError` reports non-finite seconds, invalid rates, empty ranges, overflow and
   out-of-range results. No public operation panics on hostile input.
