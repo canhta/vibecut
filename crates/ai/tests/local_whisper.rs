@@ -29,7 +29,12 @@ fn real_local_adapter_preserves_source_coordinates_raw_tokens_and_cancellation()
         .map(|b| f32::from_le_bytes(*b))
         .collect();
     let model = ai::models::catalog().unwrap().remove(0);
-    let adapter = Whisper::load(&model, &path, Device::Gpu, 4, &Hooks).unwrap();
+    let device = if std::env::var_os("VIBECUT_WHISPER_CPU").is_some() {
+        Device::Cpu
+    } else {
+        Device::Gpu
+    };
+    let adapter = Whisper::load(&model, &path, device, 4, &Hooks).unwrap();
     let range = SampleRange::new(160_000, 160_000 + pcm.len() as u64).unwrap();
     let scope = Scope {
         provider: adapter.config().clone(),
@@ -92,6 +97,99 @@ fn real_local_adapter_preserves_source_coordinates_raw_tokens_and_cancellation()
         adapter.recognize_tokens(audio, &request, &CancelAfterNative(AtomicUsize::new(0))),
         Err(Error::Cancelled)
     ));
+    // Cancel during accepted maximum-length native work, not at a checkpoint.
+    // The same context must remain usable after each cancelled invocation.
+    struct Deadline {
+        start: std::time::Instant,
+        acknowledged_ms: AtomicUsize,
+    }
+    impl ExecutionHooks for Deadline {
+        fn cancelling(&self) {
+            self.acknowledged_ms
+                .store(self.start.elapsed().as_millis() as usize, Ordering::SeqCst);
+        }
+        fn progress(&self, _: Stage, percent: u8) {
+            assert!(percent <= 100);
+            assert_eq!(
+                self.acknowledged_ms.load(Ordering::SeqCst),
+                0,
+                "progress after cancellation acknowledgement"
+            );
+        }
+        fn cancelled(&self) -> bool {
+            self.start.elapsed() >= std::time::Duration::from_secs(1)
+        }
+        fn stage(&self, _: Stage) {}
+    }
+    let long_pcm: Vec<_> = pcm
+        .iter()
+        .copied()
+        .cycle()
+        .take(ai::whisper::MAX_SAMPLES as usize)
+        .collect();
+    let long_range = SampleRange::new(160_000, 160_000 + long_pcm.len() as u64).unwrap();
+    let long_scope = Scope {
+        source_samples: long_range,
+        max_bytes: long_pcm.len() as u64 * 4,
+        ..scope.clone()
+    };
+    let long_request = Request {
+        scope: &long_scope,
+        consent: None,
+    };
+    for attempt in 0..3 {
+        let deadline = Deadline {
+            start: std::time::Instant::now(),
+            acknowledged_ms: AtomicUsize::new(0),
+        };
+        let cancelled = adapter.recognize_tokens(
+            AudioWindow {
+                samples: &long_pcm,
+                range: long_range,
+                sample_rate: SAMPLE_RATE,
+            },
+            &long_request,
+            &deadline,
+        );
+        let elapsed = deadline.start.elapsed();
+        let acknowledged = deadline.acknowledged_ms.load(Ordering::SeqCst);
+        eprintln!(
+            "device={device:?} attempt={attempt} acknowledged_ms={acknowledged} cancellation_delay_ms={}",
+            elapsed
+                .saturating_sub(std::time::Duration::from_secs(1))
+                .as_millis()
+        );
+        assert!(matches!(cancelled, Err(Error::Cancelled)));
+        assert!(
+            (1000..1100).contains(&acknowledged),
+            "acknowledgement took {acknowledged}ms"
+        );
+        let bound = match device {
+            Device::Cpu => 5500,
+            Device::Gpu => 2000,
+        };
+        assert!(
+            elapsed < std::time::Duration::from_millis(bound),
+            "cancellation took {elapsed:?}"
+        );
+    }
+    struct PanickingHooks(std::time::Instant);
+    impl ExecutionHooks for PanickingHooks {
+        fn cancelled(&self) -> bool {
+            assert!(
+                self.0.elapsed() < std::time::Duration::from_millis(200),
+                "synthetic hook failure"
+            );
+            false
+        }
+        fn stage(&self, _: Stage) {}
+    }
+    assert!(matches!(
+        adapter.recognize_tokens(audio, &request, &PanickingHooks(std::time::Instant::now())),
+        Err(Error::Inference)
+    ));
+    let reused = adapter.recognize_tokens(audio, &request, &Hooks).unwrap();
+    assert!(!reused.segments.is_empty());
     let bad = AudioWindow {
         sample_rate: 8000,
         ..audio

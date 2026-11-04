@@ -129,9 +129,16 @@ pub enum Stage {
     Translate,
     Assemble,
 }
+/// Hooks may run on an inference observer thread and must return promptly.
+/// Implementations synchronize their own job state; this seam owns no job.
 pub trait ExecutionHooks: Send + Sync {
     fn cancelled(&self) -> bool;
     fn stage(&self, stage: Stage);
+    /// Bounded native progress in percent; default preserves stage-only consumers.
+    fn progress(&self, _stage: Stage, _percent: u8) {}
+    /// Native work has observed cancellation. The job owner can enter Cancelling
+    /// immediately while the current native operation drains; no result is returned.
+    fn cancelling(&self) {}
 }
 pub(crate) fn checkpoint(hooks: &dyn ExecutionHooks, stage: Stage) -> Result<(), Error> {
     if hooks.cancelled() {

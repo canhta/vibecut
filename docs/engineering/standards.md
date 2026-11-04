@@ -9,9 +9,10 @@ and AI responses as hostile: use `get()`, checked arithmetic, nonzero divisors
 and capped input-sized allocations. Review these boundaries with focused tests.
 
 Workspace Rust lints forbid unsafe code except in `media`, the sole FFmpeg
-boundary. That crate overrides the workspace policy with `unsafe_code = "deny"`,
-permits unsafe only in specific FFI modules with `#[allow(unsafe_code)]`, documents
-each unsafe block with `// SAFETY:`, and exposes a safe `Result` API. Prefer
+boundary, and the [admitted Whisper callback boundary](../adr/0003-whisper-callback-boundary.md).
+These crates override the workspace policy with `unsafe_code = "deny"`, permit
+unsafe only in specific FFI modules with `#[allow(unsafe_code)]`, document each
+unsafe block with `// SAFETY:`, and expose a safe `Result` API. Prefer
 `ffmpeg-next` safe APIs; direct FFI fills only concrete safety/API gaps. Do not
 expose raw pointers or GPU plane slices. No other exception is admitted.
 [Architecture](architecture.md#media-and-time) owns timing and frame ownership.

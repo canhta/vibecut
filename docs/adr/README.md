@@ -5,3 +5,4 @@ ADRs record consequential choices and their rationale. Current contracts live in
 
 - [0001 Project foundations](0001-project-foundations.md)
 - [0002 Desktop media and time](0002-desktop-media-and-time.md)
+- [0003 Whisper callback boundary](0003-whisper-callback-boundary.md)

@@ -102,7 +102,8 @@ Languages are data, not code paths. Identify them with BCP 47 tags (`vi`, `en`,
 `zh-Hans`, `zh-Hant`). Each supported language has one language profile owned by
 `captions`: segmentation rules (grapheme or character limits, reading speed, line
 breaking, optional word segmenter), punctuation, and default font fallback chain
-consumed by `text`. Provider adapters declare supported languages as capabilities.
+consumed by `text`. Provider adapters declare supported languages as capabilities and own
+provider-specific decode settings as language-profile data.
 Adding a language adds a profile, fonts and optional UI catalog; core crates never
 `match` on a fixed language list. Unknown tags fall back to a generic profile.
 

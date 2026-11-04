@@ -9,10 +9,30 @@ use crate::{
 use std::{collections::BTreeSet, path::Path, sync::Once};
 use whisper_rs::{FullParams, SamplingStrategy, WhisperContext, WhisperContextParameters};
 
+#[allow(unsafe_code)]
+mod callbacks;
+
 pub const SAMPLE_RATE: u32 = 16_000;
 /// Five-minute invocation ceiling, not a recommended hard chunk boundary.
 /// Whisper chooses its own timestamp boundaries inside this window.
 pub const MAX_SAMPLES: u64 = 300 * SAMPLE_RATE as u64;
+
+// Provider-specific language profiles; keep language choices as data. Captions
+// owns layout/segmentation profiles, while this adapter owns native decode policy.
+const DEFAULT_DECODE: SamplingStrategy = SamplingStrategy::BeamSearch {
+    beam_size: 5,
+    patience: -1.0,
+};
+const LANGUAGE_DECODE: &[(&str, SamplingStrategy)] =
+    &[("en", SamplingStrategy::Greedy { best_of: 1 })];
+
+fn decode_profile(language: &str) -> SamplingStrategy {
+    LANGUAGE_DECODE
+        .iter()
+        .find(|(tag, _)| *tag == language)
+        .map_or_else(|| DEFAULT_DECODE.clone(), |(_, strategy)| strategy.clone())
+}
+
 /// Explicit device choice. Engine selects software fallback; adapter never retries.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Device {
@@ -51,8 +71,8 @@ pub struct Whisper {
 }
 impl Whisper {
     /// The caller supplies an immutable cache file. Verify size/hash before native
-    /// loading, without buffering the model. Loading and each <=5 min inference call
-    /// are synchronous and noninterruptible; check cancellation around those calls.
+    /// loading, without buffering the model. Loading is synchronous; inference
+    /// observes cancellation via native callbacks after each encoder/decode operation.
     /// Device GPU requires macOS Metal or the explicit whisper-vulkan build feature.
     pub fn load(
         model: &Model,
@@ -87,7 +107,7 @@ impl Whisper {
             "local-whisper".into(),
             model.id.as_str().into(),
             format!(
-                "whisper-rs-0.16.0:cpp{}:{}:beam5:temperature0:fallback0:context-per-call:no-prompt:flash0:max300s:tokens-v1:threads{threads}:{device:?}",
+                "whisper-rs-0.16.0:cpp{}:{}:decode-default{DEFAULT_DECODE:?}:decode-languages{LANGUAGE_DECODE:?}:temperature0:fallback0:context-per-call:no-prompt:flash0:max300s:tokens-v1:threads{threads}:{device:?}",
                 whisper_rs::WHISPER_CPP_VERSION, file.sha256
             )
             .into(),
@@ -128,10 +148,7 @@ impl Whisper {
             return Err(Error::Invalid("transcription text payload"));
         }
         let mut state = self.context.create_state().map_err(|_| Error::Inference)?;
-        let mut params = FullParams::new(SamplingStrategy::BeamSearch {
-            beam_size: 5,
-            patience: -1.0,
-        });
+        let mut params = FullParams::new(decode_profile(request.scope.source_language.as_str()));
         params.set_n_threads(self.threads);
         params.set_language(Some(request.scope.source_language.as_str()));
         params.set_translate(false);
@@ -143,9 +160,7 @@ impl Whisper {
         params.set_print_progress(false);
         params.set_print_realtime(false);
         params.set_print_timestamps(false);
-        state
-            .full(params, audio.samples)
-            .map_err(|_| Error::Inference)?;
+        callbacks::run(&mut state, params, audio.samples, hooks)?;
         checkpoint(hooks, Stage::Transcribe)?;
         let mut segments = Vec::new();
         let mut tokens = Vec::new();

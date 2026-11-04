@@ -138,7 +138,9 @@ caps before constructing transport records; engine owns job-level memory budgets
 The default `whisper` feature uses safe whisper-rs bindings, with Metal on macOS
 and CPU elsewhere. `whisper-vulkan` enables Vulkan (requires the Vulkan SDK).
 `--no-default-features` retains offline contracts/model policy without native builds.
-No workspace unsafe exception is used. `whisper::Whisper::load` verifies the pinned
+The narrowly admitted callback module is documented in
+[ADR 0003](../../docs/adr/0003-whisper-callback-boundary.md); other ai modules
+deny unsafe code. `whisper::Whisper::load` verifies the pinned
 model's exact size and SHA-256 with a fixed 64 KiB buffer before native loading;
 callers must keep the cache path immutable during loading/use. Models are never
 bundled. The multilingual default is `whisper-large-v3-turbo`, with admitted
@@ -164,11 +166,24 @@ continuous speech into independent 30 s calls. Engine chooses speech-safe invoca
 boundaries and owns reconciliation for longer recordings. The five-minute bound
 caps input buffering at 19.2 MB of f32 PCM; it is a safety ceiling, not evidence that
 hard cuts at five minutes preserve speech.
-Model loading and each native inference call (up to five minutes of audio) are
-synchronous and noninterruptible; cancellation is checked before/after each call and between result segments, and
-cancelled work returns no output. Upstream's safe abort callback is deliberately
-unused: its 0.16.0 implementation erases a boxed closure but casts it back to its
-original concrete type, and does not reclaim that allocation. CPU selection is
+Model loading is synchronous and checked for cancellation before/after loading.
+Inference uses whisper-rs raw abort/progress callbacks backed by call-owned atomic
+state; a scoped observer polls execution hooks every 2 ms, acknowledges cancellation
+through `ExecutionHooks::cancelling` once, then suppresses progress and all results.
+The engine's hook implementation owns the visible Cancelling job state. Native
+work stops at the next abort poll and the observer joins before return. The binding's
+released safe setters are bypassed because their allocation ownership/type cast is
+incorrect; no patched binding or native runtime is vendored.
+
+The bundled native runtime polls after encoding a window and after decoder work;
+it cannot interrupt an encoder graph in flight. Coordinator-accepted residual
+latency is one encoder window: observed isolated four-thread M1 Pro release runs
+returned 0.36–0.41 s after the cancellation deadline on Metal and 3.0–3.7 s on CPU.
+These are measurements, not universal bounds; contention and other hardware can
+increase the delay. Native regression checks allow 1 s on Metal and 4.5 s on CPU
+after a 1 s deadline, with acknowledgement within 100 ms. Windows/Vulkan latency
+remains unverified. Cancellation never waits for the entire five-minute invocation.
+CPU selection is
 explicit; engine owns fallback instead of silently retrying a failed GPU call.
 The adapter disables native path/text diagnostics process-wide through the
 binding's logging hooks, without enabling its logging backend features.
@@ -190,11 +205,20 @@ Its JSON output is recognition data deliberately requested by the caller, not lo
 Native tests and benchmarks require external weights/audio and are opt-in; ordinary
 unit tests are offline. Windows native runtime and Vulkan remain unverified.
 
-Quality evidence for the continuous-window policy is recorded in the local /15
-fix report against all 17 /16 samples. The former independent 30 s policy is
-superseded: it produced VI WER 24.91% on that corpus and 36.42% on the south sample.
-Holding model, language, decoding and native runtime fixed, a single continuous
-south invocation recovers 1.85% WER; restoring temperature fallback alone does not.
-Flash attention remains explicitly disabled after an earlier observed VI regression.
-Windows/Vulkan, human timing accuracy, and speech-boundary reconciliation for inputs
-longer than the invocation ceiling remain unverified.
+Native decoding policy is language-profile data owned by this provider: English
+uses greedy decoding (best-of 1); the generic profile uses beam search (beam 5),
+including the admitted Vietnamese and Chinese languages. All profiles retain
+continuous timestamp-selected native windows, temperature zero with fallback
+disabled, no prompt, per-call state and flash attention disabled. The provider
+settings fingerprint includes the complete profile table and generic strategy.
+Captions' language registry remains the owner of layout and segmentation profiles.
+
+Observed /16 corpus quality and cancellation evidence is recorded in the local /15
+review-fix report. The former independent 30 s policy damaged Vietnamese speech;
+continuous windows recover it. Continuous beam search worsened English noise/music;
+English greedy decoding reduces its aggregate error count and music omissions while
+preserving the established Vietnamese/Chinese settings. Disabling intra-call text
+history worsened English and was rejected. Flash attention remains disabled after
+an observed Vietnamese regression. These corpus observations do not establish
+universal model accuracy or human timing fidelity. Windows/Vulkan and speech-boundary
+reconciliation beyond the invocation ceiling remain unverified.
