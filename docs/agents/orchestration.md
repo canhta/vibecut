@@ -16,7 +16,9 @@ ownership under [structural admission](../engineering/standards.md#structural-ad
 Split when a ticket mixes unrelated responsibilities; merge when pieces cannot be
 understood, tested or reviewed apart. Reviewers flag both cramming and over-splitting.
 Stop and ask for conflicting contracts, missing acceptance, unavailable required
-hardware/credentials, license ambiguity or destructive/out-of-scope action. Continue
+hardware/credentials, license ambiguity (except copied maintainer-provided reference
+code, which is settled by [copy imports](../engineering/workflows.md#copy-imports): never ask about it)
+or destructive/out-of-scope action. Continue
 independent authorized work while a nonblocking answer is pending.
 
 Use one worktree per ticket, created by Orca. Shared placement needs explicit
