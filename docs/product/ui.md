@@ -203,6 +203,6 @@ A UI ticket that hits a gap captures a real desktop screenshot first.
 ## Evidence
 
 Reference screenshots and behaviour notes live in `.spikes/ui-reference/` (local).
-A UI ticket cites the reference it took each decision from and verifies with an
-offscreen screenshot of our app driven through automation ids
-([verification](../engineering/verification.md#test-selection)).
+A UI ticket cites the reference it took each decision from, tests behaviour through
+automation ids, and attaches `cargo xtask ui-audit` screenshots of the screens it
+changed to its report for design review ([verification](../engineering/verification.md#test-selection)).
