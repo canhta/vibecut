@@ -298,20 +298,11 @@ impl VideoCursor {
         let rgba = self.converter.convert(frame)?;
         let color = rgba.color().resolved_sdr();
         let stride = rgba.stride(0)?;
-        let row = rgba.width() as usize * 4;
-        let bytes = u64::from(rgba.width()) * u64::from(rgba.height()) * 4;
-        let _packed = hooks.reserve(MemoryKind::Decoded, bytes)?;
-        let mut packed = crate::vector(bytes as usize, 0u8)?;
-        for (dst, src) in packed
-            .chunks_exact_mut(row)
-            .zip(rgba.plane(0)?.chunks(stride))
-        {
-            dst.copy_from_slice(src.get(..row).ok_or(Error::Invalid("RGBA source stride"))?);
-        }
-        Ok(Some(Image::from_rgba8(
+        Ok(Some(Image::from_rgba8_strided(
             rgba.width(),
             rgba.height(),
-            &packed,
+            rgba.plane(0)?,
+            stride,
             rgba.premultiplied_alpha(),
             color.transfer,
             hooks,

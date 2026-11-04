@@ -62,30 +62,79 @@ impl Image {
             return Err(Error::Unsupported("transfer function"));
         }
         let size = Self::bytes(width, height)?;
-        if bytes.len() as u64 != size / 4
-            || (premultiplied
-                && bytes.as_chunks::<4>().0.iter().any(|p| {
-                    p.iter()
-                        .take(3)
-                        .any(|c| *c > p.get(3).copied().unwrap_or(0))
-                }))
+        if bytes.len() as u64 != size / 4 {
+            return Err(Error::Invalid("RGBA input size/premultiplication"));
+        }
+        Self::from_rgba8_strided(
+            width,
+            height,
+            bytes,
+            width as usize * 4,
+            premultiplied,
+            transfer,
+            hooks,
+        )
+    }
+    pub(crate) fn from_rgba8_strided(
+        width: u32,
+        height: u32,
+        bytes: &[u8],
+        stride: usize,
+        premultiplied: bool,
+        transfer: u32,
+        hooks: &dyn ExecutionHooks,
+    ) -> Result<Self> {
+        Self::bytes(width, height)?;
+        if !matches!(transfer, 1 | 13 | 8) {
+            return Err(Error::Unsupported("transfer function"));
+        }
+        let row = width as usize * 4;
+        let required = stride
+            .checked_mul(height as usize - 1)
+            .and_then(|n| n.checked_add(row))
+            .ok_or(Error::Invalid("RGBA source stride"))?;
+        if stride < row || bytes.len() < required {
+            return Err(Error::Invalid("RGBA source stride"));
+        }
+        let rows = || {
+            bytes
+                .chunks(stride)
+                .take(height as usize)
+                .map(|s| s.get(..row).unwrap_or(&[]))
+        };
+        if premultiplied
+            && rows().any(|row| {
+                row.as_chunks::<4>()
+                    .0
+                    .iter()
+                    .any(|&[r, g, b, a]| r > a || g > a || b > a)
+            })
         {
             return Err(Error::Invalid("RGBA input size/premultiplication"));
         }
         let mut image = Self::new(width, height, [0.0; 4], hooks)?;
         let lut = decode_lut(transfer);
-        for (dst, src) in image.pixels.iter_mut().zip(bytes.as_chunks::<4>().0.iter()) {
-            let a = f32::from(src.get(3).copied().unwrap_or(0)) / 255.0;
-            for (out, b) in dst.iter_mut().take(3).zip(src.iter().take(3)) {
-                let value = if premultiplied && a > 0.0 {
-                    (f32::from(*b) / a).round().clamp(0.0, 255.0) as usize
-                } else {
-                    usize::from(*b)
-                };
-                *out = lut.get(value).copied().unwrap_or(0.0) * a;
-            }
-            if let Some(out) = dst.get_mut(3) {
-                *out = a;
+        for (destination, source) in image.pixels.chunks_mut(width as usize).zip(rows()) {
+            crate::check(hooks)?;
+            if !premultiplied {
+                for (dst, &[r, g, b, a]) in destination.iter_mut().zip(source.as_chunks::<4>().0) {
+                    let alpha = f32::from(a) / 255.0;
+                    let channel = |v: u8| lut.get(usize::from(v)).copied().unwrap_or(0.0) * alpha;
+                    *dst = [channel(r), channel(g), channel(b), alpha];
+                }
+            } else {
+                for (dst, &[r, g, b, a]) in destination.iter_mut().zip(source.as_chunks::<4>().0) {
+                    let alpha = f32::from(a) / 255.0;
+                    let channel = |v: u8| {
+                        let value = if alpha > 0.0 {
+                            (f32::from(v) / alpha).round().clamp(0.0, 255.0) as usize
+                        } else {
+                            usize::from(v)
+                        };
+                        lut.get(value).copied().unwrap_or(0.0) * alpha
+                    };
+                    *dst = [channel(r), channel(g), channel(b), alpha];
+                }
             }
         }
         Ok(image)
@@ -105,31 +154,33 @@ impl Image {
         let bytes = self.pixels.len() * 4;
         let lease = hooks.reserve(MemoryKind::Export, bytes as u64)?;
         let mut output = vector(bytes, 0u8)?;
-        for (src, dst) in self
-            .pixels
-            .iter()
-            .zip(output.as_chunks_mut::<4>().0.iter_mut())
-        {
-            let a = src.get(3).copied().unwrap_or(0.0);
-            for (out, value) in dst.iter_mut().take(3).zip(src.iter().take(3)) {
-                let straight = if opaque {
-                    (*value).clamp(0.0, 1.0)
-                } else if a > 0.0 {
-                    (*value / a).clamp(0.0, 1.0)
-                } else {
-                    0.0
+        if opaque {
+            for (&[r, g, b, _], dst) in self.pixels.iter().zip(output.as_chunks_mut::<4>().0) {
+                let channel = |v: f32| {
+                    lut.get((v.clamp(0.0, 1.0) * 65535.0).round() as usize)
+                        .copied()
+                        .unwrap_or(0)
                 };
-                *out = lut
-                    .get((straight * 65535.0).round() as usize)
-                    .copied()
-                    .unwrap_or(0);
+                *dst = [channel(r), channel(g), channel(b), 255];
             }
-            if let Some(out) = dst.get_mut(3) {
-                *out = if opaque {
-                    255
-                } else {
-                    (a * 255.0).round() as u8
+        } else {
+            for (&[r, g, b, a], dst) in self.pixels.iter().zip(output.as_chunks_mut::<4>().0) {
+                let channel = |v: f32| {
+                    let straight = if a > 0.0 {
+                        (v / a).clamp(0.0, 1.0)
+                    } else {
+                        0.0
+                    };
+                    lut.get((straight * 65535.0).round() as usize)
+                        .copied()
+                        .unwrap_or(0)
                 };
+                *dst = [
+                    channel(r),
+                    channel(g),
+                    channel(b),
+                    (a * 255.0).round() as u8,
+                ];
             }
         }
         Ok(Rgba8 {
@@ -145,26 +196,6 @@ impl Image {
             .get(y as usize * self.width as usize + x as usize)
             .copied()
             .unwrap_or([0.0; 4])
-    }
-    pub(crate) fn sample(&self, x: f64, y: f64) -> [f32; 4] {
-        let fx = x - 0.5;
-        let fy = y - 0.5;
-        let ix = fx.floor() as i64;
-        let iy = fy.floor() as i64;
-        let tx = (fx - ix as f64) as f32;
-        let ty = (fy - iy as f64) as f32;
-        let a = self.at(ix, iy);
-        let b = self.at(ix + 1, iy);
-        let c = self.at(ix, iy + 1);
-        let d = self.at(ix + 1, iy + 1);
-        std::array::from_fn(|k| {
-            let a = a.get(k).copied().unwrap_or(0.0);
-            let b = b.get(k).copied().unwrap_or(0.0);
-            let c = c.get(k).copied().unwrap_or(0.0);
-            let d = d.get(k).copied().unwrap_or(0.0);
-            let top = a + (b - a) * tx;
-            top + (c + (d - c) * tx - top) * ty
-        })
     }
     pub(crate) fn half(&self, hooks: &dyn ExecutionHooks) -> Result<Self> {
         let w = self.width.div_ceil(2);
@@ -277,4 +308,61 @@ fn encode_lut(transfer: u32) -> Result<&'static [u8]> {
             })
             .collect()
     }))
+}
+
+#[cfg(test)]
+mod tests {
+    #![allow(clippy::unwrap_used, clippy::indexing_slicing)]
+    use super::*;
+    struct Hooks;
+    struct Lease;
+    impl Reservation for Lease {}
+    impl ExecutionHooks for Hooks {
+        fn cancelled(&self) -> bool {
+            false
+        }
+        fn reserve(&self, _: MemoryKind, _: u64) -> Result<Box<dyn Reservation>> {
+            Ok(Box::new(Lease))
+        }
+    }
+    #[test]
+    fn strided_ingress_matches_public_tight_ingress_and_refuses_hostile_rows() {
+        let tight = [
+            0, 0, 0, 0, 16, 32, 64, 128, 80, 60, 40, 100, 255, 255, 255, 255,
+        ];
+        // Padding is deliberately invalid premultiplied color; it is not a pixel.
+        let padded = [
+            0, 0, 0, 0, 16, 32, 64, 128, 255, 255, 255, 0, 80, 60, 40, 100, 255, 255, 255, 255,
+        ];
+        for premultiplied in [false, true] {
+            for transfer in [1, 8, 13] {
+                let reference =
+                    Image::from_rgba8(2, 2, &tight, premultiplied, transfer, &Hooks).unwrap();
+                let actual =
+                    Image::from_rgba8_strided(2, 2, &padded, 12, premultiplied, transfer, &Hooks)
+                        .unwrap();
+                assert_eq!(reference.pixels(), actual.pixels());
+                assert_eq!(
+                    reference.rgba8(transfer, &Hooks).unwrap().bytes,
+                    actual.rgba8(transfer, &Hooks).unwrap().bytes
+                );
+                assert_eq!(
+                    reference.video_rgba8(transfer, &Hooks).unwrap().bytes,
+                    actual.video_rgba8(transfer, &Hooks).unwrap().bytes
+                );
+            }
+        }
+        for (width, height, stride, bytes) in [
+            (2, 2, 7, padded.as_slice()),
+            (2, 2, usize::MAX, &padded),
+            (2, 2, 12, &padded[..19]),
+            (0, 2, 12, &padded),
+            (2, 0, 12, &padded),
+        ] {
+            assert!(
+                Image::from_rgba8_strided(width, height, bytes, stride, false, 1, &Hooks).is_err()
+            );
+        }
+        assert!(Image::from_rgba8_strided(1, 1, &[255, 0, 0, 128], 4, true, 1, &Hooks).is_err());
+    }
 }

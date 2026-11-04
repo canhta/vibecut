@@ -625,28 +625,69 @@ fn draw(
     let x1 = (dx + dw).ceil().clamp(0.0, f64::from(target.width)) as usize;
     let y0 = dy.floor().clamp(0.0, f64::from(target.height)) as usize;
     let y1 = (dy + dh).ceil().clamp(0.0, f64::from(target.height)) as usize;
+    // The separable transform is constant across rows. Compute horizontal
+    // coordinates once, and resolve vertical neighbors once per row.
+    let _axis = hooks.reserve(
+        MemoryKind::Compositor,
+        ((x1 - x0) * std::mem::size_of::<Option<(i64, f32)>>()) as u64,
+    )?;
+    let clamp = |p: f64, start: f64, len: f64| {
+        if len < 1.0 {
+            start + len * 0.5
+        } else {
+            p.clamp(start + 0.5, start + len - 0.5)
+        }
+    };
+    let mut columns = crate::vector(x1 - x0, None)?;
+    for (x, column) in (x0..x1).zip(&mut columns) {
+        let px = x as f64 + 0.5;
+        if px >= dx && px < dx + dw {
+            let fx = clamp(sx + (px - dx) * sw / dw, sx, sw) - 0.5;
+            let ix = fx.floor() as i64;
+            *column = Some((ix, (fx - ix as f64) as f32));
+        }
+    }
+    let row = |y: i64| {
+        if y < 0 || y >= i64::from(image.height) {
+            &[][..]
+        } else {
+            let start = y as usize * image.width as usize;
+            image
+                .pixels
+                .get(start..start + image.width as usize)
+                .unwrap_or(&[])
+        }
+    };
     for y in y0..y1 {
         check(hooks)?;
-        for x in x0..x1 {
-            let px = x as f64 + 0.5;
-            let py = y as f64 + 0.5;
-            if px < dx || py < dy || px >= dx + dw || py >= dy + dh {
-                continue;
-            }
-            let u = sx + (px - dx) * sw / dw;
-            let v = sy + (py - dy) * sh / dh;
-            let clamp = |p: f64, start: f64, len: f64| {
-                if len < 1.0 {
-                    start + len * 0.5
-                } else {
-                    p.clamp(start + 0.5, start + len - 0.5)
-                }
-            };
-            let source = image.sample(clamp(u, sx, sw), clamp(v, sy, sh));
-            let pixel = target
-                .pixels
-                .get_mut(y * target.width as usize + x)
-                .ok_or(Error::Invalid("compositor index"))?;
+        let py = y as f64 + 0.5;
+        if py < dy || py >= dy + dh {
+            continue;
+        }
+        let fy = clamp(sy + (py - dy) * sh / dh, sy, sh) - 0.5;
+        let iy = fy.floor() as i64;
+        let ty = (fy - iy as f64) as f32;
+        let top = row(iy);
+        let bottom = row(iy + 1);
+        let start = y * target.width as usize;
+        let destination = target
+            .pixels
+            .get_mut(start + x0..start + x1)
+            .ok_or(Error::Invalid("compositor row"))?;
+        for (pixel, column) in destination.iter_mut().zip(&columns) {
+            let Some((ix, tx)) = *column else { continue };
+            let a = top.get(ix as usize).copied().unwrap_or([0.0; 4]);
+            let b = top.get((ix + 1) as usize).copied().unwrap_or([0.0; 4]);
+            let c = bottom.get(ix as usize).copied().unwrap_or([0.0; 4]);
+            let d = bottom.get((ix + 1) as usize).copied().unwrap_or([0.0; 4]);
+            let source = std::array::from_fn(|k| {
+                let a = a.get(k).copied().unwrap_or(0.0);
+                let b = b.get(k).copied().unwrap_or(0.0);
+                let c = c.get(k).copied().unwrap_or(0.0);
+                let d = d.get(k).copied().unwrap_or(0.0);
+                let top = a + (b - a) * tx;
+                top + (c + (d - c) * tx - top) * ty
+            });
             over(pixel, source, placement.opacity);
         }
     }

@@ -272,3 +272,121 @@ fn blur_background_stays_below_lower_timeline_layers() {
     assert_eq!(image.pixels()[0], [0.0, 0.0, 1.0, 1.0]);
     assert!(image.pixels()[100 * 256 + 160][1] > 0.0);
 }
+
+#[test]
+fn separable_sampling_preserves_fractional_crops_and_transparent_borders() {
+    let mut d = scene().into_data();
+    d.timeline.tracks.pop();
+    let p = project::Project::new(d).unwrap();
+    let h = Hooks::default();
+    // Baselines captured from the scalar public renderer before optimization.
+    // Include subpixel crops, partially clipped destinations and one-pixel axes.
+    for (width, height, destination, crop, fit, expected) in [
+        (
+            13,
+            17,
+            Rect::default(),
+            Rect::default(),
+            Fit::Cover,
+            0x9406922a3f194af2u64,
+        ),
+        (
+            13,
+            17,
+            Rect::default(),
+            Rect::default(),
+            Fit::Contain,
+            0x453c26aa637a4267,
+        ),
+        (
+            13,
+            17,
+            Rect::default(),
+            Rect::default(),
+            Fit::Stretch,
+            0x50c6e38ada4d2c67,
+        ),
+        (
+            1,
+            17,
+            Rect::default(),
+            Rect::default(),
+            Fit::Stretch,
+            0x8aac0b8393e47abd,
+        ),
+        (
+            13,
+            1,
+            Rect::default(),
+            Rect::default(),
+            Fit::Stretch,
+            0x30994fcd45211ea0,
+        ),
+        (
+            13,
+            17,
+            Rect {
+                x: -0.2,
+                y: 0.12,
+                width: 0.91,
+                height: 1.12,
+            },
+            Rect {
+                x: 0.13,
+                y: 0.21,
+                width: 0.19,
+                height: 0.17,
+            },
+            Fit::Stretch,
+            0x4d4b3e2da6efada6,
+        ),
+        (
+            13,
+            17,
+            Rect {
+                x: 0.12,
+                y: -0.2,
+                width: 1.12,
+                height: 0.91,
+            },
+            Rect {
+                x: 0.01,
+                y: 0.17,
+                width: 0.71,
+                height: 0.81,
+            },
+            Fit::Cover,
+            0x150b8c47fba009b1,
+        ),
+        (
+            2,
+            2,
+            Rect::default(),
+            Rect::default(),
+            Fit::Stretch,
+            0x365eecd45ead1427,
+        ),
+    ] {
+        let mut settings = RenderSettings::from_project(&p);
+        settings.width = width;
+        settings.height = height;
+        settings.placements.insert(
+            project::ItemId(0),
+            Placement {
+                destination,
+                crop,
+                fit,
+                opacity: 0.73,
+            },
+        );
+        let mut renderer = Renderer::new(&p, settings).unwrap();
+        let frame = renderer.render_frame(Tick::ZERO, &mut Pixels, &h).unwrap();
+        let preview = renderer.preview_frame(Tick::ZERO, &mut Pixels, &h).unwrap();
+        assert_eq!(frame.pixels(), preview.pixels());
+        let packed = frame.rgba8(1, &h).unwrap();
+        let hash = packed.bytes.iter().fold(0xcbf29ce484222325u64, |hash, b| {
+            (hash ^ u64::from(*b)).wrapping_mul(0x100000001b3)
+        });
+        assert_eq!(hash, expected, "{width}x{height} {fit:?}");
+    }
+}

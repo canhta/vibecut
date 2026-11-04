@@ -438,3 +438,14 @@ fn caption_expansion_is_refused_before_raster_allocation() {
     ));
     assert_eq!(h.requested.load(Ordering::SeqCst), 0);
 }
+
+#[test]
+fn rgba_ingress_observes_cancellation_and_releases_its_reservation() {
+    let hooks = Hooks::default();
+    hooks.state.store(1, Ordering::SeqCst);
+    assert!(matches!(
+        Image::from_rgba8(1, 1, &[255; 4], false, 1, &hooks),
+        Err(Error::Cancelled)
+    ));
+    assert_eq!(hooks.used.load(Ordering::SeqCst), 0);
+}

@@ -19,9 +19,16 @@ two languages; default selects the source language or the first available text.
 Every working pixel is **RGBA, premultiplied alpha, linear-light f32**, finite
 0..1 with RGB <= alpha. Compositing is Porter–Duff source-over. Bilinear sampling
 has transparent borders; repeated box half-filters precede large downscales,
-including odd-sized edges. BT.709, sRGB and linear transfers convert at ingress;
+including odd-sized edges. The separable sampler reserves a bounded horizontal
+coordinate table per draw and resolves vertical neighbors once per output row;
+its arithmetic and transparent-border behavior match the scalar reference.
+BT.709, sRGB and linear transfers convert at ingress;
 text's premultiplied RGBA8 is unpremultiplied before transfer conversion, then
-premultiplied once in linear light. No gamma-space blending. `rgba8` produces
+premultiplied once in linear light. Strided decoder RGBA rows convert directly
+into working pixels without an intermediate packed image; padding is ignored,
+row bounds are validated before allocation, and conversion checks cancellation
+per row. Opaque video packing and alpha-aware packing use separate loops with
+the same transfer tables and rounding. No gamma-space blending. `rgba8` produces
 straight-alpha boundary pixels. `video_rgba8` composites residual transparency
 over black in linear light before producing opaque BT.709 pixels for MP4.
 
@@ -130,3 +137,16 @@ VideoToolbox software encoder. This returns `media::MediaError::EncoderUnavailab
 with the native source retained and leaves existing output intact. Software
 quality is unverified on this machine. Software H.264 fallback requires separate
 codec/licence admission; selecting software never silently selects hardware.
+
+Observed for task /28 on Apple M1 Pro, 16 GiB, macOS 27.2, release profile,
+two alternating warm fresh-process runs of the production engine benchmark:
+the exact 60 s/1,800-frame 1080p fixture exported to 1080x1920 in 55.69/52.60 s
+wall (55.576/52.489 s internally, 32.39/34.29 fps), with peak RSS
+257,048,576/258,834,432 bytes. The matching external crop/Lanczos hardware-encode
+command took 9.31/9.37 s: a remaining 5.98/5.61x gap. All 1,800 decoded frames
+match the pre-optimization compositor export exactly (SSIM 1, PSNR infinity);
+against the differently cropped gamma-domain FFmpeg output, SSIM is 0.994169
+and PSNR 38.998035 dB in both runs. Native profiling still observes full-frame
+RGBA conversion, linear sampling and transfer packing; the external reference
+avoids the linear float round trip. These measurements cover this fixture and
+host, not other canvases, hardware or media.
