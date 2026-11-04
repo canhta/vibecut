@@ -20,10 +20,12 @@ URL, and exits 0 for success, 1 for failure or inspection errors, or 2 after
 45 minutes queued with `fallback: run locally`. Missing runs and queued macOS
 jobs count toward that queue limit; an API failure is not fallback permission.
 
-Merge requires hosted green on the exact SHA that will land on `main`. After a
-rebase, rerun full hosted CI when intervening `main` commits touched Rust,
-manifests or `xtask`; otherwise the docs check suffices locally, but push the rebased SHA and obtain
-hosted green before merging. Record the exact merged-SHA run URL.
+Merge requires hosted green on the reviewed SHA. After a rebase, rerun full hosted
+CI only when both your branch and the commits added to `main` since your run
+touched Rust, manifests or `xtask`; each side alone was already tested. Otherwise,
+the docs check on the rebased SHA plus the earlier hosted green and the unchanged
+branch patch cover that SHA. Record the reviewed-SHA run URL and any rebase
+receipts.
 Local full `cargo xtask ci --require-oracles` substitutes only after the helper's
 queue timeout, or when a test needs local hardware (benchmarks, native smoke).
 Keep benchmarks and GPU parity runs local.
