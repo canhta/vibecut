@@ -26,6 +26,13 @@ oracles it skipped; a skip is never a pass.
 The name gate reads local regexes from `.scratch/forbidden-names.txt` and rejects
 matches in tracked files and branch commit messages.
 
+## AI model integrations
+
+Prove the integration works: contract, consent, failure paths and one bounded live
+smoke per provider showing real output. Model accuracy, quality and timing fidelity
+belong to the model the user picks and change with every release: no eval corpora,
+WER/MOS scores or quality gates, and no review finding asks for them.
+
 ## When to write tests
 
 - Every behaviour change: a test at the public interface that fails without the change.
