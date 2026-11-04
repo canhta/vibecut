@@ -15,6 +15,14 @@ Run `cargo xtask ffmpeg` once per machine before the first Rust build. Merging a
 a rebase reruns `cargo xtask ci` only when the commits added to `main` since your run
 touched Rust, manifests or `xtask`. A reviewer runs CI once on the SHA it merges.
 
+Media, render and release acceptance additionally run
+`cargo xtask ci --require-oracles`: it fails when external `ffmpeg`/`ffprobe` are
+missing, older than 6.0 or cannot report a version, sets
+`VIBECUT_REQUIRE_ORACLES=1` so skipped oracles fail, and prints resolved tool
+paths/versions plus every `target/fixtures` file with size and SHA-256 on success
+and failure. Fast/offline `cargo xtask ci` labels its mode and prints which
+oracles it skipped; a skip is never a pass.
+
 The name gate reads local regexes from `.scratch/forbidden-names.txt` and rejects
 matches in tracked files and branch commit messages.
 

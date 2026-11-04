@@ -1,6 +1,7 @@
 //! Workspace checks and admitted crate scaffolding.
 mod benchmark;
 mod ffmpeg;
+mod oracles;
 
 use serde_json::Value;
 use std::collections::BTreeMap;
@@ -17,6 +18,43 @@ fn main() -> ExitCode {
             ExitCode::FAILURE
         }
     }
+}
+
+fn ci(root: &Path, require_oracles: bool) -> Result<(), String> {
+    let checks = oracles::begin(require_oracles).and_then(|()| run_checks(root, require_oracles));
+    let fixtures = oracles::print_fixtures(root);
+    checks.and(fixtures)
+}
+
+fn run_checks(root: &Path, require_oracles: bool) -> Result<(), String> {
+    layers(root)?;
+    assets(root)?;
+    names(root)?;
+    for args in [
+        &["fmt", "--all", "--", "--check"][..],
+        &[
+            "clippy",
+            "--workspace",
+            "--all-targets",
+            "--",
+            "-D",
+            "warnings",
+        ],
+        &["test", "--workspace"],
+    ] {
+        eprintln!("cargo {}", args.join(" "));
+        let mut command = Command::new(env::var_os("CARGO").ok_or("run via cargo xtask")?);
+        command.args(args).current_dir(root);
+        if require_oracles {
+            command.env("VIBECUT_REQUIRE_ORACLES", "1");
+        }
+        ffmpeg::environment(&mut command)?;
+        let status = command.status().map_err(|e| e.to_string())?;
+        if !status.success() {
+            return Err(format!("cargo {} failed: {status}", args.join(" ")));
+        }
+    }
+    Ok(())
 }
 
 fn output(root: &Path, program: &str, args: &[&str]) -> Result<Output, String> {
@@ -282,35 +320,10 @@ fn run() -> Result<(), String> {
             names(root)
         }
         ["new-crate", name] => new_crate(root, name),
-        ["ci"] => {
-            layers(root)?;
-            assets(root)?;
-            names(root)?;
-            for args in [
-                &["fmt", "--all", "--", "--check"][..],
-                &[
-                    "clippy",
-                    "--workspace",
-                    "--all-targets",
-                    "--",
-                    "-D",
-                    "warnings",
-                ],
-                &["test", "--workspace"],
-            ] {
-                eprintln!("cargo {}", args.join(" "));
-                let mut command = Command::new(env::var_os("CARGO").ok_or("run via cargo xtask")?);
-                command.args(args).current_dir(root);
-                ffmpeg::environment(&mut command)?;
-                let status = command.status().map_err(|e| e.to_string())?;
-                if !status.success() {
-                    return Err(format!("cargo {} failed: {status}", args.join(" ")));
-                }
-            }
-            Ok(())
-        }
+        ["ci"] => ci(root, false),
+        ["ci", "--require-oracles"] => ci(root, true),
         _ => Err(
-            "usage: cargo xtask <ffmpeg [--target PLATFORM]|media-bench|ci|docs|layers|assets|new-crate NAME>"
+            "usage: cargo xtask <ffmpeg [--target PLATFORM]|media-bench|ci [--require-oracles]|docs|layers|assets|new-crate NAME>"
                 .into(),
         ),
     }
@@ -318,7 +331,10 @@ fn run() -> Result<(), String> {
 
 #[cfg(test)]
 mod tests {
-    use super::{assets, checked, layers, names, new_crate};
+    use super::{
+        assets, checked, layers, names, new_crate,
+        oracles::{Version, inventory, parse_version},
+    };
     use std::fs;
     use std::path::{Path, PathBuf};
     use std::sync::atomic::{AtomicUsize, Ordering};
@@ -455,5 +471,31 @@ mod tests {
         )
         .unwrap();
         assert!(names(&ws.0).unwrap_err().contains("commit message"));
+    }
+
+    #[test]
+    fn oracle_versions_and_fixture_inventory_are_explicit() {
+        assert_eq!(
+            parse_version("ffmpeg version 7.1.1 Copyright"),
+            Some(Version { major: 7, minor: 1 })
+        );
+        assert_eq!(
+            parse_version("ffmpeg version n6.0-static"),
+            Some(Version { major: 6, minor: 0 })
+        );
+        assert_eq!(parse_version("ffmpeg version N-123-gabc"), None);
+        assert_eq!(parse_version("not a version"), None);
+        let ws = Workspace::new();
+        let fixtures = ws.0.join("target/fixtures/nested");
+        fs::create_dir_all(&fixtures).unwrap();
+        fs::write(fixtures.join("one.bin"), b"abc").unwrap();
+        let list = inventory(&ws.0).unwrap();
+        assert_eq!(list.len(), 1);
+        assert_eq!(list[0].relative, PathBuf::from("nested/one.bin"));
+        assert_eq!(list[0].bytes, 3);
+        assert_eq!(
+            list[0].sha256,
+            "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
+        );
     }
 }

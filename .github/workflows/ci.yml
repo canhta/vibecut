@@ -2,6 +2,11 @@ name: CI
 
 on:
   workflow_dispatch:
+    inputs:
+      require-oracles:
+        description: Require external ffmpeg/ffprobe and run media/render oracle tests
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -39,6 +44,17 @@ jobs:
       - name: Provision current LGPL media libraries
         shell: ${{ runner.os == 'Windows' && 'msys2 {0}' || 'bash' }}
         run: cargo xtask ffmpeg
+      - name: Install required media oracles (macOS)
+        if: runner.os == 'macOS' && inputs.require-oracles
+        run: brew install ffmpeg
+      - name: Install required media oracles (Windows)
+        if: runner.os == 'Windows' && inputs.require-oracles
+        run: choco install ffmpeg -y --no-progress
       - name: Check workspace
+        if: ${{ !inputs.require-oracles }}
         shell: ${{ runner.os == 'Windows' && 'msys2 {0}' || 'bash' }}
         run: cargo xtask ci
+      - name: Check workspace with required media oracles
+        if: ${{ inputs.require-oracles }}
+        shell: ${{ runner.os == 'Windows' && 'msys2 {0}' || 'bash' }}
+        run: cargo xtask ci --require-oracles

@@ -55,3 +55,7 @@ architecture; Rust keeps its MSVC toolchain.
 
 Manual-only while the repo is private. Before accepting public contributions, add a
 `pull_request` trigger and require signed-off PRs.
+
+Release and media/render dispatches set the `require-oracles` input: CI installs
+external FFmpeg and runs the required mode from [verification](verification.md#checks).
+The ordinary dispatch keeps the fast/offline checks.
