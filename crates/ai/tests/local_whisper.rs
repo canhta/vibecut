@@ -57,32 +57,70 @@ fn real_local_adapter_preserves_source_coordinates_raw_tokens_and_cancellation()
         range,
         sample_rate: SAMPLE_RATE,
     };
-    let raw = adapter.recognize_tokens(audio, &request, &Hooks).unwrap();
-    assert!(!raw.segments.is_empty());
-    assert_eq!(raw.segments.len(), raw.tokens.len());
-    for (segment, tokens) in raw.segments.iter().zip(&raw.tokens) {
+    let raw = adapter.transcribe(audio, &request, &Hooks).unwrap();
+    assert!(!raw.is_empty());
+    let result = ai::transcribe(&adapter, audio, &request, None, &Hooks).unwrap();
+    assert_eq!(result.segments(), raw);
+    let transcript = result.to_transcript().unwrap();
+    assert_eq!(transcript.segments.len(), raw.len());
+    for (segment, stored) in raw.iter().zip(&transcript.segments) {
         assert!(range.contains(segment.range.unwrap()));
-        assert!(!tokens.is_empty());
-        let bytes: Vec<u8> = tokens
+        assert!(!segment.raw_tokens.is_empty());
+        assert!(stored.words.is_empty());
+        let spans = stored.spans.as_ref().unwrap();
+        let bytes: Vec<u8> = segment
+            .raw_tokens
             .iter()
             .flat_map(|t| t.bytes.iter().copied())
             .collect();
-        assert_eq!(
-            captions::NfcText::from(String::from_utf8(bytes).unwrap()),
-            segment.text
-        );
-        assert!(tokens.iter().any(|t| t.range.is_some()));
-        for token in tokens {
-            assert!(
-                token
-                    .range
-                    .is_none_or(|r| segment.range.unwrap().contains(r))
-            );
+        assert_eq!(spans.raw().as_bytes(), bytes);
+        assert_eq!(spans.normalized().text(), &segment.text);
+        assert_eq!(spans.spans().len(), segment.raw_tokens.len());
+        assert!(segment.raw_tokens.iter().any(|t| t.range.is_some()));
+        for (ordinal, (token, span)) in segment.raw_tokens.iter().zip(spans.spans()).enumerate() {
+            assert_eq!(span.input().index, ordinal);
+            assert_eq!(span.input().unit, ai::TimingUnit::Token);
+            assert_eq!(span.input().provenance, ai::Provenance::Native);
+            assert_eq!(span.input().confidence, token.confidence);
+            assert_eq!(span.input().range.is_none(), token.range.is_none());
+            if let Some(range) = token.range {
+                assert_eq!(
+                    span.input().range.unwrap().start(),
+                    time::Tick::from_units(
+                        range.start() as i64,
+                        SAMPLE_RATE as i64,
+                        time::Rounding::Floor
+                    )
+                    .unwrap()
+                );
+                assert_eq!(
+                    span.input().range.unwrap().end(),
+                    time::Tick::from_units(
+                        range.end() as i64,
+                        SAMPLE_RATE as i64,
+                        time::Rounding::Floor
+                    )
+                    .unwrap()
+                );
+            }
         }
     }
-    let result = ai::transcribe(&adapter, audio, &request, None, &Hooks).unwrap();
-    let transcript = result.to_transcript().unwrap();
-    assert_eq!(transcript.segments.len(), raw.segments.len());
+    eprintln!(
+        "native_segments={} native_tokens={} utf8_fragments={} missing_timing={}",
+        raw.len(),
+        raw.iter().map(|s| s.raw_tokens.len()).sum::<usize>(),
+        raw.iter()
+            .flat_map(|s| &s.raw_tokens)
+            .filter(|t| std::str::from_utf8(&t.bytes).is_err())
+            .count(),
+        raw.iter()
+            .flat_map(|s| &s.raw_tokens)
+            .filter(|t| t.range.is_none())
+            .count()
+    );
+    let roundtrip: captions::Transcript =
+        serde_json::from_str(&serde_json::to_string(&transcript).unwrap()).unwrap();
+    assert_eq!(roundtrip, transcript);
     // Cancel at the stage checkpoint after native inference. No partial output escapes.
     struct CancelAfterNative(AtomicUsize);
     impl ExecutionHooks for CancelAfterNative {
@@ -94,7 +132,7 @@ fn real_local_adapter_preserves_source_coordinates_raw_tokens_and_cancellation()
         }
     }
     assert!(matches!(
-        adapter.recognize_tokens(audio, &request, &CancelAfterNative(AtomicUsize::new(0))),
+        adapter.transcribe(audio, &request, &CancelAfterNative(AtomicUsize::new(0))),
         Err(Error::Cancelled)
     ));
     // Cancel during accepted maximum-length native work, not at a checkpoint.
@@ -142,7 +180,7 @@ fn real_local_adapter_preserves_source_coordinates_raw_tokens_and_cancellation()
             start: std::time::Instant::now(),
             acknowledged_ms: AtomicUsize::new(0),
         };
-        let cancelled = adapter.recognize_tokens(
+        let cancelled = adapter.transcribe(
             AudioWindow {
                 samples: &long_pcm,
                 range: long_range,
@@ -185,14 +223,14 @@ fn real_local_adapter_preserves_source_coordinates_raw_tokens_and_cancellation()
         fn stage(&self, _: Stage) {}
     }
     assert!(matches!(
-        adapter.recognize_tokens(audio, &request, &PanickingHooks(std::time::Instant::now())),
+        adapter.transcribe(audio, &request, &PanickingHooks(std::time::Instant::now())),
         Err(Error::Inference)
     ));
-    let reused = adapter.recognize_tokens(audio, &request, &Hooks).unwrap();
-    assert!(!reused.segments.is_empty());
+    let reused = adapter.transcribe(audio, &request, &Hooks).unwrap();
+    assert!(!reused.is_empty());
     let bad = AudioWindow {
         sample_rate: 8000,
         ..audio
     };
-    assert!(adapter.recognize_tokens(bad, &request, &Hooks).is_err());
+    assert!(adapter.transcribe(bad, &request, &Hooks).is_err());
 }

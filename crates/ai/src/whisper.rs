@@ -1,8 +1,8 @@
 //! Safe whisper.cpp adapter. No transfers, job runner or native unsafe here.
 use crate::{
     AudioWindow, Capabilities, CostEstimate, Error, Evidence, ExecutionHooks, Location, Operation,
-    ProviderConfig, RecognitionSegment, Request, SampleRange, Scope, Stage, Support, TimingUnit,
-    Transcriber,
+    Provenance, ProviderConfig, RawToken, RecognitionSegment, Request, SampleRange, Scope, Stage,
+    Support, TimingUnit, Transcriber,
     contracts::checkpoint,
     models::{Model, storage_error, verify_file},
 };
@@ -40,27 +40,6 @@ pub enum Device {
     Gpu,
 }
 
-/// Raw subword bytes may split a UTF-8 character. Preserve them for captions' span
-/// mapping; never decode each token lossily, call it a word, or invent its timing.
-#[derive(Clone)]
-pub struct NativeToken {
-    pub bytes: Vec<u8>,
-    pub range: Option<SampleRange>,
-    pub probability: f32,
-}
-impl std::fmt::Debug for NativeToken {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("NativeToken")
-            .field("range", &self.range)
-            .finish_non_exhaustive()
-    }
-}
-/// Parallel arrays in native segment order. Segments use complete NFC text;
-/// tokens retain original bytes. A conversion consumer must reconcile both texts.
-pub struct NativeRecognition {
-    pub segments: Vec<RecognitionSegment>,
-    pub tokens: Vec<Vec<NativeToken>>,
-}
 /// Immutable model context; each invocation owns its native state. Engine bounds
 /// concurrent invocations and retains/reuses the loaded adapter between jobs.
 pub struct Whisper {
@@ -107,7 +86,7 @@ impl Whisper {
             "local-whisper".into(),
             model.id.as_str().into(),
             format!(
-                "whisper-rs-0.16.0:cpp{}:{}:decode-default{DEFAULT_DECODE:?}:decode-languages{LANGUAGE_DECODE:?}:temperature0:fallback0:context-per-call:no-prompt:flash0:max300s:tokens-v1:threads{threads}:{device:?}",
+                "whisper-rs-0.16.0:cpp{}:{}:decode-default{DEFAULT_DECODE:?}:decode-languages{LANGUAGE_DECODE:?}:temperature0:fallback0:context-per-call:no-prompt:flash0:max300s:tokens-v2:threads{threads}:{device:?}",
                 whisper_rs::WHISPER_CPP_VERSION, file.sha256
             )
             .into(),
@@ -123,14 +102,12 @@ impl Whisper {
             threads: i32::from(threads),
         })
     }
-    /// Same validated invocation as Transcriber, additionally retaining raw tokens
-    /// for the captions span owner. No source timing is assigned to translated text.
-    pub fn recognize_tokens(
+    fn recognize(
         &self,
         audio: AudioWindow<'_>,
         request: &Request<'_>,
         hooks: &dyn ExecutionHooks,
-    ) -> Result<NativeRecognition, Error> {
+    ) -> Result<Vec<RecognitionSegment>, Error> {
         checkpoint(hooks, Stage::Transcribe)?;
         audio.validate(request.scope)?;
         if request.scope.provider != self.config {
@@ -163,7 +140,6 @@ impl Whisper {
         callbacks::run(&mut state, params, audio.samples, hooks)?;
         checkpoint(hooks, Stage::Transcribe)?;
         let mut segments = Vec::new();
-        let mut tokens = Vec::new();
         for segment in state.as_iter() {
             checkpoint(hooks, Stage::Transcribe)?;
             if segments.len() >= 4096 {
@@ -181,6 +157,7 @@ impl Whisper {
                 audio.range,
             )?;
             let mut native_tokens = Vec::new();
+            let mut token_bytes = 0usize;
             if !(0..=4096).contains(&segment.n_tokens()) {
                 return Err(Error::Payload);
             }
@@ -190,25 +167,21 @@ impl Whisper {
                     continue;
                 }
                 let data = token.token_data();
-                let probability = token.token_probability();
-                if !probability.is_finite() || !(0.0..=1.0).contains(&probability) {
-                    return Err(Error::Invalid("native probability"));
-                }
                 let bytes = token
                     .to_bytes()
                     .map_err(|_| Error::Invalid("native token"))?;
-                if bytes.len() > 65536 {
+                token_bytes = token_bytes.checked_add(bytes.len()).ok_or(Error::Payload)?;
+                if token_bytes > 16 * 1024 * 1024 {
                     return Err(Error::Payload);
                 }
-                // Missing, zero-width and out-of-segment token times stay absent.
-                let timing = timestamp_range(data.t0, data.t1, audio.range)
-                    .ok()
-                    .filter(|r| range.contains(*r));
-                native_tokens.push(NativeToken {
-                    bytes: bytes.to_vec(),
-                    range: timing,
-                    probability,
-                });
+                native_tokens.push(native_token(
+                    bytes,
+                    data.t0,
+                    data.t1,
+                    token.token_probability(),
+                    audio.range,
+                    range,
+                )?);
             }
             segments.push(RecognitionSegment {
                 id: format!(
@@ -220,11 +193,10 @@ impl Whisper {
                 text: text.into(),
                 range: Some(range),
                 timing: Vec::new(),
-                raw_tokens: Vec::new(),
+                raw_tokens: native_tokens,
             });
-            tokens.push(native_tokens);
         }
-        Ok(NativeRecognition { segments, tokens })
+        Ok(segments)
     }
 }
 impl Transcriber for Whisper {
@@ -241,7 +213,7 @@ impl Transcriber for Whisper {
             operation: Operation::Transcribe,
             languages: self.languages.clone(),
             target_languages: Vec::new(),
-            timing: BTreeSet::from([TimingUnit::Segment]),
+            timing: BTreeSet::from([TimingUnit::Segment, TimingUnit::Token]),
             diarization: Support::Unsupported,
             live_audio_input: Support::Unsupported,
             file_result_stream: Support::Unsupported,
@@ -257,8 +229,33 @@ impl Transcriber for Whisper {
         request: &Request<'_>,
         hooks: &dyn ExecutionHooks,
     ) -> Result<Vec<RecognitionSegment>, Error> {
-        Ok(self.recognize_tokens(audio, request, hooks)?.segments)
+        self.recognize(audio, request, hooks)
     }
+}
+// Retain byte fragments and unknown timing; captions alone maps raw text to NFC.
+fn native_token(
+    bytes: &[u8],
+    start: i64,
+    end: i64,
+    probability: f32,
+    window: SampleRange,
+    segment: SampleRange,
+) -> Result<RawToken, Error> {
+    if bytes.is_empty() || bytes.len() > 65536 {
+        return Err(Error::Payload);
+    }
+    let confidence = captions::Confidence::try_from(probability)
+        .map_err(|_| Error::Invalid("native probability"))?;
+    // Missing, zero-width and out-of-segment token times stay absent.
+    let range = timestamp_range(start, end, window)
+        .ok()
+        .filter(|r| segment.contains(*r));
+    Ok(RawToken {
+        bytes: bytes.to_vec(),
+        range,
+        provenance: Provenance::Native,
+        confidence: Some(confidence),
+    })
 }
 /// Native ticks are centiseconds. Convert once to absolute source samples,
 /// retaining a clipped final endpoint for native padding; never shift twice.
@@ -280,6 +277,146 @@ fn timestamp_range(start: i64, end: i64, window: SampleRange) -> Result<SampleRa
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn native_fragments_retain_missing_timing_and_shared_nfc_correspondence() {
+        let window = SampleRange::new(160_000, 176_000).unwrap();
+        let raw = "e\u{302}\u{301}中";
+        let tokens = raw
+            .as_bytes()
+            .iter()
+            .enumerate()
+            .map(|(i, byte)| {
+                let (start, end) = if i == 1 {
+                    (-1, -1)
+                } else {
+                    (i as i64, i as i64 + 1)
+                };
+                native_token(&[*byte], start, end, 0.9, window, window).unwrap()
+            })
+            .collect::<Vec<_>>();
+        let segment = RecognitionSegment {
+            id: "native-fragments".into(),
+            text: raw.into(),
+            range: Some(window),
+            timing: Vec::new(),
+            raw_tokens: tokens.clone(),
+        };
+        // Exercise the same shared execution/conversion seam as the native adapter.
+        struct Extracted {
+            config: ProviderConfig,
+            segment: RecognitionSegment,
+        }
+        impl Transcriber for Extracted {
+            fn config(&self) -> &ProviderConfig {
+                &self.config
+            }
+            fn capabilities(&self, _: &Scope) -> Capabilities {
+                Capabilities {
+                    model: self.config.model().clone(),
+                    mode: "transcribe".into(),
+                    operation: Operation::Transcribe,
+                    languages: vec![captions::LanguageTag::parse("vi").unwrap()],
+                    target_languages: Vec::new(),
+                    timing: BTreeSet::from([TimingUnit::Segment, TimingUnit::Token]),
+                    diarization: Support::Unsupported,
+                    live_audio_input: Support::Unsupported,
+                    file_result_stream: Support::Unsupported,
+                    max_upload_bytes: None,
+                    max_duration_micros: None,
+                    evidence: Evidence::FixtureVerified,
+                    revision: "native-extraction-fixture".into(),
+                }
+            }
+            fn estimate(&self, _: &Scope) -> CostEstimate {
+                CostEstimate::Free
+            }
+            fn transcribe(
+                &self,
+                _: AudioWindow<'_>,
+                _: &Request<'_>,
+                _: &dyn ExecutionHooks,
+            ) -> Result<Vec<RecognitionSegment>, Error> {
+                Ok(vec![self.segment.clone()])
+            }
+        }
+        struct Hooks;
+        impl ExecutionHooks for Hooks {
+            fn cancelled(&self) -> bool {
+                false
+            }
+            fn stage(&self, _: Stage) {}
+        }
+        let config = ProviderConfig::new(
+            "local-whisper".into(),
+            "fixture".into(),
+            "fixture".into(),
+            Location::Local {
+                backend: "whisper.cpp".into(),
+                model_ref: "fixture".into(),
+            },
+        )
+        .unwrap();
+        let scope = Scope {
+            provider: config.clone(),
+            operation: Operation::Transcribe,
+            payload_fingerprint: "fixture".into(),
+            mode: "transcribe".into(),
+            texts: Vec::new(),
+            source_language: captions::LanguageTag::parse("vi").unwrap(),
+            target_language: None,
+            source_samples: window,
+            sample_rate: SAMPLE_RATE,
+            max_bytes: 64000,
+        };
+        let pcm = vec![0.0; 16000];
+        let result = crate::transcribe(
+            &Extracted { config, segment },
+            AudioWindow {
+                samples: &pcm,
+                range: window,
+                sample_rate: SAMPLE_RATE,
+            },
+            &Request {
+                scope: &scope,
+                consent: None,
+            },
+            None,
+            &Hooks,
+        )
+        .unwrap();
+        assert_eq!(result.segments()[0].raw_tokens, tokens);
+        let transcript = result.to_transcript().unwrap();
+        let segment = &transcript.segments[0];
+        assert!(segment.words.is_empty());
+        let spans = segment.spans.as_ref().unwrap();
+        assert_eq!(spans.raw(), raw);
+        assert_eq!(spans.normalized().text().as_str(), "ế中");
+        assert_eq!(spans.spans().len(), raw.len());
+        for (i, span) in spans.spans().iter().enumerate() {
+            assert_eq!(span.input().index, i);
+            assert_eq!(span.input().raw, i..i + 1);
+            assert_eq!(span.input().unit, TimingUnit::Token);
+            assert_eq!(span.input().provenance, Provenance::Native);
+            assert_eq!(span.input().confidence, tokens[i].confidence);
+            assert_eq!(span.input().range.is_none(), i == 1);
+        }
+        assert_eq!(spans.spans()[0].normalized(), spans.spans()[4].normalized());
+        let roundtrip: captions::Transcript =
+            serde_json::from_str(&serde_json::to_string(&transcript).unwrap()).unwrap();
+        assert_eq!(roundtrip, transcript);
+        for (start, end) in [(-1, 1), (0, 0), (3, 2), (101, 102)] {
+            assert!(
+                native_token(b"a", start, end, 0.9, window, window)
+                    .unwrap()
+                    .range
+                    .is_none()
+            );
+        }
+        for probability in [f32::NAN, f32::INFINITY, -0.1, 1.1] {
+            assert!(native_token(b"a", 0, 1, probability, window, window).is_err());
+        }
+        assert!(native_token(b"", 0, 1, 0.9, window, window).is_err());
+    }
     #[test]
     fn centiseconds_convert_once_and_clip_padding() {
         let window = SampleRange::new(160_000, 176_001).unwrap();

@@ -188,14 +188,14 @@ explicit; engine owns fallback instead of silently retrying a failed GPU call.
 The adapter disables native path/text diagnostics process-wide through the
 binding's logging hooks, without enabling its logging backend features.
 
-`ai::transcribe` returns validated segment timing and converts through the shared
-`Recognition::to_transcript` sample-to-tick path. `Whisper::recognize_tokens`
-additionally retains original subword bytes and optional token ranges: tokens may
-split UTF-8, missing/invalid/zero-width token timestamps stay absent, and tokens are
-never relabelled as words. Complete segment text is normalized once by captions.
-Captions owns script-aware span mapping and persisted token timing (/17). Its
-integration turns those raw byte fragments into stored token/character spans. Token capability
-is therefore not advertised through the segment-only Transcriber interface.
+`ai::transcribe` returns validated native segments and original subword bytes in
+`RecognitionSegment::raw_tokens`, with optional absolute source-sample ranges,
+native provenance and confidence. The adapter advertises segment and token timing;
+individual tokens can still lack timing. Missing, invalid and zero-width timestamps
+stay absent. Tokens may split UTF-8 and are never relabelled as words.
+`Recognition::to_transcript` uses the shared captions span owner to retain token
+ordinals, raw-to-NFC correspondence and missing timing, converting sample boundaries
+once to ticks. There is no separate native token representation or conversion path.
 
 `cargo run -p ai --example local_whisper -- MODEL MONO-16KHZ-F32LE LANGUAGE [cpu]`
 is an explicit local smoke/benchmark command using an already downloaded model;
