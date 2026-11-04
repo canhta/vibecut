@@ -61,7 +61,7 @@ code is settled by [copy imports](../engineering/workflows.md#copy-imports).
    - `Agent loop: <assignee> <slot> max <n> start: <milestone>/NN`
    - `Review: <milestone>/NN <branch>@<sha7> <slot>`
    Longer briefs go in a spec file (`--spec-file`). Reviewers get their own new worktree, never the implementer's.
-2. End the turn; Orca wakes you for mail. Read the `worker_done` summary and the report TL;DR only.
+2. End the turn; Orca wakes you for mail. Read the `worker_done` summary and the report TL;DR only. On every wake also run `orca orchestration worker-list` and `git worktree list`: a worker idle without mail, or waiting on something that will not come soon, is stopped and its worktree cleaned (save untracked outputs first).
 3. Answer questions with one batched reply; send no acknowledgements.
 4. Return work to the dispatch that already holds its context: review `changes` go to the implementer's dispatch, re-reviews to the same reviewer's dispatch (`orca orchestration send` reopens a finished worker). Start a new worker only when that dispatch is gone.
 5. After a merge, clean up with `.scratch/bin/cleanup <dispatch-id> <worktree-name>...`. Keep the implementer and a `changes` reviewer (dispatch and worktree) until the ticket merges.
