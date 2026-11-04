@@ -263,6 +263,70 @@ pub(super) fn share_hardware_frames(
     Ok(())
 }
 
+/// A matching pixel format alone does not establish device/pool compatibility.
+pub(super) fn compatible_hardware_frame(
+    encoder: &ff::codec::context::Context,
+    frame: &ff::frame::Video,
+) -> bool {
+    // SAFETY: both owners retain their native context and buffer references;
+    // compare underlying pool identities without accessing opaque GPU planes.
+    unsafe {
+        let pool = (*encoder.as_ptr()).hw_frames_ctx;
+        let source = (*frame.as_ptr()).hw_frames_ctx;
+        !pool.is_null() && !source.is_null() && (*pool).data == (*source).data
+    }
+}
+
+pub(super) fn encoder_software_format(encoder: &ff::codec::context::Context) -> ff::format::Pixel {
+    // SAFETY: a successfully opened encoder retains any hardware pool. Read only
+    // its format; neither the pool nor any device pointer escapes this boundary.
+    unsafe {
+        let context = &*encoder.as_ptr();
+        if context.hw_frames_ctx.is_null() {
+            context.pix_fmt.into()
+        } else {
+            (*(*context.hw_frames_ctx)
+                .data
+                .cast::<ff::ffi::AVHWFramesContext>())
+            .sw_format
+            .into()
+        }
+    }
+}
+
+/// Upload CPU recovery frames into the encoder's independently retained pool.
+/// A lost device or a backend without upload support returns a native typed error;
+/// reopening an encoder midstream would invalidate the muxer's codec parameters.
+pub(super) fn upload_for_encoder(
+    encoder: &ff::codec::context::Context,
+    cpu: ff::frame::Video,
+) -> Result<ff::frame::Video> {
+    // SAFETY: live encoder and CPU frame with checked dimensions. FFmpeg owns
+    // allocation and upload; the returned frame retains its own pool reference.
+    unsafe {
+        let pool = (*encoder.as_ptr()).hw_frames_ctx;
+        if pool.is_null() {
+            return Ok(cpu);
+        }
+        let mut output = ff::frame::Video::empty();
+        if output.as_ptr().is_null() {
+            return Err(MediaError::TooLarge("encoder GPU frame"));
+        }
+        let status = ff::ffi::av_hwframe_get_buffer(pool, output.as_mut_ptr(), 0);
+        if status < 0 {
+            return Err(error("allocate encoder GPU frame")(ff::Error::from(status)));
+        }
+        output.set_width(cpu.width());
+        output.set_height(cpu.height());
+        let status = av_hwframe_transfer_data(output.as_mut_ptr(), cpu.as_ptr(), 0);
+        if status < 0 {
+            return Err(error("upload encoder GPU frame")(ff::Error::from(status)));
+        }
+        copy_props(&cpu, &mut output)?;
+        Ok(output)
+    }
+}
+
 pub(super) fn reference_video(source: &ff::frame::Video) -> Result<ff::frame::Video> {
     let mut destination = ff::frame::Video::empty();
     // SAFETY: owned empty destination and live reference-counted source. Unlike

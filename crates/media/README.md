@@ -56,8 +56,11 @@ these media-owned contracts; it does not recreate probe or asset models.
   require normalization. No raw hardware pointers leave the crate.
 - `VideoEncoder`: constant-rate frames on the requested output grid, explicit
   canvas/rate/bitrate/quality/color, H.264 or VP9. Reject missing/discontinuous
-  output timing. Hardware frames pass directly to a compatible encoder; otherwise
-  transfer/conversion is explicit in the encoder. Frame-aware swscale uses Lanczos,
+  output timing. Hardware frames pass directly to an encoder retaining the same frame pool; otherwise
+  transfer/conversion is explicit in the encoder. CPU recovery frames are converted
+  to the retained pool's software format and uploaded through FFmpeg. A failed
+  pool allocation/upload remains a typed native error; encoding is never reopened
+  midstream against stale mux parameters. Frame-aware swscale uses Lanczos,
   accurate rounding and frame color/chroma metadata when conversion is required.
 - `AudioResampler`: explicit continuous-span rate/layout/sample-format conversion.
   Admits output rates of 8–192 kHz and up to 24× expansion. Keeps the source origin and counts output samples in integer time; drain `flush`.
@@ -109,7 +112,9 @@ depth and implicit color changes; explicitly tone-map/convert upstream or stream
 copy. Tone mapping itself is not implemented here. H.264 defaults request 85/100
 quality and a 12 Mb/s bitrate target; Windows backends map that same quality
 request to their native controls and retain the bitrate target on fallback.
-Those mappings are not evidence of equal perceptual quality across platforms.
+NVENC/QSV use a positive CQ/ICQ level at the maximum quality request, avoiding
+automatic or disabled native quality. These mappings are not evidence of equal
+perceptual quality across platforms.
 
 Hardware preference uses VideoToolbox on macOS and D3D11VA/QSV on Windows.
 Encoding tries platform hardware and then the platform software path (VideoToolbox
@@ -122,8 +127,19 @@ rejection it opens a fresh bitrate-mode session with `allow_sw=1`. Intel and
 explicit software use bitrate mode directly. No Quality property is sent to a
 software encoder, and the bitrate target is never reduced. Other backends retain
 their existing native quality mappings.
-Windows device/quality behavior and live device-loss
-recovery remain unverified; they require the Windows hardware ticket.
+Decoder recovery is exercised by per-instance test faults at send, receive and
+final drain, with B-frame reordering and seeks across keyframes. These injected
+faults establish the recovery control path; they do not establish recovery from
+every physical device failure. `VideoReader::open_with_cancel` interrupts buffered
+frame delivery as well as packet reads and recovery. Only native decoder errors
+trigger the one software retry; I/O, cancellation, bounds and metadata errors
+retain their original category.
+
+The CPU compositor explicitly downloads GPU frames when it needs pixels. Direct
+decode/encode sharing avoids that transfer only for a compatible retained pool;
+this is not a zero-copy claim for composited or vertical output. Windows
+device/quality behavior and physical device-loss recovery remain unverified;
+they require the Windows hardware ticket.
 
 `RgbaConverter::with_threads` and `VideoEncoderSettings::conversion_threads`
 admit 1–8 FFmpeg conversion workers, defaulting to one. The execution owner

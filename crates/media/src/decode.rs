@@ -133,7 +133,17 @@ impl VideoFrame {
     }
 }
 
+#[cfg(test)]
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(crate) enum DecodeFault {
+    Send,
+    Receive,
+    Drain,
+}
+
 pub struct VideoDecoder {
+    #[cfg(test)]
+    pub(crate) fault: Option<DecodeFault>,
     decoder: ff::decoder::Video,
     time_base: TimeBase,
     stream: usize,
@@ -141,6 +151,16 @@ pub struct VideoDecoder {
 }
 impl VideoDecoder {
     pub fn new(stream: &StreamInfo, preference: DecodePreference) -> Result<Self> {
+        Self::with_backend(stream, preference, ffi::hardware_decoder, |builder| {
+            builder.video()
+        })
+    }
+    fn with_backend(
+        stream: &StreamInfo,
+        preference: DecodePreference,
+        setup: impl FnOnce(&mut ff::codec::context::Context),
+        mut open: impl FnMut(ff::decoder::Decoder) -> std::result::Result<ff::decoder::Video, ff::Error>,
+    ) -> Result<Self> {
         init()?;
         if stream.kind != StreamKind::Video {
             return Err(MediaError::Invalid("not a video stream"));
@@ -163,11 +183,11 @@ impl VideoDecoder {
         // Hardware setup is added at the narrow FFI seam; initialization failures
         // return to this same decoder's software path without changing timing.
         if preference == DecodePreference::Hardware {
-            ffi::hardware_decoder(&mut context);
+            setup(&mut context);
         }
         let mut builder = context.decoder();
         builder.set_packet_time_base(stream.time_base.rational());
-        let decoder = match builder.video() {
+        let decoder = match open(builder) {
             Ok(decoder) => decoder,
             Err(_) if preference == DecodePreference::Hardware => {
                 let mut software =
@@ -177,11 +197,13 @@ impl VideoDecoder {
                 ffi::decoder_bounds(&mut software, Some(pixels), None);
                 let mut builder = software.decoder();
                 builder.set_packet_time_base(stream.time_base.rational());
-                builder.video().map_err(error("open software decoder"))?
+                open(builder).map_err(error("open software decoder"))?
             }
             Err(source) => return Err(error("open video decoder")(source)),
         };
         Ok(Self {
+            #[cfg(test)]
+            fault: None,
             decoder,
             time_base: stream.time_base,
             stream: stream.index,
@@ -194,11 +216,15 @@ impl VideoDecoder {
         if self.finished || packet.stream() != self.stream {
             return Err(MediaError::Invalid("decoder state or stream"));
         }
+        #[cfg(test)]
+        self.fail_at(DecodeFault::Send, "send video packet")?;
         self.decoder
             .send_packet(&packet.inner)
             .map_err(error("send video packet"))
     }
     pub fn pull_frame(&mut self) -> Result<Option<VideoFrame>> {
+        #[cfg(test)]
+        self.fail_at(DecodeFault::Receive, "receive video frame")?;
         let mut frame = ff::frame::Video::empty();
         match self.decoder.receive_frame(&mut frame) {
             Ok(()) => {
@@ -218,6 +244,8 @@ impl VideoDecoder {
         if self.finished {
             return Ok(());
         }
+        #[cfg(test)]
+        self.fail_at(DecodeFault::Drain, "flush video decoder")?;
         self.finished = true;
         self.decoder
             .send_eof()
@@ -240,6 +268,17 @@ impl VideoDecoder {
     pub fn flush(&mut self) -> Result<Vec<VideoFrame>> {
         self.finish_input()?;
         self.receive()
+    }
+    #[cfg(test)]
+    fn fail_at(&mut self, stage: DecodeFault, operation: &'static str) -> Result<()> {
+        if self.fault == Some(stage) {
+            self.fault = None;
+            return Err(MediaError::Ffmpeg {
+                operation,
+                source: ff::Error::External,
+            });
+        }
+        Ok(())
     }
     pub fn reset(&mut self) {
         self.decoder.flush();
@@ -475,5 +514,60 @@ impl RgbaConverter {
             time_base: frame.time_base,
             presentation: frame.presentation,
         })
+    }
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod acceleration_tests {
+    use super::*;
+
+    #[test]
+    fn failed_hardware_device_or_open_uses_a_fresh_software_decoder() {
+        let Some(path) = crate::read::acceleration_tests::fixture() else {
+            return;
+        };
+        for fail_open in [false, true] {
+            let mut packets = crate::PacketReader::open(&path).unwrap();
+            let stream = packets
+                .probe()
+                .streams
+                .iter()
+                .find(|s| s.kind == StreamKind::Video)
+                .unwrap()
+                .clone();
+            let mut attempts = 0;
+            let mut decoder = VideoDecoder::with_backend(
+                &stream,
+                DecodePreference::Hardware,
+                |context| {
+                    if fail_open {
+                        ffi::hardware_decoder(context);
+                    }
+                },
+                |builder| {
+                    attempts += 1;
+                    if fail_open && attempts == 1 {
+                        Err(ff::Error::External)
+                    } else {
+                        builder.video()
+                    }
+                },
+            )
+            .unwrap();
+            assert_eq!(attempts, if fail_open { 2 } else { 1 });
+            let mut count = 0;
+            while let Some(packet) = packets.next_packet().unwrap() {
+                if packet.stream() == stream.index {
+                    for frame in decoder.decode(&packet).unwrap() {
+                        assert!(!frame.is_hardware());
+                        count += 1;
+                    }
+                }
+            }
+            count += decoder.flush().unwrap().len();
+            assert_eq!(count, 48);
+            assert!(decoder.flush().unwrap().is_empty());
+        }
     }
 }

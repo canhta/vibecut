@@ -51,6 +51,12 @@ fn videotoolbox_quality_attempts(qscale_supported: bool, software: bool) -> &'st
     }
 }
 
+// NVENC reserves zero for automatic CQ; QSV disables ICQ at zero.
+// Both backends need a positive level to retain an explicit quality request.
+fn explicit_quality_quantizer(quality: u8) -> u32 {
+    ((100 - u32::from(quality)) * 51 / 100).max(1)
+}
+
 fn video_open_error(last: Option<ff::Error>, software_h264: bool) -> MediaError {
     match last {
         Some(source) => MediaError::Ffmpeg {
@@ -155,6 +161,8 @@ impl VideoEncoder {
                 encoder.set_flags(ff::codec::Flags::GLOBAL_HEADER);
                 encoder.set_format(
                     if !settings.webm
+                        && hardware
+                        && !matches!(preference, EncodePreference::Software)
                         && first.is_hardware()
                         && first.width() == settings.width
                         && first.height() == settings.height
@@ -162,7 +170,7 @@ impl VideoEncoder {
                             |mut formats| formats.any(|format| format == first.inner.format()),
                         )
                     {
-                        ff::format::Pixel::VIDEOTOOLBOX
+                        first.inner.format()
                     } else if settings.webm {
                         ff::format::Pixel::YUV420P
                     } else {
@@ -198,14 +206,14 @@ impl VideoEncoder {
                         options.set("rc", "vbr");
                         options.set(
                             "cq",
-                            &((100 - u32::from(settings.quality)) * 51 / 100).to_string(),
+                            &explicit_quality_quantizer(settings.quality).to_string(),
                         );
                     }
                     "h264_qsv" => {
                         options.set("preset", "slow");
                         options.set(
                             "global_quality",
-                            &((100 - u32::from(settings.quality)) * 51 / 100).to_string(),
+                            &explicit_quality_quantizer(settings.quality).to_string(),
                         );
                     }
                     "h264_amf" => {
@@ -279,7 +287,9 @@ impl VideoEncoder {
                 "source depth/color changed; conversion must be explicit",
             ));
         }
+        let shared = ffi::compatible_hardware_frame(&self.encoder, &frame.inner);
         let mut output = if frame.inner.format() == self.encoder.format()
+            && (!frame.is_hardware() || shared)
             && frame.width() == self.settings.width
             && frame.height() == self.settings.height
         {
@@ -289,16 +299,19 @@ impl VideoEncoder {
             if self.scaler.is_none() {
                 self.scaler = Some(ffi::Scaler::with_threads(self.settings.conversion_threads)?);
             }
-            self.scaler
+            let format = ffi::encoder_software_format(&self.encoder);
+            let converted = self
+                .scaler
                 .as_mut()
                 .ok_or(MediaError::Invalid("scaler state"))?
                 .scale(
                     &cpu.inner,
                     self.settings.width,
                     self.settings.height,
-                    self.encoder.format(),
+                    format,
                     &self.encoder,
-                )?
+                )?;
+            ffi::upload_for_encoder(&self.encoder, converted)?
         };
         let pts = frame.pts()?.ok_or(MediaError::Unsupported(
             "video encoding requires output PTS",
@@ -566,6 +579,20 @@ mod tests {
     use super::*;
 
     #[test]
+    fn maximum_quality_never_selects_automatic_or_disabled_native_quality() {
+        assert_eq!(explicit_quality_quantizer(100), 1);
+        assert_eq!(explicit_quality_quantizer(85), 7);
+        assert_eq!(explicit_quality_quantizer(0), 51);
+        let mut previous = 51;
+        for quality in 0..=100 {
+            let level = explicit_quality_quantizer(quality);
+            assert!((1..=51).contains(&level));
+            assert!(level <= previous);
+            previous = level;
+        }
+    }
+
+    #[test]
     fn videotoolbox_quality_requires_ffmpeg_support_and_hardware_then_retries_bitrate() {
         assert_eq!(videotoolbox_quality_attempts(true, false), &[true, false]);
         assert_eq!(videotoolbox_quality_attempts(true, true), &[false]);
@@ -592,5 +619,141 @@ mod tests {
             video_open_error(None, false),
             MediaError::Unsupported(_)
         ));
+    }
+}
+
+#[cfg(all(test, target_os = "macos"))]
+#[allow(clippy::unwrap_used, clippy::expect_used)]
+mod acceleration_tests {
+    use super::*;
+    use crate::{Container, Muxer, VideoReader};
+    use time::Tick;
+
+    #[test]
+    #[ignore = "requires a working VideoToolbox hardware decoder and platform software encoder"]
+    fn explicit_software_encoder_converts_gpu_input_without_retaining_its_pool() {
+        let Some(path) = crate::read::acceleration_tests::fixture() else {
+            return;
+        };
+        let mut reader = VideoReader::open(path).unwrap();
+        let first = reader.next_frame().unwrap().unwrap();
+        assert!(first.is_hardware());
+        let settings = VideoEncoderSettings::h264(
+            first.width(),
+            first.height(),
+            FrameRate::new(24, 1).unwrap(),
+            first.color(),
+        );
+        let mut encoder =
+            VideoEncoder::with_preference(settings.clone(), &first, EncodePreference::Software)
+                .unwrap();
+        assert!(!ffi::compatible_hardware_frame(
+            &encoder.encoder,
+            &first.inner
+        ));
+        assert_eq!(encoder.settings.bit_rate, settings.bit_rate);
+        assert_eq!(encoder.settings.quality, settings.quality);
+        let packets = encoder.encode(&first).unwrap().len() + encoder.flush().unwrap().len();
+        assert_eq!(packets, 1);
+    }
+
+    #[test]
+    #[ignore = "requires a working VideoToolbox hardware decoder and encoder"]
+    fn hardware_pool_survives_decoder_and_accepts_software_frames() {
+        let Some(path) = crate::read::acceleration_tests::fixture() else {
+            return;
+        };
+        let mut reader = VideoReader::open(&path).unwrap();
+        let first = reader.next_frame().unwrap().unwrap();
+        assert!(
+            first.is_hardware(),
+            "this macOS conformance test requires a working VideoToolbox decoder"
+        );
+        let retained = first.with_pts(Tick::ZERO).unwrap();
+        drop(first);
+        drop(reader);
+        let settings = VideoEncoderSettings::h264(
+            retained.width(),
+            retained.height(),
+            FrameRate::new(24, 1).unwrap(),
+            retained.color(),
+        );
+        let mut encoder = VideoEncoder::new(settings, &retained).unwrap();
+        assert!(ffi::compatible_hardware_frame(
+            &encoder.encoder,
+            &retained.inner
+        ));
+        let wide = VideoFrame::from_rgba8(
+            retained.width() + 2,
+            retained.height(),
+            Tick::ZERO,
+            retained.color(),
+            &vec![0; (retained.width() as usize + 2) * retained.height() as usize * 4],
+        )
+        .unwrap();
+        assert!(matches!(
+            ffi::upload_for_encoder(&encoder.encoder, wide.inner),
+            Err(MediaError::Ffmpeg {
+                operation: "upload encoder GPU frame",
+                ..
+            })
+        ));
+        let output = path.with_file_name("accelerated-recovery-upload.mp4");
+        let mut muxer = Muxer::create(&output, Container::Mp4).unwrap();
+        muxer
+            .add_parameters(&encoder.parameters(), encoder.time_base())
+            .unwrap();
+        for packet in encoder.encode(&retained).unwrap() {
+            muxer.write_packet(0, &packet).unwrap();
+        }
+        assert!(
+            encoder.scaler.is_none(),
+            "shared frame must bypass CPU conversion"
+        );
+        drop(retained);
+        let mut reader = VideoReader::open(&path).unwrap();
+        reader.next_frame().unwrap().unwrap();
+        let mut count = 1;
+        while let Some(frame) = reader.next_frame().unwrap() {
+            // The new reader owns a different hardware pool; format equality
+            // must not send that foreign surface directly to the old encoder.
+            let cpu;
+            let input = if count == 1 {
+                assert!(!ffi::compatible_hardware_frame(
+                    &encoder.encoder,
+                    &frame.inner
+                ));
+                &frame
+            } else {
+                cpu = frame.download().unwrap();
+                &cpu
+            };
+            for packet in encoder.encode(input).unwrap() {
+                muxer.write_packet(0, &packet).unwrap();
+            }
+            count += 1;
+        }
+        for packet in encoder.flush().unwrap() {
+            muxer.write_packet(0, &packet).unwrap();
+        }
+        muxer.finish().unwrap();
+        assert_eq!(count, 48);
+        assert_eq!(
+            crate::read::oracle_common::decoded_frames(&output, "v:0"),
+            48
+        );
+        assert!(crate::read::oracle_common::decodes(&output));
+        let mut output = VideoReader::open(&output).unwrap();
+        let mut decoded = 0;
+        while let Some(frame) = output.next_frame().unwrap() {
+            assert_eq!(
+                frame.pts().unwrap().unwrap(),
+                Tick::from_units(decoded, 24, Rounding::Nearest).unwrap()
+            );
+            assert_eq!(frame.bit_depth(), Some(8));
+            assert_eq!(frame.color().resolved_sdr(), encoder.settings.color);
+            decoded += 1;
+        }
+        assert_eq!(decoded, 48);
     }
 }

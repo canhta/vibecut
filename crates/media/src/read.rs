@@ -204,13 +204,19 @@ pub struct VideoReader {
     stream: StreamInfo,
     last_pts: Option<Tick>,
     minimum: Option<Tick>,
+    restart: Tick,
     recovering: bool,
     software: bool,
     finished: bool,
 }
 impl VideoReader {
     pub fn open(path: impl AsRef<Path>) -> Result<Self> {
-        let packets = PacketReader::open(path)?;
+        Self::open_with_cancel(path, Arc::new(AtomicBool::new(false)))
+    }
+    /// The shared token interrupts opening, packet reads and frame delivery,
+    /// including buffered frames and software recovery. Cancellation is terminal.
+    pub fn open_with_cancel(path: impl AsRef<Path>, cancel: Arc<AtomicBool>) -> Result<Self> {
+        let packets = PacketReader::open_with_cancel(path, cancel)?;
         let stream = packets
             .probe()
             .streams
@@ -225,6 +231,7 @@ impl VideoReader {
             stream,
             last_pts: None,
             minimum: None,
+            restart: Tick::ZERO,
             recovering: false,
             software: false,
             finished: false,
@@ -237,6 +244,7 @@ impl VideoReader {
         self.packets.seek(target)?;
         self.decoder.reset();
         self.minimum = Some(target);
+        self.restart = target;
         self.last_pts = None;
         self.recovering = false;
         self.finished = false;
@@ -251,6 +259,9 @@ impl VideoReader {
     }
     pub fn next_frame(&mut self) -> Result<Option<crate::VideoFrame>> {
         loop {
+            if self.packets.cancel.load(Ordering::Relaxed) {
+                return Err(MediaError::Cancelled);
+            }
             let result = (|| {
                 if let Some(frame) = self.decoder.pull_frame()? {
                     let pts = frame.pts()?.ok_or(MediaError::Unsupported(
@@ -284,8 +295,11 @@ impl VideoReader {
             match result {
                 Ok(Some(frame)) => return Ok(frame),
                 Ok(None) => {}
-                Err(_) if !self.software => {
-                    let target = self.last_pts.or(self.minimum).unwrap_or(Tick::ZERO);
+                Err(MediaError::Ffmpeg {
+                    operation: "send video packet" | "receive video frame" | "flush video decoder",
+                    ..
+                }) if !self.software => {
+                    let target = self.last_pts.or(self.minimum).unwrap_or(self.restart);
                     self.packets.seek(target)?;
                     self.decoder =
                         crate::VideoDecoder::new(&self.stream, crate::DecodePreference::Software)?;
@@ -296,5 +310,309 @@ impl VideoReader {
                 Err(error) => return Err(error),
             }
         }
+    }
+}
+
+#[cfg(test)]
+#[path = "../tests/common/mod.rs"]
+pub(crate) mod oracle_common;
+
+#[cfg(test)]
+#[allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::indexing_slicing
+)]
+pub(crate) mod acceleration_tests {
+    use super::*;
+    use crate::{DecodePreference, RgbaConverter, VideoDecoder, VideoFrame, decode::DecodeFault};
+
+    pub(crate) fn fixture() -> Option<std::path::PathBuf> {
+        super::oracle_common::generate(
+            "accelerated recovery",
+            "accelerated-recovery-bframes.mp4",
+            &[
+                "-f",
+                "lavfi",
+                "-i",
+                "testsrc2=size=192x108:rate=24:duration=2",
+                "-f",
+                "lavfi",
+                "-i",
+                "sine=frequency=440:sample_rate=48000:duration=2",
+                "-c:v",
+                "libx264",
+                "-bf",
+                "3",
+                "-g",
+                "12",
+                "-pix_fmt",
+                "yuv420p",
+                "-color_primaries",
+                "bt709",
+                "-color_trc",
+                "bt709",
+                "-colorspace",
+                "bt709",
+                "-color_range",
+                "tv",
+                "-chroma_sample_location",
+                "left",
+                "-c:a",
+                "aac",
+            ],
+        )
+    }
+
+    fn software(path: &Path) -> VideoReader {
+        let mut reader = VideoReader::open(path).unwrap();
+        reader.decoder = VideoDecoder::new(&reader.stream, DecodePreference::Software).unwrap();
+        reader.software = true;
+        reader
+    }
+
+    fn fingerprint(frame: &VideoFrame) -> (Tick, crate::ColorInfo, Vec<u8>) {
+        let mut converter = RgbaConverter::new().unwrap();
+        let rgba = converter.convert(frame).unwrap();
+        let stride = rgba.stride(0).unwrap();
+        let pixels = rgba
+            .plane(0)
+            .unwrap()
+            .chunks(stride)
+            .take(frame.height() as usize)
+            .flat_map(|row| &row[..frame.width() as usize * 4])
+            .copied()
+            .collect();
+        (frame.pts().unwrap().unwrap(), frame.color(), pixels)
+    }
+
+    fn frames(reader: &mut VideoReader) -> Vec<(Tick, crate::ColorInfo, Vec<u8>)> {
+        let mut output = Vec::new();
+        while let Some(frame) = reader.next_frame().unwrap() {
+            assert_eq!(frame.bit_depth(), Some(8));
+            output.push(fingerprint(&frame));
+        }
+        output
+    }
+
+    #[test]
+    fn decoder_loss_reseeks_without_dropping_or_repeating_presentation_frames() {
+        let Some(path) = fixture() else { return };
+        let expected = frames(&mut software(&path));
+        assert_eq!(expected.len(), 48);
+        for stage in [DecodeFault::Send, DecodeFault::Receive, DecodeFault::Drain] {
+            let positions: &[usize] = if stage == DecodeFault::Receive {
+                &[0, 1, 11, 12, 13, 46, 48]
+            } else {
+                &[0, 1, 11, 12, 13]
+            };
+            for &emitted in positions {
+                let mut reader = VideoReader::open(&path).unwrap();
+                let mut actual = Vec::new();
+                for _ in 0..emitted {
+                    actual.push(fingerprint(&reader.next_frame().unwrap().unwrap()));
+                }
+                reader.decoder.fault = Some(stage);
+                actual.extend(frames(&mut reader));
+                assert!(
+                    reader.software,
+                    "injected decoder failure must exercise recovery"
+                );
+                assert_eq!(actual.len(), expected.len());
+                let mut maximum = 0;
+                for (actual, expected) in actual.iter().zip(&expected) {
+                    assert_eq!(actual.0, expected.0);
+                    assert_eq!(actual.1, expected.1);
+                    for (a, b) in actual.2.iter().zip(&expected.2) {
+                        maximum = maximum.max(a.abs_diff(*b));
+                    }
+                }
+                assert!(
+                    maximum <= 4,
+                    "hardware/software RGBA channel difference {maximum}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn decoder_loss_preserves_seek_minimum_and_software_errors_are_terminal() {
+        let Some(path) = fixture() else { return };
+        let expected = frames(&mut software(&path));
+        for target in [0, 1, 12, 47] {
+            let pts = expected[target].0;
+            let mut reader = VideoReader::open(&path).unwrap();
+            reader.seek(pts).unwrap();
+            reader.decoder.fault = Some(DecodeFault::Receive);
+            let actual = frames(&mut reader);
+            assert_eq!(actual.len(), expected.len() - target);
+            assert!(
+                actual == expected[target..],
+                "recovery changed exact seek output"
+            );
+            reader.seek(pts).unwrap();
+            reader.decoder.fault = Some(DecodeFault::Receive);
+            assert!(matches!(
+                reader.next_frame(),
+                Err(MediaError::Ffmpeg { .. })
+            ));
+        }
+    }
+
+    #[test]
+    fn recovery_follows_reverse_keyframe_seeks_and_in_between_frame_targets() {
+        let Some(path) = fixture() else { return };
+        for index in [46, 13, 1, 0] {
+            let mut baseline = software(&path);
+            let target = Tick::from_units(index, 24, Rounding::Nearest).unwrap();
+            baseline.seek_keyframe(target).unwrap();
+            let expected = frames(&mut baseline);
+            let mut reader = VideoReader::open(&path).unwrap();
+            reader.seek_keyframe(target).unwrap();
+            reader.decoder.fault = Some(DecodeFault::Receive);
+            let actual = frames(&mut reader);
+            assert_eq!(actual.len(), expected.len());
+            assert!(actual == expected, "recovery changed keyframe seek output");
+            reader.seek(Tick(target.0 + 1)).unwrap();
+            let actual = frames(&mut reader);
+            assert!(actual.first().unwrap().0 > target);
+        }
+    }
+
+    #[test]
+    fn missing_presentation_timestamps_keep_the_typed_error_without_recovery() {
+        let Some(path) = super::oracle_common::generate(
+            "missing video timestamps",
+            "accelerated-no-pts.h264",
+            &[
+                "-f",
+                "lavfi",
+                "-i",
+                "testsrc2=size=64x64:rate=24:duration=1",
+                "-c:v",
+                "libx264",
+                "-f",
+                "h264",
+            ],
+        ) else {
+            return;
+        };
+        let mut reader = VideoReader::open(path).unwrap();
+        assert!(matches!(
+            reader.next_frame(),
+            Err(MediaError::Unsupported(
+                "video presentation timestamp unavailable"
+            ))
+        ));
+        assert!(!reader.software);
+    }
+
+    #[test]
+    fn retained_frame_converts_for_the_compositor_after_its_reader_drops() {
+        let Some(path) = fixture() else { return };
+        let mut reader = VideoReader::open(path).unwrap();
+        let first = reader.next_frame().unwrap().unwrap();
+        let mut expected = fingerprint(&first);
+        let pts = Tick(999);
+        let retained = first.with_pts(pts).unwrap();
+        assert_eq!(retained.is_hardware(), first.is_hardware());
+        drop(first);
+        drop(reader);
+        expected.0 = pts;
+        assert!(
+            fingerprint(&retained) == expected,
+            "retained frame pixels or metadata changed"
+        );
+    }
+
+    #[test]
+    fn cancellation_refuses_buffered_frames_and_does_not_restart_decoder() {
+        let Some(path) = fixture() else { return };
+        let cancel = Arc::new(AtomicBool::new(false));
+        let mut reader = VideoReader::open_with_cancel(&path, cancel.clone()).unwrap();
+        assert!(reader.next_frame().unwrap().is_some());
+        cancel.store(true, Ordering::Relaxed);
+        assert!(matches!(reader.next_frame(), Err(MediaError::Cancelled)));
+        assert!(!reader.software);
+        assert!(matches!(
+            VideoReader::open_with_cancel(&path, cancel),
+            Err(MediaError::Cancelled)
+        ));
+    }
+}
+
+#[cfg(all(test, target_os = "macos"))]
+#[allow(clippy::unwrap_used, clippy::expect_used)]
+mod recovery_benchmark {
+    use super::*;
+    use crate::{Container, Muxer, VideoEncoder, VideoEncoderSettings, decode::DecodeFault};
+    use std::time::{Duration, Instant};
+
+    #[test]
+    #[ignore = "manual 60-second hardware recovery throughput and quality measurement"]
+    fn transcode_60_seconds_with_optional_decoder_loss() {
+        let input = std::env::var_os("VIBECUT_ACCEL_BENCH_INPUT").expect("benchmark input");
+        let output = std::env::var_os("VIBECUT_ACCEL_BENCH_OUTPUT").expect("benchmark output");
+        let loss = std::env::var_os("VIBECUT_ACCEL_BENCH_LOSS").is_some();
+        let start = Instant::now();
+        let mut reader = VideoReader::open(input).unwrap();
+        let mut encoder: Option<VideoEncoder> = None;
+        let mut mux = Muxer::create(output, Container::Mp4).unwrap();
+        let mut decode_time = Duration::ZERO;
+        let mut encode_time = Duration::ZERO;
+        let mut count = 0;
+        let mut hardware = 0;
+        loop {
+            if loss && count == 900 {
+                reader.decoder.fault = Some(DecodeFault::Receive);
+            }
+            let mark = Instant::now();
+            let frame = reader.next_frame().unwrap();
+            decode_time += mark.elapsed();
+            let Some(frame) = frame else { break };
+            assert_eq!(
+                frame.pts().unwrap().unwrap(),
+                Tick::from_units(count, 30, Rounding::Nearest).unwrap()
+            );
+            assert_eq!(frame.bit_depth(), Some(8));
+            hardware += usize::from(frame.is_hardware());
+            if encoder.is_none() {
+                let settings = VideoEncoderSettings::h264(
+                    frame.width(),
+                    frame.height(),
+                    FrameRate::new(30, 1).unwrap(),
+                    frame.color(),
+                );
+                let enc = VideoEncoder::new(settings, &frame).unwrap();
+                mux.add_parameters(&enc.parameters(), enc.time_base())
+                    .unwrap();
+                encoder = Some(enc);
+            }
+            let mark = Instant::now();
+            let packets = encoder.as_mut().unwrap().encode(&frame).unwrap();
+            encode_time += mark.elapsed();
+            for packet in packets {
+                mux.write_packet(0, &packet).unwrap();
+            }
+            count += 1;
+        }
+        let mark = Instant::now();
+        let tail = encoder.as_mut().unwrap().flush().unwrap();
+        encode_time += mark.elapsed();
+        for packet in tail {
+            mux.write_packet(0, &packet).unwrap();
+        }
+        mux.finish().unwrap();
+        assert_eq!(count, 1800);
+        assert_eq!(hardware, if loss { 900 } else { 1800 });
+        eprintln!(
+            "recovery_loss={loss} frames={count} hardware_frames={hardware} decode_seconds={:.6} decode_fps={:.3} encode_seconds={:.6} encode_fps={:.3} export_seconds={:.6}",
+            decode_time.as_secs_f64(),
+            count as f64 / decode_time.as_secs_f64(),
+            encode_time.as_secs_f64(),
+            count as f64 / encode_time.as_secs_f64(),
+            start.elapsed().as_secs_f64()
+        );
     }
 }
