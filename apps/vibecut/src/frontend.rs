@@ -25,7 +25,7 @@ pub struct Inspection {
 /// App state only. The immutable engine project is read through Session, never copied
 /// into a parallel frontend project model. Every edit dispatches its registry ID.
 pub struct Editor {
-    pub session: Session,
+    pub session: crate::lifecycle::EditorSession,
     pub playback: Playback,
     pub preferences: Preferences,
     widgets: BTreeMap<&'static str, WidgetState>,
@@ -34,11 +34,26 @@ pub struct Editor {
     texture_key: Option<(u64, Tick)>,
     texture_owner: Option<std::sync::Arc<crate::playback::Frame>>,
     error: Option<String>,
+    pub(crate) persistence_error: Option<std::sync::Arc<engine::EditError>>,
     configured: bool,
     details: bool,
+    rename: Option<String>,
+    rename_focus: bool,
+    pub(crate) lifecycle_action: Option<crate::lifecycle::EditorAction>,
 }
 impl Editor {
     pub fn new(session: Session, playback: Playback, preferences: Preferences) -> Self {
+        Self::with_session(
+            crate::lifecycle::EditorSession::Memory(Box::new(session)),
+            playback,
+            preferences,
+        )
+    }
+    fn with_session(
+        session: crate::lifecycle::EditorSession,
+        playback: Playback,
+        preferences: Preferences,
+    ) -> Self {
         Self {
             session,
             playback,
@@ -49,9 +64,25 @@ impl Editor {
             texture_key: None,
             texture_owner: None,
             error: None,
+            persistence_error: None,
             configured: false,
             details: false,
+            rename: None,
+            rename_focus: false,
+            lifecycle_action: None,
         }
+    }
+    /// Attach the engine autosave owner without duplicating its Session.
+    pub fn persisted(
+        autosave: engine::recovery::Autosave,
+        playback: Playback,
+        preferences: Preferences,
+    ) -> Self {
+        Self::with_session(
+            crate::lifecycle::EditorSession::Persistent(Box::new(autosave)),
+            playback,
+            preferences,
+        )
     }
     pub fn inspect(&self) -> Result<Inspection> {
         Ok(Inspection {
@@ -102,6 +133,15 @@ impl Editor {
         let duration = self.session.project().duration();
         let playing = self.playback.playing();
         match id {
+            "project.save" => self.lifecycle_action = Some(crate::lifecycle::EditorAction::Save),
+            "project.save_as" => {
+                self.lifecycle_action = Some(crate::lifecycle::EditorAction::SaveAs)
+            }
+            "project.back" => self.lifecycle_action = Some(crate::lifecycle::EditorAction::Leave),
+            "project.rename" => {
+                self.rename = Some(self.session.project().data().name.as_str().to_owned());
+                self.rename_focus = true;
+            }
             "transport.play" => self.playback.seek(
                 if at >= duration { Tick::ZERO } else { at },
                 !playing,
@@ -146,63 +186,77 @@ impl Editor {
     }
     fn seek(&mut self, at: Tick) -> Result<()> {
         self.playback
-            .seek(at, self.playback.playing(), self.session.project().clone())
+            .seek(at, self.playback.playing(), self.session.project().clone())?;
+        let view = self.session.metadata().view;
+        self.session.execute(
+            "project.set_view_state",
+            serde_json::json!({"zoom":view.zoom,"scroll":view.scroll,"playhead":at}),
+        )?;
+        Ok(())
     }
     fn action(&mut self, id: &str) {
         if let Err(error) = self.activate(id) {
             self.error = Some(error.to_string());
         }
     }
-    fn theme(&self, ctx: &egui::Context) {
-        let mut visuals = if self.preferences.dark {
+    pub(crate) fn theme(ctx: &egui::Context, dark: bool) {
+        let mut visuals = if dark {
             egui::Visuals::dark()
         } else {
             egui::Visuals::light()
         };
-        let panel = if self.preferences.dark {
+        let panel = if dark {
             Color32::from_rgb(15, 15, 15)
         } else {
             Color32::from_rgb(249, 250, 251)
         };
         visuals.panel_fill = panel;
         visuals.window_fill = panel;
-        visuals.override_text_color = Some(if self.preferences.dark {
+        visuals.override_text_color = Some(if dark {
             Color32::from_rgb(229, 229, 229)
         } else {
             Color32::from_rgb(28, 28, 28)
         });
-        visuals.selection.bg_fill = if self.preferences.dark {
+        visuals.selection.bg_fill = if dark {
             Color32::from_rgb(0, 193, 205)
         } else {
             Color32::from_rgb(0, 106, 116)
         };
         ctx.set_visuals(visuals);
     }
+    pub(crate) fn fonts(ctx: &egui::Context) {
+        let mut fonts = egui::FontDefinitions::empty();
+        fonts.font_data.insert(
+            "Inter".into(),
+            std::sync::Arc::new(egui::FontData::from_static(include_bytes!(
+                "../../../assets/fonts/Inter-Regular.ttf"
+            ))),
+        );
+        fonts
+            .families
+            .insert(egui::FontFamily::Proportional, vec!["Inter".into()]);
+        fonts
+            .families
+            .insert(egui::FontFamily::Monospace, vec!["Inter".into()]);
+        ctx.set_fonts(fonts);
+    }
     /// Advance jobs and the device clock even when the OS suppresses painting.
     pub fn tick(&mut self) {
+        if let Some(autosave) = self.session.autosave()
+            && let Err(e) = autosave.tick()
+        {
+            self.persistence_error = Some(std::sync::Arc::new(e));
+        }
         if let Err(e) = self.playback.poll() {
             self.error = Some(e.to_string());
         }
     }
     pub fn ui(&mut self, ui: &mut egui::Ui) {
         if !self.configured {
-            let mut fonts = egui::FontDefinitions::empty();
-            fonts.font_data.insert(
-                "Inter".into(),
-                std::sync::Arc::new(egui::FontData::from_static(include_bytes!(
-                    "../../../assets/fonts/Inter-Regular.ttf"
-                ))),
-            );
-            fonts
-                .families
-                .insert(egui::FontFamily::Proportional, vec!["Inter".into()]);
-            fonts
-                .families
-                .insert(egui::FontFamily::Monospace, vec!["Inter".into()]);
-            ui.ctx().set_fonts(fonts);
+            Self::fonts(ui.ctx());
             self.configured = true;
         }
-        self.theme(ui.ctx());
+        Self::theme(ui.ctx(), self.preferences.dark);
         ui.style_mut().interaction.selectable_labels = false;
         self.widgets.clear();
         self.panels.clear();
@@ -324,6 +378,9 @@ impl Editor {
             ));
     }
     fn keyboard(&mut self, ctx: &egui::Context) {
+        if self.rename.is_some() {
+            return;
+        }
         for (key, id) in [
             (egui::Key::Space, "transport.play"),
             (egui::Key::K, "transport.pause"),
@@ -341,9 +398,52 @@ impl Editor {
         ui.horizontal_centered(|ui| {
             ui.label(egui::RichText::new("VibeCut").strong().size(18.0));
             ui.separator();
-            ui.label(self.session.project().data().name.as_str());
+            if self.button(ui, "project.back", Text::Projects, true) {
+                self.action("project.back");
+            }
+            if self.rename.is_some() {
+                let mut name = self.rename.take().unwrap_or_default();
+                let response = ui.add(
+                    egui::TextEdit::singleline(&mut name)
+                        .id_salt("project.rename.input")
+                        .desired_width(230.0),
+                );
+                self.remember("project.rename.input", &response);
+                if self.rename_focus {
+                    response.request_focus();
+                    self.rename_focus = false;
+                }
+                let cancel = ui.input(|i| i.key_pressed(egui::Key::Escape));
+                let commit = ui.input(|i| i.key_pressed(egui::Key::Enter));
+                if commit && !cancel {
+                    if let Err(e) = self
+                        .session
+                        .execute("project.rename", serde_json::json!({"name": name}))
+                    {
+                        self.error = Some(e.to_string());
+                        self.rename = Some(name);
+                    }
+                } else if !cancel {
+                    self.rename = Some(name);
+                }
+            } else {
+                let response = ui.add_sized(
+                    [220.0, 26.0],
+                    egui::Button::new(self.session.project().data().name.as_str()).truncate(),
+                );
+                self.remember("project.rename", &response);
+                if response.clicked() {
+                    self.action("project.rename");
+                }
+            }
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 self.button(ui, "file.export", Text::Export, false);
+                if self.button(ui, "project.save_as", Text::SaveAs, true) {
+                    self.action("project.save_as");
+                }
+                if self.button(ui, "project.save", Text::Save, true) {
+                    self.action("project.save");
+                }
                 if self.button(ui, "appearance.theme", Text::Theme, true) {
                     self.action("appearance.theme");
                 }

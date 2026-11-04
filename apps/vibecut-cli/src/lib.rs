@@ -346,8 +346,15 @@ fn project_new(path: PathBuf) -> Result<Output, CliError> {
         Err(project::Error::Io(error)) if error.kind() == io::ErrorKind::NotFound => {}
         Err(error) => return Err(CliError::Project(error)),
     }
-    let project = Project::empty(ProjectId(0), "Untitled".into())?;
-    let receipt = lease.save(&project)?;
+    let session = Session::create(
+        engine::Command::CreateProject {
+            id: ProjectId(0),
+            name: "Untitled".into(),
+        },
+        1,
+    )?;
+    let receipt = lease.save(session.project())?;
+    lease.save_metadata(session.metadata())?;
     let value = json!({
         "path": json_path(receipt.path())?,
         "content_hash": hex(&receipt.content_hash().0),
@@ -359,7 +366,9 @@ fn project_new(path: PathBuf) -> Result<Output, CliError> {
 }
 
 fn project_info(path: PathBuf) -> Result<Output, CliError> {
-    let loaded = project::load(&path)?;
+    let lease = WriterLease::acquire(&path)?;
+    let loaded = lease.load()?;
+    let metadata = lease.metadata();
     let data = loaded.project.data();
     let duration = loaded.project.duration();
     let tracks = data.timeline.tracks.len();
@@ -386,6 +395,7 @@ fn project_info(path: PathBuf) -> Result<Output, CliError> {
         "items": items,
         "bookmarks": data.bookmarks.len(),
         "schema_version": loaded.schema_version,
+        "metadata": metadata,
     });
     let human = format!(
         "path: {}\nname: {}\ncanvas: {}x{} @ {} fps\nduration: {:.3} s ({} ticks)\nassets: {}, tracks: {}, items: {}, bookmarks: {}\nschema: {}",
@@ -424,10 +434,28 @@ fn exec(args: Vec<OsString>) -> Result<Output, CliError> {
     let mut lease = WriterLease::acquire(&project_path)?;
     let loaded = lease.load()?;
     let mut session = Session::new(loaded.project, 1)?;
+    session.restore_metadata(lease.metadata())?;
+    if command_id == "project.save" {
+        if params != json!({}) {
+            return Err(EditError::InvalidParams.into());
+        }
+        let _ = lease.save(session.project())?;
+        lease.save_metadata(session.metadata())?;
+        return Ok(Output {
+            value: json!({"changed":false,"created":[]}),
+            human: "saved".into(),
+        });
+    }
+    let before = session.project().clone();
     let outcome = session.execute(command_id, params)?;
-    if outcome.changed {
+    if outcome.changed && before != *session.project() {
         let _receipt = lease.save(session.project().as_ref())?;
         session.saved()?;
+    }
+    if outcome.changed {
+        let mut metadata = session.metadata().clone();
+        metadata.touch();
+        lease.save_metadata(&metadata)?;
     }
     let value = serde_json::to_value(&outcome)?;
     Ok(Output {

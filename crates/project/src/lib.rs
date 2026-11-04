@@ -9,7 +9,9 @@ pub use animation::{
     Keyframe, MAX_ANIMATION_PATHS, MAX_CHANNEL_KEYS, MAX_PROJECT_KEYS, Param, ParamValue, Segment,
     TangentMode,
 };
+mod metadata;
 mod model;
+pub use metadata::{METADATA_VERSION, Metadata, ViewState};
 mod persistence;
 mod writer;
 pub use atomic::atomic_write;

@@ -72,6 +72,15 @@ impl WriterLease {
             .checked_add(wait)
             .ok_or(Error::Invalid("lease wait duration"))?;
         let path = resolve(path)?;
+        if path.file_name().is_some_and(|name| {
+            name.as_encoded_bytes()
+                .get(name.as_encoded_bytes().len().saturating_sub(10)..)
+                .is_some_and(|suffix| suffix.eq_ignore_ascii_case(b".meta.json"))
+        }) {
+            return Err(Error::Unsupported(
+                "destination uses the project-metadata namespace",
+            ));
+        }
         let lock_path = lock_path(&path)?;
         match fs::symlink_metadata(&lock_path) {
             Ok(m) if !m.file_type().is_file() => {
@@ -142,6 +151,17 @@ impl WriterLease {
 
     pub fn path(&self) -> &Path {
         &self.path
+    }
+
+    /// Optional presentation state under the same canonical project lease.
+    pub fn metadata(&self) -> crate::Metadata {
+        crate::metadata::load(&self.path)
+    }
+
+    /// Atomically publish bounded metadata, refusing a changed project or lease.
+    pub fn save_metadata(&self, metadata: &crate::Metadata) -> Result<()> {
+        self.checked_current()?;
+        crate::metadata::save(&self.path, metadata, || self.checked_current().map(|_| ()))
     }
 
     /// Load only bytes matching the acquisition/save baseline. A noncooperating

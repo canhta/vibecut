@@ -939,3 +939,40 @@ fn auto_detection_does_not_require_cloud_translation_credentials() {
     assert!(!message.contains("OPENAI_API_KEY"), "{message}");
     assert!(!message.contains("ANTHROPIC_API_KEY"), "{message}");
 }
+
+#[test]
+fn view_state_persists_in_optional_metadata_without_rewriting_project() {
+    let root = tempfile::tempdir().unwrap();
+    let path = root.path().join("view state.vibecut");
+    new_project(&path);
+    let before = fs::read(&path).unwrap();
+    let params = json!({"zoom":2.5,"scroll":40,"playhead":254016000000_i64}).to_string();
+    let result = cli(&[
+        os("exec"),
+        path.as_os_str(),
+        os("project.set_view_state"),
+        OsStr::new(&params),
+        os("--json"),
+    ]);
+    assert_eq!(
+        code(&result),
+        0,
+        "{}",
+        String::from_utf8_lossy(&result.stderr)
+    );
+    let value = info(&path);
+    assert_eq!(value["metadata"]["view"]["zoom"], 2.5);
+    assert_eq!(value["metadata"]["view"]["scroll"], 40.0);
+    assert_eq!(fs::read(&path).unwrap(), before);
+    let lease = project::WriterLease::acquire(&path).unwrap();
+    let busy = cli(&[
+        os("exec"),
+        path.as_os_str(),
+        os("project.set_view_state"),
+        OsStr::new(&params),
+        os("--json"),
+    ]);
+    assert_eq!(code(&busy), 3);
+    assert_eq!(error_json(&busy)["error"]["code"], "busy");
+    drop(lease);
+}

@@ -243,7 +243,7 @@ impl Drop for WorkingSave {
         }
     }
 }
-fn save_on_worker(slot: &SaveSlot, project: &Project) -> Result<()> {
+fn save_on_worker(slot: &SaveSlot, project: &Project, metadata: &project::Metadata) -> Result<()> {
     let work = slot
         .lock()
         .map_err(|_| EditError::JobPoisoned)?
@@ -259,6 +259,7 @@ fn save_on_worker(slot: &SaveSlot, project: &Project) -> Result<()> {
     } else {
         work.writer.save(project)?
     });
+    work.writer.save_metadata(metadata)?;
     Ok(())
 }
 struct SaveFlight {
@@ -323,7 +324,8 @@ impl Autosave {
         schedule: Schedule,
     ) -> Result<Self> {
         let writer = WriterLease::acquire(path)?;
-        let session = Session::new(writer.load()?.project, history_limit)?;
+        let mut session = Session::new(writer.load()?.project, history_limit)?;
+        session.restore_metadata(writer.metadata())?;
         Self::with_writer(root, session, Some(writer), budget, clock, schedule)
     }
     fn with_writer(
@@ -465,7 +467,9 @@ impl Autosave {
         }
         let result = self.pump();
         if let Err(e) = result {
-            if matches!(e, EditError::StaleResult) {
+            if matches!(e, EditError::StaleResult)
+                || (self.flight.is_none() && matches!(e, EditError::Project(project::Error::Busy)))
+            {
                 return Err(e);
             }
             let e = Arc::new(e);
@@ -584,6 +588,8 @@ impl Autosave {
             return Err(EditError::TransactionActive);
         }
         let snapshot = self.session.project().clone();
+        let mut metadata = self.session.metadata().clone();
+        metadata.touch();
         let project = snapshot.clone();
         let directory = self.directory.clone();
         let old_path = self.saved_path.clone();
@@ -649,7 +655,7 @@ impl Autosave {
                     publish(&directory, &project, old_path.clone(), revision)?;
                 }
                 if let Some(slot) = &slot {
-                    save_on_worker(slot, &project)?;
+                    save_on_worker(slot, &project, &metadata)?;
                 }
                 Ok(Vec::new())
             },
@@ -723,6 +729,21 @@ impl Autosave {
         }
         self.pending_save = Some(path);
         self.tick()
+    }
+    /// Dispatch the registry save command; completion is acknowledged by tick().
+    pub fn execute(&mut self, id: &str, params: serde_json::Value) -> Result<crate::Outcome> {
+        if id == "project.save" {
+            if params != serde_json::json!({}) {
+                return Err(EditError::InvalidParams);
+            }
+            self.save()?;
+            Ok(crate::Outcome {
+                changed: false,
+                created: Vec::new(),
+            })
+        } else {
+            self.session.execute(id, params)
+        }
     }
     pub fn save(&mut self) -> Result<()> {
         let path = self.saved_path.clone().ok_or(EditError::SaveAsRequired)?;

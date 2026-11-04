@@ -13,6 +13,7 @@ path = "src/main.rs"
 workspace = true
 
 [dependencies]
+rfd = { version = "0.17.2", default-features = false }
 eframe = { version = "0.37.0", default-features = false, features = ["wgpu", "accesskit", "x11", "wayland"] }
 cpal = "0.18.2"
 media = { path = "../../crates/media" }
@@ -32,5 +33,5 @@ image = { version = "0.25.10", default-features = false, features = ["png"] }
 embed-resource = "3.0.12"
 
 [dev-dependencies]
-egui_kittest = "0.37.0"
+egui_kittest = { version = "0.37.0", features = ["wgpu"] }
 tempfile = "3.27.0"

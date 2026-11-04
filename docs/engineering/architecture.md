@@ -63,7 +63,10 @@ through the same registry. Commands validate, then commit all-or-nothing; a batc
 or closure group is one undo step; continuous drags merge by key or explicit
 gesture begin/commit/cancel. Engine restores project, history and deferred changes
 on refusal or unwind; see the [transaction contract](../../crates/engine/README.md#transactions-gestures-and-changes).
-Presentation state and preferences stay in the app.
+Preferences and transient presentation state stay in the app. Per-project view
+state is outside editable Project content and undo: engine Session exposes its
+registered command, while project owns the optional bounded metadata sidecar
+under the WriterLease; see [project metadata](../../crates/project/README.md#optional-project-metadata).
 
 **Recovery.** Engine owns unsaved-session scheduling, OS session liveness and revision-bound save acknowledgement; project owns its one snapshot format, atomic writes and rotation. See the [session recovery contract](../../crates/engine/README.md#session-recovery-and-save-acknowledgement). The app presents recovery choices.
 

@@ -35,3 +35,10 @@ FFmpeg/ffprobe: missing tools print a skip, required-oracle mode refuses a skip,
 and found but failing tools fail. Run `cargo xtask ci --require-oracles` for the
 full workspace check and tool/fixture receipts. No speed or memory measurement
 is claimed; Windows runtime behavior remains unverified.
+
+Project lifecycle commands share engine's registry. `project new` creates through
+`project.create`; `project info` acquires the project writer lease before reading
+and reports optional sidecar `metadata`. `exec ... project.set_view_state` writes
+only metadata, leaving project bytes unchanged; `project.rename` is an edit and
+`project.save {}` explicitly republishes the project plus metadata. Missing/corrupt
+sidecars default through project. Busy/conflict refusals keep their typed codes.

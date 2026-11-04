@@ -13,6 +13,32 @@ pub enum Locale {
 }
 #[derive(Clone, Copy)]
 pub enum Text {
+    ChooseProject,
+    Projects,
+    NewProject,
+    OpenProject,
+    Save,
+    SaveAs,
+    Cancel,
+    Close,
+    SaveClose,
+    LoadingProject,
+    ExitingProject,
+    SavingProject,
+    Discovering,
+    Recovery,
+    Recover,
+    Discard,
+    ClosePrompt,
+    BackProjects,
+    RetryProject,
+    ProjectError,
+    RecoveryDiagnostic,
+    TooNew,
+    TooOld,
+    Busy,
+    Conflict,
+    SaveAsNeeded,
     Media,
     Preview,
     Playhead,
@@ -44,6 +70,69 @@ pub enum Text {
 pub fn text(locale: Locale, key: Text) -> &'static str {
     use Text::*;
     match (locale, key) {
+        (Locale::En, ChooseProject) => "Choose a project file…",
+        (Locale::Vi, ChooseProject) => "Chọn tệp dự án…",
+        (Locale::En, Projects) => "Projects",
+        (Locale::Vi, Projects) => "Dự án",
+        (Locale::En, NewProject) => "New project",
+        (Locale::Vi, NewProject) => "Dự án mới",
+        (Locale::En, OpenProject) => "Open project…",
+        (Locale::Vi, OpenProject) => "Mở dự án…",
+        (Locale::En, Save) => "Save",
+        (Locale::Vi, Save) => "Lưu",
+        (Locale::En, SaveAs) => "Save as…",
+        (Locale::Vi, SaveAs) => "Lưu thành…",
+        (Locale::En, Cancel) => "Cancel",
+        (Locale::Vi, Cancel) => "Hủy",
+        (Locale::En, Close) => "Keep recovery copy and close",
+        (Locale::Vi, Close) => "Giữ bản khôi phục và đóng",
+        (Locale::En, SaveClose) => "Save and close",
+        (Locale::Vi, SaveClose) => "Lưu và đóng",
+        (Locale::En, LoadingProject) => "Loading project…",
+        (Locale::Vi, LoadingProject) => "Đang mở dự án…",
+        (Locale::En, ExitingProject) => "Exiting project…",
+        (Locale::Vi, ExitingProject) => "Đang thoát dự án…",
+        (Locale::En, SavingProject) => "Saving project…",
+        (Locale::Vi, SavingProject) => "Đang lưu dự án…",
+        (Locale::En, Discovering) => "Checking recovery copies…",
+        (Locale::Vi, Discovering) => "Đang kiểm tra bản khôi phục…",
+        (Locale::En, Recovery) => "Recover your work",
+        (Locale::Vi, Recovery) => "Khôi phục công việc",
+        (Locale::En, Recover) => "Recover a copy",
+        (Locale::Vi, Recover) => "Khôi phục bản sao",
+        (Locale::En, Discard) => "Discard recovery copy",
+        (Locale::Vi, Discard) => "Bỏ bản khôi phục",
+        (Locale::En, ClosePrompt) => "Save your project before closing?",
+        (Locale::Vi, ClosePrompt) => "Lưu dự án trước khi đóng?",
+        (Locale::En, BackProjects) => "Back to projects",
+        (Locale::Vi, BackProjects) => "Trở về dự án",
+        (Locale::En, RetryProject) => "Retry",
+        (Locale::Vi, RetryProject) => "Thử lại",
+        (Locale::En, ProjectError) => "Project operation failed. Your work is retained.",
+        (Locale::Vi, ProjectError) => "Thao tác dự án thất bại. Công việc của bạn được giữ lại.",
+        (Locale::En, RecoveryDiagnostic) => "A damaged recovery copy was skipped.",
+        (Locale::Vi, RecoveryDiagnostic) => "Đã bỏ qua một bản khôi phục bị hỏng.",
+        (Locale::En, TooNew) => {
+            "This project needs a newer version of VibeCut. The file was not changed."
+        }
+        (Locale::Vi, TooNew) => "Dự án này cần phiên bản VibeCut mới hơn. Tệp chưa bị thay đổi.",
+        (Locale::En, TooOld) => {
+            "This project uses an older format. Export or back it up with the version that created it."
+        }
+        (Locale::Vi, TooOld) => {
+            "Dự án dùng định dạng cũ. Hãy xuất hoặc sao lưu bằng phiên bản đã tạo dự án."
+        }
+        (Locale::En, Busy) => "Another editor is using this project. Retry to wait, or cancel.",
+        (Locale::Vi, Busy) => "Một trình chỉnh sửa khác đang dùng dự án. Thử lại để chờ hoặc hủy.",
+        (Locale::En, Conflict) => {
+            "The file changed outside this session. Save a copy to a different path."
+        }
+        (Locale::Vi, Conflict) => {
+            "Tệp đã thay đổi bên ngoài phiên này. Hãy lưu bản sao vào đường dẫn khác."
+        }
+        (Locale::En, SaveAsNeeded) => "Recovered and new projects need Save as.",
+        (Locale::Vi, SaveAsNeeded) => "Dự án mới và bản khôi phục cần Lưu thành.",
+
         (Locale::En, Media) => "Media",
         (Locale::Vi, Media) => "Tư liệu",
         (Locale::En, Playhead) => "Playhead",

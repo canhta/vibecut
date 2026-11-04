@@ -2,7 +2,9 @@
 pub mod capture;
 pub mod catalog;
 mod frontend;
+pub mod lifecycle;
 pub mod playback;
+pub mod workspace;
 pub use eframe::egui;
 pub use frontend::{Editor, Inspection, WidgetState};
 

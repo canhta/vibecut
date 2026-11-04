@@ -1,0 +1,891 @@
+//! Nonblocking desktop lifecycle and recovery presentation over engine persistence.
+use crate::{
+    Editor, Error, Result,
+    catalog::{self, Preferences, Text},
+    egui,
+    lifecycle::EditorAction,
+    playback::{Files, Playback},
+};
+use engine::{
+    ByteBudget, Command, EditError, Session,
+    cache::{ArtifactKind, CacheKey, KeyInputs},
+    jobs::{
+        JobBytes, JobId, JobKind, JobRunner, JobSpec, JobState, ResourceClass, RunnerConfig,
+        SystemClock,
+    },
+    recovery::{self, Autosave, Candidate, Discovery, Schedule},
+};
+use std::{
+    path::PathBuf,
+    sync::{Arc, Mutex, mpsc},
+    time::Duration,
+};
+
+#[derive(Clone, Copy)]
+enum PickerAction {
+    Open,
+    Save { leave: bool, close: bool },
+}
+struct Picker {
+    future: std::pin::Pin<Box<dyn std::future::Future<Output = Option<rfd::FileHandle>>>>,
+    action: PickerAction,
+    waker: std::task::Waker,
+}
+struct Repaint(egui::Context);
+impl std::task::Wake for Repaint {
+    fn wake(self: Arc<Self>) {
+        self.0.request_repaint();
+    }
+}
+type EditorSlot = Arc<Mutex<Option<Box<Editor>>>>;
+struct WorkingEditor {
+    slot: EditorSlot,
+    editor: Option<Box<Editor>>,
+}
+impl Drop for WorkingEditor {
+    fn drop(&mut self) {
+        if let Ok(mut slot) = self.slot.lock() {
+            *slot = self.editor.take();
+        }
+    }
+}
+enum Work {
+    Discover,
+    Open(PathBuf),
+    New,
+    Recover(Box<Candidate>),
+    Discard(Box<Candidate>),
+    Persist {
+        editor: EditorSlot,
+        path: Option<PathBuf>,
+        leave: bool,
+        close: bool,
+        journal_only: bool,
+    },
+}
+enum Completed {
+    Discovery(Discovery),
+    Opened(Box<Editor>),
+    Discarded,
+    Persisted {
+        result: Result<()>,
+        leave: bool,
+        close: bool,
+    },
+}
+struct Pending {
+    id: JobId,
+    receive: mpsc::Receiver<Result<Completed>>,
+    text: Text,
+    cancel: engine::jobs::CancelToken,
+    editor: Option<EditorSlot>,
+}
+/// The editor is absent while its owner is performing an IO boundary on an engine
+/// worker. Loading/exiting remains visible; no second Session or serializer exists.
+pub struct Workspace {
+    pub editor: Option<Box<Editor>>,
+    pub preferences: Preferences,
+    root: PathBuf,
+    budget: ByteBudget,
+    runner: JobRunner,
+    pending: Option<Pending>,
+    picker: Option<Picker>,
+    candidates: Vec<Candidate>,
+    diagnostics: Vec<EditError>,
+    error: Option<Error>,
+    retry_path: Option<PathBuf>,
+    startup_path: Option<PathBuf>,
+    close_prompt: bool,
+    ready_to_close: bool,
+    configured: bool,
+    device_available: bool,
+    retry_save: Option<(Option<PathBuf>, bool, bool, bool)>,
+    retry_discovery: bool,
+}
+impl Workspace {
+    pub fn new(root: PathBuf, preferences: Preferences, path: Option<PathBuf>) -> Result<Self> {
+        let budget = ByteBudget::new(768 << 20)?;
+        let runner = JobRunner::new(
+            RunnerConfig {
+                concurrency: [1, 1, 1],
+                queue: 1,
+                retained: 1,
+                network_attempts: 1,
+                backoff: Duration::from_secs(1),
+                progress_interval: Duration::from_millis(10),
+            },
+            budget.clone(),
+            Arc::new(SystemClock::default()),
+        )?;
+        let mut app = Self {
+            editor: None,
+            preferences,
+            root,
+            budget,
+            runner,
+            pending: None,
+            picker: None,
+            candidates: Vec::new(),
+            diagnostics: Vec::new(),
+            error: None,
+            retry_path: None,
+            startup_path: path,
+            close_prompt: false,
+            ready_to_close: false,
+            configured: false,
+            device_available: false,
+            retry_save: None,
+            retry_discovery: false,
+        };
+        app.submit(Work::Discover, Text::Discovering)?;
+        Ok(app)
+    }
+    pub fn busy(&self) -> bool {
+        self.pending.is_some() || self.picker.is_some()
+    }
+    pub fn error(&self) -> Option<&Error> {
+        self.error.as_ref()
+    }
+    pub fn ready_to_close(&self) -> bool {
+        self.ready_to_close
+    }
+    pub fn request_close(&mut self) {
+        if self.editor.is_some() || self.busy() {
+            self.close_prompt = true;
+        } else {
+            self.ready_to_close = true;
+        }
+    }
+    /// Device lifetime stays in the native adapter; replacement projects use the
+    /// same admitted 48 kHz device contract as the shell.
+    pub fn set_device_available(&mut self, available: bool) {
+        self.device_available = available;
+        if let Some(editor) = &mut self.editor {
+            editor.playback.set_device_available(available);
+        }
+    }
+    pub fn open(&mut self, path: PathBuf) -> Result<()> {
+        if self.editor.is_some() || self.busy() {
+            return Err(Error::Invalid("leave active project before opening"));
+        }
+        self.retry_path = Some(path.clone());
+        self.submit(Work::Open(path), Text::LoadingProject)
+    }
+    pub fn create(&mut self) -> Result<()> {
+        if self.editor.is_some() || self.busy() {
+            return Err(Error::Invalid("leave active project before creating"));
+        }
+        self.retry_path = None;
+        self.submit(Work::New, Text::LoadingProject)
+    }
+    /// A destination is supplied by the native picker, or the existing saved path
+    /// is reused. Move the sole owner to a worker until its revision is acknowledged.
+    pub fn persist(
+        &mut self,
+        path: Option<PathBuf>,
+        leave: bool,
+        close: bool,
+        journal_only: bool,
+    ) -> Result<()> {
+        if self.busy() {
+            return Err(Error::Invalid("project operation in progress"));
+        }
+        let editor = self.editor.as_mut().ok_or(Error::Invalid("no project"))?;
+        self.preferences = editor.preferences.clone();
+        editor.activate("transport.pause")?;
+        let at = editor.playback.position()?;
+        let view = editor.session.metadata().view;
+        editor.session.execute(
+            "project.set_view_state",
+            serde_json::json!({"zoom":view.zoom,"scroll":view.scroll,"playhead":at}),
+        )?;
+        self.retry_save = Some((path.clone(), leave, close, journal_only));
+        let editor = self.editor.take().ok_or(Error::Invalid("no project"))?;
+        self.submit(
+            Work::Persist {
+                editor: Arc::new(Mutex::new(Some(editor))),
+                path,
+                leave,
+                close,
+                journal_only,
+            },
+            if leave || close {
+                Text::ExitingProject
+            } else {
+                Text::SavingProject
+            },
+        )
+    }
+    fn pick(&mut self, ctx: &egui::Context, action: PickerAction) -> Result<()> {
+        if self.busy() {
+            return Err(Error::Invalid("project operation in progress"));
+        }
+        let dialog = rfd::AsyncFileDialog::new().add_filter("VibeCut", &["vibecut", "json"]);
+        let future: std::pin::Pin<Box<dyn std::future::Future<Output = Option<rfd::FileHandle>>>> =
+            match action {
+                PickerAction::Open => Box::pin(dialog.pick_file()),
+                PickerAction::Save { .. } => {
+                    Box::pin(dialog.set_file_name("project.vibecut").save_file())
+                }
+            };
+        self.picker = Some(Picker {
+            future,
+            action,
+            waker: std::task::Waker::from(Arc::new(Repaint(ctx.clone()))),
+        });
+        Ok(())
+    }
+    fn save_from_ui(
+        &mut self,
+        ctx: &egui::Context,
+        leave: bool,
+        close: bool,
+        force_as: bool,
+    ) -> Result<()> {
+        let editor = self.editor.as_mut().ok_or(Error::Invalid("no project"))?;
+        let needs_path = editor
+            .session
+            .autosave()
+            .is_some_and(|s| s.saved_path().is_none());
+        if force_as || needs_path {
+            self.pick(ctx, PickerAction::Save { leave, close })
+        } else {
+            self.persist(None, leave, close, false)
+        }
+    }
+    fn poll_picker(&mut self) {
+        let Some(mut picker) = self.picker.take() else {
+            return;
+        };
+        match picker
+            .future
+            .as_mut()
+            .poll(&mut std::task::Context::from_waker(&picker.waker))
+        {
+            std::task::Poll::Pending => self.picker = Some(picker),
+            std::task::Poll::Ready(None) => {}
+            std::task::Poll::Ready(Some(file)) => {
+                let result = match picker.action {
+                    PickerAction::Open => self.open(file.path().to_owned()),
+                    PickerAction::Save { leave, close } => {
+                        self.persist(Some(file.path().to_owned()), leave, close, false)
+                    }
+                };
+                if let Err(e) = result {
+                    self.error = Some(e);
+                }
+            }
+        }
+    }
+    fn submit(&mut self, work: Work, text: Text) -> Result<()> {
+        self.retry_discovery =
+            matches!(&work, Work::Discover | Work::Discard(_) | Work::Recover(_));
+        let editor = match &work {
+            Work::Persist { editor, .. } => Some(editor.clone()),
+            _ => None,
+        };
+        let input = Arc::new(Mutex::new(Some(work)));
+        let (send, receive) = mpsc::channel();
+        let root = self.root.clone();
+        let budget = self.budget.clone();
+        let preferences = self.preferences.clone();
+        let key = CacheKey::new(KeyInputs {
+            kind: ArtifactKind::Preview,
+            source: [0; 32],
+            provider: "desktop",
+            model: "project-lifecycle",
+            version: "1",
+            settings: &[],
+            transcript: [0; 32],
+            cues: [0; 32],
+            clip_range: [0; 32],
+            translation: [0; 32],
+        })?;
+        let worker_input = input.clone();
+        let submitted = self.runner.submit(
+            JobSpec {
+                kind: JobKind::Persist,
+                class: ResourceClass::Cpu,
+                input: key,
+                bytes: JobBytes {
+                    compositor: 48 << 20,
+                    ..Default::default()
+                },
+            },
+            move |ctx| {
+                ctx.check_cancelled()?;
+                let work = worker_input
+                    .lock()
+                    .map_err(|_| EditError::JobPoisoned)?
+                    .take()
+                    .ok_or(EditError::RecoveryBusy)?;
+                let result = run(work, &root, budget.clone(), preferences.clone());
+                send.send(result).map_err(|_| EditError::Cancelled)?;
+                Ok(Vec::new())
+            },
+        );
+        let (id, cancel) = match submitted {
+            Ok(job) => job,
+            Err(e) => {
+                if let Some(editor) = &editor {
+                    self.editor = editor.lock().map_err(|_| Error::Poisoned)?.take();
+                }
+                return Err(e.into());
+            }
+        };
+        self.pending = Some(Pending {
+            id,
+            receive,
+            text,
+            cancel,
+            editor,
+        });
+        self.error = None;
+        Ok(())
+    }
+    pub fn tick(&mut self) {
+        self.poll_picker();
+        if let Some(editor) = &mut self.editor {
+            editor.tick();
+            if self.error.is_none()
+                && let Some(error) = &editor.persistence_error
+            {
+                self.error = Some(Error::Worker(error.clone()));
+            }
+        }
+        if let Err(e) = self.runner.tick() {
+            self.error = Some(e.into());
+            return;
+        }
+        self.runner.drain_events();
+        let Some(pending) = &self.pending else {
+            return;
+        };
+        let Some(snapshot) = self.runner.snapshot(pending.id) else {
+            return;
+        };
+        if !matches!(
+            snapshot.state,
+            JobState::Completed | JobState::Failed | JobState::Cancelled
+        ) {
+            return;
+        }
+        let Some(pending) = self.pending.take() else {
+            return;
+        };
+        let _ = self.runner.take_output(pending.id);
+        if let Some(editor) = &pending.editor {
+            match editor.lock() {
+                Ok(mut editor) => self.editor = editor.take(),
+                Err(_) => {
+                    self.error = Some(Error::Poisoned);
+                    return;
+                }
+            }
+        }
+        let result = pending.receive.try_recv().unwrap_or_else(|_| {
+            Err(snapshot
+                .error
+                .map(Error::Worker)
+                .unwrap_or(Error::Engine(EditError::WorkerPanicked)))
+        });
+        if pending.cancel.cancelled() {
+            self.startup_path = None;
+            self.retry_path = None;
+            return;
+        }
+        match result {
+            Ok(Completed::Discovery(discovery)) => {
+                self.candidates = discovery.candidates;
+                self.diagnostics = discovery.diagnostics;
+            }
+            Ok(Completed::Opened(mut editor)) => {
+                editor.playback.set_device_available(self.device_available);
+                self.editor = Some(editor);
+                self.retry_path = None;
+                self.startup_path = None;
+            }
+            Ok(Completed::Discarded) => {}
+            Ok(Completed::Persisted {
+                result,
+                leave,
+                close,
+            }) => match result {
+                Ok(()) => {
+                    self.retry_save = None;
+                    if leave || close {
+                        self.editor = None;
+                    }
+                    if close {
+                        self.ready_to_close = true;
+                    }
+                    self.close_prompt = false;
+                }
+                Err(e) => self.error = Some(e),
+            },
+            Err(e) => self.error = Some(e),
+        }
+        if self.editor.is_none()
+            && self.candidates.is_empty()
+            && self.error.is_none()
+            && let Some(path) = self.startup_path.take()
+            && let Err(e) = self.open(path)
+        {
+            self.error = Some(e);
+        }
+    }
+    fn tr(&self, text: Text) -> &'static str {
+        catalog::text(self.preferences.locale, text)
+    }
+    fn button(&self, ui: &mut egui::Ui, id: &'static str, text: Text) -> bool {
+        let response = ui
+            .push_id(id, |ui| {
+                ui.add_sized([160.0, 34.0], egui::Button::new(self.tr(text)))
+            })
+            .inner;
+        response
+            .ctx
+            .accesskit_node_builder(response.id, |node| node.set_author_id(id));
+        response.clicked()
+    }
+    pub fn ui(&mut self, ui: &mut egui::Ui) {
+        if !self.configured {
+            Editor::fonts(ui.ctx());
+            self.configured = true;
+        }
+        Editor::theme(ui.ctx(), self.preferences.dark);
+        self.tick();
+        if ui.input(|i| i.viewport().close_requested()) && !self.ready_to_close {
+            ui.ctx()
+                .send_viewport_cmd(egui::ViewportCommand::CancelClose);
+            self.request_close();
+        }
+        if let Some(editor) = &mut self.editor {
+            editor.ui(ui);
+            self.preferences = editor.preferences.clone();
+            if let Some(action) = editor.lifecycle_action.take()
+                && let Err(e) = self.save_from_ui(
+                    ui.ctx(),
+                    action == EditorAction::Leave,
+                    false,
+                    action == EditorAction::SaveAs,
+                )
+            {
+                self.error = Some(e);
+            }
+        } else {
+            ui.vertical_centered(|ui| {
+                ui.add_space(100.0);
+                ui.heading(egui::RichText::new("VibeCut").size(28.0));
+                ui.add_space(28.0);
+                if let Some(pending) = &self.pending {
+                    ui.spinner();
+                    ui.label(self.tr(pending.text));
+                    if matches!(pending.text, Text::LoadingProject)
+                        && self.button(ui, "project.operation.cancel", Text::Cancel)
+                    {
+                        pending.cancel.cancel();
+                    }
+                } else if self.picker.is_some() {
+                    ui.label(self.tr(Text::ChooseProject));
+                } else if self.candidates.is_empty() && self.error.is_none() {
+                    if self.button(ui, "project.create", Text::NewProject)
+                        && let Err(e) = self.create()
+                    {
+                        self.error = Some(e);
+                    }
+                    if self.button(ui, "project.open", Text::OpenProject)
+                        && let Err(e) = self.pick(ui.ctx(), PickerAction::Open)
+                    {
+                        self.error = Some(e);
+                    }
+                }
+            });
+        }
+        if !self.busy() && !self.candidates.is_empty() {
+            egui::Modal::new(egui::Id::unique("recovery.prompt")).show(ui.ctx(), |ui| {
+                ui.heading(self.tr(Text::Recovery));
+                if let Some(candidate) = self.candidates.first() {
+                    ui.label(&candidate.journal.name);
+                }
+                ui.label(self.tr(Text::SaveAsNeeded));
+                ui.horizontal(|ui| {
+                    if self.button(ui, "recovery.recover", Text::Recover) {
+                        let candidate = self.candidates.remove(0);
+                        if let Err(e) =
+                            self.submit(Work::Recover(Box::new(candidate)), Text::LoadingProject)
+                        {
+                            self.error = Some(e);
+                        }
+                    }
+                    if self.button(ui, "recovery.discard", Text::Discard) {
+                        let candidate = self.candidates.remove(0);
+                        if let Err(e) =
+                            self.submit(Work::Discard(Box::new(candidate)), Text::Discovering)
+                        {
+                            self.error = Some(e);
+                        }
+                    }
+                });
+            });
+        }
+        if !self.diagnostics.is_empty() {
+            egui::Window::new(self.tr(Text::RecoveryDiagnostic))
+                .id(egui::Id::unique("recovery.diagnostic"))
+                .show(ui.ctx(), |ui| {
+                    for e in &self.diagnostics {
+                        ui.label(e.to_string());
+                    }
+                    if self.button(ui, "recovery.diagnostic.close", Text::Cancel) {
+                        self.diagnostics.clear();
+                    }
+                });
+        }
+        if self.error.is_some() {
+            self.close_prompt = false;
+            egui::Window::new(self.tr(Text::ProjectError))
+                .id(egui::Id::unique("project.error"))
+                .collapsible(false)
+                .show(ui.ctx(), |ui| {
+                    let text = match self.error.as_ref() {
+                        Some(Error::Engine(EditError::Project(project::Error::TooNew {
+                            ..
+                        })))
+                        | Some(Error::Project(project::Error::TooNew { .. })) => Text::TooNew,
+                        Some(Error::Engine(EditError::Project(project::Error::TooOld {
+                            ..
+                        })))
+                        | Some(Error::Project(project::Error::TooOld { .. })) => Text::TooOld,
+                        Some(Error::Engine(EditError::Project(project::Error::Busy)))
+                        | Some(Error::Project(project::Error::Busy)) => Text::Busy,
+                        _ => Text::ProjectError,
+                    };
+                    ui.label(self.tr(text));
+                    if let Some(e) = &self.error {
+                        ui.label(e.to_string());
+                        let mut source = std::error::Error::source(e);
+                        for _ in 0..8 {
+                            let Some(error) = source else {
+                                break;
+                            };
+                            ui.label(error.to_string());
+                            source = error.source();
+                        }
+                    }
+                    ui.horizontal(|ui| {
+                        if self.button(ui, "project.retry", Text::RetryProject) {
+                            self.error = None;
+                            let result = if let Some((path, leave, close, journal_only)) =
+                                self.retry_save.take()
+                            {
+                                self.persist(path, leave, close, journal_only)
+                            } else if self.retry_discovery {
+                                self.candidates.clear();
+                                self.submit(Work::Discover, Text::Discovering)
+                            } else if let Some(path) = self.retry_path.clone() {
+                                self.open(path)
+                            } else if self.editor.is_none() {
+                                self.create()
+                            } else {
+                                Ok(())
+                            };
+                            if let Err(e) = result {
+                                self.error = Some(e);
+                            }
+                        }
+                        if self.button(
+                            ui,
+                            "project.error.back",
+                            if self.editor.is_some() {
+                                Text::Cancel
+                            } else {
+                                Text::BackProjects
+                            },
+                        ) {
+                            self.error = None;
+                            self.retry_path = None;
+                            self.startup_path = None;
+                        }
+                    });
+                });
+        }
+        if self.close_prompt && !self.busy() {
+            egui::Modal::new(egui::Id::unique("project.close.prompt")).show(ui.ctx(), |ui| {
+                ui.heading(self.tr(Text::ClosePrompt));
+                if self.button(ui, "project.close.save", Text::SaveClose)
+                    && let Err(e) = self.save_from_ui(ui.ctx(), true, true, false)
+                {
+                    self.error = Some(e);
+                }
+                if self.button(ui, "project.close.recover", Text::Close)
+                    && let Err(e) = self.persist(None, true, true, true)
+                {
+                    self.error = Some(e);
+                }
+                if self.button(ui, "project.close.cancel", Text::Cancel) {
+                    self.close_prompt = false;
+                }
+            });
+        }
+        if self.ready_to_close {
+            ui.ctx().send_viewport_cmd(egui::ViewportCommand::Close);
+        }
+        ui.ctx().request_repaint_after(Duration::from_millis(16));
+    }
+}
+fn session(root: &std::path::Path, session: Session, budget: ByteBudget) -> Result<Autosave> {
+    Ok(Autosave::new(
+        root,
+        session,
+        budget,
+        Arc::new(SystemClock::default()),
+        Schedule::default(),
+    )?)
+}
+fn fresh(name: &str) -> Result<Session> {
+    static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    let epoch = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_err(|_| Error::Invalid("system time"))?;
+    let id = u64::try_from(epoch.as_nanos())
+        .map_err(|_| Error::Invalid("project identity"))?
+        .wrapping_add(NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed));
+    Ok(Session::create(
+        Command::CreateProject {
+            id: project::ProjectId(id),
+            name: name.into(),
+        },
+        100,
+    )?)
+}
+fn run(
+    work: Work,
+    root: &std::path::Path,
+    budget: ByteBudget,
+    preferences: Preferences,
+) -> Result<Completed> {
+    let autosave = match work {
+        Work::Discover => {
+            std::fs::create_dir_all(root)?;
+            return Ok(Completed::Discovery(recovery::discover(root)?));
+        }
+        Work::Discard(candidate) => {
+            candidate.discard()?;
+            return Ok(Completed::Discarded);
+        }
+        Work::Recover(candidate) => {
+            let mut autosave = session(root, candidate.recover(100)?, budget.clone())?;
+            // Publish the recovered copy before retiring its source journal.
+            autosave.flush()?;
+            candidate.discard()?;
+            autosave
+        }
+        Work::New => session(root, fresh("New project")?, budget.clone())?,
+        Work::Open(path) => match Autosave::open(
+            root,
+            &path,
+            100,
+            budget.clone(),
+            Arc::new(SystemClock::default()),
+            Schedule::default(),
+        ) {
+            Ok(open) => open,
+            Err(EditError::Project(project::Error::Io(e)))
+                if e.kind() == std::io::ErrorKind::NotFound
+                    && path.parent().is_some_and(|parent| parent.is_dir()) =>
+            {
+                session(root, fresh("Untitled Project")?, budget.clone())?
+            }
+            Err(e) => return Err(e.into()),
+        },
+        Work::Persist {
+            editor,
+            path,
+            leave,
+            close,
+            journal_only,
+        } => {
+            let owned = editor
+                .lock()
+                .map_err(|_| Error::Poisoned)?
+                .take()
+                .ok_or(Error::Invalid("missing editor"))?;
+            let mut active = WorkingEditor {
+                slot: editor,
+                editor: Some(owned),
+            };
+            let result = (|| -> Result<()> {
+                let editor = active
+                    .editor
+                    .as_mut()
+                    .ok_or(Error::Invalid("missing editor"))?;
+                let autosave = editor
+                    .session
+                    .autosave()
+                    .ok_or(Error::Unsupported("nonpersistent editor"))?;
+                autosave.flush()?;
+                if !journal_only {
+                    if let Some(path) = path {
+                        autosave.save_as(path)?;
+                    } else {
+                        autosave.execute("project.save", serde_json::json!({}))?;
+                    }
+                    autosave.flush()?;
+                    if autosave.saving() || autosave.is_dirty() {
+                        return Err(EditError::StaleResult.into());
+                    }
+                }
+                Ok(())
+            })();
+            if result.is_ok() && (leave || close) {
+                drop(active.editor.take());
+            }
+            return Ok(Completed::Persisted {
+                result,
+                leave,
+                close,
+            });
+        }
+    };
+    let view = autosave.session().metadata().view;
+    let mut playback = Playback::new(autosave.session(), budget, Arc::new(Files))?;
+    playback.seek(
+        view.playhead.min(autosave.session().project().duration()),
+        false,
+        autosave.session().project().clone(),
+    )?;
+    Ok(Completed::Opened(Box::new(Editor::persisted(
+        autosave,
+        playback,
+        preferences,
+    ))))
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::panic)]
+mod tests {
+    use super::*;
+    #[test]
+    fn unwind_returns_the_active_editor_before_reporting_worker_failure() {
+        let session = Session::new(
+            project::Project::empty(project::ProjectId(1), "retained".into()).unwrap(),
+            10,
+        )
+        .unwrap();
+        let playback = Playback::new(
+            &session,
+            ByteBudget::new(64 << 20).unwrap(),
+            Arc::new(Files),
+        )
+        .unwrap();
+        let slot = Arc::new(Mutex::new(Some(Box::new(Editor::new(
+            session,
+            playback,
+            Preferences::default(),
+        )))));
+        let worker_slot = slot.clone();
+        let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let editor = worker_slot.lock().unwrap().take();
+            let _active = WorkingEditor {
+                slot: worker_slot,
+                editor,
+            };
+            panic!("injected while the worker owns the editor");
+        }));
+        assert!(outcome.is_err());
+        assert_eq!(
+            slot.lock()
+                .unwrap()
+                .as_ref()
+                .unwrap()
+                .session
+                .project()
+                .data()
+                .name
+                .as_str(),
+            "retained"
+        );
+    }
+    #[derive(Default)]
+    struct ManualClock(std::sync::atomic::AtomicU64);
+    impl engine::jobs::Clock for ManualClock {
+        fn now(&self) -> Duration {
+            Duration::from_millis(self.0.load(std::sync::atomic::Ordering::SeqCst))
+        }
+    }
+    #[test]
+    fn outstanding_picker_keeps_autosave_ticking_and_cancel_preserves_the_editor() {
+        let root = tempfile::tempdir().unwrap();
+        let mut workspace =
+            Workspace::new(root.path().join("recovery"), Preferences::default(), None).unwrap();
+        let deadline = std::time::Instant::now() + Duration::from_secs(10);
+        while workspace.busy() {
+            workspace.tick();
+            assert!(std::time::Instant::now() < deadline);
+            std::thread::sleep(Duration::from_millis(1));
+        }
+        let clock = Arc::new(ManualClock::default());
+        let session = fresh("picker test").unwrap();
+        let autosave = Autosave::new(
+            &workspace.root,
+            session,
+            workspace.budget.clone(),
+            clock.clone(),
+            Schedule::default(),
+        )
+        .unwrap();
+        let playback = Playback::new(
+            autosave.session(),
+            workspace.budget.clone(),
+            Arc::new(Files),
+        )
+        .unwrap();
+        workspace.editor = Some(Box::new(Editor::persisted(
+            autosave,
+            playback,
+            Preferences::default(),
+        )));
+        workspace.picker = Some(Picker {
+            future: Box::pin(std::future::pending()),
+            action: PickerAction::Save {
+                leave: false,
+                close: false,
+            },
+            waker: std::task::Waker::noop().clone(),
+        });
+        clock.0.store(800, std::sync::atomic::Ordering::SeqCst);
+        loop {
+            workspace.tick();
+            if workspace
+                .editor
+                .as_mut()
+                .unwrap()
+                .session
+                .autosave()
+                .unwrap()
+                .journaled_revision()
+                > 0
+            {
+                break;
+            }
+            assert!(std::time::Instant::now() < deadline);
+            std::thread::sleep(Duration::from_millis(1));
+        }
+        assert!(workspace.busy());
+        workspace.picker.as_mut().unwrap().future = Box::pin(std::future::ready(None));
+        workspace.tick();
+        assert!(!workspace.busy());
+        assert_eq!(
+            workspace
+                .editor
+                .as_ref()
+                .unwrap()
+                .session
+                .project()
+                .data()
+                .name
+                .as_str(),
+            "picker test"
+        );
+    }
+}

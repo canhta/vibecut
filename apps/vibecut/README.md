@@ -13,9 +13,10 @@ Provision FFmpeg with `cargo xtask ffmpeg`. Build with that installation's
 [workspace verification](../../docs/engineering/verification.md).
 The desktop binary is `vibecut`; the headless CLI is `vibecut-cli`.
 `cargo run -p vibecut -- /native/path/to/project.json` acquires the project writer
-lease before loading. With no file it opens an empty project. This ticket provides
-preview and read-only timeline display; media import, editing and export controls
-are integrated by their owning follow-up tickets.
+lease before loading. With no file it opens the minimal Home new/open entry points. Project listing and
+thumbnail storage belong to the projects-page feature. The shell provides preview
+and timeline display; media import, editing and export controls are integrated by
+their owning feature tickets.
 
 Space toggles playback; K pauses; J/L seek one second backwards/forwards; Home/End
 seek to the timeline ends. Scrubbing uses the same seek path. Two resizable columns
@@ -91,3 +92,27 @@ from source-documented API contracts; tests alone establish no device performanc
 `--observe SECONDS OUTPUT_DIR [PROJECT]` records at most 3,601 one-second samples
 and requests one fresh window screenshot, then closes. It exercises the production device,
 engine jobs, renderer and frontend; it never sends media remotely.
+
+## Project lifecycle
+
+`Workspace` owns loading/exiting/error/recovery presentation and dispatches blocking
+open, discovery, save, flush and discard work through engine's job runner. The
+persistent `EditorSession` wraps the sole engine `Autosave`; the memory variant
+supports the existing headless editor injection interface. Home creates “New
+project”; a genuinely missing route path creates “Untitled Project” once. Other
+load failures retain typed errors and Retry/Back controls. New/Open/Save As use
+rfd's asynchronous native picker so the event loop keeps autosave ticking; paths stay native through the writer lease.
+
+Header rename commits on Enter and cancels on Esc through `project.rename`.
+The shared `project.set_view_state` stores zoom/scroll outside edit history for
+timeline navigation to expose; playhead is restored through the existing seek path. Save/exit wait off-thread for engine acknowledgement; an error retains the
+active editor. A window close is intercepted with `CancelClose`: save and close,
+keep a flushed recovery copy and close, or cancel. New/recovered work requires
+Save As. Loading can be cancelled without accepting its eventual result.
+
+Startup discovers only abandoned journals and shows corrupt-candidate diagnostics.
+Recovery publishes a new never-saved session journal before discarding the old
+candidate; the original project is untouched. rfd 0.17.2 is MIT and is the one
+native picker dependency. `tests/lifecycle.rs` exercises lifecycle boundaries and
+real rename/close/recovery widgets, and renders `target/p1-02-lifecycle.png`.
+Native picker interaction and Windows runtime need separate observed evidence.

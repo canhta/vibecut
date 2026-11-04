@@ -13,7 +13,7 @@ Build it with `cargo build -p vibecut-cli`; the binary is `target/<profile>/vibe
 |---|---|
 | `vibecut-cli probe <file>` | Probe a media file and report format, duration and streams |
 | `vibecut-cli project new <path>` | Create an empty project, refusing to replace an existing file |
-| `vibecut-cli project info <path>` | Read-only summary of a saved project |
+| `vibecut-cli project info <path>` | Summary plus optional view metadata under the project writer lease |
 | `vibecut-cli exec <project> <command_id> <json>` | Run one engine command and save the result |
 | `vibecut-cli export <project> --out <mp4>` | Export the saved timeline to MP4 |
 | `vibecut-cli subtitle <in> --to <lang>` | Transcribe, translate and export SRT/burned subtitles |
@@ -95,6 +95,14 @@ vibecut-cli exec demo.vibecut batch '{"commands":[
 ]}'
 vibecut-cli project info demo.vibecut --json
 ```
+
+`project.set_view_state` takes `{"zoom":2,"scroll":40,"playhead":0}` (logical-pixel
+scroll, integer-tick playhead), persists optional metadata and leaves editable
+project bytes unchanged. `project.rename` takes `{"name":"My project"}`;
+`project.save` takes `{}`. Missing/corrupt metadata defaults on open. `project new`
+uses the registered creation command; `exec` refuses creation inside an existing
+session. Project info and edits refuse a busy writer instead of reading stale
+state or overwriting another session.
 
 Fields are required; unknown command, parameter and model fields are refused.
 Model wire types are the Serde shapes owned by their crates; the

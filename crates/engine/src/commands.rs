@@ -93,6 +93,10 @@ fn required_option<'de, D: serde::Deserializer<'de>, T: Deserialize<'de>>(
     Option::<T>::deserialize(d)
 }
 commands! {
+    CreateProject, "project.create", "Create project" { id: project::ProjectId, name: NfcText };
+    RenameProject, "project.rename", "Rename project" { name: NfcText };
+    SaveProject, "project.save", "Save project" {};
+    SetViewState, "project.set_view_state", "Set timeline view" { zoom: f64, scroll: f64, playhead: Tick };
     ExportSubtitles, "export_subtitles", "Export subtitle file" { track: TrackId, format: captions::Format, languages: Vec<captions::LanguageTag>, path: std::path::PathBuf, overwrite: bool };
     BurnSubtitles, "burn_subtitles", "Burn subtitles into MP4" { range: time::TimeRange, languages: Vec<captions::LanguageTag>, style: render::CaptionStyle, portrait: bool, path: std::path::PathBuf, overwrite: bool };
     AddAsset, "add_asset", "Add asset" { asset: SourceAsset };

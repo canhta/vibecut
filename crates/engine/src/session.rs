@@ -25,6 +25,7 @@ pub struct JobTarget {
 }
 /// Owns project editing, bounded history, deferred changes and gesture lifecycle.
 pub struct Session {
+    metadata: project::Metadata,
     identity: Arc<()>,
     revision: Arc<()>,
     state: State,
@@ -55,6 +56,7 @@ impl Session {
             .max()
             .map_or(Some(0), |id| id.checked_add(1));
         Ok(Self {
+            metadata: project::Metadata::default(),
             identity: Arc::new(()),
             revision: Arc::new(()),
             state: State {
@@ -70,6 +72,27 @@ impl Session {
             gesture: None,
             grouping: false,
         })
+    }
+    /// Create the default canvas/timeline through the registered lifecycle command.
+    pub fn create(command: Command, history_limit: usize) -> Result<Self> {
+        match command {
+            Command::CreateProject { id, name } => {
+                Self::new(Project::empty(id, name)?, history_limit)
+            }
+            _ => Err(EditError::Invalid("expected project.create")),
+        }
+    }
+    pub fn metadata(&self) -> &project::Metadata {
+        &self.metadata
+    }
+    /// Load optional sidecar presentation state, outside project history.
+    pub fn restore_metadata(&mut self, metadata: project::Metadata) -> Result<()> {
+        if self.transaction_active() {
+            return Err(EditError::TransactionActive);
+        }
+        metadata.validate()?;
+        self.metadata = metadata;
+        Ok(())
     }
     /// Capture before submitting processing. Old results are rejected even after
     /// edit + undo returns to equal content, or another Session opens the project.
@@ -275,6 +298,32 @@ impl Session {
             return Err(EditError::InvalidParams);
         }
         match command {
+            Command::CreateProject { .. } | Command::SaveProject {} => {
+                return Err(EditError::Invalid(
+                    "lifecycle command requires create or autosave",
+                ));
+            }
+            Command::SetViewState {
+                zoom,
+                scroll,
+                playhead,
+            } => {
+                if self.transaction_active() {
+                    return Err(EditError::TransactionActive);
+                }
+                let view = project::ViewState {
+                    zoom,
+                    scroll,
+                    playhead,
+                };
+                view.validate()?;
+                let changed = self.metadata.view != view;
+                self.metadata.view = view;
+                return Ok(Outcome {
+                    changed,
+                    created: Vec::new(),
+                });
+            }
             Command::BeginGesture {} => return self.start_gesture(),
             Command::CommitGesture {} => return self.finish_gesture(),
             Command::CancelGesture {} => return self.revert_gesture(),

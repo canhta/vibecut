@@ -28,7 +28,10 @@ pub(crate) fn check_budget(command: &Command) -> Result<()> {
             Command::ExportSubtitles { .. } | Command::BurnSubtitles { .. } => {
                 return Err(EditError::Invalid("export commands require job submission"));
             }
-            Command::Undo {}
+            Command::CreateProject { .. }
+            | Command::SaveProject {}
+            | Command::SetViewState { .. }
+            | Command::Undo {}
             | Command::Redo {}
             | Command::BeginGesture {}
             | Command::CommitGesture {}
@@ -133,6 +136,7 @@ pub(crate) fn apply(
     sources: &mut TrimSources,
 ) -> Result<project::Project> {
     match command {
+        Command::RenameProject { name } => data.name = name,
         Command::AddAsset { asset } => data.assets.push(asset),
         Command::AddTrack { name, kind } => {
             let id = TrackId(alloc(next)?);
@@ -419,7 +423,10 @@ pub(crate) fn apply(
         Command::ExportSubtitles { .. } | Command::BurnSubtitles { .. } => {
             return Err(EditError::Invalid("export commands require job submission"));
         }
-        Command::Undo {}
+        Command::CreateProject { .. }
+        | Command::SaveProject {}
+        | Command::SetViewState { .. }
+        | Command::Undo {}
         | Command::Redo {}
         | Command::BeginGesture {}
         | Command::CommitGesture {}

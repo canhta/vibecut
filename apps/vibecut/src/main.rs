@@ -6,11 +6,12 @@ use std::{
     time::{Duration, Instant},
 };
 use vibecut::{
-    Editor, Error, Result,
+    Error, Result,
     capture::Capture,
     catalog::{PreferenceStore, Preferences},
     egui,
-    playback::{AudioPort, Files, Playback},
+    playback::AudioPort,
+    workspace::Workspace,
 };
 
 fn audio(port: Arc<AudioPort>, rate: u32) -> Result<cpal::Stream> {
@@ -50,12 +51,13 @@ fn audio(port: Arc<AudioPort>, rate: u32) -> Result<cpal::Stream> {
     Ok(stream)
 }
 struct Native {
-    editor: Editor,
+    workspace: Workspace,
     store: PreferenceStore,
     _stream: Option<cpal::Stream>,
-    _writer: Option<project::WriterLease>,
+    audio_port: Option<Arc<AudioPort>>,
     smoke: Option<Smoke>,
     capture: Option<Capture>,
+    observe_create: bool,
 }
 struct Smoke {
     started: Instant,
@@ -68,8 +70,41 @@ struct Smoke {
 }
 impl eframe::App for Native {
     fn logic(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
-        self.editor.tick();
         ctx.request_repaint_after(Duration::from_millis(8));
+        self.workspace.tick();
+        if self.observe_create && !self.workspace.busy() && self.workspace.error().is_none() {
+            self.observe_create = false;
+            if let Err(e) = self.workspace.create() {
+                tracing::warn!(category="observation_create_failed",error=%e,"Observation project unavailable");
+            }
+        }
+        if let Some(editor) = &mut self.workspace.editor {
+            let port = editor.playback.audio_port();
+            if self
+                .audio_port
+                .as_ref()
+                .is_none_or(|old| !Arc::ptr_eq(old, &port))
+            {
+                self._stream = None;
+                let rate = editor.session.project().data().settings.audio_sample_rate;
+                match audio(port.clone(), rate) {
+                    Ok(stream) => {
+                        editor.playback.set_device_available(true);
+                        self._stream = Some(stream);
+                    }
+                    Err(e) => {
+                        tracing::warn!(category="audio_unavailable",error=%e,"Audio output unavailable");
+                    }
+                }
+                self.audio_port = Some(port);
+                if self.smoke.is_some() && editor.session.project().duration() > time::Tick::ZERO {
+                    let _ = editor.activate("transport.play");
+                }
+            }
+        }
+        let Some(editor) = &self.workspace.editor else {
+            return;
+        };
         if let Some(smoke) = &mut self.smoke {
             ctx.send_viewport_cmd(egui::ViewportCommand::RequestPaintWhileHidden);
             let elapsed = smoke.started.elapsed().as_secs();
@@ -78,10 +113,10 @@ impl eframe::App for Native {
             }
             if elapsed != smoke.last_sample {
                 smoke.last_sample = elapsed;
-                let position = self.editor.playback.position().unwrap_or(time::Tick::ZERO);
-                let frame = self.editor.presented_frame();
-                let budget = self.editor.playback.budget().snapshot().ok();
-                smoke.samples.push(serde_json::json!({"elapsed_seconds":elapsed,"audio_tick":position.0,"video_tick":frame.map(|f|f.0),"decoded_video_tick":self.editor.playback.frame().map(|f|f.at.0),"video_lag_ticks":frame.map(|f|position.0-f.0),"budget_used":budget.as_ref().map(|b|b.used),"budget_limit":budget.as_ref().map(|b|b.limit),"underrun_frames":self.editor.playback.audio_port().underrun_frames(),"playing":self.editor.playback.playing(),"audio_device_failed":self.editor.playback.audio_port().failed(),"occluded":ctx.input(|input|input.viewport().occluded),"error":self.editor.playback.error().map(|e| format!("{e:?}"))}));
+                let position = editor.playback.position().unwrap_or(time::Tick::ZERO);
+                let frame = editor.presented_frame();
+                let budget = editor.playback.budget().snapshot().ok();
+                smoke.samples.push(serde_json::json!({"elapsed_seconds":elapsed,"audio_tick":position.0,"video_tick":frame.map(|f|f.0),"decoded_video_tick":editor.playback.frame().map(|f|f.at.0),"video_lag_ticks":frame.map(|f|position.0-f.0),"budget_used":budget.as_ref().map(|b|b.used),"budget_limit":budget.as_ref().map(|b|b.limit),"underrun_frames":editor.playback.audio_port().underrun_frames(),"playing":editor.playback.playing(),"audio_device_failed":editor.playback.audio_port().failed(),"occluded":ctx.input(|input|input.viewport().occluded),"error":editor.playback.error().map(|e| format!("{e:?}"))}));
             }
             if elapsed >= 5 && !smoke.saved && self.capture.is_none() {
                 match Capture::request(ctx, None, Duration::from_secs(3)) {
@@ -122,12 +157,16 @@ impl eframe::App for Native {
                 {
                     tracing::warn!(category = "evidence_write_failed", kind = ?e.kind(), "Evidence write failed");
                 }
-                ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+                if !self.workspace.busy()
+                    && let Err(e) = self.workspace.persist(None, true, true, true)
+                {
+                    tracing::warn!(category="observation_flush_failed",error=%e,"Observation exit refused");
+                }
             }
         }
     }
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
-        self.editor.ui(ui);
+        self.workspace.ui(ui);
     }
     fn on_exit(&mut self) {
         if let Some(smoke) = &self.smoke {
@@ -147,7 +186,7 @@ impl eframe::App for Native {
                 }
             }
         }
-        if let Err(e) = self.store.save(&self.editor.preferences) {
+        if let Err(e) = self.store.save(&self.workspace.preferences) {
             tracing::warn!(category = "preference_save_failed", error = %e, "Preferences could not be saved");
         }
     }
@@ -181,33 +220,6 @@ fn run() -> Result<()> {
             return Err(Error::Invalid("one project path expected"));
         }
     }
-    let (project, writer) = if let Some(path) = file {
-        let lease = project::WriterLease::acquire(&path)?;
-        let loaded = lease.load()?;
-        (loaded.project, Some(lease))
-    } else {
-        (
-            project::Project::empty(project::ProjectId(1), "Untitled project".into())?,
-            None,
-        )
-    };
-    let rate = project.data().settings.audio_sample_rate;
-    let session = engine::Session::new(project, 100)?;
-    let budget = engine::ByteBudget::new(768 << 20)?;
-    let mut playback = Playback::new(&session, budget, Arc::new(Files))?;
-    let stream = match audio(playback.audio_port(), rate) {
-        Ok(stream) => {
-            playback.set_device_available(true);
-            Some(stream)
-        }
-        Err(e) => {
-            tracing::warn!(category = "audio_unavailable", error = %e, "Audio output unavailable");
-            None
-        }
-    };
-    if smoke.is_some() && session.project().duration() > time::Tick::ZERO {
-        playback.seek(time::Tick::ZERO, true, session.project().clone())?;
-    }
     let home = std::env::var_os("HOME")
         .or_else(|| std::env::var_os("APPDATA"))
         .ok_or(Error::Unsupported("preference directory"))?;
@@ -219,7 +231,8 @@ fn run() -> Result<()> {
             Preferences::default()
         }
     };
-    let editor = Editor::new(session, playback, preferences);
+    let observe_create = smoke.is_some() && file.is_none();
+    let workspace = Workspace::new(store.path().with_file_name("recovery"), preferences, file)?;
     #[cfg(target_os = "macos")]
     let icon_bytes = include_bytes!("../../../assets/app-icon/vibecut-macos-512.png").as_slice();
     #[cfg(not(target_os = "macos"))]
@@ -248,12 +261,13 @@ fn run() -> Result<()> {
         options,
         Box::new(move |_| {
             Ok(Box::new(Native {
-                editor,
+                workspace,
                 store,
-                _stream: stream,
-                _writer: writer,
+                _stream: None,
+                audio_port: None,
                 smoke,
                 capture: None,
+                observe_create,
             }))
         }),
     )?;

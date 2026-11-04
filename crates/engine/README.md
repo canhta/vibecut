@@ -694,3 +694,22 @@ every bilingual pair, SRT plus burned MP4 output, ASR checkpoint reuse on a seco
 run, remote consent refusal with zero calls, credential refusal, catalog filtering
 and a real generated fixture. They establish composition and failure contracts,
 not model accuracy, live provider quality or Windows behavior.
+
+## Project lifecycle and view state
+
+`Session::create(Command::CreateProject { id, name }, history_limit)` consumes the
+registered `project.create` command and uses project's default canvas/timeline.
+`project.rename` is an ordinary edit with undo/redo. `project.set_view_state`
+requires `zoom`, `scroll` and `playhead`; it validates through project and changes
+only `Session::metadata`, outside project undo and committed-project notifications.
+View changes are refused inside gestures/groups/batches. `restore_metadata`
+loads the optional sidecar at open and is also refused during transactions.
+
+`Autosave::open` reads metadata after acquiring its writer lease. Its background
+save writes the project and then the sidecar before publishing a receipt. Desktop
+and CLI use that same lease metadata API. `Autosave::execute("project.save", {})`
+queues the registered save; callers must poll/flush and check acknowledgement.
+`Session::execute` refuses create/save because they require lifecycle ownership;
+commands stay in the one generated registry. Busy destination acquisition before a
+save starts is retryable without poisoning the active autosave owner; publication
+and worker failures retain the existing sticky error policy.
