@@ -10,9 +10,11 @@
 | Human | Product decisions, credentials, Windows hardware and license decisions |
 
 When unsure, route ambiguous correctness work to Codex; explicit recipes to opencode.
-One ticket owns one feature or crate, about 600 changed lines maximum excluding a
-mechanical import. Split larger work before starting unless explicitly authorized; one cohesive new
-crate or feature may exceed the cap without asking (note it in `worker_done`).
+Size a ticket by responsibility, never by line count: one ticket delivers one
+cohesive responsibility (a crate, contract or user-facing feature) with clear
+ownership under [structural admission](../engineering/standards.md#structural-admission).
+Split when a ticket mixes unrelated responsibilities; merge when pieces cannot be
+understood, tested or reviewed apart. Reviewers flag both cramming and over-splitting.
 Stop and ask for conflicting contracts, missing acceptance, unavailable required
 hardware/credentials, license ambiguity or destructive/out-of-scope action. Continue
 independent authorized work while a nonblocking answer is pending.
@@ -119,7 +121,7 @@ dispatch: Codex reviews opencode work; a fresh Codex reviewer reviews Codex work
 `.scratch/<milestone>/reviews/NN-<sha7>.md` using the
 [review template](../engineering/verification.md#reports) and fixes a finding on the
 ticket branch (signed-off commit) only when it is small and clear: obvious fix,
-full context, roughly <= 100 changed lines, no redesign. Larger or design-level findings: verdict `changes`, `worker_done` with the
+full context, no change to responsibilities or design. Larger or design-level findings: verdict `changes`, `worker_done` with the
 review path; the coordinator sends the review to the original implementer dispatch
 (`send` reopens a finished worker), which fixes and returns to the same reviewer
 flow. Findings needing a product decision go to the coordinator. When approved,
