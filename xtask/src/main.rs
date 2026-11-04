@@ -177,12 +177,9 @@ fn names(root: &Path) -> Result<(), String> {
         return Ok(());
     }
     let bytes = fs::read_to_string(&patterns).map_err(|e| e.to_string())?;
-    let args: Vec<_> = bytes
-        .lines()
-        .filter(|s| !s.trim().is_empty())
-        .flat_map(|s| ["-e", s])
-        .collect();
-    if args.is_empty() {
+    let patterns: Vec<_> = bytes.lines().filter(|s| !s.trim().is_empty()).collect();
+    let args: Vec<_> = patterns.iter().flat_map(|s| ["-e", *s]).collect();
+    if patterns.is_empty() {
         return Ok(());
     }
     let mut grep_args = vec!["grep", "-l", "-i", "-E"];
@@ -218,11 +215,7 @@ fn names(root: &Path) -> Result<(), String> {
         "--regexp-ignore-case",
         "--extended-regexp",
     ];
-    let filters: Vec<_> = bytes
-        .lines()
-        .filter(|s| !s.trim().is_empty())
-        .map(|s| format!("--grep={s}"))
-        .collect();
+    let filters: Vec<_> = patterns.iter().map(|s| format!("--grep={s}")).collect();
     log_args.extend(filters.iter().map(String::as_str));
     log_args.push(&range);
     let matches = checked(root, "git", &log_args)?;
@@ -425,7 +418,7 @@ mod tests {
         fs::create_dir_all(ws.0.join(".scratch")).unwrap();
         fs::write(
             ws.0.join(".scratch/forbidden-names.txt"),
-            "forbidden_sentinel\n",
+            "\nforbidden_sentinel\n\nsecond_sentinel\n",
         )
         .unwrap();
         names(&ws.0).unwrap();
