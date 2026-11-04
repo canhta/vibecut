@@ -31,7 +31,11 @@ output paths, not render's detailed receipt.
 parameters, subprocess lease contention, progress, export geometry, keyframed
 opacity decoded from an export, degraded consent and source loss before/during
 export, offline provider/model catalogs,
-subtitle argument refusals and credential refusal before any upload. Oracle tests require external
+subtitle argument refusals and credential refusal before any upload. Mid-job source loss
+uses a synchronous render hook after admission and the first decoded frame,
+then checks the real job result and CLI exit code while preserving the prior output.
+Progress is latest-only and throttled through engine; stderr stages are observational
+and cannot synchronize tests. Oracle tests require external
 FFmpeg/ffprobe: missing tools print a skip, required-oracle mode refuses a skip,
 and found but failing tools fail. Run `cargo xtask ci --require-oracles` for the
 full workspace check and tool/fixture receipts. No speed or memory measurement

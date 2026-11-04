@@ -543,6 +543,31 @@ fn export_project(
     allow_degraded: bool,
     overwrite: bool,
 ) -> Result<Output, CliError> {
+    export_project_with(
+        project_path,
+        output,
+        aspect,
+        allow_degraded,
+        overwrite,
+        engine::submit_export,
+    )
+}
+
+fn export_project_with(
+    project_path: PathBuf,
+    output: PathBuf,
+    aspect: Option<Aspect>,
+    allow_degraded: bool,
+    overwrite: bool,
+    submit: impl FnOnce(
+        &mut JobRunner,
+        CacheKey,
+        Arc<Project>,
+        TimeRange,
+        render::ExportSettings,
+        PathBuf,
+    ) -> Result<(JobId, engine::jobs::CancelToken), EditError>,
+) -> Result<Output, CliError> {
     let loaded = project::load(&project_path)?;
     let project = loaded.project;
     if same_target(&project_path, &output)? {
@@ -598,7 +623,7 @@ fn export_project(
         budget,
         Arc::new(SystemClock::default()),
     )?;
-    let (id, _cancel) = engine::submit_export(
+    let (id, _cancel) = submit(
         &mut runner,
         key,
         Arc::new(project),
@@ -1511,3 +1536,6 @@ mod tests {
         assert_eq!(hex(&[0x00, 0x0f, 0xa5, 0xff]), "000fa5ff");
     }
 }
+
+#[cfg(test)]
+mod export_tests;
