@@ -41,7 +41,7 @@ matches in tracked files and branch commit messages.
 | Decode, mux, export, A/V sync | ffmpeg/ffprobe oracle: stream parameters, frame and sample counts, stated tolerances |
 | Text, compositor, subtitle overlay | Deterministic image goldens incl. Vietnamese combining marks and clipping |
 | Engine, session, jobs | Command integration: refused states, atomicity, undo/redo, cancellation, failure |
-| Desktop interaction | egui_kittest through real commands, plus screenshot and manual observation |
+| Desktop interaction | egui_kittest through real commands via automation ids, plus a screenshot checked against the cited reference and the UI design |
 | Provider adapters | Offline fixtures for schema, errors, retry, consent; separate live test |
 
 Tests exercise public interfaces with injected codec and provider adapters,

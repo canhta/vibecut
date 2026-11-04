@@ -11,6 +11,11 @@
 3. **Learn from references** in `.spikes/repos/` (main checkout): structure and core
    from the core reference, UI/UX and features from the editor references the ticket
    names. Copy useful code under [copy imports](#copy-imports).
+   UI work follows [UI design](../product/ui.md). Choose selectively: for each
+   layout, interaction, shortcut and empty/loading/error state, compare how the
+   references (code, and screenshots in `.spikes/ui-reference/`) solve it, take the
+   best fit for our users and cite it with the reason. A design with no reference
+   basis is marked new and needs coordinator approval before you build it.
 4. **Implement** one ticket. Reuse the existing owner of any logic; re-read shared
    files right before editing them and keep other workers' changes intact. Update the
    owning docs in the same change.

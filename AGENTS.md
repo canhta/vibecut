@@ -7,6 +7,7 @@ Open-source CapCut alternative: a Rust desktop video editor for macOS and Window
 | When you | Read |
 |---|---|
 | judge scope, priority or acceptance | [requirements](docs/product/requirements.md) |
+| design or build UI | [UI design](docs/product/ui.md) |
 | add a crate, dependency edge or contract | [architecture](docs/engineering/architecture.md) |
 | write Rust | [standards](docs/engineering/standards.md), then the README of each crate you touch |
 | start, research, copy, upgrade or commit | [workflows](docs/engineering/workflows.md) |

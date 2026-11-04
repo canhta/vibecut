@@ -3,6 +3,7 @@
 | Owner | Facts |
 |---|---|
 | [Requirements](product/requirements.md) | Principles, scope, providers, languages |
+| [UI design](product/ui.md) | UI principles, design language, reference evidence |
 | [Architecture](engineering/architecture.md) | Crates, dependency edges, contracts, media and time |
 | [Standards](engineering/standards.md) | Rust safety, structure, errors, logging, time and text |
 | [Workflows](engineering/workflows.md) | Ticket loop, research, copy imports, upgrades, commits |
