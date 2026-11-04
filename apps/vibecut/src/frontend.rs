@@ -206,6 +206,12 @@ impl Editor {
         self.tick();
         self.keyboard(ui.ctx());
         let rect = ui.max_rect();
+        let window_fill = if self.preferences.dark {
+            Color32::from_rgb(15, 15, 15)
+        } else {
+            Color32::from_rgb(242, 243, 245)
+        };
+        ui.painter().rect_filled(rect, 0.0, window_fill);
         let top = Rect::from_min_size(rect.min, Vec2::new(rect.width(), 52.0));
         let body = Rect::from_min_max(egui::pos2(rect.left(), top.bottom()), rect.max);
         let timeline_height = body.height() * self.preferences.panels[2];
@@ -230,6 +236,18 @@ impl Editor {
             ("timeline", timeline),
         ] {
             self.panels.insert(id, area);
+            let fill = if id == "header" {
+                if self.preferences.dark {
+                    Color32::from_rgb(19, 19, 19)
+                } else {
+                    Color32::WHITE
+                }
+            } else if self.preferences.dark {
+                Color32::from_rgb(15, 15, 15)
+            } else {
+                Color32::from_rgb(249, 250, 251)
+            };
+            ui.painter().rect_filled(area, 0.0, fill);
             let mut child = ui.new_child(
                 egui::UiBuilder::new()
                     .id_salt(id)
