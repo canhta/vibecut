@@ -1,0 +1,7 @@
+[
+  {"id":"one","text":"Xin chào","range":[16000,32000],"timing":[
+    {"text":"Xin","unit":"word","range":[16000,22000],"provenance":"native"},
+    {"text":"chào","unit":"word","range":[23000,32000],"provenance":"native"}
+  ]},
+  {"id":"two","text":"世界","range":[32000,48000],"timing":[]}
+]

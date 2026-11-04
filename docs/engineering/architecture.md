@@ -71,6 +71,14 @@ reuse that implementation while retaining their own schema. Desktop composition
 may consume captions profiles and text font resolution directly; these dependencies
 do not move processing or command policy into widgets.
 
+AI's offline execution seam is documented in [its crate contract](../../crates/ai/README.md).
+It accepts absolute source-sample audio windows, returns validated recognition with
+explicit missing timing, and converts fully word/segment-timed results to captions'
+Transcript. Character/token layers remain explicit transport data until captions
+admits them. Configuration is versioned and location-tagged; consent binds the
+provider, operation, content, languages, text and source window. Cost bounds are
+per invocation; engine retains aggregate retry/chunk budget accounting.
+
 AI owns upload consent, estimates and provider/model capability validation once;
 transcription, translation and clip suggestion adapters reuse that policy. Consent
 covers the provider, payload and operation; retries/chunks stay within that scope.
