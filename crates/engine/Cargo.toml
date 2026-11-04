@@ -24,6 +24,7 @@ captions = { path = "../captions" }
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.154"
 thiserror = "2.0.21"
+unicode-segmentation = "1.13.3"
 
 blake3 = "1.8.7"
 fs4 = "1.1.0"

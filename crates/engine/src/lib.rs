@@ -2,6 +2,7 @@
 mod budget;
 pub mod cache;
 pub mod clip_boundaries;
+mod clip_export;
 mod commands;
 pub mod jobs;
 pub mod models;
@@ -10,6 +11,10 @@ pub mod recovery;
 pub mod subtitles;
 pub mod translation;
 pub use budget::{BudgetSnapshot, ByteBudget, ByteLease, ByteOwner};
+pub use clip_export::{
+    ClipBatch, ClipBatchRequest, ClipPaths, ClipShort, ClipSubtitlePath, MAX_BATCH_CLIPS,
+    MAX_BATCH_CUE_BYTES, MAX_CLIP_SEGMENTS,
+};
 mod edit;
 mod rendering;
 mod session;
@@ -97,6 +102,8 @@ pub enum EditError {
     Overlap(project::TrackId),
     #[error("invalid edit: {0}")]
     Invalid(&'static str),
+    #[error("clip export refused at short {short}: {reason}")]
+    ClipExport { short: usize, reason: &'static str },
     #[error("unsupported edit: {0}")]
     Unsupported(&'static str),
     #[error("command unwound; transaction rolled back")]

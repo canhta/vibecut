@@ -19,7 +19,7 @@ with a named consumer.
 | text | crates/text | Unicode shaping and rasterization | - |
 | render | crates/render | CPU compositor, caption overlay, audio mix, export execution | time, media, project, captions, text |
 | ai | crates/ai | Provider interfaces, capabilities, consent and cost, AI adapters | time, media, captions |
-| engine | crates/engine | Session, commands, history, recovery scheduling, jobs, cache, adapter selection | time, media, project, captions, text, render, ai |
+| engine | crates/engine | Session, commands, history, recovery scheduling, jobs, cache, adapter selection, clip batch export | time, media, project, captions, text, render, ai |
 | vibecut-cli | apps/vibecut-cli | Headless adapter: CLI arguments, typed exit codes, dispatch, project lease composition and export admission | engine, media, project, render, time |
 | vibecut | apps/vibecut | Desktop app: UI, playback, wgpu compositor, preferences, app controls and inspection | time, engine, media, project, captions, text, render, ai |
 
@@ -46,6 +46,7 @@ README holds the details.
 | Session, commands | engine | Owns immutable Arc<Project> snapshots and bounded history; typed Command and `execute(command_id, params) -> Result<Outcome>`; see [engine contract](../../crates/engine/README.md) |
 | Codec interfaces | media | Reference-counted packets and frames, rational time bases, decode/encode/flush, seek |
 | Export execution | render | Project snapshot, range and settings in; progress and cancellation hooks out |
+| Clip batch export | engine | One job per accepted ordered-segment short, with output naming, cue mapping, per-short cancel/retry; see [engine contract](../../crates/engine/README.md#clip-batch-export) |
 | Local models | ai + engine | ai owns catalog/download consent/integrity and shared transport; engine owns transfers and native ArtifactCache bundles; see [model transfer contract](../../crates/engine/README.md#local-model-transfers) |
 | Clip boundary adjustment | engine | Ordered source segments in; safe frame-snapped ranges and per-edge deltas out; captions owns speech groups, media owns energy measurements; see [engine contract](../../crates/engine/README.md#clip-boundary-adjustment) |
 | Provider interfaces | ai | Transcriber, Aligner, Translator, ClipSuggester; capabilities per model and language; request-scoped consent |
