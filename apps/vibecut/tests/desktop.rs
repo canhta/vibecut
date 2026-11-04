@@ -404,3 +404,225 @@ fn transparent_canvas_preview_matches_black_backed_render() {
         "preview over black must match render's black-backed pixels"
     );
 }
+
+struct PanicOnce(std::sync::atomic::AtomicBool);
+impl vibecut::playback::Sources for PanicOnce {
+    fn create(&self) -> Box<dyn render::SourceProvider> {
+        if self.0.swap(false, std::sync::atomic::Ordering::SeqCst) {
+            panic!("transient worker panic");
+        }
+        Box::new(render::FileSources::default())
+    }
+}
+#[test]
+fn retry_recovers_a_transient_worker_failure() {
+    let session = session();
+    let mut playback = Playback::new(
+        &session,
+        ByteBudget::new(64 << 20).unwrap(),
+        Arc::new(PanicOnce(std::sync::atomic::AtomicBool::new(true))),
+    )
+    .unwrap();
+    let deadline = Instant::now() + Duration::from_secs(5);
+    loop {
+        if playback.poll().is_err() {
+            break;
+        }
+        assert!(Instant::now() < deadline);
+        std::thread::sleep(Duration::from_millis(2));
+    }
+    playback.clear().unwrap();
+    assert!(
+        playback.poll().is_ok(),
+        "retry should replace the failed preview job"
+    );
+}
+
+#[test]
+fn retry_widget_recovers_after_a_transient_panic_and_clears_its_error_state() {
+    let session = session();
+    let playback = Playback::new(
+        &session,
+        ByteBudget::new(64 << 20).unwrap(),
+        Arc::new(PanicOnce(std::sync::atomic::AtomicBool::new(true))),
+    )
+    .unwrap();
+    let editor = Editor::new(session, playback, Preferences::default());
+    let mut harness = Harness::builder()
+        .with_size(egui::vec2(1440.0, 900.0))
+        .build_ui_state(|ui, editor: &mut Editor| editor.ui(ui), editor);
+    let deadline = Instant::now() + Duration::from_secs(5);
+    loop {
+        harness.run_steps(1);
+        if harness.state().playback.error().is_some() {
+            break;
+        }
+        assert!(Instant::now() < deadline);
+        std::thread::sleep(Duration::from_millis(2));
+    }
+    let retry = harness
+        .state()
+        .inspect()
+        .unwrap()
+        .widgets
+        .into_iter()
+        .find(|widget| widget.id == "preview.retry")
+        .unwrap();
+    assert!(
+        harness.state().panels["preview"].contains_rect(retry.rect),
+        "Retry must be inside the player panel: {:?} versus {:?}",
+        retry.rect,
+        harness.state().panels["preview"]
+    );
+    harness
+        .get(By::new().predicate(|node| node.author_id() == Some("preview.retry")))
+        .click();
+    loop {
+        harness.run_steps(1);
+        if harness.state().playback.frame().is_some() {
+            break;
+        }
+        assert!(Instant::now() < deadline);
+        std::thread::sleep(Duration::from_millis(2));
+    }
+    assert!(harness.state().playback.error().is_none());
+    assert!(
+        harness
+            .query(By::new().predicate(|node| node.author_id() == Some("preview.retry")))
+            .is_none()
+    );
+}
+
+struct GatedFailure {
+    calls: std::sync::atomic::AtomicUsize,
+    blocked: std::sync::atomic::AtomicBool,
+    released: std::sync::Mutex<bool>,
+    wake: std::sync::Condvar,
+}
+impl GatedFailure {
+    fn release(&self) {
+        *self.released.lock().unwrap() = true;
+        self.wake.notify_all();
+    }
+}
+impl vibecut::playback::Sources for GatedFailure {
+    fn create(&self) -> Box<dyn render::SourceProvider> {
+        match self.calls.fetch_add(1, std::sync::atomic::Ordering::SeqCst) {
+            0 => panic!("transient worker failure with an active companion"),
+            1 => {
+                self.blocked
+                    .store(true, std::sync::atomic::Ordering::Release);
+                let mut released = self.released.lock().unwrap();
+                while !*released {
+                    released = self.wake.wait(released).unwrap();
+                }
+            }
+            _ => {}
+        }
+        Box::new(render::FileSources::default())
+    }
+}
+// Release a deliberately noncooperating adapter before Playback's joining Drop,
+// including when an assertion fails, so a regression fails instead of hanging CI.
+struct ReleaseFactory(Arc<GatedFailure>);
+impl Drop for ReleaseFactory {
+    fn drop(&mut self) {
+        self.0.release();
+    }
+}
+#[test]
+fn failed_workers_pause_fence_and_join_before_retry_without_blocking_the_action() {
+    let factory = Arc::new(GatedFailure {
+        calls: std::sync::atomic::AtomicUsize::new(0),
+        blocked: std::sync::atomic::AtomicBool::new(false),
+        released: std::sync::Mutex::new(false),
+        wake: std::sync::Condvar::new(),
+    });
+    let session = session();
+    let budget = ByteBudget::new(64 << 20).unwrap();
+    let mut playback = Playback::new(&session, budget.clone(), factory.clone()).unwrap();
+    playback.set_device_available(true);
+    let mut editor = Editor::new(session, playback, Preferences::default());
+    let release = ReleaseFactory(factory.clone());
+    editor
+        .playback
+        .seek(
+            Tick(3 * TICKS_PER_SECOND),
+            true,
+            editor.session.project().clone(),
+        )
+        .unwrap();
+    let port = editor.playback.audio_port();
+    port.fill(&mut [0.0; 960], 0);
+    port.fill(&mut [0.0; 960], 0);
+    let deadline = Instant::now() + Duration::from_secs(5);
+    loop {
+        let failed = matches!(editor.playback.poll(), Err(vibecut::Error::Worker(_)));
+        if failed && factory.blocked.load(std::sync::atomic::Ordering::Acquire) {
+            break;
+        }
+        assert!(Instant::now() < deadline);
+        std::thread::sleep(Duration::from_millis(2));
+    }
+    let at = editor.playback.position().unwrap();
+    let stopped_bytes = budget.snapshot().unwrap().used;
+    assert!(!editor.playback.playing());
+    assert!(editor.playback.frame().is_none());
+    assert!(editor.activate("transport.play").is_err());
+    let mut silence = [1.0; 960];
+    port.fill(&mut silence, 0);
+    assert!(silence.iter().all(|sample| *sample == 0.0));
+    assert_eq!(editor.playback.position().unwrap(), at);
+    let (tx, rx) = std::sync::mpsc::sync_channel(1);
+    std::thread::scope(|scope| {
+        let action = scope.spawn(|| tx.send(editor.activate("preview.retry")).unwrap());
+        let result = rx.recv_timeout(Duration::from_secs(2));
+        if result.is_err() {
+            factory.release();
+        }
+        action.join().unwrap();
+        result.unwrap().unwrap();
+    });
+    for _ in 0..5 {
+        editor.playback.poll().unwrap();
+        editor.activate("preview.retry").unwrap();
+        assert!(!editor.playback.playing());
+        assert_eq!(editor.playback.position().unwrap(), at);
+    }
+    assert_eq!(
+        factory.calls.load(std::sync::atomic::Ordering::SeqCst),
+        2,
+        "obsolete companion must stop before replacement jobs are admitted"
+    );
+    factory.release();
+    let deadline = Instant::now() + Duration::from_secs(5);
+    loop {
+        editor.playback.poll().unwrap();
+        if let Some(frame) = editor.playback.frame() {
+            assert!(frame.epoch > 1);
+            assert!(frame.at <= at);
+            assert_eq!(frame.image.pixels[0], egui::Color32::RED);
+            break;
+        }
+        assert!(Instant::now() < deadline);
+        std::thread::sleep(Duration::from_millis(2));
+    }
+    assert!(editor.playback.error().is_none());
+    assert_eq!(editor.playback.position().unwrap(), at);
+    assert!(
+        budget.snapshot().unwrap().used > stopped_bytes,
+        "replacement pixels must be charged to the original aggregate budget"
+    );
+    assert!(budget.snapshot().unwrap().used <= budget.snapshot().unwrap().limit);
+    editor.activate("transport.play").unwrap();
+    assert!(editor.playback.playing());
+    editor.activate("transport.pause").unwrap();
+    drop(release);
+    drop(port);
+    drop(editor);
+    assert_eq!(
+        budget.snapshot().unwrap().used,
+        0,
+        "shutdown joins replacement workers and releases every lease"
+    );
+}

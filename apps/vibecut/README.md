@@ -61,8 +61,15 @@ retention. All leases share the one injected engine budget. The native default i
 768 MiB, including render's conservative concurrent probe/decode allowances; this
 is an admission ceiling, not resident usage. Pressure or a frame larger than the
 available budget returns a typed error before allocation and shows unavailable.
-Retry/clear invalidates queued output while preserving current position/play state;
-old work cannot publish into the new generation. OS codec/driver allocations and
+Healthy cache clear preserves position/play state and invalidates queued output.
+A terminated preview job pauses transport at the current device-clock position,
+fences old output and cancels its companion. Retry keeps playback paused while
+engine polling joins finished jobs, then resubmits both jobs with the same source
+factory, audio port and aggregate budget. It never blocks the UI waiting for an
+adapter; a noncooperating adapter delays replacement and normal shutdown until it
+returns. Playback can resume explicitly after the jobs are available. Old work
+cannot publish into the new generation, and partial resubmission failure cancels
+any admitted replacement. OS codec/driver allocations and
 allocator overhead require separate RSS measurement.
 
 ## Platforms and evidence

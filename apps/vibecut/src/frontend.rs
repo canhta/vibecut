@@ -134,7 +134,10 @@ impl Editor {
                 }
             }
             "layout.reset" => self.preferences.panels = Preferences::default().panels,
-            "preview.retry" => self.playback.clear()?,
+            "preview.retry" => {
+                self.playback.clear()?;
+                self.error = None;
+            }
             "inspector.project" => self.details = false,
             "inspector.details" => self.details = true,
             _ => return Err(Error::Unsupported("widget action")),
@@ -405,11 +408,18 @@ impl Editor {
                 .strong(),
         );
         ui.add_space(12.0);
+        let mut footer_height = 86.0;
+        if !self.playback.device_available() {
+            footer_height += 24.0;
+        }
+        if self.error.is_some() || self.playback.error().is_some() {
+            footer_height += 80.0;
+        }
         let area = Rect::from_min_size(
             ui.cursor().min,
             Vec2::new(
                 ui.available_width(),
-                (ui.available_height() - 86.0).max(40.0),
+                (ui.available_height() - footer_height).max(0.0),
             ),
         );
         ui.painter().rect_filled(area, 0.0, Color32::BLACK);
@@ -469,8 +479,7 @@ impl Editor {
             );
         }
         ui.advance_cursor_after_rect(area);
-        let ready =
-            self.session.project().duration() > Tick::ZERO && self.playback.device_available();
+        let ready = self.session.project().duration() > Tick::ZERO && self.playback.can_play();
         ui.horizontal(|ui| {
             if self.button(ui, "transport.back", Text::Back, true) {
                 self.action("transport.back");

@@ -2,7 +2,8 @@
 use crate::{Error, Result, egui};
 use engine::cache::{ArtifactKind, CacheKey, KeyInputs};
 use engine::jobs::{
-    CancelToken, JobBytes, JobKind, JobRunner, JobSpec, ResourceClass, RunnerConfig, SystemClock,
+    CancelToken, JobBytes, JobKind, JobRunner, JobSpec, JobState, ResourceClass, RunnerConfig,
+    SystemClock,
 };
 use engine::{ByteBudget, ByteLease, ByteOwner, Session};
 use std::{
@@ -159,10 +160,18 @@ struct Output {
     frames: VecDeque<Arc<Frame>>,
     error: Option<Arc<Error>>,
 }
+enum Workers {
+    Running,
+    Failed(Arc<engine::EditError>),
+    Restarting,
+}
 pub struct Playback {
     runner: JobRunner,
     cancels: Vec<CancelToken>,
     jobs: Vec<engine::jobs::JobId>,
+    workers: Workers,
+    spec: JobSpec,
+    sources: Arc<dyn Sources>,
     request: Arc<Mutex<Request>>,
     output: Arc<Mutex<Output>>,
     port: Arc<AudioPort>,
@@ -193,7 +202,7 @@ impl Playback {
             backoff: Duration::from_millis(10),
             progress_interval: Duration::from_millis(20),
         };
-        let mut runner = JobRunner::new(config, budget.clone(), Arc::new(SystemClock::default()))?;
+        let runner = JobRunner::new(config, budget.clone(), Arc::new(SystemClock::default()))?;
         let key = CacheKey::new(KeyInputs {
             kind: ArtifactKind::Preview,
             source: [0; 32],
@@ -212,17 +221,38 @@ impl Playback {
             input: key,
             bytes: JobBytes::default(),
         };
-        let mut cancels = Vec::new();
-        let mut jobs = Vec::new();
+        let mut playback = Self {
+            runner,
+            cancels: Vec::new(),
+            jobs: Vec::new(),
+            workers: Workers::Running,
+            spec,
+            sources,
+            request,
+            output,
+            port,
+            budget,
+            shown: None,
+            last_callback: (0, std::time::Instant::now()),
+            device_available: false,
+        };
+        playback.submit_workers()?;
+        playback.runner.tick()?;
+        Ok(playback)
+    }
+    // Called only at construction or after every obsolete job is terminal/joined.
+    fn submit_workers(&mut self) -> Result<()> {
+        self.cancels.clear();
+        self.jobs.clear();
         for audio in [true, false] {
             let (request, output, port, sources, budget) = (
-                request.clone(),
-                output.clone(),
-                port.clone(),
-                sources.clone(),
-                budget.clone(),
+                self.request.clone(),
+                self.output.clone(),
+                self.port.clone(),
+                self.sources.clone(),
+                self.budget.clone(),
             );
-            let (job, cancel) = runner.submit(spec, move |hooks| {
+            let submitted = self.runner.submit(self.spec, move |hooks| {
                 while !hooks.cancelled() {
                     let epoch = port.epoch.load(Ordering::Acquire);
                     let result = if audio {
@@ -244,23 +274,61 @@ impl Playback {
                     }
                 }
                 Ok(Vec::new())
-            })?;
-            cancels.push(cancel);
-            jobs.push(job);
+            });
+            match submitted {
+                Ok((job, cancel)) => {
+                    self.cancels.push(cancel);
+                    self.jobs.push(job);
+                }
+                Err(error) => {
+                    for cancel in &self.cancels {
+                        cancel.cancel();
+                    }
+                    let error = Arc::new(error);
+                    self.workers = Workers::Failed(error.clone());
+                    return Err(Error::Worker(error));
+                }
+            }
         }
-        runner.tick()?;
-        Ok(Self {
-            runner,
-            cancels,
-            jobs,
-            request,
-            output,
-            port,
-            budget,
-            shown: None,
-            last_callback: (0, std::time::Instant::now()),
-            device_available: false,
-        })
+        self.workers = Workers::Running;
+        Ok(())
+    }
+    fn poll_workers(&mut self) -> Result<()> {
+        // tick joins only finished handles; Retry must never wait on decoding IO.
+        self.runner.tick()?;
+        if let Workers::Failed(error) = &self.workers {
+            return Err(Error::Worker(error.clone()));
+        }
+        if matches!(self.workers, Workers::Restarting) {
+            let stopped = self.jobs.iter().all(|job| {
+                self.runner.snapshot(*job).is_some_and(|snapshot| {
+                    matches!(
+                        snapshot.state,
+                        JobState::Completed | JobState::Cancelled | JobState::Failed
+                    )
+                })
+            });
+            if stopped {
+                self.submit_workers()?;
+                self.runner.tick()?;
+            }
+            return Ok(());
+        }
+        let error = self.jobs.iter().find_map(|job| {
+            self.runner
+                .snapshot(*job)
+                .and_then(|snapshot| snapshot.error)
+        });
+        if let Some(error) = error {
+            let request = read_request(&self.request)?;
+            self.seek(self.position()?, false, request.project)?;
+            for cancel in &self.cancels {
+                cancel.cancel();
+            }
+            self.workers = Workers::Failed(error.clone());
+            return Err(Error::Worker(error));
+        }
+        Ok(())
     }
     pub fn audio_port(&self) -> Arc<AudioPort> {
         self.port.clone()
@@ -270,6 +338,10 @@ impl Playback {
     }
     pub fn device_available(&self) -> bool {
         self.device_available && !self.port.failed()
+    }
+    /// Device and preview jobs are available; the caller also checks timeline content.
+    pub fn can_play(&self) -> bool {
+        self.device_available() && matches!(self.workers, Workers::Running)
     }
     pub fn budget(&self) -> &ByteBudget {
         &self.budget
@@ -289,6 +361,9 @@ impl Playback {
         }
         if playing && !self.device_available() {
             return Err(Error::PreviewUnavailable("audio device"));
+        }
+        if playing && !matches!(self.workers, Workers::Running) {
+            return Err(Error::PreviewUnavailable("preview workers"));
         }
         let mut request = self.request.lock().map_err(|_| Error::Poisoned)?;
         self.port.playing.store(false, Ordering::Release);
@@ -316,25 +391,35 @@ impl Playback {
         );
         Ok(())
     }
-    /// Clearing while playing preserves the clock and invalidates all queued frames.
+    /// Healthy clearing preserves transport. After worker failure, Retry keeps it
+    /// paused and replaces both jobs once cancellation has finished, without waiting.
     pub fn clear(&mut self) -> Result<()> {
+        match self.poll_workers() {
+            Err(Error::Worker(_)) if matches!(self.workers, Workers::Failed(_)) => {
+                self.workers = Workers::Restarting;
+                return Ok(());
+            }
+            result => result?,
+        }
+        if matches!(self.workers, Workers::Restarting) {
+            return Ok(());
+        }
         let request = self.request.lock().map_err(|_| Error::Poisoned)?.clone();
         self.seek(self.position()?, request.playing, request.project)
     }
     pub fn error(&self) -> Option<Arc<Error>> {
+        if let Workers::Failed(error) = &self.workers {
+            return Some(Arc::new(Error::Worker(error.clone())));
+        }
         self.output.lock().ok().and_then(|out| out.error.clone())
     }
     pub fn frame(&self) -> Option<&Arc<Frame>> {
         self.shown.as_ref()
     }
     pub fn poll(&mut self) -> Result<()> {
-        self.runner.tick()?;
-        for job in &self.jobs {
-            if let Some(snapshot) = self.runner.snapshot(*job)
-                && let Some(error) = snapshot.error
-            {
-                return Err(Error::Worker(error));
-            }
+        self.poll_workers()?;
+        if matches!(self.workers, Workers::Restarting) {
+            return Ok(());
         }
         let submitted = self.port.submitted.load(Ordering::Acquire);
         if submitted != self.last_callback.0 {
