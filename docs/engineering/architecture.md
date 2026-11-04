@@ -46,7 +46,10 @@ README holds the details.
 | Provider interfaces | ai | Transcriber, Aligner, Translator; capabilities per model and language; request-scoped consent |
 
 **Jobs.** Engine wraps all media, render and AI execution in its job runner and
-owns scheduling, retries, checkpoints and caches. Processing crates receive
+owns scheduling, retries, checkpoints and the aggregate byte policy; see the
+[engine job contract](../../crates/engine/README.md#background-jobs-and-byte-policy).
+Persistent job artifacts use content keys; frame/glyph caches stay with their data
+owners and share accounting leases. Processing crates receive
 progress and cancellation hooks and never build their own.
 
 **Commands.** Every project edit is an engine command with a stable ID, label,

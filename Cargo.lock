@@ -457,12 +457,15 @@ dependencies = [
 name = "engine"
 version = "0.1.0"
 dependencies = [
+ "ai",
+ "blake3",
  "captions",
  "media",
  "project",
  "proptest",
  "serde",
  "serde_json",
+ "tempfile",
  "thiserror",
  "time 0.1.0",
 ]

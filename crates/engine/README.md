@@ -1,9 +1,9 @@
 # engine
 
-Headless command execution, Session ownership and project-only snapshot history.
-Jobs, scheduling, processing adapters and caches are excluded from this slice;
-processing algorithms remain with their domain owners. No widgets, device state,
-app preferences or platform API is required.
+Headless command execution, Session ownership, project-only snapshot history,
+bounded background jobs and content-addressed artifact storage. Processing
+algorithms and decoded/raster caches remain with their domain owners. No widgets,
+device state, app preferences or platform API is required.
 
 ## Public entry points
 
@@ -116,7 +116,7 @@ initial allocation. Project and source constructors retain their own limits.
 
 Errors are typed `EditError` categories with safe IDs/static diagnostics and
 retained project/time/caption sources. No raw JSON diagnostics or parameter text is
-returned. There is no command IO, retry or cancellation in this slice.
+returned. Commands perform no IO or retries; processing lifecycle is described below.
 
 ## Verification and performance
 
@@ -139,3 +139,133 @@ command rollback checkpoints retain bounded collections of Arc references. Batch
 child validation consumes each candidate without another clone. Media bytes and
 decoded frames are never copied by this crate. Byte-budgeted history and larger
 real-world drag latency remain unverified; no bounded-RSS claim is made.
+
+## Background jobs and byte policy
+
+`jobs::JobRunner::new(config, budget, clock)` schedules blocking adapters on std
+threads. `submit(spec, task)` returns a JobId and CancelToken; `tick()` joins
+finished workers, admits queued work and observes progress. The application calls
+it from its event loop. `JobContext` implements `ai::ExecutionHooks`; other domain
+owners receive its cancellation/progress functions through their own hooks.
+Engine disables ai's default native feature: composing an adapter is an app choice.
+The task closure returns complete bytes or a typed `EditError` with retained AI/IO
+sources. It must not apply commands or publish partial files. Independently complete
+ASR chunks can be committed as checkpoints inside a task.
+
+Source-documented rationale: existing AI adapters are blocking, Send + Sync and
+hook-driven, so std threads meet the current execution contract without adding an
+async runtime. `thread::Builder::spawn` returns OS creation failures; executing
+closures run inside `catch_unwind`. `shutdown` and Drop cancel and join all active
+workers. Adapters must check cancellation and put finite timeouts on blocking IO;
+a noncooperating adapter can delay shutdown. Abort/OOM cannot be recovered.
+
+One shared `ByteBudget` is cloned into every owner. Its snapshot publishes total
+used/limit and per-owner bytes for decoded frames, compositor intermediates,
+in-flight export, persistent artifacts, cache readers/staging and job results.
+`reserve(owner, bytes)` returns a lifetime-bound lease; owners reserve **before**
+allocating, including both overlapping batches and actual pixel storage. The
+engine defines policy; frame/glyph inner loops stay in their data-owning crates.
+Reservations are declared allocation ceilings, not an allocator sandbox or RSS
+measurement. Captured task data is caller-owned and must be bounded; submission
+cannot inspect arbitrary closures. The same reservation must not be charged a
+second time by its adapter. Preferences/75 supplies the aggregate limit, rather
+than allocating the whole limit independently to each cache.
+
+RunnerConfig admits 1..=16 workers per CPU/GPU-encoder/network class, 1..=10,000
+pending jobs and 1..=10,000 terminal results. Admission checks the sum of declared
+work and maximum result bytes against the aggregate. Queue-full submission returns
+`QueueFull`. Resource/byte-blocked tasks stay queued while other classes can run.
+Result memory is reserved before execution; returned Vec capacity must fit that
+reservation. Working reservations release on completion or backoff. Terminal
+results keep their reservation until taken/dropped or evicted oldest-first at the
+retention bound or to make room for new work. Consumers must handle an evicted ID
+as absent. Outputs taken by consumers keep accounting leases until dropped.
+
+`drain_events()` is a coalescing event channel: one latest snapshot per admitted or
+retained job, bounded by pending + configured concurrency + terminal retention.
+Intermediate events can be replaced; this is not an audit log. Worker progress is
+finite 0..=1 and accepts at most one update per configured interval (minimum 10 ms,
+including stage changes); `tick` forwards only changed snapshots. Terminal and
+cancelling states bypass this progress limit. Slow consumers cannot block workers.
+Cancellation is checked before execution and again before promoting success;
+late partial success is discarded. Failure never yields a JobOutput.
+
+Only Transcribe/Translate jobs in the Network class retry NetworkTransient;
+all other errors and local/preview/export/import jobs run once. Retry attempts are
+bounded to 1..=10, with configured exponential backoff through an injected monotonic
+Clock. Workers/bytes release during backoff. If the pending queue filled while the
+attempt ran, retry is refused by retaining the typed transient failure. The closure
+must revalidate request consent and aggregate monetary authorization on every
+attempt; the runner never grants consent or performs automatic provider fallback.
+
+`submit_for_session(session, spec, task)` binds its JobOutput to the original
+Session/revision; `output.apply(session, command)` uses that stored identity.
+Jobs submitted without a Session cannot apply edits through this method.
+`Session::job_target()` also captures the identity for externally adapted work. `apply_job_result(target, command)` refuses stale identity and active
+previews/groups, then uses the normal atomic command boundary. Every changed edit,
+undo/redo and changed preview invalidates older targets, even if undo restores
+equal content. Failed transactions may conservatively invalidate them too.
+Call `saved()` after a successful save; it refuses an active transaction and
+invalidates pre-save targets. Opening another Session gives a new identity.
+A valid old artifact may remain cached without being applied.
+
+## Reuse and ASR checkpoints
+
+`cache::CacheKey::new(KeyInputs)` hashes versioned, length-delimited BLAKE3 inputs.
+Owners supply canonical normalized settings and semantic content hashes (not paths,
+Debug strings or unstable JSON map order). Provider/model/version fields admit
+1..=256 bytes each; settings admit at most 1 MiB. Every key includes source content,
+provider/model/version, settings, transcript, cue, clip-range and translation
+fingerprints; unused fields are zero. A changed input yields a different key,
+without a generic dependency graph. Artifact kinds and their additional identity:
+
+| Artifact | Inputs supplied by its domain owner |
+|---|---|
+| SpeechAudio | source content, exact source range, sample format/rate, conversion version |
+| AsrChunk | speech/source content, exact invocation sample range, provider/model/version, decoding/language settings |
+| Transcript | finalized chunk identities, recognition/assembly settings and version |
+| Translation | transcript/text content, source/target language, provider/model/version/settings |
+| Cues | transcript, translations, language profile and segmentation settings/version |
+| Preview | cues, clip/source ranges, compositor/version and pixel/audio settings |
+
+`ArtifactCache::open` owns one exclusive cache directory and rebuilds bounded
+metadata after restart. Use only one live writer per directory; application
+placement owns that exclusivity. It removes atomic staging debris and malformed
+canonical entries with a diagnostic count. Unrecognized files are skipped and
+never deleted; they are outside cache accounting. Directory scanning streams metadata;
+excess entries evict without reading their payloads. Headers bind the canonical
+key; `get` checks admitted size, header and payload digest before returning a hit.
+Corruption/missing files return `CacheCorrupt` and remove the entry, so a caller can
+record the typed diagnostic and recompute. Other IO errors retain their source.
+
+`put` commits a complete artifact through project's synced atomic-file writer.
+The 72-byte envelope is charged along with payload, so even empty entries consume
+budget. The shared budget covers persistent bytes and the temporary envelope/read
+allocation; put refuses an artifact whose envelope exceeds half the aggregate
+limit (`ArtifactTooLarge`), because staging and disk must fit together. Pressure
+evicts least-recently-used unpinned entries by bytes; max_entries also bounds
+metadata. Reopen resets recency. A read returns an explicit ArtifactLease pin,
+with separately charged read memory. Eviction and `clear` skip pinned files;
+clear returns the count still in use and a later clear removes them after release.
+Put cannot replace a pinned key. Dropping the cache keeps outstanding reader bytes
+and disk charges alive through their leases; closed, unleased directories are
+reaccounted on next open. OS/allocator overhead and unopened cache directories are
+outside this active-engine accounting.
+
+ASR resume stores **only independently complete invocation chunks**, each under
+its exact content/range/model/settings key. A restarted job probes those keys,
+reuses valid chunks, computes missing ones and assembles a final output only after
+all chunks succeed. The public-job crash test commits chunk one, unwinds before
+whole-result completion, reopens the cache and proves only chunk two executes.
+This establishes checkpoint mechanics with synthetic bytes, not speech-boundary
+quality for long recordings. Encoded-export resume is unsupported here; /09 owns
+independently finalized segments, manifest/codec/source identity and timestamp
+validation. No partial encoded file is treated as a reusable artifact.
+
+Observed verification: `tests/jobs.rs` exercises actual submission with controlled
+cancellation, failure, unwind, oversized results, deterministic retry/backoff,
+resource/queue pressure, 200 completions with stable entry/charged-byte bounds,
+semantic key invalidation, restart checkpoints, corruption, byte eviction, pinning,
+clear during use and stale results after edit/undo/save/Session switch.
+No new media/render algorithm is introduced; throughput, RSS, provider quality and
+Windows runtime behavior remain unverified by these synthetic lifecycle tests.

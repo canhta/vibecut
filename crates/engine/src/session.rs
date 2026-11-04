@@ -17,8 +17,16 @@ struct State {
     next_id: Option<u64>,
     change: Option<Arc<Project>>,
 }
+/// Opaque identity for exactly one Session revision, including save boundaries.
+#[derive(Clone)]
+pub struct JobTarget {
+    session: Arc<()>,
+    revision: Arc<()>,
+}
 /// Owns project editing, bounded history, deferred changes and gesture lifecycle.
 pub struct Session {
+    identity: Arc<()>,
+    revision: Arc<()>,
     state: State,
     limit: usize,
     gesture: Option<State>,
@@ -47,6 +55,8 @@ impl Session {
             .max()
             .map_or(Some(0), |id| id.checked_add(1));
         Ok(Self {
+            identity: Arc::new(()),
+            revision: Arc::new(()),
             state: State {
                 project: Arc::new(project),
                 undo: VecDeque::new(),
@@ -60,6 +70,34 @@ impl Session {
             gesture: None,
             grouping: false,
         })
+    }
+    /// Capture before submitting processing. Old results are rejected even after
+    /// edit + undo returns to equal content, or another Session opens the project.
+    pub fn job_target(&self) -> JobTarget {
+        JobTarget {
+            session: self.identity.clone(),
+            revision: self.revision.clone(),
+        }
+    }
+    /// Call at a successful save boundary; processing started before it is stale.
+    pub fn saved(&mut self) -> Result<()> {
+        if self.transaction_active() {
+            return Err(EditError::TransactionActive);
+        }
+        self.end_merge();
+        self.revision = Arc::new(());
+        Ok(())
+    }
+    pub fn apply_job_result(&mut self, target: &JobTarget, command: Command) -> Result<Outcome> {
+        if !Arc::ptr_eq(&self.identity, &target.session)
+            || !Arc::ptr_eq(&self.revision, &target.revision)
+        {
+            return Err(EditError::StaleResult);
+        }
+        if self.transaction_active() {
+            return Err(EditError::TransactionActive);
+        }
+        self.apply(command)
     }
     /// Current immutable snapshot, including a gesture/group preview while active.
     pub fn project(&self) -> &Arc<Project> {
@@ -206,7 +244,12 @@ impl Session {
         let before = self.state.clone();
         let gesture = self.gesture.clone();
         match catch_unwind(AssertUnwindSafe(|| run(self))) {
-            Ok(Ok(value)) => Ok(value),
+            Ok(Ok(value)) => {
+                if !Arc::ptr_eq(&before.project, &self.state.project) {
+                    self.revision = Arc::new(());
+                }
+                Ok(value)
+            }
             Ok(Err(error)) => {
                 self.state = before;
                 self.gesture = gesture;
