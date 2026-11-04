@@ -1,4 +1,5 @@
 //! Offline provider policy and validated transcription/alignment/translation execution.
+pub mod anthropic;
 mod assembly;
 mod contracts;
 pub mod elevenlabs;

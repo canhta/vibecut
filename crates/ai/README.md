@@ -408,7 +408,7 @@ official OpenAI base URL is admitted. Exact languages are `vi`, `en`, `zh`,
 `zh-Hans`, `zh-Hant` for source; target Chinese must select `zh-Hans` or `zh-Hant`
 explicitly. All six ordered vi/en/zh directions are supported by the contract;
 ASR-only models cannot construct this translator. Anthropic is the other recorded
-product choice, owned by subtitle/24; this ticket does not imply it is implemented.
+product choice and is implemented below.
 
 Requests use Responses `text.format` strict JSON schema, no tools, synchronous
 execution, `store=false`, `background=false`, standard service tier, and an 8192
@@ -439,6 +439,48 @@ attempt ceiling and aggregate authorization; provider code never retries or edit
 projects. Digits-set mismatch yields cue-ID warnings for numbers/units review;
 this is advisory, cannot validate translated units or distinguish equivalent dates,
 and intentionally does not compare digit multiplicity.
+
+### Anthropic translator
+
+`anthropic::AnthropicTranslator` implements the same `Translator` contract and
+`TranslationWindow` validation with Claude Sonnet 5.5 (`claude-sonnet-5-5`), mode
+`context-window`. It admits only backend `anthropic` and the official base URL
+`https://api.anthropic.com/v1`; proxies, lookalike hosts and other version paths are
+refused. Composition resolves `ANTHROPIC_API_KEY` for development or the OS keychain
+and injects it as `transport::ApiKey`; the key is sent as `x-api-key` with
+`anthropic-version: 2026-10-21` and is never serialized or logged.
+
+`anthropic::MessagesClient` is the reusable Messages transport for later LLM
+operations such as p1-clips/01: it owns the endpoint, headers, body cap and typed
+wire errors. Translation sends synchronous Messages with `stream=false`,
+`thinking={"type":"between_tools"}` (Sonnet 5.5 rejects `disabled`), an 8192
+output-token ceiling, and a strict `output_config.format` JSON schema. Responses
+must be one complete message with a text block, `end_turn`, no refusal and valid
+IDs; thinking blocks are ignored. Schema joins transport transients as
+engine-retryable; refusals, incomplete results, auth/quota/consent/cost failures do
+not retry and no provider fallback is automatic.
+
+The Anthropic disclosure is separate from OpenAI and transcription: Anthropic states
+retained data is never used for training without express permission, prompts/outputs
+are not retained by default except Covered Models (30 days; Sonnet 5.5 is not one),
+structured-output schemas are cached up to 24 hours, and ZDR is an organization-level
+arrangement enabled on request. Account-specific retention/ZDR status is unknown to
+this adapter and must be shown honestly. Sources checked 2026-11-04:
+[Messages](https://platform.claude.com/docs/en/api/messages),
+[structured outputs](https://platform.claude.com/docs/en/build-with-claude/structured-outputs),
+[data retention](https://platform.claude.com/docs/en/manage-claude/api-and-data-retention),
+[pricing](https://platform.claude.com/docs/en/about-claude/pricing).
+
+The per-attempt USD upper bound is also 344,064 micro-USD (Sonnet 5.5 list prices
+$2 input / $10 output per 1M tokens) with the same conservative byte ceiling. It is
+deliberately loose, not a billing measurement or quality claim. Offline
+`tests/anthropic.rs` covers six directions with explicit Hans/Hant targets, strict
+wire/schema shape, context/glossary/style consent invalidation, numbers/glossary
+validation, refusal/incomplete/oversized/error mapping, redaction and endpoint
+admission. The ignored live six-direction test requires `VIBECUT_LIVE_AI=1` and
+`ANTHROPIC_API_KEY`; a consented run is recorded in the ticket report. Prompt caching
+is not enabled: windows are short, independent and below the useful cache threshold,
+and no cached user content is needed.
 
 Offline `tests/translation.rs` covers all direction/script request configurations,
 strict wire shape, context/glossary/style consent invalidation, exact ID rules,
