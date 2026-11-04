@@ -1,0 +1,36 @@
+name: Media dependencies
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { runner: macos-15, platform: macos-aarch64 }
+          - { runner: macos-15, platform: macos-x86_64 }
+          - { runner: windows-latest, platform: windows-x86_64 }
+          - { runner: windows-latest, platform: windows-aarch64 }
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install Rust
+        run: rustup toolchain install
+      - name: Install macOS build tools
+        if: runner.os == 'macOS'
+        run: brew install cmake pkgconf nasm
+      - name: Resolve current LGPL libraries
+        run: cargo xtask ffmpeg --target ${{ matrix.platform }}
+      - name: Package cache with recipes and corresponding sources
+        shell: bash
+        run: tar -czf "ffmpeg-${{ matrix.platform }}.tar.gz" -C "$HOME/.cache/vibecut/ffmpeg" "${{ matrix.platform }}"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: ffmpeg-${{ matrix.platform }}
+          path: ffmpeg-*.tar.gz
+          if-no-files-found: error

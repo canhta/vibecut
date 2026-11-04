@@ -8,11 +8,13 @@ silently stopping. Workspace Clippy denies panic shortcuts outside tests;
 and AI responses as hostile: use `get()`, checked arithmetic, nonzero divisors
 and capped input-sized allocations. Review these boundaries with focused tests.
 
-Workspace Rust lints forbid unsafe code except in the single OS-codec FFI crate:
-it overrides the workspace policy with `unsafe_code = "deny"`, permits unsafe only
-in specific FFI modules with `#[allow(unsafe_code)]`, documents each unsafe block
-with `// SAFETY:`, and exposes a safe `Result` API. No other exception is admitted.
-[Architecture](architecture.md#media-and-time) owns exact edit/timing representation.
+Workspace Rust lints forbid unsafe code except in `media`, the sole FFmpeg
+boundary. That crate overrides the workspace policy with `unsafe_code = "deny"`,
+permits unsafe only in specific FFI modules with `#[allow(unsafe_code)]`, documents
+each unsafe block with `// SAFETY:`, and exposes a safe `Result` API. Prefer
+`ffmpeg-next` safe APIs; direct FFI fills only concrete safety/API gaps. Do not
+expose raw pointers or GPU plane slices. No other exception is admitted.
+[Architecture](architecture.md#media-and-time) owns timing and frame ownership.
 
 ## Structural admission
 

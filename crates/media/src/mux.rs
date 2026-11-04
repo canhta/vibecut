@@ -1,0 +1,121 @@
+use crate::{CodecParameters, MediaError, Packet, Result, StreamInfo, TimeBase, error, init};
+use ffmpeg_next as ff;
+use std::fs::File;
+use std::path::Path;
+
+#[derive(Clone, Copy, Debug)]
+pub enum Container {
+    Mp4,
+    Mov,
+    WebM,
+}
+impl Container {
+    fn name(self) -> &'static str {
+        match self {
+            Self::Mp4 => "mp4",
+            Self::Mov => "mov",
+            Self::WebM => "webm",
+        }
+    }
+}
+/// Streaming container output. Callers write to a temporary file and promote it
+/// only after finish succeeds; dropping never hides a failed trailer as success.
+pub struct Muxer {
+    output: ff::format::context::Output,
+    started: bool,
+    time_bases: Vec<TimeBase>,
+    sink: File,
+}
+impl Muxer {
+    pub fn create(path: impl AsRef<Path>, container: Container) -> Result<Self> {
+        Self::new(File::create(path)?, container)
+    }
+    pub fn new(writer: File, container: Container) -> Result<Self> {
+        init()?;
+        let sink = writer.try_clone()?;
+        let io = ff::format::context::StreamIo::from_write_seek(writer)
+            .map_err(error("allocate output I/O"))?;
+        let output = ff::format::output_to_stream(io, None, Some(container.name()))
+            .map_err(error("create muxer"))?;
+        Ok(Self {
+            output,
+            started: false,
+            time_bases: Vec::new(),
+            sink,
+        })
+    }
+    pub fn add_stream(&mut self, stream: &StreamInfo) -> Result<usize> {
+        self.add_parameters(&stream.parameters, stream.time_base)
+    }
+    pub fn add_parameters(
+        &mut self,
+        parameters: &CodecParameters,
+        time_base: TimeBase,
+    ) -> Result<usize> {
+        if self.started {
+            return Err(MediaError::Invalid("add streams before first packet"));
+        }
+        if self.time_bases.len() >= 256 {
+            return Err(MediaError::TooLarge("mux stream count"));
+        }
+        let mut stream = self
+            .output
+            .add_stream(ff::encoder::find(ff::codec::Id::None))
+            .map_err(error("add mux stream"))?;
+        stream.set_parameters(parameters.0.clone());
+        stream.set_time_base(time_base.rational());
+        let index = stream.index();
+        self.time_bases.push(time_base);
+        Ok(index)
+    }
+    fn start(&mut self) -> Result<()> {
+        if !self.started {
+            if self.time_bases.is_empty() {
+                return Err(MediaError::Invalid("muxer has no streams"));
+            }
+            self.output
+                .write_header()
+                .map_err(error("write container header"))?;
+            for (i, base) in self.time_bases.iter_mut().enumerate() {
+                *base = TimeBase::from_ff(
+                    self.output
+                        .stream(i)
+                        .ok_or(MediaError::Invalid("output stream"))?
+                        .time_base(),
+                )?;
+            }
+            self.started = true;
+        }
+        Ok(())
+    }
+    /// Packet buffers are retained by reference; only metadata is rescaled into
+    /// the final mux time base. FFmpeg owns codec padding and edit-list creation.
+    pub fn write_packet(&mut self, track: usize, packet: &Packet) -> Result<()> {
+        packet.pts()?;
+        packet.dts()?;
+        packet.duration()?;
+        if track >= self.time_bases.len() {
+            return Err(MediaError::Invalid("output track"));
+        }
+        self.start()?;
+        let target = *self
+            .time_bases
+            .get(track)
+            .ok_or(MediaError::Invalid("output track"))?;
+        let mut packet_copy = crate::ffi::reference_packet(&packet.inner)?;
+        packet_copy.set_stream(track);
+        packet_copy.set_position(-1);
+        packet_copy.rescale_ts(packet.time_base.rational(), target.rational());
+        packet_copy
+            .write_interleaved(&mut self.output)
+            .map_err(error("mux packet"))
+    }
+    pub fn finish(mut self) -> Result<()> {
+        self.start()?;
+        self.output
+            .write_trailer()
+            .map_err(error("write container trailer"))?;
+        self.sink.sync_all()?;
+        Ok(())
+    }
+}

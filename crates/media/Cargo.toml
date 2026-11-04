@@ -5,9 +5,22 @@ edition.workspace = true
 license.workspace = true
 publish = false
 
-[lints]
-workspace = true
+[lints.rust]
+unsafe_code = "deny"
+unused_must_use = "deny"
+
+[lints.clippy]
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"
+todo = "deny"
+unimplemented = "deny"
+unreachable = "deny"
+indexing_slicing = "deny"
+dbg_macro = "deny"
+wildcard_imports = "warn"
 
 [dependencies]
+ffmpeg-next = { version = "9", default-features = false, features = ["codec", "format", "software-resampling", "software-scaling"] }
 thiserror = "2.0.21"
 time = { path = "../time" }

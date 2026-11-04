@@ -1,11 +1,22 @@
 # Desktop media and time
 
 Use egui with wgpu in the desktop app while preserving a UI-free headless core.
-Own pure Rust decode/demux/mux and put hardware codecs behind a trait using
-VideoToolbox on macOS and Media Foundation on Windows, keeping FFmpeg outside the
-shipped product to preserve the Rust-first boundary. The single OS-codec FFI crate
-may use narrowly allowed, documented unsafe modules behind a safe `Result` API;
-integer tick time preserves common video rates including NTSC and audio sample
-rates exactly, with its type name deferred until implementation. Current contracts
-live in [architecture](../engineering/architecture.md) and
+Use dynamically linked, LGPL-only FFmpeg for media I/O, demux, decode, encode,
+mux, pixel conversion and audio resampling. Maintaining codecs and containers is
+outside the editor's responsibility. Hardware acceleration is selected through
+FFmpeg; Rust owns timeline semantics, the compositor, text/caption rendering and
+job orchestration. Preview and export consume the same compositor pixels.
+
+Use the maintained `ffmpeg-next` safe wrapper and its matching system bindings.
+The permissive WTFPL dependency license is admitted for these wrappers. Keep any
+necessary direct FFI inside narrowly allowed modules of `media`, behind safe
+`Result` APIs; do not own a second bindings layer. Provision current stable shared
+LGPL builds; exclude GPL/nonfree components. Distribution rules live in
+[open-source policy](../engineering/open-source.md#ffmpeg-distribution).
+
+Integer ticks at 254,016,000,000 per second preserve admitted video and audio
+rates exactly. FFmpeg owns demux presentation timestamps, codec priming and
+reordering; convert rational timestamps at the Rust boundary without applying
+container edits a second time. Current contracts live in
+[architecture](../engineering/architecture.md) and
 [source standards](../engineering/standards.md).

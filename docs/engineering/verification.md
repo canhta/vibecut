@@ -2,7 +2,8 @@
 
 ## Checks
 
-Run `cargo xtask ci` from the root before every commit; commit only green states.
+Run `cargo xtask ffmpeg` to provision the current LGPL libraries, then
+`cargo xtask ci` from the root before every commit; commit only green states.
 It checks formatting, Clippy with warnings denied, workspace tests, architecture
 layers and asset sidecars. Use `cargo fmt --all` to format. Rust is pinned in
 `rust-toolchain.toml`. `cargo xtask layers` reads the
@@ -32,11 +33,13 @@ license or online freshness gate is installed. Record release lookup evidence.
 
 Tests establish changed behavior, not cosmetic wording or a mirror of implementation.
 Keep property regression seeds. A test that skips a required oracle is not oracle
-acceptance. Native codec evidence is platform-specific; other platforms stay unverified.
+acceptance. FFmpeg is the production backend; subprocess ffmpeg/ffprobe tests independently
+exercise its CLI and stream metadata, and do not establish independence of codec
+algorithms. Native codec evidence is platform-specific; other platforms stay unverified.
 
 ## Fixtures
 
-Generate synthetic media with external ffmpeg into `<repo>/target/fixtures/<area>/`,
+Generate synthetic media with an independently installed ffmpeg into `<repo>/target/fixtures/<area>/`,
 independent of `CARGO_TARGET_DIR`. Record the generation command/tool version and
 assert subprocess success. Use ffprobe to check streams, durations, offsets and
 export outputs; compare decoded pixels/audio with tolerances justified by codec loss.

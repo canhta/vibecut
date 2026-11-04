@@ -1,89 +1,127 @@
 # media
 
-Pure Rust MP4/MOV containers for the editor core: probe, streamed packet reading
-and progressive H.264/AAC muxing.
+Headless streaming media I/O through dynamically linked LGPL-only FFmpeg. Owns
+probe, demux, codec parameters, decode/encode, hardware selection, conversion,
+resampling and muxing. Rust timeline semantics, compositing, captions, text,
+provider policy, jobs and output promotion belong to their respective owners.
 
-## Purpose and exclusions
+## Entry points and timing
 
-Owns ISO Base Media File Format (ISO/IEC 14496-12) reading for MP4 and QuickTime
-MOV, the packet view of a source asset, and a progressive muxer that writes one
-H.264 (`avc1` + `avcC`) and one AAC (`mp4a` + `esds`) track with an edit list for
-encoder priming.
+- `probe(path)` / `PacketReader`: native `File` paths through seekable AVIO,
+  detected format, optional presentation duration, stream start/time base,
+  codec parameters, dimensions/color, audio format/priming and optional counts.
+  Unknown frame counts/VFR stay unknown. No filename-based capability guesses.
+- `TimeBase`: positive rational seconds per unit, converted through `time` with
+  checked integer arithmetic and explicit rounding. FFmpeg applies container
+  edits, codec priming and packet/frame reordering once. Never reapply an offset.
+- `Packet`: retained FFmpeg buffers with original PTS/DTS/duration. `try_clone`
+  retains buffers without copying payloads. `CodecParameters` owns its extradata.
+- `VideoDecoder` / `AudioDecoder`: whole access units in decode order; drain with
+  `flush`. Source-rate audio retains its channel layout and presentation clock.
+- `VideoReader`: hardware-preferred sequential frames, preceding-keyframe seek
+  plus decode-forward selection, and one software recovery after a decode error.
+  Recovery seeks and suppresses already emitted PTS rather than duplicating frames.
+- `VideoFrame`: retains CPU/GPU buffers; CPU access requires explicit `download`.
+  `with_pts` assigns an output tick without copying pixels. `PixelFormat` describes
+  layout, and plane access supplies checked indexes/strides. Negative strides
+  require normalization. No raw hardware pointers leave the crate.
+- `VideoEncoder`: constant-rate frames on the requested output grid, explicit
+  canvas/rate/bitrate/quality/color, H.264 or VP9. Reject missing/discontinuous
+  output timing. Hardware frames pass directly to a compatible encoder; otherwise
+  transfer/conversion is explicit in the encoder. Frame-aware swscale uses Lanczos,
+  accurate rounding and frame color/chroma metadata when conversion is required.
+- `AudioResampler`: explicit continuous-span rate/layout/sample-format conversion.
+  Keeps the source origin and counts output samples in integer time; drain `flush`.
+  A discontinuity requires a new converter. `AudioEncoder` retains source rate,
+  converts sample format, and uses a bounded FFmpeg FIFO for AAC/Opus frame sizes.
+  FFmpeg owns codec delay and final padding.
+- `Muxer`: MP4/MOV/WebM over a seekable file, stream-copy parameters or encoded
+  parameters, timestamp rescaling and trailer/fsync error propagation. Use a
+  temporary output and promote it only after successful `finish`; render/engine
+  own cancellation, final-file replacement and restart policy.
 
-Excludes Matroska/WebM, fragmented MP4 (read or write), transcoding/decoding,
-encrypted or compressed movie headers, subtitles and timecode tracks beyond
-reporting their presence, and every platform or FFI dependency. FFmpeg is only a
-test oracle.
+All errors use `MediaError`; logs omit paths and media/user text. FFmpeg's default
+logger is disabled because it can disclose filenames. After a codec/mux error,
+discard that execution; flush is idempotent after successful completion.
 
-## Public entry points
+## Input and quality boundaries
 
-- `probe(path) -> Result<Probe>`: movie brand, timescale and duration in ticks,
-  plus one `StreamInfo` per track with codec fourcc, media timescale, duration in
-  ticks, sample and keyframe counts, the VFR flag, video size, audio rate and
-  channels, the `avcC`/`esds` configuration where present, and raw edit-list
-  entries.
-- `PacketReader::open(path)`, `PacketReader::probe()` and
-  `next_packet() -> Result<Option<Packet>>`: samples interleaved by decode
-  timestamp, each `Packet` carrying `stream`, `pts`, `dts`, `duration` (all
-  `time::Tick`), `keyframe` and the stored bytes.
-- `Muxer::create(path, MuxOptions)` and `Muxer::new(Write + Seek, MuxOptions)`
-  with `add_video(VideoTrackConfig)`, `add_audio(AudioTrackConfig)`,
-  `write_packet(track, WritePacket)` and `finish()`.
-- `AacConfig` (AudioSpecificConfig) and `AvcConfig` (SPS/PPS) for passing a
-  probed stream's configuration to the muxer.
-- `MediaError` is the single typed error enum; no public operation panics.
+Input formats/codecs come from the resolved FFmpeg build. The development recipe
+includes built-in decoders, native AAC, libvpx and libopus; dav1d/LAME admission and
+all distribution requirements are owned by the
+[open-source policy](../../docs/engineering/open-source.md#ffmpeg-distribution).
+Missing encoders/decoders return typed capability failures. AV1 availability is
+conditional; no AV1 software decoder is promised by this build recipe.
 
-## Supported inputs and limits
+| Path | Observed fixture evidence |
+|---|---|
+| MP4 H.264 + AAC | Probe, reorder, software/hardware decode, source-rate audio, seek, stream copy, hardware H.264/AAC encode |
+| MP4 HEVC 10-bit PQ | Software decode, color/bit-depth metadata and HDR stream copy |
+| WebM VP9 | Lanczos resize, BT.709 tags, mux and CLI decode |
+| WebM Opus | AAC-to-Opus frame-size conversion, padding/duration and CLI decode |
+| MOV | FFmpeg muxer admitted; dedicated runtime fixture remains unverified |
 
-- Box scan reads only top-level headers and the `moov` box (at most 1 GiB);
-  sample payloads are read on demand. The reader uses positioned reads
-  (`pread` on Unix, `seek_read` on Windows): random access without a whole-file
-  buffer or a shared cursor.
-- Sample tables are capped at 2²⁶ samples or one sample per four file bytes,
-  whichever is smaller, and at least one million samples for short files. Entry
-  counts are checked against the box length before allocation.
-- `PacketReader` allocates at most `MAX_PACKET_BYTES` (64 MiB) per packet and
-  errors with `TooLarge` above it. A sample whose offset or size runs past the
-  file end is `Truncated`.
-- Timestamps convert from each track's media timescale to ticks with nearest
-  rounding, which is exact for admitted frame rates and audio sample rates.
-  `pts`/`dts` are source-media coordinates; edit lists are reported raw and a
-  caller maps them to presentation time.
-- The VFR flag is set for a video stream when its sample durations are not all
-  equal; audio streams are never reported as VFR.
-- Only the first sample description of a track is modeled; tracks that switch
-  codecs mid-file would be reported with their first entry.
-- The muxer writes a large-size `mdat` (64-bit length), `moov` at the end and
-  a single chunk run per contiguous sample run. Durations are 32-bit media units;
-  composition offsets must fit `i32`. AAC priming is in media units and must be
-  smaller than the track duration. Sample data must be stored as AVCC
-  length-prefixed NAL units for H.264 and as raw AAC frames.
-- Paths are `Path` values and are never converted to text; Unicode and spaces
-  work.
+Unknown SDR color tags resolve to the project's BT.709 limited-range default.
+Known color/range/chroma tags are retained. SDR encoding refuses HDR, high bit
+depth and implicit color changes; explicitly tone-map/convert upstream or stream
+copy. Tone mapping itself is not implemented here. H.264 defaults request 85/100
+quality and a 12 Mb/s bitrate target; Windows backends map that same quality
+request to their native controls and retain the bitrate target on fallback.
+Those mappings are not evidence of equal perceptual quality across platforms.
 
-## Tests
+Hardware preference uses VideoToolbox on macOS and D3D11VA/QSV on Windows.
+Encoding tries platform hardware and then the platform software path (VideoToolbox
+`allow_sw`, or Media Foundation software), retaining requested settings. Missing
+capability is an error. Windows device/quality behavior and live device-loss
+recovery remain unverified; they require the Windows hardware ticket.
 
-`cargo test -p media` runs unit tables for box headers and readers, sample-entry
-and configuration round trips, muxer configuration errors, a two-track muxing
-round trip, VFR detection and truncation/bit-flip inputs under `catch_unwind`
-without panics. A sparse, 2.5 GB MP4 is probed and read through a counting byte
-source that asserts the header scan reads less than 1 MiB.
+## Bounds and verification
 
-Oracle tests generate fixtures with external ffmpeg into `target/fixtures/media`
-and compare against ffprobe:
+Individual native FFmpeg allocations are capped at 256 MiB before media I/O.
+AVIO uses 32 KiB buffers; probing reads at most 32 MiB. Stream count is capped at
+256, extradata at 1 MiB, packets at 64 MiB, decoded frame area at 2^26 pixels,
+audio frames at 65,536 samples/channel and 32 channels, and one receive batch at
+64 frames. Audio encoding admits up to eight channels and caps its FIFO at
+131,072 samples/channel. Native FFmpeg allocation/codec limits still apply;
+these checks do not establish safety for every hostile C-library input.
 
-```
-ffmpeg -y -f lavfi -i testsrc2=size=1920x1080:rate=30000/1001:duration=10 \
-  -f lavfi -i sine=frequency=440:sample_rate=48000:duration=10 \
-  -c:v libx264 -preset ultrafast -crf 30 -pix_fmt yuv420p \
-  -c:a aac -b:a 96k -ac 2 -shortest h264_aac_1080p_2997.mp4
-ffmpeg -y -f lavfi -i testsrc2=size=640x360:rate=30:duration=3 \
-  -vf "setpts='if(lt(N,45),N/30/TB,1.5+(N-45)/15/TB)'" -fps_mode vfr \
-  -c:v libx264 -preset ultrafast -crf 30 -pix_fmt yuv420p vfr_30_15_640x360.mp4
-```
+`cargo xtask ffmpeg` resolves/builds the current LGPL SDK in the external user
+cache. `cargo xtask ci` configures that SDK for workspace checks. Direct Cargo
+invocations need `FFMPEG_DIR` and the platform's runtime library search path; use
+the xtask commands for the configured development path. See
+[development workflow](../../docs/engineering/workflows.md#upgrade-policy).
 
-The tests check stream parameters, frame counts, packet durations, VFR detection,
-a full remux of the source, AAC priming in the edit list, and that ffmpeg decodes
-the remuxed file without errors. Fixtures skip with a message when ffmpeg or
-ffprobe is absent; `VIBECUT_REQUIRE_ORACLES=1` turns that into failure. Tool
-version used while developing: ffmpeg/ffprobe 9.0.2.
+Tests generate synthetic inputs with an independently installed ffmpeg, then
+exercise public packet/decode/encode/resample/mux interfaces. Subprocess ffprobe
+checks counts, durations, codecs and tags. The CLI and production backend share
+FFmpeg algorithms: these are interface/pipeline oracles, not independent codec
+implementations. Missing tools are explicit skips; `VIBECUT_REQUIRE_ORACLES=1`
+requires them. A found tool that fails is a failure.
+
+Observed on macOS: Unicode/space paths, cancellation, deterministic truncation and
+bit-flip cases, and a 2,500,002,687-byte sparse MP4 with only 65,536 bytes read while
+opening and reading its first packet. Source-rate AAC processing produced 48,000
+samples; 48 kHz stereo -> 16 kHz mono produced 16,000 samples, bit-exact against
+the CLI resampling fixture. Native codec behavior on other machines is unverified.
+
+## Observed benchmark
+
+Apple M1 Pro, 16 GiB, macOS 27.2; release profile, two runs on a generated
+60 s 1920x1080/30 H.264 BT.709 video-only fixture. This is a media transcode pass
+at the same canvas size; it excludes a Rust compositor, subtitle burn and audio.
+FFmpeg 9.0.2 was resolved for this observation; no FFmpeg version is committed as
+a provisioning pin. Reproduce with `cargo xtask media-bench`.
+
+| Measurement | First run | Warm repeat |
+|---|---:|---:|
+| Hardware decoded frames | 1,800 | 1,800 |
+| Decode fps | 268.158 | 255.715 |
+| Encode API fps, including drain | 428.670 | 392.980 |
+| Export wall time | 9.405 s | 9.279 s |
+
+The repeat's process peak RSS was 138,379,264 bytes. First-run quality against the
+source decoded pixels: SSIM 0.999483 and PSNR 56.681886 dB (not VMAF). Encode API
+time excludes decoding/mux time; export wall time includes both. Cache state and
+hardware scheduling affect results; these two samples are not a general latency
+or quality guarantee. Fixture generation: ffmpeg `testsrc2`, 60 s at 1080p30,
+libx264 ultrafast CRF 18, yuv420p with BT.709 tags. No media is committed.

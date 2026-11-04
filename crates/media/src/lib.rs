@@ -1,60 +1,89 @@
-//! Pure Rust MP4/MOV containers: probe, streamed packet reading and H.264/AAC muxing.
-//!
-//! [`probe`] reads only the top-level box headers and the `moov` box, so opening a
-//! multi-gigabyte file costs metadata, not media. [`PacketReader`] then reads one
-//! sample at a time with bounded buffers. The muxer writes a progressive MP4 or MOV
-//! with an `avcC` H.264 track, an `esds` AAC track and an edit list for encoder
-//! priming.
-//!
-//! Times leave the crate as [`tick`](time::Tick)s at
-//! [`time::TICKS_PER_SECOND`], converted from each track's media timescale. Edit
-//! lists stay in their container units because they map source to presentation
-//! coordinates; a caller applies them.
+//! Headless streaming media I/O through one dynamically linked LGPL FFmpeg backend.
+//! FFmpeg owns codec parameters, demux presentation timing, priming and reordering.
 
-mod bitstream;
-mod mp4;
+mod decode;
+mod encode;
+#[allow(unsafe_code)]
+mod ffi;
+mod model;
+mod mux;
+mod read;
+mod resample;
 
-pub use mp4::codec::{AacConfig, AvcConfig};
-pub use mp4::demux::{Packet, PacketReader, probe};
-pub use mp4::mux::{AudioTrackConfig, Brand, MuxOptions, Muxer, VideoTrackConfig, WritePacket};
-pub use mp4::{AudioInfo, Edit, FourCc, Probe, StreamInfo, StreamKind, VideoInfo};
+pub use decode::{AudioDecoder, AudioFrame, DecodePreference, VideoDecoder, VideoFrame};
+pub use encode::{AudioEncoder, AudioEncoderSettings, VideoEncoder, VideoEncoderSettings};
+pub use ffmpeg_next::format::Pixel as PixelFormat;
+pub use model::{
+    AudioInfo, CodecParameters, ColorInfo, Packet, Probe, StreamInfo, StreamKind, TimeBase,
+    VideoInfo,
+};
+pub use mux::{Container, Muxer};
+pub use read::{PacketReader, VideoReader, probe};
+pub use resample::{AudioResampler, AudioSampleFormat};
 
-use std::io;
-
-/// Failure from probing, reading or writing a container.
+/// Typed failures from the media boundary. Provider paths and media text are not
+/// included in error messages; the FFmpeg source retains the numeric error category.
 #[derive(Debug, thiserror::Error)]
 pub enum MediaError {
-    /// Reading or writing the underlying file failed.
-    #[error("I/O error: {0}")]
-    Io(#[from] io::Error),
-    /// A box or structure ended before all required fields were read.
-    #[error("truncated data while reading {0}")]
-    Truncated(&'static str),
-    /// Structurally invalid data.
-    #[error("invalid data: {0}")]
-    Invalid(String),
-    /// Valid but unsupported input or capability.
-    #[error("unsupported: {0}")]
-    Unsupported(String),
-    /// A count or size exceeded the limit for the file.
-    #[error("size limit exceeded: {0}")]
+    #[error("media I/O failed")]
+    Io(#[from] std::io::Error),
+    #[error("invalid media input: {0}")]
+    Invalid(&'static str),
+    #[error("unsupported media capability: {0}")]
+    Unsupported(&'static str),
+    #[error("media limit exceeded: {0}")]
     TooLarge(&'static str),
-    /// The file has no `moov` box.
-    #[error("no moov box found")]
-    NoMoov,
-    /// A track index was out of range.
-    #[error("track index {0} out of range")]
-    NoSuchTrack(usize),
-    /// A sample index was out of range.
-    #[error("sample index {0} out of range")]
-    NoSuchSample(usize),
-    /// The muxer rejected its configuration or a packet.
-    #[error("muxer: {0}")]
-    Mux(String),
-    /// A container time could not be converted to ticks.
+    #[error("media operation cancelled")]
+    Cancelled,
+    #[error("{operation}: {source}")]
+    Ffmpeg {
+        operation: &'static str,
+        #[source]
+        source: ffmpeg_next::Error,
+    },
     #[error(transparent)]
     Time(#[from] time::TimeError),
 }
 
-/// Result alias for container operations.
 pub type Result<T> = std::result::Result<T, MediaError>;
+
+fn error(operation: &'static str) -> impl FnOnce(ffmpeg_next::Error) -> MediaError {
+    move |source| match source {
+        ffmpeg_next::Error::DecoderNotFound => {
+            MediaError::Unsupported("decoder unavailable in this FFmpeg build")
+        }
+        ffmpeg_next::Error::EncoderNotFound => {
+            MediaError::Unsupported("encoder unavailable in this FFmpeg build")
+        }
+        _ => MediaError::Ffmpeg { operation, source },
+    }
+}
+
+fn init() -> Result<()> {
+    // FFmpeg's default logger may include filenames and user metadata.
+    static INITIALIZED: std::sync::OnceLock<std::result::Result<(), ffmpeg_next::Error>> =
+        std::sync::OnceLock::new();
+    INITIALIZED
+        .get_or_init(|| {
+            ffi::allocation_limit();
+            ffmpeg_next::log::set_level(ffmpeg_next::log::Level::Quiet);
+            ffmpeg_next::init()
+        })
+        .as_ref()
+        .map_err(|source| error("initialize FFmpeg")(*source))?;
+    let config = ffmpeg_next::format::configuration();
+    if config.contains("--enable-gpl") || config.contains("--enable-nonfree") {
+        return Err(MediaError::Unsupported(
+            "FFmpeg must be an LGPL-only build; run cargo xtask ffmpeg",
+        ));
+    }
+    Ok(())
+}
+
+fn drained(error: ffmpeg_next::Error) -> bool {
+    error == ffmpeg_next::Error::Eof
+        || error
+            == ffmpeg_next::Error::Other {
+                errno: ffmpeg_next::error::EAGAIN,
+            }
+}

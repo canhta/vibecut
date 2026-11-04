@@ -11,16 +11,39 @@
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
+pub fn command(program: &str) -> Command {
+    let mut command = Command::new(program);
+    command
+        .env_remove("DYLD_LIBRARY_PATH")
+        .env_remove("LD_LIBRARY_PATH");
+    if let (Some(prefix), Some(paths)) = (std::env::var_os("FFMPEG_DIR"), std::env::var_os("PATH"))
+    {
+        let production = PathBuf::from(prefix).join("bin");
+        let paths: Vec<_> = std::env::split_paths(&paths)
+            .filter(|p| p != &production)
+            .collect();
+        command.env("PATH", std::env::join_paths(paths).expect("oracle paths"));
+    }
+    command
+}
+
 pub fn fixtures_dir() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target/fixtures/media")
 }
 
 fn tool_available(tool: &str) -> bool {
-    Command::new(tool)
-        .arg("-version")
-        .output()
-        .map(|output| output.status.success())
-        .unwrap_or(false)
+    match command(tool).arg("-version").output() {
+        Ok(output) => {
+            assert!(
+                output.status.success(),
+                "found {tool} but it failed: {}",
+                String::from_utf8_lossy(&output.stderr)
+            );
+            true
+        }
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => false,
+        Err(error) => panic!("cannot run {tool}: {error}"),
+    }
 }
 
 /// Skip with a message when ffmpeg/ffprobe are absent, unless the environment
@@ -52,7 +75,7 @@ pub fn generate(test: &str, name: &str, args: &[&str]) -> Option<PathBuf> {
     if exists {
         return Some(path);
     }
-    let output = Command::new("ffmpeg")
+    let output = command("ffmpeg")
         .args(["-y", "-hide_banner", "-loglevel", "error"])
         .args(args)
         .arg(&path)
@@ -67,7 +90,7 @@ pub fn generate(test: &str, name: &str, args: &[&str]) -> Option<PathBuf> {
 }
 
 fn ffprobe(path: &Path, args: &[&str]) -> String {
-    let output = Command::new("ffprobe")
+    let output = command("ffprobe")
         .args(["-v", "error"])
         .args(args)
         .arg(path)
@@ -133,7 +156,7 @@ pub fn duration(path: &Path) -> f64 {
 
 /// True when ffmpeg decodes every stream without error.
 pub fn decodes(path: &Path) -> bool {
-    let output = Command::new("ffmpeg")
+    let output = command("ffmpeg")
         .args(["-v", "error", "-i"])
         .arg(path)
         .args(["-f", "null", "-"])

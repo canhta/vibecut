@@ -47,6 +47,11 @@ under [completion evidence](verification.md#reports). Offline builds cannot prov
 freshness; a lockfile-only `cargo update --verbose` cannot prove direct requirements
 are current. Do not install an extra freshness tool just for CI.
 
+`cargo xtask ffmpeg` resolves the latest stable LGPL backend at invocation, logs
+the resolved version and verifies published source checksums when available.
+Do not commit an FFmpeg version/hash manifest. This makes builds non-reproducible;
+retain the resolved sources and build receipt with each distributed binary.
+
 Choose the best current design and replace in place. Remove superseded paths;
 keep no dual versions, legacy shims, deprecated paths or backward compatibility.
 For pre-release persisted-format changes, bump the schema version and refuse

@@ -23,5 +23,10 @@ jobs:
       - name: Install pinned Rust toolchain
         run: rustup toolchain install
       - uses: Swatinem/rust-cache@v2
+      - name: Install macOS media build tools
+        if: runner.os == 'macOS'
+        run: brew install cmake pkgconf nasm
+      - name: Provision current LGPL media libraries
+        run: cargo xtask ffmpeg
       - name: Check workspace
         run: cargo xtask ci

@@ -1,4 +1,7 @@
 //! Workspace checks and admitted crate scaffolding.
+mod benchmark;
+mod ffmpeg;
+
 use serde_json::Value;
 use std::collections::BTreeMap;
 use std::env;
@@ -268,6 +271,9 @@ fn run() -> Result<(), String> {
         .collect::<Vec<_>>()
         .as_slice()
     {
+        ["media-bench"] => benchmark::media(root),
+        ["ffmpeg"] => ffmpeg::provision(None),
+        ["ffmpeg", "--target", target] => ffmpeg::provision(Some(target)),
         ["layers"] => layers(root),
         ["assets"] => assets(root),
         ["new-crate", name] => new_crate(root, name),
@@ -288,18 +294,20 @@ fn run() -> Result<(), String> {
                 &["test", "--workspace"],
             ] {
                 eprintln!("cargo {}", args.join(" "));
-                let status = Command::new(env::var_os("CARGO").ok_or("run via cargo xtask")?)
-                    .args(args)
-                    .current_dir(root)
-                    .status()
-                    .map_err(|e| e.to_string())?;
+                let mut command = Command::new(env::var_os("CARGO").ok_or("run via cargo xtask")?);
+                command.args(args).current_dir(root);
+                ffmpeg::environment(&mut command)?;
+                let status = command.status().map_err(|e| e.to_string())?;
                 if !status.success() {
                     return Err(format!("cargo {} failed: {status}", args.join(" ")));
                 }
             }
             Ok(())
         }
-        _ => Err("usage: cargo xtask <ci|layers|assets|new-crate NAME>".into()),
+        _ => Err(
+            "usage: cargo xtask <ffmpeg [--target PLATFORM]|media-bench|ci|layers|assets|new-crate NAME>"
+                .into(),
+        ),
     }
 }
 
