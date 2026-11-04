@@ -577,3 +577,81 @@ fn overlap_threshold_and_near_duplicate_keep_highest_score() {
         );
     }
 }
+
+#[test]
+fn review_dense_long_local_input() {
+    let p = HeuristicClipSuggester::new().unwrap();
+    let mut w = input("en", 600);
+    w.settings.count = 1;
+    w.settings.max_duration = tick(120);
+    for (i, s) in w.segments.iter_mut().enumerate() {
+        s.range = SourceRange::new(tick(i as i64), tick(i as i64 + 1)).unwrap();
+    }
+    w.validate().unwrap();
+    let windows = w.windows().unwrap();
+    assert_eq!(windows.len(), 60);
+    assert!(windows.iter().map(|w| w.segments.len()).sum::<usize>() > 4096);
+    let result = run(&p, &w).expect("valid ten-minute local transcript should return one clip");
+    assert_eq!(result.clips.len(), 1);
+    assert_eq!(result.clips[0].source, ClipSource::Heuristic);
+    assert_eq!(
+        result.clips[0].range,
+        SourceRange::new(tick(0), tick(4)).unwrap()
+    );
+    assert!(result.dropped.len() <= 4096);
+}
+
+#[test]
+fn repeated_window_observations_keep_highest_score_first_tie_and_bounded_diagnostics() {
+    struct RepeatedWindows {
+        anthropic: bool,
+        calls: AtomicUsize,
+    }
+    impl HttpTransport for RepeatedWindows {
+        fn send(&self, _: HttpRequest) -> Result<HttpResponse, Error> {
+            let call = self.calls.fetch_add(1, Ordering::Relaxed);
+            let score = [0.2, 0.9, 0.9, 0.4][call];
+            let mut valid = proposal("s100", "s103", score);
+            valid["title"] = json!(format!("window {call}"));
+            let mut proposals = vec![valid; 64];
+            proposals.extend(vec![proposal("s100", "s100", score); 64]);
+            Ok(response(self.anthropic, json!(proposals)))
+        }
+    }
+    for anthropic in [false, true] {
+        let transport = Arc::new(RepeatedWindows {
+            anthropic,
+            calls: AtomicUsize::new(0),
+        });
+        let p = remote(anthropic, transport.clone());
+        let mut w = input("en", 150);
+        w.settings.count = 1;
+        w.settings.max_duration = tick(120);
+        for (i, s) in w.segments.iter_mut().enumerate() {
+            s.range = SourceRange::new(tick(i as i64), tick(i as i64 + 1)).unwrap();
+        }
+        assert_eq!(w.windows().unwrap().len(), 4);
+        let result = run(p.as_ref(), &w).unwrap();
+        assert_eq!(transport.calls.load(Ordering::Relaxed), 4);
+        assert_eq!(result.clips.len(), 1);
+        assert_eq!(result.clips[0].proposal.score, 0.9);
+        assert_eq!(result.clips[0].proposal.title.as_str(), "window 1");
+        assert_eq!(result.dropped.len(), 2);
+        assert_eq!(
+            result
+                .dropped
+                .iter()
+                .filter(|d| d.reason == ClipDropReason::Duplicate)
+                .count(),
+            1
+        );
+        assert_eq!(
+            result
+                .dropped
+                .iter()
+                .filter(|d| d.reason == ClipDropReason::Duration)
+                .count(),
+            1
+        );
+    }
+}

@@ -592,7 +592,14 @@ Every window's provider/language/settings/payload consent and per-invocation cos
 is checked before any IO. Requests remain independent invocations, never implicit
 retries or job-level budget approvals. Wire JSON is also capped at 64 KiB and by
 the approved byte ceiling; shared transport caps responses and supplies timeouts.
-At most 4,096 proposals including dropped proposals are retained per execution.
+At most 4,096 distinct segment endpoint pairs are retained per execution, counting
+both valid and duration-invalid candidates. Repeated observations of a pair are
+reconciled before this bound, retaining the highest score (first on a tie). Each
+valid pair retains at most one representative duplicate diagnostic; repeated
+duration-invalid observations share one Duration diagnostic. Thus retained state
+holds at most 8,192 proposals including representative duplicates, regardless of
+window overlap. The final global ranking and overlap selection use all distinct
+valid candidates; no window is trimmed to the requested output count.
 
 `OpenAiClipSuggester` uses the existing shared HTTPS transport, Responses endpoint,
 strict structured output parser, `gpt-6.1-sol`, and `OPENAI_SETTINGS`;

@@ -17,6 +17,7 @@ pub const MAX_WINDOW_SEGMENTS: usize = 128;
 pub const MAX_WINDOW_BYTES: usize = 24 * 1024;
 pub const MAX_WIRE: u64 = 64 * 1024;
 const MAX_WINDOWS: usize = 1024;
+const MAX_OBSERVATIONS: usize = 4096;
 pub const HEURISTIC_SETTINGS: &str = "clips-heuristic-v1;sentence-pause-keyword;char-bigram-dedupe";
 pub const OPENAI_SETTINGS: &str =
     "clips-openai-v1;responses;strict;store=false;max_output=8192;char-bigram-dedupe";
@@ -258,20 +259,85 @@ pub fn suggest_clips(
     for (w, r) in windows.iter().zip(requests) {
         prepare(provider, w, r)?;
     }
-    let mut all = Vec::new();
-    let mut dropped = Vec::new();
+    let mut observations = BTreeMap::new();
     for (w, r) in windows.iter().zip(requests) {
         crate::contracts::checkpoint(hooks, Stage::SuggestClips)?;
         let proposals = provider.suggest(w, r, hooks)?;
         let validated = validate(w, proposals, provider.source())?;
-        if all.len() + dropped.len() + validated.clips.len() + validated.dropped.len() > 4096 {
-            return Err(Error::Payload);
+        for clip in validated.clips {
+            observe(&mut observations, clip.proposal, Some(clip.range))?;
         }
-        all.extend(validated.clips);
-        dropped.extend(validated.dropped);
+        for drop in validated.dropped {
+            observe(&mut observations, drop.proposal, None)?;
+        }
     }
     crate::contracts::checkpoint(hooks, Stage::SuggestClips)?;
+    let mut all = Vec::new();
+    let mut dropped = Vec::new();
+    for observation in observations.into_values() {
+        if let Some(range) = observation.range {
+            all.push(ClipSuggestion {
+                proposal: observation.proposal,
+                range,
+                source: provider.source(),
+            });
+        } else {
+            dropped.push(DroppedClip {
+                proposal: observation.proposal,
+                reason: ClipDropReason::Duration,
+            });
+        }
+        if let Some(proposal) = observation.duplicate {
+            dropped.push(DroppedClip {
+                proposal,
+                reason: ClipDropReason::Duplicate,
+            });
+        }
+    }
     merge(input, all, dropped, hooks)
+}
+
+struct WindowObservation {
+    proposal: ClipProposal,
+    // The same endpoint IDs always resolve to the same source range and duration
+    // verdict, regardless of which overlapping window observed them.
+    range: Option<SourceRange>,
+    duplicate: Option<ClipProposal>,
+}
+fn observe(
+    observations: &mut BTreeMap<(NfcText, NfcText), WindowObservation>,
+    proposal: ClipProposal,
+    range: Option<SourceRange>,
+) -> Result<(), Error> {
+    let key = (
+        proposal.start_segment_id.clone(),
+        proposal.end_segment_id.clone(),
+    );
+    if let Some(previous) = observations.get_mut(&key) {
+        // Strict comparison retains the first observation on score ties, matching
+        // the stable final sort. Duplicate diagnostics retain one example per pair.
+        let discarded = if proposal.score.total_cmp(&previous.proposal.score).is_gt() {
+            std::mem::replace(&mut previous.proposal, proposal)
+        } else {
+            proposal
+        };
+        if previous.range.is_some() && previous.duplicate.is_none() {
+            previous.duplicate = Some(discarded);
+        }
+    } else {
+        if observations.len() >= MAX_OBSERVATIONS {
+            return Err(Error::Payload);
+        }
+        observations.insert(
+            key,
+            WindowObservation {
+                proposal,
+                range,
+                duplicate: None,
+            },
+        );
+    }
+    Ok(())
 }
 fn validate(
     input: &ClipInput,
