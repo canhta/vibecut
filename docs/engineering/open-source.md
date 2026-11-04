@@ -73,5 +73,7 @@ before download. Verify the pinned hash and never redistribute weights with the 
 
 Local-first is the default. Remote AI is opt-in: obtain explicit consent before
 sending media or transcripts. Never log API keys or transcript text, and never
-commit credentials or personal recordings. Review provider boundaries and error
+commit credentials or personal recordings. Keep keys (`.privates/.env`) and every other
+non-public project file (private datasets, recordings, account notes) in the
+git-ignored `.privates/`; never copy its contents into reports, logs or commits. Review provider boundaries and error
 paths for leaks. Use [private reporting](../../SECURITY.md) for vulnerabilities.

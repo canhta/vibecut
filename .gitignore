@@ -1,4 +1,5 @@
 /.spikes/
+/.privates/
 /.scratch/
 /target/
 .DS_Store
