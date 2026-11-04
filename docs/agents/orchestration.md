@@ -81,12 +81,16 @@ Load `orca skills get orchestration` for CLI details; use handles from receipts.
 ## Worker loop
 
 1. Claim: re-read the ticket in the main checkout, skip it unless `open`, set `Status: claimed`.
-2. Implement per the [development loop](../engineering/workflows.md#development-loop).
+2. Iterate with crate-scoped tests and Clippy locally; reserve full local CI for
+   the [hosted queue timeout or hardware fallback](../engineering/verification.md#checks).
+   Implement per the [development loop](../engineering/workflows.md#development-loop).
    Before handing to review, attack your own branch the way a reviewer will: hostile
    and boundary inputs, cancellation mid-operation, gesture reversal, and every
    metric the ticket names against its recorded baseline (no language, format or backend may
    regress). Fix what you find first.
-3. Finish the ticket on one of the two [merge paths](#review-and-merge). A ticket
+3. Push the frozen SHA to the ticket branch and start hosted CI before handoff;
+   review starts while it runs. Reviewers run only targeted reproductions locally.
+   Finish the ticket on one of the two [merge paths](#review-and-merge). A ticket
    that needs review ends the turn right away with `worker_done`, so its review starts
    while you wait; the coordinator sends `continue` to resume the loop.
 4. Claim the next frontier ticket with your `Assignee`: highest priority first, then
@@ -103,7 +107,7 @@ A blocked ticket gets `Status: blocked` plus the reason, then an escalation.
 
 ## Review and merge
 
-**Self-merge** T1 tickets once every Verify item holds: rebase on `origin/main`, run
+**Self-merge** T1 tickets once every Verify item holds: rebase on `origin/main`, obtain exact-SHA hosted evidence under
 the [smallest covering check](../engineering/verification.md#checks), push
 fast-forward to `main`. T2–T4 tickets go to review.
 
@@ -125,7 +129,7 @@ CI rerun (not both sides touched Rust, manifests or `xtask`),
 push fast-forward at once; a rejected push means rebase and repeat. Ask the
 coordinator for a merge window only when two ready branches both change Rust, or
 share a persistent format, schema version or contract: the coordinator orders those
-and the later one runs CI on the earlier one's candidate while it waits.
+and the later one pushes the earlier one's candidate for hosted CI while it waits.
 
 After either path the merger writes `## Answer` (SHA, evidence path), sets
 `Status: resolved` and adds one decision line to the milestone `map.md`.

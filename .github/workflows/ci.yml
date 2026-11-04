@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [main, 'canhta/**', 'feat/**']
   pull_request:
   workflow_dispatch:
     inputs:
@@ -15,8 +15,8 @@ permissions:
   contents: read
 
 concurrency:
-  group: ci-${{ github.event_name == 'pull_request' && github.ref || github.run_id }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  group: ci-${{ github.event_name }}-${{ github.ref == 'refs/heads/main' && github.run_id || github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 jobs:
   changes:
@@ -63,7 +63,7 @@ jobs:
           persist-credentials: false
       - uses: ./.github/actions/setup-build
       - name: Install required media oracles (macOS)
-        if: runner.os == 'macOS' && inputs.require-oracles
+        if: runner.os == 'macOS'
         run: brew install ffmpeg
       - name: Install required media oracles (Windows)
         if: runner.os == 'Windows' && inputs.require-oracles
@@ -72,7 +72,7 @@ jobs:
         if: runner.os == 'macOS'
         shell: bash
         env:
-          REQUIRE_ORACLES: ${{ inputs.require-oracles }}
+          REQUIRE_ORACLES: true
         run: |
           if [ "$REQUIRE_ORACLES" = true ]; then
             cargo xtask ci --require-oracles

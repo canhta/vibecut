@@ -43,6 +43,9 @@ if __name__ == '__main__':
         event = json.load(stream)
     if os.environ['GITHUB_EVENT_NAME'] == 'pull_request':
         require_signoffs(event)
-    value = str(docs_only(changed_paths(event, os.environ['GITHUB_EVENT_NAME']))).lower()
+    # Ticket pushes always exercise the full required-oracle gate, even for docs.
+    ticket = (os.environ['GITHUB_EVENT_NAME'] == 'push' and
+              os.environ.get('GITHUB_REF', '').startswith(('refs/heads/canhta/', 'refs/heads/feat/')))
+    value = str(not ticket and docs_only(changed_paths(event, os.environ['GITHUB_EVENT_NAME']))).lower()
     with open(os.environ['GITHUB_OUTPUT'], 'a') as stream:
         stream.write(f'docs-only={value}\n')

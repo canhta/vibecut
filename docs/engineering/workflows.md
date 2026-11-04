@@ -58,11 +58,14 @@ architecture; Rust keeps its MSVC toolchain.
 
 ## Hosted CI
 
-Pushes to `main` and pull requests run CI with read-only repository permissions.
+Pushes to `main`, `canhta/**` and `feat/**`, and pull requests run CI with read-only repository permissions.
 Require the stable `CI gate` status in branch protection: it selects the docs gate
 for Markdown/`docs/`-only diffs and the Apple Silicon `macos-latest` Rust gate
 otherwise. Windows runs as an advisory check until its runtime is in scope.
-Superseded PR runs cancel; main pushes finish. Fork PRs use `pull_request`, never
+Superseded PR and ticket-branch runs cancel per branch; main pushes finish.
+Ticket pushes always run the full macOS required-oracle gate, including docs-only
+pushes. Cargo, native media and synthetic media-fixture cache keys omit the branch
+so ticket runs can restore default-branch caches. Fork PRs use `pull_request`, never
 `pull_request_target`, and receive no release secrets. The PR gate requires a Signed-off-by trailer on every submitted commit,
 as described in [contributing](../../CONTRIBUTING.md).
 
@@ -73,7 +76,7 @@ cache and retains source/recipe archives.
 
 Release and media/render dispatches set the `require-oracles` input: CI installs
 external FFmpeg and runs the required mode from [verification](verification.md#checks).
-The ordinary dispatch keeps the fast/offline checks.
+The ordinary dispatch also requires macOS oracles; Windows follows the input.
 
 A `v*` tag matching the workspace version in this repository starts the macOS
 Apple Silicon release workflow. It requires `MACOS_CERT_P12` (base64),
