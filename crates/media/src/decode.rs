@@ -176,10 +176,8 @@ impl VideoDecoder {
         if area == 0 || area > 1 << 26 {
             return Err(MediaError::TooLarge("video dimensions"));
         }
-        let pixels =
-            (u64::from(info.width).div_ceil(64) * 64 * u64::from(info.height).div_ceil(64) * 64)
-                .min(1 << 26);
-        ffi::decoder_bounds(&mut context, Some(pixels), None);
+        // Keep thread_and_limits' native pixel ceiling: FFmpeg also applies it
+        // to codec scratch buffers, which can exceed the visible frame's area.
         // Hardware setup is added at the narrow FFI seam; initialization failures
         // return to this same decoder's software path without changing timing.
         if preference == DecodePreference::Hardware {
@@ -194,7 +192,6 @@ impl VideoDecoder {
                     ff::codec::context::Context::from_parameters(stream.parameters.0.clone())
                         .map_err(error("create software decoder"))?;
                 ffi::thread_and_limits(&mut software);
-                ffi::decoder_bounds(&mut software, Some(pixels), None);
                 let mut builder = software.decoder();
                 builder.set_packet_time_base(stream.time_base.rational());
                 open(builder).map_err(error("open software decoder"))?

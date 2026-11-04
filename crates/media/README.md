@@ -194,8 +194,14 @@ AVIO uses 32 KiB buffers; probing reads at most 32 MiB. Stream count is capped a
 audio frames at 65,536 samples/channel and 32 channels, and one receive batch at
 64 frames. Audio encoding admits up to eight channels and caps its FIFO at
 131,072 samples/channel. Native FFmpeg allocation/codec limits still apply;
-these checks do not establish safety for every hostile C-library input. The native
-build backports upstream PSSH iterative cleanup and linear append fixes under
+these checks do not establish safety for every hostile C-library input. The decoder
+keeps the native 2^26-pixel ceiling rather than tightening it to the probed frame
+area: FFmpeg also checks codec scratch buffers against that ceiling. Visible input
+and output dimensions are checked separately. MPEG-4 Part 2 public decoder/reader
+regressions cover 320×180 A/V, small and unaligned B-frame inputs, seeking, frame
+counts and byte-identical YUV420P pixels against external FFmpeg with both decode
+preferences; hardware preference does not imply that this codec uses a GPU.
+The native build backports upstream PSSH iterative cleanup and linear append fixes under
 [ADR 0002](../../docs/adr/0002-desktop-media-and-time.md). A generated 20,000-box
 PSSH regression probes on a 512 KiB worker stack in a subprocess with a five-second
 deadline. Full-size same-rate and upsampled PCM and AVI-to-MP4 H.264 stream copy
