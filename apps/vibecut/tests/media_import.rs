@@ -84,16 +84,7 @@ fn source_asset(
 
 #[derive(Default)]
 struct Probe {
-    delay: Mutex<Duration>,
     calls: Mutex<Vec<PathBuf>>,
-}
-impl Probe {
-    fn slow(delay: Duration) -> Self {
-        Self {
-            delay: Mutex::new(delay),
-            calls: Mutex::new(Vec::new()),
-        }
-    }
 }
 impl ImportProbe for Probe {
     fn import(
@@ -103,10 +94,6 @@ impl ImportProbe for Probe {
         _cancelled: Arc<AtomicBool>,
     ) -> media::Result<SourceAsset> {
         self.calls.lock().unwrap().push(path.clone());
-        let delay = *self.delay.lock().unwrap();
-        if !delay.is_zero() {
-            std::thread::sleep(delay);
-        }
         let name = path.file_name().unwrap().to_string_lossy().to_string();
         if name.contains("bad") {
             return Err(MediaError::Unsupported("test codec"));
@@ -367,9 +354,8 @@ fn picker_result_imports_through_workspace_and_real_editor_widgets() {
 #[test]
 fn cancel_mid_batch_keeps_completed_assets_and_stops_the_rest() {
     let mut editor = editor();
-    editor
-        .set_import_probe(Arc::new(Probe::slow(Duration::from_millis(60))))
-        .unwrap();
+    let probe = Arc::new(GateProbe::new());
+    editor.set_import_probe(probe.clone()).unwrap();
     editor
         .drop_files(
             (1..=4)
@@ -380,13 +366,14 @@ fn cancel_mid_batch_keeps_completed_assets_and_stops_the_rest() {
     let deadline = Instant::now() + Duration::from_secs(5);
     loop {
         editor.tick();
-        if editor.inspect().unwrap().import_imported >= 1 {
+        if probe.second_started() && editor.inspect().unwrap().import_imported >= 1 {
             break;
         }
         assert!(Instant::now() < deadline, "first asset never imported");
         std::thread::sleep(Duration::from_millis(2));
     }
     editor.activate("import.cancel").unwrap();
+    probe.release();
     let inspection = wait_import(&mut editor);
     assert!(inspection.import_cancelled);
     assert!(inspection.import_imported >= 1);
