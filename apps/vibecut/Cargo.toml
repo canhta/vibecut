@@ -5,6 +5,10 @@ edition.workspace = true
 license.workspace = true
 publish = false
 
+[[bin]]
+name = "vibecut-desktop"
+path = "src/main.rs"
+
 [lints]
 workspace = true
 
