@@ -258,6 +258,16 @@ creating directories. Engine owns downloads, scheduling, resume/retry/checkpoint
 cache identity/storage/promotion and model-manager wiring; these are not implemented
 by this crate.
 
+The existing `transport::UreqTransport` also implements `DownloadTransport` for
+streaming GET responses, retaining duplicate response headers for strict engine
+validation. It uses the same agent/timeouts; provider responses keep their 1 MiB
+buffer cap. `download_redirect` resolves only bounded HTTPS URLs without embedded
+credentials or fragments. The engine owns redirect limits and Range/ETag policy.
+Catalog validation admits bounded portable raw filenames, rejects device names,
+case-folded duplicates and unsafe paths, and caps file/aggregate sizes before IO.
+The [engine transfer contract](../engine/README.md#local-model-transfers) owns
+verified native bundle leases; callers retain a lease while native paths are used.
+
 Whisper accepts finite mono 16 kHz PCM windows of at most five minutes, with absolute
 source sample offsets. Whisper chooses timestamp-based decode boundaries within
 each call; do not cut

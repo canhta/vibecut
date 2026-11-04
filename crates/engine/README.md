@@ -184,7 +184,10 @@ a noncooperating adapter can delay shutdown. Abort/OOM cannot be recovered.
 
 One shared `ByteBudget` is cloned into every owner. Its snapshot publishes total
 used/limit and per-owner bytes for decoded frames, compositor intermediates,
-in-flight export, persistent artifacts, cache readers/staging and job results.
+in-flight export, persistent artifacts, cache readers/staging, job results and native
+model disk usage. `used` includes every category; `limited_used()` excludes
+`model_bytes()`, which are admitted by free-disk preflight rather than the memory
+ceiling. Model files remain pinned and cannot starve ordinary work admission.
 `reserve(owner, bytes)` returns a lifetime-bound lease; owners reserve **before**
 allocating, including both overlapping batches and actual pixel storage. The
 engine defines policy; frame/glyph inner loops stay in their data-owning crates.
@@ -222,10 +225,14 @@ finite 0..=1 and accepts at most one update per configured interval (minimum 10 
 including stage changes); `tick` forwards only changed snapshots. Terminal and
 cancelling states bypass this progress limit. Slow consumers cannot block workers.
 Cancellation is checked before execution and again before promoting success;
-late partial success is discarded, except after an explicit publication fence.
+late partial success is discarded. `JobContext::commit_publication` atomically
+seals cancellation before publishing an irreversible complete artifact and sets the
+Publish stage. A cancellation that wins the seal prevents publication; once sealed,
+late cancellation is ignored and even a transient publication error is not retried.
+The closure must perform its final cancellation-aware validation before sealing.
 Failure never yields a JobOutput.
 
-Only Transcribe/Translate jobs in the Network class retry NetworkTransient or an
+Transcribe/Translate/DownloadModel jobs in the Network class retry NetworkTransient or an
 `ai::Error` whose `is_transient` is true (network, provider server, rate limit or structured schema failure); an
 `ai` rate limit carrying `Retry-After` raises that attempt's backoff to at least the
 provider delay, capped at five minutes. Auth, quota, payload, invalid, cancelled and all other errors, plus
@@ -267,10 +274,12 @@ without a generic dependency graph. Artifact kinds and their additional identity
 | Translation | transcript/text content, source/target language, provider/model/version/settings |
 | Cues | transcript, translations, language profile and segmentation settings/version |
 | Preview | cues, clip/source ranges, compositor/version and pixel/audio settings |
+| ModelBundle | complete ai catalog record including named-file SHA-256, size, source and licence |
 
 `ArtifactCache::open` owns one exclusive cache directory and rebuilds bounded
 metadata after restart. Use only one live writer per directory; application
-placement owns that exclusivity. It removes atomic staging debris and malformed
+placement chooses the directory and an OS file lock enforces exclusivity (`CacheBusy`
+on contention). It removes atomic staging debris and malformed
 canonical entries with a diagnostic count. Unrecognized files are skipped and
 never deleted; they are outside cache accounting. Directory scanning streams metadata;
 excess entries evict without reading their payloads. Headers bind the canonical
@@ -294,6 +303,54 @@ Put cannot replace a pinned key. Dropping the cache keeps outstanding reader byt
 and disk charges alive through their leases; closed, unleased directories are
 reaccounted on next open. OS/allocator overhead and unopened cache directories are
 outside this active-engine accounting.
+
+## Local model transfers
+
+`models::ModelTransfers` composes the existing JobRunner, ArtifactCache and ai's
+shared streaming transport. `open_default` reuses `ai::models::cache_dir`; `new`
+accepts an already owned cache and injected `ModelIo`. The runner must share that
+cache's ByteBudget. There is one active transfer per cache, including queue/backoff;
+no additional runner or worker loop is created. State mutexes cover ownership
+changes only, never network, file IO or verification.
+
+`submit` requires ai's exact-model `DownloadConsent`, reauthorizes every attempt,
+and reports Download/Verify/Publish stages through existing job events. The app's
+model manager owns showing source, licence and size and obtaining the affirmative
+click before granting consent; provider selection alone cannot authorize download.
+Offline `installed` lookup requires no new download consent and verifies all named
+files before returning a `ModelLease`. Retain that lease for the entire native
+adapter lifetime, including lazy reads by the Gipformer child. Its root lock and
+reader pin prevent another writer or explicit deletion while paths are in use.
+
+ModelBundle is a native entry kind inside the same cache: a content-key directory
+contains immutable catalog-named raw files and `.bundle` metadata in the existing
+72-byte VCACHE01 key/digest envelope. Ordinary artifact files retain their layout.
+Native metadata version 1 rejects other versions and malformed identities. Only an
+atomically published verified-complete marker permits a ModelLease. Partial
+checkpoints remain unavailable to loaders. Models and checkpoints are permanently
+pinned against LRU/generic clear; only explicit `remove` deletes them, and live
+leases refuse removal. Native bundles are exempt from the half-budget entry cap;
+actual logical file and metadata bytes are reported as ModelWeights, with free-disk
+preflight for remaining bytes plus atomic metadata headroom. Uncheckpointed tails
+are reclaimed before append/restart and credited during preflight. Disk-full writes
+still return typed StorageFull if availability changes after the advisory check.
+Unknown directories and symlink targets are never adopted or overwritten.
+
+Transfers stream through a fixed 64 KiB buffer within a 256 KiB job reservation.
+Checkpoints sync raw files before atomically updating offsets every 4 MiB, at EOF,
+on cooperative cancellation or read failure. A killed process resumes only the
+last durable checkpoint and truncates its later tail. Range resumption requires a
+strong matching ETag and exact Content-Range/length; a full 200 response replaces
+the prefix. Weak/missing validators restart from zero. Changed 206 entities reset
+before retry; malformed, encoded, excess, truncated and hash-invalid responses
+cannot publish. HTTPS redirects are bounded to five, forbid credentials/fragments
+and keep signed target URLs ephemeral. Hash/size checks reuse ai's streaming owner.
+The shared client has finite timeouts; cancellation during a blocking request/read
+can wait for the response or timeout. No live remote throughput or Windows runtime
+claim follows from offline integration tests. Weights are never Git or installer
+content; actual model-manager UI and CLI composition remain downstream work.
+
+## ASR checkpoints
 
 ASR resume stores **only independently complete invocation chunks**, each under
 its exact content/range/model/settings key. A restarted job probes those keys,

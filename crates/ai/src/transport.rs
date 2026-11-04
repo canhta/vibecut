@@ -74,6 +74,35 @@ pub trait HttpTransport: Send + Sync {
     fn send(&self, request: HttpRequest) -> Result<HttpResponse, Error>;
 }
 
+/// Streaming GET response; the caller owns byte limits, cancellation and retries.
+/// Body is never logged or buffered by this transport.
+pub struct HttpStreamResponse {
+    pub status: u16,
+    pub headers: Vec<(String, String)>,
+    pub body: Box<dyn Read + Send>,
+}
+pub trait DownloadTransport: Send + Sync {
+    fn get(&self, url: &str, headers: &[(String, String)]) -> Result<HttpStreamResponse, Error>;
+}
+/// Resolve a bounded HTTPS download redirect; signed CDN queries are kept private.
+pub fn download_redirect(base: &str, location: &str) -> Result<String, Error> {
+    if location.len() > 8192 {
+        return Err(Error::Payload);
+    }
+    let url = url::Url::parse(base)
+        .and_then(|u| u.join(location))
+        .map_err(|_| Error::Invalid("download redirect"))?;
+    if url.scheme() != "https"
+        || url.host_str().is_none()
+        || !url.username().is_empty()
+        || url.password().is_some()
+        || url.fragment().is_some()
+        || url.as_str().len() > 8192
+    {
+        return Err(Error::Invalid("download redirect"));
+    }
+    Ok(url.into())
+}
 /// Production transport with connect/read/write/total timeouts and redirects disabled
 /// so an authorization header can never follow a redirect to another host.
 pub struct UreqTransport {
@@ -123,6 +152,38 @@ impl UreqTransport {
             status,
             headers,
             body,
+        })
+    }
+}
+impl DownloadTransport for UreqTransport {
+    fn get(&self, url: &str, headers: &[(String, String)]) -> Result<HttpStreamResponse, Error> {
+        let mut request = self.agent.get(url);
+        for (name, value) in headers {
+            request = request.set(name, value);
+        }
+        let response = match request.call() {
+            Ok(r) | Err(ureq::Error::Status(_, r)) => r,
+            Err(ureq::Error::Transport(_)) => return Err(Error::Network),
+        };
+        let status = response.status();
+        let names: std::collections::BTreeSet<_> = response
+            .headers_names()
+            .into_iter()
+            .map(|name| name.to_ascii_lowercase())
+            .collect();
+        let headers = names
+            .into_iter()
+            .flat_map(|name| {
+                response
+                    .all(&name)
+                    .into_iter()
+                    .map(move |v| (name.clone(), v.to_owned()))
+            })
+            .collect();
+        Ok(HttpStreamResponse {
+            status,
+            headers,
+            body: response.into_reader(),
         })
     }
 }

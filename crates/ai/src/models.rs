@@ -24,14 +24,23 @@ pub struct Model {
     pub files: Vec<ModelFile>,
 }
 fn https(value: &str) -> bool {
-    url::Url::parse(value).is_ok_and(|u| {
-        u.scheme() == "https"
-            && u.host_str().is_some()
-            && u.username().is_empty()
-            && u.password().is_none()
-            && u.query().is_none()
-            && u.fragment().is_none()
-    })
+    value.len() <= 4096
+        && url::Url::parse(value).is_ok_and(|u| {
+            u.scheme() == "https"
+                && u.host_str().is_some()
+                && u.username().is_empty()
+                && u.password().is_none()
+                && u.query().is_none()
+                && u.fragment().is_none()
+        })
+}
+fn reserved_name(name: &str) -> bool {
+    let stem = name.split('.').next().unwrap_or("").to_ascii_uppercase();
+    matches!(stem.as_str(), "CON" | "PRN" | "AUX" | "NUL")
+        || ["COM", "LPT"].iter().any(|prefix| {
+            stem.strip_prefix(prefix)
+                .is_some_and(|n| n.len() == 1 && matches!(n.as_bytes().first(), Some(b'1'..=b'9')))
+        })
 }
 impl ModelFile {
     pub fn validate(&self) -> Result<(), Error> {
@@ -43,7 +52,12 @@ impl ModelFile {
                 .bytes()
                 .all(|b| b.is_ascii_alphanumeric() || b"-_.".contains(&b))
             || !https(&self.url)
+            || self.name.len() > 128
+            || self.name.starts_with('.')
+            || self.name.ends_with('.')
+            || reserved_name(&self.name)
             || self.size == 0
+            || self.size > (16 << 30)
             || self.sha256.len() != 64
             || !self
                 .sha256
@@ -61,6 +75,15 @@ impl Model {
             || self.license.trim().is_empty()
             || !https(&self.license_url)
             || !https(&self.source)
+            || self.id.len() > 128
+            || self.license.len() > 128
+            || self.files.len() > 32
+            || self.languages.len() > 64
+            || self
+                .files
+                .iter()
+                .try_fold(0u64, |sum, f| sum.checked_add(f.size))
+                .is_none_or(|sum| sum > (64 << 30))
             || self.files.is_empty()
             || self.languages.is_empty()
         {
@@ -69,7 +92,7 @@ impl Model {
         let mut names = std::collections::BTreeSet::new();
         for file in &self.files {
             file.validate()?;
-            if !names.insert(&file.name) {
+            if !names.insert(file.name.to_ascii_lowercase()) {
                 return Err(Error::Invalid("duplicate model file"));
             }
         }

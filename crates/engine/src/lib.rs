@@ -3,6 +3,7 @@ mod budget;
 pub mod cache;
 mod commands;
 pub mod jobs;
+pub mod models;
 pub mod recovery;
 pub mod translation;
 pub use budget::{BudgetSnapshot, ByteBudget, ByteLease, ByteOwner};
@@ -18,6 +19,13 @@ pub use session::{JobTarget, Session};
 /// Safe diagnostic categories: never include parameter values or user text.
 #[derive(Debug, thiserror::Error)]
 pub enum EditError {
+    #[error("cache is in use")]
+    CacheBusy,
+    #[error("model transfer response does not match the requested representation")]
+    ModelResponse,
+    #[error("model storage is full")]
+    StorageFull,
+
     #[error("recovery candidate is corrupt or incomplete")]
     RecoveryCorrupt,
     #[error("persistence operation is already active")]

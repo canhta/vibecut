@@ -1,5 +1,8 @@
 //! Content-addressed artifacts and independently committed ASR chunk checkpoints.
+mod native;
 use crate::{ByteBudget, ByteLease, ByteOwner, EditError};
+pub use native::ModelLease;
+pub(crate) use native::{NativeEdit, strong_etag};
 use std::{
     collections::BTreeMap,
     fs,
@@ -19,6 +22,7 @@ pub enum ArtifactKind {
     Translation,
     Cues,
     Preview,
+    ModelBundle,
 }
 /// Canonical semantic inputs, in addition to source content and adapter identity.
 /// Hash normalized owner serialization, never Debug/display strings or file paths.
@@ -52,6 +56,7 @@ impl CacheKey {
             ArtifactKind::Translation => b"translation",
             ArtifactKind::Cues => b"cues",
             ArtifactKind::Preview => b"preview",
+            ArtifactKind::ModelBundle => b"model-bundle",
         };
         let mut hash = blake3::Hasher::new();
         hash.update(b"vibecut-artifact-v1");
@@ -86,6 +91,7 @@ const REMOVED: usize = usize::MAX - 1;
 /// budget. Atomic pins serialize readers against reclaimers without an IO lock.
 pub(crate) struct StoredArtifact {
     path: PathBuf,
+    native: bool,
     charge: Mutex<Option<ByteLease>>,
     len: u64,
     pins: AtomicUsize,
@@ -99,7 +105,7 @@ impl StoredArtifact {
         self.stamp.load(Ordering::Relaxed)
     }
     fn pinned(&self) -> bool {
-        self.pins.load(Ordering::Acquire) != 0
+        self.native || self.pins.load(Ordering::Acquire) != 0
     }
     fn pin(self: &Arc<Self>) -> Result<Option<ArtifactPin>, EditError> {
         let mut pins = self.pins.load(Ordering::Acquire);
@@ -124,6 +130,12 @@ impl StoredArtifact {
     /// Only the successful 0 -> EVICTING owner performs IO and releases accounting.
     /// A concurrent read/reclaim sees temporary pressure, never a missing live pin.
     pub(crate) fn evict(&self) -> Result<bool, EditError> {
+        self.evict_inner(false)
+    }
+    fn evict_inner(&self, explicit: bool) -> Result<bool, EditError> {
+        if self.native && !explicit {
+            return Ok(false);
+        }
         if self
             .pins
             .compare_exchange(0, EVICTING, Ordering::AcqRel, Ordering::Acquire)
@@ -131,7 +143,12 @@ impl StoredArtifact {
         {
             return Ok(false);
         }
-        match fs::remove_file(&self.path) {
+        let removed = if self.native {
+            fs::remove_dir_all(&self.path)
+        } else {
+            fs::remove_file(&self.path)
+        };
+        match removed {
             Ok(()) => {}
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
             Err(e) => {
@@ -160,6 +177,7 @@ impl Drop for ArtifactPin {
 /// Files are untrusted, size capped before reads and digest checked before reuse.
 pub struct ArtifactCache {
     root: PathBuf,
+    root_lock: Arc<fs::File>,
     budget: ByteBudget,
     entries: BTreeMap<CacheKey, Arc<StoredArtifact>>,
     max_entries: usize,
@@ -177,6 +195,13 @@ impl ArtifactLease {
     }
 }
 impl ArtifactCache {
+    pub(crate) fn byte_budget(&self) -> ByteBudget {
+        self.budget.clone()
+    }
+    pub(crate) fn root_path(&self) -> &Path {
+        &self.root
+    }
+
     /// Rebuild bounded metadata after a crash. Excess entries are removed, and files
     /// with malformed names/header are skipped with a diagnostic count. Payloads
     /// are verified on get. LRU order restarts at directory scan.
@@ -189,16 +214,47 @@ impl ArtifactCache {
             return Err(EditError::Limit);
         }
         fs::create_dir_all(root)?;
+        if !fs::symlink_metadata(root)?.file_type().is_dir() {
+            return Err(EditError::CacheCorrupt);
+        }
+        let root = fs::canonicalize(root)?;
+        let lock_path = root.join(".cache.lock");
+        if fs::symlink_metadata(&lock_path).is_ok_and(|m| !m.file_type().is_file()) {
+            return Err(EditError::CacheCorrupt);
+        }
+        let mut options = fs::File::options();
+        options.read(true).write(true).create(true).truncate(false);
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::OpenOptionsExt;
+            options.mode(0o600);
+        }
+        let root_lock = Arc::new(options.open(lock_path)?);
+        root_lock.try_lock().map_err(|e| match e {
+            fs::TryLockError::WouldBlock => EditError::CacheBusy,
+            fs::TryLockError::Error(e) => EditError::Io(e),
+        })?;
         let mut cache = Self {
-            root: root.to_owned(),
+            root: root.clone(),
+            root_lock,
             budget,
             entries: BTreeMap::new(),
             max_entries,
         };
         let mut corrupt = 0usize;
-        for file in fs::read_dir(root)? {
+        for file in fs::read_dir(&root)? {
             let file = file?;
             let kind = file.file_type()?;
+            if kind.is_dir() {
+                match cache.open_native(&file.path()) {
+                    Ok(true) => {}
+                    Ok(false) => {
+                        corrupt = corrupt.saturating_add(1);
+                    }
+                    Err(e) => return Err(e),
+                }
+                continue;
+            }
             if kind.is_symlink() || !kind.is_file() {
                 corrupt = corrupt.saturating_add(1);
                 continue;
@@ -207,6 +263,9 @@ impl ArtifactCache {
                 corrupt = corrupt.saturating_add(1);
                 continue;
             };
+            if name == ".cache.lock" {
+                continue;
+            }
             // Atomic writer debris is never considered a checkpoint.
             if name.starts_with(".vibecut-") {
                 fs::remove_file(file.path())?;
@@ -263,6 +322,7 @@ impl ArtifactCache {
         self.prune();
         let artifact = Arc::new(StoredArtifact {
             path: self.path(key),
+            native: false,
             charge: Mutex::new(Some(charge)),
             len,
             pins: AtomicUsize::new(0),
@@ -335,6 +395,9 @@ impl ArtifactCache {
         let Some(entry) = self.entries.get(&key) else {
             return Ok(None);
         };
+        if entry.native {
+            return Err(EditError::Unsupported("native bundle requires model lease"));
+        }
         let Some(pin) = entry.pin()? else {
             self.entries.remove(&key);
             return Ok(None);

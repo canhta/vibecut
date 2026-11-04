@@ -6,7 +6,7 @@ use std::sync::{
     atomic::{AtomicU64, Ordering},
 };
 
-/// All charged resident and persistent bytes share one ceiling.
+/// Shared accounting categories. Native model disk usage has separate free-disk admission.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ByteOwner {
     DecodedFrames,
@@ -15,6 +15,8 @@ pub enum ByteOwner {
     PersistentCache,
     CacheReads,
     JobResults,
+    /// Reported installed/checkpoint model disk bytes; separately preflighted, not memory admission.
+    ModelWeights,
 }
 impl ByteOwner {
     fn index(self) -> usize {
@@ -25,6 +27,7 @@ impl ByteOwner {
             Self::PersistentCache => 3,
             Self::CacheReads => 4,
             Self::JobResults => 5,
+            Self::ModelWeights => 6,
         }
     }
 }
@@ -32,7 +35,20 @@ impl ByteOwner {
 pub struct BudgetSnapshot {
     pub limit: u64,
     pub used: u64,
-    pub owners: [u64; 6],
+    pub owners: [u64; 7],
+}
+impl BudgetSnapshot {
+    /// Native model disk bytes are reported, but admitted by free-disk preflight.
+    pub fn model_bytes(&self) -> u64 {
+        self.owners
+            .get(ByteOwner::ModelWeights.index())
+            .copied()
+            .unwrap_or(0)
+    }
+    /// Bytes constrained by limit; excludes separately reported native model disk usage.
+    pub fn limited_used(&self) -> u64 {
+        self.used.saturating_sub(self.model_bytes())
+    }
 }
 /// Clone this handle into every cache/adapter; never instantiate one per cache.
 #[derive(Clone)]
@@ -51,11 +67,14 @@ impl ByteBudget {
             accounting: Mutex::new(BudgetSnapshot {
                 limit,
                 used: 0,
-                owners: [0; 6],
+                owners: [0; 7],
             }),
             artifacts: Mutex::new(Vec::new()),
             clock: AtomicU64::new(0),
         })))
+    }
+    pub(crate) fn same_policy(&self, other: &Self) -> bool {
+        Arc::ptr_eq(&self.0, &other.0)
     }
     pub fn snapshot(&self) -> Result<BudgetSnapshot, EditError> {
         Ok(self
@@ -129,11 +148,14 @@ impl ByteBudget {
             .accounting
             .lock()
             .map_err(|_| EditError::JobPoisoned)?;
-        if bytes > state.limit {
+        if owner != ByteOwner::ModelWeights && bytes > state.limit {
             return Err(EditError::ArtifactTooLarge);
         }
         let next = state.used.checked_add(bytes).ok_or(EditError::BudgetFull)?;
-        if next > state.limit {
+        let memory = state.limited_used();
+        if owner != ByteOwner::ModelWeights
+            && memory.checked_add(bytes).is_none_or(|v| v > state.limit)
+        {
             return Err(EditError::BudgetFull);
         }
         let count = state
@@ -154,6 +176,35 @@ pub struct ByteLease {
     budget: ByteBudget,
     owner: ByteOwner,
     bytes: u64,
+}
+impl ByteLease {
+    pub(crate) fn resize_models(&mut self, bytes: u64) -> Result<(), EditError> {
+        if self.owner != ByteOwner::ModelWeights {
+            return Err(EditError::Invalid("model accounting owner"));
+        }
+        let mut state = self
+            .budget
+            .0
+            .accounting
+            .lock()
+            .map_err(|_| EditError::JobPoisoned)?;
+        let next = state
+            .used
+            .checked_sub(self.bytes)
+            .and_then(|n| n.checked_add(bytes))
+            .ok_or(EditError::BudgetFull)?;
+        let count = state
+            .owners
+            .get_mut(self.owner.index())
+            .ok_or(EditError::Limit)?;
+        *count = count
+            .checked_sub(self.bytes)
+            .and_then(|n| n.checked_add(bytes))
+            .ok_or(EditError::BudgetFull)?;
+        state.used = next;
+        self.bytes = bytes;
+        Ok(())
+    }
 }
 impl Drop for ByteLease {
     fn drop(&mut self) {

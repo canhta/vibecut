@@ -37,6 +37,7 @@ pub enum JobKind {
     Export,
     Import,
     Persist,
+    DownloadModel,
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum JobStage {
@@ -52,6 +53,8 @@ pub enum JobStage {
     Mix,
     Encode,
     Finalize,
+    Download,
+    Verify,
     Publish,
     Backoff,
     Complete,
@@ -176,6 +179,21 @@ impl JobContext {
         } else {
             Ok(())
         }
+    }
+    /// Seal a verified atomic publication against cancellation. Cancellation that
+    /// wins first refuses publication; after sealing, cancel is a no-op and the
+    /// operation finishes or fails with its IO result. No mutex spans IO.
+    pub fn commit_publication<T>(
+        &self,
+        publish: impl FnOnce() -> Result<T, EditError>,
+    ) -> Result<T, EditError> {
+        self.begin_publication()?;
+        {
+            let mut progress = self.progress.lock().map_err(|_| EditError::JobPoisoned)?;
+            progress.stage = JobStage::Publish;
+            progress.at = self.clock.now();
+        }
+        publish()
     }
     /// Latest value only, at most once per configured interval (including stage
     /// changes). Invalid values are refused without changing visible progress.
@@ -376,6 +394,9 @@ impl JobRunner {
         });
         Ok((id, token))
     }
+    pub(crate) fn uses_budget(&self, budget: &ByteBudget) -> bool {
+        self.budget.same_policy(budget)
+    }
     /// Pump from the UI/CLI event loop. No wait for executing tasks; completed
     /// handles are joined. Scheduling scans past resource-blocked jobs.
     pub fn tick(&mut self) -> Result<(), EditError> {
@@ -406,8 +427,12 @@ impl JobRunner {
                 _ => false,
             };
             let retry = transient
+                && !pending.context.publication_started()
                 && pending.spec.class == ResourceClass::Network
-                && matches!(pending.spec.kind, JobKind::Transcribe | JobKind::Translate)
+                && matches!(
+                    pending.spec.kind,
+                    JobKind::Transcribe | JobKind::Translate | JobKind::DownloadModel
+                )
                 && pending.snapshot.attempts < self.config.network_attempts;
             // A retry must occupy one bounded pending slot. If that slot filled
             // while running, retain the typed failure instead of growing the queue.

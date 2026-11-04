@@ -689,6 +689,7 @@ fn reopened_cache_admits_large_work_and_protects_pinned_readers() {
         r.submit(request, |_| Ok(vec![])),
         Err(EditError::ArtifactTooLarge)
     ));
+    drop(cache); // Release the exclusive root writer before reopening.
     let (mut cache, _) = ArtifactCache::open(dir.path(), budget.clone(), 10).unwrap();
     cache.put(key(1), &[1; 328]).unwrap();
     let pin = cache.get(key(1)).unwrap().unwrap();
