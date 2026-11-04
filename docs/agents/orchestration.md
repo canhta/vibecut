@@ -89,7 +89,8 @@ Load `orca skills get orchestration` for CLI details; use handles from receipts.
    metric the ticket names against its recorded baseline (no language, format or backend may
    regress). Fix what you find first.
 3. Push the frozen SHA to the ticket branch and start hosted CI before handoff;
-   review starts while it runs. Reviewers run only targeted reproductions locally.
+   review starts while it runs. Pushing ticket branches and `main` is part of the
+   loop; GitHub comments, issues and PRs are not. Reviewers run only targeted reproductions locally.
    Finish the ticket on one of the two [merge paths](#review-and-merge). A ticket
    that needs review ends the turn right away with `worker_done`, so its review starts
    while you wait; the coordinator sends `continue` to resume the loop.
