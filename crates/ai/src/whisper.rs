@@ -105,6 +105,41 @@ impl Whisper {
             threads: i32::from(threads),
         })
     }
+    /// Auto-detect the spoken language from a bounded window using the loaded model.
+    /// The caller still supplies the detected tag explicitly to every transcription
+    /// request; this method performs no recognition, provider fallback or chunking.
+    pub fn detect_language(
+        &self,
+        audio: AudioWindow<'_>,
+        hooks: &dyn ExecutionHooks,
+    ) -> Result<captions::LanguageTag, Error> {
+        checkpoint(hooks, Stage::Transcribe)?;
+        if audio.sample_rate != SAMPLE_RATE
+            || audio.range.len() > MAX_SAMPLES
+            || audio.samples.len() as u64 != audio.range.len()
+            || audio.samples.iter().any(|v| !v.is_finite())
+        {
+            return Err(Error::Invalid("language detection window"));
+        }
+        let mut state = self.context.create_state().map_err(|_| Error::Inference)?;
+        state
+            .pcm_to_mel(
+                audio.samples,
+                usize::try_from(self.threads).map_err(|_| Error::Inference)?,
+            )
+            .map_err(|_| Error::Inference)?;
+        checkpoint(hooks, Stage::Transcribe)?;
+        let (id, _) = state
+            .lang_detect(
+                0,
+                usize::try_from(self.threads).map_err(|_| Error::Inference)?,
+            )
+            .map_err(|_| Error::Inference)?;
+        checkpoint(hooks, Stage::Transcribe)?;
+        let tag = whisper_rs::get_lang_str(id).ok_or(Error::UnsupportedLanguage)?;
+        captions::LanguageTag::parse(tag).map_err(Error::Captions)
+    }
+
     fn recognize(
         &self,
         audio: AudioWindow<'_>,

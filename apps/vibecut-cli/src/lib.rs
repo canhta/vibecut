@@ -1,7 +1,11 @@
 //! Headless CLI adapter: arguments, dispatch through engine, typed exit codes.
-use engine::cache::{ArtifactKind, CacheKey, KeyInputs};
-use engine::jobs::{JobRunner, JobStage, JobState, RunnerConfig, SystemClock};
-use engine::{CreatedId, EditError, Session};
+use engine::cache::{ArtifactCache, ArtifactKind, CacheKey, KeyInputs};
+use engine::jobs::{JobId, JobRunner, JobSnapshot, JobStage, JobState, RunnerConfig, SystemClock};
+use engine::subtitles::{
+    self, CatalogOperation, ConsentPrompt, Cost, Progress, ProviderOption, Stage, SubtitleOutcome,
+    SubtitleRequest, UploadRequest,
+};
+use engine::{ByteBudget, CreatedId, EditError, Session};
 use project::atomic::Overwrite;
 use project::{Project, ProjectId, WriterLease};
 use serde_json::{Value, json};
@@ -22,6 +26,14 @@ Usage:
   vibecut project info <path>
   vibecut exec <project> <command_id> <json>
   vibecut export <project> --out <mp4> [--aspect 9:16] [--allow-degraded] [--overwrite]
+  vibecut subtitle <in> [--from vi|en|zh|auto] --to vi|en|zh [--bilingual]
+                   [--srt <out>] [--burn <out.mp4>] [--aspect 9:16]
+                   [--provider <id>] [--model <id>] [--translate-provider <id>]
+                   [--translate-model <id>] [--yes-upload] [--overwrite]
+  vibecut providers [--operation transcribe|translate] [--language <tag>]
+  vibecut model list
+  vibecut model info <id>
+  vibecut model download <id> --yes-download
   vibecut commands
   vibecut --help
   vibecut --version
@@ -136,6 +148,13 @@ fn edit_code(error: &EditError) -> (&'static str, u8) {
     match error {
         EditError::Render(render::Error::Unavailable(_)) => ("unavailable", 4),
         EditError::Render(_) => ("render", 6),
+        EditError::Media(_) => ("media", 6),
+        EditError::ModelMissing(_) | EditError::RunnerMissing | EditError::CredentialMissing(_) => {
+            ("setup", 4)
+        }
+        EditError::Ai(_) => ("ai", 4),
+        EditError::JobFailure(error) => edit_code(error),
+        EditError::ConsentRequired | EditError::AutoLanguageUnsupported => ("rejected", 5),
         EditError::Project(project::Error::Busy) => ("busy", 3),
         EditError::Project(project::Error::Conflict) => ("conflict", 3),
         EditError::Project(project::Error::Io(_)) => ("io", 7),
@@ -196,6 +215,9 @@ pub fn run(args: Vec<OsString>) -> Result<Output, CliError> {
         "project" => project(rest),
         "exec" => exec(rest),
         "export" => export(rest),
+        "subtitle" => subtitle(rest),
+        "providers" => providers(rest),
+        "model" => model(rest),
         "commands" => commands(rest),
         other => Err(CliError::Usage(format!("unknown subcommand: {other}"))),
     }
@@ -561,7 +583,7 @@ fn export_project(
         settings,
         output.clone(),
     )?;
-    wait_for_export(&mut runner, id)?;
+    wait_for_job(&mut runner, id)?;
     runner.shutdown();
     let value = json!({
         "path": json_path(&output)?,
@@ -599,7 +621,7 @@ fn export_settings(
     settings
 }
 
-fn wait_for_export(runner: &mut JobRunner, id: engine::jobs::JobId) -> Result<(), CliError> {
+fn wait_for_job(runner: &mut JobRunner, id: JobId) -> Result<(), CliError> {
     let mut last = (JobStage::Queued, u32::MAX);
     loop {
         runner.tick()?;
@@ -666,6 +688,645 @@ fn stage_name(stage: JobStage) -> &'static str {
         JobStage::Backoff => "backoff",
         JobStage::Complete => "complete",
     }
+}
+
+fn subtitle(args: Vec<OsString>) -> Result<Output, CliError> {
+    let mut args = args.into_iter();
+    let mut input: Option<PathBuf> = None;
+    let mut from = "auto".to_owned();
+    let mut to: Option<String> = None;
+    let mut bilingual = false;
+    let mut srt: Option<PathBuf> = None;
+    let mut burn: Option<PathBuf> = None;
+    let mut portrait = None;
+    let mut provider = "whisper.cpp".to_owned();
+    let mut model: Option<String> = None;
+    let mut translate_provider = "openai".to_owned();
+    let mut translate_model: Option<String> = None;
+    let mut yes_upload = false;
+    let mut overwrite = false;
+    while let Some(arg) = args.next() {
+        let flag = utf8(&arg, "subtitle flag")?;
+        match flag {
+            "--from" => {
+                from = utf8(
+                    &args
+                        .next()
+                        .ok_or_else(|| CliError::Usage("--from requires a language".into()))?,
+                    "source language",
+                )?
+                .to_owned();
+            }
+            "--to" => {
+                to = Some(
+                    utf8(
+                        &args
+                            .next()
+                            .ok_or_else(|| CliError::Usage("--to requires a language".into()))?,
+                        "target language",
+                    )?
+                    .to_owned(),
+                );
+            }
+            "--bilingual" => bilingual = true,
+            "--srt" => {
+                srt = Some(PathBuf::from(args.next().ok_or_else(|| {
+                    CliError::Usage("--srt requires an output path".into())
+                })?));
+            }
+            "--burn" => {
+                burn = Some(PathBuf::from(args.next().ok_or_else(|| {
+                    CliError::Usage("--burn requires an output path".into())
+                })?));
+            }
+            "--aspect" => {
+                let raw = args
+                    .next()
+                    .ok_or_else(|| CliError::Usage("--aspect requires 9:16 or 16:9".into()))?;
+                let value = utf8(&raw, "aspect")?;
+                portrait = Some(match value {
+                    "9:16" => true,
+                    "16:9" => false,
+                    _ => return Err(CliError::Usage("--aspect must be 9:16 or 16:9".into())),
+                });
+            }
+            "--provider" => {
+                provider = utf8(
+                    &args
+                        .next()
+                        .ok_or_else(|| CliError::Usage("--provider requires an id".into()))?,
+                    "provider",
+                )?
+                .to_owned();
+            }
+            "--model" => {
+                model = Some(
+                    utf8(
+                        &args
+                            .next()
+                            .ok_or_else(|| CliError::Usage("--model requires an id".into()))?,
+                        "model",
+                    )?
+                    .to_owned(),
+                );
+            }
+            "--translate-provider" => {
+                translate_provider = utf8(
+                    &args.next().ok_or_else(|| {
+                        CliError::Usage("--translate-provider requires an id".into())
+                    })?,
+                    "translation provider",
+                )?
+                .to_owned();
+            }
+            "--translate-model" => {
+                translate_model = Some(
+                    utf8(
+                        &args.next().ok_or_else(|| {
+                            CliError::Usage("--translate-model requires an id".into())
+                        })?,
+                        "translation model",
+                    )?
+                    .to_owned(),
+                );
+            }
+            "--yes-upload" => yes_upload = true,
+            "--overwrite" => overwrite = true,
+            "--help" | "-h" => {
+                return Ok(Output {
+                    value: json!({"usage": subtitle_usage()}),
+                    human: subtitle_usage().to_owned(),
+                });
+            }
+            other if other.starts_with('-') => {
+                return Err(CliError::Usage(format!("unknown subtitle flag: {other}")));
+            }
+            _ => {
+                if input.is_some() {
+                    return Err(CliError::Usage(
+                        "subtitle takes one input media path".into(),
+                    ));
+                }
+                input = Some(PathBuf::from(arg));
+            }
+        }
+    }
+    let input = input.ok_or_else(subtitle_usage_error)?;
+    let to = to.ok_or_else(subtitle_usage_error)?;
+    if srt.is_none() && burn.is_none() {
+        return Err(CliError::Usage(
+            "subtitle requires --srt and/or --burn".into(),
+        ));
+    }
+    if portrait.is_some() && burn.is_none() {
+        return Err(CliError::Usage("--aspect requires --burn".into()));
+    }
+    let source_language = match from.as_str() {
+        "auto" => None,
+        value => {
+            if !["vi", "en", "zh"].contains(&value) {
+                return Err(CliError::Usage("--from must be vi, en, zh or auto".into()));
+            }
+            Some(subtitles::parse_language(value)?)
+        }
+    };
+    let target_language = subtitles::normalize_target_tag(&subtitles::parse_language(&to)?)?;
+    if !["vi", "en", "zh-Hans", "zh-Hant"].contains(&target_language.as_str()) {
+        return Err(CliError::Usage(
+            "--to must be vi, en, zh, zh-Hans or zh-Hant".into(),
+        ));
+    }
+    if bilingual
+        && source_language
+            .as_ref()
+            .is_some_and(|source| source == &target_language)
+    {
+        return Err(CliError::Usage(
+            "--bilingual requires --from and --to to differ".into(),
+        ));
+    }
+    let translation_needed = source_language
+        .as_ref()
+        .is_none_or(|source| source != &target_language)
+        || bilingual;
+    let transcription = subtitles::choose_transcription(&provider, model.as_deref())?;
+    let translation = if translation_needed {
+        Some(subtitles::choose_translation(
+            &translate_provider,
+            translate_model.as_deref(),
+        )?)
+    } else {
+        None
+    };
+    let credentials = subtitles::Credentials::new(
+        std::env::var("OPENAI_API_KEY").ok(),
+        std::env::var("ELEVENLABS_API_KEY").ok(),
+        std::env::var("ANTHROPIC_API_KEY").ok(),
+    )?;
+    let mut runtime = subtitles::Runtime::default();
+    if let Ok(value) = std::env::var("VIBECUT_ASR_THREADS") {
+        let threads = value.parse::<u8>().map_err(|_| {
+            CliError::Usage("VIBECUT_ASR_THREADS must be an integer from 1 to 32".into())
+        })?;
+        if !(1..=32).contains(&threads) {
+            return Err(CliError::Usage(
+                "VIBECUT_ASR_THREADS must be an integer from 1 to 32".into(),
+            ));
+        }
+        runtime.threads = threads;
+    }
+    if std::env::var("VIBECUT_ASR_GPU").is_ok_and(|value| value == "0") {
+        runtime.use_gpu = false;
+    }
+    runtime.gipformer_runner = local_asr_runner();
+    let budget = ByteBudget::new(CLI_MEMORY_LIMIT)?;
+    let root = subtitles::default_cache_root()?;
+    let (mut cache, _diagnostics) = ArtifactCache::open(&root, budget.clone(), 128)?;
+    let providers = subtitles::Providers::open(
+        transcription,
+        translation,
+        &mut cache,
+        &credentials,
+        &runtime,
+    )?;
+    let mut runner = JobRunner::new(
+        RunnerConfig {
+            concurrency: [1, 1, 2],
+            queue: 8,
+            retained: 8,
+            network_attempts: 3,
+            backoff: Duration::from_millis(250),
+            progress_interval: Duration::from_millis(50),
+        },
+        budget,
+        Arc::new(SystemClock::default()),
+    )?;
+    let request = SubtitleRequest {
+        input: input.clone(),
+        source_language,
+        target_language,
+        bilingual,
+        srt,
+        burn,
+        portrait,
+        overwrite,
+    };
+    let progress = CliProgress {
+        last: std::sync::Mutex::new((JobStage::Queued, u32::MAX)),
+    };
+    let consent = CliConsent { yes_upload };
+    let outcome = subtitles::run(
+        &request,
+        &providers,
+        &mut runner,
+        &mut cache,
+        &consent,
+        &progress,
+    )?;
+    runner.shutdown();
+    let value = outcome_json(&outcome, &input)?;
+    Ok(Output {
+        value,
+        human: outcome_human_subtitle(&outcome),
+    })
+}
+
+fn subtitle_usage() -> &'static str {
+    "usage: vibecut subtitle <in> [--from vi|en|zh|auto] --to vi|en|zh [--bilingual]\n\
+                     [--srt <out>] [--burn <out.mp4>] [--aspect 9:16]\n\
+                     [--provider <id>] [--model <id>] [--translate-provider <id>]\n\
+                     [--translate-model <id>] [--yes-upload] [--overwrite]"
+}
+fn subtitle_usage_error() -> CliError {
+    CliError::Usage(subtitle_usage().into())
+}
+
+fn local_asr_runner() -> Option<PathBuf> {
+    if let Some(value) = std::env::var_os("VIBECUT_LOCAL_ASR") {
+        let path = PathBuf::from(value);
+        if path.is_file() {
+            return Some(path);
+        }
+    }
+    if let Ok(executable) = std::env::current_exe()
+        && let Some(parent) = executable.parent()
+    {
+        let path = parent.join("vibecut-local-asr");
+        if path.is_file() {
+            return Some(path);
+        }
+    }
+    let path = Path::new("target")
+        .join("release")
+        .join("vibecut-local-asr");
+    path.is_file().then_some(path)
+}
+
+struct CliProgress {
+    last: std::sync::Mutex<(JobStage, u32)>,
+}
+impl Progress for CliProgress {
+    fn stage(&self, stage: Stage) {
+        let _ = writeln!(io::stderr(), "stage {}", subtitle_stage_name(stage));
+    }
+    fn job(&self, snapshot: &JobSnapshot) {
+        let percent = progress_percent(snapshot.progress);
+        if let Ok(mut last) = self.last.lock()
+            && *last != (snapshot.stage, percent)
+        {
+            *last = (snapshot.stage, percent);
+            let _ = writeln!(
+                io::stderr(),
+                "progress {} {}%",
+                stage_name(snapshot.stage),
+                percent
+            );
+        }
+    }
+}
+fn subtitle_stage_name(stage: Stage) -> &'static str {
+    match stage {
+        Stage::Extract => "extract",
+        Stage::Transcribe => "transcribe",
+        Stage::Align => "align",
+        Stage::Assemble => "assemble",
+        Stage::Segment => "segment",
+        Stage::Translate => "translate",
+        Stage::ExportSrt => "export_srt",
+        Stage::ExportBurn => "export_burn",
+    }
+}
+
+struct CliConsent {
+    yes_upload: bool,
+}
+impl ConsentPrompt for CliConsent {
+    fn approve(&self, request: &UploadRequest) -> Result<(), EditError> {
+        let operation = match request.operation {
+            CatalogOperation::Transcribe => "transcribe",
+            CatalogOperation::Translate => "translate",
+        };
+        let _ = writeln!(
+            io::stderr(),
+            "upload consent: {operation} {} {} ({})",
+            request.provider,
+            request.model,
+            request.languages
+        );
+        if request.audio_seconds > 0.0 {
+            let _ = writeln!(io::stderr(), "audio: {:.3} s", request.audio_seconds);
+        }
+        let _ = writeln!(io::stderr(), "payload: {} bytes", request.upload_bytes);
+        let _ = writeln!(io::stderr(), "cost: {}", cost_label(&request.cost));
+        for (label, value) in &request.terms {
+            let _ = writeln!(io::stderr(), "{label}: {value}");
+        }
+        if self.yes_upload {
+            Ok(())
+        } else {
+            let _ = writeln!(
+                io::stderr(),
+                "consent: refused; pass --yes-upload to authorize this exact scope"
+            );
+            Err(EditError::ConsentRequired)
+        }
+    }
+}
+
+fn cost_label(cost: &Cost) -> String {
+    match cost {
+        Cost::Free => "free".into(),
+        Cost::Unknown => "unknown".into(),
+        Cost::UpperBound { currency, micros } => {
+            format!("{currency} {:.6}", *micros as f64 / 1_000_000.0)
+        }
+    }
+}
+fn cost_json(cost: &Cost) -> Value {
+    match cost {
+        Cost::Free => json!({"kind": "free"}),
+        Cost::Unknown => json!({"kind": "unknown"}),
+        Cost::UpperBound { currency, micros } => {
+            json!({"kind": "upper_bound", "currency": currency, "micros": micros})
+        }
+    }
+}
+fn outcome_json(outcome: &SubtitleOutcome, input: &Path) -> Result<Value, CliError> {
+    let path = |value: &Option<PathBuf>| -> Result<Value, CliError> {
+        match value {
+            Some(value) => Ok(Value::String(json_path(value)?)),
+            None => Ok(Value::Null),
+        }
+    };
+    Ok(json!({
+        "status": "completed",
+        "input": json_path(input)?,
+        "source_language": outcome.source_language.as_str(),
+        "target_language": outcome.target_language.as_str(),
+        "provider": {
+            "id": outcome.transcription.id(),
+            "model": outcome.transcription.model(),
+        },
+        "translation_provider": outcome.translation.as_ref().map(|value| json!({
+            "id": value.id(),
+            "model": value.model(),
+        })),
+        "segments": outcome.segments,
+        "cues": outcome.cues,
+        "checkpoints": outcome.checkpoints,
+        "srt": path(&outcome.srt)?,
+        "burn": path(&outcome.burn)?,
+        "transcription_cost": cost_json(&outcome.transcription_cost),
+        "translation_cost": cost_json(&outcome.translation_cost),
+        "elapsed_seconds": outcome.elapsed.as_secs_f64(),
+    }))
+}
+fn outcome_human_subtitle(outcome: &SubtitleOutcome) -> String {
+    let mut human = format!(
+        "source: {}\ntarget: {}\nprovider: {} ({})\n",
+        outcome.source_language.as_str(),
+        outcome.target_language.as_str(),
+        outcome.transcription.id(),
+        outcome.transcription.model()
+    );
+    match &outcome.translation {
+        Some(value) => {
+            let _ = writeln!(human, "translation: {} ({})", value.id(), value.model());
+        }
+        None => human.push_str("translation: none\n"),
+    }
+    let _ = writeln!(
+        human,
+        "segments: {}\ncues: {}\ncheckpoints reused: {}",
+        outcome.segments, outcome.cues, outcome.checkpoints
+    );
+    if let Some(path) = &outcome.srt {
+        let _ = writeln!(human, "srt: {}", path.display());
+    }
+    if let Some(path) = &outcome.burn {
+        let _ = writeln!(human, "burn: {}", path.display());
+    }
+    let _ = writeln!(
+        human,
+        "cost: transcribe {}; translate {}\nelapsed: {:.3} s",
+        cost_label(&outcome.transcription_cost),
+        cost_label(&outcome.translation_cost),
+        outcome.elapsed.as_secs_f64()
+    );
+    human.trim_end().to_owned()
+}
+
+fn providers(args: Vec<OsString>) -> Result<Output, CliError> {
+    let mut args = args.into_iter();
+    let mut operation = CatalogOperation::Transcribe;
+    let mut language = None;
+    while let Some(arg) = args.next() {
+        match utf8(&arg, "providers flag")? {
+            "--operation" => {
+                let raw = args.next().ok_or_else(|| {
+                    CliError::Usage("--operation requires transcribe or translate".into())
+                })?;
+                let value = utf8(&raw, "operation")?;
+                operation = match value {
+                    "transcribe" => CatalogOperation::Transcribe,
+                    "translate" => CatalogOperation::Translate,
+                    _ => {
+                        return Err(CliError::Usage(
+                            "--operation must be transcribe or translate".into(),
+                        ));
+                    }
+                };
+            }
+            "--language" => {
+                let raw = args
+                    .next()
+                    .ok_or_else(|| CliError::Usage("--language requires a tag".into()))?;
+                let value = utf8(&raw, "language")?;
+                language = Some(subtitles::parse_language(value)?);
+            }
+            other => {
+                return Err(CliError::Usage(format!("unknown providers flag: {other}")));
+            }
+        }
+    }
+    let options = subtitles::provider_options_for(operation, language.as_ref());
+    let value: Vec<Value> = options.iter().map(provider_option_json).collect();
+    let human = options
+        .iter()
+        .map(|option| {
+            format!(
+                "{}\t{}\t{}\t{}\t{}",
+                option.id,
+                option.label,
+                option.models.join(","),
+                option.languages.join(","),
+                if option.local { "local" } else { "remote" }
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+    Ok(Output {
+        value: json!({"providers": value}),
+        human,
+    })
+}
+fn provider_option_json(option: &ProviderOption) -> Value {
+    json!({
+        "id": option.id,
+        "label": option.label,
+        "operation": match option.operation {
+            CatalogOperation::Transcribe => "transcribe",
+            CatalogOperation::Translate => "translate",
+        },
+        "location": if option.local { "local" } else { "remote" },
+        "models": option.models,
+        "languages": option.languages,
+        "target_languages": option.target_languages,
+        "native_timing": option.native_timing,
+    })
+}
+
+fn model(args: Vec<OsString>) -> Result<Output, CliError> {
+    let mut args = args.into_iter();
+    let action = args
+        .next()
+        .ok_or_else(|| CliError::Usage("usage: vibecut model list|info|download".into()))?;
+    let action = utf8(&action, "model action")?;
+    let rest: Vec<OsString> = args.collect();
+    match action {
+        "list" => {
+            if !rest.is_empty() {
+                return Err(CliError::Usage("usage: vibecut model list".into()));
+            }
+            let models = subtitles::model_infos()?;
+            let value: Vec<Value> = models.iter().map(model_json).collect();
+            let human = models
+                .iter()
+                .map(|model| {
+                    format!(
+                        "{}\t{}\t{} files\t{} bytes\t{}",
+                        model.id,
+                        model.license,
+                        model.files.len(),
+                        model.total_bytes,
+                        model.source
+                    )
+                })
+                .collect::<Vec<_>>()
+                .join("\n");
+            Ok(Output {
+                value: json!({"models": value}),
+                human,
+            })
+        }
+        "info" => {
+            let id = one_utf8(rest, "usage: vibecut model info <id>")?;
+            let model = subtitles::model_info(&id)?;
+            Ok(Output {
+                value: model_json(&model),
+                human: model_human(&model),
+            })
+        }
+        "download" => model_download(rest),
+        other => Err(CliError::Usage(format!(
+            "unknown model action: {other}; expected list, info or download"
+        ))),
+    }
+}
+fn model_download(args: Vec<OsString>) -> Result<Output, CliError> {
+    let mut args = args.into_iter();
+    let id = args.next().ok_or_else(|| {
+        CliError::Usage("usage: vibecut model download <id> --yes-download".into())
+    })?;
+    let id = utf8(&id, "model id")?.to_owned();
+    let mut accepted = false;
+    for arg in args {
+        match utf8(&arg, "model download flag")? {
+            "--yes-download" => accepted = true,
+            other => {
+                return Err(CliError::Usage(format!(
+                    "unknown model download flag: {other}"
+                )));
+            }
+        }
+    }
+    let info = subtitles::model_info(&id)?;
+    let _ = writeln!(io::stderr(), "{}", model_human(&info));
+    if !accepted {
+        let _ = writeln!(
+            io::stderr(),
+            "download: refused; pass --yes-download to accept the source and licence"
+        );
+        return Err(CliError::Rejected(
+            "model download requires --yes-download after reviewing licence and source",
+        ));
+    }
+    let budget = ByteBudget::new(CLI_MEMORY_LIMIT)?;
+    let downloader = subtitles::ModelDownloader::open(budget.clone())?;
+    let mut runner = JobRunner::new(
+        RunnerConfig {
+            concurrency: [1, 1, 1],
+            queue: 4,
+            retained: 4,
+            network_attempts: 3,
+            backoff: Duration::from_millis(500),
+            progress_interval: Duration::from_millis(100),
+        },
+        budget,
+        Arc::new(SystemClock::default()),
+    )?;
+    let id = downloader.submit(&mut runner, &id)?;
+    wait_for_job(&mut runner, id)?;
+    runner.shutdown();
+    Ok(Output {
+        value: json!({"model": info.id, "status": "installed"}),
+        human: format!("installed {}", info.id),
+    })
+}
+fn model_json(model: &subtitles::ModelInfo) -> Value {
+    json!({
+        "id": model.id,
+        "license": model.license,
+        "license_url": model.license_url,
+        "source": model.source,
+        "languages": model.languages,
+        "total_bytes": model.total_bytes,
+        "files": model.files.iter().map(|file| json!({
+            "name": file.name,
+            "source": file.source,
+            "sha256": file.sha256,
+            "size": file.size,
+        })).collect::<Vec<_>>(),
+    })
+}
+fn model_human(model: &subtitles::ModelInfo) -> String {
+    let mut human = format!(
+        "id: {}\nlicence: {} ({})\nsource: {}\nlanguages: {}\nbytes: {}\nfiles:\n",
+        model.id,
+        model.license,
+        model.license_url,
+        model.source,
+        model.languages.join(", "),
+        model.total_bytes
+    );
+    for file in &model.files {
+        let _ = writeln!(
+            human,
+            "  {} {} bytes sha256 {}\n    {}",
+            file.name, file.size, file.sha256, file.source
+        );
+    }
+    human.trim_end().to_owned()
+}
+fn one_utf8(args: Vec<OsString>, usage: &str) -> Result<String, CliError> {
+    let mut args = args.into_iter();
+    let value = args
+        .next()
+        .ok_or_else(|| CliError::Usage(usage.to_owned()))?;
+    if args.next().is_some() {
+        return Err(CliError::Usage(usage.to_owned()));
+    }
+    Ok(utf8(&value, "argument")?.to_owned())
 }
 
 fn commands(args: Vec<OsString>) -> Result<Output, CliError> {

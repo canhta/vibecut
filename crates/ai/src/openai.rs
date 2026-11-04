@@ -36,7 +36,7 @@ const DOCS_URL: &str = "https://developers.openai.com/api/docs/guides/speech-to-
 /// File mode is the only mode this adapter advertises.
 const MODE: &str = "file";
 /// Product ASR languages. Extend this data table only with documented API support.
-const LANGUAGES: [&str; 3] = ["vi", "en", "zh"];
+pub const LANGUAGES: [&str; 3] = ["vi", "en", "zh"];
 /// Settings identity for composition-owned cache keys.
 pub const SETTINGS_FINGERPRINT: &str =
     "openai-transport-v1;model=gpt-transcribe;format=json;wav=pcm16;languages=vi,en,zh";

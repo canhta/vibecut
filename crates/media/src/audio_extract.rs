@@ -132,6 +132,19 @@ fn append_energy(
     Ok(())
 }
 
+/// One mono 16 kHz PCM invocation window in absolute source ticks.
+#[derive(Clone, Debug)]
+pub struct SpeechWindow {
+    /// Exact source ticks decoded into this window.
+    pub source_range: SourceRange,
+    /// Ticks shared with the preceding window; zero for the first window.
+    pub overlap: Tick,
+    /// Mono finite f32 PCM at [`SPEECH_SAMPLE_RATE`].
+    pub samples: Vec<f32>,
+    /// Energy hint: false when the window is effectively silent, not a VAD result.
+    pub speech_detected: bool,
+}
+
 /// Bounds for [`extract_speech_audio_with`]. The OpenAI transcription endpoint
 /// accepts at most 25 MB per file, so the default keeps one megabyte of headroom.
 #[derive(Clone, Debug)]
@@ -172,7 +185,7 @@ pub fn extract_speech_audio_with(
     out_dir: impl AsRef<Path>,
     settings: &SpeechExtractSettings,
 ) -> Result<Vec<AudioChunk>> {
-    extract(
+    extract_files(
         asset,
         range,
         out_dir.as_ref(),
@@ -189,10 +202,33 @@ pub fn extract_speech_audio_with_cancel(
     settings: &SpeechExtractSettings,
     cancel: Arc<AtomicBool>,
 ) -> Result<Vec<AudioChunk>> {
-    extract(asset, range, out_dir.as_ref(), settings, cancel)
+    extract_files(asset, range, out_dir.as_ref(), settings, cancel)
 }
 
-fn extract(
+/// Stream bounded mono 16 kHz PCM windows in the same speech-safe boundaries as
+/// [`extract_speech_audio`], without producing an encoded file. Each callback runs
+/// before decoding continues; at most one window of PCM is retained by this crate.
+pub fn extract_speech_windows_with_cancel(
+    asset: &SourceAsset,
+    range: SourceRange,
+    settings: &SpeechExtractSettings,
+    cancel: Arc<AtomicBool>,
+    window: impl FnMut(SpeechWindow) -> Result<()>,
+) -> Result<()> {
+    let plan = Plan::new(settings)?;
+    let mut sink = PcmSink {
+        start: None,
+        overlap: Tick::ZERO,
+        samples: Vec::new(),
+        energy: 0.0,
+        sample_count: 0,
+        windows: 0,
+        window,
+    };
+    extract_windows(asset, range, plan, cancel, &mut sink)
+}
+
+fn extract_files(
     asset: &SourceAsset,
     range: SourceRange,
     out_dir: &Path,
@@ -201,7 +237,24 @@ fn extract(
 ) -> Result<Vec<AudioChunk>> {
     let plan = Plan::new(settings)?;
     fs::create_dir_all(out_dir)?;
-    let mut chunker = Chunker::new(out_dir, settings, plan);
+    let mut sink = FileSink {
+        out_dir,
+        settings,
+        current: None,
+        chunks: Vec::new(),
+    };
+    extract_windows(asset, range, plan, cancel, &mut sink)?;
+    Ok(sink.chunks)
+}
+
+fn extract_windows(
+    asset: &SourceAsset,
+    range: SourceRange,
+    plan: Plan,
+    cancel: Arc<AtomicBool>,
+    sink: &mut dyn Sink,
+) -> Result<()> {
+    let mut chunker = Chunker::new(plan, sink);
     decode_speech(asset, range, &cancel, &mut |samples, tick| {
         chunker.push(samples, tick)
     })?;
@@ -452,30 +505,124 @@ impl Plan {
     }
 }
 
-struct Chunker<'a> {
+/// Receives bounded windows so file and PCM consumers share one split policy.
+trait Sink {
+    fn begin(&mut self, index: usize, start: Tick, overlap: Tick) -> Result<()>;
+    fn feed(&mut self, samples: &[f32]) -> Result<()>;
+    fn commit(&mut self, start: Tick, end: Tick) -> Result<()>;
+    fn count(&self) -> usize;
+}
+
+struct FileSink<'a> {
     out_dir: &'a Path,
     settings: &'a SpeechExtractSettings,
+    current: Option<ChunkWriter>,
+    chunks: Vec<AudioChunk>,
+}
+impl Sink for FileSink<'_> {
+    fn begin(&mut self, index: usize, _start: Tick, overlap: Tick) -> Result<()> {
+        self.current = Some(ChunkWriter::new(
+            index,
+            self.out_dir,
+            overlap,
+            self.settings,
+        )?);
+        Ok(())
+    }
+    fn feed(&mut self, samples: &[f32]) -> Result<()> {
+        self.current
+            .as_mut()
+            .ok_or(MediaError::Invalid("speech chunk state"))?
+            .feed(samples)
+    }
+    fn commit(&mut self, start: Tick, end: Tick) -> Result<()> {
+        let writer = self
+            .current
+            .take()
+            .ok_or(MediaError::Invalid("speech chunk state"))?;
+        let overlap = writer.overlap;
+        let (path, speech_detected) = writer.finish(self.settings.max_bytes)?;
+        self.chunks.push(AudioChunk {
+            path,
+            source_range: SourceRange::new(start, end)?,
+            overlap,
+            speech_detected,
+        });
+        Ok(())
+    }
+    fn count(&self) -> usize {
+        self.chunks.len()
+    }
+}
+
+struct PcmSink<F> {
+    start: Option<Tick>,
+    overlap: Tick,
+    samples: Vec<f32>,
+    energy: f64,
+    sample_count: usize,
+    windows: usize,
+    window: F,
+}
+impl<F: FnMut(SpeechWindow) -> Result<()>> Sink for PcmSink<F> {
+    fn begin(&mut self, _index: usize, start: Tick, overlap: Tick) -> Result<()> {
+        self.start = Some(start);
+        self.overlap = overlap;
+        self.samples.clear();
+        self.energy = 0.0;
+        self.sample_count = 0;
+        Ok(())
+    }
+    fn feed(&mut self, samples: &[f32]) -> Result<()> {
+        self.samples.extend_from_slice(samples);
+        self.energy += samples
+            .iter()
+            .map(|sample| f64::from(*sample) * f64::from(*sample))
+            .sum::<f64>();
+        self.sample_count = self
+            .sample_count
+            .checked_add(samples.len())
+            .ok_or(MediaError::TooLarge("speech window samples"))?;
+        Ok(())
+    }
+    fn commit(&mut self, start: Tick, end: Tick) -> Result<()> {
+        let speech_detected =
+            self.sample_count > 0 && (self.energy / self.sample_count as f64).sqrt() >= SILENCE_RMS;
+        let window = SpeechWindow {
+            source_range: SourceRange::new(start, end)?,
+            overlap: self.overlap,
+            samples: std::mem::take(&mut self.samples),
+            speech_detected,
+        };
+        self.start = None;
+        self.windows += 1;
+        (self.window)(window)
+    }
+    fn count(&self) -> usize {
+        self.windows
+    }
+}
+
+struct Chunker<'a> {
     plan: Plan,
     pending: Vec<f32>,
     pending_start: Option<Tick>,
     expected_input: Option<Tick>,
     fed: usize,
-    current: Option<ChunkWriter>,
-    chunks: Vec<AudioChunk>,
+    current_start: Option<Tick>,
+    sink: &'a mut dyn Sink,
     next_index: usize,
 }
 impl<'a> Chunker<'a> {
-    fn new(out_dir: &'a Path, settings: &'a SpeechExtractSettings, plan: Plan) -> Self {
+    fn new(plan: Plan, sink: &'a mut dyn Sink) -> Self {
         Self {
-            out_dir,
-            settings,
             plan,
             pending: Vec::new(),
             pending_start: None,
             expected_input: None,
             fed: 0,
-            current: None,
-            chunks: Vec::new(),
+            current_start: None,
+            sink,
             next_index: 0,
         }
     }
@@ -503,12 +650,12 @@ impl<'a> Chunker<'a> {
         self.pump(false)
     }
 
-    fn finish(mut self) -> Result<Vec<AudioChunk>> {
+    fn finish(mut self) -> Result<()> {
         self.pump(true)?;
-        if self.chunks.is_empty() {
+        if self.sink.count() == 0 {
             return Err(MediaError::Invalid("no audio samples in range"));
         }
-        Ok(self.chunks)
+        Ok(())
     }
 
     fn pump(&mut self, finalizing: bool) -> Result<()> {
@@ -567,7 +714,7 @@ impl<'a> Chunker<'a> {
     }
 
     fn ensure_chunk(&mut self) -> Result<()> {
-        if self.current.is_some() {
+        if self.current_start.is_some() {
             return Ok(());
         }
         let start = self
@@ -578,13 +725,8 @@ impl<'a> Chunker<'a> {
         } else {
             self.plan.overlap_ticks
         };
-        self.current = Some(ChunkWriter::new(
-            self.next_index,
-            self.out_dir,
-            start,
-            overlap,
-            self.settings,
-        )?);
+        self.sink.begin(self.next_index, start, overlap)?;
+        self.current_start = Some(start);
         self.next_index += 1;
         Ok(())
     }
@@ -598,10 +740,7 @@ impl<'a> Chunker<'a> {
             .pending
             .get(..count)
             .ok_or(MediaError::Invalid("speech feed bounds"))?;
-        self.current
-            .as_mut()
-            .ok_or(MediaError::Invalid("speech chunk state"))?
-            .feed(samples)?;
+        self.sink.feed(samples)?;
         self.fed = limit;
         if let Some(start) = self.pending_start {
             self.pending_start = Some(
@@ -615,22 +754,14 @@ impl<'a> Chunker<'a> {
     }
 
     fn commit(&mut self, split: usize, available: usize, tail: Option<Vec<f32>>) -> Result<()> {
-        let writer = self
-            .current
+        let start = self
+            .current_start
             .take()
-            .ok_or(MediaError::Invalid("speech chunk state"))?;
-        let start = writer.start_tick;
-        let overlap = writer.overlap;
-        let (path, speech_detected) = writer.finish(self.settings.max_bytes)?;
+            .ok_or(MediaError::Invalid("speech chunk start"))?;
         let end = start
             .checked_add(samples_to_ticks(split as i64)?)
             .ok_or(MediaError::TooLarge("speech chunk range"))?;
-        self.chunks.push(AudioChunk {
-            path,
-            source_range: SourceRange::new(start, end)?,
-            overlap,
-            speech_detected,
-        });
+        self.sink.commit(start, end)?;
         if split < available {
             let tail = tail.ok_or(MediaError::Invalid("speech overlap state"))?;
             let mut pending = Vec::with_capacity(tail.len() + self.pending.len());
@@ -684,7 +815,6 @@ struct ChunkWriter {
     encoder: AudioEncoder,
     muxer: Muxer,
     output: OutputFile,
-    start_tick: Tick,
     overlap: Tick,
     fed: usize,
     energy: f64,
@@ -695,7 +825,6 @@ impl ChunkWriter {
     fn new(
         index: usize,
         out_dir: &Path,
-        start_tick: Tick,
         overlap: Tick,
         settings: &SpeechExtractSettings,
     ) -> Result<Self> {
@@ -712,7 +841,6 @@ impl ChunkWriter {
             encoder,
             muxer,
             output,
-            start_tick,
             overlap,
             fed: 0,
             energy: 0.0,

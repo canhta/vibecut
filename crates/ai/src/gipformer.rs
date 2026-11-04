@@ -24,7 +24,7 @@ pub const MAX_SAMPLES: u64 = 300 * SAMPLE_RATE as u64;
 const CHUNK_SAMPLES: usize = 20 * SAMPLE_RATE as usize;
 const MAX_REPLY: u64 = 16 * 1024 * 1024;
 const MAX_HEADER: usize = 16384;
-const MODEL_ID: &str = "gipformer-68m-rnnt-int8";
+pub const MODEL_ID: &str = "gipformer-68m-rnnt-int8";
 
 /// Explicit hardware request, never an ASR-provider fallback.
 #[derive(Clone, Copy, Debug, Serialize, Deserialize)]

@@ -7,6 +7,7 @@ pub mod jobs;
 pub mod models;
 pub mod providers;
 pub mod recovery;
+pub mod subtitles;
 pub mod translation;
 pub use budget::{BudgetSnapshot, ByteBudget, ByteLease, ByteOwner};
 mod edit;
@@ -58,12 +59,26 @@ pub enum EditError {
     NetworkTransient,
     #[error("job result is stale")]
     StaleResult,
+    #[error("background job failed: {0}")]
+    JobFailure(std::sync::Arc<EditError>),
     #[error("corrupt cache entry skipped")]
     CacheCorrupt,
     #[error("render execution failed")]
     Render(#[from] render::Error),
+    #[error("media operation failed")]
+    Media(#[from] media::MediaError),
     #[error("AI execution failed")]
     Ai(#[from] ai::Error),
+    #[error("local model {0} is not installed; run `vibecut model download {0}`")]
+    ModelMissing(&'static str),
+    #[error("local Gipformer runner is not installed")]
+    RunnerMissing,
+    #[error("provider {0} requires its API key")]
+    CredentialMissing(&'static str),
+    #[error("auto language detection requires the local whisper.cpp provider")]
+    AutoLanguageUnsupported,
+    #[error("remote upload requires explicit consent")]
+    ConsentRequired,
     #[error("job/cache IO failed")]
     Io(#[from] std::io::Error),
     #[error("unknown command")]

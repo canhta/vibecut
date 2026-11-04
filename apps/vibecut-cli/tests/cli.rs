@@ -751,3 +751,150 @@ fn export_refuses_when_a_source_disappears_mid_job() {
     assert_eq!(status.code(), Some(4));
     assert!(!output_path.exists());
 }
+
+#[test]
+fn providers_list_is_offline_and_capability_filtered() {
+    let output = cli(&[
+        os("providers"),
+        os("--operation"),
+        os("transcribe"),
+        os("--language"),
+        os("vi"),
+        os("--json"),
+    ]);
+    assert_eq!(
+        code(&output),
+        0,
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let value = stdout_json(&output);
+    let providers = value["providers"].as_array().unwrap();
+    assert!(providers.iter().any(|value| value["id"] == "whisper.cpp"));
+    assert!(providers.iter().any(|value| value["id"] == "gipformer"));
+    assert!(providers.iter().any(|value| value["id"] == "openai"));
+    assert!(providers.iter().any(|value| value["id"] == "elevenlabs"));
+    let english = cli(&[
+        os("providers"),
+        os("--operation"),
+        os("transcribe"),
+        os("--language"),
+        os("en"),
+        os("--json"),
+    ]);
+    assert_eq!(code(&english), 0);
+    let value = stdout_json(&english);
+    assert!(
+        !value["providers"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|value| value["id"] == "gipformer")
+    );
+}
+
+#[test]
+fn model_catalog_is_offline_and_download_requires_explicit_consent() {
+    let list = cli(&[os("model"), os("list"), os("--json")]);
+    assert_eq!(code(&list), 0, "{}", String::from_utf8_lossy(&list.stderr));
+    let value = stdout_json(&list);
+    let models = value["models"].as_array().unwrap();
+    assert!(
+        models
+            .iter()
+            .any(|model| model["id"] == "whisper-large-v3-turbo")
+    );
+    assert!(
+        models
+            .iter()
+            .any(|model| model["id"] == "whisper-small-dtw")
+    );
+    let info = cli(&[
+        os("model"),
+        os("info"),
+        os("whisper-large-v3-turbo"),
+        os("--json"),
+    ]);
+    assert_eq!(code(&info), 0);
+    let value = stdout_json(&info);
+    assert!(
+        value["license_url"]
+            .as_str()
+            .is_some_and(|v| v.starts_with("https://"))
+    );
+    assert!(!value["files"].as_array().unwrap().is_empty());
+    let refused = cli(&[
+        os("model"),
+        os("download"),
+        os("whisper-large-v3-turbo"),
+        os("--json"),
+    ]);
+    assert_eq!(code(&refused), 5);
+    let error = error_json(&refused);
+    assert_eq!(error["error"]["code"], "rejected");
+}
+
+#[test]
+fn subtitle_refuses_missing_output_and_unknown_language_without_side_effects() {
+    let directory = tempfile::tempdir().unwrap();
+    let input = directory.path().join("input.mp4");
+    fs::write(&input, b"not opened before argument validation").unwrap();
+    let missing = cli(&[
+        os("subtitle"),
+        input.as_os_str(),
+        os("--to"),
+        os("en"),
+        os("--json"),
+    ]);
+    assert_eq!(code(&missing), 2);
+    assert_eq!(error_json(&missing)["error"]["code"], "usage");
+    let language = cli(&[
+        os("subtitle"),
+        input.as_os_str(),
+        os("--from"),
+        os("fr"),
+        os("--to"),
+        os("en"),
+        os("--srt"),
+        directory.path().join("out.srt").as_os_str(),
+        os("--json"),
+    ]);
+    // The CLI restricts source languages to the admitted vi/en/zh set.
+    assert_eq!(code(&language), 2);
+    assert_eq!(error_json(&language)["error"]["code"], "usage");
+}
+
+#[test]
+fn subtitle_remote_provider_without_key_refuses_before_upload() {
+    let directory = tempfile::tempdir().unwrap();
+    let input = directory.path().join("input.mp4");
+    fs::write(&input, b"never read").unwrap();
+    let output = cli(&[
+        os("subtitle"),
+        input.as_os_str(),
+        os("--from"),
+        os("en"),
+        os("--to"),
+        os("vi"),
+        os("--provider"),
+        os("openai"),
+        os("--srt"),
+        directory.path().join("out.srt").as_os_str(),
+        os("--yes-upload"),
+        os("--json"),
+    ]);
+    assert_eq!(
+        code(&output),
+        4,
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let error = error_json(&output);
+    assert_eq!(error["error"]["code"], "setup");
+    assert!(
+        error["error"]["message"]
+            .as_str()
+            .unwrap()
+            .contains("OPENAI_API_KEY")
+    );
+}

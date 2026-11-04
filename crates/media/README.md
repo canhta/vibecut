@@ -75,6 +75,11 @@ these media-owned contracts; it does not recreate probe or asset models.
   and duration, overlaps adjacent chunks, prefers low-energy split frames and
   reports exact source ticks plus an energy-based `speech_detected` hint. Input
   without an audio stream returns `MediaError::NoAudioStream`.
+- `extract_speech_windows_with_cancel`: the same decode, resample and split policy,
+  but streams bounded mono 16 kHz f32 PCM `SpeechWindow`s to a callback instead of
+  writing m4a. The callback runs before decoding continues, so only one window is
+  retained; source ticks, overlap and `speech_detected` have the same meaning.
+  Engine uses this for local/remote ASR invocations without an encode/decode round trip.
 
 All errors use `MediaError`; logs omit paths and media/user text. FFmpeg's default
 logger is disabled because it can disclose filenames. After a codec/mux error,
@@ -136,6 +141,13 @@ both the byte and duration bounds hold. `speech_detected` is an RMS energy hint,
 not voice-activity detection; silent input still produces chunks. Decoding is
 streaming: only the confirmed prefix plus a few seconds of PCM stay buffered,
 independent of input length.
+
+`extract_speech_windows_with_cancel` shares the same bounded splitter and reports
+each window as contiguous mono 16 kHz f32 PCM. It performs no second encode or
+decode, so ASR sees the decoder output directly. A callback error stops extraction;
+the caller owns the returned window and may process it synchronously. The callback
+receives complete windows only; a window's sample count matches its exact source
+tick duration on the 16 kHz grid.
 
 Observed on Apple M1 Pro, 16 GiB, macOS 27.2 with the debug test binary and a
 generated 2 h 48 kHz stereo AAC fixture: 13 chunks covering 7200.000 s in 26.5 s

@@ -10,6 +10,7 @@ mod common;
 use media::{
     AssetId, MediaError, SPEECH_SAMPLE_RATE, SourceAsset, SpeechExtractSettings,
     extract_speech_audio, extract_speech_audio_with, extract_speech_audio_with_cancel,
+    extract_speech_windows_with_cancel,
 };
 use std::path::{Path, PathBuf};
 use std::sync::{
@@ -178,6 +179,56 @@ fn chunks_tile_the_range_with_exact_ticks_and_ffprobe_audio() {
         );
     }
     assert_no_temp_files(&dir);
+}
+
+#[test]
+fn pcm_windows_share_the_file_chunk_boundaries_without_overlap() {
+    let Some(source) = speech_source() else {
+        return;
+    };
+    let asset = asset(&source, 9);
+    let range = SourceRange::new(Tick::ZERO, seconds(30.0)).unwrap();
+    let expected = extract_speech_audio_with(
+        &asset,
+        range,
+        out_dir("pcm-reference"),
+        &settings(10.0, 0.0),
+    )
+    .unwrap();
+    let mut windows = Vec::new();
+    extract_speech_windows_with_cancel(
+        &asset,
+        range,
+        &settings(10.0, 0.0),
+        Arc::new(AtomicBool::new(false)),
+        |window| {
+            windows.push(window);
+            Ok(())
+        },
+    )
+    .unwrap();
+    assert_eq!(windows.len(), expected.len());
+    let mut sample_total = 0usize;
+    for (window, chunk) in windows.iter().zip(&expected) {
+        assert_eq!(window.source_range, chunk.source_range);
+        assert_eq!(window.overlap, Tick::ZERO);
+        assert!(window.speech_detected);
+        assert_eq!(
+            window.samples.len() as i64,
+            window
+                .source_range
+                .duration()
+                .to_units(i64::from(SPEECH_SAMPLE_RATE), Rounding::Nearest)
+                .unwrap()
+        );
+        assert!(window.samples.iter().all(|sample| sample.is_finite()));
+        sample_total += window.samples.len();
+    }
+    assert_eq!(
+        sample_total,
+        (30 * SPEECH_SAMPLE_RATE) as usize,
+        "contiguous windows cover the requested range"
+    );
 }
 
 #[test]

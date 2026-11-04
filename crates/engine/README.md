@@ -631,3 +631,49 @@ frame conflicts, duration/overlap failures, and 128 fixed-seed rational-rate
 samples. `examples/clip_boundary_benchmark.rs` measures a bounded local media and
 Transcript pair, including signed deltas and mid-speech counts against nearest
 frame snapping. This proves source-timing constraints, not ASR accuracy.
+
+## Subtitle workflow
+
+`subtitles` owns the shared end-to-end composition used by the CLI and later UI:
+speech-window extraction, explicit transcription/translation provider choice,
+checkpointed ASR chunks, optional local alignment, cue segmentation, translation
+application and the existing SRT/burn export jobs. It never reimplements captions,
+render, provider consent/cost or cache/checkpoint primitives.
+
+`provider_options()` is offline capability data (operation, model ids, languages,
+local/remote and native timing) for pickers. `choose_transcription`/`choose_translation`
+accept only a listed model and never fall back. `Runtime` selects local threads,
+the explicit GPU request and the shipped Gipformer runner path. `Credentials::new`
+accepts composition-root secrets and validates them; errors name the environment
+entry, never the value.
+
+`Providers::open` loads only the selected adapters. Local Whisper/Gipformer models
+come from verified `ArtifactCache` bundles and keep their `ModelLease` alive for the
+adapter lifetime; text-only ASR additionally loads the pinned `whisper-small-dtw`
+Candle aligner. Missing weights return `ModelMissing`, a missing runner
+`RunnerMissing`, and missing credentials `CredentialMissing`. Remote adapters use
+the official endpoints, shared `ureq` transport and their own disclosures.
+
+`run(request, providers, runner, cache, consent, progress)` imports the input,
+extracts mono 16 kHz windows at speech-safe boundaries, reuses complete
+`AsrChunk` cache entries keyed by source content, exact sample range, language,
+provider/model/settings and aligner identity, executes missing windows as
+Transcribe jobs, assembles with `ai::assemble`, converts and segments through
+captions, applies translation windows through the existing `TranslationRun`, and
+dispatches `export_subtitles`/`burn_subtitles` through the real job runner. Silent
+windows are skipped; no speech, unknown duration and burn without video return
+typed refusals. No project file is written.
+
+Remote upload scopes are prompted through `ConsentPrompt` before every request;
+`DenyUploads` is the default test refusal and `AllowAll` is the explicit test
+grant. `UploadRequest` carries provider/model, languages, audio seconds, payload
+bytes, cost ceiling and the adapter's retention/training/policy links. The
+workflow never uploads without a prompt approval and never downloads weights.
+`ModelDownloader` wraps one explicitly consented catalog download and
+`default_cache_root` is the single shared model/checkpoint location.
+
+Tests in `tests/subtitles.rs` cover all six vi/en/zh translation directions and
+every bilingual pair, SRT plus burned MP4 output, ASR checkpoint reuse on a second
+run, remote consent refusal with zero calls, credential refusal, catalog filtering
+and a real generated fixture. They establish composition and failure contracts,
+not model accuracy, live provider quality or Windows behavior.

@@ -309,6 +309,13 @@ stay absent. Tokens may split UTF-8 and are never relabelled as words.
 ordinals, raw-to-NFC correspondence and missing timing, converting sample boundaries
 once to ticks. There is no separate native token representation or conversion path.
 
+`LANGUAGES` exposes the adapter's exact vi/en/zh data for offline composition;
+`Whisper::detect_language` performs one bounded language-detection pass on an
+already decoded 16 kHz window and returns a captions `LanguageTag`. Detection is
+an explicit caller action, not an implicit provider fallback: the caller supplies
+the detected tag to the real transcription request and still owns chunking,
+consent and retries. No transcription result or timestamp is produced by detection.
+
 `cargo run -p ai --example local_whisper -- MODEL MONO-16KHZ-F32LE LANGUAGE [cpu]`
 is an explicit local smoke/benchmark command using an already downloaded model;
 it exercises public execution and transcript conversion on a continuous window.
@@ -415,7 +422,10 @@ invalidates consent before transport. Text-only composition uses SampleRange [0,
 and sample_rate 1 as Scope's non-audio sentinel; these fields do not assign timing.
 
 `openai::OpenAiTranslator` uses the shared transport's ApiKey, HttpTransport and
-UreqTransport, plus the OpenAI endpoint policy and typed HTTP errors. Its only admitted model is
+UreqTransport, plus the OpenAI endpoint policy and typed HTTP errors.
+`TRANSLATION_LANGUAGES` and `TRANSLATION_TARGET_LANGUAGES` expose the exact source
+and target tags for offline capability composition; target Chinese remains an
+explicit `zh-Hans`/`zh-Hant` choice. Its only admitted model is
 `gpt-6.1-sol`, mode `context-window`, with exported TRANSLATION_SETTINGS. Only the
 official OpenAI base URL is admitted. Exact languages are `vi`, `en`, `zh`,
 `zh-Hans`, `zh-Hant` for source; target Chinese must select `zh-Hans` or `zh-Hant`
@@ -455,7 +465,7 @@ and intentionally does not compare digit multiplicity.
 
 `anthropic::AnthropicTranslator` implements the same `Translator` contract and
 `TranslationWindow` validation with Claude Sonnet 5.5 (`claude-sonnet-5-5`), mode
-`context-window`. It admits only backend `anthropic` and the official base URL
+`context-window`; it exposes the same translation language tables. It admits only backend `anthropic` and the official base URL
 `https://api.anthropic.com/v1`; proxies, lookalike hosts and other version paths are
 refused. Composition resolves `ANTHROPIC_API_KEY` for development or the OS keychain
 and injects it as `transport::ApiKey`; the key is sent as `x-api-key` with

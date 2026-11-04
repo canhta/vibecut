@@ -8,6 +8,12 @@ publish = false
 [lints]
 workspace = true
 
+[features]
+default = ["whisper", "gipformer", "candle-align"]
+whisper = ["ai/whisper"]
+gipformer = ["ai/gipformer"]
+candle-align = ["ai/candle-align"]
+
 [dependencies]
 ai = { path = "../ai", default-features = false }
 project = { path = "../project" }

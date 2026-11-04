@@ -203,7 +203,8 @@ impl RecognitionSegment {
 }
 /// Validated source-sample recognition. An untimed segment remains text-only;
 /// conversion to the captions owner refuses it instead of fabricating a duration.
-#[derive(Clone, Debug)]
+/// Serialization is the engine checkpoint form; cache integrity is checked before use.
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Recognition {
     language: LanguageTag,
     fingerprint: Fingerprint,

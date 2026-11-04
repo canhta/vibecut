@@ -16,14 +16,21 @@ unsupported error.
 and holds the [project lease](../../crates/project/README.md#writer-lease-and-save-acknowledgement)
 from load through save. Export uses the saved snapshot and
 [render admission](../../crates/render/README.md#export-and-publication) through
-engine jobs, with a fixed 2 GiB aggregate budget. It has no resume, provider
-execution or persisted preferences. Process interruption follows crash semantics;
-it has no graceful signal-to-job cancellation handler. A completed export reports
-its output path, not render's detailed receipt.
+engine jobs, with a fixed 2 GiB aggregate budget. `subtitle`, `providers` and
+`model` are adapters over the [engine subtitle workflow](../../crates/engine/README.md#subtitle-workflow):
+the CLI parses flags, prints local/remote capabilities and upload disclosures, and
+never implements chunking, consent/cost, transcription, translation, checkpoint or
+serialization logic. `subtitle` has no graceful signal-to-job cancellation handler;
+process interruption follows crash semantics, and completed ASR windows remain
+reusable through the content-addressed cache. Local models are never downloaded
+implicitly; `model download` requires `--yes-download` after printing the exact
+licence, source, size and hashes. A completed export/subtitle run reports its
+output paths, not render's detailed receipt.
 
 `cargo test -p vibecut-cli` covers command dispatch, Unicode/space paths, refused
 parameters, subprocess lease contention, progress, export geometry, degraded
-consent and source loss before/during export. Oracle tests require external
+consent and source loss before/during export, offline provider/model catalogs,
+subtitle argument refusals and credential refusal before any upload. Oracle tests require external
 FFmpeg/ffprobe: missing tools print a skip, required-oracle mode refuses a skip,
 and found but failing tools fail. Run `cargo xtask ci --require-oracles` for the
 full workspace check and tool/fixture receipts. No speed or memory measurement

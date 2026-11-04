@@ -16,9 +16,9 @@ pub use asset::{
     AssetAvailability, AssetData, AssetId, ContentHash, SourceAsset, SourceProbe, SourceStream,
 };
 pub use audio_extract::{
-    AudioChunk, SPEECH_SAMPLE_RATE, SpeechEnergyWindow, SpeechExtractSettings,
+    AudioChunk, SPEECH_SAMPLE_RATE, SpeechEnergyWindow, SpeechExtractSettings, SpeechWindow,
     analyze_speech_energy, extract_speech_audio, extract_speech_audio_with,
-    extract_speech_audio_with_cancel,
+    extract_speech_audio_with_cancel, extract_speech_windows_with_cancel,
 };
 pub use decode::{
     AudioDecoder, AudioFrame, DecodePreference, RgbaConverter, VideoDecoder, VideoFrame,

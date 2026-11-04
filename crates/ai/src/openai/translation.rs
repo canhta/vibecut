@@ -14,6 +14,8 @@ pub const TRANSLATION_MODE: &str = "context-window";
 pub const TRANSLATION_SETTINGS: &str =
     "openai-translation-v1;responses;strict;store=false;max_output=8192";
 pub const TRANSLATION_ENDPOINT: &str = "https://api.openai.com/v1/responses";
+pub const TRANSLATION_LANGUAGES: [&str; 5] = ["vi", "en", "zh", "zh-Hans", "zh-Hant"];
+pub const TRANSLATION_TARGET_LANGUAGES: [&str; 4] = ["vi", "en", "zh-Hans", "zh-Hant"];
 const MAX_OUTPUT: u64 = 8192;
 const MAX_WIRE: usize = 64 * 1024;
 // Standard short-context list price: $2/$10 per 1M input/output tokens.
@@ -93,8 +95,8 @@ impl Translator for OpenAiTranslator {
             model: self.config.model().clone(),
             mode: TRANSLATION_MODE.into(),
             operation: Operation::Translate,
-            languages: tags(&["vi", "en", "zh", "zh-Hans", "zh-Hant"]),
-            target_languages: tags(&["vi", "en", "zh-Hans", "zh-Hant"]),
+            languages: tags(&TRANSLATION_LANGUAGES),
+            target_languages: tags(&TRANSLATION_TARGET_LANGUAGES),
             timing: Default::default(),
             diarization: Support::Unsupported,
             live_audio_input: Support::Unsupported,

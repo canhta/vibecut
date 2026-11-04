@@ -26,7 +26,7 @@ pub const MAX_DURATION_MICROS: u64 = 10 * 60 * 60 * 1_000_000;
 /// Published list price, integer micro-USD per audio hour ($0.22/h).
 const PRICE_MICROS_PER_HOUR: u64 = 220_000;
 const MODE: &str = "file";
-const LANGUAGES: [&str; 3] = ["vi", "en", "zh"];
+pub const LANGUAGES: [&str; 3] = ["vi", "en", "zh"];
 pub const SETTINGS_FINGERPRINT: &str = "elevenlabs-transport-v1;model=scribe_v2;format=json;wav=pcm16;timestamps=word;languages=vi,en,zh;logging=default";
 const POLICY_URL: &str = "https://elevenlabs.io/privacy-policy";
 const DOCS_URL: &str = "https://elevenlabs.io/docs/capabilities/speech-to-text";

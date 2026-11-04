@@ -37,6 +37,22 @@ positions in an output timeline; one source span can appear more than once.
 **LanguageProfile**: Segmentation, reading-speed, punctuation and font-fallback
 rules for a content language, with a generic fallback for unknown tags.
 
+**Subtitle workflow**: The engine composition from source speech through explicit
+provider choice, checkpointed recognition, optional alignment/translation, cue
+segmentation and subtitle export/burn.
+
+**ASR checkpoint**: One independently complete recognition window stored under its
+exact source content, sample range, language, provider/model/settings and aligner
+identity; a restarted workflow reuses valid checkpoints and recomputes missing ones.
+
+**Provider catalog**: Offline capability data (operation, models, languages, local
+or remote, native timing) used to list and filter explicit provider choices without
+constructing an adapter or making a network call.
+
+**Upload disclosure**: The exact remote request scope shown before consent:
+provider/model, operation, languages, audio duration, payload bytes, per-invocation
+cost ceiling and the provider's retention/training terms and policy links.
+
 **Job**: A tracked editing operation with progress, cancellation, failure and
 checkpoint information.
 

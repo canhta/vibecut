@@ -20,6 +20,8 @@ pub const BASE_URL: &str = "https://api.anthropic.com/v1";
 pub const ENDPOINT: &str = "https://api.anthropic.com/v1/messages";
 pub const ANTHROPIC_VERSION: &str = "2026-10-21";
 pub const TRANSLATION_MODE: &str = "context-window";
+pub const TRANSLATION_LANGUAGES: [&str; 5] = ["vi", "en", "zh", "zh-Hans", "zh-Hant"];
+pub const TRANSLATION_TARGET_LANGUAGES: [&str; 4] = ["vi", "en", "zh-Hans", "zh-Hant"];
 pub const TRANSLATION_SETTINGS: &str =
     "anthropic-translation-v1;messages;json_schema;thinking=between_tools;max_output=8192";
 pub const MAX_WIRE: usize = 64 * 1024;
@@ -158,8 +160,8 @@ impl Translator for AnthropicTranslator {
             model: self.config.model().clone(),
             mode: TRANSLATION_MODE.into(),
             operation: Operation::Translate,
-            languages: tags(&["vi", "en", "zh", "zh-Hans", "zh-Hant"]),
-            target_languages: tags(&["vi", "en", "zh-Hans", "zh-Hant"]),
+            languages: tags(&TRANSLATION_LANGUAGES),
+            target_languages: tags(&TRANSLATION_TARGET_LANGUAGES),
             timing: Default::default(),
             diarization: Support::Unsupported,
             live_audio_input: Support::Unsupported,
