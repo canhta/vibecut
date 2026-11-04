@@ -21,14 +21,17 @@
 
 ### Screens
 
-Separate screens, not panels of one editor:
+| Screen | Reference A (desktop) | Reference B (web) | Ours |
+|---|---|---|---|
+| Library | Dashboard: create tile, AI tool cards, projects grid below; left rail | Standalone page: breadcrumb, view toggle, search, `New project`, grid; no rail | Rail plus projects grid first: always-visible `New project`, search, sort, grid/list, multi-select. AI flows are rail entries, not hero or tool cards [proposed] |
+| Editor | Tool tabs, preview, properties, timeline; agent chat docks bottom-right | Same four panels; header holds logo menu (back to projects), name, Export | Layout below; header back-to-library and project name; agent chat docks bottom-right beside the timeline |
+| Long video to shorts | Own window from Home: upload (size/length limits shown), then results | none | Own window from the library rail: pick a video, review suggestions, export them or open one in the editor |
 
-- **Home:** create project, entry cards for the AI flows (long video to shorts,
-  agent prompt), projects grid; left rail with library.
-- **Editor:** the layout below; the agent chat opens as a docked panel at the
-  bottom right, beside the timeline.
-- **Long video to shorts:** its own window: upload or pick a video, review the
-  suggested clips, then export them or open one in the editor.
+Why: the library's repeated action is opening a project, so projects come first
+(Reference B); the dashboard layer adds marketing surface to a desktop editor.
+The shorts flow is a different task with its own input and output, so it gets its
+own window (Reference A). Evidence: `.spikes/ui-reference/01-project-list/`,
+`02-editor-shell/`, `screens-2026-11-04/`.
 
 ### Layout grid
 
