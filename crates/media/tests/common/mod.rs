@@ -34,10 +34,21 @@ pub fn fixtures_dir() -> PathBuf {
 fn tool_available(tool: &str) -> bool {
     match command(tool).arg("-version").output() {
         Ok(output) => {
+            const DIAGNOSTIC_BYTES: usize = 4096;
             assert!(
                 output.status.success(),
-                "found {tool} but it failed: {}",
-                String::from_utf8_lossy(&output.stderr)
+                "found {tool} but -version failed: status={}; stdout (first {} of {} bytes)={:?}; stderr (first {} of {} bytes)={:?}",
+                output.status,
+                output.stdout.len().min(DIAGNOSTIC_BYTES),
+                output.stdout.len(),
+                String::from_utf8_lossy(
+                    &output.stdout[..output.stdout.len().min(DIAGNOSTIC_BYTES)]
+                ),
+                output.stderr.len().min(DIAGNOSTIC_BYTES),
+                output.stderr.len(),
+                String::from_utf8_lossy(
+                    &output.stderr[..output.stderr.len().min(DIAGNOSTIC_BYTES)]
+                )
             );
             true
         }

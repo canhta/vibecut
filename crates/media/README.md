@@ -222,6 +222,8 @@ checks counts, durations, codecs and tags. The CLI and production backend share
 FFmpeg algorithms: these are interface/pipeline oracles, not independent codec
 implementations. Missing tools are explicit skips; `VIBECUT_REQUIRE_ORACLES=1`
 requires them. A found tool that fails is a failure.
+Failed version probes report the process exit status and the first 4 KiB of each
+output stream, with full byte counts; they are never retried or treated as skips.
 
 Observed on macOS: Unicode/space paths, cancellation, deterministic truncation and
 bit-flip cases, and a 2,500,002,687-byte sparse MP4 with only 65,536 bytes read while
