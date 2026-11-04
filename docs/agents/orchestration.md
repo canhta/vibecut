@@ -52,16 +52,16 @@ code is settled by [copy imports](../engineering/workflows.md#copy-imports).
 
 - One Orca-created worktree and branch per worker; a pull loop starts each ticket on a fresh branch from `origin/main` in that worktree.
 - `.scratch/` and `.spikes/` exist only in the main checkout: read and write them by absolute path.
-- Build cache per slot: `CARGO_TARGET_DIR=$HOME/.cache/vibecut/target/<slot>`, slots `codex-1`, `codex-2`, `opencode-1`, `opencode-2`, `review-1`, `review-2`; one live worker per slot.
-- At most three concurrent Rust builds; research and docs workers take no slot.
+- Every command that compiles Rust (`cargo xtask ci`, `cargo test`, `cargo clippy`, `cargo build`) runs through `/Users/canh/Startup/VibeCut/.scratch/bin/build <command>`: it waits for one of three build slots (a lock), sets `CARGO_TARGET_DIR` to that slot's warm cache and runs the command. Never set `CARGO_TARGET_DIR` yourself.
+- Workers are not limited by build slots: dispatch as many as the frontier allows, as long as no two live tickets own the same crate or file area (check `Ownership` in each ticket; serialize the overlap).
 - Spike hygiene: a spike keeps its report, outputs, labels and eval corpus. Its venvs, package/model caches and model weights are deleted when its ticket resolves, unless an open ticket names the path; weights are re-fetched by recorded revision and hash.
 - Build caches are kept only while used: `.scratch/bin/cleanup` prunes incremental sessions and slots untouched for 2+ days; slots in use stay warm.
 
 ## Coordinator loop
 
 1. Dispatch with a one-line spec; the rest lives in this file:
-   - `Agent loop: <assignee> <slot> max <n> start: <milestone>/NN`
-   - `Review: <milestone>/NN <branch>@<sha7> <slot>`
+   - `Agent loop: <assignee> max <n> start: <milestone>/NN`
+   - `Review: <milestone>/NN <branch>@<sha7>`
    Longer briefs go in a spec file (`--spec-file`). Reviewers get their own new worktree, never the implementer's.
 2. End the turn; Orca wakes you for mail. `check` returns one message per call: repeat it until `No messages` (or read every `[unhandled]` line of `orca orchestration inbox`). Read the `worker_done` summary and the report TL;DR only. On every wake also run `orca orchestration worker-list` and `git worktree list`: a worker whose ticket merged or was dropped, or one idle without mail and without an open ticket, is stopped and its worktree cleaned (save untracked outputs first). `worker-stop` can leave the agent running: confirm with `worker-list` that its terminal is released, else `orca terminal close --terminal <id>`. A worker waiting on its own ticket's review is not stale.
 3. Answer questions with one batched reply; send no acknowledgements.
