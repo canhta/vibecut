@@ -19,6 +19,11 @@ VibeCut is a local-first desktop video editor for macOS and Windows.
 | P1 | Improve reframing, batch operations and output quality. |
 | P2 | Optionally dub into Vietnamese, English or Chinese. |
 
+Every AI feature lets the user pick its provider: local engines (whisper.cpp,
+Gipformer), OpenAI or ElevenLabs at minimum, and more later. Transcription offers
+all of them; dubbing offers OpenAI and ElevenLabs voices. Nothing switches provider
+automatically.
+
 Exclude montage generation, automatic B-roll, voice cloning and Linux from the
 current scope. Linux support is deferred. Suggestions remain subject to user review.
 
