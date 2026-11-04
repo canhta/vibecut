@@ -2,10 +2,11 @@
 
 ## Crate map
 
-The core runs headless: editing, tests and the CLI need no window or UI toolkit.
-Apps compose concrete adapters; the desktop app uses egui and wgpu. Admit each crate
-with its first working ticket. `cargo xtask layers` enforces this table: an edge not
-listed is forbidden (all dependency kinds count).
+The core runs headless: editing, tests and the CLI need no window or UI toolkit;
+only `apps/*` may depend on UI, window or audio-device crates. Apps compose concrete
+adapters; the desktop app uses egui and wgpu. Admit each crate with its first working
+ticket. `cargo xtask layers` enforces this table: an edge not listed is forbidden
+(all dependency kinds count).
 
 | Package | Path | Owns | May depend on |
 |---|---|---|---|
@@ -17,8 +18,8 @@ listed is forbidden (all dependency kinds count).
 | render | crates/render | CPU compositor, caption overlay, audio mix, export execution | time, media, project, captions, text |
 | ai | crates/ai | Provider interfaces, capabilities, consent and cost, AI adapters | time, media, captions |
 | engine | crates/engine | Session, commands, history, jobs, cache, adapter selection | time, media, project, captions, text, render, ai |
-| vibecut-cli | apps/vibecut-cli | Headless command adapter | engine, media, ai |
-| vibecut | apps/vibecut | Desktop UI, playback, wgpu compositor, preferences | engine, media, project, captions, text, render, ai |
+| vibecut-cli | apps/vibecut-cli | Headless adapter: CLI arguments, typed exit codes, dispatch | engine, media, ai |
+| vibecut | apps/vibecut | Desktop app: UI, playback, wgpu compositor, preferences, app controls and inspection | engine, media, project, captions, text, render, ai |
 
 Only `media` links FFmpeg. Render's CPU compositor is the reference shared by preview
 and export; the app owns the optional wgpu adapter behind render's interface. Update
@@ -55,6 +56,14 @@ or closure group is one undo step; continuous drags merge by key or explicit
 gesture begin/commit/cancel. Engine restores project, history and deferred changes
 on refusal or unwind; see the [transaction contract](../../crates/engine/README.md#transactions-gestures-and-changes).
 Presentation state and preferences stay in the app.
+
+**Control.** Engine owns command IDs, schemas, events, revision and idempotency
+rules, and every project mutation; dispatch is transport-neutral. Adapters only
+translate: the CLI parses arguments and maps typed exit codes, MCP maps tools and
+transports, the app maps widgets and preferences. All dispatch through the one
+registry, never a second command catalog, and none mutates the project directly.
+A shared control library is admitted only with working CLI and MCP consumers;
+until then the first adapter owns the shared code.
 
 **AI.** `ai` owns consent, cost estimates and capability checks once for every
 operation; consent binds provider, operation, content and languages, and retries

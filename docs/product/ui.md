@@ -9,8 +9,11 @@
   placement, shortcuts and gestures beat novelty.
 - **Every state designed.** Each panel has its empty, loading, error and offline
   states; nothing appears blank or frozen.
-- **Agent-drivable.** Every interactive widget has a stable automation id, and UI
-  state is readable through the engine, so agents and tests drive the real UI.
+- **Agent-drivable.** Every interactive widget has a stable automation id that
+  survives locale and layout changes. Agents and tests send input through those ids
+  into the real command path, read engine project state plus app-owned widget state,
+  and capture a window or panel screenshot that waits for a presented frame and
+  returns a typed unavailable or timeout failure.
 - **Two languages from day one.** All strings come from the English and Vietnamese
   catalogs; layouts survive the longer string.
 
