@@ -4,7 +4,7 @@ Original artwork by the VibeCut maintainer, MIT (see [LICENSE](../../LICENSE)).
 
 ## Palette and geometry
 
-A 1024-unit square with a near-black `#0F1113` (the UI's label-on-lime colour) background and lime `#D1FE17`
+A 1024-unit square with a near-black `#0F1113` (the UI's window colour) background and lime `#D1FE17`
 foreground. Two curved pieces form a right-facing play mark, scaled 1.2 around
 the center. The flat app tile is full bleed; the web favicon has a 224-unit radius.
 The macOS source uses extended-sRGB background `(0.05882, 0.06667, 0.07451)`;

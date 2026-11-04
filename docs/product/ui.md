@@ -71,73 +71,38 @@ observations do not replace desktop sizes or colours.
 
 ### Theme and tokens
 
-- Dark and light both ship in v1. Dark window/Home background is `#090909`
-  [measured desktop, Home shot above]. Editor chrome stays `#0F0F0F` and top bar
-  `#131313`; the current live capture does not remeasure those editor surfaces.
-- Light theme tokens are in [Light theme](#light-theme); same geometry, type and
-  density as dark.
-- Editor panels and editor chrome use `#0F0F0F`; Home has the measured
-  `#090909` background above.
-- Export modal `#262626`, fields `#303034`; settings modal `#141414`, controls
-  `#262626`, active tab `#3B3B3B`.
-- Text `#E0E0E0`; secondary text `#949494`; separators `#263031` [measured
-  desktop, Home shot above: brightest pixels in Home R(54,175,88,184), Management
-  R(20,438,88,445), divider sample (20,264)]. Borders remain `#383838`.
-- Accent lime `#D1FE17` (brand choice, replacing CapCut's teal; the reference's `--hf-color-lime-500`) for selection,
-  checked boxes and the primary button; text and checkmarks on a lime fill are
-  `#0F1113` (16.1:1), never white (1.17:1).
-- Highlight pink `#FF005B` (the reference's `--hf-color-pink-500`, brand
-  secondary; light `#C70047`), used sparingly: at most one pink mark per view,
-  for AI-feature markers and new/attention badges. It is never selection, a
-  primary button or an error. On dark it is text-safe (4.93:1 on `#0F0F0F`); as a
-  fill it carries `#0F1113` text (4.87:1) or only an icon or dot.
-- Video clips use a [proposed] `#0A2A24` teal border around the filmstrip.
+Dark and light both ship in v1 with the same geometry, type and density; only
+colour changes. Dark follows the brand reference's tokens (named in the Source
+column); light is our own ramp built from the same reference greys and colour
+ramps. Ratios are WCAG 2.x against the named surface.
 
-### Light theme
-
-Same geometry, type and density as dark; only colour changes. Values sampled from
-a real light reference screenshot are cited; every designed value is marked
-`[proposed]`, including the whole neutral ramp (the references are the basis, not a
-palette to copy). Ratios are WCAG 2.x contrast against the named surface.
-Local evidence IDs E1–E6 map to the light screenshots and token notes under
-`.spikes/ui-reference/`; the mapping stays in the ticket report so reference names
-never enter tracked files.
-
-| Token | Dark | Light | Ratios against surface (and label) | Evidence |
+| Token | Dark | Light | Contrast | Source (dark) |
 |---|---|---|---|---|
-| Window (editor chrome stays `#0F0F0F`) | `#090909` | `#F2F3F5` | 1.11:1 vs top bar `#FFFFFF` | [proposed]; E6 light-pane samples `#EDF3F3`/`#FDFDFD` |
-| Top bar | `#131313` | `#FFFFFF` | 1.11:1 vs window `#F2F3F5` | Observed in E1 and E2 |
-| Editor panels | `#0F0F0F` | `#F9FAFB` | 1.06:1 vs window `#F2F3F5` | Observed panel fill in E2 |
-| Export modal | `#262626` | `#FFFFFF` | 1.11:1 vs window `#F2F3F5` | Observed white popover surface in E3 |
-| Fields | `#303034` | `#F2F3F5` | 1.11:1 fill vs modal `#FFFFFF`; 3.10:1 boundary via border `#858B91` | [proposed]; light row/field geometry observed in E3 and E4 |
-| Settings modal | `#141414` | `#FFFFFF` | 1.11:1 vs window `#F2F3F5` | Observed white settings panel in E4 |
-| Controls | `#262626` | `#EEEFF0` | 1.10:1 fill vs panel `#F9FAFB`; 3.10:1 boundary via border `#858B91` | Observed control fills in E2 |
-| Active tab | `#3B3B3B` | `#DEDEDE` | 1.29:1 fill vs panel `#F9FAFB`; 4.71:1 accent text on fill | Observed in E2 |
-| Text | `#E0E0E0` | `#1C1C1C` | 16.31:1 vs panel `#F9FAFB` | Observed text colour in E1 and E2 |
-| Secondary text | `#949494` | `#5C6268` | 5.91:1 vs panel `#F9FAFB`; 4.59:1 on active tab `#DEDEDE` | [proposed]; reference muted 50% grey fails 4.5:1 on light |
-| Separators | `#263031` | `#DEDEDE` | 1.29:1 vs panel `#F9FAFB` (decorative; WCAG 1.4.11 does not apply) | Observed 1 px lines in E2 |
-| Borders | `#383838` | `#858B91` | 3.10:1 vs field `#F2F3F5`; 3.29:1 vs panel `#F9FAFB` | [proposed]; reference `#DEDEDE` borders are 1.3:1 |
-| Accent: selection, checked boxes, primary button | `#D1FE17` (16.3:1 on `#0F0F0F`, 11.3:1 on `#303030`) | `#4D6600` | 6.25:1 vs panel `#F9FAFB`; 4.85:1 on active tab `#DEDEDE`; 6.53:1 for white label on fill | [proposed]; `#D1FE17` is 1.12:1 on the light panel |
-| Highlight (AI markers, badges) | `#FF005B` | `#C70047` | 5.71:1 vs panel `#F9FAFB`; 5.97:1 for white on fill | [proposed]; brand choice |
-| Video clip fill and border | `#0A2A24` | `#E3F7F2` fill, `#0B6B5B` border | 1.07:1 fill vs panel; 5.77:1 border on fill; 15.30:1 primary text on fill | [proposed]; no light timeline clip sample |
-| Error | `#EA1515` [proposed dark] | `#B3261E` | 5.91:1 on error surface `#FFF0F0`; 6.25:1 vs panel `#F9FAFB`; 6.54:1 for white label on fill | [proposed]; E5 error toast uses `#E50000` on `#FFF0F0`, but that is only 4.38:1 |
+| Window, top bar, editor chrome | `#0F1113` | `#F4F4F4` | | surface-tertiary |
+| Panels | `#18191C` | `#FFFFFF` | | surface-section |
+| Modals, popovers | `#1C1E20` | `#FFFFFF` | | surface-primary |
+| Fields, controls | `#23262A` | `#EDEDED` | | surface-secondary |
+| Hover, active tab | `#2A2D32` | `#E4E4E4` | | surface-secondary-hover |
+| Text | `#FFFFFF` | `#131517` | 17.6:1 dark panel; 18.3:1 light | font-primary |
+| Secondary text | `#898A8B` | `#565656` | 5.08:1 dark panel (4.39:1 on fields: placeholders only); 6.27:1 light field | font-secondary |
+| Disabled | `#737475` | `#7F7F7F` | not required | font-disabled |
+| Separators (decorative) | `#26272A` | `#E4E4E4` | not required | separator-card, white 6% |
+| Component borders | `#393C3F` | `#828282` | light 3.28:1 on fields; dark fields are identified by fill plus border [proposed] | white 10% |
+| Accent: selection, checked, primary button, focus | `#D1FE17` | `#4F6109` | 15.0:1 dark panel; 6.89:1 light; labels on fill `#131517` (15.6:1) dark, white (6.89:1) light | lime-500 / lime-900 |
+| Highlight: AI markers, badges | `#FF005B` | `#AD003E` | 4.52:1 dark panel; 7.38:1 light | pink-500 / pink-700 |
+| Error | `#FF5462` text, `#E72930` fill | `#D60016` | 5.61:1 dark panel; 5.43:1 light | red-500, surface-error / red-700 |
+| Success | `#53C546` | `#2E7D32` | 7.9:1; 5.13:1 | font-success |
+| Warning | `#F3C977` | `#8A6100` | 11.2:1; 5.54:1 | font-warning |
+| Video clip fill and border | `#0A2A24` | `#E3F7F2` fill, `#0B6B5B` border | 15.3:1 text on light fill | [proposed] track colour, not brand |
 
-- **Accent decision.** Lime `#D1FE17` is the brand accent. It fails on light
-  surfaces, so light uses `#4D6600` (same lime hue, darkened) for selection,
-  checked boxes, primary-button fill and active tab text, with white labels on
-  that fill (6.53:1). Dark keeps `#D1FE17` with `#0F1113` labels on its fill.
-- **Surfaces.** Adjacent surface separations are intentionally subtle (1.06–1.29:1);
-  the 3:1 requirement applies to text and to control boundaries that identify a
-  component, not to decorative 1 px panel separators. Light panels remain lighter
-  than the light window; the measured dark Home
-  background does not establish desktop editor-panel contrast.
-- **Lines.** Panel separators keep the observed decorative `#DEDEDE` (1.29:1);
-  WCAG 1.4.11 does not require 3:1 for them. Field and control borders that identify
-  a component use `#858B91` (3.10:1 on fields, 3.29:1 on panels).
-- **Error and clips.** Import/progress keeps the accent bar `#4D6600`; error toasts
-  keep the observed pale surface `#FFF0F0` but use `#B3261E` text/icons because the
-  reference `#E50000` is 4.38:1 there. Light video clips use a `#E3F7F2` fill,
-  `#0B6B5B` 1 px border and primary text; the filmstrip media sits inside them.
+- **Accent.** Lime is the brand colour, replacing CapCut's teal. Text on a lime
+  fill is `#131517`, never white (1.17:1). Light uses the reference's own darker
+  lime `#4F6109` because `#D1FE17` is 1.12:1 on white.
+- **Highlight.** Pink is used sparingly: at most one pink mark per view, never
+  selection, a primary button or an error. As a fill it carries an icon, a dot
+  or `#131517` text.
+- **Surfaces.** Adjacent surface steps are subtle by design; 3:1 applies to text
+  and to the boundary of a component, not to decorative separators.
 
 ### Type scale
 
@@ -158,7 +123,7 @@ never enter tracked files.
   regular stroke is 1.25 px, matching CapCut's ~1.2 px.
 - Feature toolbar tab [measured desktop, 2x screenshot]: 16 px glyph, 3.5 px
   gap to a 12 px semibold label, 48 px minimum tab width, about 9 px between
-  labels, 42 px bar on `#303030`; inactive `#E0E0E0`, selected tab in the accent.
+  labels, 42 px bar on the panel surface; inactive in text colour, selected tab in the accent.
 - Properties tabs are text-only at 14 px; the active tab uses the accent.
 - Icon-only buttons are 28x28 px with a 16 px icon and a tooltip naming the
   action and its shortcut.
