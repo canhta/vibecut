@@ -6,7 +6,7 @@
 |---|---|
 | opencode implementer | Clear/mechanical work and resource-heavy inventories, builds, benchmarks and fixtures |
 | Codex implementer/reviewer | Hard design, FFI, concurrency, jobs, render/sync, model/provider contracts; review every opencode branch |
-| Claude coordinator | Plan, ticket, dispatch, review Codex branches, resolve gates, merge and record decisions |
+| Claude coordinator | Plan, ticket, dispatch implementers and reviewers, answer product questions; does not review or merge |
 | Human | Product decisions, credentials, Windows hardware and license decisions |
 
 When unsure, route ambiguous correctness work to Codex; explicit recipes to opencode.
@@ -94,13 +94,17 @@ local name patterns, `git push origin HEAD:main` (fast-forward only; on rejectio
 fetch, rebase, rerun checks, retry). Hard tickets (FFI, concurrency, pipelines,
 contracts, persistence formats, AI providers) never self-merge.
 
-**Reviewed.** Otherwise review the frozen SHA independently: Codex reviews opencode
-work, the coordinator reviews Codex work. The reviewer writes
+**Reviewed.** Otherwise review the frozen SHA independently in a separate reviewer
+dispatch: Codex reviews opencode work; a fresh Codex reviewer reviews Codex work. The reviewer writes
 `.scratch/<milestone>/reviews/NN-<sha7>.md` using the
 [review template](../engineering/verification.md#reports) and fixes findings
 directly on the ticket branch (signed-off commits) instead of bouncing them back;
 only findings needing a product decision go back to the coordinator. When approved,
 the reviewer merges exactly as in self-merge.
+
+Workers and reviewers merge and close tickets themselves; the coordinator only
+receives the outcome. Keep `worker_done` to three short sentences (merged SHA or
+review needed, evidence path, follow-ups); details stay in the local report.
 
 After either path: record the merged SHA/evidence under `## Answer`, set
 `Status: resolved`, add one decision pointer in `.scratch/<milestone>/map.md`, and
