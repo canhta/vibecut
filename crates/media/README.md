@@ -110,16 +110,16 @@ Apple M1 Pro, 16 GiB, macOS 27.2; release profile, two runs on a generated
 60 s 1920x1080/30 H.264 BT.709 video-only fixture. This is a media transcode pass
 at the same canvas size; it excludes a Rust compositor, subtitle burn and audio.
 FFmpeg 9.0.2 was resolved for this observation; no FFmpeg version is committed as
-a provisioning pin. Reproduce with `cargo xtask media-bench`.
+a provisioning pin. Measured media code revision: `2bb02f0`. Reproduce with `cargo xtask media-bench`.
 
 | Measurement | First run | Warm repeat |
 |---|---:|---:|
 | Hardware decoded frames | 1,800 | 1,800 |
-| Decode fps | 268.158 | 255.715 |
-| Encode API fps, including drain | 428.670 | 392.980 |
-| Export wall time | 9.405 s | 9.279 s |
+| Decode fps | 280.623 | 216.495 |
+| Encode API fps, including drain | 498.868 | 697.713 |
+| Export wall time | 9.668 s | 9.313 s |
 
-The repeat's process peak RSS was 138,379,264 bytes. First-run quality against the
+The repeat's process peak RSS was 143,458,304 bytes. First-run quality against the
 source decoded pixels: SSIM 0.999483 and PSNR 56.681886 dB (not VMAF). Encode API
 time excludes decoding/mux time; export wall time includes both. Cache state and
 hardware scheduling affect results; these two samples are not a general latency
