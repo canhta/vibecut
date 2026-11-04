@@ -710,6 +710,8 @@ save writes the project and then the sidecar before publishing a receipt. Deskto
 and CLI use that same lease metadata API. `Autosave::execute("project.save", {})`
 queues the registered save; callers must poll/flush and check acknowledgement.
 `Session::execute` refuses create/save because they require lifecycle ownership;
-commands stay in the one generated registry. Busy destination acquisition before a
-save starts is retryable without poisoning the active autosave owner; publication
-and worker failures retain the existing sticky error policy.
+commands stay in the one generated registry. Destination admission refusals before
+a persistence job starts (including Busy, unsupported names and lease IO errors)
+return their typed error without poisoning the active autosave owner; choosing a
+different destination can succeed. Once a job is admitted, publication and worker
+failures retain the sticky error policy.

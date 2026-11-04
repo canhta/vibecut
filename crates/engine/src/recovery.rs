@@ -274,6 +274,17 @@ struct Flight {
     save: Option<SaveFlight>,
     clear: bool,
 }
+// Admission refusals precede a persistence job and can be corrected by choosing
+// another destination. Worker/publication failures must remain sticky.
+enum PumpFailure {
+    Admission(EditError),
+    Persistence(EditError),
+}
+impl From<EditError> for PumpFailure {
+    fn from(error: EditError) -> Self {
+        Self::Persistence(error)
+    }
+}
 /// One active Session, one journal, one in-flight persistence job and one latest
 /// pending snapshot. Drop joins workers but deliberately performs no implicit save.
 pub struct Autosave {
@@ -465,20 +476,18 @@ impl Autosave {
         if let Some(e) = &self.failure {
             return Err(EditError::PersistenceFailed(e.clone()));
         }
-        let result = self.pump();
-        if let Err(e) = result {
-            if matches!(e, EditError::StaleResult)
-                || (self.flight.is_none() && matches!(e, EditError::Project(project::Error::Busy)))
-            {
-                return Err(e);
+        match self.pump() {
+            Ok(()) => Ok(()),
+            Err(PumpFailure::Admission(error)) => Err(error),
+            Err(PumpFailure::Persistence(EditError::StaleResult)) => Err(EditError::StaleResult),
+            Err(PumpFailure::Persistence(error)) => {
+                let error = Arc::new(error);
+                self.failure = Some(error.clone());
+                Err(EditError::PersistenceFailed(error))
             }
-            let e = Arc::new(e);
-            self.failure = Some(e.clone());
-            return Err(EditError::PersistenceFailed(e));
         }
-        Ok(())
     }
-    fn pump(&mut self) -> Result<()> {
+    fn pump(&mut self) -> std::result::Result<(), PumpFailure> {
         self.observe()?;
         self.runner.tick()?;
         self.runner.drain_events();
@@ -493,7 +502,8 @@ impl Autosave {
                         state
                             .error
                             .unwrap_or_else(|| Arc::new(EditError::WorkerPanicked)),
-                    ));
+                    )
+                    .into());
                 }
                 JobState::Completed => {
                     let f = self.flight.take().ok_or(EditError::WorkerPanicked)?;
@@ -513,7 +523,7 @@ impl Autosave {
                             .ok_or(EditError::WorkerPanicked)?;
                         let receipt = work.receipt.take().ok_or(EditError::WorkerPanicked)?;
                         if receipt.path() != work.writer.path() {
-                            return Err(EditError::StaleResult);
+                            return Err(EditError::StaleResult.into());
                         }
                         // An in-place save advances the held baseline even if the
                         // edited revision is now stale. Save-as retains its source
@@ -540,7 +550,7 @@ impl Autosave {
                             // aliases); only a fresh save may reestablish cleanliness.
                             self.saved = None;
                             self.saved_receipt = None;
-                            return Err(EditError::StaleResult);
+                            return Err(EditError::StaleResult.into());
                         }
                     }
                 }
@@ -552,7 +562,13 @@ impl Autosave {
             && !self.session.transaction_active()
         {
             let path = self.pending_save.take().ok_or(EditError::RecoveryBusy)?;
-            self.start(Some(path))?;
+            if let Err(error) = self.start(Some(path)) {
+                return Err(if self.flight.is_none() {
+                    PumpFailure::Admission(error)
+                } else {
+                    PumpFailure::Persistence(error)
+                });
+            }
         }
         if self.flight.is_none()
             && !self.session.transaction_active()

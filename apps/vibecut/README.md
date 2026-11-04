@@ -112,7 +112,9 @@ Save As. Loading can be cancelled without accepting its eventual result.
 
 Startup discovers only abandoned journals and shows corrupt-candidate diagnostics.
 Recovery publishes a new never-saved session journal before discarding the old
-candidate; the original project is untouched. rfd 0.17.2 is MIT and is the one
+candidate; the original project is untouched. Other candidates remain deferred
+while that recovered editor is active, and reappear after Save As/leave. Recovery
+cannot replace an active editor outside its normal save/leave boundary. rfd 0.17.2 is MIT and is the one
 native picker dependency. `tests/lifecycle.rs` exercises lifecycle boundaries and
 real rename/close/recovery widgets, and renders `target/p1-02-lifecycle.png`.
 Native picker interaction and Windows runtime need separate observed evidence.

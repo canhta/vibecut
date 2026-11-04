@@ -278,6 +278,9 @@ impl Workspace {
         }
     }
     fn submit(&mut self, work: Work, text: Text) -> Result<()> {
+        if self.editor.is_some() && matches!(&work, Work::Recover(_) | Work::Open(_) | Work::New) {
+            return Err(Error::Invalid("leave active project before replacing it"));
+        }
         self.retry_discovery =
             matches!(&work, Work::Discover | Work::Discard(_) | Work::Recover(_));
         let editor = match &work {
@@ -502,7 +505,7 @@ impl Workspace {
                 }
             });
         }
-        if !self.busy() && !self.candidates.is_empty() {
+        if self.editor.is_none() && !self.busy() && !self.candidates.is_empty() {
             egui::Modal::new(egui::Id::unique("recovery.prompt")).show(ui.ctx(), |ui| {
                 ui.heading(self.tr(Text::Recovery));
                 if let Some(candidate) = self.candidates.first() {

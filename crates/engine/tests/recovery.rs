@@ -859,3 +859,60 @@ fn save_as_symlink_into_recovery_storage_is_refused_before_publication() {
     assert!(a.saved_path().is_none());
     assert!(a.saved_receipt().is_none());
 }
+
+#[test]
+fn save_as_admission_refusals_allow_another_destination_without_releasing_source() {
+    for refuse_lock_io in [false, true] {
+        let dir = tempfile::tempdir().unwrap();
+        let source = dir.path().join("source.vibecut");
+        seed(&source);
+        let before = fs::read(&source).unwrap();
+        let mut a = open(
+            &dir.path().join("journals"),
+            1,
+            Some(source.clone()),
+            Arc::new(TestClock::default()),
+        );
+        edit(&mut a);
+        a.flush().unwrap();
+        let refused = if refuse_lock_io {
+            // Existing target fits a filesystem component, but its adjacent lock
+            // adds six bytes and exceeds the admitted platforms' component limit.
+            let path = dir.path().join(format!("{}.vibecut", "x".repeat(242)));
+            fs::write(&path, &before).unwrap();
+            path
+        } else {
+            dir.path().join("reserved.meta.json")
+        };
+        let error = a.save_as(refused.clone()).unwrap_err();
+        if refuse_lock_io {
+            assert!(matches!(
+                project_cause(&error),
+                Some(project::Error::LockUnavailable(_))
+            ));
+        } else {
+            assert!(matches!(
+                project_cause(&error),
+                Some(project::Error::Unsupported(_))
+            ));
+            assert!(!refused.exists());
+        }
+        a.tick().unwrap();
+        assert!(!a.saving());
+        assert!(a.is_dirty());
+        busy(&source);
+        assert_eq!(fs::read(&source).unwrap(), before);
+        let destination = dir.path().join("valid.vibecut");
+        a.save_as(destination.clone()).unwrap();
+        a.flush().unwrap();
+        assert!(!a.is_dirty());
+        assert_eq!(
+            project::load(&destination).unwrap().project,
+            **a.session().project()
+        );
+        assert_eq!(fs::read(&source).unwrap(), before);
+        if refuse_lock_io {
+            assert_eq!(fs::read(refused).unwrap(), before);
+        }
+    }
+}
