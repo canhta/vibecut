@@ -330,9 +330,13 @@ Autosave with no saved path. `save()` then returns SaveAsRequired. `save_as(path
 queues a journal publication followed by an atomic project save on the worker;
 `tick()` acknowledges only the captured Session revision. `saving()` includes a
 request queued behind an earlier journal/cleanup. A stale completion returns
-StaleResult and preserves dirty state; subsequent recovery continues. Successful
-save-as establishes the destination for later save(). Absolute native paths are
-required; saves inside recovery storage are refused. Non-UTF-8 descriptor paths
+StaleResult and invalidates the clean baseline: the worker has already written
+its snapshot, so even undo to the previously saved Arc must remain dirty and
+recoverable. This conservative invalidation also covers aliased save destinations;
+a fresh acknowledged save restores the clean baseline. The existing saved path is
+retained, while a stale save-as never establishes a new destination. Subsequent
+recovery continues. Successful save-as establishes the destination for later save().
+Absolute native paths are required; saves inside recovery storage are refused. Non-UTF-8 descriptor paths
 are a typed unsupported encoding error, without changing the original file.
 
 `flush()` is an explicit blocking barrier for project-switch/exit; IO still runs

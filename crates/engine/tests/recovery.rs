@@ -396,3 +396,104 @@ fn undo_to_saved_state_retires_obsolete_recovery_and_internal_save_is_refused() 
     drop(a);
     assert!(discover(&root).unwrap().candidates.is_empty());
 }
+
+#[test]
+fn undo_before_stale_same_path_save_keeps_current_work_recoverable() {
+    stale_same_path_save_with_undo(false);
+}
+
+#[test]
+fn undo_after_stale_same_path_save_keeps_current_work_recoverable() {
+    stale_same_path_save_with_undo(true);
+}
+
+fn stale_same_path_save_with_undo(undo_after_completion: bool) {
+    for save_current_after_flush in [false, true] {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().join("journals");
+        let path = dir.path().join("saved.vibecut");
+        project::save(&path, session(1).project()).unwrap();
+        let mut a = open(&root, 1, Some(path.clone()), Arc::new(TestClock::default()));
+        edit(&mut a);
+        a.save().unwrap();
+        if undo_after_completion {
+            edit(&mut a);
+        } else {
+            a.session_mut().undo().unwrap();
+        }
+        until(|| match a.tick() {
+            Err(EditError::StaleResult) => true,
+            Ok(()) => false,
+            Err(e) => panic!("unexpected {e}"),
+        });
+        assert!(
+            a.is_dirty(),
+            "a stale write cannot acknowledge current work"
+        );
+        if undo_after_completion {
+            a.session_mut().undo().unwrap();
+            a.session_mut().undo().unwrap();
+        }
+        assert_eq!(a.session().project().data().timeline.tracks.len(), 0);
+        assert_eq!(
+            project::load(&path)
+                .unwrap()
+                .project
+                .data()
+                .timeline
+                .tracks
+                .len(),
+            1
+        );
+        assert!(
+            a.is_dirty(),
+            "undo to the obsolete disk baseline must stay dirty"
+        );
+        assert_eq!(a.saved_path(), Some(path.as_path()));
+        a.flush().unwrap();
+        if save_current_after_flush {
+            a.save().unwrap();
+            saved(&mut a);
+            a.flush().unwrap();
+            assert!(!a.is_dirty());
+            assert_eq!(
+                project::load(&path)
+                    .unwrap()
+                    .project
+                    .data()
+                    .timeline
+                    .tracks
+                    .len(),
+                0
+            );
+        }
+        drop(a);
+        let d = discover(&root).unwrap();
+        assert!(d.diagnostics.is_empty());
+        if save_current_after_flush {
+            assert!(
+                d.candidates.is_empty(),
+                "fresh acknowledged save may retire recovery"
+            );
+        } else {
+            assert_eq!(
+                d.candidates.len(),
+                1,
+                "divergent work must remain recoverable"
+            );
+            assert_eq!(
+                d.candidates
+                    .first()
+                    .unwrap()
+                    .recover(10)
+                    .unwrap()
+                    .project()
+                    .data()
+                    .timeline
+                    .tracks
+                    .len(),
+                0
+            );
+        }
+    }
+}

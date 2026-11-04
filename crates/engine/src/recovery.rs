@@ -437,6 +437,12 @@ impl Autosave {
                             self.saved_path = Some(path);
                             self.saved = Some(f.snapshot);
                         } else {
+                            // The destination was written even though this revision
+                            // cannot be acknowledged. Undo may restore the old saved
+                            // Arc, which no longer proves equality with disk. Treat
+                            // all stale destinations conservatively (including path
+                            // aliases); only a fresh save may reestablish cleanliness.
+                            self.saved = None;
                             return Err(EditError::StaleResult);
                         }
                     }
