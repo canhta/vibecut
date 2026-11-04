@@ -5,7 +5,7 @@
     clippy::indexing_slicing
 )]
 mod common;
-use media::{MediaError, PacketReader, probe};
+use media::{AssetId, MediaError, PacketReader, SourceAsset, probe};
 use std::io::{Seek, SeekFrom, Write};
 use std::sync::{
     Arc,
@@ -203,4 +203,20 @@ fn hostile_pssh_is_bounded_on_small_worker_stack() {
         PacketReader::open_with_cancel(&path, cancel),
         Err(MediaError::Cancelled)
     ));
+}
+
+#[test]
+fn source_import_honors_pre_cancelled_token() {
+    let Some(source) = source() else {
+        return;
+    };
+    let cancel = Arc::new(AtomicBool::new(true));
+    assert!(matches!(
+        SourceAsset::import_with_cancel(AssetId(1), source.clone(), cancel.clone()),
+        Err(MediaError::Cancelled)
+    ));
+    cancel.store(false, Ordering::Relaxed);
+    let asset = SourceAsset::import_with_cancel(AssetId(1), source, cancel).unwrap();
+    assert_eq!(asset.id(), AssetId(1));
+    assert!(!asset.probe().streams.is_empty());
 }

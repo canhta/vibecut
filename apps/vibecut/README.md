@@ -18,16 +18,22 @@ Project listing and thumbnail storage belong to the projects-page feature. Previ
 timeline basics and transport are present; text/audio controls and export are
 integrated by their owning feature tickets.
 
-Media import uses one native multi-file picker or a file drop. Probing and hashing
-run on an engine import job; each successful file becomes an asset immediately, so a
-later refusal or a cancel keeps earlier assets. The media panel shows the probe
-type/duration/resolution/audio format, multi-select assets, and an "Add to timeline"
-action that inserts only the selected assets in one undo step on compatible tracks.
-While a batch runs, an overlay shows completed/total progress and a 2 px accent bar,
-disables import/insert, and offers Cancel. Partial failures remain listed with their
-typed media reason and close with a toast counting imported and failed files. Insert
-synchronizes playback against the new immutable project snapshot. Image placement,
-full library views/sort and asset deletion remain with their later feature tickets.
+Media import uses one native multi-file picker or a file drop. One batch is capped
+at 128 paths (32 KiB each), must admit a 256 MiB probe/work lease from the shared
+byte budget, and publishes results through a bounded 8-event channel, so a paused
+UI applies backpressure instead of accumulating metadata. Probing and hashing run
+on an engine import job with one cooperative cancellation token carried into
+media's FFmpeg probe interrupt and 64 KiB hash reads; each successful file becomes
+an asset immediately, so a later refusal or cancel keeps earlier assets. The media
+panel shows the probe type/duration/resolution/audio format, multi-select assets,
+and an "Add to timeline" action that inserts only the selected assets in one undo
+step on compatible tracks. While a batch runs, an overlay shows completed/total
+progress and a 2 px accent bar, disables import/insert, and offers Cancel. Partial
+failures remain listed with their typed media reason and close with a toast counting
+imported, failed and unfinished files; a terminal runner failure stays a typed
+error and never reports success. Insert synchronizes playback against the new
+immutable project snapshot. Image placement, full library views/sort and asset
+deletion remain with their later feature tickets.
 
 The timeline draws tracks, filmstrip/waveform placeholders, bookmarks and the
 playhead; zoom, horizontal/vertical scrolling, frame-snapped ruler seeking,

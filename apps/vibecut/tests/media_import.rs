@@ -18,16 +18,16 @@ use std::{
     path::{Path, PathBuf},
     sync::{
         Arc, Condvar, Mutex,
-        atomic::{AtomicUsize, Ordering},
+        atomic::{AtomicBool, AtomicUsize, Ordering},
     },
     time::{Duration, Instant},
 };
 use time::{FrameRate, TICKS_PER_SECOND, Tick};
 use vibecut::{
-    Editor,
+    Editor, Error,
     catalog::{Locale, Preferences},
     egui,
-    import::ImportProbe,
+    import::{ImportEvent, ImportProbe, ImportQueue, MAX_IMPORT_FILES},
     playback::{Files, Playback},
 };
 
@@ -96,7 +96,12 @@ impl Probe {
     }
 }
 impl ImportProbe for Probe {
-    fn import(&self, id: AssetId, path: PathBuf) -> media::Result<SourceAsset> {
+    fn import(
+        &self,
+        id: AssetId,
+        path: PathBuf,
+        _cancelled: Arc<AtomicBool>,
+    ) -> media::Result<SourceAsset> {
         self.calls.lock().unwrap().push(path.clone());
         let delay = *self.delay.lock().unwrap();
         if !delay.is_zero() {
@@ -142,7 +147,12 @@ impl GateProbe {
     }
 }
 impl ImportProbe for GateProbe {
-    fn import(&self, id: AssetId, path: PathBuf) -> media::Result<SourceAsset> {
+    fn import(
+        &self,
+        id: AssetId,
+        path: PathBuf,
+        _cancelled: Arc<AtomicBool>,
+    ) -> media::Result<SourceAsset> {
         if self.calls.fetch_add(1, Ordering::SeqCst) == 1 {
             *self.second.0.lock().unwrap() = true;
             self.second.1.notify_all();
@@ -160,12 +170,42 @@ impl ImportProbe for GateProbe {
     }
 }
 
+/// Production-style adapter: checks the cooperative token while "working" and
+/// returns Cancelled, so the batch can stop without external release.
+struct BlockingProbe {
+    started: AtomicBool,
+}
+impl BlockingProbe {
+    fn new() -> Self {
+        Self {
+            started: AtomicBool::new(false),
+        }
+    }
+    fn started(&self) -> bool {
+        self.started.load(Ordering::Acquire)
+    }
+}
+impl ImportProbe for BlockingProbe {
+    fn import(
+        &self,
+        _id: AssetId,
+        _path: PathBuf,
+        cancelled: Arc<AtomicBool>,
+    ) -> media::Result<SourceAsset> {
+        self.started.store(true, Ordering::Release);
+        while !cancelled.load(Ordering::Acquire) {
+            std::thread::sleep(Duration::from_millis(1));
+        }
+        Err(MediaError::Cancelled)
+    }
+}
+
 fn editor() -> Editor {
     let session =
         Session::new(Project::empty(ProjectId(13), "Import".into()).unwrap(), 50).unwrap();
     let mut playback = Playback::new(
         &session,
-        ByteBudget::new(128 << 20).unwrap(),
+        ByteBudget::new(512 << 20).unwrap(),
         Arc::new(Files),
     )
     .unwrap();
@@ -289,6 +329,152 @@ fn cancel_mid_batch_keeps_completed_assets_and_stops_the_rest() {
         "every reported import is retained"
     );
     assert!(inspection.import_toast.unwrap().contains("cancelled"));
+}
+
+#[test]
+fn import_batches_are_capped_and_require_shared_budget_admission() {
+    let budget = ByteBudget::new(512 << 20).unwrap();
+    let mut queue = ImportQueue::new(budget).unwrap();
+    let oversized: Vec<PathBuf> = (0..=MAX_IMPORT_FILES)
+        .map(|index| PathBuf::from(format!("/tmp/vibecut-import/many-{index}.mp4")))
+        .collect();
+    assert!(matches!(
+        queue.start(oversized, 1),
+        Err(Error::Invalid("import batch limit"))
+    ));
+    assert!(matches!(
+        queue.start(vec![PathBuf::from("x".repeat(32 * 1024 + 1))], 1),
+        Err(Error::Invalid("import path limit"))
+    ));
+    let tiny = ByteBudget::new(1).unwrap();
+    let mut tiny_queue = ImportQueue::new(tiny.clone()).unwrap();
+    assert!(matches!(
+        tiny_queue.start(vec!["/tmp/review-1.mp4".into()], 1),
+        Err(Error::Engine(engine::EditError::ArtifactTooLarge))
+    ));
+    assert_eq!(tiny.snapshot().unwrap().used, 0);
+    assert_eq!(tiny.snapshot().unwrap().limit, 1);
+}
+
+#[test]
+fn unpolled_import_backpressure_bounds_completed_metadata() {
+    let budget = ByteBudget::new(512 << 20).unwrap();
+    let mut queue = ImportQueue::new(budget.clone()).unwrap();
+    let probe = Arc::new(Probe::default());
+    queue.set_probe(probe.clone());
+    queue
+        .start(
+            (0..32)
+                .map(|index| format!("/tmp/vibecut-import/backpressure-{index}.mp4").into())
+                .collect(),
+            1,
+        )
+        .unwrap();
+    let _ = queue.poll().unwrap();
+    std::thread::sleep(Duration::from_millis(100));
+    let produced = probe.calls.lock().unwrap().len();
+    assert!(
+        produced <= 10,
+        "an unpolled batch must block on its bounded event channel, produced {produced}"
+    );
+    let deadline = Instant::now() + Duration::from_secs(10);
+    loop {
+        let events = queue.poll().unwrap();
+        let done = events
+            .iter()
+            .any(|event| matches!(event, ImportEvent::Done { .. }));
+        if done {
+            break;
+        }
+        assert!(Instant::now() < deadline, "drain did not finish");
+        std::thread::sleep(Duration::from_millis(2));
+    }
+    assert!(!queue.active());
+    assert_eq!(budget.snapshot().unwrap().used, 0, "work lease released");
+}
+
+#[test]
+fn cancel_interrupts_the_current_probe_and_shutdown_joins_it() {
+    let mut editor = editor();
+    let probe = Arc::new(BlockingProbe::new());
+    editor.set_import_probe(probe.clone()).unwrap();
+    editor
+        .start_import(vec![
+            "/tmp/vibecut-import/cancel-a.mp4".into(),
+            "/tmp/vibecut-import/cancel-b.mp4".into(),
+        ])
+        .unwrap();
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while !probe.started() {
+        editor.tick();
+        assert!(Instant::now() < deadline, "probe never started");
+        std::thread::sleep(Duration::from_millis(1));
+    }
+    let started = Instant::now();
+    editor.activate("import.cancel").unwrap();
+    let inspection = wait_import(&mut editor);
+    assert!(
+        started.elapsed() < Duration::from_secs(2),
+        "cancel waits for the whole probe: {:?}",
+        started.elapsed()
+    );
+    assert!(inspection.import_cancelled);
+    assert_eq!(inspection.import_imported, 0);
+    assert_eq!(inspection.import_unfinished, 2);
+    assert!(inspection.import_error.is_none());
+
+    let mut second_editor = self::editor();
+    let probe = Arc::new(BlockingProbe::new());
+    second_editor.set_import_probe(probe.clone()).unwrap();
+    second_editor
+        .start_import(vec!["/tmp/vibecut-import/shutdown.mp4".into()])
+        .unwrap();
+    while !probe.started() {
+        second_editor.tick();
+        assert!(Instant::now() < deadline, "shutdown probe never started");
+        std::thread::sleep(Duration::from_millis(1));
+    }
+    let started = Instant::now();
+    drop(second_editor);
+    assert!(
+        started.elapsed() < Duration::from_secs(2),
+        "drop/close joins a cancelled probe: {:?}",
+        started.elapsed()
+    );
+}
+
+#[test]
+fn worker_panic_is_a_typed_failure_not_complete() {
+    struct PanicProbe;
+    impl ImportProbe for PanicProbe {
+        fn import(&self, _: AssetId, _: PathBuf, _: Arc<AtomicBool>) -> media::Result<SourceAsset> {
+            panic!("review injected failure");
+        }
+    }
+    let mut editor = editor();
+    editor.set_import_probe(Arc::new(PanicProbe)).unwrap();
+    editor
+        .start_import(vec!["/tmp/vibecut-import/panic.mp4".into()])
+        .unwrap();
+    let inspection = wait_import(&mut editor);
+    assert_eq!(inspection.import_completed, 0);
+    assert_eq!(inspection.import_imported, 0);
+    assert_eq!(inspection.import_failures.len(), 0);
+    assert_eq!(inspection.import_unfinished, 1);
+    assert!(matches!(
+        inspection.import_error.as_deref(),
+        Some(engine::EditError::WorkerPanicked)
+    ));
+    assert!(
+        inspection
+            .import_notice
+            .as_deref()
+            .is_some_and(|notice| notice.contains("unwound"))
+    );
+    let toast = inspection.import_toast.unwrap();
+    assert!(toast.contains("Import failed"), "{toast}");
+    assert!(!toast.contains("Import complete"), "{toast}");
+    assert!(toast.contains("Unfinished: 1"), "{toast}");
 }
 
 #[test]

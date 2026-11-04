@@ -1,17 +1,21 @@
 //! Background media import: probe/hash on the engine job runner, publish one
 //! typed event per file, and keep already-imported assets on cancel/failure.
 use crate::{Error, Result};
-use engine::ByteBudget;
 use engine::cache::{ArtifactKind, CacheKey, KeyInputs};
 use engine::jobs::{
     CancelToken, JobId, JobKind, JobRunner, JobSpec, JobState, ResourceClass, RunnerConfig,
     SystemClock,
 };
-use media::{AssetId, SourceAsset};
+use engine::{ByteBudget, ByteLease, ByteOwner};
+use media::{AssetId, MediaError, SourceAsset};
 use std::{
     collections::BTreeSet,
     path::PathBuf,
-    sync::{Arc, mpsc},
+    sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+        mpsc,
+    },
     time::Duration,
 };
 
@@ -21,17 +25,40 @@ pub const MEDIA_EXTENSIONS: &[&str] = &[
     "mp4", "mov", "m4v", "mkv", "webm", "avi", "mpg", "mpeg", "mp3", "wav", "m4a", "aac", "flac",
     "ogg", "opus", "png", "jpg", "jpeg", "webp", "gif", "bmp", "tif", "tiff",
 ];
+/// One drop/picker batch is bounded so a hostile or accidental selection cannot
+/// create an unbounded path/result working set.
+pub const MAX_IMPORT_FILES: usize = 128;
+const MAX_IMPORT_PATH_BYTES: usize = 32 * 1024;
+/// Bounded producer/consumer handoff. A paused UI blocks the worker instead of
+/// accumulating completed metadata without limit.
+const EVENT_QUEUE: usize = 8;
+/// Conservative probe/work ceiling, matching render's 256 MiB source-probe
+/// admission. The lease covers FFmpeg probe internals, the hash buffer and the
+/// bounded queued metadata for the life of the batch.
+const WORK_ALLOWANCE: u64 = 256 << 20;
 
 /// Injected media boundary so tests drive import outcomes without decoding files.
+/// Production passes the same cooperative token into media's interruptible probe
+/// and full-content hash.
 pub trait ImportProbe: Send + Sync + 'static {
-    fn import(&self, id: AssetId, path: PathBuf) -> media::Result<SourceAsset>;
+    fn import(
+        &self,
+        id: AssetId,
+        path: PathBuf,
+        cancelled: Arc<AtomicBool>,
+    ) -> media::Result<SourceAsset>;
 }
 
 /// Production probe: the existing media owner canonicalizes, probes and hashes.
 pub struct MediaProbe;
 impl ImportProbe for MediaProbe {
-    fn import(&self, id: AssetId, path: PathBuf) -> media::Result<SourceAsset> {
-        SourceAsset::import(id, path)
+    fn import(
+        &self,
+        id: AssetId,
+        path: PathBuf,
+        cancelled: Arc<AtomicBool>,
+    ) -> media::Result<SourceAsset> {
+        SourceAsset::import_with_cancel(id, path, cancelled)
     }
 }
 
@@ -42,10 +69,10 @@ impl ImportProbe for MediaProbe {
 pub struct ImportFailure {
     pub path: PathBuf,
     pub reason: String,
-    pub media: Option<Arc<media::MediaError>>,
+    pub media: Option<Arc<MediaError>>,
 }
 impl ImportFailure {
-    pub fn from_media(path: PathBuf, error: media::MediaError) -> Self {
+    pub fn from_media(path: PathBuf, error: MediaError) -> Self {
         Self {
             path,
             reason: error.to_string(),
@@ -69,24 +96,39 @@ pub enum ImportEvent {
     Failed(ImportFailure),
     Done {
         cancelled: bool,
-        error: Option<String>,
+        /// Typed terminal runner failure, e.g. worker unwind. File-level media
+        /// refusals arrive as `Failed` and do not close the batch.
+        error: Option<Arc<engine::EditError>>,
     },
 }
 
 struct Job {
     id: JobId,
     cancel: CancelToken,
+    cancelled: Arc<AtomicBool>,
     receive: mpsc::Receiver<ImportEvent>,
     total: usize,
     finished: bool,
+    _work: ByteLease,
 }
 
 /// One bounded import batch. The runner owns worker lifetime and cancellation;
 /// this queue only exposes typed events until the batch closes.
 pub struct ImportQueue {
+    /// Declared before the runner so dropping the receiver unblocks a worker
+    /// waiting on the bounded event channel before `JobRunner` joins it.
+    job: Option<Job>,
     runner: JobRunner,
     probe: Arc<dyn ImportProbe>,
-    job: Option<Job>,
+    budget: ByteBudget,
+}
+impl Drop for ImportQueue {
+    fn drop(&mut self) {
+        if let Some(job) = &self.job {
+            job.cancelled.store(true, Ordering::Release);
+            job.cancel.cancel();
+        }
+    }
 }
 impl ImportQueue {
     pub fn new(budget: ByteBudget) -> Result<Self> {
@@ -99,13 +141,14 @@ impl ImportQueue {
                 backoff: Duration::from_secs(1),
                 progress_interval: Duration::from_millis(20),
             },
-            budget,
+            budget.clone(),
             Arc::new(SystemClock::default()),
         )?;
         Ok(Self {
+            job: None,
             runner,
             probe: Arc::new(MediaProbe),
-            job: None,
+            budget,
         })
     }
     pub fn set_probe(&mut self, probe: Arc<dyn ImportProbe>) {
@@ -119,14 +162,25 @@ impl ImportQueue {
     }
     pub fn cancel(&self) {
         if let Some(job) = &self.job {
+            job.cancelled.store(true, Ordering::Release);
             job.cancel.cancel();
         }
     }
     /// Probe files in order. Successes are published immediately, so a later
-    /// refusal or cancel cannot roll back earlier assets.
+    /// refusal or cancel cannot roll back earlier assets. The shared budget must
+    /// admit the batch's probe/work ceiling before any path is opened.
     pub fn start(&mut self, paths: Vec<PathBuf>, first_id: u64) -> Result<()> {
         if self.job.is_some() {
             return Err(Error::Invalid("import already in progress"));
+        }
+        if paths.len() > MAX_IMPORT_FILES {
+            return Err(Error::Invalid("import batch limit"));
+        }
+        if paths
+            .iter()
+            .any(|path| path.as_os_str().len() > MAX_IMPORT_PATH_BYTES)
+        {
+            return Err(Error::Invalid("import path limit"));
         }
         let mut seen = BTreeSet::new();
         let paths: Vec<PathBuf> = paths
@@ -136,9 +190,12 @@ impl ImportQueue {
         if paths.is_empty() {
             return Ok(());
         }
+        let work = self.budget.reserve(ByteOwner::JobResults, WORK_ALLOWANCE)?;
         let total = paths.len();
-        let (send, receive) = mpsc::channel();
+        let (send, receive) = mpsc::sync_channel(EVENT_QUEUE);
         let probe = self.probe.clone();
+        let cancelled = Arc::new(AtomicBool::new(false));
+        let worker_cancel = cancelled.clone();
         // Import publishes no cached artifact; this key only satisfies the
         // engine job contract, matching the app's other scheduling-only jobs.
         let key = CacheKey::new(KeyInputs {
@@ -153,7 +210,7 @@ impl ImportQueue {
             clip_range: [0; 32],
             translation: [0; 32],
         })?;
-        let (id, cancel) = self.runner.submit(
+        let submitted = self.runner.submit(
             JobSpec {
                 kind: JobKind::Import,
                 class: ResourceClass::Cpu,
@@ -164,18 +221,22 @@ impl ImportQueue {
                 let mut next = first_id;
                 for path in &paths {
                     if ctx.cancelled() {
-                        let _ = send.send(ImportEvent::Done {
-                            cancelled: true,
-                            error: None,
-                        });
-                        return Ok(Vec::new());
+                        worker_cancel.store(true, Ordering::Release);
                     }
-                    match probe.import(AssetId(next), path.clone()) {
+                    if worker_cancel.load(Ordering::Acquire) {
+                        return finish(&send, true, None);
+                    }
+                    match probe.import(AssetId(next), path.clone(), worker_cancel.clone()) {
                         Ok(asset) => {
                             next = next.checked_add(1).ok_or(engine::EditError::Limit)?;
                             if send.send(ImportEvent::Imported(asset)).is_err() {
                                 return Ok(Vec::new());
                             }
+                        }
+                        Err(MediaError::Cancelled)
+                            if worker_cancel.load(Ordering::Acquire) || ctx.cancelled() =>
+                        {
+                            return finish(&send, true, None);
                         }
                         Err(error) => {
                             if send
@@ -190,31 +251,29 @@ impl ImportQueue {
                         }
                     }
                 }
-                let cancelled = ctx.cancelled();
-                let _ = send.send(ImportEvent::Done {
-                    cancelled,
-                    error: None,
-                });
-                Ok(Vec::new())
+                finish(&send, ctx.cancelled(), None)
             },
-        )?;
+        );
+        let (id, cancel) = submitted?;
         self.job = Some(Job {
             id,
             cancel,
+            cancelled,
             receive,
             total,
             finished: false,
+            _work: work,
         });
         Ok(())
     }
     /// Drain completed events. A worker panic or terminal runner state still
     /// closes the batch with one typed `Done`, so the UI cannot stay busy.
-    pub fn poll(&mut self) -> Result<Vec<ImportEvent>> {
+    pub fn poll(&mut self) -> std::result::Result<Vec<ImportEvent>, Arc<engine::EditError>> {
         if let Err(error) = self.runner.tick() {
             if let Some(job) = self.job.take() {
                 let _ = self.runner.take_output(job.id);
             }
-            return Err(error.into());
+            return Err(Arc::new(error));
         }
         let mut events = Vec::new();
         let Some(job) = &mut self.job else {
@@ -236,7 +295,7 @@ impl ImportQueue {
             job.finished = true;
             events.push(ImportEvent::Done {
                 cancelled: snapshot.state == JobState::Cancelled,
-                error: snapshot.error.map(|error| error.to_string()),
+                error: snapshot.error,
             });
         }
         if job.finished
@@ -246,4 +305,14 @@ impl ImportQueue {
         }
         Ok(events)
     }
+}
+fn finish(
+    send: &mpsc::SyncSender<ImportEvent>,
+    cancelled: bool,
+    error: Option<Arc<engine::EditError>>,
+) -> std::result::Result<Vec<u8>, engine::EditError> {
+    if send.send(ImportEvent::Done { cancelled, error }).is_err() {
+        return Err(engine::EditError::Cancelled);
+    }
+    Ok(Vec::new())
 }

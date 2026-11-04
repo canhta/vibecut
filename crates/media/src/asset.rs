@@ -7,6 +7,10 @@ use std::{
     fs::File,
     io::Read,
     path::{Path, PathBuf},
+    sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+    },
 };
 use time::{FrameRate, Tick};
 
@@ -190,9 +194,29 @@ impl SourceAsset {
     }
     /// Reads and hashes source content; caller controls scheduling for large files.
     pub fn import(id: AssetId, path: PathBuf) -> Result<Self> {
+        Self::import_with_cancel(id, path, Arc::new(AtomicBool::new(false)))
+    }
+    /// Interruptible probe and full-content hash. The token is checked before
+    /// canonicalization, is passed into FFmpeg's probe interrupt callback and
+    /// checked before every 64 KiB hash read, so leaving a project or cancelling
+    /// a batch does not keep reading a large file.
+    pub fn import_with_cancel(
+        id: AssetId,
+        path: PathBuf,
+        cancelled: Arc<AtomicBool>,
+    ) -> Result<Self> {
+        if cancelled.load(Ordering::Relaxed) {
+            return Err(MediaError::Cancelled);
+        }
         let path = std::fs::canonicalize(path)?;
-        let probe = SourceProbe::from(&crate::probe(&path)?);
-        let content_hash = ContentHash::read(&path)?;
+        let reader = crate::PacketReader::open_with_cancel(&path, cancelled.clone())?;
+        let probe = SourceProbe::from(reader.probe());
+        drop(reader);
+        if cancelled.load(Ordering::Relaxed) {
+            return Err(MediaError::Cancelled);
+        }
+        let content_hash =
+            ContentHash::read_with_cancel(&path, || cancelled.load(Ordering::Relaxed))?;
         Self::try_from(AssetData {
             id,
             path,

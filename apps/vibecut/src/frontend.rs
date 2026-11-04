@@ -49,9 +49,11 @@ pub struct Inspection {
     pub import_completed: usize,
     pub import_total: usize,
     pub import_imported: usize,
+    pub import_unfinished: usize,
     pub import_cancelled: bool,
     pub import_failures: Vec<String>,
     pub import_notice: Option<String>,
+    pub import_error: Option<Arc<engine::EditError>>,
     pub import_toast: Option<String>,
     pub media_selection: Vec<AssetId>,
 }
@@ -192,6 +194,7 @@ pub struct Editor {
     import_cancelled: bool,
     import_failures: Vec<ImportFailure>,
     import_notice: Option<String>,
+    import_error: Option<Arc<engine::EditError>>,
     toast: Option<Toast>,
     media_selection: BTreeSet<AssetId>,
     media_anchor: Option<AssetId>,
@@ -245,6 +248,7 @@ impl Editor {
             import_cancelled: false,
             import_failures: Vec::new(),
             import_notice: None,
+            import_error: None,
             toast: None,
             media_selection: BTreeSet::new(),
             media_anchor: None,
@@ -276,6 +280,7 @@ impl Editor {
             import_completed: self.import_completed,
             import_total: self.import_total,
             import_imported: self.import_imported,
+            import_unfinished: self.import_total.saturating_sub(self.import_completed),
             import_cancelled: self.import_cancelled,
             import_failures: self
                 .import_failures
@@ -292,6 +297,7 @@ impl Editor {
                 })
                 .collect(),
             import_notice: self.import_notice.clone(),
+            import_error: self.import_error.clone(),
             import_toast: self.toast.as_ref().map(|toast| match &toast.detail {
                 Some(detail) => format!("{} · {detail}", toast.text),
                 None => toast.text.clone(),
@@ -329,6 +335,7 @@ impl Editor {
         self.import_cancelled = false;
         self.import_failures.clear();
         self.import_notice = None;
+        self.import_error = None;
         self.toast = None;
         let result = self.import_queue()?.start(paths, first);
         if result.is_err() {
@@ -375,12 +382,12 @@ impl Editor {
         let events = match polled {
             Ok(events) => events,
             Err(error) => {
-                let detail = error_detail(&error);
-                self.import_notice = Some(detail.clone());
+                self.import_notice = Some(error_detail(error.as_ref()));
+                self.import_error = Some(error);
                 if let Some(queue) = &self.imports {
                     queue.cancel();
                 }
-                self.set_toast(self.tr(Text::ImportPartial), Some(detail));
+                self.finish_import();
                 return;
             }
         };
@@ -403,7 +410,8 @@ impl Editor {
                 ImportEvent::Done { cancelled, error } => {
                     self.import_cancelled = cancelled;
                     if let Some(error) = error {
-                        self.import_notice = Some(error);
+                        self.import_notice = Some(error_detail(error.as_ref()));
+                        self.import_error = Some(error);
                     }
                     self.finish_import();
                 }
@@ -413,15 +421,19 @@ impl Editor {
     }
     fn finish_import(&mut self) {
         let failed = self.import_failures.len();
+        let unfinished = self.import_total.saturating_sub(self.import_completed);
         let detail = format!(
-            "{}: {} · {}: {failed}",
+            "{}: {} · {}: {failed} · {}: {unfinished}",
             self.tr(Text::Imported),
             self.import_imported,
-            self.tr(Text::Failed)
+            self.tr(Text::Failed),
+            self.tr(Text::Unfinished)
         );
-        let text = if self.import_cancelled {
+        let text = if self.import_error.is_some() {
+            self.tr(Text::ImportFailed)
+        } else if self.import_cancelled {
             self.tr(Text::ImportCancelled)
-        } else if failed > 0 {
+        } else if failed > 0 || unfinished > 0 {
             self.tr(Text::ImportPartial)
         } else {
             self.tr(Text::ImportComplete)

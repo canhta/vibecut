@@ -8,7 +8,10 @@ provider policy, jobs and output promotion belong to their respective owners.
 ## Source identity
 
 `SourceAsset::import` probes an absolute native path and streams its complete
-bytes through BLAKE3. `AssetData` validates persistable identity/path/hash and
+bytes through BLAKE3. `SourceAsset::import_with_cancel` takes one cooperative
+`Arc<AtomicBool>` through canonicalization, the FFmpeg probe interrupt callback
+and every hash chunk; cancellation returns `MediaError::Cancelled` without
+publishing an asset. `AssetData` validates persistable identity/path/hash and
 `SourceProbe` metadata, without serializing runtime codec handles. Metadata
 retains rational time bases/rates, optional duration/count/VFR evidence, audio
 start offsets/priming and video color/bit depth. Stream indexes are unique and
