@@ -652,6 +652,7 @@ fn stage_name(stage: JobStage) -> &'static str {
         JobStage::Transcribe => "transcribe",
         JobStage::Align => "align",
         JobStage::Translate => "translate",
+        JobStage::SuggestClips => "suggest_clips",
         JobStage::Assemble => "assemble",
         JobStage::Process => "process",
         JobStage::Admit => "admit",
