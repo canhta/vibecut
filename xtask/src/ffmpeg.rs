@@ -16,9 +16,13 @@ pub fn host() -> Result<String, String> {
 }
 
 pub fn cache() -> Result<PathBuf, String> {
-    let home = env::var_os("HOME")
-        .or_else(|| env::var_os("USERPROFILE"))
-        .ok_or("HOME/USERPROFILE is unavailable")?;
+    // MSYS HOME can be /home/name, which is not a Windows absolute path and
+    // disagrees with the native runner's cache location.
+    let variable = if cfg!(windows) { "USERPROFILE" } else { "HOME" };
+    let home = env::var_os(variable).ok_or_else(|| format!("{variable} is unavailable"))?;
+    if !Path::new(&home).is_absolute() {
+        return Err(format!("{variable} must be a native absolute path"));
+    }
     if home.to_str().is_none() {
         return Err("the C build cache path must be valid UTF-8".into());
     }
@@ -202,20 +206,8 @@ pub fn environment(command: &mut Command) -> Result<(), String> {
 
 pub fn provision(target: Option<&str>) -> Result<(), String> {
     if cfg!(windows) {
-        for name in ["HOME", "USERPROFILE", "PATH", "MSYSTEM", "MSYSTEM_PREFIX"] {
-            eprintln!("native Rust {name}={:?}", env::var_os(name));
-        }
-        for (program, args) in [("where.exe", vec!["bash"]), ("bash", vec!["--version"])] {
-            let output = Command::new(program)
-                .args(args)
-                .output()
-                .map_err(|e| e.to_string())?;
-            eprintln!(
-                "native Rust {program}: {:?}\n{}\n{}",
-                output.status,
-                String::from_utf8_lossy(&output.stdout),
-                String::from_utf8_lossy(&output.stderr)
-            );
+        for name in ["bash", "make", "cygpath"] {
+            eprintln!("MSYS2 {name}: {}", build_tool(name)?.display());
         }
     }
     let host = host()?;
@@ -379,12 +371,16 @@ fn build_source(
         "--disable-unit-tests".into(),
         "--disable-docs".into(),
     ];
-    run(Command::new("bash")
+    run(Command::new(build_tool("bash")?)
         .arg(shell_path(&vp.join("configure"))?)
         .current_dir(&vpbuild)
         .args(&vpflags))?;
-    run(Command::new("make").current_dir(&vpbuild).args(["-j3"]))?;
-    run(Command::new("make").current_dir(&vpbuild).arg("install"))?;
+    run(Command::new(build_tool("make")?)
+        .current_dir(&vpbuild)
+        .args(["-j3"]))?;
+    run(Command::new(build_tool("make")?)
+        .current_dir(&vpbuild)
+        .arg("install"))?;
     let ffbuild = ff.join(target);
     fs::create_dir_all(&ffbuild).map_err(|e| e.to_string())?;
     let mut flags = vec![
@@ -430,7 +426,7 @@ fn build_source(
             "--enable-mediafoundation".into(),
         ]);
     }
-    run(Command::new("bash")
+    run(Command::new(build_tool("bash")?)
         .arg(shell_path(&ff.join("configure"))?)
         .current_dir(&ffbuild)
         .args(&flags)
@@ -438,8 +434,12 @@ fn build_source(
             "PKG_CONFIG_LIBDIR",
             shell_path(&prefix.join("lib/pkgconfig"))?,
         ))?;
-    run(Command::new("make").current_dir(&ffbuild).args(["-j3"]))?;
-    run(Command::new("make").current_dir(&ffbuild).arg("install"))?;
+    run(Command::new(build_tool("make")?)
+        .current_dir(&ffbuild)
+        .args(["-j3"]))?;
+    run(Command::new(build_tool("make")?)
+        .current_dir(&ffbuild)
+        .arg("install"))?;
     if cfg!(windows) {
         // FFmpeg's MinGW recipe also emits MSVC-compatible import libraries.
         for library in [
@@ -530,11 +530,36 @@ fn patch_id(patches: &[PathBuf]) -> Result<String, String> {
         .collect())
 }
 
+// Rust's native Windows process lookup checks System32 before inherited PATH.
+// Resolve MSYS tools ourselves so System32/bash.exe (WSL) can never win. The
+// package manager distinguishes a full MSYS2 installation from Git for Windows.
+fn build_tool(name: &str) -> Result<PathBuf, String> {
+    if !cfg!(windows) {
+        return Ok(PathBuf::from(name));
+    }
+    let path = env::var_os("PATH").ok_or("PATH is unavailable")?;
+    let bin = env::split_paths(&path)
+        .filter(|directory| directory.is_absolute())
+        .find(|directory| {
+            ["bash.exe", "cygpath.exe", "pacman.exe", "msys-2.0.dll"]
+                .iter()
+                .all(|file| directory.join(file).is_file())
+        })
+        .ok_or("MSYS2 usr/bin is missing from PATH; run in MSYS2 CLANG64/CLANGARM64")?;
+    let tool = bin.join(format!("{name}.exe"));
+    if !tool.is_file() {
+        return Err(format!("MSYS2 tool is missing: {}", tool.display()));
+    }
+    Ok(tool)
+}
+
 fn shell_path(path: &Path) -> Result<String, String> {
     if cfg!(windows) {
-        Ok(capture(Command::new("cygpath").arg("-u").arg(path))?
-            .trim()
-            .to_owned())
+        Ok(
+            capture(Command::new(build_tool("cygpath")?).arg("-u").arg(path))?
+                .trim()
+                .to_owned(),
+        )
     } else {
         path.to_str()
             .map(str::to_owned)
@@ -558,6 +583,67 @@ fn record_patches(prefix: &Path, patches: &[PathBuf]) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn provisioning_paths_preserve_native_home_and_shell_arguments() {
+        const CHILD: &str = "VIBECUT_PROVISION_PATHS_CHILD";
+        if let Some(expected) = env::var_os(CHILD) {
+            if expected == "invalid" {
+                assert!(cache().is_err());
+                return;
+            }
+            let directory = PathBuf::from(expected);
+            assert_eq!(cache().unwrap(), directory.join(".cache/vibecut/ffmpeg"));
+            let script = directory.join("configure fixture.sh");
+            let input = directory.join("đường dẫn input.txt");
+            fs::write(&input, b"fixture").unwrap();
+            fs::write(&script, b"test -f \"$1\" || exit 9\nprintf '%s' \"$2\"\n").unwrap();
+            let prefix = format!("--prefix={}", shell_path(&directory).unwrap());
+            let output = capture(
+                Command::new(build_tool("bash").unwrap())
+                    .arg(shell_path(&script).unwrap())
+                    .arg(shell_path(&input).unwrap())
+                    .arg(&prefix)
+                    .current_dir(&directory),
+            )
+            .unwrap();
+            assert_eq!(output, prefix);
+            return;
+        }
+        let directory = env::temp_dir().join(format!(
+            "vibecut provision Đặng space-{}",
+            std::process::id()
+        ));
+        fs::create_dir_all(&directory).unwrap();
+        let variable = if cfg!(windows) { "USERPROFILE" } else { "HOME" };
+        for value in [
+            directory.as_os_str(),
+            std::ffi::OsStr::new("relative"),
+            std::ffi::OsStr::new(""),
+        ] {
+            let valid = value == directory.as_os_str();
+            let status = Command::new(env::current_exe().unwrap())
+                .args([
+                    "--exact",
+                    "ffmpeg::tests::provisioning_paths_preserve_native_home_and_shell_arguments",
+                    "--nocapture",
+                ])
+                .env(
+                    CHILD,
+                    if valid {
+                        directory.as_os_str()
+                    } else {
+                        std::ffi::OsStr::new("invalid")
+                    },
+                )
+                .env("HOME", "/home/msys-only")
+                .env(variable, value)
+                .status()
+                .unwrap();
+            assert!(status.success());
+        }
+        fs::remove_dir_all(&directory).unwrap();
+    }
 
     #[test]
     fn patch_discovery_uses_the_invoking_worktrees_manifest() {

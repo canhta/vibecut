@@ -54,7 +54,10 @@ patch per [ADR 0002](../adr/0002-desktop-media-and-time.md).
 logs the resolved version; keep the sources and receipt with every distributed
 binary. Windows builds need MSYS2 CLANG64 (x64) or CLANGARM64 (arm64) with Bash,
 Make, CMake, Ninja, pkg-config, NASM and matching Clang/LLVM, run on the matching
-architecture; Rust keeps its MSVC toolchain.
+architecture; Rust keeps its MSVC toolchain. Native xtask uses `USERPROFILE`
+for its Windows cache and resolves Bash, Make and cygpath to absolute paths in the
+MSYS2 `usr/bin` on `PATH`, refusing an incomplete installation instead of using
+Windows/WSL or Git Bash. Provisioning logs the selected tool paths.
 
 ## Hosted CI
 
