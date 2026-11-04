@@ -18,10 +18,16 @@
 | T3 | New contracts, pipelines, persistence formats |
 | T4 | unsafe/FFI, concurrency and job engine, render and A/V sync core (Codex only) |
 
-Route each ticket to opencode when its tier allows. opencode rises one tier after
-two consecutive reviewed code tickets at its tier merge without a design-level
-`changes` verdict, and drops one tier after such a verdict or a reverted merge. The
-coordinator records tier and track record in `.scratch/agents.md` on every verdict.
+Route each ticket to opencode when its tier allows and its work type has no failing
+record. opencode rises one tier after two consecutive reviewed code tickets at its
+tier merge without a design-level `changes` verdict, and drops one tier after such a
+verdict or a reverted merge. The coordinator records tier, track record and a
+work-type profile (evidence and route per kind of work) in `.scratch/agents.md` on
+every verdict.
+
+An opencode ticket's acceptance names its failure paths and boundary inputs
+(failed publish, hostile sizes, every entry to cover); work types where reviews
+found design-level or robustness defects go to Codex until the profile changes.
 
 ## Tickets
 
