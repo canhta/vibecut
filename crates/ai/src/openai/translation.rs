@@ -119,7 +119,7 @@ impl Translator for OpenAiTranslator {
         crate::translation::prepare(self, window, request)?;
         let schema = json!({"type":"object","properties":{"translations":{"type":"array","items":{"type":"object","properties":{"id":{"type":"string"},"text":{"type":"string"}},"required":["id","text"],"additionalProperties":false}}},"required":["translations"],"additionalProperties":false});
         let body = serde_json::to_vec(&json!({"model":TRANSLATION_MODEL,"store":false,"background":false,"service_tier":"default","max_output_tokens":MAX_OUTPUT,"instructions":INSTRUCTIONS,"input":window.consent_text()?.as_str(),"text":{"format":crate::structured::format("translations",schema)}})).map_err(|_| Error::Payload)?;
-        if body.len() > MAX_WIRE {
+        if body.len() > MAX_WIRE || body.len() as u64 > request.scope.max_bytes {
             return Err(Error::Payload);
         }
         crate::contracts::checkpoint(hooks, Stage::Translate)?;

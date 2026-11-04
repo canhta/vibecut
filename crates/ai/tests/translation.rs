@@ -367,3 +367,62 @@ fn cancellation_after_network_discards_response_and_unsupported_providers_do_not
         Err(Error::Unsupported)
     ));
 }
+
+#[test]
+fn translation_must_obey_consented_wire_ceiling() {
+    let w = window("vi", "en");
+    let mut s = scope(&w);
+    s.max_bytes = w.consent_text().unwrap().as_str().len() as u64;
+    let consent = Consent::grant(s.clone(), Money::new("USD", 1_000_000).unwrap()).unwrap();
+    let (p, t) = provider(response(
+        json!({"translations":[{"id":"cue-1","text":"VibeCut 12 kg"}]}),
+    ));
+    let result = translate(
+        &p,
+        &w,
+        &Request {
+            scope: &s,
+            consent: Some(&consent),
+        },
+        &Hooks(AtomicBool::new(false)),
+    );
+    let sent_bytes = t
+        .request
+        .lock()
+        .unwrap()
+        .as_ref()
+        .map(|r| r.body.len())
+        .unwrap_or(0);
+    assert!(
+        sent_bytes <= s.max_bytes as usize,
+        "wire body {sent_bytes} exceeds consent ceiling {}",
+        s.max_bytes
+    );
+    assert!(matches!(result, Err(Error::Payload)));
+}
+#[test]
+fn translation_rejects_nonofficial_processors() {
+    for url in [
+        "https://third-party.example/v1",
+        "https://api.openai.com.evil.example/v1",
+        "https://api.openai.com/v2",
+        "https://eu.api.openai.com/v1",
+    ] {
+        let mut cfg = serde_json::to_value(config()).unwrap();
+        cfg["location"]["base_url"] = json!(url);
+        let t = Arc::new(Transport {
+            response: json!({}),
+            calls: AtomicUsize::new(0),
+            request: Mutex::new(None),
+            cancel: None,
+        });
+        assert!(matches!(
+            OpenAiTranslator::new(
+                serde_json::from_value(cfg).unwrap(),
+                ApiKey::new("test").unwrap(),
+                t
+            ),
+            Err(Error::Unsupported)
+        ));
+    }
+}
