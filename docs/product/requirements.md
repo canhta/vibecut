@@ -18,5 +18,6 @@ current scope. Linux support is deferred. Suggestions remain subject to user rev
 
 Speech recognition, translation, subtitle segmentation and text rendering are
 optimized for Vietnamese (`vi`), English (`en`) and Chinese (`zh`, Simplified and
-Traditional). Every ordered pair translates; bilingual subtitles pair any two.
-The UI ships in English and Vietnamese.
+Traditional) first; more languages are added later without code changes to the
+core. Every ordered pair translates; bilingual subtitles pair any two. The UI
+ships in English and Vietnamese and accepts more catalogs.

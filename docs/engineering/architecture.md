@@ -57,6 +57,16 @@ the same engine registry: stable ID, label, parameter schema and enabled predica
 Validate before committing; commands are all-or-nothing. A batch is one undo step;
 continuous drags merge by key. UI-local presentation state may stay in the app.
 
+## Languages
+
+Languages are data, not code paths. Identify them with BCP 47 tags (`vi`, `en`,
+`zh-Hans`, `zh-Hant`). Each supported language has one language profile owned by
+`captions`: segmentation rules (grapheme or character limits, reading speed, line
+breaking, optional word segmenter), punctuation, and default font fallback chain
+consumed by `text`. Provider adapters declare supported languages as capabilities.
+Adding a language adds a profile, fonts and optional UI catalog; core crates never
+`match` on a fixed language list. Unknown tags fall back to a generic profile.
+
 ## Media and time
 
 Pure Rust owns demux/mux/decode. Hardware codecs use VideoToolbox on macOS and
