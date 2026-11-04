@@ -18,6 +18,7 @@ Local-first desktop video editor for macOS and Windows; Linux comes later.
 | P0 | Get suggested vertical shorts from long talking videos; review, trim, export. |
 | P1 | Better reframing, batch operations, output quality; full editor parity. |
 | P2 | Optional dubbing into Vietnamese, English or Chinese. |
+| P2 | Coding agents (Claude Code, Codex, opencode, any MCP client) drive the editor through MCP, CLI and an agent skill. |
 
 Out of scope: montage generation, automatic B-roll, voice cloning. AI suggestions
 always go through user review.
