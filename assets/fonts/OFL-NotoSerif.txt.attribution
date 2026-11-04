@@ -1,0 +1,8 @@
+asset: OFL-NotoSerif.txt
+title: SIL Open Font License 1.1 for Noto Serif
+author: SIL International
+source: https://openfontlicense.org
+license: OFL-1.1
+license-file: assets/fonts/OFL-NotoSerif.txt
+added: p0-core-04-text
+notes: License text distributed with the bundled Noto Serif font file.

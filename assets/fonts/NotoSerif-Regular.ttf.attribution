@@ -1,0 +1,8 @@
+asset: NotoSerif-Regular.ttf
+title: Noto Serif Regular
+author: The Noto Project Authors
+source: https://github.com/notofonts/notofonts.github.io (fonts/NotoSerif/unhinted/ttf)
+license: OFL-1.1
+license-file: assets/fonts/OFL-NotoSerif.txt
+added: p0-core-04-text
+notes: Unmodified font file embedded by crates/text as the bundled serif face.

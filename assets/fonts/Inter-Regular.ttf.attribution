@@ -1,0 +1,8 @@
+asset: Inter-Regular.ttf
+title: Inter Regular
+author: The Inter Project Authors (Rasmus Andersson et al.)
+source: https://github.com/rsms/inter
+license: OFL-1.1
+license-file: assets/fonts/OFL-Inter.txt
+added: p0-core-04-text
+notes: Unmodified font file embedded by crates/text for overlay and title text.
