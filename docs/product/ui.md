@@ -37,7 +37,8 @@
 
 - Dark and light both ship in v1. Dark: window and editor chrome `#0F0F0F`;
   top bar `#131313`.
-- Light theme tokens: pending; same geometry, type and density as dark.
+- Light theme tokens are in [Light theme](#light-theme); same geometry, type and
+  density as dark.
 - Editor panels use `#0F0F0F`; they are not lighter than the window.
 - Export modal `#262626`, fields `#303034`; settings modal `#141414`, controls
   `#262626`, active tab `#3B3B3B`.
@@ -45,6 +46,50 @@
   `#383838`.
 - Accent `#00C1CD` for selection, checked boxes and the primary button.
 - Video clips use a [proposed] `#0A2A24` teal border around the filmstrip.
+
+### Light theme
+
+Same geometry, type and density as dark; only colour changes. Values sampled from
+a real light reference screenshot are cited; every designed value is marked
+`[proposed]`, including the whole neutral ramp (the references are the basis, not a
+palette to copy). Ratios are WCAG 2.x contrast against the named surface.
+Local evidence IDs E1–E6 map to the light screenshots and token notes under
+`.spikes/ui-reference/`; the mapping stays in the ticket report so reference names
+never enter tracked files.
+
+| Token | Dark | Light | Ratios against surface (and label) | Evidence |
+|---|---|---|---|---|
+| Window and editor chrome | `#0F0F0F` | `#F2F3F5` | 1.11:1 vs top bar `#FFFFFF` | [proposed]; E6 light-pane samples `#EDF3F3`/`#FDFDFD` |
+| Top bar | `#131313` | `#FFFFFF` | 1.11:1 vs window `#F2F3F5` | Observed in E1 and E2 |
+| Editor panels | `#0F0F0F` | `#F9FAFB` | 1.06:1 vs window `#F2F3F5` | Observed panel fill in E2 |
+| Export modal | `#262626` | `#FFFFFF` | 1.11:1 vs window `#F2F3F5` | Observed white popover surface in E3 |
+| Fields | `#303034` | `#F2F3F5` | 1.11:1 fill vs modal `#FFFFFF`; 3.10:1 boundary via border `#858B91` | [proposed]; light row/field geometry observed in E3 and E4 |
+| Settings modal | `#141414` | `#FFFFFF` | 1.11:1 vs window `#F2F3F5` | Observed white settings panel in E4 |
+| Controls | `#262626` | `#EEEFF0` | 1.10:1 fill vs panel `#F9FAFB`; 3.10:1 boundary via border `#858B91` | Observed control fills in E2 |
+| Active tab | `#3B3B3B` | `#DEDEDE` | 1.29:1 fill vs panel `#F9FAFB`; 4.71:1 accent text on fill | Observed in E2 |
+| Text | `#E5E5E5` | `#1C1C1C` | 16.31:1 vs panel `#F9FAFB` | Observed text colour in E1 and E2 |
+| Secondary text | `#9A9A9A` | `#5C6268` | 5.91:1 vs panel `#F9FAFB`; 4.59:1 on active tab `#DEDEDE` | [proposed]; reference muted 50% grey fails 4.5:1 on light |
+| Separators | `#1F1F1F` | `#878D93` | 3.21:1 vs panel `#F9FAFB`; 3.02:1 vs window `#F2F3F5` | [proposed]; reference `#DEDEDE` lines are 1.3:1 |
+| Borders | `#383838` | `#858B91` | 3.10:1 vs field `#F2F3F5`; 3.29:1 vs panel `#F9FAFB` | [proposed]; reference `#DEDEDE` borders are 1.3:1 |
+| Accent: selection, checked boxes, primary button | `#00C1CD` | `#006A74` | 6.06:1 vs panel `#F9FAFB`; 4.71:1 on active tab `#DEDEDE`; 6.34:1 for white label on fill | [proposed] darkened; `#00C1CD` is only 1.99:1 on window, 2.13:1 on panel and 2.21:1 on white |
+| Video clip fill and border | `#0A2A24` | `#E3F7F2` fill, `#0B6B5B` border | 1.07:1 fill vs panel; 5.77:1 border on fill; 15.30:1 primary text on fill | [proposed]; no light timeline clip sample |
+| Error | `#EA1515` [proposed dark] | `#B3261E` | 5.91:1 on error surface `#FFF0F0`; 6.25:1 vs panel `#F9FAFB`; 6.54:1 for white label on fill | [proposed]; E5 error toast uses `#E50000` on `#FFF0F0`, but that is only 4.38:1 |
+
+- **Accent decision.** `#00C1CD` fails even the 3:1 control threshold on light
+  surfaces, so light uses `#006A74` (same teal family) for selection, checked
+  boxes, primary-button fill and active tab text. White checkmarks and labels on
+  that fill are 6.34:1. The dark accent stays `#00C1CD`.
+- **Surfaces.** Adjacent surface separations are intentionally subtle (1.06–1.29:1);
+  the 3:1 requirement applies to text and to control/separator boundaries, not to
+  blocks that are also separated by 1 px lines. Dark's "panels are not lighter than
+  the window" inverts to "panels are not darker than the window" on light.
+- **Lines.** The sampled reference lines (`#DEDEDE`) are decorative-light, not
+  control boundaries; light therefore darkens separators and borders to
+  `#878D93`/`#858B91` to meet 3:1.
+- **Error and clips.** Import/progress keeps the accent bar `#006A74`; error toasts
+  keep the observed pale surface `#FFF0F0` but use `#B3261E` text/icons because the
+  reference `#E50000` is 4.38:1 there. Light video clips use a `#E3F7F2` fill,
+  `#0B6B5B` 1 px border and primary text; the filmstrip media sits inside them.
 
 ### Type scale
 
