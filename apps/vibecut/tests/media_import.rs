@@ -345,10 +345,7 @@ fn picker_result_imports_through_workspace_and_real_editor_widgets() {
         .project()
         .data();
     assert_eq!(data.assets.len(), 1);
-    assert_eq!(
-        data.timeline.tracks[0].items[0].source_asset,
-        Some(AssetId(1))
-    );
+    assert_eq!(data.timeline.main.items[0].source_asset, Some(AssetId(1)));
 }
 
 #[test]
@@ -723,7 +720,6 @@ fn multi_select_insert_targets_only_selected_assets_in_one_undo_step() {
     let data = harness.state().session.project().data();
     let inserted: Vec<_> = data
         .timeline
-        .tracks
         .iter()
         .flat_map(|track| track.items.iter())
         .map(|item| (item.source_asset.unwrap(), item.content.kind()))
@@ -735,7 +731,7 @@ fn multi_select_insert_targets_only_selected_assets_in_one_undo_step() {
         !inserted.iter().any(|(asset, _)| *asset == AssetId(3)),
         "unselected asset must stay out of the timeline"
     );
-    for track in &data.timeline.tracks {
+    for track in data.timeline.iter() {
         assert_eq!(track.items.len(), 1);
         assert_eq!(track.items[0].start, Tick::ZERO);
         assert_eq!(
@@ -753,7 +749,7 @@ fn multi_select_insert_targets_only_selected_assets_in_one_undo_step() {
             .project()
             .data()
             .timeline
-            .tracks
+            .overlays
             .is_empty(),
         "multi-asset insert is one undo step"
     );
@@ -799,8 +795,11 @@ fn insert_refusal_keeps_assets_and_the_timeline_unchanged() {
     );
     let data = editor.session.project().data();
     assert_eq!(data.assets.len(), 1, "the imported asset stays available");
-    assert!(data.timeline.tracks.is_empty(), "refused insert is atomic");
-    assert_eq!(data.timeline.tracks.len(), 0);
+    assert!(
+        data.timeline.overlays.is_empty(),
+        "refused insert is atomic"
+    );
+    assert_eq!(data.timeline.overlays.len(), 0);
 }
 
 #[test]
@@ -810,7 +809,7 @@ fn insert_refreshes_playback_with_the_new_project_snapshot() {
     let overlay = session
         .apply(Command::AddTrack {
             name: "Overlay".into(),
-            kind: TrackKind::Overlay,
+            kind: TrackKind::Video,
         })
         .unwrap();
     let engine::CreatedId::Track(track) = overlay.created[0] else {
@@ -868,7 +867,7 @@ fn insert_refreshes_playback_with_the_new_project_snapshot() {
         "insert fences the old generation before the next frame"
     );
     assert_eq!(
-        editor.session.project().data().timeline.tracks.len(),
+        editor.session.project().data().timeline.track_count(),
         2,
         "the inserted video gets its own compatible track"
     );
@@ -878,7 +877,6 @@ fn insert_refreshes_playback_with_the_new_project_snapshot() {
             .project()
             .data()
             .timeline
-            .tracks
             .iter()
             .flat_map(|track| track.items.iter())
             .filter(|item| item.source_asset == Some(AssetId(1)))

@@ -261,7 +261,6 @@ fn joins_play_order_excludes_gaps_and_matches_one_concatenated_mapping() {
     let video = prepared
         .data()
         .timeline
-        .tracks
         .iter()
         .find(|track| track.kind == project::TrackKind::Video)
         .unwrap();
@@ -280,9 +279,8 @@ fn joins_play_order_excludes_gaps_and_matches_one_concatenated_mapping() {
     let captions = prepared
         .data()
         .timeline
-        .tracks
         .iter()
-        .find(|track| track.kind == project::TrackKind::Caption)
+        .find(|track| track.kind == project::TrackKind::Text)
         .unwrap();
     assert_eq!(captions.items.len(), 3);
     assert_eq!(
@@ -320,7 +318,7 @@ fn joins_play_order_excludes_gaps_and_matches_one_concatenated_mapping() {
     assert_eq!(batch.paths(0).unwrap().subtitles.len(), 2);
     let exported = engine::subtitle_file(
         prepared,
-        project::TrackId(2),
+        project::TrackId(3),
         Format::Srt,
         &[lang("vi"), lang("zh-Hant")],
     )
@@ -366,7 +364,6 @@ fn applies_one_normalized_crop_to_every_piece() {
     let items: Vec<_> = prepared
         .data()
         .timeline
-        .tracks
         .iter()
         .filter(|track| track.kind == project::TrackKind::Video)
         .flat_map(|track| &track.items)

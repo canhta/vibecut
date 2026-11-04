@@ -54,7 +54,7 @@ fn add_track(project: &Path, name: &str) -> Value {
     let output = cli(&[
         os("exec"),
         project.as_os_str(),
-        os("add_track"),
+        os("track.add"),
         OsStr::new(&params),
         os("--json"),
     ]);
@@ -92,10 +92,10 @@ fn overlay_project_color(
         .into_data();
     data.canvas.width = width;
     data.canvas.height = height;
-    data.timeline.tracks.push(project::Track {
-        id: project::TrackId(0),
+    data.timeline.insert_track(project::Track {
+        id: project::TrackId(1),
         name: "Overlay".into(),
-        kind: project::TrackKind::Overlay,
+        kind: project::TrackKind::Video,
         muted: false,
         hidden: false,
         locked: false,
@@ -275,8 +275,8 @@ fn media_project(project_path: &Path, video: &Path, audio: Option<&Path>) {
     data.canvas.height = stream.height;
     data.canvas.fps = fps;
     data.assets.push(video_asset);
-    data.timeline.tracks.push(project::Track {
-        id: project::TrackId(0),
+    data.timeline.insert_track(project::Track {
+        id: project::TrackId(1),
         name: "Video".into(),
         kind: project::TrackKind::Video,
         muted: false,
@@ -298,8 +298,8 @@ fn media_project(project_path: &Path, video: &Path, audio: Option<&Path>) {
         let audio_asset = media::SourceAsset::import(media::AssetId(2), audio.to_owned()).unwrap();
         let audio_duration = audio_asset.probe().duration.unwrap();
         data.assets.push(audio_asset);
-        data.timeline.tracks.push(project::Track {
-            id: project::TrackId(1),
+        data.timeline.insert_track(project::Track {
+            id: project::TrackId(2),
             name: "Audio".into(),
             kind: project::TrackKind::Audio,
             muted: false,
@@ -345,7 +345,7 @@ fn project_new_and_info_round_trip_unicode_space_path() {
     assert_eq!(value["canvas"]["width"], 1920);
     assert_eq!(value["canvas"]["height"], 1080);
     assert_eq!(value["schema_version"], project::SCHEMA_VERSION);
-    assert_eq!(value["tracks"], 0);
+    assert_eq!(value["tracks"], 1);
 
     let second = cli(&[os("project"), os("new"), project.as_os_str()]);
     assert_eq!(code(&second), 2);
@@ -359,9 +359,9 @@ fn exec_mutates_through_engine_and_reports_created_ids() {
     new_project(&project);
     let outcome = add_track(&project, "Video");
     assert_eq!(outcome["changed"], true);
-    assert_eq!(outcome["created"][0]["track"], 0);
+    assert_eq!(outcome["created"][0]["track"], 1);
     let value = info(&project);
-    assert_eq!(value["tracks"], 1);
+    assert_eq!(value["tracks"], 2);
     assert_eq!(value["items"], 0);
 }
 
@@ -385,7 +385,7 @@ fn exec_refuses_bad_input_without_writing() {
     let invalid = cli(&[
         os("exec"),
         project.as_os_str(),
-        os("add_track"),
+        os("track.add"),
         os("{not json"),
         os("--json"),
     ]);
@@ -395,7 +395,7 @@ fn exec_refuses_bad_input_without_writing() {
     let params = cli(&[
         os("exec"),
         project.as_os_str(),
-        os("add_track"),
+        os("track.add"),
         os("{}"),
         os("--json"),
     ]);
@@ -416,7 +416,7 @@ fn busy_writer_refuses_with_typed_exit_and_no_write() {
     let output = cli(&[
         os("exec"),
         project.as_os_str(),
-        os("add_track"),
+        os("track.add"),
         OsStr::new(&params),
         os("--json"),
     ]);
@@ -431,7 +431,7 @@ fn busy_writer_refuses_with_typed_exit_and_no_write() {
         .args([
             os("exec"),
             os("busy.vibecut"),
-            os("add_track"),
+            os("track.add"),
             OsStr::new(&params),
             os("--json"),
         ])
@@ -446,7 +446,7 @@ fn busy_writer_refuses_with_typed_exit_and_no_write() {
         let linked = cli(&[
             os("exec"),
             alias.as_os_str(),
-            os("add_track"),
+            os("track.add"),
             OsStr::new(&params),
             os("--json"),
         ]);
@@ -456,7 +456,7 @@ fn busy_writer_refuses_with_typed_exit_and_no_write() {
     drop(lease);
 
     let value = info(&project);
-    assert_eq!(value["tracks"], 0);
+    assert_eq!(value["tracks"], 1);
 }
 
 #[test]
@@ -466,9 +466,9 @@ fn two_subprocesses_interleave_one_commit_one_refusal() {
     let mut data = project::Project::empty(project::ProjectId(0), "base".into())
         .unwrap()
         .into_data();
-    data.timeline.tracks = (0..250)
+    data.timeline.overlays = (0..250)
         .map(|index| project::Track {
-            id: project::TrackId(index),
+            id: project::TrackId(index + 1),
             name: format!("Base {index}").into(),
             kind: project::TrackKind::Video,
             muted: false,
@@ -498,14 +498,14 @@ fn two_subprocesses_interleave_one_commit_one_refusal() {
         let first = spawn(&[
             os("exec"),
             trial.as_os_str(),
-            os("add_track"),
+            os("track.add"),
             OsStr::new(&params_a),
         ]);
         let second = Command::new(bin())
             .args([
                 os("exec"),
                 trial.as_os_str(),
-                os("add_track"),
+                os("track.add"),
                 OsStr::new(&params_b),
             ])
             .stdout(Stdio::piped())
@@ -529,7 +529,7 @@ fn two_subprocesses_interleave_one_commit_one_refusal() {
             String::from_utf8_lossy(&second_output.stderr)
         );
         let loaded = project::load(&trial).unwrap();
-        let tracks = &loaded.project.data().timeline.tracks;
+        let tracks: Vec<_> = loaded.project.data().timeline.iter().collect();
         assert_eq!(tracks.len() as u64, base_tracks + 1);
         let winner = if first_code == 0 { "A" } else { "B" };
         let loser = if first_code == 0 { "B" } else { "A" };
@@ -548,7 +548,7 @@ fn commands_prints_the_generated_registry() {
     let entries = value.as_array().unwrap();
     let add_track = entries
         .iter()
-        .find(|entry| entry["id"] == "add_track")
+        .find(|entry| entry["id"] == "track.add")
         .unwrap();
     assert_eq!(
         add_track["params_schema"]["$defs"]["NfcText"]["type"],

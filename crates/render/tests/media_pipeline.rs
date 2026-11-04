@@ -37,8 +37,8 @@ fn video_project(path: &Path) -> project::Project {
         .unwrap();
     let duration = asset.probe().duration.unwrap();
     d.assets.push(asset);
-    d.timeline.tracks.push(project::Track {
-        id: project::TrackId(0),
+    d.timeline.insert_track(project::Track {
+        id: project::TrackId(1),
         name: "".into(),
         kind: project::TrackKind::Video,
         muted: false,
@@ -245,7 +245,7 @@ fn resampling_split_trim_offset_and_irregular_blocks_are_identical() {
             });
         }
         assert!(end > Tick::ZERO);
-        d.timeline.tracks.push(project::Track {
+        d.timeline.insert_track(project::Track {
             id: project::TrackId(n),
             name: "".into(),
             kind: project::TrackKind::Audio,
@@ -525,8 +525,8 @@ fn missing_audio_only_is_required_only_when_audio_is_requested() {
     let asset = media::SourceAsset::import(media::AssetId(3), path.clone()).unwrap();
     let mut d = solid_project(1, 64, 64, [20, 60, 90, 255]).into_data();
     d.assets.push(asset);
-    d.timeline.tracks.push(project::Track {
-        id: project::TrackId(1),
+    d.timeline.insert_track(project::Track {
+        id: project::TrackId(2),
         name: "".into(),
         kind: project::TrackKind::Audio,
         muted: false,
@@ -844,8 +844,8 @@ fn stereo_policy_keeps_headroom_and_export_refuses_overload() {
     let asset = media::SourceAsset::import(media::AssetId(7), input).unwrap();
     let mut d = solid_project(1, 64, 64, [0, 0, 0, 255]).into_data();
     d.assets.push(asset);
-    d.timeline.tracks.push(project::Track {
-        id: project::TrackId(7),
+    d.timeline.insert_track(project::Track {
+        id: project::TrackId(8),
         name: "".into(),
         kind: project::TrackKind::Audio,
         muted: false,
@@ -871,10 +871,10 @@ fn stereo_policy_keeps_headroom_and_export_refuses_overload() {
     assert_eq!(stereo.planes()[1], [0.25; 32]);
     let mono = mix_audio(&p, 0, 32, 1, &mut FileSources::default(), &h).unwrap();
     assert_eq!(mono.planes()[0], [0.5; 32]);
-    let mut extra = d.timeline.tracks.last().unwrap().clone();
-    extra.id = project::TrackId(8);
+    let mut extra = d.timeline.audio.last().unwrap().clone();
+    extra.id = project::TrackId(9);
     extra.items[0].id = project::ItemId(8);
-    d.timeline.tracks.push(extra);
+    d.timeline.insert_track(extra);
     let p = project::Project::new(d).unwrap();
     let mixed = mix_audio(&p, 0, 32, 2, &mut FileSources::default(), &h).unwrap();
     assert_eq!(mixed.peak(), 1.5);
@@ -1077,7 +1077,7 @@ fn opacity_animation_disables_video_stream_copy() {
         project::Param::new(project::ParamValue::Scalar(0.0)).unwrap(),
     ] {
         let mut candidate = data.clone();
-        candidate.timeline.tracks[0].items[0]
+        candidate.timeline.overlays[0].items[0]
             .animations
             .set(project::AnimationPath::new("opacity").unwrap(), param)
             .unwrap();
@@ -1116,7 +1116,7 @@ fn effect_stack_refuses_forced_copy_and_preserves_destination() {
     let path = root().join("blur-copy-source.mp4");
     av_fixture(&path);
     let mut data = video_project(&path).into_data();
-    data.timeline.tracks[0].items[0]
+    data.timeline.overlays[0].items[0]
         .effects
         .push(project::EffectInstance {
             id: "blur".into(),
@@ -1140,4 +1140,111 @@ fn effect_stack_refuses_forced_copy_and_preserves_destination() {
         Err(Error::Unsupported(_))
     ));
     assert_eq!(std::fs::read(&destination).unwrap(), b"keep old bytes");
+}
+
+#[test]
+fn track_output_flags_are_independent_in_preview_and_real_exports() {
+    if !tools() {
+        return;
+    }
+    let dir = tempfile::tempdir().unwrap();
+    let input = dir.path().join("track-flags.mp4");
+    av_fixture(&input);
+    let base = video_project(&input);
+    for (hidden, muted, audio_track) in [
+        (false, false, false),
+        (true, false, false),
+        (false, true, false),
+        (true, true, false),
+        (false, false, true),
+        (true, false, true),
+        (false, true, true),
+        (true, true, true),
+    ] {
+        let mut data = base.clone().into_data();
+        data.timeline.main.items = data.timeline.overlays.remove(0).items;
+        data.timeline.main.hidden = hidden;
+        data.timeline.main.muted = muted;
+        if audio_track {
+            let mut audio = data.timeline.main.items[0].clone();
+            audio.id = project::ItemId(1);
+            audio.content = project::ItemParams::Audio(project::AudioParams {
+                gain_db: 0.0,
+                muted: false,
+            });
+            if let project::ItemParams::Video(params) = &mut data.timeline.main.items[0].content {
+                params.source_audio_enabled = false;
+            }
+            data.timeline.insert_track(project::Track {
+                id: project::TrackId(1),
+                name: "Audio".into(),
+                kind: project::TrackKind::Audio,
+                muted,
+                hidden,
+                locked: false,
+                items: vec![audio],
+            });
+        }
+        let project = project::Project::new(data).unwrap();
+        let hooks = Hooks::default();
+        let frame = Renderer::new(&project, RenderSettings::from_project(&project))
+            .unwrap()
+            .render_frame(Tick::ZERO, &mut FileSources::default(), &hooks)
+            .unwrap();
+        assert_eq!(
+            frame.pixels().iter().all(|p| *p == [0.0, 0.0, 0.0, 1.0]),
+            hidden
+        );
+        let audio = mix_audio(&project, 0, 4096, 2, &mut FileSources::default(), &hooks).unwrap();
+        assert_eq!(audio.peak() == 0.0, muted);
+        let output = dir
+            .path()
+            .join(format!("flags-{hidden}-{muted}-{audio_track}.mp4"));
+        export(
+            &project,
+            TimeRange::new(Tick::ZERO, tick(1, 1)).unwrap(),
+            &ExportSettings::from_project(&project),
+            &output,
+            &hooks,
+        )
+        .unwrap();
+        let bytes = rgba(&output);
+        assert_eq!(
+            bytes
+                .as_chunks::<4>()
+                .0
+                .iter()
+                .all(|p| p[0] <= 2 && p[1] <= 2 && p[2] <= 2),
+            hidden
+        );
+        let metadata = probe(&output);
+        let has_audio = metadata["streams"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|s| s["codec_type"] == "audio");
+        if has_audio {
+            let decoded = tool_command("ffmpeg")
+                .args(["-v", "error", "-i"])
+                .arg(&output)
+                .args(["-map", "0:a:0", "-f", "f32le", "-acodec", "pcm_f32le", "-"])
+                .output()
+                .unwrap();
+            assert!(decoded.status.success());
+            let peak = decoded
+                .stdout
+                .as_chunks::<4>()
+                .0
+                .iter()
+                .map(|b| f32::from_le_bytes(*b).abs())
+                .fold(0.0f32, f32::max);
+            assert_eq!(
+                peak <= 1e-5,
+                muted,
+                "export audio hidden={hidden} muted={muted} peak={peak}"
+            );
+        } else {
+            assert!(muted);
+        }
+    }
 }

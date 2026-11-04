@@ -235,7 +235,6 @@ fn item(editor: &Editor, id: ItemId) -> &project::Item {
         .project()
         .data()
         .timeline
-        .tracks
         .iter()
         .flat_map(|track| track.items.iter())
         .find(|item| item.id == id)
@@ -248,7 +247,6 @@ fn count(editor: &Editor) -> usize {
         .project()
         .data()
         .timeline
-        .tracks
         .iter()
         .map(|track| track.items.len())
         .sum()
@@ -314,7 +312,6 @@ fn ruler_click_split_and_undo_redo_use_automation_ids_and_engine_commands() {
         .project()
         .data()
         .timeline
-        .tracks
         .iter()
         .flat_map(|track| track.items.iter())
         .find(|candidate| candidate.start == Tick(3 * SECOND))
@@ -463,7 +460,6 @@ fn item_opt(editor: &Editor, id: ItemId) -> Option<&project::Item> {
         .project()
         .data()
         .timeline
-        .tracks
         .iter()
         .flat_map(|track| track.items.iter())
         .find(|item| item.id == id)
@@ -579,7 +575,6 @@ fn text_item_id(editor: &Editor) -> ItemId {
         .project()
         .data()
         .timeline
-        .tracks
         .iter()
         .flat_map(|track| track.items.iter())
         .find(|item| matches!(item.content, ItemParams::Text(_)))
@@ -594,7 +589,7 @@ fn review_delete_invalidates_preview_and_clamps_playhead() {
         20,
     )
     .unwrap();
-    let overlay = track(&mut session, "Overlay", TrackKind::Overlay);
+    let overlay = track(&mut session, "Overlay", TrackKind::Video);
     let item_id = insert(
         &mut session,
         overlay,
@@ -752,7 +747,7 @@ fn edits_while_playing_restart_preview_and_pause_at_the_new_end() {
         20,
     )
     .unwrap();
-    let overlay = track(&mut session, "Overlay", TrackKind::Overlay);
+    let overlay = track(&mut session, "Overlay", TrackKind::Video);
     let item_id = insert(
         &mut session,
         overlay,

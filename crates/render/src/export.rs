@@ -155,7 +155,6 @@ pub fn export_with_sources(
     let hdr = project
         .data()
         .timeline
-        .tracks
         .iter()
         .filter(|t| !t.hidden)
         .flat_map(|t| &t.items)
@@ -268,7 +267,7 @@ fn admission(
 ) -> Result<Vec<Unavailable>> {
     let mut status = BTreeMap::new();
     let mut out = Vec::new();
-    for track in &project.data().timeline.tracks {
+    for track in project.data().timeline.iter() {
         for item in &track.items {
             let video = !track.hidden && matches!(item.content, ItemParams::Video(_));
             let audio = include_audio
@@ -338,7 +337,6 @@ fn copy_plan<'a>(
     let items: Vec<_> = project
         .data()
         .timeline
-        .tracks
         .iter()
         .filter(|t| !t.hidden)
         .flat_map(|t| t.items.iter().map(move |i| (t, i)))
@@ -665,7 +663,6 @@ fn copy_export(
     let other_audio = project
         .data()
         .timeline
-        .tracks
         .iter()
         .filter(|t| !t.muted)
         .flat_map(|t| &t.items)

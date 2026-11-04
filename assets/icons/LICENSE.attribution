@@ -1,0 +1,8 @@
+asset: LICENSE
+title: Phosphor Icons license
+author: Phosphor Icons
+source: https://github.com/phosphor-icons/core/blob/main/LICENSE
+license: MIT
+license-file: assets/icons/LICENSE
+added: p1-parity/17
+notes: License for the regular SVG icons in this directory.

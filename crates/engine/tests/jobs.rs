@@ -300,7 +300,7 @@ fn stale_result_rejected_after_edit_undo_save_or_session_switch() {
     let mut s = Session::new(p.clone(), 10).unwrap();
     let command = || Command::AddTrack {
         name: "".into(),
-        kind: project::TrackKind::Overlay,
+        kind: project::TrackKind::Video,
     };
     let before = s.job_target();
     s.apply(command()).unwrap();
@@ -506,7 +506,7 @@ fn submitted_output_carries_original_session_revision_through_completion() {
     let (mut r, _) = runner(&budget);
     let command = || Command::AddTrack {
         name: "".into(),
-        kind: project::TrackKind::Overlay,
+        kind: project::TrackKind::Video,
     };
     let (id, _) = r
         .submit_for_session(&session, spec(ResourceClass::Cpu), |_| Ok(vec![1]))
@@ -577,7 +577,7 @@ fn every_group_exit_invalidates_captured_preview_targets_and_submitted_outputs()
         let mut job = None;
         let add = || Command::AddTrack {
             name: "".into(),
-            kind: project::TrackKind::Overlay,
+            kind: project::TrackKind::Video,
         };
         let result: Result<(), EditError> = session.transaction(|s| {
             s.apply(add())?;
@@ -590,7 +590,7 @@ fn every_group_exit_invalidates_captured_preview_targets_and_submitted_outputs()
                 0 => Err(EditError::Cancelled),
                 1 => panic!("unwind after preview target capture"),
                 2 => {
-                    let track = s.project().data().timeline.tracks[0].id;
+                    let track = s.project().data().timeline.overlays[0].id;
                     s.apply(Command::RemoveTrack { track })?;
                     Ok(())
                 }
@@ -628,10 +628,10 @@ fn every_group_exit_invalidates_captured_preview_targets_and_submitted_outputs()
         s.begin_gesture().unwrap();
         s.apply(Command::AddTrack {
             name: "".into(),
-            kind: project::TrackKind::Overlay,
+            kind: project::TrackKind::Video,
         })
         .unwrap();
-        let track = s.project().data().timeline.tracks[0].id;
+        let track = s.project().data().timeline.overlays[0].id;
         s.apply(Command::RemoveTrack { track }).unwrap();
         let target = s.job_target();
         if cancel {
@@ -644,7 +644,7 @@ fn every_group_exit_invalidates_captured_preview_targets_and_submitted_outputs()
                 &target,
                 Command::AddTrack {
                     name: "".into(),
-                    kind: project::TrackKind::Overlay
+                    kind: project::TrackKind::Video
                 }
             ),
             Err(EditError::StaleResult)

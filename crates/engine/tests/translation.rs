@@ -71,10 +71,10 @@ fn session() -> Session {
             .into(),
         })
         .collect();
-    data.timeline.tracks.push(Track {
-        id: TrackId(0),
+    data.timeline.insert_track(Track {
+        id: TrackId(1),
         name: "captions".into(),
-        kind: TrackKind::Caption,
+        kind: TrackKind::Text,
         muted: false,
         hidden: false,
         locked: false,
@@ -93,7 +93,7 @@ fn session() -> Session {
     Session::new(Project::new(data).unwrap(), 10).unwrap()
 }
 fn cues(s: &Session) -> &[Cue] {
-    let ItemParams::Caption(p) = &s.project().data().timeline.tracks[0].items[0].content else {
+    let ItemParams::Caption(p) = &s.project().data().timeline.overlays[0].items[0].content else {
         panic!("fixture")
     };
     &p.cues.cues
@@ -295,7 +295,7 @@ fn retries_cannot_reset_operation_budget_and_late_results_refuse_changed_session
     let (id, _) = run.submit(&mut r, &s).unwrap();
     s.apply(Command::AddTrack {
         name: "".into(),
-        kind: TrackKind::Overlay,
+        kind: TrackKind::Video,
     })
     .unwrap();
     assert_eq!(pump(&mut r, id).state, JobState::Completed);
@@ -341,7 +341,7 @@ fn consent_preparation_cannot_rebind_old_source_to_a_new_session_revision() {
     let (run, transport) = run(&s, selected(&s, false), 0, 1, 1_000_000);
     s.apply(Command::AddTrack {
         name: "edit during consent".into(),
-        kind: TrackKind::Overlay,
+        kind: TrackKind::Video,
     })
     .unwrap();
     assert!(matches!(
@@ -467,7 +467,7 @@ fn translation_preserves_partial_and_hidden_cues_across_every_trim_retention_lif
                     expected,
                     "{mode} start={start} edge={edge} force={force}"
                 );
-                let item = &s.project().data().timeline.tracks[0].items[0];
+                let item = &s.project().data().timeline.overlays[0].items[0];
                 assert_eq!(item.start, Tick(0));
                 assert_eq!(
                     item.source_range,

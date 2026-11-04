@@ -869,7 +869,7 @@ mod tests {
             a.session_mut()
                 .apply(crate::Command::AddTrack {
                     name: "".into(),
-                    kind: project::TrackKind::Overlay,
+                    kind: project::TrackKind::Video,
                 })
                 .unwrap();
             a.fault = Some(fault);

@@ -30,18 +30,18 @@ fn project() -> Project {
     let mut data = Project::empty(ProjectId(0), "Tiếng Việt".into())
         .unwrap()
         .into_data();
-    for id in [0, 1] {
-        data.timeline.tracks.push(Track {
-            id: TrackId(id),
+    for id in [1, 0] {
+        data.timeline.insert_track(Track {
+            id: TrackId(id + 1),
             name: "track".into(),
-            kind: TrackKind::Overlay,
+            kind: TrackKind::Video,
             muted: false,
             hidden: false,
             locked: false,
             items: Vec::new(),
         });
     }
-    data.timeline.tracks.first_mut().unwrap().items = vec![
+    data.timeline.overlays.first_mut().unwrap().items = vec![
         Item {
             effects: Vec::new(),
             animations: Default::default(),
@@ -70,7 +70,6 @@ fn get(s: &Session, id: u64) -> &Item {
     s.project()
         .data()
         .timeline
-        .tracks
         .iter()
         .flat_map(|t| &t.items)
         .find(|i| i.id == ItemId(id))
@@ -80,14 +79,14 @@ fn get(s: &Session, id: u64) -> &Item {
 fn all_commands_share_registry_and_strict_json_dispatch() {
     let mut s = Session::new(Project::empty(ProjectId(0), "".into()).unwrap(), 10).unwrap();
     let r = s
-        .execute("add_track", json!({"name":"Tiếng", "kind":"overlay"}))
+        .execute("track.add", json!({"name":"Tiếng", "kind":"video"}))
         .unwrap();
-    assert_eq!(r.created, vec![CreatedId::Track(TrackId(0))]);
+    assert_eq!(r.created, vec![CreatedId::Track(TrackId(1))]);
     assert_eq!(
         s.project()
             .data()
             .timeline
-            .tracks
+            .overlays
             .first()
             .unwrap()
             .name
@@ -95,12 +94,12 @@ fn all_commands_share_registry_and_strict_json_dispatch() {
         "Tiếng"
     );
     let r = s
-        .execute("insert_item", json!({"track":0,"item":new_item(0,10)}))
+        .execute("insert_item", json!({"track":1,"item":new_item(0,10)}))
         .unwrap();
-    assert_eq!(r.created, vec![CreatedId::Item(ItemId(1))]);
-    s.execute("move_item", json!({"item":1,"track":0,"start":10}))
+    assert_eq!(r.created, vec![CreatedId::Item(ItemId(2))]);
+    s.execute("move_item", json!({"item":2,"track":1,"start":10}))
         .unwrap();
-    s.execute("set_item_param", json!({"item":1,"content":content()}))
+    s.execute("set_item_param", json!({"item":2,"content":content()}))
         .unwrap();
     s.execute(
         "add_bookmark",
@@ -119,22 +118,22 @@ fn all_commands_share_registry_and_strict_json_dispatch() {
     })
     .unwrap();
     s.execute("add_asset", json!({"asset":asset})).unwrap();
-    s.execute("delete", json!({"items":[1]})).unwrap();
+    s.execute("delete", json!({"items":[2]})).unwrap();
     s.execute(
-        "set_track_flags",
-        json!({"track":0,"muted":true,"hidden":true,"locked":true}),
+        "track.set_flags",
+        json!({"track":1,"muted":true,"hidden":true,"locked":true}),
     )
     .unwrap();
     assert!(matches!(
-        s.apply(Command::RemoveTrack { track: TrackId(0) }),
+        s.apply(Command::RemoveTrack { track: TrackId(1) }),
         Err(EditError::Locked(_))
     ));
     s.execute(
-        "set_track_flags",
-        json!({"track":0,"muted":false,"hidden":false,"locked":false}),
+        "track.set_flags",
+        json!({"track":1,"muted":false,"hidden":false,"locked":false}),
     )
     .unwrap();
-    s.execute("remove_track", json!({"track":0})).unwrap();
+    s.execute("track.remove", json!({"track":1})).unwrap();
     for spec in registry() {
         assert!(!spec.label.is_empty());
         assert_eq!(registry().iter().filter(|r| r.id == spec.id).count(), 1);
@@ -200,12 +199,12 @@ fn simultaneous_moves_can_swap_but_never_leave_overlap_or_touch_locked_tracks() 
         moves: vec![
             Move {
                 item: ItemId(10),
-                track: TrackId(0),
+                track: TrackId(1),
                 start: Tick(60),
             },
             Move {
                 item: ItemId(11),
-                track: TrackId(0),
+                track: TrackId(1),
                 start: Tick(0),
             },
         ],
@@ -216,14 +215,14 @@ fn simultaneous_moves_can_swap_but_never_leave_overlap_or_touch_locked_tracks() 
     assert!(matches!(
         s.apply(Command::MoveItem {
             item: ItemId(10),
-            track: TrackId(0),
+            track: TrackId(1),
             start: Tick(20)
         }),
-        Err(EditError::Overlap(TrackId(0)))
+        Err(EditError::Overlap(TrackId(1)))
     ));
     assert!(Arc::ptr_eq(&before, s.project()));
     s.apply(Command::SetTrackFlags {
-        track: TrackId(1),
+        track: TrackId(2),
         muted: false,
         hidden: false,
         locked: true,
@@ -233,11 +232,11 @@ fn simultaneous_moves_can_swap_but_never_leave_overlap_or_touch_locked_tracks() 
     for command in [
         Command::MoveItem {
             item: ItemId(10),
-            track: TrackId(1),
+            track: TrackId(2),
             start: Tick(0),
         },
         Command::InsertItem {
-            track: TrackId(1),
+            track: TrackId(2),
             item: new_item(0, 10),
         },
         Command::Delete {
@@ -247,12 +246,12 @@ fn simultaneous_moves_can_swap_but_never_leave_overlap_or_touch_locked_tracks() 
             moves: vec![
                 Move {
                     item: ItemId(10),
-                    track: TrackId(0),
+                    track: TrackId(1),
                     start: Tick(60),
                 },
                 Move {
                     item: ItemId(10),
-                    track: TrackId(0),
+                    track: TrackId(1),
                     start: Tick(60),
                 },
             ],
@@ -272,7 +271,7 @@ fn batch_is_atomic_and_uses_one_step_with_eviction_and_branching() {
             commands: vec![
                 Command::MoveItem {
                     item: ItemId(10),
-                    track: TrackId(1),
+                    track: TrackId(2),
                     start: Tick(0)
                 },
                 Command::Delete {
@@ -288,12 +287,12 @@ fn batch_is_atomic_and_uses_one_step_with_eviction_and_branching() {
         commands: vec![
             Command::MoveItem {
                 item: ItemId(10),
-                track: TrackId(1),
+                track: TrackId(2),
                 start: Tick(0),
             },
             Command::MoveItem {
                 item: ItemId(11),
-                track: TrackId(1),
+                track: TrackId(2),
                 start: Tick(60),
             },
         ],
@@ -339,7 +338,7 @@ fn continuous_gestures_merge_and_ids_do_not_alias_after_undo() {
         s.apply_merged(
             Command::MoveItem {
                 item: ItemId(10),
-                track: TrackId(1),
+                track: TrackId(2),
                 start: Tick(start),
             },
             Some("drag-1"),
@@ -354,7 +353,7 @@ fn continuous_gestures_merge_and_ids_do_not_alias_after_undo() {
     s.apply_merged(
         Command::MoveItem {
             item: ItemId(10),
-            track: TrackId(1),
+            track: TrackId(2),
             start: Tick(130),
         },
         Some("drag-1"),
@@ -363,14 +362,14 @@ fn continuous_gestures_merge_and_ids_do_not_alias_after_undo() {
     assert_eq!(s.history_len(), (2, 0));
     let first = s
         .apply(Command::InsertItem {
-            track: TrackId(1),
+            track: TrackId(2),
             item: new_item(500, 10),
         })
         .unwrap();
     s.undo().unwrap();
     let second = s
         .apply(Command::InsertItem {
-            track: TrackId(1),
+            track: TrackId(2),
             item: new_item(500, 10),
         })
         .unwrap();
@@ -383,17 +382,17 @@ fn hostile_parameters_and_limits_leave_project_and_history_intact() {
     for (id, params) in [
         ("missing", json!({})),
         ("delete", json!({"items":[10,10]})),
-        ("move_item", json!({"item":10,"track":0,"start":i64::MAX})),
-        ("move_item", json!({"item":10,"track":0,"start":-1})),
+        ("move_item", json!({"item":10,"track":1,"start":i64::MAX})),
+        ("move_item", json!({"item":10,"track":1,"start":-1})),
         (
             "move_item",
-            json!({"item":10,"track":0,"start":0,"typo":true}),
+            json!({"item":10,"track":1,"start":0,"typo":true}),
         ),
         ("trim_start", json!({"item":10,"at":i64::MIN})),
         ("trim_end", json!({"item":10,"at":0})),
         ("split_at", json!({"item":10,"at":40})),
         ("undo", json!({"unexpected":true})),
-        ("insert_item", json!({"track":0,"item":null})),
+        ("insert_item", json!({"track":1,"item":null})),
     ] {
         assert!(s.execute(id, params).is_err(), "{id}");
         assert!(Arc::ptr_eq(&before, s.project()));
@@ -411,12 +410,12 @@ fn hostile_parameters_and_limits_leave_project_and_history_intact() {
     assert!(Session::new(project(), 0).is_err());
     assert!(Session::new(project(), 1001).is_err());
     let mut data = project().into_data();
-    data.timeline.tracks.first_mut().unwrap().id = TrackId(u64::MAX);
+    data.timeline.overlays.first_mut().unwrap().id = TrackId(u64::MAX);
     let mut s = Session::new(Project::new(data).unwrap(), 1).unwrap();
     assert!(matches!(
         s.apply(Command::AddTrack {
             name: "".into(),
-            kind: TrackKind::Overlay
+            kind: TrackKind::Video
         }),
         Err(EditError::IdExhausted)
     ));
@@ -433,15 +432,15 @@ proptest! {
         let initial=s.project().clone();
         for (op,id,tick) in ops {
             let cmd=match op {
-                0=>Command::InsertItem {track:TrackId(id%2),item:new_item(tick,10)},
-                1=>Command::MoveItem {item:ItemId(id),track:TrackId(id%2),start:Tick(tick)},
+                0=>Command::InsertItem {track:TrackId(id%2 + 1),item:new_item(tick,10)},
+                1=>Command::MoveItem {item:ItemId(id),track:TrackId(id%2 + 1),start:Tick(tick)},
                 2=>Command::SplitAt {item:ItemId(id),at:Tick(tick)},
                 3=>Command::TrimStart {item:ItemId(id),at:Tick(tick)},
                 4=>Command::TrimEnd {item:ItemId(id),at:Tick(tick)},
                 5=>Command::RippleDelete {item:ItemId(id)},
                 6=>Command::Delete {items:vec![ItemId(id)]},
                 7=>Command::SetItemParam {item:ItemId(id),content:content()},
-                _=>Command::Batch{commands:vec![Command::MoveItem{item:ItemId(id),track:TrackId(id%2),start:Tick(tick)},Command::Delete{items:vec![ItemId(id.wrapping_add(1))]}]},
+                _=>Command::Batch{commands:vec![Command::MoveItem{item:ItemId(id),track:TrackId(id%2 + 1),start:Tick(tick)},Command::Delete{items:vec![ItemId(id.wrapping_add(1))]}]},
             };
             let before=s.project().clone(); let history=s.history_len();
             if s.apply(cmd).is_err() { prop_assert!(Arc::ptr_eq(&before,s.project())); prop_assert_eq!(s.history_len(),history); }
@@ -467,10 +466,10 @@ fn media_handles_and_typed_parameter_validation_are_atomic() {
     use media::{AudioInfo, ColorInfo, SourceStream, StreamKind, TimeBase, VideoInfo};
     use project::{AudioParams, VideoParams};
     let mut data = project().into_data();
-    data.timeline.tracks.clear();
+    data.timeline.overlays.clear();
     for (id, kind) in [(0, TrackKind::Video), (1, TrackKind::Audio)] {
-        data.timeline.tracks.push(Track {
-            id: TrackId(id),
+        data.timeline.insert_track(Track {
+            id: TrackId(id + 1),
             name: "".into(),
             kind,
             muted: false,
@@ -531,7 +530,7 @@ fn media_handles_and_typed_parameter_validation_are_atomic() {
     let mut s = Session::new(Project::new(data).unwrap(), 20).unwrap();
     let out = s
         .apply(Command::InsertItem {
-            track: TrackId(0),
+            track: TrackId(1),
             item: NewItem {
                 animations: Default::default(),
                 source_asset: Some(AssetId(1)),
@@ -567,7 +566,7 @@ fn media_handles_and_typed_parameter_validation_are_atomic() {
         },
         Command::MoveItem {
             item: id,
-            track: TrackId(1),
+            track: TrackId(2),
             start: Tick(0),
         },
         Command::SetItemParam {
@@ -578,7 +577,7 @@ fn media_handles_and_typed_parameter_validation_are_atomic() {
             }),
         },
         Command::InsertItem {
-            track: TrackId(1),
+            track: TrackId(2),
             item: NewItem {
                 animations: Default::default(),
                 source_asset: Some(AssetId(99)),
@@ -591,7 +590,7 @@ fn media_handles_and_typed_parameter_validation_are_atomic() {
             },
         },
         Command::InsertItem {
-            track: TrackId(1),
+            track: TrackId(2),
             item: NewItem {
                 animations: Default::default(),
                 source_asset: Some(AssetId(1)),
@@ -657,7 +656,7 @@ fn noops_preserve_redo_and_refusals_preserve_merge_state() {
     let mut s = session();
     let drag = |start| Command::MoveItem {
         item: ItemId(10),
-        track: TrackId(1),
+        track: TrackId(2),
         start: Tick(start),
     };
     s.apply_merged(drag(0), Some("gesture")).unwrap();
@@ -688,7 +687,7 @@ fn noops_preserve_redo_and_refusals_preserve_merge_state() {
 #[ignore = "manual metadata-edit benchmark; no wall-clock assertion"]
 fn measure_large_project_gesture() {
     let mut data = project().into_data();
-    let track = data.timeline.tracks.first_mut().unwrap();
+    let track = data.timeline.overlays.first_mut().unwrap();
     track.items = (0..10000)
         .map(|n| Item {
             effects: Vec::new(),
@@ -709,7 +708,7 @@ fn measure_large_project_gesture() {
             s.apply_merged(
                 Command::MoveItem {
                     item: ItemId(10009),
-                    track: TrackId(0),
+                    track: TrackId(1),
                     start: Tick(199_980 + (n % 2)),
                 },
                 Some("benchmark"),
@@ -736,7 +735,7 @@ fn explicit_gesture_commits_once_and_cancel_restores_history_redo_and_events() {
     let mut s = Session::new(project(), 1).unwrap();
     s.apply(Command::MoveItem {
         item: ItemId(10),
-        track: TrackId(1),
+        track: TrackId(2),
         start: Tick(0),
     })
     .unwrap();
@@ -750,7 +749,7 @@ fn explicit_gesture_commits_once_and_cancel_restores_history_redo_and_events() {
     ));
     assert!(matches!(s.undo(), Err(EditError::TransactionActive)));
     for start in 1..10 {
-        s.execute("move_item", json!({"item":10,"track":1,"start":start}))
+        s.execute("move_item", json!({"item":10,"track":2,"start":start}))
             .unwrap();
     }
     assert_eq!(s.history_len(), (1, 0));
@@ -776,7 +775,7 @@ fn explicit_gesture_commits_once_and_cancel_restores_history_redo_and_events() {
         s.apply_merged(
             Command::MoveItem {
                 item: ItemId(10),
-                track: TrackId(1),
+                track: TrackId(2),
                 start: Tick(start),
             },
             Some("same"),
@@ -837,7 +836,7 @@ fn grouped_failure_and_unwind_restore_every_staged_change_without_eviction() {
         s.apply_merged(
             Command::MoveItem {
                 item: ItemId(10),
-                track: TrackId(1),
+                track: TrackId(2),
                 start: Tick(0),
             },
             Some("prior"),
@@ -903,7 +902,7 @@ fn groups_evict_only_one_step_and_noop_gestures_preserve_redo() {
         for start in 0..10 {
             group.apply(Command::MoveItem {
                 item: ItemId(10),
-                track: TrackId(1),
+                track: TrackId(2),
                 start: Tick(start),
             })?;
             assert_eq!(group.history_len(), (1, 0));
@@ -934,7 +933,7 @@ fn group_rollback_restores_merge_key_and_explicit_boundaries_break_it() {
         s.apply_merged(
             Command::MoveItem {
                 item: ItemId(10),
-                track: TrackId(1),
+                track: TrackId(2),
                 start: Tick(0),
             },
             Some("drag"),
@@ -943,7 +942,7 @@ fn group_rollback_restores_merge_key_and_explicit_boundaries_break_it() {
         let result: engine::Result<()> = s.transaction(|group| {
             group.apply(Command::MoveItem {
                 item: ItemId(10),
-                track: TrackId(1),
+                track: TrackId(2),
                 start: Tick(5),
             })?;
             if unwind {
@@ -955,7 +954,7 @@ fn group_rollback_restores_merge_key_and_explicit_boundaries_break_it() {
         s.apply_merged(
             Command::MoveItem {
                 item: ItemId(10),
-                track: TrackId(1),
+                track: TrackId(2),
                 start: Tick(10),
             },
             Some("drag"),
@@ -967,7 +966,7 @@ fn group_rollback_restores_merge_key_and_explicit_boundaries_break_it() {
         s.apply_merged(
             Command::MoveItem {
                 item: ItemId(10),
-                track: TrackId(1),
+                track: TrackId(2),
                 start: Tick(20),
             },
             Some("drag"),
@@ -979,7 +978,7 @@ fn group_rollback_restores_merge_key_and_explicit_boundaries_break_it() {
         s.apply_merged(
             Command::MoveItem {
                 item: ItemId(10),
-                track: TrackId(1),
+                track: TrackId(2),
                 start: Tick(30),
             },
             Some("drag"),
@@ -994,7 +993,7 @@ fn caption_project() -> Project {
     use project::CaptionParams;
     use std::collections::BTreeMap;
     let mut data = project().into_data();
-    data.timeline.tracks.clear();
+    data.timeline.overlays.clear();
     data.assets.push(
         SourceAsset::try_from(AssetData {
             id: AssetId(1),
@@ -1022,10 +1021,10 @@ fn caption_project() -> Project {
             },
         )]),
     };
-    data.timeline.tracks.push(Track {
-        id: TrackId(0),
+    data.timeline.insert_track(Track {
+        id: TrackId(1),
         name: "".into(),
-        kind: TrackKind::Caption,
+        kind: TrackKind::Text,
         muted: false,
         hidden: false,
         locked: false,

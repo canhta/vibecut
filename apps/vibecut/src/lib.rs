@@ -3,6 +3,7 @@ pub mod capture;
 pub mod catalog;
 pub mod effects;
 mod frontend;
+mod icons;
 pub mod import;
 pub mod lifecycle;
 pub mod playback;

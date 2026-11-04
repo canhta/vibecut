@@ -155,7 +155,7 @@ pub enum ControlResult {
         outcome: Outcome,
     },
     Inspection {
-        project: project::ProjectData,
+        project: Box<project::ProjectData>,
     },
     Catalog {
         entries: Vec<crate::CommandSpec>,
@@ -748,7 +748,7 @@ impl Session {
                 }
                 validate_wire(self.project().data())?;
                 Ok(ControlResult::Inspection {
-                    project: self.project().data().clone(),
+                    project: Box::new(self.project().data().clone()),
                 })
             }
             Command::Catalog {} => {

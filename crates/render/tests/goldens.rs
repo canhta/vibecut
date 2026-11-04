@@ -102,8 +102,8 @@ fn scene() -> project::Project {
             None,
         ),
     ] {
-        d.timeline.tracks.push(project::Track {
-            id: project::TrackId(id),
+        d.timeline.insert_track(project::Track {
+            id: project::TrackId(id + 1),
             name: "".into(),
             kind,
             muted: false,
@@ -228,29 +228,26 @@ fn blur_background_stays_below_lower_timeline_layers() {
     let mut d = scene().into_data();
     // Put an opaque blue overlay below an inset video. A global background
     // prepared while visiting the video must not erase that overlay.
-    d.timeline.tracks.pop();
-    d.timeline.tracks.insert(
-        0,
-        project::Track {
-            id: project::TrackId(2),
-            name: "".into(),
-            kind: project::TrackKind::Overlay,
-            muted: false,
-            hidden: false,
-            locked: false,
-            items: vec![project::Item {
-                effects: Vec::new(),
-                animations: Default::default(),
-                id: project::ItemId(2),
-                source_asset: None,
-                source_range: TimeRange::new(Tick::ZERO, tick(1, 1)).unwrap(),
-                start: Tick::ZERO,
-                content: project::ItemParams::Overlay(project::OverlayParams {
-                    color: project::Color([0, 0, 255, 255]),
-                }),
-            }],
-        },
-    );
+    d.timeline.overlays.remove(0);
+    d.timeline.overlays.push(project::Track {
+        id: project::TrackId(3),
+        name: "".into(),
+        kind: project::TrackKind::Video,
+        muted: false,
+        hidden: false,
+        locked: false,
+        items: vec![project::Item {
+            effects: Vec::new(),
+            animations: Default::default(),
+            id: project::ItemId(2),
+            source_asset: None,
+            source_range: TimeRange::new(Tick::ZERO, tick(1, 1)).unwrap(),
+            start: Tick::ZERO,
+            content: project::ItemParams::Overlay(project::OverlayParams {
+                color: project::Color([0, 0, 255, 255]),
+            }),
+        }],
+    });
     let p = project::Project::new(d).unwrap();
     let mut s = RenderSettings::from_project(&p);
     s.background_blur = Some(3);
@@ -278,7 +275,7 @@ fn blur_background_stays_below_lower_timeline_layers() {
 #[test]
 fn separable_sampling_preserves_fractional_crops_and_transparent_borders() {
     let mut d = scene().into_data();
-    d.timeline.tracks.pop();
+    d.timeline.overlays.remove(0);
     let p = project::Project::new(d).unwrap();
     let h = Hooks::default();
     // Baselines captured from the scalar public renderer before optimization.

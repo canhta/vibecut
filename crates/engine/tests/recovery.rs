@@ -52,7 +52,7 @@ fn edit(a: &mut Autosave) {
     a.session_mut()
         .apply(Command::AddTrack {
             name: "Track".into(),
-            kind: TrackKind::Overlay,
+            kind: TrackKind::Video,
         })
         .unwrap();
 }
@@ -185,7 +185,7 @@ fn recover_discard_and_save_as_preserve_original_then_promote() {
             .project
             .data()
             .timeline
-            .tracks
+            .overlays
             .len(),
         1
     );
@@ -200,7 +200,7 @@ fn recover_discard_and_save_as_preserve_original_then_promote() {
             .project
             .data()
             .timeline
-            .tracks
+            .overlays
             .len(),
         2
     );
@@ -240,7 +240,7 @@ fn stale_save_completion_cannot_acknowledge_new_edits() {
             .project()
             .data()
             .timeline
-            .tracks
+            .overlays
             .len(),
         1
     );
@@ -268,7 +268,7 @@ fn switch_flushes_pending_and_gestures_cannot_cross_a_boundary() {
             .project()
             .data()
             .timeline
-            .tracks
+            .overlays
             .len(),
         1
     );
@@ -353,7 +353,7 @@ fn journal_survives_forced_process_termination_and_another_live_instance() {
             .project()
             .data()
             .timeline
-            .tracks
+            .overlays
             .len(),
         1
     );
@@ -443,14 +443,14 @@ fn stale_same_path_save_with_undo(undo_after_completion: bool) {
             a.session_mut().undo().unwrap();
             a.session_mut().undo().unwrap();
         }
-        assert_eq!(a.session().project().data().timeline.tracks.len(), 0);
+        assert_eq!(a.session().project().data().timeline.overlays.len(), 0);
         assert_eq!(
             project::load(&path)
                 .unwrap()
                 .project
                 .data()
                 .timeline
-                .tracks
+                .overlays
                 .len(),
             1
         );
@@ -471,7 +471,7 @@ fn stale_same_path_save_with_undo(undo_after_completion: bool) {
                     .project
                     .data()
                     .timeline
-                    .tracks
+                    .overlays
                     .len(),
                 0
             );
@@ -499,7 +499,7 @@ fn stale_same_path_save_with_undo(undo_after_completion: bool) {
                     .project()
                     .data()
                     .timeline
-                    .tracks
+                    .overlays
                     .len(),
                 0
             );
@@ -694,7 +694,7 @@ fn acknowledged_save_as_transfers_lease_and_receipt_together() {
             .project
             .data()
             .timeline
-            .tracks
+            .overlays
             .len(),
         2
     );

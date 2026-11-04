@@ -447,7 +447,7 @@ fn prepare_clip(
             });
             next_item = next_item.checked_add(1).ok_or(EditError::IdExhausted)?;
         }
-        Some(TrackId(2))
+        Some(TrackId(3))
     };
     if !options.formats.is_empty() {
         let formats = u64::try_from(options.formats.len()).map_err(|_| EditError::Limit)?;
@@ -458,24 +458,25 @@ fn prepare_clip(
     } else {
         sidecar_bytes = 0;
     }
-    let mut tracks = Vec::new();
-    tracks
-        .try_reserve_exact(1 + usize::from(caption_track.is_some()))
+    let mut timeline = Timeline::default();
+    timeline
+        .overlays
+        .try_reserve_exact(usize::from(caption_track.is_some()))
         .map_err(|_| EditError::Limit)?;
-    tracks.push(Track {
-        id: TrackId(1),
-        name: "Video".into(),
+    timeline.main = Track {
+        id: TrackId(2),
+        name: "Main Track".into(),
         kind: TrackKind::Video,
         muted: false,
         hidden: false,
         locked: false,
         items: video_items,
-    });
+    };
     if caption_track.is_some() {
-        tracks.push(Track {
-            id: TrackId(2),
+        timeline.insert_track(Track {
+            id: TrackId(3),
             name: "Captions".into(),
-            kind: TrackKind::Caption,
+            kind: TrackKind::Text,
             muted: false,
             hidden: false,
             locked: false,
@@ -487,7 +488,7 @@ fn prepare_clip(
         name: short.title.clone(),
         canvas: source.data().canvas.clone(),
         assets: vec![options.asset.clone()],
-        timeline: Timeline { tracks },
+        timeline,
         bookmarks: Vec::new(),
         settings: source.data().settings.clone(),
     })?;
@@ -502,7 +503,6 @@ fn prepare_clip(
         for item in project
             .data()
             .timeline
-            .tracks
             .iter()
             .filter(|track| track.kind == TrackKind::Video)
             .flat_map(|track| &track.items)

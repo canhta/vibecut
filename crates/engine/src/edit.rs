@@ -62,7 +62,6 @@ fn alloc(next: &mut Option<u64>) -> Result<u64> {
 }
 fn track(data: &mut ProjectData, id: TrackId) -> Result<&mut Track> {
     data.timeline
-        .tracks
         .iter_mut()
         .find(|t| t.id == id)
         .ok_or(EditError::NoTrack(id))
@@ -75,7 +74,7 @@ fn unlocked(track: &Track) -> Result<()> {
     }
 }
 fn item(data: &mut ProjectData, id: ItemId) -> Result<&mut Item> {
-    for t in &mut data.timeline.tracks {
+    for t in data.timeline.iter_mut() {
         if t.items.iter().any(|i| i.id == id) {
             unlocked(t)?;
             return t
@@ -88,7 +87,7 @@ fn item(data: &mut ProjectData, id: ItemId) -> Result<&mut Item> {
     Err(EditError::NoItem(id))
 }
 fn take_item(data: &mut ProjectData, id: ItemId) -> Result<Item> {
-    for t in &mut data.timeline.tracks {
+    for t in data.timeline.iter_mut() {
         if let Some(index) = t.items.iter().position(|i| i.id == id) {
             unlocked(t)?;
             return Ok(t.items.remove(index));
@@ -152,7 +151,7 @@ pub(crate) fn apply(
         Command::AddAsset { asset } => data.assets.push(asset),
         Command::AddTrack { name, kind } => {
             let id = TrackId(alloc(next)?);
-            data.timeline.tracks.push(Track {
+            data.timeline.insert_track(Track {
                 id,
                 name,
                 kind,
@@ -164,9 +163,28 @@ pub(crate) fn apply(
             created.push(CreatedId::Track(id));
         }
         Command::RemoveTrack { track: id } => {
+            if data.timeline.main.id == id {
+                return Err(EditError::Invalid("main track cannot be removed"));
+            }
             unlocked(track(&mut data, id)?)?;
-            data.timeline.tracks.retain(|t| t.id != id);
+            data.timeline.overlays.retain(|t| t.id != id);
+            data.timeline.audio.retain(|t| t.id != id);
         }
+        Command::SetTrackMuted { track: id, muted } => {
+            let t = track(&mut data, id)?;
+            if !t.kind.can_mute() {
+                return Err(EditError::Invalid("track has no audio"));
+            }
+            t.muted = muted;
+        }
+        Command::SetTrackHidden { track: id, hidden } => {
+            let t = track(&mut data, id)?;
+            if !t.kind.can_hide() {
+                return Err(EditError::Invalid("audio track has no video"));
+            }
+            t.hidden = hidden;
+        }
+        Command::SetTrackMagnet { enabled } => data.timeline.magnet = enabled,
         Command::SetTrackFlags {
             track: id,
             muted,
@@ -226,7 +244,6 @@ pub(crate) fn apply(
             created.push(CreatedId::Item(right.id));
             let t = data
                 .timeline
-                .tracks
                 .iter_mut()
                 .find(|t| t.items.iter().any(|i| i.id == id))
                 .ok_or(EditError::NoItem(id))?;
@@ -260,7 +277,6 @@ pub(crate) fn apply(
         Command::RippleDelete { item: id } => {
             let t = data
                 .timeline
-                .tracks
                 .iter_mut()
                 .find(|t| t.items.iter().any(|i| i.id == id))
                 .ok_or(EditError::NoItem(id))?;
@@ -494,7 +510,7 @@ pub(crate) fn apply(
     Ok(project::Project::new(data)?)
 }
 fn check_timeline(data: &mut ProjectData) -> Result<()> {
-    for track in &mut data.timeline.tracks {
+    for track in data.timeline.iter_mut() {
         track.items.sort_by_key(|i| i.start);
         let mut end = Tick::ZERO;
         for item in &track.items {

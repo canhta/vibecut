@@ -1,0 +1,8 @@
+asset: funnel.svg
+title: funnel regular icon
+author: Phosphor Icons
+source: https://raw.githubusercontent.com/phosphor-icons/core/main/assets/regular/funnel.svg
+license: MIT
+license-file: assets/icons/LICENSE
+added: p1-parity/17
+notes: Regular weight; white base fill is tinted by the app.

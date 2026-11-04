@@ -145,7 +145,7 @@ ramps. Ratios are WCAG 2.x against the named surface.
   [measured desktop, Home shot above]; top bar 52 px.
 - Top-bar primary buttons 26 px high; modal footer buttons 34 px high; icon
   buttons 28x28 px.
-- Timeline: 22 px ruler, 65 px video track, 50 px audio track, 25 px text track,
+- Timeline: 22 px ruler, 65 px video track, 50 px audio track, 25 px text/sticker/effect/filter/adjustment track,
   6 px gap, 112 px label column, 12 px scrollbar.
 - Clip trim handles are 8 px wide with a 12 px capture area.
 

@@ -49,7 +49,7 @@ impl CommandSpec {
         match self.id {
             "export_subtitles" | "burn_subtitles" => {
                 !session.transaction_active()
-                    && session.project().data().timeline.tracks.iter().any(|t| {
+                    && session.project().data().timeline.iter().any(|t| {
                         t.items
                             .iter()
                             .any(|i| matches!(i.content, ItemParams::Caption(_)))
@@ -59,22 +59,24 @@ impl CommandSpec {
             "commit_gesture" | "cancel_gesture" => session.gesture_active(),
             "undo" => session.can_undo(),
             "redo" => session.can_redo(),
-            "set_track_flags" => !session.project().data().timeline.tracks.is_empty(),
-            "remove_track" | "insert_item" => session
+            "track.set_flags" | "track.set_muted" | "track.set_hidden" => true,
+            "track.remove" => session
                 .project()
                 .data()
                 .timeline
-                .tracks
+                .overlays
                 .iter()
+                .chain(&session.project().data().timeline.audio)
                 .any(|t| !t.locked),
             "effects.add" | "effects.remove" | "effects.update_params" => {
-                session.project().data().timeline.tracks.iter().any(|t| {
+                session.project().data().timeline.iter().any(|t| {
                     !t.locked
                         && t.items
                             .iter()
                             .any(|i| !matches!(i.content, ItemParams::Audio(_)))
                 })
             }
+            "insert_item" => session.project().data().timeline.iter().any(|t| !t.locked),
             "move_item"
             | "move_items"
             | "split_at"
@@ -93,7 +95,6 @@ impl CommandSpec {
                 .project()
                 .data()
                 .timeline
-                .tracks
                 .iter()
                 .any(|t| !t.locked && !t.items.is_empty()),
             _ => true,
@@ -146,15 +147,18 @@ commands! {
     RenameProject, "project.rename", "Rename project", Edit { name: NfcText } => Timeline, serde_json::json!({"name":"Renamed"});
     SaveProject, "project.save", "Save project", SessionControl {} => Save, serde_json::json!({});
     SetViewState, "project.set_view_state", "Set timeline view", SessionControl { zoom: f64, scroll: f64, playhead: Tick } => Timeline, serde_json::json!({"zoom":2.0,"scroll":10.0,"playhead":0});
-    ExportSubtitles, "export_subtitles", "Export subtitle file", FilePublish { track: TrackId, format: captions::Format, languages: Vec<captions::LanguageTag>, path: std::path::PathBuf, overwrite: bool } => Timeline, serde_json::json!({"track":3,"format":"srt","languages":["en"],"path":"$output/subtitles.srt","overwrite":false});
+    ExportSubtitles, "export_subtitles", "Export subtitle file", FilePublish { track: TrackId, format: captions::Format, languages: Vec<captions::LanguageTag>, path: std::path::PathBuf, overwrite: bool } => Timeline, serde_json::json!({"track":4,"format":"srt","languages":["en"],"path":"$output/subtitles.srt","overwrite":false});
     BurnSubtitles, "burn_subtitles", "Burn subtitles into MP4", FilePublish { range: time::TimeRange, languages: Vec<captions::LanguageTag>, style: render::CaptionStyle, portrait: bool, path: std::path::PathBuf, overwrite: bool } => Timeline, serde_json::json!({"range":{"start":0,"end":8467200000_i64},"languages":["en"],"style":{"font":"Inter","font_style":"SemiBold","size":48.0,"color":[255,255,255,255],"outline":null,"background":null,"position":"bottom","safe_area_percent":5.0,"max_lines":2},"portrait":false,"path":"$output/burn.mp4","overwrite":false});
     AddAsset, "add_asset", "Add asset", Edit { asset: SourceAsset } => Timeline, serde_json::json!({"asset":{"id":99,"path":"$output/offline.mp4","content_hash":[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],"probe":{"format":"mp4","duration":null,"streams":[]}}});
-    AddTrack, "add_track", "Add track", Edit { name: NfcText, kind: TrackKind } => Timeline, serde_json::json!({"name":"Added","kind":"overlay"});
-    RemoveTrack, "remove_track", "Remove track", Edit { track: TrackId } => Timeline, serde_json::json!({"track":2});
-    SetTrackFlags, "set_track_flags", "Set track flags", Edit { track: TrackId, muted: bool, hidden: bool, locked: bool } => Timeline, serde_json::json!({"track":2,"muted":true,"hidden":false,"locked":false});
-    InsertItem, "insert_item", "Insert item", Edit { track: TrackId, item: NewItem } => Timeline, serde_json::json!({"track":2,"item":{"animations":{},"source_asset":null,"source_range":{"start":0,"end":8467200000_i64},"start":0,"content":{"kind":"overlay","params":{"color":[255,0,0,255]}}}});
-    MoveItem, "move_item", "Move item", Edit { item: ItemId, track: TrackId, start: Tick } => Timeline, serde_json::json!({"item":1,"track":2,"start":0});
-    MoveItems, "move_items", "Move items", Edit { moves: Vec<Move> } => Timeline, serde_json::json!({"moves":[{"item":1,"track":2,"start":0}]});
+    AddTrack, "track.add", "Add track", Edit { name: NfcText, kind: TrackKind } => Timeline, serde_json::json!({"name":"Added","kind":"video"});
+    RemoveTrack, "track.remove", "Remove track", Edit { track: TrackId } => Timeline, serde_json::json!({"track":3});
+    SetTrackMuted, "track.set_muted", "Mute track", Edit { track: TrackId, muted: bool } => Timeline, serde_json::json!({"track":3,"muted":true});
+    SetTrackHidden, "track.set_hidden", "Hide track", Edit { track: TrackId, hidden: bool } => Timeline, serde_json::json!({"track":3,"hidden":true});
+    SetTrackMagnet, "track.set_magnet", "Main track magnet", Edit { enabled: bool } => Timeline, serde_json::json!({"enabled":false});
+    SetTrackFlags, "track.set_flags", "Set track flags", Edit { track: TrackId, muted: bool, hidden: bool, locked: bool } => Timeline, serde_json::json!({"track":3,"muted":true,"hidden":false,"locked":false});
+    InsertItem, "insert_item", "Insert item", Edit { track: TrackId, item: NewItem } => Timeline, serde_json::json!({"track":3,"item":{"animations":{},"source_asset":null,"source_range":{"start":0,"end":8467200000_i64},"start":0,"content":{"kind":"overlay","params":{"color":[255,0,0,255]}}}});
+    MoveItem, "move_item", "Move item", Edit { item: ItemId, track: TrackId, start: Tick } => Timeline, serde_json::json!({"item":1,"track":3,"start":0});
+    MoveItems, "move_items", "Move items", Edit { moves: Vec<Move> } => Timeline, serde_json::json!({"moves":[{"item":1,"track":3,"start":0}]});
     SplitAt, "split_at", "Split item", Edit { item: ItemId, at: Tick } => Timeline, serde_json::json!({"item":1,"at":8467200000_i64});
     TrimStart, "trim_start", "Trim start", Edit { item: ItemId, at: Tick } => Timeline, serde_json::json!({"item":1,"at":8467200000_i64});
     TrimEnd, "trim_end", "Trim end", Edit { item: ItemId, at: Tick } => Timeline, serde_json::json!({"item":1,"at":8467200000_i64});
@@ -172,7 +176,7 @@ commands! {
     ScaleKeyframeTime, "keyframes.scale_time", "Stretch animation time", Edit { item: ItemId, numerator: i64, denominator: i64 } => Timeline, serde_json::json!({"item":1,"numerator":2,"denominator":1});
     Retranslate, "retranslate", "Apply selected cue translations", Edit { item: ItemId, target_language: captions::LanguageTag, texts: std::collections::BTreeMap<NfcText, NfcText>, translation_ref: NfcText, force: bool } => Timeline, serde_json::json!({"item":4,"target_language":"vi","texts":{"cue-1":"Xin chào"},"translation_ref":"example","force":true});
     AddBookmark, "add_bookmark", "Add bookmark", Edit { start: Tick, duration: Tick, note: NfcText, color: Color } => Timeline, serde_json::json!({"start":0,"duration":0,"note":"Mark","color":[255,255,0,255]});
-    Batch, "batch", "Batch edit", Edit { commands: Vec<Command> } => Timeline, serde_json::json!({"commands":[{"command":"add_track","params":{"name":"Batch","kind":"overlay"}}]});
+    Batch, "batch", "Batch edit", Edit { commands: Vec<Command> } => Timeline, serde_json::json!({"commands":[{"command":"track.add","params":{"name":"Batch","kind":"video"}}]});
     BeginGesture, "begin_gesture", "Begin gesture", SessionControl {} => Timeline, serde_json::json!({});
     CommitGesture, "commit_gesture", "Commit gesture", SessionControl {} => Gesture, serde_json::json!({});
     CancelGesture, "cancel_gesture", "Cancel gesture", SessionControl {} => Gesture, serde_json::json!({});

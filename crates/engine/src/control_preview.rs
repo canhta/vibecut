@@ -57,7 +57,6 @@ pub(crate) fn preview(
                 let clips: Vec<_> = project
                     .data()
                     .timeline
-                    .tracks
                     .iter()
                     .filter(|t| !t.hidden)
                     .flat_map(|t| &t.items)
@@ -87,12 +86,10 @@ pub(crate) fn preview(
                 let mut data = project.data().clone();
                 let next = data
                     .timeline
-                    .tracks
                     .iter()
                     .map(|t| t.id.0)
                     .chain(
                         data.timeline
-                            .tracks
                             .iter()
                             .flat_map(|t| t.items.iter().map(|i| i.id.0)),
                     )
@@ -123,10 +120,10 @@ pub(crate) fn preview(
                 {
                     return Err(EditError::Limit);
                 }
-                data.timeline.tracks.push(project::Track {
+                data.timeline.insert_track(project::Track {
                     id: project::TrackId(next),
                     name: "Preview label background".into(),
-                    kind: project::TrackKind::Overlay,
+                    kind: project::TrackKind::Video,
                     muted: false,
                     hidden: false,
                     locked: false,
@@ -154,7 +151,7 @@ pub(crate) fn preview(
                         ..Default::default()
                     },
                 );
-                data.timeline.tracks.push(project::Track {
+                data.timeline.insert_track(project::Track {
                     id: label_track,
                     name: "Preview evidence".into(),
                     kind: project::TrackKind::Text,

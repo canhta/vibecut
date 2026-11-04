@@ -92,8 +92,8 @@ fn add(s: &mut Session, r: &mut JobRunner, key: &str) {
     ok(run(
         s,
         r,
-        "add_track",
-        json!({"name":"Added","kind":"overlay"}),
+        "track.add",
+        json!({"name":"Added","kind":"video"}),
         key,
     ));
 }
@@ -129,11 +129,11 @@ fn seed() -> Session {
         })
         .unwrap(),
     );
-    data.timeline.tracks = vec![
+    data.timeline.overlays = vec![
         Track {
-            id: TrackId(0),
+            id: TrackId(1),
             name: "Overlay".into(),
-            kind: TrackKind::Overlay,
+            kind: TrackKind::Video,
             muted: false,
             hidden: false,
             locked: false,
@@ -154,18 +154,18 @@ fn seed() -> Session {
             }],
         },
         Track {
-            id: TrackId(2),
+            id: TrackId(3),
             name: "Empty".into(),
-            kind: TrackKind::Overlay,
+            kind: TrackKind::Video,
             muted: false,
             hidden: false,
             locked: false,
             items: vec![],
         },
         Track {
-            id: TrackId(3),
+            id: TrackId(4),
             name: "Captions".into(),
-            kind: TrackKind::Caption,
+            kind: TrackKind::Text,
             muted: false,
             hidden: false,
             locked: false,
@@ -198,6 +198,7 @@ fn seed() -> Session {
             }],
         },
     ];
+    data.timeline.overlays.reverse();
     Session::new(Project::new(data).unwrap(), 10).unwrap()
 }
 fn replace_paths(v: &mut Value, root: &std::path::Path) {
@@ -371,18 +372,18 @@ fn invalid_shape_version_unknown_and_nested_extra_refuse_before_effects() {
     let mut cases = vec![
         ("absent", json!({}), ErrorCode::UnknownCommand),
         (
-            "add_track",
+            "track.add",
             json!({"name":"x","kind":"wrong"}),
             ErrorCode::InvalidParams,
         ),
         (
-            "add_track",
+            "track.add",
             json!({"name":1,"kind":"overlay"}),
             ErrorCode::InvalidParams,
         ),
         (
-            "add_track",
-            json!({"name":"x","kind":"overlay","extra":"secret"}),
+            "track.add",
+            json!({"name":"x","kind":"video","extra":"secret"}),
             ErrorCode::InvalidParams,
         ),
         ("undo", json!({"extra":true}), ErrorCode::InvalidParams),
@@ -404,8 +405,8 @@ fn invalid_shape_version_unknown_and_nested_extra_refuse_before_effects() {
     }
     let mut bad = request(
         &s,
-        "add_track",
-        json!({"name":"x","kind":"overlay"}),
+        "track.add",
+        json!({"name":"x","kind":"video"}),
         "bad-version",
     );
     bad.api_version += 1;
@@ -415,8 +416,8 @@ fn invalid_shape_version_unknown_and_nested_extra_refuse_before_effects() {
     );
     let mut bad = request(
         &s,
-        "add_track",
-        json!({"name":"x","kind":"overlay"}),
+        "track.add",
+        json!({"name":"x","kind":"video"}),
         "bad-hash",
     );
     bad.registry_hash = Some("old".into());
@@ -435,8 +436,8 @@ fn loss_replay_conflict_principal_and_current_authorization() {
     let mut r = runner();
     let req = request(
         &s,
-        "add_track",
-        json!({"name":"once","kind":"overlay"}),
+        "track.add",
+        json!({"name":"once","kind":"video"}),
         "once",
     );
     let first = s
@@ -500,13 +501,13 @@ fn ledger_exhaustion_has_no_eviction_and_no_effect() {
         run(
             &mut s,
             &mut r,
-            "add_track",
-            json!({"name":"never","kind":"overlay"}),
+            "track.add",
+            json!({"name":"never","kind":"video"}),
             "full",
         ),
         ErrorCode::ReceiptCapacity,
     );
-    assert!(s.project().data().timeline.tracks.is_empty());
+    assert!(s.project().data().timeline.overlays.is_empty());
     assert_eq!(s.revision(), before);
     assert_eq!(s.history_len(), (0, 0));
     let replay = s.control_request(req, caller(&Allow), &mut r).unwrap();
@@ -523,7 +524,7 @@ fn stale_batch_and_external_gestures_cannot_bypass_admission() {
     let old = request(
         &s,
         "batch",
-        json!({"commands":[{"command":"add_track","params":{"name":"stale","kind":"overlay"}}]}),
+        json!({"commands":[{"command":"track.add","params":{"name":"stale","kind":"video"}}]}),
         "batch",
     );
     add(&mut s, &mut r, "ui");
@@ -548,14 +549,14 @@ fn stale_batch_and_external_gestures_cannot_bypass_admission() {
         run(
             &mut s,
             &mut r,
-            "add_track",
-            json!({"name":"blocked","kind":"overlay"}),
+            "track.add",
+            json!({"name":"blocked","kind":"video"}),
             "gesture-edit",
         ),
         ErrorCode::TransactionActive,
     );
     s.cancel_gesture().unwrap();
-    let malformed = json!({"commands":[{"command":"add_track","params":{"name":"early","kind":"overlay"}},{"command":"export","params":{"range":{"start":0,"end":1},"path":"/never","overwrite":false}}]});
+    let malformed = json!({"commands":[{"command":"track.add","params":{"name":"early","kind":"video"}},{"command":"export","params":{"range":{"start":0,"end":1},"path":"/never","overwrite":false}}]});
     assert!(matches!(
         run(&mut s, &mut r, "batch", malformed, "mixed").value,
         ResponseValue::Error(_)
@@ -861,7 +862,7 @@ fn policy_refusal_and_nested_policy_are_safe_before_io() {
         json!({"range":{"start":0,"end":1},"path":"/secret/private","overwrite":true}),
         "denied",
     )];
-    requests.push(request(&s,"batch",json!({"commands":[{"command":"add_track","params":{"name":"private text","kind":"overlay"}}]}),"batch-denied"));
+    requests.push(request(&s,"batch",json!({"commands":[{"command":"track.add","params":{"name":"private text","kind":"video"}}]}),"batch-denied"));
     let before = s.project().clone();
     for req in requests {
         let result = s.control_request(req, caller(&Deny), &mut r).unwrap();
@@ -917,8 +918,8 @@ fn concurrent_duplicate_requests_execute_once_under_the_session_boundary() {
     let s = session();
     let req = request(
         &s,
-        "add_track",
-        json!({"name":"Concurrent","kind":"overlay"}),
+        "track.add",
+        json!({"name":"Concurrent","kind":"video"}),
         "concurrent",
     );
     let state = std::sync::Mutex::new((s, runner()));
@@ -945,7 +946,7 @@ fn concurrent_duplicate_requests_execute_once_under_the_session_boundary() {
     assert!(values.windows(2).all(|pair| pair[0] == pair[1]));
     let guard = state.lock().unwrap();
     assert_eq!(guard.0.history_len(), (1, 0));
-    assert_eq!(guard.0.project().data().timeline.tracks.len(), 1);
+    assert_eq!(guard.0.project().data().timeline.overlays.len(), 1);
 }
 
 #[test]
@@ -959,9 +960,9 @@ fn every_child_failure_restores_content_history_revision_and_ids() {
         let children: Vec<_> = (0..4)
             .map(|index| {
                 if index == failed {
-                    json!({"command":"remove_track","params":{"track":999}})
+                    json!({"command":"track.remove","params":{"track":1000}})
                 } else {
-                    json!({"command":"add_track","params":{"name":"Candidate","kind":"overlay"}})
+                    json!({"command":"track.add","params":{"name":"Candidate","kind":"video"}})
                 }
             })
             .collect();
@@ -988,12 +989,12 @@ fn every_child_failure_restores_content_history_revision_and_ids() {
         let result = ok(run(
             &mut s,
             &mut r,
-            "add_track",
-            json!({"name":"After","kind":"overlay"}),
+            "track.add",
+            json!({"name":"After","kind":"video"}),
             "after",
         ));
         assert!(
-            matches!(result,ControlResult::Edit{outcome} if outcome.created==vec![engine::CreatedId::Track(TrackId(0))])
+            matches!(result,ControlResult::Edit{outcome} if outcome.created==vec![engine::CreatedId::Track(TrackId(1))])
         );
     }
 }
@@ -1058,19 +1059,14 @@ fn malformed_envelope_and_batch_depth_have_no_effect() {
     let mut r = runner();
     let initial = s.project().clone();
     let revision = s.revision();
-    let req = request(
-        &s,
-        "add_track",
-        json!({"name":"x","kind":"overlay"}),
-        "shape",
-    );
+    let req = request(&s, "track.add", json!({"name":"x","kind":"video"}), "shape");
     let mut value = serde_json::to_value(req).unwrap();
     value["caller"] = "self-authorized".into();
     assert!(
         s.control_json(&serde_json::to_vec(&value).unwrap(), caller(&Allow), &mut r)
             .is_err()
     );
-    let command = json!({"command":"add_track","params":{"name":"x","kind":"overlay"}});
+    let command = json!({"command":"track.add","params":{"name":"x","kind":"video"}});
     for count in [1024, 1025] {
         let batch = json!({"commands":vec![command.clone();count]});
         let result = run(&mut s, &mut r, "batch", batch, &format!("count-{count}"));
@@ -1314,10 +1310,10 @@ fn assert_integer_candidate_refusal(s: &mut Session, r: &mut JobRunner, id: &str
 #[test]
 fn review_integer_generated_id_is_refused_atomically_at_safe_limit() {
     let mut data = session().project().data().clone();
-    data.timeline.tracks.push(Track {
+    data.timeline.insert_track(Track {
         id: TrackId(control::MAX_SAFE_INTEGER as u64),
         name: "Boundary".into(),
-        kind: TrackKind::Overlay,
+        kind: TrackKind::Video,
         muted: false,
         hidden: false,
         locked: false,
@@ -1329,8 +1325,8 @@ fn review_integer_generated_id_is_refused_atomically_at_safe_limit() {
     assert_integer_candidate_refusal(
         &mut s,
         &mut r,
-        "add_track",
-        json!({"name":"Next","kind":"overlay"}),
+        "track.add",
+        json!({"name":"Next","kind":"video"}),
     );
 }
 
@@ -1338,10 +1334,10 @@ fn review_integer_generated_id_is_refused_atomically_at_safe_limit() {
 fn review_integer_derived_source_ticks_and_batch_are_refused_atomically() {
     for batch in [false, true] {
         let mut data = session().project().data().clone();
-        data.timeline.tracks.push(Track {
-            id: TrackId(0),
+        data.timeline.insert_track(Track {
+            id: TrackId(1),
             name: "Boundary".into(),
-            kind: TrackKind::Overlay,
+            kind: TrackKind::Video,
             muted: false,
             hidden: false,
             locked: false,
@@ -1369,7 +1365,7 @@ fn review_integer_derived_source_ticks_and_batch_are_refused_atomically() {
                 &mut s,
                 &mut r,
                 "batch",
-                json!({"commands":[{"command":"project.rename","params":{"name":"Must roll back"}},{"command":"add_track","params":{"name":"Must not consume ID","kind":"overlay"}},{"command":"trim_end","params":{"item":1,"at":20}}]}),
+                json!({"commands":[{"command":"project.rename","params":{"name":"Must roll back"}},{"command":"track.add","params":{"name":"Must not consume ID","kind":"video"}},{"command":"trim_end","params":{"item":1,"at":20}}]}),
             );
         } else {
             assert_integer_candidate_refusal(&mut s, &mut r, "trim_end", json!({"item":1,"at":20}));
@@ -1378,8 +1374,8 @@ fn review_integer_derived_source_ticks_and_batch_are_refused_atomically() {
             let result = ok(run(
                 &mut s,
                 &mut r,
-                "add_track",
-                json!({"name":"After refusal","kind":"overlay"}),
+                "track.add",
+                json!({"name":"After refusal","kind":"video"}),
                 "after-batch",
             ));
             assert!(
@@ -1392,10 +1388,10 @@ fn review_integer_derived_source_ticks_and_batch_are_refused_atomically() {
 #[test]
 fn review_integer_last_safe_created_id_matches_schema_then_next_id_refuses() {
     let mut data = session().project().data().clone();
-    data.timeline.tracks.push(Track {
+    data.timeline.insert_track(Track {
         id: TrackId(control::MAX_SAFE_INTEGER as u64 - 1),
         name: "Boundary".into(),
-        kind: TrackKind::Overlay,
+        kind: TrackKind::Video,
         muted: false,
         hidden: false,
         locked: false,
@@ -1406,8 +1402,8 @@ fn review_integer_last_safe_created_id_matches_schema_then_next_id_refuses() {
     let result = ok(run(
         &mut s,
         &mut r,
-        "add_track",
-        json!({"name":"Last safe","kind":"overlay"}),
+        "track.add",
+        json!({"name":"Last safe","kind":"video"}),
         "last-safe",
     ));
     assert!(
@@ -1415,7 +1411,7 @@ fn review_integer_last_safe_created_id_matches_schema_then_next_id_refuses() {
     );
     let schema = &registry()
         .iter()
-        .find(|spec| spec.id == "add_track")
+        .find(|spec| spec.id == "track.add")
         .unwrap()
         .output_schema;
     assert!(
@@ -1429,8 +1425,8 @@ fn review_integer_last_safe_created_id_matches_schema_then_next_id_refuses() {
     assert_integer_candidate_refusal(
         &mut s,
         &mut r,
-        "add_track",
-        json!({"name":"Unsafe","kind":"overlay"}),
+        "track.add",
+        json!({"name":"Unsafe","kind":"video"}),
     );
 }
 
@@ -1438,7 +1434,11 @@ fn review_integer_last_safe_created_id_matches_schema_then_next_id_refuses() {
 fn review_integer_derived_keyframe_ticks_refuse_before_commit() {
     let mut data = seed().project().data().clone();
     let path = project::AnimationPath::new("opacity").unwrap();
-    data.timeline.tracks[0].items[0]
+    data.timeline
+        .iter_mut()
+        .flat_map(|track| &mut track.items)
+        .find(|item| item.id == ItemId(1))
+        .unwrap()
         .animations
         .get_mut(&path)
         .unwrap()
@@ -1463,10 +1463,10 @@ fn review_integer_derived_keyframe_ticks_refuse_before_commit() {
 #[test]
 fn review_integer_history_destination_and_legacy_json_share_candidate_validation() {
     let mut data = session().project().data().clone();
-    data.timeline.tracks.push(Track {
-        id: TrackId(0),
+    data.timeline.insert_track(Track {
+        id: TrackId(1),
         name: "Boundary".into(),
-        kind: TrackKind::Overlay,
+        kind: TrackKind::Video,
         muted: false,
         hidden: false,
         locked: false,

@@ -21,7 +21,7 @@ fn key(n: u8) -> CacheKey {
 fn add() -> Command {
     Command::AddTrack {
         name: "".into(),
-        kind: project::TrackKind::Overlay,
+        kind: project::TrackKind::Video,
     }
 }
 #[test]
@@ -38,7 +38,7 @@ fn rollback_must_invalidate_target_captured_in_discarded_preview() {
         Err(EditError::Cancelled)
     });
     assert!(result.is_err());
-    assert!(session.project().data().timeline.tracks.is_empty());
+    assert!(session.project().data().timeline.overlays.is_empty());
     assert!(
         matches!(
             session.apply_job_result(&target.unwrap(), add()),

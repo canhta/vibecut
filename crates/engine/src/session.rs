@@ -45,12 +45,10 @@ impl Session {
         let data = project.data();
         let next_id = data
             .timeline
-            .tracks
             .iter()
             .map(|t| t.id.0)
             .chain(
                 data.timeline
-                    .tracks
                     .iter()
                     .flat_map(|t| t.items.iter().map(|i| i.id.0)),
             )
@@ -559,7 +557,7 @@ mod tests {
             s.commit(
                 Command::AddTrack {
                     name: "".into(),
-                    kind: project::TrackKind::Overlay,
+                    kind: project::TrackKind::Video,
                 },
                 None,
                 false,

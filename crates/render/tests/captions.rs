@@ -19,10 +19,10 @@ fn scene(texts: &[(&str, &str)]) -> project::Project {
         })
         .unwrap(),
     );
-    d.timeline.tracks.push(project::Track {
-        id: project::TrackId(1),
+    d.timeline.insert_track(project::Track {
+        id: project::TrackId(2),
         name: "".into(),
-        kind: project::TrackKind::Caption,
+        kind: project::TrackKind::Text,
         muted: false,
         hidden: false,
         locked: false,
@@ -392,8 +392,8 @@ fn empty_captions_paint_nothing_and_position_font_and_color_are_applied() {
 fn extreme_font_scaling_is_a_typed_refusal_before_raster_scratch() {
     let mut d = scene(&[("vi", "X")]).into_data();
     d.canvas.width = 1;
-    d.timeline.tracks[1].kind = project::TrackKind::Text;
-    let item = &mut d.timeline.tracks[1].items[0];
+    d.timeline.overlays[0].kind = project::TrackKind::Text;
+    let item = &mut d.timeline.overlays[0].items[0];
     item.source_asset = None;
     item.content = project::ItemParams::Text(project::TextParams {
         content: "X".into(),

@@ -271,8 +271,8 @@ fn parallel_draw_matches_sequential_at_chunk_edges_and_half_reductions() {
             .into_data();
         data.canvas.background = project::Color([0; 4]);
         data.assets.push(asset);
-        data.timeline.tracks.push(project::Track {
-            id: project::TrackId(0),
+        data.timeline.insert_track(project::Track {
+            id: project::TrackId(1),
             name: "".into(),
             kind: project::TrackKind::Video,
             muted: false,

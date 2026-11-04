@@ -88,9 +88,9 @@ list. `exec` takes that command ID and its `params` object:
 
 ```sh
 vibecut-cli project new demo.vibecut
-vibecut-cli exec demo.vibecut add_track '{"name":"Video","kind":"video"}'
+vibecut-cli exec demo.vibecut track.add '{"name":"Video","kind":"video"}'
 vibecut-cli exec demo.vibecut batch '{"commands":[
-  {"command":"add_track","params":{"name":"Overlay","kind":"overlay"}},
+  {"command":"track.add","params":{"name":"Overlay","kind":"video"}},
   {"command":"add_bookmark","params":{"start":0,"duration":1,"note":"intro","color":[0,0,0,255]}}
 ]}'
 vibecut-cli project info demo.vibecut --json

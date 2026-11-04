@@ -17,7 +17,15 @@ allocation and nesting budgets apply before typed deserialization.
 
 Project, track, item and bookmark IDs are separate `u64` newtypes; media owns
 asset IDs. IDs are unique within their type across a project. Zero is permitted;
-engine owns allocation. Tracks are ordered bottom-to-top by consumers; items
+engine owns allocation. `Timeline` owns `overlays` (topmost first), one mandatory
+`main` Video track named `Main Track`, `audio` (topmost first), and persisted
+`magnet` state (default on). `iter` / `iter_mut` traverse bottom-to-top render
+order; UI reverses this traversal. Secondary insertion uses `insert_track` at the
+highest position of its group. Main is never removed by an engine edit. Track kinds
+are Video, Audio, Text, Sticker, Effect, Filter and Adjustment. Captions share Text
+tracks; generated solid-colour `ItemParams::Overlay` uses Video tracks. Sticker,
+Effect, Filter and Adjustment accept empty tracks until their item owners land.
+Groups, main kind/name and unique IDs are validated on every candidate. Items
 within each track are sorted by output start, nonnegative and nonoverlapping.
 Touching half-open intervals are valid. Item end uses checked arithmetic. There
 is no retiming: output duration equals `source_range.duration()`. A project's
@@ -110,8 +118,8 @@ or renderer output claim is made.
 ## Persistence and limits
 
 `encode`/`decode` use one JSON envelope: `format`, `schema_version`, `generator`,
-`project`. Current schema 4 stores ProjectId as a canonical decimal string, preserving
-all u64 identity bits for control clients; other IDs remain numeric. Schemas 1–3
+`project`. Current schema 5 stores ProjectId as a canonical decimal string, preserving
+all u64 identity bits for control clients; other IDs remain numeric. Schemas 1–4
 are refused rather than migrated or silently defaulted. Older schemas return `TooOld`, newer schemas `TooNew`; there are no
 migration or compatibility paths. Unknown current-schema project/envelope fields
 are refused. `WriterLease::save` serializes completely before touching the destination;

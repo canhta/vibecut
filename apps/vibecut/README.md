@@ -167,3 +167,16 @@ that accounting. Device limit/validation/readback failure returns Unsupported fo
 CPU fallback. Submitted work retains its byte lease until GPU completion, even
 if the bounded readback wait times out. No unsafe mapping or buffer casts are used.
 `tests/effects.rs` compares f32 CPU/GPU output with max absolute tolerance 2e-5.
+
+## Track controls
+
+Timeline header and row geometry follows the [UI design](../../docs/product/ui.md#density),
+using embedded regular SVG kind icons, output toggles and accessibility-only
+names. Logical row sizes stay constant across DPI scaling; vectors are cached at
+the display density. Empty rows have dashed placeholders. Header context
+menus remove unlocked secondary tracks; main has a persisted magnet control in
+its header and the timeline toolbar. All edits use registered engine commands and
+refresh the shared preview snapshot. Paste is supplied by the clipboard owner.
+Media insertion reuses an unlocked compatible track only when the playhead range
+fits; otherwise it creates a secondary track at the top of its group. Solid colour
+is generated Video content, distinct from Sticker tracks.

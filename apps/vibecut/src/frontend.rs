@@ -93,6 +93,12 @@ struct DragState {
 }
 #[derive(Clone, Debug)]
 struct TrackRow {
+    id: TrackId,
+    main: bool,
+    muted: bool,
+    hidden: bool,
+    locked: bool,
+    empty: bool,
     kind: TrackKind,
     name: String,
     top: f32,
@@ -551,20 +557,18 @@ impl Editor {
                     .project()
                     .data()
                     .timeline
-                    .tracks
                     .iter()
-                    .find(|track| track.kind == kind && !track.locked)
-                    .map(|track| {
-                        (
-                            track.id,
-                            track
-                                .items
-                                .iter()
-                                .filter_map(|item| item.end().ok())
-                                .max()
-                                .unwrap_or(Tick::ZERO),
-                        )
-                    });
+                    .find(|track| {
+                        track.kind == kind
+                            && !track.locked
+                            && at.checked_add(duration).is_some_and(|end| {
+                                track.items.iter().all(|item| {
+                                    item.end()
+                                        .is_ok_and(|item_end| item_end <= at || item.start >= end)
+                                })
+                            })
+                    })
+                    .map(|track| (track.id, at));
                 let (track, start) = match existing {
                     Some((track, end)) => (track, at.max(end)),
                     None => {
@@ -572,7 +576,6 @@ impl Editor {
                             .project()
                             .data()
                             .timeline
-                            .tracks
                             .iter()
                             .filter(|track| track.kind == kind)
                             .count();
@@ -868,7 +871,6 @@ impl Editor {
             .project()
             .data()
             .timeline
-            .tracks
             .iter()
             .flat_map(|track| track.items.iter().map(|item| item.id))
             .collect();
@@ -880,7 +882,6 @@ impl Editor {
             .project()
             .data()
             .timeline
-            .tracks
             .iter()
             .flat_map(|track| track.items.iter().map(|item| item.id))
             .collect();
@@ -890,7 +891,7 @@ impl Editor {
         let at = self.playback.position()?;
         let mut under = Vec::new();
         let mut selected_under = Vec::new();
-        for track in &self.session.project().data().timeline.tracks {
+        for track in self.session.project().data().timeline.iter() {
             if track.locked {
                 continue;
             }
@@ -956,7 +957,6 @@ impl Editor {
             .project()
             .data()
             .timeline
-            .tracks
             .iter()
             .flat_map(|track| track.items.iter())
             .filter(|item| self.selection.contains(&item.id))
@@ -997,7 +997,7 @@ impl Editor {
         }
         let mut origins = Vec::new();
         let mut source_range = None;
-        for track in &self.session.project().data().timeline.tracks {
+        for track in self.session.project().data().timeline.iter() {
             for candidate in &track.items {
                 let wanted = if mode == DragMode::Move {
                     self.selection.contains(&candidate.id)
@@ -1180,7 +1180,7 @@ impl Editor {
         // One shared delta keeps the selected group rigid at the timeline zero edge.
         let mut low = Tick(earliest.0.saturating_neg());
         let mut high = Tick(i64::MAX / 4);
-        for track in &self.session.project().data().timeline.tracks {
+        for track in self.session.project().data().timeline.iter() {
             if !tracks.contains(&track.id) {
                 continue;
             }
@@ -1235,7 +1235,7 @@ impl Editor {
             DragMode::TrimEnd => Tick(i64::MAX / 4),
             DragMode::Move => return (Tick::ZERO, Tick::ZERO),
         };
-        for track in &self.session.project().data().timeline.tracks {
+        for track in self.session.project().data().timeline.iter() {
             if track.id != origin.track {
                 continue;
             }
@@ -1275,7 +1275,6 @@ impl Editor {
             .project()
             .data()
             .timeline
-            .tracks
             .iter()
             .flat_map(|track| track.items.iter())
             .find(|candidate| candidate.id == item)
@@ -1293,7 +1292,6 @@ impl Editor {
         );
         points.extend(
             data.timeline
-                .tracks
                 .iter()
                 .flat_map(|track| track.items.iter())
                 .filter(|item| !exclude.contains(&item.id))
@@ -2107,7 +2105,6 @@ impl Editor {
                 .project()
                 .data()
                 .timeline
-                .tracks
                 .iter()
                 .any(|track| !track.items.is_empty());
             let has_selection = !self.selection.is_empty();
@@ -2119,6 +2116,39 @@ impl Editor {
             }
             if self.toggle_button(ui, "timeline.snap", Text::Snap, self.snapping) {
                 self.action("timeline.snap");
+            }
+            let magnet = self.session.project().data().timeline.magnet;
+            let response = ui
+                .push_id("timeline.magnet", |ui| {
+                    ui.add(
+                        egui::Button::image(
+                            egui::Image::new(icon(ui, "magnet"))
+                                .fit_to_exact_size(Vec2::splat(16.0))
+                                .tint(if magnet && self.preferences.dark {
+                                    Color32::from_rgb(19, 21, 23)
+                                } else if magnet {
+                                    Color32::WHITE
+                                } else {
+                                    self.secondary()
+                                }),
+                        )
+                        .min_size(Vec2::splat(28.0))
+                        .selected(magnet),
+                    )
+                })
+                .inner;
+            response.widget_info(|| {
+                egui::WidgetInfo::selected(
+                    egui::Role::CheckBox,
+                    true,
+                    magnet,
+                    self.tr(Text::Magnet),
+                )
+            });
+            let response = response.on_hover_text(self.tr(Text::Magnet));
+            self.remember("timeline.magnet", &response);
+            if response.clicked() {
+                self.track_command("track.set_magnet", serde_json::json!({"enabled":!magnet}));
             }
             if self.toggle_button(ui, "timeline.ripple", Text::Ripple, self.ripple) {
                 self.action("timeline.ripple");
@@ -2173,11 +2203,17 @@ impl Editor {
             let mut rows = Vec::new();
             let mut raw_items = Vec::new();
             let mut offset = 0.0;
-            for (row_index, track) in data.timeline.tracks.iter().enumerate() {
+            for (row_index, track) in data.timeline.iter().rev().enumerate() {
                 let height = track_height(track.kind);
                 rows.push(TrackRow {
+                    id: track.id,
+                    main: track.id == data.timeline.main.id,
+                    muted: track.muted,
+                    hidden: track.hidden,
+                    locked: track.locked,
+                    empty: track.items.is_empty(),
                     kind: track.kind,
-                    name: display_label(track.name.as_str(), 48),
+                    name: track.name.as_str().to_owned(),
                     top: offset,
                     height,
                 });
@@ -2303,11 +2339,17 @@ impl Editor {
     }
     fn paint_tracks(
         &mut self,
-        ui: &egui::Ui,
+        ui: &mut egui::Ui,
         layout: &TimelineLayout,
         rows: &[TrackRow],
         items: &[ItemView],
     ) {
+        let mut header_ui = ui.new_child(
+            egui::UiBuilder::new()
+                .id_salt("track.headers")
+                .max_rect(layout.labels),
+        );
+        header_ui.set_clip_rect(layout.labels);
         let body_painter = ui.painter().with_clip_rect(layout.body);
         let label_painter = ui.painter().with_clip_rect(layout.labels);
         label_painter.rect_filled(layout.labels, 0.0, self.panel_fill());
@@ -2322,6 +2364,9 @@ impl Editor {
                 egui::pos2(layout.body.left(), top),
                 Vec2::new(layout.body.width(), row.height),
             );
+            if !row_rect.intersects(layout.body) {
+                continue;
+            }
             let shade = if index % 2 == 0 {
                 self.panel_fill()
             } else {
@@ -2329,20 +2374,121 @@ impl Editor {
             };
             label_painter.rect_filled(label_rect, 0.0, shade);
             body_painter.rect_filled(row_rect, 0.0, shade);
-            label_painter.text(
-                egui::pos2(label_rect.left() + 8.0, label_rect.center().y),
-                Align2::LEFT_CENTER,
-                &row.name,
-                FontId::proportional(12.0),
-                self.text_color(),
+            let header = header_ui.interact(
+                label_rect.intersect(layout.labels),
+                Id::unique(("track.header", row.id.0)),
+                egui::Sense::click(),
             );
-            label_painter.text(
-                egui::pos2(label_rect.right() - 8.0, label_rect.center().y),
-                Align2::RIGHT_CENTER,
-                self.tr(kind_label(row.kind)),
-                FontId::proportional(10.0),
-                self.secondary(),
+            header.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, &row.name));
+            self.remember(format!("track.{}.header", row.id.0), &header);
+            let type_icon = match row.kind {
+                TrackKind::Video => icon(&header_ui, "film-strip"),
+                TrackKind::Audio => icon(&header_ui, "music-notes"),
+                TrackKind::Text => icon(&header_ui, "text-t"),
+                TrackKind::Sticker => icon(&header_ui, "sticker"),
+                TrackKind::Effect => icon(&header_ui, "sparkle"),
+                TrackKind::Filter => icon(&header_ui, "funnel"),
+                TrackKind::Adjustment => icon(&header_ui, "sliders-horizontal"),
+            };
+            let icon_rect = Rect::from_center_size(
+                egui::pos2(label_rect.right() - 14.0, label_rect.center().y),
+                Vec2::splat(16.0),
             );
+            egui::Image::new(type_icon)
+                .tint(self.secondary())
+                .paint_at(&header_ui, icon_rect);
+            let mut x = label_rect.right() - 54.0;
+            if row.kind.can_hide() {
+                if self.track_toggle(
+                    &mut header_ui,
+                    layout.labels,
+                    row,
+                    x,
+                    "hidden",
+                    Text::HideTrack,
+                    row.hidden,
+                    if row.hidden { "eye-slash" } else { "eye" },
+                ) {
+                    self.track_command(
+                        "track.set_hidden",
+                        serde_json::json!({"track":row.id,"hidden":!row.hidden}),
+                    );
+                }
+                x -= 28.0;
+            }
+            if row.kind.can_mute()
+                && self.track_toggle(
+                    &mut header_ui,
+                    layout.labels,
+                    row,
+                    x,
+                    "muted",
+                    Text::MuteTrack,
+                    row.muted,
+                    if row.muted {
+                        "speaker-slash"
+                    } else {
+                        "speaker-high"
+                    },
+                )
+            {
+                self.track_command(
+                    "track.set_muted",
+                    serde_json::json!({"track":row.id,"muted":!row.muted}),
+                );
+            }
+            if row.main {
+                let enabled = self.session.project().data().timeline.magnet;
+                // A separate control fits below the main header's output toggles.
+                let mut magnet_row = row.clone();
+                magnet_row.top += 18.0;
+                if self.track_toggle(
+                    &mut header_ui,
+                    layout.labels,
+                    &magnet_row,
+                    label_rect.left() + 4.0,
+                    "magnet",
+                    Text::Magnet,
+                    enabled,
+                    "magnet",
+                ) {
+                    self.track_command("track.set_magnet", serde_json::json!({"enabled":!enabled}));
+                }
+            }
+            header.context_menu(|ui| {
+                if !row.main {
+                    let response = ui.add_enabled(
+                        !row.locked,
+                        egui::Button::image_and_text(
+                            egui::Image::new(icon(&header_ui, "trash"))
+                                .fit_to_exact_size(Vec2::splat(16.0)),
+                            self.tr(Text::DeleteTrack),
+                        ),
+                    );
+                    let response = response.on_disabled_hover_text(self.tr(Text::TrackLocked));
+                    self.remember(format!("track.{}.delete", row.id.0), &response);
+                    if response.clicked() {
+                        self.track_command("track.remove", serde_json::json!({"track":row.id}));
+                        ui.close();
+                    }
+                }
+            });
+            if row.empty {
+                let r = row_rect.shrink(3.0);
+                let points = [
+                    r.left_top(),
+                    r.right_top(),
+                    r.right_bottom(),
+                    r.left_bottom(),
+                    r.left_top(),
+                ];
+                body_painter.extend(egui::Shape::dashed_line(
+                    &points,
+                    egui::Stroke::new(1.0, self.border()),
+                    5.0,
+                    4.0,
+                ));
+            }
         }
         let modifiers = ui.ctx().input(|input| input.modifiers);
         for item in items {
@@ -2360,6 +2506,71 @@ impl Editor {
                 );
             }
         }
+    }
+    fn track_command(&mut self, command: &str, params: serde_json::Value) {
+        let before = self.session.project().clone();
+        match self.session.execute(command, params) {
+            Ok(_) => {
+                self.prune_selection();
+                if !Arc::ptr_eq(&before, self.session.project()) {
+                    self.sync_preview();
+                }
+            }
+            Err(error) => self.error = Some(error.to_string()),
+        }
+    }
+    #[allow(clippy::too_many_arguments)]
+    fn track_toggle(
+        &mut self,
+        ui: &mut egui::Ui,
+        clip: Rect,
+        row: &TrackRow,
+        x: f32,
+        suffix: &str,
+        label: Text,
+        selected: bool,
+        glyph: &str,
+    ) -> bool {
+        let rect = Rect::from_min_size(
+            egui::pos2(
+                x,
+                clip.top() + row.top - self.vertical_scroll + (row.height - 24.0) / 2.0,
+            ),
+            Vec2::splat(24.0),
+        )
+        .intersect(clip);
+        if !rect.is_positive() {
+            return false;
+        }
+        let response = ui.interact(
+            rect,
+            Id::unique(("track", row.id.0, suffix)),
+            egui::Sense::click(),
+        );
+        response.widget_info(|| {
+            egui::WidgetInfo::selected(
+                egui::Role::CheckBox,
+                true,
+                selected,
+                format!("{}: {}", self.tr(label), row.name),
+            )
+        });
+        self.remember(format!("track.{}.{suffix}", row.id.0), &response);
+        let color = if selected {
+            self.accent()
+        } else {
+            self.secondary()
+        };
+        if response.hovered() || response.has_focus() {
+            ui.painter()
+                .with_clip_rect(clip)
+                .rect_filled(rect, 4.0, self.control_fill());
+        }
+        egui::Image::new(icon(ui, glyph))
+            .tint(color)
+            .paint_at(ui, Rect::from_center_size(rect.center(), Vec2::splat(16.0)));
+        response.clone().on_hover_text(self.tr(label));
+        response.clicked()
     }
     fn paint_item(
         &mut self,
@@ -2400,7 +2611,7 @@ impl Editor {
             egui::StrokeKind::Inside,
         );
         match item.kind {
-            TrackKind::Video => {
+            TrackKind::Video if item.overlay.is_none() => {
                 let mut x = visible.left() + 4.0;
                 let mut index = 0;
                 while x + 10.0 < visible.right() && index < 256 {
@@ -2649,13 +2860,6 @@ impl Editor {
             Color32::from_rgb(133, 139, 145)
         }
     }
-    fn text_color(&self) -> Color32 {
-        if self.preferences.dark {
-            Color32::from_rgb(229, 229, 229)
-        } else {
-            Color32::from_rgb(28, 28, 28)
-        }
-    }
     fn secondary(&self) -> Color32 {
         if self.preferences.dark {
             Color32::from_rgb(154, 154, 154)
@@ -2758,16 +2962,11 @@ fn track_height(kind: TrackKind) -> f32 {
     match kind {
         TrackKind::Video => 65.0,
         TrackKind::Audio => 50.0,
-        TrackKind::Text | TrackKind::Caption | TrackKind::Overlay => 25.0,
-    }
-}
-fn kind_label(kind: TrackKind) -> Text {
-    match kind {
-        TrackKind::Video => Text::Video,
-        TrackKind::Audio => Text::Audio,
-        TrackKind::Text => Text::TextItem,
-        TrackKind::Caption => Text::Caption,
-        TrackKind::Overlay => Text::Overlay,
+        TrackKind::Text
+        | TrackKind::Sticker
+        | TrackKind::Effect
+        | TrackKind::Filter
+        | TrackKind::Adjustment => 25.0,
     }
 }
 fn item_label(content: &ItemParams, locale: Locale, dark: bool) -> (String, Option<[u8; 4]>) {
@@ -2874,4 +3073,8 @@ fn display_time(at: Tick) -> String {
         s as u64 % 60,
         ((s.fract() * 1000.0).floor()) as u64
     )
+}
+
+fn icon(ui: &egui::Ui, name: &str) -> egui::ImageSource<'static> {
+    crate::icons::image(ui, name)
 }

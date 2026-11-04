@@ -166,7 +166,7 @@ impl crate::Session {
                 overwrite,
             } => {
                 let project = self.project().clone();
-                if !project.data().timeline.tracks.iter().any(|t| {
+                if !project.data().timeline.iter().any(|t| {
                     !t.hidden
                         && t.items.iter().any(|i| {
                             matches!(i.content, project::ItemParams::Caption(_))
@@ -198,11 +198,10 @@ impl crate::Session {
                 let selected = project
                     .data()
                     .timeline
-                    .tracks
                     .iter()
                     .find(|t| t.id == track)
                     .ok_or(EditError::NoTrack(track))?;
-                if selected.kind != project::TrackKind::Caption {
+                if selected.kind != project::TrackKind::Text {
                     return Err(EditError::Invalid(
                         "subtitle export requires a caption track",
                     ));
@@ -222,7 +221,7 @@ impl crate::Session {
                     .iter()
                     .try_fold(0u64, |n, item| {
                         let project::ItemParams::Caption(params) = &item.content else {
-                            return None;
+                            return Some(n);
                         };
                         params.cues.cues.iter().try_fold(n, |n, cue| {
                             cue.texts.iter().try_fold(
@@ -325,11 +324,10 @@ pub fn subtitle_file(
     let track = project
         .data()
         .timeline
-        .tracks
         .iter()
         .find(|t| t.id == track)
         .ok_or(EditError::NoTrack(track))?;
-    if track.kind != project::TrackKind::Caption {
+    if track.kind != project::TrackKind::Text {
         return Err(EditError::Invalid(
             "subtitle export requires a caption track",
         ));
@@ -337,7 +335,7 @@ pub fn subtitle_file(
     let mut mapped = captions::CueTrack { cues: Vec::new() };
     for item in &track.items {
         let project::ItemParams::Caption(params) = &item.content else {
-            return Err(EditError::Invalid("subtitle export requires caption items"));
+            continue;
         };
         let mapping = captions::EditMapping::new(vec![(item.source_range, item.start)])?;
         for mut cue in mapping.map_cues(&params.cues)?.cues {

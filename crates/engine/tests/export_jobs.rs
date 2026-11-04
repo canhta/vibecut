@@ -30,10 +30,10 @@ fn project() -> Arc<project::Project> {
         .into_data();
     d.canvas.width = 64;
     d.canvas.height = 64;
-    d.timeline.tracks.push(project::Track {
-        id: project::TrackId(0),
+    d.timeline.insert_track(project::Track {
+        id: project::TrackId(1),
         name: "".into(),
-        kind: project::TrackKind::Overlay,
+        kind: project::TrackKind::Video,
         muted: false,
         hidden: false,
         locked: false,
@@ -341,10 +341,10 @@ fn caption_project() -> project::Project {
         texts,
     };
     // Two retained occurrences with an output gap; source is never opened for interchange.
-    d.timeline.tracks.push(Track {
-        id: TrackId(1),
+    d.timeline.insert_track(Track {
+        id: TrackId(2),
         name: "".into(),
-        kind: TrackKind::Caption,
+        kind: TrackKind::Text,
         hidden: false,
         muted: false,
         locked: false,
@@ -386,9 +386,9 @@ fn registered_subtitle_export_maps_repeated_items_and_preserves_gaps_without_med
     {
         let path = dir.path().join(format!("字幕-{n}.txt"));
         let preview =
-            engine::subtitle_file(session.project(), project::TrackId(1), format, &languages())
+            engine::subtitle_file(session.project(), project::TrackId(2), format, &languages())
                 .unwrap();
-        let (id, _) = session.execute_export(&mut r, key(40+n as u8), "export_subtitles", serde_json::json!({"track":1, "format":format, "languages":languages(), "path":path, "overwrite":false})).unwrap();
+        let (id, _) = session.execute_export(&mut r, key(40+n as u8), "export_subtitles", serde_json::json!({"track":2, "format":format, "languages":languages(), "path":path, "overwrite":false})).unwrap();
         let result = complete(&mut r, id);
         assert_eq!(result.state, JobState::Completed, "{:?}", result.error);
         assert_eq!(std::fs::read_to_string(&path).unwrap(), preview.text);
@@ -417,7 +417,7 @@ fn subtitle_export_refuses_alias_existing_output_and_batch_and_cancels_cleanly()
     let budget = ByteBudget::new(16 << 20).unwrap();
     let mut r = runner(&budget, Arc::new(SystemClock::default()));
     let command = engine::Command::ExportSubtitles {
-        track: project::TrackId(1),
+        track: project::TrackId(2),
         format: captions::Format::Srt,
         languages: languages(),
         path: path.clone(),
@@ -447,7 +447,7 @@ fn subtitle_export_refuses_alias_existing_output_and_batch_and_cancels_cleanly()
             &mut r,
             key(45),
             engine::Command::ExportSubtitles {
-                track: project::TrackId(1),
+                track: project::TrackId(2),
                 format: captions::Format::Srt,
                 languages: languages(),
                 path: alias.clone(),
@@ -516,9 +516,14 @@ fn registered_burn_job_exports_and_typed_missing_media_preserves_previous_output
         }),
     });
     data.assets[0] = media::SourceAsset::try_from(asset).unwrap();
-    data.timeline.tracks[0].kind = project::TrackKind::Video;
-    data.timeline.tracks[0].items[0].source_asset = Some(media::AssetId(1));
-    data.timeline.tracks[0].items[0].content = project::ItemParams::Video(project::VideoParams {
+    let video = data
+        .timeline
+        .iter_mut()
+        .flat_map(|track| &mut track.items)
+        .find(|item| item.id == project::ItemId(0))
+        .unwrap();
+    video.source_asset = Some(media::AssetId(1));
+    video.content = project::ItemParams::Video(project::VideoParams {
         source_audio_enabled: false,
     });
     session = engine::Session::new(project::Project::new(data).unwrap(), 10).unwrap();
@@ -573,7 +578,7 @@ fn subtitle_cancel_or_panic_after_finalization_preserves_destination_and_cleans_
                 &mut r,
                 key(48),
                 engine::Command::ExportSubtitles {
-                    track: project::TrackId(1),
+                    track: project::TrackId(2),
                     format: captions::Format::Srt,
                     languages: languages(),
                     path: path.clone(),
@@ -602,4 +607,50 @@ fn subtitle_cancel_or_panic_after_finalization_preserves_destination_and_cleans_
         assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 1);
         assert_eq!(budget.snapshot().unwrap().used, 0);
     }
+}
+
+#[test]
+fn text_tracks_export_caption_items_without_exporting_ordinary_titles() {
+    use time::Tick;
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("mixed-text.srt");
+    let mut data = caption_project().into_data();
+    data.timeline
+        .overlays
+        .iter_mut()
+        .find(|track| track.id == project::TrackId(2))
+        .unwrap()
+        .items
+        .insert(
+            1,
+            project::Item {
+                id: project::ItemId(3),
+                effects: Vec::new(),
+                animations: Default::default(),
+                source_asset: None,
+                source_range: time::SourceRange::new(Tick::ZERO, Tick(time::TICKS_PER_SECOND))
+                    .unwrap(),
+                start: Tick(time::TICKS_PER_SECOND),
+                content: project::ItemParams::Text(project::TextParams {
+                    content: "Ordinary title".into(),
+                    font_size: 32.0,
+                    color: project::Color([255; 4]),
+                }),
+            },
+        );
+    let session = engine::Session::new(project::Project::new(data).unwrap(), 10).unwrap();
+    let preview = engine::subtitle_file(
+        session.project(),
+        project::TrackId(2),
+        captions::Format::Srt,
+        &languages(),
+    )
+    .unwrap();
+    assert!(!preview.text.contains("Ordinary title"));
+    let budget = ByteBudget::new(16 << 20).unwrap();
+    let mut runner = runner(&budget, Arc::new(SystemClock::default()));
+    let (id,_)=session.execute_export(&mut runner,key(70),"export_subtitles",serde_json::json!({"track":2,"format":"srt","languages":languages(),"path":path,"overwrite":false})).unwrap();
+    let result = complete(&mut runner, id);
+    assert_eq!(result.state, JobState::Completed, "{:?}", result.error);
+    assert_eq!(std::fs::read_to_string(path).unwrap(), preview.text);
 }

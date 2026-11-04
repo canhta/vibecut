@@ -67,7 +67,7 @@ pub fn mix_audio(
         .ok_or(Error::Invalid("sample window"))?;
     let mut out = AudioBlock::new(rate, channels, frames, MemoryKind::Compositor, hooks)?;
     let mut spans = Vec::new();
-    for track in &project.data().timeline.tracks {
+    for track in project.data().timeline.iter() {
         if track.muted {
             continue;
         }

@@ -39,7 +39,6 @@ pub fn window(
         .project()
         .data()
         .timeline
-        .tracks
         .iter()
         .flat_map(|t| &t.items)
         .find(|i| i.id == item)
@@ -137,7 +136,6 @@ impl TranslationRun {
             .project()
             .data()
             .timeline
-            .tracks
             .iter()
             .flat_map(|t| &t.items)
             .find(|i| i.id == target.item)

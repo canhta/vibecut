@@ -667,10 +667,10 @@ fn project_aggregate_key_budget_and_item_schema_are_enforced() {
             .unwrap();
     }
     let mut data = Project::empty(ProjectId(1), "".into()).unwrap().into_data();
-    data.timeline.tracks.push(Track {
-        id: TrackId(1),
+    data.timeline.insert_track(Track {
+        id: TrackId(2),
         name: "".into(),
-        kind: TrackKind::Overlay,
+        kind: TrackKind::Video,
         muted: false,
         hidden: false,
         locked: false,

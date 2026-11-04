@@ -37,10 +37,10 @@ fn working_pixels_linear_premultiplied_and_hostile_dimensions() {
 #[test]
 fn track_order_half_opacity_and_half_open_frames() {
     let mut data = solid_project(1, 64, 64, [255, 0, 0, 255]).into_data();
-    data.timeline.tracks.push(project::Track {
-        id: project::TrackId(1),
+    data.timeline.insert_track(project::Track {
+        id: project::TrackId(2),
         name: "".into(),
-        kind: project::TrackKind::Overlay,
+        kind: project::TrackKind::Video,
         muted: false,
         hidden: false,
         locked: false,
@@ -97,10 +97,10 @@ fn animated_overlay_project(
     animations
         .set(path, project::Param::Value(channel))
         .unwrap();
-    data.timeline.tracks.push(project::Track {
-        id: project::TrackId(0),
+    data.timeline.insert_track(project::Track {
+        id: project::TrackId(1),
         name: "".into(),
-        kind: project::TrackKind::Overlay,
+        kind: project::TrackKind::Video,
         muted: false,
         hidden: false,
         locked: false,
@@ -389,8 +389,8 @@ fn immutable_text_reuse_is_bounded_invalidates_and_matches_uncached_pixels() {
             }),
         })
         .collect();
-    d.timeline.tracks.push(project::Track {
-        id: project::TrackId(1),
+    d.timeline.insert_track(project::Track {
+        id: project::TrackId(2),
         name: "".into(),
         kind: project::TrackKind::Text,
         muted: false,
@@ -461,8 +461,8 @@ fn text_cache_releases_inactive_entries_under_new_frame_pressure() {
             }),
         })
         .collect();
-    d.timeline.tracks.push(project::Track {
-        id: project::TrackId(1),
+    d.timeline.insert_track(project::Track {
+        id: project::TrackId(2),
         name: "".into(),
         kind: project::TrackKind::Text,
         muted: false,
@@ -520,10 +520,10 @@ fn caption_expansion_is_refused_before_raster_allocation() {
             texts: std::collections::BTreeMap::new(),
         })
         .collect();
-    d.timeline.tracks.push(project::Track {
-        id: project::TrackId(0),
+    d.timeline.insert_track(project::Track {
+        id: project::TrackId(1),
         name: "".into(),
-        kind: project::TrackKind::Caption,
+        kind: project::TrackKind::Text,
         muted: false,
         hidden: false,
         locked: false,

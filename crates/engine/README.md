@@ -31,7 +31,7 @@ JSON integer admission is limited to ±(2^53−1), including nested values. Proj
 has one decimal-string encoding at its owner, including project persistence;
 other IDs and Tick remain numbers. No adapter-specific encoding exists.
 
-For example, `execute("add_track", {"name":"Video", "kind":"video"})`
+For example, `execute("track.add", {"name":"Video", "kind":"video"})`
 returns `Outcome { changed, created }`. `created` lists engine-allocated typed
 track/item/bookmark IDs in execution order (including batch children). IDs share
 a checked increasing counter initialized above all loaded track/item/bookmark
@@ -183,6 +183,13 @@ JSON dispatch additionally caps depth at 32, nodes at 200,000, each collection a
 The caller already owns the Value; these caps bound added processing, not its
 initial allocation. Project and source constructors retain their own limits.
 
+- `track.add` inserts a secondary track at the highest position for its group;
+  `track.remove` refuses the mandatory main track and removes secondary contents
+  in the same undo step. `track.set_muted` accepts Video/Audio;
+  `track.set_hidden` accepts all kinds except Audio. Hidden filters visual output;
+  muted filters audio, independently, for preview and export.
+  `track.set_magnet` persists main-track magnet state, undoable with the project;
+  gap-closing execution belongs to the ripple edit policy, not this preference.
 - `insert_item` places an item without shifting or overwriting its neighbors.
 - `move_item` / `move_items` set absolute output positions and destination tracks.
   Multi-move removes all selected items first, permitting swaps. Duplicate IDs
@@ -207,10 +214,10 @@ initial allocation. Project and source constructors retain their own limits.
 - `delete` lifts identified items leaving gaps. `ripple_delete` removes one item
   and shifts later items on that track left by its duration, preserving earlier
   gaps; other tracks and bookmarks stay fixed. No cross-track sync lock exists.
-- `set_item_param` replaces the complete typed ItemParams. `set_track_flags`
+- `set_item_param` replaces the complete typed ItemParams. `track.set_flags`
   replaces all three flags and is permitted on locked tracks so they can unlock.
   All item edits, insertion, moving into/out of, and track removal refuse locks.
-- `remove_track` removes its items together. `add_bookmark` accepts a nonnegative
+- `track.remove` removes its items together. `add_bookmark` accepts a nonnegative
   output position/duration and normalized note. Asset, track and bookmark
   additions are validated with the rest of the candidate.
 
@@ -650,9 +657,11 @@ or their typed `Command` with `submit_export_command`; ordinary edit execution,
 batches and active transactions refuse file publication. Both execute against a
 captured immutable project snapshot in the existing JobRunner.
 
-`export_subtitles` takes `track` (caption TrackId), `format` (`srt` or `web_vtt`),
+`export_subtitles` takes `track` (a Text TrackId containing captions), `format` (`srt` or `web_vtt`),
 `languages` (one tag or two distinct tags in display order), native `path`, and
-`overwrite` (bool). `subtitle_file` exposes the same serialization plus captions'
+`overwrite` (bool). Ordinary title items on the shared Text track are skipped by
+byte admission and cue serialization; caption items retain their source windows
+and output gaps. `subtitle_file` exposes the same serialization plus captions'
 typed repair warnings for preflight presentation. Each caption item's source
 window maps to its output start through captions' EditMapping, preserving cuts,
 repeated occurrences and timeline gaps. Captions owns the only SRT/VTT serializer.

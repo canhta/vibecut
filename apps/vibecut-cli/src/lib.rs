@@ -371,13 +371,8 @@ fn project_info(path: PathBuf) -> Result<Output, CliError> {
     let metadata = lease.metadata();
     let data = loaded.project.data();
     let duration = loaded.project.duration();
-    let tracks = data.timeline.tracks.len();
-    let items = data
-        .timeline
-        .tracks
-        .iter()
-        .map(|t| t.items.len())
-        .sum::<usize>();
+    let tracks = data.timeline.track_count();
+    let items = data.timeline.iter().map(|t| t.items.len()).sum::<usize>();
     let fps = data.canvas.fps;
     let value = json!({
         "path": json_path(&path)?,

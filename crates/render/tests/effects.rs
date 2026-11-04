@@ -156,10 +156,10 @@ fn item_blur_is_isolated_from_track_below_and_uses_animation() {
         }),
     };
     data.canvas.background = Color([0, 0, 255, 255]);
-    data.timeline.tracks.push(Track {
+    data.timeline.insert_track(Track {
         id: TrackId(1),
         name: "V".into(),
-        kind: TrackKind::Overlay,
+        kind: TrackKind::Video,
         muted: false,
         hidden: false,
         locked: false,
@@ -188,7 +188,7 @@ fn item_blur_is_isolated_from_track_below_and_uses_animation() {
     assert!(p[0] > 0.1 && p[0] < 0.5);
     assert!(p[2] > 0.5);
     assert_eq!(p[3], 1.0);
-    data.timeline.tracks[0].items[0]
+    data.timeline.overlays[0].items[0]
         .animations
         .set(
             AnimationPath::new("effects.b.params.intensity").unwrap(),

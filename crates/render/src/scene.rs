@@ -121,7 +121,6 @@ impl RenderSettings {
                 || !project
                     .data()
                     .timeline
-                    .tracks
                     .iter()
                     .any(|t| t.items.iter().any(|i| i.id == *id))
             {
@@ -285,7 +284,6 @@ impl<'a> Renderer<'a> {
         let active: Vec<_> = project
             .data()
             .timeline
-            .tracks
             .iter()
             .filter(|t| !t.hidden)
             .flat_map(|t| &t.items)

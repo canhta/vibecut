@@ -1735,10 +1735,7 @@ fn build_session(
         asset: asset.clone(),
     })?;
     if with_video {
-        let video = track_id(session.apply(Command::AddTrack {
-            name: "Video".into(),
-            kind: TrackKind::Video,
-        })?)?;
+        let video = session.project().data().timeline.main.id;
         let range = SourceRange::new(Tick::ZERO, duration)?;
         session.apply(Command::InsertItem {
             track: video,
@@ -1755,7 +1752,7 @@ fn build_session(
     }
     let captions = track_id(session.apply(Command::AddTrack {
         name: "Captions".into(),
-        kind: TrackKind::Caption,
+        kind: TrackKind::Text,
     })?)?;
     let range = SourceRange::new(Tick::ZERO, duration)?;
     session.apply(Command::InsertItem {
@@ -1790,9 +1787,13 @@ fn caption_track_id(session: &Session) -> Result<TrackId, EditError> {
         .project()
         .data()
         .timeline
-        .tracks
         .iter()
-        .find(|track| track.kind == TrackKind::Caption)
+        .find(|track| {
+            track
+                .items
+                .iter()
+                .any(|item| matches!(item.content, ItemParams::Caption(_)))
+        })
         .map(|track| track.id)
         .ok_or(EditError::Invalid("missing caption track"))
 }
@@ -1801,9 +1802,8 @@ fn caption_item_id(session: &Session) -> Result<project::ItemId, EditError> {
         .project()
         .data()
         .timeline
-        .tracks
         .iter()
-        .filter(|track| track.kind == TrackKind::Caption)
+        .filter(|track| track.kind == TrackKind::Text)
         .flat_map(|track| &track.items)
         .find(|item| matches!(item.content, ItemParams::Caption(_)))
         .map(|item| item.id)
@@ -1829,7 +1829,6 @@ fn translate_cues(
         let item = project
             .data()
             .timeline
-            .tracks
             .iter()
             .flat_map(|track| &track.items)
             .find(|value| value.id == item)
