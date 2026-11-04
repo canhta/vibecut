@@ -1,0 +1,7 @@
+/.spikes/
+/.scratch/
+/target/
+.DS_Store
+.env
+.env.*
+!.env.example

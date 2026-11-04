@@ -1,0 +1,35 @@
+# VibeCut
+
+Start with [documentation owners](docs/README.md), [terms](GLOSSARY.md) and [decisions](docs/adr/README.md).
+
+## Read first
+
+| Task | Read |
+|---|---|
+| Scope or acceptance | [Requirements](docs/product/requirements.md#scope) |
+| Dependencies or core boundaries | [Architecture](docs/engineering/architecture.md#boundaries) |
+| Source structure, safety or timing | [Standards](docs/engineering/standards.md#safety) and [structural admission](docs/engineering/standards.md#structural-admission) |
+| Working in this repo, tasks or delivery | [Development loop](docs/engineering/workflows.md#development-loop), then the README of any crate you touch |
+| Upgrades or persisted data | [Upgrade policy](docs/engineering/workflows.md#upgrade-policy) |
+| Commands, tests or completion evidence | [Verification](docs/engineering/verification.md#checks) |
+| Licensing, assets or remote AI | [Open-source policy](docs/engineering/open-source.md#licensing) and [privacy](docs/engineering/open-source.md#privacy) |
+
+## Rules
+
+- Research before deciding; follow the [research rule](docs/engineering/workflows.md#development-loop).
+
+- Prefer the best current design; replace in place under the [upgrade policy](docs/engineering/workflows.md#upgrade-policy).
+- Give each fact one authoritative owner; link elsewhere and reconcile its owner in the same change.
+- Preserve unrelated work; freshly read shared files before editing them.
+- Label evidence observed, source-documented, inferred, proposed or unverified. Plans and passing builds do not prove runtime behavior.
+- Keep reports local and hand over paths. Never publish an Artifact.
+
+## Agent skills
+
+### Issue tracker
+
+Local markdown under `.scratch/` (git-ignored, never pushed). See `docs/agents/issue-tracker.md`.
+
+### Domain docs
+
+Single-context: `GLOSSARY.md` + `docs/adr/` at the repo root. See `docs/agents/domain.md`.
