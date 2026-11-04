@@ -736,19 +736,24 @@ fn export_refuses_when_a_source_disappears_mid_job() {
         .unwrap();
     let stderr = child.stderr.take().unwrap();
     let mut removed = false;
+    let mut progress = String::new();
     for line in BufReader::new(stderr).lines() {
         let line = line.unwrap();
+        progress.push_str(&line);
+        progress.push('\n');
         if !removed && line.contains("progress render") {
             fs::remove_file(&video).unwrap();
             removed = true;
         }
     }
-    let status = child.wait().unwrap();
+    let output = child.wait_with_output().unwrap();
     assert!(
         removed,
-        "render progress was not observed before completion"
+        "render progress was not observed before completion: exit {:?}; stdout {}; stderr {progress}",
+        output.status.code(),
+        String::from_utf8_lossy(&output.stdout),
     );
-    assert_eq!(status.code(), Some(4));
+    assert_eq!(output.status.code(), Some(4));
     assert!(!output_path.exists());
 }
 
