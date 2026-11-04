@@ -22,10 +22,11 @@ serve documentation. Regeneration and planned platform wiring live in the icon R
 
 ## Model weights
 
-Bundle or default only to model weights under MIT, Apache-2.0 or BSD licences.
-Users may opt in to download other weights (CC-BY, custom or non-commercial):
-show the exact licence, source and restrictions such as "non-commercial" before
-download, verify the pinned hash, and never redistribute them with the app.
+Never bundle model weights in the app or installer; keep downloads small. The user
+starts every download from the model manager. Suggest as defaults only weights under
+MIT, Apache-2.0 or BSD licences. Other weights (CC-BY, custom or non-commercial) are
+opt-in: show the exact licence, source and restrictions such as "non-commercial"
+before download. Verify the pinned hash and never redistribute weights with the app.
 
 ## Privacy
 
