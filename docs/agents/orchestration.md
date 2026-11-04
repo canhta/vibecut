@@ -128,7 +128,7 @@ ticket branch (signed-off commit) only when it is small and clear: obvious fix,
 full context, no change to responsibilities or design. Larger or design-level findings: verdict `changes`, `worker_done` with the
 review path; the coordinator sends the review to the original implementer dispatch
 (`send` reopens a finished worker), which fixes and returns to the same reviewer
-flow. Findings needing a product decision go to the coordinator. When approved,
+flow. Findings needing a product decision go to the coordinator. Any dual version, legacy shim, deprecated path or backward-compatibility code is a `changes` finding. When approved,
 the reviewer merges exactly as in self-merge.
 
 Workers and reviewers merge and close tickets themselves; the coordinator only

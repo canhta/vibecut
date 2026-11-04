@@ -19,7 +19,7 @@ Start with [documentation owners](docs/README.md), [terms](GLOSSARY.md) and [dec
 
 - Product principles: quality and stability first, then light and fast; see [requirements](docs/product/requirements.md#principles).
 - Research before deciding; follow the [research rule](docs/engineering/workflows.md#development-loop).
-- Prefer the best current design; replace in place under the [upgrade policy](docs/engineering/workflows.md#upgrade-policy).
+- Prefer the best current design; replace in place under the [upgrade policy](docs/engineering/workflows.md#upgrade-policy). No dual versions, legacy shims, deprecated paths or backward compatibility: delete superseded code in the same change.
 - Give each fact one authoritative owner; link elsewhere and reconcile its owner in the same change.
 - Preserve unrelated work; freshly read shared files before editing them.
 - Label evidence observed, source-documented, inferred, proposed or unverified. Plans and passing builds do not prove runtime behavior.
