@@ -20,8 +20,9 @@
 ## Delivery
 
 [Orchestration](../agents/orchestration.md) owns slice limits, review and merge steps.
-Use conventional commit subjects and DCO sign-off (`git commit -s`). Implementers
-hand over branch/SHAs; only the coordinator merges and pushes `main`. Hosted CI is
+Use conventional commit subjects and DCO sign-off (`git commit -s`). Merges follow
+[orchestration](../agents/orchestration.md#review-and-merge): self-merge for simple
+tickets, otherwise reviewer merges; fast-forward only. Hosted CI is
 optional and manual-only while private. Before public contributions, add a
 `pull_request` trigger and require signed-off PRs; this grants no visibility change.
 

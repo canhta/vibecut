@@ -85,16 +85,25 @@ one `worker_done`. The coordinator batches instructions into few `send` messages
 
 ## Review and merge
 
-Review the frozen SHA independently; write findings in
-`.scratch/<milestone>/reviews/NN-<sha7>.md` using the
-[review template](../engineering/verification.md#reports). Coordinator reviews
-Codex work; Codex reviews opencode work. Send changes to the same dispatch, repeat
-checks and review substantive fixes. Only an approved revision advances.
+Two paths; the implementer states which one it took in `worker_done`.
 
-The coordinator rebases the approved ticket branch on `main`, resolves conflicts,
-reruns `cargo xtask ci` including local name patterns, and reviews changed conflict
-resolutions before merging and pushing `main`. Preserve other workers' worktrees.
-Record the merged SHA/evidence under `## Answer`, set `Status: resolved`, and add
-one decision pointer in `.scratch/<milestone>/map.md`. `wontfix` needs a reason;
-`blocked` returns to `claimed` only after its blocker is removed. Never push `main`
-from an implementer. Keep reports local; publishing requires explicit direction.
+**Self-merge.** For a simple ticket (mechanical, docs, tests, small isolated
+change) where the implementer is confident it meets every Verify item, the
+implementer merges itself: rebase on `origin/main`, rerun `cargo xtask ci` with
+local name patterns, `git push origin HEAD:main` (fast-forward only; on rejection
+fetch, rebase, rerun checks, retry). Hard tickets (FFI, concurrency, pipelines,
+contracts, persistence formats, AI providers) never self-merge.
+
+**Reviewed.** Otherwise review the frozen SHA independently: Codex reviews opencode
+work, the coordinator reviews Codex work. The reviewer writes
+`.scratch/<milestone>/reviews/NN-<sha7>.md` using the
+[review template](../engineering/verification.md#reports) and fixes findings
+directly on the ticket branch (signed-off commits) instead of bouncing them back;
+only findings needing a product decision go back to the coordinator. When approved,
+the reviewer merges exactly as in self-merge.
+
+After either path: record the merged SHA/evidence under `## Answer`, set
+`Status: resolved`, add one decision pointer in `.scratch/<milestone>/map.md`, and
+preserve other workers' worktrees. `wontfix` needs a reason; `blocked` returns to
+`claimed` only after its blocker is removed. Never force-push `main`. Keep reports
+local; publishing requires explicit direction.
