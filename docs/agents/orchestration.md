@@ -21,12 +21,11 @@ independent authorized work while a nonblocking answer is pending.
 
 Use one worktree per ticket, created by Orca. Shared placement needs explicit
 coordinator assignment of disjoint files; never switch another worker's branch.
-Branch: `t/<milestone>-NN-<slug>`. For a fresh worktree starting on its base branch:
-`git checkout -b t/p0-core-01-time`. If Orca already created the ticket branch, use it.
+Branch: use the branch Orca creates for the worktree (dispatch `--name <milestone>-NN-<slug>`);
+do not create a second branch. Pull loops start each next ticket on a fresh branch from `origin/main`.
 Share build caches by slot, outside worktrees: `CARGO_TARGET_DIR=$HOME/.cache/vibecut/target/<slot>`
 with slot `codex-1`, `opencode-1`, `opencode-2` or `review-1` given in the dispatch spec;
 one live worker per slot. At most three concurrent Rust builds on a 16 GB machine.
-After merging, remove your worktree (`git worktree remove`) unless told to keep it.
 
 ## Coordinator loop
 
@@ -133,6 +132,11 @@ review needed, evidence path, follow-ups); details stay in the local report.
 
 After either path: record the merged SHA/evidence under `## Answer`, set
 `Status: resolved`, add one decision pointer in `.scratch/<milestone>/map.md`, and
-preserve other workers' worktrees. `wontfix` needs a reason; `blocked` returns to
+preserve other workers' worktrees.
+Cleanup is the coordinator's single step after a merged outcome (Orca keeps
+new-worktree workers open by design): `orca orchestration worker-release --dispatch <id>`
+then `orca worktree rm --worktree path:<worktree> --delete-branch`; delete other merged
+local branches with `git branch -d`. Keep a worktree only while its ticket awaits review
+or fixes. `wontfix` needs a reason; `blocked` returns to
 `claimed` only after its blocker is removed. Never force-push `main`. Keep reports
 local; publishing requires explicit direction.
