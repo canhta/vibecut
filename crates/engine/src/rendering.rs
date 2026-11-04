@@ -6,6 +6,66 @@ use crate::{ByteLease, ByteOwner, EditError};
 use std::{path::PathBuf, sync::Arc};
 impl render::Reservation for ByteLease {}
 impl render::ExecutionHooks for JobContext {
+    fn parallelism(&self) -> usize {
+        std::thread::available_parallelism().map_or(1, |n| n.get().min(8))
+    }
+    fn run_tasks(
+        &self,
+        tasks: &mut [&mut (dyn FnMut() -> render::Result<()> + Send)],
+    ) -> render::Result<()> {
+        if self.cancelled() {
+            return Err(render::Error::Cancelled);
+        }
+        if tasks.len() > self.parallelism() {
+            return Err(render::Error::Invalid("pixel task count"));
+        }
+        if tasks.is_empty() {
+            return Ok(());
+        }
+        // The engine owns every extra worker and its bounded stack. No global
+        // pool, detached work or uncharged lifetime is introduced by render.
+        const STACK: usize = 512 << 10;
+        let _stacks = match self.reserve(
+            render::MemoryKind::Compositor,
+            (tasks.len().saturating_sub(1) * STACK) as u64,
+        ) {
+            Err(render::Error::Budget { .. }) => {
+                for task in tasks {
+                    std::panic::catch_unwind(std::panic::AssertUnwindSafe(task))
+                        .unwrap_or(Err(render::Error::WorkerPanicked))?;
+                }
+                return Ok(());
+            }
+            result => result?,
+        };
+        std::thread::scope(|scope| {
+            let mut handles = Vec::new();
+            handles.try_reserve_exact(tasks.len().saturating_sub(1))?;
+            let Some((local, remote)) = tasks.split_last_mut() else {
+                return Ok(());
+            };
+            for task in remote {
+                handles.push(
+                    std::thread::Builder::new()
+                        .name("vibecut-pixel".into())
+                        .stack_size(STACK)
+                        .spawn_scoped(scope, move || {
+                            std::panic::catch_unwind(std::panic::AssertUnwindSafe(task))
+                                .unwrap_or(Err(render::Error::WorkerPanicked))
+                        })?,
+                );
+            }
+            let mut result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(local))
+                .unwrap_or(Err(render::Error::WorkerPanicked));
+            for handle in handles {
+                let joined = handle.join().unwrap_or(Err(render::Error::WorkerPanicked));
+                if result.is_ok() {
+                    result = joined;
+                }
+            }
+            result
+        })
+    }
     fn cancelled(&self) -> bool {
         self.cancelled()
     }

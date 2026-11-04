@@ -28,6 +28,20 @@ pub trait SourceProvider {
         at: Tick,
         hooks: &dyn ExecutionHooks,
     ) -> Result<Option<Image>>;
+    /// A full-coordinate image whose pixels outside the requested horizontal
+    /// window may be transparent. Implementations may return the full image.
+    /// Consumers must sample only the requested columns; reduction and blur use
+    /// the ordinary full-frame entry point.
+    fn video_window(
+        &mut self,
+        asset: &SourceAsset,
+        item: ItemId,
+        at: Tick,
+        _window: Option<std::ops::Range<u32>>,
+        hooks: &dyn ExecutionHooks,
+    ) -> Result<Option<Image>> {
+        self.video(asset, item, at, hooks)
+    }
     fn audio(
         &mut self,
         asset: &SourceAsset,
@@ -133,6 +147,16 @@ impl SourceProvider for FileSources {
         at: Tick,
         hooks: &dyn ExecutionHooks,
     ) -> Result<Option<Image>> {
+        self.video_window(asset, item, at, None, hooks)
+    }
+    fn video_window(
+        &mut self,
+        asset: &SourceAsset,
+        item: ItemId,
+        at: Tick,
+        window: Option<std::ops::Range<u32>>,
+        hooks: &dyn ExecutionHooks,
+    ) -> Result<Option<Image>> {
         if self.videos.get(&item).is_none_or(|c| c.asset != *asset) {
             self.videos.remove(&item);
             self.videos
@@ -141,7 +165,7 @@ impl SourceProvider for FileSources {
         self.videos
             .get_mut(&item)
             .ok_or(Error::Invalid("video cursor"))?
-            .image(at, hooks)
+            .image(at, window, hooks)
     }
     fn audio(
         &mut self,
@@ -229,7 +253,7 @@ impl VideoCursor {
             * 4
             + (96 << 20);
         drop(probe_guard);
-        let lease = hooks.reserve(MemoryKind::Decoded, bytes)?;
+        let (threads, lease) = crate::conversion_reservation(hooks, MemoryKind::Decoded, bytes)?;
         Ok(Self {
             asset: asset.clone(),
             item,
@@ -237,14 +261,19 @@ impl VideoCursor {
             end,
             step,
             reader: VideoReader::open(asset.path())?,
-            converter: RgbaConverter::new()?,
+            converter: RgbaConverter::with_threads(threads)?,
             current: None,
             next: None,
             last: None,
             _lease: lease,
         })
     }
-    fn image(&mut self, at: Tick, hooks: &dyn ExecutionHooks) -> Result<Option<Image>> {
+    fn image(
+        &mut self,
+        at: Tick,
+        window: Option<std::ops::Range<u32>>,
+        hooks: &dyn ExecutionHooks,
+    ) -> Result<Option<Image>> {
         check(hooks)?;
         if self.last.is_none_or(|last| at < last) {
             self.reader.seek_keyframe(at)?;
@@ -295,16 +324,28 @@ impl VideoCursor {
                 "runtime video color/depth change requires conversion",
             ));
         }
-        let rgba = self.converter.convert(frame)?;
+        let shape_matches = self
+            .asset
+            .probe()
+            .streams
+            .iter()
+            .find_map(|s| s.video.as_ref())
+            .is_some_and(|v| v.width == frame.width() && v.height == frame.height());
+        let (rgba, origin) = if let Some(window) = window.filter(|_| shape_matches) {
+            self.converter.convert_horizontal(frame, window)?
+        } else {
+            (self.converter.convert(frame)?, 0)
+        };
         let color = rgba.color().resolved_sdr();
         let stride = rgba.stride(0)?;
-        Ok(Some(Image::from_rgba8_strided(
+        Ok(Some(Image::from_rgba8_strided_at(
             rgba.width(),
             rgba.height(),
             rgba.plane(0)?,
             stride,
             rgba.premultiplied_alpha(),
             color.transfer,
+            Some((frame.width(), origin)),
             hooks,
         )?))
     }

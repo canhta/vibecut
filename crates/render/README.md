@@ -96,6 +96,14 @@ no normalization, clipping or limiter. Nonfinite input/overflow refuses the mix.
 Preview can inspect `AudioBlock::peak`; export returns `AudioOverload` above
 unity, preserving the old destination. Limiter/fade policy belongs to /42.
 
+Horizontal interpolation retains only two destination-width rows per active
+pixel task and reuses them when adjacent output rows share source neighbors.
+Vertical interpolation and source-over keep their original floating-point order;
+fully opaque samples replace the destination after the same clamp. Transfer
+packing uses exact float-bit transition buckets derived from the original
+16-bit transfer table. Monotonic endpoint and threshold checks cover all finite
+working values for the three admitted transfers, preserving its quantization.
+
 ## Sources, bounds and cancellation
 
 `FileSources` holds only active item cursors and bounded signature metadata.
@@ -108,6 +116,27 @@ asset/item/source-range diagnostics. Strict final output refuses by default;
 black/silence with a receipt. New source failure during execution still refuses.
 `SourceProvider` is the seam for an already validated source owner or test fixture;
 it must uphold requested timing, color and audio contracts.
+`video_window` may return transparency outside an explicitly requested horizontal
+sampling range while retaining full image geometry. Its default calls ordinary
+`video`. File-backed cover/crop renders request the shared transform's footprint;
+media converts an aligned region with a reconstruction halo, and ingress writes
+it into its original source coordinates. Fractional sampling does not move.
+Half reduction, background blur and runtime dimension changes use full frames.
+Preview and export use this same path; no second compositor or cache is involved.
+
+
+`ExecutionHooks::parallelism` defaults to one and bounds row kernels and native
+conversion to at most eight workers. `run_tasks` defaults to sequential execution;
+engine supplies joined borrowed tasks. Render reserves disjoint destination
+buffers and small task metadata before dispatch; kernels check cancellation per
+row. An engine worker's unwind is typed, and every borrowed task finishes before
+the operation releases buffers or returns an error. Native conversion reserves
+an additional conservative 8 MiB per extra worker for each active converter or
+encoder; engine separately reserves each extra row worker's 512 KiB stack.
+Native admission lowers the worker count before allocating when additional
+workers do not fit, retaining the original one-worker minimum and typed byte
+refusal. Engine uses sequential row tasks when extra stacks do not fit. These
+are bounded concurrency/memory tradeoffs, not an OS RSS sandbox.
 
 `ExecutionHooks` checks cancellation and reserves lifetime-bound bytes before
 allocation under Decoded, Compositor or Export ownership. Engine's implementation
@@ -170,15 +199,19 @@ Observed on Apple M1 Pro/macOS 27.2: the real software-export regression produce
 30 H.264 frames plus AAC with maximum decoded color-patch channel error <=6.
 Intel/Rosetta, VM-only fallback and Windows runtime remain unverified.
 
-Observed for task /28 on Apple M1 Pro, 16 GiB, macOS 27.2, release profile,
-two alternating warm fresh-process runs of the production engine benchmark:
-the exact 60 s/1,800-frame 1080p fixture exported to 1080x1920 in 55.69/52.60 s
-wall (55.576/52.489 s internally, 32.39/34.29 fps), with peak RSS
-257,048,576/258,834,432 bytes. The matching external crop/Lanczos hardware-encode
-command took 9.31/9.37 s: a remaining 5.98/5.61x gap. All 1,800 decoded frames
-match the pre-optimization compositor export exactly (SSIM 1, PSNR infinity);
-against the differently cropped gamma-domain FFmpeg output, SSIM is 0.994169
-and PSNR 38.998035 dB in both runs. Native profiling still observes full-frame
-RGBA conversion, linear sampling and transfer packing; the external reference
-avoids the linear float round trip. These measurements cover this fixture and
-host, not other canvases, hardware or media.
+Observed for task /30 on Apple M1 Pro, 16 GiB, macOS 27.2, release profile:
+nine alternating warm fresh-process pairs through the production engine benchmark
+exported the exact 60 s/1,800-frame 1080p fixture to 1080x1920 in 15.99–20.66 s
+process wall, versus the matching external crop/Lanczos hardware-encode command's
+9.29–9.55 s. The median paired wall ratio is 1.863734x. The lowest-prepair-load
+run (one-minute host load 10.19) takes 16.09 s / 15.987541 s internally, versus
+FFmpeg 9.55 s (1.684817x); three individual pairs exceed 2x under shared load.
+The contemporaneous exact-base renderer takes 53.98 s. Current peak RSS ranges
+266,452,992–275,103,744 bytes; sampled aggregate charged peak is 560,156,672.
+This trades bounded worker stacks/native conversion allowances and fixed packing
+tables for throughput; the original minimum-budget export still works by reducing
+concurrency. Every one of the nine outputs matches all 1,800 decoded /28 frames
+exactly (SSIM 1, PSNR infinity); external-reference SSIM is 0.994169 and PSNR
+38.998035 dB. Preview/export pixels, fractional crops and linear premultiplied
+math are shared. These observations cover this fixture and host, not other
+canvases, hardware, formats or guaranteed latency under concurrent workloads.

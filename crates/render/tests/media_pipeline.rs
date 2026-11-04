@@ -882,3 +882,150 @@ fn stereo_policy_keeps_headroom_and_export_refuses_overload() {
     );
     assert_eq!(std::fs::read(output).unwrap(), b"existing");
 }
+
+struct FullSources(FileSources);
+impl SourceProvider for FullSources {
+    fn status(
+        &mut self,
+        a: &media::SourceAsset,
+        hash: bool,
+        h: &dyn ExecutionHooks,
+    ) -> Result<Option<UnavailableReason>> {
+        self.0.status(a, hash, h)
+    }
+    fn begin_video(&mut self, active: &[project::ItemId]) {
+        self.0.begin_video(active);
+    }
+    fn video(
+        &mut self,
+        a: &media::SourceAsset,
+        id: project::ItemId,
+        t: Tick,
+        h: &dyn ExecutionHooks,
+    ) -> Result<Option<Image>> {
+        self.0.video(a, id, t, h)
+    }
+    fn audio(
+        &mut self,
+        a: &media::SourceAsset,
+        id: project::ItemId,
+        start: i64,
+        n: usize,
+        rate: u32,
+        h: &dyn ExecutionHooks,
+    ) -> Result<AudioBlock> {
+        self.0.audio(a, id, start, n, rate, h)
+    }
+}
+#[test]
+fn windowed_sources_preserve_full_compositor_pixels_and_blur_reduction_fallbacks() {
+    if !tools() {
+        return;
+    }
+    let path = root().join("render-windowed-source.mp4");
+    generate(
+        &path,
+        &[
+            "-f",
+            "lavfi",
+            "-i",
+            "testsrc2=size=770x130:rate=30:duration=0.1",
+            "-c:v",
+            "libx264",
+            "-pix_fmt",
+            "yuv420p",
+            "-color_primaries",
+            "bt709",
+            "-color_trc",
+            "bt709",
+            "-colorspace",
+            "bt709",
+        ],
+    );
+    let mut data = video_project(&path).into_data();
+    data.canvas.background = project::Color([0; 4]);
+    let project = project::Project::new(data).unwrap();
+    let h = Hooks::default();
+    for (width, height, fit, blur, crop) in [
+        (113, 327, Fit::Cover, None, Rect::default()),
+        (113, 327, Fit::Cover, Some(3), Rect::default()),
+        (1, 513, Fit::Cover, None, Rect::default()),
+        (30, 10, Fit::Cover, None, Rect::default()),
+        (
+            311,
+            257,
+            Fit::Contain,
+            None,
+            Rect {
+                x: 0.127,
+                y: 0.13,
+                width: 0.191,
+                height: 0.17,
+            },
+        ),
+        (
+            311,
+            257,
+            Fit::Stretch,
+            None,
+            Rect {
+                x: 0.127,
+                y: 0.13,
+                width: 0.00091,
+                height: 0.17,
+            },
+        ),
+        (
+            311,
+            257,
+            Fit::Cover,
+            None,
+            Rect {
+                x: 0.127,
+                y: 0.13,
+                width: 0.691,
+                height: 0.87,
+            },
+        ),
+    ] {
+        let mut settings = RenderSettings::from_project(&project);
+        settings.width = width;
+        settings.height = height;
+        settings.background_blur = blur;
+        settings.placements.insert(
+            project::ItemId(0),
+            Placement {
+                destination: Rect {
+                    x: -0.17,
+                    y: 0.12,
+                    width: 1.2,
+                    height: 0.88,
+                },
+                crop,
+                fit,
+                opacity: 0.73,
+            },
+        );
+        let mut reference = Renderer::new(&project, settings.clone()).unwrap();
+        let mut actual = Renderer::new(&project, settings).unwrap();
+        let mut full = FullSources(FileSources::default());
+        let mut windowed = FileSources::default();
+        for frame in [0, 1, 2, 0] {
+            let at = Tick(time::TICKS_PER_SECOND / 30 * frame);
+            let expected = reference.render_frame(at, &mut full, &h).unwrap();
+            let result = actual.render_frame(at, &mut windowed, &h).unwrap();
+            assert_eq!(
+                result.pixels(),
+                expected.pixels(),
+                "{width}x{height} {fit:?} blur={blur:?}"
+            );
+            assert_eq!(
+                actual
+                    .preview_frame(at, &mut windowed, &h)
+                    .unwrap()
+                    .pixels(),
+                expected.pixels()
+            );
+        }
+    }
+}

@@ -21,6 +21,8 @@ pub struct VideoEncoderSettings {
     pub quality: u8,
     pub color: ColorInfo,
     pub webm: bool,
+    /// FFmpeg input-conversion workers, 1..=8; caller owns scheduling/accounting.
+    pub conversion_threads: u8,
 }
 impl VideoEncoderSettings {
     /// 85/100 quality and 12 Mb/s minimum for a 1080p canvas at 30 fps. Callers
@@ -34,6 +36,7 @@ impl VideoEncoderSettings {
             quality: 85,
             color,
             webm: false,
+            conversion_threads: 1,
         }
     }
 }
@@ -83,6 +86,7 @@ impl VideoEncoder {
             || !settings.width.is_multiple_of(2)
             || !settings.height.is_multiple_of(2)
             || u64::from(settings.width) * u64::from(settings.height) > 1 << 26
+            || !(1..=8).contains(&settings.conversion_threads)
             || settings.quality > 100
             || settings.bit_rate == 0
         {
@@ -283,7 +287,7 @@ impl VideoEncoder {
         } else {
             let cpu = frame.download()?;
             if self.scaler.is_none() {
-                self.scaler = Some(ffi::Scaler::new()?);
+                self.scaler = Some(ffi::Scaler::with_threads(self.settings.conversion_threads)?);
             }
             self.scaler
                 .as_mut()

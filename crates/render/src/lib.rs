@@ -38,6 +38,19 @@ pub enum Stage {
 /// Reserve before allocating and retain the returned lease for its entire lifetime.
 pub trait ExecutionHooks: Sync {
     fn cancelled(&self) -> bool;
+    /// Bounded pixel/conversion concurrency admitted by the scheduling owner.
+    /// Providers without a scheduler remain sequential; values are clamped to 1..=8.
+    fn parallelism(&self) -> usize {
+        1
+    }
+    /// Execute disjoint borrowed kernels and join every task before returning,
+    /// including cancellation, failure and unwind. At most eight tasks are submitted.
+    fn run_tasks(&self, tasks: &mut [&mut (dyn FnMut() -> Result<()> + Send)]) -> Result<()> {
+        for task in tasks {
+            task()?;
+        }
+        Ok(())
+    }
     fn reserve(&self, kind: MemoryKind, bytes: u64) -> Result<Box<dyn Reservation>>;
     /// Concurrent cancellation owners fence cancellation before irreversible publication.
     fn begin_publish(&self) -> Result<()> {
@@ -49,6 +62,22 @@ pub trait ExecutionHooks: Sync {
     }
     fn progress(&self, _stage: Stage, _fraction: f32) -> Result<()> {
         Ok(())
+    }
+}
+pub(crate) fn conversion_reservation(
+    hooks: &dyn ExecutionHooks,
+    kind: MemoryKind,
+    base: u64,
+) -> Result<(u8, Box<dyn Reservation>)> {
+    let mut threads = hooks.parallelism().clamp(1, 8) as u8;
+    loop {
+        let bytes = base
+            .checked_add(u64::from(threads - 1) * (8 << 20))
+            .ok_or(Error::Invalid("conversion memory bound"))?;
+        match hooks.reserve(kind, bytes) {
+            Err(Error::Budget { .. }) if threads > 1 => threads -= 1,
+            result => return result.map(|lease| (threads, lease)),
+        }
     }
 }
 pub(crate) fn check(hooks: &dyn ExecutionHooks) -> Result<()> {
@@ -79,6 +108,8 @@ pub enum Error {
     Invalid(&'static str),
     #[error("unsupported render capability: {0}")]
     Unsupported(&'static str),
+    #[error("pixel worker unwound")]
+    WorkerPanicked,
     #[error("render cancelled")]
     Cancelled,
     #[error("render allocation of {requested} bytes exceeds available budget {limit}")]

@@ -125,6 +125,22 @@ their existing native quality mappings.
 Windows device/quality behavior and live device-loss
 recovery remain unverified; they require the Windows hardware ticket.
 
+`RgbaConverter::with_threads` and `VideoEncoderSettings::conversion_threads`
+admit 1–8 FFmpeg conversion workers, defaulting to one. The execution owner
+chooses and charges that bound; no codec quality, color, chroma or transfer
+setting changes with the worker count. Conversion contexts retain their native
+workers only for that converter/encoder lifetime.
+
+`RgbaConverter::convert_horizontal` accepts a nonempty source-column range and
+returns CPU RGBA plus its integer source-column origin. NV12/YUV420P at even
+widths use an aligned integer crop with a 64-pixel chroma-reconstruction halo
+and 128-pixel alignment. FFmpeg applies cropping with alignment enabled; existing
+crop metadata, other layouts or a rounded crop retain full conversion. Only the
+requested interior replaces full-frame conversion; halo-edge pixels are not a
+new resampling contract. PTS, color and alpha convention are retained. Public
+oracle tests compare every requested byte through hardware-preferred/software
+decode, varied endpoints, alignment transitions and sequential/parallel conversion.
+
 ## Speech upload chunks
 
 `extract_speech_audio` takes a `SourceAsset`; it and the `_with`/`_with_cancel`

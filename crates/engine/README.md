@@ -163,6 +163,22 @@ child validation consumes each candidate without another clone. Media bytes and
 decoded frames are never copied by this crate. Byte-budgeted history and larger
 real-world drag latency remain unverified; no bounded-RSS claim is made.
 
+## Render kernel execution
+
+`JobContext` supplies render's scheduling hook: up to eight workers, capped by
+available parallelism. Each row batch borrows disjoint buffers, runs one task on
+the job thread and uses scoped engine workers for the rest. It reserves 512 KiB
+per extra worker stack before spawning, uses sequential execution when the
+extra stacks do not fit, catches worker panics as typed render
+failures, and joins all tasks on success, cancellation, refusal and unwind.
+There is no detached work or retained pixel pool. Default hooks outside engine
+remain sequential. The existing job-class limits bound simultaneous jobs; each
+job can have at most seven additional row workers during a batch. Native FFmpeg
+conversion receives the same concurrency bound and holds its separately charged
+worker allowance for the converter/encoder lifetime; render/media retain their
+pixel and codec ownership. `tests/render_kernels.rs` covers failure joins, stack
+admission, released charges and parallel/sequential pixel equality.
+
 ## Background jobs and byte policy
 
 `jobs::JobRunner::new(config, budget, clock)` schedules blocking adapters on std

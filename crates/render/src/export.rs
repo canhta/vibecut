@@ -463,7 +463,8 @@ fn encoded_export(
     hooks: &dyn ExecutionHooks,
     count: u64,
 ) -> Result<ExportReceipt> {
-    let _encode = hooks.reserve(
+    let (threads, _encode) = crate::conversion_reservation(
+        hooks,
         MemoryKind::Export,
         Image::bytes(settings.render.width, settings.render.height)? * 4 + (64 << 20),
     )?;
@@ -480,6 +481,7 @@ fn encoded_export(
     let video_settings = VideoEncoderSettings {
         bit_rate: settings.bit_rate,
         quality: settings.quality,
+        conversion_threads: threads,
         ..VideoEncoderSettings::h264(
             settings.render.width,
             settings.render.height,
@@ -865,6 +867,20 @@ impl SourceProvider for OmittedSources<'_> {
             Ok(None)
         } else {
             self.inner.video(a, id, t, h)
+        }
+    }
+    fn video_window(
+        &mut self,
+        a: &media::SourceAsset,
+        id: project::ItemId,
+        t: Tick,
+        window: Option<std::ops::Range<u32>>,
+        h: &dyn ExecutionHooks,
+    ) -> Result<Option<Image>> {
+        if self.omitted.contains(&a.id()) {
+            Ok(None)
+        } else {
+            self.inner.video_window(a, id, t, window, h)
         }
     }
     fn audio(

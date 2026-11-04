@@ -320,9 +320,14 @@ impl<'a> Renderer<'a> {
                 .iter()
                 .filter(|i| matches!(i.content, ItemParams::Video(_)))
             {
-                if let Some(image) =
-                    self.video_image(item, source_time(item, at)?, sources, hooks, preview)?
-                {
+                if let Some(image) = self.video_image(
+                    item,
+                    source_time(item, at)?,
+                    Placement::default(),
+                    sources,
+                    hooks,
+                    preview,
+                )? {
                     draw(&mut out, &image, Placement::default(), hooks)?;
                     blur(&mut out, radius, hooks)?;
                     prepared = Some((item.id, image));
@@ -339,7 +344,7 @@ impl<'a> Renderer<'a> {
                     let image = if prepared.as_ref().is_some_and(|(id, _)| *id == item.id) {
                         prepared.take().map(|(_, image)| image)
                     } else {
-                        self.video_image(item, source_at, sources, hooks, preview)?
+                        self.video_image(item, source_at, placement, sources, hooks, preview)?
                     };
                     if let Some(image) = image {
                         draw(&mut out, &image, placement, hooks)?;
@@ -436,10 +441,12 @@ impl<'a> Renderer<'a> {
         }
         Ok(out)
     }
+    #[allow(clippy::too_many_arguments)]
     fn video_image(
         &self,
         item: &Item,
         at: Tick,
+        placement: Placement,
         sources: &mut dyn SourceProvider,
         hooks: &dyn ExecutionHooks,
         preview: bool,
@@ -462,7 +469,27 @@ impl<'a> Renderer<'a> {
                 reason,
             }]));
         }
-        sources.video(asset, item.id, at, hooks)
+        let window = if self.settings.background_blur.is_none() {
+            asset
+                .probe()
+                .streams
+                .iter()
+                .find_map(|s| s.video.as_ref())
+                .map(|shape| {
+                    horizontal_window(
+                        self.settings.width,
+                        self.settings.height,
+                        shape.width,
+                        shape.height,
+                        placement,
+                    )
+                })
+                .transpose()?
+                .flatten()
+        } else {
+            None
+        };
+        sources.video_window(asset, item.id, at, window, hooks)
     }
     fn text(
         &mut self,
@@ -659,11 +686,115 @@ fn rgba(value: [u8; 4]) -> text::Color {
 }
 
 fn over(destination: &mut [f32; 4], source: [f32; 4], opacity: f32) {
+    if opacity == 1.0 && source.get(3) == Some(&1.0) {
+        *destination = source.map(|v| v.clamp(0.0, 1.0));
+        return;
+    }
     let inverse = 1.0 - source.get(3).copied().unwrap_or(0.0) * opacity;
     for (d, s) in destination.iter_mut().zip(source) {
         *d = (s * opacity + *d * inverse).clamp(0.0, 1.0);
     }
 }
+struct Geometry {
+    dx: f64,
+    dy: f64,
+    dw: f64,
+    dh: f64,
+    sx: f64,
+    sy: f64,
+    sw: f64,
+    sh: f64,
+}
+impl Geometry {
+    fn new(
+        target_width: u32,
+        target_height: u32,
+        source_width: u32,
+        source_height: u32,
+        placement: Placement,
+    ) -> Result<Self> {
+        let mut dx = placement.destination.x * f64::from(target_width);
+        let mut dy = placement.destination.y * f64::from(target_height);
+        let mut dw = placement.destination.width * f64::from(target_width);
+        let mut dh = placement.destination.height * f64::from(target_height);
+        let mut sx = placement.crop.x * f64::from(source_width);
+        let mut sy = placement.crop.y * f64::from(source_height);
+        let mut sw = placement.crop.width * f64::from(source_width);
+        let mut sh = placement.crop.height * f64::from(source_height);
+        match placement.fit {
+            Fit::Cover => {
+                let scale = (dw / sw).max(dh / sh);
+                let cw = dw / scale;
+                let ch = dh / scale;
+                sx += (sw - cw) * 0.5;
+                sy += (sh - ch) * 0.5;
+                sw = cw;
+                sh = ch;
+            }
+            Fit::Contain => {
+                let scale = (dw / sw).min(dh / sh);
+                let w = sw * scale;
+                let h = sh * scale;
+                dx += (dw - w) * 0.5;
+                dy += (dh - h) * 0.5;
+                dw = w;
+                dh = h;
+            }
+            Fit::Stretch => {}
+        }
+        if [dx, dy, dw, dh, sx, sy, sw, sh]
+            .iter()
+            .any(|n| !n.is_finite())
+            || dw <= 0.0
+            || dh <= 0.0
+            || sw <= 0.0
+            || sh <= 0.0
+        {
+            return Err(Error::Invalid("placement transform overflow"));
+        }
+        Ok(Self {
+            dx,
+            dy,
+            dw,
+            dh,
+            sx,
+            sy,
+            sw,
+            sh,
+        })
+    }
+}
+fn horizontal_window(
+    target_width: u32,
+    target_height: u32,
+    source_width: u32,
+    source_height: u32,
+    placement: Placement,
+) -> Result<Option<std::ops::Range<u32>>> {
+    let sx = f64::from(target_width) * placement.destination.width
+        / (f64::from(source_width) * placement.crop.width);
+    let sy = f64::from(target_height) * placement.destination.height
+        / (f64::from(source_height) * placement.crop.height);
+    let scale = match placement.fit {
+        Fit::Cover => sx.max(sy),
+        _ => sx.min(sy),
+    };
+    // Half reduction reads neighbors outside this level's sampling footprint.
+    if scale <= 0.5 && source_width >= 4 && source_height >= 4 {
+        return Ok(None);
+    }
+    let geometry = Geometry::new(
+        target_width,
+        target_height,
+        source_width,
+        source_height,
+        placement,
+    )?;
+    let start = (geometry.sx.floor() - 2.0).clamp(0.0, f64::from(source_width)) as u32;
+    let end = ((geometry.sx + geometry.sw).ceil() + 2.0).clamp(0.0, f64::from(source_width)) as u32;
+    Ok((start < end && end - start < source_width / 2).then_some(start..end))
+}
+
 fn draw(
     target: &mut Image,
     source: &Image,
@@ -689,45 +820,22 @@ fn draw(
         reduced = Some(next);
         image = reduced.as_ref().ok_or(Error::Invalid("image reduction"))?;
     }
-    let mut dx = placement.destination.x * f64::from(target.width);
-    let mut dy = placement.destination.y * f64::from(target.height);
-    let mut dw = placement.destination.width * f64::from(target.width);
-    let mut dh = placement.destination.height * f64::from(target.height);
-    let mut sx = placement.crop.x * f64::from(image.width);
-    let mut sy = placement.crop.y * f64::from(image.height);
-    let mut sw = placement.crop.width * f64::from(image.width);
-    let mut sh = placement.crop.height * f64::from(image.height);
-    match placement.fit {
-        Fit::Cover => {
-            let scale = (dw / sw).max(dh / sh);
-            let cw = dw / scale;
-            let ch = dh / scale;
-            sx += (sw - cw) * 0.5;
-            sy += (sh - ch) * 0.5;
-            sw = cw;
-            sh = ch;
-        }
-        Fit::Contain => {
-            let scale = (dw / sw).min(dh / sh);
-            let w = sw * scale;
-            let h = sh * scale;
-            dx += (dw - w) * 0.5;
-            dy += (dh - h) * 0.5;
-            dw = w;
-            dh = h;
-        }
-        Fit::Stretch => {}
-    }
-    if [dx, dy, dw, dh, sx, sy, sw, sh]
-        .iter()
-        .any(|n| !n.is_finite())
-        || dw <= 0.0
-        || dh <= 0.0
-        || sw <= 0.0
-        || sh <= 0.0
-    {
-        return Err(Error::Invalid("placement transform overflow"));
-    }
+    let Geometry {
+        dx,
+        dy,
+        dw,
+        dh,
+        sx,
+        sy,
+        sw,
+        sh,
+    } = Geometry::new(
+        target.width,
+        target.height,
+        image.width,
+        image.height,
+        placement,
+    )?;
     let x0 = dx.floor().clamp(0.0, f64::from(target.width)) as usize;
     let x1 = (dx + dw).ceil().clamp(0.0, f64::from(target.width)) as usize;
     let y0 = dy.floor().clamp(0.0, f64::from(target.height)) as usize;
@@ -765,42 +873,83 @@ fn draw(
                 .unwrap_or(&[])
         }
     };
-    for y in y0..y1 {
-        check(hooks)?;
-        let py = y as f64 + 0.5;
-        if py < dy || py >= dy + dh {
-            continue;
+    let target_width = target.width as usize;
+    let target_rows = target
+        .pixels
+        .get_mut(y0 * target_width..y1 * target_width)
+        .ok_or(Error::Invalid("compositor rows"))?;
+    crate::image::row_chunks(target_rows, target_width, hooks, |start, target_rows| {
+        let _rows = hooks.reserve(
+            MemoryKind::Compositor,
+            ((x1 - x0) * 2 * std::mem::size_of::<[f32; 4]>()) as u64,
+        )?;
+        let mut top_samples = crate::vector(x1 - x0, [0.0; 4])?;
+        let mut bottom_samples = crate::vector(x1 - x0, [0.0; 4])?;
+        let mut top_index = None;
+        let mut bottom_index = None;
+        for (offset, target_row) in target_rows.chunks_mut(target_width).enumerate() {
+            let y = y0 + start / target_width + offset;
+            check(hooks)?;
+            let py = y as f64 + 0.5;
+            if py < dy || py >= dy + dh {
+                continue;
+            }
+            let fy = clamp(sy + (py - dy) * sh / dh, sy, sh) - 0.5;
+            let iy = fy.floor() as i64;
+            let ty = (fy - iy as f64) as f32;
+            // Adjacent destination rows usually share a source row. Cache only
+            // horizontal interpolation; vertical interpolation keeps its original
+            // operation order and rounding for every pixel.
+            if bottom_index == Some(iy) {
+                std::mem::swap(&mut top_samples, &mut bottom_samples);
+                std::mem::swap(&mut top_index, &mut bottom_index);
+            }
+            if top_index != Some(iy) {
+                horizontal_samples(&mut top_samples, row(iy), &columns);
+                top_index = Some(iy);
+            }
+            if bottom_index != Some(iy + 1) {
+                horizontal_samples(&mut bottom_samples, row(iy + 1), &columns);
+                bottom_index = Some(iy + 1);
+            }
+            let destination = target_row
+                .get_mut(x0..x1)
+                .ok_or(Error::Invalid("compositor row"))?;
+            for (((pixel, column), top), bottom) in destination
+                .iter_mut()
+                .zip(&columns)
+                .zip(&top_samples)
+                .zip(&bottom_samples)
+            {
+                if column.is_none() {
+                    continue;
+                }
+                let source = std::array::from_fn(|k| {
+                    let top = top.get(k).copied().unwrap_or(0.0);
+                    let bottom = bottom.get(k).copied().unwrap_or(0.0);
+                    top + (bottom - top) * ty
+                });
+                over(pixel, source, placement.opacity);
+            }
         }
-        let fy = clamp(sy + (py - dy) * sh / dh, sy, sh) - 0.5;
-        let iy = fy.floor() as i64;
-        let ty = (fy - iy as f64) as f32;
-        let top = row(iy);
-        let bottom = row(iy + 1);
-        let start = y * target.width as usize;
-        let destination = target
-            .pixels
-            .get_mut(start + x0..start + x1)
-            .ok_or(Error::Invalid("compositor row"))?;
-        for (pixel, column) in destination.iter_mut().zip(&columns) {
-            let Some((ix, tx)) = *column else { continue };
-            let a = top.get(ix as usize).copied().unwrap_or([0.0; 4]);
-            let b = top.get((ix + 1) as usize).copied().unwrap_or([0.0; 4]);
-            let c = bottom.get(ix as usize).copied().unwrap_or([0.0; 4]);
-            let d = bottom.get((ix + 1) as usize).copied().unwrap_or([0.0; 4]);
-            let source = std::array::from_fn(|k| {
-                let a = a.get(k).copied().unwrap_or(0.0);
-                let b = b.get(k).copied().unwrap_or(0.0);
-                let c = c.get(k).copied().unwrap_or(0.0);
-                let d = d.get(k).copied().unwrap_or(0.0);
-                let top = a + (b - a) * tx;
-                top + (c + (d - c) * tx - top) * ty
-            });
-            over(pixel, source, placement.opacity);
-        }
-    }
+        Ok(())
+    })?;
     drop(reduced);
     Ok(())
 }
+fn horizontal_samples(output: &mut [[f32; 4]], row: &[[f32; 4]], columns: &[Option<(i64, f32)>]) {
+    for (sample, column) in output.iter_mut().zip(columns) {
+        let Some((ix, tx)) = *column else { continue };
+        let a = row.get(ix as usize).copied().unwrap_or([0.0; 4]);
+        let b = row.get((ix + 1) as usize).copied().unwrap_or([0.0; 4]);
+        *sample = std::array::from_fn(|k| {
+            let a = a.get(k).copied().unwrap_or(0.0);
+            let b = b.get(k).copied().unwrap_or(0.0);
+            a + (b - a) * tx
+        });
+    }
+}
+
 fn blur(image: &mut Image, radius: u32, hooks: &dyn ExecutionHooks) -> Result<()> {
     if radius == 0 {
         return Ok(());

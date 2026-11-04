@@ -55,7 +55,9 @@ owns scheduling, retries, checkpoints and the aggregate byte policy; see the
 [engine job contract](../../crates/engine/README.md#background-jobs-and-byte-policy).
 Persistent job artifacts use content keys; frame/glyph caches stay with their data
 owners and share accounting leases. Processing crates receive
-progress and cancellation hooks and never build their own.
+progress and cancellation hooks and never build their own. Render row tasks run
+through engine-owned scoped execution; native conversion receives the same
+bounded worker allowance. See [kernel execution](../../crates/engine/README.md#render-kernel-execution).
 
 **Commands.** Every project edit is an engine command with a stable ID, label,
 parameter schema and enabled predicate. UI, CLI, MCP and plugins all dispatch

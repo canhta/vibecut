@@ -425,10 +425,48 @@ pub struct RgbaConverter {
 }
 impl RgbaConverter {
     pub fn new() -> Result<Self> {
+        Self::with_threads(1)
+    }
+    /// Bounded FFmpeg conversion concurrency (1..=8), supplied and accounted
+    /// by the execution owner. Pixel/color settings are unchanged.
+    pub fn with_threads(threads: u8) -> Result<Self> {
         init()?;
         Ok(Self {
-            scaler: ffi::Scaler::new()?,
+            scaler: ffi::Scaler::with_threads(threads)?,
         })
+    }
+    /// Convert a horizontal sampling window with a 64-pixel reconstruction
+    /// halo on aligned NV12/YUV420P CPU frames. Returns the RGBA image and its
+    /// integer source-column origin; other layouts retain a full-frame result.
+    /// The requested range must be nonempty and inside the original width.
+    /// Only the requested interior is an exact replacement for full conversion.
+    pub fn convert_horizontal(
+        &mut self,
+        frame: &VideoFrame,
+        window: std::ops::Range<u32>,
+    ) -> Result<(VideoFrame, u32)> {
+        if window.start >= window.end || window.end > frame.width() {
+            return Err(MediaError::Invalid("conversion window"));
+        }
+        let cpu = frame.download()?;
+        let left = window.start.saturating_sub(64) / 128 * 128;
+        let right = window
+            .end
+            .saturating_add(64)
+            .div_ceil(128)
+            .saturating_mul(128)
+            .min(frame.width());
+        let cropped = ffi::horizontal_window(&cpu.inner, left, right)?;
+        let origin = if cropped.is_some() { left } else { 0 };
+        let source = cropped.as_ref().unwrap_or(&cpu.inner);
+        Ok((
+            VideoFrame {
+                inner: self.scaler.rgba(source)?,
+                time_base: frame.time_base,
+                presentation: frame.presentation,
+            },
+            origin,
+        ))
     }
     pub fn convert(&mut self, frame: &VideoFrame) -> Result<VideoFrame> {
         let cpu = frame.download()?;

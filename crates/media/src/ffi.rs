@@ -375,11 +375,61 @@ pub(super) fn audio_buffer(
     Ok(frame)
 }
 
+/// Aligned integer window on supported 8-bit 4:2:0 CPU layouts. The caller
+/// retains a wide halo for Lanczos chroma reconstruction, then samples only its
+/// interior. Other layouts and existing crop metadata keep the full-frame path.
+pub(super) fn horizontal_window(
+    source: &ff::frame::Video,
+    left: u32,
+    right: u32,
+) -> Result<Option<ff::frame::Video>> {
+    if !matches!(
+        source.format(),
+        ff::format::Pixel::NV12 | ff::format::Pixel::YUV420P
+    ) || !source.width().is_multiple_of(2)
+    {
+        return Ok(None);
+    }
+    if left >= right || right > source.width() || !left.is_multiple_of(128) {
+        return Err(MediaError::Invalid("conversion window"));
+    }
+    let mut cropped = reference_video(source)?;
+    // SAFETY: reference_video retains the admitted source allocation. Bounds
+    // above keep a nonempty window inside it; flags=0 preserves FFmpeg's plane
+    // alignment (never AV_FRAME_CROP_UNALIGNED). Only CPU layouts are admitted.
+    // The original frame and its data pointers remain untouched.
+    unsafe {
+        let frame = &mut *cropped.as_mut_ptr();
+        if frame.crop_left != 0
+            || frame.crop_right != 0
+            || frame.crop_top != 0
+            || frame.crop_bottom != 0
+        {
+            return Ok(None);
+        }
+        frame.crop_left = left as usize;
+        frame.crop_right = (source.width() - right) as usize;
+        let status = ff::ffi::av_frame_apply_cropping(cropped.as_mut_ptr(), 0);
+        if status < 0 {
+            return Err(error("apply aligned conversion window")(ff::Error::from(
+                status,
+            )));
+        }
+    }
+    if cropped.width() != right - left || cropped.height() != source.height() {
+        return Ok(None);
+    }
+    Ok(Some(cropped))
+}
+
 /// Frame-aware swscale path: the safe wrapper's legacy sws_scale call ignores
 /// frame color/chroma metadata and its conversion return code.
 pub(super) struct Scaler(std::ptr::NonNull<ff::ffi::SwsContext>);
 impl Scaler {
-    pub fn new() -> Result<Self> {
+    pub fn with_threads(threads: u8) -> Result<Self> {
+        if !(1..=8).contains(&threads) {
+            return Err(MediaError::Invalid("conversion thread count"));
+        }
         // SAFETY: new context has no initialized legacy source/destination state;
         // sws_scale_frame dynamically configures it from each pair of frames.
         unsafe {
@@ -398,6 +448,17 @@ impl Scaler {
             );
             if status < 0 {
                 return Err(error("configure quality scaler")(ff::Error::from(status)));
+            }
+            let status = av_opt_set_int(
+                context.as_ptr().cast(),
+                c"threads".as_ptr(),
+                i64::from(threads),
+                0,
+            );
+            if status < 0 {
+                return Err(error("configure conversion threads")(ff::Error::from(
+                    status,
+                )));
             }
             Ok(result)
         }

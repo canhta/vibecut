@@ -640,3 +640,143 @@ fn software_h264_open_rejection_reports_the_native_failure() {
         })
     ));
 }
+
+#[test]
+fn bounded_conversion_threads_preserve_all_decoded_rgba_rows() {
+    for threads in [0, 9, u8::MAX] {
+        assert!(matches!(
+            media::RgbaConverter::with_threads(threads),
+            Err(media::MediaError::Invalid(_))
+        ));
+    }
+    let Some(path) = source() else {
+        return;
+    };
+    for preference in [DecodePreference::Software, DecodePreference::Hardware] {
+        let mut reader = PacketReader::open(&path).unwrap();
+        let stream = reader
+            .probe()
+            .streams
+            .iter()
+            .find(|s| s.kind == StreamKind::Video)
+            .unwrap()
+            .clone();
+        let mut decoder = VideoDecoder::new(&stream, preference).unwrap();
+        let mut sequential = media::RgbaConverter::new().unwrap();
+        let mut parallel = media::RgbaConverter::with_threads(4).unwrap();
+        let mut frames = 0;
+        let mut compare = |frame: media::VideoFrame| {
+            let expected = sequential.convert(&frame).unwrap();
+            let actual = parallel.convert(&frame).unwrap();
+            assert_eq!(actual.pts().unwrap(), expected.pts().unwrap());
+            assert_eq!(actual.color(), expected.color());
+            assert_eq!(actual.premultiplied_alpha(), expected.premultiplied_alpha());
+            let width = actual.width() as usize * 4;
+            for (a, b) in actual
+                .plane(0)
+                .unwrap()
+                .chunks(actual.stride(0).unwrap())
+                .zip(
+                    expected
+                        .plane(0)
+                        .unwrap()
+                        .chunks(expected.stride(0).unwrap()),
+                )
+            {
+                assert_eq!(&a[..width], &b[..width]);
+            }
+            frames += 1;
+        };
+        while let Some(packet) = reader.next_packet().unwrap() {
+            if packet.stream() == stream.index {
+                for frame in decoder.decode(&packet).unwrap() {
+                    compare(frame);
+                }
+            }
+        }
+        for frame in decoder.flush().unwrap() {
+            compare(frame);
+        }
+        assert!(frames >= 29);
+    }
+}
+
+#[test]
+fn aligned_horizontal_conversion_matches_full_frame_at_fractional_crop_neighbors() {
+    let Some(path) = common::generate(
+        "conversion windows",
+        "conversion-window.mp4",
+        &[
+            "-f",
+            "lavfi",
+            "-i",
+            "testsrc2=size=770x130:rate=30:duration=0.1",
+            "-c:v",
+            "libx264",
+            "-pix_fmt",
+            "yuv420p",
+            "-color_primaries",
+            "bt709",
+            "-color_trc",
+            "bt709",
+            "-colorspace",
+            "bt709",
+        ],
+    ) else {
+        return;
+    };
+    for preference in [DecodePreference::Software, DecodePreference::Hardware] {
+        let mut reader = PacketReader::open(&path).unwrap();
+        let stream = reader
+            .probe()
+            .streams
+            .iter()
+            .find(|s| s.kind == StreamKind::Video)
+            .unwrap()
+            .clone();
+        let mut decoder = VideoDecoder::new(&stream, preference).unwrap();
+        let mut full = media::RgbaConverter::new().unwrap();
+        let mut windowed = media::RgbaConverter::with_threads(4).unwrap();
+        let mut frames = Vec::new();
+        while let Some(packet) = reader.next_packet().unwrap() {
+            if packet.stream() == stream.index {
+                frames.extend(decoder.decode(&packet).unwrap());
+            }
+        }
+        frames.extend(decoder.flush().unwrap());
+        assert_eq!(frames.len(), 3);
+        for frame in frames {
+            let reference = full.convert(&frame).unwrap();
+            for range in [0..1, 1..2, 127..128, 128..129, 255..433, 769..770, 0..770] {
+                let (actual, origin) = windowed.convert_horizontal(&frame, range.clone()).unwrap();
+                assert!(origin <= range.start && origin + actual.width() >= range.end);
+                assert_eq!(actual.pts().unwrap(), reference.pts().unwrap());
+                assert_eq!(actual.color(), reference.color());
+                for (a, b) in actual
+                    .plane(0)
+                    .unwrap()
+                    .chunks(actual.stride(0).unwrap())
+                    .zip(
+                        reference
+                            .plane(0)
+                            .unwrap()
+                            .chunks(reference.stride(0).unwrap()),
+                    )
+                {
+                    assert_eq!(
+                        &a[(range.start - origin) as usize * 4..(range.end - origin) as usize * 4],
+                        &b[range.start as usize * 4..range.end as usize * 4]
+                    );
+                }
+            }
+            // Ranges are hostile API data, not iterator bounds.
+            #[allow(clippy::reversed_empty_ranges)]
+            for range in [0..0, 770..771, 2..1] {
+                assert!(matches!(
+                    windowed.convert_horizontal(&frame, range),
+                    Err(media::MediaError::Invalid(_))
+                ));
+            }
+        }
+    }
+}

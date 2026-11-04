@@ -84,6 +84,32 @@ impl Image {
         transfer: u32,
         hooks: &dyn ExecutionHooks,
     ) -> Result<Self> {
+        Self::from_rgba8_strided_at(
+            width,
+            height,
+            bytes,
+            stride,
+            premultiplied,
+            transfer,
+            None,
+            hooks,
+        )
+    }
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn from_rgba8_strided_at(
+        width: u32,
+        height: u32,
+        bytes: &[u8],
+        stride: usize,
+        premultiplied: bool,
+        transfer: u32,
+        window: Option<(u32, u32)>,
+        hooks: &dyn ExecutionHooks,
+    ) -> Result<Self> {
+        let (full_width, x) = window.unwrap_or((width, 0));
+        if x.checked_add(width).is_none_or(|end| end > full_width) {
+            return Err(Error::Invalid("RGBA window"));
+        }
         Self::bytes(width, height)?;
         if !matches!(transfer, 1 | 13 | 8) {
             return Err(Error::Unsupported("transfer function"));
@@ -112,32 +138,59 @@ impl Image {
         {
             return Err(Error::Invalid("RGBA input size/premultiplication"));
         }
-        let mut image = Self::new(width, height, [0.0; 4], hooks)?;
+        let size = Self::bytes(full_width, height)?;
+        let lease = hooks.reserve(MemoryKind::Compositor, size)?;
+        let mut pixels = vector((size / 16) as usize, [0.0; 4])?;
         let lut = decode_lut(transfer);
-        for (destination, source) in image.pixels.chunks_mut(width as usize).zip(rows()) {
-            crate::check(hooks)?;
-            if !premultiplied {
-                for (dst, &[r, g, b, a]) in destination.iter_mut().zip(source.as_chunks::<4>().0) {
-                    let alpha = f32::from(a) / 255.0;
-                    let channel = |v: u8| lut.get(usize::from(v)).copied().unwrap_or(0.0) * alpha;
-                    *dst = [channel(r), channel(g), channel(b), alpha];
+        row_chunks(
+            &mut pixels,
+            full_width as usize,
+            hooks,
+            |start, destination| {
+                let begin_row = start / full_width as usize;
+                for (destination, source) in destination
+                    .chunks_mut(full_width as usize)
+                    .zip(rows().skip(begin_row))
+                {
+                    crate::check(hooks)?;
+                    let destination = destination
+                        .get_mut(x as usize..(x + width) as usize)
+                        .ok_or(Error::Invalid("RGBA window row"))?;
+                    if !premultiplied {
+                        for (dst, &[r, g, b, a]) in
+                            destination.iter_mut().zip(source.as_chunks::<4>().0)
+                        {
+                            let alpha = f32::from(a) / 255.0;
+                            let channel =
+                                |v: u8| lut.get(usize::from(v)).copied().unwrap_or(0.0) * alpha;
+                            *dst = [channel(r), channel(g), channel(b), alpha];
+                        }
+                    } else {
+                        for (dst, &[r, g, b, a]) in
+                            destination.iter_mut().zip(source.as_chunks::<4>().0)
+                        {
+                            let alpha = f32::from(a) / 255.0;
+                            let channel = |v: u8| {
+                                let value = if alpha > 0.0 {
+                                    (f32::from(v) / alpha).round().clamp(0.0, 255.0) as usize
+                                } else {
+                                    usize::from(v)
+                                };
+                                lut.get(value).copied().unwrap_or(0.0) * alpha
+                            };
+                            *dst = [channel(r), channel(g), channel(b), alpha];
+                        }
+                    }
                 }
-            } else {
-                for (dst, &[r, g, b, a]) in destination.iter_mut().zip(source.as_chunks::<4>().0) {
-                    let alpha = f32::from(a) / 255.0;
-                    let channel = |v: u8| {
-                        let value = if alpha > 0.0 {
-                            (f32::from(v) / alpha).round().clamp(0.0, 255.0) as usize
-                        } else {
-                            usize::from(v)
-                        };
-                        lut.get(value).copied().unwrap_or(0.0) * alpha
-                    };
-                    *dst = [channel(r), channel(g), channel(b), alpha];
-                }
-            }
-        }
-        Ok(image)
+                Ok(())
+            },
+        )?;
+        Ok(Self {
+            width: full_width,
+            height,
+            pixels,
+            _lease: lease,
+        })
     }
     /// Straight transfer-encoded RGBA8 at the image/FFmpeg boundary.
     pub fn rgba8(&self, transfer: u32, hooks: &dyn ExecutionHooks) -> Result<Rgba8> {
@@ -150,39 +203,58 @@ impl Image {
     }
     fn pack(&self, transfer: u32, opaque: bool, hooks: &dyn ExecutionHooks) -> Result<Rgba8> {
         crate::check(hooks)?;
-        let lut = encode_lut(transfer)?;
+        let lut = packing_lut(transfer)?;
         let bytes = self.pixels.len() * 4;
         let lease = hooks.reserve(MemoryKind::Export, bytes as u64)?;
         let mut output = vector(bytes, 0u8)?;
-        if opaque {
-            for (&[r, g, b, _], dst) in self.pixels.iter().zip(output.as_chunks_mut::<4>().0) {
-                let channel = |v: f32| {
-                    lut.get((v.clamp(0.0, 1.0) * 65535.0).round() as usize)
-                        .copied()
-                        .unwrap_or(0)
-                };
-                *dst = [channel(r), channel(g), channel(b), 255];
-            }
-        } else {
-            for (&[r, g, b, a], dst) in self.pixels.iter().zip(output.as_chunks_mut::<4>().0) {
-                let channel = |v: f32| {
-                    let straight = if a > 0.0 {
-                        (v / a).clamp(0.0, 1.0)
+        row_chunks(
+            &mut output,
+            self.width as usize * 4,
+            hooks,
+            |start, output| {
+                let source = self
+                    .pixels
+                    .get(start / 4..(start + output.len()) / 4)
+                    .ok_or(Error::Invalid("packing source rows"))?;
+                for (source, output) in source
+                    .chunks(self.width as usize)
+                    .zip(output.chunks_mut(self.width as usize * 4))
+                {
+                    crate::check(hooks)?;
+                    if opaque {
+                        for (&[r, g, b, _], dst) in source.iter().zip(output.as_chunks_mut::<4>().0)
+                        {
+                            let [r, g, b, _] = [r, g, b, 0.0].map(|v| v.clamp(0.0, 1.0).to_bits());
+                            *dst = [
+                                lut.encode_bits(r),
+                                lut.encode_bits(g),
+                                lut.encode_bits(b),
+                                255,
+                            ];
+                        }
                     } else {
-                        0.0
-                    };
-                    lut.get((straight * 65535.0).round() as usize)
-                        .copied()
-                        .unwrap_or(0)
-                };
-                *dst = [
-                    channel(r),
-                    channel(g),
-                    channel(b),
-                    (a * 255.0).round() as u8,
-                ];
-            }
-        }
+                        for (&[r, g, b, a], dst) in source.iter().zip(output.as_chunks_mut::<4>().0)
+                        {
+                            let channel = |v: f32| {
+                                let straight = if a > 0.0 {
+                                    (v / a).clamp(0.0, 1.0)
+                                } else {
+                                    0.0
+                                };
+                                lut.encode(straight)
+                            };
+                            *dst = [
+                                channel(r),
+                                channel(g),
+                                channel(b),
+                                (a * 255.0).round() as u8,
+                            ];
+                        }
+                    }
+                }
+                Ok(())
+            },
+        )?;
         Ok(Rgba8 {
             bytes: output,
             _lease: lease,
@@ -310,6 +382,100 @@ fn encode_lut(transfer: u32) -> Result<&'static [u8]> {
     }))
 }
 
+// A coarse float-bit bucket contains at most one output-byte transition.
+// Store that exact transition, including the old 16-bit LUT's quantization,
+// so packing needs no per-channel float multiply, round, or integer conversion.
+struct PackingLut(Vec<u64>);
+impl PackingLut {
+    #[inline]
+    fn encode(&self, value: f32) -> u8 {
+        self.encode_bits(value.clamp(0.0, 1.0).to_bits())
+    }
+    #[inline]
+    fn encode_bits(&self, bits: u32) -> u8 {
+        self.0.get((bits >> 16) as usize).map_or(0, |&bucket| {
+            (bucket >> 32) as u8 + u8::from(bits >= bucket as u32)
+        })
+    }
+}
+fn packing_lut(transfer: u32) -> Result<&'static PackingLut> {
+    static SRGB: OnceLock<PackingLut> = OnceLock::new();
+    static VIDEO: OnceLock<PackingLut> = OnceLock::new();
+    static LINEAR: OnceLock<PackingLut> = OnceLock::new();
+    let original = encode_lut(transfer)?;
+    let slot = match transfer {
+        13 => &SRGB,
+        8 => &LINEAR,
+        _ => &VIDEO,
+    };
+    Ok(slot.get_or_init(|| {
+        let encode = |bits| {
+            original
+                .get((f32::from_bits(bits) * 65535.0).round() as usize)
+                .copied()
+                .unwrap_or(255)
+        };
+        let transitions: [u32; 256] = std::array::from_fn(|byte| {
+            let (mut low, mut high) = (0, 1.0f32.to_bits());
+            while low < high {
+                let mid = low + (high - low) / 2;
+                if usize::from(encode(mid)) < byte {
+                    low = mid + 1;
+                } else {
+                    high = mid;
+                }
+            }
+            low
+        });
+        PackingLut(
+            (0..=(1.0f32.to_bits() >> 16))
+                .map(|prefix| {
+                    let below = encode(prefix << 16);
+                    // Low word: next transition; high word: output below it.
+                    (u64::from(below) << 32)
+                        | u64::from(
+                            transitions
+                                .get(usize::from(below) + 1)
+                                .copied()
+                                .unwrap_or(u32::MAX),
+                        )
+                })
+                .collect(),
+        )
+    }))
+}
+
+/// Split only at row boundaries. The engine runs and joins borrowed tasks;
+/// image ownership and every byte lease stay with the calling operation.
+pub(crate) fn row_chunks<T: Send>(
+    pixels: &mut [T],
+    stride: usize,
+    hooks: &dyn ExecutionHooks,
+    kernel: impl Fn(usize, &mut [T]) -> Result<()> + Sync,
+) -> Result<()> {
+    let threads = hooks.parallelism().clamp(1, 8);
+    if stride == 0 || !pixels.len().is_multiple_of(stride) {
+        return Err(Error::Invalid("kernel row geometry"));
+    }
+    if pixels.len() < 65536 || threads == 1 {
+        return kernel(0, pixels);
+    }
+    let _tasks = hooks.reserve(MemoryKind::Compositor, 4096)?;
+    let chunk = pixels.len().div_ceil(stride).div_ceil(threads) * stride;
+    let mut work = Vec::new();
+    work.try_reserve_exact(threads)?;
+    for (index, pixels) in pixels.chunks_mut(chunk).enumerate() {
+        let kernel = &kernel;
+        work.push(move || kernel(index * chunk, pixels));
+    }
+    let mut tasks: Vec<&mut (dyn FnMut() -> Result<()> + Send)> = Vec::new();
+    tasks.try_reserve_exact(threads)?;
+    for task in &mut work {
+        tasks.push(task);
+    }
+    hooks.run_tasks(&mut tasks)
+}
+
 #[cfg(test)]
 mod tests {
     #![allow(clippy::unwrap_used, clippy::indexing_slicing)]
@@ -323,6 +489,40 @@ mod tests {
         }
         fn reserve(&self, _: MemoryKind, _: u64) -> Result<Box<dyn Reservation>> {
             Ok(Box::new(Lease))
+        }
+    }
+    #[test]
+    fn packing_buckets_preserve_every_quantized_transition() {
+        for transfer in [1, 8, 13] {
+            let original = encode_lut(transfer).unwrap();
+            assert!(original.windows(2).all(|pair| pair[0] <= pair[1]));
+            let actual = packing_lut(transfer).unwrap();
+            let reference =
+                |bits| original[(f32::from_bits(bits).clamp(0.0, 1.0) * 65535.0).round() as usize];
+            for (prefix, bucket) in actual.0.iter().enumerate() {
+                let start = (prefix as u32) << 16;
+                let end = (start + 65535).min(1.0f32.to_bits());
+                // Monotonicity plus endpoints and the exact boundary prove
+                // equality for all intervening f32 values, not only samples.
+                for bits in [
+                    start,
+                    end,
+                    (*bucket as u32).saturating_sub(1),
+                    *bucket as u32,
+                ] {
+                    if bits <= 1.0f32.to_bits() {
+                        assert_eq!(
+                            actual.encode(f32::from_bits(bits)),
+                            reference(bits),
+                            "{transfer} {bits:x}"
+                        );
+                    }
+                }
+                assert!(u16::from(reference(end)) <= u16::from(reference(start)) + 1);
+            }
+            for value in [-1.0, -0.0, 0.0, 1.0, 2.0] {
+                assert_eq!(actual.encode(value), reference(value.to_bits()));
+            }
         }
     }
     #[test]
