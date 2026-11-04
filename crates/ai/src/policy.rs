@@ -175,6 +175,7 @@ pub struct Scope {
     pub target_language: Option<LanguageTag>,
     pub source_samples: SampleRange,
     pub sample_rate: u32,
+    /// Wire-payload ceiling (encoded upload bytes), not in-memory f32 PCM.
     pub max_bytes: u64,
 }
 /// In-memory approval only; never deserialized from projects or provider responses.

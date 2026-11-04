@@ -23,10 +23,13 @@ pub const BACKEND: &str = "openai";
 pub const MAX_UPLOAD_BYTES: u64 = 25_000_000;
 /// Successful transcripts and error envelopes are small; cap hostile responses.
 pub const MAX_RESPONSE_BYTES: usize = 1024 * 1024;
+/// The only admitted provider base URL in v1; no proxies or custom processors.
+pub const BASE_URL: &str = "https://api.openai.com/v1";
+/// The only admitted transcription endpoint.
+pub const ENDPOINT: &str = "https://api.openai.com/v1/audio/transcriptions";
 /// Published list price, integer micro-USD per audio second ($0.0045/min).
 const PRICE_MICROS_PER_SECOND: u64 = 75;
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(120);
-const ENDPOINT_PATH: &str = "audio/transcriptions";
 const POLICY_URL: &str = "https://developers.openai.com/api/docs/guides/your-data";
 const DOCS_URL: &str = "https://developers.openai.com/api/docs/guides/speech-to-text";
 const TRAINING_DISCLOSURE: &str = "OpenAI documents that data sent to /v1/audio/transcriptions is not used for training unless the account explicitly opts in (checked 2026-11-04).";
@@ -216,7 +219,7 @@ impl OpenAiTranscriber {
                 if backend.as_str() != BACKEND {
                     return Err(Error::Unsupported);
                 }
-                endpoint(base_url.as_str())?;
+                official_base_url(base_url.as_str())?;
             }
             Location::Local { .. } => return Err(Error::Invalid("OpenAI requires remote config")),
         }
@@ -248,7 +251,7 @@ impl OpenAiTranscriber {
             operation: Operation::Transcribe,
             provider: self.config.id().clone(),
             model: self.config.model().clone(),
-            endpoint: NfcText::from(self.endpoint()?),
+            endpoint: NfcText::from(ENDPOINT),
             language: scope.source_language.clone(),
             format: NfcText::from(format!(
                 "audio/wav; mono 16-bit PCM at {} Hz",
@@ -272,13 +275,6 @@ impl OpenAiTranscriber {
             return Err(Error::Invalid("transcription text payload"));
         }
         self.capabilities(scope).check(scope)
-    }
-
-    fn endpoint(&self) -> Result<String, Error> {
-        match self.config.location() {
-            Location::Remote { base_url, .. } => endpoint(base_url.as_str()),
-            Location::Local { .. } => Err(Error::Invalid("OpenAI requires remote config")),
-        }
     }
 }
 impl fmt::Debug for OpenAiTranscriber {
@@ -377,12 +373,14 @@ impl OpenAiTranscriber {
     }
 }
 
-fn endpoint(base_url: &str) -> Result<String, Error> {
-    let base = base_url.trim_end_matches('/');
-    if base.is_empty() || base.contains(['\r', '\n']) {
-        return Err(Error::Invalid("provider endpoint"));
+fn official_base_url(base_url: &str) -> Result<(), Error> {
+    if base_url.trim_end_matches('/') == BASE_URL {
+        Ok(())
+    } else {
+        // The OpenAI retention/training disclosure is endpoint-specific; never
+        // apply it to a proxy, lookalike host or unsupported version path.
+        Err(Error::Unsupported)
     }
-    Ok(format!("{base}/{ENDPOINT_PATH}"))
 }
 
 fn duration_micros(scope: &Scope) -> Result<u64, Error> {
@@ -433,13 +431,9 @@ fn build_request(
     );
     file(&mut body, &boundary, "audio.wav", &wav);
     body.extend_from_slice(format!("--{boundary}--\r\n").as_bytes());
-    let endpoint = match upload.scope.provider.location() {
-        Location::Remote { base_url, .. } => endpoint(base_url.as_str())?,
-        Location::Local { .. } => return Err(Error::Invalid("OpenAI requires remote config")),
-    };
     Ok(HttpRequest {
         method: "POST",
-        url: endpoint,
+        url: ENDPOINT.into(),
         headers: vec![
             (
                 "Authorization".into(),

@@ -16,3 +16,21 @@ Offline only. Requests are never replayed against the network in ordinary CI.
 
 Refresh the recorded success fixture from a consented live run when the response
 schema changes; update this note with the date and source.
+
+## Live speech probe
+
+The ignored live test prefers a bounded synthetic probe at
+`target/fixtures/openai-review/speech.f32` (96,231 mono f32 samples, 16 kHz,
+SHA-256 `567076be368500f40ae52ac6cda1d6a33084639342c69c7476dfbd837ea4f34b`).
+If it is absent the test regenerates it on macOS with:
+
+```sh
+say -v Samantha -o target/fixtures/openai-live/speech.aiff \
+  'The quick brown fox jumps over the lazy dog. Today we are testing speech recognition in a video editor.'
+ffmpeg -hide_banner -loglevel error -y \
+  -i target/fixtures/openai-live/speech.aiff \
+  -ar 16000 -ac 1 -f f32le target/fixtures/openai-live/speech.f32
+```
+
+The probe is synthetic, generated locally, and never checked in. The test asserts
+nine spoken anchors and logs only counts, never transcript text.

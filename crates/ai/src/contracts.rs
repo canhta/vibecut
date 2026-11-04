@@ -150,8 +150,14 @@ pub(crate) fn checkpoint(hooks: &dyn ExecutionHooks, stage: Stage) -> Result<(),
     }
     Ok(())
 }
+/// Per-invocation f32 PCM safety ceiling, independent of the wire-upload ceiling.
+/// 64 MiB admits a maximum advertised 25 MB PCM16 upload (~50 MB decoded) with
+/// margin. Adapters that upload derive their own encoded byte limit from
+/// `Scope::max_bytes` so a valid container is not rejected by its larger decoded form.
+pub const MAX_PCM_BYTES: u64 = 64 * 1024 * 1024;
 /// Immutable mono PCM view. Offset is already in source samples; no second offset
 /// is applied by assembly. Decode/resample and content hashing belong to callers.
+/// Validation uses `MAX_PCM_BYTES`, never the wire-upload ceiling.
 #[derive(Clone, Copy)]
 pub struct AudioWindow<'a> {
     pub samples: &'a [f32],
@@ -177,7 +183,7 @@ impl AudioWindow<'_> {
             return Err(Error::Invalid("audio window"));
         }
         let bytes = self.range.len().checked_mul(4).ok_or(Error::Payload)?;
-        if bytes > scope.max_bytes {
+        if bytes > MAX_PCM_BYTES {
             return Err(Error::Payload);
         }
         Ok(())

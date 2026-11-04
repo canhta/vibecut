@@ -126,12 +126,16 @@ matching or splitting of words at chunk boundaries.
 
 `openai::OpenAiTranscriber` is the cloud file adapter. Only `gpt-transcribe` is
 admitted; the deprecated `whisper-1` and other models are refused at construction.
-The tagged provider config must be `Location::Remote` with backend `openai`, an HTTPS
-`base_url` including the API version path (for example
-`https://api.openai.com/v1`), and an `auth_ref` naming the external secret entry. The
-composition root resolves that entry from `OPENAI_API_KEY` for development or the OS
-keychain for the desktop app, then injects it as `openai::ApiKey`; the key is never
-serialized, logged or printed by `Debug`, and request headers/body are redacted too.
+The tagged provider config must be `Location::Remote` with backend `openai`, the
+official `base_url` `https://api.openai.com/v1`, and an `auth_ref` naming the external
+secret entry. Custom processors, proxies, lookalike hosts, regional endpoints and
+other version paths are refused in v1 because the retention/training disclosure is
+endpoint-specific. The composition root resolves that entry from `OPENAI_API_KEY` for
+development or the OS keychain for the desktop app, then injects it as
+`openai::ApiKey`; the key is never serialized, logged or printed by `Debug`, and
+request headers/body are redacted too. The direct transport dependency stays on
+`ureq` 2.12.1 because `sherpa-onnx-sys` pins ureq 2 and one version beats adopting a
+second major (coordinator decision 2026-11-04).
 `keyring` 4.2.0 is MIT OR Apache-2.0 and its native stores cover macOS Keychain and
 Windows Credential Manager; key storage remains app/CLI composition, not this crate.
 
@@ -143,7 +147,10 @@ endpoint, language, mode, byte ceiling or operation refuses before transport. An
 `AuthorizedUpload` value is created only after capability, audio and consent checks,
 so no request can be built without a token. Uploads are multipart WAV (mono PCM16),
 `model=gpt-transcribe`, `response_format=json` and a `languages[]` hint. Files are
-limited to 25 MB and responses to 1 MiB; neither is a duration guarantee.
+limited to 25 MB and responses to 1 MiB; neither is a duration guarantee. Consent's
+`max_bytes` bounds the encoded wire payload (including the 44-byte WAV header), while
+`AudioWindow` separately admits at most 64 MiB of in-memory f32 PCM so a valid
+compressed container is not rejected by its larger decoded form.
 
 `gpt-transcribe` returns text and detected languages but no timestamps. The adapter
 therefore advertises no timing units, returns one untimed segment per invocation with
@@ -166,7 +173,9 @@ typed error envelopes, a malformed body and an injected fake transport. It cover
 consent refusal before network, payload/provider consent invalidation, multipart and
 WAV shape, stable IDs, disclosure fields, error categories, redaction and bounded
 response handling. The ignored `live_openai_transcription_uses_production_transport`
-requires `VIBECUT_LIVE_AI=1` and `OPENAI_API_KEY` and performs one paid request.
+requires `VIBECUT_LIVE_AI=1` and `OPENAI_API_KEY`, uploads a bounded synthetic-speech
+probe and asserts nonempty text plus nine spoken anchors; see the fixture README for
+the reproduction command. It is the only test that reaches the network.
 
 ## Verification and limits
 

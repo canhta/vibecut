@@ -87,14 +87,18 @@ fn fixture(name: &str) -> Vec<u8> {
 }
 
 fn config_at(base_url: &str) -> ProviderConfig {
+    config_with("openai-transcribe", base_url)
+}
+
+fn config_with(id: &str, base_url: &str) -> ProviderConfig {
     ProviderConfig::new(
-        "openai-transcribe".into(),
+        id.into(),
         "gpt-transcribe".into(),
         OpenAiTranscriber::settings_fingerprint().into(),
         Location::Remote {
             backend: "openai".into(),
             base_url: base_url.into(),
-            auth_ref: "keychain:vibecut/openai".into(),
+            auth_ref: format!("keychain:vibecut/{id}").into(),
         },
     )
     .unwrap()
@@ -189,7 +193,7 @@ fn consented_upload_uses_recorded_fixture_and_stable_text_only_ids() {
         FakeTransport::ok(fixture("transcribe-success.json")),
         FakeTransport::ok(fixture("transcribe-success.json")),
     ]));
-    let provider = config_at("https://api.openai.com/v1");
+    let provider = config_at(ai::openai::BASE_URL);
     let transcriber = adapter(&fake, provider.clone());
     let scope = scope(provider);
     let approved = consent(&scope);
@@ -272,7 +276,7 @@ fn adapter_chunks_assemble_in_source_order_without_invented_timing() {
         FakeTransport::ok(fixture("transcribe-success.json")),
         FakeTransport::ok(fixture("transcribe-empty.json")),
     ]));
-    let provider = config_at("https://api.openai.com/v1");
+    let provider = config_at(ai::openai::BASE_URL);
     let transcriber = adapter(&fake, provider.clone());
     let samples = pcm();
     let first_scope = scope(provider.clone());
@@ -326,11 +330,43 @@ fn adapter_chunks_assemble_in_source_order_without_invented_timing() {
 }
 
 #[test]
+fn only_the_official_openai_destination_can_be_constructed() {
+    let fake = Arc::new(FakeTransport::new(Vec::new()));
+    for destination in [
+        "https://third-party.example/v1",
+        "https://api.openai.com.evil.example/v1",
+        "https://api.openai.com/v1/audio/transcriptions",
+        "https://eu.api.openai.com/v1",
+    ] {
+        assert!(
+            matches!(
+                OpenAiTranscriber::new(
+                    config_at(destination),
+                    ApiKey::new("test-key-not-real").unwrap(),
+                    fake.clone(),
+                ),
+                Err(Error::Unsupported)
+            ),
+            "unverified destination admitted: {destination}"
+        );
+    }
+    let provider = config_at("https://api.openai.com/v1/");
+    let transcriber = OpenAiTranscriber::new(
+        provider.clone(),
+        ApiKey::new("test-key-not-real").unwrap(),
+        fake,
+    )
+    .unwrap();
+    let disclosure = transcriber.disclosure(&scope(provider)).unwrap();
+    assert_eq!(disclosure.endpoint.as_str(), ai::openai::ENDPOINT);
+}
+
+#[test]
 fn no_network_before_consent_and_changed_payload_or_provider_is_refused() {
     let fake = Arc::new(FakeTransport::new(vec![FakeTransport::ok(fixture(
         "transcribe-success.json",
     ))]));
-    let provider = config_at("https://api.openai.com/v1");
+    let provider = config_at(ai::openai::BASE_URL);
     let transcriber = adapter(&fake, provider.clone());
     let scope = scope(provider);
     let samples = pcm();
@@ -370,7 +406,7 @@ fn no_network_before_consent_and_changed_payload_or_provider_is_refused() {
     assert_eq!(fake.calls(), 0);
 
     let mut changed_provider = scope.clone();
-    changed_provider.provider = config_at("https://eu.api.openai.com/v1");
+    changed_provider.provider = config_with("openai-other", ai::openai::BASE_URL);
     let changed_provider_request = Request {
         scope: &changed_provider,
         consent: Some(&approved),
@@ -434,7 +470,7 @@ fn no_network_before_consent_and_changed_payload_or_provider_is_refused() {
 #[test]
 fn disclosure_states_duration_size_cost_and_transcription_specific_terms() {
     let fake = Arc::new(FakeTransport::new(Vec::new()));
-    let provider = config_at("https://api.openai.com/v1");
+    let provider = config_at(ai::openai::BASE_URL);
     let transcriber = adapter(&fake, provider.clone());
     let scope = scope(provider);
 
@@ -488,11 +524,104 @@ fn disclosure_states_duration_size_cost_and_transcription_specific_terms() {
     ));
 
     let mut changed_provider = scope;
-    changed_provider.provider = config_at("https://eu.api.openai.com/v1");
+    changed_provider.provider = config_with("openai-other", ai::openai::BASE_URL);
     assert!(matches!(
         transcriber.disclosure(&changed_provider),
         Err(Error::Unsupported)
     ));
+}
+
+#[test]
+fn advertised_wav_limit_is_usable_despite_larger_f32_memory() {
+    let fake = Arc::new(FakeTransport::new(vec![FakeTransport::ok(fixture(
+        "transcribe-empty.json",
+    ))]));
+    let provider = config_at(ai::openai::BASE_URL);
+    let transcriber = adapter(&fake, provider.clone());
+    let mut scope = scope(provider);
+    let samples = vec![0.0f32; 6_400_000];
+    scope.source_samples = ai::SampleRange::new(0, samples.len() as u64).unwrap();
+    scope.max_bytes = MAX_UPLOAD_BYTES;
+    let disclosure = transcriber.disclosure(&scope).unwrap();
+    assert_eq!(disclosure.upload_bytes, 12_800_044);
+    let approved = consent(&scope);
+    let request = Request {
+        scope: &scope,
+        consent: Some(&approved),
+    };
+    let result = ai::transcribe(
+        &transcriber,
+        AudioWindow {
+            samples: &samples,
+            range: scope.source_samples,
+            sample_rate: scope.sample_rate,
+        },
+        &request,
+        None,
+        &NoHooks,
+    );
+    assert!(
+        result.is_ok(),
+        "file below the disclosed 25 MB limit was rejected"
+    );
+    assert_eq!(fake.calls(), 1);
+}
+
+#[test]
+fn encoded_wav_ceiling_includes_header_overhead_and_is_exact() {
+    let fake = Arc::new(FakeTransport::new(vec![
+        FakeTransport::ok(fixture("transcribe-empty.json")),
+        FakeTransport::ok(fixture("transcribe-empty.json")),
+    ]));
+    let provider = config_at(ai::openai::BASE_URL);
+    let transcriber = adapter(&fake, provider.clone());
+
+    let mut exact = scope(provider.clone());
+    let samples = vec![0.0f32; 4_978];
+    exact.source_samples = ai::SampleRange::new(0, samples.len() as u64).unwrap();
+    exact.max_bytes = 10_000;
+    let approved = consent(&exact);
+    assert!(
+        ai::transcribe(
+            &transcriber,
+            AudioWindow {
+                samples: &samples,
+                range: exact.source_samples,
+                sample_rate: exact.sample_rate,
+            },
+            &Request {
+                scope: &exact,
+                consent: Some(&approved)
+            },
+            None,
+            &NoHooks,
+        )
+        .is_ok()
+    );
+
+    let mut over = scope(provider);
+    let samples = vec![0.0f32; 4_978];
+    over.source_samples = ai::SampleRange::new(0, samples.len() as u64).unwrap();
+    over.max_bytes = 9_999;
+    let approved = consent(&over);
+    assert!(matches!(
+        ai::transcribe(
+            &transcriber,
+            AudioWindow {
+                samples: &samples,
+                range: over.source_samples,
+                sample_rate: over.sample_rate,
+            },
+            &Request {
+                scope: &over,
+                consent: Some(&approved)
+            },
+            None,
+            &NoHooks,
+        ),
+        Err(Error::Payload)
+    ));
+    assert_eq!(fake.calls(), 1);
 }
 
 #[test]
@@ -537,7 +666,7 @@ fn provider_failures_are_typed_without_response_bodies_and_do_not_retry() {
         },
         FakeTransport::ok(vec![b'x'; ai::openai::MAX_RESPONSE_BYTES + 1]),
     ]));
-    let provider = config_at("https://api.openai.com/v1");
+    let provider = config_at(ai::openai::BASE_URL);
     let transcriber = adapter(&fake, provider.clone());
     let scope = scope(provider);
     let approved = consent(&scope);
@@ -595,7 +724,7 @@ fn empty_speech_returns_no_segments_and_capabilities_refuse_wrong_scope() {
         FakeTransport::ok(fixture("transcribe-empty.json")),
         FakeTransport::ok(fixture("transcribe-success.json")),
     ]));
-    let provider = config_at("https://api.openai.com/v1");
+    let provider = config_at(ai::openai::BASE_URL);
     let transcriber = adapter(&fake, provider.clone());
     let scope = scope(provider);
     let approved = consent(&scope);
@@ -681,7 +810,7 @@ fn empty_speech_returns_no_segments_and_capabilities_refuse_wrong_scope() {
 #[test]
 fn debug_output_redacts_keys_headers_audio_and_transcript_bodies() {
     let fake = Arc::new(FakeTransport::new(Vec::new()));
-    let provider = config_at("https://api.openai.com/v1");
+    let provider = config_at(ai::openai::BASE_URL);
     let transcriber = adapter(&fake, provider);
     assert!(!format!("{transcriber:?}").contains("test-key-not-real"));
     assert_eq!(
@@ -707,35 +836,123 @@ fn debug_output_redacts_keys_headers_audio_and_transcript_bodies() {
     assert!(!debug.contains("request"));
 }
 
+const LIVE_SPEECH: &str = "The quick brown fox jumps over the lazy dog. Today we are testing speech recognition in a video editor.";
+
+/// Load the bounded synthetic speech probe, or generate it with the documented
+/// macOS `say` + ffmpeg command when the reviewer fixture is unavailable.
+fn live_speech() -> Option<Vec<f32>> {
+    fn decode(bytes: &[u8]) -> Vec<f32> {
+        bytes
+            .as_chunks::<4>()
+            .0
+            .iter()
+            .map(|chunk| f32::from_le_bytes(*chunk))
+            .collect()
+    }
+    let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let recorded = root.join("../../target/fixtures/openai-review/speech.f32");
+    if let Ok(bytes) = fs::read(&recorded) {
+        return Some(decode(&bytes));
+    }
+    let dir = root.join("../../target/fixtures/openai-live");
+    fs::create_dir_all(&dir).ok()?;
+    let aiff = dir.join("speech.aiff");
+    let pcm = dir.join("speech.f32");
+    let status = std::process::Command::new("say")
+        .arg("-v")
+        .arg("Samantha")
+        .arg("-o")
+        .arg(&aiff)
+        .arg(LIVE_SPEECH)
+        .status()
+        .ok()?;
+    if !status.success() {
+        return None;
+    }
+    let status = std::process::Command::new("ffmpeg")
+        .args(["-hide_banner", "-loglevel", "error", "-y", "-i"])
+        .arg(&aiff)
+        .args(["-ar", "16000", "-ac", "1", "-f", "f32le"])
+        .arg(&pcm)
+        .status()
+        .ok()?;
+    if !status.success() {
+        return None;
+    }
+    fs::read(&pcm).ok().map(|bytes| decode(&bytes))
+}
+
 #[test]
-#[ignore = "requires VIBECUT_LIVE_AI=1 and OPENAI_API_KEY; performs a paid network call"]
+#[ignore = "requires VIBECUT_LIVE_AI=1 and OPENAI_API_KEY; uploads six seconds of synthetic speech"]
 fn live_openai_transcription_uses_production_transport() {
     if std::env::var("VIBECUT_LIVE_AI").as_deref() != Ok("1") {
         eprintln!("live test skipped: set VIBECUT_LIVE_AI=1 to run");
         return;
     }
     let key = std::env::var("OPENAI_API_KEY").expect("OPENAI_API_KEY");
-    let provider = config_at("https://api.openai.com/v1");
+    let samples = live_speech().expect("live speech probe unavailable; see fixtures README");
+    assert!(samples.len() > 16_000, "speech probe is too short");
+    assert!(
+        samples.iter().any(|value| value.abs() > 0.1),
+        "speech probe is silent"
+    );
+    let provider = config_at(ai::openai::BASE_URL);
     let transcriber = OpenAiTranscriber::new(
         provider.clone(),
         ApiKey::new(key).unwrap(),
         Arc::new(UreqTransport::new()),
     )
     .unwrap();
-    let scope = scope(provider);
-    let approved = Consent::grant(scope.clone(), Money::new("USD", 1_000_000).unwrap()).unwrap();
+    let mut scope = scope(provider);
+    scope.source_language = LanguageTag::parse("en").unwrap();
+    scope.source_samples = ai::SampleRange::new(0, samples.len() as u64).unwrap();
+    scope.max_bytes = samples.len() as u64 * 2 + 44;
+    let approved = Consent::grant(scope.clone(), Money::new("USD", 10_000).unwrap()).unwrap();
     let request = Request {
         scope: &scope,
         consent: Some(&approved),
     };
-    let samples = vec![0.0f32; 32_000];
     let audio = AudioWindow {
         samples: &samples,
         range: scope.source_samples,
         sample_rate: scope.sample_rate,
     };
-    let recognition = ai::transcribe(&transcriber, audio, &request, None, &NoHooks)
-        .expect("live transcription transport");
-    eprintln!("live segments: {}", recognition.segments().len());
-    assert_eq!(recognition.language(), &scope.source_language);
+    let recognition =
+        ai::transcribe(&transcriber, audio, &request, None, &NoHooks).expect("live speech request");
+    assert!(recognition.is_text_only());
+    assert!(
+        !recognition.segments().is_empty(),
+        "speech recognized as empty"
+    );
+    assert!(
+        recognition
+            .segments()
+            .iter()
+            .all(|segment| segment.range.is_none())
+    );
+    let text = recognition
+        .segments()
+        .iter()
+        .map(|segment| segment.text.as_str())
+        .collect::<Vec<_>>()
+        .join(" ")
+        .to_lowercase();
+    for anchor in [
+        "quick",
+        "brown",
+        "fox",
+        "lazy",
+        "dog",
+        "speech",
+        "recognition",
+        "video",
+        "editor",
+    ] {
+        assert!(text.contains(anchor), "spoken anchor missing: {anchor}");
+    }
+    eprintln!(
+        "live speech verified: {} samples, {} segments, 9 anchors; no transcript logged",
+        samples.len(),
+        recognition.segments().len()
+    );
 }

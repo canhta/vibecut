@@ -462,6 +462,27 @@ fn refusal_cancellation_and_hostile_audio_never_call_provider() {
     assert_eq!(fake.calls.load(Ordering::Relaxed), 0);
 }
 #[test]
+fn wire_upload_ceiling_does_not_bound_in_memory_pcm() {
+    let mut scope = scope(config(true), Operation::Transcribe);
+    scope.max_bytes = 64_000;
+    let token = Consent::grant(scope.clone(), Money::new("USD", 10).unwrap()).unwrap();
+    let fake = Fake::new(scope.provider.clone(), TEXT);
+    let pcm = vec![0.0; 32_000];
+    let result = transcribe(
+        &fake,
+        audio(&pcm, &scope),
+        &Request {
+            scope: &scope,
+            consent: Some(&token),
+        },
+        None,
+        &Hooks::new(),
+    );
+    assert!(result.is_ok());
+    assert_eq!(fake.calls.load(Ordering::Relaxed), 1);
+}
+
+#[test]
 fn native_malformed_timing_and_duplicate_ids_are_rejected() {
     for variant in 0..5 {
         let scope = scope(config(false), Operation::Transcribe);
