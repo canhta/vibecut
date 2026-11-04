@@ -47,7 +47,7 @@ code is settled by [copy imports](../engineering/workflows.md#copy-imports).
 - Build cache per slot: `CARGO_TARGET_DIR=$HOME/.cache/vibecut/target/<slot>`, slots `codex-1`, `codex-2`, `opencode-1`, `opencode-2`, `review-1`, `review-2`; one live worker per slot.
 - At most three concurrent Rust builds; research and docs workers take no slot.
 - Spike hygiene: a spike keeps its report, outputs, labels and eval corpus. Its venvs, package/model caches and model weights are deleted when its ticket resolves, unless an open ticket names the path; weights are re-fetched by recorded revision and hash.
-- Build caches stay warm: never delete a slot's cache to tidy up. Only when free disk is under 30 GB, delete `debug/incremental` of idle slots (no live worker) first; delete a whole slot last.
+- Build caches are kept only while used: `.scratch/bin/cleanup` prunes incremental sessions and slots untouched for 2+ days; slots in use stay warm.
 
 ## Coordinator loop
 
