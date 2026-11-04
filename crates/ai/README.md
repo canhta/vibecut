@@ -50,7 +50,12 @@ is called by the composition root only after affirmative approval; local request
 need no upload approval. Chunks/retries may shrink the approved window and byte
 ceiling; changed provider, payload, text or operation requires another token.
 Remote alignment requires its own approval; it never inherits transcription
-approval. No provider selection or remote fallback happens automatically.
+approval. No provider selection or remote fallback happens automatically. `ProviderSelection`
+stores one operation, a primary and an explicitly configured ordered list of up to
+seven distinct fallback configurations. New selections and missing serialized
+fallback lists default to no fallback. Schema version 1 and duplicate/size checks
+apply on deserialization; upload approvals are never persisted with settings.
+Engine owns [fallback execution](../engine/README.md#provider-selection-and-fallback).
 
 `Money` uses integer millionths and a three-letter uppercase currency. Estimates
 are free, an upper bound, or unknown. Remote execution refuses unknown estimates,
@@ -129,8 +134,8 @@ admitted; the deprecated `whisper-1` and other models are refused at constructio
 The tagged provider config must be `Location::Remote` with backend `openai`, the
 official `base_url` `https://api.openai.com/v1`, and an `auth_ref` naming the external
 secret entry. Custom processors, proxies, lookalike hosts, regional endpoints and
-other version paths are refused in v1 because the retention/training disclosure is
-endpoint-specific. The composition root resolves that entry from `OPENAI_API_KEY` for
+other version paths are refused in v1 to keep upload consent bound to the official
+provider endpoint. The composition root resolves that entry from `OPENAI_API_KEY` for
 development or the OS keychain for the desktop app, then injects it as
 `transport::ApiKey`; the key is never serialized, logged or printed by `Debug`, and
 request headers/body are redacted too. The direct transport dependency stays on
@@ -140,9 +145,8 @@ second major (coordinator decision 2026-11-04).
 Windows Credential Manager; key storage remains app/CLI composition, not this crate.
 
 `disclosure(scope)` returns the exact endpoint, language, audio format, duration in
-microseconds, PCM16 WAV upload bytes, the per-invocation USD upper bound and the current
-transcription-specific training/retention statements with source links. Consent must
-be granted for that complete scope; a changed payload fingerprint, provider, model,
+microseconds, PCM16 WAV upload bytes, the per-invocation USD upper bound, provider
+name and official policy link. Consent must be granted for that complete scope; a changed payload fingerprint, provider, model,
 endpoint, language, mode, byte ceiling or operation refuses before transport. An
 `AuthorizedUpload` value is created only after capability, audio and consent checks,
 so no request can be built without a token. Uploads are multipart WAV (mono PCM16),
@@ -181,7 +185,8 @@ the reproduction command. It is the only test that reaches the network.
 
 `elevenlabs::ElevenLabsTranscriber` admits only `scribe_v2`, backend `elevenlabs` and
 the official base URL `https://api.elevenlabs.io/v1`; proxies, lookalike hosts and
-other version paths are refused because the disclosure is endpoint/account specific.
+other version paths are refused to keep upload consent bound to the official
+provider endpoint.
 The composition root resolves `ELEVENLABS_API_KEY` for development or the OS keychain
 entry, then injects it as `transport::ApiKey`; the key is sent as `xi-api-key` and is
 never serialized or logged.
@@ -202,12 +207,10 @@ raw-to-NFC-correspondence and the provider's per-language token identity; zero-w
 punctuation stays explicitly untimed. No cue segmentation, timestamp interpolation
 or provider fallback happens here.
 
-`disclosure(scope)` states the ElevenLabs default retention, account-dependent
-training opt-out, Enterprise default exclusion and enterprise-only Zero Retention
-Mode with source links. The adapter uses default logging, does not send
-`enable_logging=false`, and does not assume the account is Enterprise or has opted
-out; the composition root must show that uncertainty before consent. The OpenAI
-endpoint policy is never reused.
+`disclosure(scope)` names ElevenLabs and links its official privacy policy, with
+payload details and the invocation cost bound. Composition shows these before
+approval without restating the provider's retention or training terms. The adapter
+uses default logging and does not send `enable_logging=false`.
 
 Typed failures cover auth, payment/quota, rate limit, payload, server and network;
 the adapter never retries, and the engine owns the bounded network retry policy.
@@ -430,11 +433,9 @@ Adapters make exactly one attempt. Schema joins transient transport failures as
 engine-retryable; refusals, incomplete results, auth/quota/consent/cost failures
 do not retry. No provider fallback is automatic.
 
-Translation disclosure is separate from transcription: API content is not used
-for training by default, but account opt-in can differ; store=false avoids normal
-application-state storage while standard abuse monitoring may retain content for
-up to 30 days, with approved account controls and policy exceptions. Composition
-must show this operation-specific disclosure before Consent::grant. Sources checked
+Translation disclosure names OpenAI and links its official policy, alongside the
+language pair, model, endpoint and cost. Composition shows the payload and these
+fields before Consent::grant without restating provider terms. Sources checked
 2026-11-04: [structured outputs](https://developers.openai.com/api/docs/guides/structured-outputs),
 [model](https://developers.openai.com/api/docs/models/gpt-6.1-sol),
 [data controls](https://developers.openai.com/api/docs/guides/your-data),

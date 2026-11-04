@@ -4,6 +4,7 @@ pub mod cache;
 mod commands;
 pub mod jobs;
 pub mod models;
+pub mod providers;
 pub mod recovery;
 pub mod translation;
 pub use budget::{BudgetSnapshot, ByteBudget, ByteLease, ByteOwner};

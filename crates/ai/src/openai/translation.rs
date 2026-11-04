@@ -23,13 +23,12 @@ const INSTRUCTIONS: &str = "Translate each segment into the requested target_lan
 /// Operation-specific disclosure. Text and glossary themselves remain in Scope.
 #[derive(Clone, Debug)]
 pub struct TranslationDisclosure {
+    pub provider: captions::NfcText,
     pub endpoint: &'static str,
     pub model: &'static str,
     pub source_language: LanguageTag,
     pub target_language: LanguageTag,
     pub estimate: CostEstimate,
-    pub training: &'static str,
-    pub retention: &'static str,
     pub policy_url: &'static str,
 }
 pub struct OpenAiTranslator {
@@ -66,6 +65,7 @@ impl OpenAiTranslator {
         }
         self.capabilities(scope).check(scope)?;
         Ok(TranslationDisclosure {
+            provider: "OpenAI".into(),
             endpoint: TRANSLATION_ENDPOINT,
             model: TRANSLATION_MODEL,
             source_language: scope.source_language.clone(),
@@ -74,8 +74,6 @@ impl OpenAiTranslator {
                 .clone()
                 .ok_or(Error::UnsupportedLanguage)?,
             estimate: self.estimate(scope),
-            training: "API text is not used for training by default; account opt-in can change this (checked 2026-11-04).",
-            retention: "Responses uses store=false and no background mode; standard abuse-monitoring logs may retain content for up to 30 days. Approved account-specific Zero Data Retention/Modified Abuse Monitoring and policy exceptions differ (checked 2026-11-04).",
             policy_url: "https://developers.openai.com/api/docs/guides/your-data",
         })
     }

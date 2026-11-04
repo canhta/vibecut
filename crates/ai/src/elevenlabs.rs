@@ -28,15 +28,9 @@ const PRICE_MICROS_PER_HOUR: u64 = 220_000;
 const MODE: &str = "file";
 const LANGUAGES: [&str; 3] = ["vi", "en", "zh"];
 pub const SETTINGS_FINGERPRINT: &str = "elevenlabs-transport-v1;model=scribe_v2;format=json;wav=pcm16;timestamps=word;languages=vi,en,zh;logging=default";
-const DATA_USE_URL: &str =
-    "https://elevenlabs.io/docs/help-center/legal/is-my-data-used-to-improve-eleven-labs-ai-models";
-const ZERO_RETENTION_URL: &str =
-    "https://elevenlabs.io/docs/eleven-api/resources/zero-retention-mode";
+const POLICY_URL: &str = "https://elevenlabs.io/privacy-policy";
 const DOCS_URL: &str = "https://elevenlabs.io/docs/capabilities/speech-to-text";
 const PRICING_URL: &str = "https://elevenlabs.io/pricing/api?price.section=speech_to_text";
-const TRAINING_DISCLOSURE: &str = "ElevenLabs may use submitted audio and text to improve its models by default; any account can opt out under Terms & privacy > Data use, and Enterprise accounts are excluded by default. This adapter cannot read the current account's toggle (checked 2026-11-04).";
-const RETENTION_DISCLOSURE: &str = "ElevenLabs retains speech-to-text audio and text by default and offers deletion/history controls; per-account retention settings are not visible to this adapter (checked 2026-11-04).";
-const ZERO_RETENTION_DISCLOSURE: &str = "Zero Retention Mode is enterprise-only and requested per request with enable_logging=false; this adapter uses default logging and does not assume Zero Retention Mode eligibility.";
 
 /// What the composition root must show before granting upload consent.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -50,11 +44,7 @@ pub struct UploadDisclosure {
     pub audio_micros: u64,
     pub upload_bytes: u64,
     pub estimate: CostEstimate,
-    pub training: NfcText,
-    pub retention: NfcText,
-    pub zero_retention: NfcText,
-    pub data_use_url: NfcText,
-    pub zero_retention_url: NfcText,
+    pub policy_url: NfcText,
     pub docs_url: NfcText,
     pub pricing_url: NfcText,
 }
@@ -104,14 +94,14 @@ impl ElevenLabsTranscriber {
         SETTINGS_FINGERPRINT
     }
 
-    /// Current account-aware retention/training disclosure with source links.
+    /// Provider identity, policy link, payload and cost for upload approval.
     pub fn disclosure(&self, scope: &Scope) -> Result<UploadDisclosure, Error> {
         self.validate_scope(scope)?;
         let audio_micros = duration_micros(scope)?;
         let upload_bytes = encoded_bytes(scope)?;
         Ok(UploadDisclosure {
             operation: Operation::Transcribe,
-            provider: self.config.id().clone(),
+            provider: NfcText::from("ElevenLabs"),
             model: self.config.model().clone(),
             endpoint: NfcText::from(ENDPOINT),
             language: scope.source_language.clone(),
@@ -122,11 +112,7 @@ impl ElevenLabsTranscriber {
             audio_micros,
             upload_bytes,
             estimate: self.estimate(scope),
-            training: NfcText::from(TRAINING_DISCLOSURE),
-            retention: NfcText::from(RETENTION_DISCLOSURE),
-            zero_retention: NfcText::from(ZERO_RETENTION_DISCLOSURE),
-            data_use_url: NfcText::from(DATA_USE_URL),
-            zero_retention_url: NfcText::from(ZERO_RETENTION_URL),
+            policy_url: NfcText::from(POLICY_URL),
             docs_url: NfcText::from(DOCS_URL),
             pricing_url: NfcText::from(PRICING_URL),
         })
@@ -247,7 +233,7 @@ fn official_base_url(base_url: &str) -> Result<(), Error> {
     if base_url.trim_end_matches('/') == BASE_URL {
         Ok(())
     } else {
-        // The retention/training disclosure is account and endpoint specific; never
+        // Consent names the official endpoint; never
         // apply it to a proxy, lookalike host or unsupported version path.
         Err(Error::Unsupported)
     }
@@ -337,7 +323,7 @@ fn parse_transcription(
         return Err(status_error(response));
     }
     let parsed: Transcription =
-        serde_json::from_slice(&response.body).map_err(|_| Error::Invalid("provider response"))?;
+        serde_json::from_slice(&response.body).map_err(|_| Error::Schema)?;
     if parsed.text.trim().is_empty() {
         return Ok(Vec::new());
     }
@@ -370,10 +356,10 @@ fn parse_transcription(
         .iter()
         .flat_map(|group| group.bytes.iter().copied())
         .collect::<Vec<_>>();
-    let raw = String::from_utf8(raw).map_err(|_| Error::Invalid("provider response text"))?;
+    let raw = String::from_utf8(raw).map_err(|_| Error::Schema)?;
     let text = NfcText::from(raw);
     if text != NfcText::from(parsed.text) {
-        return Err(Error::Invalid("provider response text mismatch"));
+        return Err(Error::Schema);
     }
     let mut tokens = Vec::with_capacity(groups.len());
     let mut timed = Vec::new();
@@ -423,7 +409,7 @@ fn sample_range(
 
 fn sample_at(seconds: f64, window: SampleRange, sample_rate: u32) -> Result<u64, Error> {
     if !seconds.is_finite() || seconds < 0.0 {
-        return Err(Error::Invalid("provider timing"));
+        return Err(Error::Schema);
     }
     let scaled = seconds * f64::from(sample_rate);
     if !scaled.is_finite() || scaled > u64::MAX as f64 {
@@ -431,7 +417,7 @@ fn sample_at(seconds: f64, window: SampleRange, sample_rate: u32) -> Result<u64,
     }
     let relative = scaled.round();
     if relative > (window.len() as f64) + 1.0 {
-        return Err(Error::Invalid("provider timing outside audio"));
+        return Err(Error::Schema);
     }
     let relative = relative.max(0.0) as u64;
     Ok(window.start().saturating_add(relative).min(window.end()))

@@ -149,8 +149,11 @@ fn all_six_directions_and_both_chinese_scripts_use_strict_contextual_requests() 
         assert!(!format!("{req:?}").contains("secret-test-key"));
         assert!(!format!("{w:?}").contains("earlier context"));
         let d = p.disclosure(&s).unwrap();
-        assert!(d.retention.contains("30 days"));
-        assert!(d.training.contains("not used"));
+        assert_eq!(d.provider.as_str(), "OpenAI");
+        assert_eq!(
+            d.policy_url,
+            "https://developers.openai.com/api/docs/guides/your-data"
+        );
         assert_eq!(t.calls.load(Ordering::Relaxed), 1);
     }
 }

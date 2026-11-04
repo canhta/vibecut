@@ -492,22 +492,11 @@ fn disclosure_states_duration_size_cost_and_transcription_specific_terms() {
         disclosure.endpoint.as_str(),
         "https://api.openai.com/v1/audio/transcriptions"
     );
-    assert!(
-        disclosure
-            .training
-            .as_str()
-            .contains("not used for training")
-    );
-    assert!(
-        disclosure
-            .retention
-            .as_str()
-            .contains("no abuse-monitoring retention")
-    );
     assert_eq!(
         disclosure.policy_url.as_str(),
         "https://developers.openai.com/api/docs/guides/your-data"
     );
+    assert_eq!(disclosure.provider.as_str(), "OpenAI");
     assert_eq!(
         disclosure.docs_url.as_str(),
         "https://developers.openai.com/api/docs/guides/speech-to-text"
@@ -695,7 +684,7 @@ fn provider_failures_are_typed_without_response_bodies_and_do_not_retry() {
     ));
     assert!(matches!(cases[3], Error::Payload));
     assert!(matches!(cases[4], Error::Server));
-    assert!(matches!(cases[5], Error::Invalid(_)));
+    assert!(matches!(cases[5], Error::Schema));
     assert!(matches!(cases[6], Error::Network));
     assert!(matches!(cases[7], Error::Server));
     assert!(matches!(cases[8], Error::Invalid(_)));

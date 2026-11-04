@@ -439,30 +439,11 @@ fn disclosure_is_elevenlabs_specific_and_consent_binds_provider_and_payload() {
     }
     assert!(
         disclosure
-            .training
+            .policy_url
             .as_str()
-            .contains("may use submitted audio and text")
+            .starts_with("https://elevenlabs.io/")
     );
-    assert!(
-        disclosure
-            .retention
-            .as_str()
-            .contains("retains speech-to-text audio")
-    );
-    assert!(
-        disclosure
-            .zero_retention
-            .as_str()
-            .contains("enterprise-only")
-    );
-    assert!(!disclosure.retention.as_str().contains("OpenAI"));
-    assert!(disclosure.data_use_url.as_str().contains("is-my-data-used"));
-    assert!(
-        disclosure
-            .zero_retention_url
-            .as_str()
-            .contains("zero-retention-mode")
-    );
+    assert_eq!(disclosure.provider.as_str(), "ElevenLabs");
 
     let mut translate = scope.clone();
     translate.operation = Operation::Translate;
@@ -657,7 +638,7 @@ fn provider_errors_are_typed_without_bodies_and_do_not_retry() {
     ));
     assert!(matches!(cases[3], Error::Payload));
     assert!(matches!(cases[4], Error::Server));
-    assert!(matches!(cases[5], Error::Invalid(_)));
+    assert!(matches!(cases[5], Error::Schema));
     assert!(matches!(cases[6], Error::Network));
     assert!(matches!(cases[7], Error::Server));
     assert!(matches!(cases[8], Error::Invalid(_)));
@@ -718,7 +699,7 @@ fn hostile_timing_and_text_mismatch_are_rejected() {
     for _ in 0..3 {
         assert!(matches!(
             ai::transcribe(&transcriber, audio, &request, None, &NoHooks),
-            Err(Error::Invalid(_))
+            Err(Error::Schema)
         ));
     }
 }

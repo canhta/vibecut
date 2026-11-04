@@ -33,8 +33,6 @@ pub const ENDPOINT: &str = "https://api.openai.com/v1/audio/transcriptions";
 const PRICE_MICROS_PER_SECOND: u64 = 75;
 const POLICY_URL: &str = "https://developers.openai.com/api/docs/guides/your-data";
 const DOCS_URL: &str = "https://developers.openai.com/api/docs/guides/speech-to-text";
-const TRAINING_DISCLOSURE: &str = "OpenAI documents that data sent to /v1/audio/transcriptions is not used for training unless the account explicitly opts in (checked 2026-11-04).";
-const RETENTION_DISCLOSURE: &str = "OpenAI's data-controls table lists no abuse-monitoring retention and no application-state retention for /v1/audio/transcriptions; Zero Data Retention eligibility requires account approval and policy exceptions apply (checked 2026-11-04).";
 /// File mode is the only mode this adapter advertises.
 const MODE: &str = "file";
 /// Product ASR languages. Extend this data table only with documented API support.
@@ -55,8 +53,6 @@ pub struct UploadDisclosure {
     pub audio_micros: u64,
     pub upload_bytes: u64,
     pub estimate: CostEstimate,
-    pub training: NfcText,
-    pub retention: NfcText,
     pub policy_url: NfcText,
     pub docs_url: NfcText,
 }
@@ -107,16 +103,14 @@ impl OpenAiTranscriber {
         SETTINGS_FINGERPRINT
     }
 
-    /// Current operation-specific retention/training disclosure with source links.
-    /// Translation and other operations never inherit these claims because this
-    /// adapter advertises transcription only.
+    /// Provider identity, policy link, payload and cost for upload approval.
     pub fn disclosure(&self, scope: &Scope) -> Result<UploadDisclosure, Error> {
         self.validate_scope(scope)?;
         let audio_micros = duration_micros(scope)?;
         let upload_bytes = encoded_bytes(scope)?;
         Ok(UploadDisclosure {
             operation: Operation::Transcribe,
-            provider: self.config.id().clone(),
+            provider: NfcText::from("OpenAI"),
             model: self.config.model().clone(),
             endpoint: NfcText::from(ENDPOINT),
             language: scope.source_language.clone(),
@@ -127,8 +121,6 @@ impl OpenAiTranscriber {
             audio_micros,
             upload_bytes,
             estimate: self.estimate(scope),
-            training: NfcText::from(TRAINING_DISCLOSURE),
-            retention: NfcText::from(RETENTION_DISCLOSURE),
             policy_url: NfcText::from(POLICY_URL),
             docs_url: NfcText::from(DOCS_URL),
         })
@@ -244,7 +236,7 @@ fn official_base_url(base_url: &str) -> Result<(), Error> {
     if base_url.trim_end_matches('/') == BASE_URL {
         Ok(())
     } else {
-        // The OpenAI retention/training disclosure is endpoint-specific; never
+        // Consent names the official endpoint; never
         // apply it to a proxy, lookalike host or unsupported version path.
         Err(Error::Unsupported)
     }
@@ -327,10 +319,10 @@ fn parse_transcription(
         return Err(status_error(response));
     }
     let parsed: Transcription =
-        serde_json::from_slice(&response.body).map_err(|_| Error::Invalid("provider response"))?;
+        serde_json::from_slice(&response.body).map_err(|_| Error::Schema)?;
     for language in &parsed.languages {
         if language.code.trim().is_empty() || language.code.len() > 64 {
-            return Err(Error::Invalid("provider language"));
+            return Err(Error::Schema);
         }
     }
     if parsed.text.is_empty() {

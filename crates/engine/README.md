@@ -558,3 +558,37 @@ asset/range diagnostics and preserves the previous destination. Advanced codec,
 canvas and placement choices remain available through `submit_export` with
 render's ExportSettings. UI/CLI adapters consume these engine APIs; they do not
 implement their own overlay or serializer.
+
+## Provider selection and fallback
+
+`providers::{transcribe, translate, suggest_clips}` executes an AI-owned
+`ProviderSelection` on the existing job worker with its `ExecutionHooks`. A caller
+that configures a local fallback uses a CPU resource reservation for the whole
+run, so switching from network to inference cannot bypass CPU concurrency limits.
+Every attempt must exactly match the persisted feature/provider order; no adapters are
+inferred, and each adapter is invoked at most once. A successful attempt ends the
+run. Auth, quota, network, server, rate-limit, schema and incomplete-response
+failures advance only to the next configured provider; cancellation, consent,
+cost, input and capability errors stop immediately. Exhaustion returns the last
+typed failure. No retry budget is reset or second scheduler introduced.
+
+Composition implements `providers::Approval` to show provider identity, its
+policy link, exact payload and cost at setup and again immediately before a
+fallback executes. The callback receives `fallback=true` for the renewed prompt;
+a remote attempt without its own exact consent token cannot upload. Approval
+errors stop the run. Clip windows are all approved before a provider's first IO;
+partial results from a failed provider are discarded. Local heuristics are a
+normal explicitly configured `ClipSuggester`, never an implicit recovery path.
+
+`ProviderOutput` retains the exact successful provider configuration beside its
+output; serializable outputs preserve this provenance in job result bytes. Job
+callers retain the complete envelope when storing results, and include the entire
+selection and request settings in cache keys. Recognition remains its existing
+sample-coordinate model, including text-only results when timing is unavailable.
+The functions do not mutate projects; translation results still go through the
+registered edit command. There is no desktop settings UI in this crate.
+
+`cargo test -p engine --test providers` observes no-fallback defaults, ordered
+provider failures, renewed approval before any fallback upload, rejection of
+primary-token reuse, refusal/cost/cancellation and exact provenance. Offline
+injected adapters establish execution policy, not third-party model quality.

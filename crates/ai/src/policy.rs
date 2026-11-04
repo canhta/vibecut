@@ -232,3 +232,68 @@ pub fn authorize(
         _ => Err(Error::Cost),
     }
 }
+
+/// One feature's explicit provider order. Constructing a primary never adds a
+/// fallback. Persist this value in application settings, independently of projects.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(try_from = "SelectionData", into = "SelectionData")]
+pub struct ProviderSelection(SelectionData);
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct SelectionData {
+    schema_version: u32,
+    operation: Operation,
+    primary: ProviderConfig,
+    #[serde(default)]
+    fallbacks: Vec<ProviderConfig>,
+}
+impl ProviderSelection {
+    pub fn new(operation: Operation, primary: ProviderConfig) -> Self {
+        Self(SelectionData {
+            schema_version: 1,
+            operation,
+            primary,
+            fallbacks: Vec::new(),
+        })
+    }
+    /// At most seven distinct fallbacks; repeated exact configurations are refused.
+    pub fn with_fallbacks(self, fallbacks: Vec<ProviderConfig>) -> Result<Self, Error> {
+        SelectionData {
+            fallbacks,
+            ..self.0
+        }
+        .try_into()
+    }
+    pub fn operation(&self) -> Operation {
+        self.0.operation
+    }
+    pub fn providers(&self) -> impl Iterator<Item = &ProviderConfig> {
+        std::iter::once(&self.0.primary).chain(&self.0.fallbacks)
+    }
+}
+impl TryFrom<SelectionData> for ProviderSelection {
+    type Error = Error;
+    fn try_from(data: SelectionData) -> Result<Self, Error> {
+        if data.schema_version != 1 || data.fallbacks.len() > 7 {
+            return Err(Error::Invalid("provider selection version or limit"));
+        }
+        let providers: Vec<_> = std::iter::once(&data.primary)
+            .chain(&data.fallbacks)
+            .collect();
+        for (i, provider) in providers.iter().enumerate() {
+            if providers
+                .iter()
+                .take(i)
+                .any(|previous| previous == provider)
+            {
+                return Err(Error::Invalid("duplicate provider configuration"));
+            }
+        }
+        Ok(Self(data))
+    }
+}
+impl From<ProviderSelection> for SelectionData {
+    fn from(value: ProviderSelection) -> Self {
+        value.0
+    }
+}
