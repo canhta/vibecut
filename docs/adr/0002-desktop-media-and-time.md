@@ -8,4 +8,4 @@ may use narrowly allowed, documented unsafe modules behind a safe `Result` API;
 integer tick time preserves common video rates including NTSC and audio sample
 rates exactly, with its type name deferred until implementation. Current contracts
 live in [architecture](../engineering/architecture.md) and
-[source standards](../engineering/standards.md); product crate layout remains open.
+[source standards](../engineering/standards.md).

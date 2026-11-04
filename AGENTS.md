@@ -7,10 +7,11 @@ Start with [documentation owners](docs/README.md), [terms](GLOSSARY.md) and [dec
 | Task | Read |
 |---|---|
 | Scope or acceptance | [Requirements](docs/product/requirements.md#scope) |
-| Dependencies or core boundaries | [Architecture](docs/engineering/architecture.md#boundaries) |
+| Dependencies, contracts or headless work | [Architecture](docs/engineering/architecture.md#crate-map) |
 | Source structure, safety or timing | [Standards](docs/engineering/standards.md#safety) and [structural admission](docs/engineering/standards.md#structural-admission) |
 | Working in this repo, tasks or delivery | [Development loop](docs/engineering/workflows.md#development-loop), then the README of any crate you touch |
-| Upgrades or persisted data | [Upgrade policy](docs/engineering/workflows.md#upgrade-policy) |
+| Adding/upgrading dependencies or persisted data | [Upgrade policy](docs/engineering/workflows.md#upgrade-policy) |
+| Multi-agent work, dispatch, review, merge | [Orchestration](docs/agents/orchestration.md) |
 | Commands, tests or completion evidence | [Verification](docs/engineering/verification.md#checks) |
 | Licensing, assets or remote AI | [Open-source policy](docs/engineering/open-source.md#licensing) and [privacy](docs/engineering/open-source.md#privacy) |
 

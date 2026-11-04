@@ -2,32 +2,47 @@
 
 ## Development loop
 
-Read `AGENTS.md`, `GLOSSARY.md`, relevant ADRs, then open tasks using the queries
-in [the local issue tracker](../agents/issue-tracker.md). Read the README of the
-crate you touch when present. Keep tasks and progress in `.scratch/`.
-
-Research actively before deciding: read actual source and official documentation
-(use Context7 when available), and search the web for current API/library facts.
-Never guess or invent APIs, versions, limits or results. Cite what you checked;
-if a needed fact cannot be verified, label it unverified and ask.
-
-Work one focused slice: inspect current source, change its owner, run relevant
-checks, obtain independent substantive review and resolve findings before delivery.
-Preserve concurrent work. Parallel agents use separate git worktrees and
-`CARGO_TARGET_DIR=target/agent-<name>`. Keep every Cargo manifest valid: the
-`crates/*` workspace glob exposes broken manifests to every workspace command.
+1. Read `AGENTS.md`, the glossary, relevant ADRs, ticket/spec and owning crate README.
+   Claim the ticket under the [tracker](../agents/issue-tracker.md); follow
+   [orchestration](../agents/orchestration.md) for placement, branching and review.
+2. Research actual source and official documentation before deciding. Use Context7
+   when available and web lookup for current APIs. Cite checked sources in local
+   evidence; label unavailable facts unverified. Ask the coordinator when a missing
+   fact blocks correctness rather than inventing APIs, versions, limits or results.
+3. Learn core/structure patterns and UX/feature behavior from the maintainer-provided
+   local references listed in the ticket. Inspect consumers, implement one authorized slice and reconcile its owner docs.
+   Freshly read shared files before editing; preserve unrelated changes and keep
+   manifests valid throughout. Admit structure under [standards](standards.md#structural-admission).
+4. Run focused checks, `cargo fmt --all`, then `cargo xtask ci`. Record evidence using
+   [verification](verification.md#reports); obtain independent substantive review
+   and fix findings before delivery. A green build is not runtime acceptance.
 
 ## Delivery
 
-While private, the maintainer pushes reviewed slices directly to `main` after
-local `cargo xtask ci` and independent review. Use conventional commit messages
-and DCO sign-off (`git commit -s`). Hosted CI is optional and manual-only.
+[Orchestration](../agents/orchestration.md) owns slice limits, review and merge steps.
+Use conventional commit subjects and DCO sign-off (`git commit -s`). Implementers
+hand over branch/SHAs; only the maintainer merges and pushes `main`. Hosted CI is
+optional and manual-only while private. Before public contributions, add a
+`pull_request` trigger and require signed-off PRs; this grants no visibility change.
 
-Before making the repository public, add a `pull_request` trigger to CI for
-external contributions. External contributors then submit PRs with DCO sign-off.
-This policy does not authorize changing repository visibility.
+## Copy imports
+
+Copy only the ticket's required files from a read-only source. The import commit
+is mechanical: rename our identifiers, remove unused features and provenance/history
+comments, preserve logic. Adapt behavior in separate commits. Both stages pass
+[verification](verification.md#checks); retain license notices required by
+[policy](open-source.md#licensing), without source-project commentary in code.
 
 ## Upgrade policy
+
+Use the latest stable Rust, direct crates, Actions, APIs/models and OS SDK bindings.
+When adding or touching one, look up the current stable release through its official
+registry/releases/docs (`cargo search`, `cargo info`, crates.io, GitHub releases,
+`rustup check`); upgrade copied dependencies too. Record versions in manifests,
+lockfiles, toolchain/workflow configuration, not prose. Report source and result
+under [completion evidence](verification.md#reports). Offline builds cannot prove
+freshness; a lockfile-only `cargo update --verbose` cannot prove direct requirements
+are current. Do not install an extra freshness tool just for CI.
 
 Choose the best current design and replace in place. Remove superseded paths;
 keep no dual versions, legacy shims, deprecated paths or backward compatibility.

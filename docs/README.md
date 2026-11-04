@@ -3,13 +3,14 @@
 | Need | Authoritative owner |
 |---|---|
 | Scope and priorities | [Requirements](product/requirements.md) |
-| Core boundaries and open choices | [Architecture](engineering/architecture.md) |
+| Crate map, dependencies and contracts | [Architecture](engineering/architecture.md) |
 | Source safety, timing and structure | [Standards](engineering/standards.md) |
 | Checks, fixtures and evidence | [Verification](engineering/verification.md) |
-| Development, delivery and upgrades | [Workflows](engineering/workflows.md) |
+| Development, copy imports and upgrades | [Workflows](engineering/workflows.md) |
 | Licensing, assets and privacy | [Open-source policy](engineering/open-source.md) |
 | Product vocabulary | [Glossary](../GLOSSARY.md) |
 | Decision rationale | [ADRs](adr/README.md) |
+| Multi-agent roles, placement, dispatch, review and merge | [Orchestration](agents/orchestration.md) |
 | Local tasks | [Issue tracker](agents/issue-tracker.md) |
 | Domain documentation conventions | [Domain docs](agents/domain.md) |
 
