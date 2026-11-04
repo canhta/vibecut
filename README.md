@@ -8,8 +8,8 @@
 </p>
 
 <p align="center">
-  <strong>The open-source CapCut alternative.</strong><br/>
-  A free, fast, native video editor for macOS and Windows. No paywall, no watermark, your footage stays on your machine.
+  <strong>The open-source CapCut alternative your AI agents can drive.</strong><br/>
+  A free, fast, native video editor for macOS and Windows, with MCP and a CLI built in.
 </p>
 
 <!-- Hero: docs/assets/readme/hero.jpg (editor: media panel, preview, timeline, properties) -->
@@ -17,6 +17,37 @@
 ## Features
 
 <table>
+<tr>
+<td width="50%" valign="middle">
+
+### Agents Edit Video
+
+Claude Code, Codex or any MCP client opens projects, runs every editor command,
+checks preview frames and exports. The same commands run from the CLI.
+
+</td>
+<td width="50%"><!-- docs/assets/readme/agents.gif --></td>
+</tr>
+<tr>
+<td width="50%" valign="middle">
+
+### AI Captions
+
+Captions in Vietnamese, English and Chinese, translated to any pair, shown bilingual.
+
+</td>
+<td width="50%"><!-- docs/assets/readme/captions.gif --></td>
+</tr>
+<tr>
+<td width="50%" valign="middle">
+
+### AI Shorts
+
+Long video in, vertical clips out.
+
+</td>
+<td width="50%"><!-- docs/assets/readme/shorts.gif --></td>
+</tr>
 <tr>
 <td width="50%" valign="middle">
 
@@ -83,29 +114,9 @@ hardware-accelerated encoding.
 </td>
 <td width="50%"><!-- docs/assets/readme/export.gif --></td>
 </tr>
-<tr>
-<td width="50%" valign="middle">
-
-### AI Captions
-
-Captions in Vietnamese, English and Chinese, translated to any pair, shown bilingual.
-
-</td>
-<td width="50%"><!-- docs/assets/readme/captions.gif --></td>
-</tr>
-<tr>
-<td width="50%" valign="middle">
-
-### AI Shorts
-
-Long video in, vertical clips out.
-
-</td>
-<td width="50%"><!-- docs/assets/readme/shorts.gif --></td>
-</tr>
 </table>
 
-**Also in the box:** crash recovery · proxy editing · custom shortcuts · CLI · MCP for coding agents
+**Also in the box:** local or cloud AI of your choice · crash recovery · proxy editing · custom shortcuts
 
 ## Install
 
