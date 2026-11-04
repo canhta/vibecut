@@ -8,7 +8,7 @@ Start with [documentation owners](docs/README.md), [terms](GLOSSARY.md) and [dec
 |---|---|
 | Scope or acceptance | [Requirements](docs/product/requirements.md#scope) |
 | Dependencies, contracts or headless work | [Architecture](docs/engineering/architecture.md#crate-map) |
-| Source structure, safety or timing | [Standards](docs/engineering/standards.md#safety) and [structural admission](docs/engineering/standards.md#structural-admission) |
+| Source structure, safety, timing or reuse | [Standards](docs/engineering/standards.md#safety), [structural admission](docs/engineering/standards.md#structural-admission) and [minimal solutions](docs/engineering/standards.md#minimal-solutions) |
 | Working in this repo, tasks or delivery | [Development loop](docs/engineering/workflows.md#development-loop), then the README of any crate you touch |
 | Adding/upgrading dependencies or persisted data | [Upgrade policy](docs/engineering/workflows.md#upgrade-policy) |
 | Multi-agent work, dispatch, review, merge | [Orchestration](docs/agents/orchestration.md) |

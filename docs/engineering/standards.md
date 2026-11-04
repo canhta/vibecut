@@ -24,9 +24,26 @@ filler comments. Record required asset and license notices under the
 [open-source policy](open-source.md). New crates inherit `[lints] workspace = true`;
 review dependencies against [architecture](architecture.md).
 
+Before writing logic, search for its existing owner and reuse it. When a second
+consumer appears, move the logic to the module that owns the concept instead of
+copying it. Keep reusable fixture/golden helpers dev-only in their concept owner;
+admit a separate test package only when actual consumers require it.
+
+## Minimal solutions
+
+Prefer the first sufficient option: needed now, existing owner, Rust std, native
+platform feature, existing dependency, then minimum new code. This is guidance,
+not an admission gate: preserve ADR-chosen seams and planned language, provider
+and codec extensibility. Consider deletion before addition, fixed values before
+configuration, and concrete code before a hypothetical single-adapter interface.
+For a deliberate simplification with a known ceiling, write
+`// ponytail: <ceiling>, <upgrade path>`. Preserve hostile-input validation,
+data-loss handling, security and accessibility at every option.
+
 ## Errors and concurrency
 
-Product crates expose one `thiserror` error enum each, with typed variants for
+Product crates expose one typed error enum each (derive with `thiserror` when useful),
+with variants for
 invalid input, unsupported input/capability (`Unsupported`) and cancellation
 (`Cancelled`) where applicable. Keep source errors with `#[source]`/`#[from]` and
 safe operation/asset-ID context. Public APIs return typed errors, never `String`,
