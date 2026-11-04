@@ -1555,8 +1555,6 @@ impl Providers {
                     upload_bytes: disclosure.upload_bytes,
                     cost: Cost::from(&disclosure.estimate),
                     terms: vec![
-                        ("training", disclosure.training.as_str().into()),
-                        ("retention", disclosure.retention.as_str().into()),
                         ("policy", disclosure.policy_url.as_str().into()),
                         ("docs", disclosure.docs_url.as_str().into()),
                     ],
@@ -1573,10 +1571,7 @@ impl Providers {
                     upload_bytes: disclosure.upload_bytes,
                     cost: Cost::from(&disclosure.estimate),
                     terms: vec![
-                        ("training", disclosure.training.as_str().into()),
-                        ("retention", disclosure.retention.as_str().into()),
-                        ("zero_retention", disclosure.zero_retention.as_str().into()),
-                        ("policy", disclosure.data_use_url.as_str().into()),
+                        ("policy", disclosure.policy_url.as_str().into()),
                         ("pricing", disclosure.pricing_url.as_str().into()),
                         ("docs", disclosure.docs_url.as_str().into()),
                     ],
@@ -1617,11 +1612,7 @@ impl Providers {
                     )
                     .map_err(|_| EditError::Limit)?,
                     cost: Cost::from(&disclosure.estimate),
-                    terms: vec![
-                        ("training", disclosure.training.into()),
-                        ("retention", disclosure.retention.into()),
-                        ("policy", disclosure.policy_url.into()),
-                    ],
+                    terms: vec![("policy", disclosure.policy_url.into())],
                 })
             }
             Some(TranslatorKind::Anthropic(value)) => {

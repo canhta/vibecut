@@ -56,8 +56,8 @@ Simplified (`zh-Hans`), and `zh-Hant` is available explicitly.
 
 Remote requests are refused before any upload unless `--yes-upload` is present.
 The command prints the exact provider/model, languages, audio duration, upload
-payload bytes, per-invocation cost ceiling and the provider's current
-retention/training terms with policy links for every request scope; the flag
+payload bytes, per-invocation cost ceiling and the provider's official
+policy links for every request scope; the flag
 authorizes only those displayed scopes, never a model download or a different
 provider. Local providers need no upload consent.
 

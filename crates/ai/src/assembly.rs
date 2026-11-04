@@ -405,6 +405,8 @@ pub fn align(
     checkpoint(hooks, Stage::Align)?;
     if provider.config() != &scope.provider
         || scope.operation != Operation::Align
+        || recognition.window != audio.range
+        || recognition.sample_rate != audio.sample_rate
         || scope.source_samples != audio.range
         || scope.sample_rate != audio.sample_rate
         || scope.payload_fingerprint != recognition.payload_fingerprint

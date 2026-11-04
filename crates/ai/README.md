@@ -93,8 +93,9 @@ and payload fingerprint, retains native unit layers and accepts a local aligner'
 empty-text template scope by binding the exact missing segment texts before
 execution. A remote aligner must receive an already text-bound scope and its own
 consent; a template never authorizes an upload. `Recognition::needs_timing(unit)`
-reports whether alignment is required without exposing timing internals. Alignment
-is at segment granularity; providers can omit punctuation spans. Existing native
+reports whether alignment is required without exposing timing internals. Separate
+alignment rejects audio whose source window or sample rate differs from the
+recognition. Alignment is at segment granularity; providers can omit punctuation spans. Existing native
 unit layers and segment boundaries remain authoritative. The aligner must preserve
 text, IDs and ordering, return every requested segment and declare forced timing.
 Wrong-language/unsupported aligners leave missing timing absent; malformed output,

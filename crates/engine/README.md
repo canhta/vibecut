@@ -684,7 +684,7 @@ gesture pass the shared token.
 Remote upload scopes are prompted through `ConsentPrompt` before every request;
 `DenyUploads` is the default test refusal and `AllowAll` is the explicit test
 grant. `UploadRequest` carries provider/model, languages, audio seconds, payload
-bytes, cost ceiling and the adapter's retention/training/policy links. The
+bytes, cost ceiling and the adapter's official policy links. The
 workflow never uploads without a prompt approval and never downloads weights.
 `ModelDownloader` wraps one explicitly consented catalog download and
 `default_cache_root` is the single shared model/checkpoint location.

@@ -51,7 +51,7 @@ constructing an adapter or making a network call.
 
 **Upload disclosure**: The exact remote request scope shown before consent:
 provider/model, operation, languages, audio duration, payload bytes, per-invocation
-cost ceiling and the provider's retention/training terms and policy links.
+cost ceiling and the provider's official policy links.
 
 **Job**: A tracked editing operation with progress, cancellation, failure and
 checkpoint information.

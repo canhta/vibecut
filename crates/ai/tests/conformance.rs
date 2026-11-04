@@ -1655,3 +1655,46 @@ fn untimed_raw_bytes_need_no_timing_capability_but_refuse_invented_ranges() {
         .is_err()
     );
 }
+
+#[test]
+fn separate_alignment_rejects_a_different_recognition_window_or_sample_rate() {
+    let source = scope(config(false), Operation::Transcribe);
+    let fake = Fake::new(source.provider.clone(), TEXT);
+    let pcm = vec![0.0; 32000];
+    let recognition = transcribe(
+        &fake,
+        audio(&pcm, &source),
+        &Request {
+            scope: &source,
+            consent: None,
+        },
+        None,
+        &Hooks::new(),
+    )
+    .unwrap();
+    for (range, rate) in [
+        (SampleRange::new(0, 32000).unwrap(), 16000),
+        (source.source_samples, 32000),
+    ] {
+        let mut target = source.clone();
+        target.operation = Operation::Align;
+        target.source_samples = range;
+        target.sample_rate = rate;
+        let mut aligner = Fake::new(target.provider.clone(), TEXT);
+        aligner.result = forced();
+        let result = align(
+            recognition.clone(),
+            &aligner,
+            audio(&pcm, &target),
+            &target,
+            None,
+            TimingUnit::Word,
+            &Hooks::new(),
+        );
+        assert!(
+            matches!(result, Err(Error::Invalid("alignment request mismatch"))),
+            "mismatched recognition coordinates were accepted: {result:?}"
+        );
+        assert_eq!(aligner.calls.load(Ordering::Relaxed), 0);
+    }
+}
