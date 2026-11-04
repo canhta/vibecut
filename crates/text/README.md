@@ -58,15 +58,18 @@ characters stay on the preferred face.
   4096 px and explicit line height at 16,384 px.
 - CR, CRLF, NEL, line separator, paragraph separator, vertical tab and form feed become LF before
   shaping; mandatory breaks therefore never reach the shaper as tofu.
-- Lines are reshaped on their own span, so a ligature cannot straddle a line boundary. A
-  multi-grapheme line that still exceeds the width is split further; a single grapheme wider than
-  the wrap width occupies its own line.
+- Every line's final span is shaped independently whenever a boundary ligature or cross-boundary
+  kerning changes its context; a nominal-shaping comparison lets unaffected lines reuse the
+  paragraph shape. A multi-grapheme line that still exceeds the width is split further without
+  dropping its prefix; a single grapheme wider than the wrap width occupies its own line.
+- Line ranges always tile the complete source (apart from intentional max-lines overflow).
 
 ## Tests and goldens
 
 `cargo test -p text` covers raster coverage, strokes, metrics, fallback order, wrapping, long
-unbreakable words, ligature-safe per-line reshaping, mandatory separators, bounded extreme
-sizes, narrow-wrap scaling, alignment, truncation and input validation. Integration tests cover:
+unbreakable words, complete-source line coverage, ligature- and kerning-safe per-line shaping
+against isolated spans, mandatory separators, bounded extreme sizes, narrow-wrap scaling,
+alignment, truncation and input validation. Integration tests cover:
 
 - the Vietnamese stress string in NFC and NFD: identical glyph runs, no missing glyphs and
   identical rendered pixels;

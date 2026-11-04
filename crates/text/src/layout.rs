@@ -8,7 +8,7 @@
 use std::collections::VecDeque;
 use std::ops::Range;
 
-use harfrust::{Buffer, Direction, ShapeOptions, ShaperFont, shape};
+use harfrust::{Buffer, Direction, Feature, ShapeOptions, ShaperFont, Tag, shape};
 use unicode_linebreak::linebreaks;
 use unicode_normalization::UnicodeNormalization;
 use unicode_segmentation::UnicodeSegmentation;
@@ -269,6 +269,15 @@ fn append_paragraph(
         context.primary,
         options.size,
         context.fallbacks,
+        false,
+    )?;
+    let nominal = shape_paragraph(
+        paragraph,
+        base,
+        context.primary,
+        options.size,
+        context.fallbacks,
+        true,
     )?;
     let advances = advance_prefix(paragraph, &measured, base);
     let boundaries = grapheme_boundaries(paragraph);
@@ -297,6 +306,7 @@ fn append_paragraph(
 
     let mut pending: VecDeque<Range<usize>> = ranges.into();
     let mut glyph_cursor = 0usize;
+    let mut nominal_cursor = 0usize;
     let mut span_end = vec![base + paragraph.len(); measured.len()];
     let mut group_start = 0usize;
     while group_start < measured.len() {
@@ -342,6 +352,19 @@ fn append_paragraph(
         {
             measured_end += 1;
         }
+        while nominal
+            .get(nominal_cursor)
+            .is_some_and(|glyph| glyph.cluster < base + range.start)
+        {
+            nominal_cursor += 1;
+        }
+        let mut nominal_end = nominal_cursor;
+        while nominal
+            .get(nominal_end)
+            .is_some_and(|glyph| glyph.cluster < base + range.end)
+        {
+            nominal_end += 1;
+        }
         let start_crosses = glyph_cursor > 0
             && span_end
                 .get(glyph_cursor.saturating_sub(1))
@@ -350,7 +373,11 @@ fn append_paragraph(
             && span_end
                 .get(measured_end.saturating_sub(1))
                 .is_some_and(|end| *end > base + range.end);
-        let reshape = start_crosses || end_crosses;
+        let context_changed = !glyphs_same(
+            measured.get(glyph_cursor..measured_end).unwrap_or(&[]),
+            nominal.get(nominal_cursor..nominal_end).unwrap_or(&[]),
+        );
+        let reshape = start_crosses || end_crosses || context_changed;
 
         let Some(line_text) = paragraph.get(range.clone()) else {
             return Err(TextError::CoordinateOverflow);
@@ -366,6 +393,7 @@ fn append_paragraph(
                 context.primary,
                 options.size,
                 context.fallbacks,
+                false,
             )?;
             &reshaped
         } else {
@@ -392,7 +420,9 @@ fn append_paragraph(
                 .copied()
                 .filter(|previous| *previous > range.start)
             {
-                pending.push_front(previous..range.end);
+                let suffix = previous..range.end;
+                pending.push_front(suffix);
+                pending.push_front(range.start..previous);
                 continue;
             }
         }
@@ -451,6 +481,7 @@ fn append_paragraph(
             glyphs: glyph_start..layout.glyphs.len(),
         });
         glyph_cursor = measured_end;
+        nominal_cursor = nominal_end;
     }
     Ok(overflow)
 }
@@ -461,6 +492,7 @@ fn shape_paragraph(
     primary: Resolved,
     size: f32,
     fallbacks: &[fonts::FaceId],
+    nominal: bool,
 ) -> Result<Vec<ShapedGlyph>, TextError> {
     let mut out = Vec::new();
     let mut run_start = 0usize;
@@ -483,7 +515,15 @@ fn shape_paragraph(
         let Some(run) = paragraph.get(run_start..run_end) else {
             break;
         };
-        shape_run(run, base + run_start, face_id, primary, size, &mut out)?;
+        shape_run(
+            run,
+            base + run_start,
+            face_id,
+            primary,
+            size,
+            nominal,
+            &mut out,
+        )?;
         run_start = run_end;
     }
     Ok(out)
@@ -495,6 +535,7 @@ fn shape_run(
     face_id: FaceId,
     primary: Resolved,
     size: f32,
+    nominal: bool,
     out: &mut Vec<ShapedGlyph>,
 ) -> Result<(), TextError> {
     let face = fonts::face(face_id);
@@ -508,7 +549,18 @@ fn shape_run(
     }
     buffer.set_direction(Direction::LeftToRight);
     buffer.guess_segment_properties();
-    shape(&shaper, &mut buffer, ShapeOptions::new())?;
+    let features = [
+        Feature::new(Tag::new(b"kern"), 0, ..),
+        Feature::new(Tag::new(b"liga"), 0, ..),
+        Feature::new(Tag::new(b"clig"), 0, ..),
+        Feature::new(Tag::new(b"calt"), 0, ..),
+    ];
+    let options = if nominal {
+        ShapeOptions::new().features(&features)
+    } else {
+        ShapeOptions::new()
+    };
+    shape(&shaper, &mut buffer, options)?;
     let scale = face.scale(size);
     let synth_bold = primary.synth_bold && face_id == primary.face;
     let synth_italic = primary.synth_italic && face_id == primary.face;
@@ -675,6 +727,18 @@ fn line_ranges(
     (ranges, false)
 }
 
+fn glyphs_same(a: &[ShapedGlyph], b: &[ShapedGlyph]) -> bool {
+    a.len() == b.len()
+        && a.iter().zip(b).all(|(left, right)| {
+            left.id == right.id
+                && left.face == right.face
+                && left.cluster == right.cluster
+                && (left.advance - right.advance).abs() < 0.01
+                && (left.offset_x - right.offset_x).abs() < 0.01
+                && (left.offset_y - right.offset_y).abs() < 0.01
+        })
+}
+
 fn line_metrics(glyphs: &[ShapedGlyph], primary: Resolved, size: f32) -> (f32, f32) {
     let metrics = fonts::face(primary.face).metrics(size);
     let mut ascent = metrics.ascent;
@@ -825,35 +889,116 @@ mod tests {
         );
     }
 
+    fn assert_complete_and_independently_shaped(
+        text: &str,
+        options: &LayoutOptions<'static>,
+    ) -> Layout {
+        let laid_out = layout(text, options).expect("layout");
+        assert!(!laid_out.lines.is_empty());
+        assert_eq!(laid_out.lines.first().map(|line| line.range.start), Some(0));
+        for pair in laid_out.lines.windows(2) {
+            assert_eq!(
+                pair.first().map(|line| line.range.end),
+                pair.get(1).map(|line| line.range.start),
+                "{:?}",
+                laid_out.lines
+            );
+        }
+        assert_eq!(
+            laid_out.lines.last().map(|line| line.range.end),
+            Some(laid_out.text.len())
+        );
+        let reconstructed: String = laid_out
+            .lines
+            .iter()
+            .filter_map(|line| laid_out.text.get(line.range.clone()))
+            .collect();
+        assert_eq!(reconstructed, laid_out.text, "line ranges cover the source");
+
+        let independent_options = LayoutOptions {
+            max_width: 10_000.0,
+            align: Align::Left,
+            max_lines: None,
+            ..options.clone()
+        };
+        for line in &laid_out.lines {
+            let span = laid_out.text.get(line.range.clone()).expect("line span");
+            let independent = layout(span, &independent_options).expect("independent layout");
+            assert_eq!(independent.lines.len(), 1);
+            assert!(
+                (independent.lines[0].width - line.width).abs() < 0.011,
+                "line {:?} width {} vs independent {}",
+                line.range,
+                line.width,
+                independent.lines[0].width
+            );
+            let line_glyphs = laid_out.glyphs.get(line.glyphs.clone()).unwrap_or_default();
+            assert_eq!(line_glyphs.len(), independent.glyphs.len(), "{span:?}");
+            for (actual, expected) in line_glyphs.iter().zip(&independent.glyphs) {
+                assert_eq!(actual.id, expected.id, "{span:?}");
+                assert_eq!(actual.face, expected.face, "{span:?}");
+                assert_eq!(
+                    actual.cluster - line.range.start,
+                    expected.cluster,
+                    "{span:?}"
+                );
+                assert!(
+                    (actual.x - line.x - expected.x).abs() < 0.011,
+                    "{span:?}: {} vs {}",
+                    actual.x - line.x,
+                    expected.x
+                );
+                let isolated_baseline = independent.lines[0].baseline;
+                assert!(
+                    (actual.y - line.baseline - (expected.y - isolated_baseline)).abs() < 0.011,
+                    "{span:?}"
+                );
+                assert!((actual.size - expected.size).abs() < 0.001);
+            }
+        }
+        laid_out
+    }
+
     #[test]
-    fn ligatures_are_reshaped_per_line_and_never_straddle_a_break() {
-        for width in [20.0, 12.0] {
-            let text = "office";
-            let laid_out = layout(
-                text,
-                &LayoutOptions {
-                    family: "Noto Serif",
-                    size: 40.0,
-                    max_width: width,
-                    ..LayoutOptions::default()
-                },
-            )
-            .expect("layout");
-            assert!(laid_out.lines.len() > 1);
+    fn narrow_lines_cover_the_source_and_match_independent_shaping() {
+        for width in [12.0, 20.0, 30.0] {
+            let options = LayoutOptions {
+                family: "Noto Serif",
+                size: 40.0,
+                max_width: width,
+                ..LayoutOptions::default()
+            };
+            assert_complete_and_independently_shaped("office", &options);
+        }
+    }
+
+    #[test]
+    fn cross_boundary_kerning_does_not_change_standalone_line_metrics() {
+        let cases = [
+            ("Inter", "AV", 26.0, Align::Right),
+            ("Inter", "To", 24.0, Align::Right),
+            ("Inter", "AV", 30.0, Align::Center),
+            ("Inter", "WA", 20.0, Align::Left),
+            ("Inter", "Yo", 22.0, Align::Right),
+            ("Inter", "Ta", 23.0, Align::Center),
+        ];
+        for (family, text, width, align) in cases {
+            let options = LayoutOptions {
+                family,
+                size: 40.0,
+                max_width: width,
+                align,
+                ..LayoutOptions::default()
+            };
+            let laid_out = assert_complete_and_independently_shaped(text, &options);
             for line in &laid_out.lines {
-                for glyph in laid_out.glyphs.get(line.glyphs.clone()).unwrap_or_default() {
-                    assert!(
-                        glyph.cluster >= line.range.start && glyph.cluster < line.range.end,
-                        "line {:?} owns foreign glyph {glyph:?}",
-                        line.range
-                    );
-                }
-                let graphemes = text
+                let graphemes = laid_out
+                    .text
                     .get(line.range.clone())
                     .map(|span| span.graphemes(true).count())
                     .unwrap_or(0);
                 if graphemes > 1 {
-                    assert!(line.width <= width + 0.01, "{line:?}");
+                    assert!(line.width <= width + 0.011, "{line:?}");
                 }
             }
         }
