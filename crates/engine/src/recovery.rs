@@ -693,7 +693,14 @@ impl Autosave {
         if !path.is_absolute() {
             return Err(EditError::Invalid("save path must be absolute"));
         }
-        let parent = path
+        // WriterLease resolves existing symlinks before publication. Apply the
+        // storage boundary to that destination, not merely the supplied parent.
+        let destination = match path.canonicalize() {
+            Ok(destination) => destination,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => path.clone(),
+            Err(error) => return Err(error.into()),
+        };
+        let parent = destination
             .parent()
             .ok_or(EditError::Invalid("save destination"))?
             .canonicalize()?;

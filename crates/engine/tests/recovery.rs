@@ -829,3 +829,33 @@ fn refused_job_submission_retains_the_before_load_lease_and_original_bytes() {
     assert!(a.is_dirty());
     assert!(a.saved_receipt().is_none());
 }
+
+#[cfg(unix)]
+#[test]
+fn save_as_symlink_into_recovery_storage_is_refused_before_publication() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path().join("journals");
+    let mut a = open(&root, 1, None, Arc::new(TestClock::default()));
+    a.flush().unwrap();
+    let directory = fs::read_dir(&root).unwrap().next().unwrap().unwrap().path();
+    let snapshot = project::autosave::list(&directory.join("project"))
+        .unwrap()
+        .pop()
+        .unwrap();
+    let before = fs::read(&snapshot).unwrap();
+    let alias = dir.path().join("save-destination.vibecut");
+    std::os::unix::fs::symlink(&snapshot, &alias).unwrap();
+    let result = a.save_as(alias);
+    if result.is_ok() {
+        saved(&mut a);
+        a.flush().unwrap();
+        println!(
+            "accepted protected destination; snapshot remains: {}",
+            snapshot.exists()
+        );
+    }
+    assert!(matches!(result, Err(EditError::Invalid(_))));
+    assert_eq!(fs::read(&snapshot).unwrap(), before);
+    assert!(a.saved_path().is_none());
+    assert!(a.saved_receipt().is_none());
+}
