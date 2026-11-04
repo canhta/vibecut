@@ -63,10 +63,10 @@ code is settled by [copy imports](../engineering/workflows.md#copy-imports).
    - `Agent loop: <assignee> <slot> max <n> start: <milestone>/NN`
    - `Review: <milestone>/NN <branch>@<sha7> <slot>`
    Longer briefs go in a spec file (`--spec-file`). Reviewers get their own new worktree, never the implementer's.
-2. End the turn; Orca wakes you for mail. Read the `worker_done` summary and the report TL;DR only. On every wake also run `orca orchestration worker-list` and `git worktree list`: a worker idle without mail, or waiting on something that will not come soon, is stopped and its worktree cleaned (save untracked outputs first).
+2. End the turn; Orca wakes you for mail. Read the `worker_done` summary and the report TL;DR only. On every wake also run `orca orchestration worker-list` and `git worktree list`: a worker whose ticket merged or was dropped, or one idle without mail and without an open ticket, is stopped and its worktree cleaned (save untracked outputs first). A worker waiting on its own ticket's review is not stale.
 3. Answer questions with one batched reply; send no acknowledgements.
-4. Return work to the dispatch that already holds its context: re-reviews to the same reviewer's dispatch (`orca orchestration send` reopens a finished worker). Once an implementer's work is frozen for review, stop it and remove its worktree, keeping the branch; review `changes` then start a new worker on that branch.
-5. After a merge, clean up with `.scratch/bin/cleanup <dispatch-id> <worktree-name>...`. Keep a `changes` reviewer's dispatch until the ticket merges.
+4. Return work to the dispatch that already holds its context: re-reviews to the same reviewer's dispatch (`orca orchestration send` reopens a finished worker). Review `changes` go to the implementer's dispatch; start a new worker on the branch only when that dispatch is gone.
+5. After a merge, clean up with `.scratch/bin/cleanup <dispatch-id> <worktree-name>...`. Keep the implementer and reviewer (dispatch and worktree) until the ticket merges or is dropped; only then are they removed.
 6. Dispatch what `.scratch/bin/frontier` lists, opencode first, critical path first.
 7. Anything outward-facing (posting upstream, changing repo visibility, publishing) needs the maintainer's explicit yes first.
 
