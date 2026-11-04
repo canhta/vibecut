@@ -3,7 +3,7 @@
 ## Licensing
 
 Contributions are [MIT](../../LICENSE). Admitted dependency licences: MIT,
-Apache-2.0, BSD, ISC, Zlib, Unicode, Unlicense, WTFPL, unmodified MPL-2.0, and
+Apache-2.0, BSD, ISC, Zlib, Unicode, Unlicense, WTFPL, CDLA-Permissive-2.0, unmodified MPL-2.0, and
 LGPL-2.1-or-later for shared FFmpeg under the rules below. Any other licence needs
 an ADR.
 

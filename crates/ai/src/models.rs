@@ -170,9 +170,9 @@ pub fn cache_dir() -> Result<PathBuf, Error> {
     let base = base.filter(|p| p.is_absolute()).ok_or(Error::Unsupported)?;
     Ok(base.join("VibeCut").join("models"))
 }
-/// Pinned multilingual default; metadata is data, never an automatic download.
+/// Pinned local models; metadata never starts an automatic download.
 pub fn catalog() -> Result<Vec<Model>, Error> {
-    let models = vec![Model {
+    let mut models = vec![Model {
         id: "whisper-large-v3-turbo".into(), license: "MIT".into(),
         license_url: "https://github.com/openai/whisper/blob/main/LICENSE".into(),
         source: "https://huggingface.co/ggerganov/whisper.cpp".into(),
@@ -185,8 +185,42 @@ pub fn catalog() -> Result<Vec<Model>, Error> {
             size: 1_624_555_275,
         }],
     }];
+    models.push(Model {
+        id: "gipformer-68m-rnnt-int8".into(), license: "MIT".into(),
+        license_url: "https://huggingface.co/g-group-ai-lab/gipformer-68M-rnnt/blob/318322b009200f8e77a3751fa64638e5cc85a7dc/README.md".into(),
+        source: "https://huggingface.co/g-group-ai-lab/gipformer-68M-rnnt".into(),
+        languages: vec![captions::LanguageTag::parse("vi")?],
+        files: vec![
+            ModelFile { name: "encoder.int8.onnx".into(),
+                url: "https://huggingface.co/g-group-ai-lab/gipformer-68M-rnnt/resolve/318322b009200f8e77a3751fa64638e5cc85a7dc/encoder.int8.onnx".into(),
+                sha256: "3cc1a719f04d6051210e03833eef0d42939352c6f4704b67c34655ceecb98809".into(), size: 70876359 },
+            ModelFile { name: "decoder.int8.onnx".into(),
+                url: "https://huggingface.co/g-group-ai-lab/gipformer-68M-rnnt/resolve/318322b009200f8e77a3751fa64638e5cc85a7dc/decoder.int8.onnx".into(),
+                sha256: "2b6235b8a8be57b5ba57024f6119398a1aace6aff23347a04d59c9bd2686c1f6".into(), size: 1308690 },
+            ModelFile { name: "joiner.int8.onnx".into(),
+                url: "https://huggingface.co/g-group-ai-lab/gipformer-68M-rnnt/resolve/318322b009200f8e77a3751fa64638e5cc85a7dc/joiner.int8.onnx".into(),
+                sha256: "eb74e2ead853d64161ee7af2aa2bce5fcc64752d07f72e0683926b238296d58f".into(), size: 1033417 },
+            ModelFile { name: "tokens.txt".into(),
+                url: "https://huggingface.co/g-group-ai-lab/gipformer-68M-rnnt/resolve/318322b009200f8e77a3751fa64638e5cc85a7dc/tokens.txt".into(),
+                sha256: "f536d03c2e95ebd2930cf0abec88e823bd17d3c1933da7ae6a82db3b80605e15".into(), size: 25847 },
+        ],
+    });
     for model in &models {
         model.validate()?;
     }
     Ok(models)
+}
+
+/// Suggested model metadata only; callers still show a choice and obtain download
+/// consent. No execution fallback or automatic provider selection occurs here.
+pub fn suggested_transcriber(language: &captions::LanguageTag) -> Result<Model, Error> {
+    const PROFILES: &[(&str, &str)] = &[("vi", "gipformer-68m-rnnt-int8")];
+    let id = PROFILES
+        .iter()
+        .find(|(tag, _)| *tag == language.as_str())
+        .map_or("whisper-large-v3-turbo", |(_, id)| *id);
+    catalog()?
+        .into_iter()
+        .find(|m| m.id == id && m.default_eligible())
+        .ok_or(Error::Unsupported)
 }

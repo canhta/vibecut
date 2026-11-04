@@ -165,3 +165,23 @@ fn invalid_hash_size_and_missing_display_metadata_refuse_approval() {
         assert!(DownloadConsent::grant(&model).is_err());
     }
 }
+
+#[test]
+fn local_catalog_suggestions_keep_download_consent_and_provider_choice_explicit() {
+    let vi = suggested_transcriber(&captions::LanguageTag::parse("vi").unwrap()).unwrap();
+    assert_eq!(vi.id, "gipformer-68m-rnnt-int8");
+    assert_eq!(vi.license, "MIT");
+    assert_eq!(vi.files.len(), 4);
+    assert!(vi.default_eligible());
+    let consent = DownloadConsent::grant(&vi).unwrap();
+    consent.authorize(&vi).unwrap();
+    for language in ["en", "zh", "vi-VN"] {
+        let model =
+            suggested_transcriber(&captions::LanguageTag::parse(language).unwrap()).unwrap();
+        assert_eq!(model.id, "whisper-large-v3-turbo");
+        assert!(consent.authorize(&model).is_err());
+    }
+    for model in catalog().unwrap() {
+        model.validate().unwrap();
+    }
+}

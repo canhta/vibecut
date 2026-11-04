@@ -21,11 +21,19 @@ dbg_macro = "deny"
 wildcard_imports = "warn"
 
 [features]
-default = ["whisper"]
+default = ["whisper", "gipformer"]
 whisper = ["dep:whisper-rs"]
+gipformer = ["dep:sherpa-onnx"]
 whisper-vulkan = ["whisper", "whisper-rs/vulkan"]
 
+[[bin]]
+name = "vibecut-local-asr"
+path = "src/bin/local_asr.rs"
+required-features = ["gipformer"]
+
 [dependencies]
+sherpa-onnx = { version = "2.0.1", optional = true }
+serde_json = "1.0.154"
 captions = { path = "../captions" }
 time = { path = "../time" }
 serde = { version = "1.0.229", features = ["derive"] }
@@ -39,6 +47,3 @@ whisper-rs = { version = "0.16.0", optional = true, features = ["metal", "raw-ap
 
 [target.'cfg(not(target_os = "macos"))'.dependencies]
 whisper-rs = { version = "0.16.0", optional = true, features = ["raw-api"] }
-
-[dev-dependencies]
-serde_json = "1.0.154"

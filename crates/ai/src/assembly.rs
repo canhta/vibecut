@@ -68,7 +68,9 @@ impl RecognitionSegment {
         if self.range.is_some_and(|r| !window.contains(r)) {
             return Err(Error::Invalid("segment outside audio"));
         }
-        if self.range.is_none() && (!self.timing.is_empty() || !self.raw_tokens.is_empty()) {
+        if self.range.is_none()
+            && (!self.timing.is_empty() || self.raw_tokens.iter().any(|t| t.range.is_some()))
+        {
             return Err(Error::Invalid("unit timing without segment timing"));
         }
         if self
@@ -339,7 +341,8 @@ pub fn transcribe(
             return Err(Error::Invalid("unadvertised segment timing"));
         }
         if segment.raw_tokens.iter().any(|t| {
-            !caps.timing.contains(&TimingUnit::Token) || t.provenance != Provenance::Native
+            (t.range.is_some() && !caps.timing.contains(&TimingUnit::Token))
+                || t.provenance != Provenance::Native
         }) {
             return Err(Error::Invalid("unadvertised native tokens"));
         }

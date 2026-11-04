@@ -59,7 +59,10 @@ Presentation state and preferences stay in the app.
 **AI.** `ai` owns consent, cost estimates and capability checks once for every
 operation; consent binds provider, operation, content and languages, and retries
 stay inside it. Captions owns text correspondence and unit identity; translations
-never reuse source word timing. Details: [ai README](../../crates/ai/README.md).
+never reuse source word timing. Wholly untimed raw tokens may precede segment alignment;
+measured token ranges require segment timing and an advertised capability.
+Local Gipformer runs in ai's isolated native runner; see the
+[local contract](../../crates/ai/README.md#local-gipformer). Details: [ai README](../../crates/ai/README.md).
 
 ## Languages
 

@@ -1,0 +1,6 @@
+fn main() -> std::process::ExitCode {
+    match ai::gipformer::run_native() {
+        Ok(()) => std::process::ExitCode::SUCCESS,
+        Err(_) => std::process::ExitCode::FAILURE,
+    }
+}

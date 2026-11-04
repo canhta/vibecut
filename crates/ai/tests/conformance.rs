@@ -90,6 +90,7 @@ struct Fake {
     calls: AtomicUsize,
     failure: bool,
     cancel: bool,
+    untimed: bool,
 }
 #[allow(clippy::unwrap_used, reason = "offline fake adapter fixture")]
 impl Fake {
@@ -100,6 +101,7 @@ impl Fake {
             calls: AtomicUsize::new(0),
             failure: false,
             cancel: false,
+            untimed: false,
         }
     }
 }
@@ -110,7 +112,11 @@ impl Transcriber for Fake {
         &self.config
     }
     fn capabilities(&self, scope: &Scope) -> Capabilities {
-        caps(scope)
+        let mut caps = caps(scope);
+        if self.untimed {
+            caps.timing.clear();
+        }
+        caps
     }
     fn estimate(&self, _: &Scope) -> CostEstimate {
         CostEstimate::UpperBound(Money::new("USD", 10).unwrap())
@@ -1500,4 +1506,113 @@ fn token_alignment_reconciles_only_matching_ordinals_and_preserves_native_eviden
             assert_eq!(span.input().provenance, segment.raw_tokens[i].provenance);
         }
     }
+}
+
+#[test]
+fn untimed_raw_bytes_need_no_timing_capability_but_refuse_invented_ranges() {
+    let scope = scope(config(false), Operation::Transcribe);
+    let mut fake = Fake::new(scope.provider.clone(), TEXT);
+    let mut segment = raw_result("e\u{302}\u{301}中");
+    segment.range = None;
+    for token in &mut segment.raw_tokens {
+        token.range = None;
+    }
+    fake.result = vec![segment.clone()];
+    fake.untimed = true;
+    let pcm = vec![0.0; 32000];
+    let result = transcribe(
+        &fake,
+        audio(&pcm, &scope),
+        &Request {
+            scope: &scope,
+            consent: None,
+        },
+        None,
+        &Hooks::new(),
+    )
+    .unwrap();
+    assert!(result.is_text_only());
+    assert_eq!(result.segments()[0].raw_tokens, segment.raw_tokens);
+    assert!(matches!(
+        result.to_transcript(),
+        Err(Error::TimingUnavailable)
+    ));
+    let roundtrip: RecognitionSegment =
+        serde_json::from_str(&serde_json::to_string(&result.segments()[0]).unwrap()).unwrap();
+    assert_eq!(roundtrip, segment);
+    let mut align_scope = scope.clone();
+    align_scope.operation = Operation::Align;
+    align_scope.texts = vec![segment.text.clone()];
+    let mut aligner = Fake::new(align_scope.provider.clone(), TEXT);
+    let mut aligned = segment.clone();
+    aligned.range = Some(scope.source_samples);
+    for token in &mut aligned.raw_tokens {
+        token.provenance = Provenance::Forced;
+    }
+    // The aligner supplies ordinal-preserving full ranges rather than native
+    // start points being extended into guessed ends.
+    for (i, token) in aligned.raw_tokens.iter_mut().enumerate() {
+        token.range =
+            Some(SampleRange::new(16000 + i as u64 * 100, 16100 + i as u64 * 100).unwrap());
+    }
+    aligner.result = vec![aligned];
+    let timed = transcribe(
+        &fake,
+        audio(&pcm, &scope),
+        &Request {
+            scope: &scope,
+            consent: None,
+        },
+        Some(Alignment {
+            provider: &aligner,
+            request: Request {
+                scope: &align_scope,
+                consent: None,
+            },
+            unit: TimingUnit::Token,
+        }),
+        &Hooks::new(),
+    )
+    .unwrap();
+    let transcript = timed.to_transcript().unwrap();
+    let spans = transcript.segments[0].spans.as_ref().unwrap();
+    assert_eq!(spans.raw(), "e\u{302}\u{301}中");
+    assert_eq!(spans.spans().len(), segment.raw_tokens.len());
+    assert!(transcript.segments[0].words.is_empty());
+    for (i, span) in spans.spans().iter().enumerate() {
+        assert_eq!(span.input().index, i);
+        assert_eq!(span.input().provenance, Provenance::Forced);
+        assert!(span.input().range.is_some());
+    }
+    let roundtrip: captions::Transcript =
+        serde_json::from_str(&serde_json::to_string(&transcript).unwrap()).unwrap();
+    assert_eq!(roundtrip, transcript);
+    fake.result[0].raw_tokens[0].range = Some(SampleRange::new(16000, 16100).unwrap());
+    assert!(
+        transcribe(
+            &fake,
+            audio(&pcm, &scope),
+            &Request {
+                scope: &scope,
+                consent: None
+            },
+            None,
+            &Hooks::new()
+        )
+        .is_err()
+    );
+    fake.result[0].range = Some(scope.source_samples);
+    assert!(
+        transcribe(
+            &fake,
+            audio(&pcm, &scope),
+            &Request {
+                scope: &scope,
+                consent: None
+            },
+            None,
+            &Hooks::new()
+        )
+        .is_err()
+    );
 }

@@ -61,7 +61,10 @@ impl Whisper {
         hooks: &dyn ExecutionHooks,
     ) -> Result<Self, Error> {
         model.validate()?;
-        let default = crate::models::catalog()?.pop().ok_or(Error::Unsupported)?;
+        let default = crate::models::catalog()?
+            .into_iter()
+            .find(|m| m.id == "whisper-large-v3-turbo")
+            .ok_or(Error::Unsupported)?;
         if *model != default || threads == 0 || threads > 32 {
             return Err(Error::Unsupported);
         }
