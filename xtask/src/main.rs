@@ -256,7 +256,9 @@ fn new_crate(root: &Path, name: &str) -> Result<(), String> {
 }
 
 fn run() -> Result<(), String> {
-    let root = Path::new(env!("CARGO_MANIFEST_DIR"))
+    // Runtime, not env!: shared target dirs reuse this binary across worktrees.
+    let manifest_dir = env::var_os("CARGO_MANIFEST_DIR").ok_or("run via cargo xtask")?;
+    let root = Path::new(&manifest_dir)
         .parent()
         .ok_or("xtask must live in workspace root")?;
     let args: Vec<_> = env::args().skip(1).collect();
@@ -286,7 +288,7 @@ fn run() -> Result<(), String> {
                 &["test", "--workspace"],
             ] {
                 eprintln!("cargo {}", args.join(" "));
-                let status = Command::new(env!("CARGO"))
+                let status = Command::new(env::var_os("CARGO").ok_or("run via cargo xtask")?)
                     .args(args)
                     .current_dir(root)
                     .status()

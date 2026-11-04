@@ -36,7 +36,9 @@ reads only report TL;DRs. Batch instructions; never send piecemeal addenda.
 
 Dispatch spec template (one line; everything else lives in this file):
 `Agent loop: <assignee> <slot> [max 5 tickets] [start: <milestone>/NN]` or
-`Review: <milestone>/NN <branch>@<sha7> <slot>`.
+`Review: <milestone>/NN <branch>@<sha7> <slot>`. A reviewer that approves merges
+immediately (rebase on `origin/main`, resolve `Cargo.lock` by regenerating it, CI,
+ff-only push) and cleans its ticket; it never leaves the merge to the coordinator.
 
 Implementers run a pull loop: after merging (or handing to review) a ticket, claim
 the next frontier ticket with the same `Assignee` (open, unblocked, lowest number;
