@@ -201,6 +201,23 @@ pub fn environment(command: &mut Command) -> Result<(), String> {
 }
 
 pub fn provision(target: Option<&str>) -> Result<(), String> {
+    if cfg!(windows) {
+        for name in ["HOME", "USERPROFILE", "PATH", "MSYSTEM", "MSYSTEM_PREFIX"] {
+            eprintln!("native Rust {name}={:?}", env::var_os(name));
+        }
+        for (program, args) in [("where.exe", vec!["bash"]), ("bash", vec!["--version"])] {
+            let output = Command::new(program)
+                .args(args)
+                .output()
+                .map_err(|e| e.to_string())?;
+            eprintln!(
+                "native Rust {program}: {:?}\n{}\n{}",
+                output.status,
+                String::from_utf8_lossy(&output.stdout),
+                String::from_utf8_lossy(&output.stderr)
+            );
+        }
+    }
     let host = host()?;
     let target = target.unwrap_or(&host);
     if ![
