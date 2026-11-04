@@ -1,7 +1,9 @@
 //! Validated headless timeline snapshots and versioned project persistence.
 pub mod atomic;
 pub mod autosave;
+mod bezier;
 mod bounds;
+pub use bezier::cubic_bezier_y_for_x;
 mod model;
 mod persistence;
 mod writer;
