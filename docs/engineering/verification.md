@@ -28,10 +28,15 @@ matches in tracked files and branch commit messages.
 
 ## AI model integrations
 
-Prove the integration works: contract, consent, failure paths and one bounded live
-smoke per provider showing real output. Model accuracy, quality and timing fidelity
-belong to the model the user picks and change with every release: no eval corpora,
-WER/MOS scores or quality gates, and no review finding asks for them.
+- **Third-party models** (ASR, translation, TTS, LLM providers): prove the
+  integration works: contract, consent, failure paths and one bounded live smoke per
+  provider showing real output. Their accuracy belongs to the model the user picks
+  and changes with every release: no eval corpora, WER/MOS scores or quality gates,
+  and no review finding asks for them.
+- **Our own AI logic** (the agentic clip pipeline: selection, boundaries, reframe,
+  and any prompt, heuristic or ranking we own): measured, because we improve it. Its
+  eval names a fixed labelled set, a metric and a baseline, and every change to that
+  logic reports the metric against the baseline.
 
 ## When to write tests
 
