@@ -150,6 +150,28 @@ fn populated(path: PathBuf) -> Project {
             }],
         });
     }
+    for (index, kind) in [
+        TrackKind::Sticker,
+        TrackKind::Effect,
+        TrackKind::Filter,
+        TrackKind::Adjustment,
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        data.timeline.insert_track(Track {
+            id: TrackId(index as u64 + 6),
+            name: "Empty overlay".into(),
+            kind,
+            muted: false,
+            hidden: true,
+            locked: false,
+            items: vec![],
+        });
+    }
+    data.timeline.main.muted = true;
+    data.timeline.main.hidden = true;
+    data.timeline.magnet = false;
     data.bookmarks.push(Bookmark {
         id: BookmarkId(1),
         start: Tick(5),
@@ -228,11 +250,9 @@ fn model_trust_boundaries() {
     cases.push(d);
     let mut d = base.clone();
     d.timeline
-        .overlays
-        .first_mut()
-        .unwrap()
-        .items
-        .first_mut()
+        .iter_mut()
+        .flat_map(|track| &mut track.items)
+        .find(|item| item.id == ItemId(0))
         .unwrap()
         .source_asset = Some(AssetId(999));
     cases.push(d);
@@ -256,8 +276,8 @@ fn model_trust_boundaries() {
     cases.push(d);
     let mut d = base.clone();
     d.timeline
-        .overlays
-        .get_mut(1)
+        .audio
+        .first_mut()
         .unwrap()
         .items
         .first_mut()
@@ -267,33 +287,86 @@ fn model_trust_boundaries() {
         muted: false,
     });
     cases.push(d);
-    let mut d = base;
-    d.timeline
-        .overlays
-        .get_mut(2)
-        .unwrap()
-        .items
-        .first_mut()
-        .unwrap()
-        .content = ItemParams::Text(TextParams {
-        content: "text".into(),
-        font_size: f32::INFINITY,
-        color: Color([0; 4]),
-    });
+    let mut d = base.clone();
+    let title = d
+        .timeline
+        .iter_mut()
+        .flat_map(|track| &mut track.items)
+        .find(|item| matches!(item.content, ItemParams::Text(_)))
+        .unwrap();
+    if let ItemParams::Text(params) = &mut title.content {
+        params.font_size = f32::INFINITY;
+    }
     cases.push(d);
+    let mut d = base.clone();
+    d.timeline.main.kind = TrackKind::Audio;
+    cases.push(d);
+    let mut d = base.clone();
+    d.timeline.main.name = "Renamed main".into();
+    cases.push(d);
+    let mut d = base.clone();
+    d.timeline.main.id = TrackId(1);
+    cases.push(d);
+    for (audio_group, wrong_kind) in [(true, TrackKind::Text), (false, TrackKind::Audio)] {
+        let mut d = base.clone();
+        let wrong = Track {
+            id: TrackId(100),
+            name: "Wrong group".into(),
+            kind: wrong_kind,
+            muted: false,
+            hidden: false,
+            locked: false,
+            items: vec![],
+        };
+        if audio_group {
+            d.timeline.audio.push(wrong);
+        } else {
+            d.timeline.overlays.push(wrong);
+        }
+        cases.push(d);
+    }
+    for kind in [
+        TrackKind::Sticker,
+        TrackKind::Effect,
+        TrackKind::Filter,
+        TrackKind::Adjustment,
+    ] {
+        let mut d = base.clone();
+        d.timeline
+            .overlays
+            .iter_mut()
+            .find(|track| {
+                track
+                    .items
+                    .iter()
+                    .any(|item| matches!(item.content, ItemParams::Overlay(_)))
+            })
+            .unwrap()
+            .kind = kind;
+        cases.push(d);
+    }
     for d in cases {
         assert!(Project::new(d).is_err());
     }
 }
 #[test]
 fn schema_errors_precede_interpreting_an_unknown_project_body() {
-    for (version, old) in [(0, true), (SCHEMA_VERSION + 1, false)] {
+    for (version, body, old) in [
+        (0, "null", true),
+        (
+            3,
+            r#"{"id":"1","name":"Old","canvas":{"width":1920,"height":1080,"fps":{"num":30,"den":1},"background":[0,0,0,255]},"assets":[],"timeline":{"tracks":[{"id":1,"name":"Old overlay","kind":"overlay","muted":false,"hidden":false,"locked":false,"items":[]}]},"bookmarks":[],"settings":{"audio_sample_rate":48000}}"#,
+            true,
+        ),
+        (4, "null", true),
+        (SCHEMA_VERSION + 1, "null", false),
+    ] {
         let bytes = format!(
-            r#"{{"format":"vibecut.project","schema_version":{version},"generator":"test","project":null}}"#
+            r#"{{"format":"vibecut.project","schema_version":{version},"generator":"test","project":{body}}}"#
         );
         let error = decode(bytes.as_bytes()).unwrap_err();
         assert!(if old {
-            matches!(error, Error::TooOld { .. })
+            matches!(error, Error::TooOld { found, supported } if found == version && supported == SCHEMA_VERSION)
         } else {
             matches!(error, Error::TooNew { .. })
         });

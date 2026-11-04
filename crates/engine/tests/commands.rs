@@ -381,6 +381,7 @@ fn hostile_parameters_and_limits_leave_project_and_history_intact() {
     let before = s.project().clone();
     for (id, params) in [
         ("missing", json!({})),
+        ("track.remove", json!({"track":0})),
         ("delete", json!({"items":[10,10]})),
         ("move_item", json!({"item":10,"track":1,"start":i64::MAX})),
         ("move_item", json!({"item":10,"track":1,"start":-1})),
@@ -1259,4 +1260,57 @@ fn merged_caption_roundtrip_and_equal_content_replacement() {
     s.apply(caption_trim(false, 1100)).unwrap();
     assert_eq!(get(&s, 1).content, replacement);
     s.commit_gesture().unwrap();
+}
+
+#[test]
+fn track_output_controls_enforce_kind_capabilities() {
+    let mut s = Session::new(Project::empty(ProjectId(1), "Tracks".into()).unwrap(), 100).unwrap();
+    for (kind, mute_allowed, hide_allowed) in [
+        (TrackKind::Video, true, true),
+        (TrackKind::Audio, true, false),
+        (TrackKind::Text, false, true),
+        (TrackKind::Sticker, false, true),
+        (TrackKind::Effect, false, true),
+        (TrackKind::Filter, false, true),
+        (TrackKind::Adjustment, false, true),
+    ] {
+        let result = s
+            .apply(Command::AddTrack {
+                name: "Track".into(),
+                kind,
+            })
+            .unwrap();
+        let track = result
+            .created
+            .iter()
+            .find_map(|id| match id {
+                CreatedId::Track(track) => Some(*track),
+                _ => None,
+            })
+            .unwrap();
+        for (command, field, allowed) in [
+            ("track.set_muted", "muted", mute_allowed),
+            ("track.set_hidden", "hidden", hide_allowed),
+        ] {
+            let before = s.project().clone();
+            let result = s.execute(command, json!({"track":track,(field):true}));
+            if allowed {
+                result.unwrap();
+                let value = s
+                    .project()
+                    .data()
+                    .timeline
+                    .iter()
+                    .find(|value| value.id == track)
+                    .unwrap();
+                assert!(match field {
+                    "muted" => value.muted,
+                    _ => value.hidden,
+                });
+            } else {
+                assert!(result.is_err());
+                assert!(Arc::ptr_eq(&before, s.project()));
+            }
+        }
+    }
 }

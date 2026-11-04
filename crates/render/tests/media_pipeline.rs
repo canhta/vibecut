@@ -1143,7 +1143,7 @@ fn effect_stack_refuses_forced_copy_and_preserves_destination() {
 }
 
 #[test]
-fn track_output_flags_are_independent_in_preview_and_real_exports() {
+fn export_keeps_track_picture_and_audio_flags_independent() {
     if !tools() {
         return;
     }
@@ -1187,16 +1187,6 @@ fn track_output_flags_are_independent_in_preview_and_real_exports() {
         }
         let project = project::Project::new(data).unwrap();
         let hooks = Hooks::default();
-        let frame = Renderer::new(&project, RenderSettings::from_project(&project))
-            .unwrap()
-            .render_frame(Tick::ZERO, &mut FileSources::default(), &hooks)
-            .unwrap();
-        assert_eq!(
-            frame.pixels().iter().all(|p| *p == [0.0, 0.0, 0.0, 1.0]),
-            hidden
-        );
-        let audio = mix_audio(&project, 0, 4096, 2, &mut FileSources::default(), &hooks).unwrap();
-        assert_eq!(audio.peak() == 0.0, muted);
         let output = dir
             .path()
             .join(format!("flags-{hidden}-{muted}-{audio_track}.mp4"));

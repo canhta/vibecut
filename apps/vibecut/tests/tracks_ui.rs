@@ -34,7 +34,7 @@ fn editor() -> Editor {
     Editor::new(s, playback, Preferences::default())
 }
 #[test]
-fn logical_geometry_accessible_names_toggles_delete_and_screenshot() {
+fn track_headers_remain_operable_at_display_density() {
     for scale in [1.0, 2.0] {
         let mut h = Harness::builder()
             .with_size(egui::vec2(1728.0, 1200.0))
@@ -68,6 +68,17 @@ fn logical_geometry_accessible_names_toggles_delete_and_screenshot() {
                 .count()
                     == 1
             );
+        }
+        for pair in [6, 5, 4, 3, 2, 1, 0, 7].windows(2) {
+            let row = |id| {
+                inspect
+                    .widgets
+                    .iter()
+                    .find(|widget| widget.id == format!("track.{id}.header"))
+                    .unwrap()
+                    .rect
+            };
+            assert!(row(pair[0]).bottom() < row(pair[1]).top());
         }
         // Main visibility and mute are independent real registry edits.
         h.get(By::new().predicate(|n| n.author_id() == Some("track.0.muted")))

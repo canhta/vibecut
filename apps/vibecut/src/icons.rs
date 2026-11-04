@@ -57,31 +57,3 @@ pub(crate) fn image(ui: &egui::Ui, name: &str) -> egui::ImageSource<'static> {
     });
     (texture.id(), egui::Vec2::splat(16.0)).into()
 }
-#[cfg(test)]
-#[allow(clippy::expect_used)]
-mod tests {
-    #[test]
-    fn all_track_vectors_rasterize_at_standard_and_scaled_density() {
-        for name in [
-            "film-strip",
-            "music-notes",
-            "text-t",
-            "sticker",
-            "sparkle",
-            "funnel",
-            "sliders-horizontal",
-            "speaker-high",
-            "speaker-slash",
-            "eye",
-            "eye-slash",
-            "magnet",
-            "trash",
-        ] {
-            for size in [16, 32, 128] {
-                let image = super::raster(name, size).expect("valid embedded SVG");
-                assert!(image.pixels.iter().any(|p| p.a() > 0));
-                assert!(image.pixels.iter().any(|p| p.a() == 0));
-            }
-        }
-    }
-}

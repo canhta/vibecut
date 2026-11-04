@@ -376,37 +376,70 @@ fn languages() -> Vec<captions::LanguageTag> {
 }
 #[test]
 fn registered_subtitle_export_maps_repeated_items_and_preserves_gaps_without_media() {
-    let dir = tempfile::tempdir().unwrap();
-    let session = engine::Session::new(caption_project(), 10).unwrap();
-    let budget = ByteBudget::new(16 << 20).unwrap();
-    let mut r = runner(&budget, Arc::new(SystemClock::default()));
-    for (n, format) in [captions::Format::Srt, captions::Format::WebVtt]
-        .into_iter()
-        .enumerate()
-    {
-        let path = dir.path().join(format!("字幕-{n}.txt"));
-        let preview =
-            engine::subtitle_file(session.project(), project::TrackId(2), format, &languages())
-                .unwrap();
-        let (id, _) = session.execute_export(&mut r, key(40+n as u8), "export_subtitles", serde_json::json!({"track":2, "format":format, "languages":languages(), "path":path, "overwrite":false})).unwrap();
-        let result = complete(&mut r, id);
-        assert_eq!(result.state, JobState::Completed, "{:?}", result.error);
-        assert_eq!(std::fs::read_to_string(&path).unwrap(), preview.text);
-        let imported = captions::parse(
-            preview.text.as_bytes(),
-            format,
-            captions::LanguageTag::parse("vi").unwrap(),
-        )
-        .unwrap();
-        assert_eq!(imported.track.cues.len(), 2);
-        assert_eq!(
-            imported.track.cues[1].range.start(),
-            time::Tick(2 * time::TICKS_PER_SECOND)
-        );
-        assert!(preview.text.contains("Tiếng Việt\n繁體中文"));
+    use time::Tick;
+    for ordinary_title in [false, true] {
+        let dir = tempfile::tempdir().unwrap();
+        let mut data = caption_project().into_data();
+        if ordinary_title {
+            data.timeline
+                .overlays
+                .iter_mut()
+                .find(|track| track.id == project::TrackId(2))
+                .unwrap()
+                .items
+                .insert(
+                    1,
+                    project::Item {
+                        id: project::ItemId(3),
+                        effects: Vec::new(),
+                        animations: Default::default(),
+                        source_asset: None,
+                        source_range: time::SourceRange::new(
+                            Tick::ZERO,
+                            Tick(time::TICKS_PER_SECOND),
+                        )
+                        .unwrap(),
+                        start: Tick(time::TICKS_PER_SECOND),
+                        content: project::ItemParams::Text(project::TextParams {
+                            content: "Ordinary title".into(),
+                            font_size: 32.0,
+                            color: project::Color([255; 4]),
+                        }),
+                    },
+                );
+        }
+        let session = engine::Session::new(project::Project::new(data).unwrap(), 10).unwrap();
+        let budget = ByteBudget::new(16 << 20).unwrap();
+        let mut r = runner(&budget, Arc::new(SystemClock::default()));
+        for (n, format) in [captions::Format::Srt, captions::Format::WebVtt]
+            .into_iter()
+            .enumerate()
+        {
+            let path = dir.path().join(format!("字幕-{n}.txt"));
+            let preview =
+                engine::subtitle_file(session.project(), project::TrackId(2), format, &languages())
+                    .unwrap();
+            let (id, _) = session.execute_export(&mut r, key(40+n as u8), "export_subtitles", serde_json::json!({"track":2, "format":format, "languages":languages(), "path":path, "overwrite":false})).unwrap();
+            let result = complete(&mut r, id);
+            assert_eq!(result.state, JobState::Completed, "{:?}", result.error);
+            assert_eq!(std::fs::read_to_string(&path).unwrap(), preview.text);
+            let imported = captions::parse(
+                preview.text.as_bytes(),
+                format,
+                captions::LanguageTag::parse("vi").unwrap(),
+            )
+            .unwrap();
+            assert_eq!(imported.track.cues.len(), 2);
+            assert_eq!(
+                imported.track.cues[1].range.start(),
+                time::Tick(2 * time::TICKS_PER_SECOND)
+            );
+            assert!(preview.text.contains("Tiếng Việt\n繁體中文"));
+            assert!(!preview.text.contains("Ordinary title"));
+        }
+        assert_eq!(session.history_len(), (0, 0));
+        assert_eq!(budget.snapshot().unwrap().used, 0);
     }
-    assert_eq!(session.history_len(), (0, 0));
-    assert_eq!(budget.snapshot().unwrap().used, 0);
 }
 #[test]
 fn subtitle_export_refuses_alias_existing_output_and_batch_and_cancels_cleanly() {
@@ -607,50 +640,4 @@ fn subtitle_cancel_or_panic_after_finalization_preserves_destination_and_cleans_
         assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 1);
         assert_eq!(budget.snapshot().unwrap().used, 0);
     }
-}
-
-#[test]
-fn text_tracks_export_caption_items_without_exporting_ordinary_titles() {
-    use time::Tick;
-    let directory = tempfile::tempdir().unwrap();
-    let path = directory.path().join("mixed-text.srt");
-    let mut data = caption_project().into_data();
-    data.timeline
-        .overlays
-        .iter_mut()
-        .find(|track| track.id == project::TrackId(2))
-        .unwrap()
-        .items
-        .insert(
-            1,
-            project::Item {
-                id: project::ItemId(3),
-                effects: Vec::new(),
-                animations: Default::default(),
-                source_asset: None,
-                source_range: time::SourceRange::new(Tick::ZERO, Tick(time::TICKS_PER_SECOND))
-                    .unwrap(),
-                start: Tick(time::TICKS_PER_SECOND),
-                content: project::ItemParams::Text(project::TextParams {
-                    content: "Ordinary title".into(),
-                    font_size: 32.0,
-                    color: project::Color([255; 4]),
-                }),
-            },
-        );
-    let session = engine::Session::new(project::Project::new(data).unwrap(), 10).unwrap();
-    let preview = engine::subtitle_file(
-        session.project(),
-        project::TrackId(2),
-        captions::Format::Srt,
-        &languages(),
-    )
-    .unwrap();
-    assert!(!preview.text.contains("Ordinary title"));
-    let budget = ByteBudget::new(16 << 20).unwrap();
-    let mut runner = runner(&budget, Arc::new(SystemClock::default()));
-    let (id,_)=session.execute_export(&mut runner,key(70),"export_subtitles",serde_json::json!({"track":2,"format":"srt","languages":languages(),"path":path,"overwrite":false})).unwrap();
-    let result = complete(&mut runner, id);
-    assert_eq!(result.state, JobState::Completed, "{:?}", result.error);
-    assert_eq!(std::fs::read_to_string(path).unwrap(), preview.text);
 }
