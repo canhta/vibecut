@@ -349,6 +349,27 @@ fn mfcc_range_is_globally_anchored() {
             6.0,
             600,
         ),
+        (
+            "44.1 kHz Matroska PCM sample-aligned rounded PTS",
+            common::generate(
+                "vision mfcc coarse exact tick matroska",
+                "vision_mfcc_44100_coarse_exact_tick.mkv",
+                &[
+                    "-f",
+                    "lavfi",
+                    "-i",
+                    "sine=frequency=440:sample_rate=44100:duration=8",
+                    "-c:a",
+                    "pcm_s16le",
+                    "-cluster_time_limit",
+                    "100",
+                ],
+            ),
+            1.0e-4,
+            24,
+            1.65,
+            165,
+        ),
     ] {
         let Some(path) = path else {
             return;

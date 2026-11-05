@@ -376,10 +376,11 @@ pub fn decode_shot_frames(
 /// Only frames whose window starts inside `range` are emitted. A window that
 /// extends past the range but still has source audio is computed from the real
 /// source samples; only the source's real final window is zero-padded like the
-/// reference. A seek starts resampling on the stream-global grid phase and keeps
-/// at least one second of preroll, so a late subrange keeps full-range
-/// coefficients for ordinary resampled sources. A sub-chunk range still yields
-/// the frames that start inside it.
+/// reference. Every call counts decoded samples from the beginning of the audio
+/// stream, independently of container timestamp precision. Resampling starts on
+/// the stream-global grid phase with at least one second of preroll. Late ranges
+/// therefore scan the preceding audio with bounded memory and cancellation;
+/// a sub-chunk range still yields the frames that start inside it.
 pub fn mfcc_range(
     asset: &SourceAsset,
     range: SourceRange,
@@ -603,59 +604,6 @@ impl<F: FnMut(MfccFrame) -> Result<()>> MfccSink<'_, F> {
     }
 }
 
-/// Recover the input sample index of a decoded frame.
-///
-/// Exact containers (for example 1/44100 MP4 audio) give a sample-aligned PTS.
-/// Coarse containers (Matroska milliseconds) round packet timestamps, so treat
-/// the nearest estimated sample as a cursor and quantize it to the decoded
-/// frame's sample count. Any fixed-frame codec then has one unique legal frame
-/// boundary inside the timestamp's rounding window. If a timestamp is too
-/// coarse to distinguish a boundary, refuse instead of guessing the phase.
-fn recover_input_sample_index(
-    origin: Tick,
-    tick: Tick,
-    ticks_per_sample: i64,
-    frame_samples: i64,
-    max_error_samples: i64,
-) -> Result<i64> {
-    if ticks_per_sample <= 0 || frame_samples <= 0 {
-        return Err(MediaError::Invalid("audio sample clock"));
-    }
-    let delta = tick
-        .checked_sub(origin)
-        .ok_or(MediaError::Invalid("audio sample clock"))?
-        .0;
-    if delta < 0 {
-        return Err(MediaError::Invalid("audio sample clock"));
-    }
-    if delta % ticks_per_sample == 0 {
-        return Ok(delta / ticks_per_sample);
-    }
-    if max_error_samples.saturating_mul(2) >= frame_samples {
-        return Err(MediaError::Unsupported("audio timestamp precision"));
-    }
-    let estimated =
-        (i128::from(delta) + i128::from(ticks_per_sample / 2)) / i128::from(ticks_per_sample);
-    let estimated =
-        i64::try_from(estimated).map_err(|_| MediaError::TooLarge("audio sample clock"))?;
-    let quotient = estimated.div_euclid(frame_samples);
-    let remainder = estimated.rem_euclid(frame_samples);
-    let candidate = if remainder.saturating_mul(2) <= frame_samples {
-        quotient
-            .checked_mul(frame_samples)
-            .ok_or(MediaError::TooLarge("audio sample clock"))?
-    } else {
-        quotient
-            .checked_add(1)
-            .and_then(|value| value.checked_mul(frame_samples))
-            .ok_or(MediaError::TooLarge("audio sample clock"))?
-    };
-    if candidate >= 0 && (candidate - estimated).abs() <= max_error_samples {
-        Ok(candidate)
-    } else {
-        Err(MediaError::Unsupported("audio timestamp precision"))
-    }
-}
 fn sample_tick_for(origin: Tick, index: i64, ticks_per_sample: i64) -> Result<Tick> {
     let delta = index
         .checked_mul(ticks_per_sample)
@@ -771,9 +719,10 @@ fn emit_mfcc_audio(
 ///
 /// A fresh `AudioResampler` starts on an input sample whose phase matches the
 /// stream-global output grid, then runs for at least one second before the
-/// first requested window. That removes the seek-time phase error without
-/// decoding from the start of a long source. `push` receives contiguous
-/// absolute 16 kHz sample indexes; the caller caps the final window count from
+/// first requested window. Decode from stream start and count samples: neither
+/// rounded PTS nor a decoded frame's size identifies an exact seek boundary.
+/// Frames before the preroll are discarded without conversion. `push` receives
+/// contiguous absolute 16 kHz sample indexes; the caller caps the final window count from
 /// the actual received extent, so an unknown-duration EOF never fabricates
 /// windows.
 fn decode_mfcc_audio(
@@ -810,9 +759,6 @@ fn decode_mfcc_audio(
         .checked_sub(MFCC_AUDIO_PREROLL)
         .unwrap_or(Tick::ZERO)
         .max(origin);
-    if target_tick > origin && reader.seek(target_tick).is_err() {
-        reader = PacketReader::open_with_cancel(asset.path(), cancel.clone())?;
-    }
     let mut decoder = AudioDecoder::new(&stream)?;
     let step = i64::from(input_rate / gcd(input_rate, VISION_SAMPLE_RATE));
     let target_index = ceil_div(
@@ -822,20 +768,15 @@ fn decode_mfcc_audio(
             .0,
         ticks_per_input,
     )?;
-    let time_base_ticks = stream.time_base.ticks(1)?.0;
-    let half_unit = time_base_ticks.saturating_abs() / 2 + 1;
-    let max_error_samples = (half_unit + ticks_per_input - 1) / ticks_per_input + 1;
     let mut state = MfccAudioState {
         origin,
         input_rate,
         ticks_per_input,
-        step,
-        max_error_samples,
         aligned_index: round_up(target_index, step)?,
         last_sample,
         resampler: None,
         out_index: 0,
-        next_input: None,
+        next_input: 0,
         cancel,
         push,
     };
@@ -871,13 +812,11 @@ struct MfccAudioState<'a, F> {
     origin: Tick,
     input_rate: u32,
     ticks_per_input: i64,
-    step: i64,
-    max_error_samples: i64,
     aligned_index: i64,
     last_sample: i64,
     resampler: Option<AudioResampler>,
     out_index: i64,
-    next_input: Option<i64>,
+    next_input: i64,
     cancel: &'a AtomicBool,
     push: &'a mut F,
 }
@@ -886,17 +825,13 @@ impl<F: FnMut(&[f32], i64) -> Result<()>> MfccAudioState<'_, F> {
         let samples =
             i64::try_from(frame.samples()).map_err(|_| MediaError::TooLarge("audio samples"))?;
         if let Some(active) = self.resampler.as_mut() {
-            let index = self
-                .next_input
-                .ok_or(MediaError::Invalid("audio sample cursor"))?;
+            let index = self.next_input;
             let pts = sample_tick_for(self.origin, index, self.ticks_per_input)?;
             let planes = audio_planes_f32(&frame)?;
             let input = AudioFrame::from_planar_f32(pts, self.input_rate, &planes)?;
-            self.next_input = Some(
-                index
-                    .checked_add(samples)
-                    .ok_or(MediaError::TooLarge("audio sample cursor"))?,
-            );
+            self.next_input = index
+                .checked_add(samples)
+                .ok_or(MediaError::TooLarge("audio sample cursor"))?;
             for output in active.convert(&input)? {
                 emit_mfcc_audio(&output, &mut self.out_index, &mut *self.push)?;
                 if self.out_index >= self.last_sample {
@@ -905,42 +840,22 @@ impl<F: FnMut(&[f32], i64) -> Result<()>> MfccAudioState<'_, F> {
             }
             return Ok(false);
         }
-        let start_index = if let Some(index) = self.next_input {
-            index
-        } else {
-            let pts = frame
-                .pts()?
-                .ok_or(MediaError::Unsupported("audio timestamp unavailable"))?;
-            recover_input_sample_index(
-                self.origin,
-                pts,
-                self.ticks_per_input,
-                samples,
-                self.max_error_samples,
-            )?
-        };
+        let start_index = self.next_input;
         if start_index
             .checked_add(samples)
             .is_none_or(|end| end <= self.aligned_index)
         {
-            self.next_input = Some(
-                start_index
-                    .checked_add(samples)
-                    .ok_or(MediaError::TooLarge("audio sample cursor"))?,
-            );
+            self.next_input = start_index
+                .checked_add(samples)
+                .ok_or(MediaError::TooLarge("audio sample cursor"))?;
             return Ok(false);
-        }
-        if start_index > self.aligned_index {
-            self.aligned_index = round_up(start_index, self.step)?;
         }
         let skip = usize::try_from(self.aligned_index - start_index)
             .map_err(|_| MediaError::Invalid("audio sample trim"))?;
         if skip >= frame.samples() {
-            self.next_input = Some(
-                start_index
-                    .checked_add(samples)
-                    .ok_or(MediaError::TooLarge("audio sample cursor"))?,
-            );
+            self.next_input = start_index
+                .checked_add(samples)
+                .ok_or(MediaError::TooLarge("audio sample cursor"))?;
             return Ok(false);
         }
         let planes = audio_planes_f32(&frame)?;
@@ -952,11 +867,9 @@ impl<F: FnMut(&[f32], i64) -> Result<()>> MfccAudioState<'_, F> {
             trimmed.push(remainder.to_vec());
         }
         if trimmed.first().is_none_or(|plane| plane.is_empty()) {
-            self.next_input = Some(
-                start_index
-                    .checked_add(samples)
-                    .ok_or(MediaError::TooLarge("audio sample cursor"))?,
-            );
+            self.next_input = start_index
+                .checked_add(samples)
+                .ok_or(MediaError::TooLarge("audio sample cursor"))?;
             return Ok(false);
         }
         let aligned_tick = sample_tick_for(self.origin, self.aligned_index, self.ticks_per_input)?;
@@ -964,11 +877,9 @@ impl<F: FnMut(&[f32], i64) -> Result<()>> MfccAudioState<'_, F> {
         let mut active =
             AudioResampler::new(&first, VISION_SAMPLE_RATE, 1, AudioSampleFormat::PlanarF32)?;
         self.out_index = output_sample_index(self.aligned_index, self.input_rate)?;
-        self.next_input = Some(
-            start_index
-                .checked_add(samples)
-                .ok_or(MediaError::TooLarge("audio sample cursor"))?,
-        );
+        self.next_input = start_index
+            .checked_add(samples)
+            .ok_or(MediaError::TooLarge("audio sample cursor"))?;
         for output in active.convert(&first)? {
             emit_mfcc_audio(&output, &mut self.out_index, &mut *self.push)?;
             if self.out_index >= self.last_sample {

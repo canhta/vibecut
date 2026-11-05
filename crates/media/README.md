@@ -300,15 +300,15 @@ geometry are checked; hostile boxes return typed errors.
 cepstral lifter 22 and `c0` equal to log frame energy. The analysis grid is
 anchored at the start of the source audio stream, so a subrange is the exact
 suffix of a full-range call and pre-emphasis uses the sample before the first
-window. Samples are interpreted as 16-bit full-scale PCM. A seek starts the
-resampler on an input sample whose phase matches the stream-global 16 kHz grid
-and runs at least one second before the first requested window, preserving the
-full-range coefficients for ordinary 44.1/48 kHz sources. Container timestamps
-are cursors, not sample counters: when a coarse time base (for example Matroska
-milliseconds) cannot represent the exact sample instant, the nearest decoded
-frame boundary from the frame's sample count recovers the legal start, and the
-source converter uses sequential sample counts rather than rounded timestamps
-after that point. At end of input the
+window. Samples are interpreted as 16-bit full-scale PCM. Each call decodes
+sequentially from the beginning of the audio stream, counting decoded samples
+from that exact anchor rather than estimating a seek position from container
+PTS. This also works when a rounded timestamp happens to fall on the sample
+grid or decoded frames have different sample counts. Frames before the
+resampler preroll are discarded without conversion; the resampler starts on a
+stream-global 16 kHz grid phase at least one second before the requested window.
+Memory stays bounded, but late requests require decoding the preceding audio;
+cancellation is checked throughout the scan. At end of input the
 final window count comes from the actual received samples, so unknown-duration
 audio is padded only at its real last window, never extended with synthetic
 windows. Only windows starting inside the requested range are emitted; a range
