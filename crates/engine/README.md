@@ -946,3 +946,13 @@ instances, wrong types and out-of-range intensity refuse. Add stores enabled sta
 and static parameters; scalar animation overrides use `keyframes.set_param` at
 `effects.<id>.params.intensity`. Remove deletes those animation paths in the same
 undo step. CLI `exec` consumes these same registered commands before export.
+
+## Mask edits
+
+`masks.add`, `masks.remove`, `masks.update` and `masks.reorder` operate on the
+project-owned ordered mask vector through the same atomic candidate/history path.
+Update selects by the supplied mask's stable ID; reorder requires an exact
+permutation. Missing/duplicate identities, invalid parameters and locked tracks
+refuse the entire command or batch. Removal also removes that mask's animation
+channels; undo restores both. Registry schemas and CLI execution share these
+commands and their examples. No app-only mask state or evaluator is introduced.

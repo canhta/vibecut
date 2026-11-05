@@ -18,5 +18,5 @@ mod render;
 pub use color::Color;
 pub use fonts::{Face, FaceId, Resolved, face, fallback_chain, fallback_for, families, resolve};
 pub use layout::{Align, Bounds, Glyph, Layout, LayoutOptions, Line, LineBreak, TextError, layout};
-pub use mask::StrokeKind;
+pub use mask::{StrokeKind, coverage_signed_distance};
 pub use render::{Canvas, Image, Outline, Paint, Rectangle, RenderError, render};

@@ -128,6 +128,7 @@ pub(crate) fn preview(
                     hidden: false,
                     locked: false,
                     items: vec![project::Item {
+                        masks: Vec::new(),
                         effects: Vec::new(),
                         animations: Default::default(),
                         id: background_id,
@@ -159,6 +160,7 @@ pub(crate) fn preview(
                     hidden: false,
                     locked: false,
                     items: vec![project::Item {
+                        masks: Vec::new(),
                         effects: Vec::new(),
                         animations: Default::default(),
                         id: label_id,

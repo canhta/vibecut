@@ -101,6 +101,7 @@ fn overlay_project_color(
         hidden: false,
         locked: false,
         items: vec![project::Item {
+            masks: Vec::new(),
             effects: Vec::new(),
             animations: Default::default(),
             id: project::ItemId(0),
@@ -920,43 +921,65 @@ fn view_state_persists_in_optional_metadata_without_rewriting_project() {
 }
 
 #[test]
-fn cli_blur_executes_and_export_encodes_instead_of_copying() {
+fn cli_pixel_modifiers_execute_and_export_instead_of_copying() {
     if !tools() {
         return;
     }
-    let dir = tempfile::tempdir().unwrap();
-    let video = dir.path().join("input.mp4");
-    let project = dir.path().join("blur.vibecut");
-    let output_path = dir.path().join("blur.mp4");
-    generate_av(&video);
-    media_project(&project, &video, None);
-    exec(
-        &project,
-        "effects.add",
-        json!({"item":0,"effect":{"id":"blur","enabled":true,"params":{"kind":"blur","intensity":100.0}}}),
-    );
-    let output = cli(&[
-        os("export"),
-        project.as_os_str(),
-        os("--out"),
-        output_path.as_os_str(),
-        os("--json"),
-    ]);
-    assert_eq!(
-        code(&output),
-        0,
-        "{}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-    assert_eq!(stdout_json(&output)["status"], "completed");
-    let source = decoded_rgb(&video, 128, 96, &[0]);
-    let actual = decoded_rgb(&output_path, 128, 96, &[0]);
-    let difference: u64 = source[0]
-        .iter()
-        .zip(&actual[0])
-        .map(|(a, b)| u64::from(a.abs_diff(*b)))
-        .sum();
-    assert!(difference > 10000, "blur was bypassed: {difference}");
+    for masked in [false, true] {
+        let dir = tempfile::tempdir().unwrap();
+        let video = dir.path().join("input.mp4");
+        let project = dir.path().join("blur.vibecut");
+        let output_path = dir.path().join("blur.mp4");
+        generate_av(&video);
+        media_project(&project, &video, None);
+        if masked {
+            exec(
+                &project,
+                "masks.add",
+                json!({"item":0,"mask":project::Mask::new("rectangle",project::MaskShape::Rectangle)}),
+            );
+        } else {
+            exec(
+                &project,
+                "effects.add",
+                json!({"item":0,"effect":{"id":"blur","enabled":true,"params":{"kind":"blur","intensity":100.0}}}),
+            );
+        }
+        let output = cli(&[
+            os("export"),
+            project.as_os_str(),
+            os("--out"),
+            output_path.as_os_str(),
+            os("--json"),
+        ]);
+        assert_eq!(
+            code(&output),
+            0,
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        assert_eq!(stdout_json(&output)["status"], "completed");
+        let source = decoded_rgb(&video, 128, 96, &[0]);
+        let actual = decoded_rgb(&output_path, 128, 96, &[0]);
+        let difference: u64 = source[0]
+            .iter()
+            .zip(&actual[0])
+            .map(|(a, b)| u64::from(a.abs_diff(*b)))
+            .sum();
+        assert!(
+            difference > 10000,
+            "pixel modifier was bypassed: {difference}"
+        );
+        if masked {
+            for (x, y) in [(8usize, 8usize), (64, 8), (120, 88)] {
+                let offset = (y * 128 + x) * 3;
+                assert!(
+                    actual[0][offset..offset + 3].iter().all(|c| *c < 20),
+                    "rectangle did not clip outside"
+                );
+            }
+        }
+    }
 }
 
 #[test]
@@ -975,6 +998,7 @@ fn exec_shared_field_id_list_persists_only_compatible_item_fields() {
         locked: false,
         items: (0..2)
             .map(|i| project::Item {
+                masks: Vec::new(),
                 effects: vec![],
                 animations: Default::default(),
                 id: project::ItemId(i + 10),

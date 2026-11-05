@@ -1,6 +1,7 @@
 use crate::{
     CaptionPosition, CaptionStyle, Error, ExecutionHooks, Image, MemoryKind, Result,
-    SourceProvider, Unavailable, check, image::color,
+    SourceProvider, Unavailable, check,
+    image::{color, over},
 };
 use project::{AnimationPath, Item, ItemId, ItemParams, ParamValue, Project};
 use std::{collections::BTreeMap, sync::Arc};
@@ -357,7 +358,15 @@ impl<'a> Renderer<'a> {
         for item in active {
             check(hooks)?;
             let local = local_time(item, at)?;
-            let placement = self.placement_at(item, local)?;
+            let mut placement = self.placement_at(item, local)?;
+            let masked = item.masks.iter().any(|m| m.active());
+            let final_opacity = if masked {
+                let opacity = placement.opacity;
+                placement.opacity = 1.;
+                opacity
+            } else {
+                1.
+            };
             let source_at = source_time(item, at)?;
             let _plan = if item.effects.iter().any(|effect| effect.enabled) {
                 Some(hooks.reserve(
@@ -370,7 +379,7 @@ impl<'a> Renderer<'a> {
                 None
             };
             let passes = crate::effects::evaluate(item, local, out.width, out.height)?;
-            let below = if passes.is_empty() {
+            let below = if passes.is_empty() && !masked {
                 None
             } else {
                 let layer = Image::new(out.width, out.height, [0.0; 4], hooks)?;
@@ -483,12 +492,54 @@ impl<'a> Renderer<'a> {
                 };
                 let cpu = CpuEffects;
                 let adapter = self.settings.effects.as_deref().unwrap_or(&cpu);
-                let filtered = match adapter.apply(&out, &passes, inputs(), hooks) {
-                    Err(Error::Unsupported(_)) => cpu.apply(&out, &passes, inputs(), hooks)?,
-                    result => result?,
+                let mut filtered = if passes.is_empty() {
+                    out
+                } else {
+                    match adapter.apply(&out, &passes, inputs(), hooks) {
+                        Err(Error::Unsupported(_)) => cpu.apply(&out, &passes, inputs(), hooks)?,
+                        result => result?,
+                    }
                 };
                 if filtered.width != below.width || filtered.height != below.height {
                     return Err(Error::Invalid("effect output dimensions"));
+                }
+                if masked {
+                    let width = self.settings.width;
+                    let height = self.settings.height;
+                    crate::mask::apply(
+                        &mut filtered,
+                        item,
+                        local,
+                        placement,
+                        &project.data().canvas,
+                        |content, size, geometry| {
+                            let style = CaptionStyle {
+                                font_style: "Regular".into(),
+                                outline: None,
+                                background: None,
+                                position: CaptionPosition::Middle,
+                                max_lines: 64,
+                                ..Default::default()
+                            };
+                            self.text(
+                                content,
+                                size * 1080.0 / project.data().canvas.height as f32,
+                                [255; 4],
+                                Placement {
+                                    destination: Rect {
+                                        x: 0.,
+                                        y: 0.,
+                                        width: f64::from(geometry.size[0]) / f64::from(width),
+                                        height: f64::from(geometry.size[1]) / f64::from(height),
+                                    },
+                                    ..Default::default()
+                                },
+                                Some(&style),
+                                hooks,
+                            )
+                        },
+                        hooks,
+                    )?;
                 }
                 for (destination, source) in below
                     .pixels
@@ -497,7 +548,7 @@ impl<'a> Renderer<'a> {
                 {
                     check(hooks)?;
                     for (dst, src) in destination.iter_mut().zip(source) {
-                        over(dst, *src, 1.0);
+                        over(dst, *src, final_opacity);
                     }
                 }
                 out = below;
@@ -750,16 +801,6 @@ fn rgba(value: [u8; 4]) -> text::Color {
     text::Color::rgba(r, g, b, a)
 }
 
-fn over(destination: &mut [f32; 4], source: [f32; 4], opacity: f32) {
-    if opacity == 1.0 && source.get(3) == Some(&1.0) {
-        *destination = source.map(|v| v.clamp(0.0, 1.0));
-        return;
-    }
-    let inverse = 1.0 - source.get(3).copied().unwrap_or(0.0) * opacity;
-    for (d, s) in destination.iter_mut().zip(source) {
-        *d = (s * opacity + *d * inverse).clamp(0.0, 1.0);
-    }
-}
 struct Geometry {
     dx: f64,
     dy: f64,

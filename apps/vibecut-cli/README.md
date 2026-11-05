@@ -29,7 +29,8 @@ output paths, not render's detailed receipt.
 
 `cargo test -p vibecut-cli` covers command dispatch, Unicode/space paths, refused
 parameters, subprocess lease contention, progress, export geometry, keyframed
-opacity decoded from an export, degraded consent and source loss before/during
+opacity decoded from an export, rectangle masks applied by `exec` and decoded
+from an encoded export, degraded consent and source loss before/during
 export, offline provider/model catalogs,
 subtitle argument refusals and credential refusal before any upload. Mid-job source loss
 uses a synchronous render hook after admission and the first decoded frame,

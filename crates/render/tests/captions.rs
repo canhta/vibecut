@@ -27,6 +27,7 @@ fn scene(texts: &[(&str, &str)]) -> project::Project {
         hidden: false,
         locked: false,
         items: vec![project::Item {
+            masks: Vec::new(),
             effects: Vec::new(),
             animations: Default::default(),
             id: project::ItemId(1),

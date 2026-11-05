@@ -5,6 +5,7 @@ pub use caption::{CaptionBackground, CaptionOutline, CaptionPosition, CaptionSty
 pub mod effects;
 mod export;
 mod image;
+pub mod mask;
 mod scene;
 mod sources;
 pub use audio::{AudioBlock, mix_audio};

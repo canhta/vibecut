@@ -69,6 +69,7 @@ fn source(path: PathBuf) -> SourceAsset {
 }
 fn item(id: u64, start: i64) -> Item {
     Item {
+        masks: Vec::new(),
         effects: Vec::new(),
         animations: Default::default(),
         id: ItemId(id),
@@ -140,6 +141,7 @@ fn populated(path: PathBuf) -> Project {
             hidden: true,
             locked: true,
             items: vec![Item {
+                masks: Vec::new(),
                 effects: Vec::new(),
                 animations: Default::default(),
                 id: ItemId(i as u64),
@@ -359,6 +361,7 @@ fn schema_errors_precede_interpreting_an_unknown_project_body() {
             true,
         ),
         (4, "null", true),
+        (5, "null", true),
         (SCHEMA_VERSION + 1, "null", false),
     ] {
         let bytes = format!(

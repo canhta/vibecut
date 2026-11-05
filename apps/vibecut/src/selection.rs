@@ -177,6 +177,7 @@ mod tests {
             locked: false,
             items: (0..2)
                 .map(|n| Item {
+                    masks: Vec::new(),
                     effects: vec![],
                     animations: Default::default(),
                     id: ItemId(n + 10),

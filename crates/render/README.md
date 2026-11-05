@@ -250,3 +250,48 @@ tests; render tests pin sigma at 1080p/4K, channel energy, transparent coverage,
 animated overrides, budget refusal and cancellation. A missing native GPU is a
 labelled skip in offline CI and a failure in required-oracle mode. Measurements
 and benchmark commands live in the ticket's local report.
+
+## Mask coverage primitives
+
+`mask::FlatMask` rasterizes an evaluated closed contour with nonzero winding;
+`prepare_builtin` supplies rectangle, cinematic band, ellipse, heart, diamond
+and star contours, with cubic chord tolerance 0.05 output pixels. `SplitMask`
+evaluates an unbounded half-plane so frame edges never introduce artificial
+feather or stroke. Feather is a symmetric signed-distance ramp: a one-pixel
+linear ramp at zero feather, smoothstep over the feather width at >=1 pixel.
+Expansion precedes invert, then opacity scales coverage. Stroke uses distances
+on the retained/removed sides for inside/centre/outside alignment, with independent
+one-output-pixel antialiasing; mask feather affects body coverage only.
+
+`RasterMask::from_image` consumes already-ingressed glyph alpha and reuses text's
+Euclidean distance transform. No glyph renderer or transfer conversion lives in
+the mask engine. One prepared distance raster serves coverage and stroke passes.
+All coverage images use the compositor's premultiplied linear space; `scale_by`
+scales every item channel together. Effects consume working pixels before masking. Geometry mismatches refuse before mutation. Contour/scratch,
+raster-distance and image allocations hold compositor reservations; cancellation
+is checked per row, including text's distance-transform rows/columns.
+
+`Renderer` consumes project mask vectors for every visual layer. Its order is:
+item effects, combined coverage in vector order, enabled strokes in vector order,
+then item opacity and source-over. None modes are skipped. Strokes remain visible
+outside the combined coverage. Only the current mask's raster/distance data is
+retained; accumulated coverage and accumulated premultiplied strokes are bounded
+working images. Active masks disable video stream copy for Auto and forced-copy
+export admission.
+
+Mask geometry uses the placed item's output rectangle. Project-pixel appearance
+widths scale by the smaller output/item axis ratio; text uses the existing bundled
+font/cache/ingress and height scaling, then a working-space affine sample and one
+shared distance transform for coverage and stroke. Cubic flattening and contour
+geometry have a 65,536-point admission bound; unsupported/extreme output geometry
+refuses before uncontrolled allocation. No mask-local glyph renderer or cache.
+
+`tests/masks.rs` exercises the public mask kernels and all built-ins through the
+production Renderer at two resolutions. The compositor golden includes masks,
+blur, transparent source edges, half item opacity and an encoded/decode oracle;
+engine and CLI own edit/history/persistence and real rectangle export checks.
+
+The ignored production-frame benchmark in [tests/masks.rs](tests/masks.rs)
+measures enabled-mask cost against an unmasked baseline. The local task report
+records hardware, shared host load, process RSS and quality metrics; these
+measurements do not establish codec throughput or UI latency.

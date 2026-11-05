@@ -45,6 +45,7 @@ fn video_project(path: &Path) -> project::Project {
         hidden: false,
         locked: false,
         items: vec![project::Item {
+            masks: Vec::new(),
             effects: Vec::new(),
             animations: Default::default(),
             id: project::ItemId(0),
@@ -218,6 +219,7 @@ fn resampling_split_trim_offset_and_irregular_blocks_are_identical() {
         let source_in = if n == 1 { tick(123, 44100) } else { Tick::ZERO };
         let end = tick(1, 1) - source_in;
         let mut items = vec![project::Item {
+            masks: Vec::new(),
             effects: Vec::new(),
             animations: Default::default(),
             id: project::ItemId(n * 10),
@@ -232,6 +234,7 @@ fn resampling_split_trim_offset_and_irregular_blocks_are_identical() {
         if n == 2 {
             items[0].source_range = TimeRange::new(Tick::ZERO, tick(1, 2)).unwrap();
             items.push(project::Item {
+                masks: Vec::new(),
                 effects: Vec::new(),
                 animations: Default::default(),
                 id: project::ItemId(21),
@@ -533,6 +536,7 @@ fn missing_audio_only_is_required_only_when_audio_is_requested() {
         hidden: false,
         locked: false,
         items: vec![project::Item {
+            masks: Vec::new(),
             effects: Vec::new(),
             animations: Default::default(),
             id: project::ItemId(1),
@@ -852,6 +856,7 @@ fn stereo_policy_keeps_headroom_and_export_refuses_overload() {
         hidden: false,
         locked: false,
         items: vec![project::Item {
+            masks: Vec::new(),
             effects: Vec::new(),
             animations: Default::default(),
             id: project::ItemId(7),

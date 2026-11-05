@@ -56,7 +56,7 @@ impl AnimationPath {
         let parts: Vec<_> = value.split('.').collect();
         let extension = match parts.as_slice() {
             ["params", name] => identifier(name),
-            ["effects", id, "params", name] => identifier(id) && identifier(name),
+            ["effects" | "masks", id, "params", name] => identifier(id) && identifier(name),
             _ => false,
         };
         if value.len() > 160 || (!builtin && !extension) {
@@ -72,7 +72,10 @@ impl AnimationPath {
         ["transform.scaleX", "transform.scaleY"]
     }
     fn accepts(&self, param: &Param) -> bool {
-        if self.0.starts_with("params.") || self.0.starts_with("effects.") {
+        if self.0.starts_with("params.")
+            || self.0.starts_with("effects.")
+            || self.0.starts_with("masks.")
+        {
             return true;
         }
         let base = match param {

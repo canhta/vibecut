@@ -52,6 +52,7 @@ fn session() -> Session {
         hidden: false,
         locked: false,
         items: vec![Item {
+            masks: Vec::new(),
             effects: Vec::new(),
             id: ItemId(2),
             source_asset: None,

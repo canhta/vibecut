@@ -141,6 +141,7 @@ fn item_blur_is_isolated_from_track_below_and_uses_animation() {
     data.canvas.width = 256;
     data.canvas.height = 144;
     let item = Item {
+        masks: vec![],
         effects: vec![EffectInstance {
             id: "b".into(),
             enabled: true,

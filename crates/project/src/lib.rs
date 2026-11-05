@@ -1,8 +1,12 @@
 //! Validated headless timeline snapshots and versioned project persistence.
 mod animation;
 mod effects;
+mod mask;
 pub use effects::{
     EffectDefinition, EffectInstance, EffectParamDefinition, EffectParams, effect_definitions,
+};
+pub use mask::{
+    MASK_SCALARS, Mask, MaskMode, MaskPath, MaskShape, MaskStroke, MaskVertex, StrokeAlign,
 };
 pub mod atomic;
 pub mod autosave;

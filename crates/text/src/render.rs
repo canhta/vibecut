@@ -72,6 +72,12 @@ pub struct Image {
 /// Invalid canvas or paint input.
 #[derive(Debug, thiserror::Error)]
 pub enum RenderError {
+    #[error("text coverage cancelled")]
+    Cancelled,
+    #[error("coverage must be finite and in 0..=1")]
+    InvalidCoverage,
+    #[error("text coverage allocation failed")]
+    Allocation(#[from] std::collections::TryReserveError),
     #[error("canvas dimensions must be positive and at most {MAX_CANVAS_PIXELS} pixels")]
     InvalidCanvas,
     #[error("outline width must be finite and not negative")]
@@ -233,7 +239,7 @@ pub fn render(
     }
 
     if let Some(outline) = paint.outline {
-        let stroke = mask::stroke(&fill_mask, outline.width, outline.kind);
+        let stroke = mask::stroke(&fill_mask, outline.width, outline.kind)?;
         if outline.kind == StrokeKind::Outer {
             blend(&mut image, &stroke, outline.color);
             blend(&mut image, &fill_mask, paint.fill);

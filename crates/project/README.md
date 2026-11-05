@@ -118,7 +118,7 @@ or renderer output claim is made.
 ## Persistence and limits
 
 `encode`/`decode` use one JSON envelope: `format`, `schema_version`, `generator`,
-`project`. Current schema 5 stores ProjectId as a canonical decimal string, preserving
+`project`. Current schema 6 stores ProjectId as a canonical decimal string, preserving
 all u64 identity bits for control clients; other IDs remain numeric. Schemas 1–4
 are refused rather than migrated or silently defaulted. Older schemas return `TooOld`, newer schemas `TooNew`; there are no
 migration or compatibility paths. Unknown current-schema project/envelope fields
@@ -282,3 +282,30 @@ render/the desktop app. Animated overrides use the existing `Animations` map and
 only. No second keyframe store is introduced. Removing an effect removes its
 animation paths; undo restores both. Schema 4 adds the required stack and refuses
 older envelopes through the existing typed version errors.
+
+## Masks
+
+`Item.masks` stores an ordered vector of project-owned `Mask` values. IDs are
+unique within the item and use the animation-path identifier grammar. Empty or
+whitespace-only text masks are inactive while retaining their editable data. The vector
+admits 1,024 entries for resource safety; presentation limits do not define the
+model. Audio items refuse masks. Modes are None/Add/Subtract/Intersect/Lighten/
+Darken/Difference; render owns their coverage math. Commands/history belong to
+engine. Schema 6 requires mask vectors; schema 5 and earlier refuse with `TooOld`.
+
+Shapes include split, cinematic band, rectangle, ellipse, heart, diamond, star,
+text and a cubic `MaskPath`. Text masks currently persist content and font size
+and render with bundled Inter Regular; richer typography uses the shared text
+contract when available. Normalized centers are offsets from the placed item
+center, width/height are item fractions, rotation is degrees and uniform scale
+multiplies shape size. Path positions/tangent offsets use normalized item space;
+fill closes open paths. Feather, expansion, stroke width and text size use
+project-canvas pixels. Color is the existing sRGB RGBA8 `Color`; opacity is 0..1.
+
+IDs, finite ranges, scalar animation types and duplicate IDs validate with the
+whole candidate. Paths admit 4,096 vertices and bounded normalized coordinates;
+text admits 4 KiB and 1..4096-pixel font sizes. `masks.ID.params.KEY` uses the
+existing `Animations` owner for center_x/center_y, width/height, rotation, scale,
+feather, expansion, opacity and stroke_width. Values evaluate in item-local time;
+`Mask::at` clamps animated overshoot to the static admissible range. No second
+keyframe store or path interpolator is introduced.

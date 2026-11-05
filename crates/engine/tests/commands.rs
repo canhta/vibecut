@@ -43,6 +43,7 @@ fn project() -> Project {
     }
     data.timeline.overlays.first_mut().unwrap().items = vec![
         Item {
+            masks: Vec::new(),
             effects: Vec::new(),
             animations: Default::default(),
             id: ItemId(10),
@@ -52,6 +53,7 @@ fn project() -> Project {
             content: content(),
         },
         Item {
+            masks: Vec::new(),
             effects: Vec::new(),
             animations: Default::default(),
             id: ItemId(11),
@@ -691,6 +693,7 @@ fn measure_large_project_gesture() {
     let track = data.timeline.overlays.first_mut().unwrap();
     track.items = (0..10000)
         .map(|n| Item {
+            masks: Vec::new(),
             effects: Vec::new(),
             animations: Default::default(),
             id: ItemId(n + 10),
@@ -1030,6 +1033,7 @@ fn caption_project() -> Project {
         hidden: false,
         locked: false,
         items: vec![Item {
+            masks: Vec::new(),
             effects: Vec::new(),
             animations: Default::default(),
             id: ItemId(1),

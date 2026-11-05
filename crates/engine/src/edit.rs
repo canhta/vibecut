@@ -206,6 +206,7 @@ pub(crate) fn apply(
             unlocked(t)?;
             let id = ItemId(alloc(next)?);
             t.items.push(Item {
+                masks: Vec::new(),
                 effects: Vec::new(),
                 animations: new.animations,
                 id,
@@ -334,6 +335,53 @@ pub(crate) fn apply(
             if let Some(id) = remaining.into_iter().next() {
                 return Err(EditError::NoItem(id));
             }
+        }
+        Command::AddMask { item: id, mask } => {
+            item(&mut data, id)?.masks.push(mask);
+        }
+        Command::RemoveMask { item: id, mask } => {
+            let target = item(&mut data, id)?;
+            let index = target
+                .masks
+                .iter()
+                .position(|m| m.id == mask)
+                .ok_or(EditError::Invalid("missing mask"))?;
+            target.masks.remove(index);
+            let prefix = format!("masks.{mask}.params.");
+            let paths: Vec<_> = target
+                .animations
+                .iter()
+                .filter(|(p, _)| p.as_str().starts_with(&prefix))
+                .map(|(p, _)| p.clone())
+                .collect();
+            for path in paths {
+                target.animations.remove(&path);
+            }
+        }
+        Command::UpdateMask { item: id, mask } => {
+            let target = item(&mut data, id)?;
+            let previous = target
+                .masks
+                .iter_mut()
+                .find(|m| m.id == mask.id)
+                .ok_or(EditError::Invalid("missing mask"))?;
+            *previous = mask;
+        }
+        Command::ReorderMasks { item: id, order } => {
+            let target = item(&mut data, id)?;
+            if order.len() != target.masks.len() {
+                return Err(EditError::Invalid("mask order length"));
+            }
+            let mut reordered = Vec::new();
+            for id in order {
+                let index = target
+                    .masks
+                    .iter()
+                    .position(|m| m.id == id)
+                    .ok_or(EditError::Invalid("mask order identity"))?;
+                reordered.push(target.masks.remove(index));
+            }
+            target.masks = reordered;
         }
         Command::AddEffect { item: id, effect } => {
             let item = item(&mut data, id)?;

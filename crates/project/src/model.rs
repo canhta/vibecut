@@ -230,6 +230,7 @@ impl ItemParams {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct Item {
+    pub masks: Vec<crate::Mask>,
     pub effects: Vec<crate::EffectInstance>,
     pub animations: crate::Animations,
     pub id: ItemId,
@@ -380,6 +381,26 @@ fn validate(data: &ProjectData) -> Result<()> {
                     && !matches!(param.value_at(Tick::ZERO)?, crate::ParamValue::Scalar(_))
                 {
                     return Err(Error::Invalid("blur animation must be scalar"));
+                }
+            }
+            if item.masks.len() > 1024 {
+                return Err(Error::TooLarge("item masks"));
+            }
+            if !item.masks.is_empty() && matches!(item.content, ItemParams::Audio(_)) {
+                return Err(Error::Invalid("mask on audio item"));
+            }
+            let mut mask_ids = BTreeSet::new();
+            for mask in &item.masks {
+                mask.validate()?;
+                if !mask_ids.insert(&mask.id) {
+                    return Err(Error::Invalid("duplicate mask id"));
+                }
+                for key in crate::MASK_SCALARS {
+                    if let Some(param) = item.animations.get(&mask.path(key)?)
+                        && !matches!(param.value_at(Tick::ZERO)?, crate::ParamValue::Scalar(_))
+                    {
+                        return Err(Error::Invalid("mask animation must be scalar"));
+                    }
                 }
             }
             item.animations.validate()?;

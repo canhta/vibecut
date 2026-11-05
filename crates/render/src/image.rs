@@ -503,6 +503,53 @@ pub(crate) fn row_chunks<T: Send>(
     hooks.run_tasks(&mut tasks)
 }
 
+/// Bilinear working-pixel sampling; integer coordinates are pixel centres.
+/// Samples outside the image are transparent.
+pub(crate) fn sample(image: &Image, x: f32, y: f32) -> [f32; 4] {
+    let ix = x.floor() as i64;
+    let iy = y.floor() as i64;
+    let tx = x - x.floor();
+    let ty = y - y.floor();
+    let at = |x: i64, y: i64| {
+        if x < 0 || y < 0 || x >= i64::from(image.width) || y >= i64::from(image.height) {
+            [0.; 4]
+        } else {
+            image
+                .pixels
+                .get(y as usize * image.width as usize + x as usize)
+                .copied()
+                .unwrap_or([0.; 4])
+        }
+    };
+    let a = at(ix, iy);
+    let b = at(ix + 1, iy);
+    let c = at(ix, iy + 1);
+    let d = at(ix + 1, iy + 1);
+    let mut pixel: [f32; 4] = std::array::from_fn(|k| {
+        let top = a.get(k).copied().unwrap_or(0.0)
+            + (b.get(k).copied().unwrap_or(0.0) - a.get(k).copied().unwrap_or(0.0)) * tx;
+        let bottom = c.get(k).copied().unwrap_or(0.0)
+            + (d.get(k).copied().unwrap_or(0.0) - c.get(k).copied().unwrap_or(0.0)) * tx;
+        (top + (bottom - top) * ty).clamp(0., 1.)
+    });
+    let alpha = pixel.get(3).copied().unwrap_or(0.0);
+    for v in &mut pixel {
+        *v = v.clamp(0.0, alpha);
+    }
+    pixel
+}
+
+pub(crate) fn over(destination: &mut [f32; 4], source: [f32; 4], opacity: f32) {
+    if opacity == 1.0 && source.get(3) == Some(&1.0) {
+        *destination = source.map(|v| v.clamp(0.0, 1.0));
+        return;
+    }
+    let inverse = 1.0 - source.get(3).copied().unwrap_or(0.0) * opacity;
+    for (d, s) in destination.iter_mut().zip(source) {
+        *d = (s * opacity + *d * inverse).clamp(0.0, 1.0);
+    }
+}
+
 #[cfg(test)]
 mod tests {
     #![allow(clippy::unwrap_used, clippy::indexing_slicing)]

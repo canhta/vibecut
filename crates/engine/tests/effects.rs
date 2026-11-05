@@ -15,6 +15,7 @@ fn session() -> Session {
         hidden: false,
         locked: false,
         items: vec![Item {
+            masks: Vec::new(),
             effects: vec![],
             animations: Default::default(),
             id: ItemId(2),

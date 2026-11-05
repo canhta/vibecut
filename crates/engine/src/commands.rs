@@ -103,14 +103,18 @@ impl CommandSpec {
                 .iter()
                 .chain(&session.project().data().timeline.audio)
                 .any(|t| !t.locked),
-            "effects.add" | "effects.remove" | "effects.update_params" => {
-                session.project().data().timeline.iter().any(|t| {
-                    !t.locked
-                        && t.items
-                            .iter()
-                            .any(|i| !matches!(i.content, ItemParams::Audio(_)))
-                })
-            }
+            "effects.add"
+            | "effects.remove"
+            | "effects.update_params"
+            | "masks.add"
+            | "masks.remove"
+            | "masks.update"
+            | "masks.reorder" => session.project().data().timeline.iter().any(|t| {
+                !t.locked
+                    && t.items
+                        .iter()
+                        .any(|i| !matches!(i.content, ItemParams::Audio(_)))
+            }),
             "insert_item" => session.project().data().timeline.iter().any(|t| !t.locked),
             "move_item"
             | "move_items"
@@ -201,6 +205,10 @@ commands! {
     RippleDelete, "ripple_delete", "Ripple delete", Edit { item: ItemId } => Timeline, serde_json::json!({"item":1});
     SetItemParam, "set_item_param", "Set item parameters", Edit { item: ItemId, content: ItemParams } => Timeline, serde_json::json!({"item":1,"content":{"kind":"overlay","params":{"color":[255,255,0,255]}}});
     SetItemParamMany, "timeline.set_item_param_many", "Set shared item field", Edit { items: Vec<ItemId>, patch: ItemParamPatch } => Timeline, serde_json::json!({"items":[1],"patch":{"field":"text_size","value":48.0}});
+    AddMask, "masks.add", "Add mask", Edit { item: ItemId, mask: project::Mask } => Timeline, serde_json::json!({"item":1,"mask":project::Mask::new("mask2",project::MaskShape::Rectangle)});
+    RemoveMask, "masks.remove", "Remove mask", Edit { item: ItemId, mask: String } => Timeline, serde_json::json!({"item":1,"mask":"mask1"});
+    UpdateMask, "masks.update", "Update mask", Edit { item: ItemId, mask: project::Mask } => Timeline, serde_json::json!({"item":1,"mask":project::Mask::new("mask1",project::MaskShape::Ellipse)});
+    ReorderMasks, "masks.reorder", "Reorder masks", Edit { item: ItemId, order: Vec<String> } => Timeline, serde_json::json!({"item":1,"order":["mask1"]});
     AddEffect, "effects.add", "Add effect", Edit { item: ItemId, effect: project::EffectInstance } => Timeline, serde_json::json!({"item":1,"effect":{"id":"blur2","enabled":true,"params":{"kind":"blur","intensity":15.0}}});
     RemoveEffect, "effects.remove", "Remove effect", Edit { item: ItemId, effect: String } => Timeline, serde_json::json!({"item":1,"effect":"blur1"});
     UpdateEffectParams, "effects.update_params", "Update effect parameters", Edit { item: ItemId, effect: String, params: project::EffectParams } => Timeline, serde_json::json!({"item":1,"effect":"blur1","params":{"kind":"blur","intensity":30.0}});

@@ -105,6 +105,7 @@ fn text_benchmark(
         hidden: false,
         locked: false,
         items: vec![project::Item {
+            masks: Vec::new(),
             effects: Vec::new(),
             animations: Default::default(),
             id: project::ItemId(0),
@@ -200,6 +201,7 @@ fn export_benchmark(
         hidden: false,
         locked: false,
         items: vec![project::Item {
+            masks: Vec::new(),
             effects: Vec::new(),
             animations: Default::default(),
             id: project::ItemId(0),

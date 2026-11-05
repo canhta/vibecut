@@ -110,6 +110,7 @@ fn scene() -> project::Project {
             hidden: false,
             locked: false,
             items: vec![project::Item {
+                masks: Vec::new(),
                 effects: Vec::new(),
                 animations: Default::default(),
                 id: project::ItemId(id),
@@ -127,100 +128,145 @@ fn transparent_edge_half_opacity_scaled_text_and_color_survive_encoded_decode() 
     if !tools() {
         return;
     }
-    let p = scene();
-    let h = Hooks::default();
-    let mut settings = ExportSettings::from_project(&p);
-    settings.render.width = 128;
-    settings.render.height = 96;
-    settings.include_audio = false;
-    settings.mode = ExportMode::Encode;
-    settings.quality = 100;
-    settings.overwrite = project::atomic::Overwrite::Replace;
-    settings.render.placements.insert(
-        project::ItemId(0),
-        Placement {
-            destination: Rect {
-                x: 0.1,
-                y: 0.1,
-                width: 0.8,
-                height: 0.65,
+    for masked in [false, true] {
+        let mut data = scene().into_data();
+        if masked {
+            let item = data
+                .timeline
+                .iter_mut()
+                .flat_map(|t| &mut t.items)
+                .find(|i| i.id == project::ItemId(0))
+                .unwrap();
+            let mut mask = project::Mask::new("ellipse", project::MaskShape::Ellipse);
+            mask.width = 0.8;
+            mask.height = 0.8;
+            mask.feather = 8.;
+            mask.stroke.width = 6.;
+            mask.stroke.color = project::Color([255, 255, 255, 128]);
+            mask.stroke.align = project::StrokeAlign::Outside;
+            item.masks.push(mask);
+            item.effects.push(project::EffectInstance {
+                id: "blur".into(),
+                enabled: true,
+                params: project::EffectParams::Blur { intensity: 100. },
+            });
+        }
+        let p = project::Project::new(data).unwrap();
+        let h = Hooks::default();
+        let mut settings = ExportSettings::from_project(&p);
+        settings.render.width = 128;
+        settings.render.height = 96;
+        settings.include_audio = false;
+        settings.mode = ExportMode::Encode;
+        settings.quality = 100;
+        settings.overwrite = project::atomic::Overwrite::Replace;
+        settings.render.placements.insert(
+            project::ItemId(0),
+            Placement {
+                destination: Rect {
+                    x: 0.1,
+                    y: 0.1,
+                    width: 0.8,
+                    height: 0.65,
+                },
+                fit: Fit::Stretch,
+                opacity: 0.5,
+                ..Default::default()
             },
-            fit: Fit::Stretch,
-            opacity: 0.5,
-            ..Default::default()
-        },
-    );
-    settings.render.placements.insert(
-        project::ItemId(1),
-        Placement {
-            destination: Rect {
-                x: 0.1,
-                y: 0.25,
-                width: 0.8,
-                height: 0.6,
+        );
+        settings.render.placements.insert(
+            project::ItemId(1),
+            Placement {
+                destination: Rect {
+                    x: 0.1,
+                    y: 0.25,
+                    width: 0.8,
+                    height: 0.6,
+                },
+                fit: Fit::Stretch,
+                opacity: 0.75,
+                ..Default::default()
             },
-            fit: Fit::Stretch,
-            opacity: 0.75,
-            ..Default::default()
-        },
-    );
-    let mut renderer = Renderer::new(&p, settings.render.clone()).unwrap();
-    let reference = renderer.render_frame(Tick::ZERO, &mut Pixels, &h).unwrap();
-    let bytes = reference.rgba8(1, &h).unwrap();
-    let checksum = bytes.bytes.iter().fold(0xcbf29ce484222325u64, |hash, b| {
-        (hash ^ u64::from(*b)).wrapping_mul(0x100000001b3)
-    });
-    assert_eq!(
-        checksum, 0x9748c49eea14a2bf,
-        "visually inspected compositor golden"
-    );
-    let png = root().join("compositor-golden.png");
-    let raw = root().join("compositor-golden.rgba");
-    std::fs::write(&raw, &bytes.bytes).unwrap();
-    ffmpeg(&[
-        "-f".as_ref(),
-        "rawvideo".as_ref(),
-        "-pixel_format".as_ref(),
-        "rgba".as_ref(),
-        "-video_size".as_ref(),
-        "128x96".as_ref(),
-        "-i".as_ref(),
-        raw.as_os_str(),
-        "-frames:v".as_ref(),
-        "1".as_ref(),
-        png.as_os_str(),
-    ]);
-    let path = root().join("compositor-golden.mp4");
-    let receipt = export_with_sources(
-        &p,
-        TimeRange::new(Tick::ZERO, tick(1, 10)).unwrap(),
-        &settings,
-        &path,
-        &mut Pixels,
-        &Hooks::default(),
-    )
-    .unwrap();
-    assert_eq!(receipt.video_frames, 3);
-    let actual = rgba(&path);
-    assert_eq!(actual.len(), bytes.bytes.len());
-    let mse = actual
-        .iter()
-        .zip(&bytes.bytes)
-        .map(|(a, b)| (f64::from(*a) - f64::from(*b)).powi(2))
-        .sum::<f64>()
-        / actual.len() as f64;
-    assert!(mse < 150.0, "encoded compositor MSE {mse}");
-    // Transparent pixels retain the exact background; half-opacity red over it is
-    // independently checked in linear light before the lossy encoding boundary.
-    let background = reference.pixels()[0];
-    let transparent = reference.pixels()[12 * 128 + 20];
-    assert_eq!(background, transparent);
-    let red = reference.pixels()[65 * 128 + 25];
-    let alpha = 128.0 / 255.0 * 0.5;
-    assert!((red[0] - (alpha + background[0] * (1.0 - alpha))).abs() < 1e-5);
-    assert_eq!(red[3], 1.0);
-    let repeated = renderer.render_frame(tick(1, 30), &mut Pixels, &h).unwrap();
-    assert_eq!(repeated.pixels(), reference.pixels());
+        );
+        let mut renderer = Renderer::new(&p, settings.render.clone()).unwrap();
+        let reference = renderer.render_frame(Tick::ZERO, &mut Pixels, &h).unwrap();
+        let bytes = reference.rgba8(1, &h).unwrap();
+        let checksum = bytes.bytes.iter().fold(0xcbf29ce484222325u64, |hash, b| {
+            (hash ^ u64::from(*b)).wrapping_mul(0x100000001b3)
+        });
+        if masked {
+            assert_eq!(
+                checksum, 0xba9c55b24c28e586,
+                "visually inspected masked compositor golden"
+            );
+        } else {
+            assert_eq!(
+                checksum, 0x9748c49eea14a2bf,
+                "visually inspected compositor golden"
+            );
+        }
+        let png = root().join(if masked {
+            "masked-compositor-golden.png"
+        } else {
+            "compositor-golden.png"
+        });
+        let raw = root().join(if masked {
+            "masked-compositor-golden.rgba"
+        } else {
+            "compositor-golden.rgba"
+        });
+        std::fs::write(&raw, &bytes.bytes).unwrap();
+        ffmpeg(&[
+            "-f".as_ref(),
+            "rawvideo".as_ref(),
+            "-pixel_format".as_ref(),
+            "rgba".as_ref(),
+            "-video_size".as_ref(),
+            "128x96".as_ref(),
+            "-i".as_ref(),
+            raw.as_os_str(),
+            "-frames:v".as_ref(),
+            "1".as_ref(),
+            png.as_os_str(),
+        ]);
+        let path = root().join(if masked {
+            "masked-compositor-golden.mp4"
+        } else {
+            "compositor-golden.mp4"
+        });
+        let receipt = export_with_sources(
+            &p,
+            TimeRange::new(Tick::ZERO, tick(1, 10)).unwrap(),
+            &settings,
+            &path,
+            &mut Pixels,
+            &Hooks::default(),
+        )
+        .unwrap();
+        assert_eq!(receipt.video_frames, 3);
+        let actual = rgba(&path);
+        assert_eq!(actual.len(), bytes.bytes.len());
+        let mse = actual
+            .iter()
+            .zip(&bytes.bytes)
+            .map(|(a, b)| (f64::from(*a) - f64::from(*b)).powi(2))
+            .sum::<f64>()
+            / actual.len() as f64;
+        assert!(mse < 150.0, "encoded compositor MSE {mse}");
+        // Transparent pixels retain the exact background; half-opacity red over it is
+        // independently checked in linear light before the lossy encoding boundary.
+        let background = reference.pixels()[0];
+        let transparent = reference.pixels()[12 * 128 + 20];
+        assert_eq!(background, transparent);
+        if !masked {
+            let red = reference.pixels()[65 * 128 + 25];
+            let alpha = 128.0 / 255.0 * 0.5;
+            assert!((red[0] - (alpha + background[0] * (1.0 - alpha))).abs() < 1e-5);
+            assert_eq!(red[3], 1.0);
+        }
+        let repeated = renderer.render_frame(tick(1, 30), &mut Pixels, &h).unwrap();
+        assert_eq!(repeated.pixels(), reference.pixels());
+    }
 }
 
 #[test]
@@ -237,6 +283,7 @@ fn blur_background_stays_below_lower_timeline_layers() {
         hidden: false,
         locked: false,
         items: vec![project::Item {
+            masks: Vec::new(),
             effects: Vec::new(),
             animations: Default::default(),
             id: project::ItemId(2),
