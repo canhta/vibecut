@@ -594,11 +594,22 @@ impl GatedFailure {
 impl vibecut::playback::Sources for GatedFailure {
     fn create(&self) -> Box<dyn render::SourceProvider> {
         match self.calls.fetch_add(1, std::sync::atomic::Ordering::SeqCst) {
-            0 => panic!("transient worker failure with an active companion"),
+            0 => {
+                // Failure polling cancels the companion. Ensure it has entered
+                // the blocking adapter before allowing that cancellation.
+                {
+                    let mut released = self.released.lock().unwrap();
+                    while !self.blocked.load(std::sync::atomic::Ordering::Acquire) && !*released {
+                        released = self.wake.wait(released).unwrap();
+                    }
+                }
+                panic!("transient worker failure with an active companion");
+            }
             1 => {
+                let mut released = self.released.lock().unwrap();
                 self.blocked
                     .store(true, std::sync::atomic::Ordering::Release);
-                let mut released = self.released.lock().unwrap();
+                self.wake.notify_all();
                 while !*released {
                     released = self.wake.wait(released).unwrap();
                 }
