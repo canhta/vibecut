@@ -1242,6 +1242,7 @@ fn exec_shared_field_id_list_persists_only_compatible_item_fields() {
                     content: format!("Text {i}").into(),
                     font_size: 24.0 + i as f32,
                     color: project::Color([255; 4]),
+                    ..Default::default()
                 }),
             })
             .collect(),

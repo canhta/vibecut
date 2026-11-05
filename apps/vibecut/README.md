@@ -146,10 +146,9 @@ document restores the system defaults. Unversioned and unsupported versions are
 refused without rewriting their bytes on load or save. Edits and writes share the 4 KiB
 read budget, so a saved document always remains readable.
 
-The selection inspector shows audio gain/mute and text size/colour for compatible
-selected items, with a dash for mixed values (an indeterminate mute checkbox) and
-the compatible/selected count.
-A single element uses the per-type tabs above instead: Text has a size scrub and
+The selection inspector shows audio gain/mute and text content/font/size/colour/background/position for compatible
+selected items, with a dash for mixed values and the compatible/selected count.
+A single element uses the per-type tabs above instead: Text has content, font, background and position fields alongside a size scrub and
 colour entry, Blending a blend menu and opacity scrub, and Audio a gain scrub and mute checkbox.
 Each scrub field has a left drag handle, a click-to-type entry and clamps; the
 drag previews through an engine gesture, commits as one registered
@@ -160,8 +159,8 @@ Drag sensitivity is our recorded decision because the inventory leaves it
 unverified: opacity and audio gain move one 0.01/1 dB step per 4 px, and text size
 one px per 2 px. Enter or blur commits a typed shared-field patch through the
 engine registry in one undo step. Text editing owns keyboard input while focused.
-Font family and video volume await their owning contracts before joining the same
-inspector.
+The text button inserts a five-second title at the playhead in one undo step.
+Video volume awaits its owning contract before joining the same inspector.
 
 An empty-track drag selects intersecting visible items; Cmd/Ctrl/Shift adds to
 the selection at gesture entry. Reversing the drag recomputes intersections, and

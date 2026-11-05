@@ -1135,6 +1135,94 @@ impl Editor {
             }
         }
     }
+    fn insert_text(&mut self) {
+        let at = match self.playback.position() {
+            Ok(at) => at,
+            Err(error) => {
+                self.set_toast(self.tr(Text::TextInsertFailed), Some(error_detail(&error)));
+                return;
+            }
+        };
+        let locale = self.preferences.locale;
+        let content = self.tr(Text::TextItem).to_owned();
+        let result = self.session.transaction(|session| {
+            let duration = Tick(5 * TICKS_PER_SECOND);
+            let end = at
+                .checked_add(duration)
+                .ok_or(engine::EditError::Invalid("text end"))?;
+            let existing = session
+                .project()
+                .data()
+                .scene()
+                .timeline
+                .iter()
+                .find(|track| {
+                    track.kind == TrackKind::Text
+                        && !track.locked
+                        && track.items.iter().all(|item| {
+                            item.end()
+                                .is_ok_and(|item_end| item_end <= at || item.start >= end)
+                        })
+                })
+                .map(|track| track.id);
+            let track = match existing {
+                Some(track) => track,
+                None => {
+                    let count = session
+                        .project()
+                        .data()
+                        .scene()
+                        .timeline
+                        .iter()
+                        .filter(|track| track.kind == TrackKind::Text)
+                        .count();
+                    let number = catalog::number(locale, (count + 1) as u64);
+                    let name = catalog::format(locale, Text::TextTrackName, &[("n", &number)]);
+                    let outcome = session.apply(Command::AddTrack {
+                        name: name.into(),
+                        kind: TrackKind::Text,
+                        placement: engine::TrackPlacement::Auto,
+                    })?;
+                    match outcome.created.first().copied() {
+                        Some(CreatedId::Track(track)) => track,
+                        _ => {
+                            return Err(engine::EditError::Unsupported("text track allocation"));
+                        }
+                    }
+                }
+            };
+            let outcome = session.apply(Command::InsertItem {
+                placement: engine::Placement::Track { track },
+                item: NewItem {
+                    animations: Default::default(),
+                    source_asset: None,
+                    source_range: SourceRange::new(Tick::ZERO, duration)?,
+                    start: at,
+                    content: ItemParams::Text(project::TextParams::new(content)),
+                },
+            })?;
+            outcome
+                .created
+                .into_iter()
+                .find_map(|id| match id {
+                    CreatedId::Item(item) => Some(item),
+                    _ => None,
+                })
+                .ok_or(engine::EditError::Unsupported("text item allocation"))
+        });
+        match result {
+            Ok(item) => {
+                self.selection = [item].into_iter().collect();
+                self.selection_scopes = SelectionScopes::default();
+                self.property_drafts.clear();
+            }
+            Err(error) => {
+                let detail = error_detail(&error);
+                self.import_notice = Some(detail.clone());
+                self.set_toast(self.tr(Text::TextInsertFailed), Some(detail));
+            }
+        }
+    }
     fn tr(&self, key: Text) -> &'static str {
         catalog::text(self.preferences.locale, key)
     }
@@ -1491,6 +1579,7 @@ impl Editor {
                 }
             }
             "media.insert" => self.insert_selected_assets(),
+            "text.insert" => self.insert_text(),
             "import.cancel" => {
                 if let Some(queue) = &self.imports {
                     queue.cancel();
@@ -2823,8 +2912,13 @@ impl Editor {
                 [
                     "inspector.audio_gain",
                     "inspector.opacity",
+                    "inspector.text_content",
+                    "inspector.text_font",
                     "inspector.text_size",
                     "inspector.text_color",
+                    "inspector.text_background_color",
+                    "inspector.text_position_x",
+                    "inspector.text_position_y",
                 ]
                 .iter()
                 .any(|field| id == Id::unique(field))
@@ -3496,6 +3590,9 @@ impl Editor {
                 !importing && !self.media_selection.is_empty(),
             ) {
                 self.action("media.insert");
+            }
+            if self.button(ui, "text.insert", Icon::TextT, Text::TextItem, true) {
+                self.action("text.insert");
             }
         });
         if !importing && !self.media_selection.is_empty() {
@@ -4758,25 +4855,119 @@ impl Editor {
                 self.remember("inspector.blendMode", &response);
                 continue;
             }
+            ui.add_space(8.0);
+            if field.id == "text_font" {
+                let current = field
+                    .value
+                    .clone()
+                    .unwrap_or_else(|| self.tr(Text::EmptyValue).to_owned());
+                let mut chosen = None;
+                let response = egui::ComboBox::from_label(self.tr(Text::TextFont))
+                    .selected_text(current)
+                    .show_ui(ui, |ui| {
+                        for (family, _) in text::families() {
+                            let selected = field.value.as_deref() == Some(family.as_str());
+                            if ui.selectable_label(selected, family.as_str()).clicked() {
+                                chosen = Some(family);
+                            }
+                        }
+                    })
+                    .response;
+                self.remember("inspector.text_font", &response);
+                if let Some(font) = chosen
+                    && let Err(error) = self.set_shared_field("text_font", &font)
+                {
+                    self.error = Some(error.to_string());
+                }
+                self.compatible_count(ui, field.compatible);
+                continue;
+            }
+            if field.id == "text_background" {
+                let enabled = field.value.as_deref().is_some_and(|value| value != "none");
+                let mut checked = enabled;
+                let response = ui.checkbox(&mut checked, self.tr(Text::TextBackground));
+                self.remember("inspector.text_background", &response);
+                if response.changed() {
+                    let color = field
+                        .value
+                        .as_deref()
+                        .filter(|value| *value != "none")
+                        .unwrap_or("#000000A0");
+                    let value = if checked { color } else { "none" };
+                    if let Err(error) = self.set_shared_field("text_background", value) {
+                        self.error = Some(error.to_string());
+                    }
+                }
+                if enabled {
+                    let id = "inspector.text_background_color";
+                    ui.label(self.tr(Text::BackgroundColor));
+                    let mut value = self
+                        .property_drafts
+                        .get("text_background_color")
+                        .cloned()
+                        .or_else(|| field.value.clone())
+                        .unwrap_or_default();
+                    let response = ui.add_sized(
+                        [ui.available_width(), 28.0],
+                        egui::TextEdit::singleline(&mut value)
+                            .char_limit(64)
+                            .background_color(self.control_fill())
+                            .id(Id::unique(id))
+                            .hint_text(
+                                egui::RichText::new(self.tr(Text::EmptyValue))
+                                    .color(self.secondary()),
+                            ),
+                    );
+                    self.remember(id, &response);
+                    if response.changed() {
+                        self.property_drafts
+                            .insert("text_background_color", value.clone());
+                    }
+                    if (response.lost_focus()
+                        || (response.has_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter))))
+                        && self.property_drafts.contains_key("text_background_color")
+                    {
+                        let result = self.set_shared_field("text_background_color", &value);
+                        self.property_drafts.remove("text_background_color");
+                        if let Err(e) = result {
+                            self.error = Some(e.to_string());
+                        }
+                    }
+                }
+                self.compatible_count(ui, field.compatible);
+                continue;
+            }
             let (label, id) = match field.id {
                 "opacity" => (Text::Opacity, "inspector.opacity"),
                 "audio_gain" => (Text::AudioGain, "inspector.audio_gain"),
+                "text_content" => (Text::TextContent, "inspector.text_content"),
                 "text_size" => (Text::TextSize, "inspector.text_size"),
+                "text_background" => (Text::BackgroundColor, "inspector.text_background_color"),
+                "text_position_x" => (Text::TextPositionX, "inspector.text_position_x"),
+                "text_position_y" => (Text::TextPositionY, "inspector.text_position_y"),
                 _ => (Text::TextColor, "inspector.text_color"),
             };
-            ui.add_space(12.0);
             let caption = ui.label(self.tr(label));
             let mut value = self
                 .property_drafts
                 .get(field.id)
                 .cloned()
                 .unwrap_or_else(|| field.value.clone().unwrap_or_default());
-            let response = ui
-                .add_sized(
-                    [
-                        ui.available_width(),
-                        if field.id == "opacity" { 26.0 } else { 36.0 },
-                    ],
+            let multiline = field.id == "text_content";
+            let response = if multiline {
+                ui.add_sized(
+                    [ui.available_width(), 48.0],
+                    egui::TextEdit::multiline(&mut value)
+                        .char_limit(4096)
+                        .background_color(self.control_fill())
+                        .id(Id::unique(id))
+                        .hint_text(
+                            egui::RichText::new(self.tr(Text::EmptyValue)).color(self.secondary()),
+                        ),
+                )
+            } else {
+                ui.add_sized(
+                    [ui.available_width(), if field.id == "opacity" { 26.0 } else { 28.0 }],
                     egui::TextEdit::singleline(&mut value)
                         .char_limit(64)
                         .background_color(self.control_fill())
@@ -4785,16 +4976,19 @@ impl Editor {
                             egui::RichText::new(self.tr(Text::EmptyValue)).color(self.secondary()),
                         ),
                 )
-                .labelled_by(caption.id);
+            }
+            .labelled_by(caption.id);
             self.remember(id, &response);
             if response.changed() {
                 self.property_drafts
                     .insert(field.id.to_owned(), value.clone());
             }
             self.compatible_count(ui, field.compatible);
-            if (response.lost_focus()
-                || (response.has_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter))))
-                && self.property_drafts.contains_key(field.id)
+            let commit_key = response.has_focus()
+                && ui.input(|i| {
+                    i.key_pressed(egui::Key::Enter) && (!multiline || i.modifiers.command)
+                });
+            if (response.lost_focus() || commit_key) && self.property_drafts.contains_key(field.id)
             {
                 let result = self.set_shared_field(field.id, &value);
                 self.property_drafts.remove(field.id);
@@ -4836,7 +5030,63 @@ impl Editor {
     }
     /// The inspector and automation use the same registered atomic field edit.
     pub fn set_shared_field(&mut self, field: &str, value: &str) -> Result<()> {
-        let patch = item_patch(field, value)?;
+        let patch = match field {
+            "blendMode" => ItemParamPatch::BlendMode(
+                serde_json::from_value(serde_json::json!(value))
+                    .map_err(|_| Error::Invalid("blend mode"))?,
+            ),
+            "opacity" => ItemParamPatch::Opacity(
+                value
+                    .trim()
+                    .parse()
+                    .map_err(|_| Error::Invalid("opacity"))?,
+            ),
+            "audio_gain" => ItemParamPatch::AudioGain(
+                value
+                    .trim()
+                    .parse()
+                    .map_err(|_| Error::Invalid("audio gain"))?,
+            ),
+            "text_content" => ItemParamPatch::TextContent(value.into()),
+            "text_font" => {
+                let font = value.trim();
+                if font.is_empty() || font.len() > 256 {
+                    return Err(Error::Invalid("font family"));
+                }
+                ItemParamPatch::TextFont(font.into())
+            }
+            "text_size" => ItemParamPatch::TextSize(
+                value
+                    .trim()
+                    .parse()
+                    .map_err(|_| Error::Invalid("text size"))?,
+            ),
+            "text_color" => ItemParamPatch::TextColor(parse_color(value)?),
+            "text_background" => {
+                let value = value.trim();
+                ItemParamPatch::TextBackground(if value.eq_ignore_ascii_case("none") {
+                    None
+                } else {
+                    Some(project::TextBackground {
+                        color: parse_color(value)?,
+                        ..Default::default()
+                    })
+                })
+            }
+            "text_background_color" => {
+                ItemParamPatch::TextBackground(Some(project::TextBackground {
+                    color: parse_color(value)?,
+                    ..Default::default()
+                }))
+            }
+            "text_position_x" => ItemParamPatch::TextPositionX(
+                parse_percent(value).map_err(|_| Error::Invalid("horizontal position"))?,
+            ),
+            "text_position_y" => ItemParamPatch::TextPositionY(
+                parse_percent(value).map_err(|_| Error::Invalid("vertical position"))?,
+            ),
+            _ => return Err(Error::Invalid("shared field")),
+        };
         self.session.set_selection(self.selection.clone())?;
         self.session.execute(
             "timeline.set_item_param_many",
@@ -6809,6 +7059,33 @@ fn file_name(path: &std::path::Path) -> String {
         || path.to_string_lossy().into_owned(),
         |name| name.to_string_lossy().into_owned(),
     )
+}
+fn parse_color(value: &str) -> Result<project::Color> {
+    let value = value.trim().trim_start_matches('#');
+    if !matches!(value.len(), 6 | 8) || !value.is_ascii() {
+        return Err(Error::Invalid("RGBA colour"));
+    }
+    let mut rgba = [255u8; 4];
+    for (i, byte) in rgba.iter_mut().enumerate().take(value.len() / 2) {
+        *byte = u8::from_str_radix(
+            value
+                .get(i * 2..i * 2 + 2)
+                .ok_or(Error::Invalid("RGBA colour"))?,
+            16,
+        )
+        .map_err(|_| Error::Invalid("RGBA colour"))?;
+    }
+    Ok(project::Color(rgba))
+}
+fn parse_percent(value: &str) -> Result<f32> {
+    let value: f32 = value
+        .trim()
+        .parse()
+        .map_err(|_| Error::Invalid("percentage"))?;
+    if !value.is_finite() || !(0.0..=100.0).contains(&value) {
+        return Err(Error::Invalid("percentage"));
+    }
+    Ok(value)
 }
 fn error_detail(error: &dyn std::error::Error) -> String {
     let mut parts = vec![error.to_string()];

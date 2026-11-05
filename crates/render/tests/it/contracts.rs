@@ -189,6 +189,71 @@ fn empty_audio_is_exact_silence_for_any_block_partition() {
     assert!(mix_audio(&p, 0, 65537, 2, &mut Empty, &h).is_err());
 }
 #[test]
+fn text_item_font_background_and_position_reach_the_compositor() {
+    let mut data = solid_project(1, 320, 180, [0, 0, 0, 255]).into_data();
+    let mut text = project::TextParams::new("VibeCut");
+    text.font_size = 40.0;
+    data.scene_mut().timeline.insert_track(project::Track {
+        id: project::TrackId(2),
+        name: "Text".into(),
+        kind: project::TrackKind::Text,
+        muted: false,
+        hidden: false,
+        locked: false,
+        items: vec![project::Item {
+            masks: Vec::new(),
+            effects: Vec::new(),
+            animations: Default::default(),
+            id: project::ItemId(1),
+            source_asset: None,
+            source_range: time::SourceRange::new(Tick::ZERO, tick(1, 1)).unwrap(),
+            start: Tick::ZERO,
+            content: project::ItemParams::Text(text.clone()),
+        }],
+    });
+    let baseline = project::Project::new(data).unwrap();
+    let hooks = Hooks::default();
+    let mut renderer = Renderer::new(&baseline, RenderSettings::from_project(&baseline)).unwrap();
+    let plain = renderer
+        .render_frame(Tick::ZERO, &mut Empty, &hooks)
+        .unwrap();
+
+    let mut data = baseline.into_data();
+    let project::ItemParams::Text(text) =
+        &mut data.scene_mut().timeline.overlays[0].items[0].content
+    else {
+        panic!("text item")
+    };
+    text.font = "Noto Serif".into();
+    text.background = Some(project::TextBackground {
+        color: project::Color([255, 0, 0, 255]),
+        padding: 8.0,
+        radius: 2.0,
+    });
+    text.position = project::TextPosition { x: 50.0, y: 50.0 };
+    let styled = project::Project::new(data).unwrap();
+    let mut renderer = Renderer::new(&styled, RenderSettings::from_project(&styled)).unwrap();
+    let decorated = renderer
+        .render_frame(Tick::ZERO, &mut Empty, &hooks)
+        .unwrap();
+
+    assert_ne!(plain.pixels(), decorated.pixels());
+    let red = decorated
+        .pixels()
+        .iter()
+        .filter(|pixel| pixel[0] > 0.5 && pixel[1] < 0.2 && pixel[2] < 0.2)
+        .count();
+    assert!(red > 0, "background box paints red pixels");
+    let plain_red = plain
+        .pixels()
+        .iter()
+        .filter(|pixel| pixel[0] > 0.5 && pixel[1] < 0.2 && pixel[2] < 0.2)
+        .count();
+    assert_eq!(plain_red, 0, "plain title has no background box");
+}
+
+
+#[test]
 fn preview_audio_mix_obeys_item_gain_and_mute() {
     struct ConstantAudio;
     impl SourceProvider for ConstantAudio {

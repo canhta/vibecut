@@ -1359,6 +1359,7 @@ fn shared_fields_are_atomic_and_history_restores_transient_selection() {
             content: format!("item {}", item.id.0).into(),
             font_size: size,
             color: Color([10, 20, 30, 255]),
+            ..Default::default()
         });
     }
     let mut s = Session::new(Project::new(data).unwrap(), 2).unwrap();
@@ -1444,6 +1445,7 @@ fn shared_fields_are_atomic_and_history_restores_transient_selection() {
             content: "independent".into(),
             font_size: 18.0,
             color: Color([1, 2, 3, 255]),
+            ..Default::default()
         }),
     })
     .unwrap();
@@ -1480,6 +1482,76 @@ fn shared_fields_are_atomic_and_history_restores_transient_selection() {
 }
 
 #[test]
+#[allow(clippy::panic, reason = "validated fixture assertions")]
+fn text_style_patches_update_one_field_and_validate() {
+    use engine::ItemParamPatch;
+    let mut data = project().into_data();
+    let track = data.scene_mut().timeline.overlays.first_mut().unwrap();
+    track.kind = TrackKind::Text;
+    for item in &mut track.items {
+        item.content = ItemParams::Text(project::TextParams {
+            content: "Keep".into(),
+            font_size: 24.0,
+            color: Color([1, 2, 3, 255]),
+            ..Default::default()
+        });
+    }
+    let mut s = Session::new(Project::new(data).unwrap(), 20).unwrap();
+    let item = ItemId(10);
+    for patch in [
+        ItemParamPatch::TextContent("Xin chào".into()),
+        ItemParamPatch::TextFont("Noto Serif".into()),
+        ItemParamPatch::TextBackground(Some(project::TextBackground {
+            color: Color([9, 8, 7, 128]),
+            padding: 6.0,
+            radius: 3.0,
+        })),
+        ItemParamPatch::TextPositionX(25.0),
+        ItemParamPatch::TextPositionY(30.0),
+    ] {
+        assert!(
+            s.apply(Command::SetItemParamMany {
+                items: vec![item],
+                patch
+            })
+            .unwrap()
+            .changed
+        );
+    }
+    let ItemParams::Text(p) = &get(&s, item.0).content else {
+        panic!("text fixture")
+    };
+    assert_eq!(p.content.as_str(), "Xin chào");
+    assert_eq!(p.font.as_str(), "Noto Serif");
+    assert_eq!(p.font_size, 24.0);
+    assert_eq!(p.color, Color([1, 2, 3, 255]));
+    assert_eq!(p.background.as_ref().unwrap().color, Color([9, 8, 7, 128]));
+    assert_eq!(p.background.as_ref().unwrap().padding, 6.0);
+    assert_eq!(p.position, project::TextPosition { x: 25.0, y: 30.0 });
+
+    let after = s.project().clone();
+    for patch in [
+        ItemParamPatch::TextFont("".into()),
+        ItemParamPatch::TextPositionX(101.0),
+        ItemParamPatch::TextPositionY(f32::NAN),
+        ItemParamPatch::TextBackground(Some(project::TextBackground {
+            color: Color([0; 4]),
+            padding: 129.0,
+            radius: 0.0,
+        })),
+    ] {
+        assert!(
+            s.apply(Command::SetItemParamMany {
+                items: vec![item],
+                patch
+            })
+            .is_err()
+        );
+        assert_eq!(s.project(), &after);
+    }
+}
+
+#[test]
 fn shared_field_refuses_locked_compatible_target_without_partial_edit() {
     use engine::ItemParamPatch;
     let mut data = project().into_data();
@@ -1490,6 +1562,7 @@ fn shared_field_refuses_locked_compatible_target_without_partial_edit() {
             content: "Keep".into(),
             font_size: 24.0,
             color: Color([1, 2, 3, 255]),
+            ..Default::default()
         });
     }
     let second = source.items.pop().unwrap();
@@ -1828,7 +1901,7 @@ proptest! {
                 _ => Placement::Auto,
             };
             let mut item = new_item(at,duration);
-            if text { item.content = ItemParams::Text(project::TextParams {content:"Tiếng Việt".into(),font_size:24.0,color:Color([255;4])}); }
+            if text { item.content = ItemParams::Text(project::TextParams {content:"Tiếng Việt".into(),font_size:24.0,color:Color([255;4]),..Default::default()}); }
             let before = s.project().clone();
             match s.apply(Command::InsertItem {placement,item}) {
                 Ok(outcome) => {

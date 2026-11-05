@@ -190,12 +190,62 @@ pub struct AudioParams {
     pub gain_db: f32,
     pub muted: bool,
 }
+/// Percentages of the canvas; `(50, 84.5)` reproduces the original lower-third box.
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct TextPosition {
+    pub x: f32,
+    pub y: f32,
+}
+impl Default for TextPosition {
+    fn default() -> Self {
+        Self { x: 50.0, y: 84.5 }
+    }
+}
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct TextBackground {
+    pub color: Color,
+    /// Project canvas pixels; scaled with the output like the font size.
+    pub padding: f32,
+    pub radius: f32,
+}
+impl Default for TextBackground {
+    fn default() -> Self {
+        Self {
+            color: Color([0, 0, 0, 160]),
+            padding: 12.0,
+            radius: 4.0,
+        }
+    }
+}
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct TextParams {
     pub content: NfcText,
+    pub font: NfcText,
     pub font_size: f32,
     pub color: Color,
+    pub background: Option<TextBackground>,
+    pub position: TextPosition,
+}
+impl Default for TextParams {
+    fn default() -> Self {
+        Self::new("")
+    }
+}
+impl TextParams {
+    /// Baseline title style shared by insertion and fixtures.
+    pub fn new(content: impl Into<NfcText>) -> Self {
+        Self {
+            content: content.into(),
+            font: "Inter".into(),
+            font_size: 48.0,
+            color: Color([255; 4]),
+            background: None,
+            position: TextPosition::default(),
+        }
+    }
 }
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
@@ -654,8 +704,23 @@ fn validate(data: &ProjectData) -> Result<()> {
                 }
                 ItemParams::Text(p) => {
                     text(&p.content)?;
-                    if !p.font_size.is_finite() || !(1.0..=4096.0).contains(&p.font_size) {
-                        return Err(Error::Invalid("text font size"));
+                    text(&p.font)?;
+                    if p.font.as_str().trim().is_empty()
+                        || p.font.as_str().len() > 256
+                        || !p.font_size.is_finite()
+                        || !(1.0..=4096.0).contains(&p.font_size)
+                        || !p.position.x.is_finite()
+                        || !p.position.y.is_finite()
+                        || !(0.0..=100.0).contains(&p.position.x)
+                        || !(0.0..=100.0).contains(&p.position.y)
+                        || p.background.as_ref().is_some_and(|background| {
+                            !background.padding.is_finite()
+                                || !background.radius.is_finite()
+                                || !(0.0..=128.0).contains(&background.padding)
+                                || !(0.0..=128.0).contains(&background.radius)
+                        })
+                    {
+                        return Err(Error::Invalid("text style"));
                     }
                 }
                 ItemParams::Caption(p) => {

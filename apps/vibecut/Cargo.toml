@@ -28,6 +28,7 @@ engine = { path = "../../crates/engine" }
 ai = { path = "../../crates/ai", default-features = false }
 project = { path = "../../crates/project" }
 render = { path = "../../crates/render" }
+text = { path = "../../crates/text" }
 time = { path = "../../crates/time" }
 captions = { path = "../../crates/captions" }
 serde = { version = "1.0.229", features = ["derive"] }

@@ -47,10 +47,12 @@ matrices. Other primaries, HDR, high depth, non-square pixels and rotation retur
 Unchanged passthrough retains those source parameters instead. Output geometry
 must be positive and at most 2^26 pixels; encoded H.264 dimensions must be even.
 
-Text uses bundled Inter Regular and text's bundled fallback identity, centered
-inside its destination. Pixel size scales with output/project width. Immutable
+Text uses the item's bundled font family, centered inside its project-owned
+destination. Positions are canvas percentages; the default 50/84.5 reproduces the
+original lower-third box. An optional project-owned background box paints before
+the glyphs. Pixel size and box padding scale with output/project width. Immutable
 raster reuse is local to a Renderer, keyed by NFC text, font/fallback identity,
-size, color and pixel geometry. Default caps are 8 MiB/four entries; settings cap
+size, color, background and pixel geometry. Default caps are 8 MiB/four entries; settings cap
 at 256 MiB/64 entries. Zero bytes disables reuse. LRU entries retain byte leases;
 pressure clears idle entries before one retry. `text_cache_stats` reports hits,
 misses, bytes and entries; `clear_text_cache` releases them. Observed repeat-frame

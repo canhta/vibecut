@@ -98,6 +98,7 @@ fn scene() -> project::Project {
                 content: "Tiếng Việt 中文".into(),
                 font_size: 36.0,
                 color: project::Color([255, 255, 255, 224]),
+                ..Default::default()
             }),
             None,
         ),

@@ -260,13 +260,17 @@ impl<'a> Renderer<'a> {
                         fit: Fit::Stretch,
                         ..Default::default()
                     }
-                } else if matches!(item.content, ItemParams::Text(_)) {
+                } else if let ItemParams::Text(params) = &item.content {
+                    let width = 0.8;
+                    let height = 0.25;
+                    let x = f64::from(params.position.x) / 100.0 - width / 2.0;
+                    let y = f64::from(params.position.y) / 100.0 - height / 2.0;
                     Placement {
                         destination: Rect {
-                            x: 0.1,
-                            y: 0.72,
-                            width: 0.8,
-                            height: 0.25,
+                            x: x.clamp(0.0, 1.0 - width),
+                            y: y.clamp(0.0, 1.0 - height),
+                            width,
+                            height,
                         },
                         fit: Fit::Stretch,
                         ..Default::default()
@@ -429,12 +433,20 @@ impl<'a> Renderer<'a> {
                     }
                 }
                 ItemParams::Text(p) => {
+                    let scale =
+                        self.settings.width as f32 / self.project.data().canvas.width as f32;
+                    let background = p
+                        .background
+                        .as_ref()
+                        .map(|b| (b.padding * scale, b.radius * scale, b.color.0));
                     let image = self.text(
                         p.content.as_str(),
                         p.font_size,
                         p.color.0,
                         placement,
                         None,
+                        p.font.as_str(),
+                        background,
                         hooks,
                     )?;
                     draw(&mut out, &image, placement, hooks)?;
@@ -484,12 +496,19 @@ impl<'a> Renderer<'a> {
                                 value.push_str(text.text.as_str());
                             }
                             let style = self.settings.caption_style.clone();
+                            let scale = self.settings.height as f32 / 1080.0;
+                            let background = style
+                                .background
+                                .as_ref()
+                                .map(|b| (b.padding * scale, b.radius * scale, b.color));
                             let image = self.text(
                                 &value,
                                 style.size,
                                 style.color,
                                 placement,
                                 Some(&style),
+                                style.font.as_str(),
+                                background,
                                 hooks,
                             )?;
                             draw(&mut out, &image, placement, hooks)?;
@@ -549,6 +568,8 @@ impl<'a> Renderer<'a> {
                                     ..Default::default()
                                 },
                                 Some(&style),
+                                "Inter",
+                                None,
                                 hooks,
                             )
                         },
@@ -628,6 +649,7 @@ impl<'a> Renderer<'a> {
         };
         sources.video_window(asset, item.id, at, window, hooks)
     }
+    #[allow(clippy::too_many_arguments)]
     fn text(
         &mut self,
         value: &str,
@@ -635,6 +657,8 @@ impl<'a> Renderer<'a> {
         fill: [u8; 4],
         placement: Placement,
         caption: Option<&CaptionStyle>,
+        font: &str,
+        background: Option<(f32, f32, [u8; 4])>,
         hooks: &dyn ExecutionHooks,
     ) -> Result<Arc<Image>> {
         if value.len() > 16384 {
@@ -652,7 +676,6 @@ impl<'a> Renderer<'a> {
             self.settings.width as f32 / self.project.data().canvas.width as f32
         };
         let size = size * scale;
-        let font = caption.map_or("Inter", |s| s.font.as_str());
         let font_style = caption.map_or("Regular", |s| s.font_style.as_str());
         let key_bytes = (value.len() + font.len() + font_style.len()) as u64 + 512;
         let key_lease = match hooks.reserve(MemoryKind::Compositor, key_bytes) {
@@ -673,13 +696,8 @@ impl<'a> Renderer<'a> {
             outline: caption
                 .and_then(|s| s.outline.as_ref())
                 .map(|o| ((o.width * scale).to_bits(), o.color)),
-            background: caption.and_then(|s| s.background.as_ref()).map(|b| {
-                (
-                    (b.padding * scale).to_bits(),
-                    (b.radius * scale).to_bits(),
-                    b.color,
-                )
-            }),
+            background: background
+                .map(|(padding, radius, color)| (padding.to_bits(), radius.to_bits(), color)),
             position: caption.map_or(CaptionPosition::Top, |s| s.position),
             max_lines: caption.map(|s| s.max_lines),
         };

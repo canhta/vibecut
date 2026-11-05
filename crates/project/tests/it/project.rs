@@ -82,6 +82,7 @@ fn item(id: u64, start: i64) -> Item {
             content: "Tiếng Việt".into(),
             font_size: 32.0,
             color: Color([255; 4]),
+            ..Default::default()
         }),
     }
 }

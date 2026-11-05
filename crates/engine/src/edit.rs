@@ -29,6 +29,31 @@ fn apply_patch(target: &mut Item, patch: &crate::ItemParamPatch) -> Result<()> {
                 p.muted = *v;
             }
         }
+        crate::ItemParamPatch::TextContent(v) => {
+            if let ItemParams::Text(p) = &mut target.content {
+                p.content = v.clone();
+            }
+        }
+        crate::ItemParamPatch::TextFont(v) => {
+            if let ItemParams::Text(p) = &mut target.content {
+                p.font = v.clone();
+            }
+        }
+        crate::ItemParamPatch::TextBackground(v) => {
+            if let ItemParams::Text(p) = &mut target.content {
+                p.background = v.clone();
+            }
+        }
+        crate::ItemParamPatch::TextPositionX(v) => {
+            if let ItemParams::Text(p) = &mut target.content {
+                p.position.x = *v;
+            }
+        }
+        crate::ItemParamPatch::TextPositionY(v) => {
+            if let ItemParams::Text(p) = &mut target.content {
+                p.position.y = *v;
+            }
+        }
         crate::ItemParamPatch::TextSize(v) => {
             if let ItemParams::Text(p) = &mut target.content {
                 p.font_size = *v;

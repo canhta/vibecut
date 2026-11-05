@@ -174,6 +174,7 @@ pub(crate) fn preview(
                             content: label.into(),
                             font_size: label_size,
                             color: project::Color([255; 4]),
+                            ..Default::default()
                         }),
                     }],
                 });

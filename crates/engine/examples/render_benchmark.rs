@@ -117,6 +117,7 @@ fn text_benchmark(
                 content: "Tiếng Việt 中文".into(),
                 font_size: 40.0,
                 color: project::Color([255; 4]),
+                ..Default::default()
             }),
         }],
     });

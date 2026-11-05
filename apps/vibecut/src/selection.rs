@@ -137,8 +137,13 @@ pub fn shared_fields(project: &Project, selection: &BTreeSet<ItemId>) -> Vec<Sha
         "opacity",
         "audio_gain",
         "audio_muted",
+        "text_content",
+        "text_font",
         "text_size",
         "text_color",
+        "text_background",
+        "text_position_x",
+        "text_position_y",
     ]
     .into_iter()
     .filter_map(|id| {
@@ -162,11 +167,24 @@ pub fn shared_fields(project: &Project, selection: &BTreeSet<ItemId>) -> Vec<Sha
                     p.gain_db.to_string()
                 }),
                 ("audio_muted", ItemParams::Audio(p)) => Some(p.muted.to_string()),
+                ("text_content", ItemParams::Text(p)) => Some(p.content.as_str().to_owned()),
+                ("text_font", ItemParams::Text(p)) => Some(p.font.as_str().to_owned()),
                 ("text_size", ItemParams::Text(p)) => Some(p.font_size.to_string()),
                 ("text_color", ItemParams::Text(p)) => {
                     let [r, g, b, a] = p.color.0;
                     Some(format!("#{r:02X}{g:02X}{b:02X}{a:02X}"))
                 }
+                ("text_background", ItemParams::Text(p)) => {
+                    Some(p.background.as_ref().map_or_else(
+                        || "none".to_owned(),
+                        |background| {
+                            let [r, g, b, a] = background.color.0;
+                            format!("#{r:02X}{g:02X}{b:02X}{a:02X}")
+                        },
+                    ))
+                }
+                ("text_position_x", ItemParams::Text(p)) => Some(p.position.x.to_string()),
+                ("text_position_y", ItemParams::Text(p)) => Some(p.position.y.to_string()),
                 _ => None,
             })
             .collect();
@@ -207,8 +225,11 @@ mod tests {
                     start: Tick(n as i64 * 100),
                     content: ItemParams::Text(TextParams {
                         content: "Keep".into(),
+                        font: "Inter".into(),
                         font_size: 24.0 + n as f32,
                         color: Color([10, 20, 30, 255]),
+                        background: None,
+                        position: project::TextPosition::default(),
                     }),
                 })
                 .collect(),
@@ -234,6 +255,16 @@ mod tests {
                         compatible: count
                     },
                     SharedField {
+                        id: "text_content",
+                        value: Some("Keep".into()),
+                        compatible: count
+                    },
+                    SharedField {
+                        id: "text_font",
+                        value: Some("Inter".into()),
+                        compatible: count
+                    },
+                    SharedField {
                         id: "text_size",
                         value: expected_size.map(str::to_owned),
                         compatible: count
@@ -241,6 +272,21 @@ mod tests {
                     SharedField {
                         id: "text_color",
                         value: Some("#0A141EFF".into()),
+                        compatible: count
+                    },
+                    SharedField {
+                        id: "text_background",
+                        value: Some("none".into()),
+                        compatible: count
+                    },
+                    SharedField {
+                        id: "text_position_x",
+                        value: Some("50".into()),
+                        compatible: count
+                    },
+                    SharedField {
+                        id: "text_position_y",
+                        value: Some("84.5".into()),
                         compatible: count
                     }
                 ]

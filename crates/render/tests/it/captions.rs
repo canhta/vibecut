@@ -522,6 +522,7 @@ fn extreme_font_scaling_is_a_typed_refusal_before_raster_scratch() {
         content: "X".into(),
         font_size: 4096.0,
         color: project::Color([255; 4]),
+        ..Default::default()
     });
     let p = project::Project::new(d).unwrap();
     let h = Hooks::default();

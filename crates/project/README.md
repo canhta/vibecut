@@ -46,7 +46,9 @@ working directory changes never reinterpret them.
 Names, notes and text use captions' NFC text owner. Canvas frames must have exact,
 positive integer tick durations. Canvas area is at most 2^26 pixels; output audio
 admits 8–192 kHz. Audio gain admits −120..24 dB; font sizes admit 1..4096 pixels.
-Typed invalid/unsupported/limit errors refuse a whole candidate.
+Text items also carry a 1..256-byte font-family name, an optional padded RGBA
+background box, and x/y canvas percentages in 0..=100 (default 50/84.5 reproduces
+the original lower-third box). Typed invalid/unsupported/limit errors refuse a whole candidate.
 
 `ProjectData.original_canvas_size` is the optional first visual media size, not a
 second user canvas setting. It starts null and retains the first inserted media's

@@ -1206,6 +1206,118 @@ fn mixed_text_inspector_applies_one_field_and_restores_selected_items() {
 }
 
 #[test]
+fn text_insert_and_style_controls_use_one_undo_step_per_edit() {
+    let mut fixture = fixture();
+    let before = fixture.editor.session.project().clone();
+    let items_before = count(&fixture.editor);
+    let history = fixture.editor.session.history_len().0;
+    fixture
+        .editor
+        .playback
+        .seek(Tick(7 * SECOND), false, before.clone())
+        .unwrap();
+    let mut harness = harness(fixture.editor);
+    harness.run_steps(3);
+    harness.state_mut().activate("text.insert").unwrap();
+    harness.run_steps(2);
+    assert_eq!(count(harness.state()), items_before + 1);
+    assert_eq!(harness.state().session.history_len().0, history + 1);
+    let selected = harness.state().inspect().unwrap().selection;
+    assert_eq!(selected.len(), 1);
+    let item_view = item(harness.state(), selected[0]);
+    assert_eq!(item_view.start, Tick(7 * SECOND));
+    assert_eq!(item_view.source_range.duration(), Tick(5 * SECOND));
+    let ItemParams::Text(text) = &item_view.content else {
+        panic!("inserted text item")
+    };
+    assert_eq!(text.font.as_str(), "Inter");
+    assert_eq!(text.font_size, 48.0);
+    assert_eq!(text.background, None);
+    assert_eq!(text.position, project::TextPosition::default());
+    let text_track_count = harness
+        .state()
+        .session
+        .project()
+        .data()
+        .scene()
+        .timeline
+        .iter()
+        .filter(|track| track.kind == TrackKind::Text)
+        .count();
+    assert_eq!(text_track_count, 1, "free space reuses the text track");
+
+    let history = harness.state().session.history_len().0;
+    harness
+        .get(By::new().predicate(|n| n.author_id() == Some("inspector.text_size")))
+        .click();
+    harness.run_steps(1);
+    harness.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::A);
+    harness.run_steps(1);
+    harness.event(egui::Event::Text("64".into()));
+    harness.key_press(egui::Key::Enter);
+    harness.run_steps(3);
+    assert_eq!(harness.state().session.history_len().0, history + 1);
+    let style_history = harness.state().session.history_len().0;
+    for (field, value) in [
+        ("text_content", "Xin chào"),
+        ("text_font", "Noto Serif"),
+        ("text_color", "#11223344"),
+        ("text_background", "#01020380"),
+        ("text_position_x", "25"),
+        ("text_position_y", "30"),
+    ] {
+        harness.state_mut().set_shared_field(field, value).unwrap();
+        harness.run_steps(1);
+    }
+    assert_eq!(
+        harness.state().session.history_len().0,
+        style_history + 6,
+        "each committed field edit is one undo step"
+    );
+    let ItemParams::Text(text) = &item(harness.state(), selected[0]).content else {
+        panic!("text item")
+    };
+    assert_eq!(text.content.as_str(), "Xin chào");
+    assert_eq!(text.font.as_str(), "Noto Serif");
+    assert_eq!(text.font_size, 64.0);
+    assert_eq!(text.color, Color([17, 34, 51, 68]));
+    assert_eq!(
+        text.background.as_ref().unwrap().color,
+        Color([1, 2, 3, 128])
+    );
+    assert_eq!(text.position, project::TextPosition { x: 25.0, y: 30.0 });
+    for (field, value) in [
+        ("text_font", ""),
+        ("text_size", "4097"),
+        ("text_position_x", "101"),
+        ("text_position_y", "NaN"),
+        ("text_background", "not-a-colour"),
+    ] {
+        assert!(
+            harness.state_mut().set_shared_field(field, value).is_err(),
+            "{field} accepted {value}"
+        );
+    }
+
+    let encoded = project::encode(harness.state().session.project(), false).unwrap();
+    let decoded = project::decode(&encoded).unwrap();
+    assert_eq!(decoded.project, **harness.state().session.project());
+
+    for _ in 0..8 {
+        harness.state_mut().activate("edit.undo").unwrap();
+    }
+    assert_eq!(harness.state().session.project(), &before);
+    for _ in 0..8 {
+        harness.state_mut().activate("edit.redo").unwrap();
+    }
+    let ItemParams::Text(text) = &item(harness.state(), selected[0]).content else {
+        panic!("text item")
+    };
+    assert_eq!(text.content.as_str(), "Xin chào");
+}
+
+
+#[test]
 fn mixed_audio_mute_shows_indeterminate_and_undo_restores_each_item() {
     let mut fixture = fixture();
     let audio_track = &fixture

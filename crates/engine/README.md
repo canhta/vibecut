@@ -107,9 +107,11 @@ selections (mask points/keyframes) remain app-owned. Selection is absent from
 project JSON and optional persisted metadata.
 
 `timeline.set_item_param_many` accepts a nonempty, unique `items` list (at most
-100,000 IDs) and one typed `patch`: `audio_gain` in −120..=24 dB, `audio_muted`,
-`text_size` in 1..=4096 px, or `text_color` as four RGBA bytes. All numbers must
-be finite.
+100,000 IDs) and one typed `patch`: `audio_gain` in −120..=24 dB, `text_content`,
+`text_font` (1..=256 bytes), `text_size` in 1..=4096 px,
+`text_color` as four RGBA bytes, `text_background` as an optional padded box,
+`text_position_x`/`text_position_y` as canvas percentages in 0..=100. All numbers
+must be finite.
 The command preserves unrelated fields and skips incompatible item kinds;
 missing IDs, duplicates, invalid values and locked compatible items refuse the
 entire edit. An all-incompatible selection is a no-op. One successful changed

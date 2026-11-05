@@ -412,6 +412,7 @@ fn registered_subtitle_export_maps_repeated_items_and_preserves_gaps_without_med
                             content: "Ordinary title".into(),
                             font_size: 32.0,
                             color: project::Color([255; 4]),
+                            ..Default::default()
                         }),
                     },
                 );

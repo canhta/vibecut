@@ -6137,6 +6137,7 @@ dependencies = [
  "skrifa 0.49.0",
  "sys-locale",
  "tempfile",
+ "text",
  "thiserror 2.0.21",
  "time 0.1.0",
  "tracing",

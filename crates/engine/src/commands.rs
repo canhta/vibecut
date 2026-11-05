@@ -61,8 +61,13 @@ pub enum ItemParamPatch {
     Opacity(f64),
     AudioGain(f32),
     AudioMuted(bool),
+    TextContent(NfcText),
+    TextFont(NfcText),
     TextSize(f32),
     TextColor(Color),
+    TextBackground(Option<project::TextBackground>),
+    TextPositionX(f32),
+    TextPositionY(f32),
 }
 impl ItemParamPatch {
     pub fn compatible(&self, content: &ItemParams) -> bool {
@@ -71,10 +76,17 @@ impl ItemParamPatch {
         }
         matches!(
             (self, content),
-            (
-                Self::AudioGain(_) | Self::AudioMuted(_),
-                ItemParams::Audio(_)
-            ) | (Self::TextSize(_) | Self::TextColor(_), ItemParams::Text(_))
+            (Self::AudioGain(_) | Self::AudioMuted(_), ItemParams::Audio(_))
+                | (
+                    Self::TextContent(_)
+                        | Self::TextFont(_)
+                        | Self::TextSize(_)
+                        | Self::TextColor(_)
+                        | Self::TextBackground(_)
+                        | Self::TextPositionX(_)
+                        | Self::TextPositionY(_),
+                    ItemParams::Text(_)
+                )
         )
     }
     pub(crate) fn validate(&self) -> crate::Result<()> {
@@ -83,8 +95,19 @@ impl ItemParamPatch {
             Self::Opacity(v) => v.is_finite() && (0.0..=1.0).contains(v),
             Self::AudioGain(v) => v.is_finite() && (-120.0..=24.0).contains(v),
             Self::AudioMuted(_) => true,
+            Self::TextContent(v) => v.as_str().len() <= 1 << 20,
+            Self::TextFont(v) => !v.as_str().trim().is_empty() && v.as_str().len() <= 256,
             Self::TextSize(v) => v.is_finite() && (1.0..=4096.0).contains(v),
             Self::TextColor(_) => true,
+            Self::TextBackground(background) => background.as_ref().is_none_or(|background| {
+                background.padding.is_finite()
+                    && background.radius.is_finite()
+                    && (0.0..=128.0).contains(&background.padding)
+                    && (0.0..=128.0).contains(&background.radius)
+            }),
+            Self::TextPositionX(v) | Self::TextPositionY(v) => {
+                v.is_finite() && (0.0..=100.0).contains(v)
+            }
         };
         if valid {
             Ok(())
