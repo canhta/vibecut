@@ -7,29 +7,50 @@ use time::Tick;
 #[test]
 fn graphic_stroke_and_text_background_reach_the_shared_compositor() {
     let hooks = Hooks::default();
-    let mut data = solid_project(1, 64, 32, [255, 0, 0, 255]).into_data();
-    let item = data
-        .scene_mut()
-        .timeline
-        .overlays
-        .first_mut()
-        .unwrap()
-        .items
-        .first_mut()
-        .unwrap();
-    item.animations
-        .set(
-            AnimationPath::new("params.strokeColor").unwrap(),
-            Param::new(ParamValue::Text("#00FF00FF".into())).unwrap(),
-        )
-        .unwrap();
-    let project = project::Project::new(data).unwrap();
-    let mut renderer = Renderer::new(&project, RenderSettings::from_project(&project)).unwrap();
-    let frame = renderer
-        .render_frame(Tick::ZERO, &mut Empty, &hooks)
-        .unwrap();
-    assert_eq!(frame.pixels()[0], [0., 1., 0., 1.]);
-    assert_eq!(frame.pixels()[16 * 64 + 32], [1., 0., 0., 1.]);
+    let project = solid_project(1, 64, 32, [255, 0, 0, 255]);
+    for (stroke, edge) in [
+        (
+            Some(project::Color([0, 255, 0, 255])),
+            [0.0_f32, 1., 0., 1.],
+        ),
+        (Some(project::Color([0, 255, 0, 0])), [1., 0., 0., 1.]),
+        (None, [1., 0., 0., 1.]),
+    ] {
+        let mut data = project.clone().into_data();
+        let item = data
+            .scene_mut()
+            .timeline
+            .overlays
+            .first_mut()
+            .unwrap()
+            .items
+            .first_mut()
+            .unwrap();
+        if let Some(stroke) = stroke {
+            item.animations
+                .set(
+                    AnimationPath::new("params.strokeColor").unwrap(),
+                    Param::new(ParamValue::Text(render::color::hex(stroke).into())).unwrap(),
+                )
+                .unwrap();
+        }
+        let candidate = project::Project::new(data).unwrap();
+        let mut renderer =
+            Renderer::new(&candidate, RenderSettings::from_project(&candidate)).unwrap();
+        let frame = renderer
+            .render_frame(Tick::ZERO, &mut Empty, &hooks)
+            .unwrap();
+        assert_eq!(frame.pixels()[0], edge);
+        assert_eq!(frame.pixels()[16 * 64 + 32], [1., 0., 0., 1.]);
+        if edge == [1., 0., 0., 1.] {
+            assert!(
+                frame
+                    .pixels()
+                    .iter()
+                    .all(|pixel| *pixel == [1., 0., 0., 1.])
+            );
+        }
+    }
 
     let mut data = project.into_data();
     let track = data.scene_mut().timeline.overlays.first_mut().unwrap();

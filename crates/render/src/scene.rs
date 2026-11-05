@@ -464,12 +464,14 @@ impl<'a> Renderer<'a> {
                             && y < (r.y + r.height) * f64::from(h)
                         {
                             over(pixel, c, a);
-                            let edge = (x - r.x * f64::from(w))
-                                .min((r.x + r.width) * f64::from(w) - x)
-                                .min(y - r.y * f64::from(h))
-                                .min((r.y + r.height) * f64::from(h) - y);
-                            if edge < stroke_width {
-                                over(pixel, stroke, a);
+                            if stroke[3] > 0.0 {
+                                let edge = (x - r.x * f64::from(w))
+                                    .min((r.x + r.width) * f64::from(w) - x)
+                                    .min(y - r.y * f64::from(h))
+                                    .min((r.y + r.height) * f64::from(h) - y);
+                                if edge < stroke_width {
+                                    over(pixel, stroke, a);
+                                }
                             }
                         }
                     }
