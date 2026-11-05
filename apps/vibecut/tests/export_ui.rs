@@ -330,72 +330,160 @@ fn export_widget_start_cancel_and_failure_preserve_destination() {
         assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 1);
     }
 }
+// Availability changes without changing the immutable project or audio scope.
+struct Restorable {
+    restored: Arc<std::sync::atomic::AtomicBool>,
+    decoded: Arc<std::sync::atomic::AtomicUsize>,
+}
+impl Sources for Restorable {
+    fn create(&self) -> Box<dyn render::SourceProvider> {
+        Box::new(Self {
+            restored: self.restored.clone(),
+            decoded: self.decoded.clone(),
+        })
+    }
+}
+impl render::SourceProvider for Restorable {
+    fn status(
+        &mut self,
+        _: &SourceAsset,
+        _: bool,
+        _: &dyn render::ExecutionHooks,
+    ) -> render::Result<Option<render::UnavailableReason>> {
+        Ok((!self.restored.load(std::sync::atomic::Ordering::SeqCst))
+            .then_some(render::UnavailableReason::Missing))
+    }
+    fn video(
+        &mut self,
+        _: &SourceAsset,
+        _: project::ItemId,
+        _: Tick,
+        hooks: &dyn render::ExecutionHooks,
+    ) -> render::Result<Option<render::Image>> {
+        self.decoded
+            .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        render::Image::new(64, 64, [0.0, 0.0, 0.0, 1.0], hooks).map(Some)
+    }
+    fn audio(
+        &mut self,
+        _: &SourceAsset,
+        _: project::ItemId,
+        _: i64,
+        _: usize,
+        _: u32,
+        _: &dyn render::ExecutionHooks,
+    ) -> render::Result<render::AudioBlock> {
+        panic!("source audio is disabled in this fixture")
+    }
+}
 #[test]
 fn missing_media_needs_listed_consent_and_a_new_project_invalidates_it() {
-    let dir = tempfile::tempdir().unwrap();
-    let output = dir.path().join("degraded.mp4");
-    std::fs::write(&output, b"previous").unwrap();
-    let mut h = harness(editor(false, true));
-    h.run_steps(2);
-    click(&mut h, "file.export");
-    h.state_mut().export_picked_file(output.clone()).unwrap();
-    h.run_steps(1);
-    click(&mut h, "export.replace");
-    assert!(h.state().export.as_ref().unwrap().inspect().replace);
-    assert!(enabled(&h, "export.start"));
-    click(&mut h, "export.start");
-    assert!(
-        h.state().export.as_ref().unwrap().inspect().job.is_some(),
-        "start not submitted: {:?}",
-        h.state().export.as_ref().unwrap().inspect().error
-    );
-    assert_eq!(wait(&mut h), JobState::Failed);
-    let state = h.state().export.as_ref().unwrap().inspect();
-    assert_eq!(state.unavailable.len(), 1);
-    assert_eq!(state.unavailable[0].asset, AssetId(1));
-    assert_eq!(
-        state.unavailable[0].range,
-        SourceRange::new(Tick::ZERO, Tick(TICKS_PER_SECOND / 10)).unwrap()
-    );
-    assert!(!state.consent);
-    assert!(!enabled(&h, "export.start"));
-    assert_eq!(std::fs::read(&output).unwrap(), b"previous");
-    let previous_job = h.state().export.as_ref().unwrap().inspect().job.unwrap().id;
-    click(&mut h, "export.consent");
-    assert!(enabled(&h, "export.start"));
-    click(&mut h, "export.start");
-    assert_ne!(
-        h.state().export.as_ref().unwrap().inspect().job.unwrap().id,
-        previous_job,
-        "retry did not submit"
-    );
-    assert_eq!(
-        wait(&mut h),
-        JobState::Completed,
-        "{:?}",
-        h.state()
-            .export
-            .as_ref()
-            .unwrap()
-            .inspect()
-            .job
-            .unwrap()
-            .error
-    );
-    assert_ne!(std::fs::read(&output).unwrap(), b"previous");
-    assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 1);
-    click(&mut h, "export.close");
-    click(&mut h, "file.export");
-    assert!(!h.state().export.as_ref().unwrap().inspect().consent);
-    assert!(!h.state().export.as_ref().unwrap().inspect().replace);
-    click(&mut h, "export.consent");
-    assert!(h.state().export.as_ref().unwrap().inspect().consent);
-    h.state_mut()
-        .session
-        .apply(engine::Command::RenameProject {
-            name: "Changed".into(),
-        })
-        .unwrap();
-    h.run_steps(1);
-    assert!(!h.state().export.as_ref().unwrap().inspect().consent);
+    for restored_case in [false, true] {
+        let dir = tempfile::tempdir().unwrap();
+        let output = dir.path().join("export.mp4");
+        std::fs::write(&output, b"previous").unwrap();
+        let restored = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let decoded = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let mut h = harness(editor(false, true));
+        h.run_steps(2);
+        click(&mut h, "file.export");
+        h.state_mut().export_picked_file(output.clone()).unwrap();
+        if restored_case {
+            h.state_mut()
+                .export
+                .as_mut()
+                .unwrap()
+                .set_sources(Arc::new(Restorable {
+                    restored: restored.clone(),
+                    decoded: decoded.clone(),
+                }))
+                .unwrap();
+        }
+        let snapshot = h.state().session.project().clone();
+        h.run_steps(1);
+        click(&mut h, "export.replace");
+        assert!(h.state().export.as_ref().unwrap().inspect().replace);
+        assert!(enabled(&h, "export.start"));
+        click(&mut h, "export.start");
+        assert_eq!(wait(&mut h), JobState::Failed);
+        let state = h.state().export.as_ref().unwrap().inspect();
+        assert_eq!(state.unavailable.len(), 1);
+        assert_eq!(state.unavailable[0].asset, AssetId(1));
+        assert_eq!(
+            state.unavailable[0].range,
+            SourceRange::new(Tick::ZERO, Tick(TICKS_PER_SECOND / 10)).unwrap()
+        );
+        assert!(!state.consent);
+        assert_eq!(std::fs::read(&output).unwrap(), b"previous");
+        // A strict retry must reach fresh admission even before any source is restored.
+        assert!(
+            enabled(&h, "export.start"),
+            "missing-source diagnostics must not disable strict re-admission"
+        );
+        let previous_job = state.job.unwrap().id;
+        click(&mut h, "export.start");
+        assert_eq!(wait(&mut h), JobState::Failed);
+        let state = h.state().export.as_ref().unwrap().inspect();
+        assert_ne!(state.job.as_ref().unwrap().id, previous_job);
+        assert!(matches!(
+            state.job.unwrap().error.as_deref(),
+            Some(engine::EditError::Render(render::Error::Unavailable(_)))
+        ));
+        assert!(!state.consent);
+        assert_eq!(std::fs::read(&output).unwrap(), b"previous");
+        assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 1);
+        if restored_case {
+            restored.store(true, std::sync::atomic::Ordering::SeqCst);
+            h.run_steps(3);
+            assert!(!h.state().export.as_ref().unwrap().inspect().consent);
+            assert!(
+                enabled(&h, "export.start"),
+                "restored source has no non-degraded retry action"
+            );
+        } else {
+            click(&mut h, "export.consent");
+            assert!(h.state().export.as_ref().unwrap().inspect().consent);
+        }
+        click(&mut h, "export.start");
+        assert_eq!(
+            wait(&mut h),
+            JobState::Completed,
+            "{:?}",
+            h.state()
+                .export
+                .as_ref()
+                .unwrap()
+                .inspect()
+                .job
+                .unwrap()
+                .error
+        );
+        assert!(Arc::ptr_eq(&snapshot, h.state().session.project()));
+        assert_ne!(std::fs::read(&output).unwrap(), b"previous");
+        assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 1);
+        if restored_case {
+            let state = h.state().export.as_ref().unwrap().inspect();
+            assert!(!state.consent);
+            assert!(state.unavailable.is_empty());
+            assert!(
+                decoded.load(std::sync::atomic::Ordering::SeqCst) > 0,
+                "restored source was still omitted"
+            );
+        } else {
+            click(&mut h, "export.close");
+            click(&mut h, "file.export");
+            assert!(!h.state().export.as_ref().unwrap().inspect().consent);
+            assert!(!h.state().export.as_ref().unwrap().inspect().replace);
+            click(&mut h, "export.consent");
+            assert!(h.state().export.as_ref().unwrap().inspect().consent);
+            h.state_mut()
+                .session
+                .apply(engine::Command::RenameProject {
+                    name: "Changed".into(),
+                })
+                .unwrap();
+            h.run_steps(1);
+            assert!(!h.state().export.as_ref().unwrap().inspect().consent);
+        }
+    }
 }

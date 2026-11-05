@@ -238,11 +238,16 @@ it. A late cancellation can lose to the existing publication fence and then repo
 Completed. A failed/refused/cancelled attempt preserves the destination through
 render/project's staging owner. A degraded retry requires an explicit toggle over
 the listed diagnostics; a project/audio-scope change clears consent and newly
-unavailable source ranges refuse again. Errors remain in the modal for retry.
+unavailable source ranges refuse again. Strict retry always reruns render admission
+with consent off, so a restored source can export without accepting degradation;
+a still-missing source refuses again and preserves the prior destination. Stale
+diagnostics clear when that strict retry is submitted. Errors remain in the modal
+for retry.
 
 `tests/export_ui.rs` asserts real widget and engine state, never pixels. Run
-`cargo xtask ui-audit [OUTPUT_DIR]` separately for offscreen 1x dark English and
-2x light Vietnamese collapsed/expanded/empty export scenes; it opens no window,
+`cargo xtask ui-audit [OUTPUT_DIR]` separately for offscreen dark English and
+light Vietnamese at both 1x and 2x, with collapsed/expanded/empty export scenes;
+it opens no window,
 produces only audit evidence and is excluded from CI. Production source failures
 are injected through the same render source-factory boundary for deterministic
 start/cancel/failure tests; no second job state machine is introduced.

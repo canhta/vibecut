@@ -271,6 +271,7 @@ impl ExportDialog {
         if settings.allow_degraded {
             settings.degraded_consent = Some(self.unavailable.clone());
         }
+        let strict = !settings.allow_degraded;
         let key = CacheKey::new(KeyInputs {
             kind: ArtifactKind::Preview,
             source: [0; 32],
@@ -293,6 +294,10 @@ impl ExportDialog {
             path,
             move || sources.create(),
         )?;
+        if strict {
+            self.consent = false;
+            self.unavailable.clear();
+        }
         self.snapshot = self.runner.snapshot(job.0);
         self.job = Some(job);
         self.cancelling = false;
@@ -612,9 +617,9 @@ impl ExportDialog {
                             }
                             result.widgets.push(("export.cancel", r));
                         } else {
+                            // The render job rechecks sources, including after restoration.
                             let ready = !self.empty
                                 && self.destination.is_some()
-                                && (self.unavailable.is_empty() || self.consent)
                                 && (!self.destination.as_ref().is_some_and(|p| p.exists())
                                     || self.replace);
                             let r = ui.add_enabled(

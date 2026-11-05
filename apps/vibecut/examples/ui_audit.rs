@@ -17,7 +17,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .map(PathBuf::from)
         .unwrap_or_else(|| PathBuf::from("target/ui-audit/export"));
     std::fs::create_dir_all(&output)?;
-    for (scale, dark, locale) in [(1.0, true, Locale::En), (2.0, false, Locale::Vi)] {
+    for (scale, dark, locale) in [
+        (1.0, true, Locale::En),
+        (2.0, true, Locale::En),
+        (1.0, false, Locale::Vi),
+        (2.0, false, Locale::Vi),
+    ] {
         for empty in [false, true] {
             let mut d = project::Project::empty(project::ProjectId(18), "Video — Hà Nội".into())?
                 .into_data();
@@ -56,11 +61,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 },
             );
             editor.activate("file.export")?;
-            editor.export_picked_file(output.join(if dark {
-                "video-dark.mp4"
-            } else {
-                "video-light.mp4"
-            }))?;
+            editor.export_picked_file(output.join(format!(
+                "video-{}-{scale}x.mp4",
+                if dark { "dark" } else { "light" }
+            )))?;
             let mut h = Harness::builder()
                 .with_size(egui::vec2(1280.0, 800.0))
                 .with_pixels_per_point(scale)
