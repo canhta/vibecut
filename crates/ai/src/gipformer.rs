@@ -416,6 +416,14 @@ pub fn run_native() -> Result<(), Error> {
 mod tests {
     use super::*;
     use std::os::unix::fs::PermissionsExt;
+    // Process fixtures share timing thresholds; running them concurrently lets
+    // a loaded machine trip the cancellation windows.
+    static PROCESS_TESTS: std::sync::Mutex<()> = std::sync::Mutex::new(());
+    fn serial() -> std::sync::MutexGuard<'static, ()> {
+        PROCESS_TESTS
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+    }
     struct Temp(PathBuf);
     impl Temp {
         fn new(script: &str) -> (Self, PathBuf) {
@@ -518,6 +526,7 @@ mod tests {
     }
     #[test]
     fn process_failures_and_malformed_replies_are_typed() {
+        let _serial = serial();
         for script in ["exit 7".to_owned(), "printf garbage".to_owned()] {
             let (_temp, runner) = Temp::new(&script);
             assert!(Native::start(&runner, &settings(), &Hooks::new(false)).is_err());
@@ -543,6 +552,7 @@ mod tests {
     }
     #[test]
     fn cancellation_kills_native_work_with_blocked_stdin_and_joins_pipes() {
+        let _serial = serial();
         let (_temp, runner) = Temp::new(&format!("{}; exec sleep 30", emit(&Reply::Ready)));
         let mut native = Native::start(&runner, &settings(), &Hooks::new(false)).unwrap();
         let hooks = Hooks::new(true);
@@ -556,6 +566,7 @@ mod tests {
     }
     #[test]
     fn hook_unwind_reaps_native_process_before_joining_blocked_pipes() {
+        let _serial = serial();
         struct Panic(std::time::Instant);
         impl ExecutionHooks for Panic {
             fn cancelled(&self) -> bool {
