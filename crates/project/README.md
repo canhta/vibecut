@@ -151,9 +151,10 @@ or renderer output claim is made.
 ## Persistence and limits
 
 `encode`/`decode` use one JSON envelope: `format`, `schema_version`, `generator`,
-`project`. Current schema 9 adds `original_canvas_size` and the media-owned `ephemeral` flag.
+`project`. Current schema 10 stores text font, background and position fields alongside
+`original_canvas_size` and the media-owned `ephemeral` flag.
 ProjectId is stored as a canonical decimal string, preserving
-all u64 identity bits for control clients; other IDs remain numeric. Schemas 1–8
+all u64 identity bits for control clients; other IDs remain numeric. Schemas 1-9
 are refused rather than migrated or silently defaulted. Older schemas return `TooOld`, newer schemas `TooNew`; there are no
 migration or compatibility paths. Unknown current-schema project/envelope fields
 are refused. `WriterLease::save` serializes completely before touching the destination;
@@ -363,7 +364,7 @@ whitespace-only text masks are inactive while retaining their editable data. The
 admits 1,024 entries for resource safety; presentation limits do not define the
 model. Audio items refuse masks. Modes are None/Add/Subtract/Intersect/Lighten/
 Darken/Difference; render owns their coverage math. Commands/history belong to
-engine. Schema 9 requires scene arrays, per-item mask vectors and `blendMode`; schema 8 and earlier refuse with `TooOld`.
+engine. Schema 10 requires scene arrays, per-item mask vectors, `blendMode` and text style fields; schema 9 and earlier refuse with `TooOld`.
 
 Shapes include split, cinematic band, rectangle, ellipse, heart, diamond, star,
 text and a cubic `MaskPath`. Text masks currently persist content and font size

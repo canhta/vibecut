@@ -1263,6 +1263,33 @@ fn text_insert_button_fits_the_media_panel_in_both_locales() {
 }
 
 #[test]
+fn text_position_controls_are_reachable_in_a_normal_height_window() {
+    let fixture = fixture();
+    let mut harness = Harness::builder()
+        .with_size(egui::vec2(1280.0, 720.0))
+        .build_ui_state(|ui, editor: &mut Editor| editor.ui(ui), fixture.editor);
+    harness.run_steps(3);
+    harness
+        .get(By::new().predicate(|n| n.author_id() == Some("text.insert")))
+        .click();
+    harness.run_steps(3);
+    let panel = harness.state().panels["inspector"];
+    harness
+        .input_mut()
+        .events
+        .push(egui::Event::PointerMoved(panel.center()));
+    harness.input_mut().events.push(egui::Event::MouseWheel {
+        unit: egui::MouseWheelUnit::Point,
+        delta: egui::vec2(0.0, -2000.0),
+        phase: egui::TouchPhase::Move,
+        source: egui::MouseWheelSource::Unknown,
+        modifiers: egui::Modifiers::NONE,
+    });
+    harness.run_steps(20);
+    assert!(panel.contains_rect(widget(&harness, "inspector.text_position_y")));
+}
+
+#[test]
 fn text_insert_and_style_controls_use_one_undo_step_per_edit() {
     let mut fixture = fixture();
     let before = fixture.editor.session.project().clone();

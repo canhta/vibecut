@@ -3764,14 +3764,18 @@ impl Editor {
             self.properties(ui);
         } else {
             self.property_focus = None;
-            self.section(
-                ui,
-                "inspector.section.selection",
-                "inspector.selection",
-                Text::Selection,
-                true,
-                |editor, ui| editor.shared_inspector(ui),
-            );
+            egui::ScrollArea::vertical()
+                .id_salt("inspector.shared")
+                .show(ui, |ui| {
+                    self.section(
+                        ui,
+                        "inspector.section.selection",
+                        "inspector.selection",
+                        Text::Selection,
+                        true,
+                        |editor, ui| editor.shared_inspector(ui),
+                    );
+                });
         }
     }
     /// One selected element: its type's tab set, remembered per element type.
