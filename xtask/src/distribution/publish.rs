@@ -54,12 +54,12 @@ fn files(tools: &Tools, directory: &Path, release: bool) -> Result<Vec<PathBuf>>
     let suffix = if release { "dmg" } else { "pkg" };
     let required: BTreeSet<_> = ["aarch64", "x86_64", "universal"]
         .iter()
-        .map(|arch| format!("VibeCut-{}-macos-{arch}.{suffix}", tools.version()))
+        .map(|arch| format!("vibecut-{}-macos-{arch}.{suffix}", tools.version()))
         .collect();
     let mut allowed = required.clone();
     if !release {
         for arch in ["aarch64", "x86_64"] {
-            allowed.insert(format!("VibeCut-{}-windows-{arch}.zip", tools.version()));
+            allowed.insert(format!("vibecut-{}-windows-{arch}.zip", tools.version()));
         }
     }
     let mut packages = Vec::new();
@@ -350,7 +350,7 @@ mod publication_tests {
     fn packages(root: &Path, version: &str, suffix: &str) {
         for arch in ["aarch64", "x86_64", "universal"] {
             fs::write(
-                root.join(format!("VibeCut-{version}-macos-{arch}.{suffix}")),
+                root.join(format!("vibecut-{version}-macos-{arch}.{suffix}")),
                 b"synthetic package",
             )
             .expect("package");

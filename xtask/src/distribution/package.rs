@@ -167,7 +167,7 @@ pub(super) fn compliance(tools: &Tools, prefix: &Path, destination: &Path) -> Re
     }
     copy(
         &tools.root.join("LICENSE"),
-        &destination.join("VibeCut-MIT.txt"),
+        &destination.join("VibeCut-LICENSE.txt"),
     )?;
     fn assets(root: &Path, path: &Path, destination: &Path) -> Result<()> {
         for path in entries(path)? {
@@ -437,7 +437,7 @@ fn mac_package(
     )?;
     let components = output.join("components.plist");
     fs::write(&components,r#"<?xml version="1.0"?><plist version="1.0"><array><dict><key>RootRelativeBundlePath</key><string>Applications/VibeCut.app</string><key>BundleIsRelocatable</key><false/><key>BundleHasStrictIdentifier</key><true/><key>BundleIsVersionChecked</key><true/><key>BundleOverwriteAction</key><string>upgrade</string></dict></array></plist>"#).map_err(|e|e.to_string())?;
-    let pkg = output.join(format!("VibeCut-{}-macos-{}.pkg", tools.version(), r.arch));
+    let pkg = output.join(format!("vibecut-{}-macos-{}.pkg", tools.version(), r.arch));
     let mut args = vec![
         arg("--root"),
         arg(&payload),
@@ -479,7 +479,7 @@ fn mac_package(
         for name in ["install-cli.sh", "README.md"] {
             copy(&tools.root.join("packaging").join(name), &image.join(name))?;
         }
-        let dmg = output.join(format!("VibeCut-{}-macos-{}.dmg", tools.version(), r.arch));
+        let dmg = output.join(format!("vibecut-{}-macos-{}.dmg", tools.version(), r.arch));
         run!(
             tools,
             "hdiutil",
@@ -575,7 +575,7 @@ fn linux_package(
     output: &Path,
     receipt: &mut Value,
 ) -> Result<()> {
-    let name = format!("VibeCut-{}-linux-{}", tools.version(), r.arch);
+    let name = format!("vibecut-{}-linux-{}", tools.version(), r.arch);
     let payload = output.join(&name);
     let bin = payload.join("bin");
     fs::create_dir_all(&bin).map_err(|e| e.to_string())?;
@@ -700,7 +700,7 @@ fn windows_package(
     }
     write_json(&payload.join("install-manifest.json"), &manifest(&payload)?)?;
     let zip = output.join(format!(
-        "VibeCut-{}-windows-{}.zip",
+        "vibecut-{}-windows-{}.zip",
         tools.version(),
         r.arch
     ));
