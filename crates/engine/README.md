@@ -733,8 +733,10 @@ ranks and signed edge deltas.
 
 `prepare_export` validates 1..=1000 distinct candidate indices, translates the
 source cue track for each requested non-source language through the subtitle
-translation path, and calls 05's `ClipBatch::prepare`. `export` submits that batch
-and waits per short; a failed short cancels its siblings, and already published
+translation path, and calls 05's `ClipBatch::prepare`. `export` admits one short,
+waits for it, then admits the next, so a caller runner's bounded queue and
+retention are never exceeded by a large selection. A failed admission or job
+cancels the remaining batch and returns its typed error; already published
 complete files remain. The CLI only selects candidates and prints paths.
 
 `cargo test -p engine --test clip_suggest` covers the ASR-to-snapped workflow,
@@ -781,8 +783,10 @@ languages, at most one of each sidecar format, a 1 byte..=1 TiB artifact ceiling
 and at most 256 MiB of prepared cue content across the batch. Request-level failures are `Invalid`; short-level failures are
 `EditError::ClipExport { short, reason }`; a source asset without video is refused.
 
-`submit(&mut runner)` enqueues one Export/GpuEncoder job per short; the runner owns
-concurrency. `job_id`/`snapshot` expose per-short progress, `cancel`/`cancel_all`
+`submit_one(runner, index)` enqueues one prepared short and refuses an
+out-of-range or already submitted index before touching the runner;
+`submit(&mut runner)` enqueues every remaining short in order. The runner owns
+concurrency and queue bounds. `job_id`/`snapshot` expose per-short progress, `cancel`/`cancel_all`
 stop queued or running work and `retry` resubmits a failed or cancelled short with
 its prepared inputs (a completed, running or evicted job is refused). A repeated
 `submit` adds nothing. Sidecars are staged through project's StreamingStage before

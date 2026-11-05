@@ -231,6 +231,23 @@ impl ClipBatch {
     pub fn snapshot(&self, runner: &JobRunner, index: usize) -> Option<JobSnapshot> {
         runner.snapshot(self.job_id(index)?)
     }
+    /// Submit one prepared short that has no job yet. An out-of-range or already
+    /// submitted index is refused before the runner is touched, so callers that
+    /// drain as they submit never leave an orphan admission behind.
+    pub fn submit_one(&mut self, runner: &mut JobRunner, index: usize) -> Result<JobId, EditError> {
+        if self.jobs.get(index).is_some_and(Option::is_some) {
+            return Err(EditError::Invalid("clip already submitted"));
+        }
+        let clip = self
+            .clips
+            .get(index)
+            .ok_or(EditError::Invalid("clip index"))?;
+        let (id, cancel) = submit_clip(runner, clip)?;
+        if let Some(slot) = self.jobs.get_mut(index) {
+            *slot = Some(ClipJob { id, cancel });
+        }
+        Ok(id)
+    }
     /// Submit every short that has no job yet. A repeated call submits nothing and
     /// returns an empty list. If submission fails midway, earlier jobs stay tracked
     /// and cancellable; nothing is published until a job runs.
@@ -243,15 +260,7 @@ impl ClipBatch {
             if self.jobs.get(index).is_some_and(Option::is_some) {
                 continue;
             }
-            let clip = self
-                .clips
-                .get(index)
-                .ok_or(EditError::Invalid("clip index"))?;
-            let (id, cancel) = submit_clip(runner, clip)?;
-            if let Some(slot) = self.jobs.get_mut(index) {
-                *slot = Some(ClipJob { id, cancel });
-            }
-            submitted.push(id);
+            submitted.push(self.submit_one(runner, index)?);
         }
         Ok(submitted)
     }

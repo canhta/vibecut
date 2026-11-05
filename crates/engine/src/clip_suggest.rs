@@ -690,8 +690,9 @@ pub struct ClipExportOutcome {
     pub translation_cost: Cost,
 }
 
-/// Prepare, submit and wait for every selected short. A failed short cancels the
-/// rest; already published shorts remain complete files.
+/// Prepare, submit and wait for every selected short one at a time. The caller's
+/// runner queue and retention bounds are therefore never exceeded, and a failed
+/// admission or job cancels the rest without leaving pending work behind.
 #[allow(clippy::too_many_arguments)]
 pub fn export(
     outcome: &ClipSuggestionOutcome,
@@ -706,9 +707,16 @@ pub fn export(
         outcome, request, providers, runner, consent, progress, cancel,
     )?;
     let mut batch = prep.batch;
-    batch.submit(runner)?;
     let mut exports = Vec::with_capacity(prep.selected.len());
     for (slot, candidate) in prep.selected.iter().enumerate() {
+        if cancel.cancelled() {
+            batch.cancel_all();
+            return Err(EditError::Cancelled);
+        }
+        if let Err(error) = batch.submit_one(runner, slot) {
+            batch.cancel_all();
+            return Err(error);
+        }
         if let Err(error) = wait_clip(&batch, runner, slot, progress, cancel) {
             batch.cancel_all();
             return Err(error);

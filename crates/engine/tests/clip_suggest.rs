@@ -333,7 +333,7 @@ fn export_preparation_covers_source_and_translated_captions() {
     };
     let providers = providers(true);
     let (mut runner, _budget) = runner();
-    let outcome = suggest(&input, &providers, &mut runner);
+    let mut outcome = suggest(&input, &providers, &mut runner);
     let directory = tempfile::tempdir().unwrap();
     let mut prepare = |select: Vec<usize>, languages: Vec<LanguageTag>| {
         clip_suggest::prepare_export(
@@ -382,6 +382,43 @@ fn export_preparation_covers_source_and_translated_captions() {
     for select in [vec![outcome.clips.len()], vec![0, 0], vec![]] {
         assert!(prepare(select, Vec::new()).is_err());
     }
+    drop(prepare);
+
+    // Table row: nine selected clips exceed the CLI's eight-slot runner queue.
+    // The workflow must drain each admission before the next, not leave orphans.
+    let template = outcome.clips[0].clone();
+    outcome.clips = (0..9)
+        .map(|index| {
+            let mut clip = template.clone();
+            clip.proposal.title = format!("nine-{index}").into();
+            clip
+        })
+        .collect();
+    let exported = clip_suggest::export(
+        &outcome,
+        ClipExportRequest {
+            directory: directory.path().to_path_buf(),
+            select: (0..9).collect(),
+            languages: Vec::new(),
+            formats: Vec::new(),
+            overwrite: false,
+            allow_degraded: false,
+            max_output_bytes: 1 << 30,
+        },
+        &providers,
+        &mut runner,
+        &DenyUploads,
+        &SilentProgress,
+        &Cancellation::new(),
+    )
+    .unwrap();
+    assert_eq!(exported.exports.len(), 9);
+    let (pending, active, _, _) = runner.counts();
+    assert_eq!(
+        (pending, active),
+        (0, 0),
+        "nine-clip export left admitted jobs pending or active"
+    );
 }
 
 #[test]
