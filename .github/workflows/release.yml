@@ -1,14 +1,19 @@
 name: Release
 
+# Releases are manual: run this workflow from Actions with the version to ship.
 on:
-  push:
-    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Version to release (must equal workspace.package.version, without the v)
+        required: true
+        type: string
 
 permissions:
   contents: read
 
 concurrency:
-  group: release-${{ github.ref }}
+  group: release
   cancel-in-progress: false
 
 jobs:
@@ -29,15 +34,18 @@ jobs:
           APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: python3 .github/scripts/sign_macos.py validate
-      - name: Require Apple Silicon and matching version tag
+      - name: Require Apple Silicon, main and the workspace version
+        env:
+          VERSION: ${{ inputs.version }}
         run: |
           test "$(uname -m)" = arm64
+          test "$GITHUB_REF" = refs/heads/main
           python3 - <<'PY'
           import os, tomllib
           with open('Cargo.toml', 'rb') as f:
               version = tomllib.load(f)['workspace']['package']['version']
-          if os.environ['GITHUB_REF_NAME'] != 'v' + version:
-              raise SystemExit('Release tag must match workspace.package.version')
+          if os.environ['VERSION'] != version:
+              raise SystemExit('Release version must match workspace.package.version')
           PY
       - uses: ./.github/actions/setup-build
         with:
@@ -105,7 +113,8 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
-          RELEASE_TAG: ${{ github.ref_name }}
+          RELEASE_TAG: v${{ inputs.version }}
+          TARGET: ${{ github.sha }}
         run: |
           mapfile -d '' images < <(find download -name '*.dmg' -print0)
           test "${#images[@]}" -eq 1
@@ -114,6 +123,6 @@ jobs:
             jq -e '.isDraft == true' release.json
             gh release upload "$RELEASE_TAG" "${images[0]}"
           else
-            gh release create "$RELEASE_TAG" "${images[0]}" --verify-tag --draft \
+            gh release create "$RELEASE_TAG" "${images[0]}" --target "$TARGET" --draft \
               --title "VibeCut $RELEASE_TAG" --notes 'Signed and notarized macOS Apple Silicon build; app and CLI smoke passed on a fresh hosted runner.'
           fi

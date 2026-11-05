@@ -109,8 +109,9 @@ Release and media/render dispatches set the `require-oracles` input: CI installs
 external FFmpeg and runs the required mode from [verification](verification.md#checks).
 The ordinary dispatch also requires macOS oracles; Windows follows the input.
 
-A `v*` tag matching the workspace version in this repository starts the macOS
-Apple Silicon release workflow. It requires `MACOS_CERT_P12` (base64),
+Releases are manual: the maintainer runs `release.yml` from Actions on `main` with
+the workspace version; it builds the macOS Apple Silicon release and creates the
+`v<version>` tag on a draft release. It requires `MACOS_CERT_P12` (base64),
 `MACOS_CERT_PASSWORD`, `APPLE_API_KEY_P8` (raw P8), `APPLE_API_KEY_ID`,
 `APPLE_API_ISSUER` and `APPLE_TEAM_ID`; absent secrets fail before building.
 A temporary keychain is removed on success/failure, with an unconditional cleanup
@@ -120,7 +121,9 @@ stapling, platform verification and failure recovery. Only the signed DMG moves
 on to a separate fresh hosted macOS VM, which installs it and runs app/CLI smoke
 without restoring build/media caches. Only then does the workflow attach the DMG
 to a **draft** GitHub release; existing published releases and assets are refused.
-Publishing the draft and pushing release tags require maintainer approval.
+Running it and publishing the draft are the maintainer's. Every merge to `main`
+also runs `build.yml`: an unsigned test build that refreshes the rolling `nightly`
+pre-release. `ffmpeg.yml` (manual) builds the LGPL FFmpeg per platform for inspection.
 
 For an act-free local release dry run, provision the native dependencies, run
 `cargo xtask ci --require-oracles`, build with `packaging/build.py`, and stage with
@@ -128,4 +131,4 @@ For an act-free local release dry run, provision the native dependencies, run
 output directory each time. This stops at ad-hoc staging before Developer ID
 signing; it proves neither notarization nor clean-host acceptance. Run
 `python3 -m unittest discover -s .github/scripts -p 'test_*.py' -v` and `actionlint`
-for workflow boundary and syntax checks. Do not push a test tag.
+for workflow boundary and syntax checks. 

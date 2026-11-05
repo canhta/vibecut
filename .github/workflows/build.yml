@@ -1,0 +1,63 @@
+name: Build
+
+# Continuous delivery: every merge to main produces an unsigned test build and
+# refreshes the rolling `nightly` pre-release. Signed releases stay in release.yml.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  macos-arm64:
+    runs-on: macos-15
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup-build
+      - name: Build and stage the macOS package
+        run: |
+          prefix=$(cat "$HOME/.cache/vibecut/ffmpeg/macos-aarch64/current")
+          python3 packaging/build.py --ffmpeg "$prefix" --output target/package-inputs
+          python3 packaging/package.py --os macos --arch aarch64 \
+            --binaries target/package-inputs --ffmpeg "$prefix" --output target/package-macos
+          cd target/package-macos
+          find . -maxdepth 1 -type f \( -name '*.pkg' -o -name '*.zip' \) -exec shasum -a 256 {} + > SHA256SUMS
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: vibecut-macos-arm64
+          path: |
+            target/package-macos/*.pkg
+            target/package-macos/SHA256SUMS
+          if-no-files-found: error
+          retention-days: 14
+
+  nightly:
+    needs: macos-arm64
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          path: dist
+          merge-multiple: true
+      - name: Refresh the nightly pre-release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          SHA: ${{ github.sha }}
+        run: |
+          gh release delete nightly --repo "$REPO" --cleanup-tag --yes || true
+          gh release create nightly dist/* --repo "$REPO" --target "$SHA" --prerelease \
+            --title "Nightly $(echo "$SHA" | cut -c1-7)" \
+            --notes "Unsigned test build of $SHA. Not notarized: right-click Open on first launch. Signed releases are tagged v*."

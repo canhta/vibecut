@@ -1,4 +1,6 @@
-name: Media dependencies
+name: FFmpeg build
+# Manual: builds the LGPL FFmpeg used by the app for each platform and uploads it with
+# its sources, for inspecting or seeding caches. Normal CI provisions FFmpeg itself.
 
 on:
   workflow_dispatch:
