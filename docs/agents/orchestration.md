@@ -6,7 +6,8 @@
 |---|---|
 | Claude coordinator | Plans with the maintainer, writes tickets, dispatches, answers questions, cleans up; implementation, review and merge belong to workers |
 | opencode | Default implementer up to its tier for the ticket's work type |
-| Codex | Implements above opencode's tier; reviews every code branch |
+| Codex | Implements above opencode's tier where no Claude Sonnet route applies; reviews code branches it did not implement |
+| Claude Sonnet worker | Implements or reviews complex work: new contracts, file publication, T4 (concurrency, job engine, render and A/V sync); a branch is always reviewed by a different agent than its implementer |
 | Maintainer | Product decisions, credentials, hardware, assets |
 
 | Tier | Work |
@@ -58,7 +59,7 @@ Outside-ticket bugs: first check open bug tickets and recent `main` for the same
 
 ## Review and merge
 
-T1 self-merges after every Verify item holds. T2–T4 use a separate Codex review of the frozen SHA, written to `.scratch/<milestone>/reviews/NN-<sha7>.md` in the main checkout with [review fields](../engineering/verification.md#reports). Review specs are one line plus ticket-specific notes; the shared rules live in `.scratch/templates/review.md`. Read the implementer's receipt; run targeted reproductions only, following [checks](../engineering/verification.md#checks) for reviewer changes.
+T1 self-merges after every Verify item holds. T2–T4 use a separate review of the frozen SHA by a different agent than the implementer (Codex, or Claude Sonnet for complex work), written to `.scratch/<milestone>/reviews/NN-<sha7>.md` in the main checkout with [review fields](../engineering/verification.md#reports). Review specs are one line plus ticket-specific notes; the shared rules live in `.scratch/templates/review.md`. Read the implementer's receipt; run targeted reproductions only, following [checks](../engineering/verification.md#checks) for reviewer changes.
 
 The reviewer fixes every finding it is confident it can fix within the review context on the ticket branch, with a regression test, then applies checks and merges; this avoids a return loop. Only findings needing a design change, a large diff or context the reviewer lacks get `changes` and return to the implementer for a new frozen SHA; re-review covers previous findings and the fix diff. Dual versions, legacy shims, deprecated paths and compatibility code get `changes`. Ask about unsettled product/policy questions rather than issuing `changes`; they do not affect implementer tiers. A failure called known must cite a bug ticket; file one first if absent. A failure matching an open bug ticket never blocks the merge: cite it and merge without asking; stop only for a failure no ticket explains.
 
