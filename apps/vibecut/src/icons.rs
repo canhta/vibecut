@@ -17,6 +17,7 @@ pub(crate) enum Icon {
     ArrowClockwise,
     ArrowCounterClockwise,
     ArrowLeft,
+    ArrowsInLineHorizontal,
     CircleHalf,
     CornersOut,
     Export,
@@ -58,6 +59,7 @@ impl Icon {
         Self::ArrowClockwise,
         Self::ArrowCounterClockwise,
         Self::ArrowLeft,
+        Self::ArrowsInLineHorizontal,
         Self::CircleHalf,
         Self::CornersOut,
         Self::Export,
@@ -98,6 +100,7 @@ impl Icon {
             Self::ArrowClockwise => "arrow-clockwise",
             Self::ArrowCounterClockwise => "arrow-counter-clockwise",
             Self::ArrowLeft => "arrow-left",
+            Self::ArrowsInLineHorizontal => "arrows-in-line-horizontal",
             Self::CircleHalf => "circle-half",
             Self::CornersOut => "corners-out",
             Self::Export => "export",
@@ -153,6 +156,10 @@ const ICONS: &[(&str, &[u8])] = &[
     (
         "arrow-left",
         include_bytes!("../../../assets/icons/phosphor/regular/arrow-left.svg"),
+    ),
+    (
+        "arrows-in-line-horizontal",
+        include_bytes!("../../../assets/icons/phosphor/regular/arrows-in-line-horizontal.svg"),
     ),
     (
         "circle-half",

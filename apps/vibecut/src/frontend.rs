@@ -713,7 +713,10 @@ impl Editor {
         let is_selected = selected.unwrap_or(false);
         let (rect, response) = ui
             .push_id(id, |ui| {
-                ui.allocate_exact_size(Vec2::splat(ICON_BUTTON), egui::Sense::click())
+                ui.add_enabled_ui(enabled, |ui| {
+                    ui.allocate_exact_size(Vec2::splat(ICON_BUTTON), egui::Sense::click())
+                })
+                .inner
             })
             .inner;
         let color = if !enabled {
@@ -2475,7 +2478,7 @@ impl Editor {
             if self.icon_only(
                 ui,
                 "timeline.snap",
-                Icon::Magnet,
+                Icon::ArrowsInLineHorizontal,
                 self.tr(Text::Snap),
                 Some("N"),
                 Some(self.snapping),

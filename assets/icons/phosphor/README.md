@@ -9,7 +9,7 @@ time; there is no runtime network or font request.
 - Author: Phosphor Icons
 - Licence: MIT, see [LICENSE](LICENSE)
 - Added: p0-core/39
-- Files: 36 unmodified `assets/regular/*.svg` files.
+- Files: 37 unmodified `assets/regular/*.svg` files.
 
 SHA-256 of each embedded file:
 
@@ -18,6 +18,7 @@ SHA-256 of each embedded file:
 | `arrow-clockwise.svg` | `4a78a777b692cb74826e3071ae7049cc0d3927e68a7b8272e7251b1760cd771f` |
 | `arrow-counter-clockwise.svg` | `4eb160d5ae781107c674481ac081962e6bce6281a646129e6c3f960b9dd5dac6` |
 | `arrow-left.svg` | `3c2001cf957d182fc54927e4b286cc8cf66dd97830f441ca2650d42a63a9006a` |
+| `arrows-in-line-horizontal.svg` | `73d0df2946ad58d810e81f1b92a731c21674659135c4d40bb5ac29569a54d924` |
 | `circle-half.svg` | `4e5376acc240190bf951be566c4649b69936c928f679eba6793412295bb90736` |
 | `corners-out.svg` | `fd79277404b3662b50b737127fb6bf6f63ae93c9b60d9f2aca9122a950ec08c8` |
 | `export.svg` | `b3323cae86c93d7a4d344e921dc1500f97a73c66e5d9f0e6c46aab64e4a6f616` |
@@ -54,3 +55,7 @@ SHA-256 of each embedded file:
 
 Regenerate by extracting the pinned npm tarball and copying the listed
 `package/assets/regular/*.svg` files without modification.
+
+Snapping uses `arrows-in-line-horizontal` (edges converging on a guide);
+main-track magnet uses `magnet`. The distinct silhouettes follow the desktop
+reference’s separate snapping and main-track magnet controls (p0-core/39 review).

@@ -610,7 +610,7 @@ fn every_editor_button_reports_its_embedded_icon() {
         ("edit.redo", "arrow-clockwise"),
         ("timeline.split", "scissors"),
         ("timeline.delete", "trash"),
-        ("timeline.snap", "magnet"),
+        ("timeline.snap", "arrows-in-line-horizontal"),
         ("timeline.magnet", "magnet"),
         ("timeline.ripple", "waveform"),
         ("timeline.zoom_out", "magnifying-glass-minus"),
@@ -621,6 +621,14 @@ fn every_editor_button_reports_its_embedded_icon() {
     for (id, name) in expected {
         assert_eq!(icon(id), Some(name), "{id} must carry the {name} icon");
     }
+    let redo = widgets
+        .iter()
+        .find(|widget| widget.id == "edit.redo")
+        .unwrap();
+    assert!(
+        !redo.enabled,
+        "unavailable redo must report disabled to agents"
+    );
     assert_eq!(icon("inspector.project"), None);
     assert_eq!(icon("inspector.details"), None);
     let split = widgets
