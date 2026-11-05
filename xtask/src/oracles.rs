@@ -77,23 +77,6 @@ fn failures(tools: &[Tool]) -> Vec<String> {
         .collect()
 }
 
-/// Require usable platform media tools on hosts that link distribution libraries.
-pub(super) fn require_system() -> Result<(), String> {
-    let tools: Vec<Tool> = TOOLS.iter().map(|name| inspect(name)).collect();
-    for tool in &tools {
-        eprintln!("oracle: {}", receipt(tool));
-    }
-    let problems = failures(&tools);
-    if problems.is_empty() {
-        Ok(())
-    } else {
-        Err(format!(
-            "system media tools unavailable: {}",
-            problems.join("; ")
-        ))
-    }
-}
-
 fn receipt(tool: &Tool) -> String {
     match (&tool.path, tool.version, &tool.problem) {
         (Some(path), Some(version), None) => {
