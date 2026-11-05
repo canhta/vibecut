@@ -36,7 +36,7 @@ pub use mux::{Container, MuxSink, Muxer};
 pub use read::{PacketReader, VideoReader, probe};
 pub use resample::{AudioResampler, AudioSampleFormat};
 pub use vision_prep::{
-    FACE_CROP_SIZE, FaceBox, FaceCrop, MFCC_COEFFICIENTS, MfccFrame, MfccProgress,
+    FACE_CROP_SIZE, FaceBox, FaceCrop, FaceTensor, MFCC_COEFFICIENTS, MfccFrame, MfccProgress,
     VISION_SAMPLE_RATE, VisionFrame, VisionPrepLimits, decode_frame_at, decode_shot_frames,
     mfcc_range, mfcc_range_with_progress,
 };

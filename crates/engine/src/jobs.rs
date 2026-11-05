@@ -6,7 +6,7 @@ use std::{
     panic::{AssertUnwindSafe, catch_unwind},
     sync::{
         Arc, Mutex,
-        atomic::{AtomicU8, Ordering},
+        atomic::{AtomicBool, AtomicU8, Ordering},
     },
     thread::{self, JoinHandle},
     time::{Duration, Instant},
@@ -49,6 +49,7 @@ pub enum JobKind {
     Transcribe,
     Translate,
     SuggestClips,
+    AnalyzeShots,
     Preview,
     Export,
     Import,
@@ -62,6 +63,8 @@ pub enum JobKind {
 pub enum JobStage {
     Queued,
     Starting,
+    Preparing,
+    Analyzing,
     Transcribe,
     Align,
     Translate,
@@ -109,12 +112,16 @@ impl Clock for SystemClock {
     }
 }
 #[derive(Clone, Default)]
-pub struct CancelToken(Arc<AtomicU8>);
+pub struct CancelToken(Arc<AtomicU8>, Arc<AtomicBool>);
 impl CancelToken {
     pub fn cancel(&self) {
-        let _ = self
+        if self
             .0
-            .compare_exchange(0, 1, Ordering::AcqRel, Ordering::Acquire);
+            .compare_exchange(0, 1, Ordering::AcqRel, Ordering::Acquire)
+            .is_ok()
+        {
+            self.1.store(true, Ordering::Release);
+        }
     }
     pub fn cancelled(&self) -> bool {
         self.0.load(Ordering::Acquire) == 1
@@ -195,6 +202,9 @@ impl JobContext {
     }
     pub fn cancelled(&self) -> bool {
         self.cancel.cancelled()
+    }
+    pub(crate) fn media_cancel_flag(&self) -> Arc<AtomicBool> {
+        self.cancel.1.clone()
     }
     pub fn check_cancelled(&self) -> Result<(), EditError> {
         if self.cancelled() {

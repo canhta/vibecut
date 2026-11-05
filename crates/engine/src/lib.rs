@@ -11,6 +11,7 @@ pub mod jobs;
 pub mod models;
 pub mod providers;
 pub mod recovery;
+pub mod shot_analysis;
 pub mod subtitles;
 pub mod translation;
 pub use budget::{BudgetSnapshot, ByteBudget, ByteLease, ByteOwner};

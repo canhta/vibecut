@@ -913,3 +913,107 @@ fn frame_decode_cancels_and_refuses_hostile_limits() {
         Err(MediaError::TooLarge(_))
     ));
 }
+
+#[test]
+fn detector_tensors_preserve_channels_letterbox_and_clip_normalization() {
+    for (width, height) in [(1, 1), (640, 384), (1920, 1080), (1, 1024), (1024, 1)] {
+        let mut pixels = Vec::new();
+        for _ in 0..width * height {
+            pixels.extend_from_slice(&[255, 128, 0, 255]);
+        }
+        let frame = VisionFrame::from_rgba8(Tick::ZERO, width, height, pixels).unwrap();
+        let face = frame.face_tensor().unwrap();
+        assert_eq!(face.values().len(), 3 * 640 * 384);
+        assert_eq!(face.values()[0], 0.);
+        assert_eq!(face.values()[640 * 384], 128.);
+        assert_eq!(face.values()[2 * 640 * 384], 255.);
+        if face.resized_height() < 384 {
+            assert_eq!(
+                face.values()[2 * 640 * 384 + face.resized_height() as usize * 640],
+                0.
+            );
+        }
+        if face.resized_width() < 640 {
+            assert_eq!(
+                face.values()[2 * 640 * 384 + face.resized_width() as usize],
+                0.
+            );
+        }
+        let scene = frame.scene_tensor().unwrap();
+        assert_eq!(scene.len(), 3 * 224 * 224);
+        for (channel, expected) in [
+            ((1. - 0.48145466) / 0.26862954),
+            ((128. / 255. - 0.4578275) / 0.261_302_6),
+            ((0. - 0.40821073) / 0.275_777_1),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            assert!(
+                scene[channel * 224 * 224..(channel + 1) * 224 * 224]
+                    .iter()
+                    .all(|v| (v - expected).abs() < 1e-5)
+            );
+        }
+    }
+    for (w, h, pixels) in [
+        (0, 1, vec![]),
+        (1, 0, vec![]),
+        (1, 1, vec![0; 3]),
+        (u32::MAX, u32::MAX, vec![]),
+    ] {
+        assert!(VisionFrame::from_rgba8(Tick::ZERO, w, h, pixels).is_err());
+    }
+}
+
+#[test]
+fn nonuniform_detector_resize_matches_opencv_samples_with_one_level_tolerance() {
+    // OpenCV 5.0.0 INTER_LINEAR/INTER_CUBIC; centre-coordinate mapping, a=-0.75.
+    let mut rgba = Vec::new();
+    for y in 0..17 {
+        for x in 0..31 {
+            rgba.extend_from_slice(&[
+                ((x * 11 + y * 3) % 256) as u8,
+                ((x * 5 + y * 17) % 256) as u8,
+                ((x * 7 + y * 13 + 40) % 256) as u8,
+                255,
+            ]);
+        }
+    }
+    let frame = VisionFrame::from_rgba8(Tick::ZERO, 31, 17, rgba).unwrap();
+    let face = frame.face_tensor().unwrap();
+    for (y, x, expected) in [
+        (0, 0, [40., 0., 0.]),
+        (31, 7, [53., 17., 3.]),
+        (100, 100, [127., 96., 61.]),
+        (200, 300, [193., 227., 182.]),
+        (350, 639, [202., 166., 122.]),
+        (383, 639, [0., 0., 0.]),
+    ] {
+        for (channel, value) in expected.into_iter().enumerate() {
+            assert!(
+                (face.values()[channel * 640 * 384 + y * 640 + x] - value).abs() <= 1.,
+                "face {y},{x},{channel}"
+            );
+        }
+    }
+    let scene = frame.scene_tensor().unwrap();
+    let means = [0.48145466, 0.4578275, 0.40821073];
+    let stds = [0.26862954, 0.261_302_6, 0.275_777_1];
+    for (y, x, expected) in [
+        (0, 0, [71., 31., 84.]),
+        (31, 7, [84., 67., 114.]),
+        (100, 100, [177., 193., 233.]),
+        (200, 150, [240., 83., 100.]),
+        (223, 223, [51., 135., 158.]),
+    ] {
+        for (channel, value) in expected.into_iter().enumerate() {
+            let actual =
+                (scene[channel * 224 * 224 + y * 224 + x] * stds[channel] + means[channel]) * 255.;
+            assert!(
+                (actual - value).abs() <= 1.1,
+                "scene {y},{x},{channel}: {actual}"
+            );
+        }
+    }
+}

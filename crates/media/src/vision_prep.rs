@@ -94,6 +94,8 @@ pub struct VisionPrepLimits {
     /// Maximum video frames decoded by one call, including seek preroll and
     /// replayed frames; emitted frames are a subset of this budget.
     pub max_frames: usize,
+    /// Maximum packed output frame area, checked before RGBA conversion.
+    pub max_frame_pixels: u64,
     /// Maximum decoded duration per analysis range or first-preparation slice,
     /// including anchor search and preroll.
     pub max_audio_decode_duration: Tick,
@@ -110,6 +112,7 @@ impl Default for VisionPrepLimits {
         Self {
             max_shot_duration: Tick(600 * TICKS_PER_SECOND),
             max_frames: 100_000,
+            max_frame_pixels: 1 << 26,
             max_audio_decode_duration: Tick(660 * TICKS_PER_SECOND),
             max_audio_bytes: 256 << 20,
             max_mfcc_frames: 60_001,
@@ -122,6 +125,8 @@ impl VisionPrepLimits {
         if self.max_shot_duration <= Tick::ZERO
             || self.max_frames == 0
             || self.max_frames > 1_000_000
+            || self.max_frame_pixels == 0
+            || self.max_frame_pixels > 1 << 26
             || self.max_audio_decode_duration <= Tick::ZERO
             || self.max_audio_decode_duration > Tick(86_400 * TICKS_PER_SECOND)
             || self.max_audio_bytes == 0
@@ -301,7 +306,7 @@ pub fn decode_frame_at(
     if cancel.load(Ordering::Relaxed) {
         return Err(MediaError::Cancelled);
     }
-    let mut reader = VideoReader::open(asset.path())?;
+    let mut reader = VideoReader::open_with_cancel(asset.path(), cancel.clone())?;
     reader.seek_keyframe(at)?;
     let mut converter = RgbaConverter::new()?;
     let mut selected = None;
@@ -312,7 +317,7 @@ pub fn decode_frame_at(
         }
         let Some(frame) = reader.next_frame()? else {
             return selected
-                .map(|frame| pack_frame(frame, &mut converter))
+                .map(|frame| pack_frame(frame, &mut converter, limits.max_frame_pixels))
                 .transpose()?
                 .ok_or(MediaError::Invalid("frame time outside video stream"));
         };
@@ -329,7 +334,7 @@ pub fn decode_frame_at(
             selected = Some(frame);
         } else {
             return selected
-                .map(|frame| pack_frame(frame, &mut converter))
+                .map(|frame| pack_frame(frame, &mut converter, limits.max_frame_pixels))
                 .transpose()?
                 .ok_or(MediaError::Invalid("frame time outside video stream"));
         }
@@ -369,7 +374,7 @@ pub fn decode_shot_frames(
                 .duration
                 .and_then(|duration| start.checked_add(duration))
         });
-    let mut reader = VideoReader::open(asset.path())?;
+    let mut reader = VideoReader::open_with_cancel(asset.path(), cancel.clone())?;
     reader.seek_keyframe(range.start())?;
     let mut converter = RgbaConverter::new()?;
     let mut candidate: Option<VideoFrame> = None;
@@ -378,7 +383,7 @@ pub fn decode_shot_frames(
         if cancel.load(Ordering::Relaxed) {
             return Err(MediaError::Cancelled);
         }
-        let packed = pack_frame(raw, &mut converter)?;
+        let packed = pack_frame(raw, &mut converter, limits.max_frame_pixels)?;
         frame(packed)
     };
     loop {
@@ -1397,7 +1402,14 @@ fn fft(values: &mut [Complex], twiddles: &[Complex]) -> Result<()> {
     Ok(())
 }
 
-fn pack_frame(raw: VideoFrame, converter: &mut RgbaConverter) -> Result<VisionFrame> {
+fn pack_frame(
+    raw: VideoFrame,
+    converter: &mut RgbaConverter,
+    max_pixels: u64,
+) -> Result<VisionFrame> {
+    if u64::from(raw.width()) * u64::from(raw.height()) > max_pixels {
+        return Err(MediaError::TooLarge("vision packed frame pixels"));
+    }
     let pts = raw.pts()?.ok_or(MediaError::Unsupported(
         "video presentation timestamp unavailable",
     ))?;
@@ -1605,4 +1617,131 @@ fn resize_center(crop: &[u8], width: usize, height: usize) -> Result<Vec<u8>> {
         }
     }
     Ok(output)
+}
+
+/// Prepared YuNet tensor and the exact rounded resize geometry used for boxes.
+pub struct FaceTensor {
+    values: Vec<f32>,
+    resized_width: u32,
+    resized_height: u32,
+}
+impl FaceTensor {
+    pub fn values(&self) -> &[f32] {
+        &self.values
+    }
+    pub fn resized_width(&self) -> u32 {
+        self.resized_width
+    }
+    pub fn resized_height(&self) -> u32 {
+        self.resized_height
+    }
+}
+impl VisionFrame {
+    /// CHW BGR 640x384, bilinear resize preserving aspect ratio, zero padding
+    /// at bottom/right. Box coordinates are in this tensor's pixel plane.
+    pub fn face_tensor(&self) -> Result<FaceTensor> {
+        let scale = (640.0 / f64::from(self.width)).min(384.0 / f64::from(self.height));
+        let w = (f64::from(self.width) * scale).round_ties_even().max(1.) as u32;
+        let h = (f64::from(self.height) * scale).round_ties_even().max(1.) as u32;
+        let mut values = vec![0.; 3 * 640 * 384];
+        for y in 0..h {
+            for x in 0..w {
+                for channel in 0..3 {
+                    let value = self.sample_resized(x, y, w, h, 2 - channel, false)?;
+                    *values
+                        .get_mut(channel * 640 * 384 + y as usize * 640 + x as usize)
+                        .ok_or(MediaError::Invalid("face tensor index"))? = value;
+                }
+            }
+        }
+        Ok(FaceTensor {
+            values,
+            resized_width: w,
+            resized_height: h,
+        })
+    }
+    /// CHW RGB 224x224: resize shorter edge to 224 with cubic interpolation
+    /// (a=-0.75), centre crop, then the pinned CLIP mean/std normalization.
+    /// Only the centre crop is allocated, even for extreme aspect ratios.
+    pub fn scene_tensor(&self) -> Result<Vec<f32>> {
+        let scale = 224.0 / f64::from(self.width.min(self.height));
+        let scaled_width = (f64::from(self.width) * scale).round_ties_even();
+        let scaled_height = (f64::from(self.height) * scale).round_ties_even();
+        if scaled_width > f64::from(u32::MAX) || scaled_height > f64::from(u32::MAX) {
+            return Err(MediaError::TooLarge("scene resize dimensions"));
+        }
+        let w = scaled_width as u32;
+        let h = scaled_height as u32;
+        let mut values = vec![0.; 3 * 224 * 224];
+        for (channel, (mean, std)) in [
+            (0.48145466, 0.26862954),
+            (0.4578275, 0.261_302_6),
+            (0.40821073, 0.275_777_1),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            for y in 0..224 {
+                for x in 0..224 {
+                    let pixel = self.sample_resized(
+                        x + (w - 224) / 2,
+                        y + (h - 224) / 2,
+                        w,
+                        h,
+                        channel,
+                        true,
+                    )?;
+                    *values
+                        .get_mut(channel * 224 * 224 + y as usize * 224 + x as usize)
+                        .ok_or(MediaError::Invalid("scene tensor index"))? =
+                        (pixel / 255. - mean) / std;
+                }
+            }
+        }
+        Ok(values)
+    }
+    fn sample_resized(
+        &self,
+        x: u32,
+        y: u32,
+        width: u32,
+        height: u32,
+        channel: usize,
+        cubic: bool,
+    ) -> Result<f32> {
+        let sx = (f64::from(x) + 0.5) * f64::from(self.width) / f64::from(width) - 0.5;
+        let sy = (f64::from(y) + 0.5) * f64::from(self.height) / f64::from(height) - 0.5;
+        let ix = sx.floor() as i64;
+        let iy = sy.floor() as i64;
+        let mut sum = 0.;
+        let offsets = if cubic { -1..=2 } else { 0..=1 };
+        for dy in offsets.clone() {
+            let wy = resize_weight(sy - (iy + dy) as f64, cubic);
+            for dx in offsets.clone() {
+                let wx = resize_weight(sx - (ix + dx) as f64, cubic);
+                let px = (ix + dx).clamp(0, i64::from(self.width) - 1) as usize;
+                let py = (iy + dy).clamp(0, i64::from(self.height) - 1) as usize;
+                let value = self
+                    .pixels
+                    .get((py * self.width as usize + px) * 4 + channel)
+                    .ok_or(MediaError::Invalid("resize pixel index"))?;
+                sum += f64::from(*value) * wx * wy;
+            }
+        }
+        Ok(sum.round_ties_even().clamp(0., 255.) as f32)
+    }
+}
+fn resize_weight(distance: f64, cubic: bool) -> f64 {
+    let x = distance.abs();
+    if !cubic {
+        return (1. - x).max(0.);
+    }
+    let a = -0.75;
+    if x <= 1. {
+        (a + 2.) * x.powi(3) - (a + 3.) * x.powi(2) + 1.
+    } else if x < 2. {
+        a * x.powi(3) - 5. * a * x.powi(2) + 8. * a * x - 4. * a
+    } else {
+        0.
+    }
 }

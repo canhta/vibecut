@@ -13,7 +13,7 @@ The core runs headless: editing, tests and the CLI need no window or UI toolkit;
 | text | crates/text | Unicode shaping and rasterization | - |
 | render | crates/render | CPU compositor, caption overlay, audio mix, export execution | time, media, project, captions, text |
 | ai | crates/ai | Provider interfaces, capabilities, consent and cost, AI adapters | time, media, captions |
-| engine | crates/engine | Session, commands, history, recovery scheduling, jobs, cache, adapter selection, clip batch export | time, media, project, captions, text, render, ai |
+| engine | crates/engine | Session, commands, history, recovery scheduling, jobs, cache, adapter selection, clip batch export and per-shot analysis | time, media, project, captions, text, render, ai |
 | clip-eval | crates/clip-eval | Fixed labelled clip-pipeline evaluation harness, metrics and local reports | time, media, captions, ai, engine |
 | vibecut-cli | apps/vibecut-cli | Headless adapter: CLI arguments, typed exit codes, dispatch, project lease composition and export admission | engine, media, project, render, time |
 | vibecut | apps/vibecut | Desktop app: UI, playback, wgpu compositor, preferences, app controls and inspection | time, engine, media, project, captions, text, render, ai |
@@ -39,6 +39,7 @@ The [glossary](../../GLOSSARY.md) owns domain definitions; crate READMEs own con
 | Clip naming, cue mapping, per-short cancel/retry | [engine batch export](../../crates/engine/README.md#clip-batch-export) |
 | Local model catalog, consent, integrity, transport / transfers, cache bundles | [ai catalog](../../crates/ai/README.md#model-catalog-and-language-neutral-weights) / [engine transfers](../../crates/engine/README.md#local-model-transfers) |
 | Clip boundary snapping / speech groups / energy | [engine](../../crates/engine/README.md#clip-boundary-adjustment) / [captions](../../crates/captions/README.md#source-cut-units) / [media](../../crates/media/README.md#speech-energy-windows) |
+| Shot analysis and complete artifact caching | [engine analysis](../../crates/engine/README.md#per-shot-analysis) |
 | Vision preparation / inference and shape-plan cache | [media](../../crates/media/README.md#vision-preparation) / [ai detectors](../../crates/ai/README.md#local-vision-detectors) |
 | Provider capabilities, consent, cost / text timing / isolated Gipformer | [ai](../../crates/ai/README.md#consent-and-cost) / [recognition](../../crates/ai/README.md#recognition-and-time) / [local runner](../../crates/ai/README.md#local-gipformer) |
 | Translation windows and response validation / selection, retry, edit protection | [ai translation](../../crates/ai/README.md#contextual-text-translation) / [engine application](../../crates/engine/README.md#translation-selection-and-application) |

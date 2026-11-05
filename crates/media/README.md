@@ -357,3 +357,15 @@ FFmpeg hardware decode/color conversion is not OpenCV `VideoCapture`'s decode
 path. With identical input pixels the committed synthetic crop fixture matches
 within two levels; OpenCV's one-channel 8-bit `INTER_LINEAR` path is not
 bit-exact fixed-point interpolation.
+
+`VisionFrame::face_tensor` prepares YuNet CHW BGR 640x384 with bilinear resize,
+zero bottom/right letterbox and the exact rounded resize dimensions needed to
+map boxes back to source pixels. `scene_tensor` prepares CLIP CHW RGB 224x224:
+resize the shorter edge to 224 with cubic interpolation (a=-0.75), centre crop,
+then normalize with the pinned CLIP mean/std. Both are pure bounded conversions;
+no model, scheduler or AI dependency is involved. Extreme aspect ratios allocate
+only the output/crop, not an intermediate resized panorama.
+`VisionPrepLimits::max_frame_pixels` caps packed frame area before RGBA conversion
+(default 64 Mi-pixels; the engine analysis job tightens this to 16 Mi-pixels).
+Video preparation passes the shared cancellation flag through opening, packet
+reads, decoded frame delivery and software recovery, as well as its callbacks.

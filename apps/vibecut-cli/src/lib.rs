@@ -739,6 +739,8 @@ fn stage_name(stage: JobStage) -> &'static str {
     match stage {
         JobStage::Queued => "queued",
         JobStage::Starting => "starting",
+        JobStage::Preparing => "preparing",
+        JobStage::Analyzing => "analyzing",
         JobStage::Transcribe => "transcribe",
         JobStage::Align => "align",
         JobStage::Translate => "translate",

@@ -13,6 +13,7 @@ default = ["whisper", "gipformer", "candle-align"]
 whisper = ["ai/whisper"]
 gipformer = ["ai/gipformer"]
 candle-align = ["ai/candle-align"]
+vision = ["ai/vision"]
 
 [dependencies]
 getrandom = "0.4.3"
