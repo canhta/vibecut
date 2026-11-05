@@ -12,6 +12,41 @@ and maps `CliError::exit_code`. Paths retain native representation until an outp
 path must be represented in JSON, where unrepresentable paths return a typed
 unsupported error.
 
+`control` is the first external consumer of the
+[engine control contract](../../crates/engine/README.md#control-admission-revisions-and-receipts).
+One process is one engine Session: it opens the project under the
+[writer lease](../../crates/project/README.md#writer-lease-and-save-acknowledgement)
+before reading, holds it through the final save, and releases it on exit. Requests
+are newline-delimited JSON objects on stdin (`request_id`, `command`, `params`, and
+optionally `idempotency_key`, `base_rev`, `api_version`, `registry_hash`,
+`session_id`); omitted contract identity is filled from the running catalog, while
+supplied values are still validated by engine admission. Each response line carries
+the engine `Response` plus the CLI's stable `exit_code`; a frame that cannot become
+a request returns a safe error envelope instead. Revisions, receipts, replay,
+idempotency conflicts and receipt capacity are owned by the engine Session, so keys
+and epochs live exactly as long as this process. `project.save` is the explicit save
+point (the engine leaves disk saves to its composition root); otherwise a changed
+project and metadata are saved once on clean EOF. `--no-save` suppresses that final
+save. `--allow-overwrite` is the trusted grant for `export`, `export_subtitles` and
+`burn_subtitles` with `overwrite: true`; without it engine policy returns
+`permission`. External gesture commands remain refused by engine policy, and agents
+use atomic batches plus undo.
+
+The control session ticks the engine job runner between requests, so `job_status`
+and `job_cancel` operate on real preview/export jobs. EOF cancels and joins
+outstanding jobs through the runner's publication fence; completed outputs are
+never partially promoted. There is no signal-to-job-cancel handler: process
+interruption follows crash semantics, so the OS releases the lease, in-flight work
+stops with the process and unsaved edits are lost. Use `job_cancel` for graceful
+job cancellation.
+
+`commands --json` returns one generated catalog object (`api_version`,
+`registry_hash`, `limits`, `entries`) from the same engine declaration as dispatch;
+`schema --json` returns the generated request, response and event envelope schemas
+with the same identity. There is no CLI-side command table. The CLI test suite
+generates both outputs twice, compares bytes, and checks the catalog digest and
+generated command reference against the checked-in engine outputs.
+
 `exec` uses [engine commands](../../crates/engine/README.md#public-entry-points)
 and holds the [project lease](../../crates/project/README.md#writer-lease-and-save-acknowledgement)
 from load through save. Scene commands use that same registry. Export uses the saved

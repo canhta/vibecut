@@ -9,7 +9,7 @@ fn main() -> ExitCode {
     args.retain(|arg| arg != "--json");
     match vibecut_cli::run(args) {
         Ok(output) => match output.write(json) {
-            Ok(()) => ExitCode::SUCCESS,
+            Ok(()) => ExitCode::from(output.exit_code()),
             Err(error) => {
                 error.report(json);
                 ExitCode::from(error.exit_code())

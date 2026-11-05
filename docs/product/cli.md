@@ -12,12 +12,14 @@ Build with `cargo build -p vibecut-cli` through the [build wrapper](../agents/or
 | `vibecut-cli project new <path>` | Create an empty project, refusing to replace an existing file |
 | `vibecut-cli project info <path>` | Summary plus optional view metadata under the project writer lease |
 | `vibecut-cli exec <project> <command_id> <json>` | Run one engine command and save the result |
+| `vibecut-cli control <project>` | Run a revision-bound control session over newline-delimited JSON |
 | `vibecut-cli export <project> --out <mp4>` | Export the saved active scene to MP4 |
 | `vibecut-cli subtitle <in> --to <lang>` | Transcribe, translate and export SRT/burned subtitles |
 | `vibecut-cli clips <in>` | Suggest ranked shorts from a long video and optionally export them |
 | `vibecut-cli providers` | List transcription/translation/clip providers and capabilities offline |
 | `vibecut-cli model list\|info\|download` | Inspect or install pinned local model files |
 | `vibecut-cli commands` | Print the generated command registry |
+| `vibecut-cli schema` | Print the generated control request/response/event schema |
 
 Add `--json` to any command for a machine-readable result on stdout. Without it, results are human-readable on stdout. Progress and diagnostics are always on stderr, so stdout stays a single result. Errors use exit codes below and, with `--json`, one JSON object on the last stderr line.
 
@@ -37,7 +39,7 @@ ASR checkpoints are content-addressed complete windows in the default model cach
 
 ## Commands and schemas
 
-`vibecut-cli commands --json` is the authoritative generated schema: every command ID, label, effect, JSON Schema 2020-12 input/output shapes and fixture examples. Registry ownership follows [architecture](../engineering/architecture.md#contracts). `exec` takes that command ID and its `params` object:
+`vibecut-cli commands --json` is the authoritative generated catalog: one object with `api_version`, `registry_hash`, the static control `limits` and `entries`, where every entry carries its command ID, label, effect, JSON Schema 2020-12 input/output shapes and fixture example. `vibecut-cli schema --json` returns the same `api_version`/`registry_hash` with the generated request, response and event envelope schemas. Registry ownership follows [architecture](../engineering/architecture.md#contracts); there is no CLI-side command table. `exec` takes that command ID and its `params` object:
 
 ```sh
 vibecut-cli project new demo.vibecut
@@ -54,6 +56,18 @@ vibecut-cli project info demo.vibecut --json
 Keyframed item parameters are ordinary registry commands: `keyframes.set_param`, `keyframes.add`, `keyframes.remove`, `keyframes.retime`, `keyframes.set_handle` and `keyframes.scale_time` accept the project animation shapes. `export` evaluates the saved curves through render's single project evaluator; for example an `opacity` channel animates a clip in the exported frames.
 
 Fields are required; unknown command, parameter and model fields are refused. Model wire types are the Serde shapes owned by their crates; the [engine contract](../../crates/engine/README.md#public-entry-points) describes the registry and JSON limits.
+
+## Control session
+
+`vibecut-cli control <project> [--allow-overwrite] [--no-save]` is the first CLI consumer of the [engine control contract](../../crates/engine/README.md#control-admission-revisions-and-receipts). One process is one engine Session: the writer lease is acquired before the first frame and held until the final save, so a desktop app holding it returns `busy`/3 before any request is read. Sessions have an OS-random epoch; separate `control` invocations are separate sessions and do not share revisions or receipts.
+
+Requests are newline-delimited JSON objects on stdin: `request_id`, `command`, `params`, and optionally `idempotency_key`, `base_rev`, `api_version`, `registry_hash` and `session_id`. Omitted contract identity is filled from the running catalog; supplied values are still admitted by the engine, so a wrong version or digest returns `schema_mismatch` and a wrong session returns `session_gone`. Read commands need no revision or key. Effectful commands need the current `base_rev` and a 1–128 byte `idempotency_key`; stale revisions return `stale_revision` before any child of a batch, and replaying an accepted key returns its original result while a different request under the same key returns `idempotency_conflict`. Receipts are not evicted: the next new effect after 4096 retained keys returns `receipt_capacity`. Unknown commands, unknown/extra fields, duplicate JSON keys, frames over 8 MiB and integers outside ±(2^53−1) are refused before effects. A session retains 100 undo steps, so `undo` and `redo` are ordinary frames; lifecycle `project.create` stays with `project new` and is refused inside a session.
+
+stdout is always newline-delimited JSON; `--json` is implied and no human formatting is applied. Each response line is the engine `Response` plus a stable `exit_code` field. A frame that cannot become a request returns `{"status":"error","exit_code":N,"error":{"code":"…","message":"…","exit_code":N}}` instead. The process exits with the last frame's mapped code (0 for success), so a one-frame session can be used like `exec`; earlier refusals stay in-band so the session can retry. Mapping: usage/schema errors 2, stale revision 3, permission/idempotency/receipt/transaction/refusal 5, and session/job/execution failures 7. Engine replay returns the original effect revision even after a later save; use `inspect` for the current revision.
+
+`project.save` is the explicit save point. Otherwise a changed project and metadata are saved once on clean EOF; `--no-save` suppresses that final save while leaving explicit `project.save` available. Saves use the project owner's atomic publication, and a save failure exits non-zero without continuing. `--allow-overwrite` is the trusted policy grant for `export`, `export_subtitles` and `burn_subtitles` with `overwrite: true`; without it the engine refuses with `permission`. External gesture commands stay refused; agents use atomic `batch` plus `undo`.
+
+The session ticks the engine job runner between requests. `preview` and `export` return job IDs; poll `job_status`, including retained inline preview JPEGs, and use `job_cancel` for graceful cancellation. EOF cancels and joins outstanding jobs through the runner's publication fence. There is no signal-to-job-cancel handler: process interruption follows crash semantics, so the OS releases the lease, running work stops with the process and unsaved edits are lost; `job_cancel` is the graceful path.
 
 ## Project files and concurrency
 
@@ -81,7 +95,7 @@ Degraded output is never a silent default. `--allow-degraded` is the explicit co
 | 6 | Media or render execution failed |
 | 7 | I/O or background job failure |
 
-With `--json`, an error is `{"status":"error","error":{"code":"busy","message":"…", "exit_code":3,"unavailable":[…]}}`; `unavailable` appears only for source admission failures. Messages never contain project text, media text, provider payloads or API keys. Subtitle errors add the stable codes `setup` (missing local model/runner/credential), `ai` (provider execution) and `rejected` (refused upload consent or unsupported language choice).
+With `--json`, an error is `{"status":"error","error":{"code":"busy","message":"…", "exit_code":3,"unavailable":[…]}}`; `unavailable` appears only for source admission failures. Messages never contain project text, media text, provider payloads or API keys. Subtitle errors add the stable codes `setup` (missing local model/runner/credential), `ai` (provider execution) and `rejected` (refused upload consent or unsupported language choice). A `control` session returns the same codes per response line and exits with the last frame's code; its error envelope and mapping are described in [Control session](#control-session).
 
 ## Clip suggestions
 
