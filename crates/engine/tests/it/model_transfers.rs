@@ -268,6 +268,8 @@ fn submit(store: &ModelTransfers, runner: &mut JobRunner, m: &Model) -> (JobId, 
         .unwrap()
 }
 fn terminal(r: &mut JobRunner, id: JobId, clock: &TestClock) -> JobSnapshot {
+    // Durable checkpoint/publication IO can stall on a shared host; this is a
+    // liveness guard, while the callers assert the transfer's exact outcome.
     let deadline = Instant::now() + Duration::from_secs(60);
     loop {
         clock.advance();
@@ -279,7 +281,11 @@ fn terminal(r: &mut JobRunner, id: JobId, clock: &TestClock) -> JobSnapshot {
         ) {
             return snapshot;
         }
-        assert!(Instant::now() < deadline, "job timed out");
+        assert!(
+            Instant::now() < deadline,
+            "job {id:?} timed out in state {:?}",
+            snapshot.state
+        );
         thread::sleep(Duration::from_millis(1));
     }
 }
