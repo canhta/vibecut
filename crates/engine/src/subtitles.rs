@@ -2002,7 +2002,6 @@ pub(crate) fn translate_track(
         .project()
         .data()
         .timeline
-        .tracks
         .iter()
         .flat_map(|track| &track.items)
         .find_map(|item| match &item.content {
