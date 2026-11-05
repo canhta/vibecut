@@ -2457,3 +2457,123 @@ fn audio_reorder_is_screen_order_and_main_cannot_move() {
             .locked
     );
 }
+
+#[test]
+fn audio_controls_are_atomic_undoable_persisted_and_strict() {
+    let mut data = project().into_data();
+    // Reuse the existing synthetic media fixture without filesystem IO.
+    let source = media::SourceAsset::try_from(media::AssetData {
+        ephemeral: false,
+        id: AssetId(7),
+        path: std::env::temp_dir().join("audio-controls.wav"),
+        content_hash: ContentHash::from_bytes(&[7]),
+        probe: SourceProbe {
+            format: "wav".into(),
+            duration: Some(Tick(1000)),
+            streams: vec![media::SourceStream {
+                index: 0,
+                kind: media::StreamKind::Audio,
+                codec: "pcm_f32le".into(),
+                time_base: media::TimeBase::new(1, 48000).unwrap(),
+                start: None,
+                duration: Some(Tick(1000)),
+                frame_rate: None,
+                frame_count: None,
+                variable_frame_rate: None,
+                video: None,
+                audio: Some(media::AudioInfo {
+                    sample_rate: 48000,
+                    channels: 2,
+                    initial_padding: 0,
+                    trailing_padding: 0,
+                }),
+            }],
+        },
+    })
+    .unwrap();
+    data.assets.push(source);
+    data.scene_mut().timeline.insert_track(Track {
+        id: TrackId(8),
+        name: "".into(),
+        kind: TrackKind::Audio,
+        hidden: false,
+        muted: false,
+        locked: false,
+        items: vec![Item {
+            id: ItemId(20),
+            source_asset: Some(AssetId(7)),
+            source_range: range(0, 1000),
+            start: Tick::ZERO,
+            animations: Default::default(),
+            effects: vec![],
+            masks: vec![],
+            blend_mode: Default::default(),
+            content: ItemParams::Audio(project::AudioParams {
+                volume: 0.0,
+                muted: false,
+            }),
+        }],
+    });
+    let mut session = Session::new(Project::new(data).unwrap(), 100).unwrap();
+    for (command, args) in [
+        (
+            "timeline.set_item_param",
+            json!({"item":20,"patch":{"field":"volume","value":-6.01}}),
+        ),
+        (
+            "timeline.set_item_param",
+            json!({"item":20,"patch":{"field":"muted","value":true}}),
+        ),
+        ("audio.set_master", json!({"volume":-1.25,"muted":true})),
+    ] {
+        let before = session.project().clone();
+        session.execute(command, args).unwrap();
+        let after = session.project().clone();
+        assert_ne!(before, after);
+        session.undo().unwrap();
+        assert_eq!(&before, session.project());
+        session.redo().unwrap();
+        assert_eq!(&after, session.project());
+        let encoded = project::encode(session.project()).unwrap();
+        assert_eq!(project::decode(&encoded).unwrap(), after);
+    }
+    assert_eq!(session.project().data().settings.master_volume, -1.25);
+    assert!(session.project().data().settings.master_muted);
+    for value in [-60.01, 20.01, 0.001] {
+        let before = session.project().clone();
+        assert!(
+            session
+                .execute("audio.set_master", json!({"volume":value,"muted":false}))
+                .is_err()
+        );
+        assert!(
+            session
+                .execute(
+                    "timeline.set_item_param",
+                    json!({"item":20,"patch":{"field":"volume","value":value}})
+                )
+                .is_err()
+        );
+        assert_eq!(session.project(), &before);
+    }
+    for value in [-60.0, 20.0] {
+        session
+            .execute("audio.set_master", json!({"volume":value,"muted":false}))
+            .unwrap();
+    }
+    assert!(
+        session
+            .execute(
+                "timeline.set_item_param",
+                json!({"item":20,"patch":{"field":"audio_gain","value":0.0}})
+            )
+            .is_err()
+    );
+    let mut encoded: serde_json::Value =
+        serde_json::from_slice(&project::encode(session.project()).unwrap()).unwrap();
+    encoded["schema_version"] = json!(9);
+    assert!(matches!(
+        project::decode(&serde_json::to_vec(&encoded).unwrap()),
+        Err(project::Error::TooOld { .. })
+    ));
+}

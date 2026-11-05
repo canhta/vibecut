@@ -1278,7 +1278,7 @@ fn exec_shared_field_id_list_persists_only_compatible_item_fields() {
     let result = exec(
         &path,
         "timeline.set_item_param_many",
-        json!({"items":[10,11],"patch":{"field":"audio_gain","value":-6}}),
+        json!({"items":[10,11],"patch":{"field":"volume","value":-6}}),
     );
     assert_eq!(result["changed"], false);
     assert_eq!(fs::read(&path).unwrap(), before);
