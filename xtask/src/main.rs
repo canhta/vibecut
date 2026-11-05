@@ -736,7 +736,10 @@ mod tests {
         layers(&ws.0).unwrap();
         fs::write(dir.join("tests/new_behaviour.rs"), "").unwrap();
         let error = layers(&ws.0).unwrap_err();
-        assert!(error.contains("tests/new_behaviour.rs"), "{error}");
+        assert!(
+            error.replace('\\', "/").contains("tests/new_behaviour.rs"),
+            "{error}"
+        );
         assert!(
             error.contains("move integration tests to tests/it/"),
             "{error}"
