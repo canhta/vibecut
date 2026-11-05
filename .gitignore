@@ -1,6 +1,7 @@
-/.spikes/
+/.spikes
 /.privates/
-/.scratch/
+/.samples
+/.scratch
 /target/
 .DS_Store
 .env
