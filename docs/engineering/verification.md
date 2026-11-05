@@ -19,8 +19,9 @@ CI runs once per change, by the implementer, on the frozen SHA:
 and asking again for the same tree returns the receipt instead of rebuilding. A
 reviewer reads the receipt and runs only targeted reproductions; a reviewer's own fix
 commit gets one CI run. A clean rebase merges without another run. Hosted CI runs on
-`main` after every merge (and on demand for Windows via `.scratch/bin/hosted-ci`); a
-red `main` is fixed or reverted at once by whoever merged last.
+`main` only for the newest commit of a burst of merges (older runs cancel), and on
+demand for Windows via `.scratch/bin/hosted-ci`; a red `main` is fixed or reverted at
+once by whoever merged last.
 
 ## AI model integrations
 
