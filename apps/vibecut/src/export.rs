@@ -331,13 +331,9 @@ impl ExportDialog {
         let active = self.active();
         let modal = egui::Modal::new(egui::Id::unique("export.dialog"))
             .frame(
-                egui::Frame::window(&ctx.style_of(if dark {
-                    egui::Theme::Dark
-                } else {
-                    egui::Theme::Light
-                }))
-                .corner_radius(12)
-                .inner_margin(24),
+                egui::Frame::window(&ctx.global_style())
+                    .corner_radius(12)
+                    .inner_margin(24),
             )
             .show(ctx, |ui| {
                 ui.set_width(852.0_f32.min(ctx.content_rect().width() - 96.0));
