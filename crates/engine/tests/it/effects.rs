@@ -459,7 +459,7 @@ fn audio_refuses_even_an_empty_effect_reorder() {
     track.kind = TrackKind::Audio;
     let item = &mut track.items[0];
     item.content = ItemParams::Audio(AudioParams {
-        gain_db: 0.,
+        volume: 0.,
         muted: false,
     });
     item.source_asset = Some(media::AssetId(1));

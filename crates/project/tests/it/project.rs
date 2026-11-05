@@ -117,9 +117,11 @@ fn populated(path: PathBuf) -> Project {
     let contents = [
         ItemParams::Video(VideoParams {
             source_audio_enabled: true,
+            volume: 0.0,
+            muted: false,
         }),
         ItemParams::Audio(AudioParams {
-            gain_db: -6.0,
+            volume: -6.0,
             muted: true,
         }),
         item(0, 0).content,
@@ -309,7 +311,7 @@ fn model_trust_boundaries() {
         .first_mut()
         .unwrap()
         .content = ItemParams::Audio(AudioParams {
-        gain_db: f32::NAN,
+        volume: f32::NAN,
         muted: false,
     });
     cases.push(d);

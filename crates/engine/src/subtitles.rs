@@ -1815,6 +1815,8 @@ pub(crate) fn build_session(
                 start: Tick::ZERO,
                 content: ItemParams::Video(project::VideoParams {
                     source_audio_enabled: true,
+                    volume: 0.0,
+                    muted: false,
                 }),
             },
         })?;

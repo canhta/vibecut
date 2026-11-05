@@ -161,14 +161,16 @@ pub fn shared_fields(project: &Project, selection: &BTreeSet<ItemId>) -> Vec<Sha
                         _ => "1".into(),
                     })
                 }
-                ("audio_gain", ItemParams::Audio(p)) => Some(if p.gain_db == 0.0 {
+                ("audio_gain", ItemParams::Audio(p)) => Some(if p.volume == 0.0 {
                     "0".to_owned()
                 } else {
-                    p.gain_db.to_string()
+                    p.volume.to_string()
                 }),
+                ("audio_gain", ItemParams::Video(p)) => Some(p.volume.to_string()),
                 ("audio_muted", ItemParams::Audio(p)) => Some(p.muted.to_string()),
                 ("text_content", ItemParams::Text(p)) => Some(p.content.as_str().to_owned()),
                 ("text_font", ItemParams::Text(p)) => Some(p.font.as_str().to_owned()),
+                ("audio_muted", ItemParams::Video(p)) => Some(p.muted.to_string()),
                 ("text_size", ItemParams::Text(p)) => Some(p.font_size.to_string()),
                 ("text_color", ItemParams::Text(p)) => {
                     let [r, g, b, a] = p.color.0;

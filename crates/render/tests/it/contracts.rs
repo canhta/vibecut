@@ -371,7 +371,7 @@ fn preview_audio_mix_obeys_item_gain_and_mute() {
         },
     })
     .unwrap();
-    let base = |gain_db, muted| {
+    let base = |volume, muted| {
         let mut data = project::Project::empty(project::ProjectId(0), "".into())
             .unwrap()
             .into_data();
@@ -392,23 +392,23 @@ fn preview_audio_mix_obeys_item_gain_and_mute() {
                 source_asset: Some(media::AssetId(1)),
                 source_range: time::SourceRange::new(Tick::ZERO, duration).unwrap(),
                 start: Tick::ZERO,
-                content: project::ItemParams::Audio(project::AudioParams { gain_db, muted }),
+                content: project::ItemParams::Audio(project::AudioParams { volume, muted }),
             }],
         });
         project::Project::new(data).unwrap()
     };
     let hooks = Hooks::default();
-    for (gain_db, muted, expected) in [
-        (0.0, false, 1.0),
-        (-6.0, false, 10f32.powf(-6.0 / 20.0)),
+    for (volume, muted, expected) in [
+        (0.0, false, 10f32.powf(-1.0 / 20.0) * 0.98),
+        (-6.0, false, 10f32.powf(-6.0 / 20.0) * 0.98),
         (0.0, true, 0.0),
         (-6.0, true, 0.0),
     ] {
-        let project = base(gain_db, muted);
+        let project = base(volume, muted);
         let block = mix_audio(&project, 0, 480, 2, &mut ConstantAudio, &hooks).unwrap();
         assert!(
             (block.peak() - expected).abs() < 1e-6,
-            "{gain_db}dB muted={muted}"
+            "{volume}dB muted={muted}"
         );
         assert!(
             block

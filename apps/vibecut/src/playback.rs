@@ -523,6 +523,8 @@ fn audio_loop(
     let mut sources = factory.create();
     let mut epoch = 0;
     let mut cursor = 0;
+    let mut audio_project = read_request(request)?.project;
+    let mut mixer = render::AudioMixer::new(&audio_project, 2, 0, hooks)?;
     while !hooks.cancelled() {
         let r = read_request(request)?;
         if !r.playing {
@@ -534,6 +536,9 @@ fn audio_loop(
             epoch = r.epoch;
             cursor = submitted;
             sources = factory.create();
+            drop(mixer);
+            audio_project = r.project.clone();
+            mixer = render::AudioMixer::new(&audio_project, 2, 0, hooks)?;
         }
         cursor = cursor.max(submitted);
         let lead = u64::from(r.project.data().settings.audio_sample_rate) / 4;
@@ -546,7 +551,7 @@ fn audio_loop(
             i64::from(r.project.data().settings.audio_sample_rate),
             Rounding::Nearest,
         )?;
-        let block = render::mix_audio(&r.project, start, BLOCK, 2, sources.as_mut(), hooks)?;
+        let block = mixer.mix(start, BLOCK, sources.as_mut(), hooks)?;
         if port.epoch.load(Ordering::Acquire) == epoch {
             for n in 0..BLOCK {
                 let index = cursor.saturating_add(n as u64);

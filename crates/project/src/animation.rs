@@ -39,6 +39,7 @@ impl AnimationPath {
                 | "transform.rotate"
                 | "opacity"
                 | "volume"
+                | "muted"
                 | "color"
                 | "background.color"
                 | "background.paddingX"
@@ -82,7 +83,9 @@ impl AnimationPath {
             Param::Value(c) => Some(c.base()),
             Param::Color(_) => None,
         };
-        if matches!(self.0.as_str(), "color" | "background.color") {
+        if self.0 == "muted" {
+            matches!(base, Some(ParamValue::Bool(_)))
+        } else if matches!(self.0.as_str(), "color" | "background.color") {
             matches!(param, Param::Color(_)) || matches!(base, Some(ParamValue::Text(_)))
         } else {
             matches!(base, Some(ParamValue::Scalar(_)))

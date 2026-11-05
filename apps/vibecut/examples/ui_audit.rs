@@ -819,6 +819,8 @@ fn media_editor(theme: Theme, locale: Locale) -> Result<(Editor, ItemId), Failur
         Some(AssetId(1)),
         ItemParams::Video(VideoParams {
             source_audio_enabled: true,
+            volume: 0.0,
+            muted: false,
         }),
     )?;
     insert(
@@ -829,6 +831,8 @@ fn media_editor(theme: Theme, locale: Locale) -> Result<(Editor, ItemId), Failur
         Some(AssetId(1)),
         ItemParams::Video(VideoParams {
             source_audio_enabled: true,
+            volume: 0.0,
+            muted: false,
         }),
     )?;
     let audio = track(&mut session, "Audio", TrackKind::Audio)?;
@@ -839,7 +843,7 @@ fn media_editor(theme: Theme, locale: Locale) -> Result<(Editor, ItemId), Failur
         range(0, 10)?,
         Some(AssetId(2)),
         ItemParams::Audio(AudioParams {
-            gain_db: 0.0,
+            volume: 0.0,
             muted: false,
         }),
     )?;
@@ -1337,6 +1341,8 @@ fn placement(theme: Theme, scale: f32) -> Result<AppHarness, Failure> {
         Some(AssetId(1)),
         ItemParams::Video(VideoParams {
             source_audio_enabled: true,
+            volume: 0.0,
+            muted: false,
         }),
     )?;
     insert(
@@ -1347,6 +1353,8 @@ fn placement(theme: Theme, scale: f32) -> Result<AppHarness, Failure> {
         Some(AssetId(1)),
         ItemParams::Video(VideoParams {
             source_audio_enabled: true,
+            volume: 0.0,
+            muted: false,
         }),
     )?;
     let audio = track(&mut session, "Audio", TrackKind::Audio)?;
@@ -1357,7 +1365,7 @@ fn placement(theme: Theme, scale: f32) -> Result<AppHarness, Failure> {
         range(0, 10)?,
         Some(AssetId(2)),
         ItemParams::Audio(AudioParams {
-            gain_db: 0.0,
+            volume: 0.0,
             muted: false,
         }),
     )?;

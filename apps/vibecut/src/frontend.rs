@@ -294,11 +294,11 @@ const TEXT_SIZE_SCRUB: ScrubSpec = ScrubSpec {
 const AUDIO_GAIN_SCRUB: ScrubSpec = ScrubSpec {
     field: "audio_gain",
     label: Text::AudioGain,
-    min: -120.0,
-    max: 24.0,
-    step: 1.0,
+    min: -60.0,
+    max: 20.0,
+    step: 0.01,
     pixels_per_step: 4.0,
-    decimals: 1,
+    decimals: 2,
     suffix: "dB",
 };
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -1236,9 +1236,11 @@ impl Editor {
                     content: match kind {
                         TrackKind::Video => ItemParams::Video(project::VideoParams {
                             source_audio_enabled: true,
+                            volume: 0.0,
+                            muted: false,
                         }),
                         _ => ItemParams::Audio(project::AudioParams {
-                            gain_db: 0.0,
+                            volume: 0.0,
                             muted: false,
                         }),
                     },
@@ -5305,7 +5307,8 @@ impl Editor {
                 )
             }
             ("text_size", ItemParams::Text(params)) => Some(f64::from(params.font_size)),
-            ("audio_gain", ItemParams::Audio(params)) => Some(f64::from(params.gain_db)),
+            ("audio_gain", ItemParams::Audio(params)) => Some(f64::from(params.volume)),
+            ("audio_gain", ItemParams::Video(params)) => Some(f64::from(params.volume)),
             _ => None,
         }
     }

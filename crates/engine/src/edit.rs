@@ -32,14 +32,26 @@ fn apply_patch(
             )?;
         }
         crate::ItemParamPatch::AudioGain(v) => {
-            if let ItemParams::Audio(p) = &mut target.content {
-                p.gain_db = *v;
+            match &mut target.content {
+                ItemParams::Audio(p) => p.volume = *v,
+                ItemParams::Video(p) => p.volume = *v,
+                _ => {}
             }
+            target.animations.set(
+                project::AnimationPath::new("volume")?,
+                project::Param::new(project::ParamValue::Scalar(f64::from(*v)))?,
+            )?;
         }
         crate::ItemParamPatch::AudioMuted(v) => {
-            if let ItemParams::Audio(p) = &mut target.content {
-                p.muted = *v;
+            match &mut target.content {
+                ItemParams::Audio(p) => p.muted = *v,
+                ItemParams::Video(p) => p.muted = *v,
+                _ => {}
             }
+            target.animations.set(
+                project::AnimationPath::new("muted")?,
+                project::Param::new(project::ParamValue::Bool(*v))?,
+            )?;
         }
         crate::ItemParamPatch::TextContent(v) => {
             if let ItemParams::Text(p) = &mut target.content {
@@ -515,6 +527,13 @@ pub(crate) fn apply(
             unlocked(track(&mut data, id)?)?;
             data.scene_mut().timeline.overlays.retain(|t| t.id != id);
             data.scene_mut().timeline.audio.retain(|t| t.id != id);
+        }
+        Command::SetMaster { volume, muted } => {
+            if !project::valid_volume(volume) {
+                return Err(EditError::Invalid("master volume"));
+            }
+            data.settings.master_volume = volume;
+            data.settings.master_muted = muted;
         }
         Command::SetTrackMuted { track: id, muted } => {
             let t = track(&mut data, id)?;

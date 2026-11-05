@@ -80,6 +80,8 @@ fn project(empty: bool, source: bool) -> Project {
             content: if source {
                 ItemParams::Video(project::VideoParams {
                     source_audio_enabled: false,
+                    volume: 0.0,
+                    muted: false,
                 })
             } else {
                 ItemParams::Overlay(project::OverlayParams {

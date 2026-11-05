@@ -38,6 +38,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             start: time::Tick::ZERO,
             content: ItemParams::Video(VideoParams {
                 source_audio_enabled: true,
+                volume: 0.0,
+                muted: false,
             }),
         },
     })?;

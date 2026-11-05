@@ -128,6 +128,8 @@ pub(super) fn media_project(project_path: &Path, video: &Path, audio: Option<&Pa
             start: Tick::ZERO,
             content: project::ItemParams::Video(project::VideoParams {
                 source_audio_enabled: false,
+                volume: 0.0,
+                muted: false,
             }),
         }],
     });
@@ -152,7 +154,7 @@ pub(super) fn media_project(project_path: &Path, video: &Path, audio: Option<&Pa
                 source_range: TimeRange::new(Tick::ZERO, audio_duration).unwrap(),
                 start: Tick::ZERO,
                 content: project::ItemParams::Audio(project::AudioParams {
-                    gain_db: 0.0,
+                    volume: 0.0,
                     muted: false,
                 }),
             }],

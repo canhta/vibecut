@@ -88,6 +88,8 @@ fn scene() -> project::Project {
             project::TrackKind::Video,
             project::ItemParams::Video(project::VideoParams {
                 source_audio_enabled: false,
+                volume: 0.0,
+                muted: false,
             }),
             Some(media::AssetId(1)),
         ),

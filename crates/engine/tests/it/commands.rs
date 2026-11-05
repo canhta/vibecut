@@ -563,6 +563,8 @@ fn media_handles_and_typed_parameter_validation_are_atomic() {
                 start: Tick(100),
                 content: ItemParams::Video(VideoParams {
                     source_audio_enabled: true,
+                    volume: 0.0,
+                    muted: false,
                 }),
             },
         })
@@ -597,7 +599,7 @@ fn media_handles_and_typed_parameter_validation_are_atomic() {
         Command::SetItemParam {
             item: id,
             content: ItemParams::Audio(AudioParams {
-                gain_db: 0.0,
+                volume: 0.0,
                 muted: false,
             }),
         },
@@ -609,7 +611,7 @@ fn media_handles_and_typed_parameter_validation_are_atomic() {
                 source_range: range(0, 10),
                 start: Tick(0),
                 content: ItemParams::Audio(AudioParams {
-                    gain_db: 0.0,
+                    volume: 0.0,
                     muted: false,
                 }),
             },
@@ -622,7 +624,7 @@ fn media_handles_and_typed_parameter_validation_are_atomic() {
                 source_range: range(0, 10),
                 start: Tick(0),
                 content: ItemParams::Audio(AudioParams {
-                    gain_db: f32::NAN,
+                    volume: f32::NAN,
                     muted: false,
                 }),
             },
@@ -2055,6 +2057,8 @@ fn policy_insert(id: u64) -> Command {
             start: Tick::ZERO,
             content: ItemParams::Video(project::VideoParams {
                 source_audio_enabled: true,
+                volume: 0.0,
+                muted: false,
             }),
         },
     }

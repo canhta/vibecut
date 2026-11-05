@@ -52,7 +52,11 @@ impl PolyphaseBank {
         let proto: Vec<f64> = (0..len)
             .map(|m| {
                 let t = (m as f64 - centre) / factor as f64;
-                let sinc = if t.abs() < 1e-12 { 1.0 } else { (PI * t).sin() / (PI * t) };
+                let sinc = if t.abs() < 1e-12 {
+                    1.0
+                } else {
+                    (PI * t).sin() / (PI * t)
+                };
                 let r = (m as f64 - centre) / (centre + 1.0);
                 let w = bessel_i0(beta * (1.0 - r * r).max(0.0).sqrt()) / i0b;
                 sinc * w
@@ -66,9 +70,6 @@ impl PolyphaseBank {
             }
         }
         PolyphaseBank { factor, coeffs }
-    }
-    pub fn factor(&self) -> usize {
-        self.factor
     }
     /// Approximate delay (in input samples) between an input sample and the interpolated
     /// values around it.
@@ -87,15 +88,14 @@ pub struct Interpolator {
 
 impl Default for Interpolator {
     fn default() -> Self {
-        Interpolator { hist: [0.0; 2 * TAPS_PER_PHASE], pos: 0 }
+        Interpolator {
+            hist: [0.0; 2 * TAPS_PER_PHASE],
+            pos: 0,
+        }
     }
 }
 
 impl Interpolator {
-    pub fn reset(&mut self) {
-        *self = Self::default();
-    }
-
     /// Push one input sample; returns the maximum absolute value of the `factor` interpolated
     /// output samples produced for it.
     #[inline]
@@ -104,7 +104,11 @@ impl Interpolator {
             return x.abs();
         }
         // Newest sample at window[TAPS-1-0]... store so that window[j] = x[n - j].
-        self.pos = if self.pos == 0 { TAPS_PER_PHASE - 1 } else { self.pos - 1 };
+        self.pos = if self.pos == 0 {
+            TAPS_PER_PHASE - 1
+        } else {
+            self.pos - 1
+        };
         self.hist[self.pos] = x;
         self.hist[self.pos + TAPS_PER_PHASE] = x;
         let win = &self.hist[self.pos..self.pos + TAPS_PER_PHASE];
@@ -128,4 +132,3 @@ fn dot(c: &[f32; TAPS_PER_PHASE], win: &[f32]) -> f32 {
     }
     (acc[0] + acc[4]) + (acc[1] + acc[5]) + (acc[2] + acc[6]) + (acc[3] + acc[7])
 }
-

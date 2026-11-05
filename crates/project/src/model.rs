@@ -69,15 +69,19 @@ impl Default for Canvas {
     }
 }
 /// Output sample rate; presentation preferences stay in the app.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct Settings {
     pub audio_sample_rate: u32,
+    pub master_volume: f32,
+    pub master_muted: bool,
 }
 impl Default for Settings {
     fn default() -> Self {
         Self {
             audio_sample_rate: 48000,
+            master_volume: 0.0,
+            master_muted: false,
         }
     }
 }
@@ -183,11 +187,13 @@ impl TrackKind {
 #[serde(deny_unknown_fields)]
 pub struct VideoParams {
     pub source_audio_enabled: bool,
+    pub volume: f32,
+    pub muted: bool,
 }
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct AudioParams {
-    pub gain_db: f32,
+    pub volume: f32,
     pub muted: bool,
 }
 /// Percentages of the canvas; `(50, 84.5)` reproduces the original lower-third box.
@@ -554,6 +560,9 @@ fn validate(data: &ProjectData) -> Result<()> {
             "canvas rate must have exact positive frame ticks",
         ));
     }
+    if !valid_volume(data.settings.master_volume) {
+        return Err(Error::Invalid("master volume"));
+    }
     if !(8000..=192000).contains(&data.settings.audio_sample_rate) {
         return Err(Error::Invalid("audio sample rate"));
     }
@@ -756,8 +765,13 @@ fn validate(data: &ProjectData) -> Result<()> {
             {
                 return Err(Error::Invalid("generated item cannot reference media"));
             }
+            if let ItemParams::Video(p) = &item.content
+                && !valid_volume(p.volume)
+            {
+                return Err(Error::Invalid("video volume"));
+            }
             if let ItemParams::Audio(p) = &item.content
-                && (!p.gain_db.is_finite() || !(-120.0..=24.0).contains(&p.gain_db))
+                && !valid_volume(p.volume)
             {
                 return Err(Error::Invalid("audio gain"));
             }
@@ -775,4 +789,11 @@ fn validate(data: &ProjectData) -> Result<()> {
         }
     }
     Ok(())
+}
+
+/// Clip/master dB range and hundredth-dB editing grid. Curves interpolate continuously.
+pub fn valid_volume(value: f32) -> bool {
+    value.is_finite()
+        && (-60.0..=20.0).contains(&value)
+        && (value * 100.0 - (value * 100.0).round()).abs() < 0.001
 }

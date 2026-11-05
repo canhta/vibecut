@@ -299,7 +299,7 @@ fn admission(
                 && !track.muted
                 && match &item.content {
                     ItemParams::Video(p) => p.source_audio_enabled,
-                    ItemParams::Audio(p) => !p.muted,
+                    ItemParams::Audio(_) => true,
                     _ => false,
                 };
             if (!video && !audio) || !range.overlaps(TimeRange::new(item.start, item.end()?)?) {
@@ -348,7 +348,6 @@ struct CopyPlan<'a> {
     item: project::ItemId,
     source: TimeRange,
     whole: bool,
-    source_audio: bool,
 }
 fn copy_plan<'a>(
     project: &'a Project,
@@ -440,7 +439,6 @@ fn copy_plan<'a>(
         item: item.id,
         source,
         whole,
-        source_audio: !track.muted && params.source_audio_enabled,
     }))
 }
 fn safe_key_cut(
@@ -557,6 +555,12 @@ fn encoded_export(
     let origin = range
         .start()
         .to_units(i64::from(sample_rate), Rounding::Nearest)?;
+    let mut mixer = crate::AudioMixer::new(
+        project,
+        settings.channels,
+        settings.audio_cut_fade_ms,
+        hooks,
+    )?;
     let mut samples = 0i64;
     let dt = settings.fps.frame_duration()?;
     for n in 0..count {
@@ -595,6 +599,7 @@ fn encoded_export(
             .min(total);
         if let (Some(audio), Some(ai)) = (audio.as_mut(), ai) {
             fill_audio(
+                &mut mixer,
                 project,
                 origin,
                 goal,
@@ -613,6 +618,7 @@ fn encoded_export(
     }
     if let (Some(audio), Some(ai)) = (audio.as_mut(), ai) {
         fill_audio(
+            &mut mixer,
             project,
             origin,
             total,
@@ -639,6 +645,7 @@ fn encoded_export(
 }
 #[allow(clippy::too_many_arguments)]
 fn fill_audio(
+    mixer: &mut crate::AudioMixer<'_>,
     project: &Project,
     origin: i64,
     goal: i64,
@@ -655,16 +662,13 @@ fn fill_audio(
         check(hooks)?;
         hooks.progress(Stage::Mix, 0.0)?;
         let count = (goal - *position).min(settings.audio_block as i64) as usize;
-        let block = crate::audio::mix_audio_with_cut_fade(
-            project,
+        let block = mixer.mix(
             origin
                 .checked_add(*position)
                 .ok_or(Error::Invalid("mix sample position"))?,
             count,
-            settings.channels,
             sources,
             hooks,
-            settings.audio_cut_fade_ms,
         )?;
         let peak = block.peak();
         if peak > 1.0 {
@@ -700,46 +704,7 @@ fn copy_export(
     let _packets = hooks.reserve(MemoryKind::Export, 128 << 20)?;
     let mut reader = PacketReader::open(plan.asset.path())?;
     let mut mux = Muxer::new(file, settings.container)?;
-    let other_audio = project
-        .data()
-        .scene()
-        .timeline
-        .iter()
-        .filter(|t| !t.muted)
-        .flat_map(|t| &t.items)
-        .any(|i| {
-            i.id != plan.item
-                && i.start < range.end()
-                && i.end().is_ok_and(|end| end > range.start())
-                && match &i.content {
-                    ItemParams::Audio(p) => !p.muted,
-                    ItemParams::Video(p) => p.source_audio_enabled,
-                    _ => false,
-                }
-        });
-    let compatible_audio = reader
-        .probe()
-        .streams
-        .iter()
-        .find(|s| s.kind == StreamKind::Audio)
-        .is_some_and(|s| match settings.container {
-            Container::Mp4 | Container::Mov => s.codec == "aac",
-            Container::WebM => matches!(s.codec.as_str(), "opus" | "vorbis"),
-        });
-    let copy_audio = compatible_audio
-        && settings.include_audio
-        && plan.whole
-        && plan.source_audio
-        && !other_audio
-        && reader
-            .probe()
-            .streams
-            .iter()
-            .find_map(|s| s.audio.as_ref())
-            .is_some_and(|a| {
-                a.sample_rate == project.data().settings.audio_sample_rate
-                    && a.channels == settings.channels
-            });
+    let copy_audio = false;
     // Timeline sources select the first video/audio stream, just like decode.
     // Alternate angles and audio languages must not leak into the final movie.
     let video_index = reader
@@ -776,7 +741,19 @@ fn copy_export(
         .as_ref()
         .map(|a| mux.add_parameters(&a.parameters(), a.time_base()))
         .transpose()?;
+    let mut mixer = crate::AudioMixer::new(
+        project,
+        settings.channels,
+        settings.audio_cut_fade_ms,
+        hooks,
+    )?;
     let mut frames = 0u64;
+    let mut mixer = crate::AudioMixer::new(
+        project,
+        settings.channels,
+        settings.audio_cut_fade_ms,
+        hooks,
+    )?;
     let mut samples = 0i64;
     let total = range.duration().to_units(
         i64::from(project.data().settings.audio_sample_rate),
@@ -846,6 +823,7 @@ fn copy_export(
             .clamp(0, total);
         if let (Some(audio), Some(ai)) = (audio.as_mut(), ai) {
             fill_audio(
+                &mut mixer,
                 project,
                 origin,
                 goal,
@@ -861,6 +839,7 @@ fn copy_export(
     }
     if let (Some(audio), Some(ai)) = (audio.as_mut(), ai) {
         fill_audio(
+            &mut mixer,
             project,
             origin,
             total,

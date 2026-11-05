@@ -213,6 +213,8 @@ fn export_benchmark(
             start: Tick::ZERO,
             content: project::ItemParams::Video(project::VideoParams {
                 source_audio_enabled: false,
+                volume: 0.0,
+                muted: false,
             }),
         }],
     });

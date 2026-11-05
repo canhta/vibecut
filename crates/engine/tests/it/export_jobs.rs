@@ -569,6 +569,8 @@ fn registered_burn_job_exports_and_typed_missing_media_preserves_previous_output
     video.source_asset = Some(media::AssetId(1));
     video.content = project::ItemParams::Video(project::VideoParams {
         source_audio_enabled: false,
+        volume: 0.0,
+        muted: false,
     });
     session = engine::Session::new(project::Project::new(data).unwrap(), 10).unwrap();
     std::fs::write(&path, b"previous").unwrap();

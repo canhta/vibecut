@@ -156,6 +156,8 @@ fn fixture() -> Fixture {
         Some(AssetId(1)),
         ItemParams::Video(project::VideoParams {
             source_audio_enabled: true,
+            volume: 0.0,
+            muted: false,
         }),
     );
     let graphic = insert(
@@ -176,6 +178,8 @@ fn fixture() -> Fixture {
         Some(AssetId(3)),
         ItemParams::Video(project::VideoParams {
             source_audio_enabled: false,
+            volume: 0.0,
+            muted: false,
         }),
     );
     let silent_video = insert(
@@ -186,6 +190,8 @@ fn fixture() -> Fixture {
         Some(AssetId(4)),
         ItemParams::Video(project::VideoParams {
             source_audio_enabled: false,
+            volume: 0.0,
+            muted: false,
         }),
     );
     let text = insert(
@@ -208,7 +214,7 @@ fn fixture() -> Fixture {
         Tick(2 * SECOND),
         Some(AssetId(2)),
         ItemParams::Audio(project::AudioParams {
-            gain_db: 0.0,
+            volume: 0.0,
             muted: false,
         }),
     );
@@ -675,7 +681,7 @@ fn opacity_and_audio_gain_scrub_through_their_tabs() {
     let ItemParams::Audio(params) = &item(&harness, fixture.audio).content else {
         panic!("audio")
     };
-    assert_eq!(params.gain_db, 4.0);
+    assert_eq!(params.volume, 4.0);
 }
 
 #[test]

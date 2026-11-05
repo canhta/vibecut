@@ -54,6 +54,8 @@ fn video_project(path: &Path) -> project::Project {
             start: Tick::ZERO,
             content: project::ItemParams::Video(project::VideoParams {
                 source_audio_enabled: true,
+                volume: 0.0,
+                muted: false,
             }),
         }],
     });
@@ -234,7 +236,7 @@ fn resampling_split_trim_offset_and_irregular_blocks_are_identical() {
             source_range: TimeRange::new(source_in, tick(1, 1)).unwrap(),
             start: offset,
             content: project::ItemParams::Audio(project::AudioParams {
-                gain_db: -3.0,
+                volume: -3.0,
                 muted: false,
             }),
         }];
@@ -250,7 +252,7 @@ fn resampling_split_trim_offset_and_irregular_blocks_are_identical() {
                 source_range: TimeRange::new(tick(1, 2), tick(1, 1)).unwrap(),
                 start: tick(1, 2),
                 content: project::ItemParams::Audio(project::AudioParams {
-                    gain_db: -3.0,
+                    volume: -3.0,
                     muted: false,
                 }),
             });
@@ -613,7 +615,7 @@ fn missing_audio_only_is_required_only_when_audio_is_requested() {
             source_range: TimeRange::new(Tick::ZERO, tick(1, 1)).unwrap(),
             start: Tick::ZERO,
             content: project::ItemParams::Audio(project::AudioParams {
-                gain_db: 0.0,
+                volume: 0.0,
                 muted: false,
             }),
         }],
@@ -975,7 +977,7 @@ fn stereo_policy_keeps_headroom_and_export_refuses_overload() {
             source_range: TimeRange::new(Tick::ZERO, tick(1, 1)).unwrap(),
             start: Tick::ZERO,
             content: project::ItemParams::Audio(project::AudioParams {
-                gain_db: 0.0,
+                volume: 0.0,
                 muted: false,
             }),
         }],
@@ -1334,7 +1336,7 @@ fn export_item_mute_and_gain_change_samples() {
         locked: false,
         items: vec![audio],
     });
-    for (gain_db, muted) in [(0.0, false), (-6.0, false), (0.0, true), (-6.0, true)] {
+    for (volume, muted) in [(0.0, false), (-6.0, false), (0.0, true), (-6.0, true)] {
         if let Some(item) = data
             .scene_mut()
             .timeline
@@ -1342,10 +1344,10 @@ fn export_item_mute_and_gain_change_samples() {
             .first_mut()
             .and_then(|track| track.items.first_mut())
         {
-            item.content = project::ItemParams::Audio(project::AudioParams { gain_db, muted });
+            item.content = project::ItemParams::Audio(project::AudioParams { volume, muted });
         }
         let project = project::Project::new(data.clone()).unwrap();
-        let output = dir.path().join(format!("item-{gain_db}-{muted}.mp4"));
+        let output = dir.path().join(format!("item-{volume}-{muted}.mp4"));
         export(
             &project,
             TimeRange::new(Tick::ZERO, tick(1, 1)).unwrap(),
@@ -1359,9 +1361,9 @@ fn export_item_mute_and_gain_change_samples() {
             .iter()
             .fold(0.0f32, |peak, sample| peak.max(sample.abs()));
         if muted {
-            assert!(peak <= 1e-5, "muted gain={gain_db} peak={peak}");
+            assert!(peak <= 1e-5, "muted gain={volume} peak={peak}");
         } else {
-            assert!(peak > 0.05, "audible gain={gain_db} peak={peak}");
+            assert!(peak > 0.05, "audible gain={volume} peak={peak}");
         }
     }
 }
@@ -1393,7 +1395,7 @@ fn export_keeps_track_picture_and_audio_flags_independent() {
             let mut audio = data.scene_mut().timeline.main.items[0].clone();
             audio.id = project::ItemId(1);
             audio.content = project::ItemParams::Audio(project::AudioParams {
-                gain_db: 0.0,
+                volume: 0.0,
                 muted: false,
             });
             if let project::ItemParams::Video(params) =

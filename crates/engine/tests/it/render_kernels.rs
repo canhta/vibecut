@@ -290,6 +290,8 @@ fn parallel_draw_matches_sequential_at_chunk_edges_and_half_reductions() {
                 start: time::Tick::ZERO,
                 content: project::ItemParams::Video(project::VideoParams {
                     source_audio_enabled: false,
+                    volume: 0.0,
+                    muted: false,
                 }),
             }],
         });

@@ -59,7 +59,9 @@ pub enum ItemParamPatch {
     #[serde(rename = "blendMode")]
     BlendMode(project::BlendMode),
     Opacity(f64),
+    #[serde(rename = "volume")]
     AudioGain(f32),
+    #[serde(rename = "muted")]
     AudioMuted(bool),
     TextContent(NfcText),
     TextFont(NfcText),
@@ -79,7 +81,7 @@ impl ItemParamPatch {
             (self, content),
             (
                 Self::AudioGain(_) | Self::AudioMuted(_),
-                ItemParams::Audio(_)
+                ItemParams::Audio(_) | ItemParams::Video(_)
             ) | (
                 Self::TextContent(_)
                     | Self::TextFont(_)
@@ -97,7 +99,7 @@ impl ItemParamPatch {
         let valid = match self {
             Self::BlendMode(_) => true,
             Self::Opacity(v) => v.is_finite() && (0.0..=1.0).contains(v),
-            Self::AudioGain(v) => v.is_finite() && (-120.0..=24.0).contains(v),
+            Self::AudioGain(v) => project::valid_volume(*v),
             Self::AudioMuted(_) => true,
             Self::TextContent(v) => v.as_str().len() <= 1 << 20,
             Self::TextFont(v) => !v.as_str().trim().is_empty() && v.as_str().len() <= 256,
@@ -284,6 +286,7 @@ commands! {
     DeleteProject, "project.delete", "Permanently delete project", SessionControl {} => Library, serde_json::json!({});
     ThumbnailProject, "project.thumbnail", "Refresh project thumbnail", SessionControl {} => Library, serde_json::json!({});
     SaveProject, "project.save", "Save project", SessionControl {} => Save, serde_json::json!({});
+    SetMaster, "audio.set_master", "Set master audio", Edit { volume: f32, muted: bool } => Timeline, serde_json::json!({"volume":0.0,"muted":false});
     SetViewState, "project.set_view_state", "Set timeline view", SessionControl { zoom: f64, scroll: f64, playhead: Tick } => Timeline, serde_json::json!({"zoom":2.0,"scroll":10.0,"playhead":0});
     ExportSubtitles, "export_subtitles", "Export subtitle file", FilePublish { track: TrackId, format: captions::Format, languages: Vec<captions::LanguageTag>, path: std::path::PathBuf, overwrite: bool } => Timeline, serde_json::json!({"track":4,"format":"srt","languages":["en"],"path":"$output/subtitles.srt","overwrite":false});
     BurnSubtitles, "burn_subtitles", "Burn subtitles into MP4", FilePublish { range: time::TimeRange, languages: Vec<captions::LanguageTag>, style: render::CaptionStyle, portrait: bool, path: std::path::PathBuf, overwrite: bool } => Timeline, serde_json::json!({"range":{"start":0,"end":8467200000_i64},"languages":["en"],"style":{"font":"Inter","font_style":"SemiBold","size":48.0,"color":[255,255,255,255],"outline":null,"background":null,"position":"bottom","safe_area_percent":5.0,"max_lines":2},"portrait":false,"path":"$output/burn.mp4","overwrite":false});

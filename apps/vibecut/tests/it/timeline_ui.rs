@@ -140,6 +140,8 @@ fn fixture() -> Fixture {
         Some(AssetId(1)),
         ItemParams::Video(project::VideoParams {
             source_audio_enabled: true,
+            volume: 0.0,
+            muted: false,
         }),
     );
     let video_b = insert(
@@ -150,6 +152,8 @@ fn fixture() -> Fixture {
         Some(AssetId(1)),
         ItemParams::Video(project::VideoParams {
             source_audio_enabled: true,
+            volume: 0.0,
+            muted: false,
         }),
     );
     let _audio_item = insert(
@@ -159,7 +163,7 @@ fn fixture() -> Fixture {
         SourceRange::new(Tick::ZERO, Tick(10 * SECOND)).unwrap(),
         Some(AssetId(2)),
         ItemParams::Audio(project::AudioParams {
-            gain_db: 0.0,
+            volume: 0.0,
             muted: false,
         }),
     );
@@ -1447,7 +1451,7 @@ fn mixed_audio_mute_shows_indeterminate_and_undo_restores_each_item() {
         SourceRange::new(Tick::ZERO, Tick(10 * SECOND)).unwrap(),
         Some(AssetId(2)),
         ItemParams::Audio(project::AudioParams {
-            gain_db: -6.0,
+            volume: -6.0,
             muted: true,
         }),
     );
@@ -1474,7 +1478,7 @@ fn mixed_audio_mute_shows_indeterminate_and_undo_restores_each_item() {
             panic!("audio")
         };
         assert!(params.muted);
-        assert_eq!(params.gain_db, gain);
+        assert_eq!(params.volume, gain);
     }
     assert_eq!(
         item(harness.state(), video),
@@ -1547,7 +1551,7 @@ fn audio_mute_and_volume_controls_commit_one_step_and_persist() {
         panic!("audio")
     };
     assert!(params.muted);
-    assert_eq!(params.gain_db, 0.0);
+    assert_eq!(params.volume, 0.0);
     harness.state_mut().activate("edit.undo").unwrap();
     let ItemParams::Audio(params) = &item(harness.state(), audio).content else {
         panic!("audio")
@@ -1566,7 +1570,7 @@ fn audio_mute_and_volume_controls_commit_one_step_and_persist() {
     let ItemParams::Audio(params) = &item(harness.state(), audio).content else {
         panic!("audio")
     };
-    assert_eq!(params.gain_db, -6.0);
+    assert_eq!(params.volume, -6.0);
     assert!(params.muted);
     for invalid in ["NaN", "25", "-121", "loud", ""] {
         assert!(
@@ -1596,7 +1600,7 @@ fn audio_mute_and_volume_controls_commit_one_step_and_persist() {
     let ItemParams::Audio(params) = &item(harness.state(), audio).content else {
         panic!("audio")
     };
-    assert_eq!(params.gain_db, -6.0);
+    assert_eq!(params.volume, -6.0);
     assert!(!params.muted);
 }
 
@@ -1649,7 +1653,7 @@ fn compatible_audio_gain_inspector_skips_video_and_preserves_mute() {
     let ItemParams::Audio(p) = &item(harness.state(), audio).content else {
         panic!("audio")
     };
-    assert_eq!(p.gain_db, -6.0);
+    assert_eq!(p.volume, -6.0);
     assert!(!p.muted);
 }
 

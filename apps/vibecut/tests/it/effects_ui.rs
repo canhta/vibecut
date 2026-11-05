@@ -169,6 +169,8 @@ fn fixture() -> Fixture {
         Some(AssetId(1)),
         ItemParams::Video(project::VideoParams {
             source_audio_enabled: true,
+            volume: 0.0,
+            muted: false,
         }),
     );
     let image = insert(
@@ -179,6 +181,8 @@ fn fixture() -> Fixture {
         Some(AssetId(3)),
         ItemParams::Video(project::VideoParams {
             source_audio_enabled: false,
+            volume: 0.0,
+            muted: false,
         }),
     );
     let graphic = insert(
@@ -198,7 +202,7 @@ fn fixture() -> Fixture {
         Tick(2 * SECOND),
         Some(AssetId(2)),
         ItemParams::Audio(project::AudioParams {
-            gain_db: 0.0,
+            volume: 0.0,
             muted: false,
         }),
     );

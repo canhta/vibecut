@@ -419,6 +419,8 @@ fn prepare_clip(
             start: *start,
             content: ItemParams::Video(VideoParams {
                 source_audio_enabled: true,
+                volume: 0.0,
+                muted: false,
             }),
         });
         next_item = next_item.checked_add(1).ok_or(EditError::IdExhausted)?;
