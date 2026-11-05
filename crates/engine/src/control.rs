@@ -125,6 +125,7 @@ pub enum ErrorCode {
     TransactionActive,
     Refused,
     Failed,
+    EmptyProject,
 }
 impl ErrorCode {
     pub fn from_error(error: &EditError) -> Self {
@@ -143,6 +144,7 @@ impl ErrorCode {
             EditError::Cancelled => Self::Cancelled,
             EditError::QueueFull => Self::QueueFull,
             EditError::TransactionActive | EditError::NoGesture => Self::TransactionActive,
+            EditError::EmptyProject => Self::EmptyProject,
             EditError::Panicked | EditError::WorkerPanicked | EditError::Io(_) => Self::Failed,
             EditError::Project(project::Error::Io(_)) => Self::Failed,
             _ => Self::Refused,
@@ -171,6 +173,9 @@ pub enum ControlResult {
     },
     Job {
         snapshot: JobView,
+    },
+    Snapshot {
+        snapshot: crate::snapshot::SnapshotResult,
     },
     CancelRequested {
         job: JobId,
@@ -202,6 +207,7 @@ impl std::fmt::Debug for ControlResult {
             Self::Providers { .. } => "providers",
             Self::JobAccepted { .. } => "job_accepted",
             Self::Job { .. } => "job",
+            Self::Snapshot { .. } => "snapshot",
             Self::CancelRequested { .. } => "cancel_requested",
         };
         f.debug_struct("ControlResult")
@@ -642,7 +648,8 @@ impl Session {
         let fingerprint = control_fingerprint(request)?;
         if let Command::Export { path, .. }
         | Command::ExportSubtitles { path, .. }
-        | Command::BurnSubtitles { path, .. } = &command
+        | Command::BurnSubtitles { path, .. }
+        | Command::Snapshot { path, .. } = &command
         {
             bounded_json(path, MAX_PATH_BYTES)?;
         }
@@ -943,6 +950,20 @@ impl Session {
                 Ok(ControlResult::CancelRequested { job })
             }
             Command::Preview { frames } => crate::control_preview::preview(self, frames, runner),
+            Command::Snapshot { time, path } => {
+                if self.transaction_active() {
+                    return Err(EditError::TransactionActive);
+                }
+                let protected = self.protected_paths().to_vec();
+                let snapshot = crate::snapshot::save_with_budget(
+                    self.project(),
+                    time,
+                    &path,
+                    &protected,
+                    runner.memory_budget(),
+                )?;
+                Ok(ControlResult::Snapshot { snapshot })
+            }
             Command::Export {
                 range,
                 path,

@@ -335,6 +335,10 @@ pub struct JobRunner {
     events: BTreeMap<JobId, JobSnapshot>,
 }
 impl JobRunner {
+    pub(crate) fn memory_budget(&self) -> &ByteBudget {
+        &self.budget
+    }
+
     pub fn new(
         config: RunnerConfig,
         budget: ByteBudget,

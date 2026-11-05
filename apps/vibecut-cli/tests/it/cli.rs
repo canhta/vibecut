@@ -1553,6 +1553,62 @@ fn control_session_tracks_revisions_receipts_and_saves_on_exit() {
 }
 
 #[test]
+fn control_snapshot_writes_the_requested_frame_and_refuses_project_alias() {
+    let dir = tempfile::tempdir().unwrap();
+    let project_path = dir.path().join("snapshot.vibecut");
+    overlay_project(&project_path, 40, 24, Tick(time::TICKS_PER_SECOND));
+    let before = fs::read(&project_path).unwrap();
+    let out = dir.path().join("frame.png");
+    let mut control = ControlSession::start(&project_path, &[]);
+    let inspect = control.send(control_request("r0", "inspect", json!({}), None, None));
+    let rev = inspect["rev_after"].as_str().unwrap().to_owned();
+
+    let snapshot = control.send(control_request(
+        "s1",
+        "preview.snapshot",
+        json!({"time":0,"path":out}),
+        Some(&rev),
+        Some("snapshot-1"),
+    ));
+    assert_eq!(snapshot["exit_code"], 0);
+    assert_eq!(snapshot["value"]["value"]["kind"], "snapshot");
+    assert_eq!(snapshot["value"]["value"]["snapshot"]["width"], 40);
+    assert_eq!(snapshot["value"]["value"]["snapshot"]["height"], 24);
+    let bytes = fs::read(&out).unwrap();
+    assert_eq!(&bytes[..8], b"\x89PNG\r\n\x1a\n");
+    assert_eq!(u32::from_be_bytes(bytes[16..20].try_into().unwrap()), 40);
+    assert_eq!(u32::from_be_bytes(bytes[20..24].try_into().unwrap()), 24);
+
+    let refused = control.send(control_request(
+        "s2",
+        "preview.snapshot",
+        json!({"time":0,"path":project_path}),
+        Some(&rev),
+        Some("snapshot-2"),
+    ));
+    assert_eq!(response_error(&refused), "refused");
+    assert_eq!(fs::read(&project_path).unwrap(), before);
+    let (code, stderr) = control.finish();
+    assert_eq!(code, 5, "{stderr}");
+
+    let empty_path = dir.path().join("empty.vibecut");
+    new_project(&empty_path);
+    let mut empty = ControlSession::start(&empty_path, &[]);
+    let inspect = empty.send(control_request("r0", "inspect", json!({}), None, None));
+    let rev = inspect["rev_after"].as_str().unwrap().to_owned();
+    let refused = empty.send(control_request(
+        "s1",
+        "preview.snapshot",
+        json!({"time":0,"path":dir.path().join("empty.png")}),
+        Some(&rev),
+        Some("empty-snapshot"),
+    ));
+    assert_eq!(response_error(&refused), "empty_project");
+    let (code, stderr) = empty.finish();
+    assert_eq!(code, 5, "{stderr}");
+}
+
+#[test]
 fn control_refuses_unknown_extra_and_out_of_range_frames() {
     let dir = tempfile::tempdir().unwrap();
     let project = dir.path().join("refusals.vibecut");

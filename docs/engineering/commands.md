@@ -861,6 +861,17 @@ Effect: `JobControl`. Fixture: `Timeline`.
 }
 ```
 
+## `preview.snapshot` — Save preview snapshot
+
+Effect: `FilePublish`. Fixture: `Timeline`.
+
+```json
+{
+  "path": "$output/snapshot.png",
+  "time": 0
+}
+```
+
 ## `export` — Export video
 
 Effect: `FilePublish`. Fixture: `Timeline`.

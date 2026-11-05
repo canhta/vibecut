@@ -39,7 +39,10 @@ returned as an in-band `limit` error, so the session continues with earlier acce
 edits intact.
 
 The control session ticks the engine job runner between requests, so `job_status`
-and `job_cancel` operate on real preview/export jobs. EOF cancels and joins
+and `job_cancel` operate on real preview/export jobs. `preview.snapshot` renders the
+requested frame at canvas size and publishes a PNG without changing project bytes;
+the CLI registers the active project and metadata paths as protected, so a snapshot
+destination that aliases them is refused. EOF cancels and joins
 outstanding jobs through the runner's publication fence; completed outputs are
 never partially promoted. There is no signal-to-job-cancel handler: process
 interruption follows crash semantics, so the OS releases the lease, in-flight work

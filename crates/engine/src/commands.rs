@@ -175,6 +175,9 @@ impl CommandSpec {
             }
             "begin_gesture" => !session.transaction_active(),
             "commit_gesture" | "cancel_gesture" => session.gesture_active(),
+            "preview.snapshot" => {
+                !session.transaction_active() && session.project().duration() > Tick::ZERO
+            }
             "undo" => session.can_undo(),
             "redo" => session.can_redo(),
             "track.set_flags" | "track.set_muted" | "track.set_hidden" | "track.rename"
@@ -329,6 +332,7 @@ commands! {
     Redo, "redo", "Redo", SessionControl {} => Redo, serde_json::json!({});
     Inspect, "inspect", "Inspect project", Read {} => Timeline, serde_json::json!({});
     Preview, "preview", "Preview frames", JobControl { frames: Vec<i64> } => Timeline, serde_json::json!({"frames":[0]});
+    Snapshot, "preview.snapshot", "Save preview snapshot", FilePublish { time: Tick, path: std::path::PathBuf } => Timeline, serde_json::json!({"time":0,"path":"$output/snapshot.png"});
     Export, "export", "Export video", FilePublish { range: time::TimeRange, path: std::path::PathBuf, overwrite: bool } => Timeline, serde_json::json!({"range":{"start":0,"end":8467200000_i64},"path":"$output/export.mp4","overwrite":false});
     JobStatus, "job_status", "Inspect job", Read { job: crate::jobs::JobId } => Job, serde_json::json!({"job":0});
     JobCancel, "job_cancel", "Cancel job", JobControl { job: crate::jobs::JobId } => Job, serde_json::json!({"job":0});

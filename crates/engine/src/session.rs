@@ -33,6 +33,7 @@ pub struct JobTarget {
 /// Owns project editing, bounded history, deferred changes and gesture lifecycle.
 pub struct Session {
     metadata: project::Metadata,
+    protected: Vec<std::path::PathBuf>,
     pub(crate) identity: Arc<crate::control::Revision>,
     pub(crate) revision: Arc<crate::control::Revision>,
     pub(crate) generation: u64,
@@ -72,6 +73,7 @@ impl Session {
         ));
         Ok(Self {
             metadata: project::Metadata::default(),
+            protected: Vec::new(),
             revision: Arc::new(crate::control::Revision(format!("{}:0", identity.0))),
             identity,
             generation: 0,
@@ -102,6 +104,22 @@ impl Session {
     }
     pub fn metadata(&self) -> &project::Metadata {
         &self.metadata
+    }
+    /// Register active project/metadata/recovery paths that file publication must
+    /// never overwrite. Composition roots supply the same set used for export.
+    pub fn protect_paths(&mut self, paths: Vec<std::path::PathBuf>) -> Result<()> {
+        if paths.len() > 256
+            || paths
+                .iter()
+                .any(|path| path.as_os_str().len() > crate::control::MAX_PATH_BYTES)
+        {
+            return Err(EditError::Limit);
+        }
+        self.protected = paths;
+        Ok(())
+    }
+    pub fn protected_paths(&self) -> &[std::path::PathBuf] {
+        &self.protected
     }
     /// Load optional sidecar presentation state, outside project history.
     pub fn restore_metadata(&mut self, metadata: project::Metadata) -> Result<()> {

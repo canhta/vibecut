@@ -657,6 +657,10 @@ fn control(args: Vec<OsString>) -> Result<Output, CliError> {
     let loaded = lease.load()?;
     let mut session = Session::new(loaded.project, 100)?;
     session.restore_metadata(lease.metadata())?;
+    session.protect_paths(vec![
+        project_path.clone(),
+        project::metadata_path(&project_path)?,
+    ])?;
     let mut runner = JobRunner::new(
         RunnerConfig {
             concurrency: [1, 1, 2],
@@ -869,6 +873,7 @@ fn control_exit(code: ErrorCode) -> u8 {
         | ErrorCode::IdempotencyConflict
         | ErrorCode::ReceiptCapacity
         | ErrorCode::TransactionActive
+        | ErrorCode::EmptyProject
         | ErrorCode::Refused => 5,
         ErrorCode::SessionGone
         | ErrorCode::ResyncRequired
@@ -895,6 +900,7 @@ fn error_code_name(code: ErrorCode) -> &'static str {
         ErrorCode::Cancelled => "cancelled",
         ErrorCode::QueueFull => "queue_full",
         ErrorCode::TransactionActive => "transaction_active",
+        ErrorCode::EmptyProject => "empty_project",
         ErrorCode::Refused => "refused",
         ErrorCode::Failed => "failed",
     }

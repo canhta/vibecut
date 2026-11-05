@@ -13,6 +13,7 @@ pub mod models;
 pub mod providers;
 pub mod recovery;
 pub mod shot_analysis;
+pub mod snapshot;
 pub mod subtitles;
 mod thumbnail;
 pub mod thumbnails;
@@ -142,6 +143,8 @@ pub enum EditError {
     Locked(project::TrackId),
     #[error("items overlap on track {0:?}")]
     Overlap(project::TrackId),
+    #[error("Project is empty")]
+    EmptyProject,
     #[error("invalid edit: {0}")]
     Invalid(&'static str),
     #[error("clip export refused at short {short}: {reason}")]

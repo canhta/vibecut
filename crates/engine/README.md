@@ -189,7 +189,7 @@ provider bodies and Rust Debug. `bounded_json` is the adapter's bounded response
 serializer. No transport, filesystem grant store, CLI persistent Session or MCP
 runtime is introduced here; their composition belongs to the consumers.
 
-`inspect`, `catalog`, `provider_catalog`, `preview`, general `export`, `job_status`
+`inspect`, `catalog`, `provider_catalog`, `preview`, `preview.snapshot`, general `export`, `job_status`
 and `job_cancel` share the existing declaration. Export starts the production
 render job against its admitted immutable snapshot and returns job ID/revision and
 paths. Preview starts a CPU job through the same runner; job_status returns its
@@ -782,6 +782,31 @@ refusal before allocation. This does not establish crash/power-loss durability.
 source factory, constructed on the engine worker. `submit_export` supplies
 `FileSources`; desktop tests supply gated sources to order cancellation/failure.
 Both share one scheduler, byte accounting, typed result and publication fence.
+
+## Frame snapshots
+
+`preview.snapshot {time, path}` renders one frame at the project canvas size through
+the production compositor and publishes a PNG without editing the Session or undo
+history. It is independent of app transport, zoom and transient preview state, so
+the same request is executable from the CLI. A playhead at or past the end clamps to
+the last frame; negative times refuse. An empty project refuses with the typed
+`Project is empty` error.
+
+`snapshot::default_name` returns `<project>-<timecode>.png` using time's shared
+DF/NDF formatter (DF at 29.97/59.94, NDF otherwise), replaces filesystem-reserved
+characters with `-`, and falls back to `snapshot` when the project name sanitizes
+empty. `snapshot::image` returns the same PNG bytes without publishing, for the
+desktop Copy action.
+
+Publication uses project's same-directory `StreamingStage`: the PNG is written,
+synced and renamed only after render's source-path admission, project's writer-name
+admission and the composition root's protected paths pass. Canonical paths, hard
+links, content identity and protected directories refuse project/source aliases;
+refusal or storage failure preserves the previous destination and removes the
+staging file. The desktop and CLI register the active project, metadata and recovery
+paths with `Session::protect_paths` before dispatch, mirroring completed-export
+publication. External processes racing path replacement retain the atomic owner's
+documented limits.
 
 ## Subtitle export commands
 

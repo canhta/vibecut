@@ -110,6 +110,7 @@ pub(crate) fn check_budget(command: &Command) -> Result<()> {
             }
             Command::Inspect {}
             | Command::Preview { .. }
+            | Command::Snapshot { .. }
             | Command::Export { .. }
             | Command::JobStatus { .. }
             | Command::JobCancel { .. }
@@ -983,6 +984,7 @@ pub(crate) fn apply(
         }
         Command::Inspect {}
         | Command::Preview { .. }
+        | Command::Snapshot { .. }
         | Command::Export { .. }
         | Command::JobStatus { .. }
         | Command::JobCancel { .. }

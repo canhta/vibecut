@@ -19,5 +19,6 @@ mod render_kernels;
 mod review_repros;
 mod scenes;
 mod shot_analysis;
+mod snapshot;
 mod subtitles;
 mod translation;
