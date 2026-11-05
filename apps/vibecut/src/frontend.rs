@@ -3,8 +3,10 @@ use crate::{
     Error, Result,
     catalog::{self, Locale, Preferences, Text},
     egui::{self, Align2, Color32, FontId, Id, Rect, Vec2},
+    icons::{self, Icon},
     import::{ImportEvent, ImportFailure, ImportProbe, ImportQueue},
     playback::Playback,
+    theme,
 };
 use engine::{Command, CreatedId, ItemParamPatch, NewItem, Session};
 use media::{AssetId, SourceAsset, StreamKind};
@@ -17,7 +19,13 @@ use std::{
 };
 use time::{Rounding, SourceRange, TICKS_PER_SECOND, Tick};
 
-const TOOLBAR_HEIGHT: f32 = 40.0;
+const TOOLBAR_HEIGHT: f32 = 42.0;
+const TOOLBAR_ICON: f32 = 20.0;
+const TOOLBAR_LABEL: f32 = 12.0;
+const TOOLBAR_GAP: f32 = 3.5;
+const TOOLBAR_MIN_TAB: f32 = 48.0;
+const TOOLBAR_SPACING: f32 = 9.0;
+const BUTTON_ICON: f32 = 16.0;
 const RULER_HEIGHT: f32 = 22.0;
 const LABEL_WIDTH: f32 = 112.0;
 const SCROLLBAR: f32 = 12.0;
@@ -35,6 +43,8 @@ pub struct WidgetState {
     pub enabled: bool,
     pub focused: bool,
     pub rect: Rect,
+    /// Embedded Phosphor name for a button that carries an icon.
+    pub icon: Option<&'static str>,
 }
 #[derive(Clone, Debug)]
 pub struct Inspection {
@@ -70,6 +80,7 @@ struct AssetRow {
     id: AssetId,
     name: String,
     info: String,
+    icon: Icon,
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum DragMode {
@@ -632,6 +643,14 @@ impl Editor {
         catalog::text(self.preferences.locale, key)
     }
     fn remember(&mut self, id: impl Into<String>, response: &egui::Response) {
+        self.remember_with_icon(id, None, response);
+    }
+    fn remember_with_icon(
+        &mut self,
+        id: impl Into<String>,
+        icon: Option<&'static str>,
+        response: &egui::Response,
+    ) {
         let id = id.into();
         response
             .ctx
@@ -643,26 +662,88 @@ impl Editor {
                 enabled: response.enabled(),
                 focused: response.has_focus(),
                 rect: response.rect,
+                icon,
             },
         );
     }
-    fn button(&mut self, ui: &mut egui::Ui, id: &'static str, key: Text, enabled: bool) -> bool {
-        let label = self.tr(key);
+    fn button(
+        &mut self,
+        ui: &mut egui::Ui,
+        id: &'static str,
+        icon: Icon,
+        key: Text,
+        enabled: bool,
+    ) -> bool {
+        let color = if enabled {
+            self.text_color()
+        } else {
+            theme::disabled(self.preferences.dark)
+        };
+        let image = icons::tinted(icon, BUTTON_ICON, color);
+        let label = egui::RichText::new(self.tr(key)).color(color);
         let response = ui
             .push_id(id, |ui| {
                 ui.add_enabled(
                     enabled,
-                    egui::Button::new(label).min_size(Vec2::new(28.0, 26.0)),
+                    egui::Button::image_and_text(image, label).min_size(Vec2::new(28.0, 26.0)),
                 )
             })
             .inner;
+        self.remember_with_icon(id, Some(icon.name()), &response);
+        response.clicked()
+    }
+    /// Text-only is reserved for the properties tabs by the iconography contract.
+    fn text_button(&mut self, ui: &mut egui::Ui, id: &'static str, key: Text) -> bool {
+        let response = ui.push_id(id, |ui| ui.button(self.tr(key))).inner;
         self.remember(id, &response);
         response.clicked()
     }
-    fn toggle_button(&mut self, ui: &mut egui::Ui, id: &'static str, key: Text, on: bool) -> bool {
-        let label = self.tr(key);
-        let response = ui.push_id(id, |ui| ui.selectable_label(on, label)).inner;
-        self.remember(id, &response);
+    fn toolbar_button(
+        &mut self,
+        ui: &mut egui::Ui,
+        id: &'static str,
+        icon: Icon,
+        key: Text,
+        enabled: bool,
+    ) -> bool {
+        self.toolbar_toggle(ui, id, icon, key, false, enabled)
+    }
+    fn toolbar_toggle(
+        &mut self,
+        ui: &mut egui::Ui,
+        id: &'static str,
+        icon: Icon,
+        key: Text,
+        selected: bool,
+        enabled: bool,
+    ) -> bool {
+        let color = if !enabled {
+            theme::disabled(self.preferences.dark)
+        } else if selected {
+            self.accent()
+        } else {
+            self.text_color()
+        };
+        let image = icons::tinted(icon, TOOLBAR_ICON, color);
+        let label = egui::RichText::new(self.tr(key))
+            .size(TOOLBAR_LABEL)
+            .strong()
+            .color(color);
+        let response = ui
+            .push_id(id, |ui| {
+                let button = egui::Button::image_and_text(image, label)
+                    .gap(TOOLBAR_GAP)
+                    .min_size(Vec2::new(TOOLBAR_MIN_TAB, 28.0))
+                    .corner_radius(4);
+                let button = if selected {
+                    button.fill(self.active_tab_fill())
+                } else {
+                    button.frame(false)
+                };
+                ui.add_enabled(enabled, button)
+            })
+            .inner;
+        self.remember_with_icon(id, Some(icon.name()), &response);
         response.clicked()
     }
     /// All control inputs (including tests/agents) use the same action path.
@@ -1408,23 +1489,45 @@ impl Editor {
         } else {
             egui::Visuals::light()
         };
-        let panel = if dark {
-            Color32::from_rgb(15, 15, 15)
-        } else {
-            Color32::from_rgb(249, 250, 251)
-        };
-        visuals.panel_fill = panel;
-        visuals.window_fill = panel;
-        visuals.override_text_color = Some(if dark {
-            Color32::from_rgb(229, 229, 229)
-        } else {
-            Color32::from_rgb(28, 28, 28)
-        });
-        visuals.selection.bg_fill = if dark {
-            Color32::from_rgb(0, 193, 205)
-        } else {
-            Color32::from_rgb(0, 106, 116)
-        };
+        let text = theme::text(dark);
+        let border = theme::border(dark);
+        let field = theme::field(dark);
+        let hover = theme::hover(dark);
+        let separator = theme::separator(dark);
+        let stroke = |color| egui::Stroke::new(1.0, color);
+        visuals.panel_fill = theme::panel(dark);
+        visuals.window_fill = theme::modal(dark);
+        visuals.window_stroke = stroke(border);
+        visuals.extreme_bg_color = field;
+        visuals.faint_bg_color = separator;
+        visuals.code_bg_color = field;
+        visuals.warn_fg_color = theme::warning(dark);
+        visuals.error_fg_color = theme::error_text(dark);
+        visuals.hyperlink_color = theme::accent(dark);
+        visuals.override_text_color = Some(text);
+        visuals.selection.bg_fill = theme::accent(dark);
+        visuals.selection.stroke = stroke(theme::on_accent(dark));
+        visuals.text_cursor.stroke = stroke(theme::accent(dark));
+        visuals.widgets.noninteractive.bg_fill = theme::panel(dark);
+        visuals.widgets.noninteractive.weak_bg_fill = theme::panel(dark);
+        visuals.widgets.noninteractive.bg_stroke = stroke(separator);
+        visuals.widgets.noninteractive.fg_stroke = stroke(theme::secondary(dark));
+        visuals.widgets.inactive.bg_fill = field;
+        visuals.widgets.inactive.weak_bg_fill = field;
+        visuals.widgets.inactive.bg_stroke = stroke(border);
+        visuals.widgets.inactive.fg_stroke = stroke(text);
+        visuals.widgets.hovered.bg_fill = hover;
+        visuals.widgets.hovered.weak_bg_fill = hover;
+        visuals.widgets.hovered.bg_stroke = stroke(border);
+        visuals.widgets.hovered.fg_stroke = stroke(text);
+        visuals.widgets.active.bg_fill = hover;
+        visuals.widgets.active.weak_bg_fill = hover;
+        visuals.widgets.active.bg_stroke = stroke(theme::accent(dark));
+        visuals.widgets.active.fg_stroke = stroke(text);
+        visuals.widgets.open.bg_fill = hover;
+        visuals.widgets.open.weak_bg_fill = hover;
+        visuals.widgets.open.bg_stroke = stroke(border);
+        visuals.widgets.open.fg_stroke = stroke(text);
         ctx.set_visuals(visuals);
     }
     pub(crate) fn fonts(ctx: &egui::Context) {
@@ -1467,6 +1570,7 @@ impl Editor {
         }
         if !self.configured {
             Self::fonts(ui.ctx());
+            icons::install(ui.ctx());
             self.configured = true;
         }
         let (dropped, hovering) = ui.ctx().input(|input| {
@@ -1492,12 +1596,8 @@ impl Editor {
         self.tick();
         self.keyboard(ui.ctx());
         let rect = ui.max_rect();
-        let window_fill = if self.preferences.dark {
-            Color32::from_rgb(15, 15, 15)
-        } else {
-            Color32::from_rgb(242, 243, 245)
-        };
-        ui.painter().rect_filled(rect, 0.0, window_fill);
+        ui.painter()
+            .rect_filled(rect, 0.0, theme::window(self.preferences.dark));
         let top = Rect::from_min_size(rect.min, Vec2::new(rect.width(), 52.0));
         let body = Rect::from_min_max(egui::pos2(rect.left(), top.bottom()), rect.max);
         let timeline_height = body.height() * self.preferences.panels[2];
@@ -1523,15 +1623,9 @@ impl Editor {
         ] {
             self.panels.insert(id, area);
             let fill = if id == "header" {
-                if self.preferences.dark {
-                    Color32::from_rgb(19, 19, 19)
-                } else {
-                    Color32::WHITE
-                }
-            } else if self.preferences.dark {
-                Color32::from_rgb(15, 15, 15)
+                theme::window(self.preferences.dark)
             } else {
-                Color32::from_rgb(249, 250, 251)
+                theme::panel(self.preferences.dark)
             };
             ui.painter().rect_filled(area, 0.0, fill);
             let mut child = ui.new_child(
@@ -1548,11 +1642,7 @@ impl Editor {
                 _ => self.timeline(&mut child),
             }
         }
-        let separator = if self.preferences.dark {
-            Color32::from_rgb(31, 31, 31)
-        } else {
-            Color32::from_rgb(222, 222, 222)
-        };
+        let separator = theme::separator(self.preferences.dark);
         for (id, area, axis) in [
             (
                 "layout.media",
@@ -1689,7 +1779,7 @@ impl Editor {
         ui.horizontal_centered(|ui| {
             ui.label(egui::RichText::new("VibeCut").strong().size(18.0));
             ui.separator();
-            if self.button(ui, "project.back", Text::Projects, true) {
+            if self.button(ui, "project.back", Icon::ArrowLeft, Text::Projects, true) {
                 self.action("project.back");
             }
             if self.rename.is_some() {
@@ -1718,30 +1808,51 @@ impl Editor {
                     self.rename = Some(name);
                 }
             } else {
+                let image = icons::tinted(Icon::PencilSimple, BUTTON_ICON, self.text_color());
                 let response = ui.add_sized(
                     [220.0, 26.0],
-                    egui::Button::new(self.session.project().data().name.as_str()).truncate(),
+                    egui::Button::image_and_text(
+                        image,
+                        egui::RichText::new(self.session.project().data().name.as_str()),
+                    )
+                    .truncate(),
                 );
-                self.remember("project.rename", &response);
+                self.remember_with_icon(
+                    "project.rename",
+                    Some(Icon::PencilSimple.name()),
+                    &response,
+                );
                 if response.clicked() {
                     self.action("project.rename");
                 }
             }
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                self.button(ui, "file.export", Text::Export, false);
-                if self.button(ui, "project.save_as", Text::SaveAs, true) {
+                self.button(ui, "file.export", Icon::Export, Text::Export, false);
+                if self.button(
+                    ui,
+                    "project.save_as",
+                    Icon::FloppyDiskBack,
+                    Text::SaveAs,
+                    true,
+                ) {
                     self.action("project.save_as");
                 }
-                if self.button(ui, "project.save", Text::Save, true) {
+                if self.button(ui, "project.save", Icon::FloppyDisk, Text::Save, true) {
                     self.action("project.save");
                 }
-                if self.button(ui, "appearance.theme", Text::Theme, true) {
+                if self.button(ui, "appearance.theme", Icon::CircleHalf, Text::Theme, true) {
                     self.action("appearance.theme");
                 }
-                if self.button(ui, "appearance.locale", Text::Language, true) {
+                if self.button(
+                    ui,
+                    "appearance.locale",
+                    Icon::Translate,
+                    Text::Language,
+                    true,
+                ) {
                     self.action("appearance.locale");
                 }
-                if self.button(ui, "layout.reset", Text::Reset, true) {
+                if self.button(ui, "layout.reset", Icon::CornersOut, Text::Reset, true) {
                     self.action("layout.reset");
                 }
             });
@@ -1756,12 +1867,19 @@ impl Editor {
         ui.add_space(8.0);
         let importing = self.importing();
         ui.horizontal(|ui| {
-            if self.button(ui, "file.import", Text::Import, !importing) {
+            if self.button(
+                ui,
+                "file.import",
+                Icon::UploadSimple,
+                Text::Import,
+                !importing,
+            ) {
                 self.action("file.import");
             }
             if self.button(
                 ui,
                 "media.insert",
+                Icon::Plus,
                 Text::AddToTimeline,
                 !importing && !self.media_selection.is_empty(),
             ) {
@@ -1800,20 +1918,32 @@ impl Editor {
                     ui.add_enabled_ui(!importing, |ui| {
                         for row in &rows {
                             let is_selected = selected.contains(&row.id);
+                            let color = if is_selected {
+                                theme::on_accent(self.preferences.dark)
+                            } else {
+                                self.text_color()
+                            };
+                            let image = icons::tinted(row.icon, BUTTON_ICON, color);
+                            let mut button = egui::Button::image_and_text(
+                                image,
+                                egui::RichText::new(format!("{}\n{}", row.name, row.info))
+                                    .color(color),
+                            )
+                            .selected(is_selected)
+                            .wrap_mode(egui::TextWrapMode::Wrap);
+                            if is_selected {
+                                button = button.fill(self.accent());
+                            }
                             let response = ui
                                 .push_id(("media.asset", row.id.0), |ui| {
-                                    ui.add_sized(
-                                        [ui.available_width(), 46.0],
-                                        egui::Button::new(egui::RichText::new(format!(
-                                            "{}\n{}",
-                                            row.name, row.info
-                                        )))
-                                        .selected(is_selected)
-                                        .wrap_mode(egui::TextWrapMode::Wrap),
-                                    )
+                                    ui.add_sized([ui.available_width(), 46.0], button)
                                 })
                                 .inner;
-                            self.remember(format!("media.asset.{}", row.id.0), &response);
+                            self.remember_with_icon(
+                                format!("media.asset.{}", row.id.0),
+                                Some(row.icon.name()),
+                                &response,
+                            );
                             if response.clicked() {
                                 let modifiers = ui.ctx().input(|input| input.modifiers);
                                 self.select_asset(row.id, modifiers);
@@ -1855,10 +1985,10 @@ impl Editor {
     }
     fn inspector(&mut self, ui: &mut egui::Ui) {
         ui.horizontal(|ui| {
-            if self.button(ui, "inspector.project", Text::Project, true) {
+            if self.text_button(ui, "inspector.project", Text::Project) {
                 self.action("inspector.project");
             }
-            if self.button(ui, "inspector.details", Text::Details, true) {
+            if self.text_button(ui, "inspector.details", Text::Details) {
                 self.action("inspector.details");
             }
         });
@@ -2012,7 +2142,8 @@ impl Editor {
                 (ui.available_height() - footer_height).max(0.0),
             ),
         );
-        ui.painter().rect_filled(area, 0.0, Color32::BLACK);
+        ui.painter()
+            .rect_filled(area, 0.0, theme::preview_backdrop());
         if let Some(frame) = self
             .playback
             .frame()
@@ -2039,7 +2170,7 @@ impl Editor {
                     texture.id(),
                     Rect::from_center_size(area.center(), size),
                     Rect::from_min_max(egui::Pos2::ZERO, egui::pos2(1.0, 1.0)),
-                    Color32::WHITE,
+                    theme::image_tint(),
                 );
             }
         } else {
@@ -2063,7 +2194,7 @@ impl Editor {
                     ui.label(
                         egui::RichText::new(self.tr(label))
                             .size(14.0)
-                            .color(Color32::from_rgb(229, 229, 229)),
+                            .color(theme::on_scrim()),
                     );
                 },
             );
@@ -2071,22 +2202,24 @@ impl Editor {
         ui.advance_cursor_after_rect(area);
         let ready = self.session.project().duration() > Tick::ZERO && self.playback.can_play();
         ui.horizontal(|ui| {
-            if self.button(ui, "transport.back", Text::Back, true) {
+            if self.button(ui, "transport.back", Icon::SkipBack, Text::Back, true) {
                 self.action("transport.back");
+            }
+            let (play_icon, play_text) = if self.playback.playing() {
+                (Icon::Pause, Text::Pause)
+            } else {
+                (Icon::Play, Text::Play)
+            };
+            if self.button(ui, "transport.play", play_icon, play_text, ready) {
+                self.action("transport.play");
             }
             if self.button(
                 ui,
-                "transport.play",
-                if self.playback.playing() {
-                    Text::Pause
-                } else {
-                    Text::Play
-                },
-                ready,
+                "transport.forward",
+                Icon::SkipForward,
+                Text::Forward,
+                true,
             ) {
-                self.action("transport.play");
-            }
-            if self.button(ui, "transport.forward", Text::Forward, true) {
                 self.action("transport.forward");
             }
         });
@@ -2101,7 +2234,7 @@ impl Editor {
         }
         if self.error.is_some() || self.playback.error().is_some() {
             ui.label(self.tr(Text::Unavailable));
-            if self.button(ui, "preview.retry", Text::Retry, true) {
+            if self.button(ui, "preview.retry", Icon::ArrowClockwise, Text::Retry, true) {
                 self.error = None;
                 self.action("preview.retry");
             }
@@ -2162,7 +2295,7 @@ impl Editor {
                             .small()
                             .color(self.secondary()),
                         );
-                        if self.button(ui, "import.cancel", Text::Cancel, true) {
+                        if self.button(ui, "import.cancel", Icon::X, Text::Cancel, true) {
                             self.action("import.cancel");
                         }
                     });
@@ -2179,11 +2312,7 @@ impl Editor {
             .show(ctx, |ui| {
                 ui.set_width(screen.width());
                 ui.set_height(screen.height());
-                ui.painter().rect_filled(
-                    screen,
-                    0.0,
-                    Color32::from_rgba_unmultiplied(0, 0, 0, 170),
-                );
+                ui.painter().rect_filled(screen, 0.0, theme::scrim());
                 ui.scope_builder(
                     egui::UiBuilder::new().max_rect(screen.shrink(48.0)).layout(
                         egui::Layout::centered_and_justified(egui::Direction::TopDown),
@@ -2192,7 +2321,7 @@ impl Editor {
                         ui.label(
                             egui::RichText::new(self.tr(Text::DropMedia))
                                 .size(18.0)
-                                .color(Color32::WHITE),
+                                .color(theme::on_scrim()),
                         );
                     },
                 );
@@ -2251,6 +2380,8 @@ impl Editor {
         }
     }
     fn timeline_toolbar(&mut self, ui: &mut egui::Ui, layout: &TimelineLayout) {
+        ui.painter()
+            .rect_filled(layout.toolbar, 0.0, self.toolbar_fill());
         let mut child = ui.new_child(
             egui::UiBuilder::new()
                 .id_salt("timeline.toolbar")
@@ -2263,12 +2394,19 @@ impl Editor {
                     .size(16.0)
                     .strong(),
             );
+            ui.spacing_mut().item_spacing.x = TOOLBAR_SPACING;
             let can_undo = self.session.can_undo();
             let can_redo = self.session.can_redo();
-            if self.button(ui, "edit.undo", Text::Undo, can_undo) {
+            if self.toolbar_button(
+                ui,
+                "edit.undo",
+                Icon::ArrowCounterClockwise,
+                Text::Undo,
+                can_undo,
+            ) {
                 self.action("edit.undo");
             }
-            if self.button(ui, "edit.redo", Text::Redo, can_redo) {
+            if self.toolbar_button(ui, "edit.redo", Icon::ArrowClockwise, Text::Redo, can_redo) {
                 self.action("edit.redo");
             }
             let has_items = self
@@ -2279,32 +2417,40 @@ impl Editor {
                 .iter()
                 .any(|track| !track.items.is_empty());
             let has_selection = !self.selection.is_empty();
-            if self.button(ui, "timeline.split", Text::Split, has_items) {
+            if self.toolbar_button(ui, "timeline.split", Icon::Scissors, Text::Split, has_items) {
                 self.action("timeline.split");
             }
-            if self.button(ui, "timeline.delete", Text::Delete, has_selection) {
+            if self.toolbar_button(
+                ui,
+                "timeline.delete",
+                Icon::Trash,
+                Text::Delete,
+                has_selection,
+            ) {
                 self.action("timeline.delete");
             }
-            if self.toggle_button(ui, "timeline.snap", Text::Snap, self.snapping) {
+            if self.toolbar_toggle(
+                ui,
+                "timeline.snap",
+                Icon::Magnet,
+                Text::Snap,
+                self.snapping,
+                true,
+            ) {
                 self.action("timeline.snap");
             }
             let magnet = self.session.project().data().timeline.magnet;
+            let magnet_color = if magnet {
+                theme::on_accent(self.preferences.dark)
+            } else {
+                self.secondary()
+            };
             let response = ui
                 .push_id("timeline.magnet", |ui| {
                     ui.add(
-                        egui::Button::image(
-                            egui::Image::new(icon(ui, "magnet"))
-                                .fit_to_exact_size(Vec2::splat(16.0))
-                                .tint(if magnet && self.preferences.dark {
-                                    Color32::from_rgb(19, 21, 23)
-                                } else if magnet {
-                                    Color32::WHITE
-                                } else {
-                                    self.secondary()
-                                }),
-                        )
-                        .min_size(Vec2::splat(28.0))
-                        .selected(magnet),
+                        egui::Button::image(icons::tinted(Icon::Magnet, 16.0, magnet_color))
+                            .min_size(Vec2::splat(28.0))
+                            .selected(magnet),
                     )
                 })
                 .inner;
@@ -2317,17 +2463,36 @@ impl Editor {
                 )
             });
             let response = response.on_hover_text(self.tr(Text::Magnet));
-            self.remember("timeline.magnet", &response);
+            self.remember_with_icon("timeline.magnet", Some(Icon::Magnet.name()), &response);
             if response.clicked() {
                 self.track_command("track.set_magnet", serde_json::json!({"enabled":!magnet}));
             }
-            if self.toggle_button(ui, "timeline.ripple", Text::Ripple, self.ripple) {
+            if self.toolbar_toggle(
+                ui,
+                "timeline.ripple",
+                Icon::Waveform,
+                Text::Ripple,
+                self.ripple,
+                true,
+            ) {
                 self.action("timeline.ripple");
             }
-            if self.button(ui, "timeline.zoom_out", Text::ZoomOut, true) {
+            if self.toolbar_button(
+                ui,
+                "timeline.zoom_out",
+                Icon::MagnifyingGlassMinus,
+                Text::ZoomOut,
+                true,
+            ) {
                 self.action("timeline.zoom_out");
             }
-            if self.button(ui, "timeline.zoom_in", Text::ZoomIn, true) {
+            if self.toolbar_button(
+                ui,
+                "timeline.zoom_in",
+                Icon::MagnifyingGlassPlus,
+                Text::ZoomIn,
+                true,
+            ) {
                 self.action("timeline.zoom_in");
             }
         });
@@ -2551,23 +2716,17 @@ impl Editor {
                 egui::Sense::click(),
             );
             header.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, &row.name));
-            self.remember(format!("track.{}.header", row.id.0), &header);
-            let type_icon = match row.kind {
-                TrackKind::Video => icon(&header_ui, "film-strip"),
-                TrackKind::Audio => icon(&header_ui, "music-notes"),
-                TrackKind::Text => icon(&header_ui, "text-t"),
-                TrackKind::Sticker => icon(&header_ui, "sticker"),
-                TrackKind::Effect => icon(&header_ui, "sparkle"),
-                TrackKind::Filter => icon(&header_ui, "funnel"),
-                TrackKind::Adjustment => icon(&header_ui, "sliders-horizontal"),
-            };
+            let type_icon = track_icon(row.kind);
+            self.remember_with_icon(
+                format!("track.{}.header", row.id.0),
+                Some(type_icon.name()),
+                &header,
+            );
             let icon_rect = Rect::from_center_size(
                 egui::pos2(label_rect.right() - 14.0, label_rect.center().y),
                 Vec2::splat(16.0),
             );
-            egui::Image::new(type_icon)
-                .tint(self.secondary())
-                .paint_at(&header_ui, icon_rect);
+            icons::tinted(type_icon, 16.0, self.secondary()).paint_at(&header_ui, icon_rect);
             let mut x = label_rect.right() - 54.0;
             if row.kind.can_hide() {
                 if self.track_toggle(
@@ -2578,7 +2737,11 @@ impl Editor {
                     "hidden",
                     Text::HideTrack,
                     row.hidden,
-                    if row.hidden { "eye-slash" } else { "eye" },
+                    if row.hidden {
+                        Icon::EyeSlash
+                    } else {
+                        Icon::Eye
+                    },
                 ) {
                     self.track_command(
                         "track.set_hidden",
@@ -2597,9 +2760,9 @@ impl Editor {
                     Text::MuteTrack,
                     row.muted,
                     if row.muted {
-                        "speaker-slash"
+                        Icon::SpeakerSlash
                     } else {
-                        "speaker-high"
+                        Icon::SpeakerHigh
                     },
                 )
             {
@@ -2621,7 +2784,7 @@ impl Editor {
                     "magnet",
                     Text::Magnet,
                     enabled,
-                    "magnet",
+                    Icon::Magnet,
                 ) {
                     self.track_command("track.set_magnet", serde_json::json!({"enabled":!enabled}));
                 }
@@ -2631,13 +2794,16 @@ impl Editor {
                     let response = ui.add_enabled(
                         !row.locked,
                         egui::Button::image_and_text(
-                            egui::Image::new(icon(&header_ui, "trash"))
-                                .fit_to_exact_size(Vec2::splat(16.0)),
+                            icons::tinted(Icon::Trash, 16.0, self.text_color()),
                             self.tr(Text::DeleteTrack),
                         ),
                     );
                     let response = response.on_disabled_hover_text(self.tr(Text::TrackLocked));
-                    self.remember(format!("track.{}.delete", row.id.0), &response);
+                    self.remember_with_icon(
+                        format!("track.{}.delete", row.id.0),
+                        Some(Icon::Trash.name()),
+                        &response,
+                    );
                     if response.clicked() {
                         self.track_command("track.remove", serde_json::json!({"track":row.id}));
                         ui.close();
@@ -2767,7 +2933,7 @@ impl Editor {
         suffix: &str,
         label: Text,
         selected: bool,
-        glyph: &str,
+        icon: Icon,
     ) -> bool {
         let rect = Rect::from_min_size(
             egui::pos2(
@@ -2793,7 +2959,11 @@ impl Editor {
                 format!("{}: {}", self.tr(label), row.name),
             )
         });
-        self.remember(format!("track.{}.{suffix}", row.id.0), &response);
+        self.remember_with_icon(
+            format!("track.{}.{suffix}", row.id.0),
+            Some(icon.name()),
+            &response,
+        );
         let color = if selected {
             self.accent()
         } else {
@@ -2804,8 +2974,7 @@ impl Editor {
                 .with_clip_rect(clip)
                 .rect_filled(rect, 4.0, self.control_fill());
         }
-        egui::Image::new(icon(ui, glyph))
-            .tint(color)
+        icons::tinted(icon, 16.0, color)
             .paint_at(ui, Rect::from_center_size(rect.center(), Vec2::splat(16.0)));
         response.clone().on_hover_text(self.tr(label));
         response.clicked()
@@ -2860,7 +3029,7 @@ impl Editor {
                             Vec2::new(9.0, visible.height() - 6.0),
                         ),
                         0.0,
-                        Color32::from_rgba_unmultiplied(0, 193, 205, shade),
+                        Color32::from_rgba_unmultiplied(text.r(), text.g(), text.b(), shade),
                     );
                     x += 13.0;
                     index += 1;
@@ -3071,39 +3240,28 @@ impl Editor {
             .unwrap_or(at)
     }
     fn accent(&self) -> Color32 {
-        if self.preferences.dark {
-            Color32::from_rgb(0, 193, 205)
-        } else {
-            Color32::from_rgb(0, 106, 116)
-        }
+        theme::accent(self.preferences.dark)
+    }
+    fn active_tab_fill(&self) -> Color32 {
+        theme::hover(self.preferences.dark)
+    }
+    fn toolbar_fill(&self) -> Color32 {
+        theme::toolbar(self.preferences.dark)
     }
     fn panel_fill(&self) -> Color32 {
-        if self.preferences.dark {
-            Color32::from_rgb(15, 15, 15)
-        } else {
-            Color32::from_rgb(249, 250, 251)
-        }
+        theme::panel(self.preferences.dark)
     }
     fn control_fill(&self) -> Color32 {
-        if self.preferences.dark {
-            Color32::from_rgb(38, 38, 38)
-        } else {
-            Color32::from_rgb(238, 239, 240)
-        }
+        theme::field(self.preferences.dark)
     }
     fn border(&self) -> Color32 {
-        if self.preferences.dark {
-            Color32::from_rgb(56, 56, 56)
-        } else {
-            Color32::from_rgb(133, 139, 145)
-        }
+        theme::border(self.preferences.dark)
+    }
+    fn text_color(&self) -> Color32 {
+        theme::text(self.preferences.dark)
     }
     fn secondary(&self) -> Color32 {
-        if self.preferences.dark {
-            Color32::from_rgb(154, 154, 154)
-        } else {
-            Color32::from_rgb(92, 98, 104)
-        }
+        theme::secondary(self.preferences.dark)
     }
 }
 fn asset_kind(asset: &SourceAsset) -> std::result::Result<TrackKind, engine::EditError> {
@@ -3146,6 +3304,13 @@ fn asset_row(asset: &SourceAsset, locale: Locale) -> AssetRow {
     } else {
         Text::Media
     };
+    let icon = if video.is_some() {
+        Icon::FilmStrip
+    } else if audio.is_some() {
+        Icon::MusicNotes
+    } else {
+        Icon::File
+    };
     info.push(catalog::text(locale, kind).to_owned());
     info.push(asset.probe().duration.map_or_else(
         || catalog::text(locale, Text::DurationUnknown).to_owned(),
@@ -3173,6 +3338,7 @@ fn asset_row(asset: &SourceAsset, locale: Locale) -> AssetRow {
         id: asset.id(),
         name: file_name(asset.path()),
         info: info.join(" · "),
+        icon,
     }
 }
 fn file_name(path: &std::path::Path) -> String {
@@ -3205,6 +3371,17 @@ fn track_height(kind: TrackKind) -> f32 {
         | TrackKind::Effect
         | TrackKind::Filter
         | TrackKind::Adjustment => 25.0,
+    }
+}
+fn track_icon(kind: TrackKind) -> Icon {
+    match kind {
+        TrackKind::Video => Icon::FilmStrip,
+        TrackKind::Audio => Icon::MusicNotes,
+        TrackKind::Text => Icon::TextT,
+        TrackKind::Sticker => Icon::Sticker,
+        TrackKind::Effect => Icon::Sparkle,
+        TrackKind::Filter => Icon::Funnel,
+        TrackKind::Adjustment => Icon::SlidersHorizontal,
     }
 }
 fn item_label(content: &ItemParams, locale: Locale, dark: bool) -> (String, Option<[u8; 4]>) {
@@ -3241,53 +3418,17 @@ fn item_palette(
     selected: bool,
     overlay: Option<[u8; 4]>,
 ) -> (Color32, Color32, Color32) {
-    let (fill, border, text) = if dark {
-        match kind {
-            TrackKind::Video => (
-                Color32::from_rgb(10, 42, 36),
-                Color32::from_rgb(11, 107, 91),
-                Color32::from_rgb(229, 229, 229),
-            ),
-            TrackKind::Audio => (
-                Color32::from_rgb(26, 32, 38),
-                Color32::from_rgb(56, 56, 56),
-                Color32::from_rgb(229, 229, 229),
-            ),
-            _ => (
-                Color32::from_rgb(38, 38, 42),
-                Color32::from_rgb(56, 56, 56),
-                Color32::from_rgb(229, 229, 229),
-            ),
-        }
-    } else {
-        match kind {
-            TrackKind::Video => (
-                Color32::from_rgb(227, 247, 242),
-                Color32::from_rgb(11, 107, 91),
-                Color32::from_rgb(28, 28, 28),
-            ),
-            TrackKind::Audio => (
-                Color32::from_rgb(238, 239, 240),
-                Color32::from_rgb(133, 139, 145),
-                Color32::from_rgb(28, 28, 28),
-            ),
-            _ => (
-                Color32::from_rgb(238, 239, 240),
-                Color32::from_rgb(133, 139, 145),
-                Color32::from_rgb(28, 28, 28),
-            ),
-        }
+    let text = theme::text(dark);
+    let (fill, border) = match kind {
+        TrackKind::Video => (theme::video_fill(dark), theme::video_border(dark)),
+        TrackKind::Audio => (theme::field(dark), theme::border(dark)),
+        _ => (theme::hover(dark), theme::border(dark)),
     };
     let fill = overlay.map_or(fill, |[r, g, b, a]| {
         Color32::from_rgba_unmultiplied(r, g, b, a)
     });
     if selected {
-        let accent = if dark {
-            Color32::from_rgb(0, 193, 205)
-        } else {
-            Color32::from_rgb(0, 106, 116)
-        };
-        (fill, accent, text)
+        (fill, theme::accent(dark), text)
     } else {
         (fill, border, text)
     }
@@ -3311,8 +3452,4 @@ fn display_time(at: Tick) -> String {
         s as u64 % 60,
         ((s.fract() * 1000.0).floor()) as u64
     )
-}
-
-fn icon(ui: &egui::Ui, name: &str) -> egui::ImageSource<'static> {
-    crate::icons::image(ui, name)
 }

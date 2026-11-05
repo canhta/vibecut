@@ -3,6 +3,7 @@ use crate::{
     Editor, Error, Result,
     catalog::{self, Preferences, Text},
     egui,
+    icons::{self, Icon},
     lifecycle::EditorAction,
     playback::{Files, Playback},
 };
@@ -479,10 +480,14 @@ impl Workspace {
     fn tr(&self, text: Text) -> &'static str {
         catalog::text(self.preferences.locale, text)
     }
-    fn button(&self, ui: &mut egui::Ui, id: &'static str, text: Text) -> bool {
+    fn button(&self, ui: &mut egui::Ui, id: &'static str, icon: Icon, text: Text) -> bool {
+        let image = icons::tinted(icon, 16.0, ui.visuals().text_color());
         let response = ui
             .push_id(id, |ui| {
-                ui.add_sized([160.0, 34.0], egui::Button::new(self.tr(text)))
+                ui.add_sized(
+                    [160.0, 34.0],
+                    egui::Button::image_and_text(image, self.tr(text)),
+                )
             })
             .inner;
         response
@@ -493,6 +498,7 @@ impl Workspace {
     pub fn ui(&mut self, ui: &mut egui::Ui) {
         if !self.configured {
             Editor::fonts(ui.ctx());
+            icons::install(ui.ctx());
             self.configured = true;
         }
         Editor::theme(ui.ctx(), self.preferences.dark);
@@ -525,19 +531,19 @@ impl Workspace {
                     ui.spinner();
                     ui.label(self.tr(pending.text));
                     if matches!(pending.text, Text::LoadingProject)
-                        && self.button(ui, "project.operation.cancel", Text::Cancel)
+                        && self.button(ui, "project.operation.cancel", Icon::X, Text::Cancel)
                     {
                         pending.cancel.cancel();
                     }
                 } else if self.picker.is_some() {
                     ui.label(self.tr(Text::ChooseProject));
                 } else if self.candidates.is_empty() && self.error.is_none() {
-                    if self.button(ui, "project.create", Text::NewProject)
+                    if self.button(ui, "project.create", Icon::Plus, Text::NewProject)
                         && let Err(e) = self.create()
                     {
                         self.error = Some(e);
                     }
-                    if self.button(ui, "project.open", Text::OpenProject)
+                    if self.button(ui, "project.open", Icon::FolderOpen, Text::OpenProject)
                         && let Err(e) = self.pick(ui.ctx(), PickerAction::Open)
                     {
                         self.error = Some(e);
@@ -553,7 +559,12 @@ impl Workspace {
                 }
                 ui.label(self.tr(Text::SaveAsNeeded));
                 ui.horizontal(|ui| {
-                    if self.button(ui, "recovery.recover", Text::Recover) {
+                    if self.button(
+                        ui,
+                        "recovery.recover",
+                        Icon::ArrowCounterClockwise,
+                        Text::Recover,
+                    ) {
                         let candidate = self.candidates.remove(0);
                         if let Err(e) =
                             self.submit(Work::Recover(Box::new(candidate)), Text::LoadingProject)
@@ -561,7 +572,7 @@ impl Workspace {
                             self.error = Some(e);
                         }
                     }
-                    if self.button(ui, "recovery.discard", Text::Discard) {
+                    if self.button(ui, "recovery.discard", Icon::Trash, Text::Discard) {
                         let candidate = self.candidates.remove(0);
                         if let Err(e) =
                             self.submit(Work::Discard(Box::new(candidate)), Text::Discovering)
@@ -579,7 +590,7 @@ impl Workspace {
                     for e in &self.diagnostics {
                         ui.label(e.to_string());
                     }
-                    if self.button(ui, "recovery.diagnostic.close", Text::Cancel) {
+                    if self.button(ui, "recovery.diagnostic.close", Icon::X, Text::Cancel) {
                         self.diagnostics.clear();
                     }
                 });
@@ -616,7 +627,12 @@ impl Workspace {
                         }
                     }
                     ui.horizontal(|ui| {
-                        if self.button(ui, "project.retry", Text::RetryProject) {
+                        if self.button(
+                            ui,
+                            "project.retry",
+                            Icon::ArrowClockwise,
+                            Text::RetryProject,
+                        ) {
                             self.error = None;
                             let result = if let Some((path, leave, close, journal_only)) =
                                 self.retry_save.take()
@@ -639,6 +655,7 @@ impl Workspace {
                         if self.button(
                             ui,
                             "project.error.back",
+                            Icon::ArrowLeft,
                             if self.editor.is_some() {
                                 Text::Cancel
                             } else {
@@ -655,17 +672,17 @@ impl Workspace {
         if self.close_prompt && !self.busy() {
             egui::Modal::new(egui::Id::unique("project.close.prompt")).show(ui.ctx(), |ui| {
                 ui.heading(self.tr(Text::ClosePrompt));
-                if self.button(ui, "project.close.save", Text::SaveClose)
+                if self.button(ui, "project.close.save", Icon::FloppyDisk, Text::SaveClose)
                     && let Err(e) = self.save_from_ui(ui.ctx(), true, true, false)
                 {
                     self.error = Some(e);
                 }
-                if self.button(ui, "project.close.recover", Text::Close)
+                if self.button(ui, "project.close.recover", Icon::File, Text::Close)
                     && let Err(e) = self.persist(None, true, true, true)
                 {
                     self.error = Some(e);
                 }
-                if self.button(ui, "project.close.cancel", Text::Cancel) {
+                if self.button(ui, "project.close.cancel", Icon::X, Text::Cancel) {
                     self.close_prompt = false;
                 }
             });

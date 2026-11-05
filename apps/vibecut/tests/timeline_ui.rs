@@ -178,7 +178,7 @@ fn fixture() -> Fixture {
             start: Tick(8 * SECOND),
             duration: Tick::ZERO,
             note: "Beat".into(),
-            color: Color([0, 193, 205, 255]),
+            color: Color([0xD1, 0xFE, 0x17, 255]),
         })
         .unwrap();
     let mut playback = Playback::new(
@@ -566,6 +566,66 @@ fn timeline_screenshot_proof_after_automation_id_edits() {
         "timeline screenshots: {} {}",
         dark_path.display(),
         light_path.display()
+    );
+}
+
+#[test]
+fn every_editor_button_reports_its_embedded_icon() {
+    let mut harness = harness(fixture().editor);
+    harness.run_steps(2);
+    let widgets = harness.state().inspect().unwrap().widgets;
+    let icon = |id: &str| {
+        widgets
+            .iter()
+            .find(|widget| widget.id == id)
+            .unwrap_or_else(|| panic!("missing widget {id}"))
+            .icon
+    };
+    let expected = [
+        ("project.back", "arrow-left"),
+        ("project.rename", "pencil-simple"),
+        ("file.export", "export"),
+        ("project.save_as", "floppy-disk-back"),
+        ("project.save", "floppy-disk"),
+        ("appearance.theme", "circle-half"),
+        ("appearance.locale", "translate"),
+        ("layout.reset", "corners-out"),
+        ("file.import", "upload-simple"),
+        ("media.insert", "plus"),
+        ("media.asset.1", "film-strip"),
+        ("media.asset.2", "music-notes"),
+        ("transport.back", "skip-back"),
+        ("transport.play", "play"),
+        ("transport.forward", "skip-forward"),
+        ("preview.retry", "arrow-clockwise"),
+        ("edit.undo", "arrow-counter-clockwise"),
+        ("edit.redo", "arrow-clockwise"),
+        ("timeline.split", "scissors"),
+        ("timeline.delete", "trash"),
+        ("timeline.snap", "magnet"),
+        ("timeline.magnet", "magnet"),
+        ("timeline.ripple", "waveform"),
+        ("timeline.zoom_out", "magnifying-glass-minus"),
+        ("timeline.zoom_in", "magnifying-glass-plus"),
+        ("track.1.header", "film-strip"),
+        ("track.3.header", "text-t"),
+    ];
+    for (id, name) in expected {
+        assert_eq!(icon(id), Some(name), "{id} must carry the {name} icon");
+    }
+    assert_eq!(icon("inspector.project"), None);
+    assert_eq!(icon("inspector.details"), None);
+    let split = widgets
+        .iter()
+        .find(|widget| widget.id == "timeline.split")
+        .unwrap();
+    assert!(
+        (split.rect.height() - 28.0).abs() < 0.5,
+        "feature tabs keep a 28 px hit box"
+    );
+    assert!(
+        split.rect.width() >= 48.0,
+        "feature tabs keep a 48 px minimum width"
     );
 }
 

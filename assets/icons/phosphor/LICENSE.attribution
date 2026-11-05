@@ -1,0 +1,8 @@
+asset: LICENSE
+title: Phosphor Icons MIT license
+author: Phosphor Icons
+source: https://www.npmjs.com/package/@phosphor-icons/core/v/2.1.1
+license: MIT
+license-file: assets/icons/phosphor/LICENSE
+added: p0-core/39
+notes: License text shipped with the pinned Phosphor icon package.
