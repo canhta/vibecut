@@ -510,7 +510,8 @@ mod tests {
             "printf '{}'",
             framed
                 .iter()
-                .map(|b| format!("\\{b:03o}"))
+                // POSIX printf reads octal as \0NNN; dash rejects a bare \NNN.
+                .map(|b| format!("\\0{b:o}"))
                 .collect::<String>()
         )
     }
