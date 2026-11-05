@@ -229,6 +229,8 @@ fn preview_uses_budget_skips_late_video_and_invalidates_seek_and_clear() {
     assert!(editor.playback.frame().is_none());
     let deadline = Instant::now() + Duration::from_secs(5);
     loop {
+        // Keep the simulated device callback active while transport is playing.
+        port.fill(&mut audio, 0);
         editor.playback.poll().unwrap();
         if let Some(frame) = editor.playback.frame() {
             assert!(frame.epoch > first_epoch);
