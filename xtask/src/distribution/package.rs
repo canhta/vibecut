@@ -200,9 +200,9 @@ pub(super) fn compliance(tools: &Tools, prefix: &Path, destination: &Path) -> Re
         destination,
     )?;
     let licence = if gpl {
-        "GPL-3.0 FFmpeg with libx264, Opus and libvpx"
+        "GPL-3.0 FFmpeg with libx264, Opus, libvpx and zlib"
     } else {
-        "LGPL-2.1-or-later FFmpeg with Opus and libvpx"
+        "LGPL-2.1-or-later FFmpeg with Opus, libvpx and zlib"
     };
     fs::write(destination.join("NOTICE.txt"),format!("VibeCut dynamically links {licence}. Corresponding source archives, verified build receipts, backports, recipe and license texts accompany this distribution. Reverse engineering to debug modified libraries is permitted. See README.md for rebuilding and replacement. No model weights are included.\n")).map_err(|e|e.to_string())?;
     copy(
@@ -871,8 +871,15 @@ mod tests {
         ] {
             let temp = Temp::new(&env::temp_dir()).expect("temp");
             let prefix = sdk(&temp.0);
-            fs::remove_file(temp.0.join(removed)).expect("remove zlib artifact");
             let tools = Tools::new(&workspace());
+            let valid = temp.0.join("valid");
+            compliance(&tools, &prefix, &valid).expect("complete zlib distribution");
+            assert!(
+                text(&valid.join("NOTICE.txt"))
+                    .expect("notice")
+                    .contains("zlib")
+            );
+            fs::remove_file(temp.0.join(removed)).expect("remove zlib artifact");
             let error = compliance(&tools, &prefix, &temp.0.join("rejected"))
                 .expect_err("missing zlib artifact must be refused");
             assert!(error.contains(expected), "{removed}: {error}");

@@ -408,7 +408,22 @@ fn build_zlib(source: &Path, prefix: &Path, target: &str, arch: &str) -> Result<
         .arg("--build")
         .arg(&build)
         .args(["--parallel", "3"]))?;
-    run(Command::new("cmake").arg("--install").arg(&build))
+    run(Command::new("cmake").arg("--install").arg(&build))?;
+    if cfg!(windows) {
+        // zlib 1.4 names its Windows static archive libzs.a, but its
+        // pkg-config template still requests -lz (the shared import library).
+        // Point FFmpeg at our static archive instead of a system zlib.
+        let metadata = prefix.join("lib/pkgconfig/zlib.pc");
+        let contents = fs::read_to_string(&metadata).map_err(|e| e.to_string())?;
+        fs::write(
+            metadata,
+            contents
+                .replace(" -lz\n", " -lzs\n")
+                .replace(" -lz\r\n", " -lzs\r\n"),
+        )
+        .map_err(|e| e.to_string())?;
+    }
+    Ok(())
 }
 
 pub fn prefix() -> Result<PathBuf, String> {
