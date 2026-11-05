@@ -1295,3 +1295,143 @@ fn drop_at_track_edges_creates_one_track_and_one_undo_step() {
         assert_eq!(h.state().session.history_len(), history);
     }
 }
+
+#[test]
+fn zoom_slider_buttons_and_wheel_navigation_persist_through_view_state() {
+    let fixture = fixture();
+    let mut harness = harness(fixture.editor);
+    harness.run_steps(3);
+    let project_before = serde_json::to_vec(harness.state().session.project().data()).unwrap();
+    let before = harness.state().inspect().unwrap();
+    assert!(
+        before
+            .widgets
+            .iter()
+            .any(|widget| widget.id == "timeline.zoom_slider")
+    );
+    let zoom_in = widget(&harness, "timeline.zoom_in");
+    click_at(&mut harness, zoom_in.center());
+    let stepped = harness.state().inspect().unwrap().zoom;
+    assert!((stepped - before.zoom * 1.7).abs() < 0.01);
+    let zoom_out = widget(&harness, "timeline.zoom_out");
+    click_at(&mut harness, zoom_out.center());
+    let stepped_back = harness.state().inspect().unwrap().zoom;
+    assert!((stepped_back - before.zoom).abs() < 0.01);
+    let slider = widget(&harness, "timeline.zoom_slider");
+    click_at(
+        &mut harness,
+        egui::pos2(slider.left() + slider.width() * 0.4, slider.center().y),
+    );
+    let slider_zoom = harness.state().inspect().unwrap().zoom;
+    assert!(slider_zoom > stepped);
+    let body = widget(&harness, "timeline.marquee");
+    harness.hover_at(body.center());
+    harness.run_steps(1);
+    harness.event(egui::Event::MouseWheel {
+        unit: egui::MouseWheelUnit::Point,
+        delta: egui::vec2(0.0, 40.0),
+        phase: egui::TouchPhase::Move,
+        source: egui::MouseWheelSource::Unknown,
+        modifiers: egui::Modifiers::COMMAND,
+    });
+    harness.run_steps(2);
+    let wheeled = harness.state().inspect().unwrap().zoom;
+    assert!(wheeled > slider_zoom, "ctrl/cmd wheel zooms in");
+    let scroll_before = harness.state().inspect().unwrap().scroll;
+    harness.event(egui::Event::MouseWheel {
+        unit: egui::MouseWheelUnit::Point,
+        delta: egui::vec2(0.0, 40.0),
+        phase: egui::TouchPhase::Move,
+        source: egui::MouseWheelSource::Unknown,
+        modifiers: egui::Modifiers::SHIFT,
+    });
+    harness.run_steps(2);
+    let after = harness.state().inspect().unwrap();
+    assert!(
+        after.scroll > scroll_before,
+        "shift wheel scrolls horizontally and clamps at the content bound"
+    );
+    let view = harness.state().session.metadata().view;
+    assert!((view.zoom - f64::from(after.zoom) / 40.0).abs() < 1e-6);
+    assert!((view.scroll - f64::from(after.scroll * after.zoom)).abs() < 1.0);
+    assert_eq!(
+        serde_json::to_vec(harness.state().session.project().data()).unwrap(),
+        project_before,
+        "navigation changes view metadata only, never Project JSON"
+    );
+}
+
+#[test]
+fn edge_auto_scroll_follows_a_dragged_item_and_stops_when_the_pointer_leaves() {
+    let mut fixture = fixture();
+    fixture
+        .editor
+        .session
+        .execute(
+            "project.set_view_state",
+            serde_json::json!({"zoom":20,"scroll":4800,"playhead":0}),
+        )
+        .unwrap();
+    let id = fixture.video_b;
+    let mut harness = harness(fixture.editor);
+    harness.run_steps(3);
+    let item_rect = widget(&harness, &format!("timeline.item.{}", id.0));
+    let body = widget(&harness, "timeline.marquee");
+    let start = item(harness.state(), id).start;
+    let edge = egui::pos2(body.right() - 8.0, item_rect.center().y);
+    harness.drag_at(item_rect.center());
+    harness.run_steps(1);
+    harness.hover_at(edge);
+    harness.run_steps(6);
+    let scrolled = harness.state().inspect().unwrap().scroll;
+    assert!(scrolled > 0.0, "the right edge advances the viewport");
+    assert!(
+        item(harness.state(), id).start > start,
+        "the dragged item follows the auto-scrolled content"
+    );
+    harness.hover_at(egui::pos2(body.center().x, body.top() - 4.0));
+    harness.run_steps(2);
+    let stopped = harness.state().inspect().unwrap().scroll;
+    harness.run_steps(3);
+    assert_eq!(
+        harness.state().inspect().unwrap().scroll,
+        stopped,
+        "leaving the timeline stops auto-scroll"
+    );
+    harness.drop_at(egui::pos2(body.center().x, body.top() - 4.0));
+    harness.run_steps(2);
+}
+
+#[test]
+fn timeline_navigation_screenshot_covers_two_zoom_levels() {
+    let fixture = fixture();
+    let mut harness = harness(fixture.editor);
+    harness.run_steps(3);
+    harness
+        .state_mut()
+        .session
+        .execute(
+            "project.set_view_state",
+            serde_json::json!({"zoom":0.5,"scroll":0,"playhead":0}),
+        )
+        .unwrap();
+    harness.run_steps(3);
+    let low = harness.render().unwrap();
+    harness
+        .state_mut()
+        .session
+        .execute(
+            "project.set_view_state",
+            serde_json::json!({"zoom":100,"scroll":0,"playhead":0}),
+        )
+        .unwrap();
+    harness.run_steps(3);
+    let high = harness.render().unwrap();
+    let mut combined = image::RgbaImage::new(low.width(), low.height() + high.height());
+    image::imageops::replace(&mut combined, &low, 0, 0);
+    image::imageops::replace(&mut combined, &high, 0, i64::from(low.height()));
+    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../target/p1-13-timeline.png");
+    combined.save(&path).unwrap();
+    assert_eq!(combined.width(), low.width());
+    eprintln!("timeline navigation screenshot: {}", path.display());
+}

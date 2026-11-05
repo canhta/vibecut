@@ -317,6 +317,7 @@ catalog! {
     Ripple { key: "ripple", en: "Ripple", vi: "Cuốn theo" },
     ZoomIn { key: "zoom_in", en: "Zoom +", vi: "Phóng to" },
     ZoomOut { key: "zoom_out", en: "Zoom −", vi: "Thu nhỏ" },
+    ZoomLevel { key: "zoom_level", en: "Timeline zoom", vi: "Mức thu phóng dòng thời gian" },
     ActionShortcut { key: "action_shortcut", en: "{action} ({shortcut})", vi: "{action} ({shortcut})" },
 
     // Shortcut notation. Key names stay literal; the catalog owns their display.

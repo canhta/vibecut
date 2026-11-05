@@ -71,7 +71,16 @@ immutable project snapshot. Image placement, full library views/sort and asset
 deletion remain with their later feature tickets.
 
 The timeline draws tracks, filmstrip/waveform placeholders, bookmarks and the
-playhead; zoom, horizontal/vertical scrolling, frame-snapped ruler seeking,
+playhead; an adaptive ruler picks frame/second major and minor ticks from zoom
+and project fps, labels them with time's shared DF/NDF timecode, and never
+overlaps labels. The exponential zoom slider, ×1.7 buttons and Cmd/Ctrl+wheel
+share a dynamic fit minimum (content occupies 25% of the viewport), a 100×
+maximum and 75%→15% trailing padding; zooms above the 15% slider threshold hold
+the playhead's viewport offset and crossing back below restores the pre-anchor
+scroll. Wheel scrolls vertically, Shift/horizontal wheel scrolls horizontally,
+and both clamp to content plus padding. Dragging near an edge auto-scrolls in a
+100 px zone at up to 15 px per frame and stops at the content boundary or when
+the pointer leaves. Zoom, horizontal scroll, frame-snapped ruler seeking,
 single/Cmd-or-Shift multi-selection, drag move, edge trims, split, delete and
 ripple delete all dispatch engine commands. Delete/Backspace removes, Shift+Delete
 ripple-deletes, Cmd/Ctrl+B splits at the playhead and N toggles snapping; Shift
