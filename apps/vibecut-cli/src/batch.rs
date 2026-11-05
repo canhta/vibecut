@@ -278,19 +278,7 @@ fn add_project_bytes(total: u64, size: u64) -> Result<u64, CliError> {
 }
 
 fn same_file(left: &Path, right: &Path) -> bool {
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::MetadataExt;
-        match (fs::metadata(left), fs::metadata(right)) {
-            (Ok(left), Ok(right)) => left.dev() == right.dev() && left.ino() == right.ino(),
-            _ => false,
-        }
-    }
-    #[cfg(not(unix))]
-    {
-        let _ = (left, right);
-        false
-    }
+    same_file::is_same_file(left, right).unwrap_or(false)
 }
 
 fn resolve_path(base: &Path, raw: &str, what: &str) -> Result<PathBuf, CliError> {

@@ -6151,6 +6151,7 @@ dependencies = [
  "media",
  "project",
  "render",
+ "same-file",
  "serde",
  "serde_json",
  "tempfile",
