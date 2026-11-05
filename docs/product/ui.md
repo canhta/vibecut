@@ -122,6 +122,18 @@ spacing as proposed until the next UI audit.
 - The assets panel leads with a 36 px vertical icon bar: Media, Sounds, Text, Stickers, Effects, Transitions, Captions, Adjustment, Settings at 28 px icon buttons with right-side tooltips and top/bottom scroll fades. A selected element's properties view shows its type tabs as 14 px text at 40 px row height (active tab accent, 2 px underline); the empty and multi-select views keep the existing shared-field presentation, and `Project`/`Details` remain the inspector header switch. Geometry follows [layout](#layout-grid), styling follows [iconography](#iconography).
 - Scrub number fields have a 28×26 px drag handle, a 26 px typed entry and optional unit suffix; the active value previews during the drag and commits once on release.
 
+### Preview
+
+The preview panel follows the panel header and transport conventions above [new]:
+a 16 px `Player` heading; save-snapshot, copy-frame and fullscreen icon actions at
+the header's right edge; the retained canvas on the preview backdrop; then the
+28 px transport row, a 26 px editable tabular timecode with `/ duration`, and a
+26 px zoom row (Fit, 25/50/75/100/150/200%, −/+, current scale). Empty, loading,
+unavailable, invalid-timecode and snapshot failure states are explicit. The
+preview context menu repeats save, copy and fullscreen. Fullscreen fills the
+window and exits on Esc. Reference geometry for these controls is unmeasured;
+treat spacing as proposed until the next UI audit.
+
 ### Effects
 
 The assets Effects tab is our own extension of the 36 px tool rail and panel card

@@ -404,7 +404,7 @@ fn empty_player_keeps_its_accessible_instruction_after_a_black_frame_is_ready() 
         .with_size(egui::vec2(1280.0, 800.0))
         .build_ui_state(|ui, editor: &mut Editor| editor.ui(ui), editor);
     harness.run_steps(3);
-    harness.get_by_label("Add media to the timeline to begin");
+    harness.get_by_label("Project is empty");
     assert!(harness.state().presented_frame().is_none());
 }
 

@@ -29,6 +29,7 @@ enum PickerAction {
     Save { leave: bool, close: bool },
     ImportMedia,
     ExportSave,
+    SnapshotSave,
 }
 struct Picker {
     future: std::pin::Pin<Box<dyn std::future::Future<Output = Option<Vec<rfd::FileHandle>>>>>,
@@ -308,6 +309,21 @@ impl Workspace {
                     .add_filter(self.tr(Text::Media), crate::import::MEDIA_EXTENSIONS);
                 Box::pin(dialog.pick_files())
             }
+            PickerAction::SnapshotSave => {
+                let editor = self.editor.as_ref().ok_or(Error::Invalid("no project"))?;
+                let (file_name, directory) = editor.snapshot_save_defaults();
+                let mut dialog = rfd::AsyncFileDialog::new()
+                    .set_title(catalog::text(editor.preferences.locale, Text::SnapshotSave))
+                    .add_filter(
+                        catalog::text(editor.preferences.locale, Text::SnapshotFormat),
+                        &["png"],
+                    )
+                    .set_file_name(file_name);
+                if let Some(directory) = directory {
+                    dialog = dialog.set_directory(directory);
+                }
+                Box::pin(async move { dialog.save_file().await.map(|file| vec![file]) })
+            }
         };
         self.picker = Some(Picker {
             future,
@@ -354,6 +370,23 @@ impl Workspace {
             editor.export_save_cancelled();
         }
     }
+    /// Apply the native snapshot picker's destination through `preview.snapshot`.
+    pub fn snapshot_picked_file(&mut self, path: PathBuf) -> Result<()> {
+        self.editor
+            .as_mut()
+            .ok_or(Error::Invalid("no project"))?
+            .snapshot_picked_file(path)
+    }
+    /// Cancelling the native snapshot dialog issues no command.
+    pub fn snapshot_save_cancelled(&mut self) {
+        self.picker = self
+            .picker
+            .take()
+            .filter(|picker| !matches!(picker.action, PickerAction::SnapshotSave));
+        if let Some(editor) = &mut self.editor {
+            editor.snapshot_save_cancelled();
+        }
+    }
     fn poll_picker(&mut self) {
         let Some(mut picker) = self.picker.take() else {
             return;
@@ -381,6 +414,13 @@ impl Workspace {
                         Some(file) => self.export_picked_file(file.path().to_owned()),
                         None => {
                             self.export_save_cancelled();
+                            Ok(())
+                        }
+                    },
+                    PickerAction::SnapshotSave => match files.pop() {
+                        Some(file) => self.snapshot_picked_file(file.path().to_owned()),
+                        None => {
+                            self.snapshot_save_cancelled();
                             Ok(())
                         }
                     },
@@ -620,6 +660,7 @@ impl Workspace {
             if let Some(action) = editor.lifecycle_action.take() {
                 let result = match action {
                     EditorAction::ExportSave => self.pick(ui.ctx(), PickerAction::ExportSave),
+                    EditorAction::SnapshotSave => self.pick(ui.ctx(), PickerAction::SnapshotSave),
                     EditorAction::ImportMedia => self.pick(ui.ctx(), PickerAction::ImportMedia),
                     EditorAction::Leave => self.save_from_ui(ui.ctx(), true, false, false),
                     EditorAction::SaveAs => self.save_from_ui(ui.ctx(), false, false, true),

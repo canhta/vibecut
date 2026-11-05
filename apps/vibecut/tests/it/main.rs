@@ -11,6 +11,7 @@ mod media_library;
 mod models_ui;
 mod panels;
 mod projects_ui;
+mod preview_ui;
 mod review_regressions;
 mod scenes_ui;
 mod shorts_ui;

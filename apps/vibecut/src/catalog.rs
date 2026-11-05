@@ -432,7 +432,17 @@ catalog! {
     Loading { key: "loading", en: "Preparing preview…", vi: "Đang chuẩn bị xem trước…" },
     Retry { key: "retry", en: "Retry preview", vi: "Thử xem trước lại" },
     Offline { key: "offline", en: "Audio output unavailable", vi: "Đầu ra âm thanh không khả dụng" },
-    TimePosition { key: "time_position", en: "{current} / {duration}", vi: "{current} / {duration}" },
+    TimeTotal { key: "time_total", en: "/ {duration}", vi: "/ {duration}" },
+    ProjectEmpty { key: "project_empty", en: "Project is empty", vi: "Dự án trống" },
+    TimecodeInvalid { key: "timecode_invalid", en: "Invalid timecode", vi: "Mã thời gian không hợp lệ" },
+    ZoomFit { key: "zoom_fit", en: "Fit", vi: "Vừa khung" },
+    SnapshotSave { key: "snapshot_save", en: "Save snapshot", vi: "Lưu ảnh chụp" },
+    SnapshotCopy { key: "snapshot_copy", en: "Copy frame", vi: "Sao chép khung hình" },
+    SnapshotSaved { key: "snapshot_saved", en: "Snapshot saved", vi: "Đã lưu ảnh chụp" },
+    SnapshotFailed { key: "snapshot_failed", en: "Snapshot failed", vi: "Lưu ảnh chụp thất bại" },
+    SnapshotFormat { key: "snapshot_format", en: "PNG image", vi: "Ảnh PNG" },
+    Fullscreen { key: "fullscreen", en: "Fullscreen preview", vi: "Xem toàn màn hình" },
+    ExitFullscreen { key: "exit_fullscreen", en: "Exit fullscreen", vi: "Thoát toàn màn hình" },
 
     // Inspector.
     AudioGain { key: "audio_gain", en: "Volume (dB)", vi: "Âm lượng (dB)" },
@@ -870,6 +880,8 @@ pub const PREFERENCE_KEYS: &[&str] = &[
     "projects",
     "media_view",
     "media_sort",
+    "preview_fit",
+    "preview_zoom",
 ];
 
 /// A splitter drag that keeps every region non-empty and inside its limits.
@@ -950,6 +962,21 @@ pub struct Preferences {
     /// Media library sort key and direction.
     #[serde(default)]
     pub media_sort: MediaSort,
+    /// Preview follows the panel size when true; otherwise `preview_zoom` applies.
+    #[serde(default = "default_preview_fit")]
+    pub preview_fit: bool,
+    /// Explicit preview scale where 1.0 is 100%; clamped to 0.25–16.
+    #[serde(default = "default_preview_zoom")]
+    pub preview_zoom: f64,
+    /// Last directory used by the snapshot save dialog.
+    #[serde(default)]
+    pub snapshot_directory: Option<PathBuf>,
+}
+pub(crate) const fn default_preview_fit() -> bool {
+    true
+}
+pub(crate) const fn default_preview_zoom() -> f64 {
+    1.0
 }
 impl Default for Preferences {
     fn default() -> Self {
@@ -968,6 +995,9 @@ impl Default for Preferences {
             projects: ProjectsPreferences::default(),
             media_view: MediaView::default(),
             media_sort: MediaSort::default(),
+            preview_fit: default_preview_fit(),
+            preview_zoom: default_preview_zoom(),
+            snapshot_directory: None,
         }
     }
 }
@@ -987,6 +1017,19 @@ impl Preferences {
         self.subtitles.validate()?;
         self.validate_sections()?;
         self.validate_properties_tabs()?;
+        if !self.preview_zoom.is_finite()
+            || !(f64::from(crate::preview::MIN_ZOOM)..=f64::from(crate::preview::MAX_ZOOM))
+                .contains(&self.preview_zoom)
+        {
+            return Err(Error::Invalid("preview zoom"));
+        }
+        if self
+            .snapshot_directory
+            .as_ref()
+            .is_some_and(|path| path.as_os_str().len() > crate::preview::MAX_PATH_BYTES)
+        {
+            return Err(Error::Invalid("snapshot directory"));
+        }
         if serde_json::to_vec(self)?.len() as u64 > MAX_PREFERENCES_BYTES {
             return Err(Error::Invalid("preference size"));
         }
@@ -1034,6 +1077,9 @@ impl Preferences {
             "projects" => Ok(serde_json::to_value(self.projects)?),
             "media_view" => Ok(serde_json::to_value(self.media_view)?),
             "media_sort" => Ok(serde_json::to_value(self.media_sort)?),
+            "preview_fit" => Ok(serde_json::Value::Bool(self.preview_fit)),
+            "preview_zoom" => Ok(serde_json::json!(self.preview_zoom)),
+            "snapshot_directory" => Ok(serde_json::to_value(&self.snapshot_directory)?),
             _ => Err(Error::Unsupported("preference key")),
         }
     }
@@ -1060,6 +1106,9 @@ impl Preferences {
             "projects" => self.projects = serde_json::from_value(value)?,
             "media_view" => self.media_view = serde_json::from_value(value)?,
             "media_sort" => self.media_sort = serde_json::from_value(value)?,
+            "preview_fit" => self.preview_fit = serde_json::from_value(value)?,
+            "preview_zoom" => self.preview_zoom = serde_json::from_value(value)?,
+            "snapshot_directory" => self.snapshot_directory = serde_json::from_value(value)?,
             _ => return Err(Error::Unsupported("preference key")),
         }
         Ok(())

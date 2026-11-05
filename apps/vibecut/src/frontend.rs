@@ -11,7 +11,7 @@ use crate::{
     media_panel::{self, MediaKind, MediaSort, MediaSortKey, MediaSortOrder, MediaView},
     panels::{AssetsTab, ElementKind, PropertiesTab},
     playback::Playback,
-    theme,
+    preview, theme,
 };
 use engine::{Command, CreatedId, ItemParamPatch, NewItem, Session};
 use media::{AssetId, ContentHash, SourceAsset, StreamKind, UnsupportedReason};
@@ -54,6 +54,8 @@ const HORIZONTAL_WHEEL_STEP: f32 = 40.0;
 const RULER_LABEL_SPACING: f32 = 120.0;
 const RULER_TICK_SPACING: f32 = 18.0;
 const LABEL_CHARS: usize = 120;
+const PREVIEW_FOOTER_HEIGHT: f32 = 158.0;
+const TIMECODE_WIDTH: f32 = 104.0;
 
 /// App action id for every preference edit; engine history is untouched.
 pub const PREFERENCE_COMMAND: &str = "ui.prefs.set";
@@ -109,6 +111,15 @@ pub struct Inspection {
     /// the indicator and proves snapping chose no candidate.
     pub snap_indicator: Option<Tick>,
     pub ripple: bool,
+    pub preview_zoom: f32,
+    pub preview_fit: bool,
+    pub preview_offset: egui::Vec2,
+    pub preview_fullscreen: bool,
+    pub timecode: String,
+    pub timecode_editing: bool,
+    pub snapshot_dialog_open: bool,
+    pub snapshot_saved: Option<PathBuf>,
+    pub snapshot_error: Option<engine::control::ErrorCode>,
     pub importing: bool,
     pub import_completed: usize,
     pub import_total: usize,
@@ -199,6 +210,11 @@ struct Toast {
     text: String,
     detail: Option<String>,
     until: Instant,
+}
+#[derive(Clone, Debug)]
+struct TimecodeEdit {
+    text: String,
+    focus: bool,
 }
 #[derive(Clone, Debug)]
 struct AssetRow {
@@ -464,6 +480,13 @@ pub struct Editor {
     widgets: BTreeMap<String, WidgetState>,
     pub panels: BTreeMap<&'static str, Rect>,
     layout_drag: Option<[f32; 3]>,
+    preview_view: preview::View,
+    preview_viewport: Vec2,
+    preview_fullscreen: bool,
+    fullscreen_commanded: bool,
+    timecode_edit: Option<TimecodeEdit>,
+    timecode_error: Option<Text>,
+    pub snapshot: preview::SnapshotDialog,
     drag: Option<DragState>,
     bookmark_drag: Option<BookmarkDrag>,
     snap_indicator: Option<Tick>,
@@ -529,6 +552,8 @@ impl Editor {
             .clamp(f64::from(MIN_ZOOM_FLOOR), f64::from(MAX_ZOOM)) as f32;
         let scroll = (view.scroll / f64::from(zoom)) as f32;
         let selection = session.selection().clone();
+        let preferences_fit = preferences.preview_fit;
+        let preferences_zoom = preferences.preview_zoom;
         Self {
             session,
             playback,
@@ -556,6 +581,13 @@ impl Editor {
             widgets: BTreeMap::new(),
             panels: BTreeMap::new(),
             layout_drag: None,
+            preview_view: preview::View::new(preferences_fit, preferences_zoom),
+            preview_viewport: Vec2::new(640.0, 360.0),
+            preview_fullscreen: false,
+            fullscreen_commanded: false,
+            timecode_edit: None,
+            timecode_error: None,
+            snapshot: preview::SnapshotDialog::default(),
             drag: None,
             bookmark_drag: None,
             snap_indicator: None,
@@ -633,6 +665,15 @@ impl Editor {
             snapping: self.preferences.snapping,
             snap_indicator: self.snap_indicator,
             ripple: self.ripple,
+            preview_zoom: self.preview_view.zoom,
+            preview_fit: self.preview_view.fit,
+            preview_offset: self.preview_view.offset,
+            preview_fullscreen: self.preview_fullscreen,
+            timecode: self.current_timecode(),
+            timecode_editing: self.timecode_edit.is_some(),
+            snapshot_dialog_open: self.snapshot.is_open(),
+            snapshot_saved: self.snapshot.saved.clone(),
+            snapshot_error: self.snapshot.error,
             importing: self.importing(),
             import_completed: self.import_completed,
             import_total: self.import_total,
@@ -1414,6 +1455,19 @@ impl Editor {
         self.remember(id, &response);
         response.clicked()
     }
+    fn preset_button(&mut self, ui: &mut egui::Ui, id: &str, label: &str, selected: bool) -> bool {
+        let response = ui
+            .push_id(id, |ui| ui.selectable_label(selected, label))
+            .inner;
+        self.remember(id, &response);
+        response.clicked()
+    }
+
+    fn menu_button(&mut self, ui: &mut egui::Ui, id: &str, key: Text, enabled: bool) -> bool {
+        let response = ui.add_enabled(enabled, egui::Button::new(self.tr(key)));
+        self.remember(id, &response);
+        response.clicked()
+    }
     /// A property section whose open state lives in the preference store, with
     /// the same stable automation id across locale and layout changes.
     fn section<R>(
@@ -1840,6 +1894,25 @@ impl Editor {
                 self.playback.clear()?;
                 self.error = None;
             }
+            "preview.snapshot" => self.open_snapshot_dialog()?,
+            "preview.fullscreen" => self.preview_fullscreen = !self.preview_fullscreen,
+            "preview.zoom.fit" => self.set_preview_fit()?,
+            "preview.zoom.in" => self.preview_zoom_by(preview::ZOOM_STEP)?,
+            "preview.zoom.out" => self.preview_zoom_by(1.0 / preview::ZOOM_STEP)?,
+            preset if preset.starts_with("preview.zoom.") => {
+                let percent = preset
+                    .trim_start_matches("preview.zoom.")
+                    .parse::<u32>()
+                    .map_err(|_| Error::Unsupported("preview zoom"))?;
+                let zoom = percent as f32 / 100.0;
+                let viewport = self.preview_viewport;
+                let canvas = self.preview_canvas_size();
+                self.set_preview_zoom(
+                    preview::normalize_zoom(zoom).ok_or(Error::Invalid("preview zoom"))?,
+                    viewport,
+                    canvas,
+                )?;
+            }
             "inspector.project" => self.details = false,
             "inspector.details" => self.details = true,
             id if id.starts_with("timeline.item.") => {
@@ -1887,6 +1960,145 @@ impl Editor {
         {
             self.error = Some(error.to_string());
         }
+    }
+    fn preview_canvas_size(&self) -> [u32; 2] {
+        let canvas = &self.session.project().data().canvas;
+        [canvas.width, canvas.height]
+    }
+    fn format_timecode(&self, at: Tick) -> String {
+        let rate = self.session.project().data().canvas.fps;
+        time::format_timecode(at, rate, drop_frame(rate))
+            .unwrap_or_else(|_| display_time(at.max(Tick::ZERO)))
+    }
+    fn current_timecode(&self) -> String {
+        self.format_timecode(self.playback.position().unwrap_or(Tick::ZERO))
+    }
+    fn commit_timecode(&mut self) {
+        let Some(edit) = self.timecode_edit.take() else {
+            return;
+        };
+        let duration = self.session.project().duration();
+        let rate = self.session.project().data().canvas.fps;
+        match time::parse_timecode(&edit.text, rate, drop_frame(rate)) {
+            Ok(at) if at >= Tick::ZERO && at <= duration => {
+                if let Err(error) =
+                    self.dispatch("playback.seek", serde_json::json!({"time": at.0}))
+                {
+                    self.error = Some(error.to_string());
+                } else {
+                    self.timecode_error = None;
+                }
+            }
+            _ => self.timecode_error = Some(Text::TimecodeInvalid),
+        }
+    }
+    fn cancel_timecode(&mut self) {
+        self.timecode_edit = None;
+        self.timecode_error = None;
+    }
+    fn set_preview_fit(&mut self) -> Result<()> {
+        self.preview_view.set_fit();
+        self.preferences
+            .set("preview_fit", serde_json::Value::Bool(true))?;
+        Ok(())
+    }
+    fn set_preview_zoom(&mut self, zoom: f32, viewport: Vec2, canvas: [u32; 2]) -> Result<()> {
+        let zoom = self
+            .preview_view
+            .set_zoom(zoom, viewport, canvas)
+            .ok_or(Error::Invalid("preview zoom"))?;
+        self.preferences
+            .set("preview_zoom", serde_json::json!(zoom))?;
+        self.preferences
+            .set("preview_fit", serde_json::Value::Bool(false))?;
+        Ok(())
+    }
+    fn preview_zoom_by(&mut self, factor: f32) -> Result<()> {
+        let viewport = self.preview_viewport;
+        let canvas = self.preview_canvas_size();
+        let base = if self.preview_view.fit {
+            self.preview_view.scale(viewport, canvas)
+        } else {
+            self.preview_view.zoom
+        };
+        let target = preview::step_zoom(base, factor);
+        if (target - self.preview_view.zoom).abs() < f32::EPSILON && !self.preview_view.fit {
+            return Ok(());
+        }
+        self.set_preview_zoom(target, viewport, canvas)
+    }
+    fn open_snapshot_dialog(&mut self) -> Result<()> {
+        if self.session.project().duration() == Tick::ZERO {
+            self.snapshot.error = Some(engine::control::ErrorCode::EmptyProject);
+            return Err(Error::Engine(engine::EditError::EmptyProject));
+        }
+        self.snapshot.open();
+        self.lifecycle_action = Some(crate::lifecycle::EditorAction::SnapshotSave);
+        Ok(())
+    }
+    /// Native picker destination applied through the consumed `preview.snapshot`
+    /// command. Failure stays typed and never shows a success toast.
+    pub fn snapshot_picked_file(&mut self, path: PathBuf) -> Result<()> {
+        let at = self.playback.position()?;
+        let protected = self
+            .session
+            .autosave()
+            .map(|autosave| autosave.protected_export_paths())
+            .transpose()?
+            .unwrap_or_default();
+        let budget = self.playback.budget().clone();
+        match self
+            .snapshot
+            .save(&mut self.session, budget, at, &path, protected)
+        {
+            Ok(()) => {
+                self.preferences
+                    .set("snapshot_directory", serde_json::to_value(path.parent())?)?;
+                self.set_toast(
+                    self.tr(Text::SnapshotSaved),
+                    Some(path.to_string_lossy().into_owned()),
+                );
+                Ok(())
+            }
+            Err(error) => {
+                self.error = Some(error.to_string());
+                Err(error)
+            }
+        }
+    }
+    pub fn snapshot_save_cancelled(&mut self) {
+        self.snapshot.cancel();
+    }
+    /// Tests and non-window callers consume the same lifecycle request the
+    /// workspace turns into the native picker.
+    pub fn take_lifecycle_action(&mut self) -> Option<crate::lifecycle::EditorAction> {
+        self.lifecycle_action.take()
+    }
+    /// Default filename and last directory for the native snapshot dialog.
+    pub fn snapshot_save_defaults(&self) -> (String, Option<PathBuf>) {
+        let at = self.playback.position().unwrap_or(Tick::ZERO);
+        (
+            engine::snapshot::default_name(self.session.project(), at)
+                .unwrap_or_else(|_| "snapshot.png".into()),
+            self.preferences.snapshot_directory.clone(),
+        )
+    }
+    /// Put the current frame on the OS clipboard through egui's clipboard owner.
+    pub fn copy_snapshot(&mut self, ctx: &egui::Context) -> Result<()> {
+        let at = self.playback.position()?;
+        if let Err(error) = preview::copy(&self.session, at, ctx) {
+            self.snapshot.error = Some(match &error {
+                Error::Engine(engine::EditError::EmptyProject) => {
+                    engine::control::ErrorCode::EmptyProject
+                }
+                _ => engine::control::ErrorCode::Failed,
+            });
+            self.error = Some(error.to_string());
+            return Err(error);
+        }
+        self.snapshot.error = None;
+        self.set_toast(self.tr(Text::SnapshotCopy), None);
+        Ok(())
     }
     fn seek(&mut self, at: Tick) -> Result<()> {
         self.playback
@@ -1994,6 +2206,37 @@ impl Editor {
     /// App action dispatcher shared by UI and agents. Preference edits use
     /// `ui.prefs.set` with `{"key": ..., "value": ...}` typed params.
     pub fn dispatch(&mut self, id: &str, params: serde_json::Value) -> Result<()> {
+        if id == "playback.seek" {
+            let time = params
+                .get("time")
+                .and_then(serde_json::Value::as_i64)
+                .ok_or(Error::Invalid("seek time"))?;
+            let at = Tick(time).clamp(Tick::ZERO, self.session.project().duration());
+            self.playback
+                .seek(at, self.playback.playing(), self.session.project().clone())?;
+            self.remember_view()?;
+            return Ok(());
+        }
+        if id == "preview.set_zoom" {
+            let viewport = self.preview_viewport;
+            let canvas = self.preview_canvas_size();
+            if params
+                .get("fit")
+                .and_then(serde_json::Value::as_bool)
+                .unwrap_or(false)
+            {
+                self.set_preview_fit()?;
+            } else {
+                let zoom = params
+                    .get("zoom")
+                    .and_then(serde_json::Value::as_f64)
+                    .ok_or(Error::Invalid("preview zoom"))?;
+                let zoom =
+                    preview::normalize_zoom(zoom as f32).ok_or(Error::Invalid("preview zoom"))?;
+                self.set_preview_zoom(zoom, viewport, canvas)?;
+            }
+            return Ok(());
+        }
         if id == PREFERENCE_COMMAND {
             let key = params
                 .get("key")
@@ -3096,6 +3339,29 @@ impl Editor {
         {
             self.keyboard(ui.ctx());
         }
+        if self.preview_fullscreen != self.fullscreen_commanded {
+            ui.ctx()
+                .send_viewport_cmd(egui::ViewportCommand::Fullscreen(self.preview_fullscreen));
+            self.fullscreen_commanded = self.preview_fullscreen;
+        }
+        if self.preview_fullscreen {
+            let rect = ui.max_rect();
+            let rect = Rect::from_min_size(rect.min, rect.size().max(Vec2::ZERO));
+            ui.painter()
+                .rect_filled(rect, 0.0, theme::window(self.preferences.dark));
+            let mut child = ui.new_child(
+                egui::UiBuilder::new()
+                    .id_salt("preview.fullscreen")
+                    .max_rect(rect.shrink2(Vec2::new(
+                        16.0_f32.min(rect.width() / 2.0),
+                        16.0_f32.min(rect.height() / 2.0),
+                    ))),
+            );
+            child.set_clip_rect(rect);
+            self.preview(&mut child);
+            self.toast(ui.ctx());
+            return;
+        }
         let rect = ui.max_rect();
         let rect = Rect::from_min_size(rect.min, rect.size().max(Vec2::ZERO));
         ui.painter()
@@ -3242,6 +3508,18 @@ impl Editor {
             ));
     }
     fn keyboard(&mut self, ctx: &egui::Context) {
+        if self.preview_fullscreen {
+            if consume(ctx, egui::Modifiers::NONE, egui::Key::Escape) {
+                self.preview_fullscreen = false;
+            }
+            return;
+        }
+        if self.timecode_edit.is_some() {
+            if consume(ctx, egui::Modifiers::NONE, egui::Key::Escape) {
+                self.cancel_timecode();
+            }
+            return;
+        }
         if self.media_delete_confirm.is_some() {
             if consume(ctx, egui::Modifiers::NONE, egui::Key::Escape) {
                 self.media_delete_confirm = None;
@@ -5850,13 +6128,57 @@ impl Editor {
         self.preview(ui);
     }
     fn preview(&mut self, ui: &mut egui::Ui) {
-        ui.label(
-            egui::RichText::new(self.tr(Text::Preview))
-                .size(16.0)
-                .strong(),
-        );
-        ui.add_space(12.0);
-        let mut footer_height = 86.0;
+        let duration = self.session.project().duration();
+        let empty = duration == Tick::ZERO;
+        ui.horizontal(|ui| {
+            ui.label(
+                egui::RichText::new(self.tr(Text::Preview))
+                    .size(16.0)
+                    .strong(),
+            );
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                if self.icon_only(
+                    ui,
+                    "preview.fullscreen",
+                    Icon::CornersOut,
+                    self.tr(if self.preview_fullscreen {
+                        Text::ExitFullscreen
+                    } else {
+                        Text::Fullscreen
+                    }),
+                    None,
+                    Some(self.preview_fullscreen),
+                    true,
+                ) {
+                    self.action("preview.fullscreen");
+                }
+                if self.icon_only(
+                    ui,
+                    "preview.copy",
+                    Icon::File,
+                    self.tr(Text::SnapshotCopy),
+                    None,
+                    None,
+                    !empty,
+                ) && let Err(error) = self.copy_snapshot(ui.ctx())
+                {
+                    self.error = Some(error.to_string());
+                }
+                if self.icon_only(
+                    ui,
+                    "preview.snapshot",
+                    Icon::FloppyDisk,
+                    self.tr(Text::SnapshotSave),
+                    None,
+                    None,
+                    !empty,
+                ) {
+                    self.action("preview.snapshot");
+                }
+            });
+        });
+        ui.add_space(10.0);
+        let mut footer_height = PREVIEW_FOOTER_HEIGHT;
         if !self.playback.device_available() {
             footer_height += 24.0;
         }
@@ -5870,65 +6192,10 @@ impl Editor {
                 (ui.available_height() - footer_height).max(0.0),
             ),
         );
-        ui.painter()
-            .rect_filled(area, 0.0, theme::preview_backdrop());
-        if let Some(frame) = self
-            .playback
-            .frame()
-            .filter(|_| self.session.project().duration() > Tick::ZERO)
-        {
-            let key = (frame.epoch, frame.at);
-            if self.texture_key != Some(key) {
-                if let Some(texture) = &mut self.texture {
-                    texture.set(frame.image.clone(), egui::TextureOptions::LINEAR);
-                } else {
-                    self.texture = Some(ui.ctx().load_texture(
-                        "preview.frame",
-                        frame.image.clone(),
-                        egui::TextureOptions::LINEAR,
-                    ));
-                }
-                self.texture_key = Some(key);
-                self.texture_owner = Some(frame.clone());
-            }
-            if let Some(texture) = &self.texture {
-                let size = texture.size_vec2();
-                let size = size * (area.width() / size.x).min(area.height() / size.y);
-                ui.painter().image(
-                    texture.id(),
-                    Rect::from_center_size(area.center(), size),
-                    Rect::from_min_max(egui::Pos2::ZERO, egui::pos2(1.0, 1.0)),
-                    theme::image_tint(),
-                );
-            }
-        } else {
-            self.texture = None;
-            self.texture_key = None;
-            self.texture_owner = None;
-            let label = if self.playback.error().is_some() {
-                Text::Unavailable
-            } else if self.session.project().duration() == Tick::ZERO {
-                Text::EmptyPreview
-            } else {
-                Text::Loading
-            };
-            ui.scope_builder(
-                egui::UiBuilder::new()
-                    .max_rect(area)
-                    .layout(egui::Layout::centered_and_justified(
-                        egui::Direction::TopDown,
-                    )),
-                |ui| {
-                    ui.label(
-                        egui::RichText::new(self.tr(label))
-                            .size(14.0)
-                            .color(theme::on_scrim()),
-                    );
-                },
-            );
-        }
+        self.preview_viewport = area.size();
+        self.preview_canvas(ui, area, empty);
         ui.advance_cursor_after_rect(area);
-        let ready = self.session.project().duration() > Tick::ZERO && self.playback.can_play();
+        let ready = !empty && self.playback.can_play();
         ui.horizontal(|ui| {
             if self.icon_only(
                 ui,
@@ -5937,7 +6204,7 @@ impl Editor {
                 self.tr(Text::Back),
                 Some(self.tr(Text::ShortcutBack)),
                 None,
-                true,
+                !empty,
             ) {
                 self.action("transport.back");
             }
@@ -5964,20 +6231,20 @@ impl Editor {
                 self.tr(Text::Forward),
                 Some(self.tr(Text::ShortcutForward)),
                 None,
-                true,
+                !empty,
             ) {
                 self.action("transport.forward");
             }
         });
-        let at = self.playback.position().unwrap_or(Tick::ZERO);
-        ui.label(catalog::format(
-            self.preferences.locale,
-            Text::TimePosition,
-            &[
-                ("current", &display_time(at)),
-                ("duration", &display_time(self.session.project().duration())),
-            ],
-        ));
+        self.preview_timecode_row(ui, empty, duration);
+        self.preview_zoom_row(ui, area.size());
+        if let Some(code) = self.snapshot.error {
+            ui.label(
+                egui::RichText::new(format!("{}: {code:?}", self.tr(Text::SnapshotFailed)))
+                    .small()
+                    .color(theme::error_text(self.preferences.dark)),
+            );
+        }
         if !self.playback.device_available() {
             ui.label(self.tr(Text::Offline));
         }
@@ -5996,6 +6263,267 @@ impl Editor {
                 self.action("preview.retry");
             }
         }
+    }
+    /// Editable HH:MM:SS:FF position and the project duration. Enter commits
+    /// through `playback.seek`; Esc or invalid text restores the previous value.
+    fn preview_timecode_row(&mut self, ui: &mut egui::Ui, empty: bool, duration: Tick) {
+        let current = self.current_timecode();
+        let total = self.format_timecode(duration);
+        let mut editing = self.timecode_edit.take();
+        let mut start = None;
+        let mut commit = false;
+        let mut cancel = false;
+        ui.horizontal(|ui| {
+            if let Some(edit) = editing.as_mut() {
+                let response = ui.add_sized(
+                    [TIMECODE_WIDTH, 26.0],
+                    egui::TextEdit::singleline(&mut edit.text)
+                        .id_salt("preview.timecode.field")
+                        .font(egui::TextStyle::Monospace),
+                );
+                if edit.focus {
+                    response.request_focus();
+                    edit.focus = false;
+                }
+                self.remember("preview.timecode", &response);
+                let escape = ui.input(|input| input.key_pressed(egui::Key::Escape));
+                let enter = ui.input(|input| input.key_pressed(egui::Key::Enter));
+                if escape {
+                    cancel = true;
+                } else if enter {
+                    commit = true;
+                } else if response.lost_focus() {
+                    cancel = true;
+                }
+            } else {
+                let response = ui.add_enabled(
+                    !empty,
+                    egui::Button::new(egui::RichText::new(&current).monospace())
+                        .min_size(Vec2::new(TIMECODE_WIDTH, 26.0)),
+                );
+                self.remember("preview.timecode", &response);
+                if response.clicked() {
+                    start = Some(current.clone());
+                }
+            }
+            ui.label(
+                egui::RichText::new(catalog::format(
+                    self.preferences.locale,
+                    Text::TimeTotal,
+                    &[("duration", &total)],
+                ))
+                .monospace()
+                .color(self.secondary()),
+            );
+            if let Some(error) = self.timecode_error {
+                ui.label(
+                    egui::RichText::new(self.tr(error))
+                        .small()
+                        .color(theme::error_text(self.preferences.dark)),
+                );
+            }
+        });
+        if let Some(text) = start {
+            editing = Some(TimecodeEdit { text, focus: true });
+            self.timecode_error = None;
+        }
+        if commit {
+            self.timecode_edit = editing;
+            self.commit_timecode();
+        } else if cancel {
+            self.timecode_edit = None;
+        } else {
+            self.timecode_edit = editing;
+        }
+    }
+    /// Fit, the fixed presets, continuous ×1.25 steps and the current scale.
+    fn preview_zoom_row(&mut self, ui: &mut egui::Ui, viewport: Vec2) {
+        let canvas = self.preview_canvas_size();
+        let mut action = None;
+        ui.horizontal(|ui| {
+            if self.preset_button(
+                ui,
+                "preview.zoom.fit",
+                self.tr(Text::ZoomFit),
+                self.preview_view.fit,
+            ) {
+                action = Some("preview.zoom.fit".to_owned());
+            }
+            for percent in preview::PRESETS {
+                let target = *percent as f32 / 100.0;
+                let selected =
+                    !self.preview_view.fit && (self.preview_view.zoom - target).abs() < 1e-4;
+                let id = format!("preview.zoom.{percent}");
+                if self.preset_button(ui, &id, &format!("{percent}%"), selected) {
+                    action = Some(id);
+                }
+            }
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                if self.icon_only(
+                    ui,
+                    "preview.zoom.in",
+                    Icon::MagnifyingGlassPlus,
+                    self.tr(Text::ZoomIn),
+                    None,
+                    None,
+                    true,
+                ) {
+                    action = Some("preview.zoom.in".to_owned());
+                }
+                if self.icon_only(
+                    ui,
+                    "preview.zoom.out",
+                    Icon::MagnifyingGlassMinus,
+                    self.tr(Text::ZoomOut),
+                    None,
+                    None,
+                    true,
+                ) {
+                    action = Some("preview.zoom.out".to_owned());
+                }
+                let scale = self.preview_view.scale(viewport, canvas);
+                ui.label(
+                    egui::RichText::new(format!("{:.0}%", scale * 100.0))
+                        .monospace()
+                        .color(self.secondary()),
+                );
+            });
+        });
+        if let Some(action) = action {
+            self.action(&action);
+        }
+    }
+    fn preview_canvas(&mut self, ui: &mut egui::Ui, area: Rect, empty: bool) {
+        ui.painter()
+            .rect_filled(area, 0.0, theme::preview_backdrop());
+        let response = ui.interact(
+            area,
+            Id::unique("preview.canvas"),
+            egui::Sense::click_and_drag(),
+        );
+        self.remember("preview.canvas", &response);
+        let canvas = self.preview_canvas_size();
+        if response.hovered() && !empty {
+            let (zoom, scroll) = ui
+                .ctx()
+                .input(|input| (input.zoom_delta(), input.smooth_scroll_delta()));
+            if (zoom - 1.0).abs() > 1e-4 {
+                if let Err(error) = self.preview_zoom_by(zoom) {
+                    self.error = Some(error.to_string());
+                }
+            } else if scroll != Vec2::ZERO {
+                self.preview_view.pan(scroll, area.size(), canvas);
+                // Plain wheel/two-finger scroll never zooms and never falls
+                // through to another owner while the preview can pan.
+                if self.preview_view.can_pan() {
+                    ui.ctx()
+                        .input_mut(|input| input.smooth_scroll_delta = Vec2::ZERO);
+                }
+            }
+        }
+        // Middle-drag reads raw pointer state so it works even though the base
+        // canvas also owns click/drag for selection-free presentation.
+        let (middle_down, pointer_delta) = ui.ctx().input(|input| {
+            (
+                input.pointer.button_down(egui::PointerButton::Middle),
+                input.pointer.delta(),
+            )
+        });
+        if middle_down && (response.hovered() || response.dragged()) && pointer_delta != Vec2::ZERO
+        {
+            self.preview_view.pan(pointer_delta, area.size(), canvas);
+        }
+        let mut menu_action = None;
+        response.context_menu(|ui| {
+            if self.menu_button(ui, "preview.menu.snapshot", Text::SnapshotSave, !empty) {
+                menu_action = Some("preview.snapshot");
+                ui.close();
+            }
+            if self.menu_button(ui, "preview.menu.copy", Text::SnapshotCopy, !empty) {
+                menu_action = Some("preview.menu.copy");
+                ui.close();
+            }
+            if self.menu_button(ui, "preview.menu.fullscreen", Text::Fullscreen, true) {
+                menu_action = Some("preview.fullscreen");
+                ui.close();
+            }
+        });
+        match menu_action {
+            Some("preview.menu.copy") => {
+                if let Err(error) = self.copy_snapshot(ui.ctx()) {
+                    self.error = Some(error.to_string());
+                }
+            }
+            Some(action) => self.action(action),
+            None => {}
+        }
+        if empty {
+            self.texture = None;
+            self.texture_key = None;
+            self.texture_owner = None;
+            self.centered_preview_label(ui, area, Text::ProjectEmpty);
+            return;
+        }
+        if let Some(frame) = self.playback.frame() {
+            let key = (frame.epoch, frame.at);
+            if self.texture_key != Some(key) {
+                if let Some(texture) = &mut self.texture {
+                    texture.set(frame.image.clone(), egui::TextureOptions::LINEAR);
+                } else {
+                    self.texture = Some(ui.ctx().load_texture(
+                        "preview.frame",
+                        frame.image.clone(),
+                        egui::TextureOptions::LINEAR,
+                    ));
+                }
+                self.texture_key = Some(key);
+                self.texture_owner = Some(frame.clone());
+            }
+            if let Some(texture) = &self.texture {
+                let scale = self.preview_view.scale(area.size(), canvas);
+                if self.preview_view.fit {
+                    self.preview_view.offset = Vec2::ZERO;
+                } else {
+                    self.preview_view.offset =
+                        preview::clamp_offset(self.preview_view.offset, area.size(), canvas, scale);
+                }
+                let size = Vec2::new(canvas[0] as f32 * scale, canvas[1] as f32 * scale);
+                let rect = Rect::from_center_size(area.center() + self.preview_view.offset, size);
+                let painter = ui.painter().with_clip_rect(area);
+                painter.image(
+                    texture.id(),
+                    rect,
+                    Rect::from_min_max(egui::Pos2::ZERO, egui::pos2(1.0, 1.0)),
+                    theme::image_tint(),
+                );
+            }
+        } else {
+            self.texture = None;
+            self.texture_key = None;
+            self.texture_owner = None;
+            let label = if self.playback.error().is_some() {
+                Text::Unavailable
+            } else {
+                Text::Loading
+            };
+            self.centered_preview_label(ui, area, label);
+        }
+    }
+    fn centered_preview_label(&mut self, ui: &mut egui::Ui, area: Rect, label: Text) {
+        ui.scope_builder(
+            egui::UiBuilder::new()
+                .max_rect(area)
+                .layout(egui::Layout::centered_and_justified(
+                    egui::Direction::TopDown,
+                )),
+            |ui| {
+                ui.label(
+                    egui::RichText::new(self.tr(label))
+                        .size(14.0)
+                        .color(theme::on_scrim()),
+                );
+            },
+        );
     }
     /// Non-modal import overlay over the media panel. Import controls are
     /// already disabled while the batch runs; cancel remains available.
