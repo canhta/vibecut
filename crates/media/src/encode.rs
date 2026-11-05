@@ -679,54 +679,59 @@ mod tests {
             eprintln!("skipping threaded lookahead regression: libx264 absent on this platform");
             return;
         };
-        let rate = FrameRate::new(30, 1).unwrap();
-        let time_base = TimeBase::new(1, 30).unwrap();
-        let color = ColorInfo::default().resolved_sdr();
-        let settings = VideoEncoderSettings::h264(128, 96, rate, color);
-        let mut native = ff::codec::context::Context::new_with_codec(codec)
-            .encoder()
-            .video()
-            .unwrap();
-        native.set_width(128);
-        native.set_height(96);
-        native.set_format(ff::format::Pixel::NV12);
-        native.set_time_base(time_base.rational());
-        native.set_bit_rate(settings.bit_rate);
-        native.set_max_b_frames(0);
-        native.set_threading(ff::codec::threading::Config::count(2));
-        let mut options = ff::Dictionary::new();
-        // A long, real lookahead makes the final burst deterministic even on
-        // small hosts, without changing the production encoder's quality.
-        options.set("rc-lookahead", "80");
-        let mut encoder = VideoEncoder {
-            encoder: native.open_with(options).unwrap(),
-            time_base,
-            settings,
-            scaler: None,
-            finished: false,
-            name: "libx264 test".into(),
-            last_pts: None,
-        };
-        let first =
-            VideoFrame::from_rgba8(128, 96, time::Tick::ZERO, color, &vec![128; 128 * 96 * 4])
+        for threads in [2, 16] {
+            let rate = FrameRate::new(30, 1).unwrap();
+            let time_base = TimeBase::new(1, 30).unwrap();
+            let color = ColorInfo::default().resolved_sdr();
+            let settings = VideoEncoderSettings::h264(128, 96, rate, color);
+            let mut native = ff::codec::context::Context::new_with_codec(codec)
+                .encoder()
+                .video()
                 .unwrap();
-        let mut emitted = Vec::new();
-        for index in 0..128 {
-            let frame = first.with_pts(time_base.ticks(index).unwrap()).unwrap();
-            emitted.extend(encoder.encode(&frame).unwrap());
-        }
-        let delayed = encoder.flush().unwrap();
-        assert!(delayed.len() > 64, "burst must exercise the old cap");
-        println!("threaded final flush: {} delayed packets", delayed.len());
-        emitted.extend(delayed);
-        assert_eq!(emitted.len(), 128);
-        for (index, packet) in emitted.iter().enumerate() {
-            assert_eq!(
-                packet.pts().unwrap(),
-                Some(time_base.ticks(index as i64).unwrap())
+            native.set_width(128);
+            native.set_height(96);
+            native.set_format(ff::format::Pixel::NV12);
+            native.set_time_base(time_base.rational());
+            native.set_bit_rate(settings.bit_rate);
+            native.set_max_b_frames(0);
+            native.set_threading(ff::codec::threading::Config::count(threads));
+            let mut options = ff::Dictionary::new();
+            // A long, real lookahead makes the final burst deterministic even on
+            // small hosts, without changing the production encoder's quality.
+            options.set("rc-lookahead", "80");
+            let mut encoder = VideoEncoder {
+                encoder: native.open_with(options).unwrap(),
+                time_base,
+                settings,
+                scaler: None,
+                finished: false,
+                name: "libx264 test".into(),
+                last_pts: None,
+            };
+            let first =
+                VideoFrame::from_rgba8(128, 96, time::Tick::ZERO, color, &vec![128; 128 * 96 * 4])
+                    .unwrap();
+            let mut emitted = Vec::new();
+            for index in 0..128 {
+                let frame = first.with_pts(time_base.ticks(index).unwrap()).unwrap();
+                emitted.extend(encoder.encode(&frame).unwrap());
+            }
+            let delayed = encoder.flush().unwrap();
+            assert!(delayed.len() > 64, "burst must exercise the old cap");
+            println!(
+                "{threads} threads final flush: {} delayed packets",
+                delayed.len()
             );
+            emitted.extend(delayed);
+            assert_eq!(emitted.len(), 128);
+            for (index, packet) in emitted.iter().enumerate() {
+                assert_eq!(
+                    packet.pts().unwrap(),
+                    Some(time_base.ticks(index as i64).unwrap())
+                );
+            }
+            assert!(encoder.flush().unwrap().is_empty());
         }
-        assert!(encoder.flush().unwrap().is_empty());
     }
 
     #[test]

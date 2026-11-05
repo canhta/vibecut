@@ -253,7 +253,7 @@ vector capacity slack; packet count is not a codec-delay limit. Oversized batche
 return `MediaError::TooLarge`; discard that execution after a refusal. Final
 video flush receives until EOF and repeated successful flushes are empty, as
 specified by [FFmpeg's send/receive contract](https://github.com/FFmpeg/FFmpeg/blob/master/libavcodec/avcodec.h).
-Regressions cover a two-thread encoder with more than 64 delayed packets and a
+Regressions cover two- and sixteen-thread encoders with more than 64 delayed packets and a
 60 s 1080p30 encode, including decoded frame count and mux duration.
 
 Audio encoding admits up to eight channels and caps its FIFO at
