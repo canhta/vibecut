@@ -32,8 +32,8 @@ fn encoded_video_batch_bytes(retained: usize, packet: &ff::Packet) -> Result<usi
 pub enum EncodePreference {
     #[cfg_attr(not(windows), default)]
     Hardware,
-    // Windows hardware MF can substitute future pictures; keep software as the
-    // default until sustained picture integrity is verified (p0-core/78).
+    // Hardware MF is correct with copied NV12 input (p0-core/78) but remains
+    // opt-in on Windows until other vendors' encoders are verified.
     #[cfg_attr(windows, default)]
     Software,
 }
@@ -209,8 +209,13 @@ impl VideoEncoder {
                     .map_or(1, |n| n.get().min(MAX_VIDEO_ENCODER_THREADS));
                 encoder.set_threading(ff::codec::threading::Config::count(threads));
                 encoder.set_flags(ff::codec::Flags::GLOBAL_HEADER);
+                // FFmpeg mfenc wraps a D3D11 subresource without retaining the
+                // AVFrame's decoder-pool lease while its asynchronous MFT reads
+                // it. NV12 takes mfenc's owned sample-copy path instead. This
+                // keeps hardware encoding available without reusing GPU input.
                 encoder.set_format(
                     if !settings.webm
+                        && name != "h264_mf"
                         && hardware
                         && !matches!(preference, EncodePreference::Software)
                         && first.is_hardware()

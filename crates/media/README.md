@@ -157,8 +157,10 @@ NVENC/QSV use a positive CQ/ICQ level at the maximum quality request, avoiding
 automatic or disabled native quality. These mappings are not evidence of equal
 perceptual quality across platforms.
 
-Hardware preference uses VideoToolbox on macOS and D3D11VA/QSV on Windows.
-Encoding tries platform hardware and then the platform software path (VideoToolbox
+Hardware decode preference uses VideoToolbox on macOS and D3D11VA/QSV on Windows.
+Windows encode defaults to `EncodePreference::Software`; other platforms retain
+hardware preference. Explicit hardware preference tries platform hardware and
+then the platform software path (VideoToolbox
 `allow_sw`, or Media Foundation software), retaining requested settings. Missing
 capability is an error. Windows defaults (`EncodePreference::default` and
 `VideoEncoder::new`) use software encoding while sustained Media Foundation
@@ -182,9 +184,25 @@ retain their original category.
 
 The CPU compositor explicitly downloads GPU frames when it needs pixels. Direct
 decode/encode sharing avoids that transfer only for a compatible retained pool;
-this is not a zero-copy claim for composited or vertical output. Windows
-device/quality behavior and physical device-loss recovery remain unverified;
-they require the Windows hardware ticket.
+this is not a zero-copy claim for composited or vertical output. Physical
+device-loss recovery remains unverified and requires its own runtime test.
+
+Media Foundation always receives CPU NV12 input, including when its hardware
+encoder is explicitly preferred. FFmpeg's
+[D3D11 sample wrapper](https://github.com/FFmpeg/FFmpeg/blob/n9.0.2/libavcodec/mfenc.c#L330)
+retains a texture/subresource but not the decoded AVFrame's pool lease, and
+releases that frame after input acceptance. An asynchronous MFT may still read
+it: [ProcessInput's contract](https://learn.microsoft.com/en-us/windows/win32/api/mftransform/nf-mftransform-imftransform-processinput)
+allows the transform to retain the input sample. Reusing the decoder surface
+can therefore replace a picture without changing its timestamp. The existing
+download/conversion path reaches mfenc's owned sample copy, retaining requested
+bitrate, quality, color and timing without an unbounded frame-retention queue.
+This deliberately excludes direct D3D11 pool sharing for MF; hardware decode
+remains available. `streaming_h264_preserves_every_picture_identity` streams
+60 seconds of 1080p frames with an eleven-bit picture marker through default
+software and explicit hardware encode, checking every decoded marker and PTS.
+It reports a capability skip when no hardware decoder is available; a skip is
+not Windows hardware acceptance evidence.
 
 `RgbaConverter::with_threads` and `VideoEncoderSettings::conversion_threads`
 admit 1–8 FFmpeg conversion workers, defaulting to one. The execution owner

@@ -231,6 +231,147 @@ fn hardware_preference_encodes_and_preserves_color() {
     assert!(check.status.success());
 }
 
+// Retaining every decoded frame (as the short color oracle above does) hides
+// decoder-pool reuse while an asynchronous encoder still consumes its input.
+#[cfg(windows)]
+#[test]
+fn streaming_h264_preserves_every_picture_identity() {
+    use media::{EncodePreference, VideoReader};
+    use std::time::{Duration, Instant};
+
+    let mut filters = vec!["drawbox=x=0:y=0:w=704:h=64:color=black:t=fill".to_owned()];
+    for bit in 0..11 {
+        filters.push(format!(
+            "drawbox=x={}:y=0:w=64:h=64:color=white:t=fill:enable=bitand(n\\,{})",
+            bit * 64,
+            1 << bit
+        ));
+    }
+    let filter = filters.join(",");
+    let Some(path) = crate::common::generate(
+        "streaming H.264 picture identity",
+        "ffmpeg_picture_identity_1080p60s.mp4",
+        &[
+            "-f",
+            "lavfi",
+            "-i",
+            "testsrc2=size=1920x1080:rate=30:duration=60",
+            "-vf",
+            &filter,
+            "-an",
+            "-c:v",
+            "libx264",
+            "-preset",
+            "ultrafast",
+            "-crf",
+            "18",
+            "-pix_fmt",
+            "yuv420p",
+            "-color_range",
+            "tv",
+            "-colorspace",
+            "bt709",
+            "-color_trc",
+            "bt709",
+            "-color_primaries",
+            "bt709",
+        ],
+    ) else {
+        return;
+    };
+    for (label, preference) in [
+        ("default", None),
+        ("hardware", Some(EncodePreference::Hardware)),
+    ] {
+        let start = Instant::now();
+        let mut reader = VideoReader::open(&path).unwrap();
+        let first = reader.next_frame().unwrap().unwrap();
+        if !first.is_hardware() {
+            eprintln!(
+                "skipping sustained D3D11 picture identity: no hardware decoder on this host"
+            );
+            return;
+        }
+        let settings =
+            VideoEncoderSettings::h264(1920, 1080, time::FrameRate::FPS_30, first.color());
+        let mut encoder = match preference {
+            Some(preference) => {
+                VideoEncoder::with_preference(settings, &first, preference).unwrap()
+            }
+            None => VideoEncoder::new(settings, &first).unwrap(),
+        };
+        if preference.is_none() {
+            assert_eq!(encoder.name(), "h264_mf (software)");
+        }
+        let output = crate::common::fixtures_dir().join(format!("picture-identity-{label}.mp4"));
+        let mut mux = Muxer::create(&output, Container::Mp4).unwrap();
+        let track = mux
+            .add_parameters(&encoder.parameters(), encoder.time_base())
+            .unwrap();
+        let mut hardware = 0;
+        let mut count = 0;
+        let mut encode_time = Duration::ZERO;
+        let mut next = Some(first);
+        while let Some(frame) = next {
+            hardware += usize::from(frame.is_hardware());
+            assert_eq!(
+                frame.pts().unwrap(),
+                Some(time::FrameRate::FPS_30.tick_of(count).unwrap())
+            );
+            let mark = Instant::now();
+            let packets = encoder.encode(&frame).unwrap();
+            encode_time += mark.elapsed();
+            for packet in packets {
+                mux.write_packet(track, &packet).unwrap();
+            }
+            count += 1;
+            next = reader.next_frame().unwrap();
+        }
+        let mark = Instant::now();
+        let packets = encoder.flush().unwrap();
+        encode_time += mark.elapsed();
+        for packet in packets {
+            mux.write_packet(track, &packet).unwrap();
+        }
+        mux.finish().unwrap();
+        assert_eq!(count, 1800);
+        assert_eq!(hardware, 1800);
+        println!(
+            "picture_identity mode={label} encoder={} frames={count} hardware_frames={hardware} encode_seconds={:.6} export_seconds={:.6}",
+            encoder.name(),
+            encode_time.as_secs_f64(),
+            start.elapsed().as_secs_f64()
+        );
+        let mut decoded = VideoReader::open(&output).unwrap();
+        let mut checked = 0;
+        while let Some(frame) = decoded.next_frame().unwrap() {
+            assert_eq!(
+                frame.pts().unwrap(),
+                Some(time::FrameRate::FPS_30.tick_of(checked).unwrap())
+            );
+            let cpu = frame.download().unwrap();
+            let stride = cpu.stride(0).unwrap();
+            let luma = cpu.plane(0).unwrap();
+            let identity = (0..11).fold(0, |identity, bit| {
+                identity | (i64::from(luma[32 * stride + bit * 64 + 32] > 128) << bit)
+            });
+            assert_eq!(
+                identity, checked,
+                "{label}: wrong picture at output frame {checked}"
+            );
+            checked += 1;
+        }
+        assert_eq!(checked, 1800);
+        assert_eq!(
+            crate::common::stream_field(&output, "v:0", "color_range"),
+            "tv"
+        );
+        for tag in ["color_space", "color_primaries", "color_transfer"] {
+            assert_eq!(crate::common::stream_field(&output, "v:0", tag), "bt709");
+        }
+    }
+}
+
 #[test]
 fn timestamps_do_not_round_trip_through_float() {
     let base = media::TimeBase::new(1001, 30_000).unwrap();

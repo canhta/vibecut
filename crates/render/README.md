@@ -200,6 +200,7 @@ measure peak RSS separately. Sources and renderer release at completion/failure.
 `export` uses `FileSources`; `export_with_sources` accepts an explicit source
 owner. Settings select exact range, canvas/crop, fps, bitrate/quality,
 hardware-preferred or platform software encoder, audio and overwrite policy.
+The initial encoder preference follows [media's platform default](../media/README.md#input-and-quality-boundaries).
 `ExportSettings::container` defaults to MP4. MP4/MOV encode H.264 + AAC;
 WebM encodes VP9 + Opus using media's existing encoders. Output is selected by the
 settings, never guessed from the filename. Auto copies only an admitted container
