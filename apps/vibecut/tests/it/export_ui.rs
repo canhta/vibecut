@@ -733,6 +733,7 @@ fn review_reproduction_save_refuses_to_replace_source_media() {
                 error.as_deref(),
                 Some(engine::EditError::Render(render::Error::Invalid(
                     "output aliases a source"
+                        | "output aliases a source by hard link"
                         | "output hard-links a source"
                         | "output may alias source content"
                 )))
