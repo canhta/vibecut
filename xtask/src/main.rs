@@ -429,11 +429,11 @@ fn run() -> Result<ExitCode, String> {
         ["ffmpeg"] => ffmpeg::provision(None),
         ["ffmpeg", "--cache-key"] => ffmpeg::cache_key(),
         ["sherpa"] => {
-            println!("{}", sherpa::provision(root, env::consts::ARCH)?.display());
+            println!("{}", sherpa::provision(root, env::consts::ARCH, archives::fetch_limited)?.display());
             Ok(())
         }
         ["sherpa", "--arch", arch] => {
-            println!("{}", sherpa::provision(root, arch)?.display());
+            println!("{}", sherpa::provision(root, arch, archives::fetch_limited)?.display());
             Ok(())
         }
         ["checks"] => checks(root),

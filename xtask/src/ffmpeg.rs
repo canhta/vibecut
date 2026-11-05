@@ -170,7 +170,7 @@ pub fn environment(command: &mut Command) -> Result<(), String> {
                 .ok_or("xtask must live in workspace root")?;
             command.env(
                 "SHERPA_ONNX_LIB_DIR",
-                crate::sherpa::provision(root, env::consts::ARCH)?,
+                crate::sherpa::provision(root, env::consts::ARCH, crate::archives::fetch_limited)?,
             );
         }
     }

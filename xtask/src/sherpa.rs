@@ -1,5 +1,5 @@
 //! Windows Sherpa static libraries matching Rust's dynamic MSVC CRT.
-use crate::archives::{cache, fetch_limited, sha256};
+use crate::archives::{cache, sha256};
 use serde_json::{Value, json};
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -22,7 +22,12 @@ const LIBRARIES: &[&str] = &[
 /// Provision the locked Sherpa version's upstream Windows /MD archive.
 /// Supports x86_64/aarch64 on any host; native workspace callers use it only on Windows.
 /// A complete cached receipt needs no network. Incomplete caches fail with recovery guidance.
-pub fn provision(root: &Path, arch: &str) -> Result<PathBuf, String> {
+/// The supplied transport writes the destination and applies its optional byte cap.
+pub fn provision(
+    root: &Path,
+    arch: &str,
+    mut fetch: impl FnMut(&str, &Path, Option<u64>) -> Result<(), String>,
+) -> Result<PathBuf, String> {
     let platform = match arch {
         "x86_64" => "x64",
         "aarch64" => "arm64",
@@ -65,7 +70,7 @@ pub fn provision(root: &Path, arch: &str) -> Result<PathBuf, String> {
     }
     fs::create_dir_all(&base).map_err(|e| e.to_string())?;
     let metadata = base.join(format!("release-{version}-{}.json", std::process::id()));
-    fetch_limited(
+    fetch(
         &format!("https://api.github.com/repos/k2-fsa/sherpa-onnx/releases/tags/v{version}"),
         &metadata,
         Some(16 * 1024 * 1024),
@@ -99,7 +104,7 @@ pub fn provision(root: &Path, arch: &str) -> Result<PathBuf, String> {
         // A process-specific download avoids sharing curl's partial file with
         // another workspace installing the same release concurrently.
         let download = base.join(format!("{stem}-{}.download", std::process::id()));
-        fetch_limited(&source, &download, Some(size))?;
+        fetch(&source, &download, Some(size))?;
         if fs::metadata(&download).map_err(|e| e.to_string())?.len() != size
             || sha256(&download)? != digest
         {
@@ -194,7 +199,9 @@ mod tests {
             let root = PathBuf::from(root);
             let arch = std::env::var("VIBECUT_SHERPA_ARCH").unwrap();
             let expected = std::env::var("VIBECUT_SHERPA_EXPECTED").unwrap();
-            let result = provision(&root, &arch);
+            let result = provision(&root, &arch, |_, _, _| {
+                Err("unexpected network attempt on an offline cache path".into())
+            });
             if expected.is_empty() {
                 let platform = if arch == "x86_64" { "x64" } else { "arm64" };
                 assert_eq!(result.unwrap(), root.join(format!(".cache/vibecut/sherpa/sherpa-onnx-v2.0.1-win-{platform}-static-MD-Release-lib/lib")));
@@ -209,15 +216,7 @@ mod tests {
         let missing = valid.replace("sherpa-onnx-sys", "another-crate");
         let root =
             std::env::temp_dir().join(format!("sherpa cache Tiếng Việt {}", std::process::id()));
-        fs::create_dir_all(root.join("bin")).unwrap();
-        // If a supposed offline cache hit tries curl, fail immediately without
-        // reaching the network. Use an executable on both Windows and macOS.
-        fs::copy(
-            std::env::current_exe().unwrap(),
-            root.join("bin")
-                .join(format!("curl{}", std::env::consts::EXE_SUFFIX)),
-        )
-        .unwrap();
+        fs::create_dir_all(&root).unwrap();
         for (index, (arch, lock, damage, expected)) in [
             ("x86_64", valid, "", ""),
             ("aarch64", valid, "", ""),
@@ -264,7 +263,6 @@ mod tests {
                 .env(CHILD, &case).env("VIBECUT_SHERPA_ARCH", arch)
                 .env("VIBECUT_SHERPA_EXPECTED", expected)
                 .env("HOME", &case).env("USERPROFILE", &case)
-                .env("PATH", root.join("bin"))
                 .status().unwrap();
             assert!(status.success(), "case {index}");
         }
