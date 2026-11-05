@@ -129,6 +129,9 @@ ramps. Ratios are WCAG 2.x against the named surface.
   gap to a 12 px semibold label, 48 px minimum tab width, about 9 px between
   labels, 42 px bar on the panel surface; inactive in text colour, selected tab in the accent.
 - Properties tabs are text-only at 14 px; the active tab uses the accent.
+- As in CapCut, the timeline toolbar, player controls and track-header controls are
+  icon-only; labels appear only in the feature toolbar tabs, the top bar's primary
+  actions and dialogs.
 - Icon-only buttons are 28x28 px with a 16 px icon and a tooltip naming the
   action and its shortcut.
 
