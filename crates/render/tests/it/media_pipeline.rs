@@ -53,6 +53,7 @@ fn video_project(path: &Path) -> project::Project {
             source_range: TimeRange::new(Tick::ZERO, duration).unwrap(),
             start: Tick::ZERO,
             content: project::ItemParams::Video(project::VideoParams {
+                fades: Default::default(),
                 source_audio_enabled: true,
                 volume: 0.0,
                 muted: false,
@@ -259,6 +260,7 @@ fn resampling_split_trim_offset_and_irregular_blocks_are_identical() {
             source_range: TimeRange::new(source_in, tick(1, 1)).unwrap(),
             start: offset,
             content: project::ItemParams::Audio(project::AudioParams {
+                fades: Default::default(),
                 volume: -3.0,
                 muted: false,
                 source: Default::default(),
@@ -276,6 +278,7 @@ fn resampling_split_trim_offset_and_irregular_blocks_are_identical() {
                 source_range: TimeRange::new(tick(1, 2), tick(1, 1)).unwrap(),
                 start: tick(1, 2),
                 content: project::ItemParams::Audio(project::AudioParams {
+                    fades: Default::default(),
                     volume: -3.0,
                     muted: false,
                     source: Default::default(),
@@ -651,6 +654,7 @@ fn missing_audio_only_is_required_only_when_audio_is_requested() {
             source_range: TimeRange::new(Tick::ZERO, tick(1, 1)).unwrap(),
             start: Tick::ZERO,
             content: project::ItemParams::Audio(project::AudioParams {
+                fades: Default::default(),
                 volume: 0.0,
                 muted: false,
                 source: Default::default(),
@@ -1027,6 +1031,7 @@ fn stereo_policy_keeps_headroom_and_export_limits_overload() {
             source_range: TimeRange::new(Tick::ZERO, tick(1, 1)).unwrap(),
             start: Tick::ZERO,
             content: project::ItemParams::Audio(project::AudioParams {
+                fades: Default::default(),
                 volume: 0.0,
                 muted: false,
                 source: Default::default(),
@@ -1447,6 +1452,7 @@ fn export_item_mute_and_gain_change_samples() {
                 .and_then(|track| track.items.first_mut())
             {
                 item.content = project::ItemParams::Audio(project::AudioParams {
+                    fades: Default::default(),
                     volume,
                     muted,
                     source: Default::default(),
@@ -1513,6 +1519,7 @@ fn export_keeps_track_picture_and_audio_flags_independent() {
             let mut audio = data.scene_mut().timeline.main.items[0].clone();
             audio.id = project::ItemId(1);
             audio.content = project::ItemParams::Audio(project::AudioParams {
+                fades: Default::default(),
                 volume: 0.0,
                 muted: false,
                 source: Default::default(),
@@ -1615,6 +1622,7 @@ fn sound_library_attribution_and_licence_are_written_into_export_metadata() {
             source_range: TimeRange::new(Tick::ZERO, duration).unwrap(),
             start: Tick::ZERO,
             content: project::ItemParams::Audio(project::AudioParams {
+                fades: Default::default(),
                 volume: 0.0,
                 muted: false,
                 source: project::AudioSource::Library {
@@ -1697,5 +1705,114 @@ fn sound_library_attribution_and_licence_are_written_into_export_metadata() {
             "{limit} must refuse rather than omit attribution"
         );
         assert_eq!(std::fs::read(&output).unwrap(), published);
+    }
+}
+
+#[test]
+fn clip_fades_export_matches_the_preview_mix_across_block_partitions() {
+    if !tools() {
+        return;
+    }
+    let input = root().join("fade-tone.wav");
+    generate(
+        &input,
+        &[
+            "-f",
+            "lavfi",
+            "-i",
+            "aevalsrc=0.5*sin(2*PI*997*t)|0.5*sin(2*PI*997*t):s=48000:d=1",
+            "-c:a",
+            "pcm_f32le",
+        ],
+    );
+    let asset = media::SourceAsset::import(media::AssetId(7), input).unwrap();
+    let mut d = solid_project(1, 64, 64, [0, 0, 0, 255]).into_data();
+    d.assets.push(asset);
+    d.scene_mut().timeline.insert_track(project::Track {
+        id: project::TrackId(8),
+        name: "".into(),
+        kind: project::TrackKind::Audio,
+        muted: false,
+        hidden: false,
+        locked: false,
+        items: vec![project::Item {
+            blend_mode: Default::default(),
+            masks: Vec::new(),
+            effects: Vec::new(),
+            animations: Default::default(),
+            id: project::ItemId(7),
+            source_asset: Some(media::AssetId(7)),
+            source_range: TimeRange::new(Tick::ZERO, tick(1, 1)).unwrap(),
+            start: Tick::ZERO,
+            content: project::ItemParams::Audio(project::AudioParams {
+                fades: project::Fades {
+                    fade_in: project::Fade {
+                        duration: tick(12_000, 48_000),
+                        curve: project::FadeCurve::EqualPower,
+                    },
+                    fade_out: project::Fade {
+                        duration: tick(12_000, 48_000),
+                        curve: project::FadeCurve::Exponential,
+                    },
+                },
+                volume: 0.0,
+                muted: false,
+                source: Default::default(),
+            }),
+        }],
+    });
+    let p = project::Project::new(d).unwrap();
+    let h = Hooks::default();
+    let mut decoded = Vec::new();
+    for block in [2048, 137] {
+        let output = root().join(format!("clip-fade-{block}.mp4"));
+        let mut settings = ExportSettings::from_project(&p);
+        settings.overwrite = project::atomic::Overwrite::Replace;
+        settings.mode = ExportMode::Encode;
+        settings.audio_block = block;
+        export(
+            &p,
+            TimeRange::new(Tick::ZERO, tick(1, 1)).unwrap(),
+            &settings,
+            &output,
+            &h,
+        )
+        .unwrap();
+        let pcm = tool_command("ffmpeg")
+            .args(["-v", "error", "-i"])
+            .arg(&output)
+            .args(["-map", "0:a:0", "-f", "f32le", "-ac", "2", "-"])
+            .output()
+            .unwrap();
+        assert!(pcm.status.success());
+        decoded.push(
+            pcm.stdout
+                .as_chunks::<4>()
+                .0
+                .iter()
+                .step_by(2)
+                .map(|b| f32::from_le_bytes(*b))
+                .collect::<Vec<_>>(),
+        );
+    }
+    assert_eq!(decoded[0], decoded[1], "export depends on audio block size");
+    // The preview mixer and the encoded export share one envelope (AAC tolerance).
+    let preview = AudioMixer::new(&p, 2, 0, &h)
+        .unwrap()
+        .mix(0, 48_000, &mut FileSources::default(), &h)
+        .unwrap();
+    let rms = |samples: &[f32], centre: usize| {
+        let w = &samples[centre - 240..centre + 240];
+        (w.iter().map(|x| x * x).sum::<f32>() / w.len() as f32).sqrt()
+    };
+    for centre in [
+        300, 3_000, 6_000, 9_000, 24_000, 39_000, 42_000, 45_000, 47_700,
+    ] {
+        let want = rms(&preview.planes()[0], centre);
+        let got = rms(&decoded[0], centre);
+        assert!(
+            (want - got).abs() < 0.05,
+            "{centre}: preview {want} export {got}"
+        );
     }
 }

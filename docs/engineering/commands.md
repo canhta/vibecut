@@ -111,6 +111,19 @@ Effect: `Edit`. Fixture: `Timeline`.
 }
 ```
 
+## `audio.set_fade` — Set audio fade
+
+Effect: `Edit`. Fixture: `Audio`.
+
+```json
+{
+  "curve": "equal_power",
+  "duration": 0,
+  "edge": "in",
+  "item": 5
+}
+```
+
 ## `project.set_view_state` — Set timeline view
 
 Effect: `SessionControl`. Fixture: `Timeline`.

@@ -127,6 +127,7 @@ pub(super) fn media_project(project_path: &Path, video: &Path, audio: Option<&Pa
             source_range: TimeRange::new(Tick::ZERO, duration).unwrap(),
             start: Tick::ZERO,
             content: project::ItemParams::Video(project::VideoParams {
+                fades: Default::default(),
                 source_audio_enabled: false,
                 volume: 0.0,
                 muted: false,
@@ -154,6 +155,7 @@ pub(super) fn media_project(project_path: &Path, video: &Path, audio: Option<&Pa
                 source_range: TimeRange::new(Tick::ZERO, audio_duration).unwrap(),
                 start: Tick::ZERO,
                 content: project::ItemParams::Audio(project::AudioParams {
+                    fades: Default::default(),
                     volume: 0.0,
                     muted: false,
                     source: Default::default(),

@@ -446,6 +446,7 @@ impl Session {
                     source_range: SourceRange::new(Tick::ZERO, duration)?,
                     start,
                     content: ItemParams::Audio(AudioParams {
+                        fades: Default::default(),
                         volume: 0.0,
                         muted: false,
                         source: AudioSource::Library { sound },

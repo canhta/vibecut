@@ -79,6 +79,7 @@ fn project(empty: bool, source: bool) -> Project {
             start: Tick::ZERO,
             content: if source {
                 ItemParams::Video(project::VideoParams {
+                    fades: Default::default(),
                     source_audio_enabled: false,
                     volume: 0.0,
                     muted: false,

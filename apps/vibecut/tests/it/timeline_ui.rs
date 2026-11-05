@@ -139,6 +139,7 @@ pub(crate) fn fixture() -> Fixture {
         SourceRange::new(Tick::ZERO, Tick(6 * SECOND)).unwrap(),
         Some(AssetId(1)),
         ItemParams::Video(project::VideoParams {
+            fades: Default::default(),
             source_audio_enabled: true,
             volume: 0.0,
             muted: false,
@@ -151,6 +152,7 @@ pub(crate) fn fixture() -> Fixture {
         SourceRange::new(Tick(6 * SECOND), Tick(10 * SECOND)).unwrap(),
         Some(AssetId(1)),
         ItemParams::Video(project::VideoParams {
+            fades: Default::default(),
             source_audio_enabled: true,
             volume: 0.0,
             muted: false,
@@ -163,6 +165,7 @@ pub(crate) fn fixture() -> Fixture {
         SourceRange::new(Tick::ZERO, Tick(10 * SECOND)).unwrap(),
         Some(AssetId(2)),
         ItemParams::Audio(project::AudioParams {
+            fades: Default::default(),
             volume: 0.0,
             muted: false,
             source: Default::default(),
@@ -1775,6 +1778,7 @@ fn mixed_audio_mute_shows_indeterminate_and_undo_restores_each_item() {
         SourceRange::new(Tick::ZERO, Tick(10 * SECOND)).unwrap(),
         Some(AssetId(2)),
         ItemParams::Audio(project::AudioParams {
+            fades: Default::default(),
             volume: -6.0,
             muted: true,
             source: Default::default(),

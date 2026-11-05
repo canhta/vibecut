@@ -87,6 +87,7 @@ fn scene() -> project::Project {
             0,
             project::TrackKind::Video,
             project::ItemParams::Video(project::VideoParams {
+                fades: Default::default(),
                 source_audio_enabled: false,
                 volume: 0.0,
                 muted: false,

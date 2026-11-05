@@ -237,6 +237,7 @@ fn insert_video(editor: &mut Editor, asset: AssetId) -> project::ItemId {
                 source_range: SourceRange::new(Tick::ZERO, Tick(SECOND)).unwrap(),
                 start: Tick::ZERO,
                 content: ItemParams::Video(project::VideoParams {
+                    fades: Default::default(),
                     source_audio_enabled: true,
                     volume: 0.0,
                     muted: false,

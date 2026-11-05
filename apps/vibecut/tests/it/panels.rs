@@ -155,6 +155,7 @@ fn fixture() -> Fixture {
         Tick(2 * SECOND),
         Some(AssetId(1)),
         ItemParams::Video(project::VideoParams {
+            fades: Default::default(),
             source_audio_enabled: true,
             volume: 0.0,
             muted: false,
@@ -177,6 +178,7 @@ fn fixture() -> Fixture {
         Tick(SECOND),
         Some(AssetId(3)),
         ItemParams::Video(project::VideoParams {
+            fades: Default::default(),
             source_audio_enabled: false,
             volume: 0.0,
             muted: false,
@@ -189,6 +191,7 @@ fn fixture() -> Fixture {
         Tick(SECOND),
         Some(AssetId(4)),
         ItemParams::Video(project::VideoParams {
+            fades: Default::default(),
             source_audio_enabled: false,
             volume: 0.0,
             muted: false,
@@ -214,6 +217,7 @@ fn fixture() -> Fixture {
         Tick(2 * SECOND),
         Some(AssetId(2)),
         ItemParams::Audio(project::AudioParams {
+            fades: Default::default(),
             volume: 0.0,
             muted: false,
             source: Default::default(),

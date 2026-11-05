@@ -1565,5 +1565,12 @@ names are refused. Constant edits replace the corresponding animation override;
 keyframe commands edit scalar `volume` or held bool `muted` paths through the
 same evaluator. Locked/missing targets and invalid grids refuse atomically.
 `audio.set_master {volume, muted}` changes project-level master controls.
+`audio.set_fade {item, edge, duration, curve}` sets one clip fade (`edge` is `in` or
+`out`, `curve` `equal_power`, `linear` or `exponential`) on audio and video items.
+A negative duration, a non-audible item or a locked track refuses atomically; a
+duration beyond the clip is clamped to the clip minus the other edge, so the two
+fades never overlap. `split_at` divides the fades at the cut: the left piece keeps
+the fade-in, the right piece the fade-out. Trims keep stored durations; render
+clamps them to the shortened clip.
 All three edits use ordinary gestures, transactions, undo/redo and persistence;
 render owns mastering, sample timing and latency compensation.

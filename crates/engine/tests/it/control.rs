@@ -240,6 +240,69 @@ fn seed() -> Session {
     session.set_fonts(crate::font_catalog::example_store());
     session
 }
+/// The seed plus one audible clip (track 5, item 5) for audio registry examples.
+fn with_audio(seed: &Session) -> Session {
+    let mut data = seed.project().data().clone();
+    let duration = Tick(time::TICKS_PER_SECOND);
+    data.assets.push(
+        media::SourceAsset::try_from(media::AssetData {
+            ephemeral: false,
+            id: media::AssetId(97),
+            path: std::env::temp_dir().join("vibecut-control-audio-source.wav"),
+            content_hash: media::ContentHash::from_bytes(b"audio fixture"),
+            probe: media::SourceProbe {
+                format: "wav".into(),
+                duration: Some(duration),
+                streams: vec![media::SourceStream {
+                    index: 0,
+                    kind: media::StreamKind::Audio,
+                    codec: "pcm_f32le".into(),
+                    time_base: media::TimeBase::new(1, 48000).unwrap(),
+                    start: None,
+                    duration: Some(duration),
+                    frame_rate: None,
+                    frame_count: None,
+                    variable_frame_rate: None,
+                    video: None,
+                    audio: Some(media::AudioInfo {
+                        sample_rate: 48000,
+                        channels: 2,
+                        initial_padding: 0,
+                        trailing_padding: 0,
+                    }),
+                }],
+            },
+        })
+        .unwrap(),
+    );
+    data.scene_mut().timeline.insert_track(Track {
+        id: TrackId(5),
+        name: "Audio".into(),
+        kind: TrackKind::Audio,
+        muted: false,
+        hidden: false,
+        locked: false,
+        items: vec![Item {
+            blend_mode: Default::default(),
+            masks: Vec::new(),
+            effects: Vec::new(),
+            id: ItemId(5),
+            animations: Default::default(),
+            source_asset: Some(media::AssetId(97)),
+            source_range: SourceRange::new(Tick::ZERO, duration).unwrap(),
+            start: Tick::ZERO,
+            content: ItemParams::Audio(project::AudioParams {
+                fades: Default::default(),
+                volume: 0.0,
+                muted: false,
+                source: Default::default(),
+            }),
+        }],
+    });
+    let mut session = Session::new(Project::new(data).unwrap(), 10).unwrap();
+    session.set_fonts(crate::font_catalog::example_store());
+    session
+}
 fn replace_paths(v: &mut Value, root: &std::path::Path) {
     match v {
         Value::String(s) if s.starts_with("$output/") => {
@@ -330,6 +393,7 @@ fn registry_examples_validate_and_dispatch_without_an_id_table() {
             serde_json::from_value(json!({"command":spec.id,"params":params})).unwrap();
         assert_eq!(typed.id(), spec.id);
         match spec.example.fixture {
+            Fixture::Audio => s = with_audio(&s),
             Fixture::History => {
                 s.apply(Command::RenameProject {
                     name: "History".into(),

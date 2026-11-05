@@ -37,6 +37,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             source_range: time::SourceRange::new(time::Tick::ZERO, duration)?,
             start: time::Tick::ZERO,
             content: ItemParams::Video(VideoParams {
+                fades: Default::default(),
                 source_audio_enabled: true,
                 volume: 0.0,
                 muted: false,

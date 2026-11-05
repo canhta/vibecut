@@ -418,6 +418,7 @@ fn prepare_clip(
             source_range: *range,
             start: *start,
             content: ItemParams::Video(VideoParams {
+                fades: Default::default(),
                 source_audio_enabled: true,
                 volume: 0.0,
                 muted: false,

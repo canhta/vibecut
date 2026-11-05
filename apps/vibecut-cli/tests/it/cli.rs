@@ -3133,3 +3133,93 @@ fn captions_import_rejects_non_ass_input() {
     assert_eq!(code(&output), 2);
     assert_eq!(error_json(&output)["error"]["code"], "usage");
 }
+
+fn decoded_mono(path: &Path) -> Vec<f32> {
+    let output = tool_command("ffmpeg")
+        .args(["-v", "error", "-i"])
+        .arg(path)
+        .args(["-map", "0:a:0", "-f", "f32le", "-ac", "1", "-"])
+        .output()
+        .unwrap();
+    assert!(output.status.success());
+    output
+        .stdout
+        .as_chunks::<4>()
+        .0
+        .iter()
+        .map(|b| f32::from_le_bytes(*b))
+        .collect()
+}
+
+#[test]
+fn audio_set_fade_shapes_the_exported_tone_envelope() {
+    if !tools() {
+        return;
+    }
+    let dir = tempfile::tempdir().unwrap();
+    let video = dir.path().join("video.mp4");
+    let audio = dir.path().join("tone.wav");
+    let project = dir.path().join("fade.vibecut");
+    let out = dir.path().join("fade.mp4");
+    generate_av(&video);
+    generate_audio(&audio);
+    media_project(&project, &video, Some(&audio));
+    // 250 ms edges: equal-power in, linear out.
+    let quarter = time::TICKS_PER_SECOND / 4;
+    exec(
+        &project,
+        "audio.set_fade",
+        json!({"item":1,"edge":"in","duration":quarter,"curve":"equal_power"}),
+    );
+    exec(
+        &project,
+        "audio.set_fade",
+        json!({"item":1,"edge":"out","duration":quarter,"curve":"linear"}),
+    );
+    // Hostile input is refused without touching the saved project.
+    let before = fs::read(&project).unwrap();
+    let refused = cli(&[
+        os("exec"),
+        project.as_os_str(),
+        os("audio.set_fade"),
+        os(r#"{"item":1,"edge":"in","duration":-1,"curve":"linear"}"#),
+        os("--json"),
+    ]);
+    assert_ne!(code(&refused), 0);
+    assert_eq!(fs::read(&project).unwrap(), before);
+
+    let exported = cli(&[
+        os("export"),
+        project.as_os_str(),
+        os("--out"),
+        out.as_os_str(),
+        os("--json"),
+    ]);
+    assert_eq!(
+        code(&exported),
+        0,
+        "{}",
+        String::from_utf8_lossy(&exported.stderr)
+    );
+    let pcm = decoded_mono(&out);
+    assert!(pcm.len() >= 47_000, "{}", pcm.len());
+    // RMS of a 20 ms window centred on `second`.
+    let rms = |second: f64| {
+        let centre = (second * 48_000.0) as usize;
+        let window = &pcm[centre - 480..centre + 480];
+        (window.iter().map(|x| x * x).sum::<f32>() / window.len() as f32).sqrt()
+    };
+    let body = rms(0.5);
+    assert!(body > 0.05, "tone body {body}");
+    // Edges are silent (AAC adds only a faint pre-echo), midpoints follow each curve.
+    assert!(pcm[..48].iter().all(|x| x.abs() < body * 0.1));
+    assert!(rms(0.01) < body * 0.15, "fade-in start {}", rms(0.01));
+    assert!(rms(0.99) < body * 0.15, "fade-out end {}", rms(0.99));
+    let mid_in = rms(0.125) / body;
+    let mid_out = rms(0.875) / body;
+    assert!(
+        (mid_in - 0.707).abs() < 0.12,
+        "equal-power midpoint {mid_in}"
+    );
+    assert!((mid_out - 0.5).abs() < 0.12, "linear midpoint {mid_out}");
+}

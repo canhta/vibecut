@@ -99,6 +99,7 @@ fn fixture() -> project::Project {
             masks: vec![],
             blend_mode: Default::default(),
             content: project::ItemParams::Audio(project::AudioParams {
+                fades: Default::default(),
                 volume: 0.0,
                 muted: false,
                 source: Default::default(),
@@ -280,5 +281,162 @@ fn empty_muted_and_outside_timeline_are_exact_silence_and_failures_reset_state()
     assert_eq!(
         mixer.mix(13, 13, &mut source, &h).unwrap().planes()[0],
         [0.1 * 0.98; 13]
+    );
+}
+
+fn faded(fades: project::Fades) -> project::Project {
+    let mut data = fixture().into_data();
+    if let project::ItemParams::Audio(p) = &mut data.scene_mut().timeline.audio[0].items[0].content
+    {
+        p.fades = fades;
+    }
+    project::Project::new(data).unwrap()
+}
+fn fade(ms: i64, curve: project::FadeCurve) -> project::Fade {
+    project::Fade {
+        duration: tick(ms, 1000),
+        curve,
+    }
+}
+fn mix_all(p: &project::Project, partition: &[usize]) -> Vec<f32> {
+    let h = Hooks::default();
+    let mut sources = Signal {
+        level: 0.1,
+        impulse: false,
+    };
+    let mut mixer = AudioMixer::new(p, 2, 0, &h).unwrap();
+    let mut out = Vec::new();
+    let (mut at, mut index) = (0usize, 0usize);
+    while at < 48000 {
+        let frames = partition[index % partition.len()].min(48000 - at);
+        let block = mixer.mix(at as i64, frames, &mut sources, &h).unwrap();
+        out.extend_from_slice(&block.planes()[0]);
+        at += frames;
+        index += 1;
+    }
+    out
+}
+
+#[test]
+fn clip_fades_follow_the_shared_gain_exactly_and_do_not_depend_on_blocks() {
+    // Unity source through the limiter's constant 0.98 passthrough: output = 0.098 * gain.
+    let unit = 0.1f32 * 0.98;
+    for (fade_in, fade_out) in [
+        (
+            fade(100, project::FadeCurve::EqualPower),
+            fade(200, project::FadeCurve::Linear),
+        ),
+        (
+            fade(50, project::FadeCurve::Exponential),
+            fade(50, project::FadeCurve::EqualPower),
+        ),
+        // Oversized requests clamp: fade-in wins, fade-out takes the remainder.
+        (
+            fade(800, project::FadeCurve::Linear),
+            fade(800, project::FadeCurve::Linear),
+        ),
+    ] {
+        let fades = project::Fades { fade_in, fade_out };
+        let p = faded(fades);
+        let spans = fades.spans(48000, 48000).unwrap();
+        let (i, o) = spans.lengths();
+        assert!(i + o <= 48000);
+        let whole = mix_all(&p, &[48000]);
+        for (n, sample) in whole.iter().enumerate() {
+            let expected = unit * spans.gain(n as i64);
+            assert!(
+                (sample - expected).abs() <= 1e-7,
+                "sample {n}: {sample} vs {expected}"
+            );
+        }
+        // Clip edges are exactly silent and the body is exactly unity.
+        assert_eq!(whole[0], 0.0);
+        assert_eq!(whole[47999], 0.0);
+        if i > 0 && o > 0 && i + o < 48000 {
+            assert_eq!(whole[(i) as usize], unit);
+        }
+        // Preview-style and export-style partitions are bit identical.
+        assert_eq!(whole, mix_all(&p, &[1, 7, 1031, 4093, 5, 23999]));
+        assert_eq!(whole, mix_all(&p, &[2048]));
+        // No click: adjacent steps stay within the steepest curve slope (exponential, 4.07/len).
+        let shortest = i.min(o).max(1) as f32;
+        let bound = unit * 4.1 / shortest + 1e-7;
+        let max_step = whole
+            .windows(2)
+            .map(|w| (w[1] - w[0]).abs())
+            .fold(0.0, f32::max);
+        assert!(max_step <= bound, "step {max_step} > {bound}");
+    }
+}
+
+#[test]
+fn clip_fades_compose_with_volume_keyframes_and_the_master_limiter() {
+    let fades = project::Fades {
+        fade_in: fade(100, project::FadeCurve::Linear),
+        fade_out: fade(100, project::FadeCurve::Linear),
+    };
+    let mut data = faded(fades).into_data();
+    data.settings.master_volume = -6.0;
+    data.scene_mut().timeline.audio[0].items[0]
+        .animations
+        .set(
+            AnimationPath::new("volume").unwrap(),
+            Param::Value(
+                Channel::new(
+                    ParamValue::Scalar(-20.0),
+                    vec![
+                        Keyframe::new(Tick::ZERO, ParamValue::Scalar(-20.0)),
+                        Keyframe::new(tick(1, 1), ParamValue::Scalar(0.0)),
+                    ],
+                    Extrapolation::Hold,
+                    Extrapolation::Hold,
+                )
+                .unwrap(),
+            ),
+        )
+        .unwrap();
+    let p = project::Project::new(data).unwrap();
+    let mut plain = p.clone().into_data();
+    if let project::ItemParams::Audio(p) = &mut plain.scene_mut().timeline.audio[0].items[0].content
+    {
+        p.fades = Default::default();
+    }
+    let plain = project::Project::new(plain).unwrap();
+    let with = mix_all(&p, &[4096]);
+    let without = mix_all(&plain, &[4096]);
+    let spans = fades.spans(48000, 48000).unwrap();
+    for n in 0..48000 {
+        let expected = without[n] * spans.gain(n as i64);
+        assert!((with[n] - expected).abs() <= 1e-7, "sample {n}");
+    }
+    // Hot source: the limiter still bounds the faded sum.
+    let h = Hooks::default();
+    let mut hot = Signal {
+        level: 100.0,
+        impulse: false,
+    };
+    let block = AudioMixer::new(&p, 2, 0, &h)
+        .unwrap()
+        .mix(0, 48000, &mut hot, &h)
+        .unwrap();
+    assert!(block.peak() <= 10f32.powf(-1.0 / 20.0) * 0.98);
+    // Cut fades (`fade_ms`) still apply on top of clip fades.
+    let cut = AudioMixer::new(&p, 2, 10, &h)
+        .unwrap()
+        .mix(
+            0,
+            48000,
+            &mut Signal {
+                level: 0.1,
+                impulse: false,
+            },
+            &h,
+        )
+        .unwrap();
+    assert!(
+        cut.planes()[0][..480]
+            .iter()
+            .zip(&with[..480])
+            .all(|(c, w)| c.abs() <= w.abs() + 1e-7)
     );
 }

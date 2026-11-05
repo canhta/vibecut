@@ -61,6 +61,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 masks: vec![],
                 blend_mode: Default::default(),
                 content: project::ItemParams::Audio(project::AudioParams {
+                    fades: Default::default(),
                     volume: -6.0,
                     muted: false,
                     source: Default::default(),

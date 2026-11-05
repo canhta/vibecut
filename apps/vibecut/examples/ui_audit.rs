@@ -830,6 +830,7 @@ fn media_editor(theme: Theme, locale: Locale) -> Result<(Editor, ItemId), Failur
         range(0, 6)?,
         Some(AssetId(1)),
         ItemParams::Video(VideoParams {
+            fades: Default::default(),
             source_audio_enabled: true,
             volume: 0.0,
             muted: false,
@@ -842,6 +843,7 @@ fn media_editor(theme: Theme, locale: Locale) -> Result<(Editor, ItemId), Failur
         range(6, 10)?,
         Some(AssetId(1)),
         ItemParams::Video(VideoParams {
+            fades: Default::default(),
             source_audio_enabled: true,
             volume: 0.0,
             muted: false,
@@ -855,6 +857,7 @@ fn media_editor(theme: Theme, locale: Locale) -> Result<(Editor, ItemId), Failur
         range(0, 10)?,
         Some(AssetId(2)),
         ItemParams::Audio(AudioParams {
+            fades: Default::default(),
             volume: 0.0,
             muted: false,
             source: Default::default(),
@@ -1381,6 +1384,7 @@ fn placement(theme: Theme, scale: f32) -> Result<AppHarness, Failure> {
         range(0, 6)?,
         Some(AssetId(1)),
         ItemParams::Video(VideoParams {
+            fades: Default::default(),
             source_audio_enabled: true,
             volume: 0.0,
             muted: false,
@@ -1393,6 +1397,7 @@ fn placement(theme: Theme, scale: f32) -> Result<AppHarness, Failure> {
         range(6, 10)?,
         Some(AssetId(1)),
         ItemParams::Video(VideoParams {
+            fades: Default::default(),
             source_audio_enabled: true,
             volume: 0.0,
             muted: false,
@@ -1406,6 +1411,7 @@ fn placement(theme: Theme, scale: f32) -> Result<AppHarness, Failure> {
         range(0, 10)?,
         Some(AssetId(2)),
         ItemParams::Audio(AudioParams {
+            fades: Default::default(),
             volume: 0.0,
             muted: false,
             source: Default::default(),

@@ -289,6 +289,7 @@ fn parallel_draw_matches_sequential_at_chunk_edges_and_half_reductions() {
                 source_range: time::TimeRange::new(time::Tick::ZERO, duration).unwrap(),
                 start: time::Tick::ZERO,
                 content: project::ItemParams::Video(project::VideoParams {
+                    fades: Default::default(),
                     source_audio_enabled: false,
                     volume: 0.0,
                     muted: false,

@@ -212,6 +212,7 @@ fn export_benchmark(
             source_range: TimeRange::new(Tick::ZERO, duration)?,
             start: Tick::ZERO,
             content: project::ItemParams::Video(project::VideoParams {
+                fades: Default::default(),
                 source_audio_enabled: false,
                 volume: 0.0,
                 muted: false,

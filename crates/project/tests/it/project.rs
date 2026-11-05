@@ -133,11 +133,22 @@ fn populated(path: PathBuf) -> Project {
     };
     let contents = [
         ItemParams::Video(VideoParams {
+            fades: Default::default(),
             source_audio_enabled: true,
             volume: 0.0,
             muted: false,
         }),
         ItemParams::Audio(AudioParams {
+            fades: project::Fades {
+                fade_in: project::Fade {
+                    duration: Tick(3),
+                    curve: project::FadeCurve::Linear,
+                },
+                fade_out: project::Fade {
+                    duration: Tick(4),
+                    curve: project::FadeCurve::Exponential,
+                },
+            },
             volume: -6.0,
             muted: true,
             source: Default::default(),
@@ -329,7 +340,30 @@ fn model_trust_boundaries() {
         .first_mut()
         .unwrap()
         .content = ItemParams::Audio(AudioParams {
+        fades: Default::default(),
         volume: f32::NAN,
+        muted: false,
+        source: Default::default(),
+    });
+    cases.push(d);
+    let mut d = base.clone();
+    d.scene_mut()
+        .timeline
+        .audio
+        .first_mut()
+        .unwrap()
+        .items
+        .first_mut()
+        .unwrap()
+        .content = ItemParams::Audio(AudioParams {
+        fades: project::Fades {
+            fade_in: project::Fade {
+                duration: Tick(-1),
+                curve: project::FadeCurve::default(),
+            },
+            fade_out: project::Fade::default(),
+        },
+        volume: 0.0,
         muted: false,
         source: Default::default(),
     });

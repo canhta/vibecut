@@ -111,6 +111,20 @@ or catalog entry. Future owners resolve ids against their admitted implementatio
 `volume` is scalar dB (consumers clamp overshoot to -60..20); `muted` requires a held bool. Built-in numeric paths require scalars; color paths accept linear RGBA composites
 or discrete text values. Extension paths admit all parameter kinds.
 
+## Clip fades
+
+Audio and video items carry `fades {fade_in, fade_out}` (default none), each a
+`Fade {duration, curve}`: output ticks from the clip edge and a `FadeCurve`
+(`equal_power` default, `linear`, `exponential`). Fades are persisted data, not
+animation: they multiply the volume curve and are never keyframed. Validation
+refuses negative durations; durations beyond the clip are legal because trims
+shorten clips without rewriting them. `Fades::set` clamps one edge to the clip
+duration minus the other edge. `Fades::spans(len, rate)` converts ticks to samples
+once (nearest) and clamps again (fade-in wins), so in+out never exceeds the clip;
+`FadeSpans::gain(sample)` is the single per-sample gain used by preview and
+export: exactly 0 at the clip's first and last sample under a fade, exactly 1 in
+the body. Curves: `sin(x·π/2)` (-3 dB midpoint), `x`, and `(e^{4x}-1)/(e^4-1)`.
+
 `ParamValue` holds scalar, bool, NFC text or linear-light unpremultiplied RGBA.
 RGBA uses four independently keyed scalar `Channel`s, selected by `ColorComponent`;
 there is no shared-key-time restriction. Stored RGBA values are in 0..=1 and
@@ -161,7 +175,7 @@ or renderer output claim is made.
 ## Persistence and limits
 
 `encode`/`decode` use one JSON envelope: `format`, `schema_version`, `generator`,
-`project`. Current schema 14 adds optional imported cue style to schema 13 text weight, italic, letter spacing and line height (also on text masks), which followed schema 12 audio `source` (upload or library provenance), volume/mute and master controls.
+`project`. Current schema 15 adds audio/video clip `fades` to schema 14, which added optional imported cue style to schema 13 text weight, italic, letter spacing and line height (also on text masks), which followed schema 12 audio `source` (upload or library provenance), volume/mute and master controls.
 ProjectId is stored as a canonical decimal string, preserving
 all u64 identity bits for control clients; other IDs remain numeric. Schemas 1-13
 are refused rather than migrated or silently defaulted. Older schemas return `TooOld`, newer schemas `TooNew`; there are no

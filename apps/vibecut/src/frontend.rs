@@ -1355,11 +1355,13 @@ impl Editor {
                     },
                     content: match kind {
                         TrackKind::Video => ItemParams::Video(project::VideoParams {
+                            fades: Default::default(),
                             source_audio_enabled: true,
                             volume: 0.0,
                             muted: false,
                         }),
                         _ => ItemParams::Audio(project::AudioParams {
+                            fades: Default::default(),
                             volume: 0.0,
                             muted: false,
                             source: Default::default(),

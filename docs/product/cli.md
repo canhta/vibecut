@@ -70,6 +70,8 @@ vibecut-cli project info demo.vibecut --json
 
 Keyframed item parameters are ordinary registry commands: `keyframes.set_param`, `keyframes.add`, `keyframes.remove`, `keyframes.retime`, `keyframes.set_handle` and `keyframes.scale_time` accept the project animation shapes. `export` evaluates the saved curves through render's single project evaluator; for example an `opacity` channel animates a clip in the exported frames.
 
+`audio.set_fade {item, edge, duration, curve}` (`edge` `in`|`out`, `curve` `equal_power`|`linear`|`exponential`, duration in ticks) fades an audio or video clip edge; the same envelope is applied to the exported audio and to preview.
+
 Fields are required; unknown command, parameter and model fields are refused. Model wire types are the Serde shapes owned by their crates; the [engine contract](../../crates/engine/README.md#public-entry-points) describes the registry and JSON limits.
 
 ## Control session

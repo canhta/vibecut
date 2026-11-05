@@ -3,6 +3,8 @@ mod animation;
 mod blend;
 pub use blend::BlendMode;
 mod effects;
+mod fade;
+pub use fade::{Fade, FadeCurve, FadeEdge, FadeSpans, Fades};
 mod mask;
 pub use effects::{
     EffectDefinition, EffectInstance, EffectParamDefinition, EffectParams, effect_definitions,

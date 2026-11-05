@@ -132,6 +132,9 @@ sample maps from the absolute output sample index to ticks before evaluation;
 block size and other tracks ending cannot change its gain. Video source audio
 uses the same volume/muted controls; `source_audio_enabled=false` excludes it
 regardless of picture visibility. Nonfinite input/overflow refuses the mix.
+Clip fades (`project::Fades`) multiply each item's gain per absolute sample, after
+volume keyframes and before summing and the master chain; preview and export share
+this path, so their samples are bit-identical for any block partition.
 
 `AudioMixer::new(snapshot, channels, fade_ms, hooks)` retains bounded DSP state for
 sequential realtime or offline blocks. Its linked master chain uses a -1 dBFS

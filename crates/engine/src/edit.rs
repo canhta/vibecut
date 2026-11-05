@@ -705,6 +705,21 @@ pub(crate) fn apply(
             data.settings.master_volume = volume;
             data.settings.master_muted = muted;
         }
+        Command::SetFade {
+            item: id,
+            edge,
+            duration,
+            curve,
+        } => {
+            let target = item(&mut data, id)?;
+            let clip = target.source_range.duration();
+            let (ItemParams::Audio(project::AudioParams { fades, .. })
+            | ItemParams::Video(project::VideoParams { fades, .. })) = &mut target.content
+            else {
+                return Err(EditError::Invalid("fade needs an audio or video item"));
+            };
+            fades.set(edge, duration, curve, clip)?;
+        }
         Command::SetTrackMuted { track: id, muted } => {
             let t = track(&mut data, id)?;
             if !t.kind.can_mute() {
@@ -881,6 +896,17 @@ pub(crate) fn apply(
             // A split establishes independent retained content for both new pieces.
             if let ItemParams::Caption(p) = &left.content {
                 sources.insert(left.id, Arc::new(p.cues.clone()));
+            }
+            // The cut divides the fades: the left piece keeps the fade-in, the right the fade-out.
+            if let ItemParams::Audio(project::AudioParams { fades, .. })
+            | ItemParams::Video(project::VideoParams { fades, .. }) = &mut right.content
+            {
+                fades.fade_in = project::Fade::default();
+            }
+            if let ItemParams::Audio(project::AudioParams { fades, .. })
+            | ItemParams::Video(project::VideoParams { fades, .. }) = &mut left.content
+            {
+                fades.fade_out = project::Fade::default();
             }
             right.id = ItemId(alloc(next)?);
             right.start = at;

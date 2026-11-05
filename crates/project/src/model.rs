@@ -189,6 +189,8 @@ pub struct VideoParams {
     pub source_audio_enabled: bool,
     pub volume: f32,
     pub muted: bool,
+    #[serde(default)]
+    pub fades: crate::Fades,
 }
 /// Remote-library provenance carried with an audio item. URLs are canonical and
 /// bounded; no token, cache path or local absolute path belongs here.
@@ -264,6 +266,8 @@ pub struct AudioParams {
     pub muted: bool,
     #[serde(default)]
     pub source: AudioSource,
+    #[serde(default)]
+    pub fades: crate::Fades,
 }
 /// Percentages of the canvas; `(50, 84.5)` reproduces the original lower-third box.
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
@@ -861,10 +865,14 @@ fn validate(data: &ProjectData) -> Result<()> {
             {
                 return Err(Error::Invalid("video volume"));
             }
+            if let ItemParams::Video(p) = &item.content {
+                p.fades.validate()?;
+            }
             if let ItemParams::Audio(p) = &item.content {
                 if !valid_volume(p.volume) {
                     return Err(Error::Invalid("audio gain"));
                 }
+                p.fades.validate()?;
                 if let AudioSource::Library { sound } = &p.source {
                     sound.validate()?;
                 }

@@ -271,11 +271,13 @@ fn mix_raw(
         }
         let volume_path = project::AnimationPath::new("volume")?;
         let muted_path = project::AnimationPath::new("muted")?;
-        let (volume, muted) = match &item.content {
-            ItemParams::Audio(p) => (p.volume, p.muted),
-            ItemParams::Video(p) => (p.volume, p.muted),
-            _ => (0.0, true),
+        let (volume, muted, fades) = match &item.content {
+            ItemParams::Audio(p) => (p.volume, p.muted, p.fades),
+            ItemParams::Video(p) => (p.volume, p.muted, p.fades),
+            _ => (0.0, true, project::Fades::default()),
         };
+        // Clip fades multiply the volume curve before summing and the master limiter.
+        let fade_spans = fades.spans(i1 - i0, i64::from(rate))?;
         // Evaluate on absolute output samples, never relative to the block or
         // another track's active span. Gain is identical across all adapters.
         let _gains = hooks.reserve(MemoryKind::Compositor, (b - a) as u64 * 4)?;
@@ -326,8 +328,10 @@ fn mix_raw(
                 } else {
                     1.0
                 };
-                *dst +=
-                    value * gains.get(n).copied().ok_or(Error::Invalid("gain sample"))? * envelope;
+                *dst += value
+                    * gains.get(n).copied().ok_or(Error::Invalid("gain sample"))?
+                    * envelope
+                    * fade_spans.gain(sample);
                 if !dst.is_finite() {
                     return Err(Error::Invalid("audio mix overflow"));
                 }

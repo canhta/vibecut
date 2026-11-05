@@ -8,6 +8,7 @@ mod commands;
 mod control;
 mod effects;
 mod export_jobs;
+mod fades;
 mod font_catalog;
 mod jobs;
 mod keyframes;

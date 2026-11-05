@@ -618,6 +618,7 @@ fn media_handles_and_typed_parameter_validation_are_atomic() {
                 source_range: range(200, 300),
                 start: Tick(100),
                 content: ItemParams::Video(VideoParams {
+                    fades: Default::default(),
                     source_audio_enabled: true,
                     volume: 0.0,
                     muted: false,
@@ -655,6 +656,7 @@ fn media_handles_and_typed_parameter_validation_are_atomic() {
         Command::SetItemParam {
             item: id,
             content: ItemParams::Audio(AudioParams {
+                fades: Default::default(),
                 volume: 0.0,
                 muted: false,
                 source: Default::default(),
@@ -668,6 +670,7 @@ fn media_handles_and_typed_parameter_validation_are_atomic() {
                 source_range: range(0, 10),
                 start: Tick(0),
                 content: ItemParams::Audio(AudioParams {
+                    fades: Default::default(),
                     volume: 0.0,
                     muted: false,
                     source: Default::default(),
@@ -682,6 +685,7 @@ fn media_handles_and_typed_parameter_validation_are_atomic() {
                 source_range: range(0, 10),
                 start: Tick(0),
                 content: ItemParams::Audio(AudioParams {
+                    fades: Default::default(),
                     volume: f32::NAN,
                     muted: false,
                     source: Default::default(),
@@ -2130,6 +2134,7 @@ fn policy_insert(id: u64) -> Command {
             source_range: range(0, 1000),
             start: Tick::ZERO,
             content: ItemParams::Video(project::VideoParams {
+                fades: Default::default(),
                 source_audio_enabled: true,
                 volume: 0.0,
                 muted: false,
@@ -2620,6 +2625,7 @@ fn audio_controls_are_atomic_undoable_persisted_and_strict() {
             masks: vec![],
             blend_mode: Default::default(),
             content: ItemParams::Audio(project::AudioParams {
+                fades: Default::default(),
                 volume: 0.0,
                 muted: false,
                 source: Default::default(),
