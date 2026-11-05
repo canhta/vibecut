@@ -179,46 +179,51 @@ fn display_rounding_keeps_the_exact_rational_for_23976_and_2997() {
     assert_eq!(rate.rounded, 30);
 }
 
+fn assert_still_import(path: &Path, codec: &str, width: u32, height: u32) {
+    let opened = PacketReader::open(path);
+    let probe = match opened {
+        Ok(reader) => reader.probe().clone(),
+        Err(error) => panic!("{path:?}: {error}"),
+    };
+    let capabilities = ProbeCapabilities::from_probe(&probe);
+    let metadata = MediaMetadata::from_probe(&SourceProbe::from(&probe)).unwrap();
+    assert_eq!(metadata.kind, MediaKind::Image, "{path:?}");
+    assert_eq!(metadata.width, Some(width), "{path:?}");
+    assert_eq!(metadata.height, Some(height), "{path:?}");
+    assert!(!metadata.has_audio, "{path:?}");
+    assert!(metadata.needs_thumbnail(), "{path:?}");
+    assert_decodable(&capabilities, StreamKind::Video, codec);
+    let (thumbnail, _) = thumbnail_at_with_read_bytes(
+        path,
+        Tick::ZERO,
+        THUMBNAIL_MAX_EDGE,
+        std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
+    )
+    .unwrap();
+    assert!(thumbnail.width <= THUMBNAIL_MAX_EDGE);
+    assert!(thumbnail.height <= THUMBNAIL_MAX_EDGE);
+    assert_eq!(
+        thumbnail.pixels.len(),
+        (thumbnail.width * thumbnail.height * 4) as usize
+    );
+}
+
 #[test]
-fn png_and_jpeg_stills_record_dimensions_and_thumbnails() {
-    for (name, codec) in [
-        ("metadata-still.png", "png"),
-        ("metadata-still.jpg", "mjpeg"),
-    ] {
-        let Some(path) = image(name, codec) else {
-            return;
-        };
-        // Every production platform builds zlib so this decoder must be present;
-        // a build without it fails here instead of skipping the PNG row.
-        let opened = PacketReader::open(&path);
-        let probe = match opened {
-            Ok(reader) => reader.probe().clone(),
-            Err(error) => panic!("{name}: {error}"),
-        };
-        let capabilities = ProbeCapabilities::from_probe(&probe);
-        let metadata = MediaMetadata::from_probe(&SourceProbe::from(&probe)).unwrap();
-        assert_eq!(metadata.kind, MediaKind::Image, "{name}");
-        assert_eq!(metadata.width, Some(64), "{name}");
-        assert_eq!(metadata.height, Some(48), "{name}");
-        assert!(!metadata.has_audio, "{name}");
-        assert!(metadata.needs_thumbnail(), "{name}");
-        assert_eq!(common::stream_field(&path, "v:0", "width"), "64", "{name}");
-        assert_eq!(common::stream_field(&path, "v:0", "height"), "48", "{name}");
-        assert_decodable(&capabilities, StreamKind::Video, name);
-        let (thumbnail, _) = thumbnail_at_with_read_bytes(
-            &path,
-            Tick::ZERO,
-            THUMBNAIL_MAX_EDGE,
-            std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
-        )
-        .unwrap();
-        assert!(thumbnail.width <= THUMBNAIL_MAX_EDGE);
-        assert!(thumbnail.height <= THUMBNAIL_MAX_EDGE);
-        assert_eq!(
-            thumbnail.pixels.len(),
-            (thumbnail.width * thumbnail.height * 4) as usize
-        );
-    }
+fn png_still_probes_and_thumbnails_on_every_platform() {
+    // A committed PNG keeps the decoder check independent of external oracles;
+    // every production recipe builds zlib, so a missing decoder fails here.
+    let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets/app-icon/vibecut-1024.png");
+    assert_still_import(&path, "png", 1024, 1024);
+}
+
+#[test]
+fn jpeg_still_records_dimensions_and_thumbnail() {
+    let Some(path) = image("metadata-still.jpg", "mjpeg") else {
+        return;
+    };
+    assert_still_import(&path, "mjpeg", 64, 48);
+    assert_eq!(common::stream_field(&path, "v:0", "width"), "64");
+    assert_eq!(common::stream_field(&path, "v:0", "height"), "48");
 }
 
 #[test]
