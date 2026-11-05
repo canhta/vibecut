@@ -422,6 +422,9 @@ fn build_source(
             // libvpx is static and its MinGW pthread/semaphore dependencies
             // live in Libs.private; normal pkg-config output omits them.
             "--pkg-config-flags=--static".into(),
+            // Screen recording is outside the editor's media contract. FFmpeg's
+            // gfxcapture C++ build also collides with VERSION on Windows libc++.
+            "--disable-filter=gfxcapture".into(),
             format!("--arch={arch}"),
             "--enable-d3d11va".into(),
             "--enable-dxva2".into(),

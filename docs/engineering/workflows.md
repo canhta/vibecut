@@ -59,7 +59,11 @@ for its Windows cache and resolves Bash, Make and cygpath to absolute paths in t
 MSYS2 `usr/bin` on `PATH`, refusing an incomplete installation instead of using
 Windows/WSL or Git Bash. Provisioning logs the selected tool paths. The Windows FFmpeg configure step
 requests static pkg-config metadata for its static Opus/libvpx dependencies,
-including libvpx’s private pthread link dependencies.
+including libvpx’s private pthread link dependencies. The Windows recipe excludes
+FFmpeg's `gfxcapture` screen-recording source filter (outside the editor's input
+contract): its C++ build currently resolves libc++'s `<version>` include to the
+source archive's `VERSION` file on case-insensitive filesystems. This upstream
+limitation is excluded through configuration, not a source patch.
 
 ## Hosted CI
 
