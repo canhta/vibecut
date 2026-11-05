@@ -419,7 +419,6 @@ fn build_source(
             "--ld=clang".into(),
             "--ar=llvm-ar".into(),
             "--nm=llvm-nm".into(),
-            "--dlltool=llvm-dlltool".into(),
             format!("--arch={arch}"),
             "--enable-d3d11va".into(),
             "--enable-dxva2".into(),
@@ -434,12 +433,14 @@ fn build_source(
             "PKG_CONFIG_LIBDIR",
             shell_path(&prefix.join("lib/pkgconfig"))?,
         ))?;
-    run(Command::new(build_tool("make")?)
-        .current_dir(&ffbuild)
-        .args(["-j3"]))?;
-    run(Command::new(build_tool("make")?)
-        .current_dir(&ffbuild)
-        .arg("install"))?;
+    // FFmpeg has no --dlltool configure switch; its MinGW recipe exposes
+    // DLLTOOL as a make variable for MSVC-compatible import libraries.
+    for task in ["-j3", "install"] {
+        run(Command::new(build_tool("make")?)
+            .current_dir(&ffbuild)
+            .arg(task)
+            .args(cfg!(windows).then_some("DLLTOOL=llvm-dlltool")))?;
+    }
     if cfg!(windows) {
         // FFmpeg's MinGW recipe also emits MSVC-compatible import libraries.
         for library in [
