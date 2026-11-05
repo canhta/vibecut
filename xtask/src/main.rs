@@ -8,8 +8,8 @@ mod clip_eval;
 mod ffmpeg;
 mod i18n;
 mod oracles;
-mod tickets;
 mod sherpa;
+mod tickets;
 
 use serde_json::Value;
 use std::collections::BTreeMap;

@@ -16,7 +16,7 @@ pub fn host() -> Result<String, String> {
     Ok(format!("{os}-{}", env::consts::ARCH))
 }
 
-fn cache() -> Result<PathBuf, String> {
+pub(super) fn cache() -> Result<PathBuf, String> {
     crate::archives::cache("ffmpeg")
 }
 
