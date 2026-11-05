@@ -1,5 +1,6 @@
 use crate::{Error, Item, ItemId, ItemParams, ProjectData, Result, Timeline, TrackId, TrackKind};
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeSet;
 use time::Tick;
 
 #[derive(
@@ -190,6 +191,27 @@ impl Transition {
     }
 }
 
+impl Timeline {
+    /// Items on visible tracks that can contribute pixels to `[from, to)`: those
+    /// whose own extent overlaps it, plus both clips of every transition whose
+    /// span overlaps it, because they render from their handles beyond that extent.
+    pub fn rendered_items(&self, from: Tick, to: Tick) -> Vec<&Item> {
+        let joined: BTreeSet<_> = self
+            .transitions
+            .iter()
+            .filter(|tr| tr.start < to && tr.end().is_ok_and(|end| end > from))
+            .flat_map(|tr| [tr.from, tr.to])
+            .collect();
+        self.iter()
+            .filter(|t| !t.hidden)
+            .flat_map(|t| &t.items)
+            .filter(|i| {
+                (i.start < to && i.end().is_ok_and(|end| end > from)) || joined.contains(&i.id)
+            })
+            .collect()
+    }
+}
+
 trait CheckedTick {
     fn add_tick(self, rhs: Tick) -> Result<Tick>;
     fn sub_tick(self, rhs: Tick) -> Result<Tick>;
@@ -317,6 +339,25 @@ mod tests {
             Project::new(d),
             Err(Error::Invalid("overlapping transitions"))
         ));
+    }
+    #[test]
+    fn rendered_items_include_both_clips_of_an_overlapping_span() {
+        let mut d = data();
+        d.scene_mut().timeline.transitions = vec![transition()]; // span 80..120 over the cut at 100
+        let ids = |d: &ProjectData, from: i64, to: i64| -> Vec<u64> {
+            d.scene()
+                .timeline
+                .rendered_items(Tick(from), Tick(to))
+                .iter()
+                .map(|i| i.id.0)
+                .collect()
+        };
+        assert_eq!(ids(&d, 70, 80), [1]); // span start is exclusive of an earlier range
+        assert_eq!(ids(&d, 79, 81), [1, 2]); // incoming clip renders before its own start
+        assert_eq!(ids(&d, 119, 120), [1, 2]); // outgoing clip renders past its own end
+        assert_eq!(ids(&d, 120, 130), [2]);
+        d.scene_mut().timeline.main.hidden = true;
+        assert!(ids(&d, 79, 121).is_empty());
     }
     #[test]
     fn media_handles_bound_both_sides_and_zero_handles_refuse() {

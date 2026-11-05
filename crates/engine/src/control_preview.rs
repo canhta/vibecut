@@ -58,10 +58,8 @@ pub(crate) fn preview(
                     .data()
                     .scene()
                     .timeline
-                    .iter()
-                    .filter(|t| !t.hidden)
-                    .flat_map(|t| &t.items)
-                    .filter(|i| i.start <= at && i.end().is_ok_and(|end| at < end))
+                    .rendered_items(at, at.checked_add(Tick(1)).ok_or(EditError::InvalidParams)?)
+                    .into_iter()
                     .map(|i| i.id)
                     .collect();
                 if clips

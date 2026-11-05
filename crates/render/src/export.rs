@@ -177,14 +177,9 @@ pub fn export_with_sources(
         .data()
         .scene()
         .timeline
-        .iter()
-        .filter(|t| !t.hidden)
-        .flat_map(|t| &t.items)
-        .filter(|i| {
-            matches!(i.content, ItemParams::Video(_))
-                && i.start < range.end()
-                && i.end().is_ok_and(|e| e > range.start())
-        })
+        .rendered_items(range.start(), range.end())
+        .into_iter()
+        .filter(|i| matches!(i.content, ItemParams::Video(_)))
         .filter_map(|i| {
             project
                 .data()
@@ -292,14 +287,22 @@ fn admission(
 ) -> Result<Vec<Unavailable>> {
     let mut status = BTreeMap::new();
     let mut out = Vec::new();
-    for track in project.data().scene().timeline.iter() {
+    let timeline = &project.data().scene().timeline;
+    // Transition clips render from their handles, so their sources need admission too.
+    let rendered: BTreeSet<_> = timeline
+        .rendered_items(range.start(), range.end())
+        .into_iter()
+        .map(|i| i.id)
+        .collect();
+    for track in timeline.iter() {
         for item in &track.items {
-            let video = !track.hidden && matches!(item.content, ItemParams::Video(_));
+            let video = rendered.contains(&item.id) && matches!(item.content, ItemParams::Video(_));
             let audio = include_audio
                 && !track.muted
                 && !project.data().settings.master_muted
                 && crate::audio::has_source_audio(item);
-            if (!video && !audio) || !range.overlaps(TimeRange::new(item.start, item.end()?)?) {
+            let overlaps = range.overlaps(TimeRange::new(item.start, item.end()?)?);
+            if !(video || (audio && overlaps)) {
                 continue;
             }
             let Some(id) = item.source_asset else {
@@ -319,20 +322,26 @@ fn admission(
                 value
             };
             if let Some(reason) = reason {
-                let start = item
-                    .source_range
-                    .start()
-                    .checked_add(range.start().max(item.start) - item.start)
-                    .ok_or(Error::Invalid("diagnostic range"))?;
-                let end = item
-                    .source_range
-                    .start()
-                    .checked_add(range.end().min(item.end()?) - item.start)
-                    .ok_or(Error::Invalid("diagnostic range"))?;
+                // A transition clip outside the range reports its whole source window.
+                let window = if overlaps {
+                    let start = item
+                        .source_range
+                        .start()
+                        .checked_add(range.start().max(item.start) - item.start)
+                        .ok_or(Error::Invalid("diagnostic range"))?;
+                    let end = item
+                        .source_range
+                        .start()
+                        .checked_add(range.end().min(item.end()?) - item.start)
+                        .ok_or(Error::Invalid("diagnostic range"))?;
+                    TimeRange::new(start, end)?
+                } else {
+                    item.source_range
+                };
                 out.push(Unavailable {
                     asset: id,
                     item: item.id,
-                    range: TimeRange::new(start, end)?,
+                    range: window,
                     reason,
                 });
             }
@@ -354,20 +363,16 @@ fn copy_plan<'a>(
     if !settings.render.placements.is_empty() || settings.render.background_blur.is_some() {
         return Ok(None);
     }
+    // Transition clips render from their handles, so they count even outside their own extent.
     let items: Vec<_> = project
         .data()
         .scene()
         .timeline
-        .iter()
-        .filter(|t| !t.hidden)
-        .flat_map(|t| t.items.iter().map(move |i| (t, i)))
-        .filter(|(_, i)| {
-            !matches!(i.content, ItemParams::Audio(_))
-                && i.start < range.end()
-                && i.end().is_ok_and(|end| end > range.start())
-        })
+        .rendered_items(range.start(), range.end())
+        .into_iter()
+        .filter(|i| !matches!(i.content, ItemParams::Audio(_)))
         .collect();
-    let Some(&(_, item)) = items.first() else {
+    let Some(&item) = items.first() else {
         return Ok(None);
     };
     if item.blend_mode != project::BlendMode::Normal

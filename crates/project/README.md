@@ -446,3 +446,7 @@ following alignment; an odd centered duration puts floor(duration/2) before the
 cut. Custom duration changes keep the span's centre, clamped to stay over the cut.
 Zero duration/handles and invalid spans refuse. Only one transition may name a cut, and spans on one track cannot overlap. Validation never repairs
 untrusted persisted data. Edit-time revalidation belongs to [engine](../engine/README.md#video-transitions).
+`Timeline::rendered_items(from, to)` lists the visible items that draw in a range: those
+overlapping it plus both clips of every overlapping transition, which render from their
+handles outside their own extent. Range consumers (export copy and admission, HDR
+detection, control previews) use it instead of filtering item extents.

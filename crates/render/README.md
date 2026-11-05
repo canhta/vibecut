@@ -443,7 +443,9 @@ over the same backdrop. Premultiplied linear-light frames then interpolate, eith
 directly or through the definition's opaque dip colour. Hidden tracks contribute
 no transition pixels; video mute remains an audio control. The exact end resumes
 the incoming clip with no extra frame or gap. Preview, CLI snapshots and export
-share this path; audio crossfades are excluded.
+share this path; audio crossfades are excluded. Export's stream-copy plan, HDR detection and source admission select clips with
+`Timeline::rendered_items`, so a range inside one clip that overlaps a transition span
+re-encodes through the compositor and checks the other clip's source.
 
 Backdrop and outgoing images retain normal compositor byte leases. Cancellation
 checks during copying, item processing and each interpolation row release every

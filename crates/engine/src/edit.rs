@@ -652,7 +652,7 @@ pub(crate) fn apply(
     sources: &mut TrimSources,
     copied_text_bytes: &mut usize,
 ) -> Result<project::Project> {
-    let previous_transitions = (!data.scene().timeline.transitions.is_empty()
+    let previous_cuts = (!data.scene().timeline.transitions.is_empty()
         && !matches!(
             &command,
             Command::AddTransition { .. }
@@ -661,7 +661,7 @@ pub(crate) fn apply(
                 | Command::RemoveTransition { .. }
                 | Command::Batch { .. }
         ))
-    .then(|| data.scene().timeline.clone());
+    .then(|| crate::transitions::cuts(&data.scene().timeline));
     match command {
         Command::AddTransition {
             track,
@@ -1422,7 +1422,7 @@ pub(crate) fn apply(
         }
     }
     check_timeline(&mut data)?;
-    if let Some(previous) = previous_transitions {
+    if let Some(previous) = previous_cuts {
         crate::transitions::revalidate(&mut data, &previous);
     }
     Ok(project::Project::new(data)?)

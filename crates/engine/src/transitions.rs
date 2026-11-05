@@ -1,5 +1,6 @@
 use crate::{EditError, Result};
 use project::{ProjectData, Timeline, Transition, TransitionId};
+use std::collections::BTreeMap;
 use time::Tick;
 
 pub(crate) fn find(data: &ProjectData, id: TransitionId) -> Result<usize> {
@@ -26,19 +27,25 @@ pub(crate) fn unlocked(timeline: &Timeline, tr: &Transition) -> Result<()> {
     }
     Ok(())
 }
+/// Output position of each transition's cut, captured before an edit moves clips.
+pub(crate) fn cuts(timeline: &Timeline) -> BTreeMap<TransitionId, Tick> {
+    timeline
+        .transitions
+        .iter()
+        .filter_map(|tr| Some((tr.id, tr.clips(timeline).ok()?.1.start)))
+        .collect()
+}
 /// Preserve relative placement when the cut moves; remove lost adjacency or
 /// exhausted handles and clamp shortened clips before publishing the candidate.
-pub(crate) fn revalidate(data: &mut ProjectData, previous: &Timeline) {
+pub(crate) fn revalidate(data: &mut ProjectData, previous: &BTreeMap<TransitionId, Tick>) {
     let mut kept = Vec::new();
     for mut tr in std::mem::take(&mut data.scene_mut().timeline.transitions) {
         let bounds = tr.bounds(&data.scene().timeline, data);
         let Ok(bounds) = bounds else { continue };
-        if let Some(old) = previous.transitions.iter().find(|t| t.id == tr.id)
-            && let Ok((_, b)) = old.clips(previous)
-        {
+        if let Some(old_cut) = previous.get(&tr.id) {
             let shifted = bounds
                 .1
-                .checked_sub(b.start)
+                .checked_sub(*old_cut)
                 .and_then(|delta| tr.start.checked_add(delta));
             let Some(start) = shifted else { continue };
             tr.start = start;

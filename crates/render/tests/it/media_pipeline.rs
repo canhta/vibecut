@@ -1374,6 +1374,123 @@ fn visual_animation_disables_video_stream_copy() {
 }
 
 #[test]
+fn transitions_disable_copy_and_admit_the_incoming_source_of_a_sub_range() {
+    if !tools() {
+        return;
+    }
+    let dir = tempfile::tempdir().unwrap();
+    let (white, blue) = (dir.path().join("white.mp4"), dir.path().join("blue.mp4"));
+    for (path, color, rate) in [(&white, "white", "30"), (&blue, "blue", "24")] {
+        generate(
+            path,
+            &[
+                "-f",
+                "lavfi",
+                "-i",
+                &format!("color={color}:size=64x64:rate={rate}:duration=1.2"),
+                "-c:v",
+                "libx264",
+                "-pix_fmt",
+                "yuv420p",
+                "-color_primaries",
+                "bt709",
+                "-color_trc",
+                "bt709",
+                "-colorspace",
+                "bt709",
+            ],
+        );
+    }
+    // The whole white file, then blue (24 fps) from 0.3 s: the cut has no outgoing
+    // handle, so the transition ends at the cut and consumes blue's lead-in.
+    let mut data = video_project(&white).into_data();
+    let blue_asset = media::SourceAsset::import(media::AssetId(2), blue.clone()).unwrap();
+    let blue_end = blue_asset.probe().duration.unwrap();
+    data.assets.push(blue_asset);
+    let cut = data.scene().timeline.overlays[0].items[0].end().unwrap();
+    let mut incoming = data.scene().timeline.overlays[0].items[0].clone();
+    incoming.id = project::ItemId(1);
+    incoming.source_asset = Some(media::AssetId(2));
+    incoming.source_range = TimeRange::new(tick(3, 10), blue_end).unwrap();
+    incoming.start = cut;
+    data.scene_mut().timeline.overlays[0].items.push(incoming);
+    let plain = project::Project::new(data.clone()).unwrap();
+    data.scene_mut()
+        .timeline
+        .transitions
+        .push(project::Transition {
+            id: project::TransitionId(2),
+            track: project::TrackId(1),
+            from: project::ItemId(0),
+            to: project::ItemId(1),
+            kind: "cross_dissolve".into(),
+            start: cut - tick(1, 5),
+            duration: tick(1, 5),
+            alignment: project::TransitionAlignment::End,
+        });
+    let p = project::Project::new(data).unwrap();
+    // Entirely inside the outgoing clip: only its own extent overlaps, yet the
+    // last fifth of a second shows the incoming clip.
+    let range = TimeRange::new(Tick::ZERO, cut).unwrap();
+    let mut settings = ExportSettings::from_project(&p);
+    settings.include_audio = false;
+    settings.overwrite = project::atomic::Overwrite::Replace;
+    let output = dir.path().join("out.mp4");
+    let control = export(&plain, range, &settings, &output, &Hooks::default()).unwrap();
+    assert!(
+        control.stream_copied,
+        "without a transition the span copies"
+    );
+    let receipt = export(&p, range, &settings, &output, &Hooks::default()).unwrap();
+    assert!(
+        !receipt.stream_copied,
+        "a transition must reach the compositor"
+    );
+    // The last frame (1.1667 s) is five sixths through the dissolve from white (30 fps)
+    // to blue (24 fps): linear red 1/6, which the BT.709 transfer encodes to about 100.
+    let raw = dir.path().join("last.rgba");
+    ffmpeg(&[
+        "-sseof".as_ref(),
+        "-0.04".as_ref(),
+        "-i".as_ref(),
+        output.as_os_str(),
+        "-frames:v".as_ref(),
+        "1".as_ref(),
+        "-f".as_ref(),
+        "rawvideo".as_ref(),
+        "-pix_fmt".as_ref(),
+        "rgba".as_ref(),
+        raw.as_os_str(),
+    ]);
+    let last = std::fs::read(&raw).unwrap();
+    assert!(
+        last[0].abs_diff(100) <= 8 && last[2] >= 245,
+        "{:?}",
+        &last[..4]
+    );
+    settings.mode = ExportMode::StreamCopy;
+    assert!(matches!(
+        export(
+            &p,
+            range,
+            &settings,
+            &dir.path().join("forced.mp4"),
+            &Hooks::default()
+        ),
+        Err(Error::Unsupported(_))
+    ));
+    // Admission covers the incoming source even though its own extent starts after the range.
+    settings.mode = ExportMode::Encode;
+    let mut file = std::fs::OpenOptions::new()
+        .append(true)
+        .open(&blue)
+        .unwrap();
+    std::io::Write::write_all(&mut file, b"changed content").unwrap();
+    assert!(
+        matches!(export(&p, range, &settings, &output, &Hooks::default()), Err(Error::Unavailable(v)) if v.iter().any(|e| e.item == project::ItemId(1) && e.reason == UnavailableReason::Changed))
+    );
+}
+#[test]
 fn item_compositing_refuses_forced_copy_and_preserves_destination() {
     if !tools() {
         return;
