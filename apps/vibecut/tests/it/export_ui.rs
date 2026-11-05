@@ -727,8 +727,19 @@ fn review_reproduction_save_refuses_to_replace_source_media() {
         h.state_mut().export_picked_file(destination).unwrap();
         assert_eq!(wait(&mut h), vibecut::export::ExportPhase::Failed);
         let state = h.state().export.as_ref().unwrap().inspect();
-        assert!(state.job.unwrap().error.is_some());
-        assert!(state.diagnostics.unwrap().contains("alias"));
+        let error = state.job.unwrap().error;
+        assert!(
+            matches!(
+                error.as_deref(),
+                Some(engine::EditError::Render(render::Error::Invalid(
+                    "output aliases a source"
+                        | "output hard-links a source"
+                        | "output may alias source content"
+                )))
+            ),
+            "unexpected source-protection failure: {error:?}"
+        );
+        assert!(state.diagnostics.unwrap().contains("source"));
         assert_eq!(state.finished.as_ref(), Some(&finished));
         assert_eq!(
             serde_json::to_vec(h.state().session.project().as_ref()).unwrap(),
