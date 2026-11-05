@@ -1,5 +1,7 @@
 //! Validated headless timeline snapshots and versioned project persistence.
 mod animation;
+mod blend;
+pub use blend::BlendMode;
 mod effects;
 mod mask;
 pub use effects::{

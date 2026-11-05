@@ -1156,3 +1156,14 @@ files), `VIBECUT_VISION_SOURCE` (the permitted bounded source) and optional inte
 `VIBECUT_VISION_START`/`VIBECUT_VISION_DURATION` in seconds. It prints only aggregate
 analysis. Windows, real cross-shot identity, seven-layout integration and general
 speaker/cut accuracy are separate acceptance, not established by a green build.
+
+## Visual item fields
+
+`timeline.set_item_param` accepts `{ "item": 1, "patch": { "field": "blendMode",
+"value": "multiply" } }` or an `opacity` field with a finite 0..=1 value.
+The same typed patch works in `timeline.set_item_param_many`. Visual fields refuse
+audio targets in the single-item command; the shared command skips incompatible
+items. Locked/missing targets refuse atomically. Blend changes retain animation;
+setting constant opacity replaces its animation channel, as `keyframes.set_param`
+does. Keyframe commands still own animated editing. History and persistence retain
+both fields through the existing snapshot path; no adapter owns duplicate values.

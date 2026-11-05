@@ -79,6 +79,7 @@ fn session() -> Session {
         hidden: false,
         locked: false,
         items: vec![Item {
+            blend_mode: Default::default(),
             masks: Vec::new(),
             effects: Vec::new(),
             id: ItemId(0),

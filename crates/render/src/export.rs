@@ -375,7 +375,8 @@ fn copy_plan<'a>(
     let Some(&(track, item)) = items.first() else {
         return Ok(None);
     };
-    if item.masks.iter().any(|m| m.active())
+    if item.blend_mode != project::BlendMode::Normal
+        || item.masks.iter().any(|m| m.active())
         || !item.effects.is_empty()
         || items.len() != 1
         || item.start > range.start()

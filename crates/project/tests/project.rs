@@ -69,6 +69,7 @@ fn source(path: PathBuf) -> SourceAsset {
 }
 fn item(id: u64, start: i64) -> Item {
     Item {
+        blend_mode: Default::default(),
         masks: Vec::new(),
         effects: Vec::new(),
         animations: Default::default(),
@@ -141,6 +142,7 @@ fn populated(path: PathBuf) -> Project {
             hidden: true,
             locked: true,
             items: vec![Item {
+                blend_mode: Default::default(),
                 masks: Vec::new(),
                 effects: Vec::new(),
                 animations: Default::default(),
@@ -235,6 +237,17 @@ fn model_trust_boundaries() {
     let p = populated(dir.path().join("a.mp4"));
     let base = p.into_data();
     let mut cases = Vec::new();
+    let mut d = base.clone();
+    d.scene_mut()
+        .timeline
+        .audio
+        .first_mut()
+        .unwrap()
+        .items
+        .first_mut()
+        .unwrap()
+        .blend_mode = BlendMode::Screen;
+    cases.push(d);
     let mut d = base.clone();
     d.canvas.width = 0;
     cases.push(d);

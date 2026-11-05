@@ -157,6 +157,7 @@ fn seed() -> Session {
             hidden: false,
             locked: false,
             items: vec![Item {
+                blend_mode: Default::default(),
                 masks: vec![project::Mask::new("mask1", project::MaskShape::Rectangle)],
                 effects: vec![project::EffectInstance {
                     id: "blur1".into(),
@@ -190,6 +191,7 @@ fn seed() -> Session {
             hidden: false,
             locked: false,
             items: vec![Item {
+                blend_mode: Default::default(),
                 masks: Vec::new(),
                 effects: Vec::new(),
                 id: ItemId(4),
@@ -1387,6 +1389,7 @@ fn review_integer_derived_source_ticks_and_batch_are_refused_atomically() {
             hidden: false,
             locked: false,
             items: vec![Item {
+                blend_mode: Default::default(),
                 masks: Vec::new(),
                 effects: Vec::new(),
                 id: ItemId(1),
@@ -1518,6 +1521,7 @@ fn review_integer_history_destination_and_legacy_json_share_candidate_validation
         hidden: false,
         locked: false,
         items: vec![Item {
+            blend_mode: Default::default(),
             masks: Vec::new(),
             effects: Vec::new(),
             id: ItemId(1),

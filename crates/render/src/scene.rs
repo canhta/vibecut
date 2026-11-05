@@ -342,6 +342,9 @@ impl<'a> Renderer<'a> {
                 .iter()
                 .filter(|i| matches!(i.content, ItemParams::Video(_)))
             {
+                if self.placement_at(item, local_time(item, at)?)?.opacity == 0.0 {
+                    continue;
+                }
                 if let Some(image) = self.video_image(
                     item,
                     source_time(item, at)?,
@@ -361,14 +364,11 @@ impl<'a> Renderer<'a> {
             check(hooks)?;
             let local = local_time(item, at)?;
             let mut placement = self.placement_at(item, local)?;
+            if placement.opacity == 0.0 {
+                continue;
+            }
             let masked = item.masks.iter().any(|m| m.active());
-            let final_opacity = if masked {
-                let opacity = placement.opacity;
-                placement.opacity = 1.;
-                opacity
-            } else {
-                1.
-            };
+            let blended = item.blend_mode != project::BlendMode::Normal;
             let source_at = source_time(item, at)?;
             let _plan = if item.effects.iter().any(|effect| effect.enabled) {
                 Some(hooks.reserve(
@@ -381,7 +381,14 @@ impl<'a> Renderer<'a> {
                 None
             };
             let passes = crate::effects::evaluate(item, local, out.width, out.height)?;
-            let below = if passes.is_empty() && !masked {
+            let final_opacity = if masked || blended || !passes.is_empty() {
+                let opacity = placement.opacity;
+                placement.opacity = 1.;
+                opacity
+            } else {
+                1.
+            };
+            let below = if passes.is_empty() && !masked && !blended {
                 None
             } else {
                 let layer = Image::new(out.width, out.height, [0.0; 4], hooks)?;
@@ -543,15 +550,23 @@ impl<'a> Renderer<'a> {
                         hooks,
                     )?;
                 }
-                for (destination, source) in below
-                    .pixels
-                    .chunks_mut(below.width as usize)
-                    .zip(filtered.pixels.chunks(filtered.width as usize))
-                {
-                    check(hooks)?;
-                    for (dst, src) in destination.iter_mut().zip(source) {
-                        over(dst, *src, final_opacity);
-                    }
+                let cpu = CpuEffects;
+                let adapter = self.settings.effects.as_deref().unwrap_or(&cpu);
+                match adapter.composite(
+                    &mut below,
+                    &filtered,
+                    final_opacity,
+                    item.blend_mode,
+                    hooks,
+                ) {
+                    Err(Error::Unsupported(_)) => crate::blend::composite(
+                        &mut below,
+                        &filtered,
+                        final_opacity,
+                        item.blend_mode,
+                        hooks,
+                    )?,
+                    result => result?,
                 }
                 out = below;
             }

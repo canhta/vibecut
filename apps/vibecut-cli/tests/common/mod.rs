@@ -118,6 +118,7 @@ pub(super) fn media_project(project_path: &Path, video: &Path, audio: Option<&Pa
         hidden: false,
         locked: false,
         items: vec![project::Item {
+            blend_mode: Default::default(),
             masks: Vec::new(),
             effects: Vec::new(),
             animations: Default::default(),
@@ -142,6 +143,7 @@ pub(super) fn media_project(project_path: &Path, video: &Path, audio: Option<&Pa
             hidden: false,
             locked: false,
             items: vec![project::Item {
+                blend_mode: Default::default(),
                 masks: Vec::new(),
                 effects: Vec::new(),
                 animations: Default::default(),

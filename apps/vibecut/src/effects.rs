@@ -10,6 +10,13 @@ use std::{
     time::Duration,
 };
 
+#[derive(Clone, Copy)]
+struct ComputePass<'a> {
+    entry_point: &'static str,
+    horizontal: bool,
+    values: &'a [f32],
+}
+
 pub struct GpuEffects {
     device: wgpu::Device,
     queue: wgpu::Queue,
@@ -47,7 +54,7 @@ impl GpuEffects {
             immediate_size: 0,
         });
         let module = device.create_shader_module(wgpu::include_wgsl!("effects.wgsl"));
-        let pipelines = ["gaussian"]
+        let pipelines = ["gaussian", "blend"]
             .into_iter()
             .map(|entry| {
                 (
@@ -81,10 +88,10 @@ impl GpuEffects {
                 usage,
             })
     }
-    fn apply_inner(
+    fn apply_inner<'a>(
         &self,
         item: &Image,
-        passes: &[EffectPass],
+        passes: impl ExactSizeIterator<Item = ComputePass<'a>> + Clone,
         inputs: EffectInputs<'_>,
         hooks: &dyn ExecutionHooks,
     ) -> Result<Image> {
@@ -102,8 +109,7 @@ impl GpuEffects {
                 return Err(Error::Invalid("effect input dimensions"));
             }
         }
-        for pass in passes {
-            render::effects::validate_pass(pass)?;
+        for pass in passes.clone() {
             if !self.pipelines.contains_key(pass.entry_point) {
                 return Err(Error::Unsupported("GPU shader entry"));
             }
@@ -151,13 +157,13 @@ impl GpuEffects {
                 item.width(),
                 item.height(),
                 u32::from(pass.horizontal),
-                pass.weights.len() as u32,
+                pass.values.len() as u32,
             ]
             .into_iter()
             .flat_map(u32::to_le_bytes)
             .collect();
             let params = self.buffer(&constants, wgpu::BufferUsages::UNIFORM);
-            let weights: Vec<u8> = pass.weights.iter().flat_map(|w| w.to_le_bytes()).collect();
+            let weights: Vec<u8> = pass.values.iter().flat_map(|w| w.to_le_bytes()).collect();
             let weights = self.buffer(&weights, wgpu::BufferUsages::STORAGE);
             let entries: Vec<_> = [&a, &b, &weights, &params, &coverage, &below]
                 .into_iter()
@@ -221,12 +227,11 @@ impl GpuEffects {
         download.unmap();
         result
     }
-}
-impl EffectCompositor for GpuEffects {
-    fn apply(
+
+    fn execute<'a>(
         &self,
         item: &Image,
-        passes: &[EffectPass],
+        passes: impl ExactSizeIterator<Item = ComputePass<'a>> + Clone,
         inputs: EffectInputs<'_>,
         hooks: &dyn ExecutionHooks,
     ) -> Result<Image> {
@@ -245,5 +250,60 @@ impl EffectCompositor for GpuEffects {
             return Err(Error::Unsupported("GPU effect execution"));
         }
         result
+    }
+}
+impl EffectCompositor for GpuEffects {
+    fn composite(
+        &self,
+        below: &mut Image,
+        item: &Image,
+        opacity: f32,
+        mode: project::BlendMode,
+        hooks: &dyn ExecutionHooks,
+    ) -> Result<()> {
+        if !opacity.is_finite() || !(0.0..=1.0).contains(&opacity) {
+            return Err(Error::Invalid("GPU blend opacity"));
+        }
+        let values = [opacity, mode as u32 as f32];
+        let pass = ComputePass {
+            entry_point: "blend",
+            horizontal: false,
+            values: &values,
+        };
+        let result = self.execute(
+            item,
+            std::iter::once(pass),
+            EffectInputs {
+                coverage: None,
+                below,
+            },
+            hooks,
+        )?;
+        *below = result;
+        Ok(())
+    }
+    fn apply(
+        &self,
+        item: &Image,
+        passes: &[EffectPass],
+        inputs: EffectInputs<'_>,
+        hooks: &dyn ExecutionHooks,
+    ) -> Result<Image> {
+        if hooks.cancelled() {
+            return Err(Error::Cancelled);
+        }
+        for pass in passes {
+            render::effects::validate_pass(pass)?;
+        }
+        self.execute(
+            item,
+            passes.iter().map(|pass| ComputePass {
+                entry_point: pass.entry_point,
+                horizontal: pass.horizontal,
+                values: &pass.weights,
+            }),
+            inputs,
+            hooks,
+        )
     }
 }

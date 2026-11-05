@@ -45,6 +45,7 @@ fn video_project(path: &Path) -> project::Project {
         hidden: false,
         locked: false,
         items: vec![project::Item {
+            blend_mode: Default::default(),
             masks: Vec::new(),
             effects: Vec::new(),
             animations: Default::default(),
@@ -219,6 +220,7 @@ fn resampling_split_trim_offset_and_irregular_blocks_are_identical() {
         let source_in = if n == 1 { tick(123, 44100) } else { Tick::ZERO };
         let end = tick(1, 1) - source_in;
         let mut items = vec![project::Item {
+            blend_mode: Default::default(),
             masks: Vec::new(),
             effects: Vec::new(),
             animations: Default::default(),
@@ -234,6 +236,7 @@ fn resampling_split_trim_offset_and_irregular_blocks_are_identical() {
         if n == 2 {
             items[0].source_range = TimeRange::new(Tick::ZERO, tick(1, 2)).unwrap();
             items.push(project::Item {
+                blend_mode: Default::default(),
                 masks: Vec::new(),
                 effects: Vec::new(),
                 animations: Default::default(),
@@ -596,6 +599,7 @@ fn missing_audio_only_is_required_only_when_audio_is_requested() {
         hidden: false,
         locked: false,
         items: vec![project::Item {
+            blend_mode: Default::default(),
             masks: Vec::new(),
             effects: Vec::new(),
             animations: Default::default(),
@@ -957,6 +961,7 @@ fn stereo_policy_keeps_headroom_and_export_refuses_overload() {
         hidden: false,
         locked: false,
         items: vec![project::Item {
+            blend_mode: Default::default(),
             masks: Vec::new(),
             effects: Vec::new(),
             animations: Default::default(),
@@ -1256,37 +1261,45 @@ fn opacity_animation_disables_video_stream_copy() {
 }
 
 #[test]
-fn effect_stack_refuses_forced_copy_and_preserves_destination() {
+fn item_compositing_refuses_forced_copy_and_preserves_destination() {
     if !tools() {
         return;
     }
     let path = root().join("blur-copy-source.mp4");
     av_fixture(&path);
-    let mut data = video_project(&path).into_data();
-    data.scene_mut().timeline.overlays[0].items[0]
-        .effects
-        .push(project::EffectInstance {
-            id: "blur".into(),
-            enabled: true,
-            params: Default::default(),
-        });
-    let project = project::Project::new(data).unwrap();
-    let mut settings = ExportSettings::from_project(&project);
-    settings.mode = ExportMode::StreamCopy;
-    settings.overwrite = project::atomic::Overwrite::Replace;
-    let destination = root().join("blur-copy-preserved.mp4");
-    std::fs::write(&destination, b"keep old bytes").unwrap();
-    assert!(matches!(
-        export(
-            &project,
-            TimeRange::new(Tick::ZERO, tick(1, 1)).unwrap(),
-            &settings,
-            &destination,
-            &Hooks::default()
-        ),
-        Err(Error::Unsupported(_))
-    ));
-    assert_eq!(std::fs::read(&destination).unwrap(), b"keep old bytes");
+    let base = video_project(&path).into_data();
+    for blended in [false, true] {
+        let mut data = base.clone();
+        if blended {
+            data.scene_mut().timeline.overlays[0].items[0].blend_mode =
+                project::BlendMode::Multiply;
+        } else {
+            data.scene_mut().timeline.overlays[0].items[0]
+                .effects
+                .push(project::EffectInstance {
+                    id: "blur".into(),
+                    enabled: true,
+                    params: Default::default(),
+                });
+        }
+        let project = project::Project::new(data).unwrap();
+        let mut settings = ExportSettings::from_project(&project);
+        settings.mode = ExportMode::StreamCopy;
+        settings.overwrite = project::atomic::Overwrite::Replace;
+        let destination = root().join("blur-copy-preserved.mp4");
+        std::fs::write(&destination, b"keep old bytes").unwrap();
+        assert!(matches!(
+            export(
+                &project,
+                TimeRange::new(Tick::ZERO, tick(1, 1)).unwrap(),
+                &settings,
+                &destination,
+                &Hooks::default()
+            ),
+            Err(Error::Unsupported(_))
+        ));
+        assert_eq!(std::fs::read(&destination).unwrap(), b"keep old bytes");
+    }
 }
 
 #[test]

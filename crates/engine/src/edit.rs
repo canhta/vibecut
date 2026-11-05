@@ -10,6 +10,34 @@ use time::{SourceRange, Tick};
 
 pub(crate) type TrimSources = BTreeMap<ItemId, Arc<captions::CueTrack>>;
 
+fn apply_patch(target: &mut Item, patch: &crate::ItemParamPatch) -> Result<()> {
+    match patch {
+        crate::ItemParamPatch::BlendMode(mode) => target.blend_mode = *mode,
+        crate::ItemParamPatch::Opacity(value) => {
+            target.animations.set(
+                project::AnimationPath::new("opacity")?,
+                project::Param::new(project::ParamValue::Scalar(*value))?,
+            )?;
+        }
+        crate::ItemParamPatch::AudioGain(v) => {
+            if let ItemParams::Audio(p) = &mut target.content {
+                p.gain_db = *v;
+            }
+        }
+        crate::ItemParamPatch::TextSize(v) => {
+            if let ItemParams::Text(p) = &mut target.content {
+                p.font_size = *v;
+            }
+        }
+        crate::ItemParamPatch::TextColor(v) => {
+            if let ItemParams::Text(p) = &mut target.content {
+                p.color = *v;
+            }
+        }
+    }
+    Ok(())
+}
+
 pub(crate) fn check_budget(command: &Command) -> Result<()> {
     let mut stack = vec![(command, 0)];
     let mut count = 0;
@@ -410,6 +438,7 @@ pub(crate) fn apply(
             t.items.insert(
                 index,
                 Item {
+                    blend_mode: Default::default(),
                     masks: Vec::new(),
                     effects: Vec::new(),
                     animations: new.animations,
@@ -516,6 +545,14 @@ pub(crate) fn apply(
             // Explicit content replacement becomes authoritative for later previews.
             sources.remove(&id);
         }
+        Command::SetItemField { item: id, patch } => {
+            patch.validate()?;
+            let target = item(&mut data, id)?;
+            if !patch.compatible(&target.content) {
+                return Err(EditError::Invalid("incompatible item parameter"));
+            }
+            apply_patch(target, &patch)?;
+        }
         Command::SetItemParamMany { items, patch } => {
             patch.validate()?;
             if items.is_empty() {
@@ -534,16 +571,7 @@ pub(crate) fn apply(
                     if track.locked {
                         return Err(EditError::Locked(track.id));
                     }
-                    match (&patch, &mut target.content) {
-                        (crate::ItemParamPatch::AudioGain(v), ItemParams::Audio(p)) => {
-                            p.gain_db = *v
-                        }
-                        (crate::ItemParamPatch::TextSize(v), ItemParams::Text(p)) => {
-                            p.font_size = *v
-                        }
-                        (crate::ItemParamPatch::TextColor(v), ItemParams::Text(p)) => p.color = *v,
-                        _ => {}
-                    }
+                    apply_patch(target, &patch)?;
                 }
             }
             if let Some(id) = remaining.into_iter().next() {

@@ -110,6 +110,7 @@ fn scene() -> project::Project {
             hidden: false,
             locked: false,
             items: vec![project::Item {
+                blend_mode: Default::default(),
                 masks: Vec::new(),
                 effects: Vec::new(),
                 animations: Default::default(),
@@ -284,6 +285,7 @@ fn blur_background_stays_below_lower_timeline_layers() {
         hidden: false,
         locked: false,
         items: vec![project::Item {
+            blend_mode: Default::default(),
             masks: Vec::new(),
             effects: Vec::new(),
             animations: Default::default(),

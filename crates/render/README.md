@@ -24,7 +24,8 @@ compositor's 0..=1 range. Missing opacity data keeps the static placement, and
 other animation paths stay unconsumed until their owning feature lands.
 
 Every working pixel is **RGBA, premultiplied alpha, linear-light f32**, finite
-0..1 with RGB <= alpha. Compositing is Porter–Duff source-over. Bilinear sampling
+0..1 with RGB <= alpha. Compositing uses the item's blend function followed by
+Porter–Duff source-over. Bilinear sampling
 has transparent borders; repeated box half-filters precede large downscales,
 including odd-sized edges. The separable sampler reserves a bounded horizontal
 coordinate table per draw and resolves vertical neighbors once per output row;
@@ -292,7 +293,7 @@ is checked per row, including text's distance-transform rows/columns.
 
 `Renderer` consumes project mask vectors for every visual layer. Its order is:
 item effects, combined coverage in vector order, enabled strokes in vector order,
-then item opacity and source-over. None modes are skipped. Strokes remain visible
+then item opacity, blend and source-over. None modes are skipped. Strokes remain visible
 outside the combined coverage. Only the current mask's raster/distance data is
 retained; accumulated coverage and accumulated premultiplied strokes are bounded
 working images. Active masks disable video stream copy for Auto and forced-copy
@@ -314,3 +315,66 @@ The ignored production-frame benchmark in [tests/masks.rs](tests/masks.rs)
 measures enabled-mask cost against an unmasked baseline. The local task report
 records hardware, shared host load, process RSS and quality metrics; these
 measurements do not establish codec throughput or UI latency.
+## Blend formulas in working space
+
+`blend::composite` is the CPU reference for preview and export, including CLI.
+It accepts equal-size working images and finite opacity in 0..=1. Effects and
+mask/stroke coverage precede blend; opacity scales every source channel exactly
+once after those operations. Zero opacity leaves the backdrop bit-identical and
+the renderer skips that item, including its background-blur contribution.
+
+Let `b`, `s` denote straight **linear-light** channel values recovered temporarily
+from premultiplied backdrop/source RGB, with backdrop alpha `ab` and effective
+source alpha `as = source_alpha * opacity`. Working images remain premultiplied;
+there is no sRGB conversion or per-mode transfer choice. With `B(b,s)` below:
+
+`out_rgb = source_rgb * opacity * (1-ab) + backdrop_rgb * (1-as) + as*ab*B`
+
+`out_alpha = as + ab*(1-as)`.
+
+Zero source alpha bypasses division. Zero backdrop alpha uses ordinary over.
+Clamp roundoff to `0..out_alpha`. The following table defines each component;
+nonseparable functions operate on all three linear components together.
+
+| Mode | B(b,s) |
+|---|---|
+| normal | s |
+| darken | min(b,s) |
+| multiply | b*s |
+| color-burn | b=1: 1; s=0: 0; otherwise 1-min(1,(1-b)/s) |
+| lighten | max(b,s) |
+| screen | b+s-b*s |
+| plus-lighter | min(1,b+s) |
+| color-dodge | b=0: 0; s=1: 1; otherwise min(1,b/(1-s)) |
+| overlay | b<=0.5: 2*b*s; otherwise 1-2*(1-b)*(1-s) |
+| soft-light | s<=0.5: b-(1-2*s)*b*(1-b); otherwise b+(2*s-1)*(D(b)-b) |
+| hard-light | s<=0.5: 2*b*s; otherwise 1-2*(1-b)*(1-s) |
+| difference | abs(b-s) |
+| exclusion | b+s-2*b*s |
+| hue | SetLum(SetSat(s,Sat(b)),Lum(b)) |
+| saturation | SetLum(SetSat(b,Sat(s)),Lum(b)) |
+| color | SetLum(s,Lum(b)) |
+| luminosity | SetLum(b,Lum(s)) |
+
+`D(b)=((16*b-12)*b+4)*b` for b<=0.25, otherwise sqrt(b).
+`Lum(c)=0.3*r+0.59*g+0.11*b` is the nonseparable blend convention,
+not BT.709 colorimetric luminance. `Sat(c)=max(c)-min(c)`.
+`SetSat(c,t)=(c-min(c))*t/(max(c)-min(c))`, or zero for range <=1e-6.
+`SetLum(c,t)` adds `t-Lum(c)` to every component, then clips around its
+luminosity: for original minimum n<0 use `l+(c-l)*l/max(l-n,1e-6)`;
+for original maximum x>1 use `l+(c-l)*(1-l)/max(x-l,1e-6)`.
+Plus-lighter here is the registry's saturated additive **blend function** with
+source-over alpha, rather than the separate Porter-Duff additive operator.
+These are the [W3C blend formulas](https://www.w3.org/TR/compositing-1/#blending),
+evaluated in this editor's established linear space.
+
+`tests/fixtures/blend-linear.json` pins a 4x4 working image pair and independent
+f64 expected pixels for all 17 modes at opacity 0/0.5/1. CPU tolerance is 3e-6
+absolute per working channel. The desktop WGSL path uses the same fixtures and
+additional mixed-alpha grids at 1x/2x, with maximum absolute error 2e-5.
+`tests/blend.rs` checks mask/opacity order and preview identity. Its WebM/VP9
+encoded edge and patch oracle compares final decoded RGBA to opaque BT.709 output:
+maximum channel difference 20/255, RGBA MSE 8 and flat-patch channel difference
+6/255, allowing 4:2:0 chroma edge
+reconstruction. Working-space checks retain the tighter float tolerance.
+The ignored `blend_frame_benchmark` measures 640x360, ten warm frames per mode.

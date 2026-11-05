@@ -1973,6 +1973,7 @@ impl Editor {
             || ctx.memory(|m| m.focused()).is_some_and(|id| {
                 [
                     "inspector.audio_gain",
+                    "inspector.opacity",
                     "inspector.text_size",
                     "inspector.text_color",
                 ]
@@ -2378,28 +2379,76 @@ impl Editor {
             ui.label(self.tr(Text::NoSharedFields));
         }
         for field in fields {
+            if field.id == "blendMode" {
+                ui.add_space(12.0);
+                let caption = ui.label(self.tr(Text::BlendMode));
+                let current = field.value.as_ref().and_then(|v| {
+                    serde_json::from_value::<project::BlendMode>(serde_json::json!(v)).ok()
+                });
+                let label = current
+                    .map(|m| self.tr(catalog::blend_label(m)))
+                    .unwrap_or_else(|| self.tr(Text::EmptyValue));
+                let response = ui
+                    .scope(|ui| {
+                        ui.spacing_mut().interact_size.y = 26.0;
+                        egui::ComboBox::from_id_salt(Id::unique("inspector.blendMode"))
+                            .selected_text(label)
+                            .width(ui.available_width())
+                            .show_ui(ui, |ui| {
+                                for mode in project::BlendMode::ALL {
+                                    let response = ui.selectable_label(
+                                        current == Some(mode),
+                                        self.tr(catalog::blend_label(mode)),
+                                    );
+                                    self.remember(
+                                        format!("inspector.blendMode.{}", mode.id()),
+                                        &response,
+                                    );
+                                    if response.clicked() {
+                                        if let Err(error) =
+                                            self.set_shared_field("blendMode", mode.id())
+                                        {
+                                            self.error = Some(error.to_string());
+                                        }
+                                        ui.close();
+                                    }
+                                }
+                            })
+                            .response
+                            .labelled_by(caption.id)
+                    })
+                    .inner;
+                self.remember("inspector.blendMode", &response);
+                continue;
+            }
             let (label, id) = match field.id {
+                "opacity" => (Text::Opacity, "inspector.opacity"),
                 "audio_gain" => (Text::AudioGain, "inspector.audio_gain"),
                 "text_size" => (Text::TextSize, "inspector.text_size"),
                 _ => (Text::TextColor, "inspector.text_color"),
             };
             ui.add_space(12.0);
-            ui.label(self.tr(label));
+            let caption = ui.label(self.tr(label));
             let mut value = self
                 .property_drafts
                 .get(field.id)
                 .cloned()
                 .unwrap_or_else(|| field.value.clone().unwrap_or_default());
-            let response = ui.add_sized(
-                [ui.available_width(), 36.0],
-                egui::TextEdit::singleline(&mut value)
-                    .char_limit(64)
-                    .background_color(self.control_fill())
-                    .id(Id::unique(id))
-                    .hint_text(
-                        egui::RichText::new(self.tr(Text::EmptyValue)).color(self.secondary()),
-                    ),
-            );
+            let response = ui
+                .add_sized(
+                    [
+                        ui.available_width(),
+                        if field.id == "opacity" { 26.0 } else { 36.0 },
+                    ],
+                    egui::TextEdit::singleline(&mut value)
+                        .char_limit(64)
+                        .background_color(self.control_fill())
+                        .id(Id::unique(id))
+                        .hint_text(
+                            egui::RichText::new(self.tr(Text::EmptyValue)).color(self.secondary()),
+                        ),
+                )
+                .labelled_by(caption.id);
             self.remember(id, &response);
             if response.changed() {
                 self.property_drafts.insert(field.id, value.clone());
@@ -2430,6 +2479,16 @@ impl Editor {
     /// The inspector and automation use the same registered atomic field edit.
     pub fn set_shared_field(&mut self, field: &str, value: &str) -> Result<()> {
         let patch = match field {
+            "blendMode" => ItemParamPatch::BlendMode(
+                serde_json::from_value(serde_json::json!(value))
+                    .map_err(|_| Error::Invalid("blend mode"))?,
+            ),
+            "opacity" => ItemParamPatch::Opacity(
+                value
+                    .trim()
+                    .parse()
+                    .map_err(|_| Error::Invalid("opacity"))?,
+            ),
             "audio_gain" => ItemParamPatch::AudioGain(
                 value
                     .trim()

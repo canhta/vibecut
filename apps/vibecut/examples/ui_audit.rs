@@ -189,6 +189,18 @@ const SCENES: &[Scene] = &[
         build: inspector_mixed_vi,
     },
     Scene {
+        name: "inspector-blend",
+        reference_dark: Some("capcut/illustrations/capcut-desktop-ui.png"),
+        reference_light: Some("capcut/illustrations/capcut-desktop-ui.png"),
+        build: inspector_blend,
+    },
+    Scene {
+        name: "inspector-blend-vi",
+        reference_dark: Some("capcut/illustrations/capcut-desktop-ui.png"),
+        reference_light: Some("capcut/illustrations/capcut-desktop-ui.png"),
+        build: inspector_blend_vi,
+    },
+    Scene {
         name: "import-progress",
         reference_dark: Some("capcut/illustrations/capcut-desktop-modify-project.png"),
         reference_light: Some("capcut/illustrations/capcut-desktop-modify-project.png"),
@@ -656,6 +668,50 @@ fn inspector_mixed(theme: Theme, scale: f32) -> Result<AppHarness, Failure> {
 
 fn inspector_mixed_vi(theme: Theme, scale: f32) -> Result<AppHarness, Failure> {
     inspector_mixed_locale(theme, scale, Locale::Vi)
+}
+
+fn inspector_blend_locale(theme: Theme, scale: f32, locale: Locale) -> Result<AppHarness, Failure> {
+    let mut data = Project::empty(ProjectId(44), "Blend".into())?.into_data();
+    data.canvas.width = 64;
+    data.canvas.height = 64;
+    data.canvas.background = Color([120, 160, 200, 255]);
+    let mut session = Session::new(Project::new(data)?, 10)?;
+    let main = session.project().data().scene().timeline.main.id;
+    let item = insert(
+        &mut session,
+        main,
+        Tick::ZERO,
+        range(0, 10)?,
+        None,
+        ItemParams::Overlay(OverlayParams {
+            color: Color([200, 80, 120, 128]),
+        }),
+    )?;
+    session.execute(
+        "timeline.set_item_param",
+        serde_json::json!({"item":item,"patch":{"field":"blendMode","value":"multiply"}}),
+    )?;
+    session.execute(
+        "timeline.set_item_param",
+        serde_json::json!({"item":item,"patch":{"field":"opacity","value":0.5}}),
+    )?;
+    let mut playback = Playback::new(&session, ByteBudget::new(64 << 20)?, Arc::new(Files))?;
+    playback.set_device_available(true);
+    let mut editor = Editor::new(session, playback, preferences(theme, locale));
+    editor.selection.insert(item);
+    wait_for_frame(&mut editor)?;
+    let mut app = app_editor(editor, scale);
+    wait_for_presented(&mut app)?;
+    app.run_steps(3);
+    Ok(app)
+}
+
+fn inspector_blend(theme: Theme, scale: f32) -> Result<AppHarness, Failure> {
+    inspector_blend_locale(theme, scale, Locale::En)
+}
+
+fn inspector_blend_vi(theme: Theme, scale: f32) -> Result<AppHarness, Failure> {
+    inspector_blend_locale(theme, scale, Locale::Vi)
 }
 
 /// Returns a deterministic library asset for every path except `bad`, which

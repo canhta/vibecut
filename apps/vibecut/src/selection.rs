@@ -132,33 +132,50 @@ pub fn shared_fields(project: &Project, selection: &BTreeSet<ItemId>) -> Vec<Sha
         .flat_map(|t| &t.items)
         .filter(|i| selection.contains(&i.id))
         .collect();
-    ["audio_gain", "text_size", "text_color"]
-        .into_iter()
-        .filter_map(|id| {
-            let values: Vec<_> = items
-                .iter()
-                .filter_map(|i| match (id, &i.content) {
-                    ("audio_gain", ItemParams::Audio(p)) => Some(if p.gain_db == 0.0 {
-                        "0".to_owned()
-                    } else {
-                        p.gain_db.to_string()
-                    }),
-                    ("text_size", ItemParams::Text(p)) => Some(p.font_size.to_string()),
-                    ("text_color", ItemParams::Text(p)) => {
-                        let [r, g, b, a] = p.color.0;
-                        Some(format!("#{r:02X}{g:02X}{b:02X}{a:02X}"))
-                    }
-                    _ => None,
-                })
-                .collect();
-            let first = values.first()?;
-            Some(SharedField {
-                id,
-                value: values.iter().all(|v| v == first).then(|| first.clone()),
-                compatible: values.len(),
+    [
+        "blendMode",
+        "opacity",
+        "audio_gain",
+        "text_size",
+        "text_color",
+    ]
+    .into_iter()
+    .filter_map(|id| {
+        let values: Vec<_> = items
+            .iter()
+            .filter_map(|i| match (id, &i.content) {
+                ("blendMode", content) if !matches!(content, ItemParams::Audio(_)) => {
+                    Some(i.blend_mode.id().into())
+                }
+                ("opacity", content) if !matches!(content, ItemParams::Audio(_)) => {
+                    let path = AnimationPath::new("opacity").ok()?;
+                    let value = i.animations.value_at(&path, Tick::ZERO).ok().flatten();
+                    Some(match value {
+                        Some(project::ParamValue::Scalar(v)) => v.clamp(0.0, 1.0).to_string(),
+                        _ => "1".into(),
+                    })
+                }
+                ("audio_gain", ItemParams::Audio(p)) => Some(if p.gain_db == 0.0 {
+                    "0".to_owned()
+                } else {
+                    p.gain_db.to_string()
+                }),
+                ("text_size", ItemParams::Text(p)) => Some(p.font_size.to_string()),
+                ("text_color", ItemParams::Text(p)) => {
+                    let [r, g, b, a] = p.color.0;
+                    Some(format!("#{r:02X}{g:02X}{b:02X}{a:02X}"))
+                }
+                _ => None,
             })
+            .collect();
+        let first = values.first()?;
+        Some(SharedField {
+            id,
+            value: values.iter().all(|v| v == first).then(|| first.clone()),
+            compatible: values.len(),
         })
-        .collect()
+    })
+    .collect()
 }
 
 #[cfg(test)]
@@ -178,6 +195,7 @@ mod tests {
             locked: false,
             items: (0..2)
                 .map(|n| Item {
+                    blend_mode: Default::default(),
                     masks: Vec::new(),
                     effects: vec![],
                     animations: Default::default(),
@@ -203,6 +221,16 @@ mod tests {
             assert_eq!(
                 fields,
                 vec![
+                    SharedField {
+                        id: "blendMode",
+                        value: Some("normal".into()),
+                        compatible: count
+                    },
+                    SharedField {
+                        id: "opacity",
+                        value: Some("1".into()),
+                        compatible: count
+                    },
                     SharedField {
                         id: "text_size",
                         value: expected_size.map(str::to_owned),

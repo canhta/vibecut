@@ -80,6 +80,25 @@ macro_rules! catalog {
 
 #[rustfmt::skip]
 catalog! {
+    BlendMode { key: "blend_mode", en: "Blend mode", vi: "Chế độ hòa trộn" },
+    Opacity { key: "opacity", en: "Opacity (0–1)", vi: "Độ mờ (0–1)" },
+    BlendNormal { key: "blend_normal", en: "Normal", vi: "Bình thường" },
+    BlendDarken { key: "blend_darken", en: "Darken", vi: "Làm tối" },
+    BlendMultiply { key: "blend_multiply", en: "Multiply", vi: "Nhân" },
+    BlendColorBurn { key: "blend_colorburn", en: "Color burn", vi: "Đốt màu" },
+    BlendLighten { key: "blend_lighten", en: "Lighten", vi: "Làm sáng" },
+    BlendScreen { key: "blend_screen", en: "Screen", vi: "Màn hình" },
+    BlendPlusLighter { key: "blend_pluslighter", en: "Plus lighter", vi: "Cộng sáng" },
+    BlendColorDodge { key: "blend_colordodge", en: "Color dodge", vi: "Né màu" },
+    BlendOverlay { key: "blend_overlay", en: "Overlay", vi: "Phủ" },
+    BlendSoftLight { key: "blend_softlight", en: "Soft light", vi: "Ánh sáng mềm" },
+    BlendHardLight { key: "blend_hardlight", en: "Hard light", vi: "Ánh sáng mạnh" },
+    BlendDifference { key: "blend_difference", en: "Difference", vi: "Khác biệt" },
+    BlendExclusion { key: "blend_exclusion", en: "Exclusion", vi: "Loại trừ" },
+    BlendHue { key: "blend_hue", en: "Hue", vi: "Sắc độ" },
+    BlendSaturation { key: "blend_saturation", en: "Saturation", vi: "Độ bão hòa" },
+    BlendColor { key: "blend_color", en: "Color", vi: "Màu sắc" },
+    BlendLuminosity { key: "blend_luminosity", en: "Luminosity", vi: "Độ sáng" },
     // Shell and lifecycle.
     AppName { key: "app_name", en: "VibeCut", vi: "VibeCut" },
     ChooseProject { key: "choose_project", en: "Choose a project file…", vi: "Chọn tệp dự án…" },
@@ -516,6 +535,29 @@ fn export_decimal(locale: Locale, value: f64, precision: usize) -> String {
     match locale {
         Locale::En => number,
         Locale::Vi => number.replace('.', ","),
+    }
+}
+
+/// Localized label; persisted blend IDs are locale-independent.
+pub fn blend_label(mode: project::BlendMode) -> Text {
+    match mode {
+        project::BlendMode::Normal => Text::BlendNormal,
+        project::BlendMode::Darken => Text::BlendDarken,
+        project::BlendMode::Multiply => Text::BlendMultiply,
+        project::BlendMode::ColorBurn => Text::BlendColorBurn,
+        project::BlendMode::Lighten => Text::BlendLighten,
+        project::BlendMode::Screen => Text::BlendScreen,
+        project::BlendMode::PlusLighter => Text::BlendPlusLighter,
+        project::BlendMode::ColorDodge => Text::BlendColorDodge,
+        project::BlendMode::Overlay => Text::BlendOverlay,
+        project::BlendMode::SoftLight => Text::BlendSoftLight,
+        project::BlendMode::HardLight => Text::BlendHardLight,
+        project::BlendMode::Difference => Text::BlendDifference,
+        project::BlendMode::Exclusion => Text::BlendExclusion,
+        project::BlendMode::Hue => Text::BlendHue,
+        project::BlendMode::Saturation => Text::BlendSaturation,
+        project::BlendMode::Color => Text::BlendColor,
+        project::BlendMode::Luminosity => Text::BlendLuminosity,
     }
 }
 

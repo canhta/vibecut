@@ -52,6 +52,7 @@ fn session() -> Session {
         hidden: false,
         locked: false,
         items: vec![Item {
+            blend_mode: Default::default(),
             masks: Vec::new(),
             effects: Vec::new(),
             id: ItemId(2),
@@ -334,6 +335,110 @@ fn scale_time_preserves_handles_values_serde_and_clean_undo() {
     s.undo().unwrap();
     assert_eq!(s.project(), &original);
     s.redo().unwrap();
+}
+
+#[test]
+fn visual_parameters_validate_atomically_and_roundtrip_history_and_animation() {
+    let mut s = session();
+    let original = s.project().clone();
+    for mode in BlendMode::ALL {
+        let before = s.project().clone();
+        s.execute(
+            "timeline.set_item_param",
+            json!({"item":2,"patch":{"field":"blendMode","value":mode}}),
+        )
+        .unwrap();
+        assert_eq!(item(&s, ItemId(2)).blend_mode, mode);
+        if s.project() != &before {
+            let after = s.project().clone();
+            s.undo().unwrap();
+            assert_eq!(s.project(), &before);
+            s.redo().unwrap();
+            assert_eq!(s.project(), &after);
+        }
+        let bytes = encode(s.project(), false).unwrap();
+        assert_eq!(&decode(&bytes).unwrap().project, s.project().as_ref());
+    }
+    s.execute(
+        "timeline.set_item_param",
+        json!({"item":2,"patch":{"field":"blendMode","value":"screen"}}),
+    )
+    .unwrap();
+    let curved = item(&s, ItemId(2)).clone();
+    s.execute("trim_start", json!({"item":2,"at":frame(120)}))
+        .unwrap();
+    assert_eq!(item(&s, ItemId(2)).blend_mode, BlendMode::Screen);
+    for n in [0, 10, 50, 120] {
+        near(
+            value(&item(&s, ItemId(2)).animations, frame(n)),
+            value(&curved.animations, frame(n + 20)),
+        );
+    }
+    let trimmed = item(&s, ItemId(2)).clone();
+    s.execute(
+        "keyframes.scale_time",
+        json!({"item":2,"numerator":2,"denominator":1}),
+    )
+    .unwrap();
+    assert_eq!(item(&s, ItemId(2)).blend_mode, BlendMode::Screen);
+    for n in [0, 10, 50, 120] {
+        near(
+            value(&item(&s, ItemId(2)).animations, frame(n * 2)),
+            value(&trimmed.animations, frame(n)),
+        );
+    }
+    let before = s.project().clone();
+    let history = s.history_len();
+    for patch in [
+        json!({"field":"opacity","value":-0.01}),
+        json!({"field":"opacity","value":1.01}),
+        json!({"field":"blendMode","value":"unknown"}),
+    ] {
+        assert!(
+            s.execute("timeline.set_item_param", json!({"item":2,"patch":patch}))
+                .is_err()
+        );
+        assert_eq!(s.project(), &before);
+        assert_eq!(s.history_len(), history);
+    }
+    for opacity in [0., 0.5, 1.] {
+        let before = s.project().clone();
+        s.execute(
+            "timeline.set_item_param",
+            json!({"item":2,"patch":{"field":"opacity","value":opacity}}),
+        )
+        .unwrap();
+        near(value(&item(&s, ItemId(2)).animations, Tick::ZERO), opacity);
+        assert_eq!(
+            &decode(&encode(s.project(), false).unwrap())
+                .unwrap()
+                .project,
+            s.project().as_ref()
+        );
+        let after = s.project().clone();
+        s.undo().unwrap();
+        assert_eq!(s.project(), &before);
+        s.redo().unwrap();
+        assert_eq!(s.project(), &after);
+    }
+    assert_ne!(s.project(), &original);
+    let before = s.project().clone();
+    s.apply(Command::SetTrackFlags {
+        track: TrackId(2),
+        muted: false,
+        hidden: false,
+        locked: true,
+    })
+    .unwrap();
+    assert!(
+        s.execute(
+            "timeline.set_item_param",
+            json!({"item":2,"patch":{"field":"opacity","value":0.5}})
+        )
+        .is_err()
+    );
+    s.undo().unwrap();
+    assert_eq!(s.project(), &before);
 }
 #[test]
 fn invalid_key_edits_and_locked_tracks_are_wholly_atomic() {

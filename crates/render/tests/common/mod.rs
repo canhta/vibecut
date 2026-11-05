@@ -168,6 +168,7 @@ pub fn solid_project(seconds: i64, width: u32, height: u32, color: [u8; 4]) -> p
         hidden: false,
         locked: false,
         items: vec![project::Item {
+            blend_mode: Default::default(),
             masks: Vec::new(),
             effects: Vec::new(),
             animations: Default::default(),
@@ -218,5 +219,13 @@ pub fn tool_command(program: &str) -> Command {
     let mut c = Command::new(program);
     c.env_remove("DYLD_LIBRARY_PATH")
         .env_remove("LD_LIBRARY_PATH");
+    if let (Some(prefix), Some(paths)) = (std::env::var_os("FFMPEG_DIR"), std::env::var_os("PATH"))
+    {
+        let production = PathBuf::from(prefix).join("bin");
+        let paths: Vec<_> = std::env::split_paths(&paths)
+            .filter(|path| path != &production)
+            .collect();
+        c.env("PATH", std::env::join_paths(paths).unwrap());
+    }
     c
 }

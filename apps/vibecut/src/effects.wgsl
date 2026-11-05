@@ -21,3 +21,82 @@ fn gaussian(@builtin(global_invocation_id) id: vec3<u32>) {
     let a = clamp(sum.a, 0.0, 1.0);
     dst[id.y * p.width + id.x] = clamp(sum, vec4<f32>(0.0), vec4<f32>(a));
 }
+
+fn channel(mode: u32, b: f32, s: f32) -> f32 {
+    switch mode {
+        case 1u: { return min(b,s); }
+        case 2u: { return b*s; }
+        case 3u: {
+            if b >= 1.0 { return 1.0; }
+            if s <= 0.0 { return 0.0; }
+            return 1.0-min(1.0,(1.0-b)/s);
+        }
+        case 4u: { return max(b,s); }
+        case 5u: { return b+s-b*s; }
+        case 6u: { return min(1.0,b+s); }
+        case 7u: {
+            if b <= 0.0 { return 0.0; }
+            if s >= 1.0 { return 1.0; }
+            return min(1.0,b/(1.0-s));
+        }
+        case 8u: {
+            if b <= 0.5 { return 2.0*b*s; }
+            return 1.0-2.0*(1.0-b)*(1.0-s);
+        }
+        case 9u: {
+            if s <= 0.5 { return b-(1.0-2.0*s)*b*(1.0-b); }
+            var d = sqrt(b);
+            if b <= 0.25 { d = ((16.0*b-12.0)*b+4.0)*b; }
+            return b+(2.0*s-1.0)*(d-b);
+        }
+        case 10u: {
+            if s <= 0.5 { return 2.0*b*s; }
+            return 1.0-2.0*(1.0-b)*(1.0-s);
+        }
+        case 11u: { return abs(b-s); }
+        case 12u: { return b+s-2.0*b*s; }
+        default: { return s; }
+    }
+}
+fn lum(c: vec3<f32>) -> f32 { return dot(c,vec3<f32>(0.3,0.59,0.11)); }
+fn sat(c: vec3<f32>) -> f32 { return max(c.r,max(c.g,c.b))-min(c.r,min(c.g,c.b)); }
+fn set_sat(c: vec3<f32>, s: f32) -> vec3<f32> {
+    let hi = max(c.r,max(c.g,c.b));
+    let lo = min(c.r,min(c.g,c.b));
+    if hi-lo <= 1e-6 { return vec3<f32>(0.0); }
+    return (c-vec3<f32>(lo))*s/(hi-lo);
+}
+fn set_lum(c: vec3<f32>, level: f32) -> vec3<f32> {
+    var o = c+vec3<f32>(level-lum(c));
+    let l = lum(o);
+    let lo = min(o.r,min(o.g,o.b));
+    let hi = max(o.r,max(o.g,o.b));
+    if lo < 0.0 { o = vec3<f32>(l)+(o-vec3<f32>(l))*l/max(l-lo,1e-6); }
+    if hi > 1.0 { o = vec3<f32>(l)+(o-vec3<f32>(l))*(1.0-l)/max(hi-l,1e-6); }
+    return o;
+}
+fn rgb(mode: u32, b: vec3<f32>, s: vec3<f32>) -> vec3<f32> {
+    switch mode {
+        case 13u: { return set_lum(set_sat(s,sat(b)),lum(b)); }
+        case 14u: { return set_lum(set_sat(b,sat(s)),lum(b)); }
+        case 15u: { return set_lum(s,lum(b)); }
+        case 16u: { return set_lum(b,lum(s)); }
+        default: { return vec3<f32>(channel(mode,b.r,s.r),channel(mode,b.g,s.g),channel(mode,b.b,s.b)); }
+    }
+}
+@compute @workgroup_size(8, 8)
+fn blend(@builtin(global_invocation_id) id: vec3<u32>) {
+    if id.x >= p.width || id.y >= p.height { return; }
+    let i = id.y*p.width+id.x;
+    let b = below[i];
+    let s = src[i];
+    let opacity = weights[0];
+    let a = s.a*opacity;
+    let mode = u32(weights[1]);
+    if a <= 0.0 { dst[i] = b; return; }
+    if mode == 0u || b.a <= 0.0 { dst[i] = clamp(s*opacity+b*(1.0-a),vec4<f32>(0.0),vec4<f32>(1.0)); return; }
+    let mixed = clamp(rgb(mode,b.rgb/b.a,s.rgb/s.a),vec3<f32>(0.0),vec3<f32>(1.0));
+    let alpha = a+b.a*(1.0-a);
+    let color = s.rgb*opacity*(1.0-b.a)+b.rgb*(1.0-a)+a*b.a*mixed;
+    dst[i] = vec4<f32>(clamp(color,vec3<f32>(0.0),vec3<f32>(alpha)),alpha);
+}

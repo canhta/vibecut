@@ -293,3 +293,17 @@ creates an editor and draws three egui frames without a window, graphics device 
 audio output, then joins jobs and exits. It refuses an existing directory so the
 check cannot consume a user's recovery data. [Packaging](../../packaging/README.md)
 owns its clean-runner use and the separate native-device verification limits.
+
+## Blend and opacity inspector
+
+Visual selections show a localized blend dropdown (`inspector.blendMode`) and
+0..=1 opacity entry (`inspector.opacity`); options use
+`inspector.blendMode.<persisted-id>`. Mixed selections show the existing mixed
+value marker. Both controls dispatch the registered shared-field command, giving
+one atomic undo step and retaining unrelated fields. Blend labels use the same
+two-language catalog; opacity edits set a constant channel. Animated editing
+continues through the engine keyframe commands. The desktop adapter implements
+the same linear-light blend formulas in WGSL; unsupported device operations
+fall back to the render reference with the unchanged backdrop.
+`cargo xtask ui-audit inspector-blend inspector-blend-vi` renders these inspector
+scenes through the shared audit registry in both themes and at 1x/2x.

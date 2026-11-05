@@ -48,6 +48,7 @@ fn project() -> Project {
         .unwrap()
         .items = vec![
         Item {
+            blend_mode: Default::default(),
             masks: Vec::new(),
             effects: Vec::new(),
             animations: Default::default(),
@@ -58,6 +59,7 @@ fn project() -> Project {
             content: content(),
         },
         Item {
+            blend_mode: Default::default(),
             masks: Vec::new(),
             effects: Vec::new(),
             animations: Default::default(),
@@ -710,6 +712,7 @@ fn measure_large_project_gesture() {
     let track = data.scene_mut().timeline.overlays.first_mut().unwrap();
     track.items = (0..10000)
         .map(|n| Item {
+            blend_mode: Default::default(),
             masks: Vec::new(),
             effects: Vec::new(),
             animations: Default::default(),
@@ -1050,6 +1053,7 @@ fn caption_project() -> Project {
         hidden: false,
         locked: false,
         items: vec![Item {
+            blend_mode: Default::default(),
             masks: Vec::new(),
             effects: Vec::new(),
             animations: Default::default(),
@@ -1412,6 +1416,9 @@ fn shared_fields_are_atomic_and_history_restores_transient_selection() {
         (vec![], ItemParamPatch::TextSize(10.0)),
         (vec![ItemId(10)], ItemParamPatch::TextSize(f32::NAN)),
         (vec![ItemId(10)], ItemParamPatch::AudioGain(25.0)),
+        (vec![ItemId(10)], ItemParamPatch::Opacity(f64::NAN)),
+        (vec![ItemId(10)], ItemParamPatch::Opacity(f64::INFINITY)),
+        (vec![ItemId(10)], ItemParamPatch::Opacity(f64::NEG_INFINITY)),
     ] {
         assert!(s.apply(Command::SetItemParamMany { items, patch }).is_err());
         assert_eq!(s.project(), &after);

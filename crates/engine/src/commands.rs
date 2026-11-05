@@ -56,12 +56,18 @@ pub struct ItemPlacement {
     deny_unknown_fields
 )]
 pub enum ItemParamPatch {
+    #[serde(rename = "blendMode")]
+    BlendMode(project::BlendMode),
+    Opacity(f64),
     AudioGain(f32),
     TextSize(f32),
     TextColor(Color),
 }
 impl ItemParamPatch {
     pub fn compatible(&self, content: &ItemParams) -> bool {
+        if matches!(self, Self::BlendMode(_) | Self::Opacity(_)) {
+            return !matches!(content, ItemParams::Audio(_));
+        }
         matches!(
             (self, content),
             (Self::AudioGain(_), ItemParams::Audio(_))
@@ -70,6 +76,8 @@ impl ItemParamPatch {
     }
     pub(crate) fn validate(&self) -> crate::Result<()> {
         let valid = match self {
+            Self::BlendMode(_) => true,
+            Self::Opacity(v) => v.is_finite() && (0.0..=1.0).contains(v),
             Self::AudioGain(v) => v.is_finite() && (-120.0..=24.0).contains(v),
             Self::TextSize(v) => v.is_finite() && (1.0..=4096.0).contains(v),
             Self::TextColor(_) => true,
@@ -167,6 +175,7 @@ impl CommandSpec {
             | "delete"
             | "ripple_delete"
             | "set_item_param"
+            | "timeline.set_item_param"
             | "retranslate"
             | "keyframes.set_param"
             | "keyframes.add"
@@ -252,6 +261,7 @@ commands! {
     Delete, "delete", "Delete items", Edit { items: Vec<ItemId> } => Timeline, serde_json::json!({"items":[1]});
     RippleDelete, "ripple_delete", "Ripple delete", Edit { item: ItemId } => Timeline, serde_json::json!({"item":1});
     SetItemParam, "set_item_param", "Set item parameters", Edit { item: ItemId, content: ItemParams } => Timeline, serde_json::json!({"item":1,"content":{"kind":"overlay","params":{"color":[255,255,0,255]}}});
+    SetItemField, "timeline.set_item_param", "Set visual item parameter", Edit { item: ItemId, patch: ItemParamPatch } => Timeline, serde_json::json!({"item":1,"patch":{"field":"blendMode","value":"multiply"}});
     SetItemParamMany, "timeline.set_item_param_many", "Set shared item field", Edit { items: Vec<ItemId>, patch: ItemParamPatch } => Timeline, serde_json::json!({"items":[1],"patch":{"field":"text_size","value":48.0}});
     AddMask, "masks.add", "Add mask", Edit { item: ItemId, mask: project::Mask } => Timeline, serde_json::json!({"item":1,"mask":project::Mask::new("mask2",project::MaskShape::Rectangle)});
     RemoveMask, "masks.remove", "Remove mask", Edit { item: ItemId, mask: String } => Timeline, serde_json::json!({"item":1,"mask":"mask1"});

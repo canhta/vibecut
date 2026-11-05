@@ -64,7 +64,7 @@ fn source_stream(kind: media::StreamKind, duration: Tick) -> SourceStream {
 fn asset(id: u64, kind: media::StreamKind) -> SourceAsset {
     SourceAsset::try_from(AssetData {
         id: AssetId(id),
-        path: PathBuf::from(format!("/tmp/vibecut-timeline-{id}.mp4")),
+        path: std::env::temp_dir().join(format!("vibecut-timeline-{id}.mp4")),
         content_hash: ContentHash::from_bytes(&[id as u8; 8]),
         probe: SourceProbe {
             format: "mov,mp4".into(),
@@ -200,6 +200,65 @@ fn harness(editor: Editor) -> Harness<'static, Editor> {
     Harness::builder()
         .with_size(egui::vec2(1440.0, 900.0))
         .build_ui_state(|ui, editor: &mut Editor| editor.ui(ui), editor)
+}
+
+#[test]
+fn blend_dropdown_and_opacity_field_dispatch_real_edits() {
+    let fixture = fixture();
+    let id = fixture.video_a;
+    let mut harness = harness(fixture.editor);
+    harness.run_steps(3);
+    harness
+        .get(
+            By::new()
+                .predicate(|n| n.author_id() == Some(format!("timeline.item.{}", id.0).as_str())),
+        )
+        .click();
+    harness.run_steps(2);
+    harness
+        .get(By::new().predicate(|n| n.author_id() == Some("inspector.blendMode")))
+        .click();
+    harness.run_steps(2);
+    harness
+        .get(By::new().predicate(|n| n.author_id() == Some("inspector.blendMode.multiply")))
+        .click();
+    harness.run_steps(2);
+    assert_eq!(
+        item(harness.state(), id).blend_mode,
+        project::BlendMode::Multiply
+    );
+    harness
+        .get(By::new().predicate(|n| n.author_id() == Some("inspector.opacity")))
+        .click();
+    harness.run_steps(1);
+    harness.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::A);
+    harness.event(egui::Event::Text("0.5".into()));
+    harness.key_press(egui::Key::Enter);
+    harness.run_steps(3);
+    let path = project::AnimationPath::new("opacity").unwrap();
+    assert_eq!(
+        item(harness.state(), id)
+            .animations
+            .value_at(&path, Tick::ZERO)
+            .unwrap(),
+        Some(project::ParamValue::Scalar(0.5))
+    );
+    harness.state_mut().activate("edit.undo").unwrap();
+    harness.run_steps(2);
+    assert!(item(harness.state(), id).animations.get(&path).is_none());
+    harness.state_mut().activate("edit.redo").unwrap();
+    harness.run_steps(2);
+    assert_eq!(
+        item(harness.state(), id)
+            .animations
+            .value_at(&path, Tick::ZERO)
+            .unwrap(),
+        Some(project::ParamValue::Scalar(0.5))
+    );
+    let image = harness.render().unwrap();
+    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../target/p1-44-blend.png");
+    image.save(&path).unwrap();
+    eprintln!("blend screenshot: {}", path.display());
 }
 
 fn widget(harness: &Harness<'_, Editor>, id: &str) -> egui::Rect {
@@ -1035,10 +1094,11 @@ fn mixed_text_inspector_applies_one_field_and_restores_selected_items() {
         harness.state().session.project(),
         &harness.state().selection,
     );
-    assert_eq!(fields.len(), 2);
+    assert_eq!(fields.len(), 4);
     assert!(
         fields
             .iter()
+            .filter(|f| matches!(f.id, "text_size" | "text_color"))
             .all(|f| f.value.is_none() && f.compatible == 2)
     );
     let before = harness.state().session.project().clone();

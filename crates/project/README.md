@@ -142,7 +142,7 @@ or renderer output claim is made.
 ## Persistence and limits
 
 `encode`/`decode` use one JSON envelope: `format`, `schema_version`, `generator`,
-`project`. Current schema 7 stores ProjectId as a canonical decimal string, preserving
+`project`. Current schema 8 stores ProjectId as a canonical decimal string, preserving
 all u64 identity bits for control clients; other IDs remain numeric. Schemas 1–6
 are refused rather than migrated or silently defaulted. Older schemas return `TooOld`, newer schemas `TooNew`; there are no
 migration or compatibility paths. Unknown current-schema project/envelope fields
@@ -315,7 +315,7 @@ whitespace-only text masks are inactive while retaining their editable data. The
 admits 1,024 entries for resource safety; presentation limits do not define the
 model. Audio items refuse masks. Modes are None/Add/Subtract/Intersect/Lighten/
 Darken/Difference; render owns their coverage math. Commands/history belong to
-engine. Schema 7 requires scene arrays and per-item mask vectors; schema 6 and earlier refuse with `TooOld`.
+engine. Schema 8 requires scene arrays, per-item mask vectors and `blendMode`; schema 7 and earlier refuse with `TooOld`.
 
 Shapes include split, cinematic band, rectangle, ellipse, heart, diamond, star,
 text and a cubic `MaskPath`. Text masks currently persist content and font size
@@ -333,3 +333,11 @@ existing `Animations` owner for center_x/center_y, width/height, rotation, scale
 feather, expansion, opacity and stroke_width. Values evaluate in item-local time;
 `Mask::at` clamps animated overshoot to the static admissible range. No second
 keyframe store or path interpolator is introduced.
+
+## Blend selection and opacity
+
+`Item.blend_mode` persists as required `blendMode` using the 17 kebab-case IDs in
+`BlendMode::ALL`. Normal is the creation default; audio items refuse a non-normal
+blend. The render owner documents the linear-light formulas. Opacity has one
+owner: the existing scalar `opacity` animation channel. Missing channels mean
+unity; constant channels and keyframed channels share persistence and trim/retime.

@@ -17,6 +17,18 @@ pub struct EffectInputs<'a> {
     pub below: &'a Image,
 }
 pub trait EffectCompositor: Send + Sync {
+    /// Composite a masked/effected working item over its track backdrop.
+    /// Unsupported must leave `below` unchanged so the renderer can use CPU.
+    fn composite(
+        &self,
+        below: &mut Image,
+        item: &Image,
+        opacity: f32,
+        mode: project::BlendMode,
+        hooks: &dyn ExecutionHooks,
+    ) -> Result<()> {
+        crate::blend::composite(below, item, opacity, mode, hooks)
+    }
     /// Unsupported requests fall back to CPU at the renderer; other failures propagate.
     /// Implementations must reserve all transient bytes and check cancellation.
     fn apply(

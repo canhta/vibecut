@@ -177,6 +177,7 @@ fn overlay_project_color(
         hidden: false,
         locked: false,
         items: vec![project::Item {
+            blend_mode: Default::default(),
             masks: Vec::new(),
             effects: Vec::new(),
             animations: Default::default(),
@@ -1206,6 +1207,7 @@ fn exec_shared_field_id_list_persists_only_compatible_item_fields() {
         locked: false,
         items: (0..2)
             .map(|i| project::Item {
+                blend_mode: Default::default(),
                 masks: Vec::new(),
                 effects: vec![],
                 animations: Default::default(),
@@ -1887,4 +1889,71 @@ fn control_save_failure_is_receipted_and_retry_needs_fresh_key() {
     let (code, stderr) = control.finish();
     assert_eq!(code, 0, "{stderr}");
     assert_eq!(info(&project)["tracks"], 2);
+}
+
+#[test]
+fn cli_sets_blend_and_opacity_and_renders_a_blended_frame() {
+    let dir = tempfile::tempdir().unwrap();
+    let project = dir.path().join("blended.vibecut");
+    let output_path = dir.path().join("blended.mp4");
+    overlay_project_color(
+        &project,
+        64,
+        64,
+        Tick(time::TICKS_PER_SECOND),
+        [128, 64, 192, 128],
+    );
+    let mut data = project::load(&project).unwrap().project.into_data();
+    data.canvas.background = project::Color([64, 128, 32, 255]);
+    fs::write(
+        &project,
+        project::encode(&project::Project::new(data).unwrap(), false).unwrap(),
+    )
+    .unwrap();
+    exec(
+        &project,
+        "timeline.set_item_param",
+        json!({"item":0,"patch":{"field":"blendMode","value":"screen"}}),
+    );
+    exec(
+        &project,
+        "timeline.set_item_param",
+        json!({"item":0,"patch":{"field":"opacity","value":0.5}}),
+    );
+    let loaded = project::load(&project).unwrap().project;
+    let item = loaded
+        .data()
+        .scene()
+        .timeline
+        .overlays
+        .first()
+        .unwrap()
+        .items
+        .first()
+        .unwrap();
+    assert_eq!(item.blend_mode, project::BlendMode::Screen);
+    let output = cli(&[
+        os("export"),
+        project.as_os_str(),
+        os("--out"),
+        output_path.as_os_str(),
+        os("--json"),
+    ]);
+    assert_eq!(
+        code(&output),
+        0,
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    if !tools() {
+        return;
+    }
+    let frames = decoded_rgb(&output_path, 64, 64, &[0]);
+    let expected = [75, 118, 92];
+    for (actual, expected) in frames[0][..3].iter().zip(expected) {
+        assert!(
+            (i32::from(*actual) - expected).abs() <= 12,
+            "decoded blend {actual} != {expected}"
+        );
+    }
 }

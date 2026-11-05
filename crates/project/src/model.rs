@@ -230,6 +230,8 @@ impl ItemParams {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct Item {
+    #[serde(rename = "blendMode")]
+    pub blend_mode: crate::BlendMode,
     pub masks: Vec<crate::Mask>,
     pub effects: Vec<crate::EffectInstance>,
     pub animations: crate::Animations,
@@ -545,6 +547,11 @@ fn validate(data: &ProjectData) -> Result<()> {
         }
         let mut end = Tick::ZERO;
         for item in &track.items {
+            if item.blend_mode != crate::BlendMode::Normal
+                && matches!(item.content, ItemParams::Audio(_))
+            {
+                return Err(Error::Invalid("visual blend on audio item"));
+            }
             if !item.effects.is_empty() && matches!(item.content, ItemParams::Audio(_)) {
                 return Err(Error::Invalid("visual effect on audio item"));
             }

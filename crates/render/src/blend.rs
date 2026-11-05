@@ -1,23 +1,71 @@
 //! Separable and nonseparable blend functions.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum BlendMode {
-    Normal,
-    Darken,
-    Multiply,
-    ColorBurn,
-    Lighten,
-    Screen,
-    PlusLighter,
-    ColorDodge,
-    Overlay,
-    SoftLight,
-    HardLight,
-    Difference,
-    Exclusion,
-    Hue,
-    Saturation,
-    Color,
-    Luminosity,
+use crate::{Error, ExecutionHooks, Image, Result, check};
+pub use project::BlendMode;
+
+/// Source-over on finite premultiplied linear RGBA in 0..=1, RGB <= alpha.
+/// Opacity scales all source channels. No transfer conversion occurs here.
+pub fn pixel(b: [f32; 4], s: [f32; 4], opacity: f32, mode: BlendMode) -> [f32; 4] {
+    let [br, bg, bb, ba] = b;
+    let [sr, sg, sb, sa] = s;
+    let a = sa * opacity;
+    if a <= 0.0 {
+        return b;
+    }
+    if mode == BlendMode::Normal || ba <= 0.0 {
+        let mut out = b;
+        crate::image::over(&mut out, s, opacity);
+        return out;
+    }
+    let mixed = blend_rgb(
+        mode,
+        [br / ba, bg / ba, bb / ba],
+        [sr / sa, sg / sa, sb / sa],
+    );
+    let alpha = a + ba * (1.0 - a);
+    let mut out = [0.0; 4];
+    for (((o, b), s), m) in out
+        .iter_mut()
+        .take(3)
+        .zip([br, bg, bb])
+        .zip([sr, sg, sb])
+        .zip(mixed)
+    {
+        *o = (s * opacity * (1.0 - ba) + b * (1.0 - a) + a * ba * m.clamp(0.0, 1.0))
+            .clamp(0.0, alpha);
+    }
+    if let Some(v) = out.get_mut(3) {
+        *v = alpha;
+    }
+    out
+}
+
+/// Same-size working images; validates opacity and geometry before mutation.
+/// Coverage must already have scaled the source's four channels together.
+pub fn composite(
+    dst: &mut Image,
+    src: &Image,
+    opacity: f32,
+    mode: BlendMode,
+    hooks: &dyn ExecutionHooks,
+) -> Result<()> {
+    if dst.width != src.width
+        || dst.height != src.height
+        || !opacity.is_finite()
+        || !(0.0..=1.0).contains(&opacity)
+    {
+        return Err(Error::Invalid("blend inputs"));
+    }
+    for (d, s) in dst
+        .pixels
+        .chunks_mut(dst.width as usize)
+        .zip(src.pixels.chunks(src.width as usize))
+    {
+        check(hooks)?;
+        for (d, s) in d.iter_mut().zip(s) {
+            *d = pixel(*d, *s, opacity, mode);
+        }
+    }
+    Ok(())
 }
 
 fn sep(mode: BlendMode, b: f32, s: f32) -> f32 {
