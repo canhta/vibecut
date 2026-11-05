@@ -1748,10 +1748,12 @@ fn clip_fades_export_matches_the_preview_mix_across_block_partitions() {
                 fades: project::Fades {
                     fade_in: project::Fade {
                         duration: tick(12_000, 48_000),
+                        offset: Tick::ZERO,
                         curve: project::FadeCurve::EqualPower,
                     },
                     fade_out: project::Fade {
                         duration: tick(12_000, 48_000),
+                        offset: Tick::ZERO,
                         curve: project::FadeCurve::Exponential,
                     },
                 },

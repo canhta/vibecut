@@ -295,6 +295,7 @@ fn faded(fades: project::Fades) -> project::Project {
 fn fade(ms: i64, curve: project::FadeCurve) -> project::Fade {
     project::Fade {
         duration: tick(ms, 1000),
+        offset: Tick::ZERO,
         curve,
     }
 }
@@ -318,6 +319,40 @@ fn mix_all(p: &project::Project, partition: &[usize]) -> Vec<f32> {
 }
 
 #[test]
+fn a_split_clip_mixes_to_the_same_samples_as_the_whole_clip() {
+    let fades = project::Fades {
+        fade_in: fade(300, project::FadeCurve::Exponential),
+        fade_out: fade(400, project::FadeCurve::EqualPower),
+    };
+    let whole = mix_all(&faded(fades), &[4096]);
+    // Cuts inside the fade-in, between fades, inside the fade-out; off the sample grid.
+    for cut_ms in [101, 300, 550, 700, 899] {
+        let at = Tick(tick(cut_ms, 1000).0 + 12_345);
+        let mut data = faded(fades).into_data();
+        let items = &mut data.scene_mut().timeline.audio[0].items;
+        let (mut left, mut right) = (items[0].clone(), items[0].clone());
+        let end = left.end().unwrap();
+        let (l, r) = fades.split(Tick::ZERO, at, end).unwrap();
+        left.source_range = TimeRange::new(Tick::ZERO, at).unwrap();
+        right.id = project::ItemId(2);
+        right.start = at;
+        right.source_range = TimeRange::new(at, end).unwrap();
+        let set = |item: &mut project::Item, f| {
+            if let project::ItemParams::Audio(p) = &mut item.content {
+                p.fades = f;
+            }
+        };
+        set(&mut left, l);
+        set(&mut right, r);
+        *items = vec![left, right];
+        let split = project::Project::new(data).unwrap();
+        for partition in [&[4096][..], &[1, 7, 1031, 4093]] {
+            assert_eq!(whole, mix_all(&split, partition), "cut {cut_ms} ms");
+        }
+    }
+}
+
+#[test]
 fn clip_fades_follow_the_shared_gain_exactly_and_do_not_depend_on_blocks() {
     // Unity source through the limiter's constant 0.98 passthrough: output = 0.098 * gain.
     let unit = 0.1f32 * 0.98;
@@ -330,7 +365,7 @@ fn clip_fades_follow_the_shared_gain_exactly_and_do_not_depend_on_blocks() {
             fade(50, project::FadeCurve::Exponential),
             fade(50, project::FadeCurve::EqualPower),
         ),
-        // Oversized requests clamp: fade-in wins, fade-out takes the remainder.
+        // Oversized requests clamp to the clip; overlapping windows multiply.
         (
             fade(800, project::FadeCurve::Linear),
             fade(800, project::FadeCurve::Linear),
@@ -338,9 +373,9 @@ fn clip_fades_follow_the_shared_gain_exactly_and_do_not_depend_on_blocks() {
     ] {
         let fades = project::Fades { fade_in, fade_out };
         let p = faded(fades);
-        let spans = fades.spans(48000, 48000).unwrap();
+        let spans = fades.spans(Tick::ZERO, tick(1000, 1000), 48000).unwrap();
         let (i, o) = spans.lengths();
-        assert!(i + o <= 48000);
+        assert!(i <= 48000 && o <= 48000);
         let whole = mix_all(&p, &[48000]);
         for (n, sample) in whole.iter().enumerate() {
             let expected = unit * spans.gain(n as i64);
@@ -404,7 +439,7 @@ fn clip_fades_compose_with_volume_keyframes_and_the_master_limiter() {
     let plain = project::Project::new(plain).unwrap();
     let with = mix_all(&p, &[4096]);
     let without = mix_all(&plain, &[4096]);
-    let spans = fades.spans(48000, 48000).unwrap();
+    let spans = fades.spans(Tick::ZERO, tick(1000, 1000), 48000).unwrap();
     for n in 0..48000 {
         let expected = without[n] * spans.gain(n as i64);
         assert!((with[n] - expected).abs() <= 1e-7, "sample {n}");

@@ -277,7 +277,7 @@ fn mix_raw(
             _ => (0.0, true, project::Fades::default()),
         };
         // Clip fades multiply the volume curve before summing and the master limiter.
-        let fade_spans = fades.spans(i1 - i0, i64::from(rate))?;
+        let fade_spans = fades.spans(item.start, item.end()?, i64::from(rate))?;
         // Evaluate on absolute output samples, never relative to the block or
         // another track's active span. Gain is identical across all adapters.
         let _gains = hooks.reserve(MemoryKind::Compositor, (b - a) as u64 * 4)?;

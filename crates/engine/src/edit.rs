@@ -312,6 +312,15 @@ fn sub(a: Tick, b: Tick) -> Result<Tick> {
     a.checked_sub(b).ok_or(EditError::Invalid("time overflow"))
 }
 
+/// Fades of an audible item.
+fn fades_mut(content: &mut ItemParams) -> Option<&mut project::Fades> {
+    match content {
+        ItemParams::Audio(project::AudioParams { fades, .. })
+        | ItemParams::Video(project::VideoParams { fades, .. }) => Some(fades),
+        _ => None,
+    }
+}
+
 /// Keep caption clipping with its mapping owner, retaining source cue identity and text.
 /// The caller supplies authoritative cues, never a previously clipped preview.
 fn set_range(item: &mut Item, range: SourceRange, sources: &mut TrimSources) -> Result<()> {
@@ -713,9 +722,7 @@ pub(crate) fn apply(
         } => {
             let target = item(&mut data, id)?;
             let clip = target.source_range.duration();
-            let (ItemParams::Audio(project::AudioParams { fades, .. })
-            | ItemParams::Video(project::VideoParams { fades, .. })) = &mut target.content
-            else {
+            let Some(fades) = fades_mut(&mut target.content) else {
                 return Err(EditError::Invalid("fade needs an audio or video item"));
             };
             fades.set(edge, duration, curve, clip)?;
@@ -885,6 +892,7 @@ pub(crate) fn apply(
                 return Err(EditError::Invalid("split must be inside item"));
             }
             let cut = add(left.source_range.start(), sub(at, left.start)?)?;
+            let (start, end_tick) = (left.start, left.end()?);
             let mut right = left.clone();
             let end = left.source_range.end();
             set_range(
@@ -897,16 +905,12 @@ pub(crate) fn apply(
             if let ItemParams::Caption(p) = &left.content {
                 sources.insert(left.id, Arc::new(p.cues.clone()));
             }
-            // The cut divides the fades: the left piece keeps the fade-in, the right the fade-out.
-            if let ItemParams::Audio(project::AudioParams { fades, .. })
-            | ItemParams::Video(project::VideoParams { fades, .. }) = &mut right.content
+            // The cut is non-destructive: both pieces keep the whole shape of any fade reaching
+            // them, so together they replay the original gain at every sample.
+            if let (Some(l), Some(r)) =
+                (fades_mut(&mut left.content), fades_mut(&mut right.content))
             {
-                fades.fade_in = project::Fade::default();
-            }
-            if let ItemParams::Audio(project::AudioParams { fades, .. })
-            | ItemParams::Video(project::VideoParams { fades, .. }) = &mut left.content
-            {
-                fades.fade_out = project::Fade::default();
+                (*l, *r) = l.split(start, at, end_tick)?;
             }
             right.id = ItemId(alloc(next)?);
             right.start = at;
@@ -928,6 +932,13 @@ pub(crate) fn apply(
             let range = SourceRange::new(source, item.source_range.end())?;
             set_range(item, range, sources)?;
             item.start = at;
+            // A trimmed edge starts a fresh fade of the audible length, yielding to the other.
+            let clip = item.source_range.duration();
+            if let Some(fades) = fades_mut(&mut item.content) {
+                let curve = fades.fade_in.curve;
+                let window = fades.fade_in.window();
+                fades.set(project::FadeEdge::In, window, curve, clip)?;
+            }
         }
         Command::TrimEnd { item: id, at } => {
             let item = item(&mut data, id)?;
@@ -937,6 +948,12 @@ pub(crate) fn apply(
                 SourceRange::new(item.source_range.start(), end)?,
                 sources,
             )?;
+            let clip = item.source_range.duration();
+            if let Some(fades) = fades_mut(&mut item.content) {
+                let curve = fades.fade_out.curve;
+                let window = fades.fade_out.window();
+                fades.set(project::FadeEdge::Out, window, curve, clip)?;
+            }
         }
         Command::Delete { items } => {
             let mut ids = BTreeSet::new();

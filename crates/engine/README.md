@@ -1569,8 +1569,11 @@ same evaluator. Locked/missing targets and invalid grids refuse atomically.
 `out`, `curve` `equal_power`, `linear` or `exponential`) on audio and video items.
 A negative duration, a non-audible item or a locked track refuses atomically; a
 duration beyond the clip is clamped to the clip minus the other edge, so the two
-fades never overlap. `split_at` divides the fades at the cut: the left piece keeps
-the fade-in, the right piece the fade-out. Trims keep stored durations; render
-clamps them to the shortened clip.
+fades never overlap. `split_at` is non-destructive: both pieces keep the whole
+shape of any fade reaching them and record the part the other piece holds
+(`Fades::split`), so a cut inside a fade, at its boundary or off the sample grid
+leaves the summed envelope unchanged. Trimming an edge starts a fresh fade of the
+audible length there; stored durations beyond the shortened clip stay, and render
+clamps the window.
 All three edits use ordinary gestures, transactions, undo/redo and persistence;
 render owns mastering, sample timing and latency compensation.

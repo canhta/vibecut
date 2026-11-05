@@ -142,10 +142,12 @@ fn populated(path: PathBuf) -> Project {
             fades: project::Fades {
                 fade_in: project::Fade {
                     duration: Tick(3),
+                    offset: Tick(1),
                     curve: project::FadeCurve::Linear,
                 },
                 fade_out: project::Fade {
                     duration: Tick(4),
+                    offset: Tick(2),
                     curve: project::FadeCurve::Exponential,
                 },
             },
@@ -359,9 +361,33 @@ fn model_trust_boundaries() {
         fades: project::Fades {
             fade_in: project::Fade {
                 duration: Tick(-1),
+                offset: Tick::ZERO,
                 curve: project::FadeCurve::default(),
             },
             fade_out: project::Fade::default(),
+        },
+        volume: 0.0,
+        muted: false,
+        source: Default::default(),
+    });
+    cases.push(d);
+    let mut d = base.clone();
+    d.scene_mut()
+        .timeline
+        .audio
+        .first_mut()
+        .unwrap()
+        .items
+        .first_mut()
+        .unwrap()
+        .content = ItemParams::Audio(AudioParams {
+        fades: project::Fades {
+            fade_in: project::Fade::default(),
+            fade_out: project::Fade {
+                duration: Tick(5),
+                offset: Tick(6),
+                curve: project::FadeCurve::default(),
+            },
         },
         volume: 0.0,
         muted: false,
@@ -494,6 +520,7 @@ fn schema_errors_precede_interpreting_an_unknown_project_body() {
         (8, "null", true),
         (9, "null", true),
         (10, "null", true),
+        (SCHEMA_VERSION - 1, "null", true),
         (SCHEMA_VERSION + 1, "null", false),
     ] {
         let bytes = format!(
@@ -513,6 +540,17 @@ fn schema_errors_precede_interpreting_an_unknown_project_body() {
         decode(&serde_json::to_vec(&value).unwrap()),
         Err(Error::Invalid(_))
     ));
+}
+#[test]
+fn schema_14_fades_without_an_offset_load_as_uncut_fades() {
+    // Schema 14 never shipped; the branch wrote fades without `offset`, which means "uncut".
+    let fades: Fades = serde_json::from_str(
+        r#"{"fade_in":{"duration":30,"curve":"linear"},"fade_out":{"duration":20,"curve":"equal_power"}}"#,
+    )
+    .unwrap();
+    assert_eq!(fades.fade_in.offset, Tick::ZERO);
+    assert_eq!(fades.fade_in.window(), Tick(30));
+    assert_eq!(fades.fade_out.window(), Tick(20));
 }
 #[test]
 fn hostile_json_is_bounded_and_errors_redact_text() {
