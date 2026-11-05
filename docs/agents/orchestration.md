@@ -14,9 +14,9 @@
 | T1 | Mechanical edits, docs, research, benchmarks, fixtures |
 | T2 | Features/adapters on existing patterns; UI on settled contracts |
 | T3 | New contracts, pipelines, persistence formats |
-| T4 | unsafe/FFI, concurrency, job engine, render and A/V sync core; Codex only |
+| T4 | unsafe/FFI, concurrency, job engine, render and A/V sync core |
 
-opencode holds one tier per work type, not an overall tier. Promote a work type one tier after two consecutive reviewed tickets of that type merge without design-level `changes`; demote it one tier after that verdict or a reverted merge. The coordinator updates `.scratch/agents.md` on every verdict with the per-work-type tier, evidence and routing. Work types with design-level or robustness findings route to Codex until their profile changes.
+opencode holds one tier per work type, not an overall tier. Promote a work type one tier after two consecutive reviewed tickets of that type merge without design-level `changes`; demote it one tier after that verdict or a reverted merge. The coordinator updates `.scratch/agents.md` on every verdict with the per-work-type tier, evidence and routing. Work types with design-level or robustness findings route to Codex until their profile changes. A work type with two consecutive clean T3 merges may trial T4 one ticket at a time under a close Codex review whose acceptance includes race, mid-operation cancellation and hostile-input tests; unsafe/FFI stays Codex until a concurrency or job-engine trial merges clean.
 
 ## Tickets and placement
 
