@@ -95,6 +95,7 @@ both in sync.
 | `preview.zoom.in` — Zoom preview in | View | — | — | preview view |
 | `preview.zoom.out` — Zoom preview out | View | — | — | preview view |
 | `preview.zoom` — Set preview zoom percentage | View | — | — | preview view |
+| `shortcuts.open` — Keyboard shortcuts | View | — | — | shortcuts dialog |
 <!-- END GENERATED KEYMAP -->
 
 Every project mutation uses its engine command id (`vibecut-cli commands

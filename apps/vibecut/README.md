@@ -167,7 +167,15 @@ when the in-app clipboard has an entry; otherwise the event remains for media
 paste. Shift bypasses snapping during a drag. Scrubbing uses the same seek path.
 Binding overrides and `isCustomized` markers persist in the one preference store;
 unknown actions and conflicts are reported, and unsupported import profiles are
-refused with a typed diagnostic. Two resizable columns and a horizontal
+refused with a typed diagnostic. The header Shortcuts action opens a four-tab
+dialog grouped by action category: rows show platform glyph chips, click-to-record
+captures the next chord, a conflict names the existing action and leaves both
+bindings untouched, unbound actions stay listed and bindable, and per-action or
+all-action reset removes the override and its `isCustomized` marker. Every change
+is the app-local `ui.keybindings.set` / `ui.keybindings.reset` command, so undo and
+redo restore the previous map without touching Project JSON. Import/export JSON
+controls are visible but disabled until settings import/export (p1-parity/75).
+Two resizable columns and a horizontal
 divider start at the UI design's 25/50/25 and 50/50 proportions. Drags clamp
 assets/properties to 15–40%, preview to 30–85% and the timeline to 15–70%, so no
 region reaches zero. The assets panel has the reference's nine-tab vertical icon

@@ -173,6 +173,47 @@ impl Chord {
         text
     }
 
+    /// Per-key display tokens for the shortcuts dialog. macOS uses the
+    /// reference glyphs; other platforms spell modifiers out. Named keys such
+    /// as Space and Esc stay word tokens so the UI can draw them as key caps.
+    pub fn parts(self, platform: Platform) -> Vec<String> {
+        let mut parts = Vec::with_capacity(4);
+        if self.mods.command {
+            parts.push(if platform.is_mac() {
+                "⌘".to_owned()
+            } else {
+                "Ctrl".to_owned()
+            });
+        }
+        if self.mods.alt {
+            parts.push(if platform.is_mac() {
+                "⌥".to_owned()
+            } else {
+                "Alt".to_owned()
+            });
+        }
+        if self.mods.shift {
+            parts.push(if platform.is_mac() {
+                "⇧".to_owned()
+            } else {
+                "Shift".to_owned()
+            });
+        }
+        parts.push(match (platform.is_mac(), self.key) {
+            (_, egui::Key::ArrowDown) => "↓".to_owned(),
+            (_, egui::Key::ArrowLeft) => "←".to_owned(),
+            (_, egui::Key::ArrowRight) => "→".to_owned(),
+            (_, egui::Key::ArrowUp) => "↑".to_owned(),
+            (true, egui::Key::Escape) => "esc".to_owned(),
+            (true, egui::Key::Tab) => "⇥".to_owned(),
+            (true, egui::Key::Backspace) => "⌫".to_owned(),
+            (true, egui::Key::Delete) => "⌦".to_owned(),
+            (false, egui::Key::Escape) => "Esc".to_owned(),
+            _ => self.key.name().to_owned(),
+        });
+        parts
+    }
+
     /// Exact match, unlike egui's `consume_key` which ignores extra Shift/Alt.
     /// On macOS a physical Control key is never folded into Command.
     pub fn matches(self, platform: Platform, modifiers: egui::Modifiers) -> bool {
@@ -412,6 +453,7 @@ pub enum UiAction {
     DetailsInspector,
     RetryPreview,
     OpenModels,
+    OpenShortcuts,
     RunExport,
     RetryExport,
     RenameScene,
@@ -1268,6 +1310,14 @@ pub const ACTIONS: &[ActionSpec] = &[
         UiAction::PreviewZoomPreset,
         &[],
     ),
+    ActionSpec::ui(
+        "shortcuts.open",
+        "Keyboard shortcuts",
+        ActionCategory::View,
+        "shortcuts dialog",
+        UiAction::OpenShortcuts,
+        &[],
+    ),
 ];
 
 pub fn actions() -> &'static [ActionSpec] {
@@ -1884,6 +1934,13 @@ mod tests {
         assert_eq!(
             Chord::parse("return").unwrap().display(Platform::Windows),
             "Enter"
+        );
+        let right = Chord::parse("shift+ctrl+right").unwrap();
+        assert_eq!(right.parts(Platform::Mac), ["⌘", "⇧", "→"]);
+        assert_eq!(right.parts(Platform::Windows), ["Ctrl", "Shift", "→"]);
+        assert_eq!(
+            Chord::parse("space").unwrap().parts(Platform::Mac),
+            ["Space"]
         );
     }
 

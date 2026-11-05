@@ -524,6 +524,28 @@ catalog! {
     ZoomLevel { key: "zoom_level", en: "Timeline zoom", vi: "Mức thu phóng dòng thời gian" },
     ActionShortcut { key: "action_shortcut", en: "{action} ({shortcut})", vi: "{action} ({shortcut})" },
 
+    // Shortcuts dialog.
+    ShortcutsTitle { key: "shortcuts_title", en: "Shortcuts", vi: "Phím tắt" },
+    Shortcuts { key: "shortcuts", en: "Shortcuts", vi: "Phím tắt" },
+    ShortcutsPressKey { key: "shortcuts_press_key", en: "Press keys…", vi: "Nhấn phím…" },
+    ShortcutsUnbound { key: "shortcuts_unbound", en: "Unbound", vi: "Chưa gán phím" },
+    ShortcutsReset { key: "shortcuts_reset", en: "Reset", vi: "Đặt lại" },
+    ShortcutsResetAll { key: "shortcuts_reset_all", en: "Reset all", vi: "Đặt lại tất cả" },
+    ShortcutsImport { key: "shortcuts_import", en: "Import JSON", vi: "Nhập JSON" },
+    ShortcutsExport { key: "shortcuts_export", en: "Export JSON", vi: "Xuất JSON" },
+    ShortcutsIoPending { key: "shortcuts_io_pending", en: "Import and export arrive with settings import/export (p1-parity/75).", vi: "Nhập và xuất sẽ có cùng tính năng nhập/xuất cài đặt (p1-parity/75)." },
+    ShortcutsErrorConflict { key: "shortcuts_error_conflict", en: "`{chord}` is already used by {action}.", vi: "`{chord}` đã được dùng bởi {action}." },
+    ShortcutsErrorInvalid { key: "shortcuts_error_invalid", en: "Invalid shortcut: {reason}", vi: "Phím tắt không hợp lệ: {reason}" },
+    ShortcutsClose { key: "shortcuts_close", en: "Close", vi: "Đóng" },
+    ShortcutsProfile { key: "shortcuts_profile", en: "Shortcut 1", vi: "Phím tắt 1" },
+    ShortcutsSave { key: "shortcuts_save", en: "Save", vi: "Lưu" },
+    ShortcutsCancel { key: "shortcuts_cancel", en: "Cancel", vi: "Hủy" },
+    ShortcutsSaveHint { key: "shortcuts_save_hint", en: "Changes apply immediately and can be undone; no explicit save is needed.", vi: "Thay đổi được áp dụng ngay và có thể hoàn tác; không cần lưu riêng." },
+    ShortcutsTabTimeline { key: "shortcuts_tab_timeline", en: "Timeline", vi: "Dòng thời gian" },
+    ShortcutsTabPlayer { key: "shortcuts_tab_player", en: "Player", vi: "Trình phát" },
+    ShortcutsTabBasic { key: "shortcuts_tab_basic", en: "Basic", vi: "Cơ bản" },
+    ShortcutsTabOther { key: "shortcuts_tab_other", en: "Other", vi: "Khác" },
+
     // Export.
     ExportMemory { key: "export_memory", en: "Not enough memory for export. Pause playback or reduce the project canvas, then retry.", vi: "Không đủ bộ nhớ để xuất. Tạm dừng phát hoặc giảm kích thước khung hình rồi thử lại." },
     ExportCapability { key: "export_capability", en: "The selected format or source cannot be encoded on this system. Try another format or restore the source.", vi: "Hệ thống không mã hóa được định dạng hoặc nguồn đã chọn. Thử định dạng khác hoặc khôi phục nguồn." },

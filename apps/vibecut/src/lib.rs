@@ -27,7 +27,8 @@ mod theme;
 pub mod workspace;
 pub use eframe::egui;
 pub use frontend::{
-    AssetInspection, AssetState, Editor, Inspection, PREFERENCE_COMMAND, WidgetState,
+    AssetInspection, AssetState, Editor, Inspection, PREFERENCE_COMMAND, ShortcutRow, ShortcutTab,
+    ShortcutsInspection, WidgetState,
 };
 
 /// Window background token. Host adapters and offscreen audits paint it behind a
