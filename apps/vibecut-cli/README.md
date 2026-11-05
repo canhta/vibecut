@@ -108,6 +108,17 @@ and found but failing tools fail. Run `cargo xtask ci --require-oracles` for the
 full workspace check and tool/fixture receipts. No speed or memory measurement
 is claimed; Windows runtime behavior remains unverified.
 
+`sounds` is an adapter over the [engine sound library](../../crates/engine/README.md#sound-library).
+`sounds search --library <dir> [--page N] [--page-size N] [--all-licences] [query]`
+uses `FREESOUND_API_KEY` when present and otherwise searches only saved local
+sounds; results carry author, licence, attribution and URLs. `sounds save <library>
+<sound-json>` and `sounds unsave <library> <id>` manage the durable local library.
+`sounds add <project> <library> <id> [--start <ticks>]` requires the exact preview
+URL to be cached locally, then commits the asset and audio item as one undo step
+through `sounds.add_to_timeline`; it never downloads implicitly. Missing cache,
+missing credential, auth, quota, rate-limit, network and no-audio-device failures
+keep distinct stable codes, and no command prints or persists the token.
+
 `clips` is an adapter over the [engine clip suggestion workflow](../../crates/engine/README.md#clip-suggestion-workflow):
 it parses suggestion, ASR, translation and export flags, prints the provider's
 upload scope before any remote byte leaves the machine, and maps candidates or

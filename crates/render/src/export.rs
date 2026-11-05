@@ -7,7 +7,7 @@ use media::{
     StreamKind, VideoEncoder, VideoEncoderSettings,
 };
 use project::{
-    ItemParams, Project,
+    AudioSource, ItemParams, Project,
     atomic::{Overwrite, StreamingStage},
 };
 use std::{
@@ -539,6 +539,7 @@ fn encoded_export(
         None
     };
     let mut mux = Muxer::new(file, settings.container)?;
+    mux.set_metadata(&licence_tags(project))?;
     let vi = mux.add_parameters(&video.parameters(), video.time_base())?;
     let ai = audio
         .as_ref()
@@ -700,6 +701,7 @@ fn copy_export(
     let _packets = hooks.reserve(MemoryKind::Export, 128 << 20)?;
     let mut reader = PacketReader::open(plan.asset.path())?;
     let mut mux = Muxer::new(file, settings.container)?;
+    mux.set_metadata(&licence_tags(project))?;
     // Timeline sources select the first video/audio stream, just like decode.
     // Alternate angles and audio languages must not leak into the final movie.
     let video_index = reader
@@ -916,6 +918,44 @@ impl SourceProvider for OmittedSources<'_> {
             self.inner.audio(a, id, start, count, rate, h)
         }
     }
+}
+
+/// Sound-library attribution and licence records carried into the container
+/// metadata. Duplicates are collapsed by exact provider identity and URL; the
+/// combined comment is bounded by the muxer's own admission.
+fn licence_tags(project: &Project) -> Vec<(String, String)> {
+    let mut records = BTreeSet::new();
+    for item in project
+        .data()
+        .scenes
+        .iter()
+        .flat_map(|scene| scene.timeline.iter().flat_map(|track| track.items.iter()))
+    {
+        if let ItemParams::Audio(params) = &item.content
+            && let AudioSource::Library { sound } = &params.source
+        {
+            records.insert(format!(
+                "{} — {} — {}",
+                sound.attribution.as_str(),
+                sound.licence.as_str(),
+                sound.source_url
+            ));
+        }
+    }
+    if records.is_empty() {
+        return Vec::new();
+    }
+    let mut comment = String::new();
+    for record in records.into_iter().take(64) {
+        if comment.len().saturating_add(record.len()).saturating_add(1) > 8 * 1024 {
+            break;
+        }
+        if !comment.is_empty() {
+            comment.push('\n');
+        }
+        comment.push_str(&record);
+    }
+    vec![("comment".into(), comment)]
 }
 
 /// Refuse destination aliases of source media before staging any exported file.

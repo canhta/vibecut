@@ -45,6 +45,37 @@ impl Muxer {
             sink,
         })
     }
+    /// Container-level tags set before the first packet. Bounded so hostile
+    /// attribution text cannot inflate a finalizing output without limit.
+    pub fn set_metadata(&mut self, tags: &[(String, String)]) -> Result<()> {
+        if self.started {
+            return Err(MediaError::Invalid("metadata after first packet"));
+        }
+        if tags.len() > 32
+            || tags
+                .iter()
+                .map(|(key, value)| key.len().saturating_add(value.len()))
+                .try_fold(0usize, |total, len| total.checked_add(len))
+                .is_none_or(|total| total > 64 * 1024)
+            || tags.iter().any(|(key, value)| {
+                key.is_empty()
+                    || key.len() > 128
+                    || key.bytes().any(|b| b.is_ascii_control() || b == b'=')
+                    || value.len() > 8 * 1024
+                    || value
+                        .bytes()
+                        .any(|b| b.is_ascii_control() && !matches!(b, b'\n'))
+            })
+        {
+            return Err(MediaError::TooLarge("container metadata"));
+        }
+        let mut dictionary = ff::Dictionary::new();
+        for (key, value) in tags {
+            dictionary.set(key, value);
+        }
+        self.output.set_metadata(dictionary);
+        Ok(())
+    }
     pub fn add_stream(&mut self, stream: &StreamInfo) -> Result<usize> {
         self.add_parameters(&stream.parameters, stream.time_base)
     }

@@ -156,6 +156,7 @@ pub(super) fn media_project(project_path: &Path, video: &Path, audio: Option<&Pa
                 content: project::ItemParams::Audio(project::AudioParams {
                     volume: 0.0,
                     muted: false,
+                    source: Default::default(),
                 }),
             }],
         });

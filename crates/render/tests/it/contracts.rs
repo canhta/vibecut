@@ -392,7 +392,11 @@ fn preview_audio_mix_obeys_item_gain_and_mute() {
                 source_asset: Some(media::AssetId(1)),
                 source_range: time::SourceRange::new(Tick::ZERO, duration).unwrap(),
                 start: Tick::ZERO,
-                content: project::ItemParams::Audio(project::AudioParams { volume, muted }),
+                content: project::ItemParams::Audio(project::AudioParams {
+                    volume,
+                    muted,
+                    source: Default::default(),
+                }),
             }],
         });
         project::Project::new(data).unwrap()

@@ -43,6 +43,8 @@ IDs are invalid; missing files are valid. After loading, use
 content before retaining the asset ID. Source paths are absolute native paths;
 working directory changes never reinterpret them.
 
+Audio items carry `AudioParams::source`. The default `upload` source references a project asset; `library` records the provider identity, attribution, licence, source page and exact preview URL that produced the cached bytes. The record is validated (positive provider id, HTTPS URLs, bounded text) and round-trips in the project file, so export can write attribution and licence metadata without guessing.
+
 Names, notes and text use captions' NFC text owner. Canvas frames must have exact,
 positive integer tick durations. Canvas area is at most 2^26 pixels; output audio
 admits 8–192 kHz. Audio/video source volume and master volume admit -60..20 dB on a 0.01 dB grid; font sizes admit 1..4096 pixels.
@@ -151,9 +153,9 @@ or renderer output claim is made.
 ## Persistence and limits
 
 `encode`/`decode` use one JSON envelope: `format`, `schema_version`, `generator`,
-`project`. Current schema 11 adds audio/video volume and mute plus master controls to schema 10 text font, background and position fields.
+`project`. Current schema 12 adds the audio `source` (upload or library provenance) to schema 11 audio/video volume and mute plus master controls.
 ProjectId is stored as a canonical decimal string, preserving
-all u64 identity bits for control clients; other IDs remain numeric. Schemas 1-10
+all u64 identity bits for control clients; other IDs remain numeric. Schemas 1-11
 are refused rather than migrated or silently defaulted. Older schemas return `TooOld`, newer schemas `TooNew`; there are no
 migration or compatibility paths. Unknown current-schema project/envelope fields
 are refused. `WriterLease::save` serializes completely before touching the destination;
@@ -363,7 +365,7 @@ whitespace-only text masks are inactive while retaining their editable data. The
 admits 1,024 entries for resource safety; presentation limits do not define the
 model. Audio items refuse masks. Modes are None/Add/Subtract/Intersect/Lighten/
 Darken/Difference; render owns their coverage math. Commands/history belong to
-engine. Schema 11 requires scene arrays, per-item mask vectors, `blendMode`, text style and audio control fields; schema 10 and earlier refuse with `TooOld`.
+engine. Schema 12 requires scene arrays, per-item mask vectors, `blendMode`, text style, audio control fields (audio source is optional, default upload); schema 11 and earlier refuse with `TooOld`.
 
 Shapes include split, cinematic band, rectangle, ellipse, heart, diamond, star,
 text and a cubic `MaskPath`. Text masks currently persist content and font size

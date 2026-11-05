@@ -60,6 +60,7 @@ pub enum JobKind {
     Thumbnail,
     Persist,
     DownloadModel,
+    SoundDownload,
 }
 #[derive(
     Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize, schemars::JsonSchema,
@@ -491,6 +492,7 @@ impl JobRunner {
                         | JobKind::Translate
                         | JobKind::SuggestClips
                         | JobKind::DownloadModel
+                        | JobKind::SoundDownload
                 )
                 && pending.snapshot.attempts < self.config.network_attempts;
             // A retry must occupy one bounded pending slot. If that slot filled

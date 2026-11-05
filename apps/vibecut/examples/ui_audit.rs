@@ -845,6 +845,7 @@ fn media_editor(theme: Theme, locale: Locale) -> Result<(Editor, ItemId), Failur
         ItemParams::Audio(AudioParams {
             volume: 0.0,
             muted: false,
+            source: Default::default(),
         }),
     )?;
     let text = track(&mut session, "Text", TrackKind::Text)?;
@@ -1367,6 +1368,7 @@ fn placement(theme: Theme, scale: f32) -> Result<AppHarness, Failure> {
         ItemParams::Audio(AudioParams {
             volume: 0.0,
             muted: false,
+            source: Default::default(),
         }),
     )?;
     let text = track(&mut session, "Text", TrackKind::Text)?;

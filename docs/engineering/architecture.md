@@ -43,6 +43,7 @@ The [glossary](../../GLOSSARY.md) owns domain definitions; crate READMEs own con
 | Shot analysis and complete artifact caching | [engine analysis](../../crates/engine/README.md#per-shot-analysis) |
 | Vision preparation / inference, face embeddings and shape-plan cache | [media](../../crates/media/README.md#vision-preparation) / [ai detectors](../../crates/ai/README.md#local-vision-detectors) |
 | Provider capabilities, consent, cost / text timing / isolated Gipformer | [ai](../../crates/ai/README.md#consent-and-cost) / [recognition](../../crates/ai/README.md#recognition-and-time) / [local runner](../../crates/ai/README.md#local-gipformer) |
+| Sound search, saved local sounds, preview cache and attribution | [engine sounds](../../crates/engine/README.md#sound-library) |
 | Translation windows and response validation / selection, retry, edit protection | [ai translation](../../crates/ai/README.md#contextual-text-translation) / [engine application](../../crates/engine/README.md#translation-selection-and-application) |
 | SpeechSynthesizer capabilities, requests, consent, PCM validation | [ai speech](../../crates/ai/README.md#speech-synthesis) |
 

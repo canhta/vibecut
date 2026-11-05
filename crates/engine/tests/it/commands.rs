@@ -601,6 +601,7 @@ fn media_handles_and_typed_parameter_validation_are_atomic() {
             content: ItemParams::Audio(AudioParams {
                 volume: 0.0,
                 muted: false,
+                source: Default::default(),
             }),
         },
         Command::InsertItem {
@@ -613,6 +614,7 @@ fn media_handles_and_typed_parameter_validation_are_atomic() {
                 content: ItemParams::Audio(AudioParams {
                     volume: 0.0,
                     muted: false,
+                    source: Default::default(),
                 }),
             },
         },
@@ -626,6 +628,7 @@ fn media_handles_and_typed_parameter_validation_are_atomic() {
                 content: ItemParams::Audio(AudioParams {
                     volume: f32::NAN,
                     muted: false,
+                    source: Default::default(),
                 }),
             },
         },

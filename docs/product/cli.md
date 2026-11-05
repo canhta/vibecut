@@ -19,6 +19,7 @@ Build with `cargo build -p vibecut-cli` through the [build wrapper](../agents/or
 | `vibecut-cli clips <in>` | Suggest ranked shorts from a long video and optionally export them |
 | `vibecut-cli providers` | List transcription/translation/clip providers and capabilities offline |
 | `vibecut-cli model list\|info\|download` | Inspect or install pinned local model files |
+| `vibecut-cli sounds search\|save\|unsave\|add` | Search Freesound with a user token or local saved sounds; save, unsave and add a cached sound |
 | `vibecut-cli commands` | Print the generated command registry |
 | `vibecut-cli schema` | Print the generated control request/response/event schema |
 
@@ -152,6 +153,23 @@ With `--json`, an error is `{"status":"error","error":{"code":"busy","message":"
 refusals of the job file itself use the same stderr error envelope as other
 commands. Its process status is the first failed job's code from this table, or 0
 when every job completed.
+
+## Sounds
+
+`sounds search --library <dir> [--page N] [--page-size N] [--all-licences] [query]`
+calls Freesound APIv2 directly when `FREESOUND_API_KEY` is set and otherwise
+searches saved local sounds. Results are commercial-only by default and sorted by
+downloads; each carries author, licence, attribution, source page and preview URL.
+The token is never printed, stored or appended to a URL. Provider failures use the
+stable codes `auth`, `quota`, `rate_limit`, `network` and `setup`; a missing
+credential degrades to local search rather than failing.
+
+`sounds save <library> <sound-json>` and `sounds unsave <library> <id>` update the
+durable local library; `sounds add <project> <library> <id> [--start <ticks>]`
+requires the preview to be cached and commits one undoable audio item with
+`sourceType=library`, attribution and licence metadata. `clear_all` is exposed by
+the engine library owner for the panel. Cached previews are keyed by the exact
+provider URL, so changing it invalidates the old bytes.
 
 ## Clip suggestions
 

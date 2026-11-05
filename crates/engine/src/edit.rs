@@ -572,6 +572,10 @@ pub(crate) fn apply(
         Command::ReorderTrack { track: id, index } => {
             reorder_track(&mut data, id, index)?;
         }
+        // Session commits this as one grouped transaction before reaching edit.
+        Command::AddLibrarySound { .. } => {
+            return Err(EditError::Invalid("library sound requires a session"));
+        }
         Command::InsertItem {
             placement,
             item: new,

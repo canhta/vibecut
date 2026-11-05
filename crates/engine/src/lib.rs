@@ -14,6 +14,7 @@ pub mod providers;
 pub mod recovery;
 pub mod shot_analysis;
 pub mod snapshot;
+pub mod sounds;
 pub mod subtitles;
 mod thumbnail;
 pub mod thumbnails;
@@ -126,6 +127,8 @@ pub enum EditError {
     Media(#[from] media::MediaError),
     #[error("AI execution failed")]
     Ai(#[from] ai::Error),
+    #[error("sound library failed: {0}")]
+    Sounds(#[from] sounds::Error),
     #[error("local model {0} is not installed; run `vibecut-cli model download {0}`")]
     ModelMissing(&'static str),
     #[error("local Gipformer runner is not installed")]

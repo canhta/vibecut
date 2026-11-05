@@ -123,6 +123,7 @@ fn populated(path: PathBuf) -> Project {
         ItemParams::Audio(AudioParams {
             volume: -6.0,
             muted: true,
+            source: Default::default(),
         }),
         item(0, 0).content,
         ItemParams::Caption(CaptionParams {
@@ -313,6 +314,7 @@ fn model_trust_boundaries() {
         .content = ItemParams::Audio(AudioParams {
         volume: f32::NAN,
         muted: false,
+        source: Default::default(),
     });
     cases.push(d);
     let mut d = base.clone();

@@ -461,6 +461,7 @@ fn audio_refuses_even_an_empty_effect_reorder() {
     item.content = ItemParams::Audio(AudioParams {
         volume: 0.,
         muted: false,
+        source: Default::default(),
     });
     item.source_asset = Some(media::AssetId(1));
     let duration = item.source_range.end();

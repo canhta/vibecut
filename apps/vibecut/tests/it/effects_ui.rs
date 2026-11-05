@@ -204,6 +204,7 @@ fn fixture() -> Fixture {
         ItemParams::Audio(project::AudioParams {
             volume: 0.0,
             muted: false,
+            source: Default::default(),
         }),
     );
     let mut playback = Playback::new(

@@ -190,11 +190,80 @@ pub struct VideoParams {
     pub volume: f32,
     pub muted: bool,
 }
+/// Remote-library provenance carried with an audio item. URLs are canonical and
+/// bounded; no token, cache path or local absolute path belongs here.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct LibrarySound {
+    /// Provider identity; Freesound sound identifiers are positive.
+    pub id: u64,
+    pub name: NfcText,
+    pub author: NfcText,
+    pub licence: NfcText,
+    /// Human-readable attribution shown in the panel and written into exports.
+    pub attribution: NfcText,
+    /// Public provider page; the item's offline media is a cached preview.
+    pub source_url: String,
+    /// Exact preview URL the cached bytes were fetched from. Changing it
+    /// invalidates the content-addressed cache entry.
+    pub audio_url: String,
+    pub downloads: u64,
+    /// Provider-reported duration for display before the cached file is probed.
+    pub duration_ms: u64,
+}
+impl LibrarySound {
+    fn validate(&self) -> Result<()> {
+        if self.id == 0 {
+            return Err(Error::Invalid("library sound id"));
+        }
+        text(&self.name)?;
+        text(&self.author)?;
+        text(&self.licence)?;
+        text(&self.attribution)?;
+        if self.name.as_str().is_empty()
+            || self.author.as_str().is_empty()
+            || self.licence.as_str().is_empty()
+            || self.attribution.as_str().is_empty()
+        {
+            return Err(Error::Invalid("library sound attribution"));
+        }
+        https(&self.source_url)?;
+        https(&self.audio_url)?;
+        if self.duration_ms > 86_400_000 {
+            return Err(Error::Invalid("library sound duration"));
+        }
+        Ok(())
+    }
+}
+fn https(value: &str) -> Result<()> {
+    if value.len() > 8192
+        || !value.starts_with("https://")
+        || value
+            .bytes()
+            .any(|b| b.is_ascii_control() || b == b' ' || b == b'\\' || b == b'"')
+    {
+        return Err(Error::Invalid("library sound URL"));
+    }
+    Ok(())
+}
+/// Audio items either reference a project asset or a cached provider preview.
+/// Ordinary uploads keep the default so no content field is duplicated.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
+#[serde(tag = "sourceType", rename_all = "snake_case", deny_unknown_fields)]
+pub enum AudioSource {
+    #[default]
+    Upload,
+    Library {
+        sound: LibrarySound,
+    },
+}
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct AudioParams {
     pub volume: f32,
     pub muted: bool,
+    #[serde(default)]
+    pub source: AudioSource,
 }
 /// Percentages of the canvas; `(50, 84.5)` reproduces the original lower-third box.
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
@@ -770,10 +839,13 @@ fn validate(data: &ProjectData) -> Result<()> {
             {
                 return Err(Error::Invalid("video volume"));
             }
-            if let ItemParams::Audio(p) = &item.content
-                && !valid_volume(p.volume)
-            {
-                return Err(Error::Invalid("audio gain"));
+            if let ItemParams::Audio(p) = &item.content {
+                if !valid_volume(p.volume) {
+                    return Err(Error::Invalid("audio gain"));
+                }
+                if let AudioSource::Library { sound } = &p.source {
+                    sound.validate()?;
+                }
             }
         }
     }

@@ -261,6 +261,7 @@ fn resampling_split_trim_offset_and_irregular_blocks_are_identical() {
             content: project::ItemParams::Audio(project::AudioParams {
                 volume: -3.0,
                 muted: false,
+                source: Default::default(),
             }),
         }];
         if n == 2 {
@@ -277,6 +278,7 @@ fn resampling_split_trim_offset_and_irregular_blocks_are_identical() {
                 content: project::ItemParams::Audio(project::AudioParams {
                     volume: -3.0,
                     muted: false,
+                    source: Default::default(),
                 }),
             });
         }
@@ -651,6 +653,7 @@ fn missing_audio_only_is_required_only_when_audio_is_requested() {
             content: project::ItemParams::Audio(project::AudioParams {
                 volume: 0.0,
                 muted: false,
+                source: Default::default(),
             }),
         }],
     });
@@ -1026,6 +1029,7 @@ fn stereo_policy_keeps_headroom_and_export_limits_overload() {
             content: project::ItemParams::Audio(project::AudioParams {
                 volume: 0.0,
                 muted: false,
+                source: Default::default(),
             }),
         }],
     });
@@ -1433,7 +1437,11 @@ fn export_item_mute_and_gain_change_samples() {
                 .first_mut()
                 .and_then(|track| track.items.first_mut())
             {
-                item.content = project::ItemParams::Audio(project::AudioParams { volume, muted });
+                item.content = project::ItemParams::Audio(project::AudioParams {
+                    volume,
+                    muted,
+                    source: Default::default(),
+                });
             }
             data.scene_mut().timeline.audio[0].muted = video_audio;
             let project::ItemParams::Video(params) =
@@ -1498,6 +1506,7 @@ fn export_keeps_track_picture_and_audio_flags_independent() {
             audio.content = project::ItemParams::Audio(project::AudioParams {
                 volume: 0.0,
                 muted: false,
+                source: Default::default(),
             });
             if let project::ItemParams::Video(params) =
                 &mut data.scene_mut().timeline.main.items[0].content
@@ -1566,4 +1575,71 @@ fn export_keeps_track_picture_and_audio_flags_independent() {
             assert!(muted);
         }
     }
+}
+
+#[test]
+fn sound_library_attribution_and_licence_are_written_into_export_metadata() {
+    if !tools() {
+        return;
+    }
+    let dir = tempfile::tempdir().unwrap();
+    let input = dir.path().join("metadata-source.mp4");
+    av_fixture(&input);
+    let base = video_project(&input);
+    let asset = base.data().assets[0].clone();
+    let duration = asset.probe().duration.unwrap();
+    let mut data = base.into_data();
+    data.scene_mut().timeline.insert_track(project::Track {
+        id: project::TrackId(2),
+        name: "Sound".into(),
+        kind: project::TrackKind::Audio,
+        muted: false,
+        hidden: false,
+        locked: false,
+        items: vec![project::Item {
+            blend_mode: Default::default(),
+            masks: Vec::new(),
+            effects: Vec::new(),
+            animations: Default::default(),
+            id: project::ItemId(1),
+            source_asset: Some(asset.id()),
+            source_range: TimeRange::new(Tick::ZERO, duration).unwrap(),
+            start: Tick::ZERO,
+            content: project::ItemParams::Audio(project::AudioParams {
+                volume: 0.0,
+                muted: false,
+                source: project::AudioSource::Library {
+                    sound: project::LibrarySound {
+                        id: 42,
+                        name: "Whoosh".into(),
+                        author: "Freesound user".into(),
+                        licence: "Attribution".into(),
+                        attribution: "Whoosh by Freesound user (Attribution)".into(),
+                        source_url: "https://freesound.org/s/42/".into(),
+                        audio_url: "https://cdn.example/42.mp3".into(),
+                        downloads: 10,
+                        duration_ms: 1000,
+                    },
+                },
+            }),
+        }],
+    });
+    let p = project::Project::new(data).unwrap();
+    let mut settings = ExportSettings::from_project(&p);
+    settings.overwrite = project::atomic::Overwrite::Replace;
+    let output = root().join("sound-metadata.mp4");
+    export(
+        &p,
+        TimeRange::new(Tick::ZERO, p.duration()).unwrap(),
+        &settings,
+        &output,
+        &Hooks::default(),
+    )
+    .unwrap();
+    let info = probe(&output);
+    let comment = info["format"]["tags"]["comment"]
+        .as_str()
+        .expect("licence comment tag");
+    assert!(comment.contains("Whoosh by Freesound user (Attribution)"));
+    assert!(comment.contains("https://freesound.org/s/42/"));
 }

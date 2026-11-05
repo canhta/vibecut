@@ -50,6 +50,10 @@ Usage:
                      [--allow-degraded]]
                     [--yes-upload]
   vibecut-cli providers [--operation transcribe|translate|clips] [--language <tag>]
+  vibecut-cli sounds search --library <dir> [--page N] [--page-size N] [--all-licences] [query]
+  vibecut-cli sounds save <library> <sound-json>
+  vibecut-cli sounds unsave <library> <id>
+  vibecut-cli sounds add <project> <library> <id> [--start <ticks>]
   vibecut-cli model list
   vibecut-cli model info <id>
   vibecut-cli model download <id> --yes-download
@@ -106,6 +110,8 @@ pub enum CliError {
     Media(#[from] media::MediaError),
     #[error(transparent)]
     Time(#[from] time::TimeError),
+    #[error(transparent)]
+    Sounds(#[from] engine::sounds::Error),
     #[error("{0}")]
     Job(Arc<EditError>),
     #[error("{0}")]
@@ -132,6 +138,7 @@ impl CliError {
             Self::Render(_) => ("render", 6),
             Self::Media(_) => ("media", 6),
             Self::Time(_) => ("time", 5),
+            Self::Sounds(error) => sound_code(error),
             Self::Job(error) => edit_code(error),
             Self::Io(_) => ("io", 7),
             Self::Rejected(_) => ("rejected", 5),
@@ -208,6 +215,25 @@ fn edit_code(error: &EditError) -> (&'static str, u8) {
     }
 }
 
+fn sound_code(error: &engine::sounds::Error) -> (&'static str, u8) {
+    match error {
+        engine::sounds::Error::NoCredentials => ("setup", 4),
+        engine::sounds::Error::Auth => ("auth", 4),
+        engine::sounds::Error::Quota => ("quota", 4),
+        engine::sounds::Error::RateLimit { .. } => ("rate_limit", 4),
+        engine::sounds::Error::Network | engine::sounds::Error::Server => ("network", 7),
+        engine::sounds::Error::NoAudioDevice => ("audio_device", 4),
+        engine::sounds::Error::Cancelled => ("cancelled", 7),
+        engine::sounds::Error::Limit => ("limit", 2),
+        engine::sounds::Error::NotCached
+        | engine::sounds::Error::InvalidResponse
+        | engine::sounds::Error::LibraryCorrupt
+        | engine::sounds::Error::Invalid(_) => ("sounds", 5),
+        engine::sounds::Error::Io(_) | engine::sounds::Error::Project(_) => ("io", 7),
+        engine::sounds::Error::Media(_) => ("media", 6),
+    }
+}
+
 fn unavailable_json(value: &render::Unavailable) -> Value {
     json!({
         "asset": value.asset.0,
@@ -258,6 +284,7 @@ pub fn run(args: Vec<OsString>) -> Result<Output, CliError> {
         "subtitle" => subtitle(rest),
         "clips" => clips(rest),
         "providers" => providers(rest),
+        "sounds" => sounds(rest),
         "model" => model(rest),
         "commands" => commands(rest),
         "schema" => schema(rest),
@@ -2414,6 +2441,252 @@ fn clips_human(
         cost_label(&exported.map_or(Cost::Free, |value| value.translation_cost.clone()))
     );
     human.trim_end().to_owned()
+}
+
+/// `sounds` owns no provider logic: it composes engine's direct Freesound client,
+/// durable local library and cached-add service. Without a token search falls back
+/// to saved local sounds; add never touches the network.
+fn sounds(args: Vec<OsString>) -> Result<Output, CliError> {
+    let mut args = args.into_iter();
+    let action = args.next().ok_or_else(|| {
+        CliError::Usage("usage: vibecut-cli sounds search|save|unsave|add ...".into())
+    })?;
+    let action = utf8(&action, "sounds action")?;
+    let rest: Vec<OsString> = args.collect();
+    match action {
+        "search" => sounds_search(rest),
+        "save" => sounds_save(rest),
+        "unsave" => sounds_unsave(rest),
+        "add" => sounds_add(rest),
+        other => Err(CliError::Usage(format!(
+            "unknown sounds action: {other}; expected search, save, unsave or add"
+        ))),
+    }
+}
+fn sounds_search(args: Vec<OsString>) -> Result<Output, CliError> {
+    use engine::sounds::{SearchRequest, SearchSource, SoundClient, Token};
+    let mut args = args.into_iter();
+    let mut library = None;
+    let mut page = 1u32;
+    let mut page_size = 15u32;
+    let mut commercial_only = true;
+    let mut query = Vec::new();
+    while let Some(arg) = args.next() {
+        let value = utf8(&arg, "sounds search argument")?;
+        match value {
+            "--library" => {
+                library = Some(PathBuf::from(args.next().ok_or_else(|| {
+                    CliError::Usage("--library requires a directory".into())
+                })?));
+            }
+            "--page" => {
+                page = parse_u32(args.next(), "--page")?;
+            }
+            "--page-size" => {
+                page_size = parse_u32(args.next(), "--page-size")?;
+            }
+            "--all-licences" => commercial_only = false,
+            "--" => query.extend(args.by_ref().map(|arg| arg.to_string_lossy().into_owned())),
+            other if other.starts_with("--") => {
+                return Err(CliError::Usage(format!(
+                    "unknown sounds search flag: {other}"
+                )));
+            }
+            other => query.push(other.to_owned()),
+        }
+    }
+    let library_path =
+        library.ok_or_else(|| CliError::Usage("sounds search requires --library <dir>".into()))?;
+    let library = engine::sounds::SoundLibrary::open(&library_path)?;
+    let request = SearchRequest {
+        query: query.join(" "),
+        page,
+        page_size,
+        commercial_only,
+    };
+    let page = match Token::from_env()? {
+        Some(token) => SoundClient::ureq(token).search(&request)?,
+        None => library.search_local(&request)?,
+    };
+    let results: Vec<Value> = page
+        .results
+        .iter()
+        .map(|sound| {
+            json!({
+                "id": sound.id,
+                "name": sound.name,
+                "author": sound.author,
+                "licence": sound.licence,
+                "attribution": sound.attribution,
+                "source_url": sound.source_url,
+                "audio_url": sound.audio_url,
+                "duration_ms": sound.duration_ms,
+                "downloads": sound.downloads,
+            })
+        })
+        .collect();
+    let source = match page.source {
+        SearchSource::Remote => "remote",
+        SearchSource::Local => "local",
+    };
+    let value = json!({
+        "source": source,
+        "count": page.count,
+        "page": page.page,
+        "page_size": page.page_size,
+        "has_next": page.has_next,
+        "commercial_only": commercial_only,
+        "results": results,
+    });
+    let mut human = format!(
+        "{} result(s) from {source}; page {} of size {}\n",
+        page.results.len(),
+        page.page,
+        page.page_size
+    );
+    for sound in &page.results {
+        let _ = writeln!(
+            human,
+            "{}  {} — {} — {} — {} downloads",
+            sound.id, sound.name, sound.author, sound.licence, sound.downloads
+        );
+    }
+    Ok(Output {
+        value,
+        human: human.trim_end().to_owned(),
+        silent: false,
+        exit: 0,
+    })
+}
+fn sounds_save(args: Vec<OsString>) -> Result<Output, CliError> {
+    use engine::sounds::{SoundLibrary, SoundResult};
+    let mut args = args.into_iter();
+    let library = PathBuf::from(args.next().ok_or_else(|| {
+        CliError::Usage("usage: vibecut-cli sounds save <library> <sound-json>".into())
+    })?);
+    let raw = args
+        .next()
+        .ok_or_else(|| CliError::Usage("missing sound JSON".into()))?;
+    if args.next().is_some() {
+        return Err(CliError::Usage(
+            "usage: vibecut-cli sounds save <library> <sound-json>".into(),
+        ));
+    }
+    let raw = utf8(&raw, "sound JSON")?;
+    if raw.len() > 64 * 1024 {
+        return Err(CliError::Usage("sound JSON is too large".into()));
+    }
+    let sound: SoundResult =
+        serde_json::from_str(raw).map_err(|_| CliError::Usage("invalid sound JSON".into()))?;
+    let saved = SoundLibrary::open(&library)?.save(&sound)?;
+    Ok(Output {
+        value: json!({
+            "id": saved.sound.id,
+            "saved_at_unix_ms": saved.saved_at_unix_ms,
+            "attribution": saved.sound.attribution,
+            "licence": saved.sound.licence,
+        }),
+        human: format!("saved sound {}", saved.sound.id),
+        silent: false,
+        exit: 0,
+    })
+}
+fn sounds_unsave(args: Vec<OsString>) -> Result<Output, CliError> {
+    use engine::sounds::SoundLibrary;
+    let mut args = args.into_iter();
+    let library = PathBuf::from(args.next().ok_or_else(|| {
+        CliError::Usage("usage: vibecut-cli sounds unsave <library> <id>".into())
+    })?);
+    let id = parse_u64(args.next(), "sound id")?;
+    if args.next().is_some() {
+        return Err(CliError::Usage(
+            "usage: vibecut-cli sounds unsave <library> <id>".into(),
+        ));
+    }
+    let changed = SoundLibrary::open(&library)?.unsave(id)?;
+    Ok(Output {
+        value: json!({"id": id, "removed": changed}),
+        human: if changed {
+            format!("unsaved sound {id}")
+        } else {
+            format!("sound {id} was not saved")
+        },
+        silent: false,
+        exit: 0,
+    })
+}
+fn sounds_add(args: Vec<OsString>) -> Result<Output, CliError> {
+    use engine::sounds::{SoundLibrary, add_saved};
+    let mut args = args.into_iter();
+    let project = PathBuf::from(args.next().ok_or_else(|| {
+        CliError::Usage(
+            "usage: vibecut-cli sounds add <project> <library> <id> [--start <ticks>]".into(),
+        )
+    })?);
+    let library = PathBuf::from(
+        args.next()
+            .ok_or_else(|| CliError::Usage("missing sound library directory".into()))?,
+    );
+    let id = parse_u64(args.next(), "sound id")?;
+    let mut start = Tick::ZERO;
+    while let Some(arg) = args.next() {
+        let value = utf8(&arg, "sounds add flag")?;
+        match value {
+            "--start" => {
+                let raw = args
+                    .next()
+                    .ok_or_else(|| CliError::Usage("--start requires ticks".into()))?;
+                start = Tick(parse_i64(Some(raw), "start")?);
+            }
+            other => {
+                return Err(CliError::Usage(format!("unknown sounds add flag: {other}")));
+            }
+        }
+    }
+    let library = SoundLibrary::open(&library)?;
+    let mut lease = WriterLease::acquire(&project)?;
+    let loaded = lease.load()?;
+    let mut session = Session::new(loaded.project, 1)?;
+    session.restore_metadata(lease.metadata())?;
+    let outcome = add_saved(&mut session, &library, id, engine::Placement::Auto, start)?;
+    let receipt = lease.save(session.project())?;
+    lease.save_metadata(session.metadata())?;
+    let placements: Vec<Value> = outcome
+        .placements
+        .iter()
+        .map(|placement| json!({"track": placement.track.0, "item": placement.item.0}))
+        .collect();
+    let value = json!({
+        "path": json_path(receipt.path())?,
+        "content_hash": hex(&receipt.content_hash().0),
+        "sound": id,
+        "start": tick_json(start),
+        "placements": placements,
+    });
+    Ok(Output {
+        human: format!("added sound {id} at {} ticks", start.0),
+        value,
+        silent: false,
+        exit: 0,
+    })
+}
+fn parse_u32(value: Option<OsString>, what: &str) -> Result<u32, CliError> {
+    let value = value.ok_or_else(|| CliError::Usage(format!("{what} requires a value")))?;
+    utf8(&value, what)?
+        .parse()
+        .map_err(|_| CliError::Usage(format!("{what} must be a non-negative integer")))
+}
+fn parse_u64(value: Option<OsString>, what: &str) -> Result<u64, CliError> {
+    let value = value.ok_or_else(|| CliError::Usage(format!("{what} requires a value")))?;
+    utf8(&value, what)?
+        .parse()
+        .map_err(|_| CliError::Usage(format!("{what} must be a non-negative integer")))
+}
+fn parse_i64(value: Option<OsString>, what: &str) -> Result<i64, CliError> {
+    let value = value.ok_or_else(|| CliError::Usage(format!("{what} requires a value")))?;
+    utf8(&value, what)?
+        .parse()
+        .map_err(|_| CliError::Usage(format!("{what} must be an integer")))
 }
 
 fn providers(args: Vec<OsString>) -> Result<Output, CliError> {

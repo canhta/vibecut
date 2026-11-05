@@ -21,5 +21,6 @@ mod review_repros;
 mod scenes;
 mod shot_analysis;
 mod snapshot;
+mod sounds;
 mod subtitles;
 mod translation;

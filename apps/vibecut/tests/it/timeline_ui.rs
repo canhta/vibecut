@@ -165,6 +165,7 @@ fn fixture() -> Fixture {
         ItemParams::Audio(project::AudioParams {
             volume: 0.0,
             muted: false,
+            source: Default::default(),
         }),
     );
     let _text_item = insert(
@@ -1770,6 +1771,7 @@ fn mixed_audio_mute_shows_indeterminate_and_undo_restores_each_item() {
         ItemParams::Audio(project::AudioParams {
             volume: -6.0,
             muted: true,
+            source: Default::default(),
         }),
     );
     let video = fixture.video_a;

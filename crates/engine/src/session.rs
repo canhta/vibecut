@@ -1,5 +1,5 @@
-use crate::{Command, EditError, Outcome, Result, edit};
-use project::{ItemId, Project};
+use crate::{Command, EditError, NewItem, Outcome, Placement, Result, edit};
+use project::{AudioParams, AudioSource, ItemId, ItemParams, LibrarySound, Project};
 use serde_json::Value;
 use std::collections::BTreeSet;
 use std::{
@@ -7,6 +7,7 @@ use std::{
     panic::{AssertUnwindSafe, catch_unwind},
     sync::Arc,
 };
+use time::{SourceRange, Tick};
 
 #[derive(Clone)]
 struct Snapshot {
@@ -396,7 +397,69 @@ impl Session {
             }
         }
     }
+    /// One undo step: the asset and its audio item commit or roll back together.
+    /// The caller supplies an already cached, probed media file and provider
+    /// metadata; no network or cache IO happens while a project transaction is open.
+    fn add_library_sound(
+        &mut self,
+        placement: Placement,
+        start: Tick,
+        asset: media::SourceAsset,
+        sound: LibrarySound,
+    ) -> Result<Outcome> {
+        let duration = asset
+            .probe()
+            .duration
+            .ok_or(EditError::Invalid("library sound duration"))?;
+        if duration <= Tick::ZERO {
+            return Err(EditError::Invalid("library sound duration"));
+        }
+        let source_asset = asset.id();
+        let mut created = Vec::new();
+        let mut placements = Vec::new();
+        self.transaction(|session| {
+            created.extend(
+                session
+                    .apply(Command::AddAsset {
+                        asset: asset.clone(),
+                    })?
+                    .created,
+            );
+            let outcome = session.apply(Command::InsertItem {
+                placement,
+                item: NewItem {
+                    animations: project::Animations::default(),
+                    source_asset: Some(source_asset),
+                    source_range: SourceRange::new(Tick::ZERO, duration)?,
+                    start,
+                    content: ItemParams::Audio(AudioParams {
+                        volume: 0.0,
+                        muted: false,
+                        source: AudioSource::Library { sound },
+                    }),
+                },
+            })?;
+            created.extend(outcome.created);
+            placements.extend(outcome.placements);
+            Ok(())
+        })?;
+        Ok(Outcome {
+            changed: true,
+            created,
+            placements,
+        })
+    }
+
     fn commit(&mut self, command: Command, key: Option<&str>, wire: bool) -> Result<Outcome> {
+        let command = match command {
+            Command::AddLibrarySound {
+                placement,
+                start,
+                asset,
+                sound,
+            } => return self.add_library_sound(placement, start, asset, sound),
+            command => command,
+        };
         // Keep one generation available to close an active preview lifetime even
         // if its final child reaches exhaustion and the group must roll back.
         let closing = matches!(
