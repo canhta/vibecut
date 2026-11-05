@@ -118,8 +118,8 @@ verifies them with SignTool/PowerShell. Certificate acquisition remains with the
 maintainer and Windows release policy with p0-core/44.
 
 ```sh
-"$BUILD" cargo test -p xtask
-"$BUILD" cargo xtask dist smoke --installed target/package-macos/root/Applications/VibeCut.app \
+cargo xtask build -- cargo test -p xtask
+cargo xtask build -- cargo xtask dist smoke --installed target/package-macos/root/Applications/VibeCut.app \
   --output target/package-smoke
 ```
 
@@ -132,6 +132,8 @@ On clean Windows, install using `install.ps1`, smoke the installed directory, in
 module paths with PowerShell `Get-Process`/`Modules`, then uninstall. All loaded
 FFmpeg DLLs must remain beside the EXEs, including from unrelated working directories.
 MCP stdio installation belongs to p2-platform/02; no passing MCP smoke is claimed.
+The receipt keeps `release_acceptance: false`: these bounded checks do not grant
+maintainer release approval or establish native device/hardware acceptance.
 
 ## Library replacement and recovery
 
