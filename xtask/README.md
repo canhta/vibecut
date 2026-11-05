@@ -12,6 +12,8 @@ the slots. The wrapper applies `ffmpeg::environment`, so every admitted command
 discovers and loads the provisioned LGPL SDK at build and run time without
 per-command paths. This maintainer-machine wrapper is Unix-only; on Windows and
 dedicated hosted CI runners, run Cargo commands directly.
+Nested xtask commands retain the same native runpath flags and library paths,
+so direct and aggregate checks share Cargo fingerprints.
 
 | Command | Behaviour |
 |---|---|

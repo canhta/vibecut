@@ -158,12 +158,15 @@ pub fn environment_at(command: &mut Command, prefix: &Path) -> Result<(), String
     } else {
         prefix.join("lib")
     };
-    let mut paths = vec![runtime];
+    let mut paths = vec![runtime.clone()];
     let managed_bin = prefix.join("bin").canonicalize().ok();
     if let Some(old) = env::var_os(library_var) {
         paths.extend(env::split_paths(&old).filter(|path| {
             // An inherited native bin must not reintroduce the managed CLI.
-            !cfg!(windows) || managed_bin.is_none() || path.canonicalize().ok() != managed_bin
+            path != &runtime
+                && (!cfg!(windows)
+                    || managed_bin.is_none()
+                    || path.canonicalize().ok() != managed_bin)
         }));
     }
     command.env(
@@ -207,16 +210,25 @@ pub fn environment_at(command: &mut Command, prefix: &Path) -> Result<(), String
                 .collect::<Vec<_>>()
                 .join("\x1f");
         }
-        if !flags.is_empty() {
-            flags.push('\x1f');
-        }
-        flags.push_str("-C\x1flink-arg=-Wl,-rpath,");
-        flags.push_str(
+        let link_arg = format!(
+            "link-arg=-Wl,-rpath,{}",
             prefix
                 .join("lib")
                 .to_str()
-                .ok_or("FFmpeg cache path is not UTF-8")?,
+                .ok_or("FFmpeg cache path is not UTF-8")?
         );
+        let arguments: Vec<_> = flags.split('\x1f').collect();
+        let has_runpath = arguments.windows(2).any(|pair| pair == ["-C", &link_arg])
+            || arguments
+                .iter()
+                .any(|arg| arg.strip_prefix("-C") == Some(link_arg.as_str()));
+        if !has_runpath {
+            if !flags.is_empty() {
+                flags.push('\x1f');
+            }
+            flags.push_str("-C\x1f");
+            flags.push_str(&link_arg);
+        }
         command.env("CARGO_ENCODED_RUSTFLAGS", flags);
     }
     Ok(())
@@ -711,6 +723,33 @@ mod tests {
                 "{variable} was not cleared for an external tool"
             );
         }
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn inherited_native_environment_keeps_flags_and_library_paths_stable() {
+        const CHILD: &str = "VIBECUT_NATIVE_ENV_STABILITY_CHILD";
+        const TEST: &str =
+            "ffmpeg::tests::inherited_native_environment_keeps_flags_and_library_paths_stable";
+        let prefix = env::temp_dir().join("vibecut SDK with spaces");
+        if env::var_os(CHILD).is_some() {
+            let mut command = Command::new("unused");
+            environment_at(&mut command, &prefix).unwrap();
+            for variable in ["CARGO_ENCODED_RUSTFLAGS", "DYLD_LIBRARY_PATH"] {
+                let reapplied = command
+                    .get_envs()
+                    .find(|(key, _)| *key == variable)
+                    .and_then(|(_, value)| value);
+                assert_eq!(reapplied, env::var_os(variable).as_deref(), "{variable}");
+            }
+            return;
+        }
+        let mut command = Command::new(env::current_exe().unwrap());
+        command
+            .args(["--exact", TEST, "--nocapture"])
+            .env(CHILD, "1");
+        environment_at(&mut command, &prefix).unwrap();
+        assert!(command.status().unwrap().success());
     }
 
     #[cfg(windows)]
