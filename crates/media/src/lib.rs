@@ -26,6 +26,7 @@ pub use decode::{
 };
 pub use encode::{
     AudioEncoder, AudioEncoderSettings, EncodePreference, VideoEncoder, VideoEncoderSettings,
+    h264_encoder_available,
 };
 pub use ffmpeg_next::format::Pixel as PixelFormat;
 pub use model::{

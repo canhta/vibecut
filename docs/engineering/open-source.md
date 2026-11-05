@@ -2,11 +2,11 @@
 
 ## Licensing
 
-Contributions are [MIT](../../LICENSE). Admitted dependency licences: MIT, Apache-2.0, BSD, ISC, Zlib, Unicode, Unlicense, WTFPL, CDLA-Permissive-2.0, unmodified MPL-2.0, and LGPL-2.1-or-later for shared FFmpeg under the rules below. Any other licence needs an ADR.
+Contributions are [GPL-3.0-or-later](../../LICENSE), with [MIT](../../LICENSE) granted for files that predate the relicence. Admitted dependency licences: MIT, Apache-2.0, BSD, ISC, Zlib, Unicode, Unlicense, WTFPL, CDLA-Permissive-2.0, unmodified MPL-2.0, LGPL-2.1-or-later for shared FFmpeg, and GPL-3.0-or-later for FFmpeg with libx264. Any other licence needs an ADR.
 
 ## FFmpeg distribution
 
-Build dynamic, LGPL-only FFmpeg: GPL, nonfree and automatic external-library discovery off; no x264, x265 or FDK-AAC. Platform hardware codecs run through FFmpeg. Admitted extras: libvpx, libopus and dav1d (BSD), libmp3lame for encoding only (its GPL mpglib excluded). Any other component needs a licence review.
+Build dynamic FFmpeg with nonfree and automatic external-library discovery off. Linux enables the GPL build and libx264 so software H.264 export works without a GPU; macOS and Windows keep their platform encoders. Admitted extras: libvpx, libopus and dav1d (BSD), libx264 (GPL-3.0-or-later), libmp3lame for encoding only (its GPL mpglib excluded). Any other component needs a licence review.
 
 Every shipped bundle carries the resolved build recipe, source identity and hashes, licence texts and notices, and the corresponding FFmpeg source (a link to a moving branch is not enough). App docs name FFmpeg and its LGPL licence; our terms allow reverse engineering for debugging and replacing the LGPL libraries.
 

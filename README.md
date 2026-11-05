@@ -3,7 +3,7 @@
 </h1>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/license-MIT-08C?style=flat" alt="License: MIT" />
+  <img src="https://img.shields.io/badge/license-GPL--3.0--or--later-08C?style=flat" alt="License: GPL-3.0-or-later" />
   <img src="https://img.shields.io/badge/macOS%20%7C%20Windows%20%7C%20Linux-4493F8?style=flat-square" alt="Platforms: macOS, Windows and Linux" />
 </p>
 
@@ -140,4 +140,4 @@ See [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## License
 
-[MIT](LICENSE)
+[GPL-3.0-or-later](LICENSE)

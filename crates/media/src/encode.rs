@@ -68,6 +68,37 @@ fn video_open_error(last: Option<ff::Error>, software_h264: bool) -> MediaError 
     }
 }
 
+/// Encoders this host can open for MP4, in preference order.
+fn video_candidates(webm: bool) -> &'static [(&'static str, bool)] {
+    if webm {
+        &[("libvpx-vp9", true)]
+    } else if cfg!(target_os = "macos") {
+        &[("h264_videotoolbox", true)]
+    } else if cfg!(target_os = "linux") {
+        // Hardware first; the GPL build carries libx264 for software export.
+        &[
+            ("h264_nvenc", true),
+            ("h264_vaapi", true),
+            ("libx264", false),
+        ]
+    } else {
+        &[
+            ("h264_nvenc", true),
+            ("h264_qsv", true),
+            ("h264_amf", true),
+            ("h264_mf", true),
+            ("h264_mf", false),
+        ]
+    }
+}
+
+/// True when this build exposes an MP4 video encoder the export path can open.
+pub fn h264_encoder_available() -> bool {
+    video_candidates(false)
+        .iter()
+        .any(|(name, _)| ff::encoder::find_by_name(name).is_some())
+}
+
 pub struct VideoEncoder {
     encoder: ff::encoder::Video,
     time_base: TimeBase,
@@ -113,19 +144,7 @@ impl VideoEncoder {
             i32::try_from(rate.den()).map_err(|_| MediaError::Invalid("frame rate"))?,
             i32::try_from(rate.num()).map_err(|_| MediaError::Invalid("frame rate"))?,
         )?;
-        let candidates: &[(&str, bool)] = if settings.webm {
-            &[("libvpx-vp9", true)]
-        } else if cfg!(target_os = "macos") {
-            &[("h264_videotoolbox", true)]
-        } else {
-            &[
-                ("h264_nvenc", true),
-                ("h264_qsv", true),
-                ("h264_amf", true),
-                ("h264_mf", true),
-                ("h264_mf", false),
-            ]
-        };
+        let candidates = video_candidates(settings.webm);
         let mut last = None;
         for &(name, hardware) in candidates {
             if matches!(preference, EncodePreference::Software)

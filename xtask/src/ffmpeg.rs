@@ -8,6 +8,9 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
+const X264_VERSION: &str = "20191217-2245";
+const X264_URL: &str = "https://download.videolan.org/pub/videolan/x264/snapshots/x264-snapshot-20191217-2245-stable.tar.bz2";
+
 pub fn host() -> Result<String, String> {
     let os = match env::consts::OS {
         "macos" => "macos",
@@ -103,7 +106,7 @@ pub fn cache_key() -> Result<(), String> {
     let version = stable_tag("https://github.com/FFmpeg/FFmpeg.git", "n")?;
     let opus = stable_tag("https://github.com/xiph/opus.git", "v")?;
     let vpx = stable_tag("https://github.com/webmproject/libvpx.git", "v")?;
-    println!("ffmpeg{version}-opus{opus}-vpx{vpx}");
+    println!("ffmpeg{version}-opus{opus}-vpx{vpx}-x264{X264_VERSION}");
     Ok(())
 }
 
@@ -463,6 +466,18 @@ fn build_source(
         &format!("https://github.com/webmproject/libvpx/archive/refs/tags/v{vpx}.tar.gz"),
         &mut receipt,
     )?;
+    // Linux carries a software H.264 encoder; the GPL build admits libx264.
+    let x264 = if cfg!(target_os = "linux") {
+        Some(source(
+            &sources,
+            "x264",
+            X264_VERSION,
+            X264_URL,
+            &mut receipt,
+        )?)
+    } else {
+        None
+    };
     let arch = if target.ends_with("aarch64") {
         "arm64"
     } else {
@@ -535,6 +550,26 @@ fn build_source(
     run(Command::new(build_tool("make")?)
         .current_dir(&vpbuild)
         .arg("install"))?;
+    if let Some(x264) = &x264 {
+        let build = x264.join(target);
+        fs::create_dir_all(&build).map_err(|e| e.to_string())?;
+        run(Command::new(build_tool("bash")?)
+            .arg(shell_path(&x264.join("configure"))?)
+            .current_dir(&build)
+            .args([
+                format!("--prefix={}", shell_path(&prefix)?),
+                "--enable-static".into(),
+                "--enable-pic".into(),
+                "--disable-cli".into(),
+                "--disable-opencl".into(),
+            ]))?;
+        run(Command::new(build_tool("make")?)
+            .current_dir(&build)
+            .arg("-j3"))?;
+        run(Command::new(build_tool("make")?)
+            .current_dir(&build)
+            .arg("install"))?;
+    }
     let ffbuild = ff.join(target);
     fs::create_dir_all(&ffbuild).map_err(|e| e.to_string())?;
     let mut flags = vec![
@@ -578,7 +613,10 @@ fn build_source(
             "--ar=llvm-ar".into(),
             "--nm=llvm-nm".into(),
             "--enable-pic".into(),
-            // libvpx is static and its pthread dependencies live in
+            // The GPL build admits libx264 for software H.264 export.
+            "--enable-gpl".into(),
+            "--enable-libx264".into(),
+            // libvpx/x264 are static and their pthread dependencies live in
             // Libs.private; normal pkg-config output omits them.
             "--pkg-config-flags=--static".into(),
             "--extra-cflags=-fPIC".into(),
@@ -655,8 +693,9 @@ fn build_source(
         tool_runpaths(&prefix)?;
     }
     let license = fs::read_to_string(ffbuild.join("config.h")).map_err(|e| e.to_string())?;
-    if !license.contains("#define CONFIG_GPL 0") || !license.contains("#define CONFIG_NONFREE 0") {
-        return Err("FFmpeg build failed LGPL admission".into());
+    let gpl_admitted = cfg!(target_os = "linux") || license.contains("#define CONFIG_GPL 0");
+    if !gpl_admitted || !license.contains("#define CONFIG_NONFREE 0") {
+        return Err("FFmpeg build failed licence admission".into());
     }
     let compliance = prefix.join("compliance");
     fs::create_dir_all(&compliance).map_err(|e| e.to_string())?;
@@ -665,7 +704,10 @@ fn build_source(
         (&ff, "LICENSE.md"),
         (&op, "COPYING"),
         (&vp, "LICENSE"),
-    ] {
+    ]
+    .into_iter()
+    .chain(x264.iter().map(|x| (x, "COPYING")))
+    {
         fs::copy(
             source.join(name),
             compliance.join(format!(
