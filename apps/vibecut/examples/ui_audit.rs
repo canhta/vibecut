@@ -481,7 +481,7 @@ fn source_asset(id: u64, kind: StreamKind, path: PathBuf) -> Result<SourceAsset,
     Ok(SourceAsset::try_from(AssetData {
         ephemeral: false,
         id: AssetId(id),
-        path,
+        path: std::path::absolute(path)?,
         content_hash: ContentHash::from_bytes(&[id as u8; 8]),
         probe: SourceProbe {
             format: "mov,mp4".into(),

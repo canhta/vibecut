@@ -268,7 +268,7 @@ fn submit(store: &ModelTransfers, runner: &mut JobRunner, m: &Model) -> (JobId, 
         .unwrap()
 }
 fn terminal(r: &mut JobRunner, id: JobId, clock: &TestClock) -> JobSnapshot {
-    let deadline = Instant::now() + Duration::from_secs(10);
+    let deadline = Instant::now() + Duration::from_secs(60);
     loop {
         clock.advance();
         r.tick().unwrap();

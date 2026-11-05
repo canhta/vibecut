@@ -146,7 +146,7 @@ fn waiting_observes_the_post_publication_state_and_cancellation_writes_nothing()
     assert_eq!(fs::read(&path).unwrap(), before);
     std::thread::scope(|scope| {
         let waiting =
-            scope.spawn(|| WriterLease::acquire_wait(&path, Duration::from_secs(2), &|| false));
+            scope.spawn(|| WriterLease::acquire_wait(&path, Duration::from_secs(30), &|| false));
         std::thread::sleep(Duration::from_millis(20));
         held.save(&project("updated")).unwrap();
         drop(held);

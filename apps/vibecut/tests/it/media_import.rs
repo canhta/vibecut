@@ -69,10 +69,11 @@ fn source_asset(
     duration: Option<Tick>,
     path: impl Into<PathBuf>,
 ) -> SourceAsset {
+    let path: PathBuf = path.into();
     SourceAsset::try_from(AssetData {
         ephemeral: false,
         id: AssetId(id),
-        path: path.into(),
+        path: std::path::absolute(path).unwrap(),
         content_hash: ContentHash::from_bytes(&[id as u8; 8]),
         probe: SourceProbe {
             format: "mov,mp4".into(),

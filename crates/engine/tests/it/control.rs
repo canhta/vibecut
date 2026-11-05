@@ -1136,12 +1136,16 @@ fn malformed_envelope_and_batch_depth_have_no_effect() {
 fn checked_in_registry_digest_and_command_reference_match_the_registry() {
     let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
     assert_eq!(
-        std::fs::read_to_string(root.join("catalog.digest")).unwrap(),
+        std::fs::read_to_string(root.join("catalog.digest"))
+            .unwrap()
+            .replace("\r\n", "\n"),
         format!("{}\n", control::registry_hash()),
         "regenerate with cargo run -p engine --example control_catalog"
     );
     assert_eq!(
-        std::fs::read_to_string(root.join("../../docs/engineering/commands.md")).unwrap(),
+        std::fs::read_to_string(root.join("../../docs/engineering/commands.md"))
+            .unwrap()
+            .replace("\r\n", "\n"),
         control::reference_markdown().unwrap(),
         "regenerate with cargo run -p engine --example control_catalog"
     );

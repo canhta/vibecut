@@ -535,7 +535,9 @@ fn generated_catalog_is_deterministic_and_matches_checked_in_output() {
     let digest = fs::read_to_string(root.join("../../crates/engine/catalog.digest")).unwrap();
     assert_eq!(value["registry_hash"].as_str().unwrap(), digest.trim());
     assert_eq!(
-        fs::read_to_string(root.join("../../docs/engineering/commands.md")).unwrap(),
+        fs::read_to_string(root.join("../../docs/engineering/commands.md"))
+            .unwrap()
+            .replace("\r\n", "\n"),
         engine::control::reference_markdown().unwrap()
     );
 

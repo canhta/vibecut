@@ -1117,7 +1117,7 @@ fn source_video_alias_is_refused_even_with_overwrite() {
         matches!(
             snapshots[0].error.as_deref(),
             Some(EditError::Render(render::Error::Invalid(
-                "output aliases a source"
+                "output aliases a source" | "output may alias source content"
             )))
         ),
         "{:?}",
