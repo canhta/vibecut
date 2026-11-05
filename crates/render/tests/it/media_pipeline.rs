@@ -1076,7 +1076,17 @@ fn stereo_policy_keeps_headroom_and_export_limits_overload() {
         (samples.iter().map(|x| x * x).sum::<f32>() / samples.len() as f32).sqrt()
     };
     assert!(rms(&decoded[1][..240]) < rms(&decoded[0][..240]) * 0.7);
-    assert!((rms(&decoded[1][2400..4800]) - rms(&decoded[0][2400..4800])).abs() < 0.02);
+    // AAC encodes this DC fixture with a long transient; pin the plateau at
+    // the shared graph boundary rather than assuming encoder DC preservation.
+    let plain = AudioMixer::new(&p, 2, 0, &h)
+        .unwrap()
+        .mix(2400, 2400, &mut FileSources::default(), &h)
+        .unwrap();
+    let faded = AudioMixer::new(&p, 2, 10, &h)
+        .unwrap()
+        .mix(2400, 2400, &mut FileSources::default(), &h)
+        .unwrap();
+    assert_eq!(plain.planes(), faded.planes());
     let mut extra = d.scene_mut().timeline.audio.last().unwrap().clone();
     extra.id = project::TrackId(9);
     extra.items[0].id = project::ItemId(8);
