@@ -72,6 +72,7 @@ fn asset(id: u64, mut streams: Vec<SourceStream>) -> SourceAsset {
     }
     SourceAsset::try_from(AssetData {
         id: AssetId(id),
+        ephemeral: false,
         path: std::env::temp_dir().join(format!("vibecut-panels-{id}.mp4")),
         content_hash: ContentHash::from_bytes(&[id as u8; 8]),
         probe: SourceProbe {
@@ -503,6 +504,82 @@ fn scrub_previews_then_commits_one_undo_step_and_escape_cancels() {
     assert_eq!(text_size(&harness, fixture.text), 68.0);
     assert_eq!(harness.state().session.history_len(), history);
     assert!(!harness.state().session.gesture_active());
+}
+
+#[test]
+fn scrub_reversal_to_origin_leaves_no_history() {
+    let fixture = fixture();
+    let mut harness = build(fixture.editor);
+    harness.run_steps(3);
+    select(&mut harness, fixture.text);
+    let history = harness.state().session.history_len();
+    let start = widget_rect(&harness, "inspector.text_size.scrub").center();
+    drag_to(
+        &mut harness,
+        "inspector.text_size.scrub",
+        egui::vec2(40.0, 0.0),
+    );
+    assert_eq!(text_size(&harness, fixture.text), 68.0);
+    harness.hover_at(start - egui::vec2(20.0, 0.0));
+    harness.run_steps(2);
+    assert_eq!(text_size(&harness, fixture.text), 38.0);
+    harness.hover_at(start);
+    harness.run_steps(2);
+    harness.drop_at(start);
+    harness.run_steps(2);
+    assert_eq!(text_size(&harness, fixture.text), 48.0);
+    assert_eq!(harness.state().session.history_len(), history);
+    assert!(!harness.state().session.gesture_active());
+}
+
+#[test]
+fn hiding_a_scrub_field_rolls_back_and_closes_gesture() {
+    for change in ["selection", "command", "empty", "details", "tab"] {
+        let fixture = fixture();
+        let mut harness = build(fixture.editor);
+        harness.run_steps(3);
+        select(&mut harness, fixture.text);
+        let history = harness.state().session.history_len();
+        drag_to(
+            &mut harness,
+            "inspector.text_size.scrub",
+            egui::vec2(40.0, 0.0),
+        );
+        assert_eq!(text_size(&harness, fixture.text), 68.0);
+        match change {
+            "selection" => select(&mut harness, fixture.audio),
+            "command" => {
+                harness
+                    .state_mut()
+                    .activate(&format!("timeline.item.{}", fixture.audio.0))
+                    .unwrap();
+                assert!(!harness.state().session.gesture_active());
+                assert_eq!(
+                    harness.state().session.selection(),
+                    &harness.state().selection
+                );
+            }
+            "empty" => harness.state_mut().selection.clear(),
+            "details" => harness.state_mut().activate("inspector.details").unwrap(),
+            "tab" => harness
+                .state_mut()
+                .preferences
+                .set("properties_tabs", serde_json::json!({"text": "transform"}))
+                .unwrap(),
+            _ => panic!("unknown visibility boundary {change}"),
+        }
+        harness.run_steps(2);
+        harness.drop_at(egui::pos2(700.0, 300.0));
+        harness.run_steps(2);
+        assert_eq!(text_size(&harness, fixture.text), 48.0, "{change}");
+        assert_eq!(harness.state().session.history_len(), history, "{change}");
+        assert!(!harness.state().session.gesture_active(), "{change}");
+        harness
+            .state_mut()
+            .set_item_field(fixture.audio, "audio_gain", "3")
+            .unwrap();
+        assert_eq!(harness.state().session.history_len().0, history.0 + 1);
+    }
 }
 
 #[test]

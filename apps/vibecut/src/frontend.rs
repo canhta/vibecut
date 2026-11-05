@@ -245,6 +245,7 @@ const AUDIO_GAIN_SCRUB: ScrubSpec = ScrubSpec {
 };
 #[derive(Clone, Copy, Debug)]
 struct ScrubDrag {
+    item: ItemId,
     field: &'static str,
     start: f64,
     last: f64,
@@ -1402,6 +1403,9 @@ impl Editor {
         self.selection_changed();
     }
     fn selection_changed(&mut self) {
+        if self.scrub.is_some() {
+            self.finish_scrub(false);
+        }
         self.selection_scopes = SelectionScopes::default();
         self.property_drafts.clear();
         if let Err(e) = self.session.set_selection(self.selection.clone()) {
@@ -2132,6 +2136,14 @@ impl Editor {
         }
     }
     pub fn ui(&mut self, ui: &mut egui::Ui) {
+        // The gesture belongs to the item and field visible at pointer-down.
+        // Agents can change selection or panel state between pointer events.
+        if self
+            .scrub
+            .is_some_and(|scrub| self.selected_item_id() != Some(scrub.item) || self.details)
+        {
+            self.finish_scrub(false);
+        }
         if !self.session.transaction_active()
             && let Err(e) = self.session.set_selection(self.selection.clone())
         {
@@ -2279,6 +2291,13 @@ impl Editor {
         self.toast(ui.ctx());
         self.export_dialog(ui.ctx());
         self.model_dialog(ui.ctx());
+        if self.scrub.is_some_and(|scrub| {
+            !self
+                .widgets
+                .contains_key(&format!("inspector.{}.scrub", scrub.field))
+        }) {
+            self.finish_scrub(false);
+        }
         ui.ctx()
             .request_repaint_after(std::time::Duration::from_millis(
                 if self.playback.playing() { 8 } else { 33 },
@@ -3211,7 +3230,7 @@ impl Editor {
                 &handle,
             );
             if handle.drag_started() {
-                self.start_scrub(spec, current);
+                self.start_scrub(item, spec, current);
             }
             if handle.dragged()
                 && let Some(mut scrub) = self.scrub.take()
@@ -3318,7 +3337,7 @@ impl Editor {
             _ => None,
         }
     }
-    fn start_scrub(&mut self, spec: ScrubSpec, value: f64) {
+    fn start_scrub(&mut self, item: ItemId, spec: ScrubSpec, value: f64) {
         if self.scrub.is_some() {
             self.finish_scrub(false);
         }
@@ -3340,6 +3359,7 @@ impl Editor {
         self.property_drafts.remove(spec.field);
         self.property_focus = None;
         self.scrub = Some(ScrubDrag {
+            item,
             field: spec.field,
             start: value,
             last: value,

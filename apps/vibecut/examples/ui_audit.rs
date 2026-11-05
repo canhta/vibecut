@@ -839,7 +839,13 @@ fn inspector_blend_locale(theme: Theme, scale: f32, locale: Locale) -> Result<Ap
     )?;
     let mut playback = Playback::new(&session, ByteBudget::new(64 << 20)?, Arc::new(Files))?;
     playback.set_device_available(true);
-    let mut editor = Editor::new(session, playback, preferences(theme, locale));
+    let mut prefs = preferences(theme, locale);
+    prefs.set(
+        "properties_tabs",
+        serde_json::json!({"graphic": "blending"}),
+    )?;
+    prefs.set("assets_tab", serde_json::json!("effects"))?;
+    let mut editor = Editor::new(session, playback, prefs);
     editor.selection.insert(item);
     wait_for_frame(&mut editor)?;
     let mut app = app_editor(editor, scale);

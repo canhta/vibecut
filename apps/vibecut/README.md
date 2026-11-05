@@ -103,8 +103,11 @@ selection shows that element type's properties tabs, and the last tab is
 remembered per type. Text, video with/without source audio, image, sticker,
 graphic, audio and effect have the reference tab sets in `src/panels.rs`; image
 currently means a source video stream reporting one frame, and sticker/effect
-items await their item contracts (p1-parity/30 and /33) before those two sets are
-reachable from a real project. English/Vietnamese, theme, panel proportions,
+items await standalone item contracts before those two sets are reachable from a
+real project. The effect-stack contract from p1-parity/33 is attached to existing
+visual items, whose Effects tabs are already available; p1-parity/97 owns their
+stack controls and the Effects asset view. Captions remains a separate asset-view
+mount point for the subtitle editor. English/Vietnamese, theme, panel proportions,
 property-section open state, the active assets tab and per-type properties tabs
 use one bounded, versioned preference store;
 `ui.prefs.set` edits have app-owned undo/redo and never touch Project JSON.
@@ -122,7 +125,8 @@ colour entry, Blending a blend menu and opacity scrub, and Audio a gain scrub.
 Each scrub field has a left drag handle, a click-to-type entry and clamps; the
 drag previews through an engine gesture, commits as one registered
 `timeline.set_item_param` undo step on release, and Escape cancels the gesture or
-the typed draft. Invalid or non-finite input refuses without changing the item.
+the typed draft. Changing selection or hiding the scrub field cancels its
+preview before another edit can join the gesture. Invalid or non-finite input refuses without changing the item.
 Drag sensitivity is our recorded decision because the inventory leaves it
 unverified: opacity and audio gain move one 0.01/1 dB step per 4 px, and text size
 one px per 2 px. Enter or blur commits a typed shared-field patch through the
