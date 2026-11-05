@@ -800,6 +800,12 @@ fn civil_from_days(days: i64) -> (i64, u32, u32) {
 /// Bumped when the local preference document changes incompatibly.
 pub const PREFERENCES_VERSION: u32 = 2;
 const MAX_PREFERENCES_BYTES: u64 = 4096;
+
+/// Additive preference keys start at their product default when an older
+/// same-version document omits them.
+const fn default_snapping() -> bool {
+    true
+}
 const MAX_SECTIONS: usize = 128;
 
 /// Splitter bounds are fractions of the full content rectangle. The two side
@@ -855,6 +861,7 @@ impl Default for ProjectsPreferences {
 pub const PREFERENCE_KEYS: &[&str] = &[
     "locale",
     "dark",
+    "snapping",
     "panels",
     "sections",
     "export",
@@ -919,6 +926,9 @@ pub struct Preferences {
     pub subtitles: crate::subtitles::Options,
     pub locale: Locale,
     pub dark: bool,
+    /// Timeline snapping; on by default and persisted across runs.
+    #[serde(default = "default_snapping")]
+    pub snapping: bool,
     /// Ratios of the full content rectangle; validated when loaded and set.
     pub panels: [f32; 3],
     /// Open/closed state by property-section key.
@@ -950,6 +960,7 @@ impl Default for Preferences {
             subtitles: crate::subtitles::Options::default(),
             locale: Locale::En,
             dark: true,
+            snapping: true,
             panels: DEFAULT_PANELS,
             sections: BTreeMap::new(),
             assets_tab: AssetsTab::default(),
@@ -1013,6 +1024,7 @@ impl Preferences {
         match key {
             "locale" => Ok(serde_json::to_value(self.locale)?),
             "dark" => Ok(serde_json::Value::Bool(self.dark)),
+            "snapping" => Ok(serde_json::Value::Bool(self.snapping)),
             "panels" => Ok(serde_json::to_value(self.panels)?),
             "sections" => Ok(serde_json::to_value(&self.sections)?),
             "export" => Ok(serde_json::to_value(self.export)?),
@@ -1036,6 +1048,7 @@ impl Preferences {
         match key {
             "locale" => self.locale = serde_json::from_value(value)?,
             "dark" => self.dark = serde_json::from_value(value)?,
+            "snapping" => self.snapping = serde_json::from_value(value)?,
             "panels" => self.panels = validate_panels(serde_json::from_value(value)?)?,
             "sections" => {
                 self.sections = serde_json::from_value(value)?;
@@ -1287,6 +1300,7 @@ mod tests {
     fn default_is_deterministic_and_system_preferences_follow_the_os() {
         assert_eq!(Preferences::default().locale, Locale::En);
         assert_eq!(Preferences::default().panels, DEFAULT_PANELS);
+        assert!(Preferences::default().snapping);
         assert_eq!(Preferences::system().locale, Locale::from_system());
     }
 
@@ -1323,6 +1337,7 @@ mod tests {
         for (key, value) in [
             ("locale", serde_json::json!("vi")),
             ("dark", serde_json::json!(false)),
+            ("snapping", serde_json::json!(false)),
             ("panels", serde_json::json!([0.30, 0.20, 0.35])),
             ("sections", serde_json::json!({"inspector.canvas": false})),
             ("assets_tab", serde_json::json!("captions")),
@@ -1385,6 +1400,24 @@ mod tests {
         )
         .expect("write newer preferences");
         assert_eq!(store.load_with_warning().1, Some(PreferenceIssue::Version));
+    }
+
+    #[test]
+    fn same_version_document_without_snapping_keeps_the_default_on() {
+        let dir = tempfile::tempdir().expect("temporary preferences");
+        let store = PreferenceStore::new(dir.path().join("preferences.json"));
+        std::fs::write(
+            store.path(),
+            br#"{"version":2,"locale":"en","dark":true,"panels":[0.25,0.25,0.5]}"#,
+        )
+        .expect("write preferences");
+        let loaded = store.load().expect("load preferences");
+        assert!(loaded.snapping);
+        let bytes = std::fs::read(store.path()).expect("read preferences");
+        assert_eq!(
+            bytes, br#"{"version":2,"locale":"en","dark":true,"panels":[0.25,0.25,0.5]}"#,
+            "loading an additive default must not rewrite the document"
+        );
     }
 
     #[test]

@@ -131,11 +131,17 @@ horizontal wheel follows egui content direction.
 `cargo xtask ui-audit timeline-zoom-low timeline-zoom-high` captures both zoom
 levels in dark/light at 1x/2x outside CI. Zoom, horizontal scroll, frame-snapped
 ruler seeking,
-single/Cmd-or-Shift multi-selection, drag move, edge trims, split, delete and
-ripple delete all dispatch engine commands. Delete/Backspace removes, Shift+Delete
-ripple-deletes, Cmd/Ctrl+B splits at the playhead and N toggles snapping; Shift
-bypasses snapping during a drag. Cmd/Ctrl+Z undoes and Shift+Cmd/Ctrl+Z or Cmd+Y
-redoes. Space toggles playback; K pauses; J/L seek one second backwards/forwards;
+single/Cmd-or-Shift multi-selection, drag move, edge trims, bookmark drag, split,
+delete and ripple delete all dispatch engine commands. Delete/Backspace removes,
+Shift+Delete ripple-deletes, Cmd/Ctrl+B splits at the playhead and N toggles
+snapping. Snapping is a persisted preference (on by default) exposed by the
+magnet toolbar control; it converts 10 logical pixels to ticks at the current
+zoom and ranks item start/end, playhead, bookmark and animation-keyframe targets
+by pixel distance then stable source order. The indicator line is drawn only
+while a candidate is active. Move, trim and bookmark drag honour the toggle and
+Shift bypasses it; the gesture preview changes no committed history or project
+JSON until drop, and Escape restores the entry bytes. Cmd/Ctrl+Z undoes and
+Shift+Cmd/Ctrl+Z or Cmd+Y redoes. Space toggles playback; K pauses; J/L seek one second backwards/forwards;
 arrows step one frame; Shift+arrows jump one second; Home/End seek the timeline
 ends. Scrubbing uses the same seek path. Two resizable columns and a horizontal
 divider start at the UI design's 25/50/25 and 50/50 proportions. Drags clamp
@@ -154,8 +160,8 @@ real project. The effect-stack contract from p1-parity/33 is attached to existin
 visual items, whose Effects tabs are already available; p1-parity/97 owns their
 stack controls and the Effects asset view. Captions remains a separate asset-view
 mount point for the subtitle editor. English/Vietnamese, theme, panel proportions,
-property-section open state, the active assets tab and per-type properties tabs
-use one bounded, versioned preference store;
+property-section open state, the active assets tab, per-type properties tabs and
+timeline snapping use one bounded, versioned preference store;
 `ui.prefs.set` edits have app-owned undo/redo and never touch Project JSON.
 Tab navigation is presentation state: it persists through the same validated
 store but stays out of app undo history so it cannot shadow a project edit. A
@@ -203,8 +209,9 @@ creates render's `SourceProvider`; production uses `FileSources` exactly as expo
 does. `AudioPort::fill` accepts a headless device callback for transport tests.
 `Editor::activate` maps stable widget IDs to engine `execute` for every project
 edit and to app-owned transport/preferences/selection. `inspect` exposes
-enabled/focus/rect/current view, playing, position, selection, zoom and snapping
-state. The project remains the Session's immutable snapshot. Each interactive
+enabled/focus/rect/current view, playing, position, selection, zoom, snapping
+and the active snap-indicator target. The project remains the Session's immutable
+snapshot. Each interactive
 control, including every timeline item and trim handle, exposes the same stable
 `author_id` through AccessKit, independent of locale and layout. Headless tests
 query those IDs and click or drag through the real widget/engine path.

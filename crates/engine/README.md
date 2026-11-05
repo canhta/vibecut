@@ -322,8 +322,10 @@ initial allocation. Project and source constructors retain their own limits.
   `timeline.add_track` (name, kind, optional above/below placement); secondary
   tracks start unlocked.
 - `track.remove` removes its items together. `add_bookmark` accepts a nonnegative
-  output position/duration and normalized note. Asset, track and bookmark
-  additions are validated with the rest of the candidate.
+  output position/duration and normalized note; `bookmark.move` changes its start
+  while preserving duration and refuses missing, negative or overflowing targets.
+  Asset, track and bookmark additions/moves are validated with the rest of the
+  candidate.
 
 Errors are typed `EditError` categories with safe IDs/static diagnostics and
 retained project/time/caption sources. No raw JSON diagnostics or parameter text is

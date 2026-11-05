@@ -523,6 +523,304 @@ fn snapping_moves_to_a_bookmark_and_shift_bypasses_it() {
     );
 }
 
+fn bookmark_id(editor: &Editor) -> project::BookmarkId {
+    editor.session.project().data().scene().bookmarks[0].id
+}
+
+fn add_relative_keyframe(editor: &mut Editor, item: ItemId, time: Tick) {
+    let path = project::AnimationPath::new("opacity").unwrap();
+    editor
+        .session
+        .apply(Command::SetAnimatedParam {
+            item,
+            path: path.clone(),
+            param: project::Param::new(project::ParamValue::Scalar(1.0)).unwrap(),
+        })
+        .unwrap();
+    editor
+        .session
+        .apply(Command::AddKeyframe {
+            item,
+            path,
+            component: None,
+            key: project::Keyframe::new(time, project::ParamValue::Scalar(0.5)),
+        })
+        .unwrap();
+}
+
+#[test]
+fn snapping_preference_toggles_through_app_history_and_persists() {
+    let fixture = fixture();
+    let mut harness = harness(fixture.editor);
+    harness.run_steps(3);
+    let project = harness.state().session.project().clone();
+    let history = harness.state().session.history_len();
+    assert!(harness.state().inspect().unwrap().snapping);
+    assert!(harness.state().preferences.snapping);
+    let snap = widget(&harness, "timeline.snap");
+    click_at(&mut harness, snap.center());
+    assert!(!harness.state().preferences.snapping);
+    assert_eq!(harness.state().session.project(), &project);
+    assert_eq!(harness.state().session.history_len(), history);
+    let dir = tempfile::tempdir().unwrap();
+    let store = vibecut::catalog::PreferenceStore::new(dir.path().join("preferences.json"));
+    store.save(&harness.state().preferences).unwrap();
+    assert!(!store.load().unwrap().snapping);
+    let undo = widget(&harness, "edit.undo");
+    click_at(&mut harness, undo.center());
+    assert!(harness.state().preferences.snapping);
+    let redo = widget(&harness, "edit.redo");
+    click_at(&mut harness, redo.center());
+    assert!(!harness.state().preferences.snapping);
+    harness.key_press(egui::Key::N);
+    harness.run_steps(2);
+    assert!(harness.state().preferences.snapping);
+    assert_eq!(harness.state().session.project(), &project);
+}
+
+#[test]
+fn move_and_trim_snap_and_shift_mid_drag_bypasses() {
+    let fixture = fixture();
+    let video_a = fixture.video_a;
+    let video_b = fixture.video_b;
+    let mut harness = harness(fixture.editor);
+    harness.run_steps(3);
+    let zoom = harness.state().inspect().unwrap().zoom;
+    let body = widget(&harness, "timeline.marquee");
+    let item_rect = widget(&harness, &format!("timeline.item.{}", video_b.0));
+    let target = egui::pos2(item_rect.center().x + 2.1 * zoom, item_rect.center().y);
+    harness.drag_at(item_rect.center());
+    harness.run_steps(1);
+    harness.hover_at(target);
+    harness.run_steps(2);
+    assert_eq!(item(harness.state(), video_b).start, Tick(8 * SECOND));
+    assert_eq!(
+        harness.state().inspect().unwrap().snap_indicator,
+        Some(Tick(8 * SECOND))
+    );
+    harness.event(egui::Event::ModifiersChanged(egui::Modifiers::SHIFT));
+    harness.run_steps(2);
+    assert!(
+        (item(harness.state(), video_b).start.seconds() - 8.1).abs() < 0.01,
+        "Shift must bypass snapping mid-drag"
+    );
+    assert_eq!(harness.state().inspect().unwrap().snap_indicator, None);
+    harness.event(egui::Event::ModifiersChanged(egui::Modifiers::NONE));
+    harness.run_steps(2);
+    assert_eq!(item(harness.state(), video_b).start, Tick(8 * SECOND));
+    harness.drop_at(target);
+    harness.run_steps(2);
+    harness.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::Z);
+    harness.run_steps(2);
+
+    let handle = widget(&harness, &format!("timeline.item.{}.trim_end", video_a.0));
+    let target = egui::pos2(body.left() + 5.15 * zoom, handle.center().y);
+    harness.drag_at(handle.center());
+    harness.run_steps(1);
+    harness.hover_at(target);
+    harness.run_steps(2);
+    assert_eq!(
+        item(harness.state(), video_a).end().unwrap(),
+        Tick(5 * SECOND)
+    );
+    harness.event(egui::Event::ModifiersChanged(egui::Modifiers::SHIFT));
+    harness.run_steps(2);
+    assert!(
+        (item(harness.state(), video_a).end().unwrap().seconds() - 5.15).abs() < 0.01,
+        "Shift must bypass trim snapping mid-drag"
+    );
+    harness.event(egui::Event::ModifiersChanged(egui::Modifiers::NONE));
+    harness.run_steps(2);
+    assert_eq!(
+        item(harness.state(), video_a).end().unwrap(),
+        Tick(5 * SECOND)
+    );
+    harness.drop_at(target);
+    harness.run_steps(2);
+}
+
+#[test]
+fn multi_select_move_snaps_one_edge_and_keeps_group_spacing() {
+    let fixture = fixture();
+    let video_b = fixture.video_b;
+    let text = text_item_id(&fixture.editor);
+    let mut editor = fixture.editor;
+    editor.selection = [video_b, text].into_iter().collect();
+    let mut harness = harness(editor);
+    harness.run_steps(3);
+    let zoom = harness.state().inspect().unwrap().zoom;
+    let item_rect = widget(&harness, &format!("timeline.item.{}", video_b.0));
+    let target = egui::pos2(item_rect.center().x + 1.9 * zoom, item_rect.center().y);
+    drag(&mut harness, item_rect.center(), target);
+    assert_eq!(item(harness.state(), video_b).start, Tick(8 * SECOND));
+    assert_eq!(
+        item(harness.state(), video_b).start - item(harness.state(), text).start,
+        Tick(4 * SECOND),
+        "the selected group keeps its entry spacing"
+    );
+}
+
+#[test]
+fn trim_snaps_to_an_animation_keyframe() {
+    let mut fixture = fixture();
+    let video_a = fixture.video_a;
+    let text = text_item_id(&fixture.editor);
+    add_relative_keyframe(&mut fixture.editor, text, Tick(2 * SECOND));
+    let mut harness = harness(fixture.editor);
+    harness.run_steps(3);
+    let zoom = harness.state().inspect().unwrap().zoom;
+    let body = widget(&harness, "timeline.marquee");
+    let handle = widget(&harness, &format!("timeline.item.{}.trim_end", video_a.0));
+    drag(
+        &mut harness,
+        handle.center(),
+        egui::pos2(body.left() + 4.1 * zoom, handle.center().y),
+    );
+    assert_eq!(
+        item(harness.state(), video_a).end().unwrap(),
+        Tick(4 * SECOND),
+        "the text keyframe at 4 s is a snap source"
+    );
+}
+
+#[test]
+fn bookmark_drag_snaps_shift_bypasses_and_commits_one_undo_step() {
+    let fixture = fixture();
+    let mut harness = harness(fixture.editor);
+    harness.run_steps(3);
+    let history = harness.state().session.history_len();
+    let id = bookmark_id(harness.state());
+    let zoom = harness.state().inspect().unwrap().zoom;
+    let body = widget(&harness, "timeline.marquee");
+    let marker = widget(&harness, &format!("timeline.bookmark.{}", id.0));
+    let target = egui::pos2(body.left() + 9.9 * zoom, marker.center().y);
+    harness.drag_at(marker.center());
+    harness.run_steps(1);
+    harness.hover_at(target);
+    harness.run_steps(2);
+    assert_eq!(
+        harness.state().session.project().data().scene().bookmarks[0].start,
+        Tick(10 * SECOND)
+    );
+    assert_eq!(
+        harness.state().inspect().unwrap().snap_indicator,
+        Some(Tick(10 * SECOND))
+    );
+    harness.event(egui::Event::ModifiersChanged(egui::Modifiers::SHIFT));
+    harness.run_steps(2);
+    assert!(
+        (harness.state().session.project().data().scene().bookmarks[0]
+            .start
+            .seconds()
+            - 9.9)
+            .abs()
+            < 0.01,
+        "Shift must bypass bookmark snapping mid-drag"
+    );
+    harness.event(egui::Event::ModifiersChanged(egui::Modifiers::NONE));
+    harness.run_steps(2);
+    assert_eq!(
+        harness.state().session.project().data().scene().bookmarks[0].start,
+        Tick(10 * SECOND)
+    );
+    assert_eq!(
+        harness.state().session.history_len(),
+        history,
+        "bookmark preview is not committed while dragging"
+    );
+    harness.key_press(egui::Key::Escape);
+    harness.run_steps(2);
+    assert_eq!(
+        harness.state().session.project().data().scene().bookmarks[0].start,
+        Tick(8 * SECOND),
+        "Escape cancels the bookmark drag"
+    );
+    assert_eq!(harness.state().inspect().unwrap().snap_indicator, None);
+    harness.drop_at(target);
+    harness.run_steps(2);
+    let marker = widget(&harness, &format!("timeline.bookmark.{}", id.0));
+    harness.drag_at(marker.center());
+    harness.run_steps(1);
+    harness.hover_at(target);
+    harness.run_steps(2);
+    harness.drop_at(target);
+    harness.run_steps(2);
+    assert_eq!(harness.state().session.history_len().0, history.0 + 1);
+    harness.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::Z);
+    harness.run_steps(2);
+    assert_eq!(
+        harness.state().session.project().data().scene().bookmarks[0].start,
+        Tick(8 * SECOND)
+    );
+}
+
+#[test]
+fn drag_preview_keeps_committed_history_and_indicator_until_commit() {
+    let fixture = fixture();
+    let video_b = fixture.video_b;
+    let mut harness = harness(fixture.editor);
+    harness.run_steps(3);
+    let before = serde_json::to_vec(harness.state().session.project().data()).unwrap();
+    let history = harness.state().session.history_len();
+    let zoom = harness.state().inspect().unwrap().zoom;
+    let item_rect = widget(&harness, &format!("timeline.item.{}", video_b.0));
+    harness.drag_at(item_rect.center());
+    harness.run_steps(1);
+    harness.hover_at(egui::pos2(
+        item_rect.center().x + 0.5 * zoom,
+        item_rect.center().y,
+    ));
+    harness.run_steps(2);
+    assert_eq!(harness.state().inspect().unwrap().snap_indicator, None);
+    harness.hover_at(egui::pos2(
+        item_rect.center().x + 2.1 * zoom,
+        item_rect.center().y,
+    ));
+    harness.run_steps(2);
+    assert_eq!(
+        harness.state().inspect().unwrap().snap_indicator,
+        Some(Tick(8 * SECOND))
+    );
+    assert!(harness.state().session.gesture_active());
+    assert_eq!(
+        harness.state().session.history_len(),
+        history,
+        "the preview gesture is not committed while dragging"
+    );
+    let image = harness.render().unwrap();
+    let target = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../target");
+    std::fs::create_dir_all(&target).unwrap();
+    let path = target.join("p1-21-snap.png");
+    image.save(&path).unwrap();
+    eprintln!("snap screenshot: {}", path.display());
+    harness.key_press(egui::Key::Escape);
+    harness.run_steps(2);
+    assert_eq!(
+        serde_json::to_vec(harness.state().session.project().data()).unwrap(),
+        before,
+        "cancel restores the committed project bytes"
+    );
+    assert_eq!(harness.state().session.history_len(), history);
+    assert_eq!(harness.state().inspect().unwrap().snap_indicator, None);
+    harness.drag_at(item_rect.center());
+    harness.run_steps(1);
+    harness.hover_at(egui::pos2(
+        item_rect.center().x + 2.1 * zoom,
+        item_rect.center().y,
+    ));
+    harness.run_steps(2);
+    harness.drop_at(egui::pos2(
+        item_rect.center().x + 2.1 * zoom,
+        item_rect.center().y,
+    ));
+    harness.run_steps(2);
+    assert_eq!(harness.state().session.history_len().0, history.0 + 1);
+    assert_ne!(
+        serde_json::to_vec(harness.state().session.project().data()).unwrap(),
+        before
+    );
+}
+
 fn item_opt(editor: &Editor, id: ItemId) -> Option<&project::Item> {
     editor
         .session
@@ -594,7 +892,7 @@ fn every_editor_button_reports_its_embedded_icon() {
         ("edit.redo", "arrow-clockwise"),
         ("timeline.split", "scissors"),
         ("timeline.delete", "trash"),
-        ("timeline.snap", "arrows-in-line-horizontal"),
+        ("timeline.snap", "magnet"),
         ("timeline.magnet", "magnet"),
         ("timeline.ripple", "waveform"),
         ("timeline.zoom_out", "magnifying-glass-minus"),
@@ -750,7 +1048,7 @@ fn review_move_back_to_origin_restores_position() {
         let fixture = fixture();
         let id = fixture.video_b;
         let mut editor = fixture.editor;
-        editor.snapping = snapping;
+        editor.preferences.snapping = snapping;
         let mut harness = harness(editor);
         harness.run_steps(3);
         let body = widget(&harness, &format!("timeline.item.{}", id.0));
@@ -1872,7 +2170,7 @@ fn edge_scroll_clamp_reversal_and_escape_preserve_drag_origin() {
             items: vec![f.video_a],
         })
         .unwrap();
-    f.editor.snapping = false;
+    f.editor.preferences.snapping = false;
     f.editor
         .session
         .execute(

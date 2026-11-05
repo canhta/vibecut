@@ -6129,6 +6129,7 @@ dependencies = [
  "media",
  "pollster 1.0.1",
  "project",
+ "proptest",
  "render",
  "rfd",
  "serde",

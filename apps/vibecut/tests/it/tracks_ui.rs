@@ -533,11 +533,11 @@ fn rename_cancellation_restores_shortcuts_after_track_exit() {
             );
         }
         h.run_steps(3);
-        let before = h.state().snapping;
+        let before = h.state().preferences.snapping;
         h.key_press(egui::Key::N);
         h.run_steps(3);
         assert_ne!(
-            h.state().snapping,
+            h.state().preferences.snapping,
             before,
             "orphan rename must not capture shortcuts"
         );

@@ -17,6 +17,7 @@ pub mod playback;
 pub mod projects;
 pub mod selection;
 pub mod shorts;
+pub mod snapping;
 pub mod subtitles;
 mod theme;
 pub mod workspace;

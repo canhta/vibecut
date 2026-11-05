@@ -806,6 +806,17 @@ Effect: `Edit`. Fixture: `Timeline`.
 }
 ```
 
+## `bookmark.move` — Move bookmark
+
+Effect: `Edit`. Fixture: `Timeline`.
+
+```json
+{
+  "bookmark": 1,
+  "start": 0
+}
+```
+
 ## `batch` — Batch edit
 
 Effect: `Edit`. Fixture: `Timeline`.

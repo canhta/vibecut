@@ -1,4 +1,5 @@
 use crate::selection::{SelectionScope, SelectionScopes, shared_fields};
+use crate::snapping::{SnapCandidate, SnapSource, snap_point};
 use crate::{
     Error, Result,
     catalog::{self, Locale, Preferences, Text, drag_panel},
@@ -14,7 +15,7 @@ use crate::{
 };
 use engine::{Command, CreatedId, ItemParamPatch, NewItem, Session};
 use media::{AssetId, ContentHash, SourceAsset, StreamKind, UnsupportedReason};
-use project::{ItemId, ItemParams, TrackId, TrackKind};
+use project::{BookmarkId, ItemId, ItemParams, TrackId, TrackKind};
 use std::{
     collections::{BTreeMap, BTreeSet},
     path::{Path, PathBuf},
@@ -52,7 +53,6 @@ const EDGE_AUTO_SCROLL_MAX_STEP: f32 = 15.0;
 const HORIZONTAL_WHEEL_STEP: f32 = 40.0;
 const RULER_LABEL_SPACING: f32 = 120.0;
 const RULER_TICK_SPACING: f32 = 18.0;
-const SNAP_PIXELS: f32 = 10.0;
 const LABEL_CHARS: usize = 120;
 
 /// App action id for every preference edit; engine history is untouched.
@@ -105,6 +105,9 @@ pub struct Inspection {
     /// Dynamic fit minimum for the current viewport and content.
     pub min_zoom: f32,
     pub snapping: bool,
+    /// Active snap target tick while a preview gesture holds one; `None` hides
+    /// the indicator and proves snapping chose no candidate.
+    pub snap_indicator: Option<Tick>,
     pub ripple: bool,
     pub importing: bool,
     pub import_completed: usize,
@@ -246,6 +249,13 @@ struct EffectReorder {
     item: ItemId,
     effect: String,
 }
+#[derive(Clone, Copy, Debug)]
+struct BookmarkDrag {
+    bookmark: BookmarkId,
+    press_x: f32,
+    start: Tick,
+    moved: bool,
+}
 /// One scrub field's unit contract. Pixels per step are recorded in the app
 /// README; the inventory leaves the exact sensitivity unverified.
 #[derive(Clone, Copy, Debug)]
@@ -355,6 +365,17 @@ struct ItemView {
     overlay: Option<[u8; 4]>,
     source_asset: Option<AssetId>,
 }
+#[derive(Clone, Copy, Debug)]
+struct BookmarkView {
+    id: BookmarkId,
+    start: Tick,
+}
+struct TimelineViews {
+    rows: Vec<TrackRow>,
+    items: Vec<ItemView>,
+    duration: Tick,
+    bookmarks: Vec<BookmarkView>,
+}
 struct TimelineLayout {
     toolbar: Rect,
     ruler: Rect,
@@ -431,7 +452,6 @@ pub struct Editor {
     effect_drag: Option<String>,
     effect_reorder: Option<EffectReorder>,
     effect_drop_targets: Vec<(ItemId, Rect)>,
-    pub snapping: bool,
     pub ripple: bool,
     zoom: f32,
     scroll: f32,
@@ -445,6 +465,7 @@ pub struct Editor {
     pub panels: BTreeMap<&'static str, Rect>,
     layout_drag: Option<[f32; 3]>,
     drag: Option<DragState>,
+    bookmark_drag: Option<BookmarkDrag>,
     snap_indicator: Option<Tick>,
     texture: Option<egui::TextureHandle>,
     texture_key: Option<(u64, Tick)>,
@@ -525,7 +546,6 @@ impl Editor {
             effect_drag: None,
             effect_reorder: None,
             effect_drop_targets: Vec::new(),
-            snapping: true,
             ripple: false,
             zoom,
             scroll,
@@ -537,6 +557,7 @@ impl Editor {
             panels: BTreeMap::new(),
             layout_drag: None,
             drag: None,
+            bookmark_drag: None,
             snap_indicator: None,
             texture: None,
             texture_key: None,
@@ -609,7 +630,8 @@ impl Editor {
             zoom: self.zoom,
             scroll: self.scroll,
             min_zoom: self.min_zoom(self.timeline_viewport),
-            snapping: self.snapping,
+            snapping: self.preferences.snapping,
+            snap_indicator: self.snap_indicator,
             ripple: self.ripple,
             importing: self.importing(),
             import_completed: self.import_completed,
@@ -1775,7 +1797,13 @@ impl Editor {
                 self.selection_scopes = SelectionScopes::default();
             }
             "selection.escape" => self.cancel_interaction(),
-            "timeline.snap" => self.snapping = !self.snapping,
+            "timeline.snap" => {
+                let after = !self.preferences.snapping;
+                self.dispatch(
+                    PREFERENCE_COMMAND,
+                    serde_json::json!({"key": "snapping", "value": after}),
+                )?;
+            }
             "timeline.ripple" => self.ripple = !self.ripple,
             "timeline.zoom_in" => self.zoom_by(ZOOM_STEP),
             "timeline.zoom_out" => self.zoom_by(1.0 / ZOOM_STEP),
@@ -2154,6 +2182,9 @@ impl Editor {
         items.into_iter().map(|(_, id)| id).collect()
     }
     fn begin_drag(&mut self, item: ItemId, mode: DragMode, ui: &egui::Ui) {
+        if self.bookmark_drag.is_some() {
+            self.finish_bookmark_drag();
+        }
         if self.drag.is_some() {
             self.finish_drag();
         }
@@ -2415,7 +2446,7 @@ impl Editor {
             Rounding::Nearest,
         )?;
         let exclude: BTreeSet<ItemId> = drag.origins.iter().map(|origin| origin.item).collect();
-        let (snapped, indicator) = self.snap_tick(raw, &exclude, bypass);
+        let (snapped, indicator) = self.snap_tick(raw, &exclude, None, bypass);
         self.snap_indicator = indicator;
         let (low, high) = self.trim_bounds(drag, mode);
         let at = snapped.clamp(low, high);
@@ -2454,11 +2485,128 @@ impl Editor {
         self.snap_indicator = None;
         self.prune_selection();
     }
+    fn begin_bookmark_drag(&mut self, bookmark: BookmarkId, ui: &egui::Ui) {
+        if self.drag.is_some() {
+            self.finish_drag();
+        }
+        if self.bookmark_drag.is_some() {
+            self.finish_bookmark_drag();
+        }
+        let Some(press_x) = ui
+            .ctx()
+            .input(|input| input.pointer.press_origin().map(|origin| origin.x))
+        else {
+            return;
+        };
+        let Some(start) = self
+            .session
+            .project()
+            .data()
+            .scene()
+            .bookmarks
+            .iter()
+            .find(|candidate| candidate.id == bookmark)
+            .map(|candidate| candidate.start)
+        else {
+            return;
+        };
+        self.session.end_merge();
+        if self.session.transaction_active()
+            && let Err(error) = self.session.cancel_gesture()
+        {
+            self.error = Some(error.to_string());
+            return;
+        }
+        if let Err(error) = self.session.begin_gesture() {
+            self.error = Some(error.to_string());
+            return;
+        }
+        self.bookmark_drag = Some(BookmarkDrag {
+            bookmark,
+            press_x,
+            start,
+            moved: false,
+        });
+    }
+    /// Preview a bookmark move through the engine gesture. Snapping reads the
+    /// current viewport scale and excludes the dragged bookmark's own edges.
+    fn advance_bookmark_drag(&mut self, ui: &egui::Ui) {
+        let Some(mut drag) = self.bookmark_drag else {
+            return;
+        };
+        let (pointer, bypass, down) = ui.ctx().input(|input| {
+            (
+                input.pointer.interact_pos(),
+                input.modifiers.shift,
+                input.pointer.primary_down(),
+            )
+        });
+        if let Some(pointer) = pointer {
+            let raw = Tick::from_seconds_f64(
+                drag.start.seconds() + f64::from(pointer.x - drag.press_x) / f64::from(self.zoom),
+                Rounding::Nearest,
+            )
+            .unwrap_or(drag.start);
+            let exclude = BTreeSet::new();
+            let (snapped, indicator) = self.snap_tick(raw, &exclude, Some(drag.bookmark), bypass);
+            self.snap_indicator = indicator;
+            let at = snapped.clamp(Tick::ZERO, self.session.project().duration());
+            match self.session.apply(Command::MoveBookmark {
+                bookmark: drag.bookmark,
+                start: at,
+            }) {
+                Ok(outcome) => {
+                    if outcome.changed {
+                        drag.moved = true;
+                        self.sync_preview();
+                    }
+                }
+                Err(error) => self.error = Some(error.to_string()),
+            }
+        }
+        self.bookmark_drag = Some(drag);
+        if !down {
+            self.finish_bookmark_drag();
+        }
+    }
+    fn finish_bookmark_drag(&mut self) {
+        let Some(drag) = self.bookmark_drag.take() else {
+            return;
+        };
+        let mut edited = false;
+        if self.session.gesture_active() {
+            let outcome = if drag.moved {
+                edited = true;
+                self.session.commit_gesture()
+            } else {
+                self.session.cancel_gesture()
+            };
+            if let Err(error) = outcome {
+                self.error = Some(error.to_string());
+            }
+        }
+        if edited {
+            self.sync_preview();
+        }
+        self.snap_indicator = None;
+    }
     fn cancel_interaction(&mut self) {
         if self.media_marquee.take().is_some() {
             self.media_selection.clear();
             self.media_anchor = None;
             self.session.end_merge();
+            return;
+        }
+        if let Some(drag) = self.bookmark_drag.take() {
+            if self.session.gesture_active()
+                && let Err(error) = self.session.cancel_gesture()
+            {
+                self.error = Some(error.to_string());
+            }
+            if drag.moved {
+                self.sync_preview();
+            }
+            self.snap_indicator = None;
             return;
         }
         if let Some(scrub) = self.scrub.take() {
@@ -2623,83 +2771,119 @@ impl Editor {
             .find(|candidate| candidate.id == item)
             .and_then(|candidate| candidate.source_asset)
     }
-    fn snap_points(&self, exclude: &BTreeSet<ItemId>) -> Vec<Tick> {
+    /// Build the one ranked candidate set. Selected items and the bookmark being
+    /// dragged are excluded so a gesture cannot snap to itself.
+    fn snap_candidates(
+        &self,
+        exclude_items: &BTreeSet<ItemId>,
+        exclude_bookmark: Option<BookmarkId>,
+    ) -> Vec<SnapCandidate> {
         let project = self.session.project();
         let data = project.data();
-        let mut points = vec![Tick::ZERO, self.playback.position().unwrap_or(Tick::ZERO)];
-        points.push(project.duration());
-        points.extend(
-            data.scene()
-                .bookmarks
-                .iter()
-                .flat_map(|bookmark| [bookmark.start, bookmark.start + bookmark.duration]),
-        );
-        points.extend(
-            data.scene()
-                .timeline
-                .iter()
-                .flat_map(|track| track.items.iter())
-                .filter(|item| !exclude.contains(&item.id))
-                .flat_map(|item| [item.start, item.end().unwrap_or(item.start)]),
-        );
-        points
-    }
-    fn snap_delta(&self, raw: Tick, origins: &[DragOrigin], bypass: bool) -> (Tick, Option<Tick>) {
-        if !self.snapping || bypass {
-            return (raw, None);
+        let mut points = vec![SnapCandidate::new(
+            self.playback.position().unwrap_or(Tick::ZERO),
+            SnapSource::Playhead,
+        )];
+        for bookmark in &data.scene().bookmarks {
+            if Some(bookmark.id) == exclude_bookmark {
+                continue;
+            }
+            points.push(SnapCandidate::new(
+                bookmark.start,
+                SnapSource::BookmarkStart(bookmark.id),
+            ));
+            if let Some(end) = bookmark.start.checked_add(bookmark.duration) {
+                points.push(SnapCandidate::new(
+                    end,
+                    SnapSource::BookmarkEnd(bookmark.id),
+                ));
+            }
         }
-        let exclude: BTreeSet<ItemId> = origins.iter().map(|origin| origin.item).collect();
-        let points = self.snap_points(&exclude);
-        let threshold = self.snap_threshold();
-        let mut best: Option<(Tick, Tick)> = None;
-        for origin in origins {
-            for edge in [origin.start, origin.end] {
-                let current = edge + raw;
-                for point in &points {
-                    let difference = *point - current;
-                    if difference.abs() <= threshold
-                        && best.is_none_or(|(distance, _)| difference.abs() < distance.abs())
-                    {
-                        best = Some((difference, *point));
+        for item in data
+            .scene()
+            .timeline
+            .iter()
+            .flat_map(|track| track.items.iter())
+        {
+            if exclude_items.contains(&item.id) {
+                continue;
+            }
+            points.push(SnapCandidate::new(
+                item.start,
+                SnapSource::ItemStart(item.id),
+            ));
+            if let Ok(end) = item.end() {
+                points.push(SnapCandidate::new(end, SnapSource::ItemEnd(item.id)));
+            }
+            for (_, param) in item.animations.iter() {
+                let mut push = |key: &project::Keyframe| {
+                    let Some(at) = item.start.checked_add(key.time) else {
+                        return;
+                    };
+                    if at < Tick::ZERO {
+                        return;
+                    }
+                    points.push(SnapCandidate::new(
+                        at,
+                        SnapSource::Keyframe {
+                            item: item.id,
+                            time: key.time,
+                        },
+                    ));
+                };
+                match param {
+                    project::Param::Value(channel) => {
+                        for key in channel.keys() {
+                            push(key);
+                        }
+                    }
+                    project::Param::Color(channels) => {
+                        for channel in channels.iter() {
+                            for key in channel.keys() {
+                                push(key);
+                            }
+                        }
                     }
                 }
             }
         }
-        match best {
-            Some((difference, point)) => (raw + difference, Some(point)),
-            None => (raw, None),
-        }
+        points.sort_by(|a, b| a.at.cmp(&b.at).then(a.source.cmp(&b.source)));
+        points.dedup();
+        points
+    }
+    fn snap_delta(&self, raw: Tick, origins: &[DragOrigin], bypass: bool) -> (Tick, Option<Tick>) {
+        let exclude: BTreeSet<ItemId> = origins.iter().map(|origin| origin.item).collect();
+        let candidates = self.snap_candidates(&exclude, None);
+        let edges: Vec<Tick> = origins
+            .iter()
+            .flat_map(|origin| [origin.start, origin.end])
+            .collect();
+        let outcome = crate::snapping::snap_delta(
+            raw,
+            &edges,
+            &candidates,
+            self.preferences.snapping,
+            bypass,
+            self.zoom,
+        );
+        (outcome.at, outcome.target.map(|target| target.at))
     }
     fn snap_tick(
         &self,
         raw: Tick,
         exclude: &BTreeSet<ItemId>,
+        exclude_bookmark: Option<BookmarkId>,
         bypass: bool,
     ) -> (Tick, Option<Tick>) {
-        if !self.snapping || bypass {
-            return (raw, None);
-        }
-        let threshold = self.snap_threshold();
-        let mut best: Option<(Tick, Tick)> = None;
-        for point in self.snap_points(exclude) {
-            let difference = point - raw;
-            if difference.abs() <= threshold
-                && best.is_none_or(|(distance, _)| difference.abs() < distance.abs())
-            {
-                best = Some((difference, point));
-            }
-        }
-        match best {
-            Some((difference, point)) => (raw + difference, Some(point)),
-            None => (raw, None),
-        }
-    }
-    fn snap_threshold(&self) -> Tick {
-        Tick::from_seconds_f64(
-            f64::from(SNAP_PIXELS) / f64::from(self.zoom),
-            Rounding::Nearest,
-        )
-        .unwrap_or(Tick::ZERO)
+        let candidates = self.snap_candidates(exclude, exclude_bookmark);
+        let outcome = snap_point(
+            raw,
+            &candidates,
+            self.preferences.snapping,
+            bypass,
+            self.zoom,
+        );
+        (outcome.at, outcome.target.map(|target| target.at))
     }
     fn tick_at(&self, x: f32, left: f32) -> Tick {
         Tick::from_seconds_f64(
@@ -5959,17 +6143,21 @@ impl Editor {
         }
         self.timeline_toolbar(ui, &layout);
         self.timeline_scroll_input(ui, &layout);
-        let (rows, items, duration, bookmarks) = self.timeline_views(&layout);
-        self.paint_ruler(ui, &layout, bookmarks.as_slice());
-        self.paint_tracks(ui, &layout, &rows, &items);
-        self.advance_drag(ui, &layout, &rows);
+        let views = self.timeline_views(&layout);
+        self.paint_ruler(ui, &layout, views.bookmarks.as_slice());
+        self.advance_bookmark_drag(ui);
+        self.paint_tracks(ui, &layout, &views.rows, &views.items);
+        self.advance_drag(ui, &layout, &views.rows);
+        let empty_items = views.items.is_empty();
+        let duration = views.duration;
+        let rows = views.rows;
         self.paint_playhead(ui, &layout);
         self.timeline_playhead_interaction(ui, &layout);
         self.timeline_scrollbars(ui, &layout, duration, &rows);
         if let Err(error) = self.remember_view() {
             self.error = Some(error.to_string());
         }
-        if items.is_empty() && !rows.is_empty() {
+        if empty_items && !rows.is_empty() {
             let empty = self.tr(Text::EmptyTimeline);
             ui.painter().text(
                 layout.body.center(),
@@ -6296,10 +6484,10 @@ impl Editor {
             if self.icon_only(
                 ui,
                 "timeline.snap",
-                Icon::ArrowsInLineHorizontal,
+                Icon::Magnet,
                 self.tr(Text::Snap),
                 Some(self.tr(Text::ShortcutSnap)),
-                Some(self.snapping),
+                Some(self.preferences.snapping),
                 true,
             ) {
                 self.action("timeline.snap");
@@ -6430,10 +6618,7 @@ impl Editor {
             self.vertical_scroll = (self.vertical_scroll - scroll.y).max(0.0);
         }
     }
-    fn timeline_views(
-        &mut self,
-        layout: &TimelineLayout,
-    ) -> (Vec<TrackRow>, Vec<ItemView>, Tick, Vec<Tick>) {
+    fn timeline_views(&mut self, layout: &TimelineLayout) -> TimelineViews {
         let (rows, raw_items, duration, bookmarks, content_height) = {
             let data = self.session.project().data();
             let mut rows = Vec::new();
@@ -6500,7 +6685,10 @@ impl Editor {
                 data.scene()
                     .bookmarks
                     .iter()
-                    .map(|bookmark| bookmark.start)
+                    .map(|bookmark| BookmarkView {
+                        id: bookmark.id,
+                        start: bookmark.start,
+                    })
                     .collect(),
                 (offset - TRACK_GAP).max(0.0),
             )
@@ -6535,9 +6723,14 @@ impl Editor {
         let max_scroll =
             max_scroll_seconds(duration.seconds(), layout.body.width(), self.zoom, min);
         self.scroll = self.scroll.clamp(0.0, max_scroll);
-        (rows, items, duration, bookmarks)
+        TimelineViews {
+            rows,
+            items,
+            duration,
+            bookmarks,
+        }
     }
-    fn paint_ruler(&mut self, ui: &egui::Ui, layout: &TimelineLayout, bookmarks: &[Tick]) {
+    fn paint_ruler(&mut self, ui: &egui::Ui, layout: &TimelineLayout, bookmarks: &[BookmarkView]) {
         let painter = ui.painter().with_clip_rect(layout.ruler);
         painter.rect_filled(layout.ruler, 0.0, self.control_fill());
         painter.rect_filled(layout.corner, 0.0, self.control_fill());
@@ -6580,8 +6773,9 @@ impl Editor {
             index += 1;
             guard += 1;
         }
+        let mut bookmark_hits = Vec::new();
         for bookmark in bookmarks {
-            let x = self.x_at(*bookmark, layout.ruler.left());
+            let x = self.x_at(bookmark.start, layout.ruler.left());
             if x >= layout.ruler.left() && x <= layout.ruler.right() {
                 painter.rect_filled(
                     Rect::from_min_size(
@@ -6591,6 +6785,13 @@ impl Editor {
                     1.0,
                     self.accent(),
                 );
+                bookmark_hits.push((
+                    bookmark.id,
+                    Rect::from_min_max(
+                        egui::pos2(x - 5.0, layout.ruler.bottom() - 11.0),
+                        egui::pos2(x + 5.0, layout.ruler.bottom()),
+                    ),
+                ));
             }
         }
         let response = ui.interact(
@@ -6599,7 +6800,19 @@ impl Editor {
             egui::Sense::click_and_drag(),
         );
         self.remember("timeline.ruler", &response);
-        if (response.clicked() || response.dragged())
+        for (id, hit) in bookmark_hits {
+            let response = ui.interact(
+                hit,
+                Id::unique(("timeline.bookmark", id.0)),
+                egui::Sense::click_and_drag(),
+            );
+            self.remember(format!("timeline.bookmark.{}", id.0), &response);
+            if response.drag_started() && self.drag.is_none() && self.bookmark_drag.is_none() {
+                self.begin_bookmark_drag(id, ui);
+            }
+        }
+        if self.bookmark_drag.is_none()
+            && (response.clicked() || response.dragged())
             && let Some(pointer) = response.interact_pointer_pos()
         {
             let at = self.frame_snap(self.tick_at(pointer.x, layout.ruler.left()));

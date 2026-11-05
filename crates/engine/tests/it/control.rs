@@ -228,6 +228,13 @@ fn seed() -> Session {
         },
     ];
     data.scene_mut().timeline.overlays.reverse();
+    data.scene_mut().bookmarks.push(project::Bookmark {
+        id: project::BookmarkId(1),
+        start: Tick::ZERO,
+        duration: Tick::ZERO,
+        note: "Mark".into(),
+        color: Color([255, 255, 0, 255]),
+    });
     Session::new(Project::new(data).unwrap(), 10).unwrap()
 }
 fn replace_paths(v: &mut Value, root: &std::path::Path) {

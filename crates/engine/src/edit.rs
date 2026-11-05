@@ -981,6 +981,21 @@ pub(crate) fn apply(
             });
             created.push(CreatedId::Bookmark(id));
         }
+        Command::MoveBookmark { bookmark, start } => {
+            if start < Tick::ZERO {
+                return Err(EditError::Invalid("bookmark start"));
+            }
+            let candidate = data
+                .scene_mut()
+                .bookmarks
+                .iter_mut()
+                .find(|candidate| candidate.id == bookmark)
+                .ok_or(EditError::Invalid("missing bookmark"))?;
+            if start.checked_add(candidate.duration).is_none() {
+                return Err(EditError::Invalid("bookmark end"));
+            }
+            candidate.start = start;
+        }
         Command::Retranslate {
             item: id,
             target_language,

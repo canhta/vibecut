@@ -2405,6 +2405,43 @@ fn locked_tracks_refuse_structural_item_edits_but_allow_metadata_and_unlock() {
 }
 
 #[test]
+fn bookmark_move_is_one_undo_step_and_refuses_missing_or_negative_targets() {
+    let mut s = Session::new(Project::empty(ProjectId(35), "Marks".into()).unwrap(), 20).unwrap();
+    let CreatedId::Bookmark(bookmark) = *s
+        .apply(Command::AddBookmark {
+            start: Tick(10),
+            duration: Tick(5),
+            note: "Beat".into(),
+            color: Color([1, 2, 3, 255]),
+        })
+        .unwrap()
+        .created
+        .first()
+        .unwrap()
+    else {
+        panic!("bookmark id")
+    };
+    let before = s.project().clone();
+    s.execute("bookmark.move", json!({"bookmark":bookmark,"start":40}))
+        .unwrap();
+    assert_eq!(s.project().data().scene().bookmarks[0].start, Tick(40));
+    assert_eq!(s.history_len().0, 2);
+    s.undo().unwrap();
+    assert_eq!(s.project(), &before);
+    s.redo().unwrap();
+    assert_eq!(s.project().data().scene().bookmarks[0].start, Tick(40));
+    assert!(matches!(
+        s.execute("bookmark.move", json!({"bookmark":bookmark,"start":-1})),
+        Err(EditError::Invalid("bookmark start"))
+    ));
+    assert!(matches!(
+        s.execute("bookmark.move", json!({"bookmark":999,"start":0})),
+        Err(EditError::Invalid("missing bookmark"))
+    ));
+    assert_eq!(s.project().data().scene().bookmarks[0].start, Tick(40));
+}
+
+#[test]
 fn audio_reorder_is_screen_order_and_main_cannot_move() {
     let mut s = Session::new(Project::empty(ProjectId(33), "Audio".into()).unwrap(), 20).unwrap();
     let CreatedId::Track(a) = *s
