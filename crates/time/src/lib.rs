@@ -7,8 +7,10 @@
 //!
 //! Fallible operations report [`TimeError`]; hostile input never panics.
 
+mod speed;
 mod timecode;
 
+pub use speed::Speed;
 pub use timecode::{format_timecode, parse_timecode};
 
 use serde::{Deserialize, Serialize};
@@ -275,6 +277,8 @@ pub enum TimeError {
     Overflow,
     /// A representable intermediate result did not fit the return type.
     OutOfRange,
+    /// A playback speed was not finite or fell outside 0.01x..=5x.
+    InvalidSpeed,
 }
 
 impl fmt::Display for TimeError {
@@ -287,6 +291,7 @@ impl fmt::Display for TimeError {
             Self::EmptyRange => "range end must be greater than start",
             Self::Overflow => "time arithmetic overflowed",
             Self::OutOfRange => "time value is out of range",
+            Self::InvalidSpeed => "speed must be between 0.01x and 5x",
         };
         formatter.write_str(message)
     }
