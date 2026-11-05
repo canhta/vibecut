@@ -5,7 +5,7 @@
 | Role | Responsibility |
 |---|---|
 | Claude coordinator | Plans with the maintainer, writes tickets, dispatches, answers questions, cleans up; implementation, review and merge belong to workers |
-| opencode | Default implementer up to its current tier |
+| opencode | Default implementer up to its tier for the ticket's work type |
 | Codex | Implements above opencode's tier; reviews every code branch |
 | Maintainer | Product decisions, credentials, hardware, assets |
 
@@ -16,7 +16,7 @@
 | T3 | New contracts, pipelines, persistence formats |
 | T4 | unsafe/FFI, concurrency, job engine, render and A/V sync core; Codex only |
 
-Promote one tier after two consecutive reviewed code tickets at its tier merge without design-level `changes`; demote one tier after that verdict or a reverted merge. The coordinator updates `.scratch/agents.md` on every verdict with tier, track record and per-work-type evidence/routing. Work types with design-level or robustness findings route to Codex until the profile changes.
+opencode holds one tier per work type, not an overall tier. Promote a work type one tier after two consecutive reviewed tickets of that type merge without design-level `changes`; demote it one tier after that verdict or a reverted merge. The coordinator updates `.scratch/agents.md` on every verdict with the per-work-type tier, evidence and routing. Work types with design-level or robustness findings route to Codex until their profile changes.
 
 ## Tickets and placement
 
@@ -40,7 +40,7 @@ A resolved spike retains reports, outputs, labels and eval corpus; remove venvs,
 3. Answer questions in one batched reply; send only substantive replies. Never message a settled worker just to inform it (each message opens a dispatch): attach the note to its next task. When a ticket's acceptance is blocked by a separate defect, file that defect and split the acceptance instead of growing the ticket. The coordinator owns technical decisions; dispatch research when evidence is missing, and bring the maintainer only decisions in its role.
 4. Return fixes and re-reviews to the dispatch holding context; create a replacement only when it is gone. `send` may reopen a finished worker under a new dispatch ID: use the current `worker-list` ID.
 5. After merge/drop, run `cargo xtask cleanup <dispatch-id>... <worktree-name>...` to release all ticket dispatches, terminals and worktrees. Retain implementer and reviewer until then.
-6. Dispatch what `cargo xtask frontier` lists, critical path first. Implementers are opencode unless the ticket is T3+ or its work type routes to Codex in `.scratch/agents.md`; live Codex implementers never outnumber opencode ones.
+6. Dispatch what `cargo xtask frontier` lists, critical path first. Implementers are opencode when the ticket's work type has a tier covering the ticket in `.scratch/agents.md`, otherwise Codex; live Codex implementers never outnumber opencode ones.
 7. Only the coordinator pauses/resumes by explicit message; a pause also kills apps, `osascript` and builds the worker started.
 
 ## Worker loop
