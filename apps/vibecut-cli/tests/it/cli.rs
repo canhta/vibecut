@@ -2329,7 +2329,7 @@ fn batch_refuses_unsafe_or_ambiguous_destinations() {
         &[],
         2,
     );
-    #[cfg(windows)]
+    #[cfg(any(windows, target_os = "macos"))]
     run(
         "case-output.json",
         json!({"version":1,"jobs":[
@@ -2339,12 +2339,22 @@ fn batch_refuses_unsafe_or_ambiguous_destinations() {
         &["--allow-overwrite"],
         2,
     );
-    #[cfg(windows)]
+    #[cfg(any(windows, target_os = "macos"))]
     run(
         "unicode-case-output.json",
         json!({"version":1,"jobs":[
             {"project":"a.vibecut","output":"out/KẾT QUẢ.mp4","overwrite":true},
             {"project":"a.vibecut","output":"out/kết quả.mp4","overwrite":true}
+        ]}),
+        &["--allow-overwrite"],
+        2,
+    );
+    #[cfg(target_os = "macos")]
+    run(
+        "normalized-output.json",
+        json!({"version":1,"jobs":[
+            {"project":"a.vibecut","output":"out/kết quả.mp4","overwrite":true},
+            {"project":"a.vibecut","output":"out/ke\u{0302}\u{0301}t qua\u{0309}.mp4","overwrite":true}
         ]}),
         &["--allow-overwrite"],
         2,
@@ -2388,7 +2398,7 @@ fn batch_refuses_unsafe_or_ambiguous_destinations() {
         &["--allow-overwrite"],
         2,
     );
-    #[cfg(windows)]
+    #[cfg(any(windows, target_os = "macos"))]
     run(
         "aliases-metadata-case.json",
         json!({"version":1,"jobs":[

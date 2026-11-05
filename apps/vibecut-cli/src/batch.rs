@@ -288,12 +288,16 @@ fn same_file(left: &Path, right: &Path) -> bool {
 }
 
 // Canonicalization cannot fold a basename that does not exist yet. Refuse
-// case-only Windows collisions conservatively, including on case-sensitive
+// case-only Windows/macOS collisions conservatively, including on case-sensitive
 // directories; this key is only for protection, never for snapshot selection.
 fn destination_key(path: &Path) -> Result<PathBuf, CliError> {
     let target = resolve_target(path)?;
-    #[cfg(windows)]
+    #[cfg(any(windows, target_os = "macos"))]
     let target = PathBuf::from(json_path(&target)?.to_uppercase());
+    // Default macOS volumes also equate composed/decomposed spellings. This is
+    // only a conservative protection key; actual native paths stay unchanged.
+    #[cfg(target_os = "macos")]
+    let target = PathBuf::from(String::from(NfcText::from(json_path(&target)?)));
     Ok(target)
 }
 
