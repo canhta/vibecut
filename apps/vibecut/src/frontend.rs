@@ -155,6 +155,13 @@ impl ShortcutTab {
             .unwrap_or(Self::Other)
     }
 }
+// Measured from the reference captures in .scratch/refs (2x captures; 1 logical px = 2 capture px):
+// 13 px labels and keys, 14 px title, 40 px row pitch, 26 px footer and tab controls.
+const SHORTCUT_TITLE_SIZE: f32 = 14.0;
+const SHORTCUT_TEXT_SIZE: f32 = 13.0;
+const SHORTCUT_ROW_HEIGHT: f32 = 40.0;
+const SHORTCUT_CONTROL_HEIGHT: f32 = 26.0;
+
 /// One shortcuts-dialog row. Keys are already platform glyphs, and an action
 /// with no effective chord stays listed as [`Self::unbound`].
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -4241,7 +4248,7 @@ impl Editor {
         if !self.shortcuts_open {
             return;
         }
-        const ROW_HEIGHT: f32 = 36.0;
+        const ROW_HEIGHT: f32 = SHORTCUT_ROW_HEIGHT;
         const CARD_PAD: f32 = 10.0;
         const CONTENT_MAX: f32 = 500.0;
         let dark = self.preferences.dark;
@@ -4289,7 +4296,7 @@ impl Editor {
                     title_rect.center(),
                     Align2::CENTER_CENTER,
                     self.tr(Text::ShortcutsTitle),
-                    FontId::proportional(18.0),
+                    FontId::proportional(SHORTCUT_TITLE_SIZE),
                     self.text_color(),
                 );
                 let close = ui
@@ -4407,7 +4414,7 @@ impl Editor {
                             let reset = ui.add_enabled(
                                 can_reset,
                                 egui::Button::new(self.tr(Text::ShortcutsResetAll))
-                                    .min_size(Vec2::new(82.0, 34.0)),
+                                    .min_size(Vec2::new(82.0, SHORTCUT_CONTROL_HEIGHT)),
                             );
                             self.remember("shortcuts.reset_all", &reset);
                             if reset.clicked() {
@@ -4427,7 +4434,7 @@ impl Editor {
                                 .add_enabled(
                                     false,
                                     egui::Button::new(self.tr(Text::ShortcutsImport))
-                                        .min_size(Vec2::new(104.0, 34.0)),
+                                        .min_size(Vec2::new(104.0, SHORTCUT_CONTROL_HEIGHT)),
                                 )
                                 .on_hover_text(pending);
                             self.remember("shortcuts.import", &import);
@@ -4435,7 +4442,7 @@ impl Editor {
                                 .add_enabled(
                                     false,
                                     egui::Button::new(self.tr(Text::ShortcutsExport))
-                                        .min_size(Vec2::new(104.0, 34.0)),
+                                        .min_size(Vec2::new(104.0, SHORTCUT_CONTROL_HEIGHT)),
                                 )
                                 .on_hover_text(pending);
                             self.remember("shortcuts.export", &export);
@@ -4444,7 +4451,7 @@ impl Editor {
                                 |ui| {
                                     let cancel = ui.add(
                                         egui::Button::new(self.tr(Text::ShortcutsCancel))
-                                            .min_size(Vec2::new(84.0, 34.0)),
+                                            .min_size(Vec2::new(84.0, SHORTCUT_CONTROL_HEIGHT)),
                                     );
                                     self.remember("shortcuts.cancel", &cancel);
                                     if cancel.clicked() {
@@ -4458,7 +4465,7 @@ impl Editor {
                                                     .color(theme::on_accent(dark)),
                                             )
                                             .fill(theme::accent(dark).gamma_multiply(0.28))
-                                            .min_size(Vec2::new(84.0, 34.0)),
+                                            .min_size(Vec2::new(84.0, SHORTCUT_CONTROL_HEIGHT)),
                                         )
                                         .on_hover_text(self.tr(Text::ShortcutsSaveHint));
                                     self.remember("shortcuts.save", &save);
@@ -4482,12 +4489,15 @@ impl Editor {
     fn shortcut_tab_button(&mut self, ui: &mut egui::Ui, tab: ShortcutTab, dark: bool) {
         let selected = self.shortcut_tab == tab;
         let label = self.tr(tab.label());
-        let font = FontId::proportional(14.0);
+        let font = FontId::proportional(SHORTCUT_TEXT_SIZE);
         let galley = ui
             .painter()
             .layout_no_wrap(label.to_owned(), font.clone(), self.text_color());
         let width = (galley.size().x + 28.0).max(72.0);
-        let (rect, response) = ui.allocate_exact_size(Vec2::new(width, 32.0), egui::Sense::click());
+        let (rect, response) = ui.allocate_exact_size(
+            Vec2::new(width, SHORTCUT_CONTROL_HEIGHT),
+            egui::Sense::click(),
+        );
         let fill = if selected {
             theme::hover(dark)
         } else if response.hovered() {
@@ -4530,7 +4540,7 @@ impl Editor {
         platform: actions::Platform,
         dark: bool,
     ) {
-        const HEIGHT: f32 = 36.0;
+        const HEIGHT: f32 = SHORTCUT_ROW_HEIGHT;
         const RESET: f32 = 22.0;
         let width = ui.available_width().max(180.0);
         let (rect, _) = ui.allocate_exact_size(Vec2::new(width, HEIGHT), egui::Sense::hover());
@@ -4550,8 +4560,6 @@ impl Editor {
         let chords = self.preferences.keybindings.effective_chords(spec);
         let key_color = if recording {
             self.accent()
-        } else if chords.is_empty() {
-            theme::warning(dark)
         } else {
             self.secondary()
         };
@@ -4569,7 +4577,7 @@ impl Editor {
             );
         }
         let key_right = reset_rect.left() - 8.0;
-        let key_font = FontId::proportional(12.0);
+        let key_font = FontId::proportional(SHORTCUT_TEXT_SIZE);
         let key_width = if recording {
             let text = self.tr(Text::ShortcutsPressKey);
             let width = ui
@@ -4607,7 +4615,7 @@ impl Editor {
         let label_max = (key_right - key_width - (row_rect.left() + 16.0) - 8.0).max(60.0);
         let label = ui.painter().layout(
             spec.label.to_owned(),
-            FontId::proportional(14.0),
+            FontId::proportional(SHORTCUT_TEXT_SIZE),
             self.text_color(),
             label_max,
         );
@@ -4671,7 +4679,7 @@ impl Editor {
         platform: actions::Platform,
         dark: bool,
     ) -> f32 {
-        let font = FontId::proportional(12.0);
+        let font = FontId::proportional(SHORTCUT_TEXT_SIZE);
         let mut groups: Vec<Vec<(String, bool, f32)>> = Vec::with_capacity(chords.len());
         for text in chords {
             let Ok(chord) = actions::Chord::parse(text) else {
@@ -4685,7 +4693,7 @@ impl Editor {
                     .layout_no_wrap(token.clone(), font.clone(), self.text_color())
                     .size()
                     .x;
-                group.push((token, chip, if chip { width + 12.0 } else { width }));
+                group.push((token, chip, width));
             }
             groups.push(group);
         }
@@ -4701,35 +4709,14 @@ impl Editor {
             + chord_gap * groups.len().saturating_sub(1) as f32;
         let mut x = right - total;
         for (index, group) in groups.iter().enumerate() {
-            for (token_index, (token, chip, width)) in group.iter().enumerate() {
-                if *chip {
-                    let rect = Rect::from_center_size(
-                        egui::pos2(x + width / 2.0, center_y),
-                        Vec2::new(*width, 20.0),
-                    );
-                    ui.painter().rect_filled(rect, 4.0, theme::field(dark));
-                    ui.painter().rect_stroke(
-                        rect,
-                        4.0,
-                        egui::Stroke::new(1.0, theme::border(dark)),
-                        egui::StrokeKind::Inside,
-                    );
-                    ui.painter().text(
-                        rect.center(),
-                        Align2::CENTER_CENTER,
-                        token,
-                        font.clone(),
-                        theme::text(dark),
-                    );
-                } else {
-                    ui.painter().text(
-                        egui::pos2(x + width / 2.0, center_y),
-                        Align2::CENTER_CENTER,
-                        token,
-                        font.clone(),
-                        self.secondary(),
-                    );
-                }
+            for (token_index, (token, _, width)) in group.iter().enumerate() {
+                ui.painter().text(
+                    egui::pos2(x + width / 2.0, center_y),
+                    Align2::CENTER_CENTER,
+                    token,
+                    font.clone(),
+                    theme::text(dark),
+                );
                 x += width;
                 if token_index + 1 < group.len() {
                     x += token_gap;
