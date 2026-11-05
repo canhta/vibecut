@@ -69,7 +69,9 @@ survive an attach disconnect and can be inspected or cancelled after reconnect.
 
 Unix sockets require a real, owner-owned directory with no group/other access;
 new endpoint directories are created with mode 0700 and the socket with 0600.
-Both ends check the OS peer effective user ID. Broad/foreign/symlink endpoint
+On macOS, socket permissions are set after bind inside the verified private
+directory because the OS rejects pre-bind `fchmod`; the process umask is never
+changed. Both ends check the OS peer effective user ID. Broad/foreign/symlink endpoint
 directories are refused rather than repaired; existing socket names are never
 overwritten. Windows pipes reject remote connections and have a protected DACL
 granting their owner access. The attach client compares the connected pipe's
@@ -78,6 +80,9 @@ handles rather than a PID-to-user lookup. App and client must have matching
 ownership/elevation context. No bearer token or authentication environment
 variable exists in client config.
 
+The grant policy explicitly admits individual commands and refuses every other
+command with typed `permission`, including commands added to an existing effect
+class. Source-bearing sound/caption imports and font downloads are refused.
 MCP cannot admit new source paths. Media already in a human-opened project is
 trusted for rendering. File publication requires an explicit pre-existing output
 directory grant, an absolute immediate-child destination and `overwrite: false`.
@@ -89,7 +94,8 @@ directories, overwrite files, upload media or grant itself provider consent.
 
 Limits are 8 MiB per incoming/outgoing JSON-RPC frame, 64 incoming messages per
 second per connection, eight attached connections and 16 queued engine calls
-shared across clients. Each connection permits four outstanding protocol requests
+shared across clients. Accept errors log a bounded category and retry after
+100 ms until server shutdown. Each connection permits four outstanding protocol requests
 and four queued replies, with one task owning output IO. Duplicate or oversized
 protocol IDs close the connection. A partial frame has five seconds to finish; initialization,
 connect and writes also have five-second deadlines. Calls have a 30-second

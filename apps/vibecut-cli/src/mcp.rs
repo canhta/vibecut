@@ -121,9 +121,68 @@ impl Policy for Grants {
                 path, overwrite, ..
             } => self.output_path(path, *overwrite, project),
             Command::Snapshot { path, .. } => self.output_path(path, false, project),
-            // Fail closed: a path-publishing command added later is refused until it is granted here.
-            other if other.effect() == engine::Effect::FilePublish => Err(EditError::Permission),
-            _ => Ok(()),
+            // Each command is reviewed, even within an existing effect class.
+            Command::CreateScene { .. }
+            | Command::DeleteScenes { .. }
+            | Command::SwitchScene { .. }
+            | Command::RenameScene { .. }
+            | Command::RenameProject { .. }
+            | Command::SaveProject { .. }
+            | Command::SetMaster { .. }
+            | Command::SetViewState { .. }
+            | Command::RemoveAssets { .. }
+            | Command::AddTrack { .. }
+            | Command::RemoveTrack { .. }
+            | Command::SetTrackMuted { .. }
+            | Command::SetTrackHidden { .. }
+            | Command::SetTrackMagnet { .. }
+            | Command::SetTrackFlags { .. }
+            | Command::RenameTrack { .. }
+            | Command::ReorderTrack { .. }
+            | Command::SetTrackLocked { .. }
+            | Command::InsertItem { .. }
+            | Command::MoveItem { .. }
+            | Command::MoveItems { .. }
+            | Command::SplitAt { .. }
+            | Command::TrimStart { .. }
+            | Command::TrimEnd { .. }
+            | Command::Delete { .. }
+            | Command::RippleDelete { .. }
+            | Command::SetItemParam { .. }
+            | Command::SetItemField { .. }
+            | Command::SetCanvasBackground { .. }
+            | Command::SetItemParamMany { .. }
+            | Command::AddMask { .. }
+            | Command::RemoveMask { .. }
+            | Command::UpdateMask { .. }
+            | Command::ReorderMasks { .. }
+            | Command::AddEffect { .. }
+            | Command::RemoveEffect { .. }
+            | Command::UpdateEffectParam { .. }
+            | Command::ReorderEffects { .. }
+            | Command::ToggleEffect { .. }
+            | Command::SetAnimatedParam { .. }
+            | Command::AddKeyframe { .. }
+            | Command::RemoveKeyframe { .. }
+            | Command::RetimeKeyframe { .. }
+            | Command::SetKeyframeHandle { .. }
+            | Command::ScaleKeyframeTime { .. }
+            | Command::Retranslate { .. }
+            | Command::AddBookmark { .. }
+            | Command::MoveBookmark { .. }
+            | Command::Batch { .. }
+            | Command::Undo { .. }
+            | Command::Redo { .. }
+            | Command::Inspect { .. }
+            | Command::Preview { .. }
+            | Command::JobStatus { .. }
+            | Command::JobCancel { .. }
+            | Command::Catalog { .. }
+            | Command::ProviderCatalog { .. }
+            | Command::FontsList { .. }
+            | Command::FontsLoad { .. } => Ok(()),
+            // New commands, effects and source paths have no implicit capability.
+            _ => Err(EditError::Permission),
         }
     }
 }

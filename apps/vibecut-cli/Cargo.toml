@@ -13,6 +13,7 @@ path = "src/main.rs"
 workspace = true
 
 [dependencies]
+tracing = { version = "0.1.44", default-features = false, features = ["std"] }
 rmcp = { version = "3.8.0", default-features = false, features = ["server", "transport-io"] }
 tokio = { version = "1.54.1", features = ["rt-multi-thread", "sync", "time", "macros", "io-util", "io-std", "net"] }
 interprocess = { version = "2.4.7", features = ["tokio"] }

@@ -6454,6 +6454,7 @@ dependencies = [
  "thiserror 2.0.21",
  "time 0.1.0",
  "tokio",
+ "tracing",
  "widestring",
  "win-authorization-sys",
 ]

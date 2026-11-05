@@ -201,3 +201,124 @@ async fn slow_reader_bounds_output_and_close_cancels_the_writer() {
         std::io::ErrorKind::TimedOut
     );
 }
+
+#[test]
+fn every_registry_command_has_an_explicit_grant_and_effect() {
+    use engine::Effect;
+    // Deliberately independent of the registry: additions and effect changes need review.
+    let cases = [
+        ("project.create", Effect::SessionControl, false, false),
+        ("scene.create", Effect::Edit, true, true),
+        ("scene.delete", Effect::Edit, true, true),
+        ("scene.switch", Effect::SessionControl, true, true),
+        ("scene.rename", Effect::Edit, true, true),
+        ("project.rename", Effect::Edit, true, true),
+        ("project.duplicate", Effect::SessionControl, false, false),
+        ("project.delete", Effect::SessionControl, false, false),
+        ("project.thumbnail", Effect::SessionControl, false, false),
+        ("project.save", Effect::SessionControl, true, true),
+        ("audio.set_master", Effect::Edit, true, true),
+        ("project.set_view_state", Effect::SessionControl, true, true),
+        ("export_subtitles", Effect::FilePublish, true, false),
+        ("burn_subtitles", Effect::FilePublish, true, false),
+        ("import.add_asset", Effect::Edit, false, false),
+        ("media.remove", Effect::Edit, true, true),
+        ("timeline.add_track", Effect::Edit, true, true),
+        ("track.remove", Effect::Edit, true, true),
+        ("track.set_muted", Effect::Edit, true, true),
+        ("track.set_hidden", Effect::Edit, true, true),
+        ("track.set_magnet", Effect::Edit, true, true),
+        ("track.set_flags", Effect::Edit, true, true),
+        ("track.rename", Effect::Edit, true, true),
+        ("track.reorder", Effect::Edit, true, true),
+        ("track.set_locked", Effect::Edit, true, true),
+        ("timeline.insert", Effect::Edit, true, true),
+        ("sounds.add_to_timeline", Effect::Edit, false, false),
+        ("captions.import", Effect::Edit, false, false),
+        ("move_item", Effect::Edit, true, true),
+        ("move_items", Effect::Edit, true, true),
+        ("split_at", Effect::Edit, true, true),
+        ("trim_start", Effect::Edit, true, true),
+        ("trim_end", Effect::Edit, true, true),
+        ("delete", Effect::Edit, true, true),
+        ("ripple_delete", Effect::Edit, true, true),
+        ("set_item_param", Effect::Edit, true, true),
+        ("timeline.set_item_param", Effect::Edit, true, true),
+        ("project.set_canvas_background", Effect::Edit, true, true),
+        ("timeline.set_item_param_many", Effect::Edit, true, true),
+        ("masks.add", Effect::Edit, true, true),
+        ("masks.remove", Effect::Edit, true, true),
+        ("masks.update", Effect::Edit, true, true),
+        ("masks.reorder", Effect::Edit, true, true),
+        ("effects.add", Effect::Edit, true, true),
+        ("effects.remove", Effect::Edit, true, true),
+        ("effects.update_param", Effect::Edit, true, true),
+        ("effects.reorder", Effect::Edit, true, true),
+        ("effects.toggle", Effect::Edit, true, true),
+        ("keyframes.set_param", Effect::Edit, true, true),
+        ("keyframes.add", Effect::Edit, true, true),
+        ("keyframes.remove", Effect::Edit, true, true),
+        ("keyframes.retime", Effect::Edit, true, true),
+        ("keyframes.set_handle", Effect::Edit, true, true),
+        ("keyframes.scale_time", Effect::Edit, true, true),
+        ("retranslate", Effect::Edit, true, true),
+        ("add_bookmark", Effect::Edit, true, true),
+        ("bookmark.move", Effect::Edit, true, true),
+        ("batch", Effect::Edit, true, true),
+        ("begin_gesture", Effect::SessionControl, false, false),
+        ("commit_gesture", Effect::SessionControl, false, false),
+        ("cancel_gesture", Effect::SessionControl, false, false),
+        ("undo", Effect::SessionControl, true, true),
+        ("redo", Effect::SessionControl, true, true),
+        ("inspect", Effect::Read, true, true),
+        ("preview", Effect::JobControl, true, true),
+        ("preview.snapshot", Effect::FilePublish, true, false),
+        ("export", Effect::FilePublish, true, false),
+        ("job_status", Effect::Read, true, true),
+        ("job_cancel", Effect::JobControl, true, true),
+        ("catalog", Effect::Read, true, true),
+        ("provider_catalog", Effect::Read, true, true),
+        ("fonts.list", Effect::Read, true, true),
+        ("fonts.load", Effect::Read, true, true),
+        ("fonts.download", Effect::JobControl, false, false),
+    ];
+    let root = tempfile::tempdir().unwrap();
+    let grant = Grants::output(root.path()).unwrap();
+    let project = project::Project::empty(project::ProjectId(1), "policy".into()).unwrap();
+    let registry = engine::registry();
+    let encoded_root = serde_json::to_string(root.path()).unwrap();
+    assert_eq!(cases.len(), registry.len());
+    assert_eq!(
+        cases
+            .iter()
+            .map(|row| row.0)
+            .collect::<std::collections::BTreeSet<_>>(),
+        registry.iter().map(|spec| spec.id).collect()
+    );
+    for (id, effect, with_output, without_output) in cases {
+        let spec = registry.iter().find(|spec| spec.id == id).unwrap();
+        assert_eq!(spec.effect, effect, "{id}");
+        let mut params: Value = serde_json::from_str(
+            &serde_json::to_string(&spec.example.params)
+                .unwrap()
+                .replace("$output", encoded_root.trim_matches('"')),
+        )
+        .unwrap();
+        if effect == Effect::FilePublish {
+            params["path"] = json!(root.path().join("output"));
+        }
+        let command: Command =
+            serde_json::from_value(json!({"command":id,"params":params})).unwrap();
+        for (grants, expected) in [(&grant, with_output), (&Grants::default(), without_output)] {
+            let result = grants.authorize(&command, &project);
+            if expected {
+                assert!(result.is_ok(), "{id}: {result:?}");
+            } else {
+                assert!(
+                    matches!(result, Err(EditError::Permission)),
+                    "{id}: {result:?}"
+                );
+            }
+        }
+    }
+}

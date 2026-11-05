@@ -37,6 +37,7 @@ fn name(endpoint: &Path) -> io::Result<interprocess::local_socket::Name<'_>> {
 pub(super) fn listen(endpoint: &Path) -> io::Result<Listener> {
     #[cfg(unix)]
     {
+        #[cfg(not(target_os = "macos"))]
         use interprocess::os::unix::local_socket::ListenerOptionsExt;
         use std::os::unix::fs::{DirBuilderExt, MetadataExt, PermissionsExt};
         let parent = endpoint.parent().ok_or(io::ErrorKind::InvalidInput)?;
@@ -51,10 +52,16 @@ pub(super) fn listen(endpoint: &Path) -> io::Result<Listener> {
         {
             return Err(io::ErrorKind::PermissionDenied.into());
         }
-        ListenerOptions::new()
-            .name(name(endpoint)?)
-            .mode(0o600)
-            .create_tokio()
+        let options = ListenerOptions::new().name(name(endpoint)?);
+        #[cfg(not(target_os = "macos"))]
+        let options = options.mode(0o600);
+        let listener = options.create_tokio()?;
+        // macOS rejects fchmod on an unbound socket. The verified private
+        // directory denies foreign traversal during bind/chmod; never change
+        // the process-wide umask in this multithreaded application.
+        #[cfg(target_os = "macos")]
+        std::fs::set_permissions(endpoint, std::fs::Permissions::from_mode(0o600))?;
+        Ok(listener)
     }
     #[cfg(windows)]
     {
@@ -85,12 +92,27 @@ fn authenticate(stream: &Stream) -> io::Result<()> {
 }
 
 pub(super) async fn serve(listener: Listener, handler: Handler) {
+    serve_accept(|| listener.accept(), handler).await;
+}
+
+async fn serve_accept<F, A>(mut accept: F, handler: Handler)
+where
+    F: FnMut() -> A,
+    A: std::future::Future<Output = io::Result<Stream>>,
+{
     let slots = Arc::new(Semaphore::new(8));
     let mut tasks = tokio::task::JoinSet::new();
     loop {
         tokio::select! {
-            accepted = listener.accept() => {
-                let Ok(stream) = accepted else { break; };
+            accepted = accept() => {
+                let stream = match accepted {
+                    Ok(stream) => stream,
+                    Err(error) => {
+                        tracing::warn!(category = ?error.kind(), "control accept failed; retrying");
+                        tokio::time::sleep(Duration::from_millis(100)).await;
+                        continue;
+                    }
+                };
                 if authenticate(&stream).is_err() { continue; }
                 let Ok(slot) = slots.clone().try_acquire_owned() else { continue; };
                 let handler = handler.clone();
@@ -179,9 +201,78 @@ mod tests {
         std::fs::set_permissions(root.path(), std::fs::Permissions::from_mode(0o700)).unwrap();
         let endpoint = root.path().join("control.sock");
         let _listener = listen(&endpoint).unwrap();
+        assert_eq!(
+            std::fs::metadata(root.path()).unwrap().mode() & 0o777,
+            0o700
+        );
         let metadata = std::fs::metadata(endpoint).unwrap();
         assert_eq!(metadata.mode() & 0o777, 0o600);
         assert_eq!(metadata.uid(), rustix::process::geteuid().as_raw());
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn mcp_accept_error_backs_off_then_serves_same_user() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        use tokio::io::AsyncBufReadExt;
+        let root = tempfile::tempdir().unwrap();
+        let endpoint = if cfg!(windows) {
+            std::path::PathBuf::from(format!("vibecut-accept-test-{}", std::process::id()))
+        } else {
+            root.path().join("private/control.sock")
+        };
+        let listener = listen(&endpoint).unwrap();
+        let (handler, _inbox) = super::super::Inbox::new(
+            Default::default(),
+            engine::ByteBudget::new(2 << 30).unwrap(),
+        )
+        .unwrap();
+        let attempts = Arc::new(AtomicUsize::new(0));
+        let observed = attempts.clone();
+        let task = tokio::spawn(async move {
+            serve_accept(
+                || {
+                    let attempt = attempts.fetch_add(1, Ordering::SeqCst);
+                    let listener = &listener;
+                    async move {
+                        if attempt == 0 {
+                            Err(io::ErrorKind::Interrupted.into())
+                        } else {
+                            listener.accept().await
+                        }
+                    }
+                },
+                handler,
+            )
+            .await;
+        });
+        tokio::task::yield_now().await;
+        assert_eq!(observed.load(Ordering::SeqCst), 1);
+        tokio::time::advance(Duration::from_millis(99)).await;
+        tokio::task::yield_now().await;
+        assert_eq!(observed.load(Ordering::SeqCst), 1, "accept must back off");
+        assert!(
+            !task.is_finished(),
+            "an accept error must not stop the listener"
+        );
+        tokio::time::advance(Duration::from_millis(1)).await;
+        tokio::task::yield_now().await;
+        assert_eq!(observed.load(Ordering::SeqCst), 2);
+        let mut client = Stream::connect(name(&endpoint).unwrap()).await.unwrap();
+        authenticate(&client).unwrap();
+        client.write_all(b"{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\",\"params\":{\"protocolVersion\":\"2025-11-25\",\"capabilities\":{},\"clientInfo\":{\"name\":\"retry-test\",\"version\":\"1\"}}}\n").await.unwrap();
+        let mut line = String::new();
+        tokio::time::timeout(
+            Duration::from_secs(5),
+            BufReader::new(client).read_line(&mut line),
+        )
+        .await
+        .unwrap()
+        .unwrap();
+        let response: serde_json::Value = serde_json::from_str(&line).unwrap();
+        assert!(response.get("result").is_some(), "{response}");
+        assert!(!task.is_finished());
+        task.abort();
+        assert!(task.await.unwrap_err().is_cancelled());
     }
 
     #[cfg(windows)]
