@@ -1121,7 +1121,18 @@ fn stereo_policy_keeps_headroom_and_export_limits_overload() {
     )
     .unwrap();
     let decoded = pcm(&output, None);
-    assert!(decoded.iter().all(|v| v.is_finite() && v.abs() < 1.0));
+    assert!(decoded.iter().all(|v| v.is_finite()));
+    let reference = mix_audio(&p, 0, 48000, 2, &mut FileSources::default(), &h).unwrap();
+    assert!(reference.peak() <= 10f32.powf(-1.0 / 20.0) * 0.98);
+    // Lossy AAC can reconstruct peaks beyond the input sample ceiling. Compare
+    // decoded PCM quality here; the limiter's hard bound is on its PCM output.
+    let error = reference.planes()[0][2048..45952]
+        .iter()
+        .zip(&decoded[2048..45952])
+        .map(|(a, b)| f64::from(*a - *b).powi(2))
+        .sum::<f64>()
+        / (45952 - 2048) as f64;
+    assert!(error < 0.003, "overloaded export PCM MSE {error}");
 }
 
 struct FullSources(FileSources);
