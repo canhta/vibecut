@@ -50,7 +50,7 @@ code is settled by [copy imports](../engineering/workflows.md#copy-imports).
 
 ## Placement
 
-- One Orca-created worktree and branch per worker; a pull loop starts each ticket on a fresh branch from `origin/main` in that worktree.
+- One Orca-created worktree per worker. Branches are `feat/<milestone>-<NN>-<slug>` or `fix/<milestone>-<NN>-<slug>` (e.g. `feat/p1-clips-04-review-ui`); a pull loop starts each ticket on a fresh branch from `origin/main` in that worktree.
 - `.scratch/` and `.spikes/` exist only in the main checkout: read and write them by absolute path.
 - Every command that compiles Rust (`cargo xtask ci`, `cargo test`, `cargo clippy`, `cargo build`) runs through `/Users/canh/Startup/VibeCut/.scratch/bin/build <command>`: it waits for one of three build slots (a lock), sets `CARGO_TARGET_DIR` to that slot's warm cache and runs the command. Never set `CARGO_TARGET_DIR` yourself.
 - Workers are not limited by build slots: dispatch as many as the frontier allows, as long as no two live tickets own the same crate or file area (check `Ownership` in each ticket; serialize the overlap).
