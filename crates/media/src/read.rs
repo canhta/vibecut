@@ -166,6 +166,11 @@ impl PacketReader {
     pub fn bytes_read(&self) -> u64 {
         self.bytes.load(Ordering::Relaxed)
     }
+    // Preparation checkpoints occur only between complete packets, before the
+    // current read window is exhausted; native parser state stays intact.
+    pub(crate) fn start_read_window(&mut self, max_bytes: u64) {
+        self.budget.store(max_bytes, Ordering::Relaxed);
+    }
     pub fn next_packet(&mut self) -> Result<Option<Packet>> {
         if self.cancel.load(Ordering::Relaxed) {
             return Err(MediaError::Cancelled);

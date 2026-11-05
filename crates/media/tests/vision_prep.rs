@@ -8,8 +8,8 @@
 mod common;
 
 use media::{
-    AssetId, FaceBox, MediaError, SourceAsset, VisionFrame, VisionPrepLimits, decode_frame_at,
-    decode_shot_frames, mfcc_range,
+    AssetId, FaceBox, MediaError, MfccProgress, SourceAsset, VisionFrame, VisionPrepLimits,
+    decode_frame_at, decode_shot_frames, mfcc_range, mfcc_range_with_progress,
 };
 use std::path::{Path, PathBuf};
 use std::sync::{
@@ -413,38 +413,120 @@ fn mfcc_range_is_globally_anchored() {
         };
         let source = asset(&path, id);
         if long_source {
-            // A cold late call must refuse bounded work; successive ranges
-            // retain exact anchors, so a small budget admits warm late calls.
+            // First analysis builds exact anchors in one automatic sequential
+            // pass; subsequent ranges reuse them under a small work budget.
             let bounded = VisionPrepLimits {
                 max_audio_decode_duration: seconds(45.0),
                 max_audio_bytes: 2 << 20,
                 ..VisionPrepLimits::default()
             };
-            assert!(matches!(
-                mfcc_range(
-                    &source,
-                    SourceRange::new(seconds(10790.0), seconds(10791.0)).unwrap(),
-                    &bounded,
-                    cancel(),
-                    |_| Ok(())
-                ),
-                Err(MediaError::TooLarge(_))
-            ));
-            let indexing = VisionPrepLimits {
-                max_audio_decode_duration: seconds(4000.0),
-                max_audio_bytes: 128 << 20,
-                ..bounded
-            };
-            for start in [3600, 7200, 10790] {
-                let frames = collect_mfcc(
-                    &source,
-                    SourceRange::new(seconds(f64::from(start)), seconds(f64::from(start) + 1.0))
-                        .unwrap(),
-                    &indexing,
-                    cancel(),
-                );
-                assert_eq!(frames.len(), 100);
-            }
+            let began = std::time::Instant::now();
+            let limits = VisionPrepLimits::default();
+            let mut last_prepared = Tick::ZERO;
+            let mut preparing = 0;
+            let analyzing = std::cell::Cell::new(false);
+            let mut cold = Vec::new();
+            mfcc_range_with_progress(
+                &source,
+                SourceRange::new(seconds(10790.0), seconds(10791.0)).unwrap(),
+                &limits,
+                cancel(),
+                |event| {
+                    match event {
+                        MfccProgress::Preparing { decoded_to } => {
+                            assert!(decoded_to >= last_prepared);
+                            assert!(
+                                decoded_to.checked_sub(last_prepared).unwrap()
+                                    <= limits.max_audio_decode_duration
+                            );
+                            last_prepared = decoded_to;
+                            preparing += 1;
+                        }
+                        MfccProgress::Analyzing { .. } => analyzing.set(true),
+                    }
+                    Ok(())
+                },
+                |frame| {
+                    assert!(analyzing.get());
+                    cold.push(frame);
+                    Ok(())
+                },
+            )
+            .unwrap();
+            assert_eq!(cold.len(), 100, "first long-source analysis");
+            assert!(
+                preparing > 10,
+                "bounded preparation must continue automatically"
+            );
+            assert!(last_prepared > seconds(10000.0));
+            eprintln!(
+                "cold MFCC elapsed={:?} preparation events={preparing}",
+                began.elapsed()
+            );
+
+            // Small read windows must also continue through the entire cold
+            // pass without losing native demux/decoder state at a checkpoint.
+            let fresh = SourceAsset::try_from(media::AssetData::from(source.clone())).unwrap();
+            let mut prepared_to = Tick::ZERO;
+            let mut checkpoints = 0;
+            let mut emitted = 0;
+            mfcc_range_with_progress(
+                &fresh,
+                SourceRange::new(seconds(10790.0), seconds(10791.0)).unwrap(),
+                &bounded,
+                cancel(),
+                |event| {
+                    if let MfccProgress::Preparing { decoded_to } = event {
+                        assert!(decoded_to >= prepared_to);
+                        assert!(
+                            decoded_to.checked_sub(prepared_to).unwrap()
+                                <= bounded.max_audio_decode_duration
+                        );
+                        prepared_to = decoded_to;
+                        checkpoints += 1;
+                    }
+                    Ok(())
+                },
+                |_| {
+                    emitted += 1;
+                    Ok(())
+                },
+            )
+            .unwrap();
+            assert_eq!(emitted, 100);
+            assert!(
+                checkpoints > 300,
+                "byte-bounded preparation must continue automatically"
+            );
+
+            // Cancellation during preparation is observable before any output.
+            let fresh = SourceAsset::try_from(media::AssetData::from(source.clone())).unwrap();
+            let token = cancel();
+            let stop = token.clone();
+            let mut checkpoints = 0;
+            let mut emitted = 0;
+            let result = mfcc_range_with_progress(
+                &fresh,
+                SourceRange::new(seconds(10790.0), seconds(10791.0)).unwrap(),
+                &bounded,
+                token,
+                |event| {
+                    if matches!(event, MfccProgress::Preparing { .. }) {
+                        checkpoints += 1;
+                        if checkpoints == 2 {
+                            stop.store(true, Ordering::Relaxed);
+                        }
+                    }
+                    Ok(())
+                },
+                |_| {
+                    emitted += 1;
+                    Ok(())
+                },
+            );
+            assert!(matches!(result, Err(MediaError::Cancelled)));
+            assert_eq!(checkpoints, 2);
+            assert_eq!(emitted, 0);
             for start in [0.0, 3600.0, 7200.0, 10790.0, 10790.0, 10791.0] {
                 let began = std::time::Instant::now();
                 let frames = collect_mfcc(
@@ -475,20 +557,32 @@ fn mfcc_range_is_globally_anchored() {
             &VisionPrepLimits::default(),
             cancel(),
         );
-        let part = collect_mfcc(
-            &source,
-            SourceRange::new(seconds(part_start), seconds(part_start + 1.0)).unwrap(),
-            &VisionPrepLimits::default(),
-            cancel(),
-        );
-        assert_eq!(part.len(), 100, "{name}");
-        let mut max = 0.0f32;
-        for (actual, expected) in part.iter().zip(full[offset..].iter()) {
-            for (left, right) in actual.coefficients.iter().zip(expected.coefficients.iter()) {
-                max = max.max((left - right).abs());
+        let fresh = SourceAsset::try_from(media::AssetData::from(source.clone())).unwrap();
+        for (candidate, limits) in [
+            (source.clone(), VisionPrepLimits::default()),
+            (
+                fresh,
+                VisionPrepLimits {
+                    max_audio_decode_duration: seconds(3.0),
+                    ..VisionPrepLimits::default()
+                },
+            ),
+        ] {
+            let part = collect_mfcc(
+                &candidate,
+                SourceRange::new(seconds(part_start), seconds(part_start + 1.0)).unwrap(),
+                &limits,
+                cancel(),
+            );
+            assert_eq!(part.len(), 100, "{name}");
+            let mut max = 0.0f32;
+            for (actual, expected) in part.iter().zip(full[offset..].iter()) {
+                for (left, right) in actual.coefficients.iter().zip(expected.coefficients.iter()) {
+                    max = max.max((left - right).abs());
+                }
             }
+            assert!(max < tolerance, "{name}: late-seek coefficient delta {max}");
         }
-        assert!(max < tolerance, "{name}: late-seek coefficient delta {max}");
     }
 
     let Some(path) = common::generate(

@@ -2,7 +2,7 @@
 //!
 //! Decodes source frames at exact presentation times, prepares the face crops
 //! and 16 kHz mono MFCC frames used by the Light-ASD/CViT preprocessing recipe
-//! from `p1-clips/12`, and keeps all work bounded by caller-supplied limits.
+//! from `p1-clips/12`, with caller-bounded work slices and bounded memory.
 //! Detector inference, shot tracking and job orchestration belong to their
 //! owners; this module only prepares media.
 
@@ -94,9 +94,11 @@ pub struct VisionPrepLimits {
     /// Maximum video frames decoded by one call, including seek preroll and
     /// replayed frames; emitted frames are a subset of this budget.
     pub max_frames: usize,
-    /// Maximum decoded audio duration per call, including anchor search and preroll.
+    /// Maximum decoded duration per analysis range or first-preparation slice,
+    /// including anchor search and preroll.
     pub max_audio_decode_duration: Tick,
-    /// Maximum demuxed input bytes per audio call, including probing and seeking.
+    /// Maximum input reads per analysis range or first-preparation slice,
+    /// including probing and seeking.
     pub max_audio_bytes: u64,
     /// Maximum number of MFCC frames emitted by one call.
     pub max_mfcc_frames: usize,
@@ -416,6 +418,16 @@ pub fn decode_shot_frames(
     }
 }
 
+/// Progress of automatic first-source preparation and requested-range analysis.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum MfccProgress {
+    /// Exact source position reached by a bounded preparation slice, in ticks.
+    Preparing { decoded_to: Tick },
+    /// Preparation is complete; this range's required source samples start
+    /// here (including its preceding pre-emphasis sample).
+    Analyzing { source_start: Tick },
+}
+
 /// Compute the 13-coefficient MFCC stream for a source range.
 ///
 /// The analysis grid is anchored at the start of the source audio stream, so a
@@ -431,15 +443,39 @@ pub fn decode_shot_frames(
 /// reference. Exact decoded-sample anchors are retained on the source asset and
 /// shared by its clones. Late calls seek before the nearest recorded anchor,
 /// match its packet/frame identity, and count samples from there; timestamps
-/// are only seek hints. Cold scans and anchor lookup obey the audio decode/byte
-/// limits, returning `TooLarge` when exhausted (anchors already learned remain
-/// reusable). Resampling keeps the global phase and one second of preroll.
+/// are only seek hints. A cold distant request automatically prepares the
+/// source in one sequential pass of bounded, cancellable slices before serving
+/// the range; no manual retry is required. Analysis-range and individual
+/// preparation-slice work obey the audio decode/byte limits. Total first-pass
+/// work is linear in the unindexed prefix, independent of the requested output
+/// size. Use [`mfcc_range_with_progress`] to observe preparation checkpoints.
+/// Resampling keeps the global phase and one second of preroll.
 /// A sub-chunk range still yields the frames that start inside it.
 pub fn mfcc_range(
     asset: &SourceAsset,
     range: SourceRange,
     limits: &VisionPrepLimits,
     cancel: Arc<AtomicBool>,
+    frame: impl FnMut(MfccFrame) -> Result<()>,
+) -> Result<()> {
+    mfcc_range_with_progress(asset, range, limits, cancel, |_| Ok(()), frame)
+}
+
+/// Compute [`mfcc_range`] with preparation checkpoints for an analysis job.
+///
+/// A cold distant range automatically makes one sequential pass, building exact
+/// anchors in bounded slices before serving the requested windows. Preparation
+/// checkpoints preserve the reader/decoder state and report the exact source
+/// cursor; no caller retry or enlarged range budget is required. All work is
+/// cancellable and memory is bounded. A callback error stops the pass immediately.
+/// Already prepared ranges enter `Analyzing` directly. Jobs should reuse the
+/// source asset and submit ranges in source order to share this initial pass.
+pub fn mfcc_range_with_progress(
+    asset: &SourceAsset,
+    range: SourceRange,
+    limits: &VisionPrepLimits,
+    cancel: Arc<AtomicBool>,
+    mut progress: impl FnMut(MfccProgress) -> Result<()>,
     frame: impl FnMut(MfccFrame) -> Result<()>,
 ) -> Result<()> {
     let limits = limits.validate()?;
@@ -518,6 +554,7 @@ pub fn mfcc_range(
         last_sample,
         &limits,
         &cancel,
+        &mut progress,
         &mut |samples, start| sink.push(samples, start),
     );
     if let Err(error) = result {
@@ -786,6 +823,7 @@ fn decode_mfcc_audio(
     last_sample: i64,
     limits: &VisionPrepLimits,
     cancel: &Arc<AtomicBool>,
+    progress: &mut impl FnMut(MfccProgress) -> Result<()>,
     push: &mut impl FnMut(&[f32], i64) -> Result<()>,
 ) -> Result<()> {
     init()?;
@@ -866,8 +904,13 @@ fn decode_mfcc_audio(
     }
     let max_samples = i128::from(limits.max_audio_decode_duration.0) * i128::from(input_rate)
         / i128::from(TICKS_PER_SECOND);
-    let mut decoded_samples = 0i128;
-    let mut packets = 0usize;
+    let required_end =
+        (i128::from(last_sample) * i128::from(input_rate) + i128::from(VISION_SAMPLE_RATE) - 1)
+            / i128::from(VISION_SAMPLE_RATE);
+    let nearby = resume.is_some()
+        && required_end - i128::from(resume.map_or(0, |anchor| anchor.index)) <= max_samples / 2;
+    let mut preparing = target_index > 0 && !nearby;
+    let mut work = MfccWorkWindow::default();
     let mut state = MfccAudioState {
         origin,
         input_rate,
@@ -880,12 +923,32 @@ fn decode_mfcc_audio(
         cancel,
         push,
     };
+    progress(if preparing {
+        MfccProgress::Preparing { decoded_to: origin }
+    } else {
+        MfccProgress::Analyzing {
+            source_start: first_tick,
+        }
+    })?;
     loop {
         if cancel.load(Ordering::Relaxed) {
             return Err(MediaError::Cancelled);
         }
-        packets += 1;
-        if packets > 1_000_000 {
+        if preparing
+            && (work.packets >= 1_000_000
+                || reader.bytes_read().saturating_sub(work.read_start)
+                    >= limits.max_audio_bytes / 2)
+        {
+            work.restart(&mut reader, limits.max_audio_bytes);
+            progress(MfccProgress::Preparing {
+                decoded_to: sample_tick_for(origin, state.next_input, ticks_per_input)?,
+            })?;
+            if cancel.load(Ordering::Relaxed) {
+                return Err(MediaError::Cancelled);
+            }
+        }
+        work.packets += 1;
+        if work.packets > 1_000_000 {
             return Err(MediaError::TooLarge("MFCC input packets"));
         }
         let packet = reader.next_packet()?;
@@ -911,24 +974,53 @@ fn decode_mfcc_audio(
             if cancel.load(Ordering::Relaxed) {
                 return Err(MediaError::Cancelled);
             }
-            decoded_samples += frame.samples() as i128;
-            if decoded_samples > max_samples {
+            let samples = frame.samples() as i128;
+            let tick = frame.pts()?;
+            let matched = if let Some(anchor) = resume {
+                if position == anchor.position
+                    && ordinal == anchor.ordinal
+                    && frame.samples() == anchor.samples
+                    && tick == Some(anchor.tick)
+                {
+                    state.next_input = anchor.index;
+                    resume = None;
+                    true
+                } else {
+                    false
+                }
+            } else {
+                true
+            };
+            if preparing
+                && matched
+                && i128::from(state.next_input) + samples > i128::from(state.aligned_index)
+            {
+                // Continue with this very frame: no seek, retry, discarded
+                // decoder state or timestamp-derived phase at the transition.
+                preparing = false;
+                work.restart(&mut reader, limits.max_audio_bytes);
+                progress(MfccProgress::Analyzing {
+                    source_start: first_tick,
+                })?;
+            }
+            if preparing && samples <= max_samples && work.samples + samples > max_samples {
+                work.restart(&mut reader, limits.max_audio_bytes);
+                progress(MfccProgress::Preparing {
+                    decoded_to: sample_tick_for(origin, state.next_input, ticks_per_input)?,
+                })?;
+            }
+            work.samples += samples;
+            if work.samples > max_samples {
                 return Err(MediaError::TooLarge("MFCC decoded audio"));
+            }
+            if cancel.load(Ordering::Relaxed) {
+                return Err(MediaError::Cancelled);
             }
             if frame.sample_rate() != input_rate {
                 return Err(MediaError::Unsupported("audio sample rate changed"));
             }
-            let tick = frame.pts()?;
-            if let Some(anchor) = resume {
-                if position != anchor.position
-                    || ordinal != anchor.ordinal
-                    || frame.samples() != anchor.samples
-                    || tick != Some(anchor.tick)
-                {
-                    continue;
-                }
-                state.next_input = anchor.index;
-                resume = None;
+            if !matched {
+                continue;
             }
             if let Some(tick) = tick.filter(|_| position >= 0) {
                 asset
@@ -957,6 +1049,22 @@ fn decode_mfcc_audio(
             state.finish()?;
             return Ok(());
         }
+    }
+}
+
+#[derive(Default)]
+struct MfccWorkWindow {
+    samples: i128,
+    packets: usize,
+    read_start: u64,
+}
+impl MfccWorkWindow {
+    fn restart(&mut self, reader: &mut PacketReader, max_bytes: u64) {
+        *self = Self {
+            read_start: reader.bytes_read(),
+            ..Self::default()
+        };
+        reader.start_read_window(max_bytes);
     }
 }
 

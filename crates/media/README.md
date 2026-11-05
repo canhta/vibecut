@@ -311,14 +311,33 @@ only a seek hint, never a rounded sample-position estimate. Unknown packet
 positions cannot establish a reusable anchor; an unavailable exact match is a
 typed refusal. No cache lock is held during I/O, decoding or callbacks.
 
-Each request charges all decoded audio (including anchor lookup and preroll)
-against `max_audio_decode_duration` (default 660 s, maximum one day), all input
-reads including probing/seeking against `max_audio_bytes` (default 256 MiB,
-maximum 4 GiB), and all packets including other streams against a one-million
-packet ceiling. Exhaustion returns `TooLarge`; anchors already learned remain
-available for subsequent requests. An initially distant cold request may refuse:
-callers can build anchors in bounded successive ranges or increase these limits.
-Repeated late requests reuse the anchors rather than scanning the source prefix.
+A cold distant request automatically starts a first-analysis preparation pass.
+It uses one reader/decoder in source order, records exact anchors while discarding
+samples before the requested preroll, then continues directly into the requested
+windows. It never restarts from zero at a checkpoint and retains no source-length
+PCM or coefficient buffer. Later ranges reuse the anchors; jobs should submit
+ranges in source order and share the same asset (or its clones).
+
+`mfcc_range_with_progress` exposes `MfccProgress::Preparing` checkpoints with the
+exact decoded source cursor, followed by `Analyzing` before feature callbacks.
+`mfcc_range` runs the identical automatic path without a progress observer.
+Preparation is real source-length work: its total cost is linear in the unindexed
+prefix, not constant-time for a first late shot. The preparation pass is divided
+into bounded work slices so cancellation and job progress remain responsive;
+users do not retry limit errors or raise budgets to initialize a valid source.
+
+The requested analysis range, and each individual preparation slice, charge all
+decoded audio against `max_audio_decode_duration` (default 660 s, maximum one day),
+input reads against `max_audio_bytes` (default 256 MiB, maximum 4 GiB), and packets
+including other streams against a one-million-packet ceiling. During preparation,
+checkpoints occur before the sample/packet ceiling or after half the read window;
+they renew the next slice's budget while preserving demux/decoder state. Input
+reads still enforce a hard native byte ceiling, including initial probing. A
+single frame or native packet/probe that cannot fit the budget is a typed limit
+failure; small or hostile-input refusals are not silently retried. Once analysis
+starts, budget exhaustion remains `TooLarge` for that requested range. Callback
+errors and cancellation stop immediately; already learned anchors remain reusable.
+No source cache lock spans a checkpoint callback or I/O.
 Frames before resampler preroll are discarded without conversion; the resampler
 starts on a stream-global 16 kHz grid phase at least one second before the window.
 Memory remains bounded and cancellation is checked throughout. At end of input the
