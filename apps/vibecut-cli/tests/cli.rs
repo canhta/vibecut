@@ -1957,3 +1957,54 @@ fn cli_sets_blend_and_opacity_and_renders_a_blended_frame() {
         );
     }
 }
+
+#[test]
+fn exec_import_and_insert_share_persisted_media_policy() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("policy.vibecut");
+    project::atomic_write(
+        &path,
+        &project::encode(
+            &project::Project::empty(project::ProjectId(1), "policy".into()).unwrap(),
+            false,
+        )
+        .unwrap(),
+    )
+    .unwrap();
+    let asset = serde_json::json!({
+        "ephemeral":true,"id":1,"path":dir.path().join("source.mp4"),"content_hash":vec![0;32],
+        "probe":{"format":"mp4","duration":1000,"streams":[{
+            "index":0,"kind":"Video","codec":"synthetic","time_base":[1,1000],
+            "duration":1000,"start":null,"frame_rate":{"num":60000,"den":1001},
+            "frame_count":null,"variable_frame_rate":null,
+            "video":{"width":640,"height":360,"color":media::ColorInfo::default(),"bit_depth":8},"audio":null
+        }]}
+    });
+    exec(&path, "import.add_asset", json!({"asset":asset}));
+    let imported = project::load(&path).unwrap().project;
+    assert_eq!(imported.data().canvas.fps, time::FrameRate::FPS_59_94);
+    assert_eq!(imported.data().original_canvas_size, None);
+    exec(
+        &path,
+        "timeline.insert",
+        json!({"item":{
+            "animations":{},"source_asset":1,"source_range":{"start":0,"end":1000},"start":0,
+            "content":{"kind":"video","params":{"source_audio_enabled":true}}
+        }}),
+    );
+    let inserted = project::load(&path).unwrap().project;
+    assert_eq!(inserted.data().canvas.fps, time::FrameRate::FPS_59_94);
+    assert_eq!(
+        (inserted.data().canvas.width, inserted.data().canvas.height),
+        (640, 360)
+    );
+    assert_eq!(
+        inserted.data().original_canvas_size,
+        Some(project::CanvasSize {
+            width: 640,
+            height: 360
+        })
+    );
+    assert!(inserted.data().assets[0].ephemeral());
+    assert_eq!(inserted.data().scene().timeline.main.items.len(), 1);
+}

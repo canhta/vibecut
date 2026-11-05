@@ -55,7 +55,8 @@ UI applies backpressure instead of accumulating metadata. Probing and hashing ru
 on an engine import job with one cooperative cancellation token carried into
 media's FFmpeg probe interrupt and 64 KiB hash reads; each successful file becomes
 an asset immediately, so a later refusal or cancel keeps earlier assets. The media
-panel shows the probe type/duration/resolution/audio format, multi-select assets,
+panel omits media-owned ephemeral assets from rows and selection while retaining
+them in the project for internal commands. The panel shows the probe type/duration/resolution/audio format, multi-select assets,
 and an "Add to timeline" action that inserts only the selected assets in one undo
 step through engine auto placement. The engine chooses compatible tracks and
 creates secondary tracks on demand; the app owns no placement policy. While a batch runs, an overlay shows completed/total

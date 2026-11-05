@@ -63,6 +63,7 @@ fn source_stream(kind: media::StreamKind, duration: Tick) -> SourceStream {
 
 fn asset(id: u64, kind: media::StreamKind) -> SourceAsset {
     SourceAsset::try_from(AssetData {
+        ephemeral: false,
         id: AssetId(id),
         path: std::env::temp_dir().join(format!("vibecut-timeline-{id}.mp4")),
         content_hash: ContentHash::from_bytes(&[id as u8; 8]),

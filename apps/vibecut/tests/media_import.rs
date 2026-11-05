@@ -70,6 +70,7 @@ fn source_asset(
     path: impl Into<PathBuf>,
 ) -> SourceAsset {
     SourceAsset::try_from(AssetData {
+        ephemeral: false,
         id: AssetId(id),
         path: path.into(),
         content_hash: ContentHash::from_bytes(&[id as u8; 8]),
@@ -909,4 +910,87 @@ fn insert_refreshes_playback_with_the_new_project_snapshot() {
             .count(),
         1
     );
+}
+
+#[test]
+fn ephemeral_assets_are_hidden_and_cannot_enter_library_selection() {
+    let mut session = Session::new(
+        Project::empty(ProjectId(15), "Internal".into()).unwrap(),
+        10,
+    )
+    .unwrap();
+    for id in [1, 2] {
+        let mut asset = AssetData::from(source_asset(
+            id,
+            StreamKind::Video,
+            Some(Tick(4 * SECOND)),
+            format!("/tmp/vibecut-import/internal-{id}.mp4"),
+        ));
+        asset.ephemeral = id == 2;
+        session
+            .apply(Command::AddAsset {
+                asset: SourceAsset::try_from(asset).unwrap(),
+            })
+            .unwrap();
+    }
+    let playback = Playback::new(
+        &session,
+        ByteBudget::new(512 << 20).unwrap(),
+        Arc::new(Files),
+    )
+    .unwrap();
+    let mut editor = Editor::new(session, playback, Preferences::default());
+    editor.select_media([AssetId(2)]);
+    let mut harness = Harness::builder()
+        .with_size(egui::vec2(1440.0, 900.0))
+        .build_ui_state(|ui, editor: &mut Editor| editor.ui(ui), editor);
+    harness.run_steps(3);
+    assert!(
+        harness
+            .query(By::new().predicate(|node| node.author_id() == Some("media.asset.1")))
+            .is_some()
+    );
+    assert!(
+        harness
+            .query(By::new().predicate(|node| node.author_id() == Some("media.asset.2")))
+            .is_none()
+    );
+    assert_eq!(harness.state().session.project().data().assets.len(), 2);
+    // Internal IDs still reserve identities for later public imports.
+    harness
+        .state_mut()
+        .set_import_probe(Arc::new(Probe::default()))
+        .unwrap();
+    harness
+        .state_mut()
+        .start_import(vec!["/tmp/vibecut-import/visible.mp4".into()])
+        .unwrap();
+    let imported = wait_harness_import(&mut harness);
+    assert_eq!(imported.import_imported, 1);
+    assert!(
+        harness
+            .state()
+            .session
+            .project()
+            .data()
+            .assets
+            .iter()
+            .any(|asset| asset.id() == AssetId(3))
+    );
+    // UI refresh prunes the hidden source from the public selection entry point.
+    widget(&harness, "media.asset.1").click();
+    harness.run_steps(2);
+    widget(&harness, "media.insert").click();
+    harness.run_steps(2);
+    let items = &harness
+        .state()
+        .session
+        .project()
+        .data()
+        .scene()
+        .timeline
+        .main
+        .items;
+    assert_eq!(items.len(), 1);
+    assert_eq!(items[0].source_asset, Some(AssetId(1)));
 }

@@ -509,6 +509,7 @@ fn caption_expansion_is_refused_before_raster_allocation() {
     let range = TimeRange::new(Tick::ZERO, tick(1, 1)).unwrap();
     d.assets.push(
         media::SourceAsset::try_from(media::AssetData {
+            ephemeral: false,
             id: media::AssetId(0),
             path: std::env::temp_dir().join("caption-identity"),
             content_hash: media::ContentHash([0; 32]),

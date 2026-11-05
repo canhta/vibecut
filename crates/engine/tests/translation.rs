@@ -34,6 +34,7 @@ fn session() -> Session {
     let mut data = Project::empty(ProjectId(1), "".into()).unwrap().into_data();
     data.assets.push(
         media::SourceAsset::try_from(media::AssetData {
+            ephemeral: false,
             id: media::AssetId(1),
             path: std::env::temp_dir().join("translation synthetic source"),
             content_hash: media::ContentHash([0; 32]),

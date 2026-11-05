@@ -47,6 +47,12 @@ positive integer tick durations. Canvas area is at most 2^26 pixels; output audi
 admits 8–192 kHz. Audio gain admits −120..24 dB; font sizes admit 1..4096 pixels.
 Typed invalid/unsupported/limit errors refuse a whole candidate.
 
+`ProjectData.original_canvas_size` is the optional first visual media size, not a
+second user canvas setting. It starts null and retains the first inserted media's
+width/height for reset-to-original. Its dimensions obey the canvas area bound.
+[Engine import policy](../engine/README.md#import-policy) owns automatic
+initialization and FPS ratcheting in import/insert commands.
+
 ## Scenes
 
 `ProjectData.scenes` is a nonempty JSON array, represented by `Scenes` with one
@@ -142,8 +148,9 @@ or renderer output claim is made.
 ## Persistence and limits
 
 `encode`/`decode` use one JSON envelope: `format`, `schema_version`, `generator`,
-`project`. Current schema 8 stores ProjectId as a canonical decimal string, preserving
-all u64 identity bits for control clients; other IDs remain numeric. Schemas 1–6
+`project`. Current schema 9 adds `original_canvas_size` and the media-owned `ephemeral` flag.
+ProjectId is stored as a canonical decimal string, preserving
+all u64 identity bits for control clients; other IDs remain numeric. Schemas 1–8
 are refused rather than migrated or silently defaulted. Older schemas return `TooOld`, newer schemas `TooNew`; there are no
 migration or compatibility paths. Unknown current-schema project/envelope fields
 are refused. `WriterLease::save` serializes completely before touching the destination;
@@ -315,7 +322,7 @@ whitespace-only text masks are inactive while retaining their editable data. The
 admits 1,024 entries for resource safety; presentation limits do not define the
 model. Audio items refuse masks. Modes are None/Add/Subtract/Intersect/Lighten/
 Darken/Difference; render owns their coverage math. Commands/history belong to
-engine. Schema 8 requires scene arrays, per-item mask vectors and `blendMode`; schema 7 and earlier refuse with `TooOld`.
+engine. Schema 9 requires scene arrays, per-item mask vectors and `blendMode`; schema 8 and earlier refuse with `TooOld`.
 
 Shapes include split, cinematic band, rectangle, ellipse, heart, diamond, star,
 text and a cubic `MaskPath`. Text masks currently persist content and font size

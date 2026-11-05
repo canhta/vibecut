@@ -590,6 +590,7 @@ impl Editor {
             .data()
             .assets
             .iter()
+            .filter(|asset| !asset.ephemeral())
             .map(SourceAsset::id)
             .collect();
         self.media_selection.retain(|id| existing.contains(id));
@@ -613,6 +614,7 @@ impl Editor {
             .data()
             .assets
             .iter()
+            .filter(|asset| !asset.ephemeral())
             .map(SourceAsset::id)
             .collect();
         crate::selection::click(
@@ -632,6 +634,7 @@ impl Editor {
             .data()
             .assets
             .iter()
+            .filter(|asset| !asset.ephemeral())
             .filter(|asset| self.media_selection.contains(&asset.id()))
             .cloned()
             .collect();
@@ -2362,6 +2365,7 @@ impl Editor {
             .data()
             .assets
             .iter()
+            .filter(|asset| !asset.ephemeral())
             .map(|asset| asset_row(asset, locale))
             .collect();
         if rows.is_empty() {

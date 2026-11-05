@@ -124,6 +124,7 @@ fn all_commands_share_registry_and_strict_json_dispatch() {
     )
     .unwrap();
     let asset = SourceAsset::try_from(AssetData {
+        ephemeral: false,
         id: AssetId(4),
         path: std::env::temp_dir().join("missing media.mp4"),
         content_hash: ContentHash([0; 32]),
@@ -134,7 +135,8 @@ fn all_commands_share_registry_and_strict_json_dispatch() {
         },
     })
     .unwrap();
-    s.execute("add_asset", json!({"asset":asset})).unwrap();
+    s.execute("import.add_asset", json!({"asset":asset}))
+        .unwrap();
     s.execute("delete", json!({"items":[2]})).unwrap();
     s.execute(
         "track.set_flags",
@@ -515,6 +517,7 @@ fn media_handles_and_typed_parameter_validation_are_atomic() {
     };
     data.assets.push(
         SourceAsset::try_from(AssetData {
+            ephemeral: false,
             id: AssetId(1),
             path: std::env::temp_dir().join("Tiếng Việt missing media.mp4"),
             content_hash: ContentHash([0; 32]),
@@ -1020,6 +1023,7 @@ fn caption_project() -> Project {
     data.scene_mut().timeline.overlays.clear();
     data.assets.push(
         SourceAsset::try_from(AssetData {
+            ephemeral: false,
             id: AssetId(1),
             path: std::env::temp_dir().join("caption source"),
             content_hash: ContentHash([0; 32]),
@@ -1851,4 +1855,228 @@ proptest! {
         prop_assert_eq!(s.project(),&final_layout);
         prop_assert_eq!(&project::decode(&project::encode(&final_layout, false).unwrap()).unwrap().project,final_layout.as_ref());
     }
+}
+
+fn policy_asset(id: u64, format: &str, rate: Option<time::FrameRate>) -> SourceAsset {
+    SourceAsset::try_from(AssetData {
+        ephemeral: true,
+        id: AssetId(id),
+        path: std::env::temp_dir().join("policy source"),
+        content_hash: ContentHash([0; 32]),
+        probe: SourceProbe {
+            format: format.into(),
+            duration: Some(Tick(1000)),
+            streams: vec![media::SourceStream {
+                index: 0,
+                kind: media::StreamKind::Video,
+                codec: "synthetic".into(),
+                time_base: media::TimeBase::new(1, 1000).unwrap(),
+                duration: Some(Tick(1000)),
+                start: None,
+                frame_rate: rate,
+                frame_count: None,
+                variable_frame_rate: None,
+                video: Some(media::VideoInfo {
+                    width: 640,
+                    height: 360,
+                    color: Default::default(),
+                    bit_depth: Some(8),
+                }),
+                audio: None,
+            }],
+        },
+    })
+    .unwrap()
+}
+fn policy_insert(id: u64) -> Command {
+    Command::InsertItem {
+        placement: Default::default(),
+        item: NewItem {
+            animations: Default::default(),
+            source_asset: Some(AssetId(id)),
+            source_range: range(0, 1000),
+            start: Tick::ZERO,
+            content: ItemParams::Video(project::VideoParams {
+                source_audio_enabled: true,
+            }),
+        },
+    }
+}
+#[test]
+fn import_policy_ratchets_exact_rates_and_refuses_invalid_metadata_atomically() {
+    use time::FrameRate as F;
+    for (initial, incoming, format, expected) in [
+        (F::FPS_30, Some(F::FPS_60), "mp4", F::FPS_60),
+        (F::FPS_60, Some(F::FPS_30), "mp4", F::FPS_60),
+        (F::FPS_29_97, Some(F::FPS_30), "mp4", F::FPS_30),
+        (F::FPS_30, Some(F::FPS_29_97), "mp4", F::FPS_30),
+        (F::FPS_23_976, Some(F::FPS_29_97), "mp4", F::FPS_29_97),
+        (F::FPS_30, Some(F::FPS_60), "png_pipe", F::FPS_30),
+        (F::FPS_30, Some(F::FPS_60), "gif", F::FPS_30),
+        (F::FPS_30, Some(F::FPS_60), "apng", F::FPS_30),
+        (F::FPS_30, None, "mp4", F::FPS_30),
+    ] {
+        let mut data = Project::empty(ProjectId(1), "policy".into())
+            .unwrap()
+            .into_data();
+        data.canvas.fps = initial;
+        let before = Project::new(data).unwrap();
+        let mut s = Session::new(before.clone(), 10).unwrap();
+        s.execute(
+            "import.add_asset",
+            json!({"asset":policy_asset(1,format,incoming)}),
+        )
+        .unwrap();
+        assert_eq!(s.project().data().canvas.fps, expected);
+        s.execute("undo", json!({})).unwrap();
+        assert_eq!(s.project().as_ref(), &before);
+        s.execute("redo", json!({})).unwrap();
+        assert_eq!(s.project().data().canvas.fps, expected);
+        let frozen = s.project().clone();
+        for rate in [
+            json!({"num":0,"den":1}),
+            json!({"num":30,"den":0}),
+            json!({"num":-30,"den":1}),
+            json!({"num":29.97,"den":1}),
+        ] {
+            let mut asset = serde_json::to_value(policy_asset(2, "mp4", None)).unwrap();
+            asset["probe"]["streams"][0]["frame_rate"] = rate;
+            assert!(
+                s.execute("import.add_asset", json!({"asset":asset}))
+                    .is_err()
+            );
+            assert_eq!(s.project(), &frozen);
+        }
+        // A valid probe rational without exact canvas ticks is refused, never rounded.
+        assert!(
+            s.apply(Command::AddAsset {
+                asset: policy_asset(2, "mp4", Some(F::new(1001, 1).unwrap()))
+            })
+            .is_err()
+        );
+        assert_eq!(s.project(), &frozen);
+    }
+    let mut audio = AssetData::from(policy_asset(1, "wav", Some(F::FPS_120)));
+    audio.probe.streams.first_mut().unwrap().kind = media::StreamKind::Audio;
+    audio.probe.streams.first_mut().unwrap().video = None;
+    audio.probe.streams.first_mut().unwrap().audio = Some(media::AudioInfo {
+        sample_rate: 48000,
+        channels: 2,
+        initial_padding: 0,
+        trailing_padding: 0,
+    });
+    let mut s = Session::new(Project::empty(ProjectId(1), "".into()).unwrap(), 10).unwrap();
+    s.apply(Command::AddAsset {
+        asset: SourceAsset::try_from(audio).unwrap(),
+    })
+    .unwrap();
+    assert_eq!(s.project().data().canvas.fps, F::FPS_30);
+}
+#[test]
+fn first_media_canvas_is_atomic_persisted_and_batch_ordered() {
+    use time::FrameRate as F;
+    for format in ["mp4", "png_pipe"] {
+        let mut data = Project::empty(ProjectId(1), "policy".into())
+            .unwrap()
+            .into_data();
+        data.assets.push(policy_asset(1, format, Some(F::FPS_60)));
+        let before = Project::new(data).unwrap();
+        let mut s = Session::new(before.clone(), 10).unwrap();
+        s.apply(policy_insert(1)).unwrap();
+        let after = s.project().clone();
+        assert_eq!(
+            (after.data().canvas.width, after.data().canvas.height),
+            (640, 360)
+        );
+        assert_eq!(
+            after.data().original_canvas_size,
+            Some(project::CanvasSize {
+                width: 640,
+                height: 360
+            })
+        );
+        assert_eq!(
+            after.data().canvas.fps,
+            if format == "mp4" {
+                F::FPS_60
+            } else {
+                F::FPS_30
+            }
+        );
+        let loaded = project::decode(&project::encode(&after, false).unwrap()).unwrap();
+        assert_eq!(&loaded.project, after.as_ref());
+        assert!(loaded.project.data().assets.first().unwrap().ephemeral());
+        s.execute("undo", json!({})).unwrap();
+        assert_eq!(s.project().as_ref(), &before);
+        s.execute("redo", json!({})).unwrap();
+        assert_eq!(s.project(), &after);
+    }
+    let mut data = Project::empty(ProjectId(1), "policy".into())
+        .unwrap()
+        .into_data();
+    data.assets.push(policy_asset(1, "mp4", Some(F::FPS_60)));
+    let mut second = AssetData::from(policy_asset(2, "mp4", Some(F::FPS_120)));
+    second
+        .probe
+        .streams
+        .first_mut()
+        .unwrap()
+        .video
+        .as_mut()
+        .unwrap()
+        .width = 1280;
+    data.assets.push(SourceAsset::try_from(second).unwrap());
+    let mut s = Session::new(Project::new(data).unwrap(), 10).unwrap();
+    let before = s.project().as_ref().clone();
+    // A later failure must roll back first-insert canvas/FPS as well as items.
+    assert!(
+        s.apply(Command::Batch {
+            commands: vec![policy_insert(2), policy_insert(999)]
+        })
+        .is_err()
+    );
+    assert_eq!(s.project().as_ref(), &before);
+    s.execute("begin_gesture", json!({})).unwrap();
+    s.apply(policy_insert(2)).unwrap();
+    s.execute("cancel_gesture", json!({})).unwrap();
+    assert_eq!(s.project().as_ref(), &before);
+    s.apply(Command::Batch {
+        commands: vec![policy_insert(2), policy_insert(1)],
+    })
+    .unwrap();
+    assert_eq!(s.project().data().canvas.width, 1280);
+    assert_eq!(s.project().data().canvas.fps, F::FPS_120);
+    let ids = s
+        .project()
+        .data()
+        .scene()
+        .timeline
+        .iter()
+        .flat_map(|track| track.items.iter().map(|item| item.id))
+        .collect();
+    s.apply(Command::Delete { items: ids }).unwrap();
+    s.apply(policy_insert(1)).unwrap();
+    assert_eq!(s.project().data().canvas.width, 1280);
+    assert_eq!(
+        s.project()
+            .data()
+            .original_canvas_size
+            .as_ref()
+            .unwrap()
+            .width,
+        1280
+    );
+    s.execute("undo", json!({})).unwrap();
+    s.execute("undo", json!({})).unwrap();
+    s.execute("undo", json!({})).unwrap();
+    assert_eq!(s.project().as_ref(), &before);
+    // Any existing timeline item prevents canvas initialization.
+    s.apply(Command::InsertItem {
+        placement: Default::default(),
+        item: new_item(0, 10),
+    })
+    .unwrap();
+    s.apply(policy_insert(1)).unwrap();
+    assert_eq!(s.project().data().canvas.width, 1920);
+    assert_eq!(s.project().data().original_canvas_size, None);
 }

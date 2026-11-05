@@ -48,6 +48,7 @@ impl SourceProvider for Pixels {
 }
 fn scene() -> project::Project {
     let asset = media::SourceAsset::try_from(media::AssetData {
+        ephemeral: false,
         id: media::AssetId(1),
         path: std::env::temp_dir().join("render-synthetic-source"),
         content_hash: media::ContentHash([0; 32]),

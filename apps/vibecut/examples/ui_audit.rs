@@ -395,6 +395,7 @@ fn source_stream(kind: StreamKind, duration: Tick) -> Result<SourceStream, Failu
 fn source_asset(id: u64, kind: StreamKind, path: PathBuf) -> Result<SourceAsset, Failure> {
     let duration = Tick(10 * SECOND);
     Ok(SourceAsset::try_from(AssetData {
+        ephemeral: false,
         id: AssetId(id),
         path,
         content_hash: ContentHash::from_bytes(&[id as u8; 8]),

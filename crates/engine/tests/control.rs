@@ -137,6 +137,7 @@ fn seed() -> Session {
         .unwrap();
     data.assets.push(
         media::SourceAsset::try_from(media::AssetData {
+            ephemeral: false,
             id: media::AssetId(0),
             path: std::env::temp_dir().join("vibecut-control-caption-source.mp4"),
             content_hash: media::ContentHash::from_bytes(b"fixture"),

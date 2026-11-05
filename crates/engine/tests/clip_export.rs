@@ -74,6 +74,7 @@ fn stream(index: usize, kind: StreamKind) -> SourceStream {
 }
 fn asset(id: u64, path: PathBuf, duration: i64) -> SourceAsset {
     SourceAsset::try_from(AssetData {
+        ephemeral: false,
         id: AssetId(id),
         path,
         content_hash: ContentHash([0; 32]),

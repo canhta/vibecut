@@ -46,6 +46,12 @@ impl<'de> Deserialize<'de> for ProjectId {
 pub struct Color(pub [u8; 4]);
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
+pub struct CanvasSize {
+    pub width: u32,
+    pub height: u32,
+}
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
 pub struct Canvas {
     pub width: u32,
     pub height: u32,
@@ -379,6 +385,7 @@ pub struct ProjectData {
     pub id: ProjectId,
     pub name: NfcText,
     pub canvas: Canvas,
+    pub original_canvas_size: Option<CanvasSize>,
     pub assets: Vec<SourceAsset>,
     pub scenes: Scenes,
     pub current_scene_id: SceneId,
@@ -422,6 +429,7 @@ impl Project {
             id,
             name,
             canvas: Canvas::default(),
+            original_canvas_size: None,
             assets: Vec::new(),
             scenes: Scenes::default(),
             current_scene_id: SceneId(0),
@@ -478,6 +486,13 @@ fn validate(data: &ProjectData) -> Result<()> {
     let c = &data.canvas;
     if c.width == 0 || c.height == 0 || u64::from(c.width) * u64::from(c.height) > 1 << 26 {
         return Err(Error::Invalid("canvas dimensions"));
+    }
+    if data.original_canvas_size.as_ref().is_some_and(|size| {
+        size.width == 0
+            || size.height == 0
+            || u64::from(size.width) * u64::from(size.height) > 1 << 26
+    }) {
+        return Err(Error::Invalid("original canvas dimensions"));
     }
     // Exact frame ticks are required by edit and render consumers.
     let frame = c.fps.frame_duration()?;

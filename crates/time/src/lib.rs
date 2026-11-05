@@ -302,6 +302,18 @@ pub struct FrameRate {
     den: i64,
 }
 
+impl Ord for FrameRate {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        (i128::from(self.num) * i128::from(other.den))
+            .cmp(&(i128::from(other.num) * i128::from(self.den)))
+    }
+}
+impl PartialOrd for FrameRate {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
 impl Default for FrameRate {
     fn default() -> Self {
         Self::FPS_23_976
@@ -872,6 +884,16 @@ mod tests {
         assert_eq!(FrameRate::new(1, 0), Err(TimeError::InvalidRate));
         assert_eq!(FrameRate::new(-24, 1), Err(TimeError::InvalidRate));
         assert_eq!(FrameRate::new(24, -1), Err(TimeError::InvalidRate));
+        for (less, greater) in [
+            (FrameRate::FPS_29_97, FrameRate::FPS_30),
+            (
+                FrameRate::new(i64::MAX - 1, i64::MAX).unwrap(),
+                FrameRate::new(i64::MAX, i64::MAX - 1).unwrap(),
+            ),
+        ] {
+            assert!(less < greater);
+            assert!(greater > less);
+        }
         assert_eq!(FrameRate::default(), FrameRate::FPS_23_976);
         assert_eq!(FrameRate::FPS_23_976.label(), "23.976");
         assert_eq!(FrameRate::FPS_24.label(), "24");

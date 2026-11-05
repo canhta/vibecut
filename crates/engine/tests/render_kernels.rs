@@ -239,6 +239,7 @@ fn parallel_draw_matches_sequential_at_chunk_edges_and_half_reductions() {
     execute(32 << 20, |h| {
         let duration = time::Tick(time::TICKS_PER_SECOND);
         let asset = media::SourceAsset::try_from(media::AssetData {
+            ephemeral: false,
             id: media::AssetId(1),
             path: std::env::temp_dir().join("kernel-source"),
             content_hash: media::ContentHash([0; 32]),

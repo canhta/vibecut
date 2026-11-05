@@ -500,6 +500,7 @@ fn prepare_clip(
         id: source.data().id,
         name: short.title.clone(),
         canvas: source.data().canvas.clone(),
+        original_canvas_size: source.data().original_canvas_size.clone(),
         assets: vec![options.asset.clone()],
         scenes: vec![project::Scene {
             id: project::SceneId(0),

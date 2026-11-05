@@ -19,6 +19,7 @@ fn empty() -> Project {
 }
 fn source(path: PathBuf) -> SourceAsset {
     SourceAsset::try_from(AssetData {
+        ephemeral: false,
         id: AssetId(3),
         path,
         content_hash: ContentHash([1; 32]),
@@ -251,6 +252,11 @@ fn model_trust_boundaries() {
     let mut d = base.clone();
     d.canvas.width = 0;
     cases.push(d);
+    for (width, height) in [(0, 360), (640, 0), (u32::MAX, u32::MAX)] {
+        let mut d = base.clone();
+        d.original_canvas_size = Some(project::CanvasSize { width, height });
+        cases.push(d);
+    }
     let mut d = base.clone();
     d.canvas.fps = FrameRate::new(17, 1).unwrap();
     cases.push(d);
@@ -382,6 +388,8 @@ fn schema_errors_precede_interpreting_an_unknown_project_body() {
         (4, "null", true),
         (5, "null", true),
         (6, "null", true),
+        (7, "null", true),
+        (8, "null", true),
         (SCHEMA_VERSION + 1, "null", false),
     ] {
         let bytes = format!(
@@ -484,6 +492,7 @@ fn permissions_symlinks_and_unrepresentable_paths() {
     assert!(fs::symlink_metadata(link).unwrap().file_type().is_symlink());
     let bad = dir.path().join(std::ffi::OsString::from_vec(vec![0xff]));
     let data = AssetData {
+        ephemeral: false,
         id: AssetId(1),
         path: bad,
         content_hash: ContentHash([0; 32]),

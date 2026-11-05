@@ -8,6 +8,7 @@ fn scene(texts: &[(&str, &str)]) -> project::Project {
     let range = TimeRange::new(tick(1, 4), tick(3, 2)).unwrap();
     d.assets.push(
         media::SourceAsset::try_from(media::AssetData {
+            ephemeral: false,
             id: media::AssetId(1),
             path: std::env::temp_dir().join("caption-source-identity"),
             content_hash: media::ContentHash([0; 32]),

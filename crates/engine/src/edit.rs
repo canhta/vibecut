@@ -88,6 +88,20 @@ pub(crate) fn check_budget(command: &Command) -> Result<()> {
     }
     Ok(())
 }
+// Candidate mutations are committed only after full project validation; batches
+// traverse commands in caller order, so the first successful visual insert wins.
+fn ratchet_fps(canvas: &mut project::Canvas, asset: &media::SourceAsset) {
+    if !asset.is_image() {
+        for stream in &asset.probe().streams {
+            if stream.kind == media::StreamKind::Video
+                && let Some(rate) = stream.frame_rate
+            {
+                canvas.fps = canvas.fps.max(rate);
+            }
+        }
+    }
+}
+
 fn alloc(next: &mut Option<u64>) -> Result<u64> {
     let id = next.ok_or(EditError::IdExhausted)?;
     *next = id.checked_add(1);
@@ -350,7 +364,10 @@ pub(crate) fn apply(
                 .name = name;
         }
         Command::RenameProject { name } => data.name = name,
-        Command::AddAsset { asset } => data.assets.push(asset),
+        Command::AddAsset { asset } => {
+            ratchet_fps(&mut data.canvas, &asset);
+            data.assets.push(asset);
+        }
         Command::AddTrack {
             name,
             kind,
@@ -398,6 +415,32 @@ pub(crate) fn apply(
         } => {
             if new.start < Tick::ZERO {
                 return Err(EditError::Invalid("negative output start"));
+            }
+            if matches!(new.content, ItemParams::Video(_))
+                && let Some(asset) = new
+                    .source_asset
+                    .and_then(|id| data.assets.iter().find(|a| a.id() == id))
+            {
+                ratchet_fps(&mut data.canvas, asset);
+                if data.original_canvas_size.is_none()
+                    && data
+                        .scenes
+                        .iter()
+                        .all(|scene| scene.timeline.iter().all(|track| track.items.is_empty()))
+                    && let Some(video) = asset
+                        .probe()
+                        .streams
+                        .iter()
+                        .find_map(|stream| stream.video.as_ref())
+                {
+                    let size = project::CanvasSize {
+                        width: video.width,
+                        height: video.height,
+                    };
+                    data.canvas.width = size.width;
+                    data.canvas.height = size.height;
+                    data.original_canvas_size = Some(size);
+                }
             }
             let kind = new.content.kind();
             let (target, magnetic) = placement_track(

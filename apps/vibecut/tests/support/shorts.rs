@@ -32,6 +32,7 @@ pub fn source() -> ReviewSource {
 }
 pub fn source_at(offset: i64) -> ReviewSource {
     let asset = SourceAsset::try_from(AssetData {
+        ephemeral: false,
         id: AssetId(1),
         path: std::env::temp_dir().join("vibecut-shorts-missing.mp4"),
         content_hash: ContentHash([0; 32]),

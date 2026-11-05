@@ -305,6 +305,7 @@ fn caption_project() -> project::Project {
     let range = TimeRange::new(Tick::ZERO, Tick(time::TICKS_PER_SECOND)).unwrap();
     d.assets.push(
         media::SourceAsset::try_from(media::AssetData {
+            ephemeral: false,
             id: media::AssetId(1),
             path: std::env::temp_dir().join(format!(
                 "subtitle-nonexistent-source-{}-{}",
@@ -532,6 +533,7 @@ fn registered_burn_job_exports_and_typed_missing_media_preserves_previous_output
     // Turn the missing caption-identity asset into required video; production admission must refuse.
     let mut data = session.project().as_ref().clone().into_data();
     let mut asset = media::AssetData {
+        ephemeral: false,
         id: data.assets[0].id(),
         path: data.assets[0].path().to_owned(),
         content_hash: data.assets[0].content_hash(),

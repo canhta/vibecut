@@ -152,6 +152,8 @@ impl Eq for SourceAsset {}
 #[derive(Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct AssetData {
+    /// Internal assets remain usable but are omitted from the media library.
+    pub ephemeral: bool,
     pub id: AssetId,
     pub path: PathBuf,
     pub content_hash: ContentHash,
@@ -212,6 +214,17 @@ impl From<SourceAsset> for AssetData {
     }
 }
 impl SourceAsset {
+    pub fn ephemeral(&self) -> bool {
+        self.0.ephemeral
+    }
+    /// Classifies supported image demuxers, including animated GIF/APNG,
+    /// from the probed format rather than the filename.
+    pub fn is_image(&self) -> bool {
+        matches!(
+            self.0.probe.format.as_str(),
+            "png_pipe" | "jpeg_pipe" | "webp_pipe" | "bmp_pipe" | "tiff_pipe" | "gif" | "apng"
+        )
+    }
     pub fn id(&self) -> AssetId {
         self.0.id
     }
@@ -250,6 +263,7 @@ impl SourceAsset {
         let content_hash =
             ContentHash::read_with_cancel(&path, || cancelled.load(Ordering::Relaxed))?;
         Self::try_from(AssetData {
+            ephemeral: false,
             id,
             path,
             content_hash,

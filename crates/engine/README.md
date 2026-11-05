@@ -37,10 +37,30 @@ track/item/bookmark IDs in execution order (including batch children). IDs share
 a checked increasing counter initialized above all loaded track/item/bookmark
 IDs. They are not reused after delete, undo, branching, cancelled previews or
 rolled-back groups within a Session.
-Media supplies asset identity; `add_asset` registers a validated SourceAsset and
+Media supplies asset identity; `import.add_asset` registers a validated SourceAsset and
 does not perform probe/hash IO. A failed command/batch consumes no IDs; successful
 preview/group children retire their IDs even when their outer operation rolls back. ID exhaustion returns
 a typed error. Reloading a project starts a new Session/identity lifetime.
+
+## Import policy
+
+`import.add_asset` raises project FPS to the greatest video stream rate, compared
+as exact rationals by `time::FrameRate`; it never lowers FPS. `timeline.insert`
+applies the same ratchet for the inserted visual source, including preloaded
+assets. Audio and image sources (including animated images) do not change FPS. A raised source rate
+that cannot produce exact positive canvas ticks refuses the command atomically.
+Invalid probe rational parts are unavailable at native probing and refused by
+JSON ingestion, before policy execution.
+
+When all project scene timelines are empty and `original_canvas_size` is null,
+the first inserted visual source sets canvas width/height and that original size.
+Subsequent inserts, including after deleting all items or switching scenes, retain
+it. Existing audio/text/overlay items prevent this automatic initialization.
+Batches execute in supplied order, so simultaneous first inserts have a single
+deterministic winner. All policy changes share the import/insert history step;
+failed commands, cancelled gestures and failed batches publish none of them.
+Ephemeral assets remain in project storage and available to insert/render, while
+the desktop media library omits them and its selection uses only visible assets.
 
 ## Timeline placement
 
