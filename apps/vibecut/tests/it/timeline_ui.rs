@@ -947,8 +947,14 @@ fn every_editor_button_reports_its_embedded_icon() {
         (split.rect.min.y - timeline.top() - 18.0).abs() < 0.5,
         "timeline toolbar keeps its 40 px row"
     );
+    let undo = format!(
+        "Undo ({})",
+        vibecut::actions::Chord::parse("Ctrl+Z")
+            .unwrap()
+            .display(vibecut::actions::Platform::current())
+    );
     for (id, text) in [
-        ("edit.undo", "Undo (Ctrl+Z)"),
+        ("edit.undo", undo.as_str()),
         ("timeline.split", "Split (S)"),
         ("timeline.snap", "Snap (N)"),
         ("timeline.zoom_in", "Zoom +"),
