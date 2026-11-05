@@ -12,6 +12,7 @@ pub fn host() -> Result<String, String> {
     let os = match env::consts::OS {
         "macos" => "macos",
         "windows" => "windows",
+        "linux" => "linux",
         other => return Err(format!("unsupported host {other}")),
     };
     Ok(format!("{os}-{}", env::consts::ARCH))
@@ -150,6 +151,8 @@ pub fn environment_at(command: &mut Command, prefix: &Path) -> Result<(), String
     command.env("PKG_CONFIG_PATH", prefix.join("lib/pkgconfig"));
     let library_var = if cfg!(target_os = "macos") {
         "DYLD_LIBRARY_PATH"
+    } else if cfg!(target_os = "linux") {
+        "LD_LIBRARY_PATH"
     } else {
         "PATH"
     };
@@ -308,6 +311,16 @@ fn windows_bindgen_environment(command: &mut Command, include: &std::ffi::OsStr)
     command.env(key, args);
 }
 
+/// Source provisioning runs on the target host: Windows needs MSYS2 and Linux
+/// needs the distribution toolchain, so cross-hosts are refused.
+fn native_target(host: &str, target: &str) -> Result<(), String> {
+    if target == host {
+        Ok(())
+    } else {
+        Err("source provisioning must run on the target host/architecture".into())
+    }
+}
+
 pub fn provision(target: Option<&str>) -> Result<(), String> {
     if cfg!(windows) {
         for name in ["bash", "make", "cygpath"] {
@@ -321,13 +334,15 @@ pub fn provision(target: Option<&str>) -> Result<(), String> {
         "macos-x86_64",
         "windows-x86_64",
         "windows-aarch64",
+        "linux-x86_64",
+        "linux-aarch64",
     ]
     .contains(&target)
     {
         return Err(format!("unsupported FFmpeg target {target}"));
     }
-    if target.starts_with("windows-") && target != host {
-        return Err("source provisioning must run on the target host/architecture".into());
+    if target.starts_with("windows-") || target.starts_with("linux-") {
+        native_target(&host, target)?;
     }
     let version = stable_tag("https://github.com/FFmpeg/FFmpeg.git", "n")?;
     let opus = stable_tag("https://github.com/xiph/opus.git", "v")?;
@@ -464,6 +479,8 @@ fn build_source(
                     "{}-win64-gcc",
                     if arch == "arm64" { "arm64" } else { "x86_64" }
                 )
+            } else if cfg!(target_os = "linux") {
+                format!("{arch}-linux-gcc")
             } else {
                 format!("{arch}-darwin20-gcc")
             }
@@ -514,6 +531,25 @@ fn build_source(
             format!(
                 "--extra-ldflags=-arch {arch} -mmacosx-version-min=11.0 -Wl,-rpath,@loader_path"
             ),
+        ]);
+    } else if cfg!(target_os = "linux") {
+        flags.extend([
+            "--target-os=linux".into(),
+            format!(
+                "--arch={}",
+                if arch == "arm64" { "aarch64" } else { "x86_64" }
+            ),
+            "--cc=clang".into(),
+            "--cxx=clang++".into(),
+            "--ld=clang".into(),
+            "--ar=llvm-ar".into(),
+            "--nm=llvm-nm".into(),
+            "--enable-pic".into(),
+            // libvpx is static and its pthread dependencies live in
+            // Libs.private; normal pkg-config output omits them.
+            "--pkg-config-flags=--static".into(),
+            "--extra-cflags=-fPIC".into(),
+            "--extra-ldflags=-Wl,-rpath,$ORIGIN/../lib".into(),
         ]);
     } else {
         flags.extend([
@@ -1009,5 +1045,15 @@ mod tests {
             .unwrap();
         fs::remove_dir_all(directory).unwrap();
         assert!(status.success());
+    }
+
+    #[test]
+    fn source_provisioning_admits_only_the_running_host() {
+        assert!(native_target("linux-aarch64", "linux-aarch64").is_ok());
+        assert!(native_target("windows-x86_64", "windows-x86_64").is_ok());
+        assert_eq!(
+            native_target("linux-aarch64", "linux-x86_64").unwrap_err(),
+            "source provisioning must run on the target host/architecture"
+        );
     }
 }

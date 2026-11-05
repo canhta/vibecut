@@ -49,14 +49,7 @@ pub(super) fn begin(required: bool) -> Result<(), String> {
         eprintln!("oracle: {}", receipt(tool));
     }
     if required {
-        let failures: Vec<String> = tools
-            .iter()
-            .filter_map(|tool| {
-                tool.problem
-                    .as_ref()
-                    .map(|problem| format!("{}: {problem}", tool.name))
-            })
-            .collect();
+        let failures = failures(&tools);
         if !failures.is_empty() {
             return Err(format!(
                 "required media oracles unavailable: {}",
@@ -71,6 +64,34 @@ pub(super) fn begin(required: bool) -> Result<(), String> {
         }
     }
     Ok(())
+}
+
+fn failures(tools: &[Tool]) -> Vec<String> {
+    tools
+        .iter()
+        .filter_map(|tool| {
+            tool.problem
+                .as_ref()
+                .map(|problem| format!("{}: {problem}", tool.name))
+        })
+        .collect()
+}
+
+/// Require usable platform media tools on hosts that link distribution libraries.
+pub(super) fn require_system() -> Result<(), String> {
+    let tools: Vec<Tool> = TOOLS.iter().map(|name| inspect(name)).collect();
+    for tool in &tools {
+        eprintln!("oracle: {}", receipt(tool));
+    }
+    let problems = failures(&tools);
+    if problems.is_empty() {
+        Ok(())
+    } else {
+        Err(format!(
+            "system media tools unavailable: {}",
+            problems.join("; ")
+        ))
+    }
 }
 
 fn receipt(tool: &Tool) -> String {
