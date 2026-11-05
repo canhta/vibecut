@@ -57,6 +57,7 @@ fn session_len(len: i64) -> Session {
         muted: false,
         locked: false,
         items: vec![Item {
+            retime: Default::default(),
             id: ItemId(20),
             source_asset: Some(AssetId(7)),
             source_range: SourceRange::new(Tick::ZERO, Tick(len)).unwrap(),
@@ -459,5 +460,49 @@ fn trimming_to_the_current_edge_preserves_a_split_fade() {
             assert_eq!(original, after, "{command} cut {cut}, sample {n}");
         }
         assert_eq!(&before, s.project());
+    }
+}
+
+#[test]
+fn retime_fade_limits_and_split_use_output_time() {
+    for (speed, clip) in [(0.5, 2000), (2.0, 500)] {
+        let mut s = session();
+        s.execute(
+            "timeline.set_speed",
+            json!({"items":[20],"speed":speed,"maintain_pitch":true}),
+        )
+        .unwrap();
+        set(&mut s, "in", clip, "linear").unwrap();
+        let before = fades(&s, 20);
+        assert_eq!(before.fade_in.duration, Tick(clip));
+        let cut = clip / 4;
+        let out = s.execute("split_at", json!({"item":20,"at":cut})).unwrap();
+        let right_id = out
+            .created
+            .iter()
+            .find_map(|id| match id {
+                engine::CreatedId::Item(id) => Some(id.0),
+                _ => None,
+            })
+            .unwrap();
+        let left = fades(&s, 20);
+        let right = fades(&s, right_id);
+        assert_eq!(left.fade_in.duration, Tick(clip));
+        assert_eq!(right.fade_in.duration, Tick(clip));
+        assert_eq!(right.fade_in.offset, Tick(cut));
+        let rate = time::TICKS_PER_SECOND;
+        let whole = before.spans(Tick::ZERO, Tick(clip), rate).unwrap();
+        let a = left.spans(Tick::ZERO, Tick(cut), rate).unwrap();
+        let b = right.spans(Tick(cut), Tick(clip), rate).unwrap();
+        for sample in 0..clip {
+            assert_eq!(
+                whole.gain(sample),
+                if sample < cut {
+                    a.gain(sample)
+                } else {
+                    b.gain(sample - cut)
+                }
+            );
+        }
     }
 }

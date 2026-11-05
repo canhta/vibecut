@@ -28,6 +28,7 @@ use vibecut::{
 fn overlay(id: u64) -> Item {
     Item {
         blend_mode: Default::default(),
+        retime: Default::default(),
         masks: Vec::new(),
         effects: Vec::new(),
         animations: Default::default(),

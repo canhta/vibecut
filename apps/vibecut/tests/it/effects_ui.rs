@@ -109,6 +109,7 @@ fn insert(
         .apply(Command::InsertItem {
             placement: Placement::Track { track },
             item: NewItem {
+                retime: Default::default(),
                 animations: Default::default(),
                 source_asset: asset,
                 source_range: SourceRange::new(Tick::ZERO, duration).unwrap(),

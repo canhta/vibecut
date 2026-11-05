@@ -88,6 +88,7 @@ fn insert(
         .apply(Command::InsertItem {
             placement: engine::Placement::Track { track },
             item: NewItem {
+                retime: Default::default(),
                 animations: Default::default(),
                 source_asset: asset,
                 source_range: source,

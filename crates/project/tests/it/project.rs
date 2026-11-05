@@ -11,13 +11,13 @@ use time::{FrameRate, SourceRange, Tick};
 fn save_fixture(path: &std::path::Path, project: &Project) -> project::Result<SaveReceipt> {
     WriterLease::acquire(path)?.save(project)
 }
-fn range(start: i64, end: i64) -> SourceRange {
+pub(crate) fn range(start: i64, end: i64) -> SourceRange {
     SourceRange::new(Tick(start), Tick(end)).unwrap()
 }
-fn empty() -> Project {
+pub(crate) fn empty() -> Project {
     Project::empty(ProjectId(1), "Dự án Việt Nam".into()).unwrap()
 }
-fn source(path: PathBuf) -> SourceAsset {
+pub(crate) fn source(path: PathBuf) -> SourceAsset {
     SourceAsset::try_from(AssetData {
         ephemeral: false,
         id: AssetId(3),
@@ -83,6 +83,7 @@ fn item(id: u64, start: i64) -> Item {
                 line_height: 30.0,
             },
         )],
+        retime: Default::default(),
         effects: Vec::new(),
         animations: Default::default(),
         id: ItemId(id),
@@ -178,6 +179,7 @@ fn populated(path: PathBuf) -> Project {
             locked: true,
             items: vec![Item {
                 blend_mode: Default::default(),
+                retime: Default::default(),
                 masks: Vec::new(),
                 effects: Vec::new(),
                 animations: Default::default(),

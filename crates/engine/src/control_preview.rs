@@ -128,6 +128,7 @@ pub(crate) fn preview(
                     locked: false,
                     items: vec![project::Item {
                         blend_mode: Default::default(),
+                        retime: Default::default(),
                         masks: Vec::new(),
                         effects: Vec::new(),
                         animations: Default::default(),
@@ -161,6 +162,7 @@ pub(crate) fn preview(
                     locked: false,
                     items: vec![project::Item {
                         blend_mode: Default::default(),
+                        retime: Default::default(),
                         masks: Vec::new(),
                         effects: Vec::new(),
                         animations: Default::default(),

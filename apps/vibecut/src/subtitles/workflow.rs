@@ -210,6 +210,7 @@ fn insert(
     Ok(Command::InsertItem {
         placement: engine::Placement::Auto,
         item: NewItem {
+            retime: Default::default(),
             animations: Default::default(),
             source_asset: asset,
             source_range: range,

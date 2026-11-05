@@ -32,6 +32,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     session.apply(Command::InsertItem {
         placement: engine::Placement::Track { track },
         item: NewItem {
+            retime: Default::default(),
             animations: Default::default(),
             source_asset: Some(media::AssetId(1)),
             source_range: time::SourceRange::new(time::Tick::ZERO, duration)?,

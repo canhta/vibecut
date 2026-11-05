@@ -35,6 +35,8 @@ pub use transition::{
 mod transform;
 pub use metadata::{METADATA_VERSION, Metadata, Thumbnail, ViewState, path as metadata_path};
 pub use transform::TransformField;
+mod retime;
+pub use retime::{Cut, Retime};
 mod persistence;
 mod typography;
 mod writer;

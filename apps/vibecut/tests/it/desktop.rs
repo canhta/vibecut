@@ -34,6 +34,7 @@ fn session() -> Session {
         .apply(Command::InsertItem {
             placement: engine::Placement::Track { track },
             item: NewItem {
+                retime: Default::default(),
                 animations: Default::default(),
                 source_asset: None,
                 source_range: SourceRange::new(Tick::ZERO, Tick(TICKS_PER_SECOND * 10)).unwrap(),
@@ -916,6 +917,7 @@ fn new_seek_cancels_audio_preroll_and_keeps_the_replacement_epoch_alive() {
             effects: vec![],
             masks: vec![],
             blend_mode: Default::default(),
+            retime: Default::default(),
             content: ItemParams::Audio(project::AudioParams {
                 fades: Default::default(),
                 volume: 0.0,

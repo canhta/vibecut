@@ -21,6 +21,7 @@ mod model_transfers;
 mod providers;
 mod recovery;
 mod render_kernels;
+mod retime;
 mod review_repros;
 mod scenes;
 mod shot_analysis;

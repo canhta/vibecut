@@ -218,6 +218,7 @@ mod tests {
             items: (0..2)
                 .map(|n| Item {
                     blend_mode: Default::default(),
+                    retime: Default::default(),
                     masks: Vec::new(),
                     effects: vec![],
                     animations: Default::default(),

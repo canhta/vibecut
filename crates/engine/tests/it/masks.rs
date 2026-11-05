@@ -16,6 +16,7 @@ fn session() -> Session {
         locked: false,
         items: vec![Item {
             blend_mode: Default::default(),
+            retime: Default::default(),
             masks: Vec::new(),
             effects: vec![],
             animations: Default::default(),

@@ -110,6 +110,7 @@ fn insert(
         .apply(Command::InsertItem {
             placement: Placement::Track { track },
             item: NewItem {
+                retime: Default::default(),
                 animations: Default::default(),
                 source_asset: asset,
                 source_range: SourceRange::new(Tick::ZERO, end).unwrap(),
@@ -1084,6 +1085,95 @@ fn opacity_and_audio_gain_scrub_through_their_tabs() {
         panic!("audio")
     };
     assert_eq!(params.volume, 0.04);
+}
+
+#[test]
+fn speed_tab_scrubs_resets_and_toggles_pitch_through_one_command() {
+    let fixture = fixture();
+    let mut harness = build(fixture.editor);
+    harness.run_steps(3);
+    select(&mut harness, fixture.video);
+    click(&mut harness, "inspector.tab.speed");
+    assert!(has_widget(&harness, "inspector.speed"));
+    assert!(has_widget(&harness, "inspector.speed.duration"));
+    assert_eq!(
+        item(&harness, fixture.video).retime,
+        project::Retime::default()
+    );
+
+    // 100 px at 2 px per 0.01 step is +0.5x, one undo step; the clip shortens to match.
+    let history = harness.state().session.history_len();
+    drag(
+        &mut harness,
+        "inspector.speed.scrub",
+        egui::vec2(100.0, 0.0),
+    );
+    assert_eq!(harness.state().session.history_len().0, history.0 + 1);
+    let scrubbed = item(&harness, fixture.video);
+    assert_eq!(scrubbed.retime.speed.as_f64(), 1.5);
+    assert_eq!(
+        scrubbed.duration().unwrap(),
+        Tick(2 * SECOND * 2 / 3),
+        "duration follows speed over the same source range"
+    );
+
+    // "Change pitch" starts off (pitch preserved); turning it on lets pitch follow speed.
+    assert!(item(&harness, fixture.video).retime.maintain_pitch);
+    click(&mut harness, "inspector.speed.pitch");
+    let kept = item(&harness, fixture.video);
+    assert!(!kept.retime.maintain_pitch);
+    assert_eq!(kept.retime.speed.as_f64(), 1.5);
+
+    // Reset returns to 1x, keeps the pitch policy, and is inert afterwards.
+    click(&mut harness, "inspector.speed.reset");
+    let reset = item(&harness, fixture.video);
+    assert_eq!(reset.retime.speed, time::Speed::UNITY);
+    assert!(!reset.retime.maintain_pitch, "reset keeps the pitch policy");
+    assert_eq!(reset.duration().unwrap(), Tick(2 * SECOND));
+    let history = harness.state().session.history_len();
+    click(&mut harness, "inspector.speed.reset");
+    assert_eq!(harness.state().session.history_len(), history);
+
+    // Three committed edits undo one by one.
+    for _ in 0..3 {
+        harness.state_mut().session.undo().unwrap();
+    }
+    assert_eq!(
+        item(&harness, fixture.video).retime,
+        project::Retime::default()
+    );
+
+    // Audio items get the same controls; a video without audio has nothing to pitch-shift.
+    select(&mut harness, fixture.audio);
+    click(&mut harness, "inspector.tab.speed");
+    assert!(has_widget(&harness, "inspector.speed.pitch"));
+    select(&mut harness, fixture.silent_video);
+    click(&mut harness, "inspector.tab.speed");
+    assert!(has_widget(&harness, "inspector.speed"));
+    assert!(!has_widget(&harness, "inspector.speed.pitch"));
+}
+
+#[test]
+#[ignore = "renders through wgpu; run with --ignored to refresh target/p1-41-retime.png"]
+fn speed_tab_renders_the_retimed_clip_controls() {
+    let fixture = fixture();
+    let mut harness = build(fixture.editor);
+    harness.run_steps(3);
+    select(&mut harness, fixture.video);
+    click(&mut harness, "inspector.tab.speed");
+    drag(
+        &mut harness,
+        "inspector.speed.scrub",
+        egui::vec2(100.0, 0.0),
+    );
+    click(&mut harness, "inspector.speed.pitch");
+    harness.run_steps(3);
+    let image = harness.render().expect("offscreen render");
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let target = root.join("target");
+    std::fs::create_dir_all(&target).unwrap();
+    image.save(target.join("p1-41-retime.png")).unwrap();
+    assert!(image.width() > 0 && image.height() > 0);
 }
 
 #[test]

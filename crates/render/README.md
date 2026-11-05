@@ -123,6 +123,22 @@ fills gaps and half-open inactive intervals. A block admits at most 65,536 sampl
 per channel and 4,096 audible spans. Stereo stays L/R; mono duplicates at unity;
 stereo to mono averages L/R. Other source layouts are explicitly unsupported.
 
+A retimed item (project `retime`) plays source position `n * speed` at item-local
+output sample `n`. With `maintain_pitch` off, a streaming resampler reads that
+position with linear interpolation, area-averaging ceil(speed) taps above 1x so
+fast playback does not alias; pitch follows speed. With it on, WSOLA time stretch
+keeps pitch: 40 ms squared-Hann grains at a 20 ms output hop, source offsets
+searched within +/-8 ms for the best continuation of the previous grain, summed with
+window-weight normalization so item edges keep unity gain and source outside the
+trimmed window never leaks in. Every output sample depends only on the item, the
+speed and the source, so block partitions and seeks (which replay from timeline
+zero like the limiter) give identical audio, and source reads only move forward.
+The mixer keeps one bounded, leased retimer per active retimed item. Unmeasured:
+perceptual quality on speech or music (tests use pure tones, whose purity and
+click bounds live in `tests/it/retime_audio.rs`). Stream copy is refused for
+retimed items, and video frames use the nearest earlier source frame at the
+mapped source time.
+
 Media resamples each continuous source from its original clock, retaining filter
 phase across arbitrary block partitions, splits and trims. Seeking backwards
 restarts that source cursor. Source-rate decode and AAC priming are media-owned;

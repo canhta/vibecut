@@ -1809,6 +1809,7 @@ pub(crate) fn build_session(
         session.apply(Command::InsertItem {
             placement: crate::Placement::Track { track: video },
             item: NewItem {
+                retime: Default::default(),
                 animations: Animations::default(),
                 source_asset: Some(asset.id()),
                 source_range: range,
@@ -1831,6 +1832,7 @@ pub(crate) fn build_session(
     session.apply(Command::InsertItem {
         placement: crate::Placement::Track { track: captions },
         item: NewItem {
+            retime: Default::default(),
             animations: Animations::default(),
             source_asset: Some(asset.id()),
             source_range: range,

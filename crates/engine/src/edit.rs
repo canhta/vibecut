@@ -159,7 +159,9 @@ pub(crate) fn check_budget(command: &Command) -> Result<()> {
             Command::MoveItems { moves } if moves.len() > crate::control::MAX_COLLECTION => {
                 return Err(EditError::Limit);
             }
-            Command::Delete { items } | Command::SetItemParamMany { items, .. }
+            Command::Delete { items }
+            | Command::SetItemParamMany { items, .. }
+            | Command::SetSpeed { items, .. }
                 if items.len() > crate::control::MAX_COLLECTION =>
             {
                 return Err(EditError::Limit);
@@ -296,6 +298,52 @@ fn effect_item(data: &mut ProjectData, id: ItemId) -> Result<&mut Item> {
     }
     Ok(target)
 }
+/// Change one video/audio item's speed, keeping its source window. Keyframes stretch
+/// with the item; on a magnetic main track later items ripple by the duration change.
+fn set_speed(
+    data: &mut ProjectData,
+    id: ItemId,
+    speed: time::Speed,
+    maintain_pitch: bool,
+) -> Result<()> {
+    let timeline = &mut data.scene_mut().timeline;
+    let ripple = timeline.magnet && timeline.main.items.iter().any(|i| i.id == id);
+    let Some(t) = timeline
+        .iter_mut()
+        .find(|t| t.items.iter().any(|i| i.id == id))
+    else {
+        return Err(EditError::NoItem(id));
+    };
+    unlocked(t)?;
+    let index = t
+        .items
+        .iter()
+        .position(|i| i.id == id)
+        .ok_or(EditError::NoItem(id))?;
+    let target = t.items.get_mut(index).ok_or(EditError::NoItem(id))?;
+    if !matches!(target.content, ItemParams::Video(_) | ItemParams::Audio(_)) {
+        return Err(EditError::Unsupported("speed on non-media item"));
+    }
+    let old_end = target.end()?;
+    let (num, den) = target.retime.speed.stretch_to(speed);
+    if num != den {
+        target.animations.retime(num, den)?;
+    }
+    target.retime = project::Retime {
+        speed,
+        maintain_pitch,
+    };
+    let new_end = target.end()?;
+    if ripple {
+        let delta = sub(new_end, old_end)?;
+        for later in t.items.iter_mut().skip(index + 1) {
+            if later.start >= old_end {
+                later.start = add(later.start, delta)?;
+            }
+        }
+    }
+    Ok(())
+}
 fn take_item(data: &mut ProjectData, id: ItemId) -> Result<Item> {
     for t in data.scene_mut().timeline.iter_mut() {
         if let Some(index) = t.items.iter().position(|i| i.id == id) {
@@ -323,7 +371,12 @@ fn fades_mut(content: &mut ItemParams) -> Option<&mut project::Fades> {
 
 /// Keep caption clipping with its mapping owner, retaining source cue identity and text.
 /// The caller supplies authoritative cues, never a previously clipped preview.
-fn set_range(item: &mut Item, range: SourceRange, sources: &mut TrimSources) -> Result<()> {
+fn set_range(
+    item: &mut Item,
+    range: SourceRange,
+    key_shift: Tick,
+    sources: &mut TrimSources,
+) -> Result<()> {
     if let ItemParams::Caption(p) = &mut item.content {
         let mapping = captions::EditMapping::new(vec![(range, range.start())])?;
         let source = sources
@@ -335,8 +388,8 @@ fn set_range(item: &mut Item, range: SourceRange, sources: &mut TrimSources) -> 
         }
         p.cues = cues;
     }
-    let shift = sub(item.source_range.start(), range.start())?;
-    item.animations.shift(shift)?;
+    // Keys are item-relative output ticks: they shift by the start edge's output move.
+    item.animations.shift(key_shift)?;
     item.source_range = range;
     Ok(())
 }
@@ -623,6 +676,7 @@ fn import_captions(
         Command::InsertItem {
             placement: Placement::Track { track: target },
             item: NewItem {
+                retime: Default::default(),
                 animations: project::Animations::default(),
                 source_asset: Some(asset_id),
                 source_range,
@@ -802,7 +856,7 @@ pub(crate) fn apply(
             curve,
         } => {
             let target = item(&mut data, id)?;
-            let clip = target.source_range.duration();
+            let clip = target.duration()?;
             let Some(fades) = fades_mut(&mut target.content) else {
                 return Err(EditError::Invalid("fade needs an audio or video item"));
             };
@@ -945,7 +999,9 @@ pub(crate) fn apply(
                 placement,
                 kind,
                 new.start,
-                new.source_range.duration(),
+                new.retime
+                    .speed
+                    .output_duration(new.source_range.duration())?,
                 created,
                 next,
             )?;
@@ -986,6 +1042,7 @@ pub(crate) fn apply(
                     source_asset: new.source_asset,
                     source_range: new.source_range,
                     start,
+                    retime: new.retime,
                     content: new.content,
                 },
             );
@@ -1004,19 +1061,12 @@ pub(crate) fn apply(
         Command::MoveItems { moves } => move_items(&mut data, moves)?,
         Command::SplitAt { item: id, at } => {
             let left = item(&mut data, id)?;
-            if at <= left.start || at >= left.end()? {
-                return Err(EditError::Invalid("split must be inside item"));
-            }
-            let cut = add(left.source_range.start(), sub(at, left.start)?)?;
             let (start, end_tick) = (left.start, left.end()?);
+            let (left_cut, right_cut) = left.split_at(at)?;
             let mut right = left.clone();
-            let end = left.source_range.end();
-            set_range(
-                left,
-                SourceRange::new(left.source_range.start(), cut)?,
-                sources,
-            )?;
-            set_range(&mut right, SourceRange::new(cut, end)?, sources)?;
+            set_range(left, left_cut.source_range, Tick::ZERO, sources)?;
+            let shift = sub(right.start, right_cut.start)?;
+            set_range(&mut right, right_cut.source_range, shift, sources)?;
             // A split establishes independent retained content for both new pieces.
             if let ItemParams::Caption(p) = &left.content {
                 sources.insert(left.id, Arc::new(p.cues.clone()));
@@ -1026,10 +1076,10 @@ pub(crate) fn apply(
             if let (Some(l), Some(r)) =
                 (fades_mut(&mut left.content), fades_mut(&mut right.content))
             {
-                (*l, *r) = l.split(start, at, end_tick)?;
+                (*l, *r) = l.split(start, right_cut.start, end_tick)?;
             }
             right.id = ItemId(alloc(next)?);
-            right.start = at;
+            right.start = right_cut.start;
             if let ItemParams::Caption(p) = &right.content {
                 sources.insert(right.id, Arc::new(p.cues.clone()));
             }
@@ -1051,12 +1101,11 @@ pub(crate) fn apply(
         Command::TrimStart { item: id, at } => {
             let item = item(&mut data, id)?;
             let moved = item.start != at;
-            let source = add(item.source_range.start(), sub(at, item.start)?)?;
-            let range = SourceRange::new(source, item.source_range.end())?;
-            set_range(item, range, sources)?;
-            item.start = at;
-            // A trimmed edge starts a fresh fade of the audible length, yielding to the other.
-            let clip = item.source_range.duration();
+            let cut = item.trim_start(at)?;
+            let shift = sub(item.start, cut.start)?;
+            set_range(item, cut.source_range, shift, sources)?;
+            item.start = cut.start;
+            let clip = item.duration()?;
             if moved && let Some(fades) = fades_mut(&mut item.content) {
                 let curve = fades.fade_in.curve;
                 let window = fades.fade_in.window();
@@ -1066,13 +1115,9 @@ pub(crate) fn apply(
         Command::TrimEnd { item: id, at } => {
             let item = item(&mut data, id)?;
             let moved = item.end()? != at;
-            let end = add(item.source_range.start(), sub(at, item.start)?)?;
-            set_range(
-                item,
-                SourceRange::new(item.source_range.start(), end)?,
-                sources,
-            )?;
-            let clip = item.source_range.duration();
+            let cut = item.trim_end(at)?;
+            set_range(item, cut.source_range, Tick::ZERO, sources)?;
+            let clip = item.duration()?;
             if moved && let Some(fades) = fades_mut(&mut item.content) {
                 let curve = fades.fade_out.curve;
                 let window = fades.fade_out.window();
@@ -1105,7 +1150,7 @@ pub(crate) fn apply(
             let end = removed.end()?;
             for item in &mut t.items {
                 if item.start >= end {
-                    item.start = sub(item.start, removed.source_range.duration())?;
+                    item.start = sub(item.start, removed.duration()?)?;
                 }
             }
         }
@@ -1123,6 +1168,22 @@ pub(crate) fn apply(
             apply_patch(target, &patch, copied_text_bytes)?;
         }
         Command::SetCanvasBackground { color } => data.canvas.background = color,
+        Command::SetSpeed {
+            items,
+            speed,
+            maintain_pitch,
+        } => {
+            if items.is_empty() {
+                return Err(EditError::Invalid("empty item selection"));
+            }
+            let mut seen = BTreeSet::new();
+            for id in items {
+                if !seen.insert(id) {
+                    return Err(EditError::Invalid("duplicate speed item"));
+                }
+                set_speed(&mut data, id, speed, maintain_pitch)?;
+            }
+        }
         Command::SetItemParamMany { items, patch } => {
             patch.validate()?;
             if items.is_empty() {
@@ -1416,7 +1477,7 @@ pub(crate) fn apply(
                 }
             }
             if retained {
-                set_range(item, item.source_range, sources)?;
+                set_range(item, item.source_range, Tick::ZERO, sources)?;
             }
         }
         Command::Batch { commands } => {

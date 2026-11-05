@@ -353,6 +353,7 @@ struct DragState {
     press_x: f32,
     origins: Vec<DragOrigin>,
     source_range: SourceRange,
+    speed: time::Speed,
     moved: bool,
 }
 #[derive(Clone, Debug)]
@@ -411,6 +412,16 @@ const TEXT_SIZE_SCRUB: ScrubSpec = ScrubSpec {
     pixels_per_step: 2.0,
     decimals: 0,
     suffix: "px",
+};
+const SPEED_SCRUB: ScrubSpec = ScrubSpec {
+    field: "speed",
+    label: Text::Speed,
+    min: 0.01,
+    max: 5.0,
+    step: 0.01,
+    pixels_per_step: 2.0,
+    decimals: 2,
+    suffix: "x",
 };
 const AUDIO_GAIN_SCRUB: ScrubSpec = ScrubSpec {
     field: "audio_gain",
@@ -1471,6 +1482,7 @@ impl Editor {
                         "media duration is unavailable",
                     ))?;
                 let item = NewItem {
+                    retime: Default::default(),
                     animations: Default::default(),
                     source_asset: Some(asset.id()),
                     source_range: SourceRange::new(Tick::ZERO, duration)?,
@@ -1553,6 +1565,7 @@ impl Editor {
             let outcome = session.apply(Command::InsertItem {
                 placement: engine::Placement::Auto,
                 item: NewItem {
+                    retime: Default::default(),
                     animations: Default::default(),
                     source_asset: None,
                     source_range: SourceRange::new(Tick::ZERO, duration)?,
@@ -2854,6 +2867,7 @@ impl Editor {
         }
         let mut origins = Vec::new();
         let mut source_range = None;
+        let mut speed = time::Speed::UNITY;
         for track in self.session.project().data().scene().timeline.iter() {
             for candidate in &track.items {
                 let wanted = if mode == DragMode::Move {
@@ -2873,6 +2887,7 @@ impl Editor {
                     });
                     if candidate.id == item {
                         source_range = Some(candidate.source_range);
+                        speed = candidate.retime.speed;
                     }
                 }
             }
@@ -2887,6 +2902,7 @@ impl Editor {
             press_x,
             origins,
             source_range,
+            speed,
             moved: false,
         });
     }
@@ -3356,7 +3372,14 @@ impl Editor {
             return (Tick::ZERO, Tick::ZERO);
         };
         let mut low = match mode {
-            DragMode::TrimStart => (origin.start - drag.source_range.start()).max(Tick::ZERO),
+            DragMode::TrimStart => {
+                // Output time that the source before the trim point would play for.
+                let before = drag
+                    .speed
+                    .output_duration(drag.source_range.start())
+                    .unwrap_or(Tick::ZERO);
+                (origin.start - before).max(Tick::ZERO)
+            }
             DragMode::TrimEnd => origin.start + minimum,
             DragMode::Move => return (Tick::ZERO, Tick::ZERO),
         };
@@ -3393,7 +3416,11 @@ impl Editor {
                 .find(|asset| Some(asset.id()) == self.item_asset(drag.item))
             && let Some(duration) = asset.probe().duration
         {
-            high = high.min(origin.start + (duration - drag.source_range.start()));
+            let after = drag
+                .speed
+                .output_duration(duration - drag.source_range.start())
+                .unwrap_or(Tick::ZERO);
+            high = high.min(origin.start + after);
         }
         if high < low {
             high = low;
@@ -5941,6 +5968,9 @@ impl Editor {
                     self.audio_mute_control(ui, &field);
                 }
             }
+            PropertiesTab::Speed if matches!(kind, ElementKind::Video | ElementKind::Audio) => {
+                self.speed_controls(ui, item);
+            }
             PropertiesTab::Blending => {
                 self.blend_control(ui, item);
                 self.scrub_field(ui, item, OPACITY_SCRUB);
@@ -5958,6 +5988,103 @@ impl Editor {
             }
             _ => self.properties_stub(ui),
         }
+    }
+    /// Constant speed with reset and the pitch policy; both go through `timeline.set_speed`.
+    fn speed_controls(&mut self, ui: &mut egui::Ui, item: ItemId) {
+        let Some((current, maintain_pitch, has_audio)) = self.retime_of(item) else {
+            return;
+        };
+        self.scrub_field(ui, item, SPEED_SCRUB);
+        ui.add_space(8.0);
+        if let Some((source, output)) = self.retime_seconds(item) {
+            // The reference shows the source duration and the retimed duration.
+            ui.horizontal(|ui| {
+                ui.label(self.tr(Text::SpeedDuration));
+                let response = ui.label(
+                    egui::RichText::new(format!("{source:.2}s → {output:.2}s"))
+                        .color(self.secondary()),
+                );
+                self.remember("inspector.speed.duration", &response);
+            });
+            ui.add_space(8.0);
+        }
+        ui.horizontal(|ui| {
+            let reset = self.icon_only(
+                ui,
+                "inspector.speed.reset",
+                Icon::ArrowCounterClockwise,
+                self.tr(Text::SpeedReset),
+                None,
+                None,
+                current != 1.0,
+            );
+            if reset && let Err(error) = self.set_speed(item, 1.0, maintain_pitch) {
+                self.error = Some(error.to_string());
+            }
+        });
+        if has_audio {
+            ui.add_space(8.0);
+            // "Change pitch" on lets pitch follow speed, so it is the inverse of maintain_pitch.
+            let mut follows = !maintain_pitch;
+            let response = ui.add(egui::Checkbox::new(
+                &mut follows,
+                self.tr(Text::ChangePitch),
+            ));
+            self.remember("inspector.speed.pitch", &response);
+            if response.changed()
+                && let Err(error) = self.set_speed(item, current, !follows)
+            {
+                self.error = Some(error.to_string());
+            }
+        }
+    }
+    /// Source and retimed duration in seconds, for display only.
+    fn retime_seconds(&self, item: ItemId) -> Option<(f64, f64)> {
+        let found = self
+            .session
+            .project()
+            .data()
+            .scene()
+            .timeline
+            .iter()
+            .flat_map(|track| &track.items)
+            .find(|candidate| candidate.id == item)?;
+        Some((
+            found.source_range.duration().seconds(),
+            found.duration().ok()?.seconds(),
+        ))
+    }
+    /// Speed, pitch policy and whether the item has audio to retime.
+    fn retime_of(&self, item: ItemId) -> Option<(f64, bool, bool)> {
+        let found = self
+            .session
+            .project()
+            .data()
+            .scene()
+            .timeline
+            .iter()
+            .flat_map(|track| &track.items)
+            .find(|candidate| candidate.id == item)?;
+        let audible = match &found.content {
+            ItemParams::Audio(_) => true,
+            ItemParams::Video(params) => params.source_audio_enabled,
+            _ => return None,
+        };
+        Some((
+            found.retime.speed.as_f64(),
+            found.retime.maintain_pitch,
+            audible,
+        ))
+    }
+    /// One element's committed speed edit through the registered command.
+    pub fn set_speed(&mut self, item: ItemId, speed: f64, maintain_pitch: bool) -> Result<()> {
+        self.session.set_selection(self.selection.clone())?;
+        self.session.execute(
+            "timeline.set_speed",
+            serde_json::json!({"items":[item],"speed":speed,"maintain_pitch":maintain_pitch}),
+        )?;
+        self.sync_preview();
+        Ok(())
     }
     fn effects_stack(&mut self, ui: &mut egui::Ui, item: ItemId) {
         let effects = self
@@ -6861,6 +6988,9 @@ impl Editor {
             ("text_size", ItemParams::Text(params)) => Some(f64::from(params.font_size)),
             ("audio_gain", ItemParams::Audio(params)) => Some(f64::from(params.volume)),
             ("audio_gain", ItemParams::Video(params)) => Some(f64::from(params.volume)),
+            ("speed", ItemParams::Audio(_) | ItemParams::Video(_)) => {
+                Some(item.retime.speed.as_f64())
+            }
             _ => None,
         }
     }
@@ -7203,6 +7333,14 @@ impl Editor {
     }
     /// One element's committed field edit, through the singular registered command.
     pub fn set_item_field(&mut self, item: ItemId, field: &str, value: &str) -> Result<()> {
+        if field == "speed" {
+            let speed = value
+                .trim()
+                .parse::<f64>()
+                .map_err(|_| Error::Invalid("speed"))?;
+            let (_, maintain_pitch, _) = self.retime_of(item).ok_or(Error::Invalid("speed"))?;
+            return self.set_speed(item, speed, maintain_pitch);
+        }
         let patch = item_patch(field, value)?;
         self.session.set_selection(self.selection.clone())?;
         self.session.execute(

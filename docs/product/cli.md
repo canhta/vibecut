@@ -68,6 +68,8 @@ vibecut-cli project info demo.vibecut --json
 
 `project.set_view_state` takes `{"zoom":2,"scroll":40,"playhead":0}` (logical-pixel scroll, integer-tick playhead), persists optional metadata and leaves editable project bytes unchanged. `project.rename` takes `{"name":"My project"}`; `project.save` takes `{}`. Missing/corrupt metadata defaults on open. `project new` uses the registered creation command; `exec` refuses creation inside an existing session. Project info and edits refuse a busy writer instead of reading stale state or overwriting another session.
 
+`timeline.set_speed` takes `{"items":[1,2],"speed":2.0,"maintain_pitch":true}`: it retimes the listed video/audio items together (pass a linked video and audio item in one call to keep them in sync), keeping each source window, and `export` renders the result at that speed with pitch preserved or following speed.
+
 Keyframed item parameters are ordinary registry commands: `keyframes.set_param`, `keyframes.add`, `keyframes.remove`, `keyframes.retime`, `keyframes.set_handle` and `keyframes.scale_time` accept the project animation shapes. `export` evaluates the saved curves through render's single project evaluator; for example an `opacity` channel animates a clip in the exported frames.
 
 `audio.set_fade {item, edge, duration, curve}` (`edge` `in`|`out`, `curve` `equal_power`|`linear`|`exponential`, duration in ticks) fades an audio or video clip edge; the same envelope is applied to the exported audio and to preview.

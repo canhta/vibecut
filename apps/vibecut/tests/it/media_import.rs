@@ -884,6 +884,7 @@ fn import_and_insert_refresh_playback_with_the_new_project_snapshot() {
             .apply(Command::InsertItem {
                 placement: engine::Placement::Track { track },
                 item: engine::NewItem {
+                    retime: Default::default(),
                     animations: Default::default(),
                     source_asset: None,
                     source_range: time::SourceRange::new(Tick::ZERO, Tick(10 * SECOND)).unwrap(),

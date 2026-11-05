@@ -322,18 +322,13 @@ fn admission(
                 value
             };
             if let Some(reason) = reason {
-                // A transition clip outside the range reports its whole source window.
                 let window = if overlaps {
-                    let start = item
-                        .source_range
-                        .start()
-                        .checked_add(range.start().max(item.start) - item.start)
-                        .ok_or(Error::Invalid("diagnostic range"))?;
-                    let end = item
-                        .source_range
-                        .start()
-                        .checked_add(range.end().min(item.end()?) - item.start)
-                        .ok_or(Error::Invalid("diagnostic range"))?;
+                    let start = item.source_time_at(range.start().max(item.start))?;
+                    let end = item.source_time_at(range.end().min(item.end()?))?.max(
+                        start
+                            .checked_add(Tick(1))
+                            .ok_or(Error::Invalid("diagnostic range"))?,
+                    );
                     TimeRange::new(start, end)?
                 } else {
                     item.source_range
@@ -379,6 +374,7 @@ fn copy_plan<'a>(
         || item.masks.iter().any(|m| m.active())
         || !item.effects.is_empty()
         || items.len() != 1
+        || !item.retime.speed.is_unity()
         || item.start > range.start()
         || item.end()? < range.end()
         || item.animations.iter().any(|(path, _)| {

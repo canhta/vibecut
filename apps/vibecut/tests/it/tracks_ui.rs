@@ -194,6 +194,7 @@ fn track_editor() -> (Editor, project::TrackId, project::ItemId) {
         .apply(Command::InsertItem {
             placement: Placement::Track { track: text_track },
             item: NewItem {
+                retime: Default::default(),
                 animations: Default::default(),
                 source_asset: None,
                 source_range: SourceRange::new(Tick::ZERO, Tick(time::TICKS_PER_SECOND * 4))

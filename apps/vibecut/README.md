@@ -208,8 +208,13 @@ The selection inspector shows audio gain/mute and text content, font, size, colo
 background and position for compatible selected items, with a dash for mixed
 values and the compatible/selected count. A single element uses the per-type tabs
 above instead: Text has content, font, background and position fields alongside a
-size scrub and colour entry, Blending a blend menu and opacity scrub, and Audio a
-gain scrub and mute checkbox.
+size scrub and colour entry, Blending a blend menu and opacity scrub, Audio a
+gain scrub and mute checkbox, and Speed (video and audio) a 0.01-5x scrub with a
+reset button and, when the item has audio, a "Change pitch" checkbox. "Change
+pitch" is on while pitch follows speed (`maintain_pitch` off), as in the reference.
+Speed edits go through `timeline.set_speed`, one undo step per commit; the timeline
+trim handles bound extension by the retimed output length. Caption generation
+refuses a retimed source item until captions gain a rate-aware mapping.
 Each scrub field has a left drag handle, a click-to-type entry and clamps; the
 drag previews through an engine gesture, commits as one registered
 `timeline.set_item_param` undo step on release, and Escape cancels the gesture or
@@ -217,7 +222,7 @@ the typed draft. Changing selection or hiding the scrub field cancels its
 preview before another edit can join the gesture. Invalid or non-finite input refuses without changing the item.
 Drag sensitivity is our recorded decision because the inventory leaves it
 unverified: opacity and audio gain move one 0.01/1 dB step per 4 px, and text size
-one px per 2 px. Enter or blur commits a typed shared-field patch through the
+one px per 2 px, speed 0.01 per 2 px. Enter or blur commits a typed shared-field patch through the
 engine registry in one undo step. Text editing owns keyboard input while focused.
 The text button inserts a five-second title at the playhead in one undo step.
 Video volume awaits its owning contract before joining the same inspector.

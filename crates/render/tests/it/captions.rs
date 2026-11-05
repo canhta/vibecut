@@ -28,6 +28,7 @@ fn scene(texts: &[(&str, &str)]) -> project::Project {
         locked: false,
         items: vec![project::Item {
             blend_mode: Default::default(),
+            retime: Default::default(),
             masks: Vec::new(),
             effects: Vec::new(),
             animations: Default::default(),

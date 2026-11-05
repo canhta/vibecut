@@ -23,6 +23,7 @@ fn new_item(start: i64, duration: i64) -> NewItem {
         source_asset: None,
         source_range: range(100, 100 + duration),
         start: Tick(start),
+        retime: Default::default(),
         content: content(),
     }
 }
@@ -49,6 +50,7 @@ fn project() -> Project {
         .items = vec![
         Item {
             blend_mode: Default::default(),
+            retime: Default::default(),
             masks: Vec::new(),
             effects: Vec::new(),
             animations: Default::default(),
@@ -60,6 +62,7 @@ fn project() -> Project {
         },
         Item {
             blend_mode: Default::default(),
+            retime: Default::default(),
             masks: Vec::new(),
             effects: Vec::new(),
             animations: Default::default(),
@@ -613,6 +616,7 @@ fn media_handles_and_typed_parameter_validation_are_atomic() {
         .apply(Command::InsertItem {
             placement: engine::Placement::Track { track: TrackId(1) },
             item: NewItem {
+                retime: Default::default(),
                 animations: Default::default(),
                 source_asset: Some(AssetId(1)),
                 source_range: range(200, 300),
@@ -665,6 +669,7 @@ fn media_handles_and_typed_parameter_validation_are_atomic() {
         Command::InsertItem {
             placement: engine::Placement::Track { track: TrackId(2) },
             item: NewItem {
+                retime: Default::default(),
                 animations: Default::default(),
                 source_asset: Some(AssetId(99)),
                 source_range: range(0, 10),
@@ -680,6 +685,7 @@ fn media_handles_and_typed_parameter_validation_are_atomic() {
         Command::InsertItem {
             placement: engine::Placement::Track { track: TrackId(2) },
             item: NewItem {
+                retime: Default::default(),
                 animations: Default::default(),
                 source_asset: Some(AssetId(1)),
                 source_range: range(0, 10),
@@ -781,6 +787,7 @@ fn measure_large_project_gesture() {
     track.items = (0..10000)
         .map(|n| Item {
             blend_mode: Default::default(),
+            retime: Default::default(),
             masks: Vec::new(),
             effects: Vec::new(),
             animations: Default::default(),
@@ -1124,6 +1131,7 @@ fn caption_project() -> Project {
         locked: false,
         items: vec![Item {
             blend_mode: Default::default(),
+            retime: Default::default(),
             masks: Vec::new(),
             effects: Vec::new(),
             animations: Default::default(),
@@ -2129,6 +2137,7 @@ fn policy_insert(id: u64) -> Command {
     Command::InsertItem {
         placement: Default::default(),
         item: NewItem {
+            retime: Default::default(),
             animations: Default::default(),
             source_asset: Some(AssetId(id)),
             source_range: range(0, 1000),
@@ -2624,6 +2633,7 @@ fn audio_controls_are_atomic_undoable_persisted_and_strict() {
             effects: vec![],
             masks: vec![],
             blend_mode: Default::default(),
+            retime: Default::default(),
             content: ItemParams::Audio(project::AudioParams {
                 fades: Default::default(),
                 volume: 0.0,

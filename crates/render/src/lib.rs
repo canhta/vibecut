@@ -6,6 +6,7 @@ pub mod color;
 mod limiter;
 mod loudness;
 mod oversample;
+mod retime;
 pub use caption::{CaptionBackground, CaptionOutline, CaptionPosition, CaptionStyle};
 pub mod effects;
 mod export;

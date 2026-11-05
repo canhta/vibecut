@@ -47,6 +47,7 @@ pub fn insert(track: CueTrack) -> Command {
     Command::InsertItem {
         placement: engine::Placement::Auto,
         item: NewItem {
+            retime: Default::default(),
             animations: Default::default(),
             source_asset: Some(media::AssetId(1)),
             source_range: SourceRange::new(Tick::ZERO, Tick(10 * TICKS_PER_SECOND)).unwrap(),

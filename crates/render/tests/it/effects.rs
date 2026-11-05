@@ -141,6 +141,7 @@ fn item_blur_is_isolated_from_track_below_and_uses_animation() {
     data.canvas.height = 144;
     let item = Item {
         blend_mode: Default::default(),
+        retime: Default::default(),
         masks: vec![],
         effects: vec![EffectInstance {
             id: "b".into(),

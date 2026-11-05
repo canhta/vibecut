@@ -677,6 +677,7 @@ fn project_aggregate_key_budget_and_item_schema_are_enforced() {
         items: (0..2)
             .map(|i| Item {
                 blend_mode: Default::default(),
+                retime: Default::default(),
                 masks: Vec::new(),
                 effects: Vec::new(),
                 id: ItemId(i),

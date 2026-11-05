@@ -44,6 +44,7 @@ fn project(name: &str, width: u32, height: u32, duration: Tick) -> Project {
         locked: false,
         items: vec![Item {
             blend_mode: Default::default(),
+            retime: Default::default(),
             masks: Vec::new(),
             effects: Vec::new(),
             animations: Default::default(),

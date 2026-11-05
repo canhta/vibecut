@@ -92,6 +92,7 @@ fn customize(path: &Path, thumbnail: Thumbnail, duration: i64) {
             .apply(Command::InsertItem {
                 placement: Default::default(),
                 item: NewItem {
+                    retime: Default::default(),
                     animations: Default::default(),
                     source_asset: None,
                     source_range: SourceRange::new(Tick::ZERO, Tick(duration)).unwrap(),

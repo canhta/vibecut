@@ -14,4 +14,5 @@ mod media_pipeline;
 mod output_alias;
 mod transform;
 
+mod retime_audio;
 mod transitions;

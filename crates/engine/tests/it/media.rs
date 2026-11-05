@@ -78,6 +78,7 @@ fn insert_video(session: &mut Session, asset: AssetId) -> project::ItemId {
         .apply(Command::InsertItem {
             placement: Placement::Track { track: main },
             item: NewItem {
+                retime: Default::default(),
                 animations: Default::default(),
                 source_asset: Some(asset),
                 source_range: SourceRange::new(Tick::ZERO, Tick(1_000)).unwrap(),

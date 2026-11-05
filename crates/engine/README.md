@@ -328,9 +328,19 @@ initial allocation. Project and source constructors retain their own limits.
   fail; wrong track kinds, overlap and missing references fail whole-candidate
   validation. Touching half-open intervals are valid.
 - `split_at` uses an output tick strictly inside the identified item, retaining
-  the left ID and allocating a right ID with continuous source timing.
+  the left ID and allocating a right ID with continuous source timing. At a
+  retimed item the source cut comes from project's mapping, so the pieces touch
+  exactly, the right piece never ends after the original, and its keyframes move
+  by the left piece's output length.
 - `trim_start` / `trim_end` set absolute output edges, adjusting source edges at
-  unit speed with checked arithmetic. No implicit frame snapping/retiming occurs.
+  the item's speed with checked arithmetic (project's mapping keeps the other edge
+  fixed). No implicit frame snapping occurs.
+- `timeline.set_speed {items, speed, maintain_pitch}` retimes unique video/audio
+  items atomically, keeping each source window: the duration follows, keyframes
+  stretch by `old / new` and, on the magnetic main track, later items shift by the
+  duration change; elsewhere growth that would overlap a neighbour refuses. Pass
+  every linked video/audio item in one call to keep them in sync. Speed is the
+  decimal 0.01-5 (rounded to 0.001); generated items refuse.
   Known media handles bound extension; generated content has no media endpoint.
   Caption mapping clips retained cues through captions' mapping owner, preserving
   source cue IDs, languages, text, translation references and edit flags. A trim

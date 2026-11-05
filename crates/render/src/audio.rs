@@ -1,7 +1,13 @@
+use crate::retime::{Pitch, Retimer};
 use crate::{
     Error, ExecutionHooks, MemoryKind, Reservation, Result, SourceProvider, check, vector,
 };
+<<<<<<< HEAD
 use project::{ItemId, ItemParams, Project};
+=======
+use project::{ItemParams, Project};
+use std::collections::BTreeMap;
+>>>>>>> ba54052 (feat(retime): constant speed, pitch policy and retime-aware trim/split)
 use time::{Rounding, Tick};
 /// Planar f32 audio on the project output clock.
 /// Stereo default: mono duplicates at unity; stereo->mono averages L/R.
@@ -114,6 +120,7 @@ pub struct AudioMixer<'a> {
     channels: u16,
     fade_ms: u16,
     limiter: crate::limiter::Limiter,
+    retimers: BTreeMap<project::ItemId, Retimer>,
     next: Option<i64>,
     _lease: Box<dyn Reservation>,
 }
@@ -135,6 +142,7 @@ impl<'a> AudioMixer<'a> {
             channels,
             fade_ms,
             limiter: crate::limiter::Limiter::new(rate, channels),
+            retimers: BTreeMap::new(),
             next: None,
             _lease: lease,
         })
@@ -183,6 +191,8 @@ impl<'a> AudioMixer<'a> {
                     self.project.data().settings.audio_sample_rate,
                     self.channels,
                 );
+                // Retime state replays with the timeline from zero like the limiter.
+                self.retimers.clear();
                 // Prime delay from zero (or earlier silence for negative windows).
                 let origin = start.min(0);
                 self.next = Some(origin);
@@ -194,7 +204,11 @@ impl<'a> AudioMixer<'a> {
                     sources,
                     hooks,
                     self.fade_ms,
+<<<<<<< HEAD
                     &Chain::of(self.project),
+=======
+                    &mut self.retimers,
+>>>>>>> ba54052 (feat(retime): constant speed, pitch policy and retime-aware trim/split)
                 )?;
                 self.limiter.process(&mut prime.planes);
                 while self.next.is_some_and(|next| next < start) {
@@ -228,7 +242,11 @@ impl<'a> AudioMixer<'a> {
             sources,
             hooks,
             self.fade_ms,
+<<<<<<< HEAD
             &Chain::of(self.project),
+=======
+            &mut self.retimers,
+>>>>>>> ba54052 (feat(retime): constant speed, pitch policy and retime-aware trim/split)
         )?;
         self.limiter.process(&mut out.planes);
         Ok(out)
@@ -244,7 +262,11 @@ pub(crate) fn mix_raw(
     sources: &mut dyn SourceProvider,
     hooks: &dyn ExecutionHooks,
     fade_ms: u16,
+<<<<<<< HEAD
     chain: &Chain<'_>,
+=======
+    retimers: &mut BTreeMap<project::ItemId, Retimer>,
+>>>>>>> ba54052 (feat(retime): constant speed, pitch policy and retime-aware trim/split)
 ) -> Result<AudioBlock> {
     check(hooks)?;
     let rate = project.data().settings.audio_sample_rate;
@@ -296,15 +318,57 @@ pub(crate) fn mix_raw(
     }
     let active: Vec<_> = spans.iter().map(|(item, _, _, _, _, _)| item.id).collect();
     sources.begin_audio(&active);
+    retimers.retain(|id, _| active.contains(id));
     for (item, asset, i0, i1, a, b) in spans {
         check(hooks)?;
-        let source = item
+        let origin = item
             .source_range
             .start()
-            .to_units(i64::from(rate), Rounding::Nearest)?
-            .checked_add(a - i0)
-            .ok_or(Error::Invalid("source sample position"))?;
-        let input = sources.audio(asset, item.id, source, (b - a) as usize, rate, hooks)?;
+            .to_units(i64::from(rate), Rounding::Nearest)?;
+        let input = if item.retime.speed.is_unity() {
+            let source = origin
+                .checked_add(a - i0)
+                .ok_or(Error::Invalid("source sample position"))?;
+            sources.audio(asset, item.id, source, (b - a) as usize, rate, hooks)?
+        } else {
+            let length = item
+                .source_range
+                .end()
+                .to_units(i64::from(rate), Rounding::Nearest)?
+                - origin;
+            let pitch = if item.retime.maintain_pitch {
+                Pitch::Keep
+            } else {
+                Pitch::Follow
+            };
+            let speed = item.retime.speed.ratio();
+            if retimers
+                .get(&item.id)
+                .is_none_or(|r| !r.matches(rate, speed, pitch, length))
+            {
+                retimers.insert(item.id, Retimer::new(rate, speed, pitch, length, hooks)?);
+            }
+            let retimer = retimers
+                .get_mut(&item.id)
+                .ok_or(Error::Invalid("retime state"))?;
+            let mut pull = |at: i64, count: usize| -> Result<Vec<Vec<f32>>> {
+                Ok(sources
+                    .audio(asset, item.id, origin + at, count, rate, hooks)?
+                    .planes)
+            };
+            let planes = retimer.read(a - i0, (b - a) as usize, &mut pull, hooks)?;
+            let mut block = AudioBlock::new(
+                rate,
+                u16::try_from(planes.len()).map_err(|_| Error::Invalid("source audio block"))?,
+                (b - a) as usize,
+                MemoryKind::Decoded,
+                hooks,
+            )?;
+            for (dst, src) in block.planes.iter_mut().zip(&planes) {
+                dst.copy_from_slice(src);
+            }
+            block
+        };
         if input.rate != rate
             || input.samples() != (b - a) as usize
             || !matches!(input.planes.len(), 1 | 2)
@@ -390,6 +454,7 @@ pub(crate) fn mix_raw(
         }
         if b == i1 {
             sources.finish_audio(item.id);
+            retimers.remove(&item.id);
         }
     }
     if chain.master_db != 0.0 {

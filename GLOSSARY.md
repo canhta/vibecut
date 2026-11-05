@@ -8,6 +8,7 @@ Language for the editor's privacy and execution boundaries.
 - **Tick**: An integer time unit at 254_016_000_000 ticks per second, exact for admitted rational frame rates and audio sample rates.
 - **FrameRate**: An exact rational frames-per-second rate, stored as a positive numerator and denominator rather than a floating value.
 - **SourceRange**: A nonempty half-open `[start, end)` range in source-media ticks.
+- **Speed**: A video or audio item's constant playback rate, 0.01x to 5x on an exact 0.001 grid. The item keeps its source window and plays it for `floor(source / speed)` output ticks; its pitch policy chooses between pitch following speed and time-stretching with pitch preserved.
 - **SourceAsset**: A source-media identity and its location, content fingerprint and probed stream information; timeline items refer to it without copying its media.
 - **Transcript**: Source-language recognition result with stable segments and a provider/model/settings fingerprint.
 - **Cue**: Identified source range with source language and per-language text, independent edit flags and translation references.

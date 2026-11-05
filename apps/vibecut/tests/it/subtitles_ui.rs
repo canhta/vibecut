@@ -628,6 +628,7 @@ impl Workflow for GenerateWorkflow {
         Ok(Command::InsertItem {
             placement: engine::Placement::Auto,
             item: engine::NewItem {
+                retime: Default::default(),
                 animations: Default::default(),
                 source_asset: Some(asset.id()),
                 source_range: range,
@@ -678,6 +679,7 @@ fn source_clip(e: &mut Editor) -> project::ItemId {
         .apply(Command::InsertItem {
             placement: engine::Placement::Auto,
             item: engine::NewItem {
+                retime: Default::default(),
                 animations: Default::default(),
                 source_asset: Some(media::AssetId(2)),
                 source_range: time::SourceRange::new(Tick::ZERO, duration).unwrap(),

@@ -442,6 +442,7 @@ impl Session {
             let outcome = session.apply(Command::InsertItem {
                 placement,
                 item: NewItem {
+                    retime: Default::default(),
                     animations: project::Animations::default(),
                     source_asset: Some(source_asset),
                     source_range: SourceRange::new(Tick::ZERO, duration)?,

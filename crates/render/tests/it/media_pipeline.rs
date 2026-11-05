@@ -45,6 +45,7 @@ fn video_project(path: &Path) -> project::Project {
         locked: false,
         items: vec![project::Item {
             blend_mode: Default::default(),
+            retime: Default::default(),
             masks: Vec::new(),
             effects: Vec::new(),
             animations: Default::default(),
@@ -252,6 +253,7 @@ fn resampling_split_trim_offset_and_irregular_blocks_are_identical() {
         let end = tick(1, 1) - source_in;
         let mut items = vec![project::Item {
             blend_mode: Default::default(),
+            retime: Default::default(),
             masks: Vec::new(),
             effects: Vec::new(),
             animations: Default::default(),
@@ -270,6 +272,7 @@ fn resampling_split_trim_offset_and_irregular_blocks_are_identical() {
             items[0].source_range = TimeRange::new(Tick::ZERO, tick(1, 2)).unwrap();
             items.push(project::Item {
                 blend_mode: Default::default(),
+                retime: Default::default(),
                 masks: Vec::new(),
                 effects: Vec::new(),
                 animations: Default::default(),
@@ -646,6 +649,7 @@ fn missing_audio_only_is_required_only_when_audio_is_requested() {
         locked: false,
         items: vec![project::Item {
             blend_mode: Default::default(),
+            retime: Default::default(),
             masks: Vec::new(),
             effects: Vec::new(),
             animations: Default::default(),
@@ -1023,6 +1027,7 @@ fn stereo_policy_keeps_headroom_and_export_limits_overload() {
         locked: false,
         items: vec![project::Item {
             blend_mode: Default::default(),
+            retime: Default::default(),
             masks: Vec::new(),
             effects: Vec::new(),
             animations: Default::default(),
@@ -1731,6 +1736,7 @@ fn sound_library_attribution_and_licence_are_written_into_export_metadata() {
         locked: false,
         items: vec![project::Item {
             blend_mode: Default::default(),
+            retime: Default::default(),
             masks: Vec::new(),
             effects: Vec::new(),
             animations: Default::default(),
@@ -1853,6 +1859,7 @@ fn clip_fades_export_matches_the_preview_mix_across_block_partitions() {
         hidden: false,
         locked: false,
         items: vec![project::Item {
+            retime: Default::default(),
             blend_mode: Default::default(),
             masks: Vec::new(),
             effects: Vec::new(),

@@ -267,6 +267,12 @@ const SCENES: &[Scene] = &[
         build: models_vi,
     },
     Scene {
+        name: "inspector-speed",
+        reference_dark: None,
+        reference_light: None,
+        build: inspector_speed,
+    },
+    Scene {
         name: "inspector-audio",
         reference_dark: Some("capcut/illustrations/capcut-desktop-ui.png"),
         reference_light: Some("capcut/illustrations/capcut-desktop-ui.png"),
@@ -711,6 +717,7 @@ fn insert(
     let outcome = session.apply(Command::InsertItem {
         placement: Placement::Track { track },
         item: NewItem {
+            retime: Default::default(),
             animations: Default::default(),
             source_asset: asset,
             source_range,
@@ -935,6 +942,24 @@ fn timeline_selection(theme: Theme, scale: f32) -> Result<AppHarness, Failure> {
 
 fn timeline_selection_vi(theme: Theme, scale: f32) -> Result<AppHarness, Failure> {
     timeline_selection_locale(theme, scale, Locale::Vi)
+}
+
+fn inspector_speed(theme: Theme, scale: f32) -> Result<AppHarness, Failure> {
+    let (mut editor, item) = media_editor(theme, Locale::En)?;
+    editor.selection = [item].into_iter().collect();
+    editor.session.apply(Command::SetSpeed {
+        items: vec![item],
+        speed: time::Speed::from_f64(1.5)?,
+        maintain_pitch: true,
+    })?;
+    editor
+        .preferences
+        .set("properties_tabs", serde_json::json!({"video":"speed"}))?;
+    let mut app = app_editor(editor, scale);
+    wait_for_presented(&mut app)?;
+    app.run_steps(3);
+    widget_rect(&app, "inspector.speed.pitch")?;
+    Ok(app)
 }
 
 fn inspector_audio_locale(theme: Theme, scale: f32, locale: Locale) -> Result<AppHarness, Failure> {

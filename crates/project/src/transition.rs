@@ -114,7 +114,7 @@ impl Transition {
         let mut lo = a.start;
         let mut hi = b.end()?;
         if b.source_asset.is_some() {
-            lo = lo.max(cut.sub_tick(b.source_range.start())?);
+            lo = lo.max(cut.sub_tick(b.retime.speed.output_duration(b.source_range.start())?)?);
         }
         if let Some(id) = a.source_asset {
             let available = data
@@ -125,7 +125,7 @@ impl Transition {
                 .map(|d| d.sub_tick(a.source_range.end()))
                 .transpose()?
                 .unwrap_or(Tick::ZERO);
-            hi = hi.min(cut.add_tick(available)?);
+            hi = hi.min(cut.add_tick(a.retime.speed.output_duration(available)?)?);
         }
         Ok((lo, cut, hi))
     }
@@ -238,6 +238,7 @@ mod tests {
         d.scene_mut().timeline.main.items = [(1, 0), (2, 100)]
             .into_iter()
             .map(|(id, start)| Item {
+                retime: Default::default(),
                 id: ItemId(id),
                 source_asset: None,
                 source_range: SourceRange::new(Tick(10), Tick(110)).unwrap(),
@@ -401,6 +402,23 @@ mod tests {
                 muted: false,
                 fades: Default::default(),
             });
+        }
+        for (speed, cut, expected) in [
+            (0.5, 200, (180, 200, 214)),
+            (2.0, 50, (45, 50, 53)),
+            (5.0, 20, (18, 20, 21)),
+        ] {
+            let mut retimed = d.clone();
+            for i in &mut retimed.scene_mut().timeline.main.items {
+                i.retime.speed = time::Speed::from_f64(speed).unwrap();
+            }
+            retimed.scene_mut().timeline.main.items[1].start = Tick(cut);
+            assert_eq!(
+                transition()
+                    .bounds(&retimed.scene().timeline, &retimed)
+                    .unwrap(),
+                (Tick(expected.0), Tick(expected.1), Tick(expected.2)),
+            );
         }
         let mut tr = transition();
         let bounds = tr.bounds(&d.scene().timeline, &d).unwrap();

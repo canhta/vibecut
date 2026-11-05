@@ -879,10 +879,9 @@ impl<'a> Renderer<'a> {
     }
 }
 fn source_time(item: &Item, at: Tick) -> Result<Tick> {
-    item.source_range
-        .start()
-        .checked_add(local_time(item, at)?)
-        .ok_or(Error::Invalid("item source overflow"))
+    // Project owns the one retime-aware mapping: nearest earlier source frame at non-1x speed.
+    item.source_time_at(at)
+        .map_err(|_| Error::Invalid("item source overflow"))
 }
 fn local_time(item: &Item, at: Tick) -> Result<Tick> {
     at.checked_sub(item.start)

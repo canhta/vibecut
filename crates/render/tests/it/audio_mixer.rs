@@ -98,6 +98,7 @@ fn fixture() -> project::Project {
             effects: vec![],
             masks: vec![],
             blend_mode: Default::default(),
+            retime: Default::default(),
             content: project::ItemParams::Audio(project::AudioParams {
                 fades: Default::default(),
                 volume: 0.0,

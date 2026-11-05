@@ -15,6 +15,7 @@ fn scene(kind: &str) -> Project {
     d.scene_mut().timeline.main.items = [(10, 0, [255, 0, 0, 255]), (11, 100, [0, 0, 255, 255])]
         .into_iter()
         .map(|(id, start, c)| Item {
+            retime: Default::default(),
             id: ItemId(id),
             source_asset: None,
             source_range: SourceRange::new(Tick(100), Tick(200)).unwrap(),

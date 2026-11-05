@@ -13,6 +13,7 @@ pub(super) fn session(with_transition: bool) -> Session {
         .into_iter()
         .enumerate()
         .map(|(n, id)| Item {
+            retime: Default::default(),
             id: ItemId(id),
             source_asset: None,
             source_range: SourceRange::new(Tick(100), Tick(200)).unwrap(),
@@ -190,6 +191,7 @@ fn cancelled_gestures_failed_batches_and_reversal_restore_transitions() {
 }
 
 #[test]
+<<<<<<< HEAD
 fn current_schema_roundtrip_rejects_old_and_unknown_kinds() {
     let s = session(true);
     let bytes = project::encode(s.project(), false).unwrap();
@@ -205,6 +207,22 @@ fn current_schema_roundtrip_rejects_old_and_unknown_kinds() {
         }) if found == current - 1 && supported == current
     ));
     wire["schema_version"] = json!(current);
+=======
+fn transition_roundtrip_rejects_old_schema_and_unknown_kinds() {
+    let s = session(true);
+    let bytes = project::encode(s.project(), false).unwrap();
+    let mut wire: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+    assert_eq!(wire["schema_version"], project::SCHEMA_VERSION);
+    wire["schema_version"] = json!(15);
+    assert!(matches!(
+        project::decode(&serde_json::to_vec(&wire).unwrap()),
+        Err(project::Error::TooOld {
+            found: 15,
+            supported: project::SCHEMA_VERSION
+        })
+    ));
+    wire["schema_version"] = json!(project::SCHEMA_VERSION);
+>>>>>>> ba54052 (feat(retime): constant speed, pitch policy and retime-aware trim/split)
     wire["project"]["scenes"][0]["timeline"]["transitions"][0]["kind"] = json!("unknown");
     assert!(
         matches!(project::decode(&serde_json::to_vec(&wire).unwrap()),Err(project::Error::UnsupportedTransition(kind)) if kind == "unknown")

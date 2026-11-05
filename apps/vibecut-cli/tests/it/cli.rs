@@ -176,6 +176,7 @@ fn overlay_project_color(
         hidden: false,
         locked: false,
         items: vec![project::Item {
+            retime: Default::default(),
             blend_mode: Default::default(),
             masks: Vec::new(),
             effects: Vec::new(),
@@ -1438,6 +1439,7 @@ fn exec_shared_field_id_list_persists_only_compatible_item_fields() {
         locked: false,
         items: (0..2)
             .map(|i| project::Item {
+                retime: Default::default(),
                 blend_mode: Default::default(),
                 masks: Vec::new(),
                 effects: vec![],
@@ -1507,6 +1509,7 @@ fn exec_scrub_equivalent_params_use_the_single_item_command() {
         hidden: false,
         locked: false,
         items: vec![project::Item {
+            retime: Default::default(),
             blend_mode: Default::default(),
             masks: Vec::new(),
             effects: vec![],
@@ -3410,4 +3413,86 @@ fn control_commands_render_a_transition_midpoint_frame() {
     }
     let (code, stderr) = control.finish();
     assert_eq!(code, 0, "{stderr}");
+}
+
+#[test]
+fn cli_retimes_linked_clips_and_the_export_follows_speed_and_pitch() {
+    if !tools() {
+        return;
+    }
+    let dir = tempfile::tempdir().unwrap();
+    let video = dir.path().join("video.mp4");
+    let audio = dir.path().join("audio.wav");
+    let project = dir.path().join("retime.vibecut");
+    let output_path = dir.path().join("retime.mp4");
+    generate_av(&video);
+    generate_audio(&audio);
+    media_project(&project, &video, Some(&audio));
+    // Video item 0 and audio item 1 are retimed together, keeping 1 s of source at 2x.
+    exec(
+        &project,
+        "timeline.set_speed",
+        json!({"items":[0,1],"speed":2.0,"maintain_pitch":true}),
+    );
+    assert_eq!(
+        info(&project)["duration"]["seconds"],
+        0.5,
+        "1 s of source at 2x is 0.5 s"
+    );
+    let output = cli(&[
+        os("export"),
+        project.as_os_str(),
+        os("--out"),
+        output_path.as_os_str(),
+        os("--json"),
+    ]);
+    assert_eq!(
+        code(&output),
+        0,
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let probe = tool_command("ffprobe")
+        .args([
+            "-v",
+            "error",
+            "-show_entries",
+            "stream=codec_type,nb_frames,duration",
+            "-of",
+            "json",
+        ])
+        .arg(&output_path)
+        .output()
+        .unwrap();
+    let value: Value = serde_json::from_slice(&probe.stdout).unwrap();
+    let streams = value["streams"].as_array().unwrap();
+    let video_stream = streams.iter().find(|s| s["codec_type"] == "video").unwrap();
+    assert_eq!(
+        video_stream["nb_frames"], "15",
+        "1 s of 30 fps source at 2x is 15 frames"
+    );
+    let audio_stream = streams.iter().find(|s| s["codec_type"] == "audio").unwrap();
+    let seconds: f64 = audio_stream["duration"].as_str().unwrap().parse().unwrap();
+    assert!((seconds - 0.5).abs() < 0.06, "audio lasts {seconds} s");
+    // Pitch is preserved: the 440 Hz source tone still measures 440 Hz at 2x.
+    let decoded = tool_command("ffmpeg")
+        .args(["-v", "error", "-i"])
+        .arg(&output_path)
+        .args(["-vn", "-ac", "1", "-ar", "48000", "-f", "f32le", "-"])
+        .output()
+        .unwrap();
+    let samples: Vec<f32> = decoded
+        .stdout
+        .as_chunks::<4>()
+        .0
+        .iter()
+        .map(|b| f32::from_le_bytes(*b))
+        .collect();
+    let (from, to) = (4800, samples.len().min(21600));
+    let crossings = samples[from..to]
+        .windows(2)
+        .filter(|w| w[0] <= 0.0 && w[1] > 0.0)
+        .count();
+    let hertz = crossings as f64 / ((to - from) as f64 / 48000.0);
+    assert!((hertz - 440.0).abs() < 15.0, "measured {hertz} Hz");
 }

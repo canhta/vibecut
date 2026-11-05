@@ -284,6 +284,7 @@ fn listing_uses_main_duration_and_active_scene_first_frame() {
         .apply(Command::InsertItem {
             placement: Default::default(),
             item: engine::NewItem {
+                retime: Default::default(),
                 animations: Default::default(),
                 source_asset: None,
                 source_range: time::SourceRange::new(time::Tick::ZERO, frame).unwrap(),

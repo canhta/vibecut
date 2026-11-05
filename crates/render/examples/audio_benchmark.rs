@@ -35,6 +35,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         effects: vec![],
         masks: vec![],
         blend_mode: Default::default(),
+        retime: Default::default(),
         content: project::ItemParams::Overlay(project::OverlayParams {
             color: project::Color([32, 80, 128, 255]),
         }),
@@ -60,6 +61,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 effects: vec![],
                 masks: vec![],
                 blend_mode: Default::default(),
+                retime: Default::default(),
                 content: project::ItemParams::Audio(project::AudioParams {
                     fades: Default::default(),
                     volume: -6.0,

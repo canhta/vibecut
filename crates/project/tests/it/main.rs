@@ -3,6 +3,7 @@
 mod animation;
 mod metadata;
 mod project;
+mod retime;
 mod scenes;
 mod streaming;
 mod writer;

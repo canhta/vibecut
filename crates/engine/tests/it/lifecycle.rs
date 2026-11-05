@@ -156,6 +156,7 @@ fn thumbnails_backfill_on_open_and_refresh_at_exit_without_preview_state() {
     let frame = data.canvas.fps.tick_of(1).unwrap();
     data.scene_mut().timeline.main.items.push(project::Item {
         blend_mode: Default::default(),
+        retime: Default::default(),
         masks: Vec::new(),
         effects: Vec::new(),
         animations: Default::default(),
@@ -174,6 +175,7 @@ fn thumbnails_backfill_on_open_and_refresh_at_exit_without_preview_state() {
         .apply(Command::InsertItem {
             placement: Default::default(),
             item: engine::NewItem {
+                retime: Default::default(),
                 animations: item.animations,
                 source_asset: item.source_asset,
                 source_range: item.source_range,

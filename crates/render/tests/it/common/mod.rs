@@ -169,6 +169,7 @@ pub fn solid_project(seconds: i64, width: u32, height: u32, color: [u8; 4]) -> p
         locked: false,
         items: vec![project::Item {
             blend_mode: Default::default(),
+            retime: Default::default(),
             masks: Vec::new(),
             effects: Vec::new(),
             animations: Default::default(),

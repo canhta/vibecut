@@ -73,6 +73,7 @@ fn project(empty: bool, source: bool) -> Project {
     if !empty {
         d.scene_mut().timeline.main.items.push(project::Item {
             blend_mode: Default::default(),
+            retime: Default::default(),
             id: project::ItemId(1),
             source_asset: source.then_some(AssetId(1)),
             source_range: range,

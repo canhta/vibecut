@@ -45,6 +45,7 @@ fn scenes_isolate_content_and_views_and_delete_atomically_with_history() {
     s.apply(Command::InsertItem {
         placement: engine::Placement::Track { track: main },
         item: engine::NewItem {
+            retime: Default::default(),
             animations: Default::default(),
             source_asset: None,
             source_range: time::SourceRange::new(Tick(0), Tick(100)).unwrap(),

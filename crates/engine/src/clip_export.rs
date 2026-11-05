@@ -410,6 +410,7 @@ fn prepare_clip(
     for (range, start) in ranges.iter().zip(&starts) {
         video_items.push(Item {
             blend_mode: Default::default(),
+            retime: Default::default(),
             masks: Vec::new(),
             effects: Vec::new(),
             animations: Default::default(),
@@ -452,6 +453,7 @@ fn prepare_clip(
             }
             caption_items.push(Item {
                 blend_mode: Default::default(),
+                retime: Default::default(),
                 masks: Vec::new(),
                 effects: Vec::new(),
                 animations: Default::default(),

@@ -388,6 +388,10 @@ impl Subtitles {
             .flat_map(|t| &t.items)
             .find(|i| i.id == source)
             .ok_or(Error::Invalid("select source media"))?;
+        // Cues are source-time at 1x; a retimed item needs a rate-aware captions mapping first.
+        if !item.retime.speed.is_unity() {
+            return Err(Error::Invalid("captions for a retimed item"));
+        }
         let asset = session
             .project()
             .data()

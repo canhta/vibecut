@@ -232,6 +232,7 @@ fn insert_video(editor: &mut Editor, asset: AssetId) -> project::ItemId {
         .apply(Command::InsertItem {
             placement: engine::Placement::Track { track: main },
             item: engine::NewItem {
+                retime: Default::default(),
                 animations: Default::default(),
                 source_asset: Some(asset),
                 source_range: SourceRange::new(Tick::ZERO, Tick(SECOND)).unwrap(),

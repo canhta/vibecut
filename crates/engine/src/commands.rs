@@ -238,6 +238,12 @@ impl CommandSpec {
             "track.set_flags" | "track.set_muted" | "track.set_hidden" | "track.rename"
             | "track.reorder" | "track.set_locked" => true,
             "media.remove" => !session.project().data().assets.is_empty(),
+            "timeline.set_speed" => session.project().data().scene().timeline.iter().any(|t| {
+                !t.locked
+                    && t.items
+                        .iter()
+                        .any(|i| matches!(i.content, ItemParams::Video(_) | ItemParams::Audio(_)))
+            }),
             "track.remove" => session
                 .project()
                 .data()
@@ -391,6 +397,7 @@ commands! {
     SetItemParam, "set_item_param", "Set item parameters", Edit { item: ItemId, content: ItemParams } => Timeline, serde_json::json!({"item":1,"content":{"kind":"overlay","params":{"color":[255,255,0,255]}}});
     SetItemField, "timeline.set_item_param", "Set item parameter", Edit { item: ItemId, patch: ItemParamPatch } => Timeline, serde_json::json!({"item":1,"patch":{"field":"blendMode","value":"multiply"}});
     SetCanvasBackground, "project.set_canvas_background", "Set canvas background colour", Edit { color: Color } => Timeline, serde_json::json!({"color":[0,0,0,255]});
+    SetSpeed, "timeline.set_speed", "Set clip speed", Edit { items: Vec<ItemId>, speed: time::Speed, maintain_pitch: bool } => Timeline, serde_json::json!({"items":[5],"speed":2.0,"maintain_pitch":true});
     SetItemParamMany, "timeline.set_item_param_many", "Set shared item field", Edit { items: Vec<ItemId>, patch: ItemParamPatch } => Timeline, serde_json::json!({"items":[1],"patch":{"field":"text_size","value":48.0}});
     AddMask, "masks.add", "Add mask", Edit { item: ItemId, mask: project::Mask } => Timeline, serde_json::json!({"item":1,"mask":project::Mask::new("mask2",project::MaskShape::Rectangle)});
     RemoveMask, "masks.remove", "Remove mask", Edit { item: ItemId, mask: String } => Timeline, serde_json::json!({"item":1,"mask":"mask1"});
@@ -494,6 +501,7 @@ pub fn registry() -> &'static [CommandSpec] {
                         object.insert("$defs".into(), reachable_defs(object, defs));
                     }
                 }
+                retain_referenced_definitions(&mut params);
                 CommandSpec {
                     id,
                     label,
@@ -508,6 +516,7 @@ pub fn registry() -> &'static [CommandSpec] {
     })
 }
 
+<<<<<<< HEAD
 /// The `$defs` a schema can reach through `#/$defs/<name>` references, so each
 /// command carries its own types instead of the whole command union.
 fn reachable_defs(
@@ -548,6 +557,57 @@ fn reachable_defs(
             .map(|(k, v)| (k.clone(), v.clone()))
             .collect(),
     )
+=======
+/// Each standalone parameter schema keeps only definitions reachable from its root.
+/// Copying the entire command graph into every leaf grows the catalog past its wire budget.
+fn retain_referenced_definitions(schema: &mut serde_json::Value) {
+    use std::collections::{BTreeMap, BTreeSet};
+    fn references(value: &serde_json::Value, pending: &mut Vec<String>) {
+        match value {
+            serde_json::Value::Object(object) => {
+                if let Some(name) = object
+                    .get("$ref")
+                    .and_then(serde_json::Value::as_str)
+                    .and_then(|s| s.strip_prefix("#/$defs/"))
+                {
+                    pending.push(name.to_owned());
+                }
+                for value in object.values() {
+                    references(value, pending);
+                }
+            }
+            serde_json::Value::Array(values) => {
+                for value in values {
+                    references(value, pending);
+                }
+            }
+            _ => {}
+        }
+    }
+    let Some(object) = schema.as_object_mut() else {
+        return;
+    };
+    let Some(serde_json::Value::Object(mut defs)) = object.remove("$defs") else {
+        return;
+    };
+    let mut pending = Vec::new();
+    for value in object.values() {
+        references(value, &mut pending);
+    }
+    let mut visited = BTreeSet::new();
+    let mut kept = BTreeMap::new();
+    while let Some(name) = pending.pop() {
+        if visited.insert(name.clone())
+            && let Some(definition) = defs.remove(&name)
+        {
+            references(&definition, &mut pending);
+            kept.insert(name, definition);
+        }
+    }
+    if !kept.is_empty() {
+        object.insert("$defs".into(), serde_json::json!(kept));
+    }
+>>>>>>> ba54052 (feat(retime): constant speed, pitch policy and retime-aware trim/split)
 }
 
 /// Item input; the engine allocates its identity only on successful commit.
@@ -558,6 +618,9 @@ pub struct NewItem {
     pub source_asset: Option<AssetId>,
     pub source_range: SourceRange,
     pub start: Tick,
+    /// Video and audio only; omitted means 1x.
+    #[serde(default)]
+    pub retime: project::Retime,
     pub content: ItemParams,
 }
 /// Absolute output destination for a simultaneous move.

@@ -470,6 +470,9 @@ catalog! {
     // Inspector.
     AudioGain { key: "audio_gain", en: "Volume (dB)", vi: "Âm lượng (dB)" },
     AudioMuted { key: "audio_muted", en: "Mute", vi: "Tắt tiếng" },
+    ChangePitch { key: "change_pitch", en: "Change pitch", vi: "Đổi cao độ" },
+    SpeedReset { key: "speed_reset", en: "Reset speed", vi: "Đặt lại tốc độ" },
+    SpeedDuration { key: "speed_duration", en: "Duration", vi: "Thời lượng" },
     TextContent { key: "text_content", en: "Content", vi: "Nội dung" },
     TextFont { key: "text_font", en: "Font", vi: "Phông chữ" },
     TextSize { key: "text_size", en: "Font size (px)", vi: "Cỡ chữ (px)" },

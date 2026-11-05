@@ -148,7 +148,24 @@ fn seed() -> Session {
                 probe: media::SourceProbe {
                     format: "mp4".into(),
                     duration: Some(duration),
-                    streams: vec![],
+                    streams: vec![media::SourceStream {
+                        index: 0,
+                        kind: media::StreamKind::Video,
+                        codec: "h264".into(),
+                        time_base: media::TimeBase::new(1, 30000).unwrap(),
+                        duration: Some(duration),
+                        start: Some(Tick::ZERO),
+                        frame_rate: Some(FrameRate::FPS_30),
+                        frame_count: None,
+                        variable_frame_rate: None,
+                        video: Some(media::VideoInfo {
+                            width: 64,
+                            height: 64,
+                            color: media::ColorInfo::default(),
+                            bit_depth: Some(8),
+                        }),
+                        audio: None,
+                    }],
                 },
             })
             .unwrap(),
@@ -162,23 +179,43 @@ fn seed() -> Session {
             muted: false,
             hidden: false,
             locked: false,
-            items: vec![Item {
-                blend_mode: Default::default(),
-                masks: vec![project::Mask::new("mask1", project::MaskShape::Rectangle)],
-                effects: vec![project::EffectInstance {
-                    id: "blur1".into(),
-                    enabled: true,
-                    params: Default::default(),
-                }],
-                id: ItemId(1),
-                animations,
-                source_asset: None,
-                source_range: SourceRange::new(Tick::ZERO, duration).unwrap(),
-                start: Tick::ZERO,
-                content: ItemParams::Overlay(OverlayParams {
-                    color: Color([0, 64, 128, 255]),
-                }),
-            }],
+            items: vec![
+                Item {
+                    blend_mode: Default::default(),
+                    retime: Default::default(),
+                    masks: vec![project::Mask::new("mask1", project::MaskShape::Rectangle)],
+                    effects: vec![project::EffectInstance {
+                        id: "blur1".into(),
+                        enabled: true,
+                        params: Default::default(),
+                    }],
+                    id: ItemId(1),
+                    animations,
+                    source_asset: None,
+                    source_range: SourceRange::new(Tick::ZERO, duration).unwrap(),
+                    start: Tick::ZERO,
+                    content: ItemParams::Overlay(OverlayParams {
+                        color: Color([0, 64, 128, 255]),
+                    }),
+                },
+                Item {
+                    blend_mode: Default::default(),
+                    retime: Default::default(),
+                    masks: Vec::new(),
+                    effects: Vec::new(),
+                    id: ItemId(5),
+                    animations: Default::default(),
+                    source_asset: Some(media::AssetId(0)),
+                    source_range: SourceRange::new(Tick::ZERO, duration).unwrap(),
+                    start: duration,
+                    content: ItemParams::Video(project::VideoParams {
+                        fades: Default::default(),
+                        source_audio_enabled: false,
+                        volume: 0.0,
+                        muted: false,
+                    }),
+                },
+            ],
         },
         Track {
             id: TrackId(3),
@@ -198,6 +235,7 @@ fn seed() -> Session {
             locked: false,
             items: vec![Item {
                 blend_mode: Default::default(),
+                retime: Default::default(),
                 masks: Vec::new(),
                 effects: Vec::new(),
                 id: ItemId(4),
@@ -243,6 +281,9 @@ fn seed() -> Session {
 /// The seed plus one audible clip (track 5, item 5) for audio registry examples.
 fn with_audio(seed: &Session) -> Session {
     let mut data = seed.project().data().clone();
+    for track in data.scene_mut().timeline.iter_mut() {
+        track.items.retain(|item| item.id != ItemId(5));
+    }
     let duration = Tick(time::TICKS_PER_SECOND);
     data.assets.push(
         media::SourceAsset::try_from(media::AssetData {
@@ -283,6 +324,7 @@ fn with_audio(seed: &Session) -> Session {
         hidden: false,
         locked: false,
         items: vec![Item {
+            retime: Default::default(),
             blend_mode: Default::default(),
             masks: Vec::new(),
             effects: Vec::new(),
@@ -1495,6 +1537,7 @@ fn review_integer_derived_source_ticks_and_batch_are_refused_atomically() {
             locked: false,
             items: vec![Item {
                 blend_mode: Default::default(),
+                retime: Default::default(),
                 masks: Vec::new(),
                 effects: Vec::new(),
                 id: ItemId(1),
@@ -1627,6 +1670,7 @@ fn review_integer_history_destination_and_legacy_json_share_candidate_validation
         locked: false,
         items: vec![Item {
             blend_mode: Default::default(),
+            retime: Default::default(),
             masks: Vec::new(),
             effects: Vec::new(),
             id: ItemId(1),

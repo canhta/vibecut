@@ -28,9 +28,24 @@ Effect, Filter and Adjustment accept empty tracks until their item owners land.
 Groups, main kind and unique IDs are validated on every candidate. The main track's
 name is editable like secondary track names. Items
 within each track are sorted by output start, nonnegative and nonoverlapping.
-Touching half-open intervals are valid. Item end uses checked arithmetic. There
-is no retiming: output duration equals `source_range.duration()`. An active scene's
-output duration is the maximum item end, excluding bookmarks.
+Touching half-open intervals are valid. Item end uses checked arithmetic. An active
+scene's output duration is the maximum item end, excluding bookmarks.
+
+Video and audio items carry `retime { speed, maintain_pitch }` (default 1x, pitch preserved);
+every other kind must keep the default. `source_range` stays the authoritative
+source window and the output duration is `floor(source / speed)`
+(`Item::duration`, `end`), so rate changes keep the same source range and a
+retimed item shorter than one output tick is refused. This module owns the one
+source-time mapping used by render video/audio, captions placement and keyframe
+edits: `source_time_at` (floor, so frame selection never runs ahead of or past
+the window), `output_time_of` (ceiling), and `split_at` / `trim_start` /
+`trim_end`, which pick the source cut for a requested output tick. A cut never
+moves an item's other edge: the left piece ends at or before the request, the
+right piece starts exactly where the left ends and never ends after the
+original, and a trimmed start lands at or after the request, so neighbours cannot
+be overlapped by rounding (the displacement is under `1 / speed` ticks, 100 ticks
+at 0.01x, 0 from 1x up). Pitch policy is data only; render applies it. Frame
+interpolation is nearest earlier source frame; the project holds no blend policy.
 
 Each item's typed `ItemParams` determines its track kind. Video/audio require an
 asset with a corresponding stream and cannot exceed its known presentation
@@ -168,7 +183,9 @@ handle times by a positive rational through `Tick::checked_scale` with nearest-t
 ties-away-from-zero rounding. It refuses collisions/overflow atomically. Integer
 stretches of frame-aligned 29.97-fps keys remain exact. General rational stretches
 may round each timestamp by at most half a tick; they do not promise an invertible
-round trip. Media playback rate/output duration remain the retime consumer's job.
+round trip. Key times are item-relative output ticks: a speed change stretches them
+by `old / new`, trims shift them by the start edge's output move, and splits move the
+right piece's keys by the left piece's output length.
 Moving one key leaves explicit handles unchanged and clamps them when evaluated.
 
 Limits: 64 paths per item, 4096 keys per channel, 100,000 keys per project; JSON
@@ -183,7 +200,11 @@ or renderer output claim is made.
 ## Persistence and limits
 
 `encode`/`decode` use one JSON envelope: `format`, `schema_version`, `generator`,
+<<<<<<< HEAD
 `project`. Current schema 17 adds `settings.loudness` (clip/master targets and the last measured gains) to schema 16 timeline `transitions`, which followed schema 15 audio/video clip `fades`, schema 14 optional imported cue style, schema 13 text weight, italic, letter spacing and line height (also on text masks), and schema 12 audio `source` (upload or library provenance), volume/mute and master controls.
+=======
+`project`. Current schema 17 adds item `retime` (speed and pitch policy) to schema 16, which added timeline `transitions` to schema 15 audio/video clip `fades`, following schema 14, which added optional imported cue style to schema 13 text weight, italic, letter spacing and line height (also on text masks), which followed schema 12 audio `source` (upload or library provenance), volume/mute and master controls.
+>>>>>>> ba54052 (feat(retime): constant speed, pitch policy and retime-aware trim/split)
 ProjectId is stored as a canonical decimal string, preserving
 all u64 identity bits for control clients; other IDs remain numeric. Schemas 1-16
 are refused rather than migrated or silently defaulted. Older schemas return `TooOld`, newer schemas `TooNew`; there are no
@@ -339,6 +360,9 @@ Namespace regressions retain the public Save As lost-edit reproduction, all ASCI
 suffix case variants, aliased publication targets, same-byte sidecar replacement,
 parent replacement, stale save-as refusal and hard-link alias noninterference.
 Property tests generate adjacent integer-tick items and rational common rates and check exact persistence without drift.
+`tests/it/retime.rs` pins rate, duration and source range at 0.01, 0.5, 1, 2 and 5x,
+split/trim edge placement (table and random speeds/cuts), the unity-speed exact
+tick behaviour, and persistence and refusal of retime fields.
 A unit test injects failure after a partial staging write to verify original
 bytes and cleanup. This establishes application-level behavior on the tested
 filesystem, not survival of physical power loss. No performance claim is made.

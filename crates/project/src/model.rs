@@ -467,14 +467,15 @@ pub struct Item {
     pub source_asset: Option<AssetId>,
     /// Source ticks for media/captions; local content ticks for generated items.
     pub source_range: SourceRange,
-    /// Output timeline ticks. No retiming in this schema: output duration equals source duration.
+    /// Output timeline ticks. The item plays `source_range` at `retime.speed`; see [`Item::duration`].
     pub start: Tick,
+    pub retime: crate::Retime,
     pub content: ItemParams,
 }
 impl Item {
     pub fn end(&self) -> Result<Tick> {
         self.start
-            .checked_add(self.source_range.duration())
+            .checked_add(self.duration()?)
             .ok_or(Error::Invalid("item end overflow"))
     }
 }
@@ -882,6 +883,13 @@ fn validate(data: &ProjectData) -> Result<()> {
             end = item.end()?;
             if item.source_range.start() < Tick::ZERO || item.content.kind() != track.kind {
                 return Err(Error::Invalid("source range or track kind"));
+            }
+            if matches!(item.content, ItemParams::Video(_) | ItemParams::Audio(_)) {
+                if item.duration()? == Tick::ZERO {
+                    return Err(Error::Invalid("retimed item shorter than one tick"));
+                }
+            } else if item.retime != crate::Retime::default() {
+                return Err(Error::Invalid("retime on non-media item"));
             }
             let asset = item
                 .source_asset
