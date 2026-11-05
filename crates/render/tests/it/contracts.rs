@@ -623,6 +623,7 @@ fn immutable_text_reuse_is_bounded_invalidates_and_matches_uncached_pixels() {
                 content: content.into(),
                 font_size,
                 color: project::Color(color),
+                ..Default::default()
             }),
         })
         .collect();
@@ -697,6 +698,7 @@ fn text_cache_releases_inactive_entries_under_new_frame_pressure() {
                 content: "Tiếng Việt 中文".into(),
                 font_size,
                 color: project::Color([255; 4]),
+                ..Default::default()
             }),
         })
         .collect();

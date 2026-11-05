@@ -203,6 +203,7 @@ fn track_editor() -> (Editor, project::TrackId, project::ItemId) {
                     content: "Title".into(),
                     font_size: 48.0,
                     color: Color([255, 255, 255, 255]),
+                    ..Default::default()
                 }),
             },
         })

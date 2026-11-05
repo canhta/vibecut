@@ -173,6 +173,7 @@ fn fixture() -> Fixture {
             content: "Hello".into(),
             font_size: 48.0,
             color: Color([255, 255, 255, 255]),
+            ..Default::default()
         }),
     );
     session
@@ -1109,6 +1110,7 @@ fn two_text_fixture() -> (Fixture, ItemId, ItemId) {
             content: "Khác".into(),
             font_size: 24.0,
             color: Color([20, 30, 40, 255]),
+            ..Default::default()
         }),
     );
     (fixture, first, second)
