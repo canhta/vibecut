@@ -8,6 +8,8 @@ import platform
 import shutil
 import subprocess
 
+import macos
+
 parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument('--ffmpeg', type=Path, required=True)
 parser.add_argument('--output', type=Path, required=True)
@@ -19,12 +21,15 @@ args.output.mkdir(parents=True, exist_ok=False)
 env = dict(os.environ, FFMPEG_DIR=str(prefix), PKG_CONFIG_PATH=str(prefix / 'lib/pkgconfig'))
 if platform.system() == 'Windows':
     env['PATH'] = str(prefix / 'bin') + os.pathsep + env.get('PATH', '')
-elif platform.system() != 'Darwin':
+elif platform.system() == 'Darwin':
+    env['MACOSX_DEPLOYMENT_TARGET'] = macos.MINIMUM_VERSION
+else:
     parser.error('Only native macOS and Windows builds are supported')
 command = ['cargo', 'build', '--locked', '--message-format=json-render-diagnostics', '-p', 'vibecut', '-p', 'vibecut-cli']
 if not args.debug:
     command.append('--release')
-process = subprocess.Popen(command, cwd=root, env=env, stdout=subprocess.PIPE, text=True)
+invocation = ['cargo', 'xtask', 'build', '--ffmpeg', str(prefix), *command[2:]]
+process = subprocess.Popen(invocation, cwd=root, env=env, stdout=subprocess.PIPE, text=True)
 artifacts = {}
 for line in process.stdout:
     message = json.loads(line)

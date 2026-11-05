@@ -34,7 +34,7 @@ class SigningTest(unittest.TestCase):
             env.update(RUNNER_TEMP=folder, MACOS_CERT_P12='invalid base64!')
             with patch.dict(os.environ, env):
                 with self.assertRaises(ValueError):
-                    signing.sign('prefix', 'binaries', 'output')
+                    signing.sign('prefix', 'binaries', 'output', 'aarch64')
                 self.assertFalse((Path(folder) / 'vibecut-signing').exists())
 
     def test_cleanup_restores_search_list_deletes_keychain_and_keys(self):
@@ -66,7 +66,7 @@ class SigningTest(unittest.TestCase):
                     patch.object(signing.subprocess, 'run', return_value=subprocess.CompletedProcess(
                         [], 1, 'private synthetic output', 'private synthetic error')):
                 with self.assertRaisesRegex(RuntimeError, '^Signed packaging/notarization failed;') as error:
-                    signing.sign('prefix', 'binaries', 'output')
+                    signing.sign('prefix', 'binaries', 'output', 'aarch64')
                 self.assertNotIn('private synthetic', str(error.exception))
                 self.assertFalse(signing.state_dir().exists())
 

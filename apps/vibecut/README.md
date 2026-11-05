@@ -281,3 +281,11 @@ it opens no window,
 produces only audit evidence and is excluded from CI. Production source failures
 are injected through the same render source-factory boundary for deterministic
 start/cancel/failure tests; no second job state machine is introduced.
+
+## Distribution startup
+
+The distribution-only `--headless-smoke NEW_DIRECTORY` starts the real workspace,
+creates an editor and draws three egui frames without a window, graphics device or
+audio output, then joins jobs and exits. It refuses an existing directory so the
+check cannot consume a user's recovery data. [Packaging](../../packaging/README.md)
+owns its clean-runner use and the separate native-device verification limits.

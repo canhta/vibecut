@@ -712,3 +712,26 @@ fn failed_workers_pause_fence_and_join_before_retry_without_blocking_the_action(
         "shutdown joins replacement workers and releases every lease"
     );
 }
+
+#[test]
+fn packaged_app_startup_runs_without_display_or_audio_device() {
+    let directory = tempfile::tempdir().unwrap();
+    let output = std::process::Command::new(env!("CARGO_BIN_EXE_vibecut"))
+        .arg("--headless-smoke")
+        .arg(directory.path().join("workspace"))
+        .env_remove("DISPLAY")
+        .env_remove("WAYLAND_DISPLAY")
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let refused = std::process::Command::new(env!("CARGO_BIN_EXE_vibecut"))
+        .arg("--headless-smoke")
+        .arg(directory.path())
+        .output()
+        .unwrap();
+    assert!(!refused.status.success());
+}

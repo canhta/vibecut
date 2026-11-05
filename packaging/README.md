@@ -4,7 +4,7 @@
 FFmpeg shared libraries, corresponding sources, build receipt/recipe, backports,
 licences and asset notices. Version comes only from `[workspace.package]`.
 `icons.sh` regenerates assets; it is not a distribution script. Both native hosts
-need Python 3.11+ and their platform SDK tools. No models are bundled.
+need Python 3.12+ and their platform SDK tools. No models are bundled.
 
 The macOS result is an installer `.pkg` containing `/Applications/VibeCut.app`
 and `/usr/local/bin/vibecut-cli`. The Windows result is a ZIP containing a
@@ -12,6 +12,49 @@ per-user PowerShell installer and uninstaller. Installation adds the application
 directory to the user's PATH; restart the terminal. Neither installer deletes
 projects or preferences. The packaging output directory must not exist: failed
 outputs remain for inspection and must never be distributed.
+
+## Hosted builds and releases
+
+`build.yml` runs after every main push and on manual dispatch, cancelling older
+runs of the same ref. The shared `distribution.yml` builds macOS arm64 and x86_64
+(`macos-15-intel`), combines both into universal, and attempts native Windows x64
+and arm64 builds. Windows package and smoke jobs are advisory until p0-core/44.
+Each native row provisions FFmpeg through `setup-build` and its versioned cache.
+Build artifacts expire after seven days; intermediate universal inputs after three.
+
+Each package moves to a fresh runner without Rust/media caches. The installed CLI
+runs `--version`, creates a 64×64 two-second synthetic overlay project through the
+registry, exports MP4 and probes its duration/stream. The app runs
+`--headless-smoke NEW_DIRECTORY`: it creates the real workspace/editor, draws three
+egui frames and joins its jobs without creating a window or opening audio devices.
+This establishes startup/frontend and export behavior, not native GPU/device behavior.
+Universal packages run on both Apple Silicon and Intel runners.
+
+macOS deployment floor is **11.0**. `build.py` sets `MACOSX_DEPLOYMENT_TARGET`, the
+bundle sets `LSMinimumSystemVersion`, and packaging checks every Mach-O slice's
+load-command deployment version and exact architectures. The FFmpeg recipe also
+sets its compiler/linker floor to 11.0. Runtime on the oldest supported OS remains
+a separate compatibility check; hosted runners exercise newer macOS versions.
+`universal.py export` retains native executables, dylibs and verified source SDKs;
+`combine` refuses mismatched build revisions, source identities or dylib sets,
+relocates native inputs before `lipo`, and retains both architecture build receipts.
+The resulting package signs every merged library/executable and bundle inside out;
+`lipo -info` and `codesign --verify --deep --strict` are mandatory for each Mach-O.
+
+Successful main builds replace assets of the rolling `nightly` pre-release with
+unsigned packages and `SHA256SUMS`. Notes list commits since the previous nightly,
+with a compare link for the full list. Publication refuses superseded builds,
+diverged history, or a stable/immutable release; failed uploads do not move an
+existing nightly tag or remove obsolete assets. Asset replacement itself is not
+transactional: a failed upload may have replaced an asset; the failed run must be
+reconciled or rerun before treating that nightly's sums as a coherent set.
+
+The maintainer manually dispatches `release.yml` with the workspace version.
+`publish=false` (default) signs/notarizes all three macOS DMGs and runs all clean-host
+smokes, without creating a release or version tag. `publish=true` requires main,
+creates `v<version>` and attaches the three verified DMGs plus `SHA256SUMS` to one
+**draft**. Existing published/immutable releases, mismatched tags, and duplicate
+signed assets are refused. Publishing that draft remains a maintainer action.
 
 ## Build and stage
 
@@ -30,7 +73,8 @@ python3 packaging/package.py --os macos --arch aarch64 \
 cargo xtask build -- cargo xtask ci --require-oracles
 ```
 
-`build.py` collects executable paths from Cargo's JSON artifact records and names
+`build.py` uses `cargo xtask build --ffmpeg PREFIX` to reuse the native media
+environment (including Windows bindgen guards), then collects executable paths from Cargo's JSON artifact records and names
 outputs by package role. It never guesses a shared-cache path. `--debug` is only
 for local smoke; release is the default. The binary source build record accompanies
 the inputs; retain it with the final package receipt. Use `x86_64` on an Intel Mac.

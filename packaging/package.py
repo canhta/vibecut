@@ -14,6 +14,8 @@ import subprocess
 import sys
 import tomllib
 
+import macos
+
 ROOT = Path(__file__).resolve().parent.parent
 COMMANDS = []
 
@@ -95,7 +97,7 @@ def compliance(prefix, destination):
 
 def mac_dependencies(path):
     return [line.strip().split(' (compatibility')[0]
-            for line in run('otool', '-L', path).splitlines()[1:] if line.strip()]
+            for line in run('otool', '-L', path).splitlines() if line.startswith(('\t', ' '))]
 
 
 def mac_relocate(files, libraries):
@@ -112,7 +114,7 @@ def mac_relocate(files, libraries):
                 raise ValueError(f'Unbundled dependency {dep} in {path.name}')
         commands = run('otool', '-l', path)
         paths = re.findall(r'cmd LC_RPATH\s+cmdsize \d+\s+path (.*?) \(offset', commands)
-        for old in paths:
+        for old in sorted(set(paths)):
             run('install_name_tool', '-delete_rpath', old, path)
         rpath = '@loader_path' if path in libraries else '@executable_path/../Frameworks'
         run('install_name_tool', '-add_rpath', rpath, path)
@@ -132,7 +134,7 @@ def mac_sign(path, identity):
         if path.suffix != '.dmg':
             args += ['--options', 'runtime']
     run(*args, path)
-    run('codesign', '--verify', '--strict', path)
+    run('codesign', '--verify', '--deep', '--strict', path)
 
 
 def notarize(path):
@@ -190,6 +192,8 @@ def package(args):
     native = {'Darwin': 'macos', 'Windows': 'windows'}.get(platform.system())
     if native != args.os:
         raise ValueError('Packaging and dependency auditing must run on the target OS')
+    if args.os == 'windows' and args.arch == 'universal':
+        raise ValueError('Universal is a macOS distribution only')
     prefix = args.ffmpeg.resolve()
     version = tomllib.loads((ROOT / 'Cargo.toml').read_text())['workspace']['package']['version']
     output = args.output.resolve()
@@ -221,16 +225,15 @@ def package(args):
                 raise ValueError('Incomplete FFmpeg dylib set')
             files = libs + [binaries / 'vibecut-cli', binaries / 'vibecut']
             for path in files:
-                arches = run('lipo', '-archs', path).strip().split()
-                if arches != [{'aarch64': 'arm64', 'x86_64': 'x86_64'}[args.arch]]:
-                    raise ValueError(f'Wrong architecture for {path.name}: {arches}')
+                macos.audit(path, args.arch, run)
             mac_relocate(files, libs)
             shutil.copy2(ROOT / 'assets/app-icon/vibecut.icns', resources)
             with (contents / 'Info.plist').open('wb') as f:
                 plistlib.dump(dict(CFBundleExecutable='vibecut', CFBundleIdentifier='com.canhta.vibecut',
                                   CFBundleName='VibeCut', CFBundlePackageType='APPL',
                                   CFBundleShortVersionString=version, CFBundleVersion=version,
-                                  CFBundleIconFile='vibecut.icns', NSHighResolutionCapable=True), f)
+                                  CFBundleIconFile='vibecut.icns', NSHighResolutionCapable=True,
+                                  LSMinimumSystemVersion=macos.MINIMUM_VERSION), f)
             compliance(prefix, resources / 'compliance')
             linkdir = payload / 'usr/local/bin'
             linkdir.mkdir(parents=True)
@@ -328,7 +331,7 @@ def package(args):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--os', choices=['macos', 'windows'], required=True)
-    parser.add_argument('--arch', choices=['aarch64', 'x86_64'], required=True)
+    parser.add_argument('--arch', choices=['aarch64', 'x86_64', 'universal'], required=True)
     parser.add_argument('--binaries', type=Path, required=True)
     parser.add_argument('--ffmpeg', type=Path, required=True)
     parser.add_argument('--output', type=Path, required=True, help='New directory; never overwritten')

@@ -423,6 +423,17 @@ fn run() -> Result<ExitCode, String> {
             let status=command.status().map_err(|e|e.to_string())?;
             if status.success(){Ok(())}else{Err(format!("UI audit failed: {status}"))}
         }
+        ["build", "--ffmpeg", prefix, flags @ ..] => {
+            let mut command = Command::new(env::var_os("CARGO").ok_or("run via cargo xtask")?);
+            command.arg("build").args(flags).current_dir(root);
+            ffmpeg::environment_at(&mut command, Path::new(prefix))?;
+            let status = command.status().map_err(|error| error.to_string())?;
+            if status.success() {
+                Ok(())
+            } else {
+                Err(format!("distribution build failed: {status}"))
+            }
+        }
         ["media-bench"] => benchmark::media(root),
         ["frontier"] => tickets::frontier(root, None),
         ["frontier", assignee] => tickets::frontier(root, Some(assignee)),

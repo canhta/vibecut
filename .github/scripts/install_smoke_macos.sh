@@ -13,8 +13,9 @@ spctl --assess --type open --context context:primary-signature "${images[0]}"
 hdiutil attach -nobrowse -readonly -mountpoint "$mount" "${images[0]}"
 sudo ditto "$mount/VibeCut.app" /Applications/VibeCut.app
 sh "$mount/install-cli.sh"
+codesign --verify --deep --strict /Applications/VibeCut.app
+xcrun stapler validate /Applications/VibeCut.app
+spctl --assess --type execute --verbose /Applications/VibeCut.app
 export PATH="$HOME/.local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
 test "$(command -v vibecut-cli)" = "$HOME/.local/bin/vibecut-cli"
-vibecut-cli probe target/download/release-smoke.mp4 --json > target/installed-cli-probe.json
-python3 packaging/smoke.py --installed /Applications/VibeCut.app --signed \
-  --media target/download/release-smoke.mp4 --output target/clean-host-smoke
+python3 packaging/distribution_smoke.py --installed /Applications/VibeCut.app --output target/smoke

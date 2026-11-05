@@ -130,8 +130,12 @@ pub fn prefix() -> Result<PathBuf, String> {
 
 /// Give every workspace Cargo process the same shared-library installation.
 pub fn environment(command: &mut Command) -> Result<(), String> {
-    let prefix = prefix()?;
-    command.env("FFMPEG_DIR", &prefix);
+    environment_at(command, &prefix()?)
+}
+
+/// Distribution builds use their explicit audited SDK and the same native guards.
+pub fn environment_at(command: &mut Command, prefix: &Path) -> Result<(), String> {
+    command.env("FFMPEG_DIR", prefix);
     command.env("PKG_CONFIG_PATH", prefix.join("lib/pkgconfig"));
     let library_var = if cfg!(target_os = "macos") {
         "DYLD_LIBRARY_PATH"

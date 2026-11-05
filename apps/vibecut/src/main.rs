@@ -201,8 +201,64 @@ impl eframe::App for Native {
         }
     }
 }
+// Distribution startup check: the real workspace/frontend, without OS devices.
+fn headless_smoke(root: PathBuf) -> Result<()> {
+    if root.exists() {
+        return Err(Error::Invalid("headless smoke needs a new directory"));
+    }
+    let mut workspace = Workspace::new(root, Preferences::default(), None)?;
+    let deadline = Instant::now() + Duration::from_secs(20);
+    let mut creating = false;
+    loop {
+        workspace.tick();
+        if workspace.error().is_some() || Instant::now() >= deadline {
+            return Err(Error::Invalid("headless workspace startup failed"));
+        }
+        if !workspace.busy() {
+            if creating {
+                break;
+            }
+            workspace.create()?;
+            creating = true;
+        }
+        std::thread::sleep(Duration::from_millis(2));
+    }
+    if workspace.editor.is_none() {
+        return Err(Error::Invalid("headless editor missing"));
+    }
+    let context = egui::Context::default();
+    for _ in 0..3 {
+        let output = context.run_ui(
+            egui::RawInput {
+                screen_rect: Some(egui::Rect::from_min_size(
+                    egui::Pos2::ZERO,
+                    egui::vec2(1440.0, 900.0),
+                )),
+                ..Default::default()
+            },
+            |ui| workspace.ui(ui),
+        );
+        let drew_shapes = !output.shapes.is_empty();
+        output.drop_without_applying_deltas();
+        if !drew_shapes {
+            return Err(Error::Invalid("headless frontend produced no shapes"));
+        }
+    }
+    Ok(())
+}
 fn run() -> Result<()> {
-    let mut args = std::env::args_os().skip(1);
+    let arguments: Vec<_> = std::env::args_os().skip(1).collect();
+    if arguments
+        .first()
+        .is_some_and(|arg| arg == "--headless-smoke")
+    {
+        if arguments.len() != 2 {
+            return Err(Error::Invalid("headless smoke directory expected"));
+        }
+        let root = arguments.get(1).ok_or(Error::Invalid("smoke directory"))?;
+        return headless_smoke(PathBuf::from(root));
+    }
+    let mut args = arguments.into_iter();
     let mut file = None;
     let mut smoke = None;
     while let Some(arg) = args.next() {

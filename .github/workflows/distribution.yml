@@ -1,0 +1,149 @@
+name: Distribution pipeline
+
+on:
+  workflow_call:
+    inputs:
+      signed:
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  native:
+    name: package (${{ matrix.name }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { name: macos-arm64, runner: macos-15, arch: aarch64, windows: false }
+          - { name: macos-x86_64, runner: macos-15-intel, arch: x86_64, windows: false }
+          - { name: windows-x86_64, runner: windows-latest, arch: x86_64, windows: true }
+          - { name: windows-arm64, runner: windows-11-arm, arch: aarch64, windows: true }
+    runs-on: ${{ matrix.runner }}
+    continue-on-error: ${{ matrix.windows }}
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Validate signing credentials before provisioning
+        if: inputs.signed && !matrix.windows
+        env:
+          MACOS_CERT_P12: ${{ secrets.MACOS_CERT_P12 }}
+          MACOS_CERT_PASSWORD: ${{ secrets.MACOS_CERT_PASSWORD }}
+          APPLE_API_KEY_P8: ${{ secrets.APPLE_API_KEY_P8 }}
+          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: python3 .github/scripts/sign_macos.py validate
+      - uses: ./.github/actions/setup-build
+        if: '!inputs.signed || !matrix.windows'
+        with:
+          save-rust-cache: ${{ inputs.signed && matrix.name == 'macos-arm64' && 'true' || 'false' }}
+      - name: Verify required media oracles before signing
+        if: inputs.signed && matrix.name == 'macos-arm64'
+        run: |
+          brew install ffmpeg
+          cargo xtask ci --require-oracles
+      - name: Build native distribution
+        if: '!inputs.signed || !matrix.windows'
+        shell: bash
+        env:
+          MACOS_CERT_P12: ${{ secrets.MACOS_CERT_P12 }}
+          MACOS_CERT_PASSWORD: ${{ secrets.MACOS_CERT_PASSWORD }}
+          APPLE_API_KEY_P8: ${{ secrets.APPLE_API_KEY_P8 }}
+          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: python${{ runner.os == 'macOS' && '3' || '' }} .github/scripts/distribution.py native --arch ${{ matrix.arch }} ${{ inputs.signed && '--signed' || '' }}
+      - name: Remove temporary signing material
+        if: always() && inputs.signed && !matrix.windows
+        run: python3 .github/scripts/sign_macos.py cleanup
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: '!matrix.windows'
+        with:
+          name: native-${{ matrix.arch }}
+          path: target/native.tar.gz
+          if-no-files-found: error
+          retention-days: 3
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: '!inputs.signed || !matrix.windows'
+        with:
+          name: distribution-${{ matrix.name }}
+          path: target/dist/*
+          if-no-files-found: error
+          retention-days: 7
+
+  universal:
+    needs: native
+    runs-on: macos-15
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: native-aarch64
+          path: target/raw/aarch64
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: native-x86_64
+          path: target/raw/x86_64
+      - name: Combine and package both native slices
+        env:
+          MACOS_CERT_P12: ${{ secrets.MACOS_CERT_P12 }}
+          MACOS_CERT_PASSWORD: ${{ secrets.MACOS_CERT_PASSWORD }}
+          APPLE_API_KEY_P8: ${{ secrets.APPLE_API_KEY_P8 }}
+          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: python3 .github/scripts/distribution.py universal ${{ inputs.signed && '--signed' || '' }}
+      - name: Remove temporary signing material
+        if: always() && inputs.signed
+        run: python3 .github/scripts/sign_macos.py cleanup
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: distribution-macos-universal
+          path: target/dist/*
+          if-no-files-found: error
+          retention-days: 7
+
+  clean-host:
+    name: smoke (${{ matrix.name }} on ${{ matrix.runner }})
+    needs: [native, universal]
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { name: macos-arm64, runner: macos-15, windows: false }
+          - { name: macos-x86_64, runner: macos-15-intel, windows: false }
+          - { name: macos-universal, runner: macos-15, windows: false }
+          - { name: macos-universal, runner: macos-15-intel, windows: false }
+          - { name: windows-x86_64, runner: windows-latest, windows: true }
+          - { name: windows-arm64, runner: windows-11-arm, windows: true }
+    runs-on: ${{ matrix.runner }}
+    continue-on-error: ${{ matrix.windows }}
+    timeout-minutes: 15
+    # Fresh VM: no setup-build, media libraries, Rust or caches.
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        if: '!inputs.signed || !matrix.windows'
+        with:
+          name: distribution-${{ matrix.name }}
+          path: target/download
+      - name: Install and smoke app and CLI
+        if: '!inputs.signed || !matrix.windows'
+        shell: bash
+        run: python${{ runner.os == 'macOS' && '3' || '' }} .github/scripts/distribution.py smoke ${{ inputs.signed && '--signed' || '' }}
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always() && (!inputs.signed || !matrix.windows)
+        with:
+          name: smoke-${{ matrix.name }}-${{ matrix.runner }}
+          path: target/smoke
+          retention-days: 7

@@ -56,7 +56,7 @@ def cleanup():
 
 
 
-def sign(prefix, binaries, output):
+def sign(prefix, binaries, output, arch):
     validate(os.environ)
     directory = state_dir()
     directory.mkdir(mode=0o700, exist_ok=False)
@@ -90,7 +90,7 @@ def sign(prefix, binaries, output):
                    VIBECUT_NOTARY_KEY_ID=os.environ['APPLE_API_KEY_ID'],
                    VIBECUT_NOTARY_ISSUER_ID=os.environ['APPLE_API_ISSUER'])
         # Capture even successful output: signing identifiers belong in neither logs nor reports.
-        result = subprocess.run(['python3', 'packaging/package.py', '--os', 'macos', '--arch', 'aarch64',
+        result = subprocess.run(['python3', 'packaging/package.py', '--os', 'macos', '--arch', arch,
                                  '--ffmpeg', prefix, '--binaries', binaries, '--output', output],
                                 env=env, capture_output=True, text=True)
         if result.returncode:
@@ -105,10 +105,10 @@ if __name__ == '__main__':
             validate(os.environ)
         elif sys.argv[1:] == ['cleanup']:
             cleanup()
-        elif len(sys.argv) == 5 and sys.argv[1] == 'sign':
+        elif len(sys.argv) == 6 and sys.argv[1] == 'sign':
             sign(*sys.argv[2:])
         else:
-            raise ValueError('Expected validate, cleanup, or sign PREFIX BINARIES OUTPUT')
+            raise ValueError('Expected validate, cleanup, or sign PREFIX BINARIES OUTPUT ARCH')
     except Exception as error:
         # Only our fixed diagnostics may reach logs; base64/path errors may contain input.
         if isinstance(error, (ValueError, RuntimeError)) and str(error).startswith(
