@@ -11,8 +11,8 @@ fn seed(path: &Path, name: &str) {
     fs::write(path, encode(&project(name), true).unwrap()).unwrap();
 }
 /// A held writer-control file is exclusively locked on Windows, so its bytes
-/// cannot be read through another handle. Metadata still detects a replacement
-/// or write while the lease is live; Unix reads the exact bytes.
+/// cannot be read through another handle. Check that it stays empty there;
+/// the calling tests check lease contention/identity. Unix reads exact bytes.
 fn control_bytes(path: &Path) -> Vec<u8> {
     #[cfg(windows)]
     {
