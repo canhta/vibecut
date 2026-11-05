@@ -75,6 +75,62 @@ fn project() -> Project {
 fn session() -> Session {
     Session::new(project(), 1000).unwrap()
 }
+
+#[test]
+fn transform_command_bounds_atomicity_undo_and_persistence() {
+    let mut session = session();
+    for field in project::TransformField::ALL {
+        let before = session.project().clone();
+        let (min, max) = field.bounds();
+        for invalid in [min - 0.01, max + 0.01] {
+            assert!(
+                session
+                    .execute(
+                        "timeline.set_item_param",
+                        json!({"item":10,"patch":{"field":field.path(),"value":invalid}})
+                    )
+                    .is_err()
+            );
+            assert_eq!(session.project(), &before);
+        }
+        session
+            .execute(
+                "timeline.set_item_param",
+                json!({"item":10,"patch":{"field":field.path(),"value":max}}),
+            )
+            .unwrap();
+        assert_eq!(
+            field
+                .value_at(&get(&session, 10).animations, Tick::ZERO)
+                .unwrap(),
+            max
+        );
+        let saved = project::encode(session.project(), false).unwrap();
+        assert_eq!(
+            project::decode(&saved).unwrap().project,
+            *session.project().as_ref()
+        );
+        session.undo().unwrap();
+        assert_eq!(session.project(), &before);
+        session.redo().unwrap();
+        assert_eq!(
+            field
+                .value_at(&get(&session, 10).animations, Tick::ZERO)
+                .unwrap(),
+            max
+        );
+    }
+    session
+        .execute(
+            "project.set_canvas_background",
+            json!({"color":[12,34,56,78]}),
+        )
+        .unwrap();
+    assert_eq!(
+        session.project().data().canvas.background,
+        Color([12, 34, 56, 78])
+    );
+}
 fn get(s: &Session, id: u64) -> &Item {
     s.project()
         .data()

@@ -24,8 +24,24 @@ two languages; default selects the source language or the first available text.
 An item's `opacity` animation overrides its static `Placement.opacity`. Evaluation
 calls project's `Animations::value_at` with item-local ticks, the same evaluator the
 engine uses; render adds no interpolation path. Values are clamped to the
-compositor's 0..=1 range. Missing opacity data keeps the static placement, and
-other animation paths stay unconsumed until their owning feature lands.
+compositor's 0..=1 range. Missing opacity data keeps the static placement.
+
+The five transform channels now evaluate through project's `TransformField` at
+item-local time. Position is in project-canvas pixels; scale/clockwise rotation
+pivot around the item's untransformed destination centre. A nonidentity transform
+reserves an additional canvas layer, inverse-samples with transparent borders
+after masks/effects, then applies opacity/blending against the original backdrop.
+Cancellation is checked per row. Identity transforms retain the existing fast path.
+Preview and export consume the same result. Content is clipped to the canvas
+before transformation; expanding the off-canvas raster extent is not implemented.
+
+`color` owns hex and HSV entry conversion over project's existing straight sRGB
+RGBA8 value: six/eight hex digits, hue 0..360 degrees, saturation/value/alpha
+0..1. Finite HSV entries clamp; non-finite input refuses. Alpha stays straight
+and independent of RGB. Existing linear composite colour channels use the same
+transfer conversion owner as the compositor. Text background boxes consume
+project's typed `TextParams.background`; generated solid overlays consume `params.strokeColor` as a
+two-project-pixel inside stroke. Fully transparent defaults retain the old picture.
 
 Every working pixel is **RGBA, premultiplied alpha, linear-light f32**, finite
 0..1 with RGB <= alpha. Compositing uses the item's blend function followed by

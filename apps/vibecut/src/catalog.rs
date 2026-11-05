@@ -329,6 +329,28 @@ catalog! {
     Adjustment { key: "adjustment", en: "Adjustment", vi: "Điều chỉnh" },
     Settings { key: "settings", en: "Settings", vi: "Cài đặt" },
     Transform { key: "transform", en: "Transform", vi: "Biến đổi" },
+    ResetValue { key: "reset_value", en: "Reset value", vi: "Đặt lại giá trị" },
+    PositionX { key: "position_x", en: "Position X", vi: "Vị trí X" },
+    PositionY { key: "position_y", en: "Position Y", vi: "Vị trí Y" },
+    ScaleX { key: "scale_x", en: "Scale X", vi: "Tỷ lệ X" },
+    ScaleY { key: "scale_y", en: "Scale Y", vi: "Tỷ lệ Y" },
+    Rotate { key: "rotate", en: "Rotate", vi: "Xoay" },
+    ColorPicker { key: "color_picker", en: "Colour", vi: "Màu" },
+    ColorHex { key: "color_hex", en: "Hex", vi: "Mã hex" },
+    Hue { key: "color_hue", en: "Hue (0–360°)", vi: "Sắc độ (0–360°)" },
+    Saturation { key: "color_saturation", en: "Saturation (0–1)", vi: "Độ bão hòa (0–1)" },
+    Value { key: "color_value", en: "Value (0–1)", vi: "Độ sáng (0–1)" },
+    Alpha { key: "color_alpha", en: "Alpha (0–1)", vi: "Độ trong suốt (0–1)" },
+    Swatches { key: "color_swatches", en: "Swatches", vi: "Bảng màu" },
+    RecentColors { key: "recent_colors", en: "Recent colours", vi: "Màu gần đây" },
+    Eyedropper { key: "eyedropper", en: "Pick screen colour", vi: "Lấy màu màn hình" },
+    EyedropperUnavailable { key: "eyedropper_unavailable", en: "Screen colour picker is unavailable on this platform.", vi: "Bộ lấy màu màn hình không khả dụng trên nền tảng này." },
+    EyedropperPending { key: "eyedropper_pending", en: "Choose a screen pixel; Escape cancels.", vi: "Chọn một điểm ảnh; nhấn Esc để hủy." },
+    EyedropperFailed { key: "eyedropper_failed", en: "Screen colour picker failed. Try again.", vi: "Lấy màu màn hình thất bại. Hãy thử lại." },
+    InvalidColor { key: "invalid_color", en: "Enter a valid hex or finite HSV value.", vi: "Nhập mã hex hợp lệ hoặc giá trị HSV hữu hạn." },
+    GraphicFill { key: "graphic_fill", en: "Fill", vi: "Màu tô" },
+    GraphicStroke { key: "graphic_stroke", en: "Stroke", vi: "Màu viền" },
+    CanvasBackground { key: "canvas_background", en: "Canvas background", vi: "Nền khung hình" },
     Speed { key: "speed", en: "Speed", vi: "Tốc độ" },
     Blending { key: "blending", en: "Blending", vi: "Hòa trộn" },
     Masks { key: "masks", en: "Masks", vi: "Mặt nạ" },
@@ -797,7 +819,7 @@ fn civil_from_days(days: i64) -> (i64, u32, u32) {
 }
 
 /// Bumped when the local preference document changes incompatibly.
-pub const PREFERENCES_VERSION: u32 = 2;
+pub const PREFERENCES_VERSION: u32 = 3;
 const MAX_PREFERENCES_BYTES: u64 = 4096;
 
 /// Additive preference keys start at their product default when an older
@@ -872,6 +894,7 @@ pub const PREFERENCE_KEYS: &[&str] = &[
     "preview_fit",
     "preview_zoom",
     "keybindings",
+    "recent_colors",
 ];
 
 /// A splitter drag that keeps every region non-empty and inside its limits.
@@ -965,6 +988,8 @@ pub struct Preferences {
     /// `actions`; this is the only persisted binding map.
     #[serde(default)]
     pub keybindings: KeybindingPreferences,
+    #[serde(default)]
+    pub recent_colors: Vec<project::Color>,
 }
 pub(crate) const fn default_preview_fit() -> bool {
     true
@@ -993,6 +1018,7 @@ impl Default for Preferences {
             preview_zoom: default_preview_zoom(),
             snapshot_directory: None,
             keybindings: KeybindingPreferences::default(),
+            recent_colors: Vec::new(),
         }
     }
 }
@@ -1026,6 +1052,9 @@ impl Preferences {
             return Err(Error::Invalid("snapshot directory"));
         }
         self.keybindings.validate()?;
+        if self.recent_colors.len() > 16 {
+            return Err(Error::Invalid("recent colours"));
+        }
         if serde_json::to_vec(self)?.len() as u64 > MAX_PREFERENCES_BYTES {
             return Err(Error::Invalid("preference size"));
         }
@@ -1077,6 +1106,7 @@ impl Preferences {
             "preview_zoom" => Ok(serde_json::json!(self.preview_zoom)),
             "snapshot_directory" => Ok(serde_json::to_value(&self.snapshot_directory)?),
             "keybindings" => Ok(serde_json::to_value(&self.keybindings)?),
+            "recent_colors" => Ok(serde_json::to_value(&self.recent_colors)?),
             _ => Err(Error::Unsupported("preference key")),
         }
     }
@@ -1107,6 +1137,7 @@ impl Preferences {
             "preview_zoom" => self.preview_zoom = serde_json::from_value(value)?,
             "snapshot_directory" => self.snapshot_directory = serde_json::from_value(value)?,
             "keybindings" => self.keybindings = serde_json::from_value(value)?,
+            "recent_colors" => self.recent_colors = serde_json::from_value(value)?,
             _ => return Err(Error::Unsupported("preference key")),
         }
         Ok(())
@@ -1175,6 +1206,10 @@ impl PreferenceStore {
             let (sanitized, _) = std::mem::take(&mut value.keybindings).sanitize();
             value.keybindings = sanitized;
             issue = Some(PreferenceIssue::Keybindings);
+        }
+        if value.recent_colors.len() > 16 {
+            value.recent_colors.clear();
+            issue = Some(PreferenceIssue::Layout);
         }
         (value, issue)
     }
@@ -1413,6 +1448,10 @@ mod tests {
                 }),
             ),
             (
+                "recent_colors",
+                serde_json::json!([[10, 20, 30, 0], [255, 0, 100, 128]]),
+            ),
+            (
                 "export",
                 serde_json::json!({
                     "format": "webm",
@@ -1443,7 +1482,7 @@ mod tests {
         let store = PreferenceStore::new(dir.path().join("preferences.json"));
         std::fs::write(
             store.path(),
-            br#"{"version":2,"locale":"vi","dark":false,"panels":[0.9,0.9,0.9]}"#,
+            br#"{"version":3,"locale":"vi","dark":false,"panels":[0.9,0.9,0.9]}"#,
         )
         .expect("write preferences");
         let (preferences, issue) = store.load_with_warning();
@@ -1595,6 +1634,26 @@ mod tests {
         }
         assert!(store.save(&preferences).is_err());
         assert_eq!(store.load().unwrap(), Preferences::default());
+    }
+
+    #[test]
+    fn recent_colours_refuse_over_capacity_without_changing_preferences() {
+        let mut preferences = Preferences::default();
+        let recent = (0..16)
+            .map(|r| project::Color([r, 0, 0, r]))
+            .collect::<Vec<_>>();
+        preferences
+            .set("recent_colors", serde_json::to_value(&recent).unwrap())
+            .unwrap();
+        let before = preferences.clone();
+        let mut oversized = recent;
+        oversized.push(project::Color([255; 4]));
+        assert!(
+            preferences
+                .set("recent_colors", serde_json::to_value(oversized).unwrap())
+                .is_err()
+        );
+        assert_eq!(preferences, before);
     }
 
     #[test]

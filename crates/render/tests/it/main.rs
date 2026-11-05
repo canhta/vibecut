@@ -3,9 +3,11 @@
 mod audio_mixer;
 mod blend;
 mod captions;
+mod color;
 mod common;
 mod contracts;
 mod effects;
 mod goldens;
 mod masks;
 mod media_pipeline;
+mod transform;

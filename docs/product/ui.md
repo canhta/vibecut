@@ -145,6 +145,25 @@ below. Empty, pending, failed, disabled, locked, unsupported and limit states ar
 explicit. Reference geometry for this panel is unmeasured; treat spacing as
 proposed until the next UI audit.
 
+### Transform and colour controls
+
+The Transform tab uses five existing scrub rows with an inline reset arrow:
+position X/Y, independent scale X/Y and rotation. The reference's reset/value-row pattern
+is recorded in `.spikes/ui-reference/06-properties/notes.md`; the classic implementation
+properties registry confirms the five independent channels. The existing field
+geometry and catalog tokens above remain the source for sizing and colour.
+
+The shared colour window uses hex plus labelled HSV/alpha entries and sliders,
+swatches and recent colours. Sliders preview immediately and publish once on
+release; Escape/close cancels the draft. It is reused for text, text background,
+graphic fill/stroke, mask stroke and canvas background. The implementation
+reference's separate change/change-end events inform the interaction; the exact
+window layout, sixteen-colour newest-first recent list and fixed two-pixel
+graphic stroke are **proposed**, with coordinator approval to fill the uncaptured
+layout gap. `inspector-transform` and `inspector-color` are the audit scenes.
+The native sampler's unavailable/pending/failed copy is localized in the same
+window; unavailable platforms retain all manual colour entry controls.
+
 ### Shortcuts
 
 - Cmd/Ctrl+B splits at the playhead.

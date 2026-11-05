@@ -400,6 +400,7 @@ impl<'a> Renderer<'a> {
                 continue;
             }
             let masked = item.masks.iter().any(|m| m.active());
+            let transform = crate::transform::Transform::at(item, local)?;
             let blended = item.blend_mode != project::BlendMode::Normal;
             let source_at = source_time(item, at)?;
             let _plan = if item.effects.iter().any(|effect| effect.enabled) {
@@ -413,14 +414,14 @@ impl<'a> Renderer<'a> {
                 None
             };
             let passes = crate::effects::evaluate(item, local, out.width, out.height)?;
-            let final_opacity = if masked || blended || !passes.is_empty() {
+            let final_opacity = if masked || blended || !passes.is_empty() || transform.active() {
                 let opacity = placement.opacity;
                 placement.opacity = 1.;
                 opacity
             } else {
                 1.
             };
-            let below = if passes.is_empty() && !masked && !blended {
+            let below = if passes.is_empty() && !masked && !blended && !transform.active() {
                 None
             } else {
                 let layer = Image::new(out.width, out.height, [0.0; 4], hooks)?;
@@ -439,6 +440,17 @@ impl<'a> Renderer<'a> {
                 }
                 ItemParams::Overlay(p) => {
                     let c = color(p.color.0);
+                    let stroke = color(
+                        crate::color::at(
+                            &item.animations,
+                            "params.strokeColor",
+                            local,
+                            project::Color([0; 4]),
+                        )?
+                        .0,
+                    );
+                    let stroke_width =
+                        2.0 * f64::from(out.width) / f64::from(project.data().canvas.width);
                     let a = placement.opacity;
                     let w = out.width;
                     let h = out.height;
@@ -452,6 +464,13 @@ impl<'a> Renderer<'a> {
                             && y < (r.y + r.height) * f64::from(h)
                         {
                             over(pixel, c, a);
+                            let edge = (x - r.x * f64::from(w))
+                                .min((r.x + r.width) * f64::from(w) - x)
+                                .min(y - r.y * f64::from(h))
+                                .min((r.y + r.height) * f64::from(h) - y);
+                            if edge < stroke_width {
+                                over(pixel, stroke, a);
+                            }
                         }
                     }
                 }
@@ -618,6 +637,15 @@ impl<'a> Renderer<'a> {
                 }
                 let cpu = CpuEffects;
                 let adapter = self.settings.effects.as_deref().unwrap_or(&cpu);
+                if transform.active() {
+                    let r = placement.destination;
+                    filtered = transform.apply(
+                        &filtered,
+                        &project.data().canvas,
+                        [r.x + r.width * 0.5, r.y + r.height * 0.5],
+                        hooks,
+                    )?;
+                }
                 match adapter.composite(
                     &mut below,
                     &filtered,

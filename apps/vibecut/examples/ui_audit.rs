@@ -339,6 +339,18 @@ const SCENES: &[Scene] = &[
         build: inspector_blend,
     },
     Scene {
+        name: "inspector-transform",
+        reference_dark: None,
+        reference_light: None,
+        build: inspector_transform,
+    },
+    Scene {
+        name: "inspector-color",
+        reference_dark: None,
+        reference_light: None,
+        build: inspector_color,
+    },
+    Scene {
         name: "inspector-blend-vi",
         reference_dark: Some("capcut/illustrations/capcut-desktop-ui.png"),
         reference_light: Some("capcut/illustrations/capcut-desktop-ui.png"),
@@ -1076,6 +1088,34 @@ fn inspector_blend(theme: Theme, scale: f32) -> Result<AppHarness, Failure> {
 
 fn inspector_blend_vi(theme: Theme, scale: f32) -> Result<AppHarness, Failure> {
     inspector_blend_locale(theme, scale, Locale::Vi)
+}
+fn inspector_transform(theme: Theme, scale: f32) -> Result<AppHarness, Failure> {
+    let mut app = inspector_blend(theme, scale)?;
+    if let App::Editor(editor) = &mut app.state_mut().app {
+        editor.preferences.set(
+            "properties_tabs",
+            serde_json::json!({"graphic":"transform"}),
+        )?;
+    }
+    app.run_steps(3);
+    Ok(app)
+}
+fn inspector_color(theme: Theme, scale: f32) -> Result<AppHarness, Failure> {
+    let mut app = inspector_blend(theme, scale)?;
+    if let App::Editor(editor) = &mut app.state_mut().app {
+        editor
+            .preferences
+            .set("properties_tabs", serde_json::json!({"graphic":"graphic"}))?;
+        let item = editor
+            .selection
+            .first()
+            .copied()
+            .ok_or("colour audit item")?;
+        editor.open_color_picker(vibecut::color_picker::ColorTarget::GraphicFill(item))?;
+        editor.set_eyedropper(vibecut::color_picker::NativeEyedropper::unavailable())?;
+    }
+    app.run_steps(3);
+    Ok(app)
 }
 
 fn import_summary(asset: SourceAsset) -> media::ImportedSource {

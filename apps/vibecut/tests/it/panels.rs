@@ -249,6 +249,32 @@ fn select(harness: &mut Harness<Editor>, item: ItemId) {
 }
 
 fn click(harness: &mut Harness<Editor>, id: &str) {
+    if matches!(
+        id,
+        "inspector.text_color.picker" | "inspector.background_color"
+    ) {
+        for _ in 0..12 {
+            let panel = harness.state().panels["inspector"];
+            let top = widget_rect(harness, "inspector.tab.text").bottom() + 8.0;
+            let viewport = egui::Rect::from_min_max(
+                egui::pos2(panel.left() + 12.0, top),
+                panel.max - egui::vec2(12.0, 12.0),
+            );
+            let target = widget_rect(harness, id);
+            if viewport.contains_rect(target) {
+                break;
+            }
+            harness.hover_at(viewport.center());
+            harness.event(egui::Event::MouseWheel {
+                unit: egui::MouseWheelUnit::Point,
+                delta: egui::vec2(0.0, if target.top() < top { 120.0 } else { -120.0 }),
+                phase: egui::TouchPhase::Move,
+                source: egui::MouseWheelSource::Unknown,
+                modifiers: egui::Modifiers::NONE,
+            });
+            harness.run_steps(8);
+        }
+    }
     harness
         .get(By::new().predicate(|node| node.author_id() == Some(id)))
         .click();
@@ -330,6 +356,281 @@ fn drag(harness: &mut Harness<Editor>, id: &str, delta: egui::Vec2) {
     drag_to(harness, id, delta);
     harness.drop_at(start + delta);
     harness.run_steps(2);
+}
+
+fn enter(harness: &mut Harness<Editor>, id: &str, value: &str) {
+    click(harness, id);
+    harness.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::A);
+    harness.event(egui::Event::Text(value.to_owned()));
+    harness.key_press(egui::Key::Enter);
+    harness.run_steps(3);
+}
+
+#[test]
+fn transform_fields_clamp_reset_scrub_cancel_and_persist() {
+    let fixture = fixture();
+    let mut harness = build(fixture.editor);
+    harness.run_steps(3);
+    select(&mut harness, fixture.video);
+    let before = harness.state().session.project().clone();
+    enter(&mut harness, "inspector.transform.rotate", "999");
+    assert_eq!(
+        project::TransformField::Rotate
+            .value_at(&item(&harness, fixture.video).animations, Tick::ZERO)
+            .unwrap(),
+        360.0
+    );
+    let bytes = project::encode(harness.state().session.project(), false).unwrap();
+    let loaded = project::decode(&bytes).unwrap();
+    assert_eq!(loaded.project, *harness.state().session.project().as_ref());
+    click(&mut harness, "inspector.transform.rotate.reset");
+    assert_eq!(
+        project::TransformField::Rotate
+            .value_at(&item(&harness, fixture.video).animations, Tick::ZERO)
+            .unwrap(),
+        0.0
+    );
+    click(&mut harness, "inspector.transform.rotate");
+    harness.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::A);
+    harness.event(egui::Event::Text("42".to_owned()));
+    harness.run_steps(2);
+    click(&mut harness, "inspector.transform.rotate.reset");
+    assert_eq!(
+        project::TransformField::Rotate
+            .value_at(&item(&harness, fixture.video).animations, Tick::ZERO)
+            .unwrap(),
+        0.0
+    );
+    enter(&mut harness, "inspector.transform.scaleX", "-4");
+    assert_eq!(
+        project::TransformField::ScaleX
+            .value_at(&item(&harness, fixture.video).animations, Tick::ZERO)
+            .unwrap(),
+        0.01
+    );
+    let prior = harness.state().session.project().clone();
+    drag_to(
+        &mut harness,
+        "inspector.transform.positionX.scrub",
+        egui::vec2(44.0, 0.0),
+    );
+    assert!(harness.state().session.gesture_active());
+    harness.key_press(egui::Key::Escape);
+    harness.run_steps(2);
+    assert_eq!(harness.state().session.project(), &prior);
+    assert_ne!(harness.state().session.project(), &before);
+}
+
+#[test]
+fn color_drag_isolated_until_release_one_undo_and_escape_cancels() {
+    let fixture = fixture();
+    let mut harness = build(fixture.editor);
+    harness.run_steps(3);
+    select(&mut harness, fixture.text);
+    click(&mut harness, "inspector.text_color.picker");
+    harness.run_steps(3);
+    let before = harness.state().session.project().clone();
+    let slider = widget_rect(&harness, "color.v.slider");
+    harness.hover_at(slider.center());
+    harness.drag_at(slider.center());
+    harness.run_steps(2);
+    harness.hover_at(slider.left_center() + egui::vec2(15.0, 0.0));
+    harness.run_steps(2);
+    assert_eq!(
+        harness.state().session.project(),
+        &before,
+        "preview must not mutate editable snapshot"
+    );
+    assert_ne!(
+        harness.state().inspect().unwrap().color_preview,
+        Some(Color([255; 4]))
+    );
+    harness.drop_at(slider.left_center() + egui::vec2(15.0, 0.0));
+    harness.run_steps(2);
+    assert_ne!(harness.state().session.project(), &before);
+    harness.state_mut().session.undo().unwrap();
+    assert_eq!(harness.state().session.project(), &before);
+    harness.run_steps(2);
+    click(&mut harness, "inspector.text_color.picker");
+    harness.run_steps(2);
+    let slider = widget_rect(&harness, "color.v.slider");
+    harness.drag_at(slider.center());
+    harness.run_steps(2);
+    harness.hover_at(slider.left_center());
+    harness.run_steps(2);
+    harness.key_press(egui::Key::Escape);
+    harness.run_steps(2);
+    harness.drop_at(slider.left_center());
+    harness.run_steps(2);
+    assert_eq!(harness.state().session.project(), &before);
+    assert_eq!(harness.state().inspect().unwrap().color_preview, None);
+    let history = harness.state().session.history_len();
+    let recents = harness.state().preferences.recent_colors.clone();
+    click(&mut harness, "inspector.text_color.picker");
+    harness.run_steps(2);
+    let slider = widget_rect(&harness, "color.v.slider");
+    harness.drag_at(slider.center());
+    harness.run_steps(2);
+    harness.hover_at(slider.left_center());
+    harness.run_steps(2);
+    harness.hover_at(slider.right_center());
+    harness.run_steps(2);
+    harness.drop_at(slider.right_center());
+    harness.run_steps(2);
+    assert_eq!(harness.state().session.project(), &before);
+    assert_eq!(harness.state().session.history_len(), history);
+    assert_eq!(harness.state().preferences.recent_colors, recents);
+}
+
+#[test]
+fn picker_hex_hsv_recents_unavailable_and_screenshot() {
+    let mut fixture = fixture();
+    // A screenshot needs a healthy generated preview, not the offline media
+    // deliberately retained by the general panel fixture.
+    fixture.editor.session.execute("delete",serde_json::json!({"items":[fixture.video,fixture.silent_video,fixture.image,fixture.audio]})).unwrap();
+    fixture
+        .editor
+        .playback
+        .seek(Tick::ZERO, false, fixture.editor.session.project().clone())
+        .unwrap();
+    let mut harness = build(fixture.editor);
+    harness.run_steps(3);
+    select(&mut harness, fixture.text);
+    click(&mut harness, "inspector.text_color.picker");
+    harness.run_steps(3);
+    enter(&mut harness, "color.hex", "#12AB3480");
+    assert!(
+        matches!(item(&harness,fixture.text).content,ItemParams::Text(p) if p.color==Color([18,171,52,128]))
+    );
+    enter(&mut harness, "color.h", "240");
+    enter(&mut harness, "color.s", "1");
+    enter(&mut harness, "color.v", "1");
+    enter(&mut harness, "color.a", "0.5");
+    assert!(
+        matches!(item(&harness,fixture.text).content,ItemParams::Text(p) if p.color==Color([0,0,255,128]))
+    );
+    harness
+        .state_mut()
+        .set_eyedropper(vibecut::color_picker::NativeEyedropper::unavailable())
+        .unwrap();
+    click(&mut harness, "color.eyedropper");
+    assert_eq!(
+        harness.state().inspect().unwrap().eyedropper,
+        Some(vibecut::color_picker::EyedropperState::Unavailable)
+    );
+    assert!(has_widget(&harness, "color.eyedropper.status"));
+    let dir = tempfile::tempdir().unwrap();
+    let store = PreferenceStore::new(dir.path().join("prefs.json"));
+    store.save(&harness.state().preferences).unwrap();
+    assert_eq!(
+        store.load().unwrap().recent_colors,
+        harness.state().preferences.recent_colors
+    );
+    assert_eq!(
+        harness.state().preferences.recent_colors.first(),
+        Some(&Color([0, 0, 255, 128]))
+    );
+    let path =
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target/p1-45-colour.png");
+    std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+    harness.render().unwrap().save(&path).unwrap();
+    click(&mut harness, "color.swatch.3");
+    assert!(
+        matches!(item(&harness,fixture.text).content,ItemParams::Text(p) if p.color==Color([0,255,0,255]))
+    );
+    click(&mut harness, "color.recent.1");
+    assert!(
+        matches!(item(&harness,fixture.text).content,ItemParams::Text(p) if p.color==Color([0,0,255,128]))
+    );
+}
+
+#[test]
+fn shared_picker_edits_background_graphic_mask_and_canvas_through_commands() {
+    let fixture = fixture();
+    let mut harness = build(fixture.editor);
+    harness.run_steps(3);
+    harness.state_mut().session.execute("masks.add",serde_json::json!({"item":fixture.video,"mask":project::Mask::new("outline",project::MaskShape::Rectangle)})).unwrap();
+    for (selection, tab, button) in [
+        (Some(fixture.text), None, "inspector.background_color"),
+        (Some(fixture.graphic), None, "inspector.graphic_fill"),
+        (Some(fixture.graphic), None, "inspector.graphic_stroke"),
+        (
+            Some(fixture.video),
+            Some("inspector.tab.masks"),
+            "inspector.mask.outline.stroke",
+        ),
+        (None, None, "inspector.canvas_background"),
+    ] {
+        harness.key_press(egui::Key::Escape);
+        harness.run_steps(2);
+        harness.state_mut().selection = selection.into_iter().collect();
+        harness.run_steps(3);
+        if let Some(tab) = tab {
+            click(&mut harness, tab);
+            harness.run_steps(2);
+        }
+        if button == "inspector.background_color" {
+            harness
+                .state_mut()
+                .session
+                .execute(
+                    "timeline.set_item_param",
+                    serde_json::json!({
+                        "item": fixture.text,
+                        "patch": {"field": "text_background", "value": {
+                            "color": [1, 2, 3, 4], "padding": 17.0, "radius": 9.0
+                        }}
+                    }),
+                )
+                .unwrap();
+            harness.run_steps(2);
+        }
+        let before = harness.state().session.project().clone();
+        click(&mut harness, button);
+        harness.run_steps(3);
+        enter(&mut harness, "color.hex", "#AABBCC80");
+        assert_ne!(harness.state().session.project(), &before, "{button}");
+        let chosen = Color([170, 187, 204, 128]);
+        match button {
+            "inspector.background_color" => {
+                let ItemParams::Text(p) = item(&harness, fixture.text).content else {
+                    panic!("text colour target")
+                };
+                let background = p.background.unwrap();
+                assert_eq!(background.color, chosen);
+                assert_eq!(background.padding, 17.0);
+                assert_eq!(background.radius, 9.0);
+            }
+            "inspector.graphic_fill" => assert!(
+                matches!(item(&harness,fixture.graphic).content,ItemParams::Overlay(p) if p.color==chosen)
+            ),
+            "inspector.graphic_stroke" => assert_eq!(
+                render::color::at(
+                    &item(&harness, fixture.graphic).animations,
+                    "params.strokeColor",
+                    Tick::ZERO,
+                    Color([0; 4])
+                )
+                .unwrap(),
+                chosen
+            ),
+            "inspector.mask.outline.stroke" => assert_eq!(
+                item(&harness, fixture.video)
+                    .masks
+                    .first()
+                    .unwrap()
+                    .stroke
+                    .color,
+                chosen
+            ),
+            _ => assert_eq!(
+                harness.state().session.project().data().canvas.background,
+                chosen
+            ),
+        }
+        harness.state_mut().session.undo().unwrap();
+        assert_eq!(harness.state().session.project(), &before, "{button}");
+    }
 }
 
 #[test]

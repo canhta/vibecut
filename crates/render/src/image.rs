@@ -358,7 +358,7 @@ fn eotf(x: f32, transfer: u32) -> f32 {
         }
     }
 }
-fn oetf(x: f32, transfer: u32) -> f32 {
+pub(crate) fn oetf(x: f32, transfer: u32) -> f32 {
     match transfer {
         8 => x,
         13 => {

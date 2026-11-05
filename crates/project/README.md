@@ -84,6 +84,14 @@ active-scene snapshot. Export settings UI owns output scope controls and paths.
 
 ## Animated parameters
 
+`TransformField` owns the editor's units, defaults and finite clamps for the five
+existing transform channels: position X/Y in project-canvas pixels
+(−100,000..=100,000, default 0), independent X/Y scale ratios
+(0.01..=10, default 1), and clockwise rotation in degrees
+(−360..=360, default 0). The command adapter refuses out-of-bounds input;
+animated evaluation clamps overshooting curves to these bounds. These channels
+reuse the existing persisted animation representation without a schema change.
+
 `Item.animations` is the single `Animations` map for parameter overrides. A missing
 path leaves the consumer's existing static property in use. A present `Param`
 owns its explicit base value and keys, including when no keys remain; editing

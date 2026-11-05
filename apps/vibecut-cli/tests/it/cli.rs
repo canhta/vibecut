@@ -2222,6 +2222,82 @@ fn cli_sets_blend_and_opacity_and_renders_a_blended_frame() {
 }
 
 #[test]
+fn cli_sets_rotate_and_exports_the_transformed_snapshot() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("rotated.vibecut");
+    let output_path = dir.path().join("rotated.mp4");
+    overlay_project_color(
+        &path,
+        64,
+        64,
+        Tick(time::TICKS_PER_SECOND),
+        [255, 0, 0, 255],
+    );
+    for (field, value) in [
+        ("transform.scaleX", 0.5),
+        ("transform.scaleY", 0.25),
+        ("transform.rotate", 90.0),
+    ] {
+        exec(
+            &path,
+            "timeline.set_item_param",
+            json!({"item":0,"patch":{"field":field,"value":value}}),
+        );
+    }
+    let loaded = project::load(&path).unwrap().project;
+    let item = loaded
+        .data()
+        .scene()
+        .timeline
+        .overlays
+        .first()
+        .unwrap()
+        .items
+        .first()
+        .unwrap();
+    assert_eq!(
+        project::TransformField::Rotate
+            .value_at(&item.animations, Tick::ZERO)
+            .unwrap(),
+        90.0
+    );
+    let output = cli(&[
+        os("export"),
+        path.as_os_str(),
+        os("--out"),
+        output_path.as_os_str(),
+        os("--json"),
+    ]);
+    assert_eq!(
+        code(&output),
+        0,
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    if !tools() {
+        return;
+    }
+    let frames = decoded_rgb(&output_path, 64, 64, &[0]);
+    let frame = &frames[0];
+    for (x, y, red) in [
+        (32, 32, true),
+        (32, 19, true),
+        (19, 32, false),
+        (2, 2, false),
+    ] {
+        let rgb = &frame[(y * 64 + x) * 3..(y * 64 + x) * 3 + 3];
+        if red {
+            assert!(
+                rgb[0] > 180 && rgb[1] < 40 && rgb[2] < 40,
+                "{x},{y}: {rgb:?}"
+            );
+        } else {
+            assert!(rgb.iter().all(|c| *c < 40), "{x},{y}: {rgb:?}");
+        }
+    }
+}
+
+#[test]
 fn exec_import_and_insert_share_persisted_media_policy() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("policy.vibecut");

@@ -1,3 +1,4 @@
+use crate::color_picker::{ColorTarget, EyedropperState, Picker};
 use crate::selection::{SelectionScope, SelectionScopes, shared_fields};
 use crate::snapping::{SnapCandidate, SnapSource, snap_point};
 use crate::{
@@ -148,6 +149,8 @@ pub struct Inspection {
     pub subtitles: Option<crate::subtitles::Inspection>,
     /// Unknown actions, invalid chords and conflicts from the persisted map.
     pub keybinding_issues: Vec<KeybindingIssue>,
+    pub color_preview: Option<project::Color>,
+    pub eyedropper: Option<EyedropperState>,
 }
 #[derive(Clone, Debug)]
 struct PreferenceCommand {
@@ -352,6 +355,32 @@ impl ScrubTarget {
         }
     }
 }
+fn transform_scrub(field: project::TransformField) -> ScrubSpec {
+    use project::TransformField as F;
+    let (min, max) = field.bounds();
+    let label = match field {
+        F::PositionX => Text::PositionX,
+        F::PositionY => Text::PositionY,
+        F::ScaleX => Text::ScaleX,
+        F::ScaleY => Text::ScaleY,
+        F::Rotate => Text::Rotate,
+    };
+    let scale = matches!(field, F::ScaleX | F::ScaleY);
+    ScrubSpec {
+        field: field.path(),
+        label,
+        min,
+        max,
+        step: if scale { 0.01 } else { 1.0 },
+        pixels_per_step: 2.0,
+        decimals: if scale { 2 } else { 0 },
+        suffix: match field {
+            F::PositionX | F::PositionY => "px",
+            F::Rotate => "°",
+            _ => "",
+        },
+    }
+}
 #[derive(Clone, Debug)]
 struct ScrubDrag {
     item: ItemId,
@@ -481,6 +510,8 @@ pub struct Editor {
     effect_drag: Option<String>,
     effect_reorder: Option<EffectReorder>,
     effect_drop_targets: Vec<(ItemId, Rect)>,
+    color_picker: Option<Picker>,
+    color_base: Option<Arc<project::Project>>,
     pub ripple: bool,
     zoom: f32,
     scroll: f32,
@@ -592,6 +623,8 @@ impl Editor {
             effect_drag: None,
             effect_reorder: None,
             effect_drop_targets: Vec::new(),
+            color_picker: None,
+            color_base: None,
             ripple: false,
             zoom,
             scroll,
@@ -773,6 +806,8 @@ impl Editor {
                 .as_ref()
                 .map(crate::model_manager::ModelManager::inspect),
             keybinding_issues: self.keybinding_issues.clone(),
+            color_preview: self.color_picker.as_ref().map(|p| p.color),
+            eyedropper: self.color_picker.as_ref().map(|p| p.native.state),
         })
     }
     /// Last frame submitted by the frontend for presentation, independent of decode-ahead.
@@ -3382,6 +3417,18 @@ impl Editor {
         }
     }
     pub fn ui(&mut self, ui: &mut egui::Ui) {
+        if self.color_picker.as_ref().is_some_and(|picker| {
+            picker
+                .target
+                .item()
+                .is_some_and(|item| self.selected_item_id() != Some(item))
+        }) || self
+            .color_base
+            .as_ref()
+            .is_some_and(|base| !Arc::ptr_eq(base, self.session.project()))
+        {
+            self.close_color_picker();
+        }
         // The gesture belongs to the item and field visible at pointer-down.
         // Agents can change selection or panel state between pointer events.
         if self
@@ -3604,6 +3651,7 @@ impl Editor {
             }
         }
         self.model_dialog(ui.ctx());
+        self.color_dialog(ui.ctx());
         if self
             .scrub
             .as_ref()
@@ -3639,6 +3687,9 @@ impl Editor {
             if consume(ctx, egui::Modifiers::NONE, egui::Key::Escape) {
                 self.cancel_timecode();
             }
+            return;
+        }
+        if self.color_picker.is_some() {
             return;
         }
         if self.media_delete_confirm.is_some() {
@@ -4946,6 +4997,12 @@ impl Editor {
         } else if self.selection.is_empty() {
             self.property_focus = None;
             ui.label(self.tr(Text::EmptyInspector));
+            self.color_button(
+                ui,
+                "inspector.canvas_background",
+                Text::CanvasBackground,
+                ColorTarget::Canvas,
+            );
         } else if self.selection.len() == 1 {
             self.properties(ui);
         } else {
@@ -5071,6 +5128,61 @@ impl Editor {
                         }
                         _ => {}
                     }
+                }
+                self.color_button(
+                    ui,
+                    "inspector.text_color.picker",
+                    Text::ColorPicker,
+                    ColorTarget::Text(item),
+                );
+                self.color_button(
+                    ui,
+                    "inspector.background_color",
+                    Text::BackgroundColor,
+                    ColorTarget::Background(item),
+                );
+            }
+            PropertiesTab::Transform => {
+                for field in project::TransformField::ALL {
+                    self.scrub_field(ui, item, transform_scrub(field));
+                }
+            }
+            PropertiesTab::Graphic => {
+                self.color_button(
+                    ui,
+                    "inspector.graphic_fill",
+                    Text::GraphicFill,
+                    ColorTarget::GraphicFill(item),
+                );
+                self.color_button(
+                    ui,
+                    "inspector.graphic_stroke",
+                    Text::GraphicStroke,
+                    ColorTarget::GraphicStroke(item),
+                );
+            }
+            PropertiesTab::Masks => {
+                let masks = self
+                    .session
+                    .project()
+                    .data()
+                    .scene()
+                    .timeline
+                    .iter()
+                    .flat_map(|t| &t.items)
+                    .find(|i| i.id == item)
+                    .map(|i| i.masks.iter().map(|m| m.id.clone()).collect::<Vec<_>>())
+                    .unwrap_or_default();
+                if masks.is_empty() {
+                    self.properties_stub(ui);
+                }
+                for mask in masks {
+                    self.color_button(
+                        ui,
+                        &format!("inspector.mask.{mask}.stroke"),
+                        Text::GraphicStroke,
+                        ColorTarget::MaskStroke { item, mask },
+                    );
                 }
             }
             PropertiesTab::Audio if kind == ElementKind::Audio => {
@@ -5680,6 +5792,98 @@ impl Editor {
             .inner;
         self.remember("inspector.blendMode", &response);
     }
+    fn color_button(&mut self, ui: &mut egui::Ui, id: &str, label: Text, target: ColorTarget) {
+        let Ok(color) = target.color(self.session.project()) else {
+            return;
+        };
+        let [r, g, b, a] = color.0;
+        let response = ui.add(egui::Button::image_and_text(
+            icons::tinted(
+                Icon::CircleHalf,
+                BUTTON_ICON,
+                Color32::from_rgba_unmultiplied(r, g, b, a),
+            ),
+            self.tr(label),
+        ));
+        self.remember_with_icon(id, Some(Icon::CircleHalf.name()), &response);
+        if response.clicked()
+            && let Err(error) = self.open_color_picker(target)
+        {
+            self.error = Some(error.to_string());
+        }
+    }
+    /// Open the shared picker. Drafts preview through a temporary engine Session;
+    /// the editable Session, history and persistence remain untouched until release.
+    pub fn open_color_picker(&mut self, target: ColorTarget) -> Result<()> {
+        self.close_color_picker();
+        self.finish_scrub(false);
+        let color = target.color(self.session.project())?;
+        self.color_base = Some(self.session.project().clone());
+        self.color_picker = Some(Picker::new(target, color));
+        Ok(())
+    }
+    /// Inject the native capability boundary for an open picker.
+    pub fn set_eyedropper(&mut self, sampler: crate::color_picker::NativeEyedropper) -> Result<()> {
+        self.color_picker
+            .as_mut()
+            .ok_or(Error::Invalid("closed colour picker"))?
+            .native = sampler;
+        Ok(())
+    }
+    fn close_color_picker(&mut self) {
+        if self.color_picker.take().is_some() {
+            self.color_base = None;
+            self.sync_preview();
+        }
+    }
+    fn color_dialog(&mut self, ctx: &egui::Context) {
+        let Some(mut picker) = self.color_picker.take() else {
+            return;
+        };
+        let event = picker.ui(
+            ctx,
+            self.preferences.locale,
+            &self.preferences.recent_colors,
+        );
+        for (id, response) in event.widgets {
+            self.remember(id, &response);
+        }
+        if event.cancel {
+            self.color_base = None;
+            self.sync_preview();
+            return;
+        }
+        let result = (|| -> Result<()> {
+            let (command, params) = picker
+                .target
+                .command(self.session.project(), picker.color)?;
+            if event.commit && picker.color != picker.original {
+                let mut recent = self.preferences.recent_colors.clone();
+                recent.retain(|c| *c != picker.color);
+                recent.insert(0, picker.color);
+                recent.truncate(16);
+                let mut preferences = self.preferences.clone();
+                preferences.set("recent_colors", serde_json::to_value(recent)?)?;
+                self.session.end_merge();
+                self.session.execute(command, params)?;
+                picker.original = picker.color;
+                self.color_base = Some(self.session.project().clone());
+                self.preferences = preferences;
+                self.sync_preview();
+            } else if event.preview {
+                let mut draft = Session::new(self.session.project().as_ref().clone(), 1)?;
+                draft.execute(command, params)?;
+                let at = self.playback.position().unwrap_or(Tick::ZERO);
+                self.playback.seek(at, false, draft.project().clone())?;
+            }
+            Ok(())
+        })();
+        if let Err(error) = result {
+            self.error = Some(error.to_string());
+            self.sync_preview();
+        }
+        self.color_picker = Some(picker);
+    }
     fn text_color_field(&mut self, ui: &mut egui::Ui, item: ItemId) {
         let Some(value) = self
             .session
@@ -5792,8 +5996,13 @@ impl Editor {
             if handle.drag_stopped() {
                 self.finish_scrub(true);
             }
-            let width =
-                (ui.available_width() - if spec.suffix.is_empty() { 0.0 } else { 30.0 }).max(60.0);
+            let transform = project::TransformField::ALL
+                .into_iter()
+                .find(|f| f.path() == spec.field);
+            let width = (ui.available_width()
+                - if spec.suffix.is_empty() { 0.0 } else { 30.0 }
+                - if transform.is_some() { 32.0 } else { 0.0 })
+            .max(40.0);
             let id = format!("inspector.{}", spec.field);
             let mut next = self
                 .property_drafts
@@ -5825,6 +6034,28 @@ impl Editor {
                         .small()
                         .color(self.secondary()),
                 );
+            }
+            if let Some(field) = transform {
+                let id = format!("inspector.{}.reset", field.path());
+                let reset = ui
+                    .add(egui::Button::image(icons::tinted(
+                        Icon::ArrowCounterClockwise,
+                        BUTTON_ICON,
+                        self.secondary(),
+                    )))
+                    .on_hover_text(self.tr(Text::ResetValue));
+                self.remember_with_icon(id, Some(Icon::ArrowCounterClockwise.name()), &reset);
+                if reset.clicked() {
+                    self.property_drafts.remove(spec.field);
+                    self.property_focus = None;
+                    response.surrender_focus();
+                    if let Err(error) =
+                        self.set_item_field(item, field.path(), &field.default_value().to_string())
+                    {
+                        self.error = Some(error.to_string());
+                    }
+                    return;
+                }
             }
             let editing =
                 response.has_focus() || self.property_focus.as_deref() == Some(spec.field);
@@ -5864,6 +6095,12 @@ impl Editor {
             .iter()
             .flat_map(|track| &track.items)
             .find(|candidate| candidate.id == item)?;
+        if let Some(transform) = project::TransformField::ALL
+            .into_iter()
+            .find(|f| f.path() == field)
+        {
+            return transform.value_at(&item.animations, Tick::ZERO).ok();
+        }
         match (field, &item.content) {
             ("opacity", content) if !matches!(content, ItemParams::Audio(_)) => {
                 let path = project::AnimationPath::new("opacity").ok()?;
@@ -8318,6 +8555,24 @@ fn scroll_fades<F>(ui: &egui::Ui, output: &egui::scroll_area::ScrollAreaOutput<F
     }
 }
 fn item_patch(field: &str, value: &str) -> Result<ItemParamPatch> {
+    if let Some(transform) = project::TransformField::ALL
+        .into_iter()
+        .find(|f| f.path() == field)
+    {
+        let value = value
+            .trim()
+            .parse::<f64>()
+            .map_err(|_| Error::Invalid("transform value"))?;
+        let value = transform.clamp(value)?;
+        use project::TransformField as F;
+        return Ok(match transform {
+            F::PositionX => ItemParamPatch::PositionX(value),
+            F::PositionY => ItemParamPatch::PositionY(value),
+            F::ScaleX => ItemParamPatch::ScaleX(value),
+            F::ScaleY => ItemParamPatch::ScaleY(value),
+            F::Rotate => ItemParamPatch::Rotate(value),
+        });
+    }
     Ok(match field {
         "blendMode" => ItemParamPatch::BlendMode(
             serde_json::from_value(serde_json::json!(value))
@@ -8529,21 +8784,7 @@ fn file_name(path: &std::path::Path) -> String {
     )
 }
 fn parse_color(value: &str) -> Result<project::Color> {
-    let value = value.trim().trim_start_matches('#');
-    if !matches!(value.len(), 6 | 8) || !value.is_ascii() {
-        return Err(Error::Invalid("RGBA colour"));
-    }
-    let mut rgba = [255u8; 4];
-    for (i, byte) in rgba.iter_mut().enumerate().take(value.len() / 2) {
-        *byte = u8::from_str_radix(
-            value
-                .get(i * 2..i * 2 + 2)
-                .ok_or(Error::Invalid("RGBA colour"))?,
-            16,
-        )
-        .map_err(|_| Error::Invalid("RGBA colour"))?;
-    }
-    Ok(project::Color(rgba))
+    Ok(render::color::parse_hex(value)?)
 }
 fn parse_percent(value: &str) -> Result<f32> {
     let value: f32 = value

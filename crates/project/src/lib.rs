@@ -25,7 +25,9 @@ pub fn read_metadata(path: &std::path::Path) -> Metadata {
     metadata::load(path)
 }
 mod model;
+mod transform;
 pub use metadata::{METADATA_VERSION, Metadata, Thumbnail, ViewState, path as metadata_path};
+pub use transform::TransformField;
 mod persistence;
 mod typography;
 mod writer;

@@ -15,6 +15,13 @@ fn apply_patch(
     patch: &crate::ItemParamPatch,
     copied_text_bytes: &mut usize,
 ) -> Result<()> {
+    if let Some((field, value)) = patch.transform() {
+        target.animations.set(
+            project::AnimationPath::new(field.path())?,
+            project::Param::new(project::ParamValue::Scalar(value))?,
+        )?;
+        return Ok(());
+    }
     if let crate::ItemParamPatch::TextContent(value) | crate::ItemParamPatch::TextFont(value) =
         patch
     {
@@ -113,6 +120,21 @@ fn apply_patch(
                 p.color = *v;
             }
         }
+        crate::ItemParamPatch::GraphicFill(v) => {
+            if let ItemParams::Overlay(p) = &mut target.content {
+                p.color = *v;
+            }
+        }
+        crate::ItemParamPatch::GraphicStroke(v) => {
+            let [r, g, b, a] = v.0;
+            target.animations.set(
+                project::AnimationPath::new("params.strokeColor")?,
+                project::Param::new(project::ParamValue::Text(
+                    format!("#{r:02X}{g:02X}{b:02X}{a:02X}").into(),
+                ))?,
+            )?;
+        }
+        _ => return Err(EditError::Invalid("item patch")),
     }
     Ok(())
 }
@@ -786,6 +808,7 @@ pub(crate) fn apply(
             }
             apply_patch(target, &patch, copied_text_bytes)?;
         }
+        Command::SetCanvasBackground { color } => data.canvas.background = color,
         Command::SetItemParamMany { items, patch } => {
             patch.validate()?;
             if items.is_empty() {

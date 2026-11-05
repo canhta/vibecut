@@ -109,6 +109,16 @@ ordering/non-overlap, first-main clamping, undo/redo and persistence round trips
 
 ## Transient selection and shared fields
 
+`timeline.set_item_param` also accepts the exact `transform.positionX`,
+`transform.positionY`, `transform.scaleX`, `transform.scaleY` and
+`transform.rotate` patch fields with numeric values. They set a constant override
+on project's existing channel and refuse non-finite/out-of-bounds input atomically;
+audio items are incompatible. `background_color` (text) and `graphic_stroke`
+(solid overlay) set hex-text overrides on the existing `background.color` and
+`params.strokeColor` channels; `graphic_fill` edits the overlay's static colour.
+All colours reuse project's straight-alpha RGBA8 value. `project.set_canvas_background`
+sets that same value on the canvas in one history step. Masks retain `masks.update`.
+
 `set_selection(BTreeSet<ItemId>)` validates existing IDs, breaks merge continuity
 and changes no Project content, revision or history length. A change during an
 active gesture/group refuses. `selection()` exposes the current item IDs.

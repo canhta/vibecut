@@ -2,6 +2,7 @@
 mod audio;
 pub mod blend;
 mod caption;
+pub mod color;
 mod limiter;
 mod oversample;
 pub use caption::{CaptionBackground, CaptionOutline, CaptionPosition, CaptionStyle};
@@ -11,6 +12,7 @@ mod image;
 pub mod mask;
 mod scene;
 mod sources;
+mod transform;
 pub use audio::{AudioBlock, AudioMixer, mix_audio};
 pub use export::{
     ExportMode, ExportReceipt, ExportSettings, HdrPolicy, export, export_with_sources,

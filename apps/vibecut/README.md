@@ -507,6 +507,31 @@ owns its clean-runner use and the separate native-device verification limits.
 
 ## Blend and opacity inspector
 
+The Transform tab reuses the inspector's scrub fields for position X/Y, independent
+scale X/Y and rotation, with an inline reset on each row. Units, bounds and defaults
+belong to project's `TransformField`; every edit uses `timeline.set_item_param`.
+
+`color_picker` owns one reusable colour draft for text, its background box,
+graphic fill/stroke, existing mask strokes and the empty inspector's canvas
+background. Hex/HSV/alpha entries, sliders, swatches and the sixteen most recent
+committed colours share it. Stable IDs are `color.hex`, `color.h/s/v/a`, their
+`.slider` children, `color.swatch.N`, `color.recent.N` and `color.eyedropper`.
+During a slider drag a temporary engine Session supplies only the preview snapshot;
+the editable Session, persistence and undo history remain unchanged. Release
+publishes one command/undo step. Escape or closing discards the active draft;
+selection/snapshot changes fence stale drafts. Recent colours are unique,
+newest-first and capped at sixteen in preferences version 3; older preference
+versions refuse and retain their bytes under the existing store policy.
+
+The app-only native screen sampler invokes AppKit `NSColorSampler` through macOS's
+system JXA bridge asynchronously; no browser EyeDropper API, screenshot capture,
+new dependency or core OS import is used. RGB replaces the draft hex and retains
+alpha. Closing the draft cancels/joins its owned child, and 120 seconds bounds
+an abandoned request. Windows/Linux return typed `EyedropperState::Unavailable`
+with localized copy; native macOS interaction is unverified on Windows.
+`cargo xtask ui-audit inspector-transform inspector-color` captures both new scenes
+at 1x/2x in both themes. The ticket's headless kittest saves `target/p1-45-colour.png`.
+
 Visual selections show a localized blend dropdown (`inspector.blendMode`) and
 0..=1 opacity entry (`inspector.opacity`); options use
 `inspector.blendMode.<persisted-id>`. Mixed selections show the existing mixed

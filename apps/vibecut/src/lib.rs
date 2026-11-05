@@ -3,6 +3,7 @@ pub mod actions;
 mod ai_task;
 pub mod capture;
 pub mod catalog;
+pub mod color_picker;
 pub mod control;
 pub mod crop;
 pub mod effect_previews;

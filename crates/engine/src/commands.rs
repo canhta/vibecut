@@ -75,10 +75,33 @@ pub enum ItemParamPatch {
     TextBackgroundColor(Color),
     TextPositionX(f32),
     TextPositionY(f32),
+    #[serde(rename = "transform.positionX")]
+    PositionX(f64),
+    #[serde(rename = "transform.positionY")]
+    PositionY(f64),
+    #[serde(rename = "transform.scaleX")]
+    ScaleX(f64),
+    #[serde(rename = "transform.scaleY")]
+    ScaleY(f64),
+    #[serde(rename = "transform.rotate")]
+    Rotate(f64),
+    GraphicFill(Color),
+    GraphicStroke(Color),
 }
 impl ItemParamPatch {
+    pub(crate) fn transform(&self) -> Option<(project::TransformField, f64)> {
+        use project::TransformField as F;
+        Some(match self {
+            Self::PositionX(v) => (F::PositionX, *v),
+            Self::PositionY(v) => (F::PositionY, *v),
+            Self::ScaleX(v) => (F::ScaleX, *v),
+            Self::ScaleY(v) => (F::ScaleY, *v),
+            Self::Rotate(v) => (F::Rotate, *v),
+            _ => return None,
+        })
+    }
     pub fn compatible(&self, content: &ItemParams) -> bool {
-        if matches!(self, Self::BlendMode(_) | Self::Opacity(_)) {
+        if self.transform().is_some() || matches!(self, Self::BlendMode(_) | Self::Opacity(_)) {
             return !matches!(content, ItemParams::Audio(_));
         }
         matches!(
@@ -100,10 +123,20 @@ impl ItemParamPatch {
                     | Self::TextPositionX(_)
                     | Self::TextPositionY(_),
                 ItemParams::Text(_)
+            ) | (
+                Self::GraphicFill(_) | Self::GraphicStroke(_),
+                ItemParams::Overlay(_)
             )
         )
     }
     pub(crate) fn validate(&self) -> crate::Result<()> {
+        if let Some((field, value)) = self.transform() {
+            return if field.clamp(value).is_ok_and(|bounded| bounded == value) {
+                Ok(())
+            } else {
+                Err(crate::EditError::Invalid("transform bounds"))
+            };
+        }
         let valid = match self {
             Self::BlendMode(_) => true,
             Self::Opacity(v) => v.is_finite() && (0.0..=1.0).contains(v),
@@ -116,7 +149,10 @@ impl ItemParamPatch {
             Self::TextLetterSpacing(v) => project::valid_letter_spacing(*v),
             Self::TextLineHeight(v) => project::valid_line_height(*v),
             Self::TextSize(v) => v.is_finite() && (1.0..=4096.0).contains(v),
-            Self::TextColor(_) | Self::TextBackgroundColor(_) => true,
+            Self::TextColor(_)
+            | Self::TextBackgroundColor(_)
+            | Self::GraphicFill(_)
+            | Self::GraphicStroke(_) => true,
             Self::TextBackground(background) => background.as_ref().is_none_or(|background| {
                 background.padding.is_finite()
                     && background.radius.is_finite()
@@ -126,6 +162,7 @@ impl ItemParamPatch {
             Self::TextPositionX(v) | Self::TextPositionY(v) => {
                 v.is_finite() && (0.0..=100.0).contains(v)
             }
+            _ => false,
         };
         if valid {
             Ok(())
@@ -339,6 +376,7 @@ commands! {
     RippleDelete, "ripple_delete", "Ripple delete", Edit { item: ItemId } => Timeline, serde_json::json!({"item":1});
     SetItemParam, "set_item_param", "Set item parameters", Edit { item: ItemId, content: ItemParams } => Timeline, serde_json::json!({"item":1,"content":{"kind":"overlay","params":{"color":[255,255,0,255]}}});
     SetItemField, "timeline.set_item_param", "Set item parameter", Edit { item: ItemId, patch: ItemParamPatch } => Timeline, serde_json::json!({"item":1,"patch":{"field":"blendMode","value":"multiply"}});
+    SetCanvasBackground, "project.set_canvas_background", "Set canvas background colour", Edit { color: Color } => Timeline, serde_json::json!({"color":[0,0,0,255]});
     SetItemParamMany, "timeline.set_item_param_many", "Set shared item field", Edit { items: Vec<ItemId>, patch: ItemParamPatch } => Timeline, serde_json::json!({"items":[1],"patch":{"field":"text_size","value":48.0}});
     AddMask, "masks.add", "Add mask", Edit { item: ItemId, mask: project::Mask } => Timeline, serde_json::json!({"item":1,"mask":project::Mask::new("mask2",project::MaskShape::Rectangle)});
     RemoveMask, "masks.remove", "Remove mask", Edit { item: ItemId, mask: String } => Timeline, serde_json::json!({"item":1,"mask":"mask1"});
