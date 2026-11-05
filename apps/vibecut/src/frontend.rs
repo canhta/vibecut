@@ -7546,11 +7546,27 @@ impl Editor {
             Some(action) => self.action(action),
             None => {}
         }
+        // The preview frame arrives asynchronously. The overlay must keep a
+        // constant widget count whether it shows the label or the frame;
+        // otherwise every control below the canvas derives a different egui id
+        // from `ui.next_auto_id()` and a press/release pair spanning the
+        // transition is dropped by egui's click tracking.
+        let overlay = if empty {
+            Some(Text::ProjectEmpty)
+        } else if self.playback.frame().is_none() {
+            Some(if self.playback.error().is_some() {
+                Text::Unavailable
+            } else {
+                Text::Loading
+            })
+        } else {
+            None
+        };
+        self.preview_overlay_label(ui, area, overlay);
         if empty {
             self.texture = None;
             self.texture_key = None;
             self.texture_owner = None;
-            self.centered_preview_label(ui, area, Text::ProjectEmpty);
             return;
         }
         if let Some(frame) = self.playback.frame() {
@@ -7590,27 +7606,27 @@ impl Editor {
             self.texture = None;
             self.texture_key = None;
             self.texture_owner = None;
-            let label = if self.playback.error().is_some() {
-                Text::Unavailable
-            } else {
-                Text::Loading
-            };
-            self.centered_preview_label(ui, area, label);
         }
     }
-    fn centered_preview_label(&mut self, ui: &mut egui::Ui, area: Rect, label: Text) {
+    /// One stable scope for the canvas overlay. Its explicit id keeps the
+    /// widget count below the canvas independent of the async frame state.
+    fn preview_overlay_label(&mut self, ui: &mut egui::Ui, area: Rect, label: Option<Text>) {
+        let text = label.map(|label| self.tr(label));
         ui.scope_builder(
             egui::UiBuilder::new()
+                .scope_id(ui.make_persistent_id("preview.overlay"))
                 .max_rect(area)
                 .layout(egui::Layout::centered_and_justified(
                     egui::Direction::TopDown,
                 )),
             |ui| {
-                ui.label(
-                    egui::RichText::new(self.tr(label))
-                        .size(14.0)
-                        .color(theme::on_scrim()),
-                );
+                if let Some(text) = text {
+                    ui.label(
+                        egui::RichText::new(text)
+                            .size(14.0)
+                            .color(theme::on_scrim()),
+                    );
+                }
             },
         );
     }

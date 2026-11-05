@@ -1,7 +1,7 @@
 #![allow(clippy::unwrap_used, clippy::indexing_slicing, clippy::panic)]
 use egui_kittest::{
     Harness,
-    kittest::{By, Queryable},
+    kittest::{By, NodeT, Queryable},
 };
 use engine::{ByteBudget, Command, CreatedId, NewItem, Session};
 use project::{Color, ItemParams, OverlayParams, Project, ProjectId, TrackKind};
@@ -156,6 +156,62 @@ fn every_widget_has_unique_locale_stable_id_and_input_reaches_engine() {
         Tick(TICKS_PER_SECOND)
     );
 }
+#[test]
+fn transport_widget_identity_survives_preview_frame_arrival_and_empty_transition() {
+    // The preview frame arrives asynchronously, so the canvas is drawn either
+    // with its loading label or with the frame. Controls below it must keep
+    // their egui widget id (the AccessKit node id): egui drops a click when the
+    // press and release frames resolve to different widget ids.
+    let mut harness = Harness::builder()
+        .with_size(egui::vec2(1440.0, 900.0))
+        .build_ui_state(|ui, editor: &mut Editor| editor.ui(ui), editor());
+    harness.run_steps(3);
+    let node_id = |harness: &Harness<Editor>| {
+        format!(
+            "{:?}",
+            harness
+                .get(By::new().predicate(|n| n.author_id() == Some("transport.forward")))
+                .accesskit_node()
+                .id()
+        )
+    };
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while harness.state().playback.frame().is_none() {
+        assert!(Instant::now() < deadline, "preview frame did not arrive");
+        harness.run_steps(1);
+        std::thread::sleep(Duration::from_millis(2));
+    }
+    let with_frame = node_id(&harness);
+
+    // Remove the only item so the canvas takes its empty branch. The forward
+    // control stays rendered (disabled) with the same automation id.
+    let item = {
+        let project = harness.state().session.project();
+        project
+            .data()
+            .scene()
+            .timeline
+            .iter()
+            .flat_map(|track| track.items.iter())
+            .map(|item| item.id)
+            .next()
+            .expect("fixture item")
+    };
+    harness.state_mut().selection.insert(item);
+    harness.state_mut().activate("timeline.delete").unwrap();
+    harness.run_steps(2);
+    assert_eq!(
+        harness.state().session.project().duration(),
+        Tick::ZERO,
+        "fixture must reach the empty canvas"
+    );
+    assert_eq!(
+        node_id(&harness),
+        with_frame,
+        "the transport widget id must not change when the preview canvas switches between frame and empty content"
+    );
+}
+
 #[test]
 fn locale_change_uses_app_history_and_leaves_project_history_untouched() {
     let mut harness = Harness::builder()
