@@ -4272,7 +4272,8 @@ impl Editor {
                                 let response = ui.add(
                                     egui::TextEdit::singleline(&mut text)
                                         .id_salt("scene.rename.input")
-                                        .desired_width(296.0),
+                                        .desired_width(296.0)
+                                        .min_size(Vec2::new(296.0, 26.0)),
                                 );
                                 self.remember("scene.rename.input", &response);
                                 if self.scene_rename_focus {
@@ -4313,10 +4314,14 @@ impl Editor {
                             };
                             let response = ui.add_enabled(
                                 !self.scene_select || !main,
-                                egui::Button::new(label)
-                                    .truncate()
-                                    .selected(selected)
-                                    .min_size(Vec2::new(296.0, 40.0)),
+                                egui::Button::new(egui::RichText::new(label).color(if selected {
+                                    theme::on_accent(self.preferences.dark)
+                                } else {
+                                    self.text_color()
+                                }))
+                                .truncate()
+                                .selected(selected)
+                                .min_size(Vec2::new(296.0, 40.0)),
                             );
                             let rename_id = format!("scene.rename.{}", id.0);
                             let mut request_rename = false;
