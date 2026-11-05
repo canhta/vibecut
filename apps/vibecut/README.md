@@ -365,6 +365,12 @@ use injected candidates and synthetic frames by default; `SHORTS_AUDIT_VIDEO`
 optionally selects one local audit source, imported once for the run. The audit
 is separate from tests and never makes provider calls.
 
+Effect thumbnail consumers use `Arc<GpuEffects>::thumbnails(shared_budget)` to
+construct the engine's bounded offscreen preview cache. It schedules the same GPU
+adapter without a window; source selection and Effects panel presentation belong
+to their UI consumer. Engine's [thumbnail contract](../../crates/engine/README.md#effect-commands)
+owns bounds, cadence, cancellation, cache keys and typed failure.
+
 ## Local model manager
 
 The header Models action opens one modal over `ai::models::catalog` and engine's

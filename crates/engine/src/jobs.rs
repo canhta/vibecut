@@ -51,6 +51,7 @@ pub enum JobKind {
     SuggestClips,
     AnalyzeShots,
     Preview,
+    EffectThumbnail,
     Export,
     Import,
     Persist,

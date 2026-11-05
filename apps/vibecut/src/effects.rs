@@ -24,6 +24,15 @@ pub struct GpuEffects {
     pipelines: BTreeMap<&'static str, wgpu::ComputePipeline>,
 }
 impl GpuEffects {
+    /// Offscreen effect tiles and background-blur previews share this bounded
+    /// engine cache and the existing GPU adapter; no window is required.
+    pub fn thumbnails(
+        self: &std::sync::Arc<Self>,
+        budget: engine::ByteBudget,
+    ) -> engine::effect_thumbnails::EffectThumbnails {
+        engine::effect_thumbnails::EffectThumbnails::new(self.clone(), budget)
+    }
+
     pub async fn new(device: wgpu::Device, queue: wgpu::Queue) -> Result<Self> {
         let scope = device.push_error_scope(wgpu::ErrorFilter::Validation);
         let entries: Vec<_> = (0..6)

@@ -1064,13 +1064,35 @@ failures retain the sticky error policy.
 
 ## Effect commands
 
-`effects.add { item, effect }`, `effects.remove { item, effect: instance_id }` and
-`effects.update_params { item, effect: instance_id, params }` mutate the project
+`effects.add { item, effect }`, `effects.remove { item, effect: instance_id }`,
+`effects.reorder { item, order: [instance_id, ...] }`,
+`effects.toggle { item, effect: instance_id, enabled }` and
+`effects.update_param { item, effect: instance_id, key, value }` mutate the project
 stack through normal atomic history. Locked/missing items, duplicate IDs, unknown
 instances, wrong types and out-of-range intensity refuse. Add stores enabled state
 and static parameters; scalar animation overrides use `keyframes.set_param` at
 `effects.<id>.params.intensity`. Remove deletes those animation paths in the same
-undo step. CLI `exec` consumes these same registered commands before export.
+undo step. Reorder requires an exact permutation and preserves instance identity
+and animation paths. Toggle preserves params and animation. Param edits replace
+one static scalar; an existing animation still overrides it. Every command uses
+gestures/merged edits for one undo step per continuous interaction. Availability
+requires an unlocked visual item; audio refuses all effect edits. CLI `exec`
+consumes these same registered commands before export.
+
+`effect_thumbnails::EffectThumbnails` schedules device-injected `EffectThumbnail`
+jobs through the existing runner. The desktop's `GpuEffects::thumbnails` constructs
+it using the same offscreen GPU adapter as preview. Callers supply an accounted,
+downsampled working-space source image and registered `EffectParams`; the result
+is straight sRGB RGBA8 at the input dimensions. Maximum edge is 320 pixels, with
+32 LRU entries (at most 12.5 MiB), charged to the same shared byte budget as the
+runner. The cache belongs to one adapter lifetime; keys hash source pixels,
+geometry and canonical typed params. Consumers request on source/param changes;
+there is no timer or fixed cadence. Tiles and background blur use the same job.
+Cache hits retain job/cancellation semantics. Work and readback run outside cache
+locks; cancellation before the publication fence never caches an unfinished result.
+Typed GPU failure propagates without CPU fallback. Missing/oversized sources,
+invalid params, budget pressure, poisoned state and runner queue limits refuse.
+The UI and tile source selection are separate consumers of this contract.
 
 ## Mask edits
 

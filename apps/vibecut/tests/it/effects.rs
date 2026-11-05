@@ -29,7 +29,9 @@ fn gpu_matches_cpu_working_pixels_at_both_scales() {
     eprintln!("GPU parity adapter: {:?}", adapter.get_info());
     let (device, queue) =
         pollster::block_on(adapter.request_device(&wgpu::DeviceDescriptor::default())).unwrap();
-    let gpu = pollster::block_on(vibecut::effects::GpuEffects::new(device, queue)).unwrap();
+    let gpu = std::sync::Arc::new(
+        pollster::block_on(vibecut::effects::GpuEffects::new(device, queue)).unwrap(),
+    );
     let pair: serde_json::Value = serde_json::from_str(include_str!(
         "../../../../crates/render/tests/fixtures/blend-linear.json"
     ))
@@ -183,4 +185,95 @@ fn gpu_matches_cpu_working_pixels_at_both_scales() {
         .fold(0.0_f32, f32::max);
     eprintln!("repeated-pass max_abs={max} passes={}", passes.len());
     assert!(max <= 2e-5);
+    // The public thumbnail seam schedules real offscreen GPU work and reuses it.
+    let budget = engine::ByteBudget::new(64 << 20).unwrap();
+    let thumbnails = gpu.thumbnails(budget.clone());
+    use engine::jobs::*;
+    let mut runner = JobRunner::new(
+        RunnerConfig {
+            concurrency: [1, 1, 1],
+            queue: 4,
+            retained: 4,
+            network_attempts: 1,
+            backoff: std::time::Duration::from_millis(10),
+            progress_interval: std::time::Duration::from_millis(10),
+        },
+        budget,
+        std::sync::Arc::new(SystemClock::default()),
+    )
+    .unwrap();
+    let source = std::sync::Arc::new(
+        Image::from_working_pixels(
+            320,
+            180,
+            (0..320 * 180).map(|i| {
+                [
+                    ((i % 320) % 17) as f32 / 17.,
+                    ((i / 320) % 11) as f32 / 11.,
+                    0.1,
+                    1.,
+                ]
+            }),
+            &Hooks,
+        )
+        .unwrap(),
+    );
+    let mut previous = Vec::new();
+    for run in 0..2 {
+        let start = std::time::Instant::now();
+        let (job, _) = thumbnails
+            .submit(
+                &mut runner,
+                source.clone(),
+                project::EffectParams::Blur { intensity: 100.0 },
+            )
+            .unwrap();
+        loop {
+            runner.tick().unwrap();
+            let state = runner.snapshot(job).unwrap();
+            if state.state == JobState::Completed {
+                break;
+            }
+            assert!(
+                !matches!(state.state, JobState::Failed | JobState::Cancelled),
+                "{:?}",
+                state.error
+            );
+            assert!(start.elapsed() < std::time::Duration::from_secs(20));
+            std::thread::yield_now();
+        }
+        let result = runner.take_output(job).unwrap();
+        let elapsed = start.elapsed();
+        if run == 0 {
+            let expected = CpuEffects
+                .apply(
+                    &source,
+                    &blur_passes(100.0, 320, 180).unwrap(),
+                    EffectInputs {
+                        coverage: None,
+                        below: &source,
+                    },
+                    &Hooks,
+                )
+                .unwrap()
+                .rgba8(13, &Hooks)
+                .unwrap();
+            let max = result
+                .bytes()
+                .iter()
+                .zip(&expected.bytes)
+                .map(|(a, b)| a.abs_diff(*b))
+                .max()
+                .unwrap();
+            assert!(max <= 1, "thumbnail GPU/CPU byte difference {max}");
+        } else {
+            assert_eq!(result.bytes(), previous);
+        }
+        previous = result.bytes().to_vec();
+        eprintln!(
+            "effect thumbnail 320x180 run={run} elapsed_us={} bytes={}",
+            elapsed.as_micros(),
+            result.bytes().len()
+        );
+    }
 }

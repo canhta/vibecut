@@ -321,6 +321,11 @@ only. No second keyframe store is introduced. Removing an effect removes its
 animation paths; undo restores both. Schema 4 adds the required stack and refuses
 older envelopes through the existing typed version errors.
 
+`EffectParams::set_scalar` validates a registered scalar key and value before
+replacing the static parameter; unsupported keys and invalid values retain the
+previous parameter. Definition metadata and typed parameter validation share the
+project owner.
+
 ## Masks
 
 `Item.masks` stores an ordered vector of project-owned `Mask` values. IDs are

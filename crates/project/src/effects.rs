@@ -55,6 +55,17 @@ impl Default for EffectParams {
     }
 }
 impl EffectParams {
+    /// Change one registered scalar, refusing unknown keys and invalid values atomically.
+    pub fn set_scalar(&mut self, key: &str, value: f64) -> Result<()> {
+        let candidate = match (&*self, key) {
+            (Self::Blur { .. }, "intensity") => Self::Blur { intensity: value },
+            _ => return Err(Error::Unsupported("effect parameter")),
+        };
+        candidate.validate()?;
+        *self = candidate;
+        Ok(())
+    }
+
     pub fn validate(&self) -> Result<()> {
         match self {
             Self::Blur { intensity }

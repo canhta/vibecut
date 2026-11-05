@@ -137,6 +137,13 @@ fn item(data: &mut ProjectData, id: ItemId) -> Result<&mut Item> {
     }
     Err(EditError::NoItem(id))
 }
+fn effect_item(data: &mut ProjectData, id: ItemId) -> Result<&mut Item> {
+    let target = item(data, id)?;
+    if matches!(target.content, ItemParams::Audio(_)) {
+        return Err(EditError::Unsupported("visual effect on audio item"));
+    }
+    Ok(target)
+}
 fn take_item(data: &mut ProjectData, id: ItemId) -> Result<Item> {
     for t in data.scene_mut().timeline.iter_mut() {
         if let Some(index) = t.items.iter().position(|i| i.id == id) {
@@ -672,11 +679,11 @@ pub(crate) fn apply(
             target.masks = reordered;
         }
         Command::AddEffect { item: id, effect } => {
-            let item = item(&mut data, id)?;
+            let item = effect_item(&mut data, id)?;
             item.effects.push(effect);
         }
         Command::RemoveEffect { item: id, effect } => {
-            let item = item(&mut data, id)?;
+            let item = effect_item(&mut data, id)?;
             let index = item
                 .effects
                 .iter()
@@ -694,17 +701,48 @@ pub(crate) fn apply(
                 item.animations.remove(&path);
             }
         }
-        Command::UpdateEffectParams {
+        Command::UpdateEffectParam {
             item: id,
             effect,
-            params,
+            key,
+            value,
         } => {
-            let item = item(&mut data, id)?;
-            item.effects
+            let target = effect_item(&mut data, id)?;
+            let effect = target
+                .effects
+                .iter_mut()
+                .find(|e| e.id == effect)
+                .ok_or(EditError::Invalid("missing effect"))?;
+            effect.params.set_scalar(&key, value)?;
+        }
+        Command::ToggleEffect {
+            item: id,
+            effect,
+            enabled,
+        } => {
+            let target = effect_item(&mut data, id)?;
+            target
+                .effects
                 .iter_mut()
                 .find(|e| e.id == effect)
                 .ok_or(EditError::Invalid("missing effect"))?
-                .params = params;
+                .enabled = enabled;
+        }
+        Command::ReorderEffects { item: id, order } => {
+            let target = effect_item(&mut data, id)?;
+            if order.len() != target.effects.len() {
+                return Err(EditError::Invalid("effect order length"));
+            }
+            let mut reordered = Vec::with_capacity(order.len());
+            for id in order {
+                let index = target
+                    .effects
+                    .iter()
+                    .position(|e| e.id == id)
+                    .ok_or(EditError::Invalid("effect order identity"))?;
+                reordered.push(target.effects.remove(index));
+            }
+            target.effects = reordered;
         }
         Command::SetAnimatedParam {
             item: id,
