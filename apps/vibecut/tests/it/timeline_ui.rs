@@ -637,6 +637,19 @@ fn move_and_trim_snap_and_shift_mid_drag_bypasses() {
     );
     harness.drop_at(target);
     harness.run_steps(2);
+
+    // The bookmark at eight seconds is beyond the neighbour at six seconds.
+    // Clamping the trim must hide a target the edge cannot actually reach.
+    let handle = widget(&harness, &format!("timeline.item.{}.trim_end", video_a.0));
+    let target = egui::pos2(body.left() + 7.9 * zoom, handle.center().y);
+    harness.drag_at(handle.center());
+    harness.run_steps(1);
+    harness.hover_at(target);
+    harness.run_steps(2);
+    assert_eq!(item(harness.state(), video_a).end().unwrap(), Tick(6 * SECOND));
+    assert_eq!(harness.state().inspect().unwrap().snap_indicator, None);
+    harness.key_press(egui::Key::Escape);
+    harness.run_steps(2);
 }
 
 #[test]
@@ -760,7 +773,8 @@ fn drag_preview_keeps_committed_history_and_indicator_until_commit() {
     let video_b = fixture.video_b;
     let mut harness = harness(fixture.editor);
     harness.run_steps(3);
-    let before = serde_json::to_vec(harness.state().session.project().data()).unwrap();
+    let committed = harness.state().session.project().clone();
+    let before = serde_json::to_vec(committed.data()).unwrap();
     let history = harness.state().session.history_len();
     let zoom = harness.state().inspect().unwrap().zoom;
     let item_rect = widget(&harness, &format!("timeline.item.{}", video_b.0));
@@ -782,6 +796,8 @@ fn drag_preview_keeps_committed_history_and_indicator_until_commit() {
         Some(Tick(8 * SECOND))
     );
     assert!(harness.state().session.gesture_active());
+    assert_eq!(serde_json::to_vec(committed.data()).unwrap(), before);
+    assert_ne!(harness.state().session.project(), &committed);
     assert_eq!(
         harness.state().session.history_len(),
         history,

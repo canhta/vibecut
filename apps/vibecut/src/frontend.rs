@@ -2419,7 +2419,7 @@ impl Editor {
         let (snapped, indicator) = self.snap_delta(raw, &drag.origins, bypass);
         let (low, high) = self.move_bounds(&drag.origins);
         let delta = snapped.clamp(low, high);
-        self.snap_indicator = indicator;
+        self.snap_indicator = indicator.filter(|_| delta == snapped);
         // Always target the origin plus this delta. A return to the press point must
         // restore the gesture-entry positions rather than leave an earlier preview.
         let moves = drag
@@ -2447,9 +2447,9 @@ impl Editor {
         )?;
         let exclude: BTreeSet<ItemId> = drag.origins.iter().map(|origin| origin.item).collect();
         let (snapped, indicator) = self.snap_tick(raw, &exclude, None, bypass);
-        self.snap_indicator = indicator;
         let (low, high) = self.trim_bounds(drag, mode);
         let at = snapped.clamp(low, high);
+        self.snap_indicator = indicator.filter(|_| at == snapped);
         let command = match mode {
             DragMode::TrimStart => Command::TrimStart {
                 item: drag.item,
@@ -2549,8 +2549,8 @@ impl Editor {
             .unwrap_or(drag.start);
             let exclude = BTreeSet::new();
             let (snapped, indicator) = self.snap_tick(raw, &exclude, Some(drag.bookmark), bypass);
-            self.snap_indicator = indicator;
             let at = snapped.clamp(Tick::ZERO, self.session.project().duration());
+            self.snap_indicator = indicator.filter(|_| at == snapped);
             match self.session.apply(Command::MoveBookmark {
                 bookmark: drag.bookmark,
                 start: at,
