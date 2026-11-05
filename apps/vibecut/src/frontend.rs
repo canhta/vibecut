@@ -3296,6 +3296,12 @@ impl Editor {
             }
             PropertiesTab::Audio if kind == ElementKind::Audio => {
                 self.scrub_field(ui, item, AUDIO_GAIN_SCRUB);
+                if let Some(field) = shared_fields(self.session.project(), &self.selection)
+                    .into_iter()
+                    .find(|field| field.id == "audio_muted")
+                {
+                    self.audio_mute_control(ui, &field);
+                }
             }
             PropertiesTab::Blending => {
                 self.blend_control(ui, item);
@@ -3680,19 +3686,7 @@ impl Editor {
         }
         for field in fields {
             if field.id == "audio_muted" {
-                ui.add_space(12.0);
-                let mut muted = field.value.as_deref() == Some("true");
-                let response = ui.add(
-                    egui::Checkbox::new(&mut muted, self.tr(Text::AudioMuted))
-                        .indeterminate(field.value.is_none()),
-                );
-                self.remember("inspector.audio_muted", &response);
-                if response.changed()
-                    && let Err(error) = self.set_shared_field("audio_muted", &muted.to_string())
-                {
-                    self.error = Some(error.to_string());
-                }
-                self.compatible_count(ui, field.compatible);
+                self.audio_mute_control(ui, &field);
                 continue;
             }
             if field.id == "blendMode" {
@@ -3780,6 +3774,23 @@ impl Editor {
                     self.error = Some(e.to_string());
                 }
             }
+        }
+    }
+    fn audio_mute_control(&mut self, ui: &mut egui::Ui, field: &crate::selection::SharedField) {
+        ui.add_space(12.0);
+        let mut muted = field.value.as_deref() == Some("true");
+        let response = ui.add(
+            egui::Checkbox::new(&mut muted, self.tr(Text::AudioMuted))
+                .indeterminate(field.value.is_none()),
+        );
+        self.remember("inspector.audio_muted", &response);
+        if response.changed()
+            && let Err(error) = self.set_shared_field("audio_muted", &muted.to_string())
+        {
+            self.error = Some(error.to_string());
+        }
+        if self.selection.len() > 1 {
+            self.compatible_count(ui, field.compatible);
         }
     }
     fn compatible_count(&self, ui: &mut egui::Ui, compatible: usize) {
