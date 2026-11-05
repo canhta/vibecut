@@ -56,13 +56,12 @@ pub fn check(root: &Path) -> Result<(), String> {
             .map_err(|error| format!("{}: invalid Rust: {error}", path.display()))?;
         let mut audit = Audit {
             path,
+            scan_macros: path.file_name().is_none_or(|name| name != "catalog.rs"),
             used: BTreeSet::new(),
             errors: Vec::new(),
         };
         audit.visit_file(&parsed);
-        if path.file_name().is_none_or(|name| name != "catalog.rs") {
-            used.extend(audit.used);
-        }
+        used.extend(audit.used);
         errors.extend(audit.errors);
     }
     for entry in &entries {
@@ -143,6 +142,7 @@ const FIRST_ARG_FUNCTIONS: &[&str] = &["run_native", "from_label"];
 
 struct Audit<'a> {
     path: &'a Path,
+    scan_macros: bool,
     used: BTreeSet<String>,
     errors: Vec<String>,
 }
@@ -207,6 +207,13 @@ impl<'ast> Visit<'ast> for Audit<'_> {
         syn::visit::visit_item_mod(self, item);
     }
 
+    fn visit_macro(&mut self, mac: &'ast syn::Macro) {
+        if self.scan_macros {
+            scan_macro_tokens(mac.tokens.clone(), &mut self.used);
+        }
+        syn::visit::visit_macro(self, mac);
+    }
+
     fn visit_expr_call(&mut self, call: &'ast ExprCall) {
         if let Expr::Path(path) = call.func.as_ref() {
             let segments: Vec<String> = path
@@ -237,6 +244,33 @@ impl<'ast> Visit<'ast> for Audit<'_> {
             self.all_literals(&call.args, &callee);
         }
         syn::visit::visit_expr_method_call(self, call);
+    }
+}
+
+fn scan_macro_tokens(tokens: proc_macro2::TokenStream, used: &mut BTreeSet<String>) {
+    let tokens: Vec<proc_macro2::TokenTree> = tokens.into_iter().collect();
+    for (index, token) in tokens.iter().enumerate() {
+        if let proc_macro2::TokenTree::Group(group) = token {
+            scan_macro_tokens(group.stream(), used);
+        }
+        let proc_macro2::TokenTree::Ident(ident) = token else {
+            continue;
+        };
+        if ident != "Text" {
+            continue;
+        }
+        let colon = |offset: usize| {
+            matches!(
+                tokens.get(index + offset),
+                Some(proc_macro2::TokenTree::Punct(punct)) if punct.as_char() == ':'
+            )
+        };
+        if colon(1)
+            && colon(2)
+            && let Some(proc_macro2::TokenTree::Ident(variant)) = tokens.get(index + 3)
+        {
+            used.insert(variant.to_string());
+        }
     }
 }
 

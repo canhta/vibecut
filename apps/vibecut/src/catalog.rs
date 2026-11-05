@@ -193,8 +193,6 @@ catalog! {
     TextItem { key: "text_item", en: "Text", vi: "Văn bản" },
     Caption { key: "caption", en: "Captions", vi: "Phụ đề" },
     Overlay { key: "overlay", en: "Overlay", vi: "Lớp phủ" },
-    VideoTrackName { key: "video_track_name", en: "Video {n}", vi: "Video {n}" },
-    AudioTrackName { key: "audio_track_name", en: "Audio {n}", vi: "Âm thanh {n}" },
     MuteTrack { key: "mute_track", en: "Mute track", vi: "Tắt tiếng rãnh" },
     HideTrack { key: "hide_track", en: "Hide track", vi: "Ẩn rãnh" },
     DeleteTrack { key: "delete_track", en: "Delete track", vi: "Xóa rãnh" },
@@ -498,16 +496,17 @@ impl PreferenceStore {
 
 /// Export measurements stay in the catalog alongside their unit and locale.
 pub fn export_duration(locale: Locale, seconds: f64) -> String {
+    let label = text(locale, Text::ExportDuration);
     let number = export_decimal(locale, seconds, 2);
     match locale {
-        Locale::En => format!("{}: {number} s", text(locale, Text::ExportDuration)),
-        Locale::Vi => format!("{}: {number} giây", text(locale, Text::ExportDuration)),
+        Locale::En => format!("{label}: {number} s"),
+        Locale::Vi => format!("{label}: {number} giây"),
     }
 }
 pub fn export_range(locale: Locale, start: f64, end: f64) -> String {
+    let label = text(locale, Text::SourceRange);
     format!(
-        "{}: {}–{}",
-        text(locale, Text::SourceRange),
+        "{label}: {}–{}",
         export_decimal(locale, start, 3),
         export_decimal(locale, end, 3)
     )
