@@ -187,23 +187,37 @@ fn wave(
     Ok(result)
 }
 
+#[derive(Clone, Debug)]
+struct Dependents {
+    ids: BTreeSet<String>,
+    depth: usize,
+}
+
 fn dependents(
     id: &str,
     reverse: &BTreeMap<&str, Vec<&str>>,
-    memo: &mut BTreeMap<String, BTreeSet<String>>,
+    memo: &mut BTreeMap<String, Dependents>,
     path: &mut BTreeSet<String>,
-) -> Result<BTreeSet<String>, String> {
+) -> Result<Dependents, String> {
     if let Some(dependents) = memo.get(id) {
+        if path.len() + dependents.depth > 512 {
+            return Err(format!("cyclic or over-512-depth ticket graph at {id}"));
+        }
         return Ok(dependents.clone());
     }
     if path.len() >= 512 || !path.insert(id.to_owned()) {
         return Err(format!("cyclic or over-512-depth ticket graph at {id}"));
     }
-    let mut result = BTreeSet::new();
+    let mut result = Dependents {
+        ids: BTreeSet::new(),
+        depth: 1,
+    };
     if let Some(children) = reverse.get(id) {
         for child in children {
-            result.insert((*child).to_owned());
-            result.extend(dependents(child, reverse, memo, path)?);
+            result.ids.insert((*child).to_owned());
+            let child = dependents(child, reverse, memo, path)?;
+            result.depth = result.depth.max(1 + child.depth);
+            result.ids.extend(child.ids);
         }
     }
     path.remove(id);
@@ -228,7 +242,10 @@ fn dependents_by_id(tickets: &[Ticket]) -> Result<BTreeMap<String, BTreeSet<Stri
     for ticket in tickets {
         dependents(&ticket.id, &reverse, &mut memo, &mut BTreeSet::new())?;
     }
-    Ok(memo)
+    Ok(memo
+        .into_iter()
+        .map(|(id, dependents)| (id, dependents.ids))
+        .collect())
 }
 
 fn count_dependents(
@@ -621,6 +638,8 @@ mod tests {
             ticket("m", "02-dropped.md", "wontfix", "P0", ""),
             ticket("m", "03-blocked.md", "open", "P0", "02"),
         ];
+        assert!(frontier_rows(&tickets, None).unwrap().is_empty());
+        assert_eq!(open_counts(&tickets)["m/02"], 1);
         assert_eq!(
             blocker_errors(&tickets),
             [
@@ -663,10 +682,52 @@ mod tests {
                 &blocked,
             ));
         }
-        assert!(
-            dependents_by_id(&tickets)
-                .unwrap_err()
-                .contains("over-512-depth")
+        for reverse in [false, true] {
+            if reverse {
+                tickets.reverse();
+            }
+            for result in [
+                frontier_rows(&tickets, None).map(|_| ()),
+                blocking_rows(&tickets).map(|_| ()),
+                data(&tickets).map(|_| ()),
+            ] {
+                assert!(result.unwrap_err().contains("over-512-depth"));
+            }
+        }
+        tickets.remove(0);
+        assert!(dependents_by_id(&tickets).is_ok());
+    }
+
+    #[test]
+    fn empty_graph_has_no_frontier_blocking_or_board_rows() {
+        assert!(frontier_rows(&[], None).unwrap().is_empty());
+        assert!(blocking_rows(&[]).unwrap().is_empty());
+        assert_eq!(data(&[]).unwrap(), json!([]));
+    }
+
+    #[test]
+    fn cross_milestone_counts_and_frontier_order_are_stable() {
+        let mut tickets = vec![
+            ticket("a", "01-ready.md", "open", "P1", ""),
+            ticket("b", "02-waiting.md", "open", "P1", "a/01, missing/99"),
+            ticket("c", "03-waiting.md", "open", "P1", "b/02"),
+            ticket("d", "04-ready.md", "open", "P1", ""),
+        ];
+        let rows = frontier_rows(&tickets, None).unwrap();
+        assert_eq!(
+            rows.iter()
+                .map(|row| (row.id.as_str(), row.dependents))
+                .collect::<Vec<_>>(),
+            [("a/01", 2), ("d/04", 0)]
         );
+        let board = data(&tickets).unwrap();
+        assert_eq!(board[0]["unblocks"], 2);
+        assert_eq!(board[1]["ready"], false);
+        assert_eq!(
+            blocker_errors(&tickets),
+            ["ERROR missing b/02 -> missing/99"]
+        );
+        tickets.reverse();
+        assert_eq!(frontier_rows(&tickets, None).unwrap(), rows);
     }
 }
