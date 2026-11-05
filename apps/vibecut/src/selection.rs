@@ -136,6 +136,7 @@ pub fn shared_fields(project: &Project, selection: &BTreeSet<ItemId>) -> Vec<Sha
         "blendMode",
         "opacity",
         "audio_gain",
+        "audio_muted",
         "text_size",
         "text_color",
     ]
@@ -160,6 +161,7 @@ pub fn shared_fields(project: &Project, selection: &BTreeSet<ItemId>) -> Vec<Sha
                 } else {
                     p.gain_db.to_string()
                 }),
+                ("audio_muted", ItemParams::Audio(p)) => Some(p.muted.to_string()),
                 ("text_size", ItemParams::Text(p)) => Some(p.font_size.to_string()),
                 ("text_color", ItemParams::Text(p)) => {
                     let [r, g, b, a] = p.color.0;

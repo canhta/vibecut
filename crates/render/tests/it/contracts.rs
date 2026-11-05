@@ -189,6 +189,122 @@ fn empty_audio_is_exact_silence_for_any_block_partition() {
     assert!(mix_audio(&p, 0, 65537, 2, &mut Empty, &h).is_err());
 }
 #[test]
+fn preview_audio_mix_obeys_item_gain_and_mute() {
+    struct ConstantAudio;
+    impl SourceProvider for ConstantAudio {
+        fn status(
+            &mut self,
+            _: &media::SourceAsset,
+            _: bool,
+            _: &dyn ExecutionHooks,
+        ) -> Result<Option<UnavailableReason>> {
+            Ok(None)
+        }
+        fn video(
+            &mut self,
+            _: &media::SourceAsset,
+            _: project::ItemId,
+            _: Tick,
+            _: &dyn ExecutionHooks,
+        ) -> Result<Option<Image>> {
+            panic!("unexpected video read")
+        }
+        fn audio(
+            &mut self,
+            _: &media::SourceAsset,
+            _: project::ItemId,
+            _: i64,
+            frames: usize,
+            rate: u32,
+            hooks: &dyn ExecutionHooks,
+        ) -> Result<AudioBlock> {
+            let mut block = AudioBlock::new(rate, 2, frames, MemoryKind::Decoded, hooks)?;
+            for plane in block.planes_mut() {
+                plane.fill(1.0);
+            }
+            Ok(block)
+        }
+    }
+
+    let duration = tick(1, 1);
+    let source = media::SourceAsset::try_from(media::AssetData {
+        id: media::AssetId(1),
+        path: std::env::temp_dir().join("vibecut-audio-ui.mp4"),
+        content_hash: media::ContentHash::from_bytes(&[1; 8]),
+        probe: media::SourceProbe {
+            format: "mov,mp4".into(),
+            duration: Some(duration),
+            streams: vec![media::SourceStream {
+                index: 0,
+                kind: media::StreamKind::Audio,
+                codec: "aac".into(),
+                time_base: media::TimeBase::new(1, 48_000).unwrap(),
+                duration: Some(duration),
+                start: None,
+                frame_rate: None,
+                frame_count: None,
+                variable_frame_rate: None,
+                video: None,
+                audio: Some(media::AudioInfo {
+                    sample_rate: 48_000,
+                    channels: 2,
+                    initial_padding: 0,
+                    trailing_padding: 0,
+                }),
+            }],
+        },
+    })
+    .unwrap();
+    let base = |gain_db, muted| {
+        let mut data = project::Project::empty(project::ProjectId(0), "".into())
+            .unwrap()
+            .into_data();
+        data.assets.push(source.clone());
+        data.scene_mut().timeline.insert_track(project::Track {
+            id: project::TrackId(1),
+            name: "Audio".into(),
+            kind: project::TrackKind::Audio,
+            muted: false,
+            hidden: false,
+            locked: false,
+            items: vec![project::Item {
+                blend_mode: Default::default(),
+                masks: Vec::new(),
+                effects: Vec::new(),
+                animations: Default::default(),
+                id: project::ItemId(1),
+                source_asset: Some(media::AssetId(1)),
+                source_range: time::SourceRange::new(Tick::ZERO, duration).unwrap(),
+                start: Tick::ZERO,
+                content: project::ItemParams::Audio(project::AudioParams { gain_db, muted }),
+            }],
+        });
+        project::Project::new(data).unwrap()
+    };
+    let hooks = Hooks::default();
+    for (gain_db, muted, expected) in [
+        (0.0, false, 1.0),
+        (-6.0, false, 10f32.powf(-6.0 / 20.0)),
+        (0.0, true, 0.0),
+        (-6.0, true, 0.0),
+    ] {
+        let project = base(gain_db, muted);
+        let block = mix_audio(&project, 0, 480, 2, &mut ConstantAudio, &hooks).unwrap();
+        assert!(
+            (block.peak() - expected).abs() < 1e-6,
+            "{gain_db}dB muted={muted}"
+        );
+        assert!(
+            block
+                .planes()
+                .iter()
+                .flatten()
+                .all(|sample| sample.is_finite())
+        );
+    }
+}
+
+#[test]
 fn publication_preserves_destination_on_cancel_fail_finalize_and_mux_limit() {
     if !tools() {
         return;

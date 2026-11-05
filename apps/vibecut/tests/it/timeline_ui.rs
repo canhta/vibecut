@@ -1206,6 +1206,139 @@ fn mixed_text_inspector_applies_one_field_and_restores_selected_items() {
 }
 
 #[test]
+fn audio_mute_and_volume_controls_commit_one_step_and_persist() {
+    let fixture = fixture();
+    let audio = fixture
+        .editor
+        .session
+        .project()
+        .data()
+        .scene()
+        .timeline
+        .iter()
+        .find(|t| t.kind == TrackKind::Audio)
+        .unwrap()
+        .items[0]
+        .id;
+    let mut harness = harness(fixture.editor);
+    harness.run_steps(3);
+    harness
+        .get(
+            By::new().predicate(|n| {
+                n.author_id() == Some(format!("timeline.item.{}", audio.0).as_str())
+            }),
+        )
+        .click();
+    harness.run_steps(2);
+    let history = harness.state().session.history_len().0;
+    harness
+        .get(By::new().predicate(|n| n.author_id() == Some("inspector.audio_muted")))
+        .click();
+    harness.run_steps(2);
+    assert_eq!(harness.state().session.history_len().0, history + 1);
+    let ItemParams::Audio(params) = &item(harness.state(), audio).content else {
+        panic!("audio")
+    };
+    assert!(params.muted);
+    assert_eq!(params.gain_db, 0.0);
+    harness.state_mut().activate("edit.undo").unwrap();
+    let ItemParams::Audio(params) = &item(harness.state(), audio).content else {
+        panic!("audio")
+    };
+    assert!(!params.muted);
+    harness.state_mut().activate("edit.redo").unwrap();
+    let ItemParams::Audio(params) = &item(harness.state(), audio).content else {
+        panic!("audio")
+    };
+    assert!(params.muted);
+
+    harness
+        .state_mut()
+        .set_shared_field("audio_gain", "-6")
+        .unwrap();
+    let ItemParams::Audio(params) = &item(harness.state(), audio).content else {
+        panic!("audio")
+    };
+    assert_eq!(params.gain_db, -6.0);
+    assert!(params.muted);
+    for invalid in ["NaN", "25", "-121", "loud", ""] {
+        assert!(
+            harness
+                .state_mut()
+                .set_shared_field("audio_gain", invalid)
+                .is_err(),
+            "gain accepted {invalid}"
+        );
+    }
+    for invalid in ["maybe", "2"] {
+        assert!(
+            harness
+                .state_mut()
+                .set_shared_field("audio_muted", invalid)
+                .is_err(),
+            "mute accepted {invalid}"
+        );
+    }
+    harness
+        .state_mut()
+        .set_shared_field("audio_muted", "false")
+        .unwrap();
+
+    let encoded = project::encode(harness.state().session.project(), false).unwrap();
+    let decoded = project::decode(&encoded).unwrap();
+    assert_eq!(decoded.project, **harness.state().session.project());
+    let ItemParams::Audio(params) = &item(harness.state(), audio).content else {
+        panic!("audio")
+    };
+    assert_eq!(params.gain_db, -6.0);
+    assert!(!params.muted);
+}
+
+#[test]
+#[ignore = "offscreen visual audit, run explicitly outside CI"]
+fn audio_control_visual_audit() {
+    for (scale, dark, locale, filename) in [
+        (1.0, true, Locale::En, "p0-core-17-audio.png"),
+        (2.0, false, Locale::Vi, "p0-core-17-audio-light-vi-2x.png"),
+    ] {
+        let fixture = fixture();
+        let mut editor = fixture.editor;
+        editor.preferences.dark = dark;
+        editor.preferences.locale = locale;
+        let audio = editor
+            .session
+            .project()
+            .data()
+            .scene()
+            .timeline
+            .iter()
+            .find(|t| t.kind == TrackKind::Audio)
+            .unwrap()
+            .items[0]
+            .id;
+        editor.selection = [audio].into_iter().collect();
+        editor.set_shared_field("audio_gain", "-3").unwrap();
+        let project = editor.session.project().clone();
+        editor
+            .playback
+            .seek(Tick(3 * SECOND), false, project)
+            .unwrap();
+        let mut harness = Harness::builder()
+            .with_size(egui::vec2(1440.0, 1030.0))
+            .with_pixels_per_point(scale)
+            .build_ui_state(|ui, editor: &mut Editor| editor.ui(ui), editor);
+        harness.run_steps(4);
+        let image = harness.render().unwrap();
+        let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../../target")
+            .join(filename);
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        image.save(&path).unwrap();
+        println!("audio audit: {}", path.display());
+    }
+}
+
+#[test]
 fn compatible_audio_gain_inspector_skips_video_and_preserves_mute() {
     let fixture = fixture();
     let video = fixture.video_a;

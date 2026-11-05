@@ -24,6 +24,11 @@ fn apply_patch(target: &mut Item, patch: &crate::ItemParamPatch) -> Result<()> {
                 p.gain_db = *v;
             }
         }
+        crate::ItemParamPatch::AudioMuted(v) => {
+            if let ItemParams::Audio(p) = &mut target.content {
+                p.muted = *v;
+            }
+        }
         crate::ItemParamPatch::TextSize(v) => {
             if let ItemParams::Text(p) = &mut target.content {
                 p.font_size = *v;

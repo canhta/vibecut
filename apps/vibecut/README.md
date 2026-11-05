@@ -133,10 +133,10 @@ document restores the system defaults. Unversioned and unsupported versions are
 refused without rewriting their bytes on load or save. Edits and writes share the 4 KiB
 read budget, so a saved document always remains readable.
 
-The selection inspector shows audio gain and text size/colour for compatible
+The selection inspector shows audio gain/mute and text size/colour for compatible
 selected items, with a dash for mixed values and the compatible/selected count.
 A single element uses the per-type tabs above instead: Text has a size scrub and
-colour entry, Blending a blend menu and opacity scrub, and Audio a gain scrub.
+colour entry, Blending a blend menu and opacity scrub, and Audio a gain scrub and mute checkbox.
 Each scrub field has a left drag handle, a click-to-type entry and clamps; the
 drag previews through an engine gesture, commits as one registered
 `timeline.set_item_param` undo step on release, and Escape cancels the gesture or

@@ -60,6 +60,7 @@ pub enum ItemParamPatch {
     BlendMode(project::BlendMode),
     Opacity(f64),
     AudioGain(f32),
+    AudioMuted(bool),
     TextSize(f32),
     TextColor(Color),
 }
@@ -70,8 +71,10 @@ impl ItemParamPatch {
         }
         matches!(
             (self, content),
-            (Self::AudioGain(_), ItemParams::Audio(_))
-                | (Self::TextSize(_) | Self::TextColor(_), ItemParams::Text(_))
+            (
+                Self::AudioGain(_) | Self::AudioMuted(_),
+                ItemParams::Audio(_)
+            ) | (Self::TextSize(_) | Self::TextColor(_), ItemParams::Text(_))
         )
     }
     pub(crate) fn validate(&self) -> crate::Result<()> {
@@ -79,6 +82,7 @@ impl ItemParamPatch {
             Self::BlendMode(_) => true,
             Self::Opacity(v) => v.is_finite() && (0.0..=1.0).contains(v),
             Self::AudioGain(v) => v.is_finite() && (-120.0..=24.0).contains(v),
+            Self::AudioMuted(_) => true,
             Self::TextSize(v) => v.is_finite() && (1.0..=4096.0).contains(v),
             Self::TextColor(_) => true,
         };

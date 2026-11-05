@@ -1302,6 +1302,65 @@ fn item_compositing_refuses_forced_copy_and_preserves_destination() {
 }
 
 #[test]
+fn export_item_mute_and_gain_change_samples() {
+    if !tools() {
+        return;
+    }
+    let dir = tempfile::tempdir().unwrap();
+    let input = dir.path().join("item-volume.mp4");
+    av_fixture(&input);
+    let base = video_project(&input);
+    let mut data = base.into_data();
+    let video_items = data.scene_mut().timeline.overlays.remove(0).items;
+    data.scene_mut().timeline.main.items = video_items;
+    let mut audio = data.scene().timeline.main.items[0].clone();
+    audio.id = project::ItemId(1);
+    if let project::ItemParams::Video(params) = &mut data.scene_mut().timeline.main.items[0].content
+    {
+        params.source_audio_enabled = false;
+    }
+    data.scene_mut().timeline.insert_track(project::Track {
+        id: project::TrackId(1),
+        name: "Audio".into(),
+        kind: project::TrackKind::Audio,
+        muted: false,
+        hidden: false,
+        locked: false,
+        items: vec![audio],
+    });
+    for (gain_db, muted) in [(0.0, false), (-6.0, false), (0.0, true), (-6.0, true)] {
+        if let Some(item) = data
+            .scene_mut()
+            .timeline
+            .audio
+            .first_mut()
+            .and_then(|track| track.items.first_mut())
+        {
+            item.content = project::ItemParams::Audio(project::AudioParams { gain_db, muted });
+        }
+        let project = project::Project::new(data.clone()).unwrap();
+        let output = dir.path().join(format!("item-{gain_db}-{muted}.mp4"));
+        export(
+            &project,
+            TimeRange::new(Tick::ZERO, tick(1, 1)).unwrap(),
+            &ExportSettings::from_project(&project),
+            &output,
+            &Hooks::default(),
+        )
+        .unwrap();
+        let samples = pcm(&output, None);
+        let peak = samples
+            .iter()
+            .fold(0.0f32, |peak, sample| peak.max(sample.abs()));
+        if muted {
+            assert!(peak <= 1e-5, "muted gain={gain_db} peak={peak}");
+        } else {
+            assert!(peak > 0.05, "audible gain={gain_db} peak={peak}");
+        }
+    }
+}
+
+#[test]
 fn export_keeps_track_picture_and_audio_flags_independent() {
     if !tools() {
         return;

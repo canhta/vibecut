@@ -3679,6 +3679,19 @@ impl Editor {
             ui.label(self.tr(Text::NoSharedFields));
         }
         for field in fields {
+            if field.id == "audio_muted" {
+                ui.add_space(12.0);
+                let mut muted = field.value.as_deref() == Some("true");
+                let response = ui.checkbox(&mut muted, self.tr(Text::AudioMuted));
+                self.remember("inspector.audio_muted", &response);
+                if response.changed()
+                    && let Err(error) = self.set_shared_field("audio_muted", &muted.to_string())
+                {
+                    self.error = Some(error.to_string());
+                }
+                self.compatible_count(ui, field.compatible);
+                continue;
+            }
             if field.id == "blendMode" {
                 ui.add_space(12.0);
                 let caption = ui.label(self.tr(Text::BlendMode));
@@ -3775,6 +3788,19 @@ impl Editor {
                 }
             }
         }
+    }
+    fn compatible_count(&self, ui: &mut egui::Ui, compatible: usize) {
+        let compatible = catalog::number(self.preferences.locale, compatible as u64);
+        let total = catalog::number(self.preferences.locale, self.selection.len() as u64);
+        ui.label(
+            egui::RichText::new(catalog::format(
+                self.preferences.locale,
+                Text::CompatibleCount,
+                &[("compatible", &compatible), ("total", &total)],
+            ))
+            .small()
+            .color(self.secondary()),
+        );
     }
     /// The inspector and automation use the same registered atomic field edit.
     pub fn set_shared_field(&mut self, field: &str, value: &str) -> Result<()> {
@@ -5280,6 +5306,14 @@ fn item_patch(field: &str, value: &str) -> Result<ItemParamPatch> {
                 .parse()
                 .map_err(|_| Error::Invalid("audio gain"))?,
         )),
+        "audio_muted" => {
+            let muted = match value.trim() {
+                "true" | "1" | "muted" => true,
+                "false" | "0" | "unmuted" => false,
+                _ => return Err(Error::Invalid("audio mute")),
+            };
+            Ok(ItemParamPatch::AudioMuted(muted))
+        }
         "text_size" => Ok(ItemParamPatch::TextSize(
             value
                 .trim()

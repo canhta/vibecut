@@ -294,6 +294,7 @@ catalog! {
 
     // Inspector.
     AudioGain { key: "audio_gain", en: "Volume (dB)", vi: "Âm lượng (dB)" },
+    AudioMuted { key: "audio_muted", en: "Mute", vi: "Tắt tiếng" },
     TextSize { key: "text_size", en: "Font size (px)", vi: "Cỡ chữ (px)" },
     TextColor { key: "text_color", en: "Text colour (RGBA)", vi: "Màu chữ (RGBA)" },
     DragToAdjust { key: "drag_to_adjust", en: "Drag to adjust", vi: "Kéo để điều chỉnh" },
