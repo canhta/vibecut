@@ -156,7 +156,7 @@ pub struct Subtitles {
     runner: JobRunner,
     pub(crate) item: Option<ItemId>,
     selected: BTreeSet<NfcText>,
-    anchor: Option<usize>,
+    anchor: Option<NfcText>,
     page: usize,
     text_focus: Option<egui::Id>,
     drafts: BTreeMap<(NfcText, LanguageTag), String>,
@@ -633,6 +633,15 @@ impl Subtitles {
                 .map(|(_, p)| p.cues.cues.iter().map(|c| c.id.clone()).collect())
                 .unwrap_or_default();
             self.selected.retain(|id| ids.contains(id));
+            if self.anchor.as_ref().is_some_and(|id| !ids.contains(id)) {
+                self.anchor = self.caption(session).and_then(|(_, p)| {
+                    p.cues
+                        .cues
+                        .iter()
+                        .find(|cue| self.selected.contains(&cue.id))
+                        .map(|cue| cue.id.clone())
+                });
+            }
         }
     }
 }

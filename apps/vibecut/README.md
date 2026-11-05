@@ -530,9 +530,13 @@ its modal remains available when switching tabs. Disclosures show provider/model
 languages, payload size, duration, cost and the provider's own HTTPS policy links.
 The Models action on a missing bundle opens the existing model manager.
 
-Cue times seek in output coordinates. Shift extends a range; Cmd/Ctrl toggles.
+Cue times seek in output coordinates. Shift extends a range from a cue identity;
+after merging away that cue, the surviving selection supplies the anchor.
+Cmd/Ctrl toggles.
 Text edits retain independent language edit/provenance flags and normalize through
-captions. Leaving a field or switching tabs commits drafts; unrelated project edits retain
+captions. Leaving a field or switching tabs commits drafts. Cue, page, item,
+language and timing actions also commit drafts before changing the view or content;
+unrelated project edits retain
 them, and concurrent changes to the same caption retain a copyable draft until
 explicit reload. Focused text never
 triggers timeline shortcuts. Split uses the chosen playhead time and whole

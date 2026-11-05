@@ -88,6 +88,44 @@ fn with_panel<T>(e: &mut Editor, f: impl FnOnce(&mut Subtitles, &mut Session, &O
 }
 
 #[test]
+fn cue_actions_preserve_focused_caption_draft() {
+    for action in [
+        "subtitles.later",
+        "subtitles.cue.cue-0",
+        "subtitles.cue.cue-1",
+    ] {
+        let mut h = harness(editor("vi"), 1.0);
+        h.run_steps(3);
+        click(&mut h, "subtitles.cue.cue-0");
+        let field = "subtitles.text.cue-0.vi";
+        h.get(By::new().predicate(|n| n.author_id() == Some(field)))
+            .focus();
+        h.run_steps(2);
+        h.get(By::new().predicate(|n| n.author_id() == Some(field)))
+            .type_text(" pending draft");
+        h.run_steps(2);
+        let expected = h
+            .get(By::new().predicate(|n| n.author_id() == Some(field)))
+            .value()
+            .unwrap()
+            .to_owned();
+        let before = track(h.state()).cues[0].range;
+        click(&mut h, action);
+        let after = track(h.state());
+        assert_eq!(
+            after.cues[0].texts[&lang("vi")].text.as_str(),
+            expected,
+            "{action}"
+        );
+        if action == "subtitles.later" {
+            assert!(after.cues[0].range.start() > before.start());
+        } else {
+            assert_eq!(after.cues[0].range, before);
+        }
+    }
+}
+
+#[test]
 fn cue_edit_selection_seek_split_merge_nudge_and_history_use_real_controls() {
     for scale in [1.0, 2.0] {
         let mut h = harness(editor("vi"), scale);
@@ -172,6 +210,15 @@ fn cue_edit_selection_seek_split_merge_nudge_and_history_use_real_controls() {
             p.nudge(s, false).unwrap();
         });
         assert_eq!(track(h.state()), before);
+        // A merge can remove the anchor row; Shift must extend from the surviving cue.
+        with_panel(h.state_mut(), |p, s, _| {
+            p.select_cue(s, 3, false, false).unwrap();
+            p.select_cue(s, 2, true, false).unwrap();
+            p.merge(s).unwrap();
+            assert_eq!(p.inspect(s).selected.len(), 1);
+            p.select_cue(s, 0, true, false).unwrap();
+        });
+        assert_eq!(panel(h.state()).selected.len(), 3);
     }
 }
 

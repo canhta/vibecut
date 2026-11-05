@@ -156,7 +156,11 @@ impl Subtitles {
             .and_then(|d| item.start.checked_add(d))
             .ok_or(Error::Invalid("cue time overflow"))?;
         if extend {
-            let anchor = self.anchor.unwrap_or(index);
+            let anchor = self
+                .anchor
+                .as_ref()
+                .and_then(|id| params.cues.cues.iter().position(|cue| &cue.id == id))
+                .unwrap_or(index);
             let range = anchor.min(index)..=anchor.max(index);
             let ids: Vec<_> = params
                 .cues
@@ -180,7 +184,7 @@ impl Subtitles {
                 self.selected.clear();
                 self.selected.insert(id);
             }
-            self.anchor = Some(index);
+            self.anchor = Some(cue.id.clone());
         }
         Ok(at)
     }
@@ -231,7 +235,6 @@ impl Subtitles {
             content: ItemParams::Caption(project::CaptionParams { cues }),
         })?;
         self.drafts.clear();
-        self.draft_project = Some(session.project().clone());
         self.refresh(session);
         Ok(())
     }

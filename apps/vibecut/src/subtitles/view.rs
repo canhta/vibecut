@@ -198,6 +198,7 @@ impl Subtitles {
         dark: bool,
     ) -> Vec<(String, egui::Response)> {
         self.refresh(session);
+        let previous_options = options.clone();
         self.text_focus = None;
         let mut controls = Controls {
             locale,
@@ -350,6 +351,10 @@ impl Subtitles {
                         });
                     });
                 controls.remember("subtitles.translation.settings", &r.header_response);
+                if *options != previous_options {
+                    let result = self.flush_drafts(session).map(|_| ());
+                    self.ui_result(result);
+                }
                 if let Some(problem) = self.problem {
                     ui.colored_label(theme::error_text(dark), controls.tr(problem));
                     if problem == Text::SubDraftConflict && self.caption(session).is_none() {
@@ -470,7 +475,9 @@ impl Subtitles {
                     if selected != self.item
                         && let Some(item) = selected
                     {
-                        let result = self.select_item(session, item);
+                        let result = self
+                            .flush_drafts(session)
+                            .and_then(|_| self.select_item(session, item));
                         self.ui_result(result);
                     }
                 }
@@ -493,7 +500,9 @@ impl Subtitles {
                             Icon::Scissors,
                             self.selected.len() == 1,
                         ) {
-                            let result = self.split(session, at);
+                            let result = self
+                                .flush_drafts(session)
+                                .and_then(|_| self.split(session, at));
                             self.ui_result(result);
                         }
                         if controls.icon_button(
@@ -503,7 +512,8 @@ impl Subtitles {
                             Icon::ArrowsInLineHorizontal,
                             self.selected.len() > 1,
                         ) {
-                            let result = self.merge(session);
+                            let result =
+                                self.flush_drafts(session).and_then(|_| self.merge(session));
                             self.ui_result(result);
                         }
                         if controls.icon_button(
@@ -513,7 +523,9 @@ impl Subtitles {
                             Icon::SkipBack,
                             !self.selected.is_empty(),
                         ) {
-                            let result = self.nudge(session, false);
+                            let result = self
+                                .flush_drafts(session)
+                                .and_then(|_| self.nudge(session, false));
                             self.ui_result(result);
                         }
                         if controls.icon_button(
@@ -523,7 +535,9 @@ impl Subtitles {
                             Icon::SkipForward,
                             !self.selected.is_empty(),
                         ) {
-                            let result = self.nudge(session, true);
+                            let result = self
+                                .flush_drafts(session)
+                                .and_then(|_| self.nudge(session, true));
                             self.ui_result(result);
                         }
                     });
@@ -644,6 +658,8 @@ impl Subtitles {
         };
         let cues = params.cues.cues.clone();
         let profiles = LanguageRegistry::standard().ok();
+        let mut selected = None;
+        let mut save = false;
         const PAGE: usize = 50;
         self.page = self.page.min(cues.len().saturating_sub(1) / PAGE);
         if cues.len() > PAGE {
@@ -655,7 +671,10 @@ impl Subtitles {
                     Icon::SkipBack,
                     self.page > 0,
                 ) {
-                    self.page = self.page.saturating_sub(1);
+                    let result = self.flush_drafts(session).map(|_| {
+                        self.page = self.page.saturating_sub(1);
+                    });
+                    self.ui_result(result);
                 }
                 ui.label(catalog::format(
                     c.locale,
@@ -672,7 +691,10 @@ impl Subtitles {
                     Icon::SkipForward,
                     (self.page + 1) * PAGE < cues.len(),
                 ) {
-                    self.page += 1;
+                    let result = self.flush_drafts(session).map(|_| {
+                        self.page += 1;
+                    });
+                    self.ui_result(result);
                 }
             });
         }
@@ -698,11 +720,7 @@ impl Subtitles {
                 .on_hover_text(c.tr(Text::SubSelectionHelp));
             c.remember(format!("subtitles.cue.{}", cue.id.as_str()), &r);
             if r.clicked() {
-                let modifiers = ui.input(|i| i.modifiers);
-                match self.select_cue(session, index, modifiers.shift, modifiers.command) {
-                    Ok(at) => self.requested_seek = Some(at),
-                    Err(_) => self.problem = Some(Text::SubEditFailed),
-                }
+                selected = Some((index, ui.input(|i| i.modifiers)));
             }
             let mut languages: BTreeSet<_> = cue.texts.keys().cloned().collect();
             if let Ok(target) = LanguageTag::parse(&options.target) {
@@ -758,11 +776,23 @@ impl Subtitles {
                     &r,
                 );
                 if r.lost_focus() && draft != original {
-                    let text = draft.clone();
-                    let result = self.edit_text(session, &cue.id, language, &text);
-                    self.ui_result(result);
+                    save = true;
                 }
             }
+        }
+        // Apply after rendering all fields so the snapshot cannot recreate old drafts.
+        if let Some((index, modifiers)) = selected {
+            match self
+                .flush_drafts(session)
+                .and_then(|_| self.select_cue(session, index, modifiers.shift, modifiers.command))
+            {
+                Ok(at) => self.requested_seek = Some(at),
+                Err(error) => self.ui_result(Err(error)),
+            }
+            ui.ctx().request_repaint();
+        } else if save {
+            let result = self.flush_drafts(session).map(|_| ());
+            self.ui_result(result);
         }
     }
     fn consent_ui(&mut self, ctx: &egui::Context, c: &mut Controls) {
