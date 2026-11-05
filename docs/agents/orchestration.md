@@ -52,8 +52,8 @@ code is settled by [copy imports](../engineering/workflows.md#copy-imports).
 
 - One Orca-created worktree per worker. A ticket branch is `<type>/<milestone>-<NN>-<slug>`, lowercase with hyphens (e.g. `feat/p1-clips-04-review-ui`), where `<type>` is the Conventional Commits type of the ticket's main change: `feat`, `fix`, `perf`, `refactor`, `test`, `docs`, `build`, `ci` or `chore` ([Conventional Commits](https://www.conventionalcommits.org/en/v1.0.0/), [Conventional Branch](https://conventionalbranch.org/)); commits use the same types. A pull loop starts each ticket on a fresh branch from `origin/main` in that worktree.
 - `.scratch/` and `.spikes/` exist only in the main checkout: read and write them by absolute path.
-- Every command that compiles Rust (`cargo xtask ci`, `cargo test`, `cargo clippy`, `cargo build`) runs through `/Users/canh/Startup/VibeCut/.scratch/bin/build <command>`: it waits for one of three build slots (a lock), sets `CARGO_TARGET_DIR` to that slot's warm cache and runs the command. Never set `CARGO_TARGET_DIR` yourself.
-- Workers are not limited by build slots: dispatch as many as the frontier allows, as long as no two live tickets own the same crate or file area (check `Ownership` in each ticket; serialize the overlap).
+- Every command that compiles Rust (`cargo xtask ci`, `cargo test`, `cargo clippy`, `cargo build`) runs through `/Users/canh/Startup/VibeCut/.scratch/bin/build <command>`: it waits for the build slot (a lock; one on this 16 GB machine), sets `CARGO_TARGET_DIR` to that slot's warm cache and runs the command. Never set `CARGO_TARGET_DIR` yourself.
+- At most 4 live workers, reviewers included (RAM: 16 GB), and no two live tickets own the same crate or file area (check `Ownership` in each ticket; serialize the overlap).
 - Spike hygiene: a spike keeps its report, outputs, labels and eval corpus. Its venvs, package/model caches and model weights are deleted when its ticket resolves, unless an open ticket names the path; weights are re-fetched by recorded revision and hash.
 - Build caches are kept only while used: `.scratch/bin/cleanup` prunes incremental sessions and slots untouched for 2+ days; slots in use stay warm.
 
@@ -70,7 +70,7 @@ code is settled by [copy imports](../engineering/workflows.md#copy-imports).
    only what the Maintainer row owns.
 4. Return work to the dispatch that already holds its context: re-reviews to the same reviewer's dispatch (`orca orchestration send` reopens a finished worker). Review `changes` go to the implementer's dispatch; start a new worker on the branch only when that dispatch is gone.
 5. After a merge, clean up with `.scratch/bin/cleanup <dispatch-id>... <worktree-name>...` (releases every dispatch of the ticket, closes their terminals, removes worktrees). A message to a finished dispatch may open a new dispatch id: address follow-ups to the id `worker-list` shows for that worktree. Keep the implementer and reviewer (dispatch and worktree) until the ticket merges or is dropped; only then are they removed.
-6. Dispatch what `.scratch/bin/frontier` lists, opencode first, critical path first.
+6. Dispatch what `.scratch/bin/frontier` lists, critical path first. Implementers are opencode unless the ticket is T3+ or its work type routes to Codex in `.scratch/agents.md`; live Codex implementers never outnumber opencode ones.
 7. Only the coordinator pauses or resumes workers, by message. A pause also kills
    any app, `osascript` or build the worker started; workers never infer a pause from
    other text.
