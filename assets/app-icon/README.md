@@ -1,6 +1,6 @@
 # App icon
 
-Original artwork by the VibeCut maintainer, GPL-3.0-or-later (see [LICENSE](../../LICENSE)).
+Original artwork by the VibeCut maintainer, GPL-3.0-only (see [LICENSE](../../LICENSE)).
 
 ## Palette and geometry
 
@@ -10,7 +10,7 @@ the center. The flat app tile is full bleed; the web favicon has a 224-unit radi
 The macOS source uses extended-sRGB background `(0.05882, 0.06667, 0.07451)`;
 its two layers have neutral shadow opacity 0.25 and translucency 0.15. Icon Composer
 owns Liquid Glass appearance settings. The script places the native macOS export on Apple's 824/1024 optical grid
-with transparent margins/corners for runtime PNGs and legacy ICNS.
+with transparent margins/corners for runtime PNGs and ICNS.
 
 ## Files
 

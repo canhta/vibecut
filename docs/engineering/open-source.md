@@ -2,13 +2,13 @@
 
 ## Licensing
 
-Contributions are [GPL-3.0-or-later](../../LICENSE). Admitted dependency licences: MIT, Apache-2.0, BSD, ISC, Zlib, Unicode, Unlicense, WTFPL, CDLA-Permissive-2.0, unmodified MPL-2.0, LGPL-2.1-or-later for shared FFmpeg, and GPL-3.0-or-later for FFmpeg with libx264. Any other licence needs an ADR.
+Contributions are [GPL-3.0-only](../../LICENSE). Admitted dependency licences: MIT, Apache-2.0, BSD, ISC, Zlib, Unicode, Unlicense, WTFPL, CDLA-Permissive-2.0, unmodified MPL-2.0, LGPL-2.1-or-later for shared FFmpeg, and GPL-3.0 for FFmpeg with libx264. Any other licence needs an ADR.
 
 ## FFmpeg distribution
 
-Build dynamic FFmpeg with nonfree and automatic external-library discovery off. Linux enables the GPL build and libx264 so software H.264 export works without a GPU; macOS and Windows keep their platform encoders. Admitted extras: libvpx, libopus and dav1d (BSD), libx264 (GPL-3.0-or-later), libmp3lame for encoding only (its GPL mpglib excluded). Any other component needs a licence review.
+Build dynamic FFmpeg with nonfree and automatic external-library discovery off. Linux enables the GPL build and libx264 so software H.264 export works without a GPU; macOS and Windows keep their platform encoders. Admitted extras: libvpx, libopus and dav1d (BSD), libx264 (GPL-3.0), libmp3lame for encoding only (its GPL mpglib excluded). Any other component needs a licence review.
 
-Every shipped bundle carries the resolved build recipe, source identity and hashes, licence texts and notices, and the corresponding FFmpeg source (a link to a moving branch is not enough). App docs name FFmpeg and its licence (LGPL where used, GPL-3.0-or-later on Linux); our terms allow reverse engineering for debugging and replacing the libraries.
+Every shipped bundle carries the resolved build recipe, source identity and hashes, licence texts and notices, and the corresponding FFmpeg source (a link to a moving branch is not enough). App docs name FFmpeg and its licence (LGPL where used, GPL-3.0 on Linux); our terms allow reverse engineering for debugging and replacing the libraries.
 
 - **macOS:** dylibs in `Contents/Frameworks` with `@rpath` install names and an `@executable_path/../Frameworks` runpath; sign nested libraries first, then notarize the bundle (Developer ID, hardened runtime). Document how a user replaces and re-signs a library where library validation blocks a modified one.
 - **Windows:** architecture-matched DLLs beside the executable; never load FFmpeg from the working directory or a system install. Test a modified compatible DLL without rebuilding the app.

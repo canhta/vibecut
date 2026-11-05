@@ -486,7 +486,7 @@ pub(super) fn horizontal_window(
     Ok(Some(cropped))
 }
 
-/// Frame-aware swscale path: the safe wrapper's legacy sws_scale call ignores
+/// Frame-aware swscale path: the safe wrapper's sws_scale call ignores
 /// frame color/chroma metadata and its conversion return code.
 pub(super) struct Scaler(std::ptr::NonNull<ff::ffi::SwsContext>);
 impl Scaler {
@@ -494,7 +494,7 @@ impl Scaler {
         if !(1..=8).contains(&threads) {
             return Err(MediaError::Invalid("conversion thread count"));
         }
-        // SAFETY: new context has no initialized legacy source/destination state;
+        // SAFETY: new context has no initialized source/destination state;
         // sws_scale_frame dynamically configures it from each pair of frames.
         unsafe {
             let context = std::ptr::NonNull::new(ff::ffi::sws_alloc_context())

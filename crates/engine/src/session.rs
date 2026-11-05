@@ -334,7 +334,7 @@ impl Session {
     pub fn apply_merged(&mut self, command: Command, key: Option<&str>) -> Result<Outcome> {
         self.boundary(|session| session.commit(command, key, false))
     }
-    /// Control and legacy JSON admission share the candidate invariant; typed
+    /// Control and JSON admission share the candidate invariant; typed
     /// in-process editing retains the owner's full integer domain.
     pub(crate) fn apply_control(&mut self, command: Command) -> Result<Outcome> {
         self.boundary(|session| session.commit(command, None, true))

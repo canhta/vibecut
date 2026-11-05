@@ -203,7 +203,7 @@ pub(super) fn compliance(tools: &Tools, prefix: &Path, destination: &Path) -> Re
         destination,
     )?;
     let licence = if gpl {
-        "GPL-3.0-or-later FFmpeg with libx264, Opus and libvpx"
+        "GPL-3.0 FFmpeg with libx264, Opus and libvpx"
     } else {
         "LGPL-2.1-or-later FFmpeg with Opus and libvpx"
     };

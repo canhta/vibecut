@@ -139,7 +139,7 @@ integers and created IDs, including values produced by allocation or tick/keyfra
 arithmetic. Undo/redo validate their destination snapshot before moving history.
 An invalid candidate returns InvalidParams without consuming IDs, advancing
 revision or emitting a project change; its refusal receipt can be replayed. This
-also applies to legacy JSON execution; typed in-process editing keeps the owner
+also applies to JSON execution; typed in-process editing keeps the owner
 types' full integer domain.
 The recovery journal descriptor is version 2 for the same ProjectId encoding;
 older descriptors are refused before model decoding, without deleting their files.
