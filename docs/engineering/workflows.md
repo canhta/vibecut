@@ -28,6 +28,11 @@ Windows needs architecture-matched MSYS2 CLANG64 (x64) or CLANGARM64 (arm64), Ba
 
 Windows excludes FFmpeg's out-of-contract `gfxcapture` screen filter through configuration: case-insensitive builds resolve libc++'s `<version>` to the archive's `VERSION`. For workspace checks, xtask merges general, underscore-target and hyphen-target `BINDGEN_EXTRA_CLANG_ARGS` in that order, then appends AMX include guards and an explicit native MSVC Clang target in the preferred hyphen-target variable. The target applies to FFmpeg and Whisper: native bindgen otherwise trusts MSYS2 libclang’s GNU default, whose unsigned enums disagree with whisper-rs’s MSVC representation. Workspace Cargo children receive MSVC/SDK header paths in `INCLUDE`, discovered through `cc`'s Windows registry support or inherited from an already-configured developer shell. Forward only `INCLUDE` from that compiler environment to preserve the FFmpeg DLL search path; missing MSVC tools or SDK paths fail with setup guidance. Exclude dependent AMX headers together until upstream bindings handle vector layouts; this avoids invalid packed/aligned tile bindings without changing native FFmpeg or public layouts.
 
+Windows workspace Cargo children also receive the managed static `/MD` Sherpa
+library directory through `SHERPA_ONNX_LIB_DIR`, preserving Rust's default dynamic
+MSVC CRT. Native AI archive selection, cache integrity and explicit overrides
+belong to [ai's native build contract](../../crates/ai/README.md#local-gipformer).
+
 ## Hosted CI
 
 `ci.yml` (`CI`) runs on main pushes and manual dispatch, with read-only permissions; ticket branches/PRs use [local checks](verification.md#checks). Require stable `CI gate` in branch protection. Ubuntu docs/lint run fmt and repository policy each time; Markdown/`docs/`-only main pushes stop there. Code/manual runs add one Apple Silicon `test (macos-arm64)` job, Clippy then workspace tests/doctests sharing native setup and target tree, without archive transfers or another macOS runner. `gate` fails closed for failed, cancelled or skipped selected jobs. Windows is advisory and supports manual dispatch. Superseded runs cancel per event/ref, including main bursts; main classifies the event diff, manual runs the full gate.

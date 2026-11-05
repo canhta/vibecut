@@ -1,5 +1,6 @@
 //! Resolve and build the current stable LGPL media libraries outside the repository.
 
+use crate::archives::{fetch, sha256};
 use sha2::{Digest, Sha256};
 use std::env;
 use std::fs;
@@ -15,18 +16,8 @@ pub fn host() -> Result<String, String> {
     Ok(format!("{os}-{}", env::consts::ARCH))
 }
 
-pub fn cache() -> Result<PathBuf, String> {
-    // MSYS HOME can be /home/name, which is not a Windows absolute path and
-    // disagrees with the native runner's cache location.
-    let variable = if cfg!(windows) { "USERPROFILE" } else { "HOME" };
-    let home = env::var_os(variable).ok_or_else(|| format!("{variable} is unavailable"))?;
-    if !Path::new(&home).is_absolute() {
-        return Err(format!("{variable} must be a native absolute path"));
-    }
-    if home.to_str().is_none() {
-        return Err("the C build cache path must be valid UTF-8".into());
-    }
-    Ok(PathBuf::from(home).join(".cache/vibecut/ffmpeg"))
+fn cache() -> Result<PathBuf, String> {
+    crate::archives::cache("ffmpeg")
 }
 
 fn run(command: &mut Command) -> Result<(), String> {
@@ -85,40 +76,6 @@ pub fn cache_key() -> Result<(), String> {
     let vpx = stable_tag("https://github.com/webmproject/libvpx.git", "v")?;
     println!("ffmpeg{version}-opus{opus}-vpx{vpx}");
     Ok(())
-}
-
-fn fetch(url: &str, destination: &Path) -> Result<(), String> {
-    let tmp = destination.with_extension("part");
-    run(Command::new("curl")
-        .args([
-            "--fail",
-            "--location",
-            "--retry",
-            "2",
-            "--connect-timeout",
-            "20",
-            "--max-time",
-            "600",
-            "--output",
-        ])
-        .arg(&tmp)
-        .arg(url))?;
-    fs::rename(tmp, destination).map_err(|e| e.to_string())
-}
-
-fn sha256(path: &Path) -> Result<String, String> {
-    use std::io::Read;
-    let mut file = fs::File::open(path).map_err(|e| e.to_string())?;
-    let mut hash = Sha256::new();
-    let mut buffer = [0u8; 65_536];
-    loop {
-        let n = file.read(&mut buffer).map_err(|e| e.to_string())?;
-        if n == 0 {
-            break;
-        }
-        hash.update(buffer.get(..n).ok_or("hash read bounds")?);
-    }
-    Ok(hash.finalize().iter().map(|b| format!("{b:02x}")).collect())
 }
 
 fn source(
@@ -205,6 +162,17 @@ pub fn environment(command: &mut Command) -> Result<(), String> {
             .filter(|value| !value.is_empty())
             .ok_or("MSVC INCLUDE is empty; install the Windows SDK or use a Visual Studio developer shell")?;
         windows_bindgen_environment(command, &include);
+        if env::var_os("SHERPA_ONNX_LIB_DIR").is_none() {
+            let manifest =
+                PathBuf::from(env::var_os("CARGO_MANIFEST_DIR").ok_or("run via cargo xtask")?);
+            let root = manifest
+                .parent()
+                .ok_or("xtask must live in workspace root")?;
+            command.env(
+                "SHERPA_ONNX_LIB_DIR",
+                crate::sherpa::provision(root, env::consts::ARCH)?,
+            );
+        }
     }
     if cfg!(target_os = "macos") {
         let mut flags = env::var("CARGO_ENCODED_RUSTFLAGS").unwrap_or_default();

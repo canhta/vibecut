@@ -1,4 +1,5 @@
 //! Workspace checks and admitted crate scaffolding.
+mod archives;
 mod benchmark;
 #[cfg(unix)]
 mod build;
@@ -8,6 +9,7 @@ mod ffmpeg;
 mod i18n;
 mod oracles;
 mod tickets;
+mod sherpa;
 
 use serde_json::Value;
 use std::collections::BTreeMap;
@@ -84,6 +86,23 @@ fn tests(root: &Path, args: &[&str], required: bool) -> Result<(), String> {
 
 fn run_checks(root: &Path, require_oracles: bool) -> Result<(), String> {
     lint(root)?;
+    #[cfg(windows)]
+    for feature in ["whisper", "gipformer"] {
+        cargo_check(
+            root,
+            &[
+                "test",
+                "-p",
+                "ai",
+                "--lib",
+                "--no-default-features",
+                "--features",
+                feature,
+                "--no-run",
+            ],
+            require_oracles,
+        )?;
+    }
     cargo_check(root, &["test", "--workspace"], require_oracles)
 }
 
@@ -409,6 +428,14 @@ fn run() -> Result<ExitCode, String> {
         ["clip-eval", ..] => clip_eval::run(root, args.get(1..).unwrap_or(&[])),
         ["ffmpeg"] => ffmpeg::provision(None),
         ["ffmpeg", "--cache-key"] => ffmpeg::cache_key(),
+        ["sherpa"] => {
+            println!("{}", sherpa::provision(root, env::consts::ARCH)?.display());
+            Ok(())
+        }
+        ["sherpa", "--arch", arch] => {
+            println!("{}", sherpa::provision(root, arch)?.display());
+            Ok(())
+        }
         ["checks"] => checks(root),
         ["clippy"] => clippy(root),
         ["lint"] => lint(root),
@@ -427,7 +454,7 @@ fn run() -> Result<ExitCode, String> {
         ["ci"] => ci(root, false),
         ["ci", "--require-oracles"] => ci(root, true),
         _ => Err(
-            "usage: cargo xtask <build -- COMMAND [ARGS...] (Unix-only; on Windows run cargo directly)|frontier [ASSIGNEE]|board [PORT]|ffmpeg [--target PLATFORM|--cache-key]|ui-audit [OUTPUT_DIR]|media-bench|clip-eval SET [OPTIONS]|ci [--require-oracles]|checks|clippy|lint|test|docs|i18n|layers|assets|new-crate NAME>"
+            "usage: cargo xtask <build -- COMMAND [ARGS...] (Unix-only; on Windows run cargo directly)|frontier [ASSIGNEE]|board [PORT]|ffmpeg [--target PLATFORM|--cache-key]|ui-audit [OUTPUT_DIR]|sherpa [--arch x86_64|aarch64]|media-bench|clip-eval SET [OPTIONS]|ci [--require-oracles]|checks|clippy|lint|test|docs|i18n|layers|assets|new-crate NAME>"
                 .into(),
         ),
     }.map(|()| ExitCode::SUCCESS)

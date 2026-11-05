@@ -483,6 +483,25 @@ reconciliation beyond the invocation ceiling remain unverified.
 
 ## Local Gipformer
 
+Windows native builds use a single dynamic MSVC CRT (`/MD`) with Rust and Whisper.
+The upstream Rust Sherpa downloader selects `/MT` archives, so workspace xtask
+commands provision the locked `sherpa-onnx-sys` version's upstream **static `/MD`**
+release archive and pass its `lib` directory through `SHERPA_ONNX_LIB_DIR`.
+This retains static Sherpa/ONNX linking without introducing Sherpa runtime DLLs.
+macOS continues using the upstream static archive.
+
+`cargo xtask sherpa [--arch x86_64|aarch64]` prefetches the Windows archive and
+prints its library directory; direct Cargo builds outside xtask must set
+`SHERPA_ONNX_LIB_DIR` to that directory, alongside the normal FFmpeg environment.
+An explicitly supplied `SHERPA_ONNX_LIB_DIR` is retained and must contain
+architecture-matched static `/MD` libraries. Provisioning verifies the published
+GitHub release-asset SHA-256 and size before extraction and keeps an atomic cache
+receipt; incomplete caches fail with recovery guidance. The library version comes
+from `Cargo.lock`. Native Windows CI separately links Whisper-only and
+Gipformer-only ai tests, then links/runs the combined default workspace tests.
+The [workflow](../../docs/engineering/workflows.md#ffmpeg-provisioning) owns build
+environment setup. Windows hardware/runtime acceptance remains p0-core/14.
+
 The default `gipformer` feature includes the safe sherpa-onnx bindings and the
 `vibecut-local-asr` native runner binary. `gipformer::Gipformer::load` accepts the
 pinned model, immutable cache directory, absolute shipped runner path, explicit
