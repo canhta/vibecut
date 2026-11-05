@@ -646,7 +646,10 @@ fn move_and_trim_snap_and_shift_mid_drag_bypasses() {
     harness.run_steps(1);
     harness.hover_at(target);
     harness.run_steps(2);
-    assert_eq!(item(harness.state(), video_a).end().unwrap(), Tick(6 * SECOND));
+    assert_eq!(
+        item(harness.state(), video_a).end().unwrap(),
+        Tick(6 * SECOND)
+    );
     assert_eq!(harness.state().inspect().unwrap().snap_indicator, None);
     harness.key_press(egui::Key::Escape);
     harness.run_steps(2);
