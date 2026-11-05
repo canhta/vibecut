@@ -476,6 +476,7 @@ fn run() -> Result<ExitCode, String> {
         ["dist", ..] => distribution::run(root, args.get(1..).unwrap_or(&[])),
         ["media-bench"] => benchmark::media(root),
         ["frontier"] => tickets::frontier(root, None),
+        ["frontier", "--blocking"] => tickets::blocking(root),
         ["frontier", assignee] => tickets::frontier(root, Some(assignee)),
         ["cleanup", ..] => cleanup::run(root, args.get(1..).unwrap_or(&[])),
         ["pull-reports", ..] => reports::run(root, args.get(1..).unwrap_or(&[])),

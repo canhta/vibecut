@@ -17,7 +17,7 @@ so direct and aggregate checks share Cargo fingerprints.
 | Command | Behaviour |
 |---|---|
 | `build -- COMMAND [ARGS...]` | FIFO admission and command exit status on macOS and Windows; OS-native arguments, inherited standard streams |
-| `frontier [ASSIGNEE]` | Open, unblocked tickets ordered by priority and ID; missing/wontfix blocker diagnostics |
+| `frontier [ASSIGNEE]`, `frontier --blocking` | Ready tickets ordered by priority, open transitive dependents and ID, printing the dependent count; `--blocking` ranks every unresolved ticket by unresolved transitive dependents with its status; missing/wontfix blocker diagnostics |
 | `board [PORT]` | Read-only live ticket page and `data.json` on IPv4 localhost, default port 8765 |
 | `cleanup [--environment NAME] [--dry-run] TARGET...` | Release settled worker dispatches or remove worktree targets, prune two-day-old build sessions/slots; `--dry-run` prints the plan |
 | `pull-reports [--environment NAME] [--ssh HOST] [--dry-run] <worktree>...` | Merge a worktree's `.scratch` reports into the main checkout without overwriting newer local files |
@@ -77,9 +77,12 @@ The ticket commands and name policy find the main checkout through Git's absolut
 common directory, so linked worktrees read the same `.scratch` data. The
 [issue tracker](../docs/agents/issue-tracker.md) owns the ticket format. The board
 retains progress, kanban, next-up and dependency-wave views; wave, critical-path
-and unblock counts include cross-milestone edges. Missing/wontfix blockers prevent
-readiness; cycles or dependency depth beyond 512 return an error. Each request
-reloads tickets. The server only accepts GET for `/` and `/data.json`; it never
+and unblock counts include cross-milestone edges. Unblock counts are open
+tickets transitively blocked by a ticket, shared by `frontier`; `frontier
+--blocking` instead counts unresolved transitive dependents for every
+unresolved ticket. Missing/wontfix blockers prevent readiness; cycles or
+dependency depth beyond 512 return an error. Each request reloads tickets. The
+server only accepts GET for `/` and `/data.json`; it never
 serves filesystem paths or writes ticket data. Request lines are capped at 8 KiB
 and reads/writes time out after two seconds. Ticket files are trusted local data;
 this is not a public or multi-user server.

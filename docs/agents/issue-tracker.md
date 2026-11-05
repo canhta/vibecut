@@ -22,4 +22,4 @@ Blocked by: NN, <milestone>/NN
 
 Bare numbers mean the same milestone. A ticket is unblocked when every blocker is `resolved`; `wontfix` records its reason. Put the outcome under `## Answer`.
 
-Frontier order: highest priority, then lowest number. Claiming, resolving and routing follow [orchestration](orchestration.md).
+Frontier order: highest priority, then most open tickets transitively blocked, then lowest number; `frontier --blocking` ranks unresolved tickets by unresolved transitive dependents. Claiming, resolving and routing follow [orchestration](orchestration.md).
