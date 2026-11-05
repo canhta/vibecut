@@ -1154,8 +1154,8 @@ presentation interval. YuNet runs every third sample (8.33 Hz); gated IoU >=0.3
 matches boxes one-to-one within 0.4 s. Boxes are held between detections, never
 interpolated across a missing observation. Tracks reset at every cut, have stable
 shot-local integer IDs and require at least 13 observed samples (0.52 s).
-Returned boxes use source pixels; no face-recognition or cross-shot person
-identity is claimed. A shot can refuse if it accumulates more than 64 tracks.
+Returned boxes use source pixels; cross-shot identity requires the optional
+embedding evidence described below. A shot can refuse if it accumulates more than 64 tracks.
 
 Each shot submits successive <=3 s ranges to `media::mfcc_range_with_progress`
 on the same source asset. Its automatic cold-source pass reports `Preparing`,
