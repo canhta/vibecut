@@ -206,7 +206,7 @@ fn encoded_half_opacity_edge_and_color_patch_match_linear_golden() {
     settings.mode = ExportMode::Encode;
     settings.quality = 100;
     settings.overwrite = project::atomic::Overwrite::Replace;
-    // VP9 is available in the pinned LGPL software build on both platforms.
+    // VP9 is available in the pinned software build on every platform.
     settings.container = media::Container::WebM;
     let reference = Renderer::new(&p, settings.render.clone())
         .unwrap()

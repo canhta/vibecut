@@ -1,6 +1,6 @@
 # media
 
-Headless streaming media I/O through dynamically linked LGPL-only FFmpeg. Owns
+Headless streaming media I/O through dynamically linked FFmpeg (LGPL on macOS and Windows, GPL with libx264 on Linux). Owns
 probe, demux, codec parameters, decode/encode, hardware selection, conversion,
 resampling and muxing. Rust timeline semantics, compositing, captions, text,
 provider policy, jobs and output promotion belong to their respective owners.
@@ -218,7 +218,7 @@ PSSH regression probes on a 512 KiB worker stack in a subprocess with a five-sec
 deadline. Full-size same-rate and upsampled PCM and AVI-to-MP4 H.264 stream copy
 have dedicated public API regressions.
 
-`cargo xtask ffmpeg` resolves/builds the current LGPL SDK in the external user
+`cargo xtask ffmpeg` resolves/builds the current SDK in the external user
 cache. `cargo xtask ci` configures that SDK for workspace checks. Direct Cargo
 invocations need `FFMPEG_DIR` and the platform's runtime library search path; use
 the xtask commands for the configured development path. See

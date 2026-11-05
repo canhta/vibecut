@@ -1,8 +1,10 @@
 # Desktop media and time
 
 Use egui with wgpu in the desktop app while preserving a UI-free headless core.
-Use dynamically linked, LGPL-only FFmpeg for media I/O, demux, decode, encode,
-mux, pixel conversion and audio resampling. Maintaining codecs and containers is
+Use dynamically linked FFmpeg for media I/O, demux, decode, encode, mux,
+pixel conversion and audio resampling. macOS and Windows build the LGPL SDK and
+use platform encoders; Linux builds the GPL SDK with libx264 because the LGPL
+build has no software H.264 encoder (amended 2026-11-05). Maintaining codecs and containers is
 outside the editor's responsibility. Hardware acceleration is selected through
 FFmpeg; Rust owns timeline semantics, the compositor, text/caption rendering and
 job orchestration. Preview and export consume the same compositor pixels.
@@ -11,7 +13,8 @@ Use the maintained `ffmpeg-next` safe wrapper and its matching system bindings.
 The permissive WTFPL dependency license is admitted for these wrappers. Keep any
 necessary direct FFI inside narrowly allowed modules of `media`, behind safe
 `Result` APIs; do not own a second bindings layer. Provision current stable shared
-LGPL builds; exclude GPL/nonfree components. Backport verified upstream security
+builds; exclude nonfree components, and admit GPL components only where the
+[open-source policy](../engineering/open-source.md#ffmpeg-distribution) allows them. Backport verified upstream security
 fixes as patch files citing their upstream commits, applied by `cargo xtask ffmpeg`
 on every platform. Fail provisioning when a patch no longer applies; review and
 delete it once a stable release contains the fix. Build Windows from the same

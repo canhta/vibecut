@@ -76,14 +76,23 @@ pub(super) fn sources(receipt: &str) -> Result<Vec<Source>> {
 }
 pub(super) fn compliance(tools: &Tools, prefix: &Path, destination: &Path) -> Result<()> {
     let receipt = text(&prefix.join("BUILD.txt"))?;
-    for flag in ["--disable-gpl", "--disable-nonfree", "--disable-autodetect"] {
+    let gpl = receipt.contains("--enable-gpl");
+    for flag in ["--disable-nonfree", "--disable-autodetect"] {
         if !receipt.contains(flag) {
             return Err(format!("FFmpeg receipt missing {flag}"));
         }
     }
+    if !gpl && !receipt.contains("--disable-gpl") {
+        return Err("FFmpeg receipt names no licence build".into());
+    }
     let licenses = prefix.join("compliance");
     let names = entries(&licenses)?;
-    for admitted in ["ffmpeg-lgpl", "ffmpeg-license", "opus", "libvpx"] {
+    let mut admitted_names = vec!["ffmpeg-lgpl", "ffmpeg-license"];
+    if gpl {
+        admitted_names.push("x264");
+    }
+    admitted_names.extend(["opus", "libvpx"]);
+    for admitted in admitted_names {
         let matching: Vec<_> = names
             .iter()
             .filter(|p| {
@@ -91,6 +100,7 @@ pub(super) fn compliance(tools: &Tools, prefix: &Path, destination: &Path) -> Re
                 match admitted {
                     "ffmpeg-lgpl" => name.ends_with("COPYING.LGPLv2.1"),
                     "ffmpeg-license" => name.ends_with("LICENSE.md"),
+                    "x264" => name.starts_with("x264-") && name.ends_with("-COPYING"),
                     "opus" => name.starts_with("opus-") && name.ends_with("-COPYING"),
                     _ => name.starts_with("libvpx-") && name.ends_with("-LICENSE"),
                 }
@@ -192,7 +202,12 @@ pub(super) fn compliance(tools: &Tools, prefix: &Path, destination: &Path) -> Re
         &tools.root.join("assets"),
         destination,
     )?;
-    fs::write(destination.join("NOTICE.txt"),"VibeCut dynamically links LGPL-2.1-or-later FFmpeg with Opus and libvpx. Corresponding source archives, verified build receipts, backports, recipe and license texts accompany this distribution. Reverse engineering to debug modified libraries is permitted. See README.md for rebuilding and replacement. No model weights are included.\n").map_err(|e|e.to_string())?;
+    let licence = if gpl {
+        "GPL-3.0-or-later FFmpeg with libx264, Opus and libvpx"
+    } else {
+        "LGPL-2.1-or-later FFmpeg with Opus and libvpx"
+    };
+    fs::write(destination.join("NOTICE.txt"),format!("VibeCut dynamically links {licence}. Corresponding source archives, verified build receipts, backports, recipe and license texts accompany this distribution. Reverse engineering to debug modified libraries is permitted. See README.md for rebuilding and replacement. No model weights are included.\n")).map_err(|e|e.to_string())?;
     copy(
         &tools.root.join("packaging/README.md"),
         &destination.join("README.md"),

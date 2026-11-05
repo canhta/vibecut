@@ -1,4 +1,4 @@
-//! Headless streaming media I/O through one dynamically linked LGPL FFmpeg backend.
+//! Headless streaming media I/O through one dynamically linked FFmpeg backend.
 //! FFmpeg owns codec parameters, demux presentation timing, priming and reordering.
 
 mod asset;
@@ -102,7 +102,7 @@ fn init() -> Result<()> {
     let config = ffmpeg_next::format::configuration();
     if config.contains("--enable-gpl") || config.contains("--enable-nonfree") {
         return Err(MediaError::Unsupported(
-            "FFmpeg must be an LGPL-only build; run cargo xtask ffmpeg",
+            "FFmpeg build is missing required codecs; run cargo xtask ffmpeg",
         ));
     }
     Ok(())

@@ -1,6 +1,6 @@
 # App icon
 
-Original artwork by the VibeCut maintainer, MIT (see [LICENSE](../../LICENSE)).
+Original artwork by the VibeCut maintainer, GPL-3.0-or-later (see [LICENSE](../../LICENSE)).
 
 ## Palette and geometry
 

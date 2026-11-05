@@ -2,13 +2,13 @@
 
 `cargo xtask dist` owns native app/CLI builds, packages, signing, universal assembly,
 source compliance, clean-host smoke and rolling nightly/draft assets. It stages
-real Cargo executable artifacts, dynamically linked LGPL FFmpeg, corresponding
+real Cargo executable artifacts, dynamically linked FFmpeg, corresponding
 source archives, recipes, backports and license/asset notices. Version comes from
 the workspace package. No Python, model weights or extra codec binaries are used.
 Normal builds consume committed icons; `cargo xtask dist icons` regenerates them.
 
 Linux ships as `VibeCut-<version>-linux-<arch>.tar.gz`: `bin/` with `vibecut` and
-`vibecut-cli`, `lib/` with the bundled LGPL FFmpeg libraries, `compliance/`, a
+`vibecut-cli`, `lib/` with the bundled FFmpeg libraries (GPL build on Linux), `compliance/`, a
 desktop entry, icon and `install.sh` (default prefix `~/.local`). The binaries
 carry an `$ORIGIN/../lib` runpath, so extracting the tarball is enough to run it.
 No `.deb`, `.rpm` or AppImage is built yet; the stages below cover macOS and
@@ -144,7 +144,7 @@ maintainer release approval or establish native device/hardware acceptance.
 
 ## Library replacement and recovery
 
-FFmpeg is LGPL-2.1-or-later; reverse engineering to debug library changes is permitted.
+FFmpeg is LGPL-2.1-or-later on macOS and Windows and GPL-3.0-or-later with libx264 on Linux; reverse engineering to debug library changes is permitted.
 Included FFmpeg/Opus/libvpx archives match the verified recipe/receipt and patches.
 Extract `.archive` files using `tar -xf` and rebuild ABI-compatible shared libraries
 in an isolated prefix. No app rebuild is required; keep original libraries to undo

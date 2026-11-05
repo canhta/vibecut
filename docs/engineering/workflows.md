@@ -22,9 +22,9 @@ Document accepted third-party limitations. Only an unreleased upstream crash/sec
 
 ## FFmpeg provisioning
 
-`cargo xtask ffmpeg` resolves/builds latest stable LGPL FFmpeg from verified source and logs the version. Distribution obligations live in [open-source policy](open-source.md#ffmpeg-distribution).
+`cargo xtask ffmpeg` resolves/builds latest stable FFmpeg from verified source and logs the version. Distribution obligations live in [open-source policy](open-source.md#ffmpeg-distribution).
 
-Linux builds the same verified LGPL FFmpeg from source as macOS: `cargo xtask ffmpeg` admits only `linux-x86_64`/`linux-aarch64` on the running host and needs Bash, Make, Perl, pkg-config, Clang/LLVM (`clang`, `clang++`, `llvm-ar`, `llvm-nm`), CMake and Ninja, plus NASM on x86_64. Managed tools carry an `$ORIGIN/../lib` rpath, and Cargo children receive `FFMPEG_DIR`, `PKG_CONFIG_PATH` and `LD_LIBRARY_PATH`. External ffmpeg/ffprobe remain separately installed tools for oracle admission.
+Linux builds the same verified FFmpeg from source as macOS, with the GPL build and libx264: `cargo xtask ffmpeg` admits only `linux-x86_64`/`linux-aarch64` on the running host and needs Bash, Make, Perl, pkg-config, Clang/LLVM (`clang`, `clang++`, `llvm-ar`, `llvm-nm`), CMake and Ninja, plus NASM on x86_64. Managed tools carry an `$ORIGIN/../lib` rpath, and Cargo children receive `FFMPEG_DIR`, `PKG_CONFIG_PATH` and `LD_LIBRARY_PATH`. External ffmpeg/ffprobe remain separately installed tools for oracle admission.
 
 Windows needs architecture-matched MSYS2 CLANG64 (x64) or CLANGARM64 (arm64), Bash, Make, Perl (libvpx configure), CMake, Ninja, pkg-config, NASM and Clang/LLVM; Rust uses MSVC. Native xtask caches under `USERPROFILE`, resolves Bash/Make/cygpath to absolute MSYS2 `usr/bin` paths on `PATH` and logs them; incomplete installations are refused rather than using Windows/WSL/Git Bash. Static Opus/libvpx builds request static pkg-config metadata, including private pthread links.
 
@@ -38,7 +38,7 @@ belong to [ai's native build contract](../../crates/ai/README.md#local-gipformer
 On Windows, the FFmpeg environment owner projects only DLLs from the verified
 native prefix into `runtime-dlls` using atomic hard links, and prepends that
 directory to child `PATH`. It excludes the prefix's `bin` from inherited `PATH`
-so managed LGPL command-line programs cannot shadow the external test oracles.
+so managed command-line programs cannot shadow the external test oracles.
 Existing native caches use the same projection without rebuilding libraries;
 existing runtime links must match the native DLL hashes. External ffmpeg and
 ffprobe remain separately installed tools required by oracle admission.
@@ -57,7 +57,7 @@ directories) and clean `sherpa-onnx-sys` so neither the upstream directory-exist
 check nor a restored build fingerprint can retain missing libraries. Its next
 build provisions the native archive.
 
-Native LGPL cache keys use resolved FFmpeg/Opus/libvpx versions plus recipe/patch/toolchain hashes and platform, with exact matches. Provisioning resolves stable tags even on hits, saves successful native builds before later failures, and skips source-build-only macOS tools on hits. Synthetic fixture keys follow `crates/media/tests/`; rendered outputs are uncached. Log exact-hit receipts in logs/step summaries.
+Native media cache keys use resolved FFmpeg/Opus/libvpx/x264 versions plus recipe/patch/toolchain hashes and platform, with exact matches. Provisioning resolves stable tags even on hits, saves successful native builds before later failures, and skips source-build-only macOS tools on hits. Synthetic fixture keys follow `crates/media/tests/`; rendered outputs are uncached. Log exact-hit receipts in logs/step summaries.
 
 Release/media/render dispatches set `require-oracles`; ordinary manual CI also requires macOS oracles, with Windows following the input. Oracle admission and evidence follow [verification](verification.md#checks).
 

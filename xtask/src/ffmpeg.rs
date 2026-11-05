@@ -1,4 +1,4 @@
-//! Resolve and build the current stable LGPL media libraries outside the repository.
+//! Resolve and build the current stable media libraries outside the repository.
 
 use crate::archives::{fetch, sha256};
 use sha2::{Digest, Sha256};
@@ -273,7 +273,7 @@ pub fn environment_at(command: &mut Command, prefix: &Path) -> Result<(), String
     Ok(())
 }
 
-/// Expose native DLLs without putting the LGPL CLI ahead of external test oracles.
+/// Expose native DLLs without putting the managed CLI ahead of external test oracles.
 /// Hard links publish complete files atomically, including across concurrent xtasks,
 /// and retain the exact library bytes from this immutable native installation.
 fn windows_runtime(prefix: &Path) -> Result<PathBuf, String> {
@@ -416,7 +416,7 @@ fn build_source(
         println!("FFmpeg {version}: {}", prefix.display());
         return Ok(());
     }
-    let mut receipt = format!("FFmpeg LGPL shared build for {target}\n\n");
+    let mut receipt = format!("FFmpeg shared build for {target}\n\n");
     let sources = base.join("sources");
     fs::create_dir_all(&sources).map_err(|e| e.to_string())?;
     let _pristine = source(
