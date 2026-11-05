@@ -303,7 +303,6 @@ fn text_item_font_background_and_position_reach_the_compositor() {
     assert_eq!(plain_red, 0, "plain title has no background box");
 }
 
-
 #[test]
 fn preview_audio_mix_obeys_item_gain_and_mute() {
     struct ConstantAudio;

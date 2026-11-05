@@ -1425,7 +1425,6 @@ fn text_insert_and_style_controls_use_one_undo_step_per_edit() {
     assert_eq!(text.content.as_str(), "Xin chào");
 }
 
-
 #[test]
 fn mixed_audio_mute_shows_indeterminate_and_undo_restores_each_item() {
     let mut fixture = fixture();

@@ -77,18 +77,20 @@ impl ItemParamPatch {
         }
         matches!(
             (self, content),
-            (Self::AudioGain(_) | Self::AudioMuted(_), ItemParams::Audio(_))
-                | (
-                    Self::TextContent(_)
-                        | Self::TextFont(_)
-                        | Self::TextSize(_)
-                        | Self::TextColor(_)
-                        | Self::TextBackground(_)
-                        | Self::TextBackgroundColor(_)
-                        | Self::TextPositionX(_)
-                        | Self::TextPositionY(_),
-                    ItemParams::Text(_)
-                )
+            (
+                Self::AudioGain(_) | Self::AudioMuted(_),
+                ItemParams::Audio(_)
+            ) | (
+                Self::TextContent(_)
+                    | Self::TextFont(_)
+                    | Self::TextSize(_)
+                    | Self::TextColor(_)
+                    | Self::TextBackground(_)
+                    | Self::TextBackgroundColor(_)
+                    | Self::TextPositionX(_)
+                    | Self::TextPositionY(_),
+                ItemParams::Text(_)
+            )
         )
     }
     pub(crate) fn validate(&self) -> crate::Result<()> {
