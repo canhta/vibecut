@@ -14,9 +14,10 @@ use media::{
     SourceStream, StreamKind, TimeBase, VideoInfo,
 };
 use project::{
-    AudioParams, Color, ItemId, ItemParams, Project, ProjectId, TextParams, TrackId, TrackKind,
-    VideoParams,
+    AudioParams, Color, ItemId, ItemParams, OverlayParams, Project, ProjectId, TextParams, TrackId,
+    TrackKind, VideoParams,
 };
+use render::{AudioBlock, ExecutionHooks, Image, MemoryKind, SourceProvider, UnavailableReason};
 use std::{
     collections::BTreeSet,
     fmt::Write as _,
@@ -25,7 +26,7 @@ use std::{
         Arc, Condvar, Mutex,
         atomic::{AtomicUsize, Ordering},
     },
-    time::Duration,
+    time::{Duration, Instant},
 };
 use time::{FrameRate, SourceRange, TICKS_PER_SECOND, Tick};
 use vibecut::{
@@ -33,7 +34,7 @@ use vibecut::{
     catalog::{Locale, Preferences},
     egui,
     import::ImportProbe,
-    playback::{Files, Playback},
+    playback::{Files, Playback, Sources},
     workspace::Workspace,
 };
 
@@ -71,6 +72,15 @@ impl App {
             Self::Home { .. } => Err("the Home scene has no editor inspection".into()),
         }
     }
+    fn presented_frame(&self) -> Option<Tick> {
+        match self {
+            Self::Editor(editor) => editor.presented_frame(),
+            Self::Home { workspace, .. } => workspace
+                .editor
+                .as_ref()
+                .and_then(|editor| editor.presented_frame()),
+        }
+    }
 }
 
 /// eframe mode hands the app the same margin-free root Ui the native shell gets;
@@ -85,6 +95,15 @@ impl AuditApp {
     }
     fn inspect(&self) -> Result<Inspection, Failure> {
         self.app.inspect()
+    }
+    fn presented_frame(&self) -> Option<Tick> {
+        self.app.presented_frame()
+    }
+    fn session(&self) -> Option<&Session> {
+        match &self.app {
+            App::Editor(editor) => Some(&editor.session),
+            App::Home { .. } => None,
+        }
     }
 }
 impl eframe::App for AuditApp {
@@ -152,10 +171,34 @@ const SCENES: &[Scene] = &[
         build: timeline_selection,
     },
     Scene {
+        name: "timeline-selection-vi",
+        reference_dark: Some("capcut/illustrations/capcut-desktop-editor-keyframes.png"),
+        reference_light: Some("capcut/illustrations/capcut-desktop-editor-keyframes.png"),
+        build: timeline_selection_vi,
+    },
+    Scene {
+        name: "inspector-mixed-selection",
+        reference_dark: Some("capcut/illustrations/capcut-desktop-ui.png"),
+        reference_light: Some("capcut/illustrations/capcut-desktop-ui.png"),
+        build: inspector_mixed,
+    },
+    Scene {
+        name: "inspector-mixed-selection-vi",
+        reference_dark: Some("capcut/illustrations/capcut-desktop-ui.png"),
+        reference_light: Some("capcut/illustrations/capcut-desktop-ui.png"),
+        build: inspector_mixed_vi,
+    },
+    Scene {
         name: "import-progress",
         reference_dark: Some("capcut/illustrations/capcut-desktop-modify-project.png"),
         reference_light: Some("capcut/illustrations/capcut-desktop-modify-project.png"),
         build: import_progress,
+    },
+    Scene {
+        name: "import-complete-vi",
+        reference_dark: Some("capcut/illustrations/capcut-desktop-modify-project.png"),
+        reference_light: Some("capcut/illustrations/capcut-desktop-modify-project.png"),
+        build: import_complete_vi,
     },
     Scene {
         name: "export-dialog",
@@ -163,26 +206,64 @@ const SCENES: &[Scene] = &[
         reference_light: Some("capcut/illustrations/capcut-desktop-export-settings.png"),
         build: export_dialog,
     },
+    Scene {
+        name: "close-prompt",
+        reference_dark: Some("capcut/illustrations/capcut-desktop-ui.png"),
+        reference_light: Some("capcut/illustrations/capcut-desktop-ui.png"),
+        build: close_prompt,
+    },
+    Scene {
+        name: "close-prompt-vi",
+        reference_dark: Some("capcut/illustrations/capcut-desktop-ui.png"),
+        reference_light: Some("capcut/illustrations/capcut-desktop-ui.png"),
+        build: close_prompt_vi,
+    },
+    Scene {
+        name: "tracks",
+        reference_dark: Some("capcut/illustrations/capcut-desktop-ui-changes.png"),
+        reference_light: Some("capcut/illustrations/capcut-desktop-ui-changes.png"),
+        build: tracks,
+    },
+    Scene {
+        name: "scene-delete",
+        reference_dark: Some("capcut/illustrations/capcut-desktop-ui-changes.png"),
+        reference_light: Some("capcut/illustrations/capcut-desktop-ui-changes.png"),
+        build: scene_delete,
+    },
+    Scene {
+        name: "placement",
+        reference_dark: Some("capcut/illustrations/capcut-desktop-editor-keyframes.png"),
+        reference_light: Some("capcut/illustrations/capcut-desktop-editor-keyframes.png"),
+        build: placement,
+    },
 ];
 
-fn preferences(theme: Theme) -> Preferences {
+fn preferences(theme: Theme, locale: Locale) -> Preferences {
     Preferences {
-        locale: Locale::En,
+        locale,
         dark: theme.dark(),
         ..Preferences::default()
     }
 }
 
 fn harness(app: App, scale: f32) -> AppHarness {
+    harness_sized(app, scale, WINDOW)
+}
+
+fn harness_sized(app: App, scale: f32, size: [f32; 2]) -> AppHarness {
     Harness::builder()
-        .with_size(egui::vec2(WINDOW[0], WINDOW[1]))
+        .with_size(egui::vec2(size[0], size[1]))
         .with_pixels_per_point(scale)
         .build_eframe(|_| AuditApp { app })
 }
 
 fn home(theme: Theme, scale: f32) -> Result<AppHarness, Failure> {
     let directory = tempfile::tempdir()?;
-    let workspace = Workspace::new(directory.path().join("recovery"), preferences(theme), None)?;
+    let workspace = Workspace::new(
+        directory.path().join("recovery"),
+        preferences(theme, Locale::En),
+        None,
+    )?;
     let mut app = harness(
         App::Home {
             workspace: Box::new(workspace),
@@ -213,16 +294,16 @@ fn app_editor(editor: Editor, scale: f32) -> AppHarness {
     harness(App::Editor(Box::new(editor)), scale)
 }
 
-fn empty_editor(theme: Theme) -> Result<Editor, Failure> {
+fn empty_editor(theme: Theme, locale: Locale) -> Result<Editor, Failure> {
     let session = empty_session("Untitled Project")?;
     // Media import admits a 256 MiB probe/work lease before it opens a file.
     let mut playback = Playback::new(&session, ByteBudget::new(512 << 20)?, Arc::new(Files))?;
     playback.set_device_available(true);
-    Ok(Editor::new(session, playback, preferences(theme)))
+    Ok(Editor::new(session, playback, preferences(theme, locale)))
 }
 
 fn editor_empty(theme: Theme, scale: f32) -> Result<AppHarness, Failure> {
-    Ok(app_editor(empty_editor(theme)?, scale))
+    Ok(app_editor(empty_editor(theme, Locale::En)?, scale))
 }
 
 fn source_stream(kind: StreamKind, duration: Tick) -> Result<SourceStream, Failure> {
@@ -317,7 +398,90 @@ fn insert(
         .ok_or("created item id")?)
 }
 
-fn media_editor(theme: Theme) -> Result<(Editor, ItemId), Failure> {
+/// Deterministic healthy media for populated-editor scenes. The provider is
+/// injected through the same public `Sources` seam production `Files` uses, so
+/// the audit exercises the real preview/render path without opening a file.
+struct SyntheticSources;
+impl Sources for SyntheticSources {
+    fn create(&self) -> Box<dyn SourceProvider> {
+        Box::new(SyntheticFrames)
+    }
+}
+struct SyntheticFrames;
+impl SourceProvider for SyntheticFrames {
+    fn status(
+        &mut self,
+        _: &SourceAsset,
+        _: bool,
+        _: &dyn ExecutionHooks,
+    ) -> render::Result<Option<UnavailableReason>> {
+        Ok(None)
+    }
+    fn video(
+        &mut self,
+        _: &SourceAsset,
+        _: ItemId,
+        _: Tick,
+        hooks: &dyn ExecutionHooks,
+    ) -> render::Result<Option<Image>> {
+        const WIDTH: u32 = 640;
+        const HEIGHT: u32 = 360;
+        let mut bytes = Vec::with_capacity((WIDTH * HEIGHT * 4) as usize);
+        for y in 0..HEIGHT {
+            for x in 0..WIDTH {
+                let [red, green, blue] = if (160..480).contains(&x) && (90..270).contains(&y) {
+                    [238, 196, 52]
+                } else {
+                    [
+                        (24 + x * 180 / WIDTH) as u8,
+                        (58 + y * 130 / HEIGHT) as u8,
+                        148,
+                    ]
+                };
+                bytes.extend_from_slice(&[red, green, blue, 255]);
+            }
+        }
+        Ok(Some(Image::from_rgba8(
+            WIDTH, HEIGHT, &bytes, false, 13, hooks,
+        )?))
+    }
+    fn audio(
+        &mut self,
+        _: &SourceAsset,
+        _: ItemId,
+        _: i64,
+        frames: usize,
+        rate: u32,
+        hooks: &dyn ExecutionHooks,
+    ) -> render::Result<AudioBlock> {
+        AudioBlock::new(rate, 2, frames, MemoryKind::Decoded, hooks)
+    }
+}
+
+fn wait_for_frame(editor: &mut Editor) -> Result<(), Failure> {
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while editor.playback.frame().is_none() {
+        editor.playback.poll()?;
+        if Instant::now() >= deadline {
+            return Err("preview frame timeout".into());
+        }
+        std::thread::sleep(Duration::from_millis(2));
+    }
+    Ok(())
+}
+
+fn wait_for_presented(app: &mut AppHarness) -> Result<(), Failure> {
+    for _ in 0..500 {
+        app.run_steps(1);
+        if app.state().presented_frame().is_some() {
+            return Ok(());
+        }
+        std::thread::sleep(Duration::from_millis(2));
+    }
+    Err("preview frame was not presented".into())
+}
+
+fn media_editor(theme: Theme, locale: Locale) -> Result<(Editor, ItemId), Failure> {
     let mut session = empty_session("Launch cut")?;
     for (id, kind) in [(1, StreamKind::Video), (2, StreamKind::Audio)] {
         session.apply(Command::AddAsset {
@@ -370,25 +534,36 @@ fn media_editor(theme: Theme) -> Result<(Editor, ItemId), Failure> {
             color: Color([255, 255, 255, 255]),
         }),
     )?;
-    let mut playback = Playback::new(&session, ByteBudget::new(64 << 20)?, Arc::new(Files))?;
+    let mut playback = Playback::new(
+        &session,
+        ByteBudget::new(256 << 20)?,
+        Arc::new(SyntheticSources),
+    )?;
     playback.set_device_available(true);
-    let mut editor = Editor::new(session, playback, preferences(theme));
+    let mut editor = Editor::new(session, playback, preferences(theme, locale));
     let project = editor.session.project().clone();
     editor.playback.seek(Tick(3 * SECOND), false, project)?;
+    wait_for_frame(&mut editor)?;
     Ok((editor, first))
 }
 
 fn editor_media(theme: Theme, scale: f32) -> Result<AppHarness, Failure> {
-    let (editor, _) = media_editor(theme)?;
+    let (editor, _) = media_editor(theme, Locale::En)?;
     let mut app = app_editor(editor, scale);
+    wait_for_presented(&mut app)?;
     app.run_steps(2);
     Ok(app)
 }
 
-fn timeline_selection(theme: Theme, scale: f32) -> Result<AppHarness, Failure> {
-    let (editor, item) = media_editor(theme)?;
+fn timeline_selection_locale(
+    theme: Theme,
+    scale: f32,
+    locale: Locale,
+) -> Result<AppHarness, Failure> {
+    let (editor, item) = media_editor(theme, locale)?;
     let mut app = app_editor(editor, scale);
-    app.run_steps(3);
+    wait_for_presented(&mut app)?;
+    app.run_steps(2);
     let id = format!("timeline.item.{}", item.0);
     let node = app
         .query_all(By::new().predicate(|node| node.author_id() == Some(id.as_str())))
@@ -396,6 +571,341 @@ fn timeline_selection(theme: Theme, scale: f32) -> Result<AppHarness, Failure> {
         .ok_or_else(|| format!("missing automation id {id}"))?;
     node.click();
     app.run_steps(3);
+    Ok(app)
+}
+
+fn timeline_selection(theme: Theme, scale: f32) -> Result<AppHarness, Failure> {
+    timeline_selection_locale(theme, scale, Locale::En)
+}
+
+fn timeline_selection_vi(theme: Theme, scale: f32) -> Result<AppHarness, Failure> {
+    timeline_selection_locale(theme, scale, Locale::Vi)
+}
+
+fn widget_rect(app: &AppHarness, id: &str) -> Result<egui::Rect, Failure> {
+    app.state()
+        .inspect()?
+        .widgets
+        .into_iter()
+        .find(|widget| widget.id == id)
+        .map(|widget| widget.rect)
+        .ok_or_else(|| format!("missing widget {id}").into())
+}
+
+fn inspector_mixed_locale(theme: Theme, scale: f32, locale: Locale) -> Result<AppHarness, Failure> {
+    let (mut editor, _) = media_editor(theme, locale)?;
+    let media: Vec<_> = editor
+        .session
+        .project()
+        .data()
+        .scene()
+        .timeline
+        .iter()
+        .flat_map(|track| &track.items)
+        .filter(|item| matches!(item.content, ItemParams::Video(_) | ItemParams::Audio(_)))
+        .map(|item| item.id)
+        .collect();
+    editor.session.apply(Command::Delete { items: media })?;
+    let (text_track, first) = {
+        let scene = editor.session.project().data().scene();
+        let track = scene
+            .timeline
+            .iter()
+            .find(|track| track.kind == TrackKind::Text)
+            .ok_or("text track")?;
+        (track.id, track.items.first().ok_or("first text item")?.id)
+    };
+    let second = insert(
+        &mut editor.session,
+        text_track,
+        Tick(6 * SECOND),
+        range(6, 8)?,
+        None,
+        ItemParams::Text(TextParams {
+            content: "Khác".into(),
+            font_size: 24.0,
+            color: Color([20, 30, 40, 255]),
+        }),
+    )?;
+    let main = editor.session.project().data().scene().timeline.main.id;
+    let background = insert(
+        &mut editor.session,
+        main,
+        Tick::ZERO,
+        range(0, 10)?,
+        None,
+        ItemParams::Overlay(OverlayParams {
+            color: Color([35, 45, 65, 255]),
+        }),
+    )?;
+    editor.selection = [first, second, background].into_iter().collect();
+    let mut app = app_editor(editor, scale);
+    wait_for_presented(&mut app)?;
+    app.run_steps(3);
+    Ok(app)
+}
+
+fn inspector_mixed(theme: Theme, scale: f32) -> Result<AppHarness, Failure> {
+    inspector_mixed_locale(theme, scale, Locale::En)
+}
+
+fn inspector_mixed_vi(theme: Theme, scale: f32) -> Result<AppHarness, Failure> {
+    inspector_mixed_locale(theme, scale, Locale::Vi)
+}
+
+/// Returns a deterministic library asset for every path except `bad`, which
+/// exercises the real partial-import failure state.
+struct CompletedProbe;
+impl ImportProbe for CompletedProbe {
+    fn import(
+        &self,
+        id: AssetId,
+        path: PathBuf,
+        _: Arc<std::sync::atomic::AtomicBool>,
+    ) -> media::Result<SourceAsset> {
+        let name = path
+            .file_name()
+            .and_then(|name| name.to_str())
+            .unwrap_or("");
+        if name.contains("bad") {
+            return Err(MediaError::Unsupported("audit import refusal"));
+        }
+        let kind = if name.contains("audio") {
+            StreamKind::Audio
+        } else {
+            StreamKind::Video
+        };
+        source_asset(id.0, kind, path).map_err(|_| MediaError::Unsupported("fixture"))
+    }
+}
+
+fn import_complete(theme: Theme, scale: f32, locale: Locale) -> Result<AppHarness, Failure> {
+    let mut editor = empty_editor(theme, locale)?;
+    editor.set_import_probe(Arc::new(CompletedProbe))?;
+    editor.drop_files(vec![
+        PathBuf::from("/media/video-a.mp4"),
+        PathBuf::from("/media/bad-clip.mp4"),
+        PathBuf::from("/media/audio-a.wav"),
+    ])?;
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while editor.importing() {
+        editor.tick();
+        if Instant::now() >= deadline {
+            return Err("import did not finish".into());
+        }
+        std::thread::sleep(Duration::from_millis(2));
+    }
+    editor.select_media([AssetId(1)]);
+    let mut app = app_editor(editor, scale);
+    app.run_steps(3);
+    Ok(app)
+}
+
+fn import_complete_vi(theme: Theme, scale: f32) -> Result<AppHarness, Failure> {
+    import_complete(theme, scale, Locale::Vi)
+}
+
+fn close_prompt_locale(theme: Theme, scale: f32, locale: Locale) -> Result<AppHarness, Failure> {
+    let (editor, _) = media_editor(theme, locale)?;
+    let directory = tempfile::tempdir()?;
+    let mut workspace = Workspace::new(
+        directory.path().join("recovery"),
+        preferences(theme, locale),
+        None,
+    )?;
+    workspace.editor = Some(Box::new(editor));
+    workspace.request_close();
+    let mut app = harness(
+        App::Home {
+            workspace: Box::new(workspace),
+            _directory: directory,
+        },
+        scale,
+    );
+    app.run_steps(4);
+    Ok(app)
+}
+
+fn close_prompt(theme: Theme, scale: f32) -> Result<AppHarness, Failure> {
+    close_prompt_locale(theme, scale, Locale::En)
+}
+
+fn close_prompt_vi(theme: Theme, scale: f32) -> Result<AppHarness, Failure> {
+    close_prompt_locale(theme, scale, Locale::Vi)
+}
+
+const TRACKS_WINDOW: [f32; 2] = [1728.0, 1200.0];
+
+fn tracks(theme: Theme, scale: f32) -> Result<AppHarness, Failure> {
+    let mut session = empty_session("Tracks")?;
+    for kind in [
+        TrackKind::Video,
+        TrackKind::Text,
+        TrackKind::Sticker,
+        TrackKind::Effect,
+        TrackKind::Filter,
+        TrackKind::Adjustment,
+        TrackKind::Audio,
+    ] {
+        track(&mut session, &format!("{kind:?}"), kind)?;
+    }
+    let mut playback = Playback::new(
+        &session,
+        ByteBudget::new(64 << 20)?,
+        Arc::new(SyntheticSources),
+    )?;
+    playback.set_device_available(true);
+    let editor = Editor::new(session, playback, preferences(theme, Locale::En));
+    let mut app = harness_sized(App::Editor(Box::new(editor)), scale, TRACKS_WINDOW);
+    app.run_steps(4);
+    Ok(app)
+}
+
+fn scene_delete(theme: Theme, scale: f32) -> Result<AppHarness, Failure> {
+    let mut session = empty_session("Scenes")?;
+    let mut ids = Vec::new();
+    for name in ["Opening", "Closing"] {
+        let created = session.execute("scene.create", serde_json::json!({"name": name}))?;
+        if let Some(CreatedId::Scene(id)) = created.created.first() {
+            ids.push(*id);
+        }
+    }
+    let mut playback = Playback::new(
+        &session,
+        ByteBudget::new(64 << 20)?,
+        Arc::new(SyntheticSources),
+    )?;
+    playback.set_device_available(true);
+    let editor = Editor::new(session, playback, preferences(theme, Locale::En));
+    let mut app = harness_sized(App::Editor(Box::new(editor)), scale, TRACKS_WINDOW);
+    app.run_steps(3);
+    for id in ["scene.open", "scene.select"] {
+        app.query_all(By::new().predicate(|node| node.author_id() == Some(id)))
+            .next()
+            .ok_or_else(|| format!("missing automation id {id}"))?
+            .click();
+        app.run_steps(3);
+    }
+    for id in ids {
+        let row = format!("scene.row.{}", id.0);
+        app.query_all(By::new().predicate(|node| node.author_id() == Some(row.as_str())))
+            .next()
+            .ok_or_else(|| format!("missing automation id {row}"))?
+            .click();
+        app.run_steps(2);
+    }
+    app.query_all(By::new().predicate(|node| node.author_id() == Some("scene.delete")))
+        .next()
+        .ok_or("missing automation id scene.delete")?
+        .click();
+    app.run_steps(3);
+    if app
+        .query_by_label("Delete selected scenes? You can undo this action.")
+        .is_none()
+    {
+        return Err("scene delete confirmation did not open".into());
+    }
+    Ok(app)
+}
+
+fn placement(theme: Theme, scale: f32) -> Result<AppHarness, Failure> {
+    let mut session = empty_session("Placement")?;
+    for (id, kind) in [(1, StreamKind::Video), (2, StreamKind::Audio)] {
+        session.apply(Command::AddAsset {
+            asset: source_asset(id, kind, PathBuf::from(format!("/media/source-{id}.mp4")))?,
+        })?;
+    }
+    let video = track(&mut session, "Video", TrackKind::Video)?;
+    let moving = insert(
+        &mut session,
+        video,
+        Tick::ZERO,
+        range(0, 6)?,
+        Some(AssetId(1)),
+        ItemParams::Video(VideoParams {
+            source_audio_enabled: true,
+        }),
+    )?;
+    insert(
+        &mut session,
+        video,
+        Tick(6 * SECOND),
+        range(6, 10)?,
+        Some(AssetId(1)),
+        ItemParams::Video(VideoParams {
+            source_audio_enabled: true,
+        }),
+    )?;
+    let audio = track(&mut session, "Audio", TrackKind::Audio)?;
+    insert(
+        &mut session,
+        audio,
+        Tick::ZERO,
+        range(0, 10)?,
+        Some(AssetId(2)),
+        ItemParams::Audio(AudioParams {
+            gain_db: 0.0,
+            muted: false,
+        }),
+    )?;
+    let text = track(&mut session, "Text", TrackKind::Text)?;
+    insert(
+        &mut session,
+        text,
+        Tick(2 * SECOND),
+        range(2, 5)?,
+        None,
+        ItemParams::Text(TextParams {
+            content: "Chapter one".into(),
+            font_size: 48.0,
+            color: Color([255, 255, 255, 255]),
+        }),
+    )?;
+    let mut playback = Playback::new(
+        &session,
+        ByteBudget::new(256 << 20)?,
+        Arc::new(SyntheticSources),
+    )?;
+    playback.set_device_available(true);
+    let mut editor = Editor::new(session, playback, preferences(theme, Locale::En));
+    let project = editor.session.project().clone();
+    editor.playback.seek(Tick(3 * SECOND), false, project)?;
+    wait_for_frame(&mut editor)?;
+    let mut app = harness_sized(App::Editor(Box::new(editor)), scale, TRACKS_WINDOW);
+    wait_for_presented(&mut app)?;
+    app.run_steps(2);
+    let body = widget_rect(&app, &format!("timeline.item.{}", moving.0))?;
+    let header = widget_rect(&app, &format!("track.{}.header", video.0))?;
+    let before = app
+        .state()
+        .session()
+        .ok_or("editor session")?
+        .project()
+        .data()
+        .scene()
+        .timeline
+        .track_count();
+    let target = egui::pos2(body.center().x, header.bottom() - 1.0);
+    app.drag_at(body.center());
+    app.run_steps(1);
+    app.hover_at(target);
+    app.run_steps(2);
+    app.drop_at(target);
+    app.run_steps(2);
+    let after = app
+        .state()
+        .session()
+        .ok_or("editor session")?
+        .project()
+        .data()
+        .scene()
+        .timeline
+        .track_count();
+    if after <= before {
+        return Err("placement drag did not create a track".into());
+    }
+    wait_for_presented(&mut app)?;
+    app.run_steps(2);
     Ok(app)
 }
 
@@ -444,16 +954,17 @@ impl ImportProbe for ProgressProbe {
 }
 
 fn export_dialog(theme: Theme, scale: f32) -> Result<AppHarness, Failure> {
-    let (mut editor, _) = media_editor(theme)?;
+    let (mut editor, _) = media_editor(theme, Locale::En)?;
     editor.activate("file.export")?;
     editor.export_picked_file(PathBuf::from("/media/launch-cut.mp4"))?;
     let mut app = app_editor(editor, scale);
+    wait_for_presented(&mut app)?;
     app.run_steps(4);
     Ok(app)
 }
 
 fn import_progress(theme: Theme, scale: f32) -> Result<AppHarness, Failure> {
-    let mut editor = empty_editor(theme)?;
+    let mut editor = empty_editor(theme, Locale::En)?;
     editor.set_import_probe(Arc::new(ProgressProbe::new()))?;
     editor.drop_files(vec![
         PathBuf::from("/media/one.mp4"),
@@ -554,6 +1065,12 @@ fn select(names: impl Iterator<Item = String>) -> Result<Vec<(&'static Scene, Th
         }
     }
     if !unknown.is_empty() {
+        if unknown.iter().any(|name| name == "settings") {
+            return Err(
+                "scene `settings` is unavailable: main exposes language/theme in the editor header; the settings dialog and its audit scene belong to p1-parity/75"
+                    .into(),
+            );
+        }
         let known: Vec<_> = SCENES
             .iter()
             .flat_map(|scene| {

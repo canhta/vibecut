@@ -165,7 +165,7 @@ rules](../../docs/engineering/open-source.md#ffmpeg-distribution).
 split/trim/move/delete/undo/redo through automation IDs, locale retention,
 transport/seek/clear, byte refusal and worker shutdown. It asserts widget and
 engine state only; no test writes an image. `cargo xtask ui-audit [SCENE...]`
-renders the named Home, editor, import-progress and export-dialog scenes offscreen through the same automation IDs at
+renders the named Home, editor, import, export, close-guard, track, scene and placement scenes offscreen through the same automation IDs at
 1x and 2x into `$CARGO_TARGET_DIR/ui-audit/` (or `target/ui-audit/`) with an
 `index.html` placing each render beside its `.spikes/ui-reference/` counterpart;
 it opens no native window and never runs in `cargo xtask ci`. `cargo xtask ci` is
