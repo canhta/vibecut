@@ -37,6 +37,7 @@ pub use ai::clips::{
 pub use captions::{Format, NfcText};
 mod edit;
 pub mod effect_thumbnails;
+mod publication;
 mod rendering;
 mod session;
 pub use commands::{

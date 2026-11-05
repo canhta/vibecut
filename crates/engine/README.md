@@ -798,14 +798,13 @@ characters with `-`, and falls back to `snapshot` when the project name sanitize
 empty. `snapshot::image` returns the same PNG bytes without publishing, for the
 desktop Copy action.
 
-Publication uses project's same-directory `StreamingStage`: the PNG is written,
-synced and renamed only after render's source-path admission, project's writer-name
-admission and the composition root's protected paths pass. Canonical paths, hard
-links, content identity and protected directories refuse project/source aliases;
-refusal or storage failure preserves the previous destination and removes the
-staging file. The desktop and CLI register the active project, metadata and recovery
-paths with `Session::protect_paths` before dispatch, mirroring completed-export
-publication. External processes racing path replacement retain the atomic owner's
+Publication uses the [shared publication owner](#completed-export-publication).
+The desktop and CLI register active project, metadata and recovery paths with
+`Session::protect_paths`. `snapshot::save` and `save_with_budget` retain replacement
+semantics for trusted desktop Save confirmation; control requests default to atomic
+no-clobber unless their trusted `Policy::snapshot_overwrite` grants replacement
+(the CLI's `--allow-overwrite`). The request remains `preview.snapshot {time, path}`.
+External processes racing protected-path replacement retain the atomic owner's
 documented limits.
 
 ## Subtitle export commands
@@ -1381,12 +1380,18 @@ bounded raw RGBA bytes; no compressed image decoder runs during catalog reads.
 
 ## Completed export publication
 
-`submit_export_publication` copies a retained completed render through a bounded
-64 KiB buffer on the job runner. It admits the captured project sources and the
-adapter's protected active project/metadata paths before staging and immediately
-before the publication fence. Canonical paths and conservative content identity
-checks refuse normalized, link and changed-source aliases; the project atomic
-owner also refuses reserved writer-control destinations. No admission, copy or
+Engine's `publication` module owns admission and staged writing for completed
+exports and snapshots. It admits the captured project sources and the adapter's
+protected active project/metadata paths before staging and again after sync,
+then seals cancellation before publishing through project's atomic writer.
+Canonical paths (including case-folded missing names on Windows), hard links,
+live source content identity and protected directories refuse project/source
+aliases even when a source changed since import. The project atomic owner also
+refuses reserved writer-control destinations. Refusal or storage failure preserves
+the previous destination and removes staging files.
+
+`submit_export_publication` copies a retained completed render through this owner
+using a bounded 64 KiB buffer on the job runner. No admission, copy or
 sync runs on the UI thread. The existing `AtomicFs` boundary can inject storage
 failure or gate sync while the event loop ticks and cancels.
 

@@ -263,18 +263,25 @@ fn snapshot_publication_refuses_project_and_source_aliases() {
     );
     let project_alias = dir.path().join("project-alias.vibecut");
     std::fs::hard_link(&project_path, &project_alias).unwrap();
+    // Recorded import hash is deliberately stale (b"source", not current bytes).
     let source_alias = dir.path().join("source-alias.mp4");
     std::fs::hard_link(&source, &source_alias).unwrap();
-    #[cfg(unix)]
+    #[cfg(any(unix, windows))]
     let source_symlink = {
         let path = dir.path().join("source-symlink.mp4");
+        #[cfg(unix)]
         std::os::unix::fs::symlink(&source, &path).unwrap();
+        #[cfg(windows)]
+        std::os::windows::fs::symlink_file(&source, &path).unwrap();
         path
     };
-    #[cfg(unix)]
+    #[cfg(any(unix, windows))]
     let project_symlink = {
         let path = dir.path().join("project-symlink.vibecut");
+        #[cfg(unix)]
         std::os::unix::fs::symlink(&project_path, &path).unwrap();
+        #[cfg(windows)]
+        std::os::windows::fs::symlink_file(&project_path, &path).unwrap();
         path
     };
     let protected = vec![project_path.clone(), metadata.clone(), recovery.clone()];
@@ -287,7 +294,12 @@ fn snapshot_publication_refuses_project_and_source_aliases() {
         source.clone(),
         source_alias.clone(),
     ];
-    #[cfg(unix)]
+    #[cfg(windows)]
+    destinations.extend([
+        dir.path().join("ACTIVE.VIBECUT.META.JSON"),
+        recovery.join("JOURNAL.json"),
+    ]);
+    #[cfg(any(unix, windows))]
     destinations.extend([source_symlink, project_symlink]);
 
     for destination in destinations {

@@ -98,6 +98,12 @@ pub struct Request {
 /// Implementations admit source reads, destination writes/overwrite and provider
 /// consent through their owners. The engine calls this on every child before IO.
 pub trait Policy {
+    /// Trusted snapshot replacement grant; the request itself has no overwrite flag.
+    /// Without a grant, staging and final publication both use atomic no-clobber.
+    fn snapshot_overwrite(&self) -> bool {
+        false
+    }
+
     fn authorize(&self, command: &Command, project: &project::Project) -> Result<()>;
 }
 pub struct Caller<'a> {
@@ -679,7 +685,7 @@ impl Session {
         let before = self.revision();
         // All mutation response shapes have a fixed small bound (at most 1024
         // created IDs). Reads/images never occupy the no-eviction receipt ledger.
-        let value = match self.run_control(command, runner, fingerprint) {
+        let value = match self.run_control(command, runner, fingerprint, caller.policy) {
             Ok(value) => ResponseValue::Result(value),
             Err(error) => ResponseValue::Error(ErrorCode::from_error(&error)),
         };
@@ -904,6 +910,7 @@ impl Session {
         command: Command,
         runner: &mut JobRunner,
         fingerprint: blake3::Hash,
+        policy: &dyn Policy,
     ) -> Result<ControlResult> {
         match command {
             Command::Inspect {} => {
@@ -955,12 +962,17 @@ impl Session {
                     return Err(EditError::TransactionActive);
                 }
                 let protected = self.protected_paths().to_vec();
-                let snapshot = crate::snapshot::save_with_budget(
+                let snapshot = crate::snapshot::save_with_overwrite(
                     self.project(),
                     time,
                     &path,
                     &protected,
                     runner.memory_budget(),
+                    if policy.snapshot_overwrite() {
+                        project::atomic::Overwrite::Replace
+                    } else {
+                        project::atomic::Overwrite::Refuse
+                    },
                 )?;
                 Ok(ControlResult::Snapshot { snapshot })
             }

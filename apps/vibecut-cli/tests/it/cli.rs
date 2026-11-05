@@ -1591,6 +1591,36 @@ fn control_snapshot_writes_the_requested_frame_and_refuses_project_alias() {
     let (code, stderr) = control.finish();
     assert_eq!(code, 5, "{stderr}");
 
+    // Replacement is granted only by the trusted process flag, never by JSON.
+    for allow in [false, true] {
+        let out = dir.path().join("existing.png");
+        fs::write(&out, b"sentinel").unwrap();
+        let flags = if allow {
+            vec![os("--allow-overwrite")]
+        } else {
+            vec![]
+        };
+        let mut control = ControlSession::start(&project_path, &flags);
+        let inspect = control.send(control_request("r0", "inspect", json!({}), None, None));
+        let rev = inspect["rev_after"].as_str().unwrap();
+        let response = control.send(control_request(
+            "s1",
+            "preview.snapshot",
+            json!({"time":0,"path":out}),
+            Some(rev),
+            Some("replace"),
+        ));
+        if allow {
+            assert_eq!(response["exit_code"], 0);
+            assert_eq!(&fs::read(&out).unwrap()[..8], b"\x89PNG\r\n\x1a\n");
+        } else {
+            assert_ne!(response["exit_code"], 0);
+            assert_eq!(fs::read(&out).unwrap(), b"sentinel");
+        }
+        let (code, stderr) = control.finish();
+        assert_eq!(code == 0, allow, "{stderr}");
+    }
+
     let empty_path = dir.path().join("empty.vibecut");
     new_project(&empty_path);
     let mut empty = ControlSession::start(&empty_path, &[]);

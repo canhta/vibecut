@@ -33,7 +33,9 @@ so the same request replays its error and a retry that must execute again uses a
 key. Otherwise a changed project and metadata are saved once on clean EOF. `--no-save`
 suppresses that final save. `--allow-overwrite` is the trusted grant for `export`,
 `export_subtitles` and `burn_subtitles` with `overwrite: true`; without it engine
-policy returns `permission`. External gesture commands remain refused by engine
+policy returns `permission`. `preview.snapshot {time, path}` uses atomic no-clobber
+without that grant; `--allow-overwrite` permits snapshot replacement. The request
+cannot supply its own grant. External gesture commands remain refused by engine
 policy, and agents use atomic batches plus undo. Oversized frames are drained and
 returned as an in-band `limit` error, so the session continues with earlier accepted
 edits intact.

@@ -62,15 +62,40 @@ pub fn save_with_budget(
     protected: &[PathBuf],
     budget: &ByteBudget,
 ) -> Result<SnapshotResult> {
+    save_with_overwrite(
+        project,
+        time,
+        path,
+        protected,
+        budget,
+        project::atomic::Overwrite::Replace,
+    )
+}
+
+pub(crate) fn save_with_overwrite(
+    project: &Project,
+    time: Tick,
+    path: &Path,
+    protected: &[PathBuf],
+    budget: &ByteBudget,
+    overwrite: project::atomic::Overwrite,
+) -> Result<SnapshotResult> {
     let hooks = SnapshotHooks(budget);
     let image = render(project, time, &hooks)?;
-    publish(
-        path,
-        &image.png,
+    crate::publication::Publication {
         project,
+        path,
         protected,
-        &hooks,
+        hooks: &hooks,
+    }
+    .write(
+        overwrite,
+        u64::try_from(image.png.len()).map_err(|_| EditError::Limit)?,
         &project::atomic::Fs,
+        |writer| {
+            writer.write_all(&image.png)?;
+            Ok(())
+        },
     )?;
     Ok(SnapshotResult {
         path: path.to_owned(),
@@ -221,86 +246,6 @@ impl Write for PngWriter {
     }
 }
 
-fn publish(
-    path: &Path,
-    png: &[u8],
-    project: &Project,
-    protected: &[PathBuf],
-    hooks: &dyn render::ExecutionHooks,
-    fs: &dyn project::atomic::AtomicFs,
-) -> Result<()> {
-    admit_destination(project, path, protected, hooks)?;
-    let max = u64::try_from(png.len()).map_err(|_| EditError::Limit)?;
-    let stage =
-        project::atomic::StreamingStage::new(path, project::atomic::Overwrite::Replace, max)?;
-    {
-        let mut writer = stage.writer()?;
-        writer.write_all(png)?;
-    }
-    let finalized = stage.finalize_with(fs)?;
-    // Re-admit immediately before the rename so a destination swapped while
-    // staging is still refused; the stage is dropped (and removed) on refusal.
-    admit_destination(project, path, protected, hooks)?;
-    finalized.publish_with(fs)?;
-    Ok(())
-}
-
-fn admit_destination(
-    project: &Project,
-    path: &Path,
-    protected: &[PathBuf],
-    hooks: &dyn render::ExecutionHooks,
-) -> Result<()> {
-    // Source media aliases (direct, normalized, symlink and hard link).
-    render::validate_output_path(project, path, hooks)?;
-    // Writer-control names and Windows-normalized spellings.
-    project::atomic::admit_destination(path)?;
-    let normalized = normalize(path)?;
-    for protected in protected {
-        let normalized_protected = normalize(protected).unwrap_or_else(|_| protected.clone());
-        if normalized == normalized_protected
-            || (protected.is_dir() && normalized.starts_with(&normalized_protected))
-        {
-            return Err(EditError::Invalid("snapshot aliases a project file"));
-        }
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::MetadataExt;
-            if let (Ok(destination), Ok(protected)) =
-                (std::fs::metadata(path), std::fs::metadata(protected))
-                && destination.dev() == protected.dev()
-                && destination.ino() == protected.ino()
-            {
-                return Err(EditError::Invalid("snapshot aliases a project file"));
-            }
-        }
-        #[cfg(not(unix))]
-        if path.is_file()
-            && protected.is_file()
-            && media::ContentHash::read_with_cancel(path, || hooks.cancelled())?
-                == media::ContentHash::read_with_cancel(protected, || hooks.cancelled())?
-        {
-            return Err(EditError::Invalid("snapshot aliases a project file"));
-        }
-    }
-    Ok(())
-}
-
-fn normalize(path: &Path) -> Result<PathBuf> {
-    if path.exists() {
-        Ok(std::fs::canonicalize(path)?)
-    } else {
-        let parent = path
-            .parent()
-            .filter(|parent| !parent.as_os_str().is_empty())
-            .unwrap_or(Path::new("."));
-        Ok(std::fs::canonicalize(parent)?.join(
-            path.file_name()
-                .ok_or(EditError::Invalid("snapshot filename"))?,
-        ))
-    }
-}
-
 struct SnapshotHooks<'a>(&'a ByteBudget);
 
 impl render::ExecutionHooks for SnapshotHooks<'_> {
@@ -338,6 +283,31 @@ impl render::ExecutionHooks for SnapshotHooks<'_> {
 #[allow(clippy::unwrap_used, clippy::panic)]
 mod tests {
     use super::*;
+
+    fn publish(
+        path: &Path,
+        png: &[u8],
+        project: &Project,
+        protected: &[PathBuf],
+        hooks: &dyn render::ExecutionHooks,
+        fs: &dyn project::atomic::AtomicFs,
+    ) -> Result<()> {
+        crate::publication::Publication {
+            project,
+            path,
+            protected,
+            hooks,
+        }
+        .write(
+            project::atomic::Overwrite::Replace,
+            png.len() as u64,
+            fs,
+            |writer| {
+                writer.write_all(png)?;
+                Ok(())
+            },
+        )
+    }
 
     struct FullDisk;
 
@@ -393,20 +363,56 @@ mod tests {
 
     #[test]
     fn publication_replaces_atomically_without_staging_leftovers() {
-        let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("snapshot.png");
-        std::fs::write(&path, b"previous").unwrap();
-        publish(
-            &path,
-            b"new png",
-            &project(),
-            &[],
-            &hooks(),
-            &project::atomic::Fs,
-        )
-        .unwrap();
-        assert_eq!(std::fs::read(&path).unwrap(), b"new png");
-        assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 1);
+        struct CreateAtFence(PathBuf);
+        impl project::atomic::AtomicFs for CreateAtFence {
+            fn sync(&self, file: &std::fs::File) -> std::io::Result<()> {
+                file.sync_all()
+            }
+            fn before_publish(&self) -> std::io::Result<()> {
+                std::fs::write(&self.0, b"raced destination")
+            }
+        }
+        for (overwrite, exists, race, succeeds) in [
+            (project::atomic::Overwrite::Replace, true, false, true),
+            (project::atomic::Overwrite::Refuse, false, false, true),
+            (project::atomic::Overwrite::Refuse, true, false, false),
+            (project::atomic::Overwrite::Refuse, false, true, false),
+        ] {
+            let dir = tempfile::tempdir().unwrap();
+            let path = dir.path().join("snapshot.png");
+            if exists {
+                std::fs::write(&path, b"previous").unwrap();
+            }
+            let fence = CreateAtFence(path.clone());
+            let fs: &dyn project::atomic::AtomicFs =
+                if race { &fence } else { &project::atomic::Fs };
+            let project = project();
+            let hooks = hooks();
+            let result = crate::publication::Publication {
+                project: &project,
+                path: &path,
+                protected: &[],
+                hooks: &hooks,
+            }
+            .write(overwrite, 7, fs, |writer| {
+                writer.write_all(b"new png")?;
+                Ok(())
+            });
+            assert_eq!(
+                result.is_ok(),
+                succeeds,
+                "{overwrite:?} existing={exists} race={race}"
+            );
+            let expected: &[u8] = if succeeds {
+                b"new png"
+            } else if race {
+                b"raced destination"
+            } else {
+                b"previous"
+            };
+            assert_eq!(std::fs::read(&path).unwrap(), expected);
+            assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 1);
+        }
     }
 
     #[test]

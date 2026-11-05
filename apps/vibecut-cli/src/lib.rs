@@ -602,6 +602,10 @@ struct ControlPolicy {
     allow_overwrite: bool,
 }
 impl Policy for ControlPolicy {
+    fn snapshot_overwrite(&self) -> bool {
+        self.allow_overwrite
+    }
+
     fn authorize(&self, command: &Command, _: &Project) -> engine::Result<()> {
         let overwrite = match command {
             Command::Export { overwrite, .. }

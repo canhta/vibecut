@@ -191,81 +191,43 @@ pub fn submit_export_publication(
         },
         move |context| {
             use std::io::{Read, Write};
-            let admit = || -> Result<(), EditError> {
-                render::validate_output_path(&project, &destination, context)?;
-                project::atomic::admit_destination(&destination)?;
-                let normalize = |path: &std::path::Path| {
-                    std::fs::canonicalize(path).or_else(|_| {
-                        let parent = path
-                            .parent()
-                            .filter(|p| !p.as_os_str().is_empty())
-                            .unwrap_or(std::path::Path::new("."));
-                        Ok::<_, std::io::Error>(
-                            std::fs::canonicalize(parent)?
-                                .join(path.file_name().ok_or(std::io::ErrorKind::InvalidInput)?),
-                        )
-                    })
-                };
-                let normalized = normalize(&destination)?;
-                for path in protected
-                    .iter()
-                    .map(PathBuf::as_path)
-                    .chain(project.data().assets.iter().map(|asset| asset.path()))
-                {
-                    if destination == path
-                        || normalize(path).is_ok_and(|canonical| {
-                            canonical == normalized
-                                || (path.is_dir() && normalized.starts_with(canonical))
-                        })
-                        || (destination.is_file()
-                            && path.is_file()
-                            && media::ContentHash::read_with_cancel(&destination, || {
-                                context.cancelled()
-                            })? == media::ContentHash::read_with_cancel(path, || {
-                                context.cancelled()
-                            })?)
-                    {
-                        return Err(EditError::Invalid("output aliases an active project file"));
-                    }
-                }
-                Ok(())
-            };
-            admit()?;
             let mut source = std::fs::File::open(&source)?;
             let size = source.metadata()?.len();
-            let stage = project::atomic::StreamingStage::new(
-                &destination,
-                project::atomic::Overwrite::Replace,
-                size.max(1),
-            )?;
             let mut buffer = vec![0; 64 << 10];
             let mut copied = 0u64;
-            {
-                let mut writer = stage.writer()?;
-                loop {
-                    if context.cancelled() {
-                        return Err(EditError::Cancelled);
-                    }
-                    let count = source.read(&mut buffer)?;
-                    if count == 0 {
-                        break;
-                    }
-                    writer.write_all(
-                        buffer
-                            .get(..count)
-                            .ok_or(EditError::Invalid("publication read size"))?,
-                    )?;
-                    copied += count as u64;
-                    context.progress(
-                        JobStage::Finalize,
-                        (copied as f64 / size.max(1) as f64) as f32,
-                    )?;
-                }
+            crate::publication::Publication {
+                project: &project,
+                path: &destination,
+                protected: &protected,
+                hooks: context,
             }
-            let finalized = stage.finalize_with(fs.as_ref())?;
-            admit()?;
-            context.begin_publication()?;
-            finalized.publish_with(fs.as_ref())?;
+            .write(
+                project::atomic::Overwrite::Replace,
+                size.max(1),
+                fs.as_ref(),
+                |writer| {
+                    loop {
+                        if context.cancelled() {
+                            return Err(EditError::Cancelled);
+                        }
+                        let count = source.read(&mut buffer)?;
+                        if count == 0 {
+                            break;
+                        }
+                        writer.write_all(
+                            buffer
+                                .get(..count)
+                                .ok_or(EditError::Invalid("publication read size"))?,
+                        )?;
+                        copied += count as u64;
+                        context.progress(
+                            JobStage::Finalize,
+                            (copied as f64 / size.max(1) as f64) as f32,
+                        )?;
+                    }
+                    Ok(())
+                },
+            )?;
             Ok(Vec::new())
         },
     )
