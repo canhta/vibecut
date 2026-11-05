@@ -445,9 +445,21 @@ fn video_and_main_rename_fields_do_not_cover_output_controls() {
 }
 
 #[test]
-fn leaving_or_removing_a_renamed_track_restores_keyboard_shortcuts() {
-    for remove in [false, true] {
-        let (editor, track, _) = track_editor();
+fn rename_cancellation_restores_shortcuts_after_track_exit() {
+    for exit in ["remove", "scene", "scroll"] {
+        let (mut editor, track, _) = track_editor();
+        if exit == "scroll" {
+            for _ in 0..8 {
+                editor
+                    .session
+                    .apply(Command::AddTrack {
+                        name: "Audio".into(),
+                        kind: TrackKind::Audio,
+                        placement: Default::default(),
+                    })
+                    .unwrap();
+            }
+        }
         let mut h = Harness::builder()
             .with_size(egui::vec2(1728.0, 1200.0))
             .build_ui_state(|ui, e: &mut Editor| e.ui(ui), editor);
@@ -465,12 +477,12 @@ fn leaving_or_removing_a_renamed_track_restores_keyboard_shortcuts() {
         h.run_steps(2);
         h.event(egui::Event::Text("discarded draft".into()));
         h.run_steps(2);
-        if remove {
+        if exit == "remove" {
             h.state_mut()
                 .session
                 .apply(Command::RemoveTrack { track })
                 .unwrap();
-        } else {
+        } else if exit == "scene" {
             let result = h
                 .state_mut()
                 .session
@@ -482,6 +494,42 @@ fn leaving_or_removing_a_renamed_track_restores_keyboard_shortcuts() {
             h.state_mut()
                 .activate(&format!("scene.row.{}", scene.0))
                 .unwrap();
+        } else {
+            h.hover_at(header_rect(&h, track).center());
+            h.event(egui::Event::MouseWheel {
+                unit: egui::MouseWheelUnit::Point,
+                delta: egui::vec2(0.0, -1200.0),
+                phase: egui::TouchPhase::Move,
+                source: egui::MouseWheelSource::Unknown,
+                modifiers: egui::Modifiers::NONE,
+            });
+            h.run_steps(12);
+            assert!(
+                !h.state()
+                    .inspect()
+                    .unwrap()
+                    .widgets
+                    .iter()
+                    .any(|widget| widget.id == format!("track.{}.rename", track.0)),
+                "rename must actually be offscreen"
+            );
+            h.key_press(egui::Key::Escape);
+            h.run_steps(3);
+            assert_eq!(
+                h.state()
+                    .session
+                    .project()
+                    .data()
+                    .scene()
+                    .timeline
+                    .overlays
+                    .iter()
+                    .find(|candidate| candidate.id == track)
+                    .unwrap()
+                    .name
+                    .as_str(),
+                "Text"
+            );
         }
         h.run_steps(3);
         let before = h.state().snapping;

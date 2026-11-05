@@ -2642,6 +2642,11 @@ impl Editor {
             }
             return;
         }
+        if self.track_rename.is_some() && consume(ctx, egui::Modifiers::NONE, egui::Key::Escape) {
+            self.track_rename = None;
+            self.track_rename_focus = false;
+            return;
+        }
         if self.rename.is_some()
             || self.property_focus.is_some()
             || self.track_rename.is_some()
