@@ -63,7 +63,7 @@ Release/media/render dispatches set `require-oracles`; ordinary manual CI also r
 
 ## Distribution and release
 
-Every main push and manual `build.yml` dispatch builds unsigned macOS arm64, x86_64 and universal packages plus advisory Windows x64/arm64 packages. Older runs of that ref cancel. A green main run refreshes the rolling `nightly` pre-release, tag, SHA-256 sums and commit-list notes; branch dispatches only upload short-lived workflow artifacts. Each native row reuses `setup-build`; smoke runs on separate VMs without restoring media/Rust caches. Windows remains advisory until p0-core/44.
+Every main push and manual `build.yml` dispatch builds unsigned macOS arm64, x86_64 and universal packages plus advisory Windows x64/arm64 packages. Linux has no packaged artifact yet: it builds, tests and runs from source with the same `cargo xtask ffmpeg` provisioning. Older runs of that ref cancel. A green main run refreshes the rolling `nightly` pre-release, tag, SHA-256 sums and commit-list notes; branch dispatches only upload short-lived workflow artifacts. Each native row reuses `setup-build`; smoke runs on separate VMs without restoring media/Rust caches. Windows remains advisory until p0-core/44.
 
 Releases are manual: dispatch `release.yml` with the workspace version. Its default `publish=false` signs/notarizes all three macOS DMGs and verifies them on fresh runners (universal on both architectures), without creating a release or tag. `publish=true` requires main and attaches the verified DMGs and sums to one draft, creating `v<version>`; published/immutable releases, mismatched tags and duplicate signed assets are refused. Publishing that draft belongs to the maintainer.
 

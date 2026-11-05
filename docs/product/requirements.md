@@ -7,7 +7,7 @@
 
 ## Scope
 
-Local-first desktop video editor for macOS and Windows; Linux comes later.
+Local-first desktop video editor for macOS, Windows and Linux.
 
 | Priority | User outcome |
 |---|---|

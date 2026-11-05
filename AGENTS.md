@@ -1,6 +1,6 @@
 # VibeCut
 
-Rust desktop video editor for macOS and Windows.
+Rust desktop video editor for macOS, Windows and Linux.
 
 Read the owner before changing its area; keep each fact in one owner and link elsewhere.
 

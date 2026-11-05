@@ -4,12 +4,12 @@
 
 <p align="center">
   <img src="https://img.shields.io/badge/license-MIT-08C?style=flat" alt="License: MIT" />
-  <img src="https://img.shields.io/badge/macOS%20%7C%20Windows-4493F8?style=flat-square" alt="Platforms: macOS and Windows" />
+  <img src="https://img.shields.io/badge/macOS%20%7C%20Windows%20%7C%20Linux-4493F8?style=flat-square" alt="Platforms: macOS, Windows and Linux" />
 </p>
 
 <p align="center">
   <strong>The open-source CapCut alternative your AI agents can drive.</strong><br/>
-  A free, fast, native video editor for macOS and Windows, with MCP and a CLI built in.
+  A free, fast, native video editor for macOS, Windows and Linux, with MCP and a CLI built in.
 </p>
 
 <!-- Hero: docs/assets/readme/hero.jpg (editor: media panel, preview, timeline, properties) -->
@@ -121,14 +121,18 @@ hardware-accelerated encoding.
 ## Install
 
 Download the latest macOS or Windows build from
-[Releases](https://github.com/canhta/vibecut/releases/latest).
+[Releases](https://github.com/canhta/vibecut/releases/latest); Linux builds from source.
 
-Build from source:
+Build from source on any of the three platforms:
 
 ```sh
 cargo xtask ffmpeg
 cargo run --release -p vibecut
 ```
+
+Linux builds need Bash, Make, Perl, pkg-config, Clang/LLVM, CMake, Ninja, NASM
+and the desktop development headers listed in
+[workflows](docs/engineering/workflows.md#ffmpeg-provisioning).
 
 ## Contributing
 

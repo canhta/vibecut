@@ -1,6 +1,6 @@
 # Project foundations
 
-A local-first desktop editor targets macOS and Windows, with Linux later, and a
+A local-first desktop editor targets macOS, Windows and Linux, and a
 Rust core runnable headless so UI choices do not constrain editing or automation.
 AI providers use adapters, starting with opt-in OpenAI and explicit consent before
 media upload, with local models later to extend offline use. Choose MIT and English
