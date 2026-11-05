@@ -1109,6 +1109,24 @@ fn checked_in_registry_digest_and_command_reference_match_the_registry() {
 #[test]
 fn labelled_preview_preserves_production_picture_outside_the_label_band() {
     let mut s = seed();
+    let created = s
+        .apply(Command::CreateScene {
+            name: "Inactive".into(),
+        })
+        .unwrap();
+    let engine::CreatedId::Scene(scene) = created.created[0] else {
+        panic!("scene");
+    };
+    s.apply(Command::SwitchScene { scene }).unwrap();
+    s.apply(Command::AddTrack {
+        name: "Inactive overlay".into(),
+        kind: TrackKind::Video,
+    })
+    .unwrap();
+    s.apply(Command::SwitchScene {
+        scene: project::SceneId(0),
+    })
+    .unwrap();
     let mut r = runner();
     let project = s.project().clone();
     let (reference, _) = r

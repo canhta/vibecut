@@ -86,16 +86,14 @@ pub(crate) fn preview(
                 .max(1) as u32;
                 let mut data = project.data().clone();
                 let next = data
-                    .scene()
-                    .timeline
+                    .scenes
                     .iter()
-                    .map(|t| t.id.0)
-                    .chain(
-                        data.scene()
-                            .timeline
-                            .iter()
-                            .flat_map(|t| t.items.iter().map(|i| i.id.0)),
-                    )
+                    .flat_map(|scene| {
+                        scene.timeline.iter().flat_map(|track| {
+                            std::iter::once(track.id.0)
+                                .chain(track.items.iter().map(|item| item.id.0))
+                        })
+                    })
                     .max()
                     .unwrap_or(0)
                     .checked_add(1)
