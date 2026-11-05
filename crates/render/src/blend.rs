@@ -1,0 +1,125 @@
+//! Separable and nonseparable blend functions.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum BlendMode {
+    Normal,
+    Darken,
+    Multiply,
+    ColorBurn,
+    Lighten,
+    Screen,
+    PlusLighter,
+    ColorDodge,
+    Overlay,
+    SoftLight,
+    HardLight,
+    Difference,
+    Exclusion,
+    Hue,
+    Saturation,
+    Color,
+    Luminosity,
+}
+
+fn sep(mode: BlendMode, b: f32, s: f32) -> f32 {
+    match mode {
+        BlendMode::Darken => b.min(s),
+        BlendMode::Multiply => b * s,
+        BlendMode::ColorBurn => {
+            if b >= 1.0 {
+                1.0
+            } else if s <= 0.0 {
+                0.0
+            } else {
+                1.0 - ((1.0 - b) / s).min(1.0)
+            }
+        }
+        BlendMode::Lighten => b.max(s),
+        BlendMode::Screen => b + s - b * s,
+        BlendMode::ColorDodge => {
+            if b <= 0.0 {
+                0.0
+            } else if s >= 1.0 {
+                1.0
+            } else {
+                (b / (1.0 - s)).min(1.0)
+            }
+        }
+        BlendMode::PlusLighter => (b + s).min(1.0),
+        BlendMode::Overlay => sep(BlendMode::HardLight, s, b),
+        BlendMode::HardLight => {
+            if s <= 0.5 {
+                b * 2.0 * s
+            } else {
+                sep(BlendMode::Screen, b, 2.0 * s - 1.0)
+            }
+        }
+        BlendMode::SoftLight => {
+            if s <= 0.5 {
+                b - (1.0 - 2.0 * s) * b * (1.0 - b)
+            } else {
+                let d = if b <= 0.25 {
+                    ((16.0 * b - 12.0) * b + 4.0) * b
+                } else {
+                    b.sqrt()
+                };
+                b + (2.0 * s - 1.0) * (d - b)
+            }
+        }
+        BlendMode::Difference => (b - s).abs(),
+        BlendMode::Exclusion => b + s - 2.0 * b * s,
+        _ => s,
+    }
+}
+fn lum(c: [f32; 3]) -> f32 {
+    let [r, g, b] = c;
+    0.3 * r + 0.59 * g + 0.11 * b
+}
+fn clip_color(c: [f32; 3]) -> [f32; 3] {
+    let l = lum(c);
+    let [r, g, b] = c;
+    let n = r.min(g).min(b);
+    let x = r.max(g).max(b);
+    let mut o = c;
+    if n < 0.0 {
+        for v in &mut o {
+            *v = l + (*v - l) * l / (l - n).max(1e-6);
+        }
+    }
+    if x > 1.0 {
+        for v in &mut o {
+            *v = l + (*v - l) * (1.0 - l) / (x - l).max(1e-6);
+        }
+    }
+    o
+}
+fn set_lum(c: [f32; 3], l: f32) -> [f32; 3] {
+    let d = l - lum(c);
+    clip_color(c.map(|v| v + d))
+}
+fn sat(c: [f32; 3]) -> f32 {
+    let [r, g, b] = c;
+    r.max(g).max(b) - r.min(g).min(b)
+}
+fn set_sat(c: [f32; 3], s: f32) -> [f32; 3] {
+    let [r, g, b] = c;
+    let mx = r.max(g).max(b);
+    let mn = r.min(g).min(b);
+    if mx - mn <= 1e-6 {
+        return [0.0; 3];
+    }
+    c.map(|v| (v - mn) * s / (mx - mn))
+}
+/// Blend straight colour components in the caller's working space.
+pub fn blend_rgb(mode: BlendMode, b: [f32; 3], s: [f32; 3]) -> [f32; 3] {
+    match mode {
+        BlendMode::Hue => set_lum(set_sat(s, sat(b)), lum(b)),
+        BlendMode::Saturation => set_lum(set_sat(b, sat(s)), lum(b)),
+        BlendMode::Color => set_lum(s, lum(b)),
+        BlendMode::Luminosity => set_lum(b, lum(s)),
+        m => {
+            let [br, bg, bb] = b;
+            let [sr, sg, sb] = s;
+            [sep(m, br, sr), sep(m, bg, sg), sep(m, bb, sb)]
+        }
+    }
+}

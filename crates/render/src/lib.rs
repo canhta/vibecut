@@ -1,5 +1,6 @@
 //! Shared CPU pixels, absolute-sample audio, and finalized export execution.
 mod audio;
+pub mod blend;
 mod caption;
 pub use caption::{CaptionBackground, CaptionOutline, CaptionPosition, CaptionStyle};
 pub mod effects;
