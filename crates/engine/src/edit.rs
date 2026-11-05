@@ -330,6 +330,11 @@ fn set_speed(
         target.animations.retime(num, den)?;
     }
     target.retime = project::Retime {
+        window: if target.retime.speed == speed {
+            target.retime.window
+        } else {
+            None
+        },
         speed,
         maintain_pitch,
     };
@@ -730,6 +735,8 @@ pub(crate) fn apply(
                 return Err(EditError::Invalid("custom alignment requires move"));
             }
             let mut tr = project::Transition {
+                from_pieces: vec![],
+                to_pieces: vec![],
                 id: project::TransitionId(alloc(next)?),
                 track,
                 from,
@@ -1065,8 +1072,10 @@ pub(crate) fn apply(
             let (left_cut, right_cut) = left.split_at(at)?;
             let mut right = left.clone();
             set_range(left, left_cut.source_range, Tick::ZERO, sources)?;
+            left.retime = left_cut.retime;
             let shift = sub(right.start, right_cut.start)?;
             set_range(&mut right, right_cut.source_range, shift, sources)?;
+            right.retime = right_cut.retime;
             // A split establishes independent retained content for both new pieces.
             if let ItemParams::Caption(p) = &left.content {
                 sources.insert(left.id, Arc::new(p.cues.clone()));
@@ -1093,9 +1102,7 @@ pub(crate) fn apply(
             let right_id = right.id;
             t.items.push(right);
             for tr in &mut data.scene_mut().timeline.transitions {
-                if tr.from == id {
-                    tr.from = right_id;
-                }
+                tr.split_piece(id, right_id);
             }
         }
         Command::TrimStart { item: id, at } => {
@@ -1104,6 +1111,7 @@ pub(crate) fn apply(
             let cut = item.trim_start(at)?;
             let shift = sub(item.start, cut.start)?;
             set_range(item, cut.source_range, shift, sources)?;
+            item.retime = cut.retime;
             item.start = cut.start;
             let clip = item.duration()?;
             if moved && let Some(fades) = fades_mut(&mut item.content) {
@@ -1117,6 +1125,7 @@ pub(crate) fn apply(
             let moved = item.end()? != at;
             let cut = item.trim_end(at)?;
             set_range(item, cut.source_range, Tick::ZERO, sources)?;
+            item.retime = cut.retime;
             let clip = item.duration()?;
             if moved && let Some(fades) = fades_mut(&mut item.content) {
                 let curve = fades.fade_out.curve;

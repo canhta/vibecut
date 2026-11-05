@@ -1424,6 +1424,8 @@ fn transitions_disable_copy_and_admit_the_incoming_source_of_a_sub_range() {
         .timeline
         .transitions
         .push(project::Transition {
+            from_pieces: vec![],
+            to_pieces: vec![],
             id: project::TransitionId(2),
             track: project::TrackId(1),
             from: project::ItemId(0),

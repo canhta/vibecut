@@ -40,6 +40,49 @@ pub(crate) fn cuts(timeline: &Timeline) -> BTreeMap<TransitionId, Tick> {
 pub(crate) fn revalidate(data: &mut ProjectData, previous: &BTreeMap<TransitionId, Tick>) {
     let mut kept = Vec::new();
     for mut tr in std::mem::take(&mut data.scene_mut().timeline.transitions) {
+        // An explicit trim/move/delete may detach a previously split piece.
+        // Keep only the contiguous suffix/prefix still reaching the shared cut.
+        if let Some(track) = data.scene().timeline.iter().find(|t| t.id == tr.track) {
+            for (anchor, pieces, outgoing) in [
+                (tr.from, &mut tr.from_pieces, true),
+                (tr.to, &mut tr.to_pieces, false),
+            ] {
+                let Some(mut n) = track.items.iter().position(|i| i.id == anchor) else {
+                    continue;
+                };
+                let mut retained = Vec::new();
+                let ordered: Vec<_> = if outgoing {
+                    pieces.iter().rev().copied().collect()
+                } else {
+                    pieces.clone()
+                };
+                for id in ordered {
+                    let next = if outgoing {
+                        n.checked_sub(1)
+                    } else {
+                        n.checked_add(1)
+                    };
+                    let Some(next) = next else { break };
+                    let (Some(a), Some(b)) = (track.items.get(n), track.items.get(next)) else {
+                        break;
+                    };
+                    let touches = if outgoing {
+                        b.end().ok() == Some(a.start)
+                    } else {
+                        a.end().ok() == Some(b.start)
+                    };
+                    if b.id != id || !touches {
+                        break;
+                    }
+                    retained.push(id);
+                    n = next;
+                }
+                if outgoing {
+                    retained.reverse();
+                }
+                *pieces = retained;
+            }
+        }
         let bounds = tr.bounds(&data.scene().timeline, data);
         let Ok(bounds) = bounds else { continue };
         if let Some(old_cut) = previous.get(&tr.id) {

@@ -28,6 +28,8 @@ fn scene(kind: &str) -> Project {
         })
         .collect();
     d.scene_mut().timeline.transitions.push(Transition {
+        from_pieces: vec![],
+        to_pieces: vec![],
         id: TransitionId(1),
         track: TrackId(0),
         from: ItemId(10),

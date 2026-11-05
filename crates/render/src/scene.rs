@@ -326,10 +326,10 @@ impl<'a> Renderer<'a> {
         let mut active = Vec::new();
         for track in timeline.iter().filter(|t| !t.hidden) {
             if let Some(tr) = transitions.get(&track.id) {
-                let (a, b) = tr.clips(timeline)?;
+                let (a, b) = tr.contributors(timeline, at)?;
                 active.extend([a, b]);
-                active_transitions.insert(a.id, *tr);
-                active_transitions.insert(b.id, *tr);
+                active_transitions.insert(a.id, (*tr, true));
+                active_transitions.insert(b.id, (*tr, false));
             } else {
                 active.extend(
                     track
@@ -412,7 +412,7 @@ impl<'a> Renderer<'a> {
         for item in active {
             check(hooks)?;
             let transition = active_transitions.get(&item.id).copied();
-            if transition.is_some_and(|tr| tr.from == item.id) {
+            if transition.is_some_and(|(_, outgoing)| outgoing) {
                 transition_base = Some(out.copy(hooks)?);
             }
             let local = local_time(item, at)?;
@@ -691,8 +691,8 @@ impl<'a> Renderer<'a> {
                     out = below;
                 }
             }
-            if let Some(tr) = transition {
-                if tr.from == item.id {
+            if let Some((tr, is_outgoing)) = transition {
+                if is_outgoing {
                     let base = transition_base
                         .take()
                         .ok_or(Error::Invalid("transition backdrop"))?;

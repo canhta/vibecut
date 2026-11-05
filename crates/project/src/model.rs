@@ -467,7 +467,7 @@ pub struct Item {
     pub source_asset: Option<AssetId>,
     /// Source ticks for media/captions; local content ticks for generated items.
     pub source_range: SourceRange,
-    /// Output timeline ticks. The item plays `source_range` at `retime.speed`; see [`Item::duration`].
+    /// Output timeline ticks. Playback uses the retained retime slice when present; see [`Item::duration`].
     pub start: Tick,
     pub retime: crate::Retime,
     pub content: ItemParams,
@@ -885,7 +885,8 @@ fn validate(data: &ProjectData) -> Result<()> {
                 return Err(Error::Invalid("source range or track kind"));
             }
             if matches!(item.content, ItemParams::Video(_) | ItemParams::Audio(_)) {
-                if item.duration()? == Tick::ZERO {
+                item.validate_retime_window()?;
+                if item.duration()? <= Tick::ZERO {
                     return Err(Error::Invalid("retimed item shorter than one tick"));
                 }
             } else if item.retime != crate::Retime::default() {
@@ -911,11 +912,10 @@ fn validate(data: &ProjectData) -> Result<()> {
                     if !asset.probe().streams.iter().any(|s| s.kind == kind) {
                         return Err(Error::Invalid("asset lacks item stream kind"));
                     }
-                    if asset
-                        .probe()
-                        .duration
-                        .is_some_and(|d| item.source_range.end() > d)
-                    {
+                    if asset.probe().duration.is_some_and(|d| {
+                        item.source_range.end() > d
+                            || item.retime.window.is_some_and(|w| w.source_range.end() > d)
+                    }) {
                         return Err(Error::Invalid("item exceeds source duration"));
                     }
                 }

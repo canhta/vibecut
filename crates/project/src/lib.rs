@@ -36,7 +36,7 @@ mod transform;
 pub use metadata::{METADATA_VERSION, Metadata, Thumbnail, ViewState, path as metadata_path};
 pub use transform::TransformField;
 mod retime;
-pub use retime::{Cut, Retime};
+pub use retime::{Cut, Retime, RetimeWindow};
 mod persistence;
 mod typography;
 mod writer;

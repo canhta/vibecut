@@ -16,7 +16,7 @@ Hardware decoding remains enabled; requested quality and bitrate are retained.
 normalized crop/destination rectangles. `render_frame(t, sources, hooks)` returns
 one `Image`; `preview_frame` is the explicitly separate placeholder path. Track
 order is bottom-to-top; hidden visual tracks and half-open inactive items produce
-no pixels. Position maps at unit speed to the item's source range. Cover uses a
+no pixels. Position uses the project-owned retime mapping. Cover uses a
 center crop, Contain letterboxes, and Stretch maps the selected crop. Background
 blur renders behind every timeline layer. Selected caption languages admit up to
 two languages; default selects the source language or the first available text.
@@ -123,8 +123,11 @@ fills gaps and half-open inactive intervals. A block admits at most 65,536 sampl
 per channel and 4,096 audible spans. Stereo stays L/R; mono duplicates at unity;
 stereo to mono averages L/R. Other source layouts are explicitly unsupported.
 
-A retimed item (project `retime`) plays source position `n * speed` at item-local
-output sample `n`. With `maintain_pitch` off, a streaming resampler reads that
+A retimed item (project `retime`) plays source position `n * speed` at output
+sample `n` of its original processing window. A split retains that source window
+and advances the output offset, so neither resampling phase nor WSOLA grains
+restart at the cut. Absolute sample rounding and the implicit edge envelope also
+use the retained window; explicit fades keep their project-owned split offsets. With `maintain_pitch` off, a streaming resampler reads that
 position with linear interpolation, area-averaging ceil(speed) taps above 1x so
 fast playback does not alias; pitch follows speed. With it on, WSOLA time stretch
 keeps pitch: 40 ms squared-Hann grains at a 20 ms output hop, source offsets
@@ -483,7 +486,10 @@ and geometry validation. It adds no alternate crop renderer.
 ## Video transitions
 
 The active transition replaces its two clips in track order over its half-open
-span. Both clips map output ticks into their actual source handles and pass
+span. Project resolves one piece on each complete transition side at that output
+tick, including the first/last piece's handles beyond its side extent. Progress
+always uses the unchanged timeline span, even after repeated splits. Both
+contributors use the retained source mapping and pass
 through the existing item compositor (effects, masks, transform, opacity and blend)
 over the same backdrop. Premultiplied linear-light frames then interpolate, either
 directly or through the definition's opaque dip colour. Hidden tracks contribute

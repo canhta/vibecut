@@ -64,12 +64,103 @@ pub struct Transition {
     pub track: TrackId,
     pub from: ItemId,
     pub to: ItemId,
+    /// Earlier outgoing pieces, in timeline order; `from` remains at the shared cut.
+    pub from_pieces: Vec<ItemId>,
+    /// Later incoming pieces, in timeline order; `to` remains at the shared cut.
+    pub to_pieces: Vec<ItemId>,
     pub kind: String,
     pub start: Tick,
     pub duration: Tick,
     pub alignment: TransitionAlignment,
 }
 impl Transition {
+    /// Resolve both complete sides. Split pieces must remain contiguous and on
+    /// the transition's track; edits that break a side invalidate the transition.
+    fn sides<'a>(&self, timeline: &'a Timeline) -> Result<(&'a [Item], &'a [Item])> {
+        self.clips(timeline)?;
+        let track = timeline
+            .iter()
+            .find(|t| t.id == self.track)
+            .ok_or(Error::Invalid("transition track"))?;
+        let from = track
+            .items
+            .iter()
+            .position(|i| i.id == self.from)
+            .ok_or(Error::Invalid("transition outgoing clip"))?;
+        let first = from
+            .checked_sub(self.from_pieces.len())
+            .ok_or(Error::Invalid("transition pieces"))?;
+        let to = from
+            .checked_add(1)
+            .ok_or(Error::Invalid("transition pieces"))?;
+        let end = to
+            .checked_add(self.to_pieces.len())
+            .and_then(|n| n.checked_add(1))
+            .ok_or(Error::Invalid("transition pieces"))?;
+        let a = track
+            .items
+            .get(first..to)
+            .ok_or(Error::Invalid("transition pieces"))?;
+        let b = track
+            .items
+            .get(to..end)
+            .ok_or(Error::Invalid("transition pieces"))?;
+        let valid = |items: &[Item]| {
+            items
+                .iter()
+                .all(|i| matches!(i.content, ItemParams::Video(_) | ItemParams::Overlay(_)))
+                && items.windows(2).all(|p| match (p.first(), p.get(1)) {
+                    (Some(a), Some(b)) => a.end().ok() == Some(b.start),
+                    _ => false,
+                })
+        };
+        if !valid(a)
+            || !valid(b)
+            || !a
+                .iter()
+                .map(|i| i.id)
+                .eq(self.from_pieces.iter().copied().chain([self.from]))
+            || !b
+                .iter()
+                .map(|i| i.id)
+                .eq(std::iter::once(self.to).chain(self.to_pieces.iter().copied()))
+        {
+            return Err(Error::Invalid("transition piece continuity"));
+        }
+        Ok((a, b))
+    }
+    /// The piece that continues each side at `at`, including its source handles.
+    pub fn contributors<'a>(
+        &self,
+        timeline: &'a Timeline,
+        at: Tick,
+    ) -> Result<(&'a Item, &'a Item)> {
+        let (a, b) = self.sides(timeline)?;
+        let select = |items: &'a [Item]| -> Result<&'a Item> {
+            items
+                .iter()
+                .rev()
+                .find(|i| i.start <= at)
+                .or_else(|| items.first())
+                .ok_or(Error::Invalid("transition side"))
+        };
+        Ok((select(a)?, select(b)?))
+    }
+
+    /// Extend a side's identity across a non-destructive split.
+    pub fn split_piece(&mut self, left: ItemId, right: ItemId) {
+        if self.from == left {
+            self.from_pieces.push(left);
+            self.from = right;
+        } else if let Some(n) = self.from_pieces.iter().position(|i| *i == left) {
+            self.from_pieces.insert(n + 1, right);
+        }
+        if self.to == left {
+            self.to_pieces.insert(0, right);
+        } else if let Some(n) = self.to_pieces.iter().position(|i| *i == left) {
+            self.to_pieces.insert(n + 1, right);
+        }
+    }
     /// Exclusive output end in ticks; overflow returns Invalid.
     pub fn end(&self) -> Result<Tick> {
         self.start.add_tick(self.duration)
@@ -109,10 +200,18 @@ impl Transition {
     /// Earliest start, shared cut and latest end, in output ticks. Source handles
     /// bound extensions; unknown source duration refuses an outgoing extension.
     pub fn bounds(&self, timeline: &Timeline, data: &ProjectData) -> Result<(Tick, Tick, Tick)> {
-        let (a, b) = self.clips(timeline)?;
+        let (outgoing, incoming) = self.sides(timeline)?;
+        let a = outgoing.last().ok_or(Error::Invalid("transition side"))?;
+        let b = incoming.first().ok_or(Error::Invalid("transition side"))?;
         let cut = b.start;
-        let mut lo = a.start;
-        let mut hi = b.end()?;
+        let mut lo = outgoing
+            .first()
+            .ok_or(Error::Invalid("transition side"))?
+            .start;
+        let mut hi = incoming
+            .last()
+            .ok_or(Error::Invalid("transition side"))?
+            .end()?;
         if b.source_asset.is_some() {
             lo = lo.max(cut.sub_tick(b.retime.speed.output_duration(b.source_range.start())?)?);
         }
@@ -196,12 +295,28 @@ impl Timeline {
     /// whose own extent overlaps it, plus both clips of every transition whose
     /// span overlaps it, because they render from their handles beyond that extent.
     pub fn rendered_items(&self, from: Tick, to: Tick) -> Vec<&Item> {
-        let joined: BTreeSet<_> = self
+        let mut joined = BTreeSet::new();
+        for tr in self
             .transitions
             .iter()
             .filter(|tr| tr.start < to && tr.end().is_ok_and(|end| end > from))
-            .flat_map(|tr| [tr.from, tr.to])
-            .collect();
+        {
+            let Ok((a, b)) = tr.sides(self) else { continue };
+            let Ok(end) = tr.end() else { continue };
+            for side in [a, b] {
+                for (n, item) in side.iter().enumerate() {
+                    let lo = if n == 0 { tr.start } else { item.start };
+                    let hi = if n + 1 == side.len() {
+                        end
+                    } else {
+                        item.end().unwrap_or(item.start)
+                    };
+                    if lo.max(tr.start) < to && hi.min(end) > from {
+                        joined.insert(item.id);
+                    }
+                }
+            }
+        }
         self.iter()
             .filter(|t| !t.hidden)
             .flat_map(|t| &t.items)
@@ -256,6 +371,8 @@ mod tests {
     }
     fn transition() -> Transition {
         Transition {
+            from_pieces: vec![],
+            to_pieces: vec![],
             id: TransitionId(1),
             track: TrackId(0),
             from: ItemId(1),
@@ -357,6 +474,29 @@ mod tests {
         assert_eq!(ids(&d, 79, 81), [1, 2]); // incoming clip renders before its own start
         assert_eq!(ids(&d, 119, 120), [1, 2]); // outgoing clip renders past its own end
         assert_eq!(ids(&d, 120, 130), [2]);
+        let mut split = d.clone();
+        let mut right = split.scene().timeline.main.items[0].clone();
+        right.id = ItemId(3);
+        right.start = Tick(90);
+        right.source_range = SourceRange::new(Tick(100), Tick(110)).unwrap();
+        split.scene_mut().timeline.main.items[0].source_range =
+            SourceRange::new(Tick(10), Tick(100)).unwrap();
+        split.scene_mut().timeline.main.items.insert(1, right);
+        split.scene_mut().timeline.transitions[0].from = ItemId(3);
+        split.scene_mut().timeline.transitions[0].from_pieces = vec![ItemId(1)];
+        Project::new(split.clone()).unwrap();
+        for (from, to, expected) in [
+            (79, 81, vec![1, 2]),
+            (89, 91, vec![1, 3, 2]),
+            (100, 110, vec![3, 2]),
+            (119, 120, vec![3, 2]),
+        ] {
+            assert_eq!(
+                ids(&split, from, to),
+                expected,
+                "only pieces that contribute to this range"
+            );
+        }
         d.scene_mut().timeline.main.hidden = true;
         assert!(ids(&d, 79, 121).is_empty());
     }

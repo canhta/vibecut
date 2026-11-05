@@ -191,7 +191,6 @@ fn cancelled_gestures_failed_batches_and_reversal_restore_transitions() {
 }
 
 #[test]
-<<<<<<< HEAD
 fn current_schema_roundtrip_rejects_old_and_unknown_kinds() {
     let s = session(true);
     let bytes = project::encode(s.project(), false).unwrap();
@@ -207,22 +206,6 @@ fn current_schema_roundtrip_rejects_old_and_unknown_kinds() {
         }) if found == current - 1 && supported == current
     ));
     wire["schema_version"] = json!(current);
-=======
-fn transition_roundtrip_rejects_old_schema_and_unknown_kinds() {
-    let s = session(true);
-    let bytes = project::encode(s.project(), false).unwrap();
-    let mut wire: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
-    assert_eq!(wire["schema_version"], project::SCHEMA_VERSION);
-    wire["schema_version"] = json!(15);
-    assert!(matches!(
-        project::decode(&serde_json::to_vec(&wire).unwrap()),
-        Err(project::Error::TooOld {
-            found: 15,
-            supported: project::SCHEMA_VERSION
-        })
-    ));
-    wire["schema_version"] = json!(project::SCHEMA_VERSION);
->>>>>>> ba54052 (feat(retime): constant speed, pitch policy and retime-aware trim/split)
     wire["project"]["scenes"][0]["timeline"]["transitions"][0]["kind"] = json!("unknown");
     assert!(
         matches!(project::decode(&serde_json::to_vec(&wire).unwrap()),Err(project::Error::UnsupportedTransition(kind)) if kind == "unknown")
@@ -243,7 +226,7 @@ fn joint_moves_incoming_splits_and_cancelled_additions_keep_identity_and_cut() {
     assert_eq!((tr(&s).start, tr(&s).duration), (Tick(130), Tick(40)));
     s.execute("split_at", json!({"item":11,"at":160})).unwrap();
     assert_eq!(tr(&s).to, ItemId(11));
-    assert_eq!((tr(&s).start, tr(&s).duration), (Tick(140), Tick(20)));
+    assert_eq!((tr(&s).start, tr(&s).duration), (Tick(130), Tick(40)));
     let mut s = session(false);
     s.begin_gesture().unwrap();
     add(&mut s, "center", 40).unwrap();

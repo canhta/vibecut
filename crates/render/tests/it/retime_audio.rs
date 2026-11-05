@@ -110,6 +110,7 @@ fn fixture(thousandths: u16, maintain_pitch: bool, output_seconds: f64) -> proje
             source_range: TimeRange::new(Tick::ZERO, Tick(source_ticks)).unwrap(),
             start: Tick::ZERO,
             retime: project::Retime {
+                window: None,
                 speed,
                 maintain_pitch,
             },

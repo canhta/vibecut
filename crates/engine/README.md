@@ -332,7 +332,7 @@ initial allocation. Project and source constructors retain their own limits.
 - `split_at` uses an output tick strictly inside the identified item, retaining
   the left ID and allocating a right ID with continuous source timing. At a
   retimed item the source cut comes from project's mapping, so the pieces touch
-  exactly, the right piece never ends after the original, and its keyframes move
+  exactly at the requested tick, the right piece ends at the original end, and its keyframes move
   by the left piece's output length.
 - `trim_start` / `trim_end` set absolute output edges, adjusting source edges at
   the item's speed with checked arithmetic (project's mapping keeps the other edge
@@ -1604,8 +1604,11 @@ and persistence through the existing session snapshot path.
 
 Clip edits revalidate the affected active timeline before publishing: transitions
 follow moved cuts, clamp after shortening, and disappear when adjacency or handles
-are lost. Splitting an outgoing clip rebinds the transition to its new right piece;
-splitting an incoming clip keeps its original left piece. Failed edits publish
+are lost. Splits extend the transition's ordered side pieces while keeping the
+original span and progress. Explicit trim/move/delete edits detach pieces that
+no longer form a contiguous chain reaching the cut, then revalidate the remaining
+side extents. Splits retain the original retime processing window for both video
+mapping and audio replay. Failed edits publish
 neither item nor transition changes. Audio remains on its existing mixer path;
 these transitions are video-only. [Project](../project/README.md#video-transitions)
 owns the admitted kinds and invariant mathematics.

@@ -2,12 +2,8 @@ use crate::retime::{Pitch, Retimer};
 use crate::{
     Error, ExecutionHooks, MemoryKind, Reservation, Result, SourceProvider, check, vector,
 };
-<<<<<<< HEAD
 use project::{ItemId, ItemParams, Project};
-=======
-use project::{ItemParams, Project};
 use std::collections::BTreeMap;
->>>>>>> ba54052 (feat(retime): constant speed, pitch policy and retime-aware trim/split)
 use time::{Rounding, Tick};
 /// Planar f32 audio on the project output clock.
 /// Stereo default: mono duplicates at unity; stereo->mono averages L/R.
@@ -204,11 +200,8 @@ impl<'a> AudioMixer<'a> {
                     sources,
                     hooks,
                     self.fade_ms,
-<<<<<<< HEAD
                     &Chain::of(self.project),
-=======
                     &mut self.retimers,
->>>>>>> ba54052 (feat(retime): constant speed, pitch policy and retime-aware trim/split)
                 )?;
                 self.limiter.process(&mut prime.planes);
                 while self.next.is_some_and(|next| next < start) {
@@ -242,11 +235,8 @@ impl<'a> AudioMixer<'a> {
             sources,
             hooks,
             self.fade_ms,
-<<<<<<< HEAD
             &Chain::of(self.project),
-=======
             &mut self.retimers,
->>>>>>> ba54052 (feat(retime): constant speed, pitch policy and retime-aware trim/split)
         )?;
         self.limiter.process(&mut out.planes);
         Ok(out)
@@ -262,11 +252,8 @@ pub(crate) fn mix_raw(
     sources: &mut dyn SourceProvider,
     hooks: &dyn ExecutionHooks,
     fade_ms: u16,
-<<<<<<< HEAD
     chain: &Chain<'_>,
-=======
     retimers: &mut BTreeMap<project::ItemId, Retimer>,
->>>>>>> ba54052 (feat(retime): constant speed, pitch policy and retime-aware trim/split)
 ) -> Result<AudioBlock> {
     check(hooks)?;
     let rate = project.data().settings.audio_sample_rate;
@@ -321,17 +308,31 @@ pub(crate) fn mix_raw(
     retimers.retain(|id, _| active.contains(id));
     for (item, asset, i0, i1, a, b) in spans {
         check(hooks)?;
-        let origin = item
+        let window = item.retime_window()?;
+        let output_start = item
+            .start
+            .checked_sub(window.offset)
+            .ok_or(Error::Invalid("audio continuation origin"))?;
+        let output_origin = output_start.to_units(i64::from(rate), Rounding::Nearest)?;
+        let output_end = output_start
+            .checked_add(
+                item.retime
+                    .speed
+                    .output_duration(window.source_range.duration())?,
+            )
+            .ok_or(Error::Invalid("audio continuation end"))?
+            .to_units(i64::from(rate), Rounding::Nearest)?;
+        let origin = window
             .source_range
             .start()
             .to_units(i64::from(rate), Rounding::Nearest)?;
         let input = if item.retime.speed.is_unity() {
             let source = origin
-                .checked_add(a - i0)
+                .checked_add(a - output_origin)
                 .ok_or(Error::Invalid("source sample position"))?;
             sources.audio(asset, item.id, source, (b - a) as usize, rate, hooks)?
         } else {
-            let length = item
+            let length = window
                 .source_range
                 .end()
                 .to_units(i64::from(rate), Rounding::Nearest)?
@@ -356,7 +357,7 @@ pub(crate) fn mix_raw(
                     .audio(asset, item.id, origin + at, count, rate, hooks)?
                     .planes)
             };
-            let planes = retimer.read(a - i0, (b - a) as usize, &mut pull, hooks)?;
+            let planes = retimer.read(a - output_origin, (b - a) as usize, &mut pull, hooks)?;
             let mut block = AudioBlock::new(
                 rate,
                 u16::try_from(planes.len()).map_err(|_| Error::Invalid("source audio block"))?,
@@ -414,7 +415,8 @@ pub(crate) fn mix_raw(
             }
         }
         let offset = (a - start) as usize;
-        let fade = (i64::from(rate) * i64::from(fade_ms) / 1000).min((i1 - i0) / 2);
+        let fade =
+            (i64::from(rate) * i64::from(fade_ms) / 1000).min((output_end - output_origin) / 2);
         for (channel, destination) in out.planes.iter_mut().enumerate() {
             for (n, dst) in destination
                 .iter_mut()
@@ -439,7 +441,10 @@ pub(crate) fn mix_raw(
                 };
                 let sample = a - i0 + n as i64;
                 let envelope = if fade > 0 {
-                    (sample.min(i1 - i0 - 1 - sample) as f32 / fade as f32).clamp(0.0, 1.0)
+                    let original_sample = a - output_origin + n as i64;
+                    (original_sample.min(output_end - output_origin - 1 - original_sample) as f32
+                        / fade as f32)
+                        .clamp(0.0, 1.0)
                 } else {
                     1.0
                 };

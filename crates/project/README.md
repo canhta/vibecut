@@ -31,21 +31,29 @@ within each track are sorted by output start, nonnegative and nonoverlapping.
 Touching half-open intervals are valid. Item end uses checked arithmetic. An active
 scene's output duration is the maximum item end, excluding bookmarks.
 
-Video and audio items carry `retime { speed, maintain_pitch }` (default 1x, pitch preserved);
-every other kind must keep the default. `source_range` stays the authoritative
-source window and the output duration is `floor(source / speed)`
-(`Item::duration`, `end`), so rate changes keep the same source range and a
-retimed item shorter than one output tick is refused. This module owns the one
-source-time mapping used by render video/audio, captions placement and keyframe
-edits: `source_time_at` (floor, so frame selection never runs ahead of or past
-the window), `output_time_of` (ceiling), and `split_at` / `trim_start` /
-`trim_end`, which pick the source cut for a requested output tick. A cut never
-moves an item's other edge: the left piece ends at or before the request, the
-right piece starts exactly where the left ends and never ends after the
-original, and a trimmed start lands at or after the request, so neighbours cannot
-be overlapped by rounding (the displacement is under `1 / speed` ticks, 100 ticks
-at 0.01x, 0 from 1x up). Pitch policy is data only; render applies it. Frame
-interpolation is nearest earlier source frame; the project holds no blend policy.
+Video and audio items carry `retime { speed, maintain_pitch, window? }` (default
+1x, pitch preserved); every other kind must keep the default. An unsplit item's
+output duration is `floor(source / speed)`; a rate change keeps its source range.
+Items shorter than one output tick refuse. `Item::source_time_at` (floor) and
+`output_time_of` (ceiling) own the mapping used by render and edits.
+
+`Retime.window`, when present, retains the original source processing window,
+output offset and slice duration. `source_time_at` evaluates that original mapping
+at offset plus local output time, retaining fractional-tick phase. Split pieces
+partition output time exactly, including the original final tick, while
+`source_range` records their source cut. The original window also lets audio
+continue the same interpolation/WSOLA processing across cuts. Validation checks
+positive contained slices, source mapping consistency and the original source
+window against the asset duration. A new speed establishes a new mapping; a
+pitch-only change retains it. Shortening a retained slice preserves its mapping.
+
+`split_at` keeps both original output edges and places the new cut exactly at the
+requested tick. A piece with an empty source range refuses. `trim_start` and
+`trim_end` keep the opposite edge fixed; unsplit trims may displace the requested
+edge inward by less than one source tick's output duration (up to 100 ticks at
+0.01x), while shortening a retained slice keeps the exact output tick. Pitch
+policy is data only; render applies it. Frame interpolation uses the nearest
+earlier source frame; the project holds no blend policy.
 
 Each item's typed `ItemParams` determines its track kind. Video/audio require an
 asset with a corresponding stream and cannot exceed its known presentation
@@ -200,13 +208,9 @@ or renderer output claim is made.
 ## Persistence and limits
 
 `encode`/`decode` use one JSON envelope: `format`, `schema_version`, `generator`,
-<<<<<<< HEAD
-`project`. Current schema 17 adds `settings.loudness` (clip/master targets and the last measured gains) to schema 16 timeline `transitions`, which followed schema 15 audio/video clip `fades`, schema 14 optional imported cue style, schema 13 text weight, italic, letter spacing and line height (also on text masks), and schema 12 audio `source` (upload or library provenance), volume/mute and master controls.
-=======
-`project`. Current schema 17 adds item `retime` (speed and pitch policy) to schema 16, which added timeline `transitions` to schema 15 audio/video clip `fades`, following schema 14, which added optional imported cue style to schema 13 text weight, italic, letter spacing and line height (also on text masks), which followed schema 12 audio `source` (upload or library provenance), volume/mute and master controls.
->>>>>>> ba54052 (feat(retime): constant speed, pitch policy and retime-aware trim/split)
+`project`. Current schema 18 adds item `retime` (speed, pitch policy and the retained processing window of split pieces) and ordered transition split pieces; schema 17 added `settings.loudness` (clip/master targets and the last measured gains) to schema 16 timeline `transitions`, which followed schema 15 audio/video clip `fades`, schema 14 optional imported cue style, schema 13 text weight, italic, letter spacing and line height (also on text masks), and schema 12 audio `source` (upload or library provenance), volume/mute and master controls.
 ProjectId is stored as a canonical decimal string, preserving
-all u64 identity bits for control clients; other IDs remain numeric. Schemas 1-16
+all u64 identity bits for control clients; other IDs remain numeric. Schemas 1-17
 are refused rather than migrated or silently defaulted. Older schemas return `TooOld`, newer schemas `TooNew`; there are no
 migration or compatibility paths. Unknown current-schema project/envelope fields
 are refused. `WriterLease::save` serializes completely before touching the destination;
@@ -455,13 +459,20 @@ Source and active-project identity checks remain with the execution owner.
 
 `Timeline.transitions` owns first-class `Transition` entities with project-wide
 unique `TransitionId`, track, outgoing/incoming item IDs, kind, output start,
-duration and `TransitionAlignment` (start, center, end, custom). Both items must
+duration and `TransitionAlignment` (start, center, end, custom). The cut-adjacent items must
 be adjacent and touching on the same video track and contain video or generated
 solid overlays. `TRANSITION_DEFINITIONS` is the admitted catalog: cross dissolve,
 dip to black and dip to white in the Dissolve family. Unknown kinds return
 `UnsupportedTransition` with a bounded kind name, including during file ingestion.
 
-`Transition::bounds` intersects the two clip extents with real source handles:
+A transition retains earlier outgoing IDs in `from_pieces` and later incoming
+IDs in `to_pieces`, both in timeline order. Each side must form a contiguous chain
+of video/overlay items on its track. `from`/`to` remain adjacent at the original
+cut. `contributors(at)` resolves the appropriate piece on each side, using the
+first/last piece's handles beyond the side extent. A split preserves the output
+start, duration and alignment; it never renormalizes transition progress.
+
+`Transition::bounds` intersects the two complete side extents with real source handles:
 the incoming source in-point bounds the time before the cut and the outgoing
 source's remaining known duration bounds the time after it. Unknown outgoing
 source duration permits no extension after the cut. Generated overlays have no

@@ -10,6 +10,7 @@ fn media(source_range: time::SourceRange, thousandths: u16, start: i64) -> Item 
     Item {
         blend_mode: Default::default(),
         retime: Retime {
+            window: None,
             speed: Speed::from_thousandths(thousandths).unwrap(),
             maintain_pitch: false,
         },
@@ -65,31 +66,67 @@ fn rate_duration_and_source_range_agree_at_every_boundary_speed() {
 
 fn check_split(item: &Item, at: Tick) {
     let (left, right) = item.split_at(at).unwrap();
-    let speed = item.retime.speed;
-    let (num, den) = speed.ratio();
-    let left_end = left.start + speed.output_duration(left.source_range.duration()).unwrap();
+    let left_item = Item {
+        source_range: left.source_range,
+        start: left.start,
+        retime: left.retime,
+        ..item.clone()
+    };
+    let right_item = Item {
+        source_range: right.source_range,
+        start: right.start,
+        retime: right.retime,
+        ..item.clone()
+    };
     assert_eq!(left.start, item.start);
-    assert_eq!(right.start, left_end, "pieces touch exactly");
-    assert!(left_end <= at, "left edge stays at or before the request");
-    assert!(
-        at.0 - left_end.0 <= den / num + 1,
-        "edge snaps by under one source tick"
+    assert_eq!(left_item.end().unwrap(), at);
+    assert_eq!(right.start, at, "pieces touch at the requested tick");
+    assert_eq!(
+        right_item.end().unwrap(),
+        item.end().unwrap(),
+        "no lost output ticks"
     );
     assert_eq!(left.source_range.start(), item.source_range.start());
     assert_eq!(left.source_range.end(), right.source_range.start());
     assert_eq!(right.source_range.end(), item.source_range.end());
-    let right_end = right.start
-        + speed
-            .output_duration(right.source_range.duration())
-            .unwrap();
-    assert!(
-        right_end <= item.end().unwrap(),
-        "no overlap with a neighbour"
-    );
-    assert!(
-        item.end().unwrap().0 - right_end.0 <= 1,
-        "at most the floor of one tick is lost"
-    );
+    for t in [
+        item.start,
+        Tick(at.0 - 1),
+        at,
+        Tick(at.0 + 1),
+        Tick(item.end().unwrap().0 - 1),
+    ] {
+        if t >= item.end().unwrap() {
+            continue;
+        }
+        let piece = if t < at { &left_item } else { &right_item };
+        assert_eq!(
+            piece.source_time_at(t).unwrap(),
+            item.source_time_at(t).unwrap()
+        );
+    }
+    for piece in [&left_item, &right_item] {
+        let middle = Tick(piece.start.0 + piece.duration().unwrap().0 / 2);
+        for cut in [piece.trim_start(middle), piece.trim_end(middle)]
+            .into_iter()
+            .flatten()
+        {
+            let trimmed = Item {
+                start: cut.start,
+                source_range: cut.source_range,
+                retime: cut.retime,
+                ..piece.clone()
+            };
+            assert!(trimmed.start == piece.start || trimmed.end().unwrap() == piece.end().unwrap());
+            for t in [trimmed.start, Tick(trimmed.end().unwrap().0 - 1)] {
+                assert_eq!(
+                    trimmed.source_time_at(t).unwrap(),
+                    item.source_time_at(t).unwrap(),
+                    "trimmed split keeps phase"
+                );
+            }
+        }
+    }
 }
 
 #[test]
@@ -244,6 +281,7 @@ fn persistence_roundtrips_speed_and_pitch_and_refuses_invalid_retime() {
             .next()
             .unwrap();
         item.retime = Retime {
+            window: None,
             speed: Speed::from_thousandths(speed).unwrap(),
             maintain_pitch: pitch,
         };

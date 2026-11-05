@@ -501,7 +501,6 @@ pub fn registry() -> &'static [CommandSpec] {
                         object.insert("$defs".into(), reachable_defs(object, defs));
                     }
                 }
-                retain_referenced_definitions(&mut params);
                 CommandSpec {
                     id,
                     label,
@@ -516,7 +515,6 @@ pub fn registry() -> &'static [CommandSpec] {
     })
 }
 
-<<<<<<< HEAD
 /// The `$defs` a schema can reach through `#/$defs/<name>` references, so each
 /// command carries its own types instead of the whole command union.
 fn reachable_defs(
@@ -557,57 +555,6 @@ fn reachable_defs(
             .map(|(k, v)| (k.clone(), v.clone()))
             .collect(),
     )
-=======
-/// Each standalone parameter schema keeps only definitions reachable from its root.
-/// Copying the entire command graph into every leaf grows the catalog past its wire budget.
-fn retain_referenced_definitions(schema: &mut serde_json::Value) {
-    use std::collections::{BTreeMap, BTreeSet};
-    fn references(value: &serde_json::Value, pending: &mut Vec<String>) {
-        match value {
-            serde_json::Value::Object(object) => {
-                if let Some(name) = object
-                    .get("$ref")
-                    .and_then(serde_json::Value::as_str)
-                    .and_then(|s| s.strip_prefix("#/$defs/"))
-                {
-                    pending.push(name.to_owned());
-                }
-                for value in object.values() {
-                    references(value, pending);
-                }
-            }
-            serde_json::Value::Array(values) => {
-                for value in values {
-                    references(value, pending);
-                }
-            }
-            _ => {}
-        }
-    }
-    let Some(object) = schema.as_object_mut() else {
-        return;
-    };
-    let Some(serde_json::Value::Object(mut defs)) = object.remove("$defs") else {
-        return;
-    };
-    let mut pending = Vec::new();
-    for value in object.values() {
-        references(value, &mut pending);
-    }
-    let mut visited = BTreeSet::new();
-    let mut kept = BTreeMap::new();
-    while let Some(name) = pending.pop() {
-        if visited.insert(name.clone())
-            && let Some(definition) = defs.remove(&name)
-        {
-            references(&definition, &mut pending);
-            kept.insert(name, definition);
-        }
-    }
-    if !kept.is_empty() {
-        object.insert("$defs".into(), serde_json::json!(kept));
-    }
->>>>>>> ba54052 (feat(retime): constant speed, pitch policy and retime-aware trim/split)
 }
 
 /// Item input; the engine allocates its identity only on successful commit.
