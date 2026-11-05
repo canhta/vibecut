@@ -3682,7 +3682,10 @@ impl Editor {
             if field.id == "audio_muted" {
                 ui.add_space(12.0);
                 let mut muted = field.value.as_deref() == Some("true");
-                let response = ui.checkbox(&mut muted, self.tr(Text::AudioMuted));
+                let response = ui.add(
+                    egui::Checkbox::new(&mut muted, self.tr(Text::AudioMuted))
+                        .indeterminate(field.value.is_none()),
+                );
                 self.remember("inspector.audio_muted", &response);
                 if response.changed()
                     && let Err(error) = self.set_shared_field("audio_muted", &muted.to_string())
@@ -3766,17 +3769,7 @@ impl Editor {
             if response.changed() {
                 self.property_drafts.insert(field.id, value.clone());
             }
-            let compatible = catalog::number(self.preferences.locale, field.compatible as u64);
-            let total = catalog::number(self.preferences.locale, self.selection.len() as u64);
-            ui.label(
-                egui::RichText::new(catalog::format(
-                    self.preferences.locale,
-                    Text::CompatibleCount,
-                    &[("compatible", &compatible), ("total", &total)],
-                ))
-                .small()
-                .color(self.secondary()),
-            );
+            self.compatible_count(ui, field.compatible);
             if (response.lost_focus()
                 || (response.has_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter))))
                 && self.property_drafts.contains_key(field.id)

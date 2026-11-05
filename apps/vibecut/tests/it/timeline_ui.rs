@@ -6,7 +6,7 @@
 )]
 use egui_kittest::{
     Harness,
-    kittest::{By, Queryable},
+    kittest::{By, NodeT, Queryable},
 };
 use engine::{ByteBudget, Command, CreatedId, NewItem, Session};
 use media::{
@@ -1206,6 +1206,91 @@ fn mixed_text_inspector_applies_one_field_and_restores_selected_items() {
 }
 
 #[test]
+fn mixed_audio_mute_shows_indeterminate_and_undo_restores_each_item() {
+    let mut fixture = fixture();
+    let audio_track = &fixture
+        .editor
+        .session
+        .project()
+        .data()
+        .scene()
+        .timeline
+        .audio[0];
+    let track_id = audio_track.id;
+    let first = audio_track.items[0].id;
+    let second = insert(
+        &mut fixture.editor.session,
+        track_id,
+        Tick(10 * SECOND),
+        SourceRange::new(Tick::ZERO, Tick(10 * SECOND)).unwrap(),
+        Some(AssetId(2)),
+        ItemParams::Audio(project::AudioParams {
+            gain_db: -6.0,
+            muted: true,
+        }),
+    );
+    let video = fixture.video_a;
+    fixture.editor.selection = [first, second, video].into_iter().collect();
+    let mut harness = harness(fixture.editor);
+    harness.run_steps(3);
+    let before = harness.state().session.project().clone();
+    let history = harness.state().session.history_len().0;
+    let mute = By::new().predicate(|n| n.author_id() == Some("inspector.audio_muted"));
+    assert_eq!(
+        harness.get(mute.clone()).accesskit_node().toggled(),
+        Some(egui::accesskit::Toggled::Mixed)
+    );
+    harness.get(mute.clone()).click();
+    harness.run_steps(2);
+    assert_eq!(
+        harness.get(mute.clone()).accesskit_node().toggled(),
+        Some(egui::accesskit::Toggled::True)
+    );
+    assert_eq!(harness.state().session.history_len().0, history + 1);
+    for (id, gain) in [(first, 0.0), (second, -6.0)] {
+        let ItemParams::Audio(params) = &item(harness.state(), id).content else {
+            panic!("audio")
+        };
+        assert!(params.muted);
+        assert_eq!(params.gain_db, gain);
+    }
+    assert_eq!(
+        item(harness.state(), video),
+        before
+            .data()
+            .scene()
+            .timeline
+            .iter()
+            .flat_map(|track| &track.items)
+            .find(|item| item.id == video)
+            .unwrap()
+    );
+    let after = harness.state().session.project().clone();
+    harness.state_mut().activate("edit.undo").unwrap();
+    harness.run_steps(2);
+    assert_eq!(harness.state().session.project(), &before);
+    assert_eq!(
+        harness.get(mute.clone()).accesskit_node().toggled(),
+        Some(egui::accesskit::Toggled::Mixed)
+    );
+    harness.state_mut().activate("edit.redo").unwrap();
+    harness.run_steps(2);
+    assert_eq!(harness.state().session.project(), &after);
+    harness.get(mute.clone()).click();
+    harness.run_steps(2);
+    assert_eq!(
+        harness.get(mute).accesskit_node().toggled(),
+        Some(egui::accesskit::Toggled::False)
+    );
+    for id in [first, second] {
+        let ItemParams::Audio(params) = &item(harness.state(), id).content else {
+            panic!("audio")
+        };
+        assert!(!params.muted);
+    }
+}
+
+#[test]
 fn audio_mute_and_volume_controls_commit_one_step_and_persist() {
     let fixture = fixture();
     let audio = fixture
@@ -1279,63 +1364,18 @@ fn audio_mute_and_volume_controls_commit_one_step_and_persist() {
             "mute accepted {invalid}"
         );
     }
+    let encoded = project::encode(harness.state().session.project(), false).unwrap();
+    let decoded = project::decode(&encoded).unwrap();
+    assert_eq!(decoded.project, **harness.state().session.project());
     harness
         .state_mut()
         .set_shared_field("audio_muted", "false")
         .unwrap();
-
-    let encoded = project::encode(harness.state().session.project(), false).unwrap();
-    let decoded = project::decode(&encoded).unwrap();
-    assert_eq!(decoded.project, **harness.state().session.project());
     let ItemParams::Audio(params) = &item(harness.state(), audio).content else {
         panic!("audio")
     };
     assert_eq!(params.gain_db, -6.0);
     assert!(!params.muted);
-}
-
-#[test]
-#[ignore = "offscreen visual audit, run explicitly outside CI"]
-fn audio_control_visual_audit() {
-    for (scale, dark, locale, filename) in [
-        (1.0, true, Locale::En, "p0-core-17-audio.png"),
-        (2.0, false, Locale::Vi, "p0-core-17-audio-light-vi-2x.png"),
-    ] {
-        let fixture = fixture();
-        let mut editor = fixture.editor;
-        editor.preferences.dark = dark;
-        editor.preferences.locale = locale;
-        let audio = editor
-            .session
-            .project()
-            .data()
-            .scene()
-            .timeline
-            .iter()
-            .find(|t| t.kind == TrackKind::Audio)
-            .unwrap()
-            .items[0]
-            .id;
-        editor.selection = [audio].into_iter().collect();
-        editor.set_shared_field("audio_gain", "-3").unwrap();
-        let project = editor.session.project().clone();
-        editor
-            .playback
-            .seek(Tick(3 * SECOND), false, project)
-            .unwrap();
-        let mut harness = Harness::builder()
-            .with_size(egui::vec2(1440.0, 1030.0))
-            .with_pixels_per_point(scale)
-            .build_ui_state(|ui, editor: &mut Editor| editor.ui(ui), editor);
-        harness.run_steps(4);
-        let image = harness.render().unwrap();
-        let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("../../target")
-            .join(filename);
-        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
-        image.save(&path).unwrap();
-        println!("audio audit: {}", path.display());
-    }
 }
 
 #[test]

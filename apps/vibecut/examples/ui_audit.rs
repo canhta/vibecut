@@ -217,6 +217,18 @@ const SCENES: &[Scene] = &[
         build: models_vi,
     },
     Scene {
+        name: "inspector-audio",
+        reference_dark: Some("capcut/illustrations/capcut-desktop-ui.png"),
+        reference_light: Some("capcut/illustrations/capcut-desktop-ui.png"),
+        build: inspector_audio,
+    },
+    Scene {
+        name: "inspector-audio-vi",
+        reference_dark: Some("capcut/illustrations/capcut-desktop-ui.png"),
+        reference_light: Some("capcut/illustrations/capcut-desktop-ui.png"),
+        build: inspector_audio_vi,
+    },
+    Scene {
         name: "home",
         reference_dark: Some("capcut/capcut-desktop-my-projects.png"),
         reference_light: Some("capcut/capcut-desktop-my-projects.png"),
@@ -627,7 +639,11 @@ fn media_editor(theme: Theme, locale: Locale) -> Result<(Editor, ItemId), Failur
     let mut session = empty_session("Launch cut")?;
     for (id, kind) in [(1, StreamKind::Video), (2, StreamKind::Audio)] {
         session.apply(Command::AddAsset {
-            asset: source_asset(id, kind, PathBuf::from(format!("/media/source-{id}.mp4")))?,
+            asset: source_asset(
+                id,
+                kind,
+                std::env::temp_dir().join(format!("source-{id}.mp4")),
+            )?,
         })?;
     }
     let main = session.project().data().scene().timeline.main.id;
@@ -734,6 +750,35 @@ fn timeline_selection(theme: Theme, scale: f32) -> Result<AppHarness, Failure> {
 
 fn timeline_selection_vi(theme: Theme, scale: f32) -> Result<AppHarness, Failure> {
     timeline_selection_locale(theme, scale, Locale::Vi)
+}
+
+fn inspector_audio_locale(theme: Theme, scale: f32, locale: Locale) -> Result<AppHarness, Failure> {
+    let (mut editor, _) = media_editor(theme, locale)?;
+    let audio = editor
+        .session
+        .project()
+        .data()
+        .scene()
+        .timeline
+        .audio
+        .first()
+        .and_then(|track| track.items.first())
+        .ok_or("audio item")?
+        .id;
+    editor.selection = [audio].into_iter().collect();
+    editor.set_shared_field("audio_gain", "-3")?;
+    let mut app = app_editor(editor, scale);
+    wait_for_presented(&mut app)?;
+    app.run_steps(3);
+    Ok(app)
+}
+
+fn inspector_audio(theme: Theme, scale: f32) -> Result<AppHarness, Failure> {
+    inspector_audio_locale(theme, scale, Locale::En)
+}
+
+fn inspector_audio_vi(theme: Theme, scale: f32) -> Result<AppHarness, Failure> {
+    inspector_audio_locale(theme, scale, Locale::Vi)
 }
 
 fn widget_rect(app: &AppHarness, id: &str) -> Result<egui::Rect, Failure> {
@@ -908,9 +953,9 @@ fn import_complete(theme: Theme, scale: f32, locale: Locale) -> Result<AppHarnes
     let mut editor = empty_editor(theme, locale)?;
     editor.set_import_probe(Arc::new(CompletedProbe))?;
     editor.drop_files(vec![
-        PathBuf::from("/media/video-a.mp4"),
-        PathBuf::from("/media/bad-clip.mp4"),
-        PathBuf::from("/media/audio-a.wav"),
+        std::env::temp_dir().join("video-a.mp4"),
+        std::env::temp_dir().join("bad-clip.mp4"),
+        std::env::temp_dir().join("audio-a.wav"),
     ])?;
     let deadline = Instant::now() + Duration::from_secs(10);
     while editor.importing() {
@@ -1037,7 +1082,11 @@ fn placement(theme: Theme, scale: f32) -> Result<AppHarness, Failure> {
     let mut session = empty_session("Placement")?;
     for (id, kind) in [(1, StreamKind::Video), (2, StreamKind::Audio)] {
         session.apply(Command::AddAsset {
-            asset: source_asset(id, kind, PathBuf::from(format!("/media/source-{id}.mp4")))?,
+            asset: source_asset(
+                id,
+                kind,
+                std::env::temp_dir().join(format!("source-{id}.mp4")),
+            )?,
         })?;
     }
     let video = track(&mut session, "Video", TrackKind::Video)?;
@@ -1193,9 +1242,9 @@ fn import_progress(theme: Theme, scale: f32) -> Result<AppHarness, Failure> {
     let mut editor = empty_editor(theme, Locale::En)?;
     editor.set_import_probe(Arc::new(ProgressProbe::new()))?;
     editor.drop_files(vec![
-        PathBuf::from("/media/one.mp4"),
-        PathBuf::from("/media/two.mp4"),
-        PathBuf::from("/media/three.mp4"),
+        std::env::temp_dir().join("one.mp4"),
+        std::env::temp_dir().join("two.mp4"),
+        std::env::temp_dir().join("three.mp4"),
     ])?;
     let mut app = app_editor(editor, scale);
     for _ in 0..500 {

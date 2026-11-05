@@ -228,6 +228,7 @@ fn preview_audio_mix_obeys_item_gain_and_mute() {
 
     let duration = tick(1, 1);
     let source = media::SourceAsset::try_from(media::AssetData {
+        ephemeral: false,
         id: media::AssetId(1),
         path: std::env::temp_dir().join("vibecut-audio-ui.mp4"),
         content_hash: media::ContentHash::from_bytes(&[1; 8]),
