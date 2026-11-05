@@ -537,7 +537,25 @@ fn item_opt(editor: &Editor, id: ItemId) -> Option<&project::Item> {
 #[test]
 fn every_editor_button_reports_its_embedded_icon() {
     let mut harness = harness(fixture().editor);
-    harness.run_steps(2);
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+    loop {
+        harness.run_steps(1);
+        if harness
+            .state()
+            .inspect()
+            .unwrap()
+            .widgets
+            .iter()
+            .any(|widget| widget.id == "preview.retry")
+        {
+            break;
+        }
+        assert!(
+            std::time::Instant::now() < deadline,
+            "preview failure did not reach the retry state"
+        );
+        std::thread::sleep(std::time::Duration::from_millis(2));
+    }
     let widgets = harness.state().inspect().unwrap().widgets;
     let icon = |id: &str| {
         widgets

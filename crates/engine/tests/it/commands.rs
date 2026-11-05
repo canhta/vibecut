@@ -1862,6 +1862,7 @@ proptest! {
 fn imported_asset_is_one_undo_step_and_restores_the_exact_record() {
     let mut s = Session::new(Project::empty(ProjectId(9), "Assets".into()).unwrap(), 8).unwrap();
     let asset = SourceAsset::try_from(AssetData {
+        ephemeral: false,
         id: AssetId(3),
         path: std::env::temp_dir().join("import record.mp4"),
         content_hash: ContentHash([3; 32]),

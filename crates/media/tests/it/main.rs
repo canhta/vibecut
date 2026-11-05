@@ -7,3 +7,5 @@ mod oracle;
 mod robustness;
 mod speech;
 mod vision_prep;
+
+mod metadata;

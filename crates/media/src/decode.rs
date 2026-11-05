@@ -141,6 +141,9 @@ pub(crate) enum DecodeFault {
     Drain,
 }
 
+#[cfg(test)]
+thread_local! { pub(crate) static FRAME_DELIVERIES: std::cell::Cell<usize> = const { std::cell::Cell::new(0) }; }
+
 pub struct VideoDecoder {
     #[cfg(test)]
     pub(crate) fault: Option<DecodeFault>,
@@ -159,9 +162,8 @@ impl VideoDecoder {
             |builder| builder.video(),
         )
     }
-    /// Probe-only open for streams whose coded dimensions are not in codec
-    /// parameters (image demuxers leave them at zero until the first frame).
-    pub(crate) fn open_for_probe(stream: &StreamInfo) -> Result<Self> {
+    /// Bounded single-worker software decode for thumbnails and geometry recovery.
+    pub(crate) fn for_thumbnail(stream: &StreamInfo) -> Result<Self> {
         Self::with_backend(
             stream,
             DecodePreference::Software,
@@ -184,10 +186,20 @@ impl VideoDecoder {
         let mut context = ff::codec::context::Context::from_parameters(stream.parameters.0.clone())
             .map_err(error("create video decoder"))?;
         ffi::thread_and_limits(&mut context);
+        if allow_unknown_dimensions {
+            ffi::thumbnail_limits(&mut context);
+        }
         match stream.video.as_ref() {
             Some(info) => {
                 let area = u64::from(info.width) * u64::from(info.height);
-                if area == 0 || area > 1 << 26 {
+                if area == 0
+                    || area
+                        > if allow_unknown_dimensions {
+                            crate::thumbnail::MAX_SOURCE_PIXELS
+                        } else {
+                            1 << 26
+                        }
+                {
                     return Err(MediaError::TooLarge("video dimensions"));
                 }
             }
@@ -249,6 +261,8 @@ impl VideoDecoder {
                 {
                     return Err(MediaError::TooLarge("decoded video dimensions"));
                 }
+                #[cfg(test)]
+                FRAME_DELIVERIES.with(|count| count.set(count.get() + 1));
                 Ok(Some(VideoFrame::from_inner(frame, self.time_base)))
             }
             Err(e) if drained(e) => Ok(None),
@@ -521,6 +535,23 @@ impl RgbaConverter {
             },
             origin,
         ))
+    }
+    /// Convert directly into bounded RGBA output; no full-size RGBA intermediary.
+    pub fn convert_scaled(
+        &mut self,
+        frame: &VideoFrame,
+        width: u32,
+        height: u32,
+    ) -> Result<VideoFrame> {
+        if width == 0 || height == 0 || width > 1024 || height > 1024 {
+            return Err(MediaError::TooLarge("scaled RGBA dimensions"));
+        }
+        let cpu = frame.download()?;
+        Ok(VideoFrame {
+            inner: self.scaler.rgba_scaled(&cpu.inner, width, height)?,
+            time_base: frame.time_base,
+            presentation: frame.presentation,
+        })
     }
     pub fn convert(&mut self, frame: &VideoFrame) -> Result<VideoFrame> {
         let cpu = frame.download()?;

@@ -3,7 +3,7 @@
 //! No browser API and no second frame decoder: the same `VideoReader` that
 //! preview and export use decodes the still. Only the first frame at the
 //! requested position is decoded, converted to RGBA8 and scaled down, so memory
-//! is bounded by the source frame plus one thumbnail.
+//! uses a bounded software decoder and only thumbnail-sized RGBA output planes.
 use crate::{MediaError, Result, RgbaConverter, SourceAsset, VideoReader};
 use std::{
     path::Path,
@@ -18,6 +18,8 @@ use time::Tick;
 pub const THUMBNAIL_MAX_EDGE: u32 = 320;
 /// One thumbnail never exceeds this many bytes (1024 * 1024 * 4).
 const MAX_THUMBNAIL_EDGE: u32 = 1024;
+/// Native thumbnail/recovery image and scratch ceiling (separate from playback).
+pub(crate) const MAX_SOURCE_PIXELS: u64 = 1 << 21;
 const MAGIC: &[u8; 8] = b"VTMB0001";
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -126,7 +128,13 @@ pub fn thumbnail_at_with_read_bytes(
     if cancelled.load(Ordering::Relaxed) {
         return Err(MediaError::Cancelled);
     }
-    let mut reader = VideoReader::open_with_cancel(path, cancelled.clone())?;
+    let mut reader = VideoReader::open_thumbnail(path, cancelled.clone())?;
+    if at == Tick::ZERO
+        && max_edge == THUMBNAIL_MAX_EDGE
+        && let Some(thumbnail) = reader.take_recovered_thumbnail()
+    {
+        return Ok((thumbnail, reader.bytes_read()));
+    }
     if at > Tick::ZERO {
         reader.seek(at)?;
     }
@@ -136,46 +144,34 @@ pub fn thumbnail_at_with_read_bytes(
     if cancelled.load(Ordering::Relaxed) {
         return Err(MediaError::Cancelled);
     }
-    let frame_pts = frame.pts()?.unwrap_or(at);
+    let thumbnail = from_frame(&frame, at, max_edge)?;
+    Ok((thumbnail, reader.bytes_read()))
+}
+
+pub(crate) fn from_frame(frame: &crate::VideoFrame, at: Tick, max_edge: u32) -> Result<Thumbnail> {
+    let (width, height) = fit(frame.width(), frame.height(), max_edge)?;
     let mut converter = RgbaConverter::new()?;
-    let rgba = converter.convert(&frame)?;
-    let source_width = rgba.width();
-    let source_height = rgba.height();
+    let rgba = converter.convert_scaled(frame, width, height)?;
     let stride = rgba.stride(0)?;
-    let row_bytes = usize::try_from(source_width)
-        .ok()
-        .and_then(|width| width.checked_mul(4))
-        .ok_or(MediaError::TooLarge("thumbnail source row"))?;
-    let mut source = Vec::with_capacity(row_bytes.saturating_mul(source_height as usize));
+    let row_bytes = width as usize * 4;
     let plane = rgba.plane(0)?;
-    for y in 0..source_height {
-        let start = usize::try_from(y)
-            .ok()
-            .and_then(|row| row.checked_mul(stride))
-            .ok_or(MediaError::TooLarge("thumbnail source row"))?;
-        let end = start
-            .checked_add(row_bytes)
-            .ok_or(MediaError::TooLarge("thumbnail source row"))?;
-        let row = plane
-            .get(start..end)
-            .ok_or(MediaError::Invalid("thumbnail source stride"))?;
-        source.extend_from_slice(row);
+    let mut pixels = Vec::with_capacity(row_bytes * height as usize);
+    for y in 0..height as usize {
+        let start = y
+            .checked_mul(stride)
+            .ok_or(MediaError::TooLarge("thumbnail row"))?;
+        pixels.extend_from_slice(
+            plane
+                .get(start..start + row_bytes)
+                .ok_or(MediaError::Invalid("thumbnail stride"))?,
+        );
     }
-    let (width, height) = fit(source_width, source_height, max_edge)?;
-    let pixels = if width == source_width && height == source_height {
-        source
-    } else {
-        resize_rgba(&source, source_width, source_height, width, height)?
-    };
-    Ok((
-        Thumbnail {
-            width,
-            height,
-            frame: frame_pts,
-            pixels,
-        },
-        reader.bytes_read(),
-    ))
+    Ok(Thumbnail {
+        width,
+        height,
+        frame: frame.pts()?.unwrap_or(at),
+        pixels,
+    })
 }
 
 /// Preserve aspect ratio inside a square `max_edge` box without upscaling.
@@ -194,39 +190,6 @@ fn fit(width: u32, height: u32, max_edge: u32) -> Result<(u32, u32)> {
         u32::try_from(value.max(1)).map_err(|_| MediaError::TooLarge("thumbnail scale"))
     };
     Ok((scaled(width)?, scaled(height)?))
-}
-
-fn resize_rgba(
-    source: &[u8],
-    source_width: u32,
-    source_height: u32,
-    width: u32,
-    height: u32,
-) -> Result<Vec<u8>> {
-    let count = u64::from(width)
-        .checked_mul(u64::from(height))
-        .and_then(|value| value.checked_mul(4))
-        .ok_or(MediaError::TooLarge("thumbnail geometry"))?;
-    let mut output =
-        vec![0u8; usize::try_from(count).map_err(|_| MediaError::TooLarge("thumbnail"))?];
-    for y in 0..height {
-        let source_y = u64::from(y) * u64::from(source_height) / u64::from(height);
-        for x in 0..width {
-            let source_x = u64::from(x) * u64::from(source_width) / u64::from(width);
-            let from = usize::try_from((source_y * u64::from(source_width) + source_x) * 4)
-                .map_err(|_| MediaError::TooLarge("thumbnail source pixel"))?;
-            let to = usize::try_from((u64::from(y) * u64::from(width) + u64::from(x)) * 4)
-                .map_err(|_| MediaError::TooLarge("thumbnail pixel"))?;
-            let pixel = source
-                .get(from..from + 4)
-                .ok_or(MediaError::Invalid("thumbnail source pixel"))?;
-            let target = output
-                .get_mut(to..to + 4)
-                .ok_or(MediaError::Invalid("thumbnail pixel"))?;
-            target.copy_from_slice(pixel);
-        }
-    }
-    Ok(output)
 }
 
 #[cfg(test)]

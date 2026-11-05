@@ -47,6 +47,7 @@ pub struct PacketReader {
     cancel: Arc<AtomicBool>,
     bytes: Arc<AtomicU64>,
     budget: Arc<AtomicU64>,
+    pub(crate) recovered_thumbnail: Option<crate::Thumbnail>,
 }
 impl PacketReader {
     pub fn open(path: impl AsRef<Path>) -> Result<Self> {
@@ -61,6 +62,14 @@ impl PacketReader {
         path: impl AsRef<Path>,
         cancel: Arc<AtomicBool>,
         max_bytes: u64,
+    ) -> Result<Self> {
+        Self::open_prepared(path.as_ref(), cancel, max_bytes, None)
+    }
+    pub(crate) fn open_prepared(
+        path: &Path,
+        cancel: Arc<AtomicBool>,
+        max_bytes: u64,
+        known: Option<&crate::SourceProbe>,
     ) -> Result<Self> {
         init()?;
         if cancel.load(Ordering::Relaxed) {
@@ -93,10 +102,6 @@ impl PacketReader {
                     error("probe input")(source)
                 }
             })?;
-        budget.store(
-            max_bytes.saturating_sub(bytes.load(Ordering::Relaxed)),
-            Ordering::Relaxed,
-        );
         if input.nb_streams() > 256 {
             return Err(MediaError::TooLarge("stream count"));
         }
@@ -158,8 +163,24 @@ impl PacketReader {
             cancel,
             bytes,
             budget,
+            recovered_thumbnail: None,
         };
+        if let Some(known) = known {
+            for stream in &mut reader.probe.streams {
+                if stream.video.is_none() {
+                    stream.video = known
+                        .streams
+                        .iter()
+                        .find(|s| s.index == stream.index && s.codec == stream.codec)
+                        .and_then(|s| s.video.clone());
+                }
+            }
+        }
         reader.recover_video_dimensions()?;
+        reader.budget.store(
+            max_bytes.saturating_sub(reader.bytes_read()),
+            Ordering::Relaxed,
+        );
         Ok(reader)
     }
     /// Some image demuxers report coded dimensions only after the first frame.
@@ -176,6 +197,14 @@ impl PacketReader {
         if missing.is_empty() {
             return Ok(());
         }
+        // Recovery owns the opening boundary too: even a prematurely restored
+        // streaming window cannot grant it reads beyond the aggregate prefix.
+        self.budget.store(
+            self.budget
+                .load(Ordering::Relaxed)
+                .min((32_u64 << 20).saturating_sub(self.bytes_read())),
+            Ordering::Relaxed,
+        );
         for index in missing {
             let stream = self
                 .probe
@@ -184,9 +213,9 @@ impl PacketReader {
                 .find(|stream| stream.index == index)
                 .cloned()
                 .ok_or(MediaError::Invalid("probe stream"))?;
-            let mut decoder = crate::VideoDecoder::open_for_probe(&stream)?;
+            let mut decoder = crate::VideoDecoder::for_thumbnail(&stream)?;
             let mut geometry = None;
-            loop {
+            for _ in 0..4096 {
                 let Some(packet) = self.next_packet()? else {
                     break;
                 };
@@ -195,6 +224,9 @@ impl PacketReader {
                 }
                 decoder.push_packet(&packet)?;
                 if let Some(frame) = decoder.pull_frame()? {
+                    self.recovered_thumbnail =
+                        crate::thumbnail::from_frame(&frame, Tick::ZERO, crate::THUMBNAIL_MAX_EDGE)
+                            .ok();
                     geometry = Some((
                         frame.width(),
                         frame.height(),
@@ -304,6 +336,7 @@ pub struct VideoReader {
     recovering: bool,
     software: bool,
     finished: bool,
+    thumbnail_only: bool,
 }
 impl VideoReader {
     pub fn open(path: impl AsRef<Path>) -> Result<Self> {
@@ -312,7 +345,17 @@ impl VideoReader {
     /// The shared token interrupts opening, packet reads and frame delivery,
     /// including buffered frames and software recovery. Cancellation is terminal.
     pub fn open_with_cancel(path: impl AsRef<Path>, cancel: Arc<AtomicBool>) -> Result<Self> {
-        let packets = PacketReader::open_with_cancel(path, cancel)?;
+        Self::open_mode(path.as_ref(), cancel, false)
+    }
+    pub(crate) fn open_thumbnail(path: &Path, cancel: Arc<AtomicBool>) -> Result<Self> {
+        Self::open_mode(path, cancel, true)
+    }
+    fn open_mode(path: &Path, cancel: Arc<AtomicBool>, thumbnail_only: bool) -> Result<Self> {
+        let packets = if thumbnail_only {
+            PacketReader::open_with_read_limit(path, cancel, 64 << 20)?
+        } else {
+            PacketReader::open_with_cancel(path, cancel)?
+        };
         let stream = packets
             .probe()
             .streams
@@ -320,7 +363,11 @@ impl VideoReader {
             .find(|s| s.kind == StreamKind::Video)
             .ok_or(MediaError::Unsupported("no video stream"))?
             .clone();
-        let decoder = crate::VideoDecoder::new(&stream, crate::DecodePreference::Hardware)?;
+        let decoder = if thumbnail_only {
+            crate::VideoDecoder::for_thumbnail(&stream)?
+        } else {
+            crate::VideoDecoder::new(&stream, crate::DecodePreference::Hardware)?
+        };
         Ok(Self {
             packets,
             decoder,
@@ -331,7 +378,11 @@ impl VideoReader {
             recovering: false,
             software: false,
             finished: false,
+            thumbnail_only,
         })
+    }
+    pub(crate) fn take_recovered_thumbnail(&mut self) -> Option<crate::Thumbnail> {
+        self.packets.recovered_thumbnail.take()
     }
     pub fn stream(&self) -> &StreamInfo {
         &self.stream
@@ -399,7 +450,7 @@ impl VideoReader {
                 Err(MediaError::Ffmpeg {
                     operation: "send video packet" | "receive video frame" | "flush video decoder",
                     ..
-                }) if !self.software => {
+                }) if !self.software && !self.thumbnail_only => {
                     let target = self.last_pts.or(self.minimum).unwrap_or(self.restart);
                     self.packets.seek(target)?;
                     self.decoder =
@@ -715,5 +766,153 @@ mod recovery_benchmark {
             count as f64 / encode_time.as_secs_f64(),
             start.elapsed().as_secs_f64()
         );
+    }
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::indexing_slicing)]
+mod import_regressions {
+    use super::*;
+    #[test]
+    fn jpeg_cold_import_delivers_one_frame_and_cached_probe_delivers_none() {
+        let Some(path) = super::oracle_common::generate(
+            "image decode reuse",
+            "import-reuse.jpg",
+            &[
+                "-f",
+                "lavfi",
+                "-i",
+                "color=blue:size=640x480",
+                "-frames:v",
+                "1",
+                "-c:v",
+                "mjpeg",
+            ],
+        ) else {
+            return;
+        };
+        crate::decode::FRAME_DELIVERIES.with(|count| count.set(0));
+        let (cold, image) = crate::SourceAsset::import_prepared(
+            crate::AssetId(1),
+            path.clone(),
+            Arc::new(AtomicBool::new(false)),
+            |_| None,
+        )
+        .unwrap();
+        assert_eq!(
+            (
+                cold.metadata().unwrap().width,
+                cold.metadata().unwrap().height
+            ),
+            (Some(640), Some(480))
+        );
+        let image = image.unwrap_or_else(|| {
+            crate::thumbnail(
+                &cold.asset,
+                Tick::ZERO,
+                crate::THUMBNAIL_MAX_EDGE,
+                Arc::new(AtomicBool::new(false)),
+            )
+            .unwrap()
+        });
+        assert_eq!((image.width, image.height), (320, 240));
+        assert_eq!(crate::decode::FRAME_DELIVERIES.with(|count| count.get()), 1);
+        let (_, image) = crate::SourceAsset::import_prepared(
+            crate::AssetId(2),
+            path.clone(),
+            Arc::new(AtomicBool::new(false)),
+            |hash| {
+                assert_eq!(hash, cold.asset.content_hash());
+                Some(cold.asset.probe().clone())
+            },
+        )
+        .unwrap();
+        assert!(image.is_none());
+        assert_eq!(
+            crate::decode::FRAME_DELIVERIES.with(|count| count.get()),
+            1,
+            "warm metadata must not deliver another decoder frame"
+        );
+        // Exercise demuxers that omit geometry even when this build's JPEG
+        // parser happened to report it. Recovery must hand off that same frame.
+        let mut reader = PacketReader::open(&path).unwrap();
+        reader.probe.streams[0].video = None;
+        crate::decode::FRAME_DELIVERIES.with(|count| count.set(0));
+        reader.recover_video_dimensions().unwrap();
+        let image = reader.recovered_thumbnail.take().unwrap();
+        assert_eq!((image.width, image.height), (320, 240));
+        assert_eq!(reader.probe.streams[0].video.as_ref().unwrap().width, 640);
+        assert_eq!(
+            crate::decode::FRAME_DELIVERIES.with(|count| count.get()),
+            1,
+            "geometry recovery must return its already decoded thumbnail"
+        );
+    }
+
+    #[test]
+    fn geometry_recovery_without_deliverable_packets_keeps_its_finite_read_window() {
+        let Some(path) = super::oracle_common::generate(
+            "recovery bounds",
+            "recovery-bounds.mp4",
+            &[
+                "-f",
+                "lavfi",
+                "-i",
+                "testsrc2=size=1280x720:rate=30:duration=2",
+                "-c:v",
+                "libx264",
+                "-preset",
+                "ultrafast",
+                "-crf",
+                "0",
+            ],
+        ) else {
+            return;
+        };
+        let mut reader = PacketReader::open(&path).unwrap();
+        // No packet can match this geometry-less video stream. Recovery must
+        // stop at its read allowance, rather than scanning the remainder.
+        reader.probe.streams[0].index = usize::MAX;
+        reader.probe.streams[0].video = None;
+        reader.seek(Tick::ZERO).unwrap();
+        // Simulate probe analysis having consumed nearly all its allowance,
+        // followed by the hostile premature streaming-window reset from review.
+        reader.bytes.store((32 << 20) - 1024, Ordering::Relaxed);
+        reader.start_read_window(u64::MAX);
+        let before = reader.bytes_read();
+        let result = reader.recover_video_dimensions();
+        assert!(matches!(
+            result,
+            Err(MediaError::TooLarge("input read bytes"))
+        ));
+        assert!(reader.bytes_read() - before <= 1024);
+        let thumbnail =
+            VideoReader::open_thumbnail(&path, Arc::new(AtomicBool::new(false))).unwrap();
+        assert_eq!(
+            thumbnail.packets.budget.load(Ordering::Relaxed),
+            (64 << 20) - thumbnail.bytes_read(),
+            "thumbnail decode must retain a finite total input allowance"
+        );
+    }
+
+    #[test]
+    fn thumbnail_decoder_refuses_geometry_above_its_native_allowance() {
+        let Some(path) = super::acceleration_tests::fixture() else {
+            return;
+        };
+        let reader = PacketReader::open(path).unwrap();
+        let mut stream = reader.probe.streams[0].clone();
+        for (width, height, admitted) in [
+            (2048, 1024, true),
+            (2049, 1024, false),
+            (u32::MAX, u32::MAX, false),
+        ] {
+            stream.video.as_mut().unwrap().width = width;
+            stream.video.as_mut().unwrap().height = height;
+            assert_eq!(
+                crate::VideoDecoder::for_thumbnail(&stream).is_ok(),
+                admitted
+            );
+        }
     }
 }

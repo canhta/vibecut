@@ -54,7 +54,9 @@ pub enum JobKind {
     EffectThumbnail,
     Export,
     Import,
+    #[serde(rename = "import.probe")]
     Probe,
+    #[serde(rename = "import.thumbnail")]
     Thumbnail,
     Persist,
     DownloadModel,

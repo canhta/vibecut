@@ -39,6 +39,7 @@ fn asset(id: u64, hash: u8, video: bool, path: impl Into<PathBuf>) -> SourceAsse
         StreamKind::Audio
     };
     SourceAsset::try_from(AssetData {
+        ephemeral: false,
         id: AssetId(id),
         path: path.into(),
         content_hash: ContentHash([hash; 32]),
@@ -278,6 +279,37 @@ fn probing_badge_becomes_ready_with_a_thumbnail_and_iso_audio_finishes_immediate
     finish(&mut editor);
     assert_eq!(second.calls(), 0, "cached frame must not decode again");
     assert!(editor.inspect().unwrap().assets[0].thumbnail);
+    let bytes = serde_json::to_vec(editor.session.project().as_ref()).unwrap();
+    drop(editor);
+    let session = Session::new(serde_json::from_slice(&bytes).unwrap(), 50).unwrap();
+    let playback = Playback::new(
+        &session,
+        ByteBudget::new(512 << 20).unwrap(),
+        Arc::new(Files),
+    )
+    .unwrap();
+    let mut reopened = Editor::new(session, playback, Preferences::default());
+    reopened.set_thumbnail_root(root.clone());
+    reopened
+        .set_import_probe(Arc::new(FixedProbe {
+            id: 1,
+            hash: 9,
+            decodable: true,
+        }))
+        .unwrap();
+    let restored_thumbs = Arc::new(Thumbs::ready());
+    reopened.set_thumbnailer(restored_thumbs.clone()).unwrap();
+    assert_eq!(state(&reopened, 0), "probing");
+    reopened.tick();
+    finish(&mut reopened);
+    assert_eq!(state(&reopened, 0), "ready");
+    assert!(reopened.inspect().unwrap().assets[0].thumbnail);
+    assert_eq!(
+        restored_thumbs.calls(),
+        0,
+        "reopen restores the content-keyed image"
+    );
+    drop(reopened);
     let _ = std::fs::remove_dir_all(root);
 }
 
@@ -417,4 +449,335 @@ fn media_panel_renders_probing_ready_and_unsupported_badges() {
     harness.render().unwrap().save(&path).unwrap();
     println!("media screenshot: {}", path.display());
     let _ = std::fs::remove_dir_all(root);
+}
+
+struct ProbeGate {
+    release: AtomicBool,
+    started: AtomicBool,
+    decodable: bool,
+}
+impl ImportProbe for ProbeGate {
+    fn import(
+        &self,
+        id: AssetId,
+        path: PathBuf,
+        cancelled: Arc<AtomicBool>,
+    ) -> media::Result<ImportedSource> {
+        self.started.store(true, Ordering::Release);
+        while !self.release.load(Ordering::Acquire) {
+            if cancelled.load(Ordering::Acquire) {
+                return Err(MediaError::Cancelled);
+            }
+            std::thread::sleep(Duration::from_millis(1));
+        }
+        let asset = asset(id.0, 29, false, path);
+        Ok(ImportedSource {
+            capabilities: capabilities(&asset, self.decodable),
+            asset,
+        })
+    }
+}
+
+#[test]
+fn blocked_probe_has_a_pending_row_and_publishes_only_validated_metadata() {
+    for decodable in [true, false] {
+        let probe = Arc::new(ProbeGate {
+            release: AtomicBool::new(false),
+            started: AtomicBool::new(false),
+            decodable,
+        });
+        let mut editor = new_editor();
+        editor.set_import_probe(probe.clone()).unwrap();
+        editor
+            .start_import(vec!["C:/vibecut-test/pending.wav".into()])
+            .unwrap();
+        tick_until(&mut editor, |_| probe.started.load(Ordering::Acquire));
+        editor.tick();
+        assert!(editor.session.project().data().assets.is_empty());
+        assert_eq!(state(&editor, 0), "probing");
+        let mut harness = Harness::builder()
+            .with_size(egui::vec2(1728.0, 1200.0))
+            .build_ui_state(|ui, editor: &mut Editor| editor.ui(ui), editor);
+        harness.run_steps(2);
+        assert!(
+            harness
+                .state()
+                .inspect()
+                .unwrap()
+                .widgets
+                .iter()
+                .any(|w| w.id == "media.asset.1.status")
+        );
+        probe.release.store(true, Ordering::Release);
+        let deadline = Instant::now() + Duration::from_secs(10);
+        while harness.state().importing() {
+            harness.run_steps(1);
+            assert!(Instant::now() < deadline);
+            std::thread::sleep(Duration::from_millis(1));
+        }
+        assert_eq!(harness.state().session.project().data().assets.len(), 1);
+        assert_eq!(
+            state(harness.state(), 0),
+            if decodable { "ready" } else { "unsupported" }
+        );
+    }
+}
+
+#[test]
+fn undo_redo_and_reopen_revalidate_capabilities_before_timeline_use() {
+    let mut editor = new_editor();
+    editor
+        .set_import_probe(Arc::new(FixedProbe {
+            id: 1,
+            hash: 3,
+            decodable: false,
+        }))
+        .unwrap();
+    editor
+        .start_import(vec!["C:/vibecut-test/refused.mp4".into()])
+        .unwrap();
+    finish(&mut editor);
+    assert_eq!(state(&editor, 0), "unsupported");
+    editor.session.undo().unwrap();
+    editor.tick();
+    editor.session.redo().unwrap();
+    assert_eq!(state(&editor, 0), "probing");
+    editor.select_media([AssetId(1)]);
+    editor.activate("media.insert").unwrap();
+    assert!(
+        editor
+            .session
+            .project()
+            .data()
+            .scene()
+            .timeline
+            .iter()
+            .all(|track| track.items.is_empty())
+    );
+    editor.tick();
+    finish(&mut editor);
+    assert_eq!(state(&editor, 0), "unsupported");
+    let bytes = serde_json::to_vec(editor.session.project().as_ref()).unwrap();
+    let restored: Project = serde_json::from_slice(&bytes).unwrap();
+    let session = Session::new(restored, 50).unwrap();
+    let playback = Playback::new(
+        &session,
+        ByteBudget::new(512 << 20).unwrap(),
+        Arc::new(Files),
+    )
+    .unwrap();
+    let mut reopened = Editor::new(session, playback, Preferences::default());
+    reopened
+        .set_import_probe(Arc::new(FixedProbe {
+            id: 1,
+            hash: 3,
+            decodable: false,
+        }))
+        .unwrap();
+    assert_eq!(state(&reopened, 0), "probing");
+    reopened.select_media([AssetId(1)]);
+    reopened.activate("media.insert").unwrap();
+    assert!(
+        reopened
+            .session
+            .project()
+            .data()
+            .scene()
+            .timeline
+            .iter()
+            .all(|track| track.items.is_empty())
+    );
+    reopened.tick();
+    finish(&mut reopened);
+    assert_eq!(state(&reopened, 0), "unsupported");
+}
+
+#[test]
+fn undo_releases_retained_thumbnail_and_texture_allowances() {
+    let mut editor = new_editor();
+    tick_until(&mut editor, |editor| editor.playback.frame().is_some());
+    let budget = editor.playback.budget().clone();
+    let before = budget.snapshot().unwrap().used;
+    struct SharedProbe;
+    impl ImportProbe for SharedProbe {
+        fn import(
+            &self,
+            id: AssetId,
+            path: PathBuf,
+            _: Arc<AtomicBool>,
+        ) -> media::Result<ImportedSource> {
+            let asset = asset(id.0, 3, true, path);
+            Ok(ImportedSource {
+                capabilities: capabilities(&asset, true),
+                asset,
+            })
+        }
+    }
+    editor.set_import_probe(Arc::new(SharedProbe)).unwrap();
+    let thumbs = Arc::new(Thumbs::ready());
+    editor.set_thumbnailer(thumbs.clone()).unwrap();
+    editor
+        .start_import(vec![
+            "C:/vibecut-test/pixels.mp4".into(),
+            "C:/vibecut-test/same-pixels.mp4".into(),
+        ])
+        .unwrap();
+    finish(&mut editor);
+    tick_until(&mut editor, |editor| editor.playback.frame().is_some());
+    let charge = budget.snapshot().unwrap().used - before;
+    assert!(
+        (32..1024).contains(&charge),
+        "pixels/uploads plus bounded probe metadata must be accounted"
+    );
+    assert_eq!(
+        thumbs.calls(),
+        1,
+        "the duplicate content must reuse the retained image"
+    );
+    let texture_count = Arc::new(AtomicUsize::new(0));
+    let uploaded = texture_count.clone();
+    let mut harness = Harness::builder()
+        .with_size(egui::vec2(1728.0, 1200.0))
+        .build_ui_state(
+            move |ui, editor: &mut Editor| {
+                editor.ui(ui);
+                let count = ui
+                    .ctx()
+                    .tex_manager()
+                    .read()
+                    .allocated()
+                    .filter(|(_, meta)| meta.name.starts_with("media.thumbnail."))
+                    .count();
+                uploaded.store(count, Ordering::SeqCst);
+            },
+            editor,
+        );
+    harness.run_steps(2);
+    assert_eq!(
+        texture_count.load(Ordering::SeqCst),
+        1,
+        "shared pixels must upload one texture"
+    );
+    assert_eq!(
+        budget.snapshot().unwrap().used - before,
+        charge,
+        "upload uses the existing allowance"
+    );
+    harness.state_mut().session.undo().unwrap();
+    harness.state_mut().tick();
+    harness.run_steps(2);
+    assert_eq!(
+        budget.snapshot().unwrap().used - before,
+        charge,
+        "one alias still owns the allowance"
+    );
+    harness.state_mut().session.undo().unwrap();
+    harness.state_mut().tick();
+    harness.run_steps(2);
+    assert_eq!(texture_count.load(Ordering::SeqCst), 0);
+    assert!(harness.state().inspect().unwrap().assets.is_empty());
+    assert_eq!(budget.snapshot().unwrap().used, before);
+}
+
+#[test]
+fn cancelling_thumbnail_work_keeps_validated_assets_ready_with_a_placeholder() {
+    let mut editor = new_editor();
+    let release = Arc::new(AtomicBool::new(false));
+    let thumbs = Arc::new(Thumbs::gated(release));
+    editor
+        .set_import_probe(Arc::new(FixedProbe {
+            id: 1,
+            hash: 3,
+            decodable: true,
+        }))
+        .unwrap();
+    editor.set_thumbnailer(thumbs.clone()).unwrap();
+    editor
+        .start_import(vec!["C:/vibecut-test/cancel-thumb.mp4".into()])
+        .unwrap();
+    tick_until(&mut editor, |_| thumbs.started());
+    editor.activate("import.cancel").unwrap();
+    finish(&mut editor);
+    assert!(editor.inspect().unwrap().import_cancelled);
+    assert_eq!(state(&editor, 0), "ready");
+    assert!(!editor.inspect().unwrap().assets[0].thumbnail);
+    editor.select_media([AssetId(1)]);
+    editor.activate("media.insert").unwrap();
+    assert_eq!(
+        editor
+            .session
+            .project()
+            .data()
+            .scene()
+            .timeline
+            .iter()
+            .flat_map(|track| track.items.iter())
+            .filter(|item| item.source_asset == Some(AssetId(1)))
+            .count(),
+        1
+    );
+}
+
+#[test]
+fn undo_during_probe_keeps_later_pending_and_thumbnail_identities() {
+    struct SecondGate {
+        started: AtomicBool,
+        release: AtomicBool,
+    }
+    impl ImportProbe for SecondGate {
+        fn import(
+            &self,
+            id: AssetId,
+            path: PathBuf,
+            cancelled: Arc<AtomicBool>,
+        ) -> media::Result<ImportedSource> {
+            if id == AssetId(2) {
+                self.started.store(true, Ordering::Release);
+                while !self.release.load(Ordering::Acquire) {
+                    if cancelled.load(Ordering::Acquire) {
+                        return Err(MediaError::Cancelled);
+                    }
+                    std::thread::sleep(Duration::from_millis(1));
+                }
+            }
+            let asset = asset(id.0, id.0 as u8, true, path);
+            Ok(ImportedSource {
+                capabilities: capabilities(&asset, true),
+                asset,
+            })
+        }
+    }
+    let gate = Arc::new(SecondGate {
+        started: AtomicBool::new(false),
+        release: AtomicBool::new(false),
+    });
+    let mut editor = new_editor();
+    editor.set_import_probe(gate.clone()).unwrap();
+    editor.set_thumbnailer(Arc::new(Thumbs::ready())).unwrap();
+    editor
+        .start_import(vec![
+            "C:/vibecut-test/first.mp4".into(),
+            "C:/vibecut-test/second.mp4".into(),
+        ])
+        .unwrap();
+    tick_until(&mut editor, |editor| {
+        gate.started.load(Ordering::Acquire) && editor.session.project().data().assets.len() == 1
+    });
+    editor.session.undo().unwrap();
+    editor.tick();
+    assert!(editor.session.project().data().assets.is_empty());
+    let pending = editor.inspect().unwrap().assets;
+    assert_eq!(pending.len(), 1);
+    assert_eq!(pending[0].id, AssetId(2));
+    assert_eq!(pending[0].state, "probing");
+    gate.release.store(true, Ordering::Release);
+    finish(&mut editor);
+    let inspected = editor.inspect().unwrap().assets;
+    assert_eq!(inspected.len(), 1);
+    assert_eq!(inspected[0].id, AssetId(2));
+    assert_eq!(inspected[0].state, "ready");
+    assert!(
+        inspected[0].thumbnail,
+        "the later thumbnail must reach the same asset identity"
+    );
 }

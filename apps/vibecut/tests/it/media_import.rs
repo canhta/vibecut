@@ -132,7 +132,7 @@ impl ImportProbe for Probe {
         if name.contains("highfps") {
             asset.probe.streams[0].frame_rate = Some(FrameRate::FPS_60);
         }
-        SourceAsset::try_from(asset)
+        SourceAsset::try_from(asset).map(imported)
     }
 }
 
@@ -211,6 +211,32 @@ impl ImportProbe for BlockingProbe {
         }
         Err(MediaError::Cancelled)
     }
+}
+
+/// Seeded records still enter through the real restoration/validation protocol.
+fn validate_assets(editor: &mut Editor) {
+    struct RecordedProbe(Vec<SourceAsset>);
+    impl ImportProbe for RecordedProbe {
+        fn import(
+            &self,
+            id: AssetId,
+            path: PathBuf,
+            _cancelled: Arc<AtomicBool>,
+        ) -> media::Result<ImportedSource> {
+            let asset = self
+                .0
+                .iter()
+                .find(|asset| asset.id() == id && asset.path() == path)
+                .ok_or(MediaError::Invalid("missing validation fixture"))?;
+            Ok(imported(asset.clone()))
+        }
+    }
+    let assets = editor.session.project().data().assets.clone();
+    editor
+        .set_import_probe(Arc::new(RecordedProbe(assets)))
+        .unwrap();
+    editor.tick();
+    wait_import(editor);
 }
 
 fn editor() -> Editor {
@@ -647,6 +673,7 @@ fn import_overlay_disables_import_and_insert_and_cancel_stops_batch() {
             ),
         })
         .unwrap();
+    validate_assets(&mut editor);
     editor.select_media([AssetId(1)]);
     let probe = Arc::new(GateProbe::new());
     editor.set_import_probe(probe.clone()).unwrap();
@@ -726,14 +753,15 @@ fn multi_select_insert_targets_only_selected_assets_in_one_undo_step() {
     }
     let mut playback = Playback::new(
         &session,
-        ByteBudget::new(128 << 20).unwrap(),
+        ByteBudget::new(512 << 20).unwrap(),
         Arc::new(Files),
     )
     .unwrap();
     playback.set_device_available(true);
-    let editor = Editor::new(session, playback, Preferences::default());
+    let mut editor = Editor::new(session, playback, Preferences::default());
+    validate_assets(&mut editor);
     let mut harness = Harness::builder()
-        .with_size(egui::vec2(1440.0, 900.0))
+        .with_size(egui::vec2(1728.0, 1200.0))
         .build_ui_state(|ui, editor: &mut Editor| editor.ui(ui), editor);
     harness.run_steps(3);
     widget(&harness, "media.asset.1").click();
@@ -810,12 +838,13 @@ fn insert_refusal_keeps_assets_and_the_timeline_unchanged() {
         .unwrap();
     let mut playback = Playback::new(
         &session,
-        ByteBudget::new(64 << 20).unwrap(),
+        ByteBudget::new(512 << 20).unwrap(),
         Arc::new(Files),
     )
     .unwrap();
     playback.set_device_available(true);
     let mut editor = Editor::new(session, playback, Preferences::default());
+    validate_assets(&mut editor);
     editor.select_media([AssetId(1)]);
     editor.activate("media.insert").unwrap();
     let inspection = editor.inspect().unwrap();
@@ -883,6 +912,7 @@ fn import_and_insert_refresh_playback_with_the_new_project_snapshot() {
         .unwrap();
         playback.set_device_available(true);
         let mut editor = Editor::new(session, playback, Preferences::default());
+        validate_assets(&mut editor);
         let deadline = Instant::now() + Duration::from_secs(5);
         loop {
             editor.playback.poll().unwrap();
@@ -986,6 +1016,7 @@ fn ephemeral_assets_are_hidden_and_cannot_enter_library_selection() {
     )
     .unwrap();
     let mut editor = Editor::new(session, playback, Preferences::default());
+    validate_assets(&mut editor);
     editor.select_media([AssetId(2)]);
     let mut harness = Harness::builder()
         .with_size(egui::vec2(1440.0, 900.0))

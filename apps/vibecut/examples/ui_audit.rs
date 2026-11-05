@@ -862,6 +862,20 @@ fn inspector_blend_vi(theme: Theme, scale: f32) -> Result<AppHarness, Failure> {
     inspector_blend_locale(theme, scale, Locale::Vi)
 }
 
+fn import_summary(asset: SourceAsset) -> media::ImportedSource {
+    let streams: Vec<_> = asset
+        .probe()
+        .streams
+        .iter()
+        .filter(|stream| stream.kind != StreamKind::Other)
+        .map(|stream| (stream.index, stream.kind, stream.codec.clone()))
+        .collect();
+    media::ImportedSource {
+        asset,
+        capabilities: media::ProbeCapabilities::decodable(streams),
+    }
+}
+
 /// Returns a deterministic library asset for every path except `bad`, which
 /// exercises the real partial-import failure state.
 struct CompletedProbe;
@@ -871,7 +885,7 @@ impl ImportProbe for CompletedProbe {
         id: AssetId,
         path: PathBuf,
         _: Arc<std::sync::atomic::AtomicBool>,
-    ) -> media::Result<SourceAsset> {
+    ) -> media::Result<media::ImportedSource> {
         let name = path
             .file_name()
             .and_then(|name| name.to_str())
@@ -884,7 +898,9 @@ impl ImportProbe for CompletedProbe {
         } else {
             StreamKind::Video
         };
-        source_asset(id.0, kind, path).map_err(|_| MediaError::Unsupported("fixture"))
+        source_asset(id.0, kind, path)
+            .map(import_summary)
+            .map_err(|_| MediaError::Unsupported("fixture"))
     }
 }
 
@@ -1138,7 +1154,7 @@ impl ImportProbe for ProgressProbe {
         id: AssetId,
         path: PathBuf,
         cancelled: Arc<std::sync::atomic::AtomicBool>,
-    ) -> media::Result<SourceAsset> {
+    ) -> media::Result<media::ImportedSource> {
         if self.calls.fetch_add(1, Ordering::SeqCst) > 0 {
             let mut released = match self.release.0.lock() {
                 Ok(released) => released,
@@ -1158,7 +1174,9 @@ impl ImportProbe for ProgressProbe {
                 };
             }
         }
-        source_asset(id.0, StreamKind::Video, path).map_err(|_| MediaError::Unsupported("fixture"))
+        source_asset(id.0, StreamKind::Video, path)
+            .map(import_summary)
+            .map_err(|_| MediaError::Unsupported("fixture"))
     }
 }
 

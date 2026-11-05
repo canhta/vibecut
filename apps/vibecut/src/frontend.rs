@@ -12,7 +12,7 @@ use crate::{
     theme,
 };
 use engine::{Command, CreatedId, ItemParamPatch, NewItem, Session};
-use media::{AssetId, SourceAsset, StreamKind, Thumbnail, UnsupportedReason};
+use media::{AssetId, SourceAsset, StreamKind, UnsupportedReason};
 use project::{ItemId, ItemParams, TrackId, TrackKind};
 use std::{
     collections::{BTreeMap, BTreeSet},
@@ -415,7 +415,9 @@ pub struct Editor {
     pub export: Option<crate::export::ExportDialog>,
     models: Option<crate::model_manager::ModelManager>,
     asset_states: BTreeMap<AssetId, AssetState>,
-    thumbnails: BTreeMap<AssetId, Thumbnail>,
+    thumbnails: BTreeMap<AssetId, engine::thumbnails::RetainedThumbnail>,
+    pending_imports: BTreeMap<AssetId, PathBuf>,
+    restoring_asset: Option<AssetId>,
     thumbnail_textures: BTreeMap<AssetId, egui::TextureHandle>,
     thumbnail_root: Option<PathBuf>,
 }
@@ -491,6 +493,8 @@ impl Editor {
             models: None,
             asset_states: BTreeMap::new(),
             thumbnails: BTreeMap::new(),
+            pending_imports: BTreeMap::new(),
+            restoring_asset: None,
             thumbnail_textures: BTreeMap::new(),
             thumbnail_root: None,
         }
@@ -554,12 +558,13 @@ impl Editor {
                 .data()
                 .assets
                 .iter()
+                .filter(|asset| !asset.ephemeral())
                 .map(|asset| {
                     let state = self
                         .asset_states
                         .get(&asset.id())
                         .copied()
-                        .unwrap_or(AssetState::Ready);
+                        .unwrap_or(AssetState::Probing);
                     AssetInspection {
                         id: asset.id(),
                         state: state.code(),
@@ -570,6 +575,12 @@ impl Editor {
                         },
                     }
                 })
+                .chain(self.pending_imports.keys().map(|id| AssetInspection {
+                    id: *id,
+                    state: "probing",
+                    thumbnail: false,
+                    detail: None,
+                }))
                 .collect(),
             export_options: self.preferences.export,
             export: self
@@ -627,11 +638,22 @@ impl Editor {
         self.import_notice = None;
         self.import_error = None;
         self.toast = None;
-        let result = self.import_queue()?.start(paths, first);
+        let result = self.start_import_paths(paths, first);
         if result.is_err() {
             self.import_total = 0;
         }
         result
+    }
+    fn start_import_paths(&mut self, paths: Vec<PathBuf>, first: u64) -> Result<()> {
+        let result = self.import_queue()?.start(paths.clone(), first);
+        if matches!(result, Err(Error::Engine(engine::EditError::BudgetFull))) {
+            self.thumbnail_textures.clear();
+            self.thumbnails.clear();
+            self.import_queue()?.evict_thumbnails();
+            self.import_queue()?.start(paths, first)
+        } else {
+            result
+        }
     }
     fn import_queue(&mut self) -> Result<&mut ImportQueue> {
         if self.imports.is_none() {
@@ -657,15 +679,8 @@ impl Editor {
             .map_or(1, |id| id.saturating_add(1))
     }
     fn add_imported_asset(&mut self, asset: SourceAsset) -> Result<AssetId> {
-        let next = self.next_asset_id();
-        let asset = if asset.id().0 == next {
-            asset
-        } else {
-            let mut data = media::AssetData::from(asset);
-            data.id = AssetId(next);
-            SourceAsset::try_from(data)
-                .map_err(|error| Error::Engine(engine::EditError::Media(error)))?
-        };
+        // The worker reserves this identity before publishing its probing row;
+        // undoing an earlier import must not renumber later job/thumbnail events.
         let id = asset.id();
         self.session.apply(Command::AddAsset { asset })?;
         Ok(id)
@@ -678,6 +693,10 @@ impl Editor {
         };
         let events = match polled {
             Ok(events) => events,
+            Err(_) if self.restoring_asset.is_some() => {
+                self.finish_import();
+                return;
+            }
             Err(error) => {
                 self.import_notice = Some(error_detail(error.as_ref()));
                 self.import_error = Some(error);
@@ -690,33 +709,85 @@ impl Editor {
         };
         for event in events {
             match event {
+                ImportEvent::Probing { id, path } => {
+                    if self.restoring_asset != Some(id) {
+                        self.pending_imports.insert(id, path);
+                    }
+                }
                 ImportEvent::Imported(imported) => {
+                    self.pending_imports.remove(&imported.asset.id());
+                    self.pending_imports
+                        .retain(|_, path| path != imported.asset.path());
                     let path = imported.asset.path().to_owned();
-                    self.import_completed += 1;
+                    if self.restoring_asset.is_none() {
+                        self.import_completed += 1;
+                    }
                     let unsupported = imported.capabilities.unsupported();
                     let thumbnail = crate::import::needs_thumbnail(&imported);
-                    match self.add_imported_asset(imported.asset) {
+                    let adding = if self.restoring_asset == Some(imported.asset.id()) {
+                        let id = imported.asset.id();
+                        let matches = self.session.project().data().assets.iter().any(|a| {
+                            a.id() == id && a.content_hash() == imported.asset.content_hash()
+                        });
+                        if matches {
+                            Ok(id)
+                        } else {
+                            Err(Error::Invalid("restored media content changed"))
+                        }
+                    } else {
+                        self.add_imported_asset(imported.asset)
+                    };
+                    match adding {
                         Ok(id) => {
                             let state = match unsupported {
                                 Some(reason) => AssetState::Unsupported(reason),
-                                None if thumbnail => AssetState::Probing,
+                                None if thumbnail && self.restoring_asset.is_none() => {
+                                    AssetState::Probing
+                                }
                                 None => AssetState::Ready,
                             };
                             self.asset_states.insert(id, state);
-                            self.import_imported += 1;
+                            if self.restoring_asset.is_none() {
+                                self.import_imported += 1;
+                            }
                         }
                         Err(error) => {
-                            self.import_failures
-                                .push(ImportFailure::local(path, error_detail(&error)));
+                            if let Some(id) = self.restoring_asset {
+                                self.asset_states.insert(
+                                    id,
+                                    AssetState::Unsupported(UnsupportedReason::OpenFailed),
+                                );
+                            }
+                            if self.restoring_asset.is_none() {
+                                self.import_failures
+                                    .push(ImportFailure::local(path, error_detail(&error)));
+                            }
                         }
                     }
                 }
                 ImportEvent::Failed(failure) => {
-                    self.import_completed += 1;
-                    self.import_failures.push(failure);
+                    self.pending_imports.retain(|_, path| path != &failure.path);
+                    if let Some(id) = self.restoring_asset {
+                        self.asset_states
+                            .insert(id, AssetState::Unsupported(UnsupportedReason::OpenFailed));
+                    }
+                    if self.restoring_asset.is_none() {
+                        self.import_completed += 1;
+                        self.import_failures.push(failure);
+                    }
                 }
+                ImportEvent::Thumbnail { asset, .. }
+                    if !matches!(
+                        self.asset_states.get(&asset),
+                        Some(AssetState::Probing | AssetState::Ready)
+                    ) => {}
                 ImportEvent::Thumbnail { asset, outcome } => match outcome {
                     ThumbnailOutcome::Ready(thumbnail) => {
+                        while self.thumbnails.len() >= 64 {
+                            if let Some((id, _)) = self.thumbnails.pop_first() {
+                                self.thumbnail_textures.remove(&id);
+                            }
+                        }
                         self.thumbnails.insert(asset, thumbnail);
                         self.thumbnail_textures.remove(&asset);
                         self.asset_states.insert(asset, AssetState::Ready);
@@ -727,6 +798,7 @@ impl Editor {
                         tracing::warn!(category = "thumbnail_generation", error = %error, "thumbnail unavailable");
                     }
                 },
+                ImportEvent::Done { .. } if self.restoring_asset.is_some() => self.finish_import(),
                 ImportEvent::Done { cancelled, error } => {
                     self.import_cancelled = cancelled;
                     if let Some(error) = error {
@@ -744,6 +816,21 @@ impl Editor {
         }
     }
     fn finish_import(&mut self) {
+        self.pending_imports.clear();
+        if let Some(id) = self.restoring_asset.take() {
+            if self.asset_states.get(&id) == Some(&AssetState::Probing) {
+                self.asset_states
+                    .insert(id, AssetState::Unsupported(UnsupportedReason::OpenFailed));
+            }
+            return;
+        }
+        // Completed probes already validated these assets; cancellation or a
+        // terminal thumbnail failure leaves a usable asset and a placeholder.
+        for state in self.asset_states.values_mut() {
+            if *state == AssetState::Probing {
+                *state = AssetState::Ready;
+            }
+        }
         let failed_count = self.import_failures.len();
         let unfinished_count = self.import_total.saturating_sub(self.import_completed);
         let locale = self.preferences.locale;
@@ -818,6 +905,33 @@ impl Editor {
         self.thumbnails.retain(|id, _| existing.contains(id));
         self.thumbnail_textures
             .retain(|id, _| existing.contains(id));
+        if let Some(queue) = &mut self.imports {
+            queue.retain_assets(&self.session.project().data().assets);
+        }
+    }
+    fn restore_asset_state(&mut self) {
+        if self.importing() {
+            return;
+        }
+        let asset = self
+            .session
+            .project()
+            .data()
+            .assets
+            .iter()
+            .find(|a| !a.ephemeral() && !self.asset_states.contains_key(&a.id()))
+            .cloned();
+        if let Some(asset) = asset {
+            let id = asset.id();
+            self.asset_states.insert(id, AssetState::Probing);
+            self.restoring_asset = Some(id);
+            let result = self.start_import_paths(vec![asset.path().to_owned()], id.0);
+            if result.is_err() {
+                self.restoring_asset = None;
+                self.asset_states
+                    .insert(id, AssetState::Unsupported(UnsupportedReason::OpenFailed));
+            }
+        }
     }
     /// Replace the media selection; tests and agents use the same state as clicks.
     pub fn select_media(&mut self, ids: impl IntoIterator<Item = AssetId>) {
@@ -866,10 +980,10 @@ impl Editor {
                 return;
             }
         };
-        let unsupported: BTreeSet<AssetId> = self
-            .asset_states
+        let unsupported: BTreeSet<AssetId> = selected
             .iter()
-            .filter_map(|(id, state)| matches!(state, AssetState::Unsupported(_)).then_some(*id))
+            .filter(|asset| self.asset_states.get(&asset.id()) != Some(&AssetState::Ready))
+            .map(SourceAsset::id)
             .collect();
         let result = self.session.transaction(|session| {
             let mut created = Vec::new();
@@ -2254,6 +2368,7 @@ impl Editor {
             dialog.failed(error);
         }
         self.apply_import_events();
+        self.restore_asset_state();
         self.truncate_toast();
         if let Err(error) = self.remember_view() {
             self.error = Some(error.to_string());
@@ -2869,7 +2984,7 @@ impl Editor {
         }
         ui.add_space(12.0);
         let locale = self.preferences.locale;
-        let rows: Vec<AssetRow> = self
+        let mut rows: Vec<AssetRow> = self
             .session
             .project()
             .data()
@@ -2881,10 +2996,17 @@ impl Editor {
                     .asset_states
                     .get(&asset.id())
                     .copied()
-                    .unwrap_or(AssetState::Ready);
+                    .unwrap_or(AssetState::Probing);
                 asset_row(asset, locale, state)
             })
             .collect();
+        rows.extend(self.pending_imports.iter().map(|(id, path)| AssetRow {
+            id: *id,
+            name: file_name(path),
+            info: asset_state_text(locale, AssetState::Probing),
+            icon: Icon::UploadSimple,
+            state: AssetState::Probing,
+        }));
         if rows.is_empty() {
             ui.label(self.tr(Text::EmptyMedia));
         } else {
@@ -5078,6 +5200,17 @@ impl Editor {
             return Some(texture.clone());
         }
         let thumbnail = self.thumbnails.get(&id)?;
+        // One retained image pays for one CPU image and GPU upload, even when
+        // several library records refer to the same content/frame.
+        if let Some(texture) = self.thumbnail_textures.iter().find_map(|(other, texture)| {
+            self.thumbnails
+                .get(other)
+                .filter(|image| image.shares_pixels(thumbnail))
+                .map(|_| texture.clone())
+        }) {
+            self.thumbnail_textures.insert(id, texture.clone());
+            return Some(texture);
+        }
         let image = egui::ColorImage::from_rgba_unmultiplied(
             [thumbnail.width as usize, thumbnail.height as usize],
             &thumbnail.pixels,

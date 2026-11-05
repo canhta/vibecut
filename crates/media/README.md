@@ -49,13 +49,19 @@ nearest integer chosen for compact display, so `24000/1001` shows 24 and
 
 Image demuxers may report coded dimensions only after the first frame. The probe
 therefore decodes exactly one frame in that case, records its real geometry and
-rewinds the input before any packet consumer runs. A build without a required
+rewinds the input before any packet consumer runs. Recovery keeps the 32 MiB
+opening read allowance and a 4096-packet ceiling until it completes.
+`SourceAsset::import_prepared` hashes first and accepts validated content-keyed
+probe metadata, avoiding recovery decode on a warm import. On a cold recovery it
+returns the bounded thumbnail alongside the imported asset, for reuse by the
+engine cache; no decoded native frame enters project state. A build without a required
 decoder returns `UnsupportedReason::DecoderUnavailable`; no filename or browser
 codec hint is inferred.
 
 `thumbnail` / `thumbnail_at` decode the first frame at a requested position
 (`seek` plus decode forward for a later position) through the existing
-`VideoReader` and `RgbaConverter`, then scale to a 320 px maximum edge. This is
+`VideoReader` and `RgbaConverter::convert_scaled`, converting directly to a
+320 px maximum edge without a full-resolution RGBA intermediary. This is
 the one frame decoder shared with ticket 18; no second decoder exists.
 `Thumbnail::encode`/`decode` is the bounded cache payload (1024 px ceiling),
 and `thumbnail_at_with_read_bytes` reports how many source bytes the first frame
@@ -225,8 +231,12 @@ only; provider upload and transcription remain unverified.
 
 Individual native FFmpeg allocations are capped at 256 MiB before media I/O.
 AVIO uses 32 KiB buffers; probing reads at most 32 MiB. A first-frame thumbnail
-reads only the packets needed for that frame and retains one source frame plus
-one bounded RGBA thumbnail; it never reads the file for hashing (the import job
+reads at most 64 MiB in total (including opening and seek/decode-forward), with a single software decoder
+worker, a native 2^21-pixel image/scratch ceiling, and small output RGBA planes
+plus the packed thumbnail. Inputs exceeding this thumbnail ceiling return a
+typed size refusal; video assets remain usable with a placeholder. The same
+native bound applies when geometry must be recovered during opening. This is a
+stricter bound than general playback's 2^26-pixel ceiling. It it never reads the file for hashing (the import job
 hashes separately by design). Stream count is capped at
 256, extradata at 1 MiB, packets at 64 MiB, decoded frame area at 2^26 pixels,
 audio frames at 65,536 samples/channel and 32 channels, and one receive batch at

@@ -51,7 +51,7 @@ timeline basics, transport and the export dialog are present; text/audio control
 are integrated by their owning feature tickets.
 
 Media import uses one native multi-file picker or a file drop. One batch is capped
-at 128 paths (32 KiB each), must admit a 256 MiB probe/work lease from the shared
+at 128 paths (32 KiB each), must admit a 448 MiB probe/work lease from the shared
 byte budget, and publishes results through a bounded 8-event channel, so a paused
 UI applies backpressure instead of accumulating metadata. Probing and hashing run
 on an engine import job with one cooperative cancellation token carried into
@@ -69,6 +69,21 @@ imported, failed and unfinished files; a terminal runner failure stays a typed
 error and never reports success. Insert synchronizes playback against the new
 immutable project snapshot. Image placement, full library views/sort and asset
 deletion remain with their later feature tickets.
+
+A pending import row is emitted before probe/hash execution and remains transient
+until validated metadata is added through the engine command. Audio and video
+follow the same probing -> ready/unsupported presentation. Restored assets
+(including undo/redo) default to probing and reopen capabilities in a background
+import job before timeline insertion; persisted thumbnails are requested through
+the same content cache. Missing, changed or refused sources remain blocked.
+
+Queue and editor retain at most 64 shared thumbnail handles each, charged by
+engine `RetainedThumbnail` for CPU/upload/GPU storage. Undo prunes both owners;
+entry limits and aggregate budget pressure evict images and textures together.
+Import retries work admission after dropping retained thumbnails on pressure.
+The batch work allowance is 448 MiB, covering bounded native decoding, codec
+scratch, packet/probe buffers, hashing and handoff; retained images have separate
+leases. Media owns the stricter thumbnail/recovery geometry and worker bounds.
 
 The timeline draws tracks, filmstrip/waveform placeholders, bookmarks and the
 playhead; an adaptive ruler picks frame/second major and minor ticks from zoom

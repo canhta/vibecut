@@ -8,7 +8,7 @@ use engine::jobs::{
     CancelToken, JobId, JobKind, JobRunner, JobSpec, JobStage, JobState, ResourceClass,
     RunnerConfig, SystemClock,
 };
-use engine::thumbnails::{ThumbnailCache, thumbnail_key};
+use engine::thumbnails::{RetainedThumbnail, ThumbnailCache, thumbnail_key};
 use engine::{ByteBudget, ByteLease, ByteOwner};
 use media::{AssetId, ImportedSource, MediaError, SourceAsset, THUMBNAIL_MAX_EDGE, Thumbnail};
 use std::{
@@ -36,12 +36,12 @@ const MAX_IMPORT_PATH_BYTES: usize = 32 * 1024;
 /// Bounded producer/consumer handoff. A paused UI blocks the worker instead of
 /// accumulating completed metadata without limit.
 const EVENT_QUEUE: usize = 8;
-/// Conservative probe/work ceiling, matching render's 256 MiB source-probe
-/// admission. The lease covers FFmpeg probe internals, the hash buffer and the
-/// bounded queued metadata for the life of the batch.
-const WORK_ALLOWANCE: u64 = 256 << 20;
+/// Conservative work allowance: 256 MiB for bounded single-worker native
+/// decoder references/scratch, 64 MiB packets, 32 MiB probe IO and 96 MiB for
+/// demux/scaler/hash/handoff overhead. Retained images have separate leases.
+const WORK_ALLOWANCE: u64 = 448 << 20;
 /// One thumbnail's cache payload is far below this; the decode itself is capped
-/// by media's 2^26-pixel frame ceiling.
+/// by media's stricter thumbnail/recovery decoder ceiling.
 const MAX_THUMBNAIL_ENTRIES: usize = 4096;
 
 /// Injected media boundary so tests drive import outcomes without decoding files.
@@ -54,6 +54,16 @@ pub trait ImportProbe: Send + Sync + 'static {
         path: PathBuf,
         cancelled: Arc<AtomicBool>,
     ) -> media::Result<ImportedSource>;
+    fn import_cached(
+        &self,
+        id: AssetId,
+        path: PathBuf,
+        cancelled: Arc<AtomicBool>,
+        _cached: &mut dyn FnMut(media::ContentHash) -> Option<media::SourceProbe>,
+    ) -> media::Result<(ImportedSource, Option<Thumbnail>)> {
+        self.import(id, path, cancelled)
+            .map(|imported| (imported, None))
+    }
 }
 
 /// Production probe: the existing media owner canonicalizes, probes, hashes and
@@ -67,6 +77,15 @@ impl ImportProbe for MediaProbe {
         cancelled: Arc<AtomicBool>,
     ) -> media::Result<ImportedSource> {
         SourceAsset::import_with_summary(id, path, cancelled)
+    }
+    fn import_cached(
+        &self,
+        id: AssetId,
+        path: PathBuf,
+        cancelled: Arc<AtomicBool>,
+        cached: &mut dyn FnMut(media::ContentHash) -> Option<media::SourceProbe>,
+    ) -> media::Result<(ImportedSource, Option<Thumbnail>)> {
+        SourceAsset::import_prepared(id, path, cancelled, cached)
     }
 }
 
@@ -122,7 +141,7 @@ impl ImportFailure {
 
 #[derive(Debug)]
 pub enum ThumbnailOutcome {
-    Ready(Thumbnail),
+    Ready(RetainedThumbnail),
     /// The asset stays usable; the library shows a placeholder.
     Failed(Arc<MediaError>),
 }
@@ -131,6 +150,10 @@ pub enum ThumbnailOutcome {
 /// the same single-owner boundary as every other edit.
 #[derive(Debug)]
 pub enum ImportEvent {
+    Probing {
+        id: AssetId,
+        path: PathBuf,
+    },
     Imported(ImportedSource),
     Failed(ImportFailure),
     Thumbnail {
@@ -174,43 +197,130 @@ enum Phase {
 #[derive(Default)]
 struct ThumbnailStore {
     cache: Option<ThumbnailCache>,
-    memo: BTreeMap<CacheKey, Thumbnail>,
+    epoch: u64,
+    memo: BTreeMap<CacheKey, RetainedThumbnail>,
 }
 impl ThumbnailStore {
-    fn lookup(&mut self, asset: &SourceAsset, at: Tick) -> Option<Thumbnail> {
-        let Ok(key) = thumbnail_key(asset.content_hash(), at, THUMBNAIL_MAX_EDGE) else {
-            return None;
-        };
-        if let Some(thumbnail) = self.memo.get(&key) {
-            return Some(thumbnail.clone());
-        }
-        let Some(cache) = &mut self.cache else {
-            return None;
-        };
-        match cache.get(asset, at, THUMBNAIL_MAX_EDGE) {
-            Ok(Some(thumbnail)) => {
-                self.memo.insert(key, thumbnail.clone());
-                Some(thumbnail)
-            }
-            Ok(None) => None,
-            Err(error) => {
-                tracing::warn!(category = "thumbnail_cache_read", error = %error, "thumbnail cache miss");
-                None
+    fn probe(&self, content: media::ContentHash) -> Option<media::SourceProbe> {
+        let key = thumbnail_key(content, Tick::ZERO, THUMBNAIL_MAX_EDGE).ok()?;
+        self.memo.get(&key).map(|image| image.probe().clone())
+    }
+    fn retain(
+        store: &Mutex<Self>,
+        key: CacheKey,
+        asset: &SourceAsset,
+        thumbnail: Thumbnail,
+        budget: &ByteBudget,
+    ) -> Option<RetainedThumbnail> {
+        // Budget admission can evict disk artifacts, so never hold the memo lock
+        // during admission or cache IO. UI undo only needs this short memo lock.
+        loop {
+            match RetainedThumbnail::new(thumbnail.clone(), asset, budget) {
+                Ok(image) => {
+                    let mut memo = store.lock().ok()?;
+                    while memo.memo.len() >= 64 {
+                        memo.memo.pop_first();
+                    }
+                    memo.memo.insert(key, image.clone());
+                    return Some(image);
+                }
+                Err(_) => {
+                    store.lock().ok()?.memo.pop_first()?;
+                }
             }
         }
     }
-
-    fn insert(&mut self, asset: &SourceAsset, at: Tick, thumbnail: &Thumbnail) {
-        let Ok(key) = thumbnail_key(asset.content_hash(), at, THUMBNAIL_MAX_EDGE) else {
-            return;
+}
+/// A job temporarily owns the disk cache. Its guard restores ownership even on
+/// cancellation/unwind, without holding a UI-shared lock across filesystem IO.
+struct ThumbnailDisk {
+    store: Arc<Mutex<ThumbnailStore>>,
+    cache: Option<ThumbnailCache>,
+    epoch: u64,
+}
+impl ThumbnailDisk {
+    fn take(store: Arc<Mutex<ThumbnailStore>>) -> engine::Result<Self> {
+        let (cache, epoch) = {
+            let mut memo = store.lock().map_err(|_| engine::EditError::JobPoisoned)?;
+            (memo.cache.take(), memo.epoch)
         };
-        self.memo.insert(key, thumbnail.clone());
-        let Some(cache) = &mut self.cache else {
-            return;
-        };
-        if let Err(error) = cache.put(asset, at, THUMBNAIL_MAX_EDGE, thumbnail) {
-            tracing::warn!(category = "thumbnail_cache_write", error = %error, "thumbnail not cached");
+        Ok(Self {
+            store,
+            cache,
+            epoch,
+        })
+    }
+    fn probe(&mut self, content: media::ContentHash) -> Option<media::SourceProbe> {
+        let memory = self.store.lock().ok()?.probe(content);
+        memory.or_else(|| {
+            self.cache
+                .as_mut()
+                .and_then(|cache| cache.get_probe(content))
+        })
+    }
+    fn lookup(
+        &mut self,
+        asset: &SourceAsset,
+        at: Tick,
+    ) -> media::Result<Option<RetainedThumbnail>> {
+        let key = thumbnail_key(asset.content_hash(), at, THUMBNAIL_MAX_EDGE)
+            .map_err(|_| MediaError::Invalid("thumbnail key"))?;
+        if let Some(image) = self
+            .store
+            .lock()
+            .map_err(|_| MediaError::Invalid("thumbnail cache lock"))?
+            .memo
+            .get(&key)
+            .cloned()
+        {
+            return Ok(Some(image));
         }
+        let Some(cache) = &mut self.cache else {
+            return Ok(None);
+        };
+        match cache.get(asset, at, THUMBNAIL_MAX_EDGE) {
+            Ok(Some(image)) => {
+                let mut memo = self
+                    .store
+                    .lock()
+                    .map_err(|_| MediaError::Invalid("thumbnail cache lock"))?;
+                while memo.memo.len() >= 64 {
+                    memo.memo.pop_first();
+                }
+                memo.memo.insert(key, image.clone());
+                Ok(Some(image))
+            }
+            Ok(None) => Ok(None),
+            Err(engine::EditError::BudgetFull | engine::EditError::ArtifactTooLarge) => {
+                Err(MediaError::TooLarge("retained thumbnail budget"))
+            }
+            Err(error) => {
+                tracing::warn!(category = "thumbnail_cache_read", error = %error,"thumbnail cache miss");
+                Ok(None)
+            }
+        }
+    }
+    fn insert(&mut self, asset: &SourceAsset, at: Tick, thumbnail: &Thumbnail) {
+        if let Some(cache) = &mut self.cache
+            && let Err(error) = cache.put(asset, at, THUMBNAIL_MAX_EDGE, thumbnail)
+        {
+            tracing::warn!(category = "thumbnail_cache_write", error = %error,"thumbnail not cached");
+        }
+    }
+}
+impl Drop for ThumbnailDisk {
+    fn drop(&mut self) {
+        let old = if let Ok(mut memo) = self.store.lock() {
+            if memo.epoch == self.epoch {
+                std::mem::replace(&mut memo.cache, self.cache.take())
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+        // Close any replaced/root-invalidated cache outside the memo lock.
+        drop(old);
     }
 }
 
@@ -284,9 +394,28 @@ impl ImportQueue {
     pub fn set_thumbnail_root(&mut self, root: PathBuf) {
         if self.thumbnail_root.as_ref() != Some(&root) {
             self.thumbnail_root = Some(root);
-            if let Ok(mut store) = self.thumbnails.lock() {
-                store.cache = None;
-            }
+            let old = if let Ok(mut store) = self.thumbnails.lock() {
+                store.epoch = store.epoch.saturating_add(1);
+                store.cache.take()
+            } else {
+                None
+            };
+            drop(old);
+        }
+    }
+    pub fn evict_thumbnails(&mut self) {
+        if let Ok(mut store) = self.thumbnails.lock() {
+            store.memo.clear();
+        }
+    }
+    /// Drop memo pins when library ownership ends (including undo).
+    pub fn retain_assets(&mut self, assets: &[SourceAsset]) {
+        let keys: BTreeSet<_> = assets
+            .iter()
+            .filter_map(|a| thumbnail_key(a.content_hash(), Tick::ZERO, THUMBNAIL_MAX_EDGE).ok())
+            .collect();
+        if let Ok(mut store) = self.thumbnails.lock() {
+            store.memo.retain(|key, _| keys.contains(key));
         }
     }
     pub fn active(&self) -> bool {
@@ -333,6 +462,8 @@ impl ImportQueue {
         self.phase = Phase::Probe;
         let (send, receive) = mpsc::sync_channel(EVENT_QUEUE);
         let probe = self.probe.clone();
+        let store = self.thumbnails.clone();
+        let budget = self.budget.clone();
         let cancelled = Arc::new(AtomicBool::new(false));
         let worker_cancel = cancelled.clone();
         let key = job_key(ArtifactKind::Preview, "media-probe")?;
@@ -344,6 +475,7 @@ impl ImportQueue {
                 bytes: Default::default(),
             },
             move |ctx| {
+                let mut disk = ThumbnailDisk::take(store.clone())?;
                 let mut next = first_id;
                 for (index, path) in paths.iter().enumerate() {
                     if ctx.cancelled() {
@@ -354,8 +486,39 @@ impl ImportQueue {
                     }
                     ctx.progress(JobStage::Probe, index as f32 / total.max(1) as f32)
                         .ok();
-                    match probe.import(AssetId(next), path.clone(), worker_cancel.clone()) {
-                        Ok(imported) => {
+                    if send
+                        .send(ImportEvent::Probing {
+                            id: AssetId(next),
+                            path: path.clone(),
+                        })
+                        .is_err()
+                    {
+                        return Ok(Vec::new());
+                    }
+                    let mut cached = |hash| disk.probe(hash);
+                    match probe.import_cached(
+                        AssetId(next),
+                        path.clone(),
+                        worker_cancel.clone(),
+                        &mut cached,
+                    ) {
+                        Ok((imported, recovered)) => {
+                            if let Some(image) = recovered {
+                                disk.insert(&imported.asset, Tick::ZERO, &image);
+                                if let Ok(key) = thumbnail_key(
+                                    imported.asset.content_hash(),
+                                    Tick::ZERO,
+                                    THUMBNAIL_MAX_EDGE,
+                                ) {
+                                    ThumbnailStore::retain(
+                                        &store,
+                                        key,
+                                        &imported.asset,
+                                        image,
+                                        &budget,
+                                    );
+                                }
+                            }
                             next = next.checked_add(1).ok_or(engine::EditError::Limit)?;
                             if send.send(ImportEvent::Imported(imported)).is_err() {
                                 return Ok(Vec::new());
@@ -397,16 +560,22 @@ impl ImportQueue {
         let Some(root) = self.thumbnail_root.clone() else {
             return;
         };
-        let Ok(mut store) = self.thumbnails.lock() else {
-            return;
+        let epoch = match self.thumbnails.lock() {
+            Ok(store) if store.cache.is_none() => store.epoch,
+            _ => return,
         };
-        if store.cache.is_some() {
-            return;
-        }
         match ThumbnailCache::open(&root, self.budget.clone(), MAX_THUMBNAIL_ENTRIES) {
-            Ok(cache) => store.cache = Some(cache),
+            Ok(cache) => {
+                let mut cache = Some(cache);
+                if let Ok(mut store) = self.thumbnails.lock()
+                    && store.epoch == epoch
+                    && store.cache.is_none()
+                {
+                    store.cache = cache.take();
+                }
+            }
             Err(error) => {
-                tracing::warn!(category = "thumbnail_cache_open", error = %error, "thumbnail cache unavailable");
+                tracing::warn!(category = "thumbnail_cache_open", error = %error,"thumbnail cache unavailable")
             }
         }
     }
@@ -496,6 +665,7 @@ impl ImportQueue {
         let worker_cancel = cancelled.clone();
         let store = self.thumbnails.clone();
         let thumbnailer = self.thumbnailer.clone();
+        let budget = self.budget.clone();
         let key = job_key(ArtifactKind::Thumbnail, "media-thumbnail")?;
         let submitted = self.runner.submit(
             JobSpec {
@@ -505,6 +675,7 @@ impl ImportQueue {
                 bytes: Default::default(),
             },
             move |ctx| {
+                let mut disk = ThumbnailDisk::take(store.clone())?;
                 for (index, asset) in assets.iter().enumerate() {
                     if ctx.cancelled() {
                         worker_cancel.store(true, Ordering::Release);
@@ -514,33 +685,32 @@ impl ImportQueue {
                     }
                     ctx.progress(JobStage::Thumbnail, index as f32 / total.max(1) as f32)
                         .ok();
-                    let outcome = match store.lock() {
-                        Ok(mut memo) => match memo.lookup(asset, Tick::ZERO) {
-                            Some(thumbnail) => ThumbnailOutcome::Ready(thumbnail),
-                            None => {
-                                drop(memo);
-                                match thumbnailer.thumbnail(
-                                    asset,
+                    let outcome = match disk.lookup(asset, Tick::ZERO) {
+                        Ok(Some(image)) => ThumbnailOutcome::Ready(image),
+                        Err(error) => ThumbnailOutcome::Failed(Arc::new(error)),
+                        Ok(None) => match thumbnailer.thumbnail(
+                            asset,
+                            Tick::ZERO,
+                            THUMBNAIL_MAX_EDGE,
+                            worker_cancel.clone(),
+                        ) {
+                            Ok(image) => {
+                                disk.insert(asset, Tick::ZERO, &image);
+                                let key = thumbnail_key(
+                                    asset.content_hash(),
                                     Tick::ZERO,
                                     THUMBNAIL_MAX_EDGE,
-                                    worker_cancel.clone(),
-                                ) {
-                                    Ok(thumbnail) => {
-                                        if let Ok(mut memo) = store.lock() {
-                                            memo.insert(asset, Tick::ZERO, &thumbnail);
-                                        }
-                                        ThumbnailOutcome::Ready(thumbnail)
-                                    }
-                                    Err(MediaError::Cancelled) => {
-                                        return finish(&send, true, None);
-                                    }
-                                    Err(error) => ThumbnailOutcome::Failed(Arc::new(error)),
+                                )?;
+                                match ThumbnailStore::retain(&store, key, asset, image, &budget) {
+                                    Some(image) => ThumbnailOutcome::Ready(image),
+                                    None => ThumbnailOutcome::Failed(Arc::new(
+                                        MediaError::TooLarge("retained thumbnail budget"),
+                                    )),
                                 }
                             }
+                            Err(MediaError::Cancelled) => return finish(&send, true, None),
+                            Err(error) => ThumbnailOutcome::Failed(Arc::new(error)),
                         },
-                        Err(_) => ThumbnailOutcome::Failed(Arc::new(MediaError::Invalid(
-                            "thumbnail cache lock",
-                        ))),
                     };
                     if send
                         .send(ImportEvent::Thumbnail {
@@ -609,4 +779,58 @@ fn finish(
         return Err(engine::EditError::Cancelled);
     }
     Ok(Vec::new())
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod retention_tests {
+    use super::*;
+    fn fixture(hash: u8) -> SourceAsset {
+        SourceAsset::try_from(media::AssetData {
+            ephemeral: false,
+            id: AssetId(hash as u64),
+            path: std::env::temp_dir().join("retained-thumbnail"),
+            content_hash: media::ContentHash([hash; 32]),
+            probe: media::SourceProbe {
+                format: "fixture".into(),
+                duration: None,
+                streams: Vec::new(),
+            },
+        })
+        .unwrap()
+    }
+    fn image() -> Thumbnail {
+        Thumbnail {
+            width: 2,
+            height: 1,
+            frame: Tick::ZERO,
+            pixels: vec![0; 8],
+        }
+    }
+    #[test]
+    fn thumbnail_retention_evicts_under_pressure_and_bounds_entries() {
+        let calibration = ByteBudget::new(1 << 20).unwrap();
+        let retained = RetainedThumbnail::new(image(), &fixture(0), &calibration).unwrap();
+        let charge = calibration.snapshot().unwrap().used;
+        drop(retained);
+        for (bytes, expected) in [(charge * 2, 2), (1 << 20, 64)] {
+            let budget = ByteBudget::new(bytes).unwrap();
+            let store = Mutex::new(ThumbnailStore::default());
+            for hash in 0..100 {
+                let asset = fixture(hash);
+                let key = thumbnail_key(asset.content_hash(), Tick::ZERO, 320).unwrap();
+                assert!(ThumbnailStore::retain(&store, key, &asset, image(), &budget).is_some());
+                assert!(budget.snapshot().unwrap().used <= bytes);
+            }
+            assert_eq!(store.lock().unwrap().memo.len(), expected);
+            assert_eq!(budget.snapshot().unwrap().used, expected as u64 * charge);
+            assert_eq!(
+                store.lock().unwrap().probe(fixture(99).content_hash()),
+                Some(fixture(99).probe().clone()),
+                "memory hits retain geometry without any disk cache"
+            );
+            drop(store);
+            assert_eq!(budget.snapshot().unwrap().used, 0);
+        }
+    }
 }

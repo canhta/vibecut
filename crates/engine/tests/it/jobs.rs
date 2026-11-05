@@ -850,3 +850,17 @@ fn corrupt_read_preserves_existing_pin_and_removes_entry_after_release() {
 fn vision_inference_uses_the_existing_process_job_stage() {
     assert_eq!(JobStage::from(ai::Stage::Vision), JobStage::Process);
 }
+
+#[test]
+fn import_jobs_expose_the_registered_probe_and_thumbnail_ids() {
+    for (kind, id) in [
+        (JobKind::Probe, "import.probe"),
+        (JobKind::Thumbnail, "import.thumbnail"),
+    ] {
+        assert_eq!(serde_json::to_value(kind).unwrap(), serde_json::json!(id));
+        assert_eq!(
+            serde_json::from_value::<JobKind>(serde_json::json!(id)).unwrap(),
+            kind
+        );
+    }
+}

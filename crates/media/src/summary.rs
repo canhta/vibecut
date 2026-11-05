@@ -102,18 +102,10 @@ fn classify(format: &str, has_video: bool, has_audio: bool) -> MediaKind {
     }
 }
 
-fn is_image_format(format: &str) -> bool {
+pub(crate) fn is_image_format(format: &str) -> bool {
     matches!(
         format,
-        "image2"
-            | "png_pipe"
-            | "jpeg_pipe"
-            | "mjpeg"
-            | "webp_pipe"
-            | "gif"
-            | "bmp_pipe"
-            | "tiff_pipe"
-            | "jpegls_pipe"
+        "png_pipe" | "jpeg_pipe" | "webp_pipe" | "gif" | "apng" | "bmp_pipe" | "tiff_pipe"
     )
 }
 
@@ -262,5 +254,36 @@ pub struct ImportedSource {
 impl ImportedSource {
     pub fn metadata(&self) -> Result<MediaMetadata> {
         MediaMetadata::from_probe(self.asset.probe())
+    }
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod tests {
+    use super::*;
+    #[test]
+    fn image_classification_retains_import_policy_demuxer_boundaries() {
+        for (format, image) in [
+            ("png_pipe", true),
+            ("jpeg_pipe", true),
+            ("gif", true),
+            ("apng", true),
+            ("mjpeg", false),
+            ("image2", false),
+        ] {
+            let asset = SourceAsset::try_from(crate::AssetData {
+                ephemeral: false,
+                id: crate::AssetId(1),
+                path: std::env::temp_dir().join("image-classification"),
+                content_hash: crate::ContentHash([0; 32]),
+                probe: SourceProbe {
+                    format: format.into(),
+                    duration: None,
+                    streams: Vec::new(),
+                },
+            })
+            .unwrap();
+            assert_eq!(asset.is_image(), image, "{format}");
+        }
     }
 }

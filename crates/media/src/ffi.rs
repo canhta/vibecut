@@ -83,6 +83,17 @@ pub(super) fn thread_and_limits(ctx: &mut ff::codec::context::Context) {
     }
 }
 
+/// Thumbnail/recovery decoding has one worker and at most two megapixels per
+/// native image/scratch allocation, independent of the general playback limit.
+pub(super) fn thumbnail_limits(ctx: &mut ff::codec::context::Context) {
+    // SAFETY: exclusive access to an unopened context; positive native bounds.
+    unsafe {
+        (*ctx.as_mut_ptr()).thread_count = 1;
+        (*ctx.as_mut_ptr()).thread_type = FF_THREAD_SLICE;
+        (*ctx.as_mut_ptr()).max_pixels = crate::thumbnail::MAX_SOURCE_PIXELS as i64;
+    }
+}
+
 pub(super) fn decoder_bounds(
     context: &mut ff::codec::context::Context,
     pixels: Option<u64>,
@@ -533,9 +544,17 @@ impl Scaler {
         }
     }
     pub fn rgba(&mut self, source: &ff::frame::Video) -> Result<ff::frame::Video> {
+        self.rgba_scaled(source, source.width(), source.height())
+    }
+    pub fn rgba_scaled(
+        &mut self,
+        source: &ff::frame::Video,
+        width: u32,
+        height: u32,
+    ) -> Result<ff::frame::Video> {
         let mut output = ff::frame::Video::empty();
-        output.set_width(source.width());
-        output.set_height(source.height());
+        output.set_width(width);
+        output.set_height(height);
         output.set_format(ff::format::Pixel::RGBA);
         copy_props(source, &mut output)?;
         // SAFETY: distinct live frames, source dimensions were admitted by decode;

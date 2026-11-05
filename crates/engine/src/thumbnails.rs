@@ -12,7 +12,7 @@ use time::Tick;
 
 const PROVIDER: &str = "vibecut";
 const MODEL: &str = "thumbnail";
-const VERSION: &str = "1";
+const VERSION: &str = "3";
 
 /// Canonical key for one decoded frame. `at == Tick::ZERO` means the first
 /// decodable frame.
@@ -38,15 +38,105 @@ pub fn thumbnail_key(content: ContentHash, at: Tick, max_edge: u32) -> Result<Ca
     })
 }
 
+/// Shared retained pixels and allowance for CPU image, upload staging and GPU
+/// texture. Cloning the handle never clones pixels or loses their accounting.
+#[derive(Clone)]
+pub struct RetainedThumbnail(std::sync::Arc<RetainedImage>);
+struct RetainedImage {
+    image: Thumbnail,
+    probe: media::SourceProbe,
+    _lease: crate::ByteLease,
+}
+impl std::fmt::Debug for RetainedThumbnail {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.0.image.fmt(f)
+    }
+}
+impl std::ops::Deref for RetainedThumbnail {
+    type Target = Thumbnail;
+    fn deref(&self) -> &Thumbnail {
+        &self.0.image
+    }
+}
+impl RetainedThumbnail {
+    /// True for clones of the same retained image, including its upload lease.
+    pub fn shares_pixels(&self, other: &Self) -> bool {
+        std::sync::Arc::ptr_eq(&self.0, &other.0)
+    }
+    /// Geometry follows pixels through memory-cache eviction, without host state.
+    pub fn probe(&self) -> &media::SourceProbe {
+        &self.0.probe
+    }
+    fn probe_bytes(probe: &media::SourceProbe) -> u64 {
+        (std::mem::size_of::<media::SourceProbe>()
+            + probe.format.capacity()
+            + probe.streams.capacity() * std::mem::size_of::<media::SourceStream>()
+            + probe
+                .streams
+                .iter()
+                .map(|stream| stream.codec.capacity())
+                .sum::<usize>()) as u64
+    }
+    /// The generator's temporary allocation belongs to its working allowance;
+    /// transfer to this lease before releasing that allowance.
+    pub fn new(image: Thumbnail, asset: &SourceAsset, budget: &ByteBudget) -> Result<Self> {
+        if image.width == 0
+            || image.height == 0
+            || image.width > THUMBNAIL_MAX_EDGE
+            || image.height > THUMBNAIL_MAX_EDGE
+            || u64::from(image.width) * u64::from(image.height) * 4 != image.pixels.len() as u64
+        {
+            return Err(EditError::Invalid("retained thumbnail geometry"));
+        }
+        let lease = budget.reserve(
+            crate::ByteOwner::DecodedFrames,
+            image.pixels.capacity() as u64
+                + image.pixels.len() as u64 * 3
+                + Self::probe_bytes(asset.probe()),
+        )?;
+        Ok(Self(std::sync::Arc::new(RetainedImage {
+            image,
+            probe: asset.probe().clone(),
+            _lease: lease,
+        })))
+    }
+}
+
 /// One exclusive thumbnail cache directory, reusing the engine artifact policy.
 pub struct ThumbnailCache {
     cache: ArtifactCache,
+    budget: ByteBudget,
 }
 
 impl ThumbnailCache {
     pub fn open(root: &Path, budget: ByteBudget, max_entries: usize) -> Result<Self> {
-        let (cache, _diagnostics) = ArtifactCache::open(root, budget, max_entries)?;
-        Ok(Self { cache })
+        let (cache, _diagnostics) = ArtifactCache::open(root, budget.clone(), max_entries)?;
+        Ok(Self { cache, budget })
+    }
+
+    // Geometry and pixels share an envelope and eviction lifetime: a surviving
+    // frame hit must never lose the metadata that prevents recovery re-decode.
+    fn unpack(bytes: &[u8], content: ContentHash) -> Option<(media::SourceProbe, &[u8])> {
+        if bytes.get(..8)? != b"VTCIMG03" {
+            return None;
+        }
+        let length = u32::from_le_bytes(bytes.get(8..12)?.try_into().ok()?) as usize;
+        if length > 1 << 20 {
+            return None;
+        }
+        let end = 12_usize.checked_add(length)?;
+        let asset: SourceAsset = serde_json::from_slice(bytes.get(12..end)?).ok()?;
+        if asset.content_hash() != content {
+            return None;
+        }
+        Some((media::AssetData::from(asset).probe, bytes.get(end..)?))
+    }
+    /// Validated metadata from the default first-frame thumbnail entry, without
+    /// decoding pixels. Host capabilities are always reopened on this machine.
+    pub fn get_probe(&mut self, content: ContentHash) -> Option<media::SourceProbe> {
+        let key = thumbnail_key(content, Tick::ZERO, THUMBNAIL_MAX_EDGE).ok()?;
+        let lease = self.cache.get(key).ok()??;
+        Self::unpack(lease.bytes(), content).map(|(probe, _)| probe)
     }
 
     /// A missing, corrupt or undecodable entry is `None`, never a partial image.
@@ -55,7 +145,7 @@ impl ThumbnailCache {
         asset: &SourceAsset,
         at: Tick,
         max_edge: u32,
-    ) -> Result<Option<Thumbnail>> {
+    ) -> Result<Option<RetainedThumbnail>> {
         let key = thumbnail_key(asset.content_hash(), at, max_edge)?;
         let lease = match self.cache.get(key) {
             Ok(lease) => lease,
@@ -65,10 +155,27 @@ impl ThumbnailCache {
         let Some(lease) = lease else {
             return Ok(None);
         };
-        let decoded = Thumbnail::decode(lease.bytes());
+        // Reserve the decoded image, CPU upload and GPU allowance before the
+        // payload decoder allocates pixels. The cache read lease stays pinned.
+        let Some((probe, payload)) = Self::unpack(lease.bytes(), asset.content_hash()) else {
+            return Ok(None);
+        };
+        let pixels = payload.len().saturating_sub(24) as u64;
+        let image_lease = self.budget.reserve(
+            crate::ByteOwner::DecodedFrames,
+            pixels * 4 + RetainedThumbnail::probe_bytes(&probe),
+        )?;
+        let decoded = Thumbnail::decode(payload);
         drop(lease);
         match decoded {
-            Ok(thumbnail) => Ok(Some(thumbnail)),
+            Ok(image) if image.width <= max_edge && image.height <= max_edge => Ok(Some(
+                RetainedThumbnail(std::sync::Arc::new(RetainedImage {
+                    image,
+                    probe,
+                    _lease: image_lease,
+                })),
+            )),
+            Ok(_) => Ok(None),
             // Replaced on the next successful put.
             Err(_) => Ok(None),
         }
@@ -82,7 +189,18 @@ impl ThumbnailCache {
         thumbnail: &Thumbnail,
     ) -> Result<()> {
         let key = thumbnail_key(asset.content_hash(), at, max_edge)?;
-        self.cache.put(key, &thumbnail.encode())
+        let metadata = serde_json::to_vec(asset)
+            .map_err(|_| EditError::Invalid("thumbnail probe metadata"))?;
+        if metadata.len() > 1 << 20 {
+            return Err(EditError::ArtifactTooLarge);
+        }
+        let image = thumbnail.encode();
+        let mut payload = Vec::with_capacity(12 + metadata.len() + image.len());
+        payload.extend_from_slice(b"VTCIMG03");
+        payload.extend_from_slice(&(metadata.len() as u32).to_le_bytes());
+        payload.extend_from_slice(&metadata);
+        payload.extend_from_slice(&image);
+        self.cache.put(key, &payload)
     }
 
     /// Cache hit without decoding; otherwise decode once and publish. The
@@ -93,13 +211,13 @@ impl ThumbnailCache {
         at: Tick,
         max_edge: u32,
         generate: impl FnOnce() -> media::Result<Thumbnail>,
-    ) -> Result<Thumbnail> {
+    ) -> Result<RetainedThumbnail> {
         if let Some(thumbnail) = self.get(asset, at, max_edge)? {
             return Ok(thumbnail);
         }
         let thumbnail = generate()?;
         self.put(asset, at, max_edge, &thumbnail)?;
-        Ok(thumbnail)
+        RetainedThumbnail::new(thumbnail, asset, &self.budget)
     }
 }
 
@@ -115,6 +233,7 @@ mod tests {
 
     fn sample_asset(id: u64, hash: u8) -> SourceAsset {
         SourceAsset::try_from(AssetData {
+            ephemeral: false,
             id: AssetId(id),
             path: std::path::PathBuf::from("C:/media/fixture.mp4"),
             content_hash: ContentHash([hash; 32]),
@@ -154,6 +273,53 @@ mod tests {
     }
 
     #[test]
+    fn retained_pixels_share_accounting_and_release_only_after_the_last_owner() {
+        let budget = ByteBudget::new(1 << 20).unwrap();
+        let asset = sample_asset(1, 7);
+        let image = RetainedThumbnail::new(thumbnail(), &asset, &budget).unwrap();
+        let charge = budget.snapshot().unwrap().used;
+        assert!(charge >= 32);
+        assert_eq!(image.probe(), asset.probe());
+        let ui = image.clone();
+        drop(image);
+        assert_eq!(budget.snapshot().unwrap().used, charge);
+        let pressure = budget.reserve(crate::ByteOwner::JobResults, (1 << 20) - charge + 1);
+        assert!(matches!(pressure, Err(EditError::BudgetFull)));
+        drop(ui);
+        assert_eq!(budget.snapshot().unwrap().used, 0);
+        assert!(
+            budget
+                .reserve(crate::ByteOwner::JobResults, 1 << 20)
+                .is_ok()
+        );
+    }
+
+    #[test]
+    fn cached_probe_keeps_metadata_and_excludes_host_capabilities() {
+        let directory = tempfile::tempdir().unwrap();
+        let mut cache =
+            ThumbnailCache::open(directory.path(), ByteBudget::new(1 << 20).unwrap(), 16).unwrap();
+        let asset = sample_asset(1, 7);
+        cache
+            .put(&asset, Tick::ZERO, THUMBNAIL_MAX_EDGE, &thumbnail())
+            .unwrap();
+        assert_eq!(
+            std::fs::read_dir(directory.path())
+                .unwrap()
+                .filter_map(|e| e.ok())
+                .filter(|e| e.file_name() != ".cache.lock")
+                .count(),
+            1,
+            "probe geometry and image must have one eviction lifetime"
+        );
+        assert_eq!(
+            cache.get_probe(asset.content_hash()),
+            Some(asset.probe().clone())
+        );
+        assert!(cache.get_probe(ContentHash([8; 32])).is_none());
+    }
+
+    #[test]
     fn key_binds_content_position_and_edge() {
         let content = ContentHash([1; 32]);
         let base = thumbnail_key(content, Tick::ZERO, 320).unwrap();
@@ -181,11 +347,11 @@ mod tests {
         let first = cache
             .get_or_generate(&asset, Tick::ZERO, 320, || generate(decodes.clone()))
             .unwrap();
-        assert_eq!(first, thumbnail());
+        assert_eq!(&*first, &thumbnail());
         let second = cache
             .get_or_generate(&asset, Tick::ZERO, 320, || generate(decodes.clone()))
             .unwrap();
-        assert_eq!(second, thumbnail());
+        assert_eq!(&*second, &thumbnail());
         assert_eq!(decodes.load(Ordering::SeqCst), 1);
         let changed = sample_asset(1, 8);
         cache
@@ -220,7 +386,7 @@ mod tests {
                 Ok(thumbnail())
             })
             .unwrap();
-        assert_eq!(recovered, thumbnail());
+        assert_eq!(&*recovered, &thumbnail());
         assert_eq!(decodes.load(Ordering::SeqCst), 1);
     }
 }

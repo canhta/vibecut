@@ -220,10 +220,7 @@ impl SourceAsset {
     /// Classifies supported image demuxers, including animated GIF/APNG,
     /// from the probed format rather than the filename.
     pub fn is_image(&self) -> bool {
-        matches!(
-            self.0.probe.format.as_str(),
-            "png_pipe" | "jpeg_pipe" | "webp_pipe" | "bmp_pipe" | "tiff_pipe" | "gif" | "apng"
-        )
+        crate::summary::is_image_format(&self.0.probe.format)
     }
     pub fn id(&self) -> AssetId {
         self.0.id
@@ -259,19 +256,29 @@ impl SourceAsset {
         path: PathBuf,
         cancelled: Arc<AtomicBool>,
     ) -> Result<crate::summary::ImportedSource> {
+        Self::import_prepared(id, path, cancelled, |_| None).map(|(imported, _)| imported)
+    }
+    /// Hash first, then reuse content-keyed probe geometry if available. A cold
+    /// geometry recovery returns its thumbnail so callers never decode it twice.
+    /// Cached metadata must have been validated by SourceAsset's constructor.
+    pub fn import_prepared(
+        id: AssetId,
+        path: PathBuf,
+        cancelled: Arc<AtomicBool>,
+        cached: impl FnOnce(ContentHash) -> Option<SourceProbe>,
+    ) -> Result<(crate::ImportedSource, Option<crate::Thumbnail>)> {
         if cancelled.load(Ordering::Relaxed) {
             return Err(MediaError::Cancelled);
         }
         let path = std::fs::canonicalize(path)?;
-        let reader = crate::PacketReader::open_with_cancel(&path, cancelled.clone())?;
-        let probe = SourceProbe::from(reader.probe());
-        let capabilities = crate::summary::ProbeCapabilities::from_probe(reader.probe());
-        drop(reader);
-        if cancelled.load(Ordering::Relaxed) {
-            return Err(MediaError::Cancelled);
-        }
         let content_hash =
             ContentHash::read_with_cancel(&path, || cancelled.load(Ordering::Relaxed))?;
+        let known = cached(content_hash);
+        let mut reader =
+            crate::PacketReader::open_prepared(&path, cancelled.clone(), u64::MAX, known.as_ref())?;
+        let probe = SourceProbe::from(reader.probe());
+        let capabilities = crate::ProbeCapabilities::from_probe(reader.probe());
+        let recovered = reader.recovered_thumbnail.take();
         let asset = Self::try_from(AssetData {
             ephemeral: false,
             id,
@@ -279,10 +286,13 @@ impl SourceAsset {
             content_hash,
             probe,
         })?;
-        Ok(crate::summary::ImportedSource {
-            asset,
-            capabilities,
-        })
+        Ok((
+            crate::ImportedSource {
+                asset,
+                capabilities,
+            },
+            recovered,
+        ))
     }
     /// A successful relink preserves identity and only accepts identical content.
     pub fn relink(&self, path: PathBuf) -> Result<Self> {

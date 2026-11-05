@@ -5,7 +5,7 @@
     clippy::panic,
     clippy::indexing_slicing
 )]
-mod common;
+use super::common;
 
 use media::{
     Decodability, MediaKind, MediaMetadata, PacketReader, ProbeCapabilities, SourceAsset,
@@ -363,9 +363,9 @@ fn probe_and_thumbnail_read_a_bounded_prefix_of_a_large_file() {
     assert!(thumbnail.width <= THUMBNAIL_MAX_EDGE);
     assert!(thumbnail.height <= THUMBNAIL_MAX_EDGE);
     assert!(thumbnail.pixels.len() <= (THUMBNAIL_MAX_EDGE * THUMBNAIL_MAX_EDGE * 4) as usize);
-    // The documented memory bound: one decoded source frame plus one thumbnail.
-    let frame_bytes = 1280_u64 * 720 * 4;
-    assert!(frame_bytes + thumbnail.pixels.len() as u64 <= 2 * frame_bytes);
+    // Source/native allocations are admitted separately; packed output is bounded
+    // independently of input file length. Peak RSS is measured in the fix receipt.
+    assert!(thumbnail.pixels.len() <= 320 * 320 * 4);
 }
 
 #[test]
@@ -393,4 +393,46 @@ fn imported_source_metadata_survives_project_round_trip_without_transient_state(
         !String::from_utf8_lossy(&bytes).contains("capabilities"),
         "transient decode state leaked into the asset"
     );
+}
+
+#[test]
+fn thumbnail_native_geometry_boundary_uses_small_output_or_a_typed_refusal() {
+    for (width, admitted) in [(2048, true), (2049, false)] {
+        let name = format!("thumbnail-native-bound-{width}.jpg");
+        let input = format!("color=blue:size={width}x1024,format=yuv444p");
+        let Some(path) = common::generate(
+            "thumbnail native bounds",
+            &name,
+            &[
+                "-f",
+                "lavfi",
+                "-i",
+                &input,
+                "-frames:v",
+                "1",
+                "-c:v",
+                "mjpeg",
+                "-pix_fmt",
+                "yuvj444p",
+            ],
+        ) else {
+            return;
+        };
+        let result = thumbnail_at_with_read_bytes(
+            &path,
+            Tick::ZERO,
+            THUMBNAIL_MAX_EDGE,
+            std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
+        );
+        if admitted {
+            let (image, _) = result.unwrap();
+            assert_eq!((image.width, image.height), (320, 160));
+            assert_eq!(image.pixels.len(), 320 * 160 * 4);
+        } else {
+            assert!(
+                matches!(result, Err(media::MediaError::TooLarge(_))),
+                "{result:?}"
+            );
+        }
+    }
 }

@@ -471,6 +471,17 @@ a miss; corrupt envelopes or payloads count as misses and regenerate. The CLI's
 maps capabilities to its localized `probing`/`ready`/`unsupported` badges and
 keeps a placeholder when thumbnail generation fails.
 
+`thumbnails::RetainedThumbnail` shares pixels through an Arc and holds the
+aggregate `DecodedFrames` allowance until the last owner drops. It reserves
+four RGBA byte counts for packed pixels, egui CPU image, upload staging and GPU
+texture, plus the retained probe metadata allocation; app owners keep that
+handle while any texture is retained. Geometry follows pixels in memory too,
+so disk eviction or a session-only cache cannot trigger recovery decode on a hit.
+`ThumbnailCache` keeps validated source probe metadata in the same content-keyed
+envelope as pixels, so eviction cannot leave a frame hit requiring recovery
+decode. It never caches machine capabilities. A warm image import can reuse
+geometry before opening a recovery decoder. Cache payloads remain disposable.
+
 ## Reuse and ASR checkpoints
 
 `cache::CacheKey::new(KeyInputs)` hashes versioned, length-delimited BLAKE3 inputs.
