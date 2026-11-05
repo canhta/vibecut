@@ -504,9 +504,54 @@ fn mac_package(
     Ok(())
 }
 pub(super) fn staple(tools: &mut Tools, path: &Path) -> Result<()> {
-    run!(tools, "xcrun", "stapler", "staple", path)?;
-    run!(tools, "xcrun", "stapler", "validate", path)?;
-    Ok(())
+    stapler_with_wait(tools, "staple", path, std::thread::sleep)?;
+    validate_staple(tools, path)
+}
+pub(super) fn validate_staple(tools: &mut Tools, path: &Path) -> Result<()> {
+    stapler_with_wait(tools, "validate", path, std::thread::sleep)
+}
+fn stapler_with_wait(
+    tools: &mut Tools,
+    operation: &str,
+    path: &Path,
+    mut wait: impl FnMut(Duration),
+) -> Result<()> {
+    let deadline = Instant::now() + Duration::from_secs(180);
+    for (attempt, delay) in [0, 10, 20, 30, 50, 60].into_iter().enumerate() {
+        let remaining = deadline.saturating_duration_since(Instant::now());
+        let delay = Duration::from_secs(delay);
+        if remaining <= delay {
+            break;
+        }
+        if !delay.is_zero() {
+            wait(delay);
+        }
+        let remaining = deadline.saturating_duration_since(Instant::now());
+        if remaining.is_zero() {
+            break;
+        }
+        let mut command = Command::new("xcrun");
+        command.args([arg("stapler"), arg(operation), arg(path)]);
+        command.current_dir(&tools.root);
+        let captured = tools.execute(&mut command, remaining.min(Duration::from_secs(30)))?;
+        if captured.code == Some(0) {
+            return Ok(());
+        }
+        // EX_NOHOST covers unavailable tickets/unexpected ticket-service replies.
+        // Invalid/revoked signatures, unsupported files and write errors fail now.
+        if captured.code != Some(68) {
+            return Err(format!(
+                "stapler {operation} failed ({:?}); native diagnostics suppressed",
+                captured.code
+            ));
+        }
+        if attempt < 5 {
+            eprintln!("stapler {operation}: ticket lookup unavailable; bounded retry");
+        }
+    }
+    Err(format!(
+        "stapler {operation}: ticket lookup unavailable after bounded retries; native diagnostics suppressed"
+    ))
 }
 fn windows_package(
     tools: &mut Tools,
@@ -604,6 +649,36 @@ fn windows_package(
 #[allow(clippy::wildcard_imports)]
 mod tests {
     use super::*;
+    #[test]
+    fn ticket_lookup_retries_are_bounded_and_do_not_retry_invalid_data() {
+        for operation in ["staple", "validate"] {
+            for (codes, expected_success, expected_delays) in [
+                (vec![68, 68, 0], true, vec![10, 20]),
+                (vec![68; 6], false, vec![10, 20, 30, 50, 60]),
+                (vec![65], false, vec![]),
+            ] {
+                let mut tools = Tools::new(Path::new("."));
+                let mut codes = std::collections::VecDeque::from(codes);
+                tools.runner = Box::new(move |_, _| {
+                    Ok(Captured {
+                        code: codes.pop_front(),
+                        stdout: "PRIVATE-STDOUT".into(),
+                        stderr: "PRIVATE-STDERR".into(),
+                    })
+                });
+                let mut delays = Vec::new();
+                let result =
+                    stapler_with_wait(&mut tools, operation, Path::new("private.app"), |delay| {
+                        delays.push(delay.as_secs())
+                    });
+                assert_eq!(result.is_ok(), expected_success);
+                assert_eq!(delays, expected_delays);
+                if let Err(error) = result {
+                    assert!(!error.contains("PRIVATE"));
+                }
+            }
+        }
+    }
     fn sdk(root: &Path) -> PathBuf {
         let prefix = root.join("prefix");
         fs::create_dir_all(prefix.join("compliance")).expect("licenses");

@@ -1,5 +1,6 @@
 #[allow(clippy::wildcard_imports)]
 use super::*;
+use std::collections::BTreeSet;
 
 const REQUIRED: [&str; 6] = [
     "MACOS_CERT_P12",
@@ -329,14 +330,14 @@ pub(super) fn package(tools: &mut Tools, request: &package::Request) -> Result<(
     })
 }
 pub(super) fn notarize(tools: &mut Tools, path: &Path, config: &Config) -> Result<()> {
-    let mut args = vec![arg("notarytool"), arg("submit"), arg(path)];
+    let mut credentials = Vec::new();
     match config
         .notary
         .as_ref()
         .ok_or("notarization credentials missing")?
     {
-        Notary::Profile(profile) => args.extend([arg("--keychain-profile"), arg(profile)]),
-        Notary::Key { file, id, issuer } => args.extend([
+        Notary::Profile(profile) => credentials.extend([arg("--keychain-profile"), arg(profile)]),
+        Notary::Key { file, id, issuer } => credentials.extend([
             arg("--key"),
             arg(file),
             arg("--key-id"),
@@ -345,13 +346,78 @@ pub(super) fn notarize(tools: &mut Tools, path: &Path, config: &Config) -> Resul
             arg(issuer),
         ]),
     };
+    let mut args = vec![arg("notarytool"), arg("submit"), arg(path)];
+    args.extend(credentials.clone());
     args.extend([arg("--wait"), arg("--output-format"), arg("json")]);
-    let output: Value = serde_json::from_str(&tools.run("xcrun", args)?)
-        .map_err(|_| "invalid notarization receipt")?;
-    if field(&output, "/status") != "Accepted" {
-        return Err("notarization refused; inspect the submission using notarytool log".into());
+    let mut command = Command::new("xcrun");
+    command.args(args).current_dir(&tools.root);
+    let result = tools.execute(&mut command, Duration::from_secs(1800))?;
+    let output: Value = serde_json::from_str(&result.stdout).unwrap_or(Value::Null);
+    if result.code == Some(0) && field(&output, "/status") == "Accepted" {
+        eprintln!("notarytool: Accepted");
+        return Ok(());
     }
-    Ok(())
+    let id = field(&output, "/id").as_str().unwrap_or("");
+    let log = if id.len() == 36
+        && id
+            .bytes()
+            .all(|byte| byte.is_ascii_hexdigit() || byte == b'-')
+    {
+        let mut command = Command::new("xcrun");
+        command.args([arg("notarytool"), arg("log"), arg(id)]);
+        command.args(credentials).args(["--output-format", "json"]);
+        command.current_dir(&tools.root);
+        tools
+            .execute(&mut command, Duration::from_secs(180))
+            .ok()
+            .filter(|captured| captured.code == Some(0))
+            .and_then(|captured| serde_json::from_str::<Value>(&captured.stdout).ok())
+            .unwrap_or(Value::Null)
+    } else {
+        Value::Null
+    };
+    Err(format!(
+        "notarization refused (exit {:?}; {}); private submission details suppressed",
+        result.code,
+        notary_diagnostic(&log)
+    ))
+}
+fn notary_diagnostic(log: &Value) -> String {
+    // Emit only fixed categories and numeric codes, never Apple's free text,
+    // submission identifiers, signing identities, paths or signed URLs.
+    let mut categories = BTreeSet::new();
+    let messages = std::iter::once(field(log, "/statusSummary")).chain(
+        log.get("issues")
+            .and_then(Value::as_array)
+            .into_iter()
+            .flatten()
+            .map(|issue| field(issue, "/message")),
+    );
+    for message in messages {
+        let message = message.as_str().unwrap_or("").to_ascii_lowercase();
+        for (needle, category) in [
+            ("not yet configured for notarization", "team-not-configured"),
+            ("developer id", "developer-id-certificate"),
+            ("signature", "code-signature"),
+            ("hardened runtime", "hardened-runtime"),
+            ("timestamp", "secure-timestamp"),
+            ("sdk", "sdk-version"),
+        ] {
+            if message.contains(needle) {
+                categories.insert(category);
+            }
+        }
+    }
+    let code = log
+        .get("statusCode")
+        .and_then(Value::as_i64)
+        .map_or_else(|| "unknown".to_owned(), |code| code.to_string());
+    let categories = if categories.is_empty() {
+        "unclassified".to_owned()
+    } else {
+        categories.into_iter().collect::<Vec<_>>().join(",")
+    };
+    format!("Apple statusCode {code}; categories {categories}")
 }
 pub(super) fn run(tools: &mut Tools, args: &[String]) -> Result<()> {
     match args
@@ -385,6 +451,32 @@ pub(super) fn run(tools: &mut Tools, args: &[String]) -> Result<()> {
 #[allow(clippy::wildcard_imports)]
 mod tests {
     use super::*;
+    #[test]
+    fn rejected_submission_fetches_only_safe_diagnostic_categories() {
+        let mut tools = Tools::new(Path::new("."));
+        tools.runner = Box::new(|command, _| {
+            let log = command.get_args().nth(1) == Some(OsStr::new("log"));
+            Ok(Captured {
+                code: Some(if log { 0 } else { 68 }),
+                stdout: if log {
+                    json!({"statusCode":7000,"statusSummary":"Team is not yet configured for notarization PRIVATE-TEAM","issues":[{"path":"PRIVATE-PATH","message":"PRIVATE-MESSAGE"}]}).to_string()
+                } else {
+                    json!({"id":"00000000-0000-0000-0000-000000000001","status":"Invalid","private":"PRIVATE-SUBMISSION"}).to_string()
+                },
+                stderr: "PRIVATE-STDERR".into(),
+            })
+        });
+        let config = Config {
+            identity: "PRIVATE-IDENTITY".into(),
+            installer: None,
+            notary: Some(Notary::Profile("PRIVATE-PROFILE".into())),
+        };
+        let error = notarize(&mut tools, Path::new("PRIVATE-ARCHIVE"), &config).unwrap_err();
+        assert!(error.contains("7000"));
+        assert!(error.contains("team-not-configured"));
+        assert!(!error.contains("PRIVATE"));
+        assert_eq!(tools.commands.len(), 2);
+    }
     #[test]
     fn missing_secrets_name_fields_without_values() {
         let env = BTreeMap::from([("APPLE_API_KEY_P8".into(), "synthetic private key".into())]);

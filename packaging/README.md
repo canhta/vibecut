@@ -106,6 +106,12 @@ and staples the app before sealing the DMG, then signs/notarizes/staples the ima
 `Accepted`, code-signature verification, staples and Gatekeeper assessments are
 mandatory. An unsigned `.pkg` is only a local-test artifact.
 
+Notarization failures fetch Apple's submission log before credential cleanup,
+reporting only numeric status codes and fixed diagnostic categories. Stapling and
+validation retry ticket-service exit 68 up to six times within three minutes per
+operation; other failures stop immediately. This bounded lookup retry never
+substitutes for an Accepted submission or successful ticket validation.
+
 Windows signing uses `VIBECUT_WINDOWS_CERT_SHA1` and
 `VIBECUT_WINDOWS_TIMESTAMP_URL`, signs DLLs, CLI, app and installer scripts, and
 verifies them with SignTool/PowerShell. Certificate acquisition remains with the

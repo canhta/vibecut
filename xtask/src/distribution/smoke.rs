@@ -49,7 +49,7 @@ fn verify_signed(tools: &mut Tools, app: &Path) -> Result<()> {
         "--verbose",
         app
     )?;
-    run!(tools, "xcrun", "stapler", "validate", app)?;
+    package::validate_staple(tools, app)?;
     Ok(())
 }
 pub(super) fn run(tools: &mut Tools, o: &Options) -> Result<()> {
@@ -280,7 +280,7 @@ pub(super) fn install(tools: &mut Tools, o: &Options) -> Result<()> {
     let file = packages.first().ok_or("download missing")?;
     if tools.host == Host::Mac && o.has("--signed") {
         run!(tools, "codesign", "--verify", "--strict", file)?;
-        run!(tools, "xcrun", "stapler", "validate", file)?;
+        package::validate_staple(tools, file)?;
         run!(
             tools,
             "spctl",
