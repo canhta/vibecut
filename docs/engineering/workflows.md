@@ -65,8 +65,9 @@ contract): its C++ build currently resolves libc++'s `<version>` include to the
 source archive's `VERSION` file on case-insensitive filesystems. This upstream
 limitation is excluded through configuration, not a source patch.
 For Windows workspace checks, `xtask` also appends AMX intrinsic include guards to
-`BINDGEN_EXTRA_CLANG_ARGS` (including its native target-specific variants), keeping
-caller arguments. This avoids bindgen's invalid packed/aligned tile representation
+`BINDGEN_EXTRA_CLANG_ARGS` for the native Windows target. It merges caller
+arguments from the general, underscore-target and hyphen-target forms in that order,
+then appends the guards in the preferred hyphen-target variable. This avoids bindgen's invalid packed/aligned tile representation
 without changing the native FFmpeg build or its public layouts. The dependent AMX
 headers are excluded together; remove this configuration when the upstream bindings
 handle those vector layouts.
