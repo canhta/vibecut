@@ -47,6 +47,19 @@ jobs:
 
   lint:
     needs: changes
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - run: rustup toolchain install
+      - name: Check formatting and repository policy
+        run: cargo xtask checks
+
+  test:
+    name: test (macos-arm64)
+    needs: changes
     if: needs.changes.outputs.docs-only != 'true'
     runs-on: macos-latest
     timeout-minutes: 45
@@ -55,59 +68,14 @@ jobs:
         with:
           persist-credentials: false
       - uses: ./.github/actions/setup-build
-      - run: cargo xtask lint
-
-  test-build:
-    name: build tests (macos-arm64)
-    needs: changes
-    if: needs.changes.outputs.docs-only != 'true'
-    runs-on: macos-latest
-    timeout-minutes: 60
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - uses: ./.github/actions/setup-build
         with:
           save-rust-cache: 'true'
-      - uses: ./.github/actions/setup-nextest
-      - run: cargo xtask archive nextest.tar.zst
-      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: tests-macos-arm64
-          path: nextest.tar.zst
-          compression-level: 0
-          retention-days: 1
-          if-no-files-found: error
-      - run: brew install ffmpeg
-      # Nextest does not execute doctests; retain cargo test's coverage here.
-      - run: cargo xtask doctest
-
-  test:
-    name: test (macos-arm64, ${{ matrix.partition }}/3)
-    needs: test-build
-    strategy:
-      fail-fast: false
-      matrix:
-        partition: [1, 2, 3]
-    runs-on: macos-latest
-    timeout-minutes: 30
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - uses: ./.github/actions/setup-build
-        with:
-          rust-cache: 'false'
-      - uses: ./.github/actions/setup-nextest
-      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
-        with:
-          name: tests-macos-arm64
-      - run: brew install ffmpeg
-      - name: Run archived partition with required oracles
-        env:
-          PARTITION: count:${{ matrix.partition }}/3
-        run: cargo xtask test-shard nextest.tar.zst "$PARTITION"
+      - name: Install required media oracles
+        run: brew install ffmpeg
+      - name: Check Clippy
+        run: cargo xtask clippy
+      - name: Build and run workspace tests with required oracles
+        run: cargo xtask test
 
   windows:
     name: test (windows-x64, advisory)
@@ -123,7 +91,6 @@ jobs:
       - uses: ./.github/actions/setup-build
         with:
           save-rust-cache: 'true'
-      - uses: ./.github/actions/setup-nextest
       - name: Install required media oracles
         if: inputs.require-oracles
         run: choco install ffmpeg -y --no-progress
@@ -141,14 +108,14 @@ jobs:
   gate:
     name: CI gate
     if: always()
-    needs: [changes, docs, lint, test-build, test]
+    needs: [changes, docs, lint, test]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - name: Require every selected check and partition
+      - name: Require every selected check
         env:
           NEEDS_JSON: ${{ toJSON(needs) }}
         run: python3 .github/scripts/gate.py

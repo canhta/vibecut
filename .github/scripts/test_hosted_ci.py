@@ -32,10 +32,6 @@ class HostedCiTest(unittest.TestCase):
              [0, ci.QUEUE_LIMIT], 2, 'fallback: run locally', 'https://example.invalid/1'),
             ('queued macOS', [[run(status='in_progress')]],
              [0, ci.QUEUE_LIMIT], 2, 'fallback: run locally', 'https://example.invalid/1'),
-            ('queued shard after builder', [[run(status='in_progress')]],
-             [0, ci.QUEUE_LIMIT], 2, 'fallback: run locally', 'https://example.invalid/1'),
-            ('running shards', [[run(status='in_progress')], [run(status='in_progress')], [run('success')]],
-             [0, 0, ci.QUEUE_LIMIT + 1, ci.QUEUE_LIMIT + 2], 0, 'pass:', 'https://example.invalid/1'),
             ('running macOS', [[run(status='in_progress')], [run(status='in_progress')], [run('success')]],
              [0, 0, ci.QUEUE_LIMIT + 1, ci.QUEUE_LIMIT + 2], 0, 'pass:', 'https://example.invalid/1'),
             ('API error', None, [0], 1, 'cannot inspect hosted CI', ''),
@@ -51,12 +47,7 @@ class HostedCiTest(unittest.TestCase):
                     if command[2] == 'list':
                         self.assertEqual(command[command.index('--commit') + 1], SHA)
                         return json.dumps(next(responses))
-                    if name in ('queued shard after builder', 'running shards'):
-                        return json.dumps({'jobs': [
-                            {'name': 'build tests (macos-arm64)', 'status': 'completed'},
-                            {'name': 'test (macos-arm64, 2/3)',
-                             'status': 'in_progress' if name == 'running shards' else 'queued'}]})
-                    return json.dumps({'jobs': [{'name': 'build tests (macos-arm64)',
+                    return json.dumps({'jobs': [{'name': 'test (macos-arm64)',
                                       'status': 'in_progress' if name == 'running macOS' else 'queued'}]})
                 with patch.object(ci.sys, 'argv', ['hosted-ci', SHA]), \
                      patch.object(ci.subprocess, 'check_output', side_effect=output), \

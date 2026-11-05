@@ -9,13 +9,12 @@ class GateTest(unittest.TestCase):
     def test_selected_checks_fail_closed(self):
         for docs_only in (True, False):
             needs = {name: {'result': 'success'} for name in
-                     ('changes', 'docs', 'lint', 'test-build', 'test')}
+                     ('changes', 'docs', 'lint', 'test')}
             needs['changes']['outputs'] = {'docs-only': str(docs_only).lower()}
             if docs_only:
-                for name in ('lint', 'test-build', 'test'):
-                    needs[name]['result'] = 'skipped'
+                needs['test']['result'] = 'skipped'
             cases = [('green', needs, True)]
-            for name in ('changes', 'docs') if docs_only else tuple(needs):
+            for name in ('changes', 'docs', 'lint') if docs_only else tuple(needs):
                 for result in ('failure', 'cancelled', 'skipped', None):
                     value = json.loads(json.dumps(needs))
                     if result is None:

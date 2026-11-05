@@ -5,7 +5,7 @@ inputs:
     description: Restore Rust build dependencies (disable for archive-only runners)
     default: 'true'
   save-rust-cache:
-    description: Save only after a successful full workspace build
+    description: Save after successful Clippy and workspace tests
     default: 'false'
 outputs:
   rust-hit:
@@ -28,14 +28,10 @@ runs:
       uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
       with:
         # Replace the automatic job key: lint/build/release can reuse main's deps.
-        shared-key: deps-v2-${{ runner.os }}-${{ runner.arch }}
+        shared-key: deps-v3-${{ runner.os }}-${{ runner.arch }}
         # A tooling-only or metadata-only snapshot would leave an immutable
         # exact-hit cache missing compiled dependencies for every later build.
         save-if: ${{ inputs.save-rust-cache == 'true' && github.event_name != 'pull_request' }}
-    - name: Install macOS media build tools
-      if: runner.os == 'macOS'
-      shell: bash
-      run: brew install cmake pkgconf nasm
     - name: Install Windows source build tools
       if: runner.os == 'Windows'
       uses: msys2/setup-msys2@ec48f7c5447b3140e2b088413ae3a55687bccb6e # v2.33.0
@@ -55,6 +51,10 @@ runs:
       with:
         path: ~/.cache/vibecut/ffmpeg
         key: media-${{ runner.os }}-${{ runner.arch }}-${{ steps.versions.outputs.key }}-${{ hashFiles('xtask/src/ffmpeg.rs', 'xtask/patches/**', 'rust-toolchain.toml') }}
+    - name: Install macOS media build tools
+      if: runner.os == 'macOS' && steps.media.outputs.cache-hit != 'true'
+      shell: bash
+      run: brew install cmake pkgconf nasm
     - name: Resolve and provision current LGPL media libraries (macOS)
       # Always resolve stable upstream tags, even after a cache hit.
       if: runner.os == 'macOS'

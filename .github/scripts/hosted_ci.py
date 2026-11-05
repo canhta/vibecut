@@ -36,9 +36,8 @@ def wait(sha):
                 print(f"{'pass' if passed else 'fail'}: {sha} ({run['conclusion']}) {url}")
                 return 0 if passed else 1
             jobs = gh('run', 'view', str(run['databaseId']), '--json', 'jobs')['jobs']
-            # Count queued macOS work even after the archive builder completes.
-            macos = [job for job in jobs if job['name'] in ('lint', 'build tests (macos-arm64)')
-                     or job['name'].startswith('test (macos-arm64, ')]
+            # Ubuntu policy jobs do not consume the native runner queue budget.
+            macos = [job for job in jobs if job['name'] == 'test (macos-arm64)']
             waiting = not macos or any(job['status'] not in ('in_progress', 'completed') for job in macos)
         else:
             waiting = True

@@ -1,9 +1,0 @@
-name: Install nextest
-description: Use the same checksum-verified test runner for archive creation and execution
-runs:
-  using: composite
-  steps:
-    - uses: taiki-e/install-action@c509219cf42fba86913069efd0ade2458c59337b # v2.90.1
-      with:
-        tool: cargo-nextest@0.9.151
-        fallback: none

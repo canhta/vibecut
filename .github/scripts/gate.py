@@ -5,9 +5,9 @@ import os
 
 def main():
     needs = json.loads(os.environ['NEEDS_JSON'])
-    required = ['changes', 'docs']
+    required = ['changes', 'docs', 'lint']
     if needs.get('changes', {}).get('outputs', {}).get('docs-only') != 'true':
-        required += ['lint', 'test-build', 'test']
+        required += ['test']
     failures = [name for name in required if needs.get(name, {}).get('result') != 'success']
     if failures:
         raise SystemExit('Required checks did not succeed: ' + ', '.join(failures))

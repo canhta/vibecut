@@ -76,11 +76,11 @@ handle those vector layouts.
 
 Pushes to `main`, `canhta/**` and `feat/**`, and pull requests run CI with read-only repository permissions.
 Require the stable `CI gate` status in branch protection. `ci.yml` (`CI`) runs
-`docs` on every change; Markdown/`docs/`-only diffs stop there. Rust changes also
-run `lint` alongside a single Apple Silicon `macos-latest` test archive build.
-Three `test (macos-arm64, N/3)` runners execute disjoint nextest count partitions
-from that archive with required oracles; doctests run on the archive builder.
-`gate` fails closed if any selected job or partition fails, cancels or skips.
+Ubuntu `docs` and `lint` (fmt and repository policy) on every change;
+Markdown/`docs/`-only branches stop there. Code changes also run one Apple Silicon
+`test (macos-arm64)` job: Clippy, then workspace tests including doctests, sharing
+the same target tree and native setup. No archive upload/download or extra macOS
+runner is needed. `gate` fails closed if any selected job fails, cancels or skips.
 Windows runs as an advisory check until its runtime is in scope.
 Superseded PR and ticket-branch runs cancel per branch; main pushes finish.
 Ticket pushes classify the whole branch diff against its merge-base with
@@ -91,21 +91,20 @@ so ticket runs can restore default-branch caches. Fork PRs use `pull_request`, n
 as described in [contributing](../../CONTRIBUTING.md).
 
 The shared native setup uses `Swatinem/rust-cache` with an explicit shared key
-across build/lint/release jobs. Only successful full workspace producers save
-Rust caches; lint and media-only setup restore them without writing incomplete
-immutable snapshots. Its environment/manifest hash includes the Rust
+across native test/release jobs. Only successful full workspace producers that
+run Clippy and tests save Rust caches; media-only setup restores without writing
+incomplete immutable snapshots. Its environment/manifest hash includes the Rust
 compiler, lockfile, target environment and configuration, with OS/architecture
 separation. GitHub permits ticket branches to restore main's caches, but main
 cannot restore sibling ticket caches. Native LGPL FFmpeg is keyed by resolved
-FFmpeg/Opus/libvpx versions plus recipe/patch/toolchain/setup hashes and platform,
+FFmpeg/Opus/libvpx versions plus recipe/patch/toolchain hashes and platform,
 with no date or stale-prefix fallback. Provisioning always resolves stable upstream
 tags, including after a cache hit, and saves successful native builds before
 later checks can fail. Media input fixtures are keyed by their owning generator
 (`crates/media/tests/`); generated render outputs are not cached.
-Nextest 0.9.151 is installed from checksum-verified upstream binaries through the
-shared setup action. Archive runners restore only native/fixture caches; they do
-not compile the test suite again. CI cache receipts report exact hits in logs and
-step summaries. The manual media-dependencies workflow warms the same
+Native cache hits skip installation of source-build-only macOS tools. CI cache
+receipts report exact hits in logs and step summaries.
+The manual media-dependencies workflow warms the same
 cache and retains source/recipe archives.
 
 Release and media/render dispatches set the `require-oracles` input: CI installs
