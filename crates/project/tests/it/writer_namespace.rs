@@ -10,6 +10,24 @@ fn project(name: &str) -> Project {
 fn seed(path: &Path, name: &str) {
     fs::write(path, encode(&project(name), true).unwrap()).unwrap();
 }
+/// A held writer-control file is exclusively locked on Windows, so its bytes
+/// cannot be read through another handle. Metadata still detects a replacement
+/// or write while the lease is live; Unix reads the exact bytes.
+fn control_bytes(path: &Path) -> Vec<u8> {
+    #[cfg(windows)]
+    {
+        assert_eq!(
+            fs::metadata(path).unwrap().len(),
+            0,
+            "writer control file changed while leased"
+        );
+        Vec::new()
+    }
+    #[cfg(not(windows))]
+    {
+        fs::read(path).unwrap()
+    }
+}
 
 #[test]
 fn save_as_must_not_replace_another_live_projects_lock_file() {
@@ -21,13 +39,13 @@ fn save_as_must_not_replace_another_live_projects_lock_file() {
     let _held = WriterLease::acquire(&target).unwrap();
     let mut other_writer = WriterLease::acquire(&other).unwrap();
     let lock_path = root.path().join(".target.vibecut.lock");
-    let before = fs::read(&lock_path).unwrap();
+    let before = control_bytes(&lock_path);
     assert!(matches!(
         other_writer.save_as(&lock_path, &project("save-as destination")),
         Err(Error::Unsupported(_))
     ));
     assert!(matches!(WriterLease::acquire(&target), Err(Error::Busy)));
-    assert_eq!(fs::read(&lock_path).unwrap(), before);
+    assert_eq!(control_bytes(&lock_path), before);
     assert_eq!(other_writer.load().unwrap().project, project("other"));
     assert!(!root.path().join("..target.vibecut.lock.lock").exists());
 }
@@ -148,7 +166,7 @@ fn replaced_sidecar_invalidates_the_old_lease_even_when_both_files_stay_regular(
     seed(&target, "target");
     let mut old = WriterLease::acquire(&target).unwrap();
     let control = root.path().join(".target.vibecut.lock");
-    let bytes = fs::read(&control).unwrap();
+    let bytes = control_bytes(&control);
     let replacement = root.path().join("foreign-replacement");
     fs::write(&replacement, &bytes).unwrap();
     match fs::rename(&replacement, &control) {
@@ -204,12 +222,12 @@ fn shared_atomic_publication_cannot_overwrite_writer_control_files() {
     seed(&target, "target");
     let _held = WriterLease::acquire(&target).unwrap();
     let control = root.path().join(".target.vibecut.lock");
-    let before = fs::read(&control).unwrap();
+    let before = control_bytes(&control);
     assert!(matches!(
         project::atomic_write(&control, b"data"),
         Err(Error::Unsupported(_))
     ));
-    assert_eq!(fs::read(&control).unwrap(), before);
+    assert_eq!(control_bytes(&control), before);
     assert!(matches!(WriterLease::acquire(&target), Err(Error::Busy)));
     #[cfg(unix)]
     {

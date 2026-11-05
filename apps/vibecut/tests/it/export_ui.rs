@@ -10,7 +10,6 @@ use media::{
 };
 use project::{ItemParams, Project, ProjectId};
 use std::{
-    path::PathBuf,
     sync::{Arc, Condvar, Mutex, mpsc},
     time::{Duration, Instant},
 };
@@ -35,7 +34,7 @@ fn project(empty: bool, source: bool) -> Project {
             SourceAsset::try_from(AssetData {
                 ephemeral: false,
                 id: AssetId(1),
-                path: PathBuf::from("/nonexistent-vibecut-export-source/video.mp4"),
+                path: std::env::temp_dir().join("vibecut-export-missing/video.mp4"),
                 content_hash: ContentHash::from_bytes(b"source"),
                 probe: SourceProbe {
                     format: "mp4".into(),
