@@ -4,3 +4,4 @@ xtask/patches/*.patch text eol=lf
 # Tests compare these generated files byte-for-byte with in-process output.
 crates/engine/catalog.digest text eol=lf
 docs/engineering/commands.md text eol=lf
+docs/product/keyboard.md text eol=lf

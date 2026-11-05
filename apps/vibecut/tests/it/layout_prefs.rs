@@ -266,12 +266,14 @@ fn invalid_section_edits_are_atomic_and_do_not_enter_history() {
 fn splitter_commit_refuses_an_edit_that_would_exceed_the_store_budget() {
     let mut preferences = Preferences::default();
     for index in 0..128 {
-        if serde_json::to_vec(&preferences).unwrap().len() >= 4040 {
+        let mut next = preferences.clone();
+        next.sections.insert(format!("section.{index:032}"), false);
+        next.sections.insert("x".to_owned(), false);
+        if serde_json::to_vec(&next).unwrap().len() > 4096 {
             break;
         }
-        preferences
-            .sections
-            .insert(format!("section.{index:032}"), false);
+        next.sections.remove("x");
+        preferences = next;
     }
     let base = preferences.clone();
     for length in 1..=64 {

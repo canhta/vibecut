@@ -655,6 +655,12 @@ impl Workspace {
             self.request_close();
         }
         if let Some(editor) = &mut self.editor {
+            editor.overlay_open = self.close_prompt
+                || self.error.is_some()
+                || self.picker.is_some()
+                || self.pending.is_some()
+                || self.preference_warning
+                || !self.diagnostics.is_empty();
             editor.ui(ui);
             self.preferences = editor.preferences.clone();
             if let Some(action) = editor.lifecycle_action.take() {

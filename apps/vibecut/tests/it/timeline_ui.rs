@@ -25,10 +25,10 @@ use vibecut::{
 
 const SECOND: i64 = TICKS_PER_SECOND;
 
-struct Fixture {
-    editor: Editor,
-    video_a: ItemId,
-    video_b: ItemId,
+pub(crate) struct Fixture {
+    pub(crate) editor: Editor,
+    pub(crate) video_a: ItemId,
+    pub(crate) video_b: ItemId,
 }
 
 fn source_stream(kind: media::StreamKind, duration: Tick) -> SourceStream {
@@ -116,7 +116,7 @@ fn track(session: &mut Session, name: &str, kind: TrackKind) -> TrackId {
     }
 }
 
-fn fixture() -> Fixture {
+pub(crate) fn fixture() -> Fixture {
     let mut session = Session::new(
         Project::empty(ProjectId(12), "Timeline".into()).unwrap(),
         50,
@@ -203,7 +203,7 @@ fn fixture() -> Fixture {
     }
 }
 
-fn harness(editor: Editor) -> Harness<'static, Editor> {
+pub(crate) fn harness(editor: Editor) -> Harness<'static, Editor> {
     Harness::builder()
         .with_size(egui::vec2(1440.0, 900.0))
         .build_ui_state(|ui, editor: &mut Editor| editor.ui(ui), editor)
@@ -268,7 +268,7 @@ fn blend_dropdown_and_opacity_field_dispatch_real_edits() {
     );
 }
 
-fn widget(harness: &Harness<'_, Editor>, id: &str) -> egui::Rect {
+pub(crate) fn widget(harness: &Harness<'_, Editor>, id: &str) -> egui::Rect {
     harness
         .state()
         .inspect()
@@ -296,7 +296,7 @@ fn drag(harness: &mut Harness<'_, Editor>, from: egui::Pos2, to: egui::Pos2) {
     harness.run_steps(2);
 }
 
-fn item(editor: &Editor, id: ItemId) -> &project::Item {
+pub(crate) fn item(editor: &Editor, id: ItemId) -> &project::Item {
     editor
         .session
         .project()
@@ -948,8 +948,8 @@ fn every_editor_button_reports_its_embedded_icon() {
         "timeline toolbar keeps its 40 px row"
     );
     for (id, text) in [
-        ("edit.undo", "Undo (Cmd/Ctrl+Z)"),
-        ("timeline.split", "Split (Cmd/Ctrl+B)"),
+        ("edit.undo", "Undo (Ctrl+Z)"),
+        ("timeline.split", "Split (S)"),
         ("timeline.snap", "Snap (N)"),
         ("timeline.zoom_in", "Zoom +"),
         ("timeline.magnet", "Main track magnet"),

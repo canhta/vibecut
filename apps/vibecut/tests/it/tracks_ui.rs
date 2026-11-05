@@ -602,7 +602,7 @@ fn lock_refuses_structural_edits_and_add_track_uses_the_active_kind() {
     let history = h.state().session.history_len().0;
     assert!(matches!(
         h.state_mut().activate("timeline.split"),
-        Err(vibecut::Error::Engine(engine::EditError::Locked(track))) if track == text_track
+        Err(vibecut::Error::ActionDisabled("timeline.split"))
     ));
     h.get(By::new().predicate(|n| n.author_id() == Some("timeline.split")))
         .click();

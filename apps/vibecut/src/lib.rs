@@ -1,4 +1,5 @@
 //! Native editor frontend. Device creation and window ownership stay in main.
+pub mod actions;
 mod ai_task;
 pub mod capture;
 pub mod catalog;
@@ -39,6 +40,12 @@ pub enum Error {
     EmptyTimeline,
     #[error("unsupported desktop capability: {0}")]
     Unsupported(&'static str),
+    #[error("action is disabled: {0}")]
+    ActionDisabled(&'static str),
+    #[error("not available yet: {0}")]
+    NotAvailable(&'static str),
+    #[error("keybinding failed")]
+    Keybinding(#[from] crate::actions::KeybindingError),
     #[error("operation cancelled")]
     Cancelled,
     #[error("preview unavailable: {0}")]

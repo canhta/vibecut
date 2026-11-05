@@ -2,6 +2,10 @@ use crate::selection::{SelectionScope, SelectionScopes, shared_fields};
 use crate::snapping::{SnapCandidate, SnapSource, snap_point};
 use crate::{
     Error, Result,
+    actions::{
+        self, ActionTarget, BlockedReason, Dispatch, DispatchContext, EngineAction,
+        KeybindingIssue, Keymap, UiAction,
+    },
     catalog::{self, Locale, Preferences, Text, drag_panel},
     egui::{self, Align2, Color32, FontId, Id, Rect, Vec2},
     icons::{self, Icon},
@@ -142,6 +146,8 @@ pub struct Inspection {
     pub export_options: crate::export::ExportOptions,
     pub models: Option<crate::model_manager::ModelInspection>,
     pub subtitles: Option<crate::subtitles::Inspection>,
+    /// Unknown actions, invalid chords and conflicts from the persisted map.
+    pub keybinding_issues: Vec<KeybindingIssue>,
 }
 #[derive(Clone, Debug)]
 struct PreferenceCommand {
@@ -454,6 +460,13 @@ pub struct Editor {
     pub playback: Playback,
     pub preferences: Preferences,
     preference_history: PreferenceHistory,
+    keymap: Keymap,
+    keymap_source: actions::KeybindingPreferences,
+    keybinding_issues: Vec<KeybindingIssue>,
+    /// Voiceover recording owner (p1-parity/86) sets this; global keys wait.
+    recording_active: bool,
+    /// Workspace-owned dialogs take keyboard priority over the editor's sheets.
+    pub(crate) overlay_open: bool,
     pub selection: BTreeSet<ItemId>,
     pub selection_scopes: SelectionScopes,
     marquee: Option<(egui::Pos2, BTreeSet<ItemId>, bool)>,
@@ -554,11 +567,19 @@ impl Editor {
         let selection = session.selection().clone();
         let preferences_fit = preferences.preview_fit;
         let preferences_zoom = preferences.preview_zoom;
+        let keymap = Keymap::resolve(&preferences.keybindings);
+        let keybinding_issues = keymap.issues().to_vec();
+        let keymap_source = preferences.keybindings.clone();
         Self {
             session,
             playback,
             preferences,
             preference_history: PreferenceHistory::default(),
+            keymap,
+            keymap_source,
+            keybinding_issues,
+            recording_active: false,
+            overlay_open: false,
             selection,
             selection_scopes: SelectionScopes::default(),
             marquee: None,
@@ -751,6 +772,7 @@ impl Editor {
                 .models
                 .as_ref()
                 .map(crate::model_manager::ModelManager::inspect),
+            keybinding_issues: self.keybinding_issues.clone(),
         })
     }
     /// Last frame submitted by the frontend for presentation, independent of decode-ahead.
@@ -1213,10 +1235,10 @@ impl Editor {
         };
         let count = ids.len() as u64;
         let before = self.session.project().clone();
-        match self
-            .session
-            .execute("media.remove", serde_json::json!({ "assets": ids }))
-        {
+        match self.session.execute(
+            engine::CommandKind::RemoveAssets.id(),
+            serde_json::json!({ "assets": ids }),
+        ) {
             Ok(_) => {
                 self.media_selection.clear();
                 self.media_anchor = None;
@@ -1243,7 +1265,7 @@ impl Editor {
         }
     }
     /// Insert selected assets in library order; engine owns track and overlap policy.
-    fn insert_selected_assets(&mut self) {
+    fn insert_selected_assets(&mut self, command: engine::CommandKind) {
         let selected: Vec<SourceAsset> = self
             .session
             .project()
@@ -1309,10 +1331,12 @@ impl Editor {
                         }),
                     },
                 };
-                let outcome = session.apply(Command::InsertItem {
-                    placement: engine::Placement::Auto,
-                    item,
-                })?;
+                let outcome = session.execute(
+                    command.id(),
+                    serde_json::json!({
+                        "placement": engine::Placement::Auto, "item": item,
+                    }),
+                )?;
                 let placed = outcome
                     .placements
                     .first()
@@ -1431,6 +1455,7 @@ impl Editor {
         key: Text,
         enabled: bool,
     ) -> bool {
+        let enabled = enabled && actions::action(id).is_none_or(|_| self.action_enabled(id));
         let color = if enabled {
             self.text_color()
         } else {
@@ -1523,6 +1548,7 @@ impl Editor {
         selected: Option<bool>,
         enabled: bool,
     ) -> bool {
+        let enabled = enabled && actions::action(id).is_none_or(|_| self.action_enabled(id));
         let locale = self.preferences.locale;
         let tooltip = shortcut.map_or_else(
             || label.to_owned(),
@@ -1575,6 +1601,10 @@ impl Editor {
     /// All control inputs (including tests/agents) use the same action path.
     /// Project edits are engine registry calls; transport/preferences are app state.
     pub fn activate(&mut self, id: &str) -> Result<()> {
+        let (spec, argument) = actions::resolve(id).ok_or(Error::Unsupported("widget action"))?;
+        if let Some(ticket) = spec.pending_ticket() {
+            return Err(Error::NotAvailable(ticket));
+        }
         let flushed = if let Some(subtitles) = &mut self.subtitles {
             if matches!(
                 id,
@@ -1593,348 +1623,306 @@ impl Editor {
         if flushed {
             self.sync_preview();
         }
+        if !self.action_enabled(id) {
+            return Err(Error::ActionDisabled(spec.id));
+        }
         self.session.set_selection(self.selection.clone())?;
         self.remember_view()?;
         let at = self.playback.position()?;
         let duration = self.session.project().duration();
         let playing = self.playback.playing();
         let before = self.session.project().clone();
-        match id {
-            action if action.starts_with("subtitles.") => {
-                self.prepare_subtitles()?;
-                let mut options = self.preferences.subtitles.clone();
-                if let Some(panel) = &mut self.subtitles {
-                    panel.activate(
-                        &mut self.session,
-                        &mut options,
-                        self.selection.iter().next().copied(),
-                        at,
-                        action,
+        match spec.target {
+            ActionTarget::Engine(route) => self.execute_engine_action(route)?,
+            ActionTarget::Pending { ticket, .. } => return Err(Error::NotAvailable(ticket)),
+            ActionTarget::Ui { action, .. } => match action {
+                UiAction::MediaView => {
+                    let view = match self.preferences.media_view {
+                        MediaView::Grid => MediaView::List,
+                        MediaView::List => MediaView::Grid,
+                    };
+                    self.dispatch(
+                        PREFERENCE_COMMAND,
+                        serde_json::json!({"key":"media_view", "value":view}),
                     )?;
-                    let seek = panel.requested_seek.take();
-                    let model = panel.requested_model.take();
-                    if let Some(at) = seek {
-                        self.seek(at)?;
+                }
+                UiAction::MediaSort | UiAction::MediaSortBy(_) => {
+                    let key = match action {
+                        UiAction::MediaSortBy(key) => key,
+                        _ => self.preferences.media_sort.key,
+                    };
+                    let next = media_panel::next_sort(self.preferences.media_sort, key);
+                    self.dispatch(
+                        PREFERENCE_COMMAND,
+                        serde_json::json!({"key":"media_sort", "value":next}),
+                    )?;
+                }
+                UiAction::RequestDeleteMedia => {
+                    self.request_media_delete(self.media_selection.iter().copied().collect())
+                }
+                UiAction::CancelDeleteMedia => self.media_delete_confirm = None,
+                UiAction::ConfirmDeleteMedia => self.confirm_media_delete()?,
+                UiAction::RevealMedia => {
+                    let asset = AssetId(argument.ok_or(Error::Unsupported("media identity"))?);
+                    self.reveal_media(asset)?;
+                }
+                UiAction::InsertText => self.insert_text(),
+                UiAction::Subtitles | UiAction::SubtitleCue => {
+                    self.prepare_subtitles()?;
+                    let mut options = self.preferences.subtitles.clone();
+                    if let Some(panel) = &mut self.subtitles {
+                        panel.activate(
+                            &mut self.session,
+                            &mut options,
+                            self.selection.iter().next().copied(),
+                            at,
+                            id,
+                        )?;
+                        let seek = panel.requested_seek.take();
+                        let model = panel.requested_model.take();
+                        if let Some(at) = seek {
+                            self.seek(at)?;
+                        }
+                        if let Some(id) = model {
+                            self.open_model(&id)?;
+                        }
                     }
-                    if let Some(id) = model {
-                        self.open_model(&id)?;
+                    if options != self.preferences.subtitles {
+                        self.set_preference("subtitles", serde_json::to_value(options)?)?;
                     }
                 }
-                if options != self.preferences.subtitles {
-                    self.set_preference("subtitles", serde_json::to_value(options)?)?;
-                }
-            }
-            "scene.open" => self.scenes_open = true,
-            "scene.close" => {
-                self.scenes_open = false;
-                self.scene_confirm = false;
-                self.scene_rename = None;
-            }
-            "scene.create" => {
-                let count = self.session.project().data().scenes.iter().count();
-                let number = catalog::number(self.preferences.locale, (count + 1) as u64);
-                let name = catalog::format(
-                    self.preferences.locale,
-                    Text::SceneDefaultName,
-                    &[("n", &number)],
-                );
-                let created = self
-                    .session
-                    .execute("scene.create", serde_json::json!({"name":name}))?;
-                if let Some(CreatedId::Scene(scene)) = created.created.first().copied() {
-                    self.cancel_interaction();
-                    self.session
-                        .execute("scene.switch", serde_json::json!({"scene":scene}))?;
-                    self.selection.clear();
-                    self.selection_scopes = SelectionScopes::default();
-                    self.scene_select = false;
-                    self.scene_selected.clear();
+
+                UiAction::OpenScenes => self.scenes_open = true,
+                UiAction::CloseScenes => {
+                    self.scenes_open = false;
                     self.scene_confirm = false;
                     self.scene_rename = None;
                 }
-            }
-            "scene.select" => {
-                self.scene_select = !self.scene_select;
-                self.scene_selected.clear();
-            }
-            "scene.delete" => self.scene_confirm = !self.scene_selected.is_empty(),
-            "scene.cancel_delete" => self.scene_confirm = false,
-            "scene.confirm_delete" => {
-                self.session.execute(
-                    "scene.delete",
-                    serde_json::json!({"scenes":self.scene_selected}),
-                )?;
-                self.scene_selected.clear();
-                self.scene_select = false;
-                self.scene_confirm = false;
-                self.selection.clear();
-                self.selection_scopes = SelectionScopes::default();
-            }
-            rename if rename.starts_with("scene.rename.") => {
-                let scene = project::SceneId(
-                    rename
-                        .trim_start_matches("scene.rename.")
-                        .parse()
-                        .map_err(|_| Error::Unsupported("scene identity"))?,
-                );
-                let name = self
-                    .session
-                    .project()
-                    .data()
-                    .scenes
-                    .get(scene)
-                    .ok_or(Error::Unsupported("scene not found"))?
-                    .name
-                    .as_str()
-                    .to_owned();
-                self.scene_rename = Some((scene, name));
-                self.scene_rename_focus = true;
-            }
-            row if row.starts_with("scene.row.") => {
-                let scene = project::SceneId(
-                    row.trim_start_matches("scene.row.")
-                        .parse()
-                        .map_err(|_| Error::Unsupported("scene identity"))?,
-                );
-                let target = self
-                    .session
-                    .project()
-                    .data()
-                    .scenes
-                    .get(scene)
-                    .ok_or(Error::Unsupported("scene not found"))?;
-                if self.scene_select {
-                    if !target.is_main && !self.scene_selected.remove(&scene) {
-                        self.scene_selected.insert(scene);
+                UiAction::SelectScenes => {
+                    self.scene_select = !self.scene_select;
+                    self.scene_selected.clear();
+                }
+                UiAction::RequestDeleteScenes => {
+                    self.scene_confirm = !self.scene_selected.is_empty()
+                }
+                UiAction::CancelDeleteScenes => self.scene_confirm = false,
+                UiAction::RenameScene => {
+                    let scene =
+                        project::SceneId(argument.ok_or(Error::Unsupported("scene identity"))?);
+                    let name = self
+                        .session
+                        .project()
+                        .data()
+                        .scenes
+                        .get(scene)
+                        .ok_or(Error::Unsupported("scene not found"))?
+                        .name
+                        .as_str()
+                        .to_owned();
+                    self.scene_rename = Some((scene, name));
+                    self.scene_rename_focus = true;
+                }
+                UiAction::SceneRow => {
+                    let scene =
+                        project::SceneId(argument.ok_or(Error::Unsupported("scene identity"))?);
+                    let target = self
+                        .session
+                        .project()
+                        .data()
+                        .scenes
+                        .get(scene)
+                        .ok_or(Error::Unsupported("scene not found"))?;
+                    if self.scene_select {
+                        if !target.is_main && !self.scene_selected.remove(&scene) {
+                            self.scene_selected.insert(scene);
+                        }
+                    } else {
+                        self.cancel_interaction();
+                        self.session
+                            .execute("scene.switch", serde_json::json!({"scene":scene}))?;
+                        self.selection.clear();
+                        self.selection_scopes = SelectionScopes::default();
                     }
-                } else {
-                    self.cancel_interaction();
-                    self.session
-                        .execute("scene.switch", serde_json::json!({"scene":scene}))?;
+                }
+                UiAction::Export => {
+                    if self.export.is_none() {
+                        self.export = Some(crate::export::ExportDialog::new(
+                            self.playback.budget().clone(),
+                            self.playback.render_state()?,
+                        )?);
+                    }
+                    if let Some(dialog) = &mut self.export {
+                        dialog.show(self.session.project());
+                    }
+                }
+                UiAction::RunExport => {
+                    if self.export.is_none() {
+                        self.export = Some(crate::export::ExportDialog::new(
+                            self.playback.budget().clone(),
+                            self.playback.render_state()?,
+                        )?);
+                    }
+                    let dialog = self
+                        .export
+                        .as_mut()
+                        .ok_or(Error::Unsupported("export dialog"))?;
+                    dialog.show(self.session.project());
+                    dialog.start(self.session.project().clone(), self.preferences.export)?;
+                }
+                UiAction::RetryExport => {
+                    let dialog = self
+                        .export
+                        .as_mut()
+                        .ok_or(Error::Unsupported("export dialog"))?;
+                    dialog.retry(self.session.project().clone())?;
+                }
+                UiAction::Save => {
+                    self.lifecycle_action = Some(crate::lifecycle::EditorAction::Save)
+                }
+                UiAction::SaveAs => {
+                    self.lifecycle_action = Some(crate::lifecycle::EditorAction::SaveAs)
+                }
+                UiAction::Back => {
+                    self.lifecycle_action = Some(crate::lifecycle::EditorAction::Leave)
+                }
+                UiAction::RenameProject => {
+                    self.rename = Some(self.session.project().data().name.as_str().to_owned());
+                    self.rename_focus = true;
+                }
+                UiAction::Import => {
+                    if self.importing() {
+                        self.import_notice = Some(self.tr(Text::ImportBusy).to_owned());
+                    } else {
+                        self.lifecycle_action = Some(crate::lifecycle::EditorAction::ImportMedia);
+                    }
+                }
+                UiAction::CancelImport => {
+                    if let Some(queue) = &self.imports {
+                        queue.cancel();
+                    }
+                }
+                UiAction::Play => self.playback.seek(
+                    if at >= duration { Tick::ZERO } else { at },
+                    !playing,
+                    self.session.project().clone(),
+                )?,
+                UiAction::Pause => self
+                    .playback
+                    .seek(at, false, self.session.project().clone())?,
+                UiAction::BackSecond => {
+                    self.seek((at - Tick(TICKS_PER_SECOND)).max(Tick::ZERO))?;
+                }
+                UiAction::ForwardSecond => {
+                    self.seek((at + Tick(TICKS_PER_SECOND)).min(duration))?;
+                }
+                UiAction::FrameBack => self.step_frames(-1)?,
+                UiAction::FrameForward => self.step_frames(1)?,
+                UiAction::Start => self.seek(Tick::ZERO)?,
+                UiAction::End => self.seek(duration)?,
+                UiAction::Undo | UiAction::Redo => {
+                    let preference_changed = if action == UiAction::Undo {
+                        self.preference_history.undo(&mut self.preferences)
+                    } else {
+                        self.preference_history.redo(&mut self.preferences)
+                    };
+                    if !preference_changed {
+                        self.session.execute(
+                            if action == UiAction::Undo {
+                                engine::CommandKind::Undo
+                            } else {
+                                engine::CommandKind::Redo
+                            }
+                            .id(),
+                            serde_json::json!({}),
+                        )?;
+                        self.selection = self.session.selection().clone();
+                        self.selection_scopes = SelectionScopes::default();
+                        self.property_drafts.clear();
+                    } else {
+                        self.sync_keymap();
+                    }
+                }
+                UiAction::SelectAll => self.select_all(),
+                UiAction::DeselectAll => {
                     self.selection.clear();
                     self.selection_scopes = SelectionScopes::default();
                 }
-            }
-            "file.export" => {
-                if self.export.is_none() {
-                    self.export = Some(crate::export::ExportDialog::new(
-                        self.playback.budget().clone(),
-                        self.playback.render_state()?,
-                    )?);
-                }
-                if let Some(dialog) = &mut self.export {
-                    dialog.show(self.session.project());
-                }
-            }
-            "export.run" => {
-                if self.export.is_none() {
-                    self.export = Some(crate::export::ExportDialog::new(
-                        self.playback.budget().clone(),
-                        self.playback.render_state()?,
-                    )?);
-                }
-                let dialog = self
-                    .export
-                    .as_mut()
-                    .ok_or(Error::Unsupported("export dialog"))?;
-                dialog.show(self.session.project());
-                dialog.start(self.session.project().clone(), self.preferences.export)?;
-            }
-            "export.retry" => {
-                let dialog = self
-                    .export
-                    .as_mut()
-                    .ok_or(Error::Unsupported("export dialog"))?;
-                dialog.retry(self.session.project().clone())?;
-            }
-            "project.save" => self.lifecycle_action = Some(crate::lifecycle::EditorAction::Save),
-            "project.save_as" => {
-                self.lifecycle_action = Some(crate::lifecycle::EditorAction::SaveAs)
-            }
-            "project.back" => self.lifecycle_action = Some(crate::lifecycle::EditorAction::Leave),
-            "project.rename" => {
-                self.rename = Some(self.session.project().data().name.as_str().to_owned());
-                self.rename_focus = true;
-            }
-            "file.import" => {
-                if self.importing() {
-                    self.import_notice = Some(self.tr(Text::ImportBusy).to_owned());
-                } else {
-                    self.lifecycle_action = Some(crate::lifecycle::EditorAction::ImportMedia);
-                }
-            }
-            "media.insert" => self.insert_selected_assets(),
-            "text.insert" => self.insert_text(),
-            "media.view" => {
-                let view = match self.preferences.media_view {
-                    MediaView::Grid => MediaView::List,
-                    MediaView::List => MediaView::Grid,
-                };
-                self.dispatch(
-                    PREFERENCE_COMMAND,
-                    serde_json::json!({"key": "media_view", "value": view}),
-                )?;
-            }
-            "media.sort" => {
-                let next = media_panel::next_sort(
-                    self.preferences.media_sort,
-                    self.preferences.media_sort.key,
-                );
-                self.dispatch(
-                    PREFERENCE_COMMAND,
-                    serde_json::json!({"key": "media_sort", "value": next}),
-                )?;
-            }
-            row if row.starts_with("media.sort.") => {
-                let key = MediaSortKey::from_id(row.trim_start_matches("media.sort."))
-                    .ok_or(Error::Unsupported("media sort key"))?;
-                let next = media_panel::next_sort(self.preferences.media_sort, key);
-                self.dispatch(
-                    PREFERENCE_COMMAND,
-                    serde_json::json!({"key": "media_sort", "value": next}),
-                )?;
-            }
-            "media.delete" => {
-                self.request_media_delete(self.media_selection.iter().copied().collect())
-            }
-            "media.cancel_delete" => self.media_delete_confirm = None,
-            "media.confirm_delete" => self.confirm_media_delete()?,
-            row if row.starts_with("media.reveal.") => {
-                let asset = AssetId(
-                    row.trim_start_matches("media.reveal.")
-                        .parse()
-                        .map_err(|_| Error::Unsupported("media identity"))?,
-                );
-                self.reveal_media(asset)?;
-            }
-            "import.cancel" => {
-                if let Some(queue) = &self.imports {
-                    queue.cancel();
-                }
-            }
-            "transport.play" => self.playback.seek(
-                if at >= duration { Tick::ZERO } else { at },
-                !playing,
-                self.session.project().clone(),
-            )?,
-            "transport.pause" => self
-                .playback
-                .seek(at, false, self.session.project().clone())?,
-            "transport.back" => self.seek((at - Tick(TICKS_PER_SECOND)).max(Tick::ZERO))?,
-            "transport.forward" => self.seek((at + Tick(TICKS_PER_SECOND)).min(duration))?,
-            "transport.frame_back" => self.step_frames(-1)?,
-            "transport.frame_forward" => self.step_frames(1)?,
-            "transport.start" => self.seek(Tick::ZERO)?,
-            "transport.end" => self.seek(duration)?,
-            "edit.undo" | "edit.redo" => {
-                let preference_changed = if id == "edit.undo" {
-                    self.preference_history.undo(&mut self.preferences)
-                } else {
-                    self.preference_history.redo(&mut self.preferences)
-                };
-                if !preference_changed {
-                    self.session.execute(
-                        if id == "edit.undo" { "undo" } else { "redo" },
-                        serde_json::json!({}),
+                UiAction::Escape => self.cancel_interaction(),
+                UiAction::Snap => {
+                    let after = !self.preferences.snapping;
+                    self.dispatch(
+                        PREFERENCE_COMMAND,
+                        serde_json::json!({"key":"snapping", "value":after}),
                     )?;
-                    self.selection = self.session.selection().clone();
-                    self.selection_scopes = SelectionScopes::default();
-                    self.property_drafts.clear();
                 }
-            }
-            "timeline.split" => self.split_at_playhead()?,
-            "timeline.delete" => self.delete_selected(self.ripple)?,
-            "timeline.add_track" => self.add_track(),
-            "timeline.ripple_delete" => self.delete_selected(true)?,
-            "timeline.select_all" => self.select_all(),
-            "timeline.deselect_all" => {
-                self.selection.clear();
-                self.selection_scopes = SelectionScopes::default();
-            }
-            "selection.escape" => self.cancel_interaction(),
-            "timeline.snap" => {
-                let after = !self.preferences.snapping;
-                self.dispatch(
-                    PREFERENCE_COMMAND,
-                    serde_json::json!({"key": "snapping", "value": after}),
-                )?;
-            }
-            "timeline.ripple" => self.ripple = !self.ripple,
-            "timeline.zoom_in" => self.zoom_by(ZOOM_STEP),
-            "timeline.zoom_out" => self.zoom_by(1.0 / ZOOM_STEP),
-            "appearance.theme" => {
-                let after = !self.preferences.dark;
-                self.dispatch(
-                    PREFERENCE_COMMAND,
-                    serde_json::json!({"key": "dark", "value": after}),
-                )?;
-            }
-            "appearance.locale" => {
-                let after = if self.preferences.locale == Locale::En {
-                    Locale::Vi
-                } else {
-                    Locale::En
-                };
-                self.dispatch(
-                    PREFERENCE_COMMAND,
-                    serde_json::json!({"key": "locale", "value": after}),
-                )?;
-            }
-            "layout.reset" => {
-                self.dispatch(
-                    PREFERENCE_COMMAND,
-                    serde_json::json!({
-                        "key": "panels",
-                        "value": Preferences::default().panels,
-                    }),
-                )?;
-            }
-            "models.open" => self.open_models()?,
-            "preview.retry" => {
-                self.playback.clear()?;
-                self.error = None;
-            }
-            "preview.snapshot" => self.open_snapshot_dialog()?,
-            "preview.fullscreen" => self.preview_fullscreen = !self.preview_fullscreen,
-            "preview.zoom.fit" => self.set_preview_fit()?,
-            "preview.zoom.in" => self.preview_zoom_by(preview::ZOOM_STEP)?,
-            "preview.zoom.out" => self.preview_zoom_by(1.0 / preview::ZOOM_STEP)?,
-            preset if preset.starts_with("preview.zoom.") => {
-                let percent = preset
-                    .trim_start_matches("preview.zoom.")
-                    .parse::<u32>()
-                    .map_err(|_| Error::Unsupported("preview zoom"))?;
-                let zoom = percent as f32 / 100.0;
-                let viewport = self.preview_viewport;
-                let canvas = self.preview_canvas_size();
-                self.set_preview_zoom(
-                    preview::normalize_zoom(zoom).ok_or(Error::Invalid("preview zoom"))?,
-                    viewport,
-                    canvas,
-                )?;
-            }
-            "inspector.project" => self.details = false,
-            "inspector.details" => self.details = true,
-            id if id.starts_with("timeline.item.") => {
-                let raw = id.trim_start_matches("timeline.item.");
-                let parsed = raw
-                    .parse::<u64>()
-                    .map_err(|_| Error::Unsupported("widget action"))?;
-                let item = ItemId(parsed);
-                if !self
-                    .session
-                    .project()
-                    .data()
-                    .scene()
-                    .timeline
-                    .iter()
-                    .any(|t| t.items.iter().any(|i| i.id == item))
-                {
-                    return Err(Error::Engine(engine::EditError::NoItem(item)));
+                UiAction::Ripple => self.ripple = !self.ripple,
+                UiAction::ZoomIn => self.zoom_by(ZOOM_STEP),
+                UiAction::ZoomOut => self.zoom_by(1.0 / ZOOM_STEP),
+                UiAction::Theme => {
+                    let after = !self.preferences.dark;
+                    self.dispatch(
+                        PREFERENCE_COMMAND,
+                        serde_json::json!({"key": "dark", "value": after}),
+                    )?;
                 }
-                self.select_single(item);
-            }
-            _ => return Err(Error::Unsupported("widget action")),
+                UiAction::Locale => {
+                    let after = if self.preferences.locale == Locale::En {
+                        Locale::Vi
+                    } else {
+                        Locale::En
+                    };
+                    self.dispatch(
+                        PREFERENCE_COMMAND,
+                        serde_json::json!({"key": "locale", "value": after}),
+                    )?;
+                }
+                UiAction::ResetLayout => {
+                    self.dispatch(
+                        PREFERENCE_COMMAND,
+                        serde_json::json!({
+                            "key": "panels",
+                            "value": Preferences::default().panels,
+                        }),
+                    )?;
+                }
+                UiAction::OpenModels => self.open_models()?,
+                UiAction::RetryPreview => {
+                    self.playback.clear()?;
+                    self.error = None;
+                }
+                UiAction::ProjectInspector => self.details = false,
+                UiAction::DetailsInspector => self.details = true,
+                UiAction::PreviewSnapshot => self.open_snapshot_dialog()?,
+                UiAction::PreviewFullscreen => self.preview_fullscreen = !self.preview_fullscreen,
+                UiAction::PreviewFit => self.set_preview_fit()?,
+                UiAction::PreviewZoomIn => self.preview_zoom_by(preview::ZOOM_STEP)?,
+                UiAction::PreviewZoomOut => self.preview_zoom_by(1.0 / preview::ZOOM_STEP)?,
+                UiAction::PreviewZoomPreset => {
+                    let percent =
+                        u32::try_from(argument.ok_or(Error::Unsupported("preview zoom"))?)
+                            .map_err(|_| Error::Unsupported("preview zoom"))?;
+                    let viewport = self.preview_viewport;
+                    let canvas = self.preview_canvas_size();
+                    let zoom = preview::normalize_zoom(percent as f32 / 100.0)
+                        .ok_or(Error::Invalid("preview zoom"))?;
+                    self.set_preview_zoom(zoom, viewport, canvas)?;
+                }
+                UiAction::SelectItem => {
+                    let item = ItemId(argument.ok_or(Error::Unsupported("item identity"))?);
+                    if !self
+                        .session
+                        .project()
+                        .data()
+                        .scene()
+                        .timeline
+                        .iter()
+                        .any(|t| t.items.iter().any(|i| i.id == item))
+                    {
+                        return Err(Error::Engine(engine::EditError::NoItem(item)));
+                    }
+                    self.select_single(item);
+                }
+            },
         }
         self.prune_media_selection();
         if !Arc::ptr_eq(&before, self.session.project()) {
@@ -2198,6 +2186,13 @@ impl Editor {
         let max = max_scroll_seconds(duration.seconds(), layout.body.width(), self.zoom, min);
         (view, max)
     }
+    /// Tooltip text from the action's first effective persisted chord.
+    fn shortcut(&self, action: &str) -> Option<String> {
+        let spec = actions::action(action)?;
+        let chords = self.preferences.keybindings.effective_chords(spec);
+        let chord = actions::Chord::parse(chords.first()?).ok()?;
+        Some(chord.display(actions::Platform::current()))
+    }
     fn action(&mut self, id: &str) {
         if let Err(error) = self.activate(id) {
             self.error = Some(error.to_string());
@@ -2237,6 +2232,29 @@ impl Editor {
             }
             return Ok(());
         }
+        if id == actions::KEYBINDINGS_SET_COMMAND {
+            let action = params
+                .get("action")
+                .and_then(serde_json::Value::as_str)
+                .ok_or(Error::Invalid("keybinding action"))?;
+            let chords = params
+                .get("bindings")
+                .cloned()
+                .ok_or(Error::Invalid("keybinding chords"))
+                .and_then(|value| {
+                    serde_json::from_value::<Vec<String>>(value)
+                        .map_err(|_| Error::Invalid("keybinding chords"))
+                })?;
+            return self.set_keybinding(action, chords);
+        }
+        if id == actions::KEYBINDINGS_RESET_COMMAND {
+            let action = params.get("action").and_then(serde_json::Value::as_str);
+            return if let Some(action) = action {
+                self.reset_keybinding(action)
+            } else {
+                self.reset_keybindings()
+            };
+        }
         if id == PREFERENCE_COMMAND {
             let key = params
                 .get("key")
@@ -2253,9 +2271,32 @@ impl Editor {
                 .get("asset")
                 .and_then(serde_json::Value::as_u64)
                 .ok_or(Error::Invalid("media identity"))?;
-            return self.reveal_media(AssetId(asset));
+            return self.activate(&format!("media.reveal.{asset}"));
         }
         self.activate(id)
+    }
+    /// One binding change command for the shortcuts dialog; it uses the same
+    /// app preference history as every other user-visible preference edit.
+    pub fn set_keybinding(&mut self, action: &str, chords: Vec<String>) -> Result<()> {
+        let mut next = self.preferences.keybindings.clone();
+        next.set_action(action, chords)?;
+        self.store_keybindings(next)
+    }
+    pub fn reset_keybinding(&mut self, action: &str) -> Result<()> {
+        let mut next = self.preferences.keybindings.clone();
+        next.reset_action(action)?;
+        self.store_keybindings(next)
+    }
+    pub fn reset_keybindings(&mut self) -> Result<()> {
+        let mut next = self.preferences.keybindings.clone();
+        next.reset_all();
+        self.store_keybindings(next)
+    }
+    fn store_keybindings(&mut self, keybindings: actions::KeybindingPreferences) -> Result<()> {
+        self.dispatch(
+            PREFERENCE_COMMAND,
+            serde_json::json!({"key": "keybindings", "value": keybindings}),
+        )
     }
     /// One command (`ui.prefs.set`) for every user-visible preference edit.
     /// App history is separate from Project history and never changes Project JSON.
@@ -2266,6 +2307,9 @@ impl Editor {
         if before != after {
             self.preference_history
                 .record(PreferenceCommand::new(key, before, after));
+            if key == "keybindings" {
+                self.sync_keymap();
+            }
         }
         Ok(())
     }
@@ -2343,66 +2387,139 @@ impl Editor {
             .keyframes
             .retain(|target| self.selection.contains(&target.item));
     }
-    fn split_at_playhead(&mut self) -> Result<()> {
-        let at = self.playback.position()?;
-        let mut under = Vec::new();
-        let mut selected_under = Vec::new();
-        for track in self.session.project().data().scene().timeline.iter() {
-            for item in &track.items {
-                if item.start < at && item.end().is_ok_and(|end| at < end) {
-                    under.push(item.id);
-                    if self.selection.contains(&item.id) {
-                        selected_under.push(item.id);
+    /// Availability is shared by widget admission and direct/key activation.
+    /// Engine predicates remain engine-owned; selection and app workflows are local.
+    pub fn action_enabled(&self, id: &str) -> bool {
+        let Some((spec, _)) = actions::resolve(id) else {
+            return false;
+        };
+        match spec.target {
+            ActionTarget::Pending { .. } => false,
+            ActionTarget::Engine(route) => {
+                route.command(self.ripple).enabled(&self.session)
+                    && match route {
+                        EngineAction::Delete | EngineAction::RippleDelete => {
+                            !self.selection.is_empty()
+                        }
+                        EngineAction::DeleteScenes => !self.scene_selected.is_empty(),
+                        EngineAction::InsertMedia => {
+                            !self.importing() && !self.media_selection.is_empty()
+                        }
+                        _ => true,
                     }
+            }
+            ActionTarget::Ui {
+                action: UiAction::Undo,
+                ..
+            } => {
+                self.preference_history.can_undo()
+                    || engine::CommandKind::Undo.enabled(&self.session)
+            }
+            ActionTarget::Ui {
+                action: UiAction::Redo,
+                ..
+            } => {
+                self.preference_history.can_redo()
+                    || engine::CommandKind::Redo.enabled(&self.session)
+            }
+            ActionTarget::Ui { .. } => true,
+        }
+    }
+
+    fn engine_action_params(&self, route: EngineAction) -> Result<Vec<serde_json::Value>> {
+        Ok(match route {
+            EngineAction::Split => {
+                let at = self.playback.position()?;
+                self.session
+                    .project()
+                    .data()
+                    .scene()
+                    .timeline
+                    .iter()
+                    .flat_map(|track| &track.items)
+                    .filter(|item| {
+                        item.start < at
+                            && item.end().is_ok_and(|end| at < end)
+                            && (self.selection.is_empty() || self.selection.contains(&item.id))
+                    })
+                    .map(|item| serde_json::json!({"item":item.id,"at":at}))
+                    .collect()
+            }
+            EngineAction::Delete | EngineAction::RippleDelete => {
+                if route.command(self.ripple) == engine::CommandKind::RippleDelete {
+                    self.selection_by_end(true)
+                        .into_iter()
+                        .map(|item| serde_json::json!({"item":item}))
+                        .collect()
+                } else {
+                    vec![serde_json::json!({"items":self.selection})]
                 }
             }
+            EngineAction::InsertMedia => Vec::new(), // Placement depends on each preceding outcome.
+            EngineAction::AddTrack => vec![self.add_track_params()],
+            EngineAction::CreateScene => {
+                let count = self.session.project().data().scenes.iter().count();
+                let number = catalog::number(self.preferences.locale, (count + 1) as u64);
+                let name = catalog::format(
+                    self.preferences.locale,
+                    Text::SceneDefaultName,
+                    &[("n", &number)],
+                );
+                vec![serde_json::json!({"name":name})]
+            }
+            EngineAction::DeleteScenes => vec![serde_json::json!({"scenes":self.scene_selected})],
+        })
+    }
+
+    fn execute_engine_action(&mut self, route: EngineAction) -> Result<()> {
+        let command = route.command(self.ripple);
+        if route == EngineAction::InsertMedia {
+            self.insert_selected_assets(command);
+            return Ok(());
         }
-        // A nonempty selection owns the edit even when no selected item crosses the
-        // playhead: splitting then is a no-op, never a fallback to unrelated clips.
-        let targets = if self.selection.is_empty() {
-            under
-        } else {
-            selected_under
-        };
-        if targets.is_empty() {
+        let params = self.engine_action_params(route)?;
+        if params.is_empty() {
             return Ok(());
         }
         let mut created = Vec::new();
         self.session.transaction(|session| {
-            for item in targets {
-                created.extend(session.apply(Command::SplitAt { item, at })?.created);
+            for params in params {
+                created.extend(session.execute(command.id(), params)?.created);
             }
             Ok(())
         })?;
-        self.selection = created
-            .into_iter()
-            .filter_map(|id| match id {
-                CreatedId::Item(item) => Some(item),
-                _ => None,
-            })
-            .collect();
+        match route {
+            EngineAction::Split => {
+                self.selection = created
+                    .into_iter()
+                    .filter_map(|id| match id {
+                        CreatedId::Item(item) => Some(item),
+                        _ => None,
+                    })
+                    .collect();
+            }
+            EngineAction::Delete | EngineAction::RippleDelete => self.selection.clear(),
+            EngineAction::CreateScene => {
+                if let Some(CreatedId::Scene(scene)) = created.first().copied() {
+                    self.cancel_interaction();
+                    self.session.apply(Command::SwitchScene { scene })?;
+                    self.clear_scene_selection();
+                    self.scene_rename = None;
+                }
+            }
+            EngineAction::DeleteScenes => self.clear_scene_selection(),
+            EngineAction::AddTrack => self.prune_selection(),
+            EngineAction::InsertMedia => {}
+        }
         self.session.end_merge();
         Ok(())
     }
-    fn delete_selected(&mut self, ripple: bool) -> Result<()> {
-        if self.selection.is_empty() {
-            return Ok(());
-        }
-        if ripple {
-            let order = self.selection_by_end(true);
-            self.session.transaction(|session| {
-                for item in &order {
-                    session.apply(Command::RippleDelete { item: *item })?;
-                }
-                Ok(())
-            })?;
-        } else {
-            let items: Vec<ItemId> = self.selection.iter().copied().collect();
-            self.session.apply(Command::Delete { items })?;
-        }
+    fn clear_scene_selection(&mut self) {
+        self.scene_selected.clear();
+        self.scene_select = false;
+        self.scene_confirm = false;
         self.selection.clear();
-        self.session.end_merge();
-        Ok(())
+        self.selection_scopes = SelectionScopes::default();
     }
     fn selection_by_end(&self, descending: bool) -> Vec<ItemId> {
         let mut items: Vec<(Tick, ItemId)> = self
@@ -3508,6 +3625,10 @@ impl Editor {
             ));
     }
     fn keyboard(&mut self, ctx: &egui::Context) {
+        self.sync_keymap();
+        if self.overlay_open || egui::Popup::is_any_open(ctx) {
+            return;
+        }
         if self.preview_fullscreen {
             if consume(ctx, egui::Modifiers::NONE, egui::Key::Escape) {
                 self.preview_fullscreen = false;
@@ -3526,6 +3647,9 @@ impl Editor {
             }
             return;
         }
+        // An open sheet or dialog owns its own Escape handling and blocks every
+        // global action. Text inputs are handled below so Escape still reaches
+        // the focused field.
         if self.scenes_open {
             if (self.scene_confirm || self.scene_rename.is_none())
                 && consume(ctx, egui::Modifiers::NONE, egui::Key::Escape)
@@ -3544,88 +3668,69 @@ impl Editor {
             }
             return;
         }
+        if self.export.as_ref().is_some_and(|dialog| dialog.open) {
+            return;
+        }
         if self.track_rename.is_some() && consume(ctx, egui::Modifiers::NONE, egui::Key::Escape) {
             self.track_rename = None;
             self.track_rename_focus = false;
             return;
         }
-        if self.subtitles.as_ref().is_some_and(|s| s.editing(ctx))
-            || self.rename.is_some()
-            || self.property_focus.is_some()
-            || self.track_rename.is_some()
-            || ctx.memory(|m| m.focused()).is_some_and(|id| {
-                [
-                    "inspector.audio_gain",
-                    "inspector.opacity",
-                    "inspector.text_content",
-                    "inspector.text_font",
-                    "inspector.text_size",
-                    "inspector.text_color",
-                    "inspector.text_background_color",
-                    "inspector.text_position_x",
-                    "inspector.text_position_y",
-                ]
-                .iter()
-                .any(|field| id == Id::unique(field))
-            })
-        {
-            return;
-        }
-        // Most specific chords first: consume_key ignores extra Shift/Alt modifiers.
-        let command_shift = egui::Modifiers::COMMAND.plus(egui::Modifiers::SHIFT);
-        if consume(ctx, command_shift, egui::Key::Z)
-            || consume(ctx, egui::Modifiers::COMMAND, egui::Key::Y)
-        {
-            self.action("edit.redo");
-        }
-        if consume(ctx, egui::Modifiers::COMMAND, egui::Key::Z) {
-            self.action("edit.undo");
-        }
-        if consume(ctx, egui::Modifiers::COMMAND, egui::Key::B) {
-            self.action("timeline.split");
-        }
-        if consume(ctx, egui::Modifiers::COMMAND, egui::Key::A) {
-            self.action("timeline.select_all");
-        }
-        if consume(ctx, egui::Modifiers::SHIFT, egui::Key::Delete)
-            || consume(ctx, egui::Modifiers::SHIFT, egui::Key::Backspace)
-        {
-            self.action("timeline.ripple_delete");
-        } else if consume(ctx, egui::Modifiers::NONE, egui::Key::Delete)
-            || consume(ctx, egui::Modifiers::NONE, egui::Key::Backspace)
-        {
-            self.action("timeline.delete");
-        }
-        if consume(ctx, egui::Modifiers::NONE, egui::Key::N) {
-            self.action("timeline.snap");
-        }
-        if consume(ctx, egui::Modifiers::NONE, egui::Key::Escape) {
-            self.cancel_interaction();
-        }
-        if consume(ctx, egui::Modifiers::SHIFT, egui::Key::ArrowLeft) {
-            self.action("transport.back");
-        }
-        if consume(ctx, egui::Modifiers::SHIFT, egui::Key::ArrowRight) {
-            self.action("transport.forward");
-        }
-        if consume(ctx, egui::Modifiers::NONE, egui::Key::ArrowLeft) {
-            self.action("transport.frame_back");
-        }
-        if consume(ctx, egui::Modifiers::NONE, egui::Key::ArrowRight) {
-            self.action("transport.frame_forward");
-        }
-        for (key, id) in [
-            (egui::Key::Space, "transport.play"),
-            (egui::Key::K, "transport.pause"),
-            (egui::Key::J, "transport.back"),
-            (egui::Key::L, "transport.forward"),
-            (egui::Key::Home, "transport.start"),
-            (egui::Key::End, "transport.end"),
-        ] {
-            if consume(ctx, egui::Modifiers::NONE, key) {
-                self.action(id);
+        let context = self.dispatch_context(ctx);
+        let outcome = {
+            let keymap = &self.keymap;
+            ctx.input_mut(|input| keymap.take(input, context))
+        };
+        match outcome {
+            Dispatch::Blocked(BlockedReason::TextInput) => {
+                // The focused field sees Escape and blurs itself.
+            }
+            Dispatch::Blocked(_) | Dispatch::NoMatch | Dispatch::FellThrough(_) => {}
+            Dispatch::Unavailable { action, .. } | Dispatch::Action { action, .. } => {
+                self.action(action);
             }
         }
+    }
+    /// Rebuild only when the persisted map changes, including direct test edits.
+    fn sync_keymap(&mut self) {
+        if self.keymap_source != self.preferences.keybindings {
+            self.keymap = Keymap::resolve(&self.preferences.keybindings);
+            self.keybinding_issues = self.keymap.issues().to_vec();
+            self.keymap_source = self.preferences.keybindings.clone();
+        }
+    }
+    fn dispatch_context(&self, ctx: &egui::Context) -> DispatchContext {
+        DispatchContext {
+            overlay_open: self.subtitles.as_ref().is_some_and(|s| s.modal_open())
+                || self.scenes_open
+                || self.export.as_ref().is_some_and(|dialog| dialog.open)
+                || self
+                    .models
+                    .as_ref()
+                    .is_some_and(|models| models.inspect().open),
+            // There is no Editor while a project is loading; the workspace shows
+            // its own progress surface and dispatches no actions.
+            project_loading: false,
+            recording: self.recording_active,
+            text_input: self.subtitles.as_ref().is_some_and(|s| s.editing(ctx))
+                || ctx.text_edit_focused()
+                || self.rename.is_some()
+                || self.track_rename.is_some()
+                || self.scene_rename.is_some()
+                || self.property_focus.is_some(),
+            clipboard_entry: self.clipboard_has_entry(),
+        }
+    }
+    /// Clipboard payload and presence belong to p1-parity/20. Until that lands
+    /// no entry exists, so Ctrl+V falls through to the media paste owner.
+    fn clipboard_has_entry(&self) -> bool {
+        false
+    }
+    pub fn set_recording_active(&mut self, active: bool) {
+        self.recording_active = active;
+    }
+    pub fn recording_active(&self) -> bool {
+        self.recording_active
     }
     /// Accept the native export save picker's result without opening OS UI in tests.
     pub fn export_picked_file(&mut self, path: PathBuf) -> Result<()> {
@@ -6202,23 +6307,23 @@ impl Editor {
                 "transport.back",
                 Icon::SkipBack,
                 self.tr(Text::Back),
-                Some(self.tr(Text::ShortcutBack)),
+                self.shortcut("transport.back").as_deref(),
                 None,
                 !empty,
             ) {
                 self.action("transport.back");
             }
-            let (play_icon, play_text, play_key) = if self.playback.playing() {
-                (Icon::Pause, Text::Pause, Text::ShortcutPause)
+            let (play_icon, play_text, play_action) = if self.playback.playing() {
+                (Icon::Pause, Text::Pause, "transport.pause")
             } else {
-                (Icon::Play, Text::Play, Text::ShortcutPlay)
+                (Icon::Play, Text::Play, "transport.play")
             };
             if self.icon_only(
                 ui,
                 "transport.play",
                 play_icon,
                 self.tr(play_text),
-                Some(self.tr(play_key)),
+                self.shortcut(play_action).as_deref(),
                 None,
                 ready,
             ) {
@@ -6229,7 +6334,7 @@ impl Editor {
                 "transport.forward",
                 Icon::SkipForward,
                 self.tr(Text::Forward),
-                Some(self.tr(Text::ShortcutForward)),
+                self.shortcut("transport.forward").as_deref(),
                 None,
                 !empty,
             ) {
@@ -6944,16 +7049,14 @@ impl Editor {
                     .strong(),
             );
             ui.spacing_mut().item_spacing.x = TOOLBAR_SPACING;
-            let can_undo = self.session.can_undo() || self.preference_history.can_undo();
-            let can_redo = self.session.can_redo() || self.preference_history.can_redo();
             if self.icon_only(
                 ui,
                 "edit.undo",
                 Icon::ArrowCounterClockwise,
                 self.tr(Text::Undo),
-                Some(self.tr(Text::ShortcutUndo)),
+                self.shortcut("edit.undo").as_deref(),
                 None,
-                can_undo,
+                true,
             ) {
                 self.action("edit.undo");
             }
@@ -6962,29 +7065,20 @@ impl Editor {
                 "edit.redo",
                 Icon::ArrowClockwise,
                 self.tr(Text::Redo),
-                Some(self.tr(Text::ShortcutRedo)),
+                self.shortcut("edit.redo").as_deref(),
                 None,
-                can_redo,
+                true,
             ) {
                 self.action("edit.redo");
             }
-            let has_items = self
-                .session
-                .project()
-                .data()
-                .scene()
-                .timeline
-                .iter()
-                .any(|track| !track.items.is_empty());
-            let has_selection = !self.selection.is_empty();
             if self.icon_only(
                 ui,
                 "timeline.split",
                 Icon::Scissors,
                 self.tr(Text::Split),
-                Some(self.tr(Text::ShortcutSplit)),
+                self.shortcut("timeline.split").as_deref(),
                 None,
-                has_items,
+                true,
             ) {
                 self.action("timeline.split");
             }
@@ -6993,9 +7087,9 @@ impl Editor {
                 "timeline.delete",
                 Icon::Trash,
                 self.tr(Text::Delete),
-                Some(self.tr(Text::ShortcutDelete)),
+                self.shortcut("timeline.delete").as_deref(),
                 None,
-                has_selection,
+                true,
             ) {
                 self.action("timeline.delete");
             }
@@ -7015,7 +7109,7 @@ impl Editor {
                 "timeline.snap",
                 Icon::Magnet,
                 self.tr(Text::Snap),
-                Some(self.tr(Text::ShortcutSnap)),
+                self.shortcut("timeline.snap").as_deref(),
                 Some(self.preferences.snapping),
                 true,
             ) {
@@ -7038,7 +7132,7 @@ impl Editor {
                 "timeline.ripple",
                 Icon::Waveform,
                 self.tr(Text::Ripple),
-                Some(self.tr(Text::ShortcutRippleDelete)),
+                None,
                 Some(self.ripple),
                 true,
             ) {
@@ -7744,7 +7838,7 @@ impl Editor {
     /// Add a secondary track compatible with the active section: audio beside an
     /// audio track, otherwise the active overlay kind (Video when nothing is
     /// selected). Above the active track, or the overlay section end otherwise.
-    fn add_track(&mut self) {
+    fn add_track_params(&self) -> serde_json::Value {
         let locale = self.preferences.locale;
         let (kind, placement, count) = {
             let data = self.session.project().data();
@@ -7780,10 +7874,7 @@ impl Editor {
             TrackKind::Text => self.tr(Text::TextItem).to_owned(),
             _ => catalog::format(locale, Text::VideoTrackName, &[("n", &number)]),
         };
-        self.track_command(
-            "timeline.add_track",
-            serde_json::json!({"name":name,"kind":kind,"placement":placement}),
-        );
+        serde_json::json!({"name":name,"kind":kind,"placement":placement})
     }
     fn track_command(&mut self, command: &str, params: serde_json::Value) {
         let before = self.session.project().clone();

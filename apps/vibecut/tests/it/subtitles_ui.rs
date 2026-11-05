@@ -89,10 +89,13 @@ fn with_panel<T>(e: &mut Editor, f: impl FnOnce(&mut Subtitles, &mut Session, &O
 
 #[test]
 fn cue_actions_preserve_focused_caption_draft() {
-    for action in [
-        "subtitles.later",
-        "subtitles.cue.cue-0",
-        "subtitles.cue.cue-1",
+    for (action, direct) in [
+        ("subtitles.later", false),
+        ("subtitles.cue.cue-0", false),
+        ("subtitles.cue.cue-1", false),
+        ("subtitles.later", true),
+        ("subtitles.cue.cue-0", true),
+        ("subtitles.cue.cue-1", true),
     ] {
         let mut h = harness(editor("vi"), 1.0);
         h.run_steps(3);
@@ -110,7 +113,14 @@ fn cue_actions_preserve_focused_caption_draft() {
             .unwrap()
             .to_owned();
         let before = track(h.state()).cues[0].range;
-        click(&mut h, action);
+        if direct {
+            h.state_mut()
+                .dispatch(action, serde_json::json!({}))
+                .unwrap();
+            h.run_steps(3);
+        } else {
+            click(&mut h, action);
+        }
         let after = track(h.state());
         assert_eq!(
             after.cues[0].texts[&lang("vi")].text.as_str(),

@@ -5,6 +5,7 @@
 //! rejects empty rows, duplicate keys and keys no frontend code uses.
 use crate::{
     Error, Result,
+    actions::KeybindingPreferences,
     media_panel::{MediaSort, MediaView},
     panels::{AssetsTab, ElementKind, PropertiesTab},
 };
@@ -501,18 +502,6 @@ catalog! {
     ZoomLevel { key: "zoom_level", en: "Timeline zoom", vi: "Mức thu phóng dòng thời gian" },
     ActionShortcut { key: "action_shortcut", en: "{action} ({shortcut})", vi: "{action} ({shortcut})" },
 
-    // Shortcut notation. Key names stay literal; the catalog owns their display.
-    ShortcutUndo { key: "shortcut_undo", en: "Cmd/Ctrl+Z", vi: "Cmd/Ctrl+Z" },
-    ShortcutRedo { key: "shortcut_redo", en: "Shift+Cmd/Ctrl+Z", vi: "Shift+Cmd/Ctrl+Z" },
-    ShortcutSplit { key: "shortcut_split", en: "Cmd/Ctrl+B", vi: "Cmd/Ctrl+B" },
-    ShortcutDelete { key: "shortcut_delete", en: "Delete", vi: "Delete" },
-    ShortcutSnap { key: "shortcut_snap", en: "N", vi: "N" },
-    ShortcutRippleDelete { key: "shortcut_ripple_delete", en: "Shift+Delete", vi: "Shift+Delete" },
-    ShortcutBack { key: "shortcut_back", en: "J", vi: "J" },
-    ShortcutPause { key: "shortcut_pause", en: "K", vi: "K" },
-    ShortcutPlay { key: "shortcut_play", en: "Space", vi: "Space" },
-    ShortcutForward { key: "shortcut_forward", en: "L", vi: "L" },
-
     // Export.
     ExportMemory { key: "export_memory", en: "Not enough memory for export. Pause playback or reduce the project canvas, then retry.", vi: "Không đủ bộ nhớ để xuất. Tạm dừng phát hoặc giảm kích thước khung hình rồi thử lại." },
     ExportCapability { key: "export_capability", en: "The selected format or source cannot be encoded on this system. Try another format or restore the source.", vi: "Hệ thống không mã hóa được định dạng hoặc nguồn đã chọn. Thử định dạng khác hoặc khôi phục nguồn." },
@@ -882,6 +871,7 @@ pub const PREFERENCE_KEYS: &[&str] = &[
     "media_sort",
     "preview_fit",
     "preview_zoom",
+    "keybindings",
 ];
 
 /// A splitter drag that keeps every region non-empty and inside its limits.
@@ -971,6 +961,10 @@ pub struct Preferences {
     /// Last directory used by the snapshot save dialog.
     #[serde(default)]
     pub snapshot_directory: Option<PathBuf>,
+    /// App-local action overrides. Defaults and action metadata live in
+    /// `actions`; this is the only persisted binding map.
+    #[serde(default)]
+    pub keybindings: KeybindingPreferences,
 }
 pub(crate) const fn default_preview_fit() -> bool {
     true
@@ -998,6 +992,7 @@ impl Default for Preferences {
             preview_fit: default_preview_fit(),
             preview_zoom: default_preview_zoom(),
             snapshot_directory: None,
+            keybindings: KeybindingPreferences::default(),
         }
     }
 }
@@ -1030,6 +1025,7 @@ impl Preferences {
         {
             return Err(Error::Invalid("snapshot directory"));
         }
+        self.keybindings.validate()?;
         if serde_json::to_vec(self)?.len() as u64 > MAX_PREFERENCES_BYTES {
             return Err(Error::Invalid("preference size"));
         }
@@ -1080,6 +1076,7 @@ impl Preferences {
             "preview_fit" => Ok(serde_json::Value::Bool(self.preview_fit)),
             "preview_zoom" => Ok(serde_json::json!(self.preview_zoom)),
             "snapshot_directory" => Ok(serde_json::to_value(&self.snapshot_directory)?),
+            "keybindings" => Ok(serde_json::to_value(&self.keybindings)?),
             _ => Err(Error::Unsupported("preference key")),
         }
     }
@@ -1109,6 +1106,7 @@ impl Preferences {
             "preview_fit" => self.preview_fit = serde_json::from_value(value)?,
             "preview_zoom" => self.preview_zoom = serde_json::from_value(value)?,
             "snapshot_directory" => self.snapshot_directory = serde_json::from_value(value)?,
+            "keybindings" => self.keybindings = serde_json::from_value(value)?,
             _ => return Err(Error::Unsupported("preference key")),
         }
         Ok(())
@@ -1121,6 +1119,7 @@ pub enum PreferenceIssue {
     Read,
     Version,
     Layout,
+    Keybindings,
 }
 impl std::fmt::Display for PreferenceIssue {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -1128,6 +1127,7 @@ impl std::fmt::Display for PreferenceIssue {
             Self::Read => "preferences could not be read",
             Self::Version => "preferences use an unsupported version",
             Self::Layout => "layout preferences were reset",
+            Self::Keybindings => "invalid keybindings were removed",
         })
     }
 }
@@ -1170,6 +1170,11 @@ impl PreferenceStore {
         if value.validate_properties_tabs().is_err() {
             value.properties_tabs.clear();
             issue = Some(PreferenceIssue::Layout);
+        }
+        if value.keybindings.validate().is_err() {
+            let (sanitized, _) = std::mem::take(&mut value.keybindings).sanitize();
+            value.keybindings = sanitized;
+            issue = Some(PreferenceIssue::Keybindings);
         }
         (value, issue)
     }
@@ -1399,6 +1404,13 @@ mod tests {
             (
                 "projects",
                 serde_json::json!({"view": "list", "sort": "duration", "ascending": true}),
+            ),
+            (
+                "keybindings",
+                serde_json::json!({
+                    "bindings": {"timeline.snap": ["Ctrl+Shift+N"]},
+                    "isCustomized": ["timeline.snap"]
+                }),
             ),
             (
                 "export",

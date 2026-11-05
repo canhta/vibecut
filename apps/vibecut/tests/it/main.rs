@@ -4,6 +4,7 @@ mod desktop;
 mod effects;
 mod effects_ui;
 mod export_ui;
+mod keybindings_ui;
 mod layout_prefs;
 mod lifecycle;
 mod media_import;

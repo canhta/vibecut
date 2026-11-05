@@ -245,12 +245,27 @@ macro_rules! commands {
         fn declarations() -> Vec<(&'static str, &'static str, Effect, Example)> {
             vec![$(($id, $label, Effect::$effect, Example { fixture:Fixture::$fixture, params:$example })),*]
         }
+        /// Parameter-free command identity, generated with its schema and executor.
+        #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+        pub enum CommandKind { $($variant),* }
+        impl CommandKind {
+            pub const fn id(self) -> &'static str {
+                match self { $(Self::$variant => $id),* }
+            }
+            pub fn enabled(self, session: &crate::Session) -> bool {
+                registry().iter().find(|spec| spec.id == self.id())
+                    .is_some_and(|spec| spec.enabled(session))
+            }
+        }
         impl Command {
             pub fn effect(&self) -> Effect {
                 match self { $(Self::$variant { .. } => Effect::$effect),* }
             }
+            pub const fn kind(&self) -> CommandKind {
+                match self { $(Self::$variant { .. } => CommandKind::$variant),* }
+            }
             pub fn id(&self) -> &'static str {
-                match self { $(Self::$variant { .. } => $id),* }
+                self.kind().id()
             }
         }
     };

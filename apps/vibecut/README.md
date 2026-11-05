@@ -132,18 +132,39 @@ horizontal wheel follows egui content direction.
 levels in dark/light at 1x/2x outside CI. Zoom, horizontal scroll, frame-snapped
 ruler seeking,
 single/Cmd-or-Shift multi-selection, drag move, edge trims, bookmark drag, split,
-delete and ripple delete all dispatch engine commands. Delete/Backspace removes,
-Shift+Delete ripple-deletes, Cmd/Ctrl+B splits at the playhead and N toggles
-snapping. Snapping is a persisted preference (on by default) exposed by the
+delete and ripple delete all dispatch engine commands. Snapping is a persisted preference (on by default) exposed by the
 magnet toolbar control; it converts 10 logical pixels to ticks at the current
 zoom and ranks item start/end, playhead, bookmark and animation-keyframe targets
 by pixel distance then stable source order. The indicator line is drawn only
 while a candidate is active. Move, trim and bookmark drag honour the toggle and
 Shift bypasses it; the gesture preview changes no committed history or project
-JSON until drop, and Escape restores the entry bytes. Cmd/Ctrl+Z undoes and
-Shift+Cmd/Ctrl+Z or Cmd+Y redoes. Space toggles playback; K pauses; J/L seek one second backwards/forwards;
-arrows step one frame; Shift+arrows jump one second; Home/End seek the timeline
-ends. Scrubbing uses the same seek path. Two resizable columns and a horizontal
+JSON until drop, and Escape restores the entry bytes. The app
+action registry in `src/actions.rs` is the single source for key, menu and button
+trigger ids and executable routes. `ActionTarget::Engine(EngineAction)` chooses
+an engine-owned `CommandKind`; the same chosen kind supplies its id to execution
+and its engine availability predicate. App payload construction and batch
+selection updates stay in the frontend. `ActionTarget::Ui { owner, action }`
+names an explicit app workflow, including dialog opening and the combined app /
+engine undo history. Parameterized scene/item widgets resolve to registered
+families before activation; unregistered ids refuse before state changes.
+`Editor::action_enabled` adds app selection requirements to engine availability
+and gates both generic action widgets and direct/key dispatch.
+
+The read surface for the shortcuts dialog remains `actions()`, `action(id)`,
+`ActionSpec` metadata/defaults/availability (`bindable()` excludes parameterized
+widget families), effective bindings and conflicts on
+`KeybindingPreferences` / `Keymap`, and `Editor::set_keybinding` /
+`reset_keybinding` / `reset_keybindings`. Target payloads are executable route
+enums; consumers need not match them to list or edit shortcuts.
+[The keyboard guide](../../docs/product/keyboard.md) holds its
+generated default table. Global dispatch runs in the capture phase, waits while
+an overlay or dialog is open, a project is loading, recording is active or a text
+field has focus, and consumes one exact chord once. Paste is intercepted only
+when the in-app clipboard has an entry; otherwise the event remains for media
+paste. Shift bypasses snapping during a drag. Scrubbing uses the same seek path.
+Binding overrides and `isCustomized` markers persist in the one preference store;
+unknown actions and conflicts are reported, and unsupported import profiles are
+refused with a typed diagnostic. Two resizable columns and a horizontal
 divider start at the UI design's 25/50/25 and 50/50 proportions. Drags clamp
 assets/properties to 15–40%, preview to 30–85% and the timeline to 15–70%, so no
 region reaches zero. The assets panel has the reference's nine-tab vertical icon

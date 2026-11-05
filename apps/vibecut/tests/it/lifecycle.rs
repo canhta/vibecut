@@ -179,10 +179,23 @@ fn inline_rename_commit_cancel_and_window_close_guard_use_real_widgets() {
         .events
         .clear();
     h.run_steps(3);
+    let snapping = h.state().editor.as_ref().unwrap().preferences.snapping;
+    h.key_press(egui::Key::N);
+    h.run_steps(3);
+    assert_eq!(
+        h.state().editor.as_ref().unwrap().preferences.snapping,
+        snapping
+    );
     h.get(By::new().predicate(|n| n.author_id() == Some("project.close.cancel")))
         .click();
     h.run_steps(3);
     assert!(!h.state().ready_to_close());
+    h.key_press(egui::Key::N);
+    h.run_steps(3);
+    assert_ne!(
+        h.state().editor.as_ref().unwrap().preferences.snapping,
+        snapping
+    );
 }
 #[test]
 fn recovery_prompt_recovers_copy_and_requires_save_as() {
