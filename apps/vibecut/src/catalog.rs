@@ -101,10 +101,32 @@ pub enum Text {
     Ripple,
     ZoomIn,
     ZoomOut,
+    AudioGain,
+    TextSize,
+    TextColor,
+    Compatible,
+    NoSharedFields,
+    MaskPoints,
+    Keyframes,
 }
 pub fn text(locale: Locale, key: Text) -> &'static str {
     use Text::*;
     match (locale, key) {
+        (Locale::En, AudioGain) => "Volume (dB)",
+        (Locale::Vi, AudioGain) => "Âm lượng (dB)",
+        (Locale::En, TextSize) => "Font size (px)",
+        (Locale::Vi, TextSize) => "Cỡ chữ (px)",
+        (Locale::En, TextColor) => "Text colour (RGBA)",
+        (Locale::Vi, TextColor) => "Màu chữ (RGBA)",
+        (Locale::En, Compatible) => "Compatible items",
+        (Locale::Vi, Compatible) => "Mục tương thích",
+        (Locale::En, NoSharedFields) => "No editable shared fields for this selection.",
+        (Locale::Vi, NoSharedFields) => "Không có thuộc tính chung có thể sửa cho lựa chọn này.",
+        (Locale::En, MaskPoints) => "Mask points selected",
+        (Locale::Vi, MaskPoints) => "Đã chọn điểm mặt nạ",
+        (Locale::En, Keyframes) => "Keyframes selected",
+        (Locale::Vi, Keyframes) => "Đã chọn khung hình chính",
+
         (Locale::En, Sticker) => "Sticker",
         (Locale::Vi, Sticker) => "Nhãn dán",
         (Locale::En, Effect) => "Effect",

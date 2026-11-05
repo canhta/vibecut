@@ -1,6 +1,7 @@
 use crate::{Command, EditError, Outcome, Result, edit};
-use project::Project;
+use project::{ItemId, Project};
 use serde_json::Value;
+use std::collections::BTreeSet;
 use std::{
     collections::VecDeque,
     panic::{AssertUnwindSafe, catch_unwind},
@@ -8,10 +9,16 @@ use std::{
 };
 
 #[derive(Clone)]
+struct Snapshot {
+    project: Arc<Project>,
+    selection: Arc<BTreeSet<ItemId>>,
+}
+#[derive(Clone)]
 struct State {
     project: Arc<Project>,
-    undo: VecDeque<Arc<Project>>,
-    redo: Vec<Arc<Project>>,
+    undo: VecDeque<Snapshot>,
+    redo: Vec<Snapshot>,
+    selection: Arc<BTreeSet<ItemId>>,
     merge_key: Option<String>,
     trim_sources: edit::TrimSources,
     next_id: Option<u64>,
@@ -70,6 +77,7 @@ impl Session {
                 project: Arc::new(project),
                 undo: VecDeque::new(),
                 redo: Vec::new(),
+                selection: Arc::new(BTreeSet::new()),
                 merge_key: None,
                 trim_sources: edit::TrimSources::new(),
                 next_id,
@@ -137,6 +145,48 @@ impl Session {
     /// Current immutable snapshot, including a gesture/group preview while active.
     pub fn project(&self) -> &Arc<Project> {
         &self.state.project
+    }
+    /// Transient item selection, retained with history but never serialized into Project.
+    pub fn selection(&self) -> &BTreeSet<ItemId> {
+        &self.state.selection
+    }
+    /// Replace selection without making an undo step. Missing IDs and changes during
+    /// a gesture/group refuse; changing selection ends implicit coalescing.
+    pub fn set_selection(&mut self, selection: BTreeSet<ItemId>) -> Result<()> {
+        if selection == *self.state.selection {
+            return Ok(());
+        }
+        if self.transaction_active() {
+            return Err(EditError::TransactionActive);
+        }
+        if selection.len() > crate::control::MAX_COLLECTION {
+            return Err(EditError::Limit);
+        }
+        let existing: BTreeSet<_> = self
+            .project()
+            .data()
+            .timeline
+            .iter()
+            .flat_map(|t| t.items.iter().map(|i| i.id))
+            .collect();
+        if let Some(id) = selection.iter().find(|id| !existing.contains(id)) {
+            return Err(EditError::NoItem(*id));
+        }
+        self.end_merge();
+        self.state.selection = Arc::new(selection);
+        Ok(())
+    }
+    fn prune_selection(&mut self) {
+        let existing: BTreeSet<_> = self
+            .project()
+            .data()
+            .timeline
+            .iter()
+            .flat_map(|t| t.items.iter().map(|i| i.id))
+            .collect();
+        if self.state.selection.iter().any(|id| !existing.contains(id)) {
+            Arc::make_mut(&mut self.state.selection).retain(|id| existing.contains(id));
+        }
     }
     pub fn can_undo(&self) -> bool {
         !self.transaction_active() && !self.state.undo.is_empty()
@@ -444,12 +494,16 @@ impl Session {
     }
     fn publish(&mut self, next: Arc<Project>, key: Option<&str>) {
         if key.is_none() || self.state.merge_key.as_deref() != key {
-            self.state.undo.push_back(self.state.project.clone());
+            self.state.undo.push_back(Snapshot {
+                project: self.state.project.clone(),
+                selection: self.state.selection.clone(),
+            });
             if self.state.undo.len() > self.limit {
                 self.state.undo.pop_front();
             }
         }
         self.state.project = next;
+        self.prune_selection();
         self.state.redo.clear();
         self.state.merge_key = key.map(str::to_owned);
         self.state.change = Some(self.state.project.clone());
@@ -471,7 +525,7 @@ impl Session {
                 self.state.undo.back()
             }
             .ok_or(EditError::NoHistory)?;
-            crate::control::validate_wire(candidate.data())?;
+            crate::control::validate_wire(candidate.project.data())?;
         }
         let snapshot = if redo {
             self.state.redo.pop()
@@ -479,7 +533,14 @@ impl Session {
             self.state.undo.pop_back()
         }
         .ok_or(EditError::NoHistory)?;
-        let old = std::mem::replace(&mut self.state.project, snapshot);
+        // Each entry remembers the selection that produced its edit, even if the
+        // user subsequently deselected everything before invoking history.
+        let old = Snapshot {
+            project: std::mem::replace(&mut self.state.project, snapshot.project),
+            selection: snapshot.selection.clone(),
+        };
+        self.state.selection = snapshot.selection;
+        self.prune_selection();
         if redo {
             self.state.undo.push_back(old);
         } else {

@@ -951,3 +951,69 @@ fn cli_blur_executes_and_export_encodes_instead_of_copying() {
         .sum();
     assert!(difference > 10000, "blur was bypassed: {difference}");
 }
+
+#[test]
+fn exec_shared_field_id_list_persists_only_compatible_item_fields() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("Lựa chọn.json");
+    let mut data = project::Project::empty(project::ProjectId(0), "Batch".into())
+        .unwrap()
+        .into_data();
+    data.timeline.insert_track(project::Track {
+        id: project::TrackId(1),
+        name: "Text".into(),
+        kind: project::TrackKind::Text,
+        muted: false,
+        hidden: false,
+        locked: false,
+        items: (0..2)
+            .map(|i| project::Item {
+                effects: vec![],
+                animations: Default::default(),
+                id: project::ItemId(i + 10),
+                source_asset: None,
+                source_range: TimeRange::new(Tick::ZERO, Tick(100)).unwrap(),
+                start: Tick(i as i64 * 100),
+                content: project::ItemParams::Text(project::TextParams {
+                    content: format!("Text {i}").into(),
+                    font_size: 24.0 + i as f32,
+                    color: project::Color([255; 4]),
+                }),
+            })
+            .collect(),
+    });
+    let original = project::Project::new(data).unwrap();
+    fs::write(&path, project::encode(&original, true).unwrap()).unwrap();
+    let result = exec(
+        &path,
+        "timeline.set_item_param_many",
+        json!({"items":[10,11],"patch":{"field":"text_size","value":60}}),
+    );
+    assert_eq!(result["changed"], true);
+    let saved = project::decode(&fs::read(&path).unwrap()).unwrap().project;
+    for (before, after) in original
+        .data()
+        .timeline
+        .iter()
+        .flat_map(|t| &t.items)
+        .zip(saved.data().timeline.iter().flat_map(|t| &t.items))
+    {
+        let project::ItemParams::Text(p) = &after.content else {
+            panic!("text")
+        };
+        let project::ItemParams::Text(old) = &before.content else {
+            panic!("text")
+        };
+        assert_eq!(p.font_size, 60.0);
+        assert_eq!(p.content, old.content);
+        assert_eq!(p.color, old.color);
+    }
+    let before = fs::read(&path).unwrap();
+    let result = exec(
+        &path,
+        "timeline.set_item_param_many",
+        json!({"items":[10,11],"patch":{"field":"audio_gain","value":-6}}),
+    );
+    assert_eq!(result["changed"], false);
+    assert_eq!(fs::read(&path).unwrap(), before);
+}

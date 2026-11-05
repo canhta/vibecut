@@ -26,7 +26,9 @@ pub(crate) fn check_budget(command: &Command) -> Result<()> {
             Command::MoveItems { moves } if moves.len() > crate::control::MAX_COLLECTION => {
                 return Err(EditError::Limit);
             }
-            Command::Delete { items } if items.len() > crate::control::MAX_COLLECTION => {
+            Command::Delete { items } | Command::SetItemParamMany { items, .. }
+                if items.len() > crate::control::MAX_COLLECTION =>
+            {
                 return Err(EditError::Limit);
             }
             Command::Inspect {}
@@ -298,6 +300,40 @@ pub(crate) fn apply(
             item(&mut data, id)?.content = content;
             // Explicit content replacement becomes authoritative for later previews.
             sources.remove(&id);
+        }
+        Command::SetItemParamMany { items, patch } => {
+            patch.validate()?;
+            if items.is_empty() {
+                return Err(EditError::Invalid("empty item selection"));
+            }
+            let mut remaining: BTreeSet<_> = items.iter().copied().collect();
+            if remaining.len() != items.len() {
+                return Err(EditError::Invalid("duplicate item selection"));
+            }
+            // Walk the candidate once: large selections must not rescan the timeline per ID.
+            for track in data.timeline.iter_mut() {
+                for target in &mut track.items {
+                    if !remaining.remove(&target.id) || !patch.compatible(&target.content) {
+                        continue;
+                    }
+                    if track.locked {
+                        return Err(EditError::Locked(track.id));
+                    }
+                    match (&patch, &mut target.content) {
+                        (crate::ItemParamPatch::AudioGain(v), ItemParams::Audio(p)) => {
+                            p.gain_db = *v
+                        }
+                        (crate::ItemParamPatch::TextSize(v), ItemParams::Text(p)) => {
+                            p.font_size = *v
+                        }
+                        (crate::ItemParamPatch::TextColor(v), ItemParams::Text(p)) => p.color = *v,
+                        _ => {}
+                    }
+                }
+            }
+            if let Some(id) = remaining.into_iter().next() {
+                return Err(EditError::NoItem(id));
+            }
         }
         Command::AddEffect { item: id, effect } => {
             let item = item(&mut data, id)?;

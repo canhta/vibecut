@@ -47,3 +47,8 @@ and reports optional sidecar `metadata`. `exec ... project.set_view_state` write
 only metadata, leaving project bytes unchanged; `project.rename` is an edit and
 `project.save {}` explicitly republishes the project plus metadata. Missing/corrupt
 sidecars default through project. Busy/conflict refusals keep their typed codes.
+
+A shared-field edit uses the same registry, for example:
+`exec project.json timeline.set_item_param_many '{"items":[10,11],"patch":{"field":"text_size","value":48}}'`.
+See the [engine shared-field contract](../../crates/engine/README.md#transient-selection-and-shared-fields)
+for compatibility and atomic refusal rules.

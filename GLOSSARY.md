@@ -70,3 +70,9 @@ text, retaining its source speech timing.
 **Word**: Recognized source text with optional source range, speaker and confidence.
 
 **CueTrack**: A collection of timed cues for subtitle validation and export.
+
+**Selection**: The timeline items chosen as the targets of an editing action.
+
+**Selection scope**: The current level of selection: timeline items, keyframes
+within items, or points within a mask. Clearing a selection acts on the most
+specific occupied scope first.

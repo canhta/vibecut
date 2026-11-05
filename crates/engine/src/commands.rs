@@ -4,6 +4,41 @@ use project::{BookmarkId, Color, ItemId, ItemParams, TrackId, TrackKind};
 use serde::{Deserialize, Serialize};
 use time::{SourceRange, Tick};
 
+/// A shared field edit; incompatible item kinds are left unchanged.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
+#[serde(
+    tag = "field",
+    content = "value",
+    rename_all = "snake_case",
+    deny_unknown_fields
+)]
+pub enum ItemParamPatch {
+    AudioGain(f32),
+    TextSize(f32),
+    TextColor(Color),
+}
+impl ItemParamPatch {
+    pub fn compatible(&self, content: &ItemParams) -> bool {
+        matches!(
+            (self, content),
+            (Self::AudioGain(_), ItemParams::Audio(_))
+                | (Self::TextSize(_) | Self::TextColor(_), ItemParams::Text(_))
+        )
+    }
+    pub(crate) fn validate(&self) -> crate::Result<()> {
+        let valid = match self {
+            Self::AudioGain(v) => v.is_finite() && (-120.0..=24.0).contains(v),
+            Self::TextSize(v) => v.is_finite() && (1.0..=4096.0).contains(v),
+            Self::TextColor(_) => true,
+        };
+        if valid {
+            Ok(())
+        } else {
+            Err(crate::EditError::Invalid("shared field value"))
+        }
+    }
+}
+
 /// Effects are engine metadata; adapters must never infer permission from names.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, schemars::JsonSchema)]
 #[serde(rename_all = "snake_case")]
@@ -165,6 +200,7 @@ commands! {
     Delete, "delete", "Delete items", Edit { items: Vec<ItemId> } => Timeline, serde_json::json!({"items":[1]});
     RippleDelete, "ripple_delete", "Ripple delete", Edit { item: ItemId } => Timeline, serde_json::json!({"item":1});
     SetItemParam, "set_item_param", "Set item parameters", Edit { item: ItemId, content: ItemParams } => Timeline, serde_json::json!({"item":1,"content":{"kind":"overlay","params":{"color":[255,255,0,255]}}});
+    SetItemParamMany, "timeline.set_item_param_many", "Set shared item field", Edit { items: Vec<ItemId>, patch: ItemParamPatch } => Timeline, serde_json::json!({"items":[1],"patch":{"field":"text_size","value":48.0}});
     AddEffect, "effects.add", "Add effect", Edit { item: ItemId, effect: project::EffectInstance } => Timeline, serde_json::json!({"item":1,"effect":{"id":"blur2","enabled":true,"params":{"kind":"blur","intensity":15.0}}});
     RemoveEffect, "effects.remove", "Remove effect", Edit { item: ItemId, effect: String } => Timeline, serde_json::json!({"item":1,"effect":"blur1"});
     UpdateEffectParams, "effects.update_params", "Update effect parameters", Edit { item: ItemId, effect: String, params: project::EffectParams } => Timeline, serde_json::json!({"item":1,"effect":"blur1","params":{"kind":"blur","intensity":30.0}});

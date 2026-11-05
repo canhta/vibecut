@@ -905,3 +905,313 @@ fn engine_view_command_is_not_overwritten_by_the_next_editor_action() {
         "a relative UI action starts from the latest engine-issued view"
     );
 }
+
+#[test]
+fn marquee_reversal_and_escape_scopes_leave_project_unchanged() {
+    use vibecut::selection::SelectionScope;
+    let fixture = fixture();
+    let a = fixture.video_a;
+    let b = fixture.video_b;
+    let bytes = serde_json::to_vec(fixture.editor.session.project().data()).unwrap();
+    let mut harness = harness(fixture.editor);
+    harness.run_steps(3);
+    let ar = widget(&harness, &format!("timeline.item.{}", a.0));
+    let br = widget(&harness, &format!("timeline.item.{}", b.0));
+    let body = widget(&harness, "timeline.marquee");
+    // The test derives geometry from real automation IDs; no OS/window coordinates.
+    let origin = egui::pos2(br.right() + 12.0, ar.bottom() + 3.0);
+    assert!(body.contains(origin));
+    harness.drag_at(origin);
+    harness.run_steps(1);
+    harness.hover_at(ar.left_top() - egui::vec2(1.0, 1.0));
+    harness.run_steps(2);
+    assert_eq!(harness.state().selection, [a, b].into_iter().collect());
+    harness.hover_at(egui::pos2(br.left() + 5.0, ar.top() - 1.0));
+    harness.run_steps(2);
+    assert_eq!(harness.state().selection, [b].into_iter().collect());
+    harness.drop_at(ar.left_top() - egui::vec2(1.0, 1.0));
+    harness.run_steps(2);
+    assert_eq!(harness.state().selection, [a, b].into_iter().collect());
+    harness.drag_at(origin);
+    harness.run_steps(1);
+    harness.hover_at(egui::pos2(br.left() + 5.0, ar.top() - 1.0));
+    harness.run_steps(2);
+    assert_eq!(harness.state().selection, [b].into_iter().collect());
+    harness.key_press(egui::Key::Escape);
+    harness.run_steps(2);
+    assert_eq!(harness.state().selection, [a, b].into_iter().collect());
+    harness.drop_at(origin);
+    harness.run_steps(2);
+    harness.state_mut().selection_scopes.mask_points.insert(
+        vibecut::selection::MaskPointSelection {
+            item: a,
+            mask: 0,
+            point: 0,
+        },
+    );
+    harness
+        .state_mut()
+        .selection_scopes
+        .keyframes
+        .insert(vibecut::selection::KeyframeSelection {
+            item: a,
+            path: project::AnimationPath::new("opacity").unwrap(),
+            component: None,
+            time: Tick::ZERO,
+        });
+    for scope in [
+        SelectionScope::MaskPoints,
+        SelectionScope::Keyframes,
+        SelectionScope::Items,
+    ] {
+        assert_eq!(harness.state().inspect().unwrap().selection_scope, scope);
+        harness.key_press(egui::Key::Escape);
+        harness.run_steps(2);
+    }
+    assert!(harness.state().selection.is_empty());
+    harness.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::A);
+    harness.run_steps(2);
+    assert_eq!(harness.state().selection.len(), count(harness.state()));
+    harness.key_press(egui::Key::Escape);
+    harness.run_steps(2);
+    assert!(harness.state().selection.is_empty());
+    assert_eq!(
+        serde_json::to_vec(harness.state().session.project().data()).unwrap(),
+        bytes
+    );
+}
+
+fn two_text_fixture() -> (Fixture, ItemId, ItemId) {
+    let mut fixture = fixture();
+    let text = fixture
+        .editor
+        .session
+        .project()
+        .data()
+        .timeline
+        .iter()
+        .find(|t| t.kind == TrackKind::Text)
+        .unwrap()
+        .id;
+    let first = fixture
+        .editor
+        .session
+        .project()
+        .data()
+        .timeline
+        .iter()
+        .find(|t| t.id == text)
+        .unwrap()
+        .items[0]
+        .id;
+    let second = insert(
+        &mut fixture.editor.session,
+        text,
+        Tick(6 * SECOND),
+        SourceRange::new(Tick::ZERO, Tick(2 * SECOND)).unwrap(),
+        None,
+        ItemParams::Text(project::TextParams {
+            content: "Khác".into(),
+            font_size: 24.0,
+            color: Color([20, 30, 40, 255]),
+        }),
+    );
+    (fixture, first, second)
+}
+
+#[test]
+fn mixed_text_inspector_applies_one_field_and_restores_selected_items() {
+    let (fixture, first, second) = two_text_fixture();
+    let mut harness = harness(fixture.editor);
+    harness.run_steps(3);
+    for (id, modifiers) in [
+        (first, egui::Modifiers::NONE),
+        (second, egui::Modifiers::SHIFT),
+    ] {
+        harness
+            .get(
+                By::new().predicate(|n| {
+                    n.author_id() == Some(format!("timeline.item.{}", id.0).as_str())
+                }),
+            )
+            .click_modifiers(modifiers);
+        harness.run_steps(2);
+    }
+    let fields = vibecut::selection::shared_fields(
+        harness.state().session.project(),
+        &harness.state().selection,
+    );
+    assert_eq!(fields.len(), 2);
+    assert!(
+        fields
+            .iter()
+            .all(|f| f.value.is_none() && f.compatible == 2)
+    );
+    let before = harness.state().session.project().clone();
+    let history = harness.state().session.history_len().0;
+    harness
+        .get(By::new().predicate(|n| n.author_id() == Some("inspector.text_size")))
+        .click();
+    harness.run_steps(1);
+    harness.event(egui::Event::Text("64".into()));
+    harness.key_press(egui::Key::Enter);
+    harness.run_steps(3);
+    assert_eq!(harness.state().session.history_len().0, history + 1);
+    for id in [first, second] {
+        let ItemParams::Text(p) = &item(harness.state(), id).content else {
+            panic!("text")
+        };
+        assert_eq!(p.font_size, 64.0);
+    }
+    harness
+        .state_mut()
+        .activate("timeline.deselect_all")
+        .unwrap();
+    harness.state_mut().activate("edit.undo").unwrap();
+    assert_eq!(harness.state().session.project(), &before);
+    assert_eq!(
+        harness.state().selection,
+        [first, second].into_iter().collect()
+    );
+    harness.state_mut().activate("edit.redo").unwrap();
+    assert_eq!(
+        harness.state().selection,
+        [first, second].into_iter().collect()
+    );
+    for invalid in ["NaN", "0", "4097", "-1"] {
+        assert!(
+            harness
+                .state_mut()
+                .set_shared_field("text_size", invalid)
+                .is_err()
+        );
+    }
+    assert!(
+        harness
+            .state_mut()
+            .set_shared_field("text_color", "💥")
+            .is_err()
+    );
+    harness
+        .state_mut()
+        .set_shared_field("text_color", "#11223344")
+        .unwrap();
+    for id in [first, second] {
+        let ItemParams::Text(p) = &item(harness.state(), id).content else {
+            panic!("text")
+        };
+        assert_eq!(p.font_size, 64.0);
+        assert_eq!(p.color, Color([17, 34, 51, 68]));
+    }
+}
+
+#[test]
+#[ignore = "offscreen visual audit, run explicitly outside CI"]
+fn selection_inspector_visual_audit() {
+    for (scale, dark, locale, filename) in [
+        (1.0, true, Locale::En, "p1-19-selection.png"),
+        (2.0, false, Locale::Vi, "p1-19-selection-light-vi-2x.png"),
+    ] {
+        let (mut fixture, first, second) = two_text_fixture();
+        fixture.editor.preferences.dark = dark;
+        fixture.editor.preferences.locale = locale;
+        let media: Vec<_> = fixture
+            .editor
+            .session
+            .project()
+            .data()
+            .timeline
+            .iter()
+            .flat_map(|t| &t.items)
+            .filter(|i| matches!(i.content, ItemParams::Video(_) | ItemParams::Audio(_)))
+            .map(|i| i.id)
+            .collect();
+        fixture
+            .editor
+            .session
+            .apply(Command::Delete { items: media })
+            .unwrap();
+        let main = fixture.editor.session.project().data().timeline.main.id;
+        let background = insert(
+            &mut fixture.editor.session,
+            main,
+            Tick::ZERO,
+            SourceRange::new(Tick::ZERO, Tick(10 * SECOND)).unwrap(),
+            None,
+            ItemParams::Overlay(project::OverlayParams {
+                color: Color([35, 45, 65, 255]),
+            }),
+        );
+        fixture.editor.selection = [first, second, background].into_iter().collect();
+        let project = fixture.editor.session.project().clone();
+        fixture
+            .editor
+            .playback
+            .seek(Tick(3 * SECOND), false, project)
+            .unwrap();
+        let mut harness = Harness::builder()
+            .with_size(egui::vec2(1440.0, 900.0))
+            .with_pixels_per_point(scale)
+            .build_ui_state(|ui, editor: &mut Editor| editor.ui(ui), fixture.editor);
+        harness.run_steps(4);
+        let image = harness.render().unwrap();
+        let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../../target")
+            .join(filename);
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        image.save(&path).unwrap();
+        println!("selection audit: {}", path.display());
+    }
+}
+
+#[test]
+fn compatible_audio_gain_inspector_skips_video_and_preserves_mute() {
+    let fixture = fixture();
+    let video = fixture.video_a;
+    let audio = fixture
+        .editor
+        .session
+        .project()
+        .data()
+        .timeline
+        .iter()
+        .find(|t| t.kind == TrackKind::Audio)
+        .unwrap()
+        .items[0]
+        .id;
+    let mut harness = harness(fixture.editor);
+    harness.run_steps(3);
+    for (id, modifiers) in [
+        (video, egui::Modifiers::NONE),
+        (audio, egui::Modifiers::CTRL),
+    ] {
+        harness
+            .get(
+                By::new().predicate(|n| {
+                    n.author_id() == Some(format!("timeline.item.{}", id.0).as_str())
+                }),
+            )
+            .click_modifiers(modifiers);
+        harness.run_steps(2);
+    }
+    let before = item(harness.state(), video).clone();
+    harness
+        .get(By::new().predicate(|n| n.author_id() == Some("inspector.audio_gain")))
+        .click();
+    harness.run_steps(1);
+    harness.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::A);
+    harness.run_steps(1);
+    harness.event(egui::Event::Text("-6".into()));
+    harness.key_press(egui::Key::Enter);
+    harness.run_steps(3);
+    assert_eq!(
+        harness.state().selection,
+        [video, audio].into_iter().collect()
+    );
+    assert_eq!(item(harness.state(), video), &before);
+    let ItemParams::Audio(p) = &item(harness.state(), audio).content else {
+        panic!("audio")
+    };
+    assert_eq!(p.gain_db, -6.0);
+    assert!(!p.muted);
+}

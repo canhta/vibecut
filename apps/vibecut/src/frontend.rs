@@ -1,3 +1,4 @@
+use crate::selection::{SelectionScope, SelectionScopes, shared_fields};
 use crate::{
     Error, Result,
     catalog::{self, Locale, Preferences, Text},
@@ -5,7 +6,7 @@ use crate::{
     import::{ImportEvent, ImportFailure, ImportProbe, ImportQueue},
     playback::Playback,
 };
-use engine::{Command, CreatedId, NewItem, Session};
+use engine::{Command, CreatedId, ItemParamPatch, NewItem, Session};
 use media::{AssetId, SourceAsset, StreamKind};
 use project::{ItemId, ItemParams, TrackId, TrackKind};
 use std::{
@@ -42,6 +43,7 @@ pub struct Inspection {
     pub playing: bool,
     pub position: Tick,
     pub selection: Vec<ItemId>,
+    pub selection_scope: SelectionScope,
     pub zoom: f32,
     pub snapping: bool,
     pub ripple: bool,
@@ -173,6 +175,10 @@ pub struct Editor {
     pub playback: Playback,
     pub preferences: Preferences,
     pub selection: BTreeSet<ItemId>,
+    pub selection_scopes: SelectionScopes,
+    marquee: Option<(egui::Pos2, BTreeSet<ItemId>, bool)>,
+    property_drafts: BTreeMap<&'static str, String>,
+    property_selection: BTreeSet<ItemId>,
     pub snapping: bool,
     pub ripple: bool,
     zoom: f32,
@@ -222,11 +228,16 @@ impl Editor {
         let zoom = (f64::from(DEFAULT_ZOOM) * view.zoom)
             .clamp(f64::from(MIN_ZOOM), f64::from(MAX_ZOOM)) as f32;
         let scroll = (view.scroll / f64::from(zoom)) as f32;
+        let selection = session.selection().clone();
         Self {
             session,
             playback,
             preferences,
-            selection: BTreeSet::new(),
+            selection,
+            selection_scopes: SelectionScopes::default(),
+            marquee: None,
+            property_drafts: BTreeMap::new(),
+            property_selection: BTreeSet::new(),
             snapping: true,
             ripple: false,
             zoom,
@@ -279,6 +290,7 @@ impl Editor {
             playing: self.playback.playing(),
             position: self.playback.position()?,
             selection: self.selection.iter().copied().collect(),
+            selection_scope: self.selection_scopes.active(&self.selection),
             zoom: self.zoom,
             snapping: self.snapping,
             ripple: self.ripple,
@@ -495,29 +507,13 @@ impl Editor {
             .iter()
             .map(SourceAsset::id)
             .collect();
-        if modifiers.shift
-            && let Some(anchor) = self.media_anchor
-            && let (Some(from), Some(to)) = (
-                ids.iter().position(|candidate| *candidate == anchor),
-                ids.iter().position(|candidate| *candidate == id),
-            )
-        {
-            let (from, to) = if from <= to { (from, to) } else { (to, from) };
-            if let Some(range) = ids.get(from..=to) {
-                self.media_selection = range.iter().copied().collect();
-            }
-            self.session.end_merge();
-            return;
-        }
-        if modifiers.command {
-            if !self.media_selection.remove(&id) {
-                self.media_selection.insert(id);
-            }
-        } else {
-            self.media_selection.clear();
-            self.media_selection.insert(id);
-        }
-        self.media_anchor = Some(id);
+        crate::selection::click(
+            &mut self.media_selection,
+            &mut self.media_anchor,
+            id,
+            modifiers.command || modifiers.ctrl,
+            modifiers.shift.then_some(ids.as_slice()),
+        );
         self.session.end_merge();
     }
     /// Add only selected assets, in library order, appending after existing
@@ -672,6 +668,7 @@ impl Editor {
     /// All control inputs (including tests/agents) use the same action path.
     /// Project edits are engine registry calls; transport/preferences are app state.
     pub fn activate(&mut self, id: &str) -> Result<()> {
+        self.session.set_selection(self.selection.clone())?;
         self.remember_view()?;
         let at = self.playback.position()?;
         let duration = self.session.project().duration();
@@ -719,12 +716,19 @@ impl Editor {
                     if id == "edit.undo" { "undo" } else { "redo" },
                     serde_json::json!({}),
                 )?;
-                self.prune_selection();
+                self.selection = self.session.selection().clone();
+                self.selection_scopes = SelectionScopes::default();
+                self.property_drafts.clear();
             }
             "timeline.split" => self.split_at_playhead()?,
             "timeline.delete" => self.delete_selected(self.ripple)?,
             "timeline.ripple_delete" => self.delete_selected(true)?,
             "timeline.select_all" => self.select_all(),
+            "timeline.deselect_all" => {
+                self.selection.clear();
+                self.selection_scopes = SelectionScopes::default();
+            }
+            "selection.escape" => self.cancel_interaction(),
             "timeline.snap" => self.snapping = !self.snapping,
             "timeline.ripple" => self.ripple = !self.ripple,
             "timeline.zoom_in" => self.zoom_by(ZOOM_STEP),
@@ -749,7 +753,18 @@ impl Editor {
                 let parsed = raw
                     .parse::<u64>()
                     .map_err(|_| Error::Unsupported("widget action"))?;
-                self.select_single(ItemId(parsed));
+                let item = ItemId(parsed);
+                if !self
+                    .session
+                    .project()
+                    .data()
+                    .timeline
+                    .iter()
+                    .any(|t| t.items.iter().any(|i| i.id == item))
+                {
+                    return Err(Error::Engine(engine::EditError::NoItem(item)));
+                }
+                self.select_single(item);
             }
             _ => return Err(Error::Unsupported("widget action")),
         }
@@ -852,18 +867,17 @@ impl Editor {
     fn select_single(&mut self, item: ItemId) {
         self.selection.clear();
         self.selection.insert(item);
-        self.session.end_merge();
+        self.selection_changed();
     }
     fn select_item(&mut self, item: ItemId, modifiers: egui::Modifiers) {
-        if modifiers.command || modifiers.shift {
-            if !self.selection.remove(&item) {
-                self.selection.insert(item);
-            }
-        } else {
-            self.selection.clear();
-            self.selection.insert(item);
-        }
-        self.session.end_merge();
+        crate::selection::click(
+            &mut self.selection,
+            &mut None,
+            item,
+            modifiers.command || modifiers.ctrl || modifiers.shift,
+            None,
+        );
+        self.selection_changed();
     }
     fn select_all(&mut self) {
         self.selection = self
@@ -874,7 +888,14 @@ impl Editor {
             .iter()
             .flat_map(|track| track.items.iter().map(|item| item.id))
             .collect();
-        self.session.end_merge();
+        self.selection_changed();
+    }
+    fn selection_changed(&mut self) {
+        self.selection_scopes = SelectionScopes::default();
+        self.property_drafts.clear();
+        if let Err(e) = self.session.set_selection(self.selection.clone()) {
+            self.error = Some(e.to_string());
+        }
     }
     fn prune_selection(&mut self) {
         let existing: BTreeSet<ItemId> = self
@@ -886,6 +907,12 @@ impl Editor {
             .flat_map(|track| track.items.iter().map(|item| item.id))
             .collect();
         self.selection.retain(|id| existing.contains(id));
+        self.selection_scopes
+            .mask_points
+            .retain(|target| self.selection.contains(&target.item));
+        self.selection_scopes
+            .keyframes
+            .retain(|target| self.selection.contains(&target.item));
     }
     fn split_at_playhead(&mut self) -> Result<()> {
         let at = self.playback.position()?;
@@ -991,7 +1018,11 @@ impl Editor {
             self.error = Some(error.to_string());
             return;
         }
-        if let Err(error) = self.session.begin_gesture() {
+        if let Err(error) = self
+            .session
+            .set_selection(self.selection.clone())
+            .and_then(|_| self.session.begin_gesture())
+        {
             self.error = Some(error.to_string());
             return;
         }
@@ -1164,9 +1195,14 @@ impl Editor {
                 self.sync_preview();
             }
             self.snap_indicator = None;
+        } else if let Some((_, before, _)) = self.marquee.take() {
+            self.selection = before;
+            self.selection_changed();
         } else {
-            self.selection.clear();
-            self.session.end_merge();
+            self.selection_scopes.clear_specific(&mut self.selection);
+            if let Err(e) = self.session.set_selection(self.selection.clone()) {
+                self.error = Some(e.to_string());
+            }
         }
     }
     fn move_bounds(&self, origins: &[DragOrigin]) -> (Tick, Tick) {
@@ -1424,6 +1460,11 @@ impl Editor {
         }
     }
     pub fn ui(&mut self, ui: &mut egui::Ui) {
+        if !self.session.transaction_active()
+            && let Err(e) = self.session.set_selection(self.selection.clone())
+        {
+            self.error = Some(e.to_string());
+        }
         if !self.configured {
             Self::fonts(ui.ctx());
             self.configured = true;
@@ -1569,7 +1610,23 @@ impl Editor {
             ));
     }
     fn keyboard(&mut self, ctx: &egui::Context) {
-        if self.rename.is_some() {
+        if self.marquee.is_some() {
+            if consume(ctx, egui::Modifiers::NONE, egui::Key::Escape) {
+                self.cancel_interaction();
+            }
+            return;
+        }
+        if self.rename.is_some()
+            || ctx.memory(|m| m.focused()).is_some_and(|id| {
+                [
+                    "inspector.audio_gain",
+                    "inspector.text_size",
+                    "inspector.text_color",
+                ]
+                .iter()
+                .any(|field| id == Id::unique(field))
+            })
+        {
             return;
         }
         // Most specific chords first: consume_key ignores extra Shift/Alt modifiers.
@@ -1816,9 +1873,123 @@ impl Editor {
                 data.canvas.fps.den()
             ));
             ui.label(format!("{} Hz", data.settings.audio_sample_rate));
-        } else {
+        } else if self.selection.is_empty() {
             ui.label(self.tr(Text::EmptyInspector));
+        } else {
+            self.shared_inspector(ui);
         }
+    }
+    fn shared_inspector(&mut self, ui: &mut egui::Ui) {
+        if self.property_selection != self.selection {
+            self.property_drafts.clear();
+            self.property_selection = self.selection.clone();
+        }
+        ui.label(format!(
+            "{}: {}",
+            self.tr(Text::Selected),
+            self.selection.len()
+        ));
+        match self.selection_scopes.active(&self.selection) {
+            SelectionScope::MaskPoints => {
+                ui.label(self.tr(Text::MaskPoints));
+            }
+            SelectionScope::Keyframes => {
+                ui.label(self.tr(Text::Keyframes));
+            }
+            _ => {}
+        }
+        let fields = shared_fields(self.session.project(), &self.selection);
+        if fields.is_empty() {
+            ui.label(self.tr(Text::NoSharedFields));
+        }
+        for field in fields {
+            let (label, id) = match field.id {
+                "audio_gain" => (Text::AudioGain, "inspector.audio_gain"),
+                "text_size" => (Text::TextSize, "inspector.text_size"),
+                _ => (Text::TextColor, "inspector.text_color"),
+            };
+            ui.add_space(12.0);
+            ui.label(self.tr(label));
+            let mut value = self
+                .property_drafts
+                .get(field.id)
+                .cloned()
+                .unwrap_or_else(|| field.value.clone().unwrap_or_default());
+            let response = ui.add_sized(
+                [ui.available_width(), 36.0],
+                egui::TextEdit::singleline(&mut value)
+                    .char_limit(64)
+                    .background_color(self.control_fill())
+                    .id(Id::unique(id))
+                    .hint_text(egui::RichText::new("—").color(self.secondary())),
+            );
+            self.remember(id, &response);
+            if response.changed() {
+                self.property_drafts.insert(field.id, value.clone());
+            }
+            ui.label(
+                egui::RichText::new(format!(
+                    "{}: {} / {}",
+                    self.tr(Text::Compatible),
+                    field.compatible,
+                    self.selection.len()
+                ))
+                .small()
+                .color(self.secondary()),
+            );
+            if (response.lost_focus()
+                || (response.has_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter))))
+                && self.property_drafts.contains_key(field.id)
+            {
+                let result = self.set_shared_field(field.id, &value);
+                self.property_drafts.remove(field.id);
+                if let Err(e) = result {
+                    self.error = Some(e.to_string());
+                }
+            }
+        }
+    }
+    /// The inspector and automation use the same registered atomic field edit.
+    pub fn set_shared_field(&mut self, field: &str, value: &str) -> Result<()> {
+        let patch = match field {
+            "audio_gain" => ItemParamPatch::AudioGain(
+                value
+                    .trim()
+                    .parse()
+                    .map_err(|_| Error::Invalid("audio gain"))?,
+            ),
+            "text_size" => ItemParamPatch::TextSize(
+                value
+                    .trim()
+                    .parse()
+                    .map_err(|_| Error::Invalid("text size"))?,
+            ),
+            "text_color" => {
+                let value = value.trim().trim_start_matches('#');
+                if !matches!(value.len(), 6 | 8) || !value.is_ascii() {
+                    return Err(Error::Invalid("RGBA colour"));
+                }
+                let mut rgba = [255u8; 4];
+                for (i, byte) in rgba.iter_mut().enumerate().take(value.len() / 2) {
+                    *byte = u8::from_str_radix(
+                        value
+                            .get(i * 2..i * 2 + 2)
+                            .ok_or(Error::Invalid("RGBA colour"))?,
+                        16,
+                    )
+                    .map_err(|_| Error::Invalid("RGBA colour"))?;
+                }
+                ItemParamPatch::TextColor(project::Color(rgba))
+            }
+            _ => return Err(Error::Invalid("shared field")),
+        };
+        self.session.set_selection(self.selection.clone())?;
+        self.session.execute(
+            "timeline.set_item_param_many",
+            serde_json::json!({"items":self.selection,"patch":patch}),
+        )?;
+        self.sync_preview();
+        Ok(())
     }
     fn preview(&mut self, ui: &mut egui::Ui) {
         ui.label(
@@ -2490,9 +2661,72 @@ impl Editor {
                 ));
             }
         }
+        let background = ui.interact(
+            layout.body,
+            Id::unique("timeline.marquee"),
+            egui::Sense::click_and_drag(),
+        );
+        self.remember("timeline.marquee", &background);
         let modifiers = ui.ctx().input(|input| input.modifiers);
         for item in items {
             self.paint_item(ui, layout, item, modifiers);
+        }
+        let item_rects: Vec<_> = items
+            .iter()
+            .map(|item| {
+                (
+                    item.id,
+                    Rect::from_min_max(
+                        egui::pos2(self.x_at(item.start, layout.body.left()), item.top + 2.0),
+                        egui::pos2(
+                            self.x_at(item.end, layout.body.left()),
+                            item.top + item.height - 2.0,
+                        ),
+                    )
+                    .intersect(layout.body),
+                )
+            })
+            .filter(|(_, rect)| rect.is_positive())
+            .collect();
+        if background.drag_started()
+            && self.drag.is_none()
+            && let Some(origin) = ui.input(|i| i.pointer.press_origin())
+            && !item_rects.iter().any(|(_, r)| r.contains(origin))
+        {
+            self.marquee = Some((
+                origin,
+                self.selection.clone(),
+                modifiers.command || modifiers.ctrl || modifiers.shift,
+            ));
+        }
+        if let Some((origin, before, additive)) = &self.marquee
+            && let Some(pointer) = ui.input(|i| i.pointer.interact_pos())
+        {
+            let rect = Rect::from_two_pos(*origin, pointer).intersect(layout.body);
+            let mut selected =
+                crate::selection::intersections(rect.min, rect.max, item_rects.iter().copied());
+            if *additive {
+                selected.extend(before);
+            }
+            self.selection = selected;
+            ui.painter().with_clip_rect(layout.body).rect_filled(
+                rect,
+                0.0,
+                self.accent().gamma_multiply(0.15),
+            );
+            ui.painter().with_clip_rect(layout.body).rect_stroke(
+                rect,
+                0.0,
+                egui::Stroke::new(1.0, self.accent()),
+                egui::StrokeKind::Inside,
+            );
+        }
+        if background.drag_stopped() && self.marquee.take().is_some() {
+            self.selection_changed();
+        }
+        if background.clicked() {
+            self.selection.clear();
+            self.selection_changed();
         }
         if let Some(at) = self.snap_indicator {
             let x = self.x_at(at, layout.body.left());
@@ -2509,7 +2743,11 @@ impl Editor {
     }
     fn track_command(&mut self, command: &str, params: serde_json::Value) {
         let before = self.session.project().clone();
-        match self.session.execute(command, params) {
+        match self
+            .session
+            .set_selection(self.selection.clone())
+            .and_then(|_| self.session.execute(command, params))
+        {
             Ok(_) => {
                 self.prune_selection();
                 if !Arc::ptr_eq(&before, self.session.project()) {

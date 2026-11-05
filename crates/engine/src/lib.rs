@@ -21,7 +21,8 @@ mod edit;
 mod rendering;
 mod session;
 pub use commands::{
-    Command, CommandSpec, CreatedId, Effect, Example, Fixture, Move, NewItem, Outcome, registry,
+    Command, CommandSpec, CreatedId, Effect, Example, Fixture, ItemParamPatch, Move, NewItem,
+    Outcome, registry,
 };
 pub use rendering::{submit_export, subtitle_file};
 pub use session::{JobTarget, Session};

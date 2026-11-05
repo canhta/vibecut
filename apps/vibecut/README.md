@@ -47,6 +47,22 @@ ends. Scrubbing uses the same seek path. Two resizable columns and a horizontal
 divider start at the UI design's 25/50/25 and 60/40 proportions.
 English/Vietnamese, theme and panel proportions use one bounded preference store.
 
+The selection inspector shows audio gain and text size/colour for compatible
+selected items, with a dash for mixed values and the compatible/selected count.
+Enter or blur commits a typed shared-field patch through the engine registry in
+one undo step; invalid input refuses without changing any item. Text editing owns
+keyboard input while focused. Font family and video volume await their owning
+contracts before joining the same inspector.
+
+An empty-track drag selects intersecting visible items; Cmd/Ctrl/Shift adds to
+the selection at gesture entry. Reversing the drag recomputes intersections, and
+Escape cancels an active marquee. Otherwise Escape clears mask points, then
+keyframes, then items. `selection_scopes` is transient app state; `inspect` reports
+the most specific active scope. Timeline Shift clicks toggle; ordered media-list
+Shift clicks extend from its anchor. `timeline.deselect_all` clears every scope.
+Item selection is synchronized to Session history before edits and restored on
+undo/redo; it never enters Project JSON.
+
 ## Injection and inspection
 
 `Workspace::import_picked_files` applies native picker result paths through the

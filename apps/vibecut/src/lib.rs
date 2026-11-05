@@ -7,6 +7,7 @@ mod icons;
 pub mod import;
 pub mod lifecycle;
 pub mod playback;
+pub mod selection;
 pub mod workspace;
 pub use eframe::egui;
 pub use frontend::{Editor, Inspection, WidgetState};

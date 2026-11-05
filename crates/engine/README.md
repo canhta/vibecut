@@ -1,6 +1,6 @@
 # engine
 
-Headless command execution, Session ownership, project-only snapshot history,
+Headless command execution, Session ownership, project snapshots and transient item-selection history,
 bounded background jobs and content-addressed artifact storage, plus batch export
 orchestration for accepted ordered-segment shorts. Processing
 algorithms and decoded/raster caches remain with their domain owners. No widgets,
@@ -41,6 +41,24 @@ Media supplies asset identity; `add_asset` registers a validated SourceAsset and
 does not perform probe/hash IO. A failed command/batch consumes no IDs; successful
 preview/group children retire their IDs even when their outer operation rolls back. ID exhaustion returns
 a typed error. Reloading a project starts a new Session/identity lifetime.
+
+## Transient selection and shared fields
+
+`set_selection(BTreeSet<ItemId>)` validates existing IDs, breaks merge continuity
+and changes no Project content, revision or history length. A change during an
+active gesture/group refuses. `selection()` exposes the current item IDs.
+Each bounded undo snapshot retains the selection that produced the edit; undo
+and redo restore both. Deleted IDs are pruned from current selection. Scope
+selections (mask points/keyframes) remain app-owned. Selection is absent from
+project JSON and optional persisted metadata.
+
+`timeline.set_item_param_many` accepts a nonempty, unique `items` list (at most
+100,000 IDs) and one typed `patch`: `audio_gain` in −120..=24 dB, `text_size` in
+1..=4096 px, or `text_color` as four RGBA bytes. All numbers must be finite.
+The command preserves unrelated fields and skips incompatible item kinds;
+missing IDs, duplicates, invalid values and locked compatible items refuse the
+entire edit. An all-incompatible selection is a no-op. One successful changed
+command is one undo step, including every item's previous field value.
 
 ## Control admission, revisions and receipts
 
@@ -170,7 +188,7 @@ Commands and groups catch unwinding panics, restore their engine state and retur
 `EditError::Panicked` without formatting payloads. Aborts, OOM and double-panic
 termination cannot be recovered. The application owns panic-hook policy. Errors
 preserve project/history/merge state and undrained changes; successful undo/redo
-always break merging. App presentation/selection/preferences are not Session state.
+always break merging. App presentation/scopes/preferences are not Session state.
 
 ## Edit semantics and limits
 

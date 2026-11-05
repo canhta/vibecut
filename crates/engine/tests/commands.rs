@@ -1314,3 +1314,176 @@ fn track_output_controls_enforce_kind_capabilities() {
         }
     }
 }
+
+#[test]
+#[allow(clippy::panic, reason = "validated fixture assertions")]
+fn shared_fields_are_atomic_and_history_restores_transient_selection() {
+    use engine::ItemParamPatch;
+    use std::collections::BTreeSet;
+    let mut data = project().into_data();
+    let track = data.timeline.overlays.first_mut().unwrap();
+    track.kind = TrackKind::Text;
+    for (item, size) in track.items.iter_mut().zip([20.0, 30.0]) {
+        item.content = ItemParams::Text(project::TextParams {
+            content: format!("item {}", item.id.0).into(),
+            font_size: size,
+            color: Color([10, 20, 30, 255]),
+        });
+    }
+    let mut s = Session::new(Project::new(data).unwrap(), 2).unwrap();
+    let before = s.project().clone();
+    let bytes = serde_json::to_vec(s.project().data()).unwrap();
+    let both: BTreeSet<_> = [ItemId(10), ItemId(11)].into_iter().collect();
+    s.set_selection(both.clone()).unwrap();
+    assert_eq!(serde_json::to_vec(s.project().data()).unwrap(), bytes);
+    assert_eq!(s.history_len(), (0, 0));
+    assert!(
+        s.set_selection([ItemId(999)].into_iter().collect())
+            .is_err()
+    );
+    assert_eq!(s.selection(), &both);
+    s.execute(
+        "timeline.set_item_param_many",
+        json!({"items":[10,11],"patch":{"field":"text_size","value":72}}),
+    )
+    .unwrap();
+    let after = s.project().clone();
+    assert_eq!(s.history_len(), (1, 0));
+    for (id, size) in [(10, 20.0), (11, 30.0)] {
+        let ItemParams::Text(p) = &get(&s, id).content else {
+            panic!("text fixture")
+        };
+        assert_eq!(p.font_size, 72.0);
+        assert_eq!(p.content.as_str(), format!("item {id}"));
+        assert_eq!(p.color, Color([10, 20, 30, 255]));
+        let ItemParams::Text(p) = &before
+            .data()
+            .timeline
+            .overlays
+            .first()
+            .unwrap()
+            .items
+            .iter()
+            .find(|i| i.id == ItemId(id))
+            .unwrap()
+            .content
+        else {
+            panic!("text fixture")
+        };
+        assert_eq!(p.font_size, size);
+    }
+    s.set_selection(BTreeSet::new()).unwrap();
+    s.undo().unwrap();
+    assert_eq!(s.project(), &before);
+    assert_eq!(s.selection(), &both);
+    s.redo().unwrap();
+    assert_eq!(s.project(), &after);
+    assert_eq!(s.selection(), &both);
+    for (items, patch) in [
+        (vec![ItemId(10), ItemId(10)], ItemParamPatch::TextSize(10.0)),
+        (
+            vec![ItemId(10), ItemId(999)],
+            ItemParamPatch::TextSize(10.0),
+        ),
+        (vec![], ItemParamPatch::TextSize(10.0)),
+        (vec![ItemId(10)], ItemParamPatch::TextSize(f32::NAN)),
+        (vec![ItemId(10)], ItemParamPatch::AudioGain(25.0)),
+    ] {
+        assert!(s.apply(Command::SetItemParamMany { items, patch }).is_err());
+        assert_eq!(s.project(), &after);
+        assert_eq!(s.history_len(), (1, 0));
+    }
+    // Incompatible kinds are intentionally skipped, including locked incompatible tracks.
+    assert!(
+        !s.apply(Command::SetItemParamMany {
+            items: vec![ItemId(10), ItemId(11)],
+            patch: ItemParamPatch::AudioGain(-6.0)
+        })
+        .unwrap()
+        .changed
+    );
+    s.set_selection(both.clone()).unwrap();
+    s.apply(Command::SetItemParam {
+        item: ItemId(10),
+        content: ItemParams::Text(project::TextParams {
+            content: "independent".into(),
+            font_size: 18.0,
+            color: Color([1, 2, 3, 255]),
+        }),
+    })
+    .unwrap();
+    let single = s.project().clone();
+    s.set_selection(BTreeSet::new()).unwrap();
+    s.undo().unwrap();
+    assert_eq!(s.selection(), &both);
+    s.redo().unwrap();
+    assert_eq!(s.project(), &single);
+    s.set_selection(both.clone()).unwrap();
+    s.begin_gesture().unwrap();
+    assert!(matches!(
+        s.set_selection(BTreeSet::new()),
+        Err(EditError::TransactionActive)
+    ));
+    s.apply(Command::SetItemParamMany {
+        items: vec![ItemId(10)],
+        patch: ItemParamPatch::TextSize(44.0),
+    })
+    .unwrap();
+    s.cancel_gesture().unwrap();
+    assert_eq!(s.project(), &single);
+    assert_eq!(s.selection(), &both);
+    s.apply(Command::Delete {
+        items: vec![ItemId(10)],
+    })
+    .unwrap();
+    assert_eq!(s.selection(), &[ItemId(11)].into_iter().collect());
+    assert_eq!(s.history_len(), (2, 0));
+    s.undo().unwrap();
+    assert_eq!(s.selection(), &both);
+    s.undo().unwrap();
+    assert!(!s.can_undo());
+}
+
+#[test]
+fn shared_field_refuses_locked_compatible_target_without_partial_edit() {
+    use engine::ItemParamPatch;
+    let mut data = project().into_data();
+    let source = data.timeline.overlays.first_mut().unwrap();
+    source.kind = TrackKind::Text;
+    for item in &mut source.items {
+        item.content = ItemParams::Text(project::TextParams {
+            content: "Keep".into(),
+            font_size: 24.0,
+            color: Color([1, 2, 3, 255]),
+        });
+    }
+    let second = source.items.pop().unwrap();
+    data.timeline.insert_track(Track {
+        id: TrackId(99),
+        name: "Locked".into(),
+        kind: TrackKind::Text,
+        muted: false,
+        hidden: false,
+        locked: true,
+        items: vec![second],
+    });
+    let mut s = Session::new(Project::new(data).unwrap(), 2).unwrap();
+    let before = s.project().clone();
+    assert!(matches!(
+        s.apply(Command::SetItemParamMany {
+            items: vec![ItemId(10), ItemId(11)],
+            patch: ItemParamPatch::TextSize(80.0)
+        }),
+        Err(EditError::Locked(TrackId(99)))
+    ));
+    assert_eq!(s.project(), &before);
+    assert_eq!(s.history_len(), (0, 0));
+    assert!(
+        !s.apply(Command::SetItemParamMany {
+            items: vec![ItemId(10), ItemId(11)],
+            patch: ItemParamPatch::AudioGain(-6.0)
+        })
+        .unwrap()
+        .changed
+    );
+}
