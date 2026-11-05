@@ -6,6 +6,7 @@ mod build;
 mod checkout;
 mod cleanup;
 mod clip_eval;
+mod distribution;
 mod ffmpeg;
 mod i18n;
 mod oracles;
@@ -423,17 +424,7 @@ fn run() -> Result<ExitCode, String> {
             let status=command.status().map_err(|e|e.to_string())?;
             if status.success(){Ok(())}else{Err(format!("UI audit failed: {status}"))}
         }
-        ["build", "--ffmpeg", prefix, flags @ ..] => {
-            let mut command = Command::new(env::var_os("CARGO").ok_or("run via cargo xtask")?);
-            command.arg("build").args(flags).current_dir(root);
-            ffmpeg::environment_at(&mut command, Path::new(prefix))?;
-            let status = command.status().map_err(|error| error.to_string())?;
-            if status.success() {
-                Ok(())
-            } else {
-                Err(format!("distribution build failed: {status}"))
-            }
-        }
+        ["dist", ..] => distribution::run(root, args.get(1..).unwrap_or(&[])),
         ["media-bench"] => benchmark::media(root),
         ["frontier"] => tickets::frontier(root, None),
         ["frontier", assignee] => tickets::frontier(root, Some(assignee)),
@@ -470,7 +461,8 @@ fn run() -> Result<ExitCode, String> {
         ["ci"] => ci(root, false),
         ["ci", "--require-oracles"] => ci(root, true),
         _ => Err(
-            "usage: cargo xtask <build -- COMMAND [ARGS...] (Unix-only; on Windows run cargo directly)|frontier [ASSIGNEE]|board [PORT]|ffmpeg [--target PLATFORM|--cache-key]|ui-audit [OUTPUT_DIR]|sherpa [--arch x86_64|aarch64]|media-bench|clip-eval SET [OPTIONS]|cleanup [--environment NAME] [--dry-run] TARGET...|pull-reports [--environment NAME] [--ssh HOST] [--dry-run] WORKTREE...|ci [--require-oracles]|checks|clippy|lint|test|docs|i18n|layers|assets|new-crate NAME>"
+            "usage: cargo xtask <dist COMMAND [OPTIONS]|build -- COMMAND [ARGS...] (Unix-only; on Windows run cargo directly)|frontier [ASSIGNEE]|board [PORT]|ffmpeg [--target PLATFORM|--cache-key]|ui-audit [OUTPUT_DIR]|sherpa [--arch x86_64|aarch64]|media-bench|clip-eval SET [OPTIONS]|cleanup [--environment NAME] [--dry-run] TARGET...|pull-reports [--environment NAME] [--ssh HOST] [--dry-run] WORKTREE...|ci [--require-oracles]|checks|clippy|lint|test|docs|i18n|layers|assets|new-crate NAME>"
+
                 .into(),
         ),
     }.map(|()| ExitCode::SUCCESS)

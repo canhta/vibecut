@@ -33,7 +33,7 @@ jobs:
           PUBLISH: ${{ inputs.publish }}
         run: |
           if [ "$PUBLISH" = true ]; then test "$GITHUB_REF" = refs/heads/main; fi
-          python3 .github/scripts/distribution.py validate --version "$VERSION"
+          cargo xtask dist validate --version "$VERSION"
 
   distributions:
     needs: validate
@@ -63,4 +63,4 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
           VERSION: ${{ inputs.version }}
-        run: python3 .github/scripts/publish_distribution.py release dist --version "$VERSION"
+        run: cargo xtask dist publish release dist --version "$VERSION"

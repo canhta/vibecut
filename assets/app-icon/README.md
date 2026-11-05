@@ -42,8 +42,8 @@ the runtime icon covers the window/task switcher. Windows appearance is unverifi
 
 ## Regenerate
 
-Run `packaging/icons.sh` on macOS with Xcode/Icon Composer, sips, iconutil, Python
-and Pillow installed. It renders the flat SVG, exports the layered Default macOS
+Run `packaging/icons.sh` on macOS with Xcode/Icon Composer, sips and iconutil.
+Rust xtask handles PNG compositing and ICO packing. It renders the flat SVG, exports the layered Default macOS
 appearance, creates runtime PNG/ICNS/ICO and refreshes brand vector exports together.
 It also writes native catalog/plist inspection output under `target/icons/native/`.
 Edit the bundle's layers and the matching flat vectors together; inspect all outputs

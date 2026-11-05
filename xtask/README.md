@@ -97,3 +97,20 @@ launcher death, a surviving descendant after normal launcher exit, FIFO and the
 last-slot race), memory probe failure, receipt cleanliness and worktree/disk
 cleanup. macOS is exercised locally; Windows runs the other xtask commands
 directly, without the shared build wrapper.
+
+## Distribution
+
+`dist` owns build/package/export/native/universal, smoke/install-smoke, library
+replacement, signing lifecycle, icons and nightly/draft publication. Its native
+media environment is shared with normal checks through `ffmpeg::environment_at`.
+[Packaging](../packaging/README.md) owns commands, inputs, limits, platform gates and
+recovery; [verification](../docs/engineering/verification.md) owns workspace checks.
+All generated output directories must be new. Credentials and sensitive platform
+tool output are suppressed, and safe command receipts remain local to outputs.
+
+Distribution unit tests cover source/patch hashes, architecture/deployment admission,
+runpaths, PE headers, signing cleanup/redaction and publication refusal/order.
+Targeted tests run with `cargo test -p xtask`; native packaging and clean-host hosted
+runs provide the integration evidence. No oldest-OS, hardware or performance
+acceptance follows from unit tests alone. The generic image crate is reused for
+PNG/ICO icon regeneration; normal builds consume committed icon assets.

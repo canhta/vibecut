@@ -38,4 +38,4 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
-        run: python3 .github/scripts/publish_distribution.py nightly dist
+        run: cargo xtask dist publish nightly dist

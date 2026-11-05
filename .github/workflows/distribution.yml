@@ -37,7 +37,7 @@ jobs:
           APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
           APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-        run: python3 .github/scripts/sign_macos.py validate
+        run: cargo xtask dist signing validate
       - uses: ./.github/actions/setup-build
         if: '!inputs.signed || !matrix.windows'
         with:
@@ -57,15 +57,22 @@ jobs:
           APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
           APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-        run: python${{ runner.os == 'macOS' && '3' || '' }} .github/scripts/distribution.py native --arch ${{ matrix.arch }} ${{ inputs.signed && '--signed' || '' }}
+        run: cargo xtask dist native --arch ${{ matrix.arch }} ${{ inputs.signed && '--signed' || '' }}
       - name: Remove temporary signing material
         if: always() && inputs.signed && !matrix.windows
-        run: python3 .github/scripts/sign_macos.py cleanup
+        run: cargo xtask dist signing cleanup
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: '!inputs.signed || !matrix.windows'
+        with:
+          name: smoke-tool-${{ matrix.name }}
+          path: target/smoke-tool/*
+          if-no-files-found: error
+          retention-days: 3
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: '!matrix.windows'
         with:
           name: native-${{ matrix.arch }}
-          path: target/native.tar.gz
+          path: target/native
           if-no-files-found: error
           retention-days: 3
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -77,6 +84,7 @@ jobs:
           retention-days: 7
 
   universal:
+    if: '!cancelled()'
     needs: native
     runs-on: macos-15
     timeout-minutes: 45
@@ -100,10 +108,10 @@ jobs:
           APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
           APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-        run: python3 .github/scripts/distribution.py universal ${{ inputs.signed && '--signed' || '' }}
+        run: cargo xtask dist universal ${{ inputs.signed && '--signed' || '' }}
       - name: Remove temporary signing material
         if: always() && inputs.signed
-        run: python3 .github/scripts/sign_macos.py cleanup
+        run: cargo xtask dist signing cleanup
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: distribution-macos-universal
@@ -112,22 +120,23 @@ jobs:
           retention-days: 7
 
   clean-host:
+    if: '!cancelled()'
     name: smoke (${{ matrix.name }} on ${{ matrix.runner }})
     needs: [native, universal]
     strategy:
       fail-fast: false
       matrix:
         include:
-          - { name: macos-arm64, runner: macos-15, windows: false }
-          - { name: macos-x86_64, runner: macos-15-intel, windows: false }
-          - { name: macos-universal, runner: macos-15, windows: false }
-          - { name: macos-universal, runner: macos-15-intel, windows: false }
-          - { name: windows-x86_64, runner: windows-latest, windows: true }
-          - { name: windows-arm64, runner: windows-11-arm, windows: true }
+          - { name: macos-arm64, runner: macos-15, tool: macos-arm64, windows: false }
+          - { name: macos-x86_64, runner: macos-15-intel, tool: macos-x86_64, windows: false }
+          - { name: macos-universal, runner: macos-15, tool: macos-arm64, windows: false }
+          - { name: macos-universal, runner: macos-15-intel, tool: macos-x86_64, windows: false }
+          - { name: windows-x86_64, runner: windows-latest, tool: windows-x86_64, windows: true }
+          - { name: windows-arm64, runner: windows-11-arm, tool: windows-arm64, windows: true }
     runs-on: ${{ matrix.runner }}
     continue-on-error: ${{ matrix.windows }}
     timeout-minutes: 15
-    # Fresh VM: no setup-build, media libraries, Rust or caches.
+    # Fresh VM: native standalone smoke helper; no Rust/media setup or caches.
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -137,10 +146,19 @@ jobs:
         with:
           name: distribution-${{ matrix.name }}
           path: target/download
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        if: '!inputs.signed || !matrix.windows'
+        with:
+          name: smoke-tool-${{ matrix.tool }}
+          path: target/smoke-tool
       - name: Install and smoke app and CLI
         if: '!inputs.signed || !matrix.windows'
         shell: bash
-        run: python${{ runner.os == 'macOS' && '3' || '' }} .github/scripts/distribution.py smoke ${{ inputs.signed && '--signed' || '' }}
+        env:
+          CARGO_MANIFEST_DIR: ${{ github.workspace }}/xtask
+        run: |
+          if [ "${{ runner.os }}" = macOS ]; then chmod +x target/smoke-tool/xtask; fi
+          target/smoke-tool/xtask${{ runner.os == 'Windows' && '.exe' || '' }} dist install-smoke ${{ inputs.signed && '--signed' || '' }}
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always() && (!inputs.signed || !matrix.windows)
         with:

@@ -1,235 +1,153 @@
 # Native distribution
 
-`package.py` stages real desktop `vibecut` and headless `vibecut-cli` artifacts,
-FFmpeg shared libraries, corresponding sources, build receipt/recipe, backports,
-licences and asset notices. Version comes only from `[workspace.package]`.
-`icons.sh` regenerates assets; it is not a distribution script. Both native hosts
-need Python 3.12+ and their platform SDK tools. No models are bundled.
+`cargo xtask dist` owns native app/CLI builds, packages, signing, universal assembly,
+source compliance, clean-host smoke and rolling nightly/draft assets. It stages
+real Cargo executable artifacts, dynamically linked LGPL FFmpeg, corresponding
+source archives, recipes, backports and license/asset notices. Version comes from
+the workspace package. No Python, model weights or extra codec binaries are used.
+Normal builds consume committed icons; `cargo xtask dist icons` regenerates them.
 
-The macOS result is an installer `.pkg` containing `/Applications/VibeCut.app`
-and `/usr/local/bin/vibecut-cli`. The Windows result is a ZIP containing a
-per-user PowerShell installer and uninstaller. Installation adds the application
-directory to the user's PATH; restart the terminal. Neither installer deletes
-projects or preferences. The packaging output directory must not exist: failed
-outputs remain for inspection and must never be distributed.
+## Local build and stage
+
+Run Rust commands through the shared build wrapper in managed worktrees. Provision
+with `cargo xtask ffmpeg`, then read its prefix from
+`~/.cache/vibecut/ffmpeg/<os>-<arch>/current` (native Windows uses `USERPROFILE`).
+Preserve the prefix and its sibling `sources/` directory.
+
+```sh
+BUILD=/Users/canh/Startup/VibeCut/.scratch/bin/build
+"$BUILD" cargo xtask ffmpeg
+PREFIX=$(cat "$HOME/.cache/vibecut/ffmpeg/macos-aarch64/current")
+"$BUILD" cargo xtask dist build --ffmpeg "$PREFIX" --output target/package-inputs
+"$BUILD" cargo xtask dist package --os macos --arch aarch64 \
+  --binaries target/package-inputs --ffmpeg "$PREFIX" --output target/package-macos
+```
+
+`dist build` collects the two executable paths from Cargo JSON records, reuses the
+native media environment (including Windows bindgen guards), and records revision,
+profile and Cargo arguments. Release is the default; `--debug` is for local smoke.
+Output directories must be new: failures remain for inspection and must never be
+distributed. Packaging/auditing runs on the target OS. `macos-app.sh` forwards to
+`dist package --os macos`.
+
+The macOS `.pkg` contains `/Applications/VibeCut.app` and the CLI symlink under
+`/usr/local/bin`. Signed releases distribute a DMG with the app, Applications link
+and `install-cli.sh`, which adds `~/.local/bin/vibecut-cli`. The Windows ZIP contains
+a per-user installer/uninstaller; restart the terminal after installing its PATH
+entry. Neither platform deletes projects/preferences.
+
+On Windows use matching MSVC/Windows SDK developer tools and architecture-matched
+MSYS2 CLANG64 or CLANGARM64, as described in [provisioning](../docs/engineering/workflows.md#ffmpeg-provisioning).
+Use `--os windows --arch x86_64` or `aarch64`. PE machine/subsystem admission and
+`dumpbin /dependents` reject wrong architectures and missing non-system DLLs;
+FFmpeg cannot be satisfied from System32. Shared libraries live beside both EXEs.
+Windows install/sign/runtime acceptance remains separate from a successful build.
 
 ## Hosted builds and releases
 
-`build.yml` runs after every main push and on manual dispatch, cancelling older
-runs of the same ref. The shared `distribution.yml` builds macOS arm64 and x86_64
-(`macos-15-intel`), combines both into universal, and attempts native Windows x64
-and arm64 builds. Windows package and smoke jobs are advisory until p0-core/44.
-Each native row provisions FFmpeg through `setup-build` and its versioned cache.
-Build artifacts expire after seven days; intermediate universal inputs after three.
+`build.yml` runs on every main push and manual dispatch, cancelling older runs of
+the same ref. `distribution.yml` builds native macOS arm64 and x86_64
+(`macos-15-intel`), merges both into universal, and attempts native Windows x64 and
+arm64. Windows jobs are advisory until p0-core/44. Each native row provisions
+FFmpeg through `setup-build` and its versioned cache. Distributions expire after
+seven days; intermediate native inputs expire after three.
 
-Each package moves to a fresh runner without Rust/media caches. The installed CLI
-runs `--version`, creates a 64×64 two-second synthetic overlay project through the
-registry, exports MP4 and probes its duration/stream. The app runs
-`--headless-smoke NEW_DIRECTORY`: it creates the real workspace/editor, draws three
-egui frames and joins its jobs without creating a window or opening audio devices.
-This establishes startup/frontend and export behavior, not native GPU/device behavior.
-Universal packages run on both Apple Silicon and Intel runners.
+Packages move to separate fresh VMs without Rust/media caches or media provisioning.
+These VMs run an architecture-matched standalone Rust xtask helper from the build
+VM, then install the downloaded package; Rust and media SDKs are not provisioned.
+The installed CLI runs `--version`, creates a 64×64 two-second synthetic overlay
+project through the registry, exports MP4, and checks its duration/video stream.
+The actual app runs `--headless-smoke NEW_DIRECTORY`, creates its workspace/editor
+and draws three egui frames without a window, graphics device or audio output.
+Universal packages run on both Apple Silicon and Intel. This proves those startup,
+frontend and export behaviors; native GPU/device behavior needs separate evidence.
 
-macOS deployment floor is **11.0**. `build.py` sets `MACOSX_DEPLOYMENT_TARGET`, the
-bundle sets `LSMinimumSystemVersion`, and packaging checks every Mach-O slice's
-load-command deployment version and exact architectures. The FFmpeg recipe also
-sets its compiler/linker floor to 11.0. Runtime on the oldest supported OS remains
-a separate compatibility check; hosted runners exercise newer macOS versions.
-`universal.py export` retains native executables, dylibs and verified source SDKs;
-`combine` refuses mismatched build revisions, source identities or dylib sets,
-relocates native inputs before `lipo`, and retains both architecture build receipts.
-The resulting package signs every merged library/executable and bundle inside out;
-`lipo -info` and `codesign --verify --deep --strict` are mandatory for each Mach-O.
+macOS deployment floor is **11.0**. `dist build` sets `MACOSX_DEPLOYMENT_TARGET`,
+the bundle sets `LSMinimumSystemVersion`, and packaging audits every Mach-O slice's
+exact architecture and deployment load command. FFmpeg's recipe also targets 11.0.
+Runtime on macOS 11 remains a separate compatibility check; hosted VMs run newer OSes.
+`dist export` retains native executables, dylibs and verified source SDKs; universal
+assembly refuses mismatched build records, source identities or dylib sets. Native
+inputs are relocated before `lipo`, and both architecture build receipts are kept.
+Every merged dylib/executable and bundle is signed inside out; `lipo -info` and
+`codesign --verify --deep --strict` are mandatory for every Mach-O.
 
-Successful main builds replace assets of the rolling `nightly` pre-release with
-unsigned packages and `SHA256SUMS`. Notes list commits since the previous nightly,
-with a compare link for the full list. Publication refuses superseded builds,
-diverged history, or a stable/immutable release; failed uploads do not move an
-existing nightly tag or remove obsolete assets. Asset replacement itself is not
-transactional: a failed upload may have replaced an asset; the failed run must be
-reconciled or rerun before treating that nightly's sums as a coherent set.
+A green main build replaces the rolling `nightly` pre-release's unsigned packages
+and `SHA256SUMS`. Notes list commits since the previous nightly, with a full compare
+link. Publication refuses stale main heads, diverged history, and stable/immutable
+releases. Failed uploads do not move an existing nightly tag or delete stale assets.
+Asset replacement itself is not transactional: an interrupted upload can replace
+some assets; reconcile or rerun the failed build before trusting a coherent set.
+Branch dispatches only upload workflow artifacts.
 
 The maintainer manually dispatches `release.yml` with the workspace version.
-`publish=false` (default) signs/notarizes all three macOS DMGs and runs all clean-host
-smokes, without creating a release or version tag. `publish=true` requires main,
-creates `v<version>` and attaches the three verified DMGs plus `SHA256SUMS` to one
-**draft**. Existing published/immutable releases, mismatched tags, and duplicate
-signed assets are refused. Publishing that draft remains a maintainer action.
+`publish=false` (default) signs/notarizes all three macOS DMGs and runs clean-host
+smokes without creating a release or version tag. `publish=true` requires main,
+creates `v<version>` and attaches verified DMGs plus sums to one **draft**. Existing
+published/immutable releases, mismatched tags and duplicate signed assets are
+refused. Publishing the draft remains the maintainer's action.
 
-## Build and stage
+## Signing and verification
 
-From the repository root on the target OS/architecture, provision the media
-backend with `cargo xtask ffmpeg` through the shared build wrapper. Read the
-resolved prefix from `~/.cache/vibecut/ffmpeg/<os>-<arch>/current` (Windows uses
-USERPROFILE when HOME is absent). Keep that prefix and its sibling `sources/`.
-The following macOS example uses the wrapper required in managed worktrees:
+Hosted signing requires `MACOS_CERT_P12` (base64), `MACOS_CERT_PASSWORD`,
+`APPLE_API_KEY_P8` (raw P8), `APPLE_API_KEY_ID`, `APPLE_API_ISSUER` and `APPLE_TEAM_ID`.
+`dist signing` imports one Developer ID Application identity into an ephemeral
+keychain and restores the original keychain search list on success/failure. The
+workflow also calls `dist signing cleanup` after cancellation. Private files have
+owner-only permissions; credentials, identities and tool output stay out of logs.
 
-```sh
-cargo xtask build -- cargo xtask ffmpeg
-PREFIX=$(cat "$HOME/.cache/vibecut/ffmpeg/macos-aarch64/current")
-cargo xtask build -- python3 packaging/build.py --ffmpeg "$PREFIX" --output target/package-inputs
-python3 packaging/package.py --os macos --arch aarch64 \
-  --binaries target/package-inputs --ffmpeg "$PREFIX" --output target/package-macos
-cargo xtask build -- cargo xtask ci --require-oracles
-```
+For a local package with identities already in the keychain, use
+`VIBECUT_MAC_SIGN_IDENTITY` and optional `VIBECUT_MAC_INSTALLER_IDENTITY`, plus
+`VIBECUT_NOTARY_PROFILE` or the key-file/key-ID/issuer variables. Unsigned staging
+uses ad-hoc signatures. Developer ID enables hardened runtime/timestamps, notarizes
+and staples the app before sealing the DMG, then signs/notarizes/staples the image.
+`Accepted`, code-signature verification, staples and Gatekeeper assessments are
+mandatory. An unsigned `.pkg` is only a local-test artifact.
 
-`build.py` uses `cargo xtask build --ffmpeg PREFIX` to reuse the native media
-environment (including Windows bindgen guards), then collects executable paths from Cargo's JSON artifact records and names
-outputs by package role. It never guesses a shared-cache path. `--debug` is only
-for local smoke; release is the default. The binary source build record accompanies
-the inputs; retain it with the final package receipt. Use `x86_64` on an Intel Mac.
-Run `python3 -m unittest discover -s packaging -p 'test_*.py' -v` for source-integrity,
-licence, dependency, runpath, architecture and credential-redaction boundary checks.
-`macos-app.sh` forwards these staging arguments to `package.py --os macos`.
-
-On native Windows, in the matching MSVC/Windows SDK developer shell, provision
-FFmpeg using the documented MSYS2 toolchain in [workflows](../docs/engineering/workflows.md#ffmpeg-provisioning).
-Native Windows runs Rust compilation directly; the shared build wrapper is Unix-only:
-
-```powershell
-$Prefix = Get-Content "$env:USERPROFILE\.cache\vibecut\ffmpeg\windows-x86_64\current" -Raw
-$Prefix = $Prefix.Trim()
-python packaging/build.py --ffmpeg $Prefix --output target/package-inputs
-python packaging/package.py --os windows --arch x86_64 --binaries target/package-inputs --ffmpeg $Prefix --output target/package-windows
-Expand-Archive target/package-windows/VibeCut-0.1.0-windows-x86_64.zip target/install-test
-powershell -NoProfile -File target/install-test/VibeCut/install.ps1
-```
-
-Choose `aarch64` on Windows ARM64. PE machine/subsystem checks refuse mismatched
-app, CLI or DLL inputs. `dumpbin /dependents` audits every executable and DLL;
-missing FFmpeg cannot be satisfied from System32. Other dependencies must be
-bundled, a Windows API set, or present in System32. This does not establish that
-a clean machine has the same system components: clean-host runtime is mandatory.
-
-## Sign and notarize
-
-Unsigned macOS staging uses explicit ad-hoc signatures, required for modified
-arm64 Mach-O files. For release, provide names of existing keychain identities:
+Windows signing uses `VIBECUT_WINDOWS_CERT_SHA1` and
+`VIBECUT_WINDOWS_TIMESTAMP_URL`, signs DLLs, CLI, app and installer scripts, and
+verifies them with SignTool/PowerShell. Certificate acquisition remains with the
+maintainer and Windows release policy with p0-core/44.
 
 ```sh
-export VIBECUT_MAC_SIGN_IDENTITY='Developer ID Application: <maintainer>'
-export VIBECUT_MAC_INSTALLER_IDENTITY='Developer ID Installer: <maintainer>'
-export VIBECUT_NOTARY_PROFILE='<existing notarytool keychain profile>'
-# Rerun package.py with a fresh --output directory, then:
-pkgutil --check-signature target/package-macos/VibeCut-0.1.0-macos-aarch64.pkg
-spctl --assess --type install --verbose target/package-macos/VibeCut-0.1.0-macos-aarch64.pkg
+"$BUILD" cargo test -p xtask
+"$BUILD" cargo xtask dist smoke --installed target/package-macos/root/Applications/VibeCut.app \
+  --output target/package-smoke
 ```
 
-The script signs dylibs, helper, app executable, app bundle, then package. Real
-identities enable hardened runtime and secure timestamps. It verifies each code
-signature, submits the signed package via `notarytool --keychain-profile`, requires
-`Accepted`, then staples and validates the ticket. A profile never selects an
-identity implicitly. Library validation remains enabled in release builds.
-
-Windows signing reads `VIBECUT_WINDOWS_CERT_SHA1` (certificate in CurrentUser/My)
-and `VIBECUT_WINDOWS_TIMESTAMP_URL` (RFC3161 for PE files; configure a service also
-supporting PowerShell Authenticode timestamps). It signs DLLs, helper, app, then
-uninstaller and installer scripts, verifying each. ZIP is an envelope, with its
-SHA-256 in `receipt.json`; it has no Authenticode signature. Use signed installer
-scripts under the machine's normal execution policy; do not globally weaken it.
-When notarization is configured, macOS additionally produces a signed, notarized
-and stapled `.dmg` containing the stapled app and `install-cli.sh`. Drag the app
-to Applications, then run `sh /Volumes/VibeCut/install-cli.sh`; add `$HOME/.local/bin`
-to PATH as instructed. This route needs only the Developer ID Application identity.
-The `.pkg` requires a separate Developer ID Installer identity for a signed,
-notarized installer; without that identity it remains a local unsigned test package.
-Do not distribute that unsigned package as the signed release.
-
-Instead of a keychain profile, a private build environment can provide
-`VIBECUT_NOTARY_KEY_FILE`, `VIBECUT_NOTARY_KEY_ID` and `VIBECUT_NOTARY_ISSUER_ID`.
-Never put those values into reports or source control. Signing/notary arguments are
-redacted from command receipts. The bundle ID is `com.canhta.vibecut`; helper and
-library signature IDs derive from it. No signing identity, timestamp URL or notary
-profile is selected by default.
-
-## Install and smoke
-
-On a clean Apple Silicon Mac, mount the signed image using `hdiutil attach`,
-copy VibeCut.app to Applications and run its accompanying `install-cli.sh`.
-Assess the image with `spctl --assess --type open --context context:primary-signature
---verbose <dmg>` and the app with `spctl --assess --type execute --verbose <app>`;
-validate both staples using `xcrun stapler validate <path>`. Run the smoke with
-`--signed`: hardened runtime ignores dyld environment diagnostics, so this mode
-checks signatures/Gatekeeper/staples and captures actual app dylib mappings using
-`lsof`. CLI `probe` plus bundled-only static runpaths exercise the signed CLI;
-its transient mapped paths are not captured in this mode.
-
-For an unsigned local package test, install using Installer or:
-
-```sh
-sudo installer -pkg target/package-macos/VibeCut-0.1.0-macos-aarch64.pkg -target /
-command -v vibecut-cli
-ffmpeg -f lavfi -i testsrc2=size=64x64:rate=24 -t 1 -c:v mpeg4 target/package-probe.mp4
-python3 packaging/smoke.py --installed /Applications/VibeCut.app \
-  --media target/package-probe.mp4 --output target/installed-smoke
-```
-
-The oracle fixture generator is external and not distributed. Smoke runs real
-`probe`, project creation, `exec add_track`, project info, and an eight-second
-window launch from an unrelated directory with sanitized library environment and
-system-only PATH. It requires valid JSON, success, completed app observation and
-a captured window. On macOS dyld receipts must show bundled FFmpeg paths for every
-process. Record `otool -L` and `otool -l` for installed executables and dylibs;
-only bundled `@rpath` or system paths are admitted by packaging.
-
-On clean Windows, install using `install.ps1`, then run:
-
-```powershell
-Get-Command vibecut-cli
-python packaging/smoke.py --installed "$env:LOCALAPPDATA\Programs\VibeCut" --media target/package-probe.mp4 --output target/installed-smoke
-Get-ChildItem "$env:LOCALAPPDATA\Programs\VibeCut\*.dll", "$env:LOCALAPPDATA\Programs\VibeCut\*.exe" | ForEach-Object { dumpbin /dependents $_.FullName }
-$p = Start-Process "$env:LOCALAPPDATA\Programs\VibeCut\vibecut.exe" -PassThru
-Start-Sleep -Seconds 3
-$p.Refresh()
-$p.Modules | Select-Object ModuleName,FileName | ConvertTo-Json | Set-Content target/loaded-modules.json
-Stop-Process -Id $p.Id
-powershell -NoProfile -File "$env:LOCALAPPDATA\Programs\VibeCut\uninstall.ps1"
-```
-
-Inspect the module receipt: every FFmpeg DLL must resolve beside the executable,
-including when launched from a directory containing unrelated DLLs. Repeat with
-replacement DLLs. Windows runtime and clean-machine installation remain unverified until these
-commands run on provisioned hosts. Signing/notarization claims require the
-corresponding successful receipt and external platform verification.
-MCP stdio installation smoke is deferred to its owning ticket `p2-platform/02`;
-no MCP executable or passing MCP smoke is claimed here.
+The default smoke opens no window. `--signed` also checks the app signature,
+Gatekeeper and staple. Explicit `--observe` runs the native eight-second observation
+and screenshot path; request the maintainer's screen before using it locally.
+Its signed macOS mode records actual mapped FFmpeg paths with `lsof`. Optional
+`--media PATH` probes an external synthetic fixture before the generated export.
+On clean Windows, install using `install.ps1`, smoke the installed directory, inspect
+module paths with PowerShell `Get-Process`/`Modules`, then uninstall. All loaded
+FFmpeg DLLs must remain beside the EXEs, including from unrelated working directories.
+MCP stdio installation belongs to p2-platform/02; no passing MCP smoke is claimed.
 
 ## Library replacement and recovery
 
-FFmpeg is LGPL-2.1-or-later; reverse engineering for debugging library changes is
-permitted. The included archives are the corresponding FFmpeg, Opus and libvpx
-sources, verified against the build receipt, plus applied backports and build
-recipe. Extract the `.archive` files using `tar -xf`; their original URLs/formats
-are in BUILD.txt. Rebuild compatible shared libraries using the recorded configure
-flags and backports in an isolated prefix; do not overwrite the shipped sources.
-Restore the original libraries from the recorded build prefix or a fresh extraction
-of the same installer to undo a replacement. No application rebuild is required.
+FFmpeg is LGPL-2.1-or-later; reverse engineering to debug library changes is permitted.
+Included FFmpeg/Opus/libvpx archives match the verified recipe/receipt and patches.
+Extract `.archive` files using `tar -xf` and rebuild ABI-compatible shared libraries
+in an isolated prefix. No app rebuild is required; keep original libraries to undo
+replacement. Never modify the only copy of an installed app.
 
-On macOS, make a copy of VibeCut.app, replace files in Contents/Frameworks with
-ABI/architecture-compatible dylibs, retain their `@rpath/<filename>` install IDs
-and `@loader_path` runpath, then re-sign each replacement, both executables and the
-bundle inside out with `codesign --force --sign - <path>`. Ad-hoc re-signing the
-whole app permits local replacement without the original developer's identity;
-this copy loses the original notarized identity. Run the smoke again and inspect
-dyld paths. For untouched originals from the build prefix, use `replace-macos.py`,
-which fixes runpaths and re-signs in that order. Never modify your only app copy.
+On macOS, copy the app, replace architecture/ABI-compatible dylibs under
+`Contents/Frameworks`, preserve `@rpath/<filename>` IDs and `@loader_path`, and re-sign
+inside out with an ad-hoc identity. `cargo xtask dist replace --app-copy COPY.app
+--libraries PREFIX/lib` performs replacement/relocation/re-signing for original
+runtime filenames. This copy loses its original notarized identity. Rerun the smoke
+and inspect loaded paths. On Windows close the app, back up/replace compatible DLLs
+beside both EXEs, then rerun smoke/module inspection; restore backups to recover.
 
-On Windows, close the app, back up the DLLs, copy compatible replacements beside
-both executables, then rerun smoke and module inspection. Library replacement
-does not require rebuilding the app or a certificate; enterprise execution policy
-may require administrator coordination. Restore backups to recover.
+Failures refuse distribution and leave `receipt.json` with safe command records.
+Fix the input and rerun with a fresh output. Inspect notary rejections using
+`xcrun notarytool log`; retry stapling only after an Accepted submission. Do not
+claim signing/notarization or clean-host acceptance from an unsigned build. Uninstall
+only verified app-owned CLI links; preserve project and preference data.
 
-Packaging fails closed on source mismatch, missing licences/receipt, unsupported
-host/architecture, unbundled dependencies or signing/notarization errors. Inspect
-stdout/stderr and the failed `receipt.json`; fix the input and rerun with a new
-output directory. For notary rejection use `xcrun notarytool log <submission-id>
---keychain-profile <profile>`; for transient staple failure retry `xcrun stapler
-staple <pkg>` and `validate <pkg>` after confirming an Accepted submission. A
-failed/unsigned build must never be described as release accepted. To uninstall
-the macOS CLI, remove only its installed symlink after checking `readlink` points
-to this app; remove the app through Finder. Keep projects and preferences.
-
-Source-documented platform contracts: [Apple signing order](https://developer.apple.com/documentation/xcode/using-the-latest-code-signature-format),
-[Apple notarization](https://developer.apple.com/documentation/security/notarizing-macos-software-before-distribution),
+Source-documented contracts: [Apple signing](https://developer.apple.com/documentation/xcode/using-the-latest-code-signature-format),
+[notarization](https://developer.apple.com/documentation/security/notarizing-macos-software-before-distribution),
 [Windows DLL search](https://learn.microsoft.com/en-us/windows/win32/dlls/dynamic-link-library-search-order),
 [SignTool](https://learn.microsoft.com/en-us/windows/win32/seccrypto/signtool).
