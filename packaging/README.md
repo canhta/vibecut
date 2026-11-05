@@ -15,11 +15,10 @@ with `cargo xtask ffmpeg`, then read its prefix from
 Preserve the prefix and its sibling `sources/` directory.
 
 ```sh
-BUILD=/Users/canh/Startup/VibeCut/.scratch/bin/build
-"$BUILD" cargo xtask ffmpeg
+cargo xtask build -- cargo xtask ffmpeg
 PREFIX=$(cat "$HOME/.cache/vibecut/ffmpeg/macos-aarch64/current")
-"$BUILD" cargo xtask dist build --ffmpeg "$PREFIX" --output target/package-inputs
-"$BUILD" cargo xtask dist package --os macos --arch aarch64 \
+cargo xtask build -- cargo xtask dist build --ffmpeg "$PREFIX" --output target/package-inputs
+cargo xtask build -- cargo xtask dist package --os macos --arch aarch64 \
   --binaries target/package-inputs --ffmpeg "$PREFIX" --output target/package-macos
 ```
 
@@ -38,6 +37,7 @@ entry. Neither platform deletes projects/preferences.
 
 On Windows use matching MSVC/Windows SDK developer tools and architecture-matched
 MSYS2 CLANG64 or CLANGARM64, as described in [provisioning](../docs/engineering/workflows.md#ffmpeg-provisioning).
+Run Cargo directly there; shared build admission is Unix-only.
 Use `--os windows --arch x86_64` or `aarch64`. PE machine/subsystem admission and
 `dumpbin /dependents` reject wrong architectures and missing non-system DLLs;
 FFmpeg cannot be satisfied from System32. Shared libraries live beside both EXEs.
