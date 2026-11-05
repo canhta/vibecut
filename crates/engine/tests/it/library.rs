@@ -74,6 +74,7 @@ fn copies_media_and_rolls_back_missing_changed_cancelled_and_busy_sources() {
     let media = root.path().join("Tiếng Việt bytes.dat");
     fs::write(&media, [7u8; 131072]).unwrap();
     let asset = media::SourceAsset::try_from(media::AssetData {
+        ephemeral: false,
         id: media::AssetId(4),
         path: media.clone(),
         content_hash: media::ContentHash::read(&media).unwrap(),
