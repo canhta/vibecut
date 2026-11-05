@@ -56,10 +56,6 @@ pub(crate) const VIDEO_BORDER_DARK: Color32 = Color32::from_rgb(0x0B, 0x6B, 0x5B
 pub(crate) const VIDEO_FILL_LIGHT: Color32 = Color32::from_rgb(0xE3, 0xF7, 0xF2);
 pub(crate) const VIDEO_BORDER_LIGHT: Color32 = Color32::from_rgb(0x0B, 0x6B, 0x5B);
 
-/// Feature toolbar bar measured in Iconography; light uses the active-tab step.
-const TOOLBAR_DARK: Color32 = Color32::from_rgb(0x30, 0x30, 0x30);
-const TOOLBAR_LIGHT: Color32 = HOVER_LIGHT;
-
 /// Preview well, drop scrim and the text or tint drawn on them.
 const PREVIEW_BACKDROP: Color32 = Color32::BLACK;
 const SCRIM: Color32 = Color32::from_rgba_premultiplied(0, 0, 0, 170);
@@ -147,9 +143,6 @@ pub(crate) const fn video_border(dark: bool) -> Color32 {
         VIDEO_BORDER_LIGHT
     }
 }
-pub(crate) const fn toolbar(dark: bool) -> Color32 {
-    if dark { TOOLBAR_DARK } else { TOOLBAR_LIGHT }
-}
 pub(crate) const fn preview_backdrop() -> Color32 {
     PREVIEW_BACKDROP
 }
@@ -201,7 +194,6 @@ mod tests {
             (video_fill(true), rgb(0x0A, 0x2A, 0x24)),
             (video_fill(false), rgb(0xE3, 0xF7, 0xF2)),
             (video_border(false), rgb(0x0B, 0x6B, 0x5B)),
-            (toolbar(true), rgb(0x30, 0x30, 0x30)),
         ];
         for (index, (actual, expected)) in cases.into_iter().enumerate() {
             assert_eq!(actual, expected, "token case {index}");

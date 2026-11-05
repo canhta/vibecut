@@ -19,13 +19,10 @@ use std::{
 };
 use time::{Rounding, SourceRange, TICKS_PER_SECOND, Tick};
 
-const TOOLBAR_HEIGHT: f32 = 42.0;
-const TOOLBAR_ICON: f32 = 20.0;
-const TOOLBAR_LABEL: f32 = 12.0;
-const TOOLBAR_GAP: f32 = 3.5;
-const TOOLBAR_MIN_TAB: f32 = 48.0;
-const TOOLBAR_SPACING: f32 = 9.0;
+const TOOLBAR_HEIGHT: f32 = 40.0;
+const TOOLBAR_SPACING: f32 = 4.0;
 const BUTTON_ICON: f32 = 16.0;
+const ICON_BUTTON: f32 = 28.0;
 const RULER_HEIGHT: f32 = 22.0;
 const LABEL_WIDTH: f32 = 112.0;
 const SCROLLBAR: f32 = 12.0;
@@ -45,6 +42,8 @@ pub struct WidgetState {
     pub rect: Rect,
     /// Embedded Phosphor name for a button that carries an icon.
     pub icon: Option<&'static str>,
+    /// Action and shortcut shown for icon-only controls.
+    pub tooltip: Option<String>,
 }
 #[derive(Clone, Debug)]
 pub struct Inspection {
@@ -663,6 +662,7 @@ impl Editor {
                 focused: response.has_focus(),
                 rect: response.rect,
                 icon,
+                tooltip: None,
             },
         );
     }
@@ -698,53 +698,52 @@ impl Editor {
         self.remember(id, &response);
         response.clicked()
     }
-    fn toolbar_button(
+    #[allow(clippy::too_many_arguments)]
+    fn icon_only(
         &mut self,
         ui: &mut egui::Ui,
         id: &'static str,
         icon: Icon,
-        key: Text,
+        label: &str,
+        shortcut: Option<&str>,
+        selected: Option<bool>,
         enabled: bool,
     ) -> bool {
-        self.toolbar_toggle(ui, id, icon, key, false, enabled)
-    }
-    fn toolbar_toggle(
-        &mut self,
-        ui: &mut egui::Ui,
-        id: &'static str,
-        icon: Icon,
-        key: Text,
-        selected: bool,
-        enabled: bool,
-    ) -> bool {
+        let tooltip = shortcut.map_or_else(|| label.to_owned(), |key| format!("{label} ({key})"));
+        let is_selected = selected.unwrap_or(false);
+        let (rect, response) = ui
+            .push_id(id, |ui| {
+                ui.allocate_exact_size(Vec2::splat(ICON_BUTTON), egui::Sense::click())
+            })
+            .inner;
         let color = if !enabled {
             theme::disabled(self.preferences.dark)
-        } else if selected {
+        } else if is_selected {
             self.accent()
         } else {
             self.text_color()
         };
-        let image = icons::tinted(icon, TOOLBAR_ICON, color);
-        let label = egui::RichText::new(self.tr(key))
-            .size(TOOLBAR_LABEL)
-            .strong()
-            .color(color);
-        let response = ui
-            .push_id(id, |ui| {
-                let button = egui::Button::image_and_text(image, label)
-                    .gap(TOOLBAR_GAP)
-                    .min_size(Vec2::new(TOOLBAR_MIN_TAB, 28.0))
-                    .corner_radius(4);
-                let button = if selected {
-                    button.fill(self.active_tab_fill())
-                } else {
-                    button.frame(false)
-                };
-                ui.add_enabled(enabled, button)
-            })
-            .inner;
+        if enabled && (response.hovered() || response.has_focus()) {
+            ui.painter()
+                .rect_filled(rect, 4.0, theme::field(self.preferences.dark));
+        }
+        icons::tinted(icon, BUTTON_ICON, color).paint_at(
+            ui,
+            Rect::from_center_size(rect.center(), Vec2::splat(BUTTON_ICON)),
+        );
+        response.widget_info(|| {
+            if let Some(selected) = selected {
+                egui::WidgetInfo::selected(egui::Role::CheckBox, enabled, selected, &tooltip)
+            } else {
+                egui::WidgetInfo::labeled(egui::Role::Button, enabled, &tooltip)
+            }
+        });
+        let response = response.on_hover_text(&tooltip);
         self.remember_with_icon(id, Some(icon.name()), &response);
-        response.clicked()
+        if let Some(state) = self.widgets.get_mut(id) {
+            state.tooltip = Some(tooltip);
+        }
+        enabled && response.clicked()
     }
     /// All control inputs (including tests/agents) use the same action path.
     /// Project edits are engine registry calls; transport/preferences are app state.
@@ -2202,22 +2201,40 @@ impl Editor {
         ui.advance_cursor_after_rect(area);
         let ready = self.session.project().duration() > Tick::ZERO && self.playback.can_play();
         ui.horizontal(|ui| {
-            if self.button(ui, "transport.back", Icon::SkipBack, Text::Back, true) {
+            if self.icon_only(
+                ui,
+                "transport.back",
+                Icon::SkipBack,
+                self.tr(Text::Back),
+                Some("J"),
+                None,
+                true,
+            ) {
                 self.action("transport.back");
             }
-            let (play_icon, play_text) = if self.playback.playing() {
-                (Icon::Pause, Text::Pause)
+            let (play_icon, play_text, play_key) = if self.playback.playing() {
+                (Icon::Pause, Text::Pause, "K")
             } else {
-                (Icon::Play, Text::Play)
+                (Icon::Play, Text::Play, "Space")
             };
-            if self.button(ui, "transport.play", play_icon, play_text, ready) {
+            if self.icon_only(
+                ui,
+                "transport.play",
+                play_icon,
+                self.tr(play_text),
+                Some(play_key),
+                None,
+                ready,
+            ) {
                 self.action("transport.play");
             }
-            if self.button(
+            if self.icon_only(
                 ui,
                 "transport.forward",
                 Icon::SkipForward,
-                Text::Forward,
+                self.tr(Text::Forward),
+                Some("L"),
+                None,
                 true,
             ) {
                 self.action("transport.forward");
@@ -2234,7 +2251,15 @@ impl Editor {
         }
         if self.error.is_some() || self.playback.error().is_some() {
             ui.label(self.tr(Text::Unavailable));
-            if self.button(ui, "preview.retry", Icon::ArrowClockwise, Text::Retry, true) {
+            if self.icon_only(
+                ui,
+                "preview.retry",
+                Icon::ArrowClockwise,
+                self.tr(Text::Retry),
+                None,
+                None,
+                true,
+            ) {
                 self.error = None;
                 self.action("preview.retry");
             }
@@ -2380,12 +2405,10 @@ impl Editor {
         }
     }
     fn timeline_toolbar(&mut self, ui: &mut egui::Ui, layout: &TimelineLayout) {
-        ui.painter()
-            .rect_filled(layout.toolbar, 0.0, self.toolbar_fill());
         let mut child = ui.new_child(
             egui::UiBuilder::new()
                 .id_salt("timeline.toolbar")
-                .max_rect(layout.toolbar.shrink2(Vec2::new(4.0, 7.0))),
+                .max_rect(layout.toolbar.shrink2(Vec2::new(4.0, 6.0))),
         );
         child.set_clip_rect(layout.toolbar);
         child.horizontal_centered(|ui| {
@@ -2397,16 +2420,26 @@ impl Editor {
             ui.spacing_mut().item_spacing.x = TOOLBAR_SPACING;
             let can_undo = self.session.can_undo();
             let can_redo = self.session.can_redo();
-            if self.toolbar_button(
+            if self.icon_only(
                 ui,
                 "edit.undo",
                 Icon::ArrowCounterClockwise,
-                Text::Undo,
+                self.tr(Text::Undo),
+                Some("Cmd/Ctrl+Z"),
+                None,
                 can_undo,
             ) {
                 self.action("edit.undo");
             }
-            if self.toolbar_button(ui, "edit.redo", Icon::ArrowClockwise, Text::Redo, can_redo) {
+            if self.icon_only(
+                ui,
+                "edit.redo",
+                Icon::ArrowClockwise,
+                self.tr(Text::Redo),
+                Some("Shift+Cmd/Ctrl+Z"),
+                None,
+                can_redo,
+            ) {
                 self.action("edit.redo");
             }
             let has_items = self
@@ -2417,80 +2450,80 @@ impl Editor {
                 .iter()
                 .any(|track| !track.items.is_empty());
             let has_selection = !self.selection.is_empty();
-            if self.toolbar_button(ui, "timeline.split", Icon::Scissors, Text::Split, has_items) {
+            if self.icon_only(
+                ui,
+                "timeline.split",
+                Icon::Scissors,
+                self.tr(Text::Split),
+                Some("Cmd/Ctrl+B"),
+                None,
+                has_items,
+            ) {
                 self.action("timeline.split");
             }
-            if self.toolbar_button(
+            if self.icon_only(
                 ui,
                 "timeline.delete",
                 Icon::Trash,
-                Text::Delete,
+                self.tr(Text::Delete),
+                Some("Delete"),
+                None,
                 has_selection,
             ) {
                 self.action("timeline.delete");
             }
-            if self.toolbar_toggle(
+            if self.icon_only(
                 ui,
                 "timeline.snap",
                 Icon::Magnet,
-                Text::Snap,
-                self.snapping,
+                self.tr(Text::Snap),
+                Some("N"),
+                Some(self.snapping),
                 true,
             ) {
                 self.action("timeline.snap");
             }
             let magnet = self.session.project().data().timeline.magnet;
-            let magnet_color = if magnet {
-                theme::on_accent(self.preferences.dark)
-            } else {
-                self.secondary()
-            };
-            let response = ui
-                .push_id("timeline.magnet", |ui| {
-                    ui.add(
-                        egui::Button::image(icons::tinted(Icon::Magnet, 16.0, magnet_color))
-                            .min_size(Vec2::splat(28.0))
-                            .selected(magnet),
-                    )
-                })
-                .inner;
-            response.widget_info(|| {
-                egui::WidgetInfo::selected(
-                    egui::Role::CheckBox,
-                    true,
-                    magnet,
-                    self.tr(Text::Magnet),
-                )
-            });
-            let response = response.on_hover_text(self.tr(Text::Magnet));
-            self.remember_with_icon("timeline.magnet", Some(Icon::Magnet.name()), &response);
-            if response.clicked() {
+            if self.icon_only(
+                ui,
+                "timeline.magnet",
+                Icon::Magnet,
+                self.tr(Text::Magnet),
+                None,
+                Some(magnet),
+                true,
+            ) {
                 self.track_command("track.set_magnet", serde_json::json!({"enabled":!magnet}));
             }
-            if self.toolbar_toggle(
+            if self.icon_only(
                 ui,
                 "timeline.ripple",
                 Icon::Waveform,
-                Text::Ripple,
-                self.ripple,
+                self.tr(Text::Ripple),
+                Some("Shift+Delete"),
+                Some(self.ripple),
                 true,
             ) {
                 self.action("timeline.ripple");
             }
-            if self.toolbar_button(
+            if self.icon_only(
                 ui,
                 "timeline.zoom_out",
                 Icon::MagnifyingGlassMinus,
-                Text::ZoomOut,
+                self.tr(Text::ZoomOut),
+                None,
+                None,
                 true,
             ) {
                 self.action("timeline.zoom_out");
             }
-            if self.toolbar_button(
+            if self.icon_only(
                 ui,
                 "timeline.zoom_in",
                 Icon::MagnifyingGlassPlus,
-                Text::ZoomIn,
+                self.tr(Text::ZoomIn),
+                None,
+                None,
                 true,
             ) {
                 self.action("timeline.zoom_in");
@@ -2940,7 +2973,7 @@ impl Editor {
                 x,
                 clip.top() + row.top - self.vertical_scroll + (row.height - 24.0) / 2.0,
             ),
-            Vec2::splat(24.0),
+            Vec2::splat(ICON_BUTTON),
         )
         .intersect(clip);
         if !rect.is_positive() {
@@ -2951,19 +2984,21 @@ impl Editor {
             Id::unique(("track", row.id.0, suffix)),
             egui::Sense::click(),
         );
+        let tooltip = format!("{}: {}", self.tr(label), row.name);
         response.widget_info(|| {
-            egui::WidgetInfo::selected(
-                egui::Role::CheckBox,
-                true,
-                selected,
-                format!("{}: {}", self.tr(label), row.name),
-            )
+            egui::WidgetInfo::selected(egui::Role::CheckBox, true, selected, tooltip.clone())
         });
         self.remember_with_icon(
             format!("track.{}.{suffix}", row.id.0),
             Some(icon.name()),
             &response,
         );
+        if let Some(state) = self
+            .widgets
+            .get_mut(&format!("track.{}.{suffix}", row.id.0))
+        {
+            state.tooltip = Some(tooltip.clone());
+        }
         let color = if selected {
             self.accent()
         } else {
@@ -2976,7 +3011,7 @@ impl Editor {
         }
         icons::tinted(icon, 16.0, color)
             .paint_at(ui, Rect::from_center_size(rect.center(), Vec2::splat(16.0)));
-        response.clone().on_hover_text(self.tr(label));
+        response.clone().on_hover_text(tooltip);
         response.clicked()
     }
     fn paint_item(
@@ -3241,12 +3276,6 @@ impl Editor {
     }
     fn accent(&self) -> Color32 {
         theme::accent(self.preferences.dark)
-    }
-    fn active_tab_fill(&self) -> Color32 {
-        theme::hover(self.preferences.dark)
-    }
-    fn toolbar_fill(&self) -> Color32 {
-        theme::toolbar(self.preferences.dark)
     }
     fn panel_fill(&self) -> Color32 {
         theme::panel(self.preferences.dark)

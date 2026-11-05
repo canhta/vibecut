@@ -581,6 +581,14 @@ fn every_editor_button_reports_its_embedded_icon() {
             .unwrap_or_else(|| panic!("missing widget {id}"))
             .icon
     };
+    let tooltip = |id: &str| {
+        widgets
+            .iter()
+            .find(|widget| widget.id == id)
+            .unwrap_or_else(|| panic!("missing widget {id}"))
+            .tooltip
+            .as_deref()
+    };
     let expected = [
         ("project.back", "arrow-left"),
         ("project.rename", "pencil-simple"),
@@ -620,13 +628,27 @@ fn every_editor_button_reports_its_embedded_icon() {
         .find(|widget| widget.id == "timeline.split")
         .unwrap();
     assert!(
-        (split.rect.height() - 28.0).abs() < 0.5,
-        "feature tabs keep a 28 px hit box"
+        (split.rect.height() - 28.0).abs() < 0.5 && (split.rect.width() - 28.0).abs() < 0.5,
+        "timeline actions keep the 28x28 icon-only hit box, got {:?}",
+        split.rect
     );
+    let timeline = harness.state().panels["timeline"];
     assert!(
-        split.rect.width() >= 48.0,
-        "feature tabs keep a 48 px minimum width"
+        (split.rect.min.y - timeline.top() - 18.0).abs() < 0.5,
+        "timeline toolbar keeps its 40 px row"
     );
+    for (id, text) in [
+        ("edit.undo", "Undo (Cmd/Ctrl+Z)"),
+        ("timeline.split", "Split (Cmd/Ctrl+B)"),
+        ("timeline.snap", "Snap (N)"),
+        ("timeline.zoom_in", "Zoom +"),
+        ("timeline.magnet", "Main track magnet"),
+        ("transport.back", "Back 1 second (J)"),
+        ("transport.play", "Play (Space)"),
+        ("preview.retry", "Retry preview"),
+    ] {
+        assert_eq!(tooltip(id), Some(text), "{id} tooltip");
+    }
 }
 
 fn text_item_id(editor: &Editor) -> ItemId {
