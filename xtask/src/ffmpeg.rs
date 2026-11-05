@@ -247,6 +247,10 @@ fn windows_bindgen_environment(command: &mut Command) {
         }
     }
     args.push_str(AMX_GUARDS);
+    // Native bindgen builds trust libclang's default target. MSYS2 Clang
+    // defaults to GNU Windows, whose unsigned enums disagree with whisper-rs's
+    // MSVC representation. Match the Rust ABI for every generated binding.
+    args.push_str(&format!(" --target={target}"));
     command.env(key, args);
 }
 
@@ -730,6 +734,7 @@ mod tests {
             let (caller, guards) = args.split_once("-D__AMXINTRIN_H").unwrap();
             assert_eq!(caller.trim_end(), expected);
             assert!(guards.contains("-D__AMX_FP16INTRIN_H"));
+            assert!(args.ends_with(&format!(" --target={target}")));
             return;
         }
         for (general, underscored, hyphenated, expected) in [
@@ -737,6 +742,12 @@ mod tests {
             (Some("-DGENERAL"), None, None, "-DGENERAL"),
             (None, Some("-DUNDERSCORE"), None, "-DUNDERSCORE"),
             (None, None, Some("-DHYPHEN"), "-DHYPHEN"),
+            (
+                Some("--target=x86_64-w64-windows-gnu"),
+                None,
+                None,
+                "--target=x86_64-w64-windows-gnu",
+            ),
             (
                 Some("-DGENERAL"),
                 Some("-DUNDERSCORE"),
