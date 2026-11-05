@@ -1489,7 +1489,9 @@ fn edge_scroll_clamp_reversal_and_escape_preserve_drag_origin() {
     h.run_steps(2);
     assert_eq!(item(h.state(), id).start, Tick(6 * SECOND));
     h.key_press(egui::Key::Escape);
-    h.run_steps(2);
+    // Inspect the cancellation frame before a later tick can present a fresh
+    // frame from the restored snapshot.
+    h.run_steps(1);
     assert_eq!(h.state().session.project(), &before);
     assert!(!h.state().session.gesture_active());
     assert!(h.state().playback.frame().is_none());
