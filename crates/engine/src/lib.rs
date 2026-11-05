@@ -11,6 +11,7 @@ mod control_preview;
 pub mod fonts;
 pub mod jobs;
 pub mod library;
+pub mod loudness;
 pub mod models;
 pub mod providers;
 pub mod recovery;
@@ -121,6 +122,8 @@ pub enum EditError {
     NetworkTransient,
     #[error("job result is stale")]
     StaleResult,
+    #[error("loudness gains are missing or measured for different audio; measure again")]
+    LoudnessStale,
     #[error("background job failed: {0}")]
     JobFailure(std::sync::Arc<EditError>),
     #[error("corrupt cache entry skipped")]

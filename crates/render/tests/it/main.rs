@@ -8,6 +8,7 @@ mod common;
 mod contracts;
 mod effects;
 mod goldens;
+mod loudness;
 mod masks;
 mod media_pipeline;
 mod output_alias;

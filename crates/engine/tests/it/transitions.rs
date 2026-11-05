@@ -190,20 +190,21 @@ fn cancelled_gestures_failed_batches_and_reversal_restore_transitions() {
 }
 
 #[test]
-fn schema_sixteen_roundtrip_rejects_old_and_unknown_kinds() {
+fn current_schema_roundtrip_rejects_old_and_unknown_kinds() {
     let s = session(true);
     let bytes = project::encode(s.project(), false).unwrap();
     let mut wire: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
-    assert_eq!(wire["schema_version"], 16);
-    wire["schema_version"] = json!(15);
+    let current = project::SCHEMA_VERSION;
+    assert_eq!(wire["schema_version"], current);
+    wire["schema_version"] = json!(current - 1);
     assert!(matches!(
         project::decode(&serde_json::to_vec(&wire).unwrap()),
         Err(project::Error::TooOld {
-            found: 15,
-            supported: 16
-        })
+            found,
+            supported
+        }) if found == current - 1 && supported == current
     ));
-    wire["schema_version"] = json!(16);
+    wire["schema_version"] = json!(current);
     wire["project"]["scenes"][0]["timeline"]["transitions"][0]["kind"] = json!("unknown");
     assert!(
         matches!(project::decode(&serde_json::to_vec(&wire).unwrap()),Err(project::Error::UnsupportedTransition(kind)) if kind == "unknown")

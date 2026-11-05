@@ -148,6 +148,31 @@ apply the chain, including quiet offline exports; no block-dependent bypass.
 so returned PCM stays on the requested output sample grid without leading delay
 or lost final samples. Gaps/empty content stay bit-exact zero.
 
+Loudness normalization (EBU R128 / BS.1770-4) is a two-pass planner over this
+same graph. `measure_loudness(project, sources, hooks)` reads the project's
+clip and master targets. Pass one mixes each audible clip alone with its volume,
+mute and automation, without master fader, mute, limiter or other gains, and
+meters it; the clip gain is `min(target - integrated, ceiling - true peak)`.
+Pass two meters the whole pre-limiter mix with those clip gains applied, so
+material is never normalized twice, and derives the master gain the same way
+against `min(true_peak_db, -1 dBFS)`, the limiter threshold. The meter is
+K-weighted at the project rate (shelf and RLB high-pass from the BS.1770-4
+analogue prototype), 400 ms blocks on a 100 ms hop, absolute gate -70 LUFS,
+relative gate -10 LU, with true peak from the limiter's 4x/2x polyphase
+detector. Measurement is stereo (mono duplicates at unity), so a mono export of
+stereo-measured material reads up to 3 dB lower. Silence, clips under 400 ms and
+gains within 0.05 dB are exact unity; gains clamp to +/-60 dB, and an
+unreachable target (peak-limited) lands below target rather than clipping. The
+planner reports progress through `Stage::Mix`, honours cancellation and returns
+`LoudnessReport` (gains plus the measured numbers; its key is the engine's).
+`project.settings.loudness.measured` holds the gains: `AudioMixer`, `mix_audio`
+and therefore preview and export apply the clip gain beside item volume and the
+master gain to the summed mix ahead of the limiter, whose fixed 0.98 post gain
+stays part of the master chain (final loudness is 0.18 dB under the target).
+Gains apply sample-accurately and do not change timing. Tests compare the
+meter with ffmpeg's `ebur128` on a tone, pink noise and a gated programme
+(`cargo test -p render --test it loudness::`).
+
 Retain one mixer for an immutable snapshot. Discontinuous seeks deterministically
 replay from timeline zero in bounded, cancellable blocks to reconstruct the full
 release envelope; cost grows with seek position. `mix_audio` is a convenience

@@ -14,6 +14,7 @@ mod jobs;
 mod keyframes;
 mod library;
 mod lifecycle;
+mod loudness;
 mod masks;
 mod media;
 mod model_transfers;

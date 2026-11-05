@@ -808,6 +808,41 @@ pub(crate) fn apply(
             };
             fades.set(edge, duration, curve, clip)?;
         }
+        Command::SetLoudness {
+            scope,
+            target_lufs,
+            true_peak_db,
+        } => {
+            let target = project::LoudnessTarget {
+                target_lufs,
+                true_peak_db,
+            };
+            if !target.is_valid() {
+                return Err(EditError::Invalid("loudness target"));
+            }
+            let l = &mut data.settings.loudness;
+            match scope {
+                project::LoudnessScope::Clip => l.clip = Some(target),
+                project::LoudnessScope::Master => l.master = Some(target),
+            }
+            // Gains were measured for the previous targets; remeasure before export.
+            l.measured = None;
+        }
+        Command::ClearLoudness { scope } => {
+            let l = &mut data.settings.loudness;
+            let target = match scope {
+                project::LoudnessScope::Clip => &mut l.clip,
+                project::LoudnessScope::Master => &mut l.master,
+            };
+            *target = None;
+            l.measured = None;
+        }
+        Command::ApplyLoudness { gains } => {
+            if !gains.is_valid() {
+                return Err(EditError::Invalid("loudness gains"));
+            }
+            data.settings.loudness.measured = Some(gains);
+        }
         Command::SetTrackMuted { track: id, muted } => {
             let t = track(&mut data, id)?;
             if !t.kind.can_mute() {

@@ -39,6 +39,7 @@ The [glossary](../../GLOSSARY.md) owns domain definitions; crate READMEs own con
 | Font catalog, system/bundled/Google fonts, download cache, `fonts.*` commands | [engine fonts](../../crates/engine/README.md#font-catalog); resolution and raster in [text](../../crates/text/README.md#fonts) |
 | Row tasks and native conversion worker allowance | [engine kernel execution](../../crates/engine/README.md#render-kernel-execution) |
 | Export execution | [render](../../crates/render/README.md#export-and-publication) |
+| Loudness measurement, gains and export admission | [render planner](../../crates/render/README.md#audio-clock-and-headroom) / [engine job](../../crates/engine/README.md#loudness-normalization) |
 | Clip naming, cue mapping, per-short cancel/retry | [engine batch export](../../crates/engine/README.md#clip-batch-export) |
 | Local model catalog, consent, integrity, transport / transfers, cache bundles / manager presentation | [ai catalog](../../crates/ai/README.md#model-catalog-and-language-neutral-weights) / [engine transfers](../../crates/engine/README.md#local-model-transfers) / [app manager](../../apps/vibecut/README.md#local-model-manager) |
 | Clip boundary snapping / speech groups / energy | [engine](../../crates/engine/README.md#clip-boundary-adjustment) / [captions](../../crates/captions/README.md#source-cut-units) / [media](../../crates/media/README.md#speech-energy-windows) |

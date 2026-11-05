@@ -1597,3 +1597,28 @@ splitting an incoming clip keeps its original left piece. Failed edits publish
 neither item nor transition changes. Audio remains on its existing mixer path;
 these transitions are video-only. [Project](../project/README.md#video-transitions)
 owns the admitted kinds and invariant mathematics.
+`audio.set_loudness {scope: clip|master, target_lufs, true_peak_db}` stores an EBU R128
+target (-50..-5 LUFS, -20..0 dBTP; default -14/-1) and drops stale gains;
+`audio.clear_loudness {scope}` removes it; both are ordinary undoable edits that
+persist with the project. Measured gains arrive through `audio.apply_loudness {gains}`
+(validated range and ordering only). See [loudness normalization](#loudness-normalization).
+All three edits use ordinary gestures, transactions, undo/redo and persistence;
+render owns mastering, sample timing and latency compensation.
+
+## Loudness normalization
+
+`loudness::submit_loudness(runner, cache, project, sources)` queues one CPU
+`MeasureLoudness` job that runs render's [two-pass planner](../render/README.md#audio-clock-and-headroom)
+over the production mix graph for the targets set by `audio.set_loudness`. It reports
+`Mix` progress, honours cancellation, and surfaces failures as typed
+`JobFailure`. It never edits the project: `LoudnessJob::finish` validates the result
+(`LoudnessResult`: gains plus the measured numbers per clip and master), caches it as
+`ArtifactKind::Loudness` and the caller applies it with `audio.apply_loudness`.
+The gains' `key` is `loudness::content_key`: a hash of the active scene's audible items
+(timing, source content, volume/mute and their automation), track mutes, sample rate
+and both targets. The master fader is excluded because measurement ignores it.
+Identical content and targets hit the cache without decoding. `submit_export*` calls
+`loudness::admit`, which refuses `LoudnessStale` when a target is set and the stored
+gains are missing or measured for different audio, so preview (which applies stored
+gains as is) and export cannot disagree. Undo restores the gains with the content.
+`vibecut-cli normalize` composes these steps. Limits: 4,096 clips, 1 MiB result.

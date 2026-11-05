@@ -4,6 +4,7 @@ pub mod blend;
 mod caption;
 pub mod color;
 mod limiter;
+mod loudness;
 mod oversample;
 pub use caption::{CaptionBackground, CaptionOutline, CaptionPosition, CaptionStyle};
 pub mod effects;
@@ -19,6 +20,7 @@ pub use export::{
     validate_output_path,
 };
 pub use image::Image;
+pub use loudness::{LoudnessReport, Measurement, measure_loudness};
 use media::AssetId;
 pub use scene::{Fit, Placement, RasterCacheStats, Rect, RenderSettings, Renderer};
 pub use sources::{FileSources, SourceProvider};

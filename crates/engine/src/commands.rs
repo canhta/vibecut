@@ -361,6 +361,9 @@ commands! {
     SetTransitionDuration, "transition.set_duration", "Resize video transition", Edit { transition: project::TransitionId, duration: Tick } => Transition, serde_json::json!({"transition":13,"duration":20});
     RemoveTransition, "transition.remove", "Remove video transition", Edit { transition: project::TransitionId } => Transition, serde_json::json!({"transition":13});
     SetFade, "audio.set_fade", "Set audio fade", Edit { item: ItemId, edge: project::FadeEdge, duration: Tick, curve: project::FadeCurve } => Audio, serde_json::json!({"item":5,"edge":"in","duration":0,"curve":"equal_power"});
+    SetLoudness, "audio.set_loudness", "Set loudness target", Edit { scope: project::LoudnessScope, target_lufs: f32, true_peak_db: f32 } => Timeline, serde_json::json!({"scope":"master","target_lufs":-14.0,"true_peak_db":-1.0});
+    ClearLoudness, "audio.clear_loudness", "Clear loudness target", Edit { scope: project::LoudnessScope } => Timeline, serde_json::json!({"scope":"master"});
+    ApplyLoudness, "audio.apply_loudness", "Apply measured loudness gains", Edit { gains: project::LoudnessGains } => Timeline, serde_json::json!({"gains":{"key":[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],"clip":[],"master_db":0.0}});
     SetViewState, "project.set_view_state", "Set timeline view", SessionControl { zoom: f64, scroll: f64, playhead: Tick } => Timeline, serde_json::json!({"zoom":2.0,"scroll":10.0,"playhead":0});
     ExportSubtitles, "export_subtitles", "Export subtitle file", FilePublish { track: TrackId, format: captions::Format, languages: Vec<captions::LanguageTag>, path: std::path::PathBuf, overwrite: bool } => Timeline, serde_json::json!({"track":4,"format":"srt","languages":["en"],"path":"$output/subtitles.srt","overwrite":false});
     BurnSubtitles, "burn_subtitles", "Burn subtitles into MP4", FilePublish { range: time::TimeRange, languages: Vec<captions::LanguageTag>, style: render::CaptionStyle, portrait: bool, path: std::path::PathBuf, overwrite: bool } => Timeline, serde_json::json!({"range":{"start":0,"end":8467200000_i64},"languages":["en"],"style":{"font":"Inter","font_style":"SemiBold","size":48.0,"color":[255,255,255,255],"outline":null,"background":null,"position":"bottom","safe_area_percent":5.0,"max_lines":2},"portrait":false,"path":"$output/burn.mp4","overwrite":false});
@@ -487,8 +490,8 @@ pub fn registry() -> &'static [CommandSpec] {
                         "$schema".into(),
                         serde_json::json!("https://json-schema.org/draft/2020-12/schema"),
                     );
-                    if let Some(defs) = schema.get("$defs") {
-                        object.insert("$defs".into(), defs.clone());
+                    if let Some(defs) = schema.get("$defs").and_then(serde_json::Value::as_object) {
+                        object.insert("$defs".into(), reachable_defs(object, defs));
                     }
                 }
                 CommandSpec {
@@ -503,6 +506,48 @@ pub fn registry() -> &'static [CommandSpec] {
             })
             .collect()
     })
+}
+
+/// The `$defs` a schema can reach through `#/$defs/<name>` references, so each
+/// command carries its own types instead of the whole command union.
+fn reachable_defs(
+    root: &serde_json::Map<String, serde_json::Value>,
+    defs: &serde_json::Map<String, serde_json::Value>,
+) -> serde_json::Value {
+    fn refs<'a>(value: &'a serde_json::Value, out: &mut Vec<&'a str>) {
+        match value {
+            serde_json::Value::Object(o) => {
+                if let Some(name) = o
+                    .get("$ref")
+                    .and_then(serde_json::Value::as_str)
+                    .and_then(|r| r.strip_prefix("#/$defs/"))
+                {
+                    out.push(name);
+                }
+                o.values().for_each(|v| refs(v, out));
+            }
+            serde_json::Value::Array(a) => a.iter().for_each(|v| refs(v, out)),
+            _ => {}
+        }
+    }
+    let mut keep = std::collections::BTreeSet::new();
+    let mut pending = Vec::new();
+    root.iter()
+        .filter(|(k, _)| k.as_str() != "$defs")
+        .for_each(|(_, v)| refs(v, &mut pending));
+    while let Some(name) = pending.pop() {
+        if let Some(def) = defs.get(name)
+            && keep.insert(name)
+        {
+            refs(def, &mut pending);
+        }
+    }
+    serde_json::Value::Object(
+        defs.iter()
+            .filter(|(k, _)| keep.contains(k.as_str()))
+            .map(|(k, v)| (k.clone(), v.clone()))
+            .collect(),
+    )
 }
 
 /// Item input; the engine allocates its identity only on successful commit.

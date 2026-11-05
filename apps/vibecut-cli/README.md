@@ -81,6 +81,12 @@ never promotes a partial output or replaces an existing destination on failure.
 There is no signal-to-job-cancel handler; process interruption keeps the existing
 crash semantics.
 
+`normalize <project> [--clip] [--master] [--target-lufs -14] [--true-peak-db -1]`
+sets those [loudness targets](../../crates/engine/README.md#loudness-normalization)
+(master by default), runs the measurement job with progress on stderr, stores the gains
+and prints the measured clips and master with their gains. `export` then applies them;
+it refuses stale gains after an audible edit until `normalize` runs again.
+
 `exec` uses [engine commands](../../crates/engine/README.md#public-entry-points)
 and holds the [project lease](../../crates/project/README.md#writer-lease-and-save-acknowledgement)
 from load through save. Scene commands use that same registry. Export uses the saved

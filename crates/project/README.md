@@ -47,7 +47,7 @@ Audio items carry `AudioParams::source`. The default `upload` source references 
 
 Names, notes and text use captions' NFC text owner. Canvas frames must have exact,
 positive integer tick durations. Canvas area is at most 2^26 pixels; output audio
-admits 8–192 kHz. Audio/video source volume and master volume admit -60..20 dB on a 0.01 dB grid; font sizes admit 1..4096 pixels.
+admits 8–192 kHz. Audio/video source volume and master volume admit -60..20 dB on a 0.01 dB grid; loudness targets admit -50..-5 LUFS and -20..0 dBTP on the same grid, and measured gains -60..60 dB for at most 4,096 sorted clips; font sizes admit 1..4096 pixels.
 Text items also carry a 1..256-byte font-family name, an optional padded RGBA
 background box, and x/y canvas percentages in 0..=100 (default 50/84.5 reproduces
 the original lower-third box). Typed invalid/unsupported/limit errors refuse a whole candidate.
@@ -183,9 +183,9 @@ or renderer output claim is made.
 ## Persistence and limits
 
 `encode`/`decode` use one JSON envelope: `format`, `schema_version`, `generator`,
-`project`. Current schema 16 adds timeline `transitions` to schema 15 audio/video clip `fades`, following schema 14, which added optional imported cue style to schema 13 text weight, italic, letter spacing and line height (also on text masks), which followed schema 12 audio `source` (upload or library provenance), volume/mute and master controls.
+`project`. Current schema 17 adds `settings.loudness` (clip/master targets and the last measured gains) to schema 16 timeline `transitions`, which followed schema 15 audio/video clip `fades`, schema 14 optional imported cue style, schema 13 text weight, italic, letter spacing and line height (also on text masks), and schema 12 audio `source` (upload or library provenance), volume/mute and master controls.
 ProjectId is stored as a canonical decimal string, preserving
-all u64 identity bits for control clients; other IDs remain numeric. Schemas 1-15
+all u64 identity bits for control clients; other IDs remain numeric. Schemas 1-16
 are refused rather than migrated or silently defaulted. Older schemas return `TooOld`, newer schemas `TooNew`; there are no
 migration or compatibility paths. Unknown current-schema project/envelope fields
 are refused. `WriterLease::save` serializes completely before touching the destination;
@@ -395,7 +395,7 @@ whitespace-only text masks are inactive while retaining their editable data. The
 admits 1,024 entries for resource safety; presentation limits do not define the
 model. Audio items refuse masks. Modes are None/Add/Subtract/Intersect/Lighten/
 Darken/Difference; render owns their coverage math. Commands/history belong to
-engine. Schema 16 requires timeline transitions, scene arrays, per-item mask vectors, `blendMode`, text style and typography, audio control fields (audio source is optional, default upload) optional imported cue style and optional clip `fades` (`offset` defaults to 0); schema 15 and earlier refuse with `TooOld`.
+engine. Schema 17 requires `settings.loudness`, timeline transitions, scene arrays, per-item mask vectors, `blendMode`, text style and typography, audio control fields (audio source is optional, default upload) optional imported cue style and optional clip `fades` (`offset` defaults to 0); schema 16 and earlier refuse with `TooOld`.
 
 Shapes include split, cinematic band, rectangle, ellipse, heart, diamond, star,
 text and a cubic `MaskPath`. Text masks currently persist content and font size

@@ -75,6 +75,7 @@ pub struct Settings {
     pub audio_sample_rate: u32,
     pub master_volume: f32,
     pub master_muted: bool,
+    pub loudness: Loudness,
 }
 impl Default for Settings {
     fn default() -> Self {
@@ -82,7 +83,83 @@ impl Default for Settings {
             audio_sample_rate: 48000,
             master_volume: 0.0,
             master_muted: false,
+            loudness: Loudness::default(),
         }
+    }
+}
+/// EBU R128 normalization target: integrated loudness and true-peak ceiling.
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct LoudnessTarget {
+    pub target_lufs: f32,
+    pub true_peak_db: f32,
+}
+impl LoudnessTarget {
+    /// EBU R128 streaming default: -14 LUFS integrated, -1 dBTP.
+    pub const DEFAULT: Self = Self {
+        target_lufs: -14.0,
+        true_peak_db: -1.0,
+    };
+    /// Finite, on the hundredth grid: LUFS -50..=-5, true peak -20..=0 dBTP.
+    pub fn is_valid(self) -> bool {
+        let grid = |v: f32| (v * 100.0 - (v * 100.0).round()).abs() < 0.001;
+        self.target_lufs.is_finite()
+            && self.true_peak_db.is_finite()
+            && (-50.0..=-5.0).contains(&self.target_lufs)
+            && (-20.0..=0.0).contains(&self.true_peak_db)
+            && grid(self.target_lufs)
+            && grid(self.true_peak_db)
+    }
+}
+/// Which part of the signal a loudness target normalizes.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum LoudnessScope {
+    Clip,
+    Master,
+}
+/// Which loudness gains a project requests; `measured` holds the last two-pass result.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct Loudness {
+    /// Normalize each audible clip to this target before the master chain.
+    pub clip: Option<LoudnessTarget>,
+    /// Normalize the whole mix (after clip gains) to this target.
+    pub master: Option<LoudnessTarget>,
+    pub measured: Option<LoudnessGains>,
+}
+/// Gains derived by one measurement pass. `key` binds them to the audio content
+/// and targets they were measured for; the mixer applies them unconditionally so
+/// preview and export agree, and export admission refuses stale keys.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct LoudnessGains {
+    pub key: [u8; 32],
+    /// Per-clip dB gain, sorted by item; absent items (silence, identity) are unity.
+    pub clip: Vec<(ItemId, f32)>,
+    /// Gain in dB applied to the summed mix before the limiter.
+    pub master_db: f32,
+}
+impl LoudnessGains {
+    pub const MAX_CLIPS: usize = 4096;
+    pub const GAIN_RANGE_DB: std::ops::RangeInclusive<f32> = -60.0..=60.0;
+    pub fn is_valid(&self) -> bool {
+        self.clip.len() <= Self::MAX_CLIPS
+            && Self::GAIN_RANGE_DB.contains(&self.master_db)
+            && self.master_db.is_finite()
+            && self
+                .clip
+                .iter()
+                .all(|(_, g)| g.is_finite() && Self::GAIN_RANGE_DB.contains(g))
+            && self.clip.windows(2).all(|w| match w {
+                [a, b] => a.0.0 < b.0.0,
+                _ => true,
+            })
+    }
+    pub fn clip_db(&self, item: ItemId) -> f32 {
+        self.clip
+            .binary_search_by_key(&item.0, |(id, _)| id.0)
+            .map_or(0.0, |i| self.clip.get(i).map_or(0.0, |(_, g)| *g))
     }
 }
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
@@ -654,6 +731,13 @@ fn validate(data: &ProjectData) -> Result<()> {
     }
     if !(8000..=192000).contains(&data.settings.audio_sample_rate) {
         return Err(Error::Invalid("audio sample rate"));
+    }
+    let loudness = &data.settings.loudness;
+    if loudness.clip.is_some_and(|t| !t.is_valid())
+        || loudness.master.is_some_and(|t| !t.is_valid())
+        || loudness.measured.as_ref().is_some_and(|m| !m.is_valid())
+    {
+        return Err(Error::Invalid("loudness settings"));
     }
     if data.assets.len() > 10000
         || data

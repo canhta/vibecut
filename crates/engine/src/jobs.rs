@@ -50,6 +50,7 @@ pub enum JobKind {
     Translate,
     SuggestClips,
     AnalyzeShots,
+    MeasureLoudness,
     Preview,
     EffectThumbnail,
     Export,

@@ -1,7 +1,7 @@
 use crate::{
     Error, ExecutionHooks, MemoryKind, Reservation, Result, SourceProvider, check, vector,
 };
-use project::{ItemParams, Project};
+use project::{ItemId, ItemParams, Project};
 use time::{Rounding, Tick};
 /// Planar f32 audio on the project output clock.
 /// Stereo default: mono duplicates at unity; stereo->mono averages L/R.
@@ -50,6 +50,49 @@ impl AudioBlock {
         self.planes.first().map_or(0, Vec::len)
     }
 }
+/// What `mix_raw` applies besides item volume: loudness gains, the master fader
+/// and an optional solo item. Production reads the project; measurement passes
+/// build their own so pass one never sees gains or the fader.
+pub(crate) struct Chain<'a> {
+    clip: &'a [(ItemId, f32)],
+    master_db: f32,
+    fader: bool,
+    solo: Option<ItemId>,
+}
+impl<'a> Chain<'a> {
+    /// The gains and fader the project requests, for preview and export alike.
+    pub(crate) fn of(project: &'a Project) -> Self {
+        let l = &project.data().settings.loudness;
+        let (clip, master_db) = match &l.measured {
+            Some(m) => (
+                if l.clip.is_some() { &m.clip[..] } else { &[] },
+                if l.master.is_some() { m.master_db } else { 0.0 },
+            ),
+            None => (&[][..], 0.0),
+        };
+        Self {
+            clip,
+            master_db,
+            fader: true,
+            solo: None,
+        }
+    }
+    /// No fader or mute; `clip` gains applied, only `solo` audible when set.
+    pub(crate) fn measuring(clip: &'a [(ItemId, f32)], solo: Option<ItemId>) -> Self {
+        Self {
+            clip,
+            master_db: 0.0,
+            fader: false,
+            solo,
+        }
+    }
+    fn clip_db(&self, item: ItemId) -> f32 {
+        self.clip
+            .binary_search_by_key(&item, |(id, _)| *id)
+            .map_or(0.0, |i| self.clip.get(i).map_or(0.0, |(_, g)| *g))
+    }
+}
+
 /// Absolute output sample window [start,start+frames), using nearest rounding for
 /// every item/source boundary once. Identical sample math for preview and export.
 pub fn mix_audio(
@@ -151,6 +194,7 @@ impl<'a> AudioMixer<'a> {
                     sources,
                     hooks,
                     self.fade_ms,
+                    &Chain::of(self.project),
                 )?;
                 self.limiter.process(&mut prime.planes);
                 while self.next.is_some_and(|next| next < start) {
@@ -184,6 +228,7 @@ impl<'a> AudioMixer<'a> {
             sources,
             hooks,
             self.fade_ms,
+            &Chain::of(self.project),
         )?;
         self.limiter.process(&mut out.planes);
         Ok(out)
@@ -191,7 +236,7 @@ impl<'a> AudioMixer<'a> {
 }
 
 #[allow(clippy::too_many_arguments)]
-fn mix_raw(
+pub(crate) fn mix_raw(
     project: &Project,
     start: i64,
     frames: usize,
@@ -199,6 +244,7 @@ fn mix_raw(
     sources: &mut dyn SourceProvider,
     hooks: &dyn ExecutionHooks,
     fade_ms: u16,
+    chain: &Chain<'_>,
 ) -> Result<AudioBlock> {
     check(hooks)?;
     let rate = project.data().settings.audio_sample_rate;
@@ -206,7 +252,7 @@ fn mix_raw(
         .checked_add(i64::try_from(frames).map_err(|_| Error::Invalid("sample count"))?)
         .ok_or(Error::Invalid("sample window"))?;
     let mut out = AudioBlock::new(rate, channels, frames, MemoryKind::Compositor, hooks)?;
-    if project.data().settings.master_muted {
+    if chain.fader && project.data().settings.master_muted {
         return Ok(out);
     }
     let mut spans = Vec::new();
@@ -215,7 +261,7 @@ fn mix_raw(
             continue;
         }
         for item in &track.items {
-            if !has_source_audio(item) {
+            if !has_source_audio(item) || chain.solo.is_some_and(|id| id != item.id) {
                 continue;
             }
             let i0 = item.start.to_units(i64::from(rate), Rounding::Nearest)?;
@@ -294,8 +340,13 @@ fn mix_raw(
                 Some(project::ParamValue::Scalar(value)) => value.clamp(-60.0, 20.0) as f32,
                 _ => volume,
             };
-            if !muted && !project.data().settings.master_muted {
-                *gain = 10f32.powf((db + project.data().settings.master_volume) / 20.0);
+            if !muted {
+                let master = if chain.fader {
+                    project.data().settings.master_volume
+                } else {
+                    0.0
+                };
+                *gain = 10f32.powf((db + master + chain.clip_db(item.id)) / 20.0);
             }
         }
         let offset = (a - start) as usize;
@@ -339,6 +390,15 @@ fn mix_raw(
         }
         if b == i1 {
             sources.finish_audio(item.id);
+        }
+    }
+    if chain.master_db != 0.0 {
+        let gain = 10f32.powf(chain.master_db / 20.0);
+        for sample in out.planes.iter_mut().flatten() {
+            *sample *= gain;
+            if !sample.is_finite() {
+                return Err(Error::Invalid("audio mix overflow"));
+            }
         }
     }
     Ok(out)

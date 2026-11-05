@@ -2643,6 +2643,19 @@ fn audio_controls_are_atomic_undoable_persisted_and_strict() {
             json!({"item":20,"patch":{"field":"muted","value":true}}),
         ),
         ("audio.set_master", json!({"volume":-1.25,"muted":true})),
+        (
+            "audio.set_loudness",
+            json!({"scope":"clip","target_lufs":-16.0,"true_peak_db":-2.0}),
+        ),
+        (
+            "audio.set_loudness",
+            json!({"scope":"master","target_lufs":-14.0,"true_peak_db":-1.0}),
+        ),
+        (
+            "audio.apply_loudness",
+            json!({"gains":{"key":vec![7; 32],"clip":[[20,3.5]],"master_db":-1.0}}),
+        ),
+        ("audio.clear_loudness", json!({"scope":"clip"})),
     ] {
         let before = session.project().clone();
         session.execute(command, args).unwrap();
@@ -2657,6 +2670,43 @@ fn audio_controls_are_atomic_undoable_persisted_and_strict() {
     }
     assert_eq!(session.project().data().settings.master_volume, -1.25);
     assert!(session.project().data().settings.master_muted);
+    let loudness = &session.project().data().settings.loudness;
+    assert!(loudness.clip.is_none() && loudness.master.is_some() && loudness.measured.is_none());
+    // Invalid targets and gains refuse atomically.
+    for (command, args) in [
+        (
+            "audio.set_loudness",
+            json!({"scope":"master","target_lufs":-4.0,"true_peak_db":-1.0}),
+        ),
+        (
+            "audio.set_loudness",
+            json!({"scope":"master","target_lufs":-51.0,"true_peak_db":-1.0}),
+        ),
+        (
+            "audio.set_loudness",
+            json!({"scope":"master","target_lufs":-14.0,"true_peak_db":0.5}),
+        ),
+        (
+            "audio.set_loudness",
+            json!({"scope":"clip","target_lufs":-14.0,"true_peak_db":-21.0}),
+        ),
+        (
+            "audio.set_loudness",
+            json!({"scope":"clip","target_lufs":-14.001,"true_peak_db":-1.0}),
+        ),
+        (
+            "audio.apply_loudness",
+            json!({"gains":{"key":vec![0; 32],"clip":[],"master_db":61.0}}),
+        ),
+        (
+            "audio.apply_loudness",
+            json!({"gains":{"key":vec![0; 32],"clip":[[2,0.0],[1,0.0]],"master_db":0.0}}),
+        ),
+    ] {
+        let before = session.project().clone();
+        assert!(session.execute(command, args).is_err());
+        assert_eq!(session.project(), &before);
+    }
     for value in [-60.01, 20.01, 0.001] {
         let before = session.project().clone();
         assert!(
