@@ -376,10 +376,12 @@ fn copy_plan<'a>(
         || items.len() != 1
         || item.start > range.start()
         || item.end()? < range.end()
-        || item
-            .animations
-            .iter()
-            .any(|(path, _)| path.as_str() == "opacity")
+        || item.animations.iter().any(|(path, _)| {
+            path.as_str() == "opacity"
+                || project::TransformField::ALL
+                    .into_iter()
+                    .any(|field| path.as_str() == field.path())
+        })
     {
         return Ok(None);
     }

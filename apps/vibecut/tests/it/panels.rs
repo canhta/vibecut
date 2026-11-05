@@ -484,6 +484,19 @@ fn color_drag_isolated_until_release_one_undo_and_escape_cancels() {
 
 #[test]
 fn picker_hex_hsv_recents_unavailable_and_screenshot() {
+    #[cfg(not(target_os = "macos"))]
+    {
+        let mut native = vibecut::color_picker::NativeEyedropper::default();
+        assert_eq!(
+            native.state,
+            vibecut::color_picker::EyedropperState::Unavailable
+        );
+        assert!(matches!(
+            native.start(),
+            Err(vibecut::Error::Unsupported(_))
+        ));
+        assert_eq!(native.poll().unwrap(), None);
+    }
     let mut fixture = fixture();
     // A screenshot needs a healthy generated preview, not the offline media
     // deliberately retained by the general panel fixture.
@@ -551,6 +564,7 @@ fn shared_picker_edits_background_graphic_mask_and_canvas_through_commands() {
     harness.run_steps(3);
     harness.state_mut().session.execute("masks.add",serde_json::json!({"item":fixture.video,"mask":project::Mask::new("outline",project::MaskShape::Rectangle)})).unwrap();
     for (selection, tab, button) in [
+        (Some(fixture.text), None, "inspector.text_color.picker"),
         (Some(fixture.text), None, "inspector.background_color"),
         (Some(fixture.graphic), None, "inspector.graphic_fill"),
         (Some(fixture.graphic), None, "inspector.graphic_stroke"),
@@ -592,6 +606,9 @@ fn shared_picker_edits_background_graphic_mask_and_canvas_through_commands() {
         assert_ne!(harness.state().session.project(), &before, "{button}");
         let chosen = Color([170, 187, 204, 128]);
         match button {
+            "inspector.text_color.picker" => assert!(
+                matches!(item(&harness,fixture.text).content,ItemParams::Text(p) if p.color==chosen)
+            ),
             "inspector.background_color" => {
                 let ItemParams::Text(p) = item(&harness, fixture.text).content else {
                     panic!("text colour target")
@@ -628,7 +645,86 @@ fn shared_picker_edits_background_graphic_mask_and_canvas_through_commands() {
                 chosen
             ),
         }
+        // Every target shares bounded entry, isolated drafts and one-step publication.
+        for (field, value, expected) in [
+            ("color.h", "999", Color([204, 170, 170, 128])),
+            ("color.s", "-1", Color([204, 204, 204, 128])),
+            ("color.v", "-1", Color([0, 0, 0, 128])),
+            ("color.a", "999", Color([0, 0, 0, 255])),
+        ] {
+            enter(&mut harness, field, value);
+            assert_eq!(
+                harness.state().inspect().unwrap().color_preview,
+                Some(expected),
+                "{button}: {field}"
+            );
+        }
+        let committed = harness.state().session.project().clone();
+        let history = harness.state().session.history_len();
+        let recents = harness.state().preferences.recent_colors.clone();
+        let slider = widget_rect(&harness, "color.a.slider");
+        harness.drag_at(slider.right_center());
+        harness.run_steps(2);
+        harness.hover_at(slider.left_center());
+        harness.run_steps(2);
+        assert_eq!(harness.state().session.project(), &committed, "{button}");
+        assert_eq!(harness.state().session.history_len(), history, "{button}");
+        assert_eq!(
+            harness.state().inspect().unwrap().color_preview,
+            Some(Color([0; 4])),
+            "{button}"
+        );
+        harness.hover_at(slider.right_center());
+        harness.run_steps(2);
+        harness.drop_at(slider.right_center());
+        harness.run_steps(2);
+        assert_eq!(harness.state().session.project(), &committed, "{button}");
+        assert_eq!(harness.state().session.history_len(), history, "{button}");
+        assert_eq!(
+            harness.state().preferences.recent_colors,
+            recents,
+            "{button}"
+        );
+        harness.drag_at(slider.right_center());
+        harness.run_steps(2);
+        harness.hover_at(slider.left_center());
+        harness.run_steps(2);
+        harness.key_press(egui::Key::Escape);
+        harness.run_steps(2);
+        harness.drop_at(slider.left_center());
+        harness.run_steps(2);
+        assert_eq!(harness.state().session.project(), &committed, "{button}");
+        assert_eq!(harness.state().session.history_len(), history, "{button}");
+        assert_eq!(
+            harness.state().inspect().unwrap().color_preview,
+            None,
+            "{button}"
+        );
+        assert_eq!(
+            harness.state().preferences.recent_colors,
+            recents,
+            "{button}"
+        );
+        click(&mut harness, button);
+        let slider = widget_rect(&harness, "color.a.slider");
+        harness.drag_at(slider.right_center());
+        harness.run_steps(2);
+        harness.hover_at(slider.left_center());
+        harness.run_steps(2);
+        harness.drop_at(slider.left_center());
+        harness.run_steps(2);
+        assert_ne!(harness.state().session.project(), &committed, "{button}");
+        assert_eq!(
+            harness.state().session.history_len().0,
+            history.0 + 1,
+            "{button}"
+        );
         harness.state_mut().session.undo().unwrap();
+        assert_eq!(harness.state().session.project(), &committed, "{button}");
+        // Undo the four bounds edits and the initial hex pick.
+        for _ in 0..5 {
+            harness.state_mut().session.undo().unwrap();
+        }
         assert_eq!(harness.state().session.project(), &before, "{button}");
     }
 }

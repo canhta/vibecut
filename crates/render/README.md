@@ -233,7 +233,9 @@ same absolute sample grid as preview. AAC delay/padding remain FFmpeg-owned.
 
 Auto copies unchanged video when a single visible source covers the output with
 no pixel changes. An opacity override (including a channel with no keys) disables
-video copy; Auto encodes it and forced stream copy refuses it. It encodes the exact mastered audio window while retaining video packet bytes. Only the first
+video copy; the five transform channels do likewise for both constant and animated
+values. Auto encodes these edits and forced stream copy refuses them. It encodes
+the exact mastered audio window while retaining video packet bytes. Only the first
 video/audio stream selected by decode is published. An explicitly accepted
 keyframe cut additionally requires exact start/end keys (or source EOF), regular
 requested fps and PTS==DTS; reordered/open-GOP candidates refuse forced copy and
