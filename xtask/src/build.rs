@@ -591,10 +591,16 @@ fn receipt(root: &Path, base: &Path, args: &[OsString]) -> Result<Option<PathBuf
 }
 
 pub fn run(root: &Path, args: &[OsString]) -> Result<ExitCode, String> {
-    run_in(root, args, cache()?, cfg!(target_os = "macos"))
+    run_in(root, args, cache()?, cfg!(target_os = "macos"), disk_free)
 }
 
-fn run_in(root: &Path, args: &[OsString], base: PathBuf, macos: bool) -> Result<ExitCode, String> {
+fn run_in(
+    root: &Path,
+    args: &[OsString],
+    base: PathBuf,
+    macos: bool,
+    free_space: impl FnMut(&Path) -> Result<u64, String>,
+) -> Result<ExitCode, String> {
     fs::create_dir_all(&base).map_err(|e| e.to_string())?;
     let before = receipt(root, &base, args)?;
     if let Some(path) = &before
@@ -620,7 +626,7 @@ fn run_in(root: &Path, args: &[OsString], base: PathBuf, macos: bool) -> Result<
         }
         std::thread::sleep(Duration::from_secs(1));
     };
-    let target = prepare(&base, root, slot.number, disk_free)?;
+    let target = prepare(&base, root, slot.number, free_space)?;
     eprintln!(
         "[build] slot-{} after {:.0}s wait",
         slot.number,
@@ -743,7 +749,7 @@ mod tests {
         let label = std::env::var("VIBECUT_BUILD_TEST_LABEL").unwrap();
         if label == "missing" {
             let args = vec![root.join("missing-command").into_os_string()];
-            assert!(run_in(&root, &args, root.clone(), false).is_err());
+            assert!(run_in(&root, &args, root.clone(), false, |_| Ok(31 * GIB)).is_err());
             return;
         }
         if matches!(label.as_str(), "wrapped" | "detached") {
@@ -754,7 +760,9 @@ mod tests {
                 "--nocapture".into(),
             ];
             assert_eq!(
-                run_in(&root, &args, root.clone(), false).unwrap(),
+                // Lease/process lifetime is independent of host disk capacity.
+                // The cache test below covers refusal with injected low space.
+                run_in(&root, &args, root.clone(), false, |_| Ok(31 * GIB)).unwrap(),
                 ExitCode::SUCCESS
             );
             return;
