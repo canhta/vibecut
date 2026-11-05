@@ -6,6 +6,7 @@ mod export_ui;
 mod layout_prefs;
 mod lifecycle;
 mod media_import;
+mod models_ui;
 mod review_regressions;
 mod scenes_ui;
 mod shorts_ui;

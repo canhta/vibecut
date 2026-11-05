@@ -379,7 +379,7 @@ never starts a transfer. The affirmative Download click is the only place a
 `DownloadConsent` is granted; closing while a transfer is active is refused, and
 Cancel leaves the engine checkpoint available for Resume.
 
-`tests/models_ui.rs` drives the real widgets against injected cache, transport and
+`tests/it/models_ui.rs` drives the real widgets against injected cache, transport and
 `ModelIo` boundaries for complete, cancel, resumed Range/ETag, checksum-failure
 and disk-full paths, proves zero HTTP requests before the Download click, checks
 the non-permissive opt-in, and writes 1x/2x screenshots under `target/`. The
