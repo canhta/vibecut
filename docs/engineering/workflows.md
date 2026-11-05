@@ -42,8 +42,10 @@ Cargo/native/fixture keys omit branches. Native jobs share `Swatinem/rust-cache`
 Sherpa's native prebuilt directory under `target/` has a separate OS/architecture,
 lockfile and toolchain cache, saved before Rust cache cleanup. That cleanup removes
 non-Cargo files even when named as an extra cache directory. On a missing native
-cache, clean `sherpa-onnx-sys` so its restored build fingerprint cannot retain a
-link path to missing libraries; its next build provisions the native archive.
+cache, remove its generated directory (old Rust caches retain empty library
+directories) and clean `sherpa-onnx-sys` so neither the upstream directory-existence
+check nor a restored build fingerprint can retain missing libraries. Its next
+build provisions the native archive.
 
 Native LGPL cache keys use resolved FFmpeg/Opus/libvpx versions plus recipe/patch/toolchain hashes and platform, with exact matches. Provisioning resolves stable tags even on hits, saves successful native builds before later failures, and skips source-build-only macOS tools on hits. Synthetic fixture keys follow `crates/media/tests/`; rendered outputs are uncached. Log exact-hit receipts in logs/step summaries.
 
