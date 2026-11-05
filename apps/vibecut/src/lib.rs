@@ -10,6 +10,7 @@ mod frontend;
 mod icons;
 pub mod import;
 pub mod lifecycle;
+pub mod media_panel;
 pub mod model_manager;
 pub mod panels;
 pub mod playback;

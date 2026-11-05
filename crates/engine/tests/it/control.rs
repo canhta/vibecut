@@ -135,20 +135,25 @@ fn seed() -> Session {
     animations
         .set(project::AnimationPath::new("opacity").unwrap(), param)
         .unwrap();
-    data.assets.push(
-        media::SourceAsset::try_from(media::AssetData {
-            ephemeral: false,
-            id: media::AssetId(0),
-            path: std::env::temp_dir().join("vibecut-control-caption-source.mp4"),
-            content_hash: media::ContentHash::from_bytes(b"fixture"),
-            probe: media::SourceProbe {
-                format: "mp4".into(),
-                duration: Some(duration),
-                streams: vec![],
-            },
-        })
-        .unwrap(),
-    );
+    for (id, path) in [
+        (0, "vibecut-control-caption-source.mp4"),
+        (98, "vibecut-control-unused-source.mp4"),
+    ] {
+        data.assets.push(
+            media::SourceAsset::try_from(media::AssetData {
+                ephemeral: false,
+                id: media::AssetId(id),
+                path: std::env::temp_dir().join(path),
+                content_hash: media::ContentHash::from_bytes(b"fixture"),
+                probe: media::SourceProbe {
+                    format: "mp4".into(),
+                    duration: Some(duration),
+                    streams: vec![],
+                },
+            })
+            .unwrap(),
+        );
+    }
     data.scene_mut().timeline.overlays = vec![
         Track {
             id: TrackId(1),

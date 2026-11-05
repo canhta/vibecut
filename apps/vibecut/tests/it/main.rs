@@ -7,6 +7,7 @@ mod export_ui;
 mod layout_prefs;
 mod lifecycle;
 mod media_import;
+mod media_library;
 mod models_ui;
 mod panels;
 mod projects_ui;

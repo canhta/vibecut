@@ -12,6 +12,7 @@ mod keyframes;
 mod library;
 mod lifecycle;
 mod masks;
+mod media;
 mod model_transfers;
 mod providers;
 mod recovery;

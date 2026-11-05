@@ -5,6 +5,7 @@
 //! rejects empty rows, duplicate keys and keys no frontend code uses.
 use crate::{
     Error, Result,
+    media_panel::{MediaSort, MediaView},
     panels::{AssetsTab, ElementKind, PropertiesTab},
 };
 use serde::{Deserialize, Serialize};
@@ -386,6 +387,27 @@ catalog! {
     DurationUnknown { key: "duration_unknown", en: "duration unknown", vi: "chưa rõ thời lượng" },
     SelectedCountOne { key: "selected_count_one", en: "{n} item selected", vi: "{n} mục đã chọn" },
     SelectedCountOther { key: "selected_count_other", en: "{n} items selected", vi: "{n} mục đã chọn" },
+
+    // Media library views, sorting and removal.
+    Image { key: "image", en: "Image", vi: "Hình ảnh" },
+    SwitchToGrid { key: "switch_to_grid", en: "Switch to grid view", vi: "Chuyển sang dạng lưới" },
+    SwitchToList { key: "switch_to_list", en: "Switch to list view", vi: "Chuyển sang dạng danh sách" },
+    SortName { key: "sort_name", en: "Name", vi: "Tên" },
+    SortType { key: "sort_type", en: "Type", vi: "Loại" },
+    SortDuration { key: "sort_duration", en: "Duration", vi: "Thời lượng" },
+    SortSize { key: "sort_size", en: "File size", vi: "Kích thước tệp" },
+    SortAscending { key: "sort_ascending", en: "ascending", vi: "tăng dần" },
+    SortDescending { key: "sort_descending", en: "descending", vi: "giảm dần" },
+    SortTooltip { key: "sort_tooltip", en: "Sort by {key} ({order})", vi: "Sắp xếp theo {key} ({order})" },
+    MediaSize { key: "media_size", en: "{size} {unit}", vi: "{size} {unit}" },
+    DeleteItemOne { key: "delete_item_one", en: "Delete item", vi: "Xóa mục" },
+    DeleteItemsOther { key: "delete_items_other", en: "Delete {n} items", vi: "Xóa {n} mục" },
+    DeleteMediaPromptOne { key: "delete_media_prompt_one", en: "Delete this media asset? You can undo this action.", vi: "Xóa tư liệu này? Bạn có thể hoàn tác thao tác này." },
+    DeleteMediaPromptOther { key: "delete_media_prompt_other", en: "Delete {n} media assets? You can undo this action.", vi: "Xóa {n} tư liệu? Bạn có thể hoàn tác thao tác này." },
+    DeleteMediaFailed { key: "delete_media_failed", en: "Could not delete media", vi: "Không thể xóa tư liệu" },
+    MediaDeletedOne { key: "media_deleted_one", en: "Media deleted", vi: "Đã xóa tư liệu" },
+    MediaDeletedOther { key: "media_deleted_other", en: "Media deleted", vi: "Đã xóa tư liệu" },
+    RevealMedia { key: "reveal_media", en: "Reveal media", vi: "Tìm tư liệu" },
 
     // Scenes.
     NewScene { key: "new_scene", en: "New scene", vi: "Cảnh mới" },
@@ -839,6 +861,8 @@ pub const PREFERENCE_KEYS: &[&str] = &[
     "assets_tab",
     "properties_tabs",
     "projects",
+    "media_view",
+    "media_sort",
 ];
 
 /// A splitter drag that keeps every region non-empty and inside its limits.
@@ -910,6 +934,12 @@ pub struct Preferences {
     /// Projects page view mode and sort order; presentation only.
     #[serde(default)]
     pub projects: ProjectsPreferences,
+    /// Media library grid/list presentation.
+    #[serde(default)]
+    pub media_view: MediaView,
+    /// Media library sort key and direction.
+    #[serde(default)]
+    pub media_sort: MediaSort,
 }
 impl Default for Preferences {
     fn default() -> Self {
@@ -925,6 +955,8 @@ impl Default for Preferences {
             assets_tab: AssetsTab::default(),
             properties_tabs: BTreeMap::new(),
             projects: ProjectsPreferences::default(),
+            media_view: MediaView::default(),
+            media_sort: MediaSort::default(),
         }
     }
 }
@@ -988,6 +1020,8 @@ impl Preferences {
             "properties_tabs" => Ok(serde_json::to_value(&self.properties_tabs)?),
             "subtitles" => Ok(serde_json::to_value(&self.subtitles)?),
             "projects" => Ok(serde_json::to_value(self.projects)?),
+            "media_view" => Ok(serde_json::to_value(self.media_view)?),
+            "media_sort" => Ok(serde_json::to_value(self.media_sort)?),
             _ => Err(Error::Unsupported("preference key")),
         }
     }
@@ -1011,6 +1045,8 @@ impl Preferences {
             "properties_tabs" => self.properties_tabs = serde_json::from_value(value)?,
             "subtitles" => self.subtitles = serde_json::from_value(value)?,
             "projects" => self.projects = serde_json::from_value(value)?,
+            "media_view" => self.media_view = serde_json::from_value(value)?,
+            "media_sort" => self.media_sort = serde_json::from_value(value)?,
             _ => return Err(Error::Unsupported("preference key")),
         }
         Ok(())
@@ -1291,6 +1327,11 @@ mod tests {
             ("sections", serde_json::json!({"inspector.canvas": false})),
             ("assets_tab", serde_json::json!("captions")),
             ("properties_tabs", serde_json::json!({"text": "transform"})),
+            ("media_view", serde_json::json!("list")),
+            (
+                "media_sort",
+                serde_json::json!({"key": "size", "order": "desc"}),
+            ),
             (
                 "projects",
                 serde_json::json!({"view": "list", "sort": "duration", "ascending": true}),
@@ -1363,6 +1404,26 @@ mod tests {
         assert_eq!(store.load_with_warning().1, Some(PreferenceIssue::Version));
         assert!(store.save(&Preferences::default()).is_err());
         assert_eq!(std::fs::read(store.path()).expect("retained bytes"), bytes);
+    }
+
+    #[test]
+    fn media_preferences_refuse_unknown_values_atomically() {
+        let mut preferences = Preferences::default();
+        let before = preferences.clone();
+        for (key, value) in [
+            ("media_view", serde_json::json!("columns")),
+            (
+                "media_sort",
+                serde_json::json!({"key": "bogus", "order": "asc"}),
+            ),
+            (
+                "media_sort",
+                serde_json::json!({"key": "name", "order": "bogus"}),
+            ),
+        ] {
+            assert!(preferences.set(key, value).is_err(), "{key}");
+            assert_eq!(preferences, before, "{key} must fail atomically");
+        }
     }
 
     #[test]

@@ -76,11 +76,11 @@ impl SelectionScopes {
     }
 }
 
-pub(crate) fn intersections(
+pub(crate) fn intersections<T: Copy + Ord>(
     start: Pos2,
     end: Pos2,
-    items: impl Iterator<Item = (ItemId, Rect)>,
-) -> BTreeSet<ItemId> {
+    items: impl Iterator<Item = (T, Rect)>,
+) -> BTreeSet<T> {
     let marquee = Rect::from_two_pos(start, end);
     items
         .filter(|(_, rect)| rect.intersects(marquee))

@@ -7,18 +7,19 @@ use crate::{
     import::{
         ImportEvent, ImportFailure, ImportProbe, ImportQueue, ThumbnailOutcome, ThumbnailSource,
     },
+    media_panel::{self, MediaKind, MediaSort, MediaSortKey, MediaSortOrder, MediaView},
     panels::{AssetsTab, ElementKind, PropertiesTab},
     playback::Playback,
     theme,
 };
 use engine::{Command, CreatedId, ItemParamPatch, NewItem, Session};
-use media::{AssetId, SourceAsset, StreamKind, UnsupportedReason};
+use media::{AssetId, ContentHash, SourceAsset, StreamKind, UnsupportedReason};
 use project::{ItemId, ItemParams, TrackId, TrackKind};
 use std::{
     collections::{BTreeMap, BTreeSet},
     path::{Path, PathBuf},
     sync::Arc,
-    time::Instant,
+    time::{Duration, Instant},
 };
 use time::{FrameRate, Rounding, SourceRange, TICKS_PER_SECOND, Tick};
 
@@ -30,6 +31,11 @@ const RULER_HEIGHT: f32 = 22.0;
 const LABEL_WIDTH: f32 = 112.0;
 const SCROLLBAR: f32 = 12.0;
 const TRACK_GAP: f32 = 6.0;
+const MEDIA_CARD_WIDTH: f32 = 112.0;
+const MEDIA_CARD_HEIGHT: f32 = 104.0;
+const MEDIA_CARD_GAP: f32 = 8.0;
+const MEDIA_ROW_HEIGHT: f32 = 46.0;
+const MEDIA_REVEAL: Duration = Duration::from_millis(1500);
 /// Fixed reference scale for persisted view state: 1× is 40 logical px/s.
 const DEFAULT_ZOOM: f32 = 40.0;
 /// The timeline slider tops out at 100× the reference scale.
@@ -113,6 +119,11 @@ pub struct Inspection {
     pub media_selection: Vec<AssetId>,
     pub assets: Vec<AssetInspection>,
     pub effect_previews: BTreeMap<String, crate::effect_previews::EffectPreviewStatus>,
+    pub media_view: MediaView,
+    pub media_sort: MediaSort,
+    pub media_order: Vec<AssetId>,
+    pub media_highlight: Option<AssetId>,
+    pub media_delete_pending: Vec<AssetId>,
     pub export: Option<crate::export::ExportInspection>,
     pub export_options: crate::export::ExportOptions,
     pub models: Option<crate::model_manager::ModelInspection>,
@@ -191,8 +202,22 @@ struct AssetRow {
     id: AssetId,
     name: String,
     info: String,
+    brief: String,
     icon: Icon,
     state: AssetState,
+    duration: Option<Tick>,
+}
+#[derive(Clone, Copy, Debug)]
+struct MediaReveal {
+    asset: AssetId,
+    until: Instant,
+}
+#[derive(Clone, Debug)]
+struct MediaMarquee {
+    origin: egui::Pos2,
+    before: BTreeSet<AssetId>,
+    additive: bool,
+    moved: bool,
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum DragMode {
@@ -328,6 +353,7 @@ struct ItemView {
     locked: bool,
     label: String,
     overlay: Option<[u8; 4]>,
+    source_asset: Option<AssetId>,
 }
 struct TimelineLayout {
     toolbar: Rect,
@@ -444,6 +470,10 @@ pub struct Editor {
     toast: Option<Toast>,
     media_selection: BTreeSet<AssetId>,
     media_anchor: Option<AssetId>,
+    media_sizes: BTreeMap<AssetId, (ContentHash, Option<u64>)>,
+    media_marquee: Option<MediaMarquee>,
+    media_reveal: Option<MediaReveal>,
+    media_delete_confirm: Option<Vec<AssetId>>,
     scenes_open: bool,
     scene_select: bool,
     scene_selected: BTreeSet<project::SceneId>,
@@ -532,6 +562,10 @@ impl Editor {
             toast: None,
             media_selection: BTreeSet::new(),
             media_anchor: None,
+            media_sizes: BTreeMap::new(),
+            media_marquee: None,
+            media_reveal: None,
+            media_delete_confirm: None,
             scenes_open: false,
             scene_select: false,
             scene_selected: BTreeSet::new(),
@@ -562,6 +596,9 @@ impl Editor {
         )
     }
     pub fn inspect(&self) -> Result<Inspection> {
+        let media_order = self.media_order();
+        let media_highlight = self.media_reveal.map(|reveal| reveal.asset);
+        let media_delete_pending = self.media_delete_confirm.clone().unwrap_or_default();
         Ok(Inspection {
             widgets: self.widgets.values().cloned().collect(),
             view: "editor",
@@ -636,6 +673,11 @@ impl Editor {
                 .effect_previews
                 .as_ref()
                 .map_or_else(BTreeMap::new, |previews| previews.statuses()),
+            media_view: self.preferences.media_view,
+            media_sort: self.preferences.media_sort,
+            media_order,
+            media_highlight,
+            media_delete_pending,
             export_options: self.preferences.export,
             export: self
                 .export
@@ -961,6 +1003,47 @@ impl Editor {
         {
             self.media_anchor = None;
         }
+        self.media_sizes.retain(|id, _| existing.contains(id));
+        if self
+            .media_reveal
+            .is_some_and(|reveal| !existing.contains(&reveal.asset))
+        {
+            self.media_reveal = None;
+        }
+        if let Some(pending) = &mut self.media_delete_confirm {
+            pending.retain(|id| existing.contains(id));
+            if pending.is_empty() {
+                self.media_delete_confirm = None;
+            }
+        }
+    }
+    fn media_size_map(&self) -> BTreeMap<AssetId, Option<u64>> {
+        self.media_sizes
+            .iter()
+            .map(|(id, (_, size))| (*id, *size))
+            .collect()
+    }
+    /// File size is display metadata; stat each asset once per content identity.
+    fn refresh_media_sizes(&mut self) {
+        let assets = &self.session.project().data().assets;
+        let mut next = BTreeMap::new();
+        for asset in assets.iter().filter(|asset| !asset.ephemeral()) {
+            let hash = asset.content_hash();
+            let size = match self.media_sizes.get(&asset.id()) {
+                Some((cached, Some(size))) if *cached == hash => Some(*size),
+                Some((cached, None)) if *cached == hash => media_panel::file_size(asset.path()),
+                _ => media_panel::file_size(asset.path()),
+            };
+            next.insert(asset.id(), (hash, size));
+        }
+        self.media_sizes = next;
+    }
+    fn media_order(&self) -> Vec<AssetId> {
+        media_panel::ordered_assets(
+            &self.session.project().data().assets,
+            self.preferences.media_sort,
+            &self.media_size_map(),
+        )
     }
     fn prune_asset_state(&mut self) {
         let existing: BTreeSet<AssetId> = self
@@ -1010,15 +1093,7 @@ impl Editor {
         self.session.end_merge();
     }
     fn select_asset(&mut self, id: AssetId, modifiers: egui::Modifiers) {
-        let ids: Vec<AssetId> = self
-            .session
-            .project()
-            .data()
-            .assets
-            .iter()
-            .filter(|asset| !asset.ephemeral())
-            .map(SourceAsset::id)
-            .collect();
+        let ids = self.media_order();
         crate::selection::click(
             &mut self.media_selection,
             &mut self.media_anchor,
@@ -1027,6 +1102,82 @@ impl Editor {
             modifiers.shift.then_some(ids.as_slice()),
         );
         self.session.end_merge();
+    }
+    /// App action `media.reveal`: switch to Media, scroll and highlight for 1.5 s.
+    /// It changes presentation state only; the project snapshot is untouched.
+    pub fn reveal_media(&mut self, asset: AssetId) -> Result<()> {
+        if !self
+            .session
+            .project()
+            .data()
+            .assets
+            .iter()
+            .any(|candidate| candidate.id() == asset && !candidate.ephemeral())
+        {
+            return Err(Error::Engine(engine::EditError::NoAsset(asset)));
+        }
+        if self.preferences.assets_tab != AssetsTab::Media {
+            self.preferences
+                .set("assets_tab", serde_json::to_value(AssetsTab::Media)?)?;
+        }
+        self.media_reveal = Some(MediaReveal {
+            asset,
+            until: Instant::now() + MEDIA_REVEAL,
+        });
+        self.session.end_merge();
+        Ok(())
+    }
+    fn request_media_delete(&mut self, ids: Vec<AssetId>) {
+        let existing: BTreeSet<AssetId> = self
+            .session
+            .project()
+            .data()
+            .assets
+            .iter()
+            .filter(|asset| !asset.ephemeral())
+            .map(SourceAsset::id)
+            .collect();
+        let mut ids: Vec<AssetId> = ids.into_iter().filter(|id| existing.contains(id)).collect();
+        ids.sort_unstable();
+        ids.dedup();
+        if !ids.is_empty() {
+            self.media_delete_confirm = Some(ids);
+        }
+    }
+    fn confirm_media_delete(&mut self) -> Result<()> {
+        let Some(ids) = self.media_delete_confirm.take() else {
+            return Ok(());
+        };
+        let count = ids.len() as u64;
+        let before = self.session.project().clone();
+        match self
+            .session
+            .execute("media.remove", serde_json::json!({ "assets": ids }))
+        {
+            Ok(_) => {
+                self.media_selection.clear();
+                self.media_anchor = None;
+                self.media_reveal = None;
+                self.prune_media_selection();
+                if !Arc::ptr_eq(&before, self.session.project()) {
+                    self.sync_preview();
+                }
+                let text = catalog::format_count(
+                    self.preferences.locale,
+                    count,
+                    Text::MediaDeletedOne,
+                    Text::MediaDeletedOther,
+                );
+                self.set_toast(&text, None);
+                Ok(())
+            }
+            Err(error) => {
+                let detail = error_detail(&error);
+                self.import_notice = Some(detail.clone());
+                self.set_toast(self.tr(Text::DeleteMediaFailed), Some(detail));
+                Ok(())
+            }
+        }
     }
     /// Insert selected assets in library order; engine owns track and overlap policy.
     fn insert_selected_assets(&mut self) {
@@ -1535,6 +1686,48 @@ impl Editor {
             }
             "media.insert" => self.insert_selected_assets(),
             "text.insert" => self.insert_text(),
+            "media.view" => {
+                let view = match self.preferences.media_view {
+                    MediaView::Grid => MediaView::List,
+                    MediaView::List => MediaView::Grid,
+                };
+                self.dispatch(
+                    PREFERENCE_COMMAND,
+                    serde_json::json!({"key": "media_view", "value": view}),
+                )?;
+            }
+            "media.sort" => {
+                let next = media_panel::next_sort(
+                    self.preferences.media_sort,
+                    self.preferences.media_sort.key,
+                );
+                self.dispatch(
+                    PREFERENCE_COMMAND,
+                    serde_json::json!({"key": "media_sort", "value": next}),
+                )?;
+            }
+            row if row.starts_with("media.sort.") => {
+                let key = MediaSortKey::from_id(row.trim_start_matches("media.sort."))
+                    .ok_or(Error::Unsupported("media sort key"))?;
+                let next = media_panel::next_sort(self.preferences.media_sort, key);
+                self.dispatch(
+                    PREFERENCE_COMMAND,
+                    serde_json::json!({"key": "media_sort", "value": next}),
+                )?;
+            }
+            "media.delete" => {
+                self.request_media_delete(self.media_selection.iter().copied().collect())
+            }
+            "media.cancel_delete" => self.media_delete_confirm = None,
+            "media.confirm_delete" => self.confirm_media_delete()?,
+            row if row.starts_with("media.reveal.") => {
+                let asset = AssetId(
+                    row.trim_start_matches("media.reveal.")
+                        .parse()
+                        .map_err(|_| Error::Unsupported("media identity"))?,
+                );
+                self.reveal_media(asset)?;
+            }
             "import.cancel" => {
                 if let Some(queue) = &self.imports {
                     queue.cancel();
@@ -1780,6 +1973,13 @@ impl Editor {
                 .cloned()
                 .ok_or(Error::Invalid("preference value"))?;
             return self.set_preference(key, value);
+        }
+        if id == "media.reveal" {
+            let asset = params
+                .get("asset")
+                .and_then(serde_json::Value::as_u64)
+                .ok_or(Error::Invalid("media identity"))?;
+            return self.reveal_media(AssetId(asset));
         }
         self.activate(id)
     }
@@ -2253,6 +2453,12 @@ impl Editor {
         self.prune_selection();
     }
     fn cancel_interaction(&mut self) {
+        if self.media_marquee.take().is_some() {
+            self.media_selection.clear();
+            self.media_anchor = None;
+            self.session.end_merge();
+            return;
+        }
         if let Some(scrub) = self.scrub.take() {
             let changed = scrub.last != scrub.start;
             if self.session.gesture_active()
@@ -2295,6 +2501,11 @@ impl Editor {
             self.selection_scopes.clear_specific(&mut self.selection);
             if let Err(e) = self.session.set_selection(self.selection.clone()) {
                 self.error = Some(e.to_string());
+            }
+            if !self.media_selection.is_empty() {
+                self.media_selection.clear();
+                self.media_anchor = None;
+                self.session.end_merge();
             }
         }
     }
@@ -2612,6 +2823,13 @@ impl Editor {
         self.apply_import_events();
         self.restore_asset_state();
         self.truncate_toast();
+        if self
+            .media_reveal
+            .as_ref()
+            .is_some_and(|reveal| Instant::now() >= reveal.until)
+        {
+            self.media_reveal = None;
+        }
         if let Err(error) = self.remember_view() {
             self.error = Some(error.to_string());
         }
@@ -2799,6 +3017,7 @@ impl Editor {
                 .line_segment([a, b], egui::Stroke::new(1.0, separator));
         }
         self.scenes_sheet(ui.ctx());
+        self.media_delete_dialog(ui.ctx());
         self.import_overlay(ui.ctx());
         self.drop_overlay(ui.ctx(), hovering);
         self.toast(ui.ctx());
@@ -2836,6 +3055,12 @@ impl Editor {
             ));
     }
     fn keyboard(&mut self, ctx: &egui::Context) {
+        if self.media_delete_confirm.is_some() {
+            if consume(ctx, egui::Modifiers::NONE, egui::Key::Escape) {
+                self.media_delete_confirm = None;
+            }
+            return;
+        }
         if self.scenes_open {
             if (self.scene_confirm || self.scene_rename.is_none())
                 && consume(ctx, egui::Modifiers::NONE, egui::Key::Escape)
@@ -2848,7 +3073,7 @@ impl Editor {
             }
             return;
         }
-        if self.marquee.is_some() {
+        if self.marquee.is_some() || self.media_marquee.is_some() {
             if consume(ctx, egui::Modifiers::NONE, egui::Key::Escape) {
                 self.cancel_interaction();
             }
@@ -3526,129 +3751,67 @@ impl Editor {
                 .strong(),
         );
         ui.add_space(8.0);
+        self.refresh_media_sizes();
         let importing = self.importing();
-        ui.horizontal(|ui| {
-            if self.button(
-                ui,
-                "file.import",
-                Icon::UploadSimple,
-                Text::Import,
-                !importing,
-            ) {
-                self.action("file.import");
-            }
-            if self.button(
-                ui,
-                "media.insert",
-                Icon::Plus,
-                Text::AddToTimeline,
-                !importing && !self.media_selection.is_empty(),
-            ) {
-                self.action("media.insert");
-            }
-        });
+        self.media_toolbar(ui, importing);
         if self.button(ui, "text.insert", Icon::TextT, Text::TextItem, true) {
             self.action("text.insert");
         }
-        if !importing && !self.media_selection.is_empty() {
-            ui.label(
-                egui::RichText::new(catalog::format_count(
-                    self.preferences.locale,
-                    self.media_selection.len() as u64,
-                    Text::SelectedCountOne,
-                    Text::SelectedCountOther,
-                ))
-                .small()
-                .color(self.secondary()),
-            );
-        }
-        ui.add_space(12.0);
+        // Reserve the line whether or not a selection exists so selecting an
+        // asset never shifts the grid under a subsequent click.
+        let count = if !importing && !self.media_selection.is_empty() {
+            catalog::format_count(
+                self.preferences.locale,
+                self.media_selection.len() as u64,
+                Text::SelectedCountOne,
+                Text::SelectedCountOther,
+            )
+        } else {
+            String::new()
+        };
+        ui.add_sized(
+            [ui.available_width(), 16.0],
+            egui::Label::new(egui::RichText::new(count).small().color(self.secondary())),
+        );
+        ui.add_space(8.0);
         let locale = self.preferences.locale;
-        let mut rows: Vec<AssetRow> = self
+        let order = self.media_order();
+        let sizes = self.media_size_map();
+        let by_id: BTreeMap<AssetId, &SourceAsset> = self
             .session
             .project()
             .data()
             .assets
             .iter()
-            .filter(|asset| !asset.ephemeral())
-            .map(|asset| {
-                let state = self
-                    .asset_states
-                    .get(&asset.id())
-                    .copied()
-                    .unwrap_or(AssetState::Probing);
-                asset_row(asset, locale, state)
+            .map(|asset| (asset.id(), asset))
+            .collect();
+        let mut rows: Vec<AssetRow> = order
+            .iter()
+            .filter_map(|id| {
+                by_id
+                    .get(id)
+                    .map(|asset| {
+                        let state = self.asset_states.get(id).copied().unwrap_or(AssetState::Probing);
+                        asset_row(asset, locale, sizes.get(id).copied().flatten(), state)
+                    })
             })
             .collect();
         rows.extend(self.pending_imports.iter().map(|(id, path)| AssetRow {
             id: *id,
             name: file_name(path),
             info: asset_state_text(locale, AssetState::Probing),
+            brief: asset_state_text(locale, AssetState::Probing),
             icon: Icon::UploadSimple,
             state: AssetState::Probing,
+            duration: None,
         }));
         if rows.is_empty() {
             ui.label(self.tr(Text::EmptyMedia));
         } else {
-            let selected = self.media_selection.clone();
-            egui::ScrollArea::vertical()
-                .id_salt("media.list")
-                .max_height((ui.available_height() - 120.0).max(80.0))
-                .show(ui, |ui| {
-                    ui.add_enabled_ui(!importing, |ui| {
-                        for row in &rows {
-                            let is_selected = selected.contains(&row.id);
-                            let color = if is_selected {
-                                theme::on_accent(self.preferences.dark)
-                            } else {
-                                self.text_color()
-                            };
-                            let image = match self.thumbnail_texture(ui.ctx(), row.id) {
-                                Some(texture) => {
-                                    egui::Image::new((texture.id(), egui::vec2(64.0, 36.0)))
-                                }
-                                None => icons::tinted(row.icon, BUTTON_ICON, color),
-                            };
-                            let mut button = egui::Button::image_and_text(
-                                image,
-                                egui::RichText::new(format!("{}\n{}", row.name, row.info))
-                                    .color(color),
-                            )
-                            .selected(is_selected)
-                            .wrap_mode(egui::TextWrapMode::Wrap);
-                            if is_selected {
-                                button = button.fill(self.accent());
-                            }
-                            let response = ui
-                                .push_id(("media.asset", row.id.0), |ui| {
-                                    let response =
-                                        ui.add_sized([ui.available_width(), 46.0], button);
-                                    let state_color = if is_selected {
-                                        theme::on_accent(self.preferences.dark)
-                                    } else {
-                                        asset_state_color(row.state, self.preferences.dark)
-                                    };
-                                    let badge = ui.label(
-                                        egui::RichText::new(asset_state_text(locale, row.state))
-                                            .small()
-                                            .color(state_color),
-                                    );
-                                    (response, badge)
-                                })
-                                .inner;
-                            self.remember_with_icon(
-                                format!("media.asset.{}", row.id.0),
-                                Some(row.icon.name()),
-                                &response.0,
-                            );
-                            self.remember(format!("media.asset.{}.status", row.id.0), &response.1);
-                            if response.0.clicked() {
-                                let modifiers = ui.ctx().input(|input| input.modifiers);
-                                self.select_asset(row.id, modifiers);
-                            }
-                        }
-                    });
-                });
+            match self.preferences.media_view {
+                MediaView::Grid => self.media_grid(ui, &rows, importing),
+                MediaView::List => self.media_list(ui, &rows, importing),
+            }
             if self.media_selection.is_empty() && !importing {
                 ui.label(
                     egui::RichText::new(self.tr(Text::SelectAssets))
@@ -3680,6 +3843,427 @@ impl Editor {
         if let Some(notice) = &self.import_notice {
             ui.separator();
             ui.label(egui::RichText::new(notice).small().color(self.secondary()));
+        }
+    }
+    fn media_toolbar(&mut self, ui: &mut egui::Ui, importing: bool) {
+        ui.horizontal(|ui| {
+            let (icon, label) = match self.preferences.media_view {
+                MediaView::Grid => (Icon::ListBullets, Text::SwitchToList),
+                MediaView::List => (Icon::SquaresFour, Text::SwitchToGrid),
+            };
+            if self.icon_only(
+                ui,
+                "media.view",
+                icon,
+                self.tr(label),
+                None,
+                None,
+                !importing,
+            ) {
+                self.action("media.view");
+            }
+            ui.add_enabled_ui(!importing, |ui| self.media_sort_menu(ui));
+            if self.button(
+                ui,
+                "file.import",
+                Icon::UploadSimple,
+                Text::Import,
+                !importing,
+            ) {
+                self.action("file.import");
+            }
+            if self.icon_only(
+                ui,
+                "media.insert",
+                Icon::Plus,
+                self.tr(Text::AddToTimeline),
+                None,
+                None,
+                !importing && !self.media_selection.is_empty(),
+            ) {
+                self.action("media.insert");
+            }
+        });
+    }
+    fn media_sort_label(&self, key: MediaSortKey) -> &'static str {
+        self.tr(match key {
+            MediaSortKey::Name => Text::SortName,
+            MediaSortKey::Type => Text::SortType,
+            MediaSortKey::Duration => Text::SortDuration,
+            MediaSortKey::Size => Text::SortSize,
+        })
+    }
+    fn media_sort_menu(&mut self, ui: &mut egui::Ui) {
+        let current = self.preferences.media_sort;
+        let arrow = match current.order {
+            MediaSortOrder::Asc => "↑",
+            MediaSortOrder::Desc => "↓",
+        };
+        let selected = format!("{} {arrow}", self.media_sort_label(current.key));
+        let combo = egui::ComboBox::from_id_salt(Id::unique("media.sort"))
+            .selected_text(selected)
+            .width(120.0)
+            .show_ui(ui, |ui| {
+                for key in MediaSortKey::ALL {
+                    let active = current.key == key;
+                    let arrow = if active { arrow } else { "" };
+                    let response = ui.selectable_label(
+                        active,
+                        format!("{} {arrow}", self.media_sort_label(key)),
+                    );
+                    self.remember(format!("media.sort.{}", key.id()), &response);
+                    if response.clicked() {
+                        self.action(&format!("media.sort.{}", key.id()));
+                        ui.close();
+                    }
+                }
+            });
+        let order = self.tr(match current.order {
+            MediaSortOrder::Asc => Text::SortAscending,
+            MediaSortOrder::Desc => Text::SortDescending,
+        });
+        let tooltip = catalog::format(
+            self.preferences.locale,
+            Text::SortTooltip,
+            &[
+                ("key", self.media_sort_label(current.key)),
+                ("order", order),
+            ],
+        );
+        let response = combo.response.on_hover_text(tooltip.clone());
+        self.remember("media.sort", &response);
+        if let Some(state) = self.widgets.get_mut("media.sort") {
+            state.tooltip = Some(tooltip);
+        }
+    }
+    fn media_viewport_height(&self, ui: &egui::Ui) -> f32 {
+        let reserved = if self.import_failures.is_empty() && self.import_notice.is_none() {
+            16.0
+        } else {
+            120.0
+        };
+        (ui.clip_rect().bottom() - ui.cursor().min.y - reserved).max(80.0)
+    }
+    fn media_grid(&mut self, ui: &mut egui::Ui, rows: &[AssetRow], importing: bool) {
+        let width = (ui.clip_rect().right() - ui.cursor().min.x).max(0.0);
+        let columns = ((width + MEDIA_CARD_GAP) / (MEDIA_CARD_WIDTH + MEDIA_CARD_GAP))
+            .floor()
+            .max(1.0) as usize;
+        let content_height = rows.len().div_ceil(columns) as f32
+            * (MEDIA_CARD_HEIGHT + MEDIA_CARD_GAP)
+            - MEDIA_CARD_GAP;
+        egui::ScrollArea::vertical()
+            .id_salt("media.grid")
+            .max_height(self.media_viewport_height(ui))
+            .show(ui, |ui| {
+                let (content, _) = ui.allocate_exact_size(
+                    Vec2::new(width, content_height.max(0.0)),
+                    egui::Sense::hover(),
+                );
+                let background = ui.interact(
+                    content,
+                    Id::unique("media.marquee"),
+                    egui::Sense::click_and_drag(),
+                );
+                self.remember("media.marquee", &background);
+                let mut rects = Vec::with_capacity(rows.len());
+                for (index, row) in rows.iter().enumerate() {
+                    let column = index % columns;
+                    let line = index / columns;
+                    let rect = Rect::from_min_size(
+                        content.min
+                            + Vec2::new(
+                                column as f32 * (MEDIA_CARD_WIDTH + MEDIA_CARD_GAP),
+                                line as f32 * (MEDIA_CARD_HEIGHT + MEDIA_CARD_GAP),
+                            ),
+                        Vec2::new(MEDIA_CARD_WIDTH, MEDIA_CARD_HEIGHT),
+                    );
+                    let response = ui
+                        .scope_builder(egui::UiBuilder::new().max_rect(rect), |ui| {
+                            self.media_asset(ui, row, importing, true)
+                        })
+                        .inner;
+                    if self
+                        .media_reveal
+                        .is_some_and(|reveal| reveal.asset == row.id)
+                    {
+                        ui.scroll_to_rect(rect, Some(egui::Align::Center));
+                    }
+                    if response.clicked() {
+                        let modifiers = ui.ctx().input(|input| input.modifiers);
+                        self.select_asset(row.id, modifiers);
+                    }
+                    rects.push((row.id, rect));
+                }
+                self.media_marquee(ui, content, &background, &rects);
+            });
+    }
+    fn media_list(&mut self, ui: &mut egui::Ui, rows: &[AssetRow], importing: bool) {
+        let width = (ui.clip_rect().right() - ui.cursor().min.x).max(0.0);
+        egui::ScrollArea::vertical()
+            .id_salt("media.list")
+            .max_height(self.media_viewport_height(ui))
+            .show(ui, |ui| {
+                let (content, _) = ui.allocate_exact_size(
+                    Vec2::new(width, rows.len() as f32 * MEDIA_ROW_HEIGHT),
+                    egui::Sense::hover(),
+                );
+                let background = ui.interact(
+                    content,
+                    Id::unique("media.marquee"),
+                    egui::Sense::click_and_drag(),
+                );
+                self.remember("media.marquee", &background);
+                let mut rects = Vec::with_capacity(rows.len());
+                for (index, row) in rows.iter().enumerate() {
+                    let rect = Rect::from_min_size(
+                        content.min + Vec2::new(0.0, index as f32 * MEDIA_ROW_HEIGHT),
+                        Vec2::new(content.width(), MEDIA_ROW_HEIGHT - 2.0),
+                    );
+                    let response = ui
+                        .scope_builder(egui::UiBuilder::new().max_rect(rect), |ui| {
+                            self.media_asset(ui, row, importing, false)
+                        })
+                        .inner;
+                    if self
+                        .media_reveal
+                        .is_some_and(|reveal| reveal.asset == row.id)
+                    {
+                        ui.scroll_to_rect(rect, Some(egui::Align::Center));
+                    }
+                    if response.clicked() {
+                        let modifiers = ui.ctx().input(|input| input.modifiers);
+                        self.select_asset(row.id, modifiers);
+                    }
+                    rects.push((row.id, rect));
+                }
+                self.media_marquee(ui, content, &background, &rects);
+            });
+    }
+    fn media_marquee(
+        &mut self,
+        ui: &mut egui::Ui,
+        content: Rect,
+        background: &egui::Response,
+        rects: &[(AssetId, Rect)],
+    ) {
+        let modifiers = ui.ctx().input(|input| input.modifiers);
+        if background.drag_started()
+            && self.media_marquee.is_none()
+            && let Some(origin) = ui.input(|input| input.pointer.press_origin())
+            && !rects.iter().any(|(_, rect)| rect.contains(origin))
+        {
+            self.media_marquee = Some(MediaMarquee {
+                origin,
+                before: self.media_selection.clone(),
+                additive: modifiers.command || modifiers.ctrl || modifiers.shift,
+                moved: false,
+            });
+        }
+        if let Some(marquee) = self.media_marquee.clone()
+            && let Some(pointer) = ui.input(|input| input.pointer.interact_pos())
+        {
+            let rect = Rect::from_two_pos(marquee.origin, pointer).intersect(content);
+            let mut selected =
+                crate::selection::intersections(rect.min, rect.max, rects.iter().copied());
+            if marquee.additive {
+                selected.extend(&marquee.before);
+            }
+            self.media_selection = selected;
+            if let Some(state) = &mut self.media_marquee {
+                state.moved |= marquee.origin.distance(pointer) > 4.0;
+            }
+            ui.painter().with_clip_rect(content).rect_filled(
+                rect,
+                0.0,
+                self.accent().gamma_multiply(0.15),
+            );
+            ui.painter().with_clip_rect(content).rect_stroke(
+                rect,
+                0.0,
+                egui::Stroke::new(1.0, self.accent()),
+                egui::StrokeKind::Inside,
+            );
+        }
+        if background.drag_stopped()
+            && let Some(marquee) = self.media_marquee.take()
+        {
+            if !marquee.moved {
+                self.media_selection.clear();
+                self.media_anchor = None;
+            }
+            self.session.end_merge();
+        }
+        if background.clicked() {
+            self.media_selection.clear();
+            self.media_anchor = None;
+            self.session.end_merge();
+        }
+    }
+    fn media_asset(
+        &mut self,
+        ui: &mut egui::Ui,
+        row: &AssetRow,
+        importing: bool,
+        grid: bool,
+    ) -> egui::Response {
+        let rect = ui.max_rect();
+        let response = ui.interact(
+            rect,
+            Id::unique(("media.asset", row.id.0)),
+            egui::Sense::click(),
+        );
+        self.remember_with_icon(
+            format!("media.asset.{}", row.id.0),
+            Some(row.icon.name()),
+            &response,
+        );
+        response
+            .widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, row.name.as_str()));
+        if response.secondary_clicked() && !self.media_selection.contains(&row.id) {
+            self.media_selection = [row.id].into_iter().collect();
+            self.media_anchor = Some(row.id);
+            self.session.end_merge();
+        }
+        let selected = self.media_selection.contains(&row.id);
+        let highlighted = self
+            .media_reveal
+            .is_some_and(|reveal| reveal.asset == row.id);
+        let dark = self.preferences.dark;
+        let fill = if selected {
+            self.accent()
+        } else if response.hovered() {
+            theme::hover(dark)
+        } else {
+            self.control_fill()
+        };
+        let text = if selected {
+            theme::on_accent(dark)
+        } else {
+            self.text_color()
+        };
+        let painter = ui.painter().with_clip_rect(rect);
+        painter.rect_filled(rect, 4.0, fill);
+        painter.rect_stroke(
+            rect,
+            4.0,
+            egui::Stroke::new(
+                if highlighted { 2.0 } else { 1.0 },
+                if highlighted {
+                    self.accent()
+                } else {
+                    self.border()
+                },
+            ),
+            egui::StrokeKind::Inside,
+        );
+        let secondary = if selected {
+            theme::on_accent(dark)
+        } else {
+            self.secondary()
+        };
+        if grid {
+            let thumbnail = Rect::from_min_size(
+                rect.min + Vec2::new(4.0, 4.0),
+                Vec2::new(rect.width() - 8.0, 58.0),
+            );
+            painter.rect_filled(thumbnail, 2.0, theme::field(dark));
+            self.media_thumbnail(ui, row, thumbnail, 24.0, self.text_color());
+            if let Some(duration) = row.duration {
+                let label = display_short_time(duration);
+                let badge = Rect::from_min_size(
+                    thumbnail.right_bottom() - Vec2::new(4.0, 4.0),
+                    Vec2::new(0.0, 0.0),
+                );
+                let galley =
+                    painter.layout_no_wrap(label, FontId::proportional(10.0), theme::on_scrim());
+                let badge = Rect::from_min_size(
+                    badge.min - Vec2::new(galley.size().x + 4.0, galley.size().y + 2.0),
+                    galley.size() + Vec2::new(4.0, 2.0),
+                );
+                painter.rect_filled(badge, 2.0, theme::scrim());
+                painter.galley(badge.min + Vec2::new(2.0, 1.0), galley, theme::on_scrim());
+            }
+            painter.text(
+                egui::pos2(rect.left() + 5.0, thumbnail.bottom() + 5.0),
+                Align2::LEFT_TOP,
+                &row.name,
+                FontId::proportional(12.0),
+                text,
+            );
+            painter.text(
+                egui::pos2(rect.left() + 5.0, thumbnail.bottom() + 21.0),
+                Align2::LEFT_TOP,
+                &row.brief,
+                FontId::proportional(10.0),
+                secondary,
+            );
+        } else {
+            let thumbnail = Rect::from_center_size(
+                egui::pos2(rect.left() + 36.0, rect.center().y),
+                Vec2::new(64.0, 36.0),
+            );
+            self.media_thumbnail(ui, row, thumbnail, BUTTON_ICON, text);
+            painter.text(
+                egui::pos2(rect.left() + 74.0, rect.center().y - 2.0),
+                Align2::LEFT_BOTTOM,
+                &row.name,
+                FontId::proportional(13.0),
+                text,
+            );
+            painter.text(
+                egui::pos2(rect.left() + 74.0, rect.center().y + 2.0),
+                Align2::LEFT_TOP,
+                &row.info,
+                FontId::proportional(11.0),
+                secondary,
+            );
+        }
+        let status_rect = Rect::from_min_size(
+            if grid { rect.min + Vec2::splat(6.0) } else { egui::pos2(rect.right() - 102.0, rect.top() + 3.0) },
+            Vec2::new((rect.width() - 12.0).min(96.0), 14.0),
+        );
+        painter.rect_filled(status_rect, 2.0, self.control_fill());
+        let status = ui.put(status_rect, egui::Label::new(
+            egui::RichText::new(asset_state_text(self.preferences.locale, row.state))
+                .size(10.0).color(asset_state_color(row.state, dark)),
+        ).truncate());
+        self.remember(format!("media.asset.{}.status", row.id.0), &status);
+        let ids: Vec<AssetId> = if selected {
+            self.media_selection.iter().copied().collect()
+        } else {
+            vec![row.id]
+        };
+        let label = if ids.len() == 1 {
+            self.tr(Text::DeleteItemOne).to_owned()
+        } else {
+            catalog::format_count(
+                self.preferences.locale,
+                ids.len() as u64,
+                Text::DeleteItemsOther,
+                Text::DeleteItemsOther,
+            )
+        };
+        response.context_menu(|ui| {
+            let delete = ui.add_enabled(!importing, egui::Button::new(label));
+            self.remember("media.delete", &delete);
+            if delete.clicked() {
+                self.request_media_delete(ids.clone());
+                ui.close();
+            }
+        });
+        response
+    }
+    fn media_thumbnail(&mut self, ui: &mut egui::Ui, row: &AssetRow, rect: Rect, fallback_size: f32, color: Color32) {
+        if let Some(texture) = self.thumbnail_texture(ui.ctx(), row.id) {
+            let size = texture.size_vec2();
+            let scale = (rect.width() / size.x).min(rect.height() / size.y);
+            let image_rect = Rect::from_center_size(rect.center(), size * scale);
+            let response = ui.put(image_rect, egui::Image::new((texture.id(), image_rect.size())));
+            self.remember(format!("media.asset.{}.thumbnail", row.id.0), &response);
+        } else {
+            icons::tinted(row.icon, fallback_size, color).paint_at(ui,
+                Rect::from_center_size(rect.center(), Vec2::splat(fallback_size)));
         }
     }
     fn inspector(&mut self, ui: &mut egui::Ui) {
@@ -5563,6 +6147,37 @@ impl Editor {
             });
         }
     }
+    fn media_delete_dialog(&mut self, ctx: &egui::Context) {
+        let Some(ids) = self.media_delete_confirm.clone() else {
+            return;
+        };
+        egui::Modal::new(Id::unique("media.delete_dialog")).show(ctx, |ui| {
+            ui.set_max_width(380.0);
+            ui.heading(format!(
+                "{} {}",
+                self.tr(Text::Delete),
+                self.tr(Text::Media)
+            ));
+            ui.label(catalog::format_count(
+                self.preferences.locale,
+                ids.len() as u64,
+                Text::DeleteMediaPromptOne,
+                Text::DeleteMediaPromptOther,
+            ));
+            ui.horizontal(|ui| {
+                let response = ui.add_sized([90.0, 34.0], egui::Button::new(self.tr(Text::Cancel)));
+                self.remember("media.cancel_delete", &response);
+                if response.clicked() {
+                    self.action("media.cancel_delete");
+                }
+                let response = ui.add_sized([90.0, 34.0], egui::Button::new(self.tr(Text::Delete)));
+                self.remember("media.confirm_delete", &response);
+                if response.clicked() {
+                    self.action("media.confirm_delete");
+                }
+            });
+        });
+    }
     fn timeline_toolbar(&mut self, ui: &mut egui::Ui, layout: &TimelineLayout) {
         let mut child = ui.new_child(
             egui::UiBuilder::new()
@@ -5838,6 +6453,7 @@ impl Editor {
                         track.locked,
                         label,
                         overlay,
+                        item.source_asset,
                     ));
                 }
                 offset += height + TRACK_GAP;
@@ -5858,7 +6474,7 @@ impl Editor {
             .vertical_scroll
             .clamp(0.0, (content_height - layout.body.height()).max(0.0));
         let mut items = Vec::new();
-        for (row_index, id, kind, start, end, locked, label, overlay) in raw_items {
+        for (row_index, id, kind, start, end, locked, label, overlay, source_asset) in raw_items {
             let (top, height) = rows
                 .get(row_index)
                 .map_or((layout.body.top(), 25.0), |row| {
@@ -5877,6 +6493,7 @@ impl Editor {
                 locked,
                 label,
                 overlay,
+                source_asset,
             });
         }
         let min = self.min_zoom(layout.body.width());
@@ -6593,6 +7210,16 @@ impl Editor {
         if !item.locked && self.drag.is_none() && response.drag_started() {
             self.begin_drag(item.id, DragMode::Move, ui);
         }
+        if let Some(asset) = item.source_asset {
+            response.context_menu(|ui| {
+                let reveal = ui.button(self.tr(Text::RevealMedia));
+                self.remember(format!("timeline.item.{}.reveal", item.id.0), &reveal);
+                if reveal.clicked() {
+                    self.action(&format!("media.reveal.{}", asset.0));
+                    ui.close();
+                }
+            });
+        }
     }
     fn paint_playhead(&self, ui: &egui::Ui, layout: &TimelineLayout) {
         let at = self.playback.position().unwrap_or(Tick::ZERO);
@@ -6929,7 +7556,7 @@ fn asset_state_color(state: AssetState, dark: bool) -> Color32 {
         AssetState::Unsupported(_) => theme::warning(dark),
     }
 }
-fn asset_row(asset: &SourceAsset, locale: Locale, state: AssetState) -> AssetRow {
+fn asset_row(asset: &SourceAsset, locale: Locale, size: Option<u64>, state: AssetState) -> AssetRow {
     let mut info = Vec::new();
     let video = asset
         .probe()
@@ -6941,25 +7568,25 @@ fn asset_row(asset: &SourceAsset, locale: Locale, state: AssetState) -> AssetRow
         .streams
         .iter()
         .find_map(|stream| stream.audio.as_ref());
-    let kind = if video.is_some() {
-        Text::Video
-    } else if audio.is_some() {
-        Text::Audio
-    } else {
-        Text::Media
+    let media_kind = MediaKind::of(asset);
+    let (kind, icon) = match media_kind {
+        MediaKind::Image => (Text::Image, Icon::File),
+        MediaKind::Video => (Text::Video, Icon::FilmStrip),
+        MediaKind::Audio => (Text::Audio, Icon::MusicNotes),
+        MediaKind::Other => (Text::Media, Icon::File),
     };
-    let icon = if video.is_some() {
-        Icon::FilmStrip
-    } else if audio.is_some() {
-        Icon::MusicNotes
-    } else {
-        Icon::File
-    };
-    info.push(catalog::text(locale, kind).to_owned());
+    let type_label = catalog::text(locale, kind).to_owned();
+    let mut brief = vec![type_label.clone()];
+    info.push(type_label);
     info.push(asset.probe().duration.map_or_else(
         || catalog::text(locale, Text::DurationUnknown).to_owned(),
         display_time,
     ));
+    if let Some(size) = size {
+        let size = format_media_size(locale, size);
+        brief.push(size.clone());
+        info.push(size);
+    }
     if let Some(video) = video {
         let width = catalog::number(locale, u64::from(video.width));
         let height = catalog::number(locale, u64::from(video.height));
@@ -6995,9 +7622,32 @@ fn asset_row(asset: &SourceAsset, locale: Locale, state: AssetState) -> AssetRow
         id: asset.id(),
         name: file_name(asset.path()),
         info: info.join(" · "),
+        brief: brief.join(" · "),
         icon,
         state,
+        duration: asset.probe().duration,
     }
+}
+fn format_media_size(locale: Locale, bytes: u64) -> String {
+    let (value, unit) = if bytes >= 1 << 30 {
+        (
+            catalog::decimal(locale, bytes as f64 / (1u64 << 30) as f64, 1),
+            "GB",
+        )
+    } else if bytes >= 1 << 20 {
+        (
+            catalog::decimal(locale, bytes as f64 / (1u64 << 20) as f64, 1),
+            "MB",
+        )
+    } else if bytes >= 1 << 10 {
+        (
+            catalog::decimal(locale, bytes as f64 / (1u64 << 10) as f64, 1),
+            "KB",
+        )
+    } else {
+        (catalog::number(locale, bytes), "B")
+    };
+    catalog::format(locale, Text::MediaSize, &[("size", &value), ("unit", unit)])
 }
 fn file_name(path: &std::path::Path) -> String {
     path.file_name().map_or_else(
@@ -7391,6 +8041,11 @@ fn display_time(at: Tick) -> String {
         s as u64 % 60,
         ((s.fract() * 1000.0).floor()) as u64
     )
+}
+/// Compact grid badge: total minutes and seconds, matching the reference.
+fn display_short_time(at: Tick) -> String {
+    let seconds = at.seconds().max(0.0) as u64;
+    format!("{}:{:02}", seconds / 60, seconds % 60)
 }
 
 #[cfg(test)]

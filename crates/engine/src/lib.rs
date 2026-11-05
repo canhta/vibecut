@@ -49,6 +49,14 @@ pub use rendering::{
 };
 pub use session::{JobTarget, Session};
 
+/// One media asset's timeline usage, retained in the typed removal refusal.
+/// Item IDs are stable identifiers, never user-authored text.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct AssetUsage {
+    pub asset: media::AssetId,
+    pub items: Vec<project::ItemId>,
+}
+
 /// Safe diagnostic categories: never include parameter values or user text.
 #[derive(Debug, thiserror::Error)]
 pub enum EditError {
@@ -138,6 +146,10 @@ pub enum EditError {
     Limit,
     #[error("missing track {0:?}")]
     NoTrack(project::TrackId),
+    #[error("missing media asset {0:?}")]
+    NoAsset(media::AssetId),
+    #[error("media asset is used by timeline items: {0:?}")]
+    AssetsInUse(Vec<AssetUsage>),
     #[error("missing item {0:?}")]
     NoItem(project::ItemId),
     #[error("track {0:?} is locked")]
