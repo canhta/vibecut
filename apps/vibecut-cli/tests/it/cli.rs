@@ -2837,7 +2837,8 @@ fn sounds_cli_saves_searches_and_adds_a_cached_sound_offline() {
     };
     assert_eq!(sound.id, 5);
     assert_eq!(sound.licence.as_str(), "Creative Commons 0");
-    assert!(data.assets[0].path().exists());
+    let media = data.assets[0].path().to_owned();
+    assert!(media.starts_with(dir.path().join("sounds.vibecut.media")));
     let stdout = String::from_utf8_lossy(&output.stdout);
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(!stdout.contains("secret"));
@@ -2853,6 +2854,7 @@ fn sounds_cli_saves_searches_and_adds_a_cached_sound_offline() {
     assert_eq!(output.status.code(), Some(0), "{output:?}");
     let value: Value = serde_json::from_slice(&output.stdout).unwrap();
     assert_eq!(value["removed"], true);
+    assert!(media.is_file(), "unsave must not remove project media");
 }
 #[test]
 fn sounds_cli_refuses_missing_cache_and_invalid_arguments() {

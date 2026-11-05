@@ -1011,8 +1011,13 @@ and 1,024 entries, and previews at 32 MiB. `SoundDownloads` streams through the
 shared runner (`JobKind::SoundDownload`, network retries) with HTTPS-only bounded
 redirects, content-length checks, cancellation before every read/write and atomic
 publication; no credential is sent to preview CDN URLs. `sounds.add_to_timeline`
-takes an already cached, probed file and commits the asset plus audio item in one
-undo step; the item stores `sourceType=library` metadata. `SoundPreview` composes
+takes an asset that already lives in project-owned media and commits it plus the
+audio item in one undo step; the item stores `sourceType=library` metadata. The
+`sounds::add_to_timeline`/`add_saved` helpers first copy the cached preview into the
+caller's project media directory under its content hash (atomic, hash-verified,
+reused when present), so unsave, clear-all and URL invalidation only ever remove
+cache entries and never a file a project references. The CLI uses
+`<project file>.media/`; managed projects pass their own `media` directory. `SoundPreview` composes
 the cache/download owner with an app-owned `PreviewSink`; play/stop are cancellable
 and a missing device is a typed error.
 

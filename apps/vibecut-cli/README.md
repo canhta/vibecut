@@ -115,7 +115,8 @@ sounds; results carry author, licence, attribution and URLs. `sounds save <libra
 <sound-json>` and `sounds unsave <library> <id>` manage the durable local library.
 `sounds add <project> <library> <id> [--start <ticks>]` requires the exact preview
 URL to be cached locally, then commits the asset and audio item as one undo step
-through `sounds.add_to_timeline`; it never downloads implicitly. Missing cache,
+through `sounds.add_to_timeline`, copying the sound into `<project>.media/` so later
+library cleanup cannot remove it; it never downloads implicitly. Missing cache,
 missing credential, auth, quota, rate-limit, network and no-audio-device failures
 keep distinct stable codes, and no command prints or persists the token.
 

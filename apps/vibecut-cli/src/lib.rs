@@ -2648,7 +2648,18 @@ fn sounds_add(args: Vec<OsString>) -> Result<Output, CliError> {
     let loaded = lease.load()?;
     let mut session = Session::new(loaded.project, 1)?;
     session.restore_metadata(lease.metadata())?;
-    let outcome = add_saved(&mut session, &library, id, engine::Placement::Auto, start)?;
+    // Project-owned media sits beside the project file, so library cleanup never
+    // removes bytes this project references.
+    let mut media = project.clone().into_os_string();
+    media.push(".media");
+    let outcome = add_saved(
+        &mut session,
+        &library,
+        id,
+        Path::new(&media),
+        engine::Placement::Auto,
+        start,
+    )?;
     let receipt = lease.save(session.project())?;
     lease.save_metadata(session.metadata())?;
     let placements: Vec<Value> = outcome

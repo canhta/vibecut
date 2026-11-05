@@ -7,6 +7,7 @@ use engine::sounds::{
     SoundPreview, SoundResult, Token, add_saved,
 };
 use engine::{Command, EditError, Placement, Session};
+use media::ContentHash;
 use project::{AudioSource, ItemParams, Project, ProjectId};
 use std::{
     io::{Cursor, Read},
@@ -588,12 +589,40 @@ fn adding_a_cached_sound_is_one_undo_step_and_round_trips_metadata() {
     let cached = library.store_cached(&sound.audio_url, &wav()).unwrap();
     let mut session =
         Session::new(Project::empty(ProjectId(0), "sounds".into()).unwrap(), 8).unwrap();
-    let outcome = add_saved(&mut session, &library, 21, Placement::Auto, Tick::ZERO).unwrap();
+    let media = tempfile::tempdir().unwrap();
+    // A media directory that cannot be created refuses before any project change.
+    let blocked = media.path().join("file");
+    std::fs::write(&blocked, b"x").unwrap();
+    assert!(
+        add_saved(
+            &mut session,
+            &library,
+            21,
+            &blocked,
+            Placement::Auto,
+            Tick::ZERO
+        )
+        .is_err()
+    );
+    assert_eq!(session.history_len(), (0, 0));
+    let outcome = add_saved(
+        &mut session,
+        &library,
+        21,
+        media.path(),
+        Placement::Auto,
+        Tick::ZERO,
+    )
+    .unwrap();
     assert_eq!(outcome.placements.len(), 1);
     assert_eq!(session.history_len(), (1, 0));
     let data = session.project().data();
     assert_eq!(data.assets.len(), 1);
-    assert_eq!(data.assets[0].path(), cached.path.as_path());
+    // The asset is project-owned media, not the library's cache entry.
+    let owned = data.assets[0].path().to_owned();
+    assert_ne!(owned, cached.path);
+    assert!(owned.starts_with(media.path()));
+    assert_eq!(data.assets[0].content_hash(), cached.content_hash);
     let item = data
         .scene()
         .timeline
@@ -643,6 +672,41 @@ fn adding_a_cached_sound_is_one_undo_step_and_round_trips_metadata() {
     );
     session.apply(Command::Redo {}).unwrap();
     assert_eq!(session.project().data().assets.len(), 1);
+
+    // Every library cleanup path leaves the referenced project media intact,
+    // across undo/redo and reload.
+    let mut changed = sound.clone();
+    changed.audio_url = "https://cdn.example/21-v2.mp3".into();
+    for step in ["url change", "unsave", "clear all"] {
+        match step {
+            "url change" => {
+                library.save(&changed).unwrap();
+            }
+            "unsave" => {
+                assert!(library.unsave(21).unwrap());
+            }
+            _ => {
+                library.save(&sound).unwrap();
+                library.clear_all().unwrap();
+            }
+        }
+        assert!(
+            library.cached(&sound.audio_url).unwrap().is_none(),
+            "{step}: cache entry should be gone"
+        );
+        assert_eq!(
+            ContentHash::read(&owned).unwrap(),
+            cached.content_hash,
+            "{step}: project media changed"
+        );
+        session.apply(Command::Undo {}).unwrap();
+        session.apply(Command::Redo {}).unwrap();
+        assert_eq!(session.project().data().assets[0].path(), owned, "{step}");
+        let reloaded = project::decode(&project::encode(session.project(), false).unwrap())
+            .unwrap()
+            .project;
+        assert_eq!(reloaded.data().assets[0].path(), owned, "{step}");
+    }
 }
 #[test]
 fn adding_an_uncached_sound_is_typed_and_changes_nothing() {
@@ -653,7 +717,14 @@ fn adding_an_uncached_sound_is_typed_and_changes_nothing() {
     let mut session =
         Session::new(Project::empty(ProjectId(1), "sounds".into()).unwrap(), 8).unwrap();
     assert!(matches!(
-        add_saved(&mut session, &library, 22, Placement::Auto, Tick::ZERO),
+        add_saved(
+            &mut session,
+            &library,
+            22,
+            root.path(),
+            Placement::Auto,
+            Tick::ZERO
+        ),
         Err(EditError::Sounds(engine::sounds::Error::NotCached))
     ));
     assert!(session.project().data().assets.is_empty());
