@@ -9,6 +9,7 @@ mod lifecycle;
 mod media_import;
 mod models_ui;
 mod panels;
+mod projects_ui;
 mod review_regressions;
 mod scenes_ui;
 mod shorts_ui;

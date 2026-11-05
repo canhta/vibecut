@@ -6,6 +6,7 @@ use crate::{
     icons::{self, Icon},
     lifecycle::EditorAction,
     playback::{Files, Playback},
+    projects::{ProjectsAction, ProjectsPage},
 };
 use engine::{
     ByteBudget, Command, EditError, Session,
@@ -89,6 +90,7 @@ struct Pending {
 pub struct Workspace {
     pub editor: Option<Box<Editor>>,
     pub shorts: Option<crate::shorts::Shorts>,
+    pub projects: ProjectsPage,
     shorts_window: bool,
     pub preferences: Preferences,
     root: PathBuf,
@@ -108,9 +110,20 @@ pub struct Workspace {
     retry_save: Option<(Option<PathBuf>, bool, bool, bool)>,
     retry_discovery: bool,
     preference_warning: bool,
+    open_file_requested: bool,
 }
 impl Workspace {
     pub fn new(root: PathBuf, preferences: Preferences, path: Option<PathBuf>) -> Result<Self> {
+        let projects = root.with_file_name("projects");
+        Self::with_projects(root, projects, preferences, path)
+    }
+    /// Explicit managed-catalog root, used by the native adapter and tests.
+    pub fn with_projects(
+        root: PathBuf,
+        projects_root: PathBuf,
+        preferences: Preferences,
+        path: Option<PathBuf>,
+    ) -> Result<Self> {
         let budget = ByteBudget::new(768 << 20)?;
         let runner = JobRunner::new(
             RunnerConfig {
@@ -127,6 +140,7 @@ impl Workspace {
         let mut app = Self {
             editor: None,
             shorts: None,
+            projects: ProjectsPage::new(projects_root, budget.clone()),
             shorts_window: false,
             preferences,
             root,
@@ -146,6 +160,7 @@ impl Workspace {
             retry_save: None,
             retry_discovery: false,
             preference_warning: false,
+            open_file_requested: false,
         };
         app.submit(Work::Discover, Text::Discovering)?;
         Ok(app)
@@ -173,7 +188,7 @@ impl Workspace {
         self.preference_warning = true;
     }
     pub fn busy(&self) -> bool {
-        self.pending.is_some() || self.picker.is_some()
+        self.pending.is_some() || self.picker.is_some() || self.projects.busy()
     }
     pub fn error(&self) -> Option<&Error> {
         self.error.as_ref()
@@ -453,6 +468,21 @@ impl Workspace {
         Ok(())
     }
     pub fn tick(&mut self) {
+        self.projects.tick();
+        match self.projects.take_action() {
+            Some(ProjectsAction::Open(path)) => {
+                if let Err(error) = self.open(path) {
+                    self.error = Some(error);
+                }
+            }
+            Some(ProjectsAction::OpenFile) => self.open_file_requested = true,
+            Some(ProjectsAction::Shorts) => {
+                if let Err(error) = self.open_shorts() {
+                    self.error = Some(error);
+                }
+            }
+            None => {}
+        }
         self.poll_picker();
         if let Some(shorts) = &mut self.shorts {
             shorts.tick();
@@ -527,6 +557,7 @@ impl Workspace {
                     self.retry_save = None;
                     if leave || close {
                         self.editor = None;
+                        self.projects.refresh();
                     }
                     if close {
                         self.ready_to_close = true;
@@ -572,6 +603,12 @@ impl Workspace {
         }
         Editor::theme(ui.ctx(), self.preferences.dark);
         self.tick();
+        if self.open_file_requested && !self.busy() {
+            self.open_file_requested = false;
+            if let Err(error) = self.pick(ui.ctx(), PickerAction::Open) {
+                self.error = Some(error);
+            }
+        }
         if ui.input(|i| i.viewport().close_requested()) && !self.ready_to_close {
             ui.ctx()
                 .send_viewport_cmd(egui::ViewportCommand::CancelClose);
@@ -592,57 +629,65 @@ impl Workspace {
                     self.error = Some(e);
                 }
             }
-        } else {
+        } else if let Some(pending) = &self.pending {
             ui.vertical_centered(|ui| {
                 ui.add_space(100.0);
                 ui.heading(egui::RichText::new(self.tr(Text::AppName)).size(28.0));
                 ui.add_space(28.0);
-                if let Some(pending) = &self.pending {
-                    ui.spinner();
-                    ui.label(self.tr(pending.text));
-                    if matches!(pending.text, Text::LoadingProject)
-                        && self.button(ui, "project.operation.cancel", Icon::X, Text::Cancel)
-                    {
-                        pending.cancel.cancel();
-                    }
-                } else if self.picker.is_some() {
-                    ui.label(self.tr(Text::ChooseProject));
-                } else if self.candidates.is_empty() && self.error.is_none() {
-                    if self.button(ui, "project.create", Icon::Plus, Text::NewProject)
-                        && let Err(e) = self.create()
-                    {
-                        self.error = Some(e);
-                    }
-                    if self.button(ui, "home.shorts", Icon::Scissors, Text::Shorts)
-                        && let Err(e) = self.open_shorts()
-                    {
-                        self.error = Some(e);
-                    }
-                    if let Some(shorts) = &self.shorts {
-                        let status = if shorts.cancelling() {
-                            Some(Text::ShortsCancelling)
-                        } else if shorts.awaiting_consent() {
-                            Some(Text::ShortsConsent)
-                        } else if shorts.exporting() {
-                            Some(Text::ShortsExporting)
-                        } else if shorts.busy() {
-                            Some(Text::ShortsCreating)
-                        } else if shorts.source().is_some() {
-                            Some(Text::ShortsReview)
-                        } else {
-                            None
-                        };
-                        if let Some(status) = status {
-                            ui.label(self.tr(status));
-                        }
-                    }
-                    if self.button(ui, "project.open", Icon::FolderOpen, Text::OpenProject)
-                        && let Err(e) = self.pick(ui.ctx(), PickerAction::Open)
-                    {
-                        self.error = Some(e);
-                    }
+                ui.spinner();
+                ui.label(self.tr(pending.text));
+                if matches!(pending.text, Text::LoadingProject)
+                    && self.button(ui, "project.operation.cancel", Icon::X, Text::Cancel)
+                {
+                    pending.cancel.cancel();
                 }
             });
+        } else if self.picker.is_some() {
+            ui.vertical_centered(|ui| {
+                ui.add_space(100.0);
+                ui.heading(egui::RichText::new(self.tr(Text::AppName)).size(28.0));
+                ui.add_space(28.0);
+                ui.label(self.tr(Text::ChooseProject));
+            });
+        } else if self.candidates.is_empty() && self.error.is_none() {
+            self.projects.ui(ui, &mut self.preferences);
+            if let Some(action) = self.projects.take_action() {
+                match action {
+                    ProjectsAction::Open(path) => {
+                        if let Err(error) = self.open(path) {
+                            self.error = Some(error);
+                        }
+                    }
+                    ProjectsAction::OpenFile => {
+                        if let Err(error) = self.pick(ui.ctx(), PickerAction::Open) {
+                            self.error = Some(error);
+                        }
+                    }
+                    ProjectsAction::Shorts => {
+                        if let Err(error) = self.open_shorts() {
+                            self.error = Some(error);
+                        }
+                    }
+                }
+            }
+            if let Some(shorts) = &self.shorts {
+                let status = if shorts.cancelling() {
+                    Some(Text::ShortsCancelling)
+                } else if shorts.awaiting_consent() {
+                    Some(Text::ShortsConsent)
+                } else if shorts.exporting() {
+                    Some(Text::ShortsExporting)
+                } else if shorts.busy() {
+                    Some(Text::ShortsCreating)
+                } else if shorts.source().is_some() {
+                    Some(Text::ShortsReview)
+                } else {
+                    None
+                };
+                if let Some(status) = status {
+                    ui.label(self.tr(status));
+                }
+            }
         }
         if self.shorts_window
             && let Some(shorts) = &mut self.shorts

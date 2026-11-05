@@ -13,6 +13,7 @@ pub mod lifecycle;
 pub mod model_manager;
 pub mod panels;
 pub mod playback;
+pub mod projects;
 pub mod selection;
 pub mod shorts;
 pub mod subtitles;

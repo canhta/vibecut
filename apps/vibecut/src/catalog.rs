@@ -271,6 +271,43 @@ catalog! {
     SaveAsNeeded { key: "save_as_needed", en: "Recovered and new projects need Save as.", vi: "Dự án mới và bản khôi phục cần Lưu thành." },
     DefaultProjectFileName { key: "default_project_file_name", en: "project.vibecut", vi: "project.vibecut" },
 
+    // Projects page.
+    ProjectsSearch { key: "projects_search", en: "Search projects", vi: "Tìm dự án" },
+    ProjectsGrid { key: "projects_grid", en: "Grid view", vi: "Dạng lưới" },
+    ProjectsList { key: "projects_list", en: "List view", vi: "Dạng danh sách" },
+    ProjectsSort { key: "projects_sort", en: "Sort: {sort}", vi: "Sắp xếp: {sort}" },
+    ProjectsSortValue { key: "projects_sort_value", en: "{key} · {order}", vi: "{key} · {order}" },
+    ProjectsSortCreated { key: "projects_sort_created", en: "Created", vi: "Ngày tạo" },
+    ProjectsSortModified { key: "projects_sort_modified", en: "Modified", vi: "Ngày sửa" },
+    ProjectsSortName { key: "projects_sort_name", en: "Name", vi: "Tên" },
+    ProjectsSortDuration { key: "projects_sort_duration", en: "Duration", vi: "Thời lượng" },
+    ProjectsSortAscending { key: "projects_sort_ascending", en: "Ascending", vi: "Tăng dần" },
+    ProjectsSortDescending { key: "projects_sort_descending", en: "Descending", vi: "Giảm dần" },
+    ProjectsEmpty { key: "projects_empty", en: "No projects yet. Create your first project.", vi: "Chưa có dự án. Hãy tạo dự án đầu tiên." },
+    ProjectsNoResults { key: "projects_no_results", en: "No projects match your search.", vi: "Không có dự án khớp tìm kiếm." },
+    ProjectsOpen { key: "projects_open", en: "Open", vi: "Mở" },
+    ProjectsCardMenu { key: "projects_card_menu", en: "Project actions", vi: "Thao tác dự án" },
+    ProjectsDuplicate { key: "projects_duplicate", en: "Duplicate", vi: "Nhân bản" },
+    ProjectsDuplicating { key: "projects_duplicating", en: "Duplicating {done} of {total}…", vi: "Đang nhân bản {done}/{total}…" },
+    ProjectsDuplicateFailed { key: "projects_duplicate_failed", en: "Could not duplicate the project. It is unchanged.", vi: "Không thể nhân bản dự án. Dự án không thay đổi." },
+    ProjectsDeleteTitle { key: "projects_delete_title", en: "Delete projects?", vi: "Xóa dự án?" },
+    ProjectsDeletePrompt { key: "projects_delete_prompt", en: "This permanently deletes the selected projects. This cannot be undone.", vi: "Thao tác này xóa vĩnh viễn các dự án đã chọn. Không thể hoàn tác." },
+    ProjectsDeleteConfirm { key: "projects_delete_confirm", en: "Delete permanently", vi: "Xóa vĩnh viễn" },
+    ProjectsDeleteFailed { key: "projects_delete_failed", en: "Could not delete the project. It remains in the library.", vi: "Không thể xóa dự án. Dự án vẫn còn trong thư viện." },
+    ProjectsRenameTitle { key: "projects_rename_title", en: "Rename project", vi: "Đổi tên dự án" },
+    ProjectsRename { key: "projects_rename", en: "Rename", vi: "Đổi tên" },
+    ProjectsRenameSave { key: "projects_rename_save", en: "Save name", vi: "Lưu tên" },
+    ProjectsRenameInvalid { key: "projects_rename_invalid", en: "Enter a unique, non-empty project name.", vi: "Hãy nhập tên dự án không trống và chưa được dùng." },
+    ProjectsInfoTitle { key: "projects_info_title", en: "Project info", vi: "Thông tin dự án" },
+    ProjectsInfoId { key: "projects_info_id", en: "Project ID", vi: "Mã dự án" },
+    ProjectsDuration { key: "projects_duration", en: "Duration {duration}", vi: "Thời lượng {duration}" },
+    ProjectsRefreshThumbnail { key: "projects_refresh_thumbnail", en: "Refresh thumbnail", vi: "Làm mới ảnh thu nhỏ" },
+    ProjectsThumbnailMissing { key: "projects_thumbnail_missing", en: "No thumbnail", vi: "Chưa có ảnh thu nhỏ" },
+    ProjectsThumbnailFailed { key: "projects_thumbnail_failed", en: "Could not refresh the thumbnail.", vi: "Không thể làm mới ảnh thu nhỏ." },
+    ProjectsRetry { key: "projects_retry", en: "Retry project list", vi: "Tải lại danh sách dự án" },
+    ProjectsSelected { key: "projects_selected", en: "{n} selected", vi: "{n} đã chọn" },
+    ProjectsListError { key: "projects_list_error", en: "Project list unavailable.", vi: "Không thể tải danh sách dự án." },
+
     // Header and appearance.
     Theme { key: "theme", en: "Switch theme", vi: "Đổi giao diện" },
     Language { key: "language", en: "Tiếng Việt", vi: "English" },
@@ -746,6 +783,44 @@ pub const TIMELINE_MIN: f32 = 0.15;
 pub const TIMELINE_MAX: f32 = 0.70;
 pub const DEFAULT_PANELS: [f32; 3] = [0.25, 0.25, 0.50];
 
+/// Projects page presentation state, persisted with the workspace shell.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum ProjectsView {
+    #[default]
+    Grid,
+    List,
+}
+
+/// Projects page sort keys. `Modified` is part of the sort menu and info dialog,
+/// never displayed on the card.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum ProjectsSortKey {
+    #[default]
+    Created,
+    Modified,
+    Name,
+    Duration,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ProjectsPreferences {
+    pub view: ProjectsView,
+    pub sort: ProjectsSortKey,
+    pub ascending: bool,
+}
+impl Default for ProjectsPreferences {
+    fn default() -> Self {
+        Self {
+            view: ProjectsView::Grid,
+            sort: ProjectsSortKey::Created,
+            ascending: false,
+        }
+    }
+}
+
 /// Every user-visible preference key in the one versioned document.
 pub const PREFERENCE_KEYS: &[&str] = &[
     "locale",
@@ -755,6 +830,7 @@ pub const PREFERENCE_KEYS: &[&str] = &[
     "export",
     "assets_tab",
     "properties_tabs",
+    "projects",
 ];
 
 /// A splitter drag that keeps every region non-empty and inside its limits.
@@ -823,6 +899,9 @@ pub struct Preferences {
     /// that does not offer that tab falls back to the kind's default.
     #[serde(default)]
     pub properties_tabs: BTreeMap<String, String>,
+    /// Projects page view mode and sort order; presentation only.
+    #[serde(default)]
+    pub projects: ProjectsPreferences,
 }
 impl Default for Preferences {
     fn default() -> Self {
@@ -837,6 +916,7 @@ impl Default for Preferences {
             sections: BTreeMap::new(),
             assets_tab: AssetsTab::default(),
             properties_tabs: BTreeMap::new(),
+            projects: ProjectsPreferences::default(),
         }
     }
 }
@@ -899,6 +979,7 @@ impl Preferences {
             "assets_tab" => Ok(serde_json::to_value(self.assets_tab)?),
             "properties_tabs" => Ok(serde_json::to_value(&self.properties_tabs)?),
             "subtitles" => Ok(serde_json::to_value(&self.subtitles)?),
+            "projects" => Ok(serde_json::to_value(self.projects)?),
             _ => Err(Error::Unsupported("preference key")),
         }
     }
@@ -921,6 +1002,7 @@ impl Preferences {
             "assets_tab" => self.assets_tab = serde_json::from_value(value)?,
             "properties_tabs" => self.properties_tabs = serde_json::from_value(value)?,
             "subtitles" => self.subtitles = serde_json::from_value(value)?,
+            "projects" => self.projects = serde_json::from_value(value)?,
             _ => return Err(Error::Unsupported("preference key")),
         }
         Ok(())
@@ -1201,6 +1283,10 @@ mod tests {
             ("sections", serde_json::json!({"inspector.canvas": false})),
             ("assets_tab", serde_json::json!("captions")),
             ("properties_tabs", serde_json::json!({"text": "transform"})),
+            (
+                "projects",
+                serde_json::json!({"view": "list", "sort": "duration", "ascending": true}),
+            ),
             (
                 "export",
                 serde_json::json!({
