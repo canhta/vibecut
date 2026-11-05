@@ -32,6 +32,8 @@ pub(crate) enum Icon {
     FloppyDiskBack,
     FolderOpen,
     GearSix,
+    Lock,
+    LockOpen,
     Magnet,
     MagnifyingGlassMinus,
     MagnifyingGlassPlus,
@@ -78,6 +80,8 @@ impl Icon {
         Self::FloppyDiskBack,
         Self::FolderOpen,
         Self::GearSix,
+        Self::Lock,
+        Self::LockOpen,
         Self::Magnet,
         Self::MagnifyingGlassMinus,
         Self::MagnifyingGlassPlus,
@@ -123,6 +127,8 @@ impl Icon {
             Self::FloppyDiskBack => "floppy-disk-back",
             Self::FolderOpen => "folder-open",
             Self::GearSix => "gear-six",
+            Self::Lock => "lock",
+            Self::LockOpen => "lock-open",
             Self::Magnet => "magnet",
             Self::MagnifyingGlassMinus => "magnifying-glass-minus",
             Self::MagnifyingGlassPlus => "magnifying-glass-plus",
@@ -228,6 +234,14 @@ const ICONS: &[(&str, &[u8])] = &[
     (
         "gear-six",
         include_bytes!("../../../assets/icons/phosphor/regular/gear-six.svg"),
+    ),
+    (
+        "lock",
+        include_bytes!("../../../assets/icons/phosphor/regular/lock.svg"),
+    ),
+    (
+        "lock-open",
+        include_bytes!("../../../assets/icons/phosphor/regular/lock-open.svg"),
     ),
     (
         "magnet",

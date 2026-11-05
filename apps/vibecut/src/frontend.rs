@@ -280,6 +280,8 @@ struct ScrubDrag {
 struct TrackRow {
     id: TrackId,
     main: bool,
+    audio: bool,
+    display_index: usize,
     muted: bool,
     hidden: bool,
     locked: bool,
@@ -396,6 +398,9 @@ pub struct Editor {
     details: bool,
     rename: Option<String>,
     rename_focus: bool,
+    track_rename: Option<(TrackId, String)>,
+    track_rename_focus: bool,
+    track_drag: Option<TrackId>,
     pub(crate) lifecycle_action: Option<crate::lifecycle::EditorAction>,
     imports: Option<ImportQueue>,
     import_total: usize,
@@ -475,6 +480,9 @@ impl Editor {
             details: false,
             rename: None,
             rename_focus: false,
+            track_rename: None,
+            track_rename_focus: false,
+            track_drag: None,
             lifecycle_action: None,
             imports: None,
             import_total: 0,
@@ -1420,6 +1428,7 @@ impl Editor {
             }
             "timeline.split" => self.split_at_playhead()?,
             "timeline.delete" => self.delete_selected(self.ripple)?,
+            "timeline.add_track" => self.add_track(),
             "timeline.ripple_delete" => self.delete_selected(true)?,
             "timeline.select_all" => self.select_all(),
             "timeline.deselect_all" => {
@@ -2117,6 +2126,7 @@ impl Editor {
             }
             return;
         }
+        self.track_drag = None;
         if let Some(drag) = self.drag.take() {
             if self.session.gesture_active()
                 && let Err(error) = self.session.cancel_gesture()
@@ -2619,6 +2629,7 @@ impl Editor {
         }
         if self.rename.is_some()
             || self.property_focus.is_some()
+            || self.track_rename.is_some()
             || ctx.memory(|m| m.focused()).is_some_and(|id| {
                 [
                     "inspector.audio_gain",
@@ -4479,6 +4490,17 @@ impl Editor {
             }
             if self.icon_only(
                 ui,
+                "timeline.add_track",
+                Icon::Plus,
+                self.tr(Text::AddTrack),
+                None,
+                None,
+                true,
+            ) {
+                self.action("timeline.add_track");
+            }
+            if self.icon_only(
+                ui,
                 "timeline.snap",
                 Icon::ArrowsInLineHorizontal,
                 self.tr(Text::Snap),
@@ -4623,11 +4645,28 @@ impl Editor {
             let mut rows = Vec::new();
             let mut raw_items = Vec::new();
             let mut offset = 0.0;
+            let mut overlay_index = 0usize;
+            let mut audio_index = 0usize;
             for (row_index, track) in data.scene().timeline.iter().rev().enumerate() {
                 let height = track_height(track.kind);
+                let main = track.id == data.scene().timeline.main.id;
+                let audio = track.kind == TrackKind::Audio;
+                let display_index = if main {
+                    0
+                } else if audio {
+                    let index = audio_index;
+                    audio_index += 1;
+                    index
+                } else {
+                    let index = overlay_index;
+                    overlay_index += 1;
+                    index
+                };
                 rows.push(TrackRow {
                     id: track.id,
-                    main: track.id == data.scene().timeline.main.id,
+                    main,
+                    audio,
+                    display_index,
                     muted: track.muted,
                     hidden: track.hidden,
                     locked: track.locked,
@@ -4811,7 +4850,7 @@ impl Editor {
             let header = header_ui.interact(
                 label_rect.intersect(layout.labels),
                 Id::unique(("track.header", row.id.0)),
-                egui::Sense::click(),
+                egui::Sense::click_and_drag(),
             );
             header.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, &row.name));
             let type_icon = track_icon(row.kind);
@@ -4820,6 +4859,71 @@ impl Editor {
                 Some(type_icon.name()),
                 &header,
             );
+            if row.locked {
+                label_painter.rect_filled(
+                    label_rect,
+                    0.0,
+                    theme::warning(self.preferences.dark).gamma_multiply(0.08),
+                );
+            }
+            if self.track_drag == Some(row.id) {
+                label_painter.rect_stroke(
+                    label_rect,
+                    0.0,
+                    egui::Stroke::new(1.0, self.accent()),
+                    egui::StrokeKind::Inside,
+                );
+            }
+            let name_rect = Rect::from_min_max(
+                egui::pos2(label_rect.left() + 4.0, label_rect.top() + 2.0),
+                egui::pos2(
+                    (label_rect.right() - 58.0).max(label_rect.left() + 4.0),
+                    label_rect.bottom() - 2.0,
+                ),
+            );
+            let renaming = self
+                .track_rename
+                .as_ref()
+                .is_some_and(|(track, _)| *track == row.id);
+            if renaming {
+                let mut name = self
+                    .track_rename
+                    .take()
+                    .map_or_else(String::new, |(_, name)| name);
+                let response = header_ui.put(
+                    name_rect,
+                    egui::TextEdit::singleline(&mut name)
+                        .id_salt(("track.rename.input", row.id.0))
+                        .desired_width(name_rect.width()),
+                );
+                self.remember(format!("track.{}.rename", row.id.0), &response);
+                if self.track_rename_focus {
+                    response.request_focus();
+                    self.track_rename_focus = false;
+                }
+                let cancel = header_ui.input(|input| input.key_pressed(egui::Key::Escape));
+                let commit = header_ui.input(|input| input.key_pressed(egui::Key::Enter));
+                if commit && !cancel {
+                    self.track_command(
+                        "track.rename",
+                        serde_json::json!({"track":row.id,"name":name}),
+                    );
+                } else if !cancel {
+                    self.track_rename = Some((row.id, name));
+                }
+            } else {
+                label_painter.with_clip_rect(name_rect).text(
+                    egui::pos2(name_rect.left(), name_rect.center().y),
+                    Align2::LEFT_CENTER,
+                    &row.name,
+                    FontId::proportional(if row.height >= 40.0 { 12.0 } else { 10.0 }),
+                    if row.locked {
+                        theme::warning(self.preferences.dark)
+                    } else {
+                        self.text_color()
+                    },
+                );
+            }
             let icon_rect = Rect::from_center_size(
                 egui::pos2(label_rect.right() - 14.0, label_rect.center().y),
                 Vec2::splat(16.0),
@@ -4888,6 +4992,46 @@ impl Editor {
                 }
             }
             header.context_menu(|ui| {
+                let rename = ui.add(egui::Button::image_and_text(
+                    icons::tinted(Icon::PencilSimple, 16.0, self.text_color()),
+                    self.tr(Text::RenameTrack),
+                ));
+                self.remember_with_icon(
+                    format!("track.{}.rename_action", row.id.0),
+                    Some(Icon::PencilSimple.name()),
+                    &rename,
+                );
+                if rename.clicked() {
+                    self.track_rename = Some((row.id, row.name.clone()));
+                    self.track_rename_focus = true;
+                    ui.close();
+                }
+                let lock_icon = if row.locked {
+                    Icon::LockOpen
+                } else {
+                    Icon::Lock
+                };
+                let lock_text = if row.locked {
+                    self.tr(Text::UnlockTrack)
+                } else {
+                    self.tr(Text::LockTrack)
+                };
+                let lock = ui.add(egui::Button::image_and_text(
+                    icons::tinted(lock_icon, 16.0, self.text_color()),
+                    lock_text,
+                ));
+                self.remember_with_icon(
+                    format!("track.{}.lock", row.id.0),
+                    Some(lock_icon.name()),
+                    &lock,
+                );
+                if lock.clicked() {
+                    self.track_command(
+                        "track.set_locked",
+                        serde_json::json!({"track":row.id,"locked":!row.locked}),
+                    );
+                    ui.close();
+                }
                 if !row.main {
                     let response = ui.add_enabled(
                         !row.locked,
@@ -4908,6 +5052,30 @@ impl Editor {
                     }
                 }
             });
+            if header.drag_started() {
+                self.track_drag = Some(row.id);
+            }
+            if header.drag_stopped() {
+                self.track_drag = None;
+                let drop = ui.input(|input| input.pointer.interact_pos());
+                if !row.main
+                    && let Some(drop) = drop
+                    && let Some(target) = rows.iter().find(|candidate| {
+                        !candidate.main
+                            && candidate.audio == row.audio
+                            && drop.y >= layout.body.top() + candidate.top - self.vertical_scroll
+                            && drop.y
+                                <= layout.body.top() + candidate.top - self.vertical_scroll
+                                    + candidate.height
+                    })
+                    && target.id != row.id
+                {
+                    self.track_command(
+                        "track.reorder",
+                        serde_json::json!({"track":row.id,"index":target.display_index}),
+                    );
+                }
+            }
             if row.empty {
                 let r = row_rect.shrink(3.0);
                 let points = [
@@ -5004,6 +5172,50 @@ impl Editor {
                 );
             }
         }
+    }
+    /// Add a secondary track compatible with the active section: audio beside an
+    /// audio track, otherwise the active overlay kind (Video when nothing is
+    /// selected). Above the active track, or the group top when none is active.
+    fn add_track(&mut self) {
+        let locale = self.preferences.locale;
+        let (kind, placement, count) = {
+            let data = self.session.project().data();
+            let scene = data.scene();
+            let active = self.selection.iter().find_map(|id| {
+                scene
+                    .timeline
+                    .iter()
+                    .find(|track| track.items.iter().any(|item| item.id == *id))
+            });
+            let kind = active.map_or(TrackKind::Video, |track| match track.kind {
+                TrackKind::Audio => TrackKind::Audio,
+                TrackKind::Text => TrackKind::Text,
+                _ => TrackKind::Video,
+            });
+            let placement = match active {
+                Some(track) if track.id != scene.timeline.main.id => {
+                    serde_json::json!({"mode":"above","track":track.id})
+                }
+                _ => serde_json::json!({"mode":"auto"}),
+            };
+            let count = scene
+                .timeline
+                .iter()
+                .filter(|track| track.kind == kind)
+                .count()
+                + 1;
+            (kind, placement, count)
+        };
+        let number = catalog::number(locale, count as u64);
+        let name = match kind {
+            TrackKind::Audio => catalog::format(locale, Text::AudioTrackName, &[("n", &number)]),
+            TrackKind::Text => self.tr(Text::TextItem).to_owned(),
+            _ => catalog::format(locale, Text::VideoTrackName, &[("n", &number)]),
+        };
+        self.track_command(
+            "timeline.add_track",
+            serde_json::json!({"name":name,"kind":kind,"placement":placement}),
+        );
     }
     fn track_command(&mut self, command: &str, params: serde_json::Value) {
         let before = self.session.project().clone();

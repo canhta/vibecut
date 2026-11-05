@@ -2107,3 +2107,189 @@ fn first_media_canvas_is_atomic_persisted_and_batch_ordered() {
     assert_eq!(s.project().data().canvas.width, 1920);
     assert_eq!(s.project().data().original_canvas_size, None);
 }
+
+#[test]
+fn track_rename_reorder_lock_and_add_persist_and_undo_exactly() {
+    let mut s = Session::new(Project::empty(ProjectId(31), "Tracks".into()).unwrap(), 20).unwrap();
+    let CreatedId::Track(a) = *s
+        .apply(Command::AddTrack {
+            name: "First".into(),
+            kind: TrackKind::Video,
+            placement: Default::default(),
+        })
+        .unwrap()
+        .created
+        .first()
+        .unwrap()
+    else {
+        panic!("track id")
+    };
+    let outcome = s
+        .execute(
+            "timeline.add_track",
+            json!({"name":"Second","kind":"video"}),
+        )
+        .unwrap();
+    let CreatedId::Track(b) = outcome.created[0] else {
+        panic!("track id")
+    };
+    assert_eq!(s.project().data().scene().timeline.overlays.len(), 2);
+    assert_eq!(s.project().data().scene().timeline.overlays[0].id, b);
+
+    s.execute("track.rename", json!({"track":a,"name":"Rãnh đã đổi"}))
+        .unwrap();
+    s.execute("track.reorder", json!({"track":b,"index":1}))
+        .unwrap();
+    s.execute("track.set_locked", json!({"track":a,"locked":true}))
+        .unwrap();
+    let changed = s.project().clone();
+    let overlays = &changed.data().scene().timeline.overlays;
+    assert_eq!(overlays[0].id, a);
+    assert_eq!(overlays[1].id, b);
+    assert_eq!(overlays[0].name.as_str(), "Rãnh đã đổi");
+    assert!(overlays[0].locked);
+    assert!(!overlays[1].locked);
+
+    let bytes = project::encode(&changed, false).unwrap();
+    let loaded = project::decode(&bytes).unwrap().project;
+    assert_eq!(&loaded, changed.as_ref());
+
+    for _ in 0..3 {
+        s.undo().unwrap();
+    }
+    let original = s.project().data().scene().timeline.overlays.clone();
+    assert_eq!(original[0].id, b);
+    assert_eq!(original[0].name.as_str(), "Second");
+    assert_eq!(original[1].name.as_str(), "First");
+    assert!(original.iter().all(|track| !track.locked));
+    for _ in 0..3 {
+        s.redo().unwrap();
+    }
+    assert_eq!(s.project(), &changed);
+}
+
+#[test]
+fn locked_tracks_refuse_structural_item_edits_but_allow_metadata_and_unlock() {
+    let mut s = Session::new(Project::empty(ProjectId(32), "Lock".into()).unwrap(), 20).unwrap();
+    let outcome = s
+        .execute(
+            "timeline.add_track",
+            json!({"name":"Locked","kind":"video"}),
+        )
+        .unwrap();
+    let CreatedId::Track(track) = outcome.created[0] else {
+        panic!("track id")
+    };
+    let item = new_item(0, 20);
+    let outcome = s
+        .execute(
+            "timeline.insert",
+            json!({"placement":{"mode":"track","track":track},"item":item}),
+        )
+        .unwrap();
+    let CreatedId::Item(one) = outcome.created[0] else {
+        panic!("item id")
+    };
+    s.execute("track.set_locked", json!({"track":track,"locked":true}))
+        .unwrap();
+    let before = s.project().clone();
+
+    let edits = [
+        (
+            "timeline.insert",
+            json!({"placement":{"mode":"track","track":track},"item":new_item(30,10)}),
+        ),
+        ("move_item", json!({"item":one,"track":track,"start":5})),
+        (
+            "move_items",
+            json!({"moves":[{"item":one,"track":track,"start":5}]}),
+        ),
+        ("split_at", json!({"item":one,"at":5})),
+        ("trim_start", json!({"item":one,"at":2})),
+        ("trim_end", json!({"item":one,"at":10})),
+        ("delete", json!({"items":[one]})),
+        ("ripple_delete", json!({"item":one})),
+        (
+            "set_item_param",
+            json!({"item":one,"content":{"kind":"overlay","params":{"color":[1,2,3,255]}}}),
+        ),
+    ];
+    for (id, params) in edits {
+        assert!(
+            matches!(
+                s.execute(id, params.clone()),
+                Err(EditError::Locked(found)) if found == track
+            ),
+            "{id} did not refuse a locked track: {:?}",
+            s.execute(id, params)
+        );
+        assert_eq!(s.project(), &before, "{id} changed a locked project");
+    }
+
+    // Selection, mute and the name remain editable while items are protected.
+    s.set_selection([one].into_iter().collect()).unwrap();
+    assert_eq!(s.selection().len(), 1);
+    s.execute("track.set_muted", json!({"track":track,"muted":true}))
+        .unwrap();
+    s.execute("track.rename", json!({"track":track,"name":"Still locked"}))
+        .unwrap();
+    assert!(s.project().data().scene().timeline.overlays[0].locked);
+    s.execute("track.set_locked", json!({"track":track,"locked":false}))
+        .unwrap();
+    s.execute("move_item", json!({"item":one,"track":track,"start":5}))
+        .unwrap();
+}
+
+#[test]
+fn audio_reorder_is_screen_order_and_main_cannot_move() {
+    let mut s = Session::new(Project::empty(ProjectId(33), "Audio".into()).unwrap(), 20).unwrap();
+    let CreatedId::Track(a) = *s
+        .apply(Command::AddTrack {
+            name: "A".into(),
+            kind: TrackKind::Audio,
+            placement: Default::default(),
+        })
+        .unwrap()
+        .created
+        .first()
+        .unwrap()
+    else {
+        panic!("track id")
+    };
+    let CreatedId::Track(b) = *s
+        .apply(Command::AddTrack {
+            name: "B".into(),
+            kind: TrackKind::Audio,
+            placement: Default::default(),
+        })
+        .unwrap()
+        .created
+        .first()
+        .unwrap()
+    else {
+        panic!("track id")
+    };
+    assert_eq!(s.project().data().scene().timeline.audio[0].id, b);
+    s.execute("track.reorder", json!({"track":a,"index":0}))
+        .unwrap();
+    assert_eq!(s.project().data().scene().timeline.audio[0].id, a);
+    assert_eq!(s.project().data().scene().timeline.audio[1].id, b);
+    let main = s.project().data().scene().timeline.main.id;
+    assert!(matches!(
+        s.execute("track.reorder", json!({"track":main,"index":0})),
+        Err(EditError::Invalid("main track cannot be moved"))
+    ));
+    assert!(matches!(
+        s.execute("track.reorder", json!({"track":a,"index":5})),
+        Err(EditError::Invalid("track index"))
+    ));
+    assert!(
+        !Project::empty(ProjectId(34), "Fresh".into())
+            .unwrap()
+            .data()
+            .scene()
+            .timeline
+            .main
+            .locked
+    );
+}

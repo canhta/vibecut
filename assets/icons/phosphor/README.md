@@ -8,8 +8,8 @@ time; there is no runtime network or font request.
 - Source archive: <https://registry.npmjs.org/@phosphor-icons/core/-/core-2.1.1.tgz>
 - Author: Phosphor Icons
 - Licence: MIT, see [LICENSE](LICENSE)
-- Added: p0-core/39; extended: p1-parity/06
-- Files: 41 unmodified `assets/regular/*.svg` files.
+- Added: p0-core/39; extended: p1-parity/06, p1-parity/54
+- Files: 43 unmodified `assets/regular/*.svg` files.
 
 SHA-256 of each embedded file:
 
@@ -34,6 +34,8 @@ SHA-256 of each embedded file:
 | `funnel.svg` | `26b847aa9f8566707443669502dcf08bf0a2d1d3cfb2dc1136842f4033104abb` |
 | `gear-six.svg` | `2bb05ec80cc37505a3f21c74989dbb297ab8442a668f5ffbd6a8f7c1d5794c7b` |
 | `magnet.svg` | `b62b4c2348845e7b498b274540b9eda464ab1f4f39176e5c5d51f7485f038f5d` |
+| `lock-open.svg` | `8b9f2b734cf20b70327b569ae4e254d5899771b6ea886bb6e9a2facde5582c04` |
+| `lock.svg` | `7f9e0acc09a417a48328cd5b74e95de98989c5af1710ca5da705179da75c72d9` |
 | `magnifying-glass-minus.svg` | `a8478832f12a7a5a231e1ffb1b987fe45f9e1508570b98046e7ff51db7eb1043` |
 | `magnifying-glass-plus.svg` | `c61e00fdb994983b59cab26905a7ed45342d7319115d29f50050e26d1f210cb1` |
 | `music-notes.svg` | `b991d76e24e781b864f9ad8b7aa14e516d4fd851871a979928917e20d492eca0` |
@@ -63,3 +65,4 @@ Regenerate by extracting the pinned npm tarball and copying the listed
 Snapping uses `arrows-in-line-horizontal` (edges converging on a guide);
 main-track magnet uses `magnet`. The distinct silhouettes follow the desktop
 reference’s separate snapping and main-track magnet controls (p0-core/39 review).
+

@@ -222,6 +222,34 @@ fn move_items(data: &mut ProjectData, moves: Vec<Move>) -> Result<()> {
     }
     Ok(())
 }
+/// Move a secondary track to a screen-order index inside its own section.
+/// `index` counts from the top of the overlay or audio section; the mandatory
+/// main track cannot move. Track names, order and lock state are project data.
+fn reorder_track(data: &mut ProjectData, id: TrackId, index: u32) -> Result<()> {
+    let timeline = &mut data.scene_mut().timeline;
+    if timeline.main.id == id {
+        return Err(EditError::Invalid("main track cannot be moved"));
+    }
+    let index = index as usize;
+    if let Some(position) = timeline.overlays.iter().position(|track| track.id == id) {
+        if index >= timeline.overlays.len() {
+            return Err(EditError::Invalid("track index"));
+        }
+        let track = timeline.overlays.remove(position);
+        timeline.overlays.insert(index, track);
+        return Ok(());
+    }
+    if let Some(position) = timeline.audio.iter().position(|track| track.id == id) {
+        if index >= timeline.audio.len() {
+            return Err(EditError::Invalid("track index"));
+        }
+        let track = timeline.audio.remove(position);
+        timeline.audio.insert(index, track);
+        return Ok(());
+    }
+    Err(EditError::NoTrack(id))
+}
+
 /// Resolve a screen-order insertion without crossing the main/audio boundary.
 fn add_track(
     data: &mut ProjectData,
@@ -423,6 +451,17 @@ pub(crate) fn apply(
             t.muted = muted;
             t.hidden = hidden;
             t.locked = locked;
+        }
+        Command::SetTrackLocked { track: id, locked } => {
+            track(&mut data, id)?.locked = locked;
+        }
+        Command::RenameTrack { track: id, name } => {
+            // Renaming is project metadata, not an item structural edit; a
+            // locked track can still be labelled (and unlocked) here.
+            track(&mut data, id)?.name = name;
+        }
+        Command::ReorderTrack { track: id, index } => {
+            reorder_track(&mut data, id, index)?;
         }
         Command::InsertItem {
             placement,

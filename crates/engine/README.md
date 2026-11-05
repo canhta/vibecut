@@ -298,6 +298,15 @@ initial allocation. Project and source constructors retain their own limits.
 - `set_item_param` replaces the complete typed ItemParams. `track.set_flags`
   replaces all three flags and is permitted on locked tracks so they can unlock.
   All item edits, insertion, moving into/out of, and track removal refuse locks.
+  `track.set_locked` toggles the same barrier for one track.
+- `track.rename` changes a track's display name and `track.reorder` moves a
+  secondary track to a zero-based index inside its own section (overlays top to
+  bottom, audio top to bottom); the mandatory main track refuses. Both, together
+  with `track.set_locked`, are project data with exact undo/redo and persistence;
+  they remain permitted on a locked track, while all item structural edits and
+  track removal return `EditError::Locked`. The add command is
+  `timeline.add_track` (name, kind, optional above/below placement); secondary
+  tracks start unlocked.
 - `track.remove` removes its items together. `add_bookmark` accepts a nonnegative
   output position/duration and normalized note. Asset, track and bookmark
   additions are validated with the rest of the candidate.
