@@ -143,7 +143,7 @@ pub fn environment_at(command: &mut Command, prefix: &Path) -> Result<(), String
         "PATH"
     };
     let runtime = if cfg!(windows) {
-        windows_runtime(&prefix)?
+        windows_runtime(prefix)?
     } else {
         prefix.join("lib")
     };
