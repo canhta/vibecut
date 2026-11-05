@@ -808,7 +808,7 @@ fn killed_process_resumes_only_the_durable_prefix_and_publishes_atomically() {
     let root = tempfile::tempdir().unwrap();
     let mut child = ChildGuard(
         std::process::Command::new(std::env::current_exe().unwrap())
-            .args(["--exact", "transfer_child", "--nocapture"])
+            .args(["--exact", "model_transfers::transfer_child", "--nocapture"])
             .env("VIBECUT_TEST_MODEL_ROOT", root.path())
             .spawn()
             .unwrap(),

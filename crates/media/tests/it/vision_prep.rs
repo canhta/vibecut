@@ -5,7 +5,6 @@
     clippy::panic,
     clippy::indexing_slicing
 )]
-mod common;
 
 use media::{
     AssetId, FaceBox, MediaError, MfccProgress, SourceAsset, VisionFrame, VisionPrepLimits,
@@ -54,7 +53,7 @@ fn wav_16k_mono(samples: &[i16]) -> Vec<u8> {
 fn mfcc_fixture() -> PathBuf {
     static PATH: OnceLock<PathBuf> = OnceLock::new();
     PATH.get_or_init(|| {
-        let dir = common::fixtures_dir().join("vision");
+        let dir = crate::common::fixtures_dir().join("vision");
         std::fs::create_dir_all(&dir).unwrap();
         let path = dir.join("mfcc_reference.wav");
         let mut state = 0x1234_5678u32;
@@ -110,7 +109,7 @@ fn face_crop_matches_reference_recipe_with_padding() {
         .unwrap();
     assert_eq!(crop.width(), 112);
     assert_eq!(crop.height(), 112);
-    let golden = include_bytes!("fixtures/vision/face_crop_reference.bin");
+    let golden = include_bytes!("../fixtures/vision/face_crop_reference.bin");
     assert_eq!(golden.len(), 112 * 112);
     let mut max = 0u8;
     let mut total = 0u64;
@@ -305,7 +304,7 @@ fn mfcc_range_is_globally_anchored() {
     for (name, path, tolerance, id, part_start, offset, long_source) in [
         (
             "44.1 kHz PCM",
-            common::generate(
+            crate::common::generate(
                 "vision mfcc 44k",
                 "vision_mfcc_44100.wav",
                 &[
@@ -325,7 +324,7 @@ fn mfcc_range_is_globally_anchored() {
         ),
         (
             "44.1 kHz AAC",
-            common::generate(
+            crate::common::generate(
                 "vision mfcc compressed seek",
                 "vision_mfcc_44100.m4a",
                 &[
@@ -347,7 +346,7 @@ fn mfcc_range_is_globally_anchored() {
         ),
         (
             "44.1 kHz Matroska PCM",
-            common::generate(
+            crate::common::generate(
                 "vision mfcc coarse matroska",
                 "vision_mfcc_44100_coarse.mkv",
                 &[
@@ -369,7 +368,7 @@ fn mfcc_range_is_globally_anchored() {
         ),
         (
             "44.1 kHz Matroska PCM sample-aligned rounded PTS",
-            common::generate(
+            crate::common::generate(
                 "vision mfcc coarse exact tick matroska",
                 "vision_mfcc_44100_coarse_exact_tick.mkv",
                 &[
@@ -391,7 +390,7 @@ fn mfcc_range_is_globally_anchored() {
         ),
         (
             "three-hour PCM with bounded anchor reuse",
-            common::generate(
+            crate::common::generate(
                 "vision mfcc long source",
                 "vision_3h_silence.wav",
                 &[
@@ -589,7 +588,7 @@ fn mfcc_range_is_globally_anchored() {
         }
     }
 
-    let Some(path) = common::generate(
+    let Some(path) = crate::common::generate(
         "vision mfcc unknown duration",
         "vision_unknown_duration.mkv",
         &[
@@ -639,7 +638,7 @@ fn mfcc_cancellation_stops_between_frames() {
 }
 
 fn video_source() -> Option<PathBuf> {
-    common::generate(
+    crate::common::generate(
         "vision cfr",
         "vision_cfr.mp4",
         &[
@@ -661,7 +660,7 @@ fn video_source() -> Option<PathBuf> {
 }
 
 fn long_gop_source() -> Option<PathBuf> {
-    common::generate(
+    crate::common::generate(
         "vision long gop",
         "vision_long_gop.mp4",
         &[
@@ -687,7 +686,7 @@ fn long_gop_source() -> Option<PathBuf> {
 }
 
 fn vfr_source() -> Option<PathBuf> {
-    common::generate(
+    crate::common::generate(
         "vision vfr",
         "vision_vfr.mp4",
         &[

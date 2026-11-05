@@ -191,8 +191,8 @@ impl Translator for Fake {
         })
     }
 }
-const NATIVE: &str = include_str!("fixtures/native.json");
-const TEXT: &str = include_str!("fixtures/text-only.json");
+const NATIVE: &str = include_str!("../fixtures/native.json");
+const TEXT: &str = include_str!("../fixtures/text-only.json");
 fn audio<'a>(samples: &'a [f32], scope: &Scope) -> AudioWindow<'a> {
     AudioWindow {
         samples,

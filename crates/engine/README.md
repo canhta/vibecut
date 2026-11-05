@@ -361,7 +361,7 @@ remain sequential. The existing job-class limits bound simultaneous jobs; each
 job can have at most seven additional row workers during a batch. Native FFmpeg
 conversion receives the same concurrency bound and holds its separately charged
 worker allowance for the converter/encoder lifetime; render/media retain their
-pixel and codec ownership. `tests/render_kernels.rs` covers failure joins, stack
+pixel and codec ownership. `tests/it/render_kernels.rs` covers failure joins, stack
 admission, released charges and parallel/sequential pixel equality.
 
 ## Background jobs and byte policy
@@ -564,7 +564,7 @@ This establishes checkpoint mechanics with synthetic bytes, not speech-boundary
 quality for long recordings. Encoded-export resume returns a typed refusal in render; independently finalized
 segments and manifest/codec/source identity would be required before admitting it. No partial encoded file is treated as a reusable artifact.
 
-Observed verification: `tests/jobs.rs` exercises actual submission with controlled
+Observed verification: `tests/it/jobs.rs` exercises actual submission with controlled
 cancellation, failure, unwind, oversized results, deterministic retry/backoff,
 resource/queue pressure, 200 completions with stable entry/charged-byte bounds,
 semantic key invalidation, restart checkpoints, corruption, byte eviction, pinning,
@@ -731,7 +731,7 @@ Stages expose admission, rendering, mixing, encoding, finalization and publicati
 cancel. Publishing is visible without progress throttling. A late cancel cannot
 turn a committed output into Cancelled; shutdown joins that publication. Before
 the fence, cancellation/unwind drops staging and preserves the existing file.
-`tests/export_jobs.rs` verifies both sides of the fence with real production
+`tests/it/export_jobs.rs` verifies both sides of the fence with real production
 render hooks, worker unwind, persistent-cache reclamation and oversized-frame
 refusal before allocation. This does not establish crash/power-loss durability.
 
@@ -811,11 +811,11 @@ A failed admission or job cancels and drains admitted siblings before returning
 its typed error; already published
 complete files remain. The CLI only selects candidates and prints paths.
 
-`cargo test -p engine --test clip_suggest` covers the ASR-to-snapped workflow,
+`cargo test -p engine --test it clip_suggest::` covers the ASR-to-snapped workflow,
 source and translated caption preparation, portrait geometry, hostile/empty/
 duplicate selections and the explicit provider catalog/credential refusal. Provider
-attempt/consent tests remain in `tests/providers.rs`; media encoding remains in
-`tests/clip_export.rs`.
+attempt/consent tests remain in `tests/it/providers.rs`; media encoding remains in
+`tests/it/clip_export.rs`.
 
 The clip suggestion outcome also retains its source project, source cues,
 transcript, measured speech energy and resolved boundary settings for desktop
@@ -890,7 +890,7 @@ project source path or hard link is refused even with overwrite permission.
 Retry reuses the prepared snapshot, so relinking a source requires preparing a new
 batch.
 
-`cargo test -p engine --test clip_export` covers play-order joining, gap exclusion,
+`cargo test -p engine --test it clip_export::` covers play-order joining, gap exclusion,
 one concatenated mapping against `subtitle_file`, bilingual cue ordering, portrait
 crop placement, Unicode/bounded/unique names, hostile ranges/languages/formats,
 missing sources per short, cancel mid-batch with neighbour completion and retry,
@@ -928,7 +928,7 @@ sample-coordinate model, including text-only results when timing is unavailable.
 The functions do not mutate projects; translation results still go through the
 registered edit command. There is no desktop settings UI in this crate.
 
-`cargo test -p engine --test providers` observes no-fallback defaults, ordered
+`cargo test -p engine --test it providers::` observes no-fallback defaults, ordered
 provider failures, renewed approval before any fallback upload, rejection of
 primary-token reuse, refusal/cost/cancellation and exact provenance. Offline
 injected adapters establish execution policy, not third-party model quality.
@@ -1035,7 +1035,7 @@ workflow never uploads without a prompt approval and never downloads weights.
 `ModelDownloader` wraps one explicitly consented catalog download and
 `default_cache_root` is the single shared model/checkpoint location.
 
-Tests in `tests/subtitles.rs` cover all six vi/en/zh translation directions and
+Tests in `tests/it/subtitles.rs` cover all six vi/en/zh translation directions and
 every bilingual pair, SRT plus burned MP4 output, ASR checkpoint reuse on a second
 run, remote consent refusal with zero calls, credential refusal, catalog filtering
 and a real generated fixture. They establish composition and failure contracts,
@@ -1177,7 +1177,7 @@ fingerprints, partition, tracks, probabilities and continuity hints; stale paylo
 are `CacheCorrupt`, never accepted as a hit. Changed keys recompute. Existing cache
 LRU/accounting and corruption diagnostics retain ownership.
 
-`cargo test -p engine --test shot_analysis` uses labelled synthetic cuts and injected
+`cargo test -p engine --test it shot_analysis::` uses labelled synthetic cuts and injected
 inference to exercise jobs/cache/failures. The ignored `real_vision_analysis_smoke`
 requires `--features vision`, `VIBECUT_VISION_MODELS` (the verified catalog-named
 files), `VIBECUT_VISION_SOURCE` (the permitted bounded source) and optional integer

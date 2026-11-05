@@ -3,7 +3,7 @@ use super::*;
 use engine::jobs::{JobBytes, JobContext, JobKind, JobSpec, ResourceClass};
 use std::sync::atomic::{AtomicBool, Ordering};
 
-#[path = "../tests/common/mod.rs"]
+#[path = "../tests/it/common/mod.rs"]
 mod common;
 
 struct SourceLoss<'a> {

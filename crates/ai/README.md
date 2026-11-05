@@ -180,7 +180,7 @@ typed `Network`, `Server`, `RateLimit` (with optional `Retry-After`), `Auth`, `Q
 identifies the retryable set, and the engine's Transcribe/Translate network policy owns
 the attempt budget and backoff; auth, quota and payload failures are never retried.
 
-`cargo test -p ai --test openai` runs offline against a recorded success response,
+`cargo test -p ai --test it openai::` runs offline against a recorded success response,
 typed error envelopes, a malformed body and an injected fake transport. It covers
 consent refusal before network, payload/provider consent invalidation, multipart and
 WAV shape, stable IDs, disclosure fields, error categories, redaction and bounded
@@ -222,7 +222,7 @@ uses default logging and does not send `enable_logging=false`.
 
 Typed failures cover auth, payment/quota, rate limit, payload, server and network;
 the adapter never retries, and the engine owns the bounded network retry policy.
-`cargo test -p ai --test elevenlabs` runs offline against recorded English,
+`cargo test -p ai --test it elevenlabs::` runs offline against recorded English,
 Vietnamese and Chinese responses plus synthetic errors, consent and disclosure
 tests. The ignored live test uses the same bounded synthetic-speech probe as OpenAI;
 a separate consented run on the `/16` English corpus sample is recorded in the
@@ -361,7 +361,7 @@ classification explicitly; model errors propagate instead of becoming unknown.
 consistency; it exposes face count, boxes, active speaker and scene. Engine owns
 shot boundaries, track identity, cross-shot persistence and job/result caching.
 
-`cargo test -p ai --test vision` covers hostile sizes, finite values, missing
+`cargo test -p ai --test it vision::` covers hostile sizes, finite values, missing
 speaker evidence, overlap, cancellation, invalid bundles and output consistency.
 The ignored `real_model_parity_and_exact_tails` additionally requires
 `VIBECUT_VISION_MODELS` (the catalog-named YuNet/CLIP files plus six ASD files)
@@ -652,7 +652,7 @@ Sources checked 2026-11-04:
 The per-attempt USD upper bound is also 344,064 micro-USD (Sonnet 5.5 list prices
 $2 input / $10 output per 1M tokens) with the same conservative byte ceiling. It is
 deliberately loose, not a billing measurement or quality claim. Offline
-`tests/anthropic.rs` covers six directions with explicit Hans/Hant targets, strict
+`tests/it/anthropic.rs` covers six directions with explicit Hans/Hant targets, strict
 wire/schema shape, context/glossary/style consent invalidation, numbers/glossary
 validation, refusal/incomplete/oversized/error mapping, redaction and endpoint
 admission. The ignored live six-direction test requires `VIBECUT_LIVE_AI=1` and
@@ -660,7 +660,7 @@ admission. The ignored live six-direction test requires `VIBECUT_LIVE_AI=1` and
 is not enabled: windows are short, independent and below the useful cache threshold,
 and no cached user content is needed.
 
-Offline `tests/translation.rs` covers all direction/script request configurations,
+Offline `tests/it/translation.rs` covers all direction/script request configurations,
 strict wire shape, context/glossary/style consent invalidation, exact ID rules,
 fixed terms, digit warnings, redaction, malformed/truncated/oversized/refused output,
 unsupported ASR model construction and cancellation before/after transport.
@@ -833,7 +833,7 @@ shared validation/merging. On a remote failure the original typed error propagat
 Only an affirmative user selection starts a fresh local execution. Cancellation
 returns Cancelled and discards partial output, including cancellation after IO.
 
-`cargo test -p ai --test clips` covers both wire formats, hostile/schema/ID/duration
+`cargo test -p ai --test it clips::` covers both wire formats, hostile/schema/ID/duration
 inputs, exact consent and wire budgets, provider failures, cancellation, duplicate
 and overlap selection, long-window coverage and multilingual heuristic execution.
 The fixed synthetic EN/VI/ZH ranking fixture compares keyword ranking to a
@@ -899,7 +899,7 @@ the crate's safe categories, including UnsupportedLanguage, UnsupportedVoice,
 Payload, Auth, Quota, RateLimit, ContentPolicy, Server, Network, Timeout, Cost,
 OutputRejected and Cancelled.
 
-Observed offline evidence: `cargo test -p ai --test speech` exercises the production
+Observed offline evidence: `cargo test -p ai --test it speech::` exercises the production
 seam with injected success/failure fixtures, exact scope/policy/quote approval,
 NFC/grapheme boundaries, transcript mismatch, malformed/truncated decoded audio,
 cost overruns and cancellation before/after execution. It establishes the
@@ -964,7 +964,7 @@ runaway response cannot allocate past the approved invocation. The default trait
 method checks after buffering for simple implementations; `UreqTransport`
 enforces the ceiling during the read.
 
-`cargo test -p ai --test elevenlabs_speech` replays synthetic 24 kHz PCM (stored
+`cargo test -p ai --test it elevenlabs_speech::` replays synthetic 24 kHz PCM (stored
 as `tests/fixtures/elevenlabs-speech/success.wav`, replayed as its raw `data`
 chunk), recorded JSON envelopes for auth, quota, rate limit and content policy,
 and fixtures for cost, normalization, unsupported language/voice, split
@@ -1024,7 +1024,7 @@ voice-listing call.
 The consent policy names no training, abuse-monitoring logs up to 30 days,
 Chat Completions audio application state up to 1 hour, organization-approved
 Zero Data Retention and AI-generated voice disclosure; it never claims zero
-retention. Offline `tests/openai_speech.rs` replays a recorded success fixture
+retention. Offline `tests/it/openai_speech.rs` replays a recorded success fixture
 and covers exact wire fields, NFC input, client-side language/voice gates,
 transcript mismatch, incomplete/filtered/missing finish status, broken or
 truncated WAV containers (including finite RIFF boundaries), Unicode byte-bound

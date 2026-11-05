@@ -82,7 +82,7 @@ same overlay path. Outline, box, font, size, position, line limit, text and pixe
 geometry participate in the existing bounded raster cache; there is no second
 caption cache or colour conversion.
 
-`tests/captions.rs` pins visually inspected Vietnamese/English and Hans/Hant
+`tests/it/captions.rs` pins visually inspected Vietnamese/English and Hans/Hant
 portrait goldens, NFC/NFD equality, safe-area clipping, gap boundaries, cached
 versus uncached equality and zero preview/export pixel difference. Its encoded
 MP4 test measures decoded pixel error and writes `caption-burn-decoded.png` under
@@ -210,7 +210,7 @@ Crash-orphan, replacement and filesystem guarantees belong to
 
 ## Evidence
 
-`tests/contracts.rs`, `goldens.rs` and `media_pipeline.rs` own deterministic local
+`tests/it/contracts.rs`, `goldens.rs` and `media_pipeline.rs` own deterministic local
 scenes and final encoded/decode comparisons, exact PCM partitions, cuts, crop,
 HDR/display metadata, offline admission, byte pressure and failure boundaries.
 Engine tests submit real jobs and exercise cancellation fences and worker unwind.
@@ -306,12 +306,12 @@ shared distance transform for coverage and stroke. Cubic flattening and contour
 geometry have a 65,536-point admission bound; unsupported/extreme output geometry
 refuses before uncontrolled allocation. No mask-local glyph renderer or cache.
 
-`tests/masks.rs` exercises the public mask kernels and all built-ins through the
+`tests/it/masks.rs` exercises the public mask kernels and all built-ins through the
 production Renderer at two resolutions. The compositor golden includes masks,
 blur, transparent source edges, half item opacity and an encoded/decode oracle;
 engine and CLI own edit/history/persistence and real rectangle export checks.
 
-The ignored production-frame benchmark in [tests/masks.rs](tests/masks.rs)
+The ignored production-frame benchmark in [tests/it/masks.rs](tests/it/masks.rs)
 measures enabled-mask cost against an unmasked baseline. The local task report
 records hardware, shared host load, process RSS and quality metrics; these
 measurements do not establish codec throughput or UI latency.

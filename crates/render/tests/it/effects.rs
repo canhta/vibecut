@@ -1,6 +1,5 @@
 #![allow(clippy::unwrap_used, clippy::panic, clippy::indexing_slicing)]
-mod common;
-use common::Hooks;
+use crate::common::Hooks;
 use render::{effects::*, *};
 use std::sync::{
     Arc,

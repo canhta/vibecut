@@ -211,7 +211,7 @@ Recovery publishes a new never-saved session journal before discarding the old
 candidate; the original project is untouched. Other candidates remain deferred
 while that recovered editor is active, and reappear after Save As/leave. Recovery
 cannot replace an active editor outside its normal save/leave boundary. rfd 0.17.2 is MIT and is the one
-native picker dependency. `tests/lifecycle.rs` exercises lifecycle boundaries and
+native picker dependency. `tests/it/lifecycle.rs` exercises lifecycle boundaries and
 real rename/close/recovery widgets without writing images.
 Native picker interaction and Windows runtime need separate observed evidence.
 
@@ -227,7 +227,7 @@ charged to the engine hooks; native driver/pipeline allocations remain outside
 that accounting. Device limit/validation/readback failure returns Unsupported for
 CPU fallback. Submitted work retains its byte lease until GPU completion, even
 if the bounded readback wait times out. No unsafe mapping or buffer casts are used.
-`tests/effects.rs` compares f32 CPU/GPU output with max absolute tolerance 2e-5.
+`tests/it/effects.rs` compares f32 CPU/GPU output with max absolute tolerance 2e-5.
 
 ## Track controls
 
@@ -253,7 +253,7 @@ Session metadata view; item/keyframe/mask-point selection clears on switching.
 English/Vietnamese copy uses the existing catalog. Creation and rename commands
 are headless here; their frontend controls belong to the scene-name feature.
 
-`tests/scenes_ui.rs` operates the real widgets and engine at 1x/2x density and
+`tests/it/scenes_ui.rs` operates the real widgets and engine at 1x/2x density and
 checks switching, protected main and atomic multi-delete/undo without writing
 images.
 ## Export dialog
@@ -288,7 +288,7 @@ a still-missing source refuses again and preserves the prior destination. Stale
 diagnostics clear when that strict retry is submitted. Errors remain in the modal
 for retry.
 
-`tests/export_ui.rs` asserts real widget and engine state, never pixels.
+`tests/it/export_ui.rs` asserts real widget and engine state, never pixels.
 `cargo xtask ui-audit export-dialog` renders the modal offscreen in dark and
 light at 1x and 2x beside the export reference; it opens no window, produces only
 audit evidence and is excluded from CI. Production source failures

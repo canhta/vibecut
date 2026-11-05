@@ -1,6 +1,5 @@
 #![allow(clippy::unwrap_used, clippy::panic, clippy::indexing_slicing)]
-mod common;
-use common::*;
+use crate::common::*;
 use render::*;
 use std::sync::atomic::Ordering;
 use time::{Tick, TimeRange};

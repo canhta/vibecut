@@ -1,5 +1,3 @@
-mod common;
-
 use std::error::Error;
 use std::fs;
 
@@ -94,17 +92,20 @@ fn simplified_and_traditional_chinese_wrap_and_render() -> Result<(), Box<dyn Er
     };
     let image = render(&simplified, canvas, (30.0, 40.0), &paint)?;
     assert_eq!(
-        common::checksum(&image),
+        crate::common::checksum(&image),
         ZH_GOLDEN,
         "re-bless only after visual inspection"
     );
 
     let target = target_dir();
     fs::create_dir_all(&target)?;
-    fs::write(target.join("text-zh.png"), common::encode(&image))?;
+    fs::write(target.join("text-zh.png"), crate::common::encode(&image))?;
 
     let repeated = render(&simplified, canvas, (30.0, 40.0), &paint)?;
-    assert_eq!(common::encode(&repeated), common::encode(&image));
+    assert_eq!(
+        crate::common::encode(&repeated),
+        crate::common::encode(&image)
+    );
 
     // The profile's line-breaking mode is data: breaking every grapheme stays inside clusters.
     let grapheme_options = LayoutOptions {

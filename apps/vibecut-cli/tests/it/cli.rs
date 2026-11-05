@@ -1,6 +1,5 @@
 #![allow(clippy::unwrap_used, clippy::panic, clippy::indexing_slicing)]
-mod common;
-use common::*;
+use crate::common::*;
 use serde_json::{Value, json};
 use std::ffi::OsStr;
 use std::fs;

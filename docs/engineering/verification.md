@@ -32,6 +32,11 @@ Add a test only for a plausible bug without existing coverage: changed behaviour
 
 Compiler/type guarantees, getters/constructors, plumbing, Debug/Display, third-party behaviour, private helpers, repeated coverage at another layer, unchanged refactors and docs/tickets need no test. Test decisions where owned and only caller-specific decisions in callers. Redundant, duplicate or implementation-coupled tests are review `changes`, like missing coverage.
 
+Integration tests use one binary per package, rooted at `tests/it/main.rs`; behaviour
+files and shared helpers are modules beneath `tests/it/`. `cargo xtask checks`
+rejects other integration-test entry points, including explicit Cargo targets.
+Run a module with `cargo test -p <crate> --test it <module>::`.
+
 ## Test selection
 
 | Change | Evidence |

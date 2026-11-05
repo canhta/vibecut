@@ -224,8 +224,8 @@ Timed words: first 9.852 ms, 19 warm calls 9.674–11.484 ms (median 9.873 ms).
 The combined test process peaked at 11,075,584 bytes RSS. Timed fixtures use
 whitespace-delimited words with uniform source ranges; dictionary callbacks are
 not benchmarked.
-Run `cargo test -p captions --release --test segmentation --no-run`, then invoke
-the emitted executable with `--exact segmentation_benchmark --ignored --nocapture`
+Run `cargo test -p captions --release --test it segmentation:: --no-run`, then invoke
+the emitted executable with `--exact segmentation::segmentation_benchmark --ignored --nocapture`
 under `/usr/bin/time -l` to measure without including compilation. No pixel metric
 applies to this pure text/timing operation; other hardware and font callbacks are
 unverified.
@@ -241,9 +241,9 @@ visible NFC text and had zero visible end-tick drift. First call: 4.944 ms;
 The synthetic token clock is one millisecond per byte; the final formatting space
 is retained in the transcript but excluded from visible cue timing. These figures
 measure pure correspondence/segmentation, not ASR accuracy or speech alignment.
-Build with `cargo test -p captions --release --test timing --no-run`, then run the
+Build with `cargo test -p captions --release --test it timing:: --no-run`, then run the
 emitted binary under `/usr/bin/time -l` with
-`--exact timing_span_benchmark --ignored --nocapture`. Other hardware is unverified.
+`--exact timing::timing_span_benchmark --ignored --nocapture`. Other hardware is unverified.
 
 ## Source cut units
 

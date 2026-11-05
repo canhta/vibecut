@@ -5,7 +5,6 @@
     clippy::panic,
     clippy::indexing_slicing
 )]
-mod common;
 
 use media::{
     AssetId, MediaError, SPEECH_SAMPLE_RATE, SourceAsset, SpeechExtractSettings,
@@ -38,14 +37,14 @@ fn asset(path: &Path, id: u64) -> SourceAsset {
 }
 
 fn out_dir(name: &str) -> PathBuf {
-    let dir = common::fixtures_dir().join("speech").join(name);
+    let dir = crate::common::fixtures_dir().join("speech").join(name);
     let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(&dir).unwrap();
     dir
 }
 
 fn speech_source() -> Option<PathBuf> {
-    common::generate(
+    crate::common::generate(
         "speech chunking",
         "speech_30s.m4a",
         &[
@@ -64,7 +63,7 @@ fn speech_source() -> Option<PathBuf> {
 }
 
 fn silence_source() -> Option<PathBuf> {
-    common::generate(
+    crate::common::generate(
         "speech silence",
         "speech_silence_12s.m4a",
         &[
@@ -83,7 +82,7 @@ fn silence_source() -> Option<PathBuf> {
 }
 
 fn video_source() -> Option<PathBuf> {
-    common::generate(
+    crate::common::generate(
         "speech video only",
         "speech_video_only.mp4",
         &[
@@ -101,7 +100,7 @@ fn video_source() -> Option<PathBuf> {
 }
 
 fn long_source() -> Option<PathBuf> {
-    common::generate(
+    crate::common::generate(
         "speech two hours",
         "speech_2h.m4a",
         &[
@@ -120,10 +119,16 @@ fn long_source() -> Option<PathBuf> {
 }
 
 fn assert_chunk_audio(path: &std::path::Path) {
-    assert_eq!(common::stream_field(path, "a:0", "codec_name"), "aac");
-    assert_eq!(common::stream_field(path, "a:0", "sample_rate"), "16000");
-    assert_eq!(common::stream_field(path, "a:0", "channels"), "1");
-    assert!(common::decodes(path));
+    assert_eq!(
+        crate::common::stream_field(path, "a:0", "codec_name"),
+        "aac"
+    );
+    assert_eq!(
+        crate::common::stream_field(path, "a:0", "sample_rate"),
+        "16000"
+    );
+    assert_eq!(crate::common::stream_field(path, "a:0", "channels"), "1");
+    assert!(crate::common::decodes(path));
 }
 
 fn assert_no_temp_files(dir: &std::path::Path) {
@@ -157,8 +162,8 @@ fn chunks_tile_the_range_with_exact_ticks_and_ffprobe_audio() {
         let size = std::fs::metadata(&chunk.path).unwrap().len();
         assert!(size > 0 && size <= 24_000_000, "chunk size {size}");
         assert_chunk_audio(&chunk.path);
-        common::approx(
-            common::duration(&chunk.path),
+        crate::common::approx(
+            crate::common::duration(&chunk.path),
             chunk.source_range.duration().seconds(),
             0.05,
             "chunk duration",
@@ -359,7 +364,7 @@ fn two_hour_input_streams_with_bounded_memory() {
     let chunks = extract_speech_audio(&asset(&source, 5), range, &dir).unwrap();
     let elapsed = started.elapsed();
     assert!(chunks.len() >= 10, "only {} chunks", chunks.len());
-    common::approx(
+    crate::common::approx(
         chunks.last().unwrap().source_range.end().seconds(),
         7200.0,
         0.1,

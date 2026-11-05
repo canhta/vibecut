@@ -295,7 +295,7 @@ impl Drop for Child {
 fn child(root: &Path, role: &str) -> Child {
     Child(
         std::process::Command::new(std::env::current_exe().unwrap())
-            .args(["--exact", "lease_subprocess", "--nocapture"])
+            .args(["--exact", "writer::lease_subprocess", "--nocapture"])
             .env("VIBECUT_LEASE_FIXTURE", root)
             .env("VIBECUT_LEASE_ROLE", role)
             .spawn()

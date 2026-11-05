@@ -298,7 +298,7 @@ are refused. Project writer destinations reserve the `.meta.json` suffix, includ
 case variants and canonical aliases, so saving a project cannot replace another
 project's metadata. A sidecar write error is returned; it does not roll back a
 previously successful project publication. Callers acknowledge a save only after
-both writes succeed. `tests/metadata.rs` covers bounds, fallback, native paths,
+both writes succeed. `tests/it/metadata.rs` covers bounds, fallback, native paths,
 symlink refusal, external project replacement and round-trip independence.
 
 ## Item effects

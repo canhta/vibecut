@@ -193,6 +193,44 @@ fn forbidden_app_only(package: &str, dependency: &Value) -> Option<String> {
     ))
 }
 
+/// Inspect Cargo's actual targets, including explicit paths and disabled harnesses.
+fn integration_test_layout(package: &Value) -> Result<(), String> {
+    let manifest = Path::new(
+        package["manifest_path"]
+            .as_str()
+            .ok_or("missing manifest path")?,
+    );
+    let expected = manifest
+        .parent()
+        .ok_or("manifest has no parent")?
+        .join("tests/it/main.rs");
+    let targets = package["targets"]
+        .as_array()
+        .ok_or("package has no targets")?;
+    let mut count = 0;
+    for target in targets {
+        if !target["kind"]
+            .as_array()
+            .is_some_and(|kinds| kinds.iter().any(|kind| kind == "test"))
+        {
+            continue;
+        }
+        count += 1;
+        let path = Path::new(
+            target["src_path"]
+                .as_str()
+                .ok_or("test target has no source path")?,
+        );
+        if path != expected || count > 1 {
+            return Err(format!(
+                "{}: move integration tests to tests/it/ as modules of the single tests/it/main.rs binary",
+                path.display()
+            ));
+        }
+    }
+    Ok(())
+}
+
 fn layers(root: &Path) -> Result<(), String> {
     let rules = policy(root)?;
     let bytes = checked(
@@ -218,6 +256,7 @@ fn layers(root: &Path) -> Result<(), String> {
     let mut errors = Vec::new();
     for p in packages.iter().filter(|p| members.contains(&p["id"])) {
         let name = p["name"].as_str().ok_or("package has no name")?;
+        integration_test_layout(p)?;
         let deps = p["dependencies"]
             .as_array()
             .ok_or("package has no dependency array")?;
@@ -680,6 +719,45 @@ mod tests {
                 .unwrap_err()
                 .contains("forbidden workspace edge: vibecut -> time")
         );
+    }
+
+    #[test]
+    fn integration_tests_use_one_entry_point_even_with_explicit_targets() {
+        let ws = Workspace::new();
+        new_crate(&ws.0, "time").unwrap();
+        let dir = ws.0.join("crates/time");
+        fs::create_dir_all(dir.join("tests/it")).unwrap();
+        fs::write(dir.join("tests/it/main.rs"), "mod behaviour;\n").unwrap();
+        fs::write(
+            dir.join("tests/it/behaviour.rs"),
+            "#[test] fn behaviour() {}\n",
+        )
+        .unwrap();
+        layers(&ws.0).unwrap();
+        fs::write(dir.join("tests/new_behaviour.rs"), "").unwrap();
+        let error = layers(&ws.0).unwrap_err();
+        assert!(error.contains("tests/new_behaviour.rs"), "{error}");
+        assert!(
+            error.contains("move integration tests to tests/it/"),
+            "{error}"
+        );
+        fs::remove_file(dir.join("tests/new_behaviour.rs")).unwrap();
+        let manifest = dir.join("Cargo.toml");
+        let original = fs::read_to_string(&manifest).unwrap();
+        fs::write(dir.join("custom.rs"), "fn main() {}\n").unwrap();
+        for extra in [
+            "[[test]]\nname = \"custom\"\npath = \"custom.rs\"\nharness = false\n",
+            "[[test]]\nname = \"duplicate\"\npath = \"tests/it/main.rs\"\n[[test]]\nname = \"second\"\npath = \"tests/it/main.rs\"\n",
+        ] {
+            fs::write(&manifest, format!("{original}\n{extra}")).unwrap();
+            let error = layers(&ws.0).unwrap_err();
+            assert!(
+                error.contains("move integration tests to tests/it/"),
+                "{error}"
+            );
+        }
+        fs::write(&manifest, original).unwrap();
+        layers(&ws.0).unwrap();
     }
 
     #[test]

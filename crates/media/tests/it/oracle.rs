@@ -5,7 +5,6 @@
     clippy::panic,
     clippy::indexing_slicing
 )]
-mod common;
 
 use media::{
     AudioDecoder, Container, DecodePreference, Muxer, PacketReader, StreamKind, VideoDecoder,
@@ -17,7 +16,7 @@ pub fn source() -> Option<std::path::PathBuf> {
     static SOURCE: std::sync::OnceLock<Option<std::path::PathBuf>> = std::sync::OnceLock::new();
     SOURCE
         .get_or_init(|| {
-            common::generate(
+            crate::common::generate(
                 "FFmpeg media",
                 "ffmpeg_source.mp4",
                 &[
@@ -76,7 +75,7 @@ fn probe_decode_seek_and_stream_copy() {
     let mut audio_decoder = AudioDecoder::new(audio).unwrap();
     let mut pts = Vec::new();
     let mut samples = 0usize;
-    let output = common::fixtures_dir().join("ffmpeg_remux.mp4");
+    let output = crate::common::fixtures_dir().join("ffmpeg_remux.mp4");
     let mut mux = Muxer::create(&output, Container::Mp4).unwrap();
     for stream in &probe.streams {
         mux.add_stream(stream).unwrap();
@@ -106,15 +105,24 @@ fn probe_decode_seek_and_stream_copy() {
     assert!(decoder.flush().unwrap().is_empty());
     assert!(audio_decoder.flush().unwrap().is_empty());
     mux.finish().unwrap();
-    assert_eq!(pts.len(), common::decoded_frames(&path, "v:0") as usize);
+    assert_eq!(
+        pts.len(),
+        crate::common::decoded_frames(&path, "v:0") as usize
+    );
     assert!(pts.windows(2).all(|p| p[0] < p[1]));
     assert!(samples >= 48_000);
-    assert!(common::decodes(&output));
-    assert_eq!(common::stream_field(&output, "v:0", "codec_name"), "h264");
-    assert_eq!(common::stream_field(&output, "a:0", "sample_rate"), "48000");
-    common::approx(
-        common::duration(&output),
-        common::duration(&path),
+    assert!(crate::common::decodes(&output));
+    assert_eq!(
+        crate::common::stream_field(&output, "v:0", "codec_name"),
+        "h264"
+    );
+    assert_eq!(
+        crate::common::stream_field(&output, "a:0", "sample_rate"),
+        "48000"
+    );
+    crate::common::approx(
+        crate::common::duration(&output),
+        crate::common::duration(&path),
         0.05,
         "remux duration",
     );
@@ -175,7 +183,7 @@ fn hardware_preference_encodes_and_preserves_color() {
     let hardware = first.is_hardware();
     let settings = VideoEncoderSettings::h264(128, 96, stream.frame_rate.unwrap(), first.color());
     let mut encoder = VideoEncoder::new(settings, first).unwrap();
-    let output = common::fixtures_dir().join("ffmpeg_encoded.mp4");
+    let output = crate::common::fixtures_dir().join("ffmpeg_encoded.mp4");
     let mut mux = Muxer::create(&output, Container::Mp4).unwrap();
     let track = mux
         .add_parameters(&encoder.parameters(), encoder.time_base())
@@ -189,15 +197,21 @@ fn hardware_preference_encodes_and_preserves_color() {
         mux.write_packet(track, &packet).unwrap();
     }
     mux.finish().unwrap();
-    assert_eq!(common::decoded_frames(&output, "v:0"), frames.len() as u64);
-    assert!(common::decodes(&output));
-    assert_eq!(common::stream_field(&output, "v:0", "color_space"), "bt709");
     assert_eq!(
-        common::stream_field(&output, "v:0", "color_primaries"),
+        crate::common::decoded_frames(&output, "v:0"),
+        frames.len() as u64
+    );
+    assert!(crate::common::decodes(&output));
+    assert_eq!(
+        crate::common::stream_field(&output, "v:0", "color_space"),
         "bt709"
     );
     assert_eq!(
-        common::stream_field(&output, "v:0", "color_transfer"),
+        crate::common::stream_field(&output, "v:0", "color_primaries"),
+        "bt709"
+    );
+    assert_eq!(
+        crate::common::stream_field(&output, "v:0", "color_transfer"),
         "bt709"
     );
     println!(
@@ -205,7 +219,7 @@ fn hardware_preference_encodes_and_preserves_color() {
         encoder.name(),
         frames.len()
     );
-    let check = common::command("ffmpeg")
+    let check = crate::common::command("ffmpeg")
         .args(["-v", "error", "-i"])
         .arg(&output)
         .args(["-f", "null", "-"])
@@ -243,7 +257,7 @@ fn audio_encode_and_resample_preserve_clock_and_sample_counts() {
     let mut decoder = AudioDecoder::new(&stream).unwrap();
     let mut encoder =
         media::AudioEncoder::new(media::AudioEncoderSettings::aac(48_000, 2)).unwrap();
-    let output = common::fixtures_dir().join("ffmpeg_audio.m4a");
+    let output = crate::common::fixtures_dir().join("ffmpeg_audio.m4a");
     let mut mux = Muxer::create(&output, Container::Mp4).unwrap();
     let track = mux
         .add_parameters(&encoder.parameters(), encoder.time_base())
@@ -290,14 +304,14 @@ fn audio_encode_and_resample_preserve_clock_and_sample_counts() {
     mux.finish().unwrap();
     assert_eq!(input_samples, 48_000);
     assert_eq!(mono.len(), 16_000);
-    common::approx(
-        common::duration(&output),
+    crate::common::approx(
+        crate::common::duration(&output),
         1.0,
         1.0 / 48_000.0,
         "AAC duration including priming",
     );
-    assert!(common::decodes(&output));
-    let reference = common::command("ffmpeg")
+    assert!(crate::common::decodes(&output));
+    let reference = crate::common::command("ffmpeg")
         .args(["-v", "error", "-i"])
         .arg(&path)
         .args(["-vn", "-ac", "1", "-ar", "16000", "-f", "f32le", "-"])
@@ -349,7 +363,7 @@ fn webm_vp9_scaling_has_bt709_tags_and_complete_frames() {
         VideoEncoderSettings::h264(64, 48, stream.frame_rate.unwrap(), frames[0].color());
     settings.webm = true;
     let mut encoder = VideoEncoder::new(settings, &frames[0]).unwrap();
-    let path = common::fixtures_dir().join("ffmpeg_scaled.webm");
+    let path = crate::common::fixtures_dir().join("ffmpeg_scaled.webm");
     let mut mux = Muxer::create(&path, Container::WebM).unwrap();
     let track = mux
         .add_parameters(&encoder.parameters(), encoder.time_base())
@@ -363,11 +377,20 @@ fn webm_vp9_scaling_has_bt709_tags_and_complete_frames() {
         mux.write_packet(track, &packet).unwrap();
     }
     mux.finish().unwrap();
-    assert_eq!(common::decoded_frames(&path, "v:0"), frames.len() as u64);
-    assert_eq!(common::stream_field(&path, "v:0", "codec_name"), "vp9");
-    assert_eq!(common::stream_field(&path, "v:0", "width"), "64");
-    assert_eq!(common::stream_field(&path, "v:0", "color_space"), "bt709");
-    assert!(common::decodes(&path));
+    assert_eq!(
+        crate::common::decoded_frames(&path, "v:0"),
+        frames.len() as u64
+    );
+    assert_eq!(
+        crate::common::stream_field(&path, "v:0", "codec_name"),
+        "vp9"
+    );
+    assert_eq!(crate::common::stream_field(&path, "v:0", "width"), "64");
+    assert_eq!(
+        crate::common::stream_field(&path, "v:0", "color_space"),
+        "bt709"
+    );
+    assert!(crate::common::decodes(&path));
 }
 
 #[test]
@@ -387,7 +410,7 @@ fn opus_reframes_aac_without_changing_duration() {
     let mut settings = media::AudioEncoderSettings::aac(48_000, 2);
     settings.webm = true;
     let mut encoder = media::AudioEncoder::new(settings).unwrap();
-    let output = common::fixtures_dir().join("ffmpeg_opus.webm");
+    let output = crate::common::fixtures_dir().join("ffmpeg_opus.webm");
     let mut mux = Muxer::create(&output, Container::WebM).unwrap();
     let track = mux
         .add_parameters(&encoder.parameters(), encoder.time_base())
@@ -410,19 +433,22 @@ fn opus_reframes_aac_without_changing_duration() {
         mux.write_packet(track, &packet).unwrap();
     }
     mux.finish().unwrap();
-    assert_eq!(common::stream_field(&output, "a:0", "codec_name"), "opus");
-    common::approx(
-        common::duration(&output),
+    assert_eq!(
+        crate::common::stream_field(&output, "a:0", "codec_name"),
+        "opus"
+    );
+    crate::common::approx(
+        crate::common::duration(&output),
         1.0,
         0.021,
         "Opus duration including padding",
     );
-    assert!(common::decodes(&output));
+    assert!(crate::common::decodes(&output));
 }
 
 #[test]
 fn hdr_is_preserved_by_stream_copy_and_refused_by_sdr_encoder() {
-    let Some(path) = common::generate(
+    let Some(path) = crate::common::generate(
         "HDR test",
         "ffmpeg_hdr_pq10.mp4",
         &[
@@ -452,7 +478,7 @@ fn hdr_is_preserved_by_stream_copy_and_refused_by_sdr_encoder() {
     let mut reader = PacketReader::open(&path).unwrap();
     let stream = reader.probe().streams[0].clone();
     let mut decoder = VideoDecoder::new(&stream, DecodePreference::Software).unwrap();
-    let output = common::fixtures_dir().join("ffmpeg_hdr_copy.mp4");
+    let output = crate::common::fixtures_dir().join("ffmpeg_hdr_copy.mp4");
     let mut mux = Muxer::create(&output, Container::Mp4).unwrap();
     let track = mux.add_stream(&stream).unwrap();
     let mut frames = Vec::new();
@@ -472,14 +498,14 @@ fn hdr_is_preserved_by_stream_copy_and_refused_by_sdr_encoder() {
     ));
     mux.finish().unwrap();
     assert_eq!(
-        common::stream_field(&output, "v:0", "color_transfer"),
+        crate::common::stream_field(&output, "v:0", "color_transfer"),
         "smpte2084"
     );
     assert_eq!(
-        common::stream_field(&output, "v:0", "color_primaries"),
+        crate::common::stream_field(&output, "v:0", "color_primaries"),
         "bt2020"
     );
-    assert_eq!(common::decoded_frames(&output, "v:0"), 3);
+    assert_eq!(crate::common::decoded_frames(&output, "v:0"), 3);
 }
 
 #[test]
@@ -487,8 +513,8 @@ fn speech_pcm_constructor_and_short_final_aac_frame() {
     assert!(media::AudioFrame::from_planar_f32(Tick::ZERO, 16_000, &[vec![f32::NAN]]).is_err());
     let mut encoder =
         media::AudioEncoder::new(media::AudioEncoderSettings::aac(16_000, 1)).unwrap();
-    let path = common::fixtures_dir().join("speech-contract.m4a");
-    std::fs::create_dir_all(common::fixtures_dir()).unwrap();
+    let path = crate::common::fixtures_dir().join("speech-contract.m4a");
+    std::fs::create_dir_all(crate::common::fixtures_dir()).unwrap();
     let mut mux = Muxer::create(&path, Container::Mp4).unwrap();
     let track = mux
         .add_parameters(&encoder.parameters(), encoder.time_base())
@@ -510,20 +536,20 @@ fn speech_pcm_constructor_and_short_final_aac_frame() {
     }
     mux.finish().unwrap();
     assert!(media::PacketReader::open(&path).is_ok());
-    if common::require_oracles("speech contract") {
-        common::approx(
-            common::duration(&path),
+    if crate::common::require_oracles("speech contract") {
+        crate::common::approx(
+            crate::common::duration(&path),
             2333.0 / 16_000.0,
             1.0 / 16_000.0,
             "short final AAC frame",
         );
-        assert!(common::decodes(&path));
+        assert!(crate::common::decodes(&path));
     }
 }
 
 #[test]
 fn cross_container_codec_tags() {
-    let Some(path) = common::generate(
+    let Some(path) = crate::common::generate(
         "AVI stream copy",
         "codec-tag.avi",
         &[
@@ -541,15 +567,15 @@ fn cross_container_codec_tags() {
         return;
     };
     let mut reader = PacketReader::open(path).unwrap();
-    let output = common::fixtures_dir().join("codec-tag.mp4");
+    let output = crate::common::fixtures_dir().join("codec-tag.mp4");
     let mut mux = Muxer::create(&output, Container::Mp4).unwrap();
     mux.add_stream(&reader.probe().streams[0]).unwrap();
     while let Some(packet) = reader.next_packet().unwrap() {
         mux.write_packet(0, &packet).unwrap();
     }
     mux.finish().unwrap();
-    assert_eq!(common::decoded_frames(&output, "v:0"), 5);
-    assert!(common::decodes(&output));
+    assert_eq!(crate::common::decoded_frames(&output, "v:0"), 5);
+    assert!(crate::common::decodes(&output));
 }
 
 #[test]
@@ -592,7 +618,7 @@ fn source_asset_import_retains_native_path_and_persistable_probe() {
     let Some(original) = source() else {
         return;
     };
-    let path = common::fixtures_dir().join("nguồn phim dự án.mp4");
+    let path = crate::common::fixtures_dir().join("nguồn phim dự án.mp4");
     std::fs::copy(original, &path).unwrap();
     let asset = media::SourceAsset::import(media::AssetId(42), path.clone()).unwrap();
     assert_eq!(asset.path(), std::fs::canonicalize(&path).unwrap());
@@ -703,7 +729,7 @@ fn bounded_conversion_threads_preserve_all_decoded_rgba_rows() {
 
 #[test]
 fn aligned_horizontal_conversion_matches_full_frame_at_fractional_crop_neighbors() {
-    let Some(path) = common::generate(
+    let Some(path) = crate::common::generate(
         "conversion windows",
         "conversion-window.mp4",
         &[

@@ -341,7 +341,7 @@ impl VideoReader {
 }
 
 #[cfg(test)]
-#[path = "../tests/common/mod.rs"]
+#[path = "../tests/it/common/mod.rs"]
 pub(crate) mod oracle_common;
 
 #[cfg(test)]

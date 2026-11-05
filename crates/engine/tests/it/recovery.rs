@@ -335,7 +335,7 @@ fn journal_survives_forced_process_termination_and_another_live_instance() {
     let dir = tempfile::tempdir().unwrap();
     let mut child = ChildGuard(
         Process::new(std::env::current_exe().unwrap())
-            .args(["--exact", "recovery_child", "--nocapture"])
+            .args(["--exact", "recovery::recovery_child", "--nocapture"])
             .env("VIBECUT_TEST_RECOVERY_ROOT", dir.path())
             .spawn()
             .unwrap(),
