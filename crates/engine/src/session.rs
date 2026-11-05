@@ -495,7 +495,15 @@ impl Session {
         } else {
             edit::TrimSources::new()
         };
-        let next = edit::apply(candidate, command, &mut created, &mut next_id, &mut sources)?;
+        let mut copied_text_bytes = 0;
+        let next = edit::apply(
+            candidate,
+            command,
+            &mut created,
+            &mut next_id,
+            &mut sources,
+            &mut copied_text_bytes,
+        )?;
         if wire {
             // The batch is still one local candidate: refuse before publishing,
             // allocating persistent IDs, changing history or advancing revision.

@@ -315,6 +315,18 @@ const SCENES: &[Scene] = &[
         build: inspector_mixed,
     },
     Scene {
+        name: "text-item",
+        reference_dark: Some("capcut/illustrations/capcut-desktop-ui.png"),
+        reference_light: Some("capcut/illustrations/capcut-desktop-ui.png"),
+        build: text_item,
+    },
+    Scene {
+        name: "text-item-vi",
+        reference_dark: Some("capcut/illustrations/capcut-desktop-ui.png"),
+        reference_light: Some("capcut/illustrations/capcut-desktop-ui.png"),
+        build: text_item_vi,
+    },
+    Scene {
         name: "inspector-mixed-selection-vi",
         reference_dark: Some("capcut/illustrations/capcut-desktop-ui.png"),
         reference_light: Some("capcut/illustrations/capcut-desktop-ui.png"),
@@ -842,6 +854,7 @@ fn media_editor(theme: Theme, locale: Locale) -> Result<(Editor, ItemId), Failur
             content: "Chapter one".into(),
             font_size: 48.0,
             color: Color([255, 255, 255, 255]),
+            ..Default::default()
         }),
     )?;
     let mut playback = Playback::new(
@@ -976,6 +989,7 @@ fn inspector_mixed_locale(theme: Theme, scale: f32, locale: Locale) -> Result<Ap
             content: "Khác".into(),
             font_size: 24.0,
             color: Color([20, 30, 40, 255]),
+            ..Default::default()
         }),
     )?;
     let main = editor.session.project().data().scene().timeline.main.id;
@@ -1071,6 +1085,42 @@ fn import_summary(asset: SourceAsset) -> media::ImportedSource {
         asset,
         capabilities: media::ProbeCapabilities::decodable(streams),
     }
+}
+
+fn text_item_locale(theme: Theme, scale: f32, locale: Locale) -> Result<AppHarness, Failure> {
+    let (mut editor, _) = media_editor(theme, locale)?;
+    let item = editor
+        .session
+        .project()
+        .data()
+        .scene()
+        .timeline
+        .iter()
+        .flat_map(|track| &track.items)
+        .find(|item| matches!(item.content, ItemParams::Text(_)))
+        .ok_or("text item")?
+        .id;
+    editor.selection = [item].into_iter().collect();
+    for (field, value) in [
+        ("text_content", "VibeCut · Tiếng Việt"),
+        ("text_font", "Noto Serif"),
+        ("text_background", "#000000A0"),
+        ("text_position_y", "70"),
+    ] {
+        editor.set_shared_field(field, value)?;
+    }
+    let mut app = harness_sized(App::Editor(Box::new(editor)), scale, [1440.0, 1440.0]);
+    wait_for_presented(&mut app)?;
+    app.run_steps(2);
+    Ok(app)
+}
+
+fn text_item(theme: Theme, scale: f32) -> Result<AppHarness, Failure> {
+    text_item_locale(theme, scale, Locale::En)
+}
+
+fn text_item_vi(theme: Theme, scale: f32) -> Result<AppHarness, Failure> {
+    text_item_locale(theme, scale, Locale::Vi)
 }
 
 /// Returns a deterministic library asset for every path except `bad`, which
@@ -1322,6 +1372,7 @@ fn placement(theme: Theme, scale: f32) -> Result<AppHarness, Failure> {
             content: "Chapter one".into(),
             font_size: 48.0,
             color: Color([255, 255, 255, 255]),
+            ..Default::default()
         }),
     )?;
     let mut playback = Playback::new(

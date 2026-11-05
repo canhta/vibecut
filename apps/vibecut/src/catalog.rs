@@ -446,7 +446,6 @@ catalog! {
     AudioTrackName { key: "audio_track_name", en: "Audio {n}", vi: "Âm thanh {n}" },
     Caption { key: "caption", en: "Captions", vi: "Phụ đề" },
     Overlay { key: "overlay", en: "Overlay", vi: "Lớp phủ" },
-    TextTrackName { key: "text_track_name", en: "Text {n}", vi: "Văn bản {n}" },
     MuteTrack { key: "mute_track", en: "Mute track", vi: "Tắt tiếng rãnh" },
     HideTrack { key: "hide_track", en: "Hide track", vi: "Ẩn rãnh" },
     DeleteTrack { key: "delete_track", en: "Delete track", vi: "Xóa rãnh" },

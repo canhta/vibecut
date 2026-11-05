@@ -1506,6 +1506,7 @@ fn text_style_patches_update_one_field_and_validate() {
             padding: 6.0,
             radius: 3.0,
         })),
+        ItemParamPatch::TextBackgroundColor(Color([7, 6, 5, 128])),
         ItemParamPatch::TextPositionX(25.0),
         ItemParamPatch::TextPositionY(30.0),
     ] {
@@ -1525,8 +1526,9 @@ fn text_style_patches_update_one_field_and_validate() {
     assert_eq!(p.font.as_str(), "Noto Serif");
     assert_eq!(p.font_size, 24.0);
     assert_eq!(p.color, Color([1, 2, 3, 255]));
-    assert_eq!(p.background.as_ref().unwrap().color, Color([9, 8, 7, 128]));
+    assert_eq!(p.background.as_ref().unwrap().color, Color([7, 6, 5, 128]));
     assert_eq!(p.background.as_ref().unwrap().padding, 6.0);
+    assert_eq!(p.background.as_ref().unwrap().radius, 3.0);
     assert_eq!(p.position, project::TextPosition { x: 25.0, y: 30.0 });
 
     let after = s.project().clone();
@@ -1548,6 +1550,61 @@ fn text_style_patches_update_one_field_and_validate() {
             .is_err()
         );
         assert_eq!(s.project(), &after);
+    }
+}
+
+#[test]
+fn text_patch_expansion_is_bounded_and_atomic() {
+    for selections in [vec![4], vec![5], vec![3, 3]] {
+        let mut data = project().into_data();
+        let track = data.scene_mut().timeline.overlays.first_mut().unwrap();
+        track.kind = TrackKind::Text;
+        let template = track.items.first().unwrap().clone();
+        track.items = (0..6)
+            .map(|index| Item {
+                id: ItemId(100 + index),
+                start: Tick(index as i64 * 1000),
+                content: ItemParams::Text(project::TextParams::new("Keep")),
+                ..template.clone()
+            })
+            .collect();
+        let mut offset = 0;
+        let mut commands: Vec<_> = selections
+            .iter()
+            .map(|count| {
+                let items = track
+                    .items
+                    .iter()
+                    .skip(offset)
+                    .take(*count)
+                    .map(|item| item.id)
+                    .collect();
+                offset += count;
+                Command::SetItemParamMany {
+                    items,
+                    patch: engine::ItemParamPatch::TextContent("x".repeat(1 << 20).into()),
+                }
+            })
+            .collect();
+        let command = if commands.len() == 1 {
+            commands.pop().unwrap()
+        } else {
+            Command::Batch {
+                commands: vec![Command::Batch { commands }],
+            }
+        };
+        let mut session = Session::new(Project::new(data).unwrap(), 20).unwrap();
+        let before = session.project().clone();
+        let result = session.apply(command);
+        if selections == [4] {
+            assert!(result.unwrap().changed);
+            assert_eq!(session.history_len(), (1, 0));
+            session.undo().unwrap();
+        } else {
+            assert!(matches!(result, Err(EditError::Limit)));
+            assert_eq!(session.history_len(), (0, 0));
+        }
+        assert_eq!(session.project(), &before);
     }
 }
 

@@ -10,7 +10,19 @@ use time::{SourceRange, Tick};
 
 pub(crate) type TrimSources = BTreeMap<ItemId, Arc<captions::CueTrack>>;
 
-fn apply_patch(target: &mut Item, patch: &crate::ItemParamPatch) -> Result<()> {
+fn apply_patch(
+    target: &mut Item,
+    patch: &crate::ItemParamPatch,
+    copied_text_bytes: &mut usize,
+) -> Result<()> {
+    if let crate::ItemParamPatch::TextContent(value) | crate::ItemParamPatch::TextFont(value) =
+        patch
+    {
+        *copied_text_bytes = copied_text_bytes
+            .checked_add(value.as_str().len())
+            .filter(|bytes| *bytes <= crate::control::MAX_TEXT_BYTES)
+            .ok_or(EditError::Limit)?;
+    }
     match patch {
         crate::ItemParamPatch::BlendMode(mode) => target.blend_mode = *mode,
         crate::ItemParamPatch::Opacity(value) => {
@@ -42,6 +54,11 @@ fn apply_patch(target: &mut Item, patch: &crate::ItemParamPatch) -> Result<()> {
         crate::ItemParamPatch::TextBackground(v) => {
             if let ItemParams::Text(p) = &mut target.content {
                 p.background = v.clone();
+            }
+        }
+        crate::ItemParamPatch::TextBackgroundColor(value) => {
+            if let ItemParams::Text(p) = &mut target.content {
+                p.background.get_or_insert_with(Default::default).color = *value;
             }
         }
         crate::ItemParamPatch::TextPositionX(v) => {
@@ -396,6 +413,7 @@ pub(crate) fn apply(
     created: &mut Vec<CreatedId>,
     next: &mut Option<u64>,
     sources: &mut TrimSources,
+    copied_text_bytes: &mut usize,
 ) -> Result<project::Project> {
     match command {
         Command::CreateScene { name } => {
@@ -673,7 +691,7 @@ pub(crate) fn apply(
             if !patch.compatible(&target.content) {
                 return Err(EditError::Invalid("incompatible item parameter"));
             }
-            apply_patch(target, &patch)?;
+            apply_patch(target, &patch, copied_text_bytes)?;
         }
         Command::SetItemParamMany { items, patch } => {
             patch.validate()?;
@@ -693,7 +711,7 @@ pub(crate) fn apply(
                     if track.locked {
                         return Err(EditError::Locked(track.id));
                     }
-                    apply_patch(target, &patch)?;
+                    apply_patch(target, &patch, copied_text_bytes)?;
                 }
             }
             if let Some(id) = remaining.into_iter().next() {
@@ -960,7 +978,7 @@ pub(crate) fn apply(
             for command in commands {
                 // Consume each candidate before applying the next child; validation must
                 // not clone an unvalidated allocation or publish a partial batch.
-                data = apply(data, command, created, next, sources)?.into_data();
+                data = apply(data, command, created, next, sources, copied_text_bytes)?.into_data();
             }
         }
         Command::Inspect {}

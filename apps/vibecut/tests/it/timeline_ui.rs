@@ -14,7 +14,7 @@ use media::{
     TimeBase, VideoInfo,
 };
 use project::{Color, ItemId, ItemParams, Project, ProjectId, TrackId, TrackKind};
-use std::{path::PathBuf, sync::Arc};
+use std::sync::Arc;
 use time::{FrameRate, SourceRange, TICKS_PER_SECOND, Tick};
 use vibecut::{
     Editor,
@@ -260,10 +260,6 @@ fn blend_dropdown_and_opacity_field_dispatch_real_edits() {
             .unwrap(),
         Some(project::ParamValue::Scalar(0.5))
     );
-    let image = harness.render().unwrap();
-    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../target/p1-44-blend.png");
-    image.save(&path).unwrap();
-    eprintln!("blend screenshot: {}", path.display());
 }
 
 fn widget(harness: &Harness<'_, Editor>, id: &str) -> egui::Rect {
@@ -1119,6 +1115,30 @@ fn two_text_fixture() -> (Fixture, ItemId, ItemId) {
 }
 
 #[test]
+fn mixed_text_background_is_reported_as_indeterminate() {
+    let (mut fixture, first, second) = two_text_fixture();
+    fixture
+        .editor
+        .session
+        .apply(Command::SetItemParamMany {
+            items: vec![second],
+            patch: engine::ItemParamPatch::TextBackground(Some(Default::default())),
+        })
+        .unwrap();
+    fixture.editor.selection = [first, second].into_iter().collect();
+    let mut harness = Harness::builder()
+        .with_size(egui::vec2(1440.0, 1600.0))
+        .build_ui_state(|ui, editor: &mut Editor| editor.ui(ui), fixture.editor);
+    harness.run_steps(3);
+    let checkbox = harness
+        .get(By::new().predicate(|node| node.author_id() == Some("inspector.text_background")));
+    assert_eq!(
+        egui_kittest::kittest::NodeT::accesskit_node(&checkbox).toggled(),
+        Some(egui::accesskit::Toggled::Mixed)
+    );
+}
+
+#[test]
 fn mixed_text_inspector_applies_one_field_and_restores_selected_items() {
     let (fixture, first, second) = two_text_fixture();
     let mut harness = harness(fixture.editor);
@@ -1225,11 +1245,19 @@ fn text_insert_button_fits_the_media_panel_in_both_locales() {
                 harness.state().panels["media"]
             );
             let before = count(harness.state());
+            let project = harness.state().session.project().clone();
+            let history = harness.state().session.history_len().0;
             harness
                 .get(By::new().predicate(|node| node.author_id() == Some("text.insert")))
                 .click();
             harness.run_steps(2);
             assert_eq!(count(harness.state()), before + 1);
+            assert_eq!(harness.state().session.history_len().0, history + 1);
+            harness
+                .get(By::new().predicate(|node| node.author_id() == Some("edit.undo")))
+                .click();
+            harness.run_steps(2);
+            assert_eq!(harness.state().session.project(), &project);
         }
     }
 }

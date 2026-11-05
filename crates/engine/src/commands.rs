@@ -66,6 +66,7 @@ pub enum ItemParamPatch {
     TextSize(f32),
     TextColor(Color),
     TextBackground(Option<project::TextBackground>),
+    TextBackgroundColor(Color),
     TextPositionX(f32),
     TextPositionY(f32),
 }
@@ -83,6 +84,7 @@ impl ItemParamPatch {
                         | Self::TextSize(_)
                         | Self::TextColor(_)
                         | Self::TextBackground(_)
+                        | Self::TextBackgroundColor(_)
                         | Self::TextPositionX(_)
                         | Self::TextPositionY(_),
                     ItemParams::Text(_)
@@ -98,7 +100,7 @@ impl ItemParamPatch {
             Self::TextContent(v) => v.as_str().len() <= 1 << 20,
             Self::TextFont(v) => !v.as_str().trim().is_empty() && v.as_str().len() <= 256,
             Self::TextSize(v) => v.is_finite() && (1.0..=4096.0).contains(v),
-            Self::TextColor(_) => true,
+            Self::TextColor(_) | Self::TextBackgroundColor(_) => true,
             Self::TextBackground(background) => background.as_ref().is_none_or(|background| {
                 background.padding.is_finite()
                     && background.radius.is_finite()

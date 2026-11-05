@@ -1143,56 +1143,11 @@ impl Editor {
                 return;
             }
         };
-        let locale = self.preferences.locale;
         let content = self.tr(Text::TextItem).to_owned();
         let result = self.session.transaction(|session| {
             let duration = Tick(5 * TICKS_PER_SECOND);
-            let end = at
-                .checked_add(duration)
-                .ok_or(engine::EditError::Invalid("text end"))?;
-            let existing = session
-                .project()
-                .data()
-                .scene()
-                .timeline
-                .iter()
-                .find(|track| {
-                    track.kind == TrackKind::Text
-                        && !track.locked
-                        && track.items.iter().all(|item| {
-                            item.end()
-                                .is_ok_and(|item_end| item_end <= at || item.start >= end)
-                        })
-                })
-                .map(|track| track.id);
-            let track = match existing {
-                Some(track) => track,
-                None => {
-                    let count = session
-                        .project()
-                        .data()
-                        .scene()
-                        .timeline
-                        .iter()
-                        .filter(|track| track.kind == TrackKind::Text)
-                        .count();
-                    let number = catalog::number(locale, (count + 1) as u64);
-                    let name = catalog::format(locale, Text::TextTrackName, &[("n", &number)]);
-                    let outcome = session.apply(Command::AddTrack {
-                        name: name.into(),
-                        kind: TrackKind::Text,
-                        placement: engine::TrackPlacement::Auto,
-                    })?;
-                    match outcome.created.first().copied() {
-                        Some(CreatedId::Track(track)) => track,
-                        _ => {
-                            return Err(engine::EditError::Unsupported("text track allocation"));
-                        }
-                    }
-                }
-            };
             let outcome = session.apply(Command::InsertItem {
-                placement: engine::Placement::Track { track },
+                placement: engine::Placement::Auto,
                 item: NewItem {
                     animations: Default::default(),
                     source_asset: None,
@@ -4862,19 +4817,30 @@ impl Editor {
                     .clone()
                     .unwrap_or_else(|| self.tr(Text::EmptyValue).to_owned());
                 let mut chosen = None;
-                let response = egui::ComboBox::from_label(self.tr(Text::TextFont))
-                    .selected_text(current)
-                    .show_ui(ui, |ui| {
-                        for (family, _) in text::families() {
-                            let selected = field.value.as_deref() == Some(family.as_str());
-                            let response = ui.selectable_label(selected, family.as_str());
-                            self.remember(format!("inspector.text_font.{family}"), &response);
-                            if response.clicked() {
-                                chosen = Some(family);
-                            }
-                        }
+                let caption = ui.label(self.tr(Text::TextFont));
+                let response = ui
+                    .scope(|ui| {
+                        ui.spacing_mut().interact_size.y = 26.0;
+                        egui::ComboBox::from_id_salt(Id::unique("inspector.text_font"))
+                            .selected_text(current)
+                            .width(ui.available_width())
+                            .show_ui(ui, |ui| {
+                                for (family, _) in text::families() {
+                                    let selected = field.value.as_deref() == Some(family.as_str());
+                                    let response = ui.selectable_label(selected, family.as_str());
+                                    self.remember(
+                                        format!("inspector.text_font.{family}"),
+                                        &response,
+                                    );
+                                    if response.clicked() {
+                                        chosen = Some(family);
+                                    }
+                                }
+                            })
+                            .response
+                            .labelled_by(caption.id)
                     })
-                    .response;
+                    .inner;
                 self.remember("inspector.text_font", &response);
                 if let Some(font) = chosen
                     && let Err(error) = self.set_shared_field("text_font", &font)
@@ -4887,7 +4853,10 @@ impl Editor {
             if field.id == "text_background" {
                 let enabled = field.value.as_deref().is_some_and(|value| value != "none");
                 let mut checked = enabled;
-                let response = ui.checkbox(&mut checked, self.tr(Text::TextBackground));
+                let response = ui.add(
+                    egui::Checkbox::new(&mut checked, self.tr(Text::TextBackground))
+                        .indeterminate(field.value.is_none()),
+                );
                 self.remember("inspector.text_background", &response);
                 if response.changed() {
                     let color = field
@@ -4910,7 +4879,7 @@ impl Editor {
                         .or_else(|| field.value.clone())
                         .unwrap_or_default();
                     let response = ui.add_sized(
-                        [ui.available_width(), 28.0],
+                        [ui.available_width(), 26.0],
                         egui::TextEdit::singleline(&mut value)
                             .char_limit(64)
                             .background_color(self.control_fill())
@@ -4969,7 +4938,7 @@ impl Editor {
                 )
             } else {
                 ui.add_sized(
-                    [ui.available_width(), if field.id == "opacity" { 26.0 } else { 28.0 }],
+                    [ui.available_width(), 26.0],
                     egui::TextEdit::singleline(&mut value)
                         .char_limit(64)
                         .background_color(self.control_fill())
@@ -5075,12 +5044,7 @@ impl Editor {
                     })
                 })
             }
-            "text_background_color" => {
-                ItemParamPatch::TextBackground(Some(project::TextBackground {
-                    color: parse_color(value)?,
-                    ..Default::default()
-                }))
-            }
+            "text_background_color" => ItemParamPatch::TextBackgroundColor(parse_color(value)?),
             "text_position_x" => ItemParamPatch::TextPositionX(
                 parse_percent(value).map_err(|_| Error::Invalid("horizontal position"))?,
             ),

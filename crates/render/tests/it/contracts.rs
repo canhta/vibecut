@@ -201,6 +201,7 @@ fn text_item_font_background_and_position_reach_the_compositor() {
         hidden: false,
         locked: false,
         items: vec![project::Item {
+            blend_mode: Default::default(),
             masks: Vec::new(),
             effects: Vec::new(),
             animations: Default::default(),

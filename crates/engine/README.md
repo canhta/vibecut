@@ -110,8 +110,13 @@ project JSON and optional persisted metadata.
 100,000 IDs) and one typed `patch`: `audio_gain` in −120..=24 dB, `text_content`,
 `text_font` (1..=256 bytes), `text_size` in 1..=4096 px,
 `text_color` as four RGBA bytes, `text_background` as an optional padded box,
+`text_background_color` as RGBA bytes, preserving padding/radius or creating a
+baseline box if absent, and
 `text_position_x`/`text_position_y` as canvas percentages in 0..=100. All numbers
 must be finite.
+Text content/font patches copy at most the control owner's `MAX_TEXT_BYTES` budget
+across compatible targets per command tree, including nested batches; excess
+expansion refuses atomically.
 The command preserves unrelated fields and skips incompatible item kinds;
 missing IDs, duplicates, invalid values and locked compatible items refuse the
 entire edit. An all-incompatible selection is a no-op. One successful changed
