@@ -85,7 +85,9 @@ Each entry has exactly `project` and `output`, plus optional `aspect` (`project`
 `false`). Relative paths resolve from the job file's directory. Paths must be
 UTF-8, non-empty, at most 4096 bytes and name a file; `output` parents must already
 exist. All outputs must be distinct and must not alias a project, project source or
-the job file. Existing outputs refuse unless that entry sets `overwrite` and the
+the job file. Hard-linked outputs are refused; on Windows case-only destination
+collisions are conservatively refused even in case-sensitive directories.
+Existing outputs refuse unless that entry sets `overwrite` and the
 command has `--allow-overwrite`. An entry setting `allow_degraded` requires
 `--allow-degraded`; neither grant can be inferred from the file alone.
 

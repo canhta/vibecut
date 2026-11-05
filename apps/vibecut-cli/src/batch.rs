@@ -166,7 +166,7 @@ fn load(
         .filter(|parent| !parent.as_os_str().is_empty())
         .unwrap_or(Path::new("."));
     let base = fs::canonicalize(base)?;
-    let job_file_target = resolve_target(path)?;
+    let job_file_target = destination_key(path)?;
     let mut jobs = Vec::new();
     jobs.try_reserve_exact(file.jobs.len())
         .map_err(|_| CliError::Engine(EditError::Limit))?;
@@ -199,8 +199,12 @@ fn load(
                 "batch output exists and the job does not allow overwrite",
             ));
         }
-        let target = resolve_target(&output)?;
-        if !destinations.insert(target) {
+        let target = destination_key(&output)?;
+        if !destinations.insert(target)
+            || jobs
+                .iter()
+                .any(|job: &PreparedJob| same_file(&output, &job.output))
+        {
             return Err(CliError::Usage("batch outputs must be distinct".into()));
         }
         let project_target = resolve_target(&project)?;
@@ -214,10 +218,12 @@ fn load(
         });
     }
 
-    let project_targets: BTreeSet<PathBuf> =
-        jobs.iter().map(|job| job.project_target.clone()).collect();
+    let project_targets: BTreeSet<PathBuf> = jobs
+        .iter()
+        .map(|job| destination_key(&job.project))
+        .collect::<Result<_, _>>()?;
     for job in &jobs {
-        let target = resolve_target(&job.output)?;
+        let target = destination_key(&job.output)?;
         if target == job_file_target || project_targets.contains(&target) {
             return Err(CliError::Usage(
                 "batch output aliases a project or the job file".into(),
@@ -240,7 +246,7 @@ fn load(
     protected.extend(jobs.iter().map(|job| job.project.clone()));
     for job in &jobs {
         if let Ok(metadata) = project::metadata_path(&job.project) {
-            if let Ok(target) = resolve_target(&metadata) {
+            if let Ok(target) = destination_key(&metadata) {
                 sources.insert(target);
             }
             sources.insert(metadata.clone());
@@ -249,7 +255,7 @@ fn load(
     }
     for project in projects.values() {
         for asset in &project.data().assets {
-            if let Ok(target) = resolve_target(asset.path()) {
+            if let Ok(target) = destination_key(asset.path()) {
                 sources.insert(target);
             }
             sources.insert(asset.path().to_path_buf());
@@ -257,7 +263,7 @@ fn load(
         }
     }
     for job in &jobs {
-        let target = resolve_target(&job.output)?;
+        let target = destination_key(&job.output)?;
         if sources.contains(&target)
             || sources.contains(&job.output)
             || protected.iter().any(|path| same_file(&job.output, path))
@@ -279,6 +285,16 @@ fn add_project_bytes(total: u64, size: u64) -> Result<u64, CliError> {
 
 fn same_file(left: &Path, right: &Path) -> bool {
     same_file::is_same_file(left, right).unwrap_or(false)
+}
+
+// Canonicalization cannot fold a basename that does not exist yet. Refuse
+// case-only Windows collisions conservatively, including on case-sensitive
+// directories; this key is only for protection, never for snapshot selection.
+fn destination_key(path: &Path) -> Result<PathBuf, CliError> {
+    let target = resolve_target(path)?;
+    #[cfg(windows)]
+    let target = PathBuf::from(json_path(&target)?.to_uppercase());
+    Ok(target)
 }
 
 fn resolve_path(base: &Path, raw: &str, what: &str) -> Result<PathBuf, CliError> {

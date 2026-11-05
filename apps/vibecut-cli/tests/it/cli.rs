@@ -2239,6 +2239,16 @@ fn batch_refuses_malformed_oversized_and_hostile_job_files() {
     };
     case("truncated.json", b"{".to_vec(), 2);
     case(
+        "deep.json",
+        format!("{}0{}", "[".repeat(64), "]".repeat(64)).into_bytes(),
+        2,
+    );
+    case(
+        "empty-path.json",
+        br#"{"version":1,"jobs":[{"project":"a.vibecut","output":""}]}"#.to_vec(),
+        2,
+    );
+    case(
         "duplicate.json",
         br#"{"version":1,"version":1,"jobs":[]}"#.to_vec(),
         2,
@@ -2319,6 +2329,41 @@ fn batch_refuses_unsafe_or_ambiguous_destinations() {
         &[],
         2,
     );
+    #[cfg(windows)]
+    run(
+        "case-output.json",
+        json!({"version":1,"jobs":[
+            {"project":"a.vibecut","output":"out/Result.mp4","overwrite":true},
+            {"project":"a.vibecut","output":"out/result.mp4","overwrite":true}
+        ]}),
+        &["--allow-overwrite"],
+        2,
+    );
+    #[cfg(windows)]
+    run(
+        "unicode-case-output.json",
+        json!({"version":1,"jobs":[
+            {"project":"a.vibecut","output":"out/KẾT QUẢ.mp4","overwrite":true},
+            {"project":"a.vibecut","output":"out/kết quả.mp4","overwrite":true}
+        ]}),
+        &["--allow-overwrite"],
+        2,
+    );
+    let first_alias = output_dir.join("first-alias.mp4");
+    let second_alias = output_dir.join("second-alias.mp4");
+    fs::write(&first_alias, b"previous").unwrap();
+    fs::hard_link(&first_alias, &second_alias).unwrap();
+    run(
+        "hard-linked-outputs.json",
+        json!({"version":1,"jobs":[
+            {"project":"a.vibecut","output":"out/first-alias.mp4","overwrite":true},
+            {"project":"a.vibecut","output":"out/second-alias.mp4","overwrite":true}
+        ]}),
+        &["--allow-overwrite"],
+        2,
+    );
+    assert_eq!(fs::read(&first_alias).unwrap(), b"previous");
+    assert_eq!(fs::read(&second_alias).unwrap(), b"previous");
     run(
         "aliases-project.json",
         json!({"version":1,"jobs":[
@@ -2339,6 +2384,15 @@ fn batch_refuses_unsafe_or_ambiguous_destinations() {
         "aliases-metadata.json",
         json!({"version":1,"jobs":[
             {"project":"a.vibecut","output":"a.vibecut.meta.json","overwrite":true}
+        ]}),
+        &["--allow-overwrite"],
+        2,
+    );
+    #[cfg(windows)]
+    run(
+        "aliases-metadata-case.json",
+        json!({"version":1,"jobs":[
+            {"project":"a.vibecut","output":"A.VIBECUT.META.JSON","overwrite":true}
         ]}),
         &["--allow-overwrite"],
         2,
@@ -2554,7 +2608,6 @@ fn batch_refuses_an_output_that_aliases_another_jobs_source() {
     assert!(!output_dir.join("media.mp4").exists());
 }
 
-#[cfg(unix)]
 #[test]
 fn batch_refuses_an_output_hard_linked_to_another_jobs_source() {
     if !tools() {
@@ -2565,6 +2618,7 @@ fn batch_refuses_an_output_hard_linked_to_another_jobs_source() {
     let media = dir.path().join("media.vibecut");
     let overlay = dir.path().join("overlay.vibecut");
     generate_av(&source);
+    let source_before = fs::read(&source).unwrap();
     media_project(&media, &source, None);
     overlay_project(&overlay, 64, 64, Tick(time::TICKS_PER_SECOND));
     let output_dir = dir.path().join("out");
@@ -2586,6 +2640,7 @@ fn batch_refuses_an_output_hard_linked_to_another_jobs_source() {
         os("--json"),
     ]);
     batch_refusal(&output, 2);
-    assert!(source.exists());
+    assert_eq!(fs::read(&source).unwrap(), source_before);
+    assert_eq!(fs::read(&linked).unwrap(), source_before);
     assert!(!output_dir.join("media.mp4").exists());
 }
