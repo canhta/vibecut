@@ -567,7 +567,7 @@ impl ProjectsPage {
                     "projects.retry",
                     Icon::ArrowClockwise,
                     tr(Text::ProjectsRetry),
-                    true,
+                    !self.busy(),
                 ) {
                     retry = true;
                 }
@@ -1572,6 +1572,10 @@ mod tests {
 
     #[test]
     fn catalog_retry_retains_rows_after_a_failed_refresh() {
+        use egui_kittest::{
+            Harness,
+            kittest::{By, NodeT, Queryable},
+        };
         let root = tempfile::tempdir().expect("directory");
         {
             let mut catalog = library(root.path());
@@ -1608,14 +1612,39 @@ mod tests {
         }
         assert_eq!(page.entries.len(), 2);
         assert!(page.list_error.is_some());
+        let mut harness = Harness::builder()
+            .with_context_setup(|ctx| {
+                crate::Editor::fonts(ctx);
+                icons::install(ctx);
+            })
+            .with_size(egui::vec2(1440.0, 900.0))
+            .build_ui_state(
+                |ui, state: &mut (ProjectsPage, Preferences)| {
+                    crate::Editor::theme(ui.ctx(), state.1.dark);
+                    state.0.tick();
+                    state.0.ui(ui, &mut state.1);
+                },
+                (page, Preferences::default()),
+            );
+        let retry = || By::new().predicate(|node| node.author_id() == Some("projects.retry"));
+        for pending in [1, 0] {
+            harness.state_mut().0.pending = pending;
+            harness.run_steps(2);
+            assert_eq!(
+                harness.get(retry()).accesskit_node().is_disabled(),
+                pending != 0,
+                "Retry must not join a worker while an operation is pending"
+            );
+        }
         std::fs::write(path, original).unwrap();
-        page.retry();
-        while page.busy() {
-            page.tick();
+        harness.get(retry()).click();
+        harness.run_steps(2);
+        while harness.state().0.busy() {
+            harness.run_steps(1);
             assert!(std::time::Instant::now() < deadline);
             std::thread::yield_now();
         }
-        assert!(page.list_error.is_none());
+        assert!(harness.state().0.list_error.is_none());
     }
 
     #[test]
