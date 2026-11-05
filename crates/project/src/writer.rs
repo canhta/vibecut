@@ -153,6 +153,11 @@ impl WriterLease {
         &self.path
     }
 
+    /// Validate the held lease identity and unchanged content, including absent targets.
+    pub fn validate(&self) -> Result<()> {
+        self.checked_current().map(|_| ())
+    }
+
     /// Optional presentation state under the same canonical project lease.
     pub fn metadata(&self) -> crate::Metadata {
         crate::metadata::load(&self.path)

@@ -44,7 +44,9 @@ Provision FFmpeg with `cargo xtask ffmpeg`. Build with that installation's
 The desktop binary is `vibecut`; the headless CLI is `vibecut-cli`.
 `cargo run -p vibecut -- /native/path/to/project.json` acquires the project writer
 lease before loading. With no file it opens the minimal Home new/open entry points.
-Project listing and thumbnail storage belong to the projects-page feature. Preview,
+Managed project listing is supplied by [engine library](../../crates/engine/README.md#managed-project-library); the projects-page feature owns its presentation.
+Engine lifecycle hooks backfill and refresh project-owned thumbnails, including
+close without saving editable content. Preview,
 timeline basics, transport and the export dialog are present; text/audio controls
 are integrated by their owning feature tickets.
 

@@ -285,12 +285,19 @@ filesystem, not survival of physical power loss. No performance claim is made.
 ## Optional project metadata
 
 `WriterLease::metadata` reads `<canonical project filename>.meta.json`, bounded to
-64 KiB, with metadata schema version 2. Missing, unreadable, corrupt, oversized or
+512 KiB, with metadata schema version 3. Missing, unreadable, corrupt, oversized or
 unsupported metadata defaults without blocking the project. `Metadata` contains
 created/modified Unix milliseconds, the current `ViewState` and up to 256 scene-ID-keyed views (positive zoom at most 1000, horizontal
 scroll 0–1e9 logical pixels, nonnegative integer-tick playhead). Nonfinite values
 are refused. This sidecar is outside the editable project envelope and does not
-change its schema. No project index or thumbnail bytes are stored here.
+change its schema. Thumbnail is Missing, Unavailable or Ready with 1..=128-pixel dimensions and
+exactly width × height × 4 sRGB RGBA bytes (at most 64 KiB). Invalid dimensions,
+byte counts and oversized sidecars default on read and refuse on write. No image
+decoder runs on metadata. The 8-character display ID is derived from the project
+ID by engine, never duplicated here. No project index is stored here.
+`read_metadata(path)` supports bounded read-only catalog display; mutations remain
+under WriterLease. `WriterLease::validate` checks its baseline and stable lock
+identity without requiring a project file to exist.
 
 `WriterLease::save_metadata` validates then atomically replaces the sidecar under
 the existing canonical project lease and content precondition. Sidecar symlinks

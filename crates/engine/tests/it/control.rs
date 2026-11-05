@@ -334,6 +334,25 @@ fn registry_examples_validate_and_dispatch_without_an_id_table() {
             Fixture::Job => {
                 submit(&mut r);
             }
+            Fixture::Library => {
+                let mut library = engine::library::ProjectLibrary::open(
+                    &root.path().join(format!("library-{}", spec.id)),
+                    ByteBudget::new(64 << 20).unwrap(),
+                )
+                .unwrap();
+                library
+                    .execute(
+                        project::ProjectId(1),
+                        Command::CreateProject {
+                            id: project::ProjectId(1),
+                            name: "Example".into(),
+                        },
+                    )
+                    .unwrap();
+                library.execute(project::ProjectId(1), typed).unwrap();
+                exercised.insert(spec.id);
+                continue;
+            }
             Fixture::Create => {
                 assert!(Session::create(typed, 10).is_ok());
                 exercised.insert(spec.id);

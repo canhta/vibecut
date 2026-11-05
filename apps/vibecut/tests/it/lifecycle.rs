@@ -311,3 +311,38 @@ fn corrupt_recovery_candidate_is_skipped_with_a_visible_diagnostic() {
     assert!(h.query_by_label("Recover a copy").is_none());
     assert!(h.query_by_label("New project").is_some());
 }
+
+#[test]
+fn journal_only_exit_refreshes_first_frame_thumbnail_without_saving_edits() {
+    let root = tempfile::tempdir().unwrap();
+    let path = root.path().join("project.vibecut");
+    let mut app = app(root.path());
+    app.create().unwrap();
+    idle(&mut app);
+    app.persist(Some(path.clone()), false, false, false)
+        .unwrap();
+    idle(&mut app);
+    assert!(app.error().is_none());
+    let before = std::fs::read(&path).unwrap();
+    let session = &mut app.editor.as_mut().unwrap().session;
+    let frame = session.project().data().canvas.fps.tick_of(1).unwrap();
+    session.execute("timeline.insert", serde_json::json!({
+        "placement":{"mode":"auto"},
+        "item":{"animations":{},"source_asset":null,"source_range":{"start":0,"end":frame.0},
+        "start":0,"content":{"kind":"overlay","params":{"color":[255,0,0,255]}}}
+    })).unwrap();
+    session
+        .execute(
+            "project.set_view_state",
+            serde_json::json!({"zoom":1,"scroll":0,"playhead":frame.0*10}),
+        )
+        .unwrap();
+    app.persist(None, false, true, true).unwrap();
+    idle(&mut app);
+    assert!(app.error().is_none(), "{:?}", app.error());
+    assert!(app.ready_to_close());
+    assert!(app.editor.is_none());
+    assert_eq!(std::fs::read(&path).unwrap(), before);
+    assert!(matches!(project::read_metadata(&path).thumbnail,
+        project::Thumbnail::Ready { ref rgba, .. } if rgba[0]>245 && rgba[1]<10 && rgba[2]<10));
+}

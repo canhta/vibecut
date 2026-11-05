@@ -244,6 +244,7 @@ struct SaveWork {
     source: Option<WriterLease>,
     writer: WriterLease,
     receipt: Option<SaveReceipt>,
+    metadata: Option<project::Metadata>,
 }
 type SaveSlot = Arc<Mutex<Option<SaveWork>>>;
 struct WorkingSave {
@@ -274,6 +275,7 @@ fn save_on_worker(slot: &SaveSlot, project: &Project, metadata: &project::Metada
         work.writer.save(project)?
     });
     work.writer.save_metadata(metadata)?;
+    work.metadata = Some(metadata.clone());
     Ok(())
 }
 struct SaveFlight {
@@ -350,7 +352,14 @@ impl Autosave {
     ) -> Result<Self> {
         let writer = WriterLease::acquire(path)?;
         let mut session = Session::new(writer.load()?.project, history_limit)?;
-        session.restore_metadata(writer.metadata())?;
+        let mut metadata = writer.metadata();
+        if matches!(metadata.thumbnail, project::Thumbnail::Missing) {
+            metadata.thumbnail =
+                crate::thumbnail::capture(session.project(), &crate::thumbnail::Hooks(&budget));
+            // Optional thumbnail failure must never prevent opening editable content.
+            let _ = writer.save_metadata(&metadata);
+        }
+        session.restore_metadata(metadata)?;
         Self::with_writer(root, session, Some(writer), budget, clock, schedule)
     }
     fn with_writer(
@@ -537,6 +546,7 @@ impl Autosave {
                             .take()
                             .ok_or(EditError::WorkerPanicked)?;
                         let receipt = work.receipt.take().ok_or(EditError::WorkerPanicked)?;
+                        let metadata = work.metadata.take().ok_or(EditError::WorkerPanicked)?;
                         if receipt.path() != work.writer.path() {
                             return Err(EditError::StaleResult.into());
                         }
@@ -553,6 +563,7 @@ impl Autosave {
                         // Revision identity includes gesture rollback/save boundaries,
                         // not just equal content or a matching numeric revision.
                         if current {
+                            self.session.restore_metadata(metadata)?;
                             self.session.saved()?;
                             self.saved_path = Some(receipt.path().to_owned());
                             self.saved_receipt = Some(receipt);
@@ -657,6 +668,7 @@ impl Autosave {
                     source: if in_place { None } else { self.writer.take() },
                     writer,
                     receipt: None,
+                    metadata: None,
                 }))),
                 in_place,
             })
@@ -686,6 +698,8 @@ impl Autosave {
                     publish(&directory, &project, old_path.clone(), revision)?;
                 }
                 if let Some(slot) = &slot {
+                    let mut metadata = metadata.clone();
+                    metadata.thumbnail = crate::thumbnail::capture(&project, ctx);
                     save_on_worker(slot, &project, &metadata)?;
                 }
                 Ok(Vec::new())
@@ -763,7 +777,29 @@ impl Autosave {
     }
     /// Dispatch the registry save command; completion is acknowledged by tick().
     pub fn execute(&mut self, id: &str, params: serde_json::Value) -> Result<crate::Outcome> {
-        if id == "project.save" {
+        if id == "project.thumbnail" {
+            if params != serde_json::json!({}) {
+                return Err(EditError::InvalidParams);
+            }
+            if self.session.transaction_active() {
+                return Err(EditError::TransactionActive);
+            }
+            self.flush()?;
+            let mut metadata = self.session.metadata().clone();
+            metadata.thumbnail = crate::thumbnail::capture(
+                self.session.project(),
+                &crate::thumbnail::Hooks(&self.budget),
+            );
+            if let Some(writer) = &self.writer {
+                writer.save_metadata(&metadata)?;
+            }
+            self.session.restore_metadata(metadata)?;
+            Ok(crate::Outcome {
+                changed: false,
+                created: Vec::new(),
+                placements: Vec::new(),
+            })
+        } else if id == "project.save" {
             if params != serde_json::json!({}) {
                 return Err(EditError::InvalidParams);
             }
@@ -883,6 +919,7 @@ mod tests {
             source: None,
             writer,
             receipt: None,
+            metadata: None,
         })));
         let unwound = std::panic::catch_unwind(|| {
             let work = slot.lock().unwrap().take();

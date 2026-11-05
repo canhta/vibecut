@@ -959,6 +959,9 @@ fn run(
                         return Err(EditError::StaleResult.into());
                     }
                 }
+                if leave || close {
+                    autosave.execute("project.thumbnail", serde_json::json!({}))?;
+                }
                 Ok(())
             })();
             if result.is_ok() && (leave || close) {

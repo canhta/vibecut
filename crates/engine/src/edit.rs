@@ -72,7 +72,10 @@ pub(crate) fn check_budget(command: &Command) -> Result<()> {
             | Command::BurnSubtitles { .. } => {
                 return Err(EditError::Invalid("export commands require job submission"));
             }
-            Command::CreateProject { .. }
+            Command::DuplicateProject { .. }
+            | Command::DeleteProject {}
+            | Command::ThumbnailProject {}
+            | Command::CreateProject { .. }
             | Command::SaveProject {}
             | Command::SetViewState { .. }
             | Command::SwitchScene { .. }
@@ -864,7 +867,10 @@ pub(crate) fn apply(
         | Command::BurnSubtitles { .. } => {
             return Err(EditError::Invalid("export commands require job submission"));
         }
-        Command::CreateProject { .. }
+        Command::DuplicateProject { .. }
+        | Command::DeleteProject {}
+        | Command::ThumbnailProject {}
+        | Command::CreateProject { .. }
         | Command::SaveProject {}
         | Command::SetViewState { .. }
         | Command::SwitchScene { .. }

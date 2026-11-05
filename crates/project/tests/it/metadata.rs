@@ -111,3 +111,48 @@ fn metadata_namespace_cannot_be_used_as_a_project_or_escaped_by_symlinks() {
         assert_eq!(std::fs::read(victim).unwrap(), b"preserve");
     }
 }
+
+#[test]
+fn thumbnails_roundtrip_and_refuse_hostile_dimensions_and_oversized_sidecars() {
+    use project::Thumbnail;
+    let root = tempfile::tempdir().unwrap();
+    let path = root.path().join("p.vibecut");
+    let mut lease = WriterLease::acquire(&path).unwrap();
+    lease
+        .save(&Project::empty(ProjectId(1), "Test".into()).unwrap())
+        .unwrap();
+    let mut metadata = Metadata::default();
+    for thumbnail in [
+        Thumbnail::Missing,
+        Thumbnail::Unavailable,
+        Thumbnail::Ready {
+            width: 128,
+            height: 128,
+            rgba: vec![255; 128 * 128 * 4],
+        },
+    ] {
+        metadata.thumbnail = thumbnail;
+        lease.save_metadata(&metadata).unwrap();
+        assert_eq!(lease.metadata(), metadata);
+    }
+    let valid = metadata.clone();
+    for (width, height, rgba) in [
+        (0, 1, vec![]),
+        (u32::MAX, u32::MAX, vec![]),
+        (129, 1, vec![0; 516]),
+        (1, 1, vec![0; 3]),
+    ] {
+        metadata.thumbnail = Thumbnail::Ready {
+            width,
+            height,
+            rgba,
+        };
+        assert!(lease.save_metadata(&metadata).is_err());
+        assert_eq!(lease.metadata(), valid);
+    }
+    let mut encoded = serde_json::to_vec(&valid).unwrap();
+    encoded.resize(524289, b' ');
+    std::fs::write(root.path().join("p.vibecut.meta.json"), encoded).unwrap();
+    assert_eq!(lease.metadata().thumbnail, Thumbnail::Missing);
+    assert!(lease.load().is_ok());
+}

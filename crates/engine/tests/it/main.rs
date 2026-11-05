@@ -10,6 +10,7 @@ mod export_jobs;
 mod jobs;
 mod keyframes;
 mod lifecycle;
+mod library;
 mod masks;
 mod model_transfers;
 mod providers;

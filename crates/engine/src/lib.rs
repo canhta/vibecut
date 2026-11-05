@@ -8,11 +8,13 @@ mod commands;
 pub mod control;
 mod control_preview;
 pub mod jobs;
+pub mod library;
 pub mod models;
 pub mod providers;
 pub mod recovery;
 pub mod shot_analysis;
 pub mod subtitles;
+mod thumbnail;
 pub mod translation;
 pub use budget::{BudgetSnapshot, ByteBudget, ByteLease, ByteOwner};
 pub use clip_export::{

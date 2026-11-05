@@ -396,9 +396,13 @@ impl Session {
             return Err(EditError::InvalidParams);
         }
         match command {
-            Command::CreateProject { .. } | Command::SaveProject {} => {
+            Command::DuplicateProject { .. }
+            | Command::DeleteProject {}
+            | Command::ThumbnailProject {}
+            | Command::CreateProject { .. }
+            | Command::SaveProject {} => {
                 return Err(EditError::Invalid(
-                    "lifecycle command requires create or autosave",
+                    "lifecycle command requires its library or persistence owner",
                 ));
             }
             Command::SwitchScene { scene } => {

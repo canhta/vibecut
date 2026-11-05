@@ -8,7 +8,36 @@ use std::{
 };
 use time::Tick;
 
-pub const METADATA_VERSION: u32 = 2;
+pub const METADATA_VERSION: u32 = 3;
+/// Small uncompressed sRGB RGBA thumbnail; consumers never decode untrusted images.
+#[derive(Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "state", rename_all = "snake_case", deny_unknown_fields)]
+pub enum Thumbnail {
+    #[default]
+    Missing,
+    Unavailable,
+    Ready {
+        width: u32,
+        height: u32,
+        rgba: Vec<u8>,
+    },
+}
+impl Thumbnail {
+    pub fn validate(&self) -> Result<()> {
+        if let Self::Ready {
+            width,
+            height,
+            rgba,
+        } = self
+            && (!(1..=128).contains(width)
+                || !(1..=128).contains(height)
+                || u64::from(*width) * u64::from(*height) * 4 != rgba.len() as u64)
+        {
+            return Err(Error::Invalid("thumbnail dimensions or bytes"));
+        }
+        Ok(())
+    }
+}
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ViewState {
@@ -45,6 +74,7 @@ impl ViewState {
 #[serde(deny_unknown_fields)]
 pub struct Metadata {
     pub version: u32,
+    pub thumbnail: Thumbnail,
     pub view: ViewState,
     pub scene_views: std::collections::BTreeMap<crate::SceneId, ViewState>,
     pub created_unix_ms: u64,
@@ -55,6 +85,7 @@ impl Default for Metadata {
         let now = now_ms();
         Self {
             version: METADATA_VERSION,
+            thumbnail: Thumbnail::Missing,
             view: ViewState::default(),
             scene_views: Default::default(),
             created_unix_ms: now,
@@ -73,6 +104,7 @@ impl Metadata {
         for view in self.scene_views.values() {
             view.validate()?;
         }
+        self.thumbnail.validate()?;
         self.view.validate()
     }
     pub fn touch(&mut self) {
@@ -104,9 +136,9 @@ pub(crate) fn load(project: &Path) -> Metadata {
         }
         let mut bytes = Vec::new();
         std::fs::File::open(path)?
-            .take(65537)
+            .take(524289)
             .read_to_end(&mut bytes)?;
-        if bytes.len() > 65536 {
+        if bytes.len() > 524288 {
             return Err(Error::TooLarge("metadata"));
         }
         let value: Metadata = serde_json::from_slice(&bytes)?;
@@ -122,8 +154,27 @@ pub(crate) fn save(
 ) -> Result<()> {
     value.validate()?;
     let bytes = serde_json::to_vec(value)?;
-    if bytes.len() > 65536 {
+    if bytes.len() > 524288 {
         return Err(Error::TooLarge("metadata"));
     }
     crate::atomic::atomic_write_checked(&path(project)?, &bytes, check)
+}
+
+impl std::fmt::Debug for Thumbnail {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Missing => f.write_str("Missing"),
+            Self::Unavailable => f.write_str("Unavailable"),
+            Self::Ready {
+                width,
+                height,
+                rgba,
+            } => f
+                .debug_struct("Ready")
+                .field("width", width)
+                .field("height", height)
+                .field("bytes", &rgba.len())
+                .finish(),
+        }
+    }
 }

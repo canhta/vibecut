@@ -31,6 +31,7 @@ The [glossary](../../GLOSSARY.md) owns domain definitions; crate READMEs own con
 | Param and keyframes | [project animation](../../crates/project/README.md#animated-parameters) |
 | SourceRange | [time](../../crates/time/README.md) |
 | Transcript, Cue, EditMapping, LanguageProfile | [captions](../../crates/captions/README.md) |
+| Managed catalog, copied-media publication and catalog history | [engine library](../../crates/engine/README.md#managed-project-library); project retains metadata/persistence |
 | Session, registry, transactions, gestures, undo/redo | [engine](../../crates/engine/README.md#transactions-gestures-and-changes) |
 | Control schemas, revisions, receipts, resync events | [engine control](../../crates/engine/README.md#control-admission-revisions-and-receipts) |
 | Job runner, scheduling, retries, checkpoints, aggregate bytes | [engine jobs](../../crates/engine/README.md#background-jobs-and-byte-policy) |
