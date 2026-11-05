@@ -477,6 +477,7 @@ fn source_stream(kind: StreamKind, duration: Tick) -> Result<SourceStream, Failu
 }
 
 fn source_asset(id: u64, kind: StreamKind, path: PathBuf) -> Result<SourceAsset, Failure> {
+    let path = std::path::absolute(path)?;
     let duration = Tick(10 * SECOND);
     Ok(SourceAsset::try_from(AssetData {
         ephemeral: false,
