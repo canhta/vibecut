@@ -131,8 +131,7 @@ on exactly the samples the whole clip had; windows clamp to the clip and overlap
 windows (left by a trim) multiply, so there is never a step. `FadeSpans::gain(sample)`
 is the single per-sample gain used by preview and export: exactly 0 at the clip edge
 where a fade starts, exactly 1 in the body. Both pieces of a split together
-reproduce the original gain at every sample. Schema 14 never shipped; fades written
-without `offset` load as uncut fades. Curves: `sin(x·π/2)` (-3 dB midpoint), `x`, and `(e^{4x}-1)/(e^4-1)`.
+reproduce the original gain at every sample. A fade without `offset` loads as uncut. Curves: `sin(x·π/2)` (-3 dB midpoint), `x`, and `(e^{4x}-1)/(e^4-1)`.
 
 `ParamValue` holds scalar, bool, NFC text or linear-light unpremultiplied RGBA.
 RGBA uses four independently keyed scalar `Channel`s, selected by `ColorComponent`;
@@ -396,7 +395,7 @@ whitespace-only text masks are inactive while retaining their editable data. The
 admits 1,024 entries for resource safety; presentation limits do not define the
 model. Audio items refuse masks. Modes are None/Add/Subtract/Intersect/Lighten/
 Darken/Difference; render owns their coverage math. Commands/history belong to
-engine. Schema 14 requires scene arrays, per-item mask vectors, `blendMode`, text style and typography, audio control fields (audio source is optional, default upload) and optional imported cue style; schema 13 and earlier refuse with `TooOld`.
+engine. Schema 15 requires scene arrays, per-item mask vectors, `blendMode`, text style and typography, audio control fields (audio source is optional, default upload) optional imported cue style and optional clip `fades` (`offset` defaults to 0); schema 14 and earlier refuse with `TooOld`.
 
 Shapes include split, cinematic band, rectangle, ellipse, heart, diamond, star,
 text and a cubic `MaskPath`. Text masks currently persist content and font size

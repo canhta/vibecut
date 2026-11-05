@@ -542,8 +542,8 @@ fn schema_errors_precede_interpreting_an_unknown_project_body() {
     ));
 }
 #[test]
-fn schema_14_fades_without_an_offset_load_as_uncut_fades() {
-    // Schema 14 never shipped; the branch wrote fades without `offset`, which means "uncut".
+fn fades_without_an_offset_load_as_uncut_fades() {
+    // A fade without `offset` is uncut.
     let fades: Fades = serde_json::from_str(
         r#"{"fade_in":{"duration":30,"curve":"linear"},"fade_out":{"duration":20,"curve":"equal_power"}}"#,
     )
