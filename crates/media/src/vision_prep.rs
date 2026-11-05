@@ -183,6 +183,98 @@ impl VisionFrame {
     pub fn rgba(&self) -> &[u8] {
         &self.pixels
     }
+    /// SFace five-landmark similarity alignment to 112x112 CHW RGB, raw 0..255.
+    /// Landmarks are source pixels, ordered eyes, nose, mouth corners as YuNet.
+    /// Bilinear sampling pads outside with black. Missing, tiny, degenerate or
+    /// out-of-frame landmarks return None; nonfinite coordinates are errors.
+    pub fn identity_tensor(&self, points: [[f32; 2]; 5]) -> Result<Option<Vec<f32>>> {
+        const TARGET: [[f64; 2]; 5] = [
+            [38.2946, 51.6963],
+            [73.5318, 51.5014],
+            [56.0252, 71.7366],
+            [41.5493, 92.3655],
+            [70.7299, 92.2041],
+        ];
+        if points.iter().flatten().any(|v| !v.is_finite()) {
+            return Err(MediaError::Invalid("face landmarks"));
+        }
+        if points
+            .iter()
+            .any(|[x, y]| *x < 0. || *y < 0. || *x >= self.width as f32 || *y >= self.height as f32)
+        {
+            return Ok(None);
+        }
+        let [[x0, y0], [x1, y1], ..] = points;
+        if (x0 - x1).hypot(y0 - y1) < 8. {
+            return Ok(None);
+        }
+        let mut source_mean = [0.; 2];
+        let mut target_mean = [0.; 2];
+        for (p, q) in points.iter().zip(TARGET) {
+            for ((s, t), (v, w)) in source_mean
+                .iter_mut()
+                .zip(&mut target_mean)
+                .zip(p.iter().zip(q))
+            {
+                *s += f64::from(*v) / 5.;
+                *t += w / 5.;
+            }
+        }
+        let [sx, sy] = source_mean;
+        let [tx, ty] = target_mean;
+        let (mut dot, mut cross, mut variance) = (0., 0., 0.);
+        for ([x, y], [u, v]) in points.iter().zip(TARGET) {
+            let (x, y) = (f64::from(*x) - sx, f64::from(*y) - sy);
+            let (u, v) = (u - tx, v - ty);
+            dot += x * u + y * v;
+            cross += x * v - y * u;
+            variance += x * x + y * y;
+        }
+        if variance <= 1e-8 {
+            return Ok(None);
+        }
+        let (a, b) = (dot / variance, cross / variance);
+        let det = a * a + b * b;
+        if det <= 1e-12 || !det.is_finite() {
+            return Ok(None);
+        }
+        let mut output = vec![0.; 3 * 112 * 112];
+        for y in 0..112usize {
+            for x in 0..112usize {
+                let (u, v) = (x as f64 - tx, y as f64 - ty);
+                let (px, py) = ((a * u + b * v) / det + sx, (-b * u + a * v) / det + sy);
+                let (ix, iy) = (px.floor() as i64, py.floor() as i64);
+                let (fx, fy) = (px - px.floor(), py - py.floor());
+                for c in 0..3usize {
+                    let mut value = 0.;
+                    for (dx, wx) in [(0, 1. - fx), (1, fx)] {
+                        for (dy, wy) in [(0, 1. - fy), (1, fy)] {
+                            let (xx, yy) = (ix + dx, iy + dy);
+                            if xx >= 0
+                                && yy >= 0
+                                && xx < i64::from(self.width)
+                                && yy < i64::from(self.height)
+                            {
+                                let offset =
+                                    (yy as usize * self.width as usize + xx as usize) * 4 + c;
+                                value += f64::from(
+                                    *self
+                                        .pixels
+                                        .get(offset)
+                                        .ok_or(MediaError::Invalid("face pixel"))?,
+                                ) * wx
+                                    * wy;
+                            }
+                        }
+                    }
+                    *output
+                        .get_mut(c * 112 * 112 + y * 112 + x)
+                        .ok_or(MediaError::Invalid("face tensor"))? = value.round() as f32;
+                }
+            }
+        }
+        Ok(Some(output))
+    }
     /// Crop, grayscale and resize a face region using the `p1-clips/12`
     /// reference recipe: expand by 0.40, pad outside pixels with gray 110,
     /// resize to 224x224 with linear interpolation and keep the centre 112.

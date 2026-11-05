@@ -21,6 +21,27 @@ impl ExecutionHooks for Cancel {
     fn stage(&self, _: Stage) {}
 }
 #[test]
+fn face_embeddings_validate_normalize_and_redact_biometric_values() {
+    use vision::{FaceEmbedding, IdentityFrame};
+    for values in [
+        vec![],
+        vec![0.; 128],
+        vec![f32::NAN; 128],
+        vec![f32::INFINITY; 128],
+    ] {
+        assert!(FaceEmbedding::new(&values).is_err());
+    }
+    let mut values = vec![0.; 128];
+    values[0] = 2.;
+    let a = FaceEmbedding::new(&values).unwrap();
+    values[0] = -10.;
+    assert_eq!(a.similarity(&FaceEmbedding::new(&values).unwrap()), -1.);
+    assert_eq!(a.similarity(&a), 1.);
+    assert_eq!(format!("{a:?}"), "FaceEmbedding([redacted])");
+    assert!(IdentityFrame::new(&[]).is_err());
+    assert!(IdentityFrame::new(&vec![256.; 3 * 112 * 112]).is_err());
+}
+#[test]
 fn bounds_refuse_hostile_inputs_without_allocating() {
     for n in [0, 1, 24, 76, usize::MAX] {
         assert!(matches!(
@@ -431,6 +452,7 @@ fn shot_result_refuses_unbounded_or_inconsistent_evidence() {
         ShotResult::new(
             vec![
                 FaceBox {
+                    landmarks: None,
                     x: 0.,
                     y: 0.,
                     width: 1.,

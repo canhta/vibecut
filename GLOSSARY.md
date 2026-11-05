@@ -26,3 +26,6 @@ Language for the editor's privacy and execution boundaries.
 - **CueTrack**: A collection of timed cues for subtitle validation and export.
 - **Selection**: The timeline items chosen as the targets of an editing action.
 - **Selection scope**: The current level of selection: timeline items, keyframes within items, or points within a mask. Clearing a selection acts on the most specific occupied scope first.
+
+- **Face track**: Observations of one visible face within a single shot; its identifier is local to that shot.
+- **Cross-shot identity**: A confident link from a face track to an earlier face track serving as its anchor. An uncertain link stays Unknown; it is not a claim about a person's name.

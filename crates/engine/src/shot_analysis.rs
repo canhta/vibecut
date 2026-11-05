@@ -1,4 +1,5 @@
-//! Cancellable local shot analysis; no project mutations or cross-shot identity claims.
+//! Cancellable local shot analysis and conservative cross-shot face identity; no project mutations.
+mod reidentification;
 mod tracking;
 use crate::{
     EditError,
@@ -14,7 +15,7 @@ use serde::{Deserialize, Serialize};
 use std::{io::Write, sync::Mutex};
 use time::{SourceRange, TICKS_PER_SECOND, Tick};
 
-const VERSION: &str = "shot-analysis-v2:negative-all-visible-scored:grid32x18-rgb-mad:25fps-hold:8hz-iou.3:3s:mean1s:.5-.4";
+const VERSION: &str = "shot-analysis-v3:sface-cosine.30-margin.08-consensus3:negative-all-visible-scored:grid32x18-rgb-mad:25fps-hold:8hz-iou.3:3s:mean1s:.5-.4";
 const MAX_SHOTS: usize = 4096;
 const MAX_SECONDS: usize = 86_400;
 const MAX_BYTES: usize = 32 << 20;
@@ -81,6 +82,9 @@ pub struct SecondAnalysis {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct FaceTrack {
+    /// Cross-shot anchor only after a confident, unambiguous embedding match.
+    /// None is Unknown, including the first observation of an individual.
+    pub identity: Option<SpeakerRef>,
     pub id: u32,
     pub bounds: [f32; 4],
     pub observed_frames: usize,
@@ -273,8 +277,20 @@ impl AnalysisRequest {
             {
                 return Err(EditError::CacheCorrupt);
             }
+            let mut identities = std::collections::BTreeSet::new();
             let mut ids = std::collections::BTreeSet::new();
             for t in &shot.tracks {
+                if let Some(anchor) = t.identity {
+                    let valid = (anchor.shot as usize) < i
+                        && result.shots.get(anchor.shot as usize).is_some_and(|s| {
+                            s.tracks
+                                .iter()
+                                .any(|t| t.id == anchor.track && t.identity.is_none())
+                        });
+                    if !valid || !identities.insert((anchor.shot, anchor.track)) {
+                        return Err(EditError::CacheCorrupt);
+                    }
+                }
                 if !ids.insert(t.id)
                     || t.observed_frames < 13
                     || !t.bounds.iter().all(|v| v.is_finite())
@@ -338,13 +354,15 @@ impl AnalysisRequest {
             shots: Vec::new(),
         };
         let mut hint = None;
+        let mut identities = reidentification::Identities::default();
         for (index, pair) in cuts.windows(2).enumerate() {
             ctx.check_cancelled()?;
             let range = SourceRange::new(
                 *pair.first().ok_or(EditError::Limit)?,
                 *pair.get(1).ok_or(EditError::Limit)?,
             )?;
-            let mut shot = self.shot(index as u32, range, detector, ctx)?;
+            let (mut shot, evidence) = self.shot(index as u32, range, detector, ctx)?;
+            identities.assign(index as u32, &mut shot.tracks, evidence, ctx)?;
             if let SpeakerState::Visible { local, .. } = shot.speaker {
                 hint = Some(local);
             }
@@ -425,7 +443,7 @@ impl AnalysisRequest {
         range: SourceRange,
         detector: &mut dyn VisionDetector,
         ctx: &JobContext,
-    ) -> Result<ShotAnalysis, EditError> {
+    ) -> Result<(ShotAnalysis, reidentification::Evidence), EditError> {
         let audio = self
             .asset
             .probe()

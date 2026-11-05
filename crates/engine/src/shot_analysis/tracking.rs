@@ -3,9 +3,13 @@ use super::{
     SourceRange, SpeakerRef, SpeakerState, TICKS_PER_SECOND, Tick, VIDEO_STEP, VisionDetector,
     VisionFrame, VisionPrepLimits,
 };
-use ai::vision::{FaceBox, FaceFrame, SceneFrame, ShotResult, SpeakerChunk};
+use ai::vision::{
+    FaceBox, FaceEmbedding, FaceFrame, IdentityFrame, SceneFrame, ShotResult, SpeakerChunk,
+};
 
 struct Track {
+    embeddings: Vec<FaceEmbedding>,
+    embedding_attempts: usize,
     bounds: FaceBox,
     seen: Tick,
     visible: bool,
@@ -93,6 +97,7 @@ impl Tracks {
                 let sx = frame.width() as f32 / tensor.resized_width() as f32;
                 let sy = frame.height() as f32 / tensor.resized_height() as f32;
                 let bounds = FaceBox {
+                    landmarks: face.landmarks.map(|p| p.map(|[x, y]| [x * sx, y * sy])),
                     x: face.x * sx,
                     y: face.y * sy,
                     width: face.width * sx,
@@ -108,6 +113,7 @@ impl Tracks {
                     .filter(|(_, score)| *score >= 0.3)
                     .max_by(|(a, x), (b, y)| x.total_cmp(y).then(b.cmp(a)))
                     .map(|(i, _)| i);
+                let track_index = best.unwrap_or(self.tracks.len());
                 if let Some(i) = best {
                     let track = self.tracks.get_mut(i).ok_or(EditError::Limit)?;
                     track.bounds = bounds;
@@ -118,6 +124,8 @@ impl Tracks {
                         return Err(EditError::Limit);
                     }
                     self.tracks.push(Track {
+                        embeddings: Vec::new(),
+                        embedding_attempts: 0,
                         bounds,
                         seen: at,
                         visible: true,
@@ -126,6 +134,17 @@ impl Tracks {
                         score: 0.,
                         scored: 0,
                     });
+                }
+                let track = self.tracks.get_mut(track_index).ok_or(EditError::Limit)?;
+                if track.embedding_attempts < 3 && track.observed >= track.embedding_attempts * 25 {
+                    track.embedding_attempts += 1;
+                    if let Some(points) = track.bounds.landmarks
+                        && let Some(tensor) = frame.identity_tensor(points)?
+                        && let Some(embedding) =
+                            detector.embedding(IdentityFrame::new(&tensor)?, &VisionHooks(ctx))?
+                    {
+                        track.embeddings.push(embedding);
+                    }
                 }
             }
             let bin = self.bins.get_mut(bin_index).ok_or(EditError::Limit)?;
@@ -267,13 +286,14 @@ impl Tracks {
         self,
         speech: &[SourceRange],
         audio: bool,
-    ) -> Result<ShotAnalysis, EditError> {
+    ) -> Result<(ShotAnalysis, super::reidentification::Evidence), EditError> {
         let tracks: Vec<_> = self
             .tracks
             .iter()
             .enumerate()
             .filter(|(_, t)| t.observed >= 13)
             .map(|(i, t)| FaceTrack {
+                identity: None,
                 id: i as u32,
                 bounds: [t.bounds.x, t.bounds.y, t.bounds.width, t.bounds.height],
                 observed_frames: t.observed,
@@ -352,33 +372,45 @@ impl Tracks {
                     .iter()
                     .all(|track| track.scored == track.observed),
         );
-        Ok(ShotAnalysis {
-            range: self.range,
-            people_count,
-            tracks,
-            speaker,
-            continuity_hint: None,
-            scene: {
-                let camera = self
-                    .bins
-                    .iter()
-                    .filter(|b| b.scene == Scene::Camera)
-                    .count();
-                let screen = self
-                    .bins
-                    .iter()
-                    .filter(|b| b.scene == Scene::Screen)
-                    .count();
-                if camera == 0 && screen == 0 {
-                    Scene::Unknown
-                } else if screen > camera {
-                    Scene::Screen
-                } else {
-                    Scene::Camera
-                }
+        let evidence = tracks
+            .iter()
+            .filter_map(|t| {
+                self.tracks
+                    .get(t.id as usize)
+                    .filter(|v| !v.embeddings.is_empty())
+                    .map(|v| (t.id, v.embeddings.clone()))
+            })
+            .collect();
+        Ok((
+            ShotAnalysis {
+                range: self.range,
+                people_count,
+                tracks,
+                speaker,
+                continuity_hint: None,
+                scene: {
+                    let camera = self
+                        .bins
+                        .iter()
+                        .filter(|b| b.scene == Scene::Camera)
+                        .count();
+                    let screen = self
+                        .bins
+                        .iter()
+                        .filter(|b| b.scene == Scene::Screen)
+                        .count();
+                    if camera == 0 && screen == 0 {
+                        Scene::Unknown
+                    } else if screen > camera {
+                        Scene::Screen
+                    } else {
+                        Scene::Camera
+                    }
+                },
+                seconds,
             },
-            seconds,
-        })
+            evidence,
+        ))
     }
 }
 fn overlaps(speech: &[SourceRange], range: SourceRange) -> bool {

@@ -1,6 +1,7 @@
 use super::{
-    FaceBox, FaceFrame, PROMPTS, RECIPE, SceneFrame, SceneResult, SpeakerChunk, VisionDetector,
-    VisionFingerprint, classify_embedding, decisions::decode_faces, finite,
+    FaceBox, FaceEmbedding, FaceFrame, IdentityFrame, PROMPTS, RECIPE, SceneFrame, SceneResult,
+    SpeakerChunk, VisionDetector, VisionFingerprint, classify_embedding, decisions::decode_faces,
+    finite,
 };
 use crate::{Error, ExecutionHooks, Stage, contracts::checkpoint, models};
 use prost::Message;
@@ -26,6 +27,7 @@ pub struct VisionPaths<'a> {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Kind {
     Face,
+    Identity,
     Image,
     Text,
     Audio,
@@ -56,6 +58,7 @@ pub struct TractVision {
     threads: usize,
     executor: Executor,
     prompts: [Vec<f32>; 2],
+    reidentification: Option<TractFaceEmbedding>,
 }
 impl TractVision {
     pub fn load(
@@ -138,6 +141,7 @@ impl TractVision {
             threads,
             executor,
             prompts: [Vec::new(), Vec::new()],
+            reidentification: None,
         };
         // Fixed prompts are derived once per loaded bundle, then the text graph
         // and its plan are dropped. They never execute for a frame.
@@ -229,8 +233,16 @@ impl TractVision {
                 hash.update(f.sha256.as_bytes());
             }
         }
+        if let Some(embedding) = &self.reidentification {
+            hash.update(embedding.fingerprint().as_bytes());
+        }
         hash.update((self.threads as u64).to_le_bytes());
         Ok(VisionFingerprint(hash.finalize().into()))
+    }
+    /// Explicitly attach an already downloaded, verified embedding model.
+    pub fn with_reidentification(mut self, embedding: TractFaceEmbedding) -> Self {
+        self.reidentification = Some(embedding);
+        self
     }
     pub fn cached_plans(&self) -> usize {
         self.plans.len()
@@ -241,46 +253,7 @@ impl TractVision {
         dims: &[Vec<usize>],
         hooks: &dyn ExecutionHooks,
     ) -> Result<Arc<TypedRunnableModel>, Error> {
-        checkpoint(hooks, Stage::Vision)?;
-        let result = guarded(
-            || {
-                // Only ASD graphs contain stale dynamic exporter annotations. The
-                // cloned metadata is specialized without rewriting any operator.
-                let mut specialized;
-                let proto = if matches!(graph.kind, Kind::Audio | Kind::Visual | Kind::Backend) {
-                    specialized = graph.proto.clone();
-                    specialize(&mut specialized, graph.kind, dims)?;
-                    &specialized
-                } else {
-                    &graph.proto
-                };
-                let mut model = tract_onnx::onnx()
-                    .model_for_proto_model(proto)
-                    .map_err(|_| Error::VisionLoad)?;
-                for (i, shape) in dims.iter().enumerate() {
-                    let dt = if graph.kind == Kind::Text {
-                        i64::datum_type()
-                    } else {
-                        f32::datum_type()
-                    };
-                    model
-                        .set_input_fact(i, InferenceFact::dt_shape(dt, shape.clone()))
-                        .map_err(|_| Error::VisionShape)?;
-                }
-                let model = model.into_optimized().map_err(|_| Error::VisionLoad)?;
-                TypedRunnableModel::new_with_options(
-                    model,
-                    &RunOptions {
-                        executor: Some(self.executor.clone()),
-                        ..Default::default()
-                    },
-                )
-                .map_err(|_| Error::VisionLoad)
-            },
-            Error::VisionLoad,
-        );
-        checkpoint(hooks, Stage::Vision)?;
-        result
+        compile_graph(graph, dims, &self.executor, hooks)
     }
     fn plan(
         &mut self,
@@ -317,6 +290,16 @@ impl TractVision {
     }
 }
 impl VisionDetector for TractVision {
+    fn embedding(
+        &mut self,
+        frame: IdentityFrame<'_>,
+        hooks: &dyn ExecutionHooks,
+    ) -> Result<Option<FaceEmbedding>, Error> {
+        self.reidentification
+            .as_mut()
+            .map(|e| e.embed(frame, hooks))
+            .transpose()
+    }
     fn faces(
         &mut self,
         frame: FaceFrame<'_>,
@@ -405,6 +388,122 @@ impl VisionDetector for TractVision {
         checkpoint(hooks, Stage::Vision)?;
         Ok(result)
     }
+}
+/// Integrity-verified, fixed-shape CPU SFace adapter. One plan, no runtime download.
+pub struct TractFaceEmbedding {
+    plan: Arc<TypedRunnableModel>,
+    fingerprint: VisionFingerprint,
+}
+impl TractFaceEmbedding {
+    pub fn load(dir: &Path, threads: usize, hooks: &dyn ExecutionHooks) -> Result<Self, Error> {
+        use sha2::{Digest, Sha256};
+        checkpoint(hooks, Stage::Vision)?;
+        if !(1..=4).contains(&threads) {
+            return Err(Error::VisionShape);
+        }
+        let executor = if threads == 1 {
+            Executor::SingleThread
+        } else {
+            Executor::MultiThread(Arc::new(
+                rayon::ThreadPoolBuilder::new()
+                    .num_threads(threads)
+                    .thread_name(|i| format!("face-embedding-{i}"))
+                    .build()
+                    .map_err(|_| Error::VisionLoad)?,
+            ))
+        };
+        let catalog = models::catalog()?;
+        let file = catalog
+            .iter()
+            .find(|m| m.id == "sface-2021dec")
+            .and_then(|m| m.files.first())
+            .ok_or(Error::VisionLoad)?;
+        let graph = Graph::load(
+            dir,
+            &file.name,
+            file.size,
+            &file.sha256,
+            Kind::Identity,
+            None,
+            hooks,
+        )?;
+        let plan = compile_graph(&graph, &[vec![1, 3, 112, 112]], &executor, hooks)?;
+        let mut hash = Sha256::new();
+        hash.update(file.sha256.as_bytes());
+        hash.update(
+            b"sface-v1:five-point-similarity-eye8:bilinear-round-black:rgb112-raw:cosine128",
+        );
+        hash.update(RUNTIME.as_bytes());
+        hash.update((threads as u64).to_le_bytes());
+        Ok(Self {
+            plan,
+            fingerprint: VisionFingerprint(hash.finalize().into()),
+        })
+    }
+    pub fn fingerprint(&self) -> VisionFingerprint {
+        self.fingerprint
+    }
+    pub fn embed(
+        &mut self,
+        frame: IdentityFrame<'_>,
+        hooks: &dyn ExecutionHooks,
+    ) -> Result<FaceEmbedding, Error> {
+        let values = run(
+            &self.plan,
+            vec![tensor(&[1, 3, 112, 112], frame.values())?],
+            hooks,
+        )?;
+        let embedding = FaceEmbedding::new(&output(&values, 0, &[1, 128])?)?;
+        checkpoint(hooks, Stage::Vision)?;
+        Ok(embedding)
+    }
+}
+fn compile_graph(
+    graph: &Graph,
+    dims: &[Vec<usize>],
+    executor: &Executor,
+    hooks: &dyn ExecutionHooks,
+) -> Result<Arc<TypedRunnableModel>, Error> {
+    checkpoint(hooks, Stage::Vision)?;
+    let result = guarded(
+        || {
+            // Only ASD graphs contain stale dynamic exporter annotations. The
+            // cloned metadata is specialized without rewriting any operator.
+            let mut specialized;
+            let proto = if matches!(graph.kind, Kind::Audio | Kind::Visual | Kind::Backend) {
+                specialized = graph.proto.clone();
+                specialize(&mut specialized, graph.kind, dims)?;
+                &specialized
+            } else {
+                &graph.proto
+            };
+            let mut model = tract_onnx::onnx()
+                .model_for_proto_model(proto)
+                .map_err(|_| Error::VisionLoad)?;
+            for (i, shape) in dims.iter().enumerate() {
+                let dt = if graph.kind == Kind::Text {
+                    i64::datum_type()
+                } else {
+                    f32::datum_type()
+                };
+                model
+                    .set_input_fact(i, InferenceFact::dt_shape(dt, shape.clone()))
+                    .map_err(|_| Error::VisionShape)?;
+            }
+            let model = model.into_optimized().map_err(|_| Error::VisionLoad)?;
+            TypedRunnableModel::new_with_options(
+                model,
+                &RunOptions {
+                    executor: Some(executor.clone()),
+                    ..Default::default()
+                },
+            )
+            .map_err(|_| Error::VisionLoad)
+        },
+        Error::VisionLoad,
+    );
+    checkpoint(hooks, Stage::Vision)?;
+    result
 }
 fn read(
     dir: &Path,

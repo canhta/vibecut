@@ -61,5 +61,9 @@ whisper-rs = { version = "0.16.0", optional = true, features = ["metal", "raw-ap
 whisper-rs = { version = "0.16.0", optional = true, features = ["raw-api"] }
 
 [[example]]
+name = "face_embedding"
+required-features = ["vision"]
+
+[[example]]
 name = "local_alignment"
 required-features = ["candle-align"]

@@ -297,6 +297,16 @@ frame and callback, so interruption latency is at most one frame. The decoded
 frame budget covers the keyframe preroll and any replay, not just emitted
 frames.
 
+`VisionFrame::identity_tensor` prepares SFace input from five source-pixel YuNet
+landmarks: a least-squares orientation-preserving similarity fit to the pinned
+112x112 template, bilinear sampling with black border, then raw CHW RGB pixels.
+The output is fixed at 37,632 floats. Landmarks outside the source, eye distance
+below 8 pixels or a degenerate transform return
+None, preserving unavailable evidence; nonfinite landmarks return a typed error.
+No learned operator or descriptor matching belongs here. `vision_prep` tests cover
+RGB order, translation and hostile geometry; media's `identity_prepare` example
+prepares local evaluation tensors through this same public method.
+
 `VisionFrame::face_crop` applies the `p1-clips/12` Light-ASD recipe: expand the
 box by 0.40, pad pixels outside the decoded frame with gray 110, convert to raw
 0–255 grayscale, resize to 224x224 with linear interpolation and keep the centre

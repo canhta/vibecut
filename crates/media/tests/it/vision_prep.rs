@@ -29,6 +29,39 @@ fn cancel() -> Arc<AtomicBool> {
     Arc::new(AtomicBool::new(false))
 }
 
+#[test]
+fn identity_alignment_preserves_rgb_and_refuses_unusable_landmarks() {
+    let points = [
+        [38.2946, 51.6963],
+        [73.5318, 51.5014],
+        [56.0252, 71.7366],
+        [41.5493, 92.3655],
+        [70.7299, 92.2041],
+    ];
+    let pixels = (0..112 * 112)
+        .flat_map(|i| [(i % 112) as u8, (i / 112) as u8, 71, 255])
+        .collect();
+    let frame = VisionFrame::from_rgba8(Tick::ZERO, 112, 112, pixels).unwrap();
+    let aligned = frame.identity_tensor(points).unwrap().unwrap();
+    assert_eq!(aligned[45 * 112 + 50], 50.);
+    assert_eq!(aligned[112 * 112 + 45 * 112 + 50], 45.);
+    assert_eq!(aligned[2 * 112 * 112 + 45 * 112 + 50], 71.);
+    for p in [[[0., 0.]; 5], [[-1., 4.]; 5], [[1e20, 1e20]; 5]] {
+        assert!(frame.identity_tensor(p).unwrap().is_none());
+    }
+    assert!(frame.identity_tensor([[f32::NAN, 0.]; 5]).is_err());
+    // A translated face is sampled in source coordinates, not merely resized.
+    let shifted = points.map(|[x, y]| [x + 3., y + 2.]);
+    let aligned = frame.identity_tensor(shifted).unwrap().unwrap();
+    assert_eq!(aligned[45 * 112 + 50], 53.);
+    assert_eq!(aligned[112 * 112 + 45 * 112 + 50], 47.);
+    assert_eq!(aligned[111 * 112 + 111], 0.);
+    let rotated = points.map(|[x, y]| [112. - y, x]);
+    let aligned = frame.identity_tensor(rotated).unwrap().unwrap();
+    assert_eq!(aligned[45 * 112 + 50], 67.);
+    assert_eq!(aligned[112 * 112 + 45 * 112 + 50], 50.);
+}
+
 fn wav_16k_mono(samples: &[i16]) -> Vec<u8> {
     let data = samples.len() * 2;
     let mut bytes = Vec::with_capacity(44 + data);

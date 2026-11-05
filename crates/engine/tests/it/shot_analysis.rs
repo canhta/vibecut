@@ -170,6 +170,7 @@ impl VisionDetector for Detector {
             3 => panic!("injected detector panic"),
             4 => {
                 return Ok(vec![FaceBox {
+                    landmarks: None,
                     x: f32::NAN,
                     y: 0.,
                     width: 2.,
@@ -185,6 +186,16 @@ impl VisionDetector for Detector {
             Ok(vec![])
         } else {
             let mut faces = vec![FaceBox {
+                landmarks: (self.mode == 8).then(|| {
+                    [
+                        [38.2946, 51.6963],
+                        [73.5318, 51.5014],
+                        [56.0252, 71.7366],
+                        [41.5493, 92.3655],
+                        [70.7299, 92.2041],
+                    ]
+                    .map(|[x, y]| [(x * 0.35 + 5.) * 10., (y * 0.35 + 5.) * 10.])
+                }),
                 x: 64.,
                 y: 64.,
                 width: 180.,
@@ -193,6 +204,7 @@ impl VisionDetector for Detector {
             }];
             if self.mode == 6 && call < 3 {
                 faces.push(FaceBox {
+                    landmarks: None,
                     x: 230.,
                     y: 64.,
                     width: 110.,
@@ -202,6 +214,15 @@ impl VisionDetector for Detector {
             }
             Ok(faces)
         }
+    }
+    fn embedding(
+        &mut self,
+        _: ai::vision::IdentityFrame<'_>,
+        _: &dyn ExecutionHooks,
+    ) -> Result<Option<ai::vision::FaceEmbedding>, ai::Error> {
+        let mut values = vec![0.; 128];
+        values[0] = 1.;
+        Ok(Some(ai::vision::FaceEmbedding::new(&values)?))
     }
     fn speaker(
         &mut self,
@@ -271,6 +292,7 @@ fn analysis_partitions_shots_keeps_identity_local_and_reuses_only_matching_model
     );
     for shot in &result.shots {
         assert_eq!(shot.continuity_hint, Some(SpeakerRef { shot: 0, track: 0 }));
+        assert!(shot.tracks.iter().all(|track| track.identity.is_none()));
     }
     assert_eq!(cache.len(), 1);
     let before = calls.load(Ordering::SeqCst);
@@ -721,4 +743,63 @@ fn cache_pressure_keeps_complete_output_for_finish_retry() {
     drop(pressure);
     assert!(job.finish(&mut runner, &mut cache).unwrap().is_some());
     assert_eq!(cache.len(), 1);
+}
+
+#[test]
+fn repeated_faces_gain_cross_shot_identity_and_survive_cache_reopen() {
+    let Some(asset) = fixture() else {
+        return;
+    };
+    let (mut runner, mut cache, _dir) = setup();
+    let request = AnalysisRequest::new(
+        asset,
+        range(0, 5),
+        vec![],
+        [8; 32],
+        AnalysisSettings::default(),
+    )
+    .unwrap();
+    let calls = Arc::new(AtomicUsize::new(0));
+    let job = request
+        .submit(
+            &mut runner,
+            &mut cache,
+            Detector {
+                mode: 8,
+                ..Detector::normal(calls.clone())
+            },
+        )
+        .unwrap();
+    assert_eq!(wait(&mut runner, job.id), JobState::Completed);
+    let result = job.finish(&mut runner, &mut cache).unwrap().unwrap();
+    assert_eq!(result.shots[0].tracks[0].identity, None);
+    assert_eq!(
+        result.shots[1].tracks[0].identity,
+        Some(SpeakerRef { shot: 0, track: 0 })
+    );
+    let reused = request
+        .submit(
+            &mut runner,
+            &mut cache,
+            Detector {
+                mode: 3,
+                ..Detector::normal(calls.clone())
+            },
+        )
+        .unwrap();
+    assert_eq!(wait(&mut runner, reused.id), JobState::Completed);
+    assert_eq!(
+        reused.finish(&mut runner, &mut cache).unwrap().unwrap(),
+        result
+    );
+    let mut corrupt: serde_json::Value =
+        serde_json::from_slice(cache.get(request.cache_key()).unwrap().unwrap().bytes()).unwrap();
+    corrupt["shots"][1]["tracks"][0]["identity"]["shot"] = serde_json::json!(1);
+    cache
+        .put(request.cache_key(), &serde_json::to_vec(&corrupt).unwrap())
+        .unwrap();
+    assert!(matches!(
+        request.submit(&mut runner, &mut cache, Detector::normal(calls)),
+        Err(EditError::CacheCorrupt)
+    ));
 }

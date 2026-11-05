@@ -1,0 +1,8 @@
+asset: user-downloaded face_recognition_sface_2021dec.onnx (not bundled)
+title: SFace MobileFaceNet face embedding weights
+author: Yaoyao Zhong; ONNX conversion by Chengrui Wang; OpenCV Zoo contributors
+source: https://github.com/opencv/opencv_zoo/tree/48b10fa505aeb51fbd127fc60a5c660040e823b7/models/face_recognition_sface
+license: Apache-2.0
+license-file: https://raw.githubusercontent.com/opencv/opencv_zoo/48b10fa505aeb51fbd127fc60a5c660040e823b7/models/face_recognition_sface/LICENSE
+added: p1-clips/19
+notes: Model-directory Apache-2.0 notice approved for this model admission; upstream commercial/training-data clarification https://github.com/opencv/opencv_zoo/issues/313 and https://github.com/opencv/opencv_zoo/issues/318 remain recorded. No redistribution beyond the upstream model-directory notice is inferred. Exact file identity is owned by the ai model catalog; downloads remain explicit and hash verified.

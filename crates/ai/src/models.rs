@@ -259,6 +259,18 @@ pub fn catalog() -> Result<Vec<Model>, Error> {
     });
     models.push(alignment_model()?);
     models.push(Model {
+        id: "sface-2021dec".into(), license: "Apache-2.0".into(),
+        license_url: "https://raw.githubusercontent.com/opencv/opencv_zoo/48b10fa505aeb51fbd127fc60a5c660040e823b7/models/face_recognition_sface/LICENSE".into(),
+        source: "https://github.com/opencv/opencv_zoo/tree/48b10fa505aeb51fbd127fc60a5c660040e823b7/models/face_recognition_sface".into(),
+        languages: Vec::new(),
+        files: vec![ModelFile {
+            name: "face_recognition_sface_2021dec.onnx".into(),
+            url: "https://media.githubusercontent.com/media/opencv/opencv_zoo/48b10fa505aeb51fbd127fc60a5c660040e823b7/models/face_recognition_sface/face_recognition_sface_2021dec.onnx".into(),
+            sha256: "0ba9fbfa01b5270c96627c4ef784da859931e02f04419c829e83484087c34e79".into(),
+            size: 38_696_353,
+        }],
+    });
+    models.push(Model {
         id: "yunet-2026may".into(), license: "MIT".into(),
         license_url: "https://raw.githubusercontent.com/opencv/opencv_zoo/48b10fa505aeb51fbd127fc60a5c660040e823b7/models/face_detection_yunet/LICENSE".into(),
         source: "https://github.com/opencv/opencv_zoo/tree/48b10fa505aeb51fbd127fc60a5c660040e823b7/models/face_detection_yunet".into(),

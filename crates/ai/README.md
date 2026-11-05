@@ -306,6 +306,32 @@ transfer, catalog entry or default-model exposure until hosting is approved):
 | `lightasd_backend.onnx` | 9,393 | `f3d2b8b2ac81888e1a023e0bb1b3d9b764a151bf309d2510ae1357fbecd58084` |
 | `lightasd_backend.onnx.data` | 794,112 | `960c75126082846b34623606a9aff56baa6f092f1dbb7d37d59a2096105af9a0` |
 
+## Local face embeddings
+
+`vision::TractFaceEmbedding::load(dir, threads, hooks)` loads the catalog's pinned
+SFace ONNX weights only after size/SHA-256 verification; nothing is downloaded
+implicitly. The graph runs unmodified on the existing tract CPU runtime with
+1..=4 private executor threads and one fixed-shape plan. `embed` accepts an
+`IdentityFrame`: finite 112x112 CHW RGB pixels in 0..=255. Media owns five-point
+alignment; the graph itself owns centering/scaling. `FaceEmbedding` validates and
+normalizes its 128 finite elements and computes bounded cosine similarities. Its
+Debug output is redacted and it has no serialization implementation.
+
+Attach a loaded adapter with `TractVision::with_reidentification`; its model,
+alignment recipe, runtime and thread fingerprint then enter the vision bundle
+fingerprint and engine cache key. `VisionDetector::embedding` returns None when
+unavailable. YuNet `FaceBox::landmarks` retains its five points in prepared pixels;
+missing landmarks remain explicit. Loading/compilation/inference checks use the
+same cancellation, caught-panic and typed-error boundaries as other vision models.
+One running tract operation drains before cancellation returns.
+
+SFace model attribution and the approved licence disposition are in
+[SFACE.attribution](SFACE.attribution). Weights stay in the user cache and are never
+bundled. `examples/face_embedding.rs` is an offline tensor smoke/latency and pair
+score harness; `tests/vision.rs` covers descriptor validation and biometric
+redaction. Sample accuracy is agent-labelled evidence in the ticket report, not
+a runtime or library guarantee. Threshold decisions belong to engine.
+
 ## Local vision detectors
 
 `vision::VisionDetector` is a blocking, object-safe local inference seam;

@@ -178,7 +178,7 @@ fn language_neutral_metadata_never_matches_a_speech_language() {
             .iter()
             .map(|model| model.id.as_str())
             .collect::<Vec<_>>(),
-        ["yunet-2026may", "clip-vit-base-patch32"]
+        ["sface-2021dec", "yunet-2026may", "clip-vit-base-patch32"]
     );
     for model in neutral {
         assert!(model.languages.is_empty());

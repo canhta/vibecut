@@ -1186,7 +1186,27 @@ visible speaker still takes precedence. Missing audio or insufficient ASD eviden
 Unknown. Speech overlap is not inferred from a face detector or arbitrary noise.
 `continuity_hint` retains the last confirmed shot-local reference across cuts,
 including listener shots. It never assigns that reference to another shot's face;
-real re-identification is a separate consumer prerequisite.
+cross-shot identity is carried separately by `FaceTrack::identity`.
+
+When an embedding adapter is attached, at most three fresh aligned observations
+per track (about one second apart) are sampled. Missing/poor landmarks or an
+unavailable adapter leave no descriptor. Matching compares all sampled crops
+against fixed earlier anchors: every cosine must be at least 0.30 and the winner
+must exceed every alternative anchor by at least 0.08. Two simultaneous tracks
+claiming one anchor are both Unknown; a shot's tracks never match each other.
+Unmatched tracks seed separate anchors for future observations but their public
+identity remains None (Unknown). Confirmed matches never update anchor embeddings,
+preventing prediction feedback and identity drift. Layout consumers resolve a
+visible speaker's local reference through its shot's track identity, rather than
+reinterpreting the continuity hint. No face identity implies speech activity.
+
+The transient gallery admits 1024 anchors with at most three descriptors each;
+excess is a typed Limit. Embeddings are never serialized; only confident anchor
+references enter artifacts. Version 3 and the recipe invalidate old cached output.
+Reopened identities must refer to a prior existing anchor, never a future/current
+shot or another predicted match, and cannot be shared by simultaneous tracks.
+The 0.30 threshold uses a small agent-labelled interview calibration; it is a
+conservative sample-specific operating point, not a general face accuracy claim.
 
 `AnalysisJob::finish` returns None while pending, propagates typed terminal
 failures/cancellation, validates a complete retained result, then stores it in the
@@ -1204,8 +1224,12 @@ inference to exercise jobs/cache/failures. The ignored `real_vision_analysis_smo
 requires `--features vision`, `VIBECUT_VISION_MODELS` (the verified catalog-named
 files), `VIBECUT_VISION_SOURCE` (the permitted bounded source) and optional integer
 `VIBECUT_VISION_START`/`VIBECUT_VISION_DURATION` in seconds. It prints only aggregate
-analysis. Windows, real cross-shot identity, seven-layout integration and general
-speaker/cut accuracy are separate acceptance, not established by a green build.
+analysis. Cross-shot matching has focused uncertainty/collision/drift tests and
+an injected job/cache composition test. media's `identity_prepare` and ai's
+`face_embedding` example measure the actual media/tract adapters on local labelled
+boundary crops without logging private media. The ticket report records per-boundary
+agent-labelled results and rejection coverage. Seven-layout integration and general
+speaker/cut accuracy remain separate acceptance, not established by a green build.
 
 ## Visual item fields
 

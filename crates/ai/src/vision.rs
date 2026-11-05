@@ -4,7 +4,9 @@ use crate::{Error, ExecutionHooks};
 #[cfg(feature = "vision")]
 mod tract;
 #[cfg(feature = "vision")]
-pub use tract::{TractVision, VisionPaths};
+pub use tract::{TractFaceEmbedding, TractVision, VisionPaths};
+mod reidentification;
+pub use reidentification::{FaceEmbedding, IdentityFrame};
 mod decisions;
 pub use decisions::{aggregate_speakers, classify_embedding};
 
@@ -119,6 +121,8 @@ impl<'a> SpeakerChunk<'a> {
 /// Finite box in the prepared 640x384 plane; edges can extend outside the plane.
 #[derive(Clone, Debug, PartialEq)]
 pub struct FaceBox {
+    /// Five YuNet landmarks in prepared pixels; absent evidence cannot be aligned.
+    pub landmarks: Option<[[f32; 2]; 5]>,
     pub x: f32,
     pub y: f32,
     pub width: f32,
@@ -168,6 +172,15 @@ pub struct ShotResult {
 /// plan construction and every inference; a running tract call drains before
 /// cancellation discards its output. The caller serializes access per instance.
 pub trait VisionDetector: Send {
+    /// Optional local re-identification. None means unavailable, never a match.
+    /// A loaded embedding bundle must be included in the adapter fingerprint.
+    fn embedding(
+        &mut self,
+        _frame: IdentityFrame<'_>,
+        _hooks: &dyn ExecutionHooks,
+    ) -> Result<Option<FaceEmbedding>, Error> {
+        Ok(None)
+    }
     fn faces(
         &mut self,
         frame: FaceFrame<'_>,
@@ -195,6 +208,11 @@ impl ShotResult {
             return Err(Error::VisionShape);
         }
         for face in &faces {
+            if let Some(points) = face.landmarks {
+                for point in points {
+                    finite(&point)?;
+                }
+            }
             finite(&[face.x, face.y, face.width, face.height, face.confidence])?;
             if face.width <= 0. || face.height <= 0. || !(0.0..=1.0).contains(&face.confidence) {
                 return Err(Error::VisionShape);

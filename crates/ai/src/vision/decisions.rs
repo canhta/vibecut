@@ -163,7 +163,20 @@ pub(super) fn decode_faces(outputs: &[Vec<f32>]) -> Result<Vec<FaceBox>, Error> 
             let y = (k / (FACE_WIDTH / stride)) as f32 * stride as f32 + dy * stride as f32
                 - height / 2.;
             finite(&[x, y, width, height])?;
+            let mut landmarks = [[0.; 2]; 5];
+            let raw = outputs
+                .get(i + 9)
+                .and_then(|o| o.get(k * 10..k * 10 + 10))
+                .ok_or(Error::VisionShape)?;
+            for (point, pair) in landmarks.iter_mut().zip(raw.as_chunks::<2>().0) {
+                point[0] = (k % (FACE_WIDTH / stride)) as f32 * stride as f32
+                    + pair.first().copied().ok_or(Error::VisionShape)? * stride as f32;
+                point[1] = (k / (FACE_WIDTH / stride)) as f32 * stride as f32
+                    + pair.get(1).copied().ok_or(Error::VisionShape)? * stride as f32;
+                finite(point)?;
+            }
             boxes.push(FaceBox {
+                landmarks: Some(landmarks),
                 x,
                 y,
                 width,
@@ -215,7 +228,13 @@ mod tests {
         assert!(decode_faces(&outputs).unwrap().is_empty());
         outputs[0][0] = 1.;
         outputs[3][0] = 1.;
+        outputs[9][0] = 1.;
+        outputs[9][1] = 2.;
         assert_eq!(decode_faces(&outputs).unwrap().len(), 1);
+        assert_eq!(
+            decode_faces(&outputs).unwrap()[0].landmarks.unwrap()[0],
+            [8., 16.]
+        );
         // A second identical box is suppressed, even across feature scales.
         outputs[1][0] = 1.;
         outputs[4][0] = 1.;
