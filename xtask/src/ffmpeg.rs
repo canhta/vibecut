@@ -425,14 +425,22 @@ fn build_source(
             "--enable-mediafoundation".into(),
         ]);
     }
-    run(Command::new(build_tool("bash")?)
+    if let Err(error) = run(Command::new(build_tool("bash")?)
         .arg(shell_path(&ff.join("configure"))?)
         .current_dir(&ffbuild)
         .args(&flags)
         .env(
             "PKG_CONFIG_LIBDIR",
             shell_path(&prefix.join("lib/pkgconfig"))?,
-        ))?;
+        ))
+    {
+        let log = ffbuild.join("ffbuild/config.log");
+        match fs::read_to_string(&log) {
+            Ok(log) => eprintln!("FFmpeg configure failure log:\n{log}"),
+            Err(error) => eprintln!("cannot read {}: {error}", log.display()),
+        }
+        return Err(error);
+    }
     // FFmpeg has no --dlltool configure switch; its MinGW recipe exposes
     // DLLTOOL as a make variable for MSVC-compatible import libraries.
     for task in ["-j3", "install"] {
