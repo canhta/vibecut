@@ -39,7 +39,7 @@ pub(super) fn sources(receipt: &str) -> Result<Vec<Source>> {
         let Some((name, version)) = line.split_once(": ") else {
             continue;
         };
-        if !matches!(name, "ffmpeg" | "opus" | "libvpx") {
+        if !matches!(name, "ffmpeg" | "opus" | "libvpx" | "zlib") {
             continue;
         }
         if version.is_empty()
@@ -69,7 +69,7 @@ pub(super) fn sources(receipt: &str) -> Result<Vec<Source>> {
         });
     }
     let names: BTreeSet<_> = result.iter().map(|s| s.name.as_str()).collect();
-    if result.len() != 3 || names != BTreeSet::from(["ffmpeg", "opus", "libvpx"]) {
+    if result.len() != 4 || names != BTreeSet::from(["ffmpeg", "opus", "libvpx", "zlib"]) {
         return Err("missing/duplicate corresponding source identities".into());
     }
     Ok(result)
@@ -91,7 +91,7 @@ pub(super) fn compliance(tools: &Tools, prefix: &Path, destination: &Path) -> Re
     if gpl {
         admitted_names.push("x264");
     }
-    admitted_names.extend(["opus", "libvpx"]);
+    admitted_names.extend(["opus", "libvpx", "zlib"]);
     for admitted in admitted_names {
         let matching: Vec<_> = names
             .iter()
@@ -102,6 +102,7 @@ pub(super) fn compliance(tools: &Tools, prefix: &Path, destination: &Path) -> Re
                     "ffmpeg-license" => name.ends_with("LICENSE.md"),
                     "x264" => name.starts_with("x264-") && name.ends_with("-COPYING"),
                     "opus" => name.starts_with("opus-") && name.ends_with("-COPYING"),
+                    "zlib" => name.starts_with("zlib-") && name.ends_with("-LICENSE"),
                     _ => name.starts_with("libvpx-") && name.ends_with("-LICENSE"),
                 }
             })
@@ -137,11 +138,7 @@ pub(super) fn compliance(tools: &Tools, prefix: &Path, destination: &Path) -> Re
             .ok_or("source parent")?
             .join("sources")
             .join(format!("{}-{}.archive", identity.name, identity.version));
-        if !fs::symlink_metadata(&archive)
-            .map_err(|e| e.to_string())?
-            .file_type()
-            .is_file()
-        {
+        if !fs::symlink_metadata(&archive).is_ok_and(|metadata| metadata.file_type().is_file()) {
             return Err("corresponding source archive must be a regular file".into());
         }
         if digest(&archive)? != identity.hash {
@@ -767,11 +764,12 @@ mod tests {
             "ffmpeg-LICENSE.md",
             "opus-1.0-COPYING",
             "libvpx-1.0-LICENSE",
+            "zlib-1.0-LICENSE",
         ] {
             fs::write(prefix.join("compliance").join(name), b"license fixture").expect("license");
         }
         let mut receipt = "--disable-gpl --disable-nonfree --disable-autodetect\n".to_owned();
-        for name in ["ffmpeg", "opus", "libvpx"] {
+        for name in ["ffmpeg", "opus", "libvpx", "zlib"] {
             let path = root.join("sources").join(format!("{name}-1.0.archive"));
             fs::write(&path, b"synthetic corresponding source").expect("archive");
             receipt.push_str(&format!(
@@ -828,7 +826,8 @@ mod tests {
             BTreeSet::from([
                 arg("ffmpeg-1.0.archive"),
                 arg("opus-1.0.archive"),
-                arg("libvpx-1.0.archive")
+                arg("libvpx-1.0.archive"),
+                arg("zlib-1.0.archive")
             ])
         );
         fs::write(temp.0.join("sources/opus-1.0.archive"), b"tampered").expect("tamper");
@@ -864,6 +863,22 @@ mod tests {
                 .contains("license")
         );
     }
+    #[test]
+    fn zlib_license_and_corresponding_source_are_required() {
+        for (removed, expected) in [
+            ("prefix/compliance/zlib-1.0-LICENSE", "zlib"),
+            ("sources/zlib-1.0.archive", "source archive"),
+        ] {
+            let temp = Temp::new(&env::temp_dir()).expect("temp");
+            let prefix = sdk(&temp.0);
+            fs::remove_file(temp.0.join(removed)).expect("remove zlib artifact");
+            let tools = Tools::new(&workspace());
+            let error = compliance(&tools, &prefix, &temp.0.join("rejected"))
+                .expect_err("missing zlib artifact must be refused");
+            assert!(error.contains(expected), "{removed}: {error}");
+        }
+    }
+
     #[test]
     fn pe_headers_are_bounded_and_preserve_architecture_and_subsystem() {
         let temp = Temp::new(&env::temp_dir()).expect("temp");

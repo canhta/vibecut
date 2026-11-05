@@ -180,7 +180,7 @@ fn display_rounding_keeps_the_exact_rational_for_23976_and_2997() {
 }
 
 #[test]
-fn images_record_dimensions_and_one_decodable_frame() {
+fn png_and_jpeg_stills_record_dimensions_and_thumbnails() {
     for (name, codec) in [
         ("metadata-still.png", "png"),
         ("metadata-still.jpg", "mjpeg"),
@@ -188,16 +188,11 @@ fn images_record_dimensions_and_one_decodable_frame() {
         let Some(path) = image(name, codec) else {
             return;
         };
-        // The production FFmpeg recipe omits zlib, so a build without a PNG
-        // decoder must refuse the still with a typed capability error instead
-        // of inventing geometry. JPEG is built in and always runs.
+        // Every production platform builds zlib so this decoder must be present;
+        // a build without it fails here instead of skipping the PNG row.
         let opened = PacketReader::open(&path);
         let probe = match opened {
             Ok(reader) => reader.probe().clone(),
-            Err(media::MediaError::Unsupported(reason)) if codec == "png" => {
-                eprintln!("PNG row is capability-unsupported in this FFmpeg build: {reason}");
-                continue;
-            }
             Err(error) => panic!("{name}: {error}"),
         };
         let capabilities = ProbeCapabilities::from_probe(&probe);

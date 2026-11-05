@@ -10,6 +10,80 @@ use std::process::Command;
 
 const X264_VERSION: &str = "20191217-2245";
 const X264_URL: &str = "https://download.videolan.org/pub/videolan/x264/snapshots/x264-snapshot-20191217-2245-stable.tar.bz2";
+const ZLIB_REPOSITORY: &str = "https://github.com/madler/zlib.git";
+// zlib's release page publishes the archive digest; pin the digest per version
+// so a compromised mirror or a moved release cannot alter the provisioned SDK.
+const ZLIB_SHA256: [(&str, &str); 1] = [(
+    "1.4",
+    "02dd159783677a749c04adbdd02b55b8a2bcc7e054f51b76b549199a916ad584",
+)];
+
+/// Distinct failure from verifying an archive that must match its published digest.
+#[derive(Debug, PartialEq, Eq)]
+enum SourceError {
+    NoPinnedChecksum {
+        name: &'static str,
+        version: String,
+    },
+    Download {
+        name: &'static str,
+        version: String,
+        source: String,
+        detail: String,
+    },
+    ChecksumMismatch {
+        name: &'static str,
+        version: String,
+        expected: &'static str,
+        actual: String,
+    },
+    Extract {
+        name: &'static str,
+        version: String,
+        detail: String,
+    },
+    Io {
+        name: &'static str,
+        detail: String,
+    },
+}
+
+impl std::fmt::Display for SourceError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::NoPinnedChecksum { name, version } => write!(
+                formatter,
+                "{name} {version} has no pinned SHA-256; update xtask/src/ffmpeg.rs before provisioning"
+            ),
+            Self::Download {
+                name,
+                version,
+                source,
+                detail,
+            } => write!(
+                formatter,
+                "downloading {name} {version} from {source} failed: {detail}"
+            ),
+            Self::ChecksumMismatch {
+                name,
+                version,
+                expected,
+                actual,
+            } => write!(
+                formatter,
+                "{name} {version} source checksum mismatch: expected {expected}, got {actual}; removed the downloaded archive"
+            ),
+            Self::Extract {
+                name,
+                version,
+                detail,
+            } => write!(formatter, "extracting {name} {version} failed: {detail}"),
+            Self::Io { name, detail } => write!(formatter, "{name} source I/O failed: {detail}"),
+        }
+    }
+}
+
+impl std::error::Error for SourceError {}
 
 pub fn host() -> Result<String, String> {
     let os = match env::consts::OS {
@@ -101,12 +175,17 @@ fn stable_tag(repository: &str, prefix: &str) -> Result<String, String> {
         .ok_or_else(|| format!("no stable release in {repository}"))
 }
 
+fn cache_key_for(ffmpeg: &str, opus: &str, vpx: &str, zlib: &str) -> String {
+    format!("ffmpeg{ffmpeg}-opus{opus}-vpx{vpx}-zlib{zlib}-x264{X264_VERSION}")
+}
+
 /// Resolve the versions used by provisioning before restoring its hosted cache.
 pub fn cache_key() -> Result<(), String> {
     let version = stable_tag("https://github.com/FFmpeg/FFmpeg.git", "n")?;
     let opus = stable_tag("https://github.com/xiph/opus.git", "v")?;
     let vpx = stable_tag("https://github.com/webmproject/libvpx.git", "v")?;
-    println!("ffmpeg{version}-opus{opus}-vpx{vpx}-x264{X264_VERSION}");
+    let zlib = stable_tag(ZLIB_REPOSITORY, "v")?;
+    println!("{}", cache_key_for(&version, &opus, &vpx, &zlib));
     Ok(())
 }
 
@@ -141,6 +220,195 @@ fn source(
             .arg(&dir))?;
     }
     Ok(dir)
+}
+
+fn pinned_zlib_sha256(version: &str) -> Result<&'static str, SourceError> {
+    ZLIB_SHA256
+        .iter()
+        .find_map(|(pinned, digest)| (*pinned == version).then_some(*digest))
+        .ok_or_else(|| SourceError::NoPinnedChecksum {
+            name: "zlib",
+            version: version.to_owned(),
+        })
+}
+
+/// Fetch, verify and extract zlib before any install prefix exists.
+fn zlib_source(base: &Path, version: &str, receipt: &mut String) -> Result<PathBuf, SourceError> {
+    let expected = pinned_zlib_sha256(version)?;
+    let sources = base.join("sources");
+    fs::create_dir_all(&sources).map_err(|error| SourceError::Io {
+        name: "zlib",
+        detail: error.to_string(),
+    })?;
+    let archive = sources.join(format!("zlib-{version}.archive"));
+    let source = format!("https://zlib.net/fossils/zlib-{version}.tar.gz");
+    if !archive.exists() {
+        fetch(&source, &archive).map_err(|detail| SourceError::Download {
+            name: "zlib",
+            version: version.to_owned(),
+            source: source.clone(),
+            detail,
+        })?;
+    }
+    let measured = sha256(&archive).map_err(|detail| SourceError::Io {
+        name: "zlib",
+        detail,
+    })?;
+    if measured != expected {
+        let extracted = sources.join(format!("zlib-{version}"));
+        fs::remove_file(&archive).map_err(|error| SourceError::Io {
+            name: "zlib",
+            detail: format!("cannot remove the mismatched archive: {error}"),
+        })?;
+        if extracted.exists() {
+            fs::remove_dir_all(&extracted).map_err(|error| SourceError::Io {
+                name: "zlib",
+                detail: format!("cannot remove the mismatched extraction: {error}"),
+            })?;
+        }
+        return Err(SourceError::ChecksumMismatch {
+            name: "zlib",
+            version: version.to_owned(),
+            expected,
+            actual: measured,
+        });
+    }
+    receipt.push_str(&format!(
+        "zlib: {version}\nsource: {source}\nsha256: {measured}\nupstream checksum verified: true\n\n"
+    ));
+    let dir = sources.join(format!("zlib-{version}"));
+    if !dir.exists() {
+        fs::create_dir(&dir).map_err(|error| SourceError::Io {
+            name: "zlib",
+            detail: error.to_string(),
+        })?;
+        run(Command::new("tar")
+            .arg("-xf")
+            .arg(&archive)
+            .arg("--strip-components=1")
+            .arg("-C")
+            .arg(&dir))
+        .map_err(|detail| SourceError::Extract {
+            name: "zlib",
+            version: version.to_owned(),
+            detail,
+        })?;
+    }
+    Ok(dir)
+}
+
+fn ffmpeg_configure_flags(prefix: &Path, target: &str, arch: &str) -> Result<Vec<String>, String> {
+    let os = target
+        .split('-')
+        .next()
+        .ok_or("FFmpeg target is missing an OS")?;
+    let mut flags = vec![
+        format!("--prefix={}", shell_path(prefix)?),
+        "--enable-shared".into(),
+        "--disable-static".into(),
+        "--disable-gpl".into(),
+        "--disable-nonfree".into(),
+        "--disable-version3".into(),
+        "--disable-autodetect".into(),
+        "--disable-network".into(),
+        "--disable-doc".into(),
+        "--disable-avdevice".into(),
+        "--disable-ffplay".into(),
+        "--enable-libvpx".into(),
+        "--enable-libopus".into(),
+        // Static zlib is built from verified source; --disable-autodetect keeps
+        // this the only compression library the recipe links.
+        "--enable-zlib".into(),
+    ];
+    if os == "macos" {
+        flags.extend([
+            "--enable-videotoolbox".into(),
+            "--enable-audiotoolbox".into(),
+            "--install-name-dir=@rpath".into(),
+            "--enable-cross-compile".into(),
+            "--target-os=darwin".into(),
+            format!("--arch={arch}"),
+            format!("--extra-cflags=-arch {arch} -mmacosx-version-min=11.0"),
+            format!(
+                "--extra-ldflags=-arch {arch} -mmacosx-version-min=11.0 -Wl,-rpath,@loader_path"
+            ),
+        ]);
+    } else if os == "linux" {
+        flags.extend([
+            "--target-os=linux".into(),
+            format!(
+                "--arch={}",
+                if arch == "arm64" { "aarch64" } else { "x86_64" }
+            ),
+            "--cc=clang".into(),
+            "--cxx=clang++".into(),
+            "--ld=clang".into(),
+            "--ar=llvm-ar".into(),
+            "--nm=llvm-nm".into(),
+            "--enable-pic".into(),
+            // The GPL build admits libx264 for software H.264 export.
+            "--enable-gpl".into(),
+            "--enable-libx264".into(),
+            // libvpx/x264 are static and their pthread dependencies live in
+            // Libs.private; normal pkg-config output omits them.
+            "--pkg-config-flags=--static".into(),
+            "--extra-cflags=-fPIC".into(),
+            "--extra-ldflags=-Wl,-rpath,$ORIGIN/../lib".into(),
+        ]);
+    } else {
+        flags.extend([
+            "--target-os=mingw32".into(),
+            "--cc=clang".into(),
+            "--cxx=clang++".into(),
+            "--ld=clang".into(),
+            "--ar=llvm-ar".into(),
+            "--nm=llvm-nm".into(),
+            // libvpx is static and its MinGW pthread/semaphore dependencies
+            // live in Libs.private; normal pkg-config output omits them.
+            "--pkg-config-flags=--static".into(),
+            // Screen recording is outside the editor's media contract. FFmpeg's
+            // gfxcapture C++ build also collides with VERSION on Windows libc++.
+            "--disable-filter=gfxcapture".into(),
+            format!("--arch={arch}"),
+            "--enable-d3d11va".into(),
+            "--enable-dxva2".into(),
+            "--enable-mediafoundation".into(),
+        ]);
+    }
+    Ok(flags)
+}
+
+fn build_zlib(source: &Path, prefix: &Path, target: &str, arch: &str) -> Result<(), String> {
+    let build = source.join(target);
+    fs::create_dir_all(&build).map_err(|e| e.to_string())?;
+    let mut configure = Command::new("cmake");
+    configure
+        .arg("-S")
+        .arg(source)
+        .arg("-B")
+        .arg(&build)
+        .arg(format!("-DCMAKE_INSTALL_PREFIX={}", prefix.display()))
+        .args([
+            "-DCMAKE_BUILD_TYPE=Release",
+            "-DZLIB_BUILD_SHARED=OFF",
+            "-DZLIB_BUILD_STATIC=ON",
+            "-DZLIB_BUILD_TESTING=OFF",
+            "-DCMAKE_POSITION_INDEPENDENT_CODE=ON",
+        ]);
+    if cfg!(target_os = "macos") {
+        configure.args([
+            format!("-DCMAKE_OSX_ARCHITECTURES={arch}"),
+            "-DCMAKE_OSX_DEPLOYMENT_TARGET=11.0".into(),
+        ]);
+    } else {
+        configure.args(["-G", "Ninja", "-DCMAKE_C_COMPILER=clang"]);
+    }
+    run(&mut configure)?;
+    run(Command::new("cmake")
+        .arg("--build")
+        .arg(&build)
+        .args(["--parallel", "3"]))?;
+    run(Command::new("cmake").arg("--install").arg(&build))
 }
 
 pub fn prefix() -> Result<PathBuf, String> {
@@ -383,6 +651,7 @@ pub fn provision(target: Option<&str>) -> Result<(), String> {
     let version = stable_tag("https://github.com/FFmpeg/FFmpeg.git", "n")?;
     let opus = stable_tag("https://github.com/xiph/opus.git", "v")?;
     let vpx = stable_tag("https://github.com/webmproject/libvpx.git", "v")?;
+    let zlib = stable_tag(ZLIB_REPOSITORY, "v")?;
     let base = cache()?.join(target);
     fs::create_dir_all(&base).map_err(|e| e.to_string())?;
     let lock = fs::OpenOptions::new()
@@ -390,7 +659,7 @@ pub fn provision(target: Option<&str>) -> Result<(), String> {
         .create_new(true)
         .open(base.join("building.lock"))
         .map_err(|e| format!("FFmpeg provision already running or stale building.lock: {e}"))?;
-    let result = build_source(&base, target, &version, &opus, &vpx);
+    let result = build_source(&base, target, &version, &opus, &vpx, &zlib);
     drop(lock);
     fs::remove_file(base.join("building.lock")).map_err(|e| e.to_string())?;
     result
@@ -402,10 +671,13 @@ fn build_source(
     version: &str,
     opus: &str,
     vpx: &str,
+    zlib: &str,
 ) -> Result<(), String> {
     let patches = patches()?;
     let patch_id = patch_id(&patches)?;
-    let prefix = base.join(format!("{version}-opus{opus}-vpx{vpx}-{patch_id}"));
+    let prefix = base.join(format!(
+        "{version}-opus{opus}-vpx{vpx}-zlib{zlib}-{patch_id}"
+    ));
     if prefix.join("BUILD.txt").exists() {
         record_patches(&prefix, &patches)?;
         if cfg!(target_os = "macos") {
@@ -413,10 +685,14 @@ fn build_source(
         }
         fs::write(base.join("current"), prefix.as_os_str().as_encoded_bytes())
             .map_err(|e| e.to_string())?;
-        println!("FFmpeg {version}: {}", prefix.display());
+        println!("FFmpeg {version} + zlib {zlib}: {}", prefix.display());
         return Ok(());
     }
     let mut receipt = format!("FFmpeg shared build for {target}\n\n");
+    // Verify every pinned source before creating the install prefix, so a bad
+    // download can never leave a prefix that later provisioning mistakes for a
+    // completed build.
+    let zl = zlib_source(base, zlib, &mut receipt).map_err(|error| error.to_string())?;
     let sources = base.join("sources");
     fs::create_dir_all(&sources).map_err(|e| e.to_string())?;
     let _pristine = source(
@@ -484,6 +760,7 @@ fn build_source(
         "x86_64"
     };
     fs::create_dir_all(&prefix).map_err(|e| e.to_string())?;
+    build_zlib(&zl, &prefix, target, arch)?;
     run(Command::new("cmake")
         .arg("-S")
         .arg(&op)
@@ -572,76 +849,7 @@ fn build_source(
     }
     let ffbuild = ff.join(target);
     fs::create_dir_all(&ffbuild).map_err(|e| e.to_string())?;
-    let mut flags = vec![
-        format!("--prefix={}", shell_path(&prefix)?),
-        "--enable-shared".into(),
-        "--disable-static".into(),
-        "--disable-gpl".into(),
-        "--disable-nonfree".into(),
-        "--disable-version3".into(),
-        "--disable-autodetect".into(),
-        "--disable-network".into(),
-        "--disable-doc".into(),
-        "--disable-avdevice".into(),
-        "--disable-ffplay".into(),
-        "--enable-libvpx".into(),
-        "--enable-libopus".into(),
-    ];
-    if cfg!(target_os = "macos") {
-        flags.extend([
-            "--enable-videotoolbox".into(),
-            "--enable-audiotoolbox".into(),
-            "--install-name-dir=@rpath".into(),
-            "--enable-cross-compile".into(),
-            "--target-os=darwin".into(),
-            format!("--arch={arch}"),
-            format!("--extra-cflags=-arch {arch} -mmacosx-version-min=11.0"),
-            format!(
-                "--extra-ldflags=-arch {arch} -mmacosx-version-min=11.0 -Wl,-rpath,@loader_path"
-            ),
-        ]);
-    } else if cfg!(target_os = "linux") {
-        flags.extend([
-            "--target-os=linux".into(),
-            format!(
-                "--arch={}",
-                if arch == "arm64" { "aarch64" } else { "x86_64" }
-            ),
-            "--cc=clang".into(),
-            "--cxx=clang++".into(),
-            "--ld=clang".into(),
-            "--ar=llvm-ar".into(),
-            "--nm=llvm-nm".into(),
-            "--enable-pic".into(),
-            // The GPL build admits libx264 for software H.264 export.
-            "--enable-gpl".into(),
-            "--enable-libx264".into(),
-            // libvpx/x264 are static and their pthread dependencies live in
-            // Libs.private; normal pkg-config output omits them.
-            "--pkg-config-flags=--static".into(),
-            "--extra-cflags=-fPIC".into(),
-            "--extra-ldflags=-Wl,-rpath,$ORIGIN/../lib".into(),
-        ]);
-    } else {
-        flags.extend([
-            "--target-os=mingw32".into(),
-            "--cc=clang".into(),
-            "--cxx=clang++".into(),
-            "--ld=clang".into(),
-            "--ar=llvm-ar".into(),
-            "--nm=llvm-nm".into(),
-            // libvpx is static and its MinGW pthread/semaphore dependencies
-            // live in Libs.private; normal pkg-config output omits them.
-            "--pkg-config-flags=--static".into(),
-            // Screen recording is outside the editor's media contract. FFmpeg's
-            // gfxcapture C++ build also collides with VERSION on Windows libc++.
-            "--disable-filter=gfxcapture".into(),
-            format!("--arch={arch}"),
-            "--enable-d3d11va".into(),
-            "--enable-dxva2".into(),
-            "--enable-mediafoundation".into(),
-        ]);
-    }
+    let flags = ffmpeg_configure_flags(&prefix, target, arch)?;
     if let Err(error) = run(Command::new(build_tool("bash")?)
         .arg(shell_path(&ff.join("configure"))?)
         .current_dir(&ffbuild)
@@ -704,6 +912,7 @@ fn build_source(
         (&ff, "LICENSE.md"),
         (&op, "COPYING"),
         (&vp, "LICENSE"),
+        (&zl, "LICENSE"),
     ]
     .into_iter()
     .chain(x264.iter().map(|x| (x, "COPYING")))
@@ -718,11 +927,13 @@ fn build_source(
         .map_err(|e| e.to_string())?;
     }
     record_patches(&prefix, &patches)?;
-    receipt.push_str(&format!("opus flags: static PIC, DNN off, architecture {arch}\nlibvpx flags: {vpflags:?}\nFFmpeg configure: {flags:?}\n"));
+    receipt.push_str(&format!(
+        "zlib flags: static, PIC, architecture {arch}\nopus flags: static PIC, DNN off, architecture {arch}\nlibvpx flags: {vpflags:?}\nFFmpeg configure: {flags:?}\n"
+    ));
     fs::write(prefix.join("BUILD.txt"), receipt).map_err(|e| e.to_string())?;
     fs::write(base.join("current"), prefix.as_os_str().as_encoded_bytes())
         .map_err(|e| e.to_string())?;
-    println!("FFmpeg {version}: {}", prefix.display());
+    println!("FFmpeg {version} + zlib {zlib}: {}", prefix.display());
     Ok(())
 }
 
@@ -1120,6 +1331,111 @@ mod tests {
             .unwrap();
         fs::remove_dir_all(directory).unwrap();
         assert!(status.success());
+    }
+
+    #[test]
+    fn ffmpeg_recipe_keeps_disable_autodetect_and_platform_licence_admission() {
+        let prefix = env::temp_dir();
+        for (target, arch, gpl) in [
+            ("macos-aarch64", "arm64", false),
+            ("macos-x86_64", "x86_64", false),
+            ("windows-x86_64", "x86_64", false),
+            ("windows-aarch64", "arm64", false),
+            ("linux-x86_64", "x86_64", true),
+            ("linux-aarch64", "aarch64", true),
+        ] {
+            let flags = ffmpeg_configure_flags(&prefix, target, arch).unwrap();
+            for required in [
+                "--disable-autodetect",
+                "--disable-nonfree",
+                "--enable-zlib",
+                "--disable-gpl",
+            ] {
+                assert!(
+                    flags.iter().any(|flag| flag == required),
+                    "{target}: missing {required}"
+                );
+            }
+            assert_eq!(
+                flags.iter().any(|flag| flag == "--enable-gpl"),
+                gpl,
+                "{target}: GPL admission"
+            );
+            assert_eq!(
+                flags.iter().any(|flag| flag == "--enable-libx264"),
+                gpl,
+                "{target}: libx264 admission"
+            );
+        }
+    }
+
+    #[test]
+    fn zlib_version_participates_in_the_media_cache_key() {
+        let current = cache_key_for("9.0.2", "1.6.1", "1.17.0", "1.4");
+        assert_eq!(
+            current,
+            "ffmpeg9.0.2-opus1.6.1-vpx1.17.0-zlib1.4-x26420191217-2245"
+        );
+        assert_ne!(current, cache_key_for("9.0.2", "1.6.1", "1.17.0", "1.5"));
+    }
+
+    #[test]
+    fn unpinned_zlib_version_is_refused() {
+        assert_eq!(
+            pinned_zlib_sha256("1.5").unwrap_err(),
+            SourceError::NoPinnedChecksum {
+                name: "zlib",
+                version: "1.5".into(),
+            }
+        );
+    }
+
+    #[test]
+    fn zlib_checksum_mismatch_returns_a_typed_error_and_removes_the_archive() {
+        let base = env::temp_dir().join(format!(
+            "vibecut-zlib-checksum-typed-{}",
+            std::process::id()
+        ));
+        let _ = fs::remove_dir_all(&base);
+        fs::create_dir_all(base.join("sources")).unwrap();
+        fs::write(base.join("sources/zlib-1.4.archive"), b"tampered zlib").unwrap();
+        let actual = sha256(&base.join("sources/zlib-1.4.archive")).unwrap();
+        let mut receipt = String::new();
+        let error = zlib_source(&base, "1.4", &mut receipt).unwrap_err();
+        assert_eq!(
+            error,
+            SourceError::ChecksumMismatch {
+                name: "zlib",
+                version: "1.4".into(),
+                expected: pinned_zlib_sha256("1.4").unwrap(),
+                actual,
+            }
+        );
+        assert!(!base.join("sources/zlib-1.4.archive").exists());
+        assert!(!base.join("sources/zlib-1.4").exists());
+        assert!(receipt.is_empty());
+        fs::remove_dir_all(base).unwrap();
+    }
+
+    #[test]
+    fn zlib_checksum_mismatch_leaves_no_provisioned_prefix() {
+        let base = env::temp_dir().join(format!(
+            "vibecut-zlib-checksum-prefix-{}",
+            std::process::id()
+        ));
+        let _ = fs::remove_dir_all(&base);
+        fs::create_dir_all(base.join("sources")).unwrap();
+        fs::write(base.join("sources/zlib-1.4.archive"), b"tampered zlib").unwrap();
+        let patch_id = patch_id(&patches().unwrap()).unwrap();
+        let prefix = base.join(format!("1.4-opus1.0-vpx1.0-zlib1.4-{patch_id}"));
+        let error = build_source(&base, "linux-aarch64", "1.4", "1.0", "1.0", "1.4").unwrap_err();
+        assert!(
+            error.contains("zlib 1.4 source checksum mismatch"),
+            "{error}"
+        );
+        assert!(!prefix.exists());
+        assert!(!base.join("sources/zlib-1.4.archive").exists());
+        fs::remove_dir_all(base).unwrap();
     }
 
     #[test]

@@ -145,7 +145,7 @@ maintainer release approval or establish native device/hardware acceptance.
 ## Library replacement and recovery
 
 FFmpeg is LGPL-2.1-or-later on macOS and Windows and GPL-3.0 with libx264 on Linux; reverse engineering to debug library changes is permitted.
-Included FFmpeg/Opus/libvpx archives match the verified recipe/receipt and patches.
+Included FFmpeg/Opus/libvpx/zlib archives match the verified recipe/receipt and patches.
 Extract `.archive` files using `tar -xf` and rebuild ABI-compatible shared libraries
 in an isolated prefix. No app rebuild is required; keep original libraries to undo
 replacement. Never modify the only copy of an installed app.

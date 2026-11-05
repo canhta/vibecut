@@ -132,8 +132,8 @@ discard that execution; flush is idempotent after successful completion.
 ## Input and quality boundaries
 
 Input formats/codecs come from the resolved FFmpeg build. The development recipe
-includes built-in decoders, native AAC, libvpx and libopus; dav1d/LAME admission and
-all distribution requirements are owned by the
+includes built-in decoders, static zlib for PNG, native AAC, libvpx and libopus;
+dav1d/LAME admission and all distribution requirements are owned by the
 [open-source policy](../../docs/engineering/open-source.md#ffmpeg-distribution).
 Missing encoders/decoders return typed capability failures. AV1 availability is
 conditional; no AV1 software decoder is promised by this build recipe.
