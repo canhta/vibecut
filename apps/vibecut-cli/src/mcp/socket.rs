@@ -187,7 +187,7 @@ mod tests {
     #[cfg(unix)]
     #[test]
     fn mcp_socket_refuses_broad_directory_and_uses_owner_permissions() {
-        use std::os::unix::fs::{MetadataExt, PermissionsExt};
+        use std::os::unix::fs::{DirBuilderExt, MetadataExt, PermissionsExt};
         let root = tempfile::tempdir().unwrap();
         let runtime = tokio::runtime::Runtime::new().unwrap();
         let _enter = runtime.enter();
@@ -205,9 +205,29 @@ mod tests {
             std::fs::metadata(root.path()).unwrap().mode() & 0o777,
             0o700
         );
-        let metadata = std::fs::metadata(endpoint).unwrap();
+        let metadata = std::fs::metadata(&endpoint).unwrap();
         assert_eq!(metadata.mode() & 0o777, 0o600);
         assert_eq!(metadata.uid(), rustix::process::geteuid().as_raw());
+        // An alias of a private directory is refused rather than followed.
+        let real = root.path().join("real");
+        std::fs::DirBuilder::new()
+            .mode(0o700)
+            .create(&real)
+            .unwrap();
+        let alias = root.path().join("alias");
+        std::os::unix::fs::symlink(&real, &alias).unwrap();
+        assert_eq!(
+            listen(&alias.join("control.sock")).unwrap_err().kind(),
+            io::ErrorKind::PermissionDenied
+        );
+        // A taken name is never replaced or re-permissioned, live socket or stale file.
+        assert!(listen(&endpoint).is_err());
+        let stale = real.join("stale.sock");
+        std::fs::write(&stale, b"").unwrap();
+        std::fs::set_permissions(&stale, std::fs::Permissions::from_mode(0o644)).unwrap();
+        assert!(listen(&stale).is_err());
+        assert_eq!(std::fs::metadata(&stale).unwrap().mode() & 0o777, 0o644);
+        assert_eq!(std::fs::metadata(&endpoint).unwrap().mode() & 0o777, 0o600);
     }
 
     #[tokio::test(start_paused = true)]
