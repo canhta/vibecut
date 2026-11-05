@@ -11,7 +11,8 @@ Commit only green; choose the smallest covering check. Rust compilations follow 
 | App UI strings | `cargo xtask i18n` (en/vi completeness, unused keys, direct egui literals) |
 | Code handoff, frozen SHA | `cargo xtask ci --require-oracles` once (fmt, Clippy, all tests/doctests, layers, assets, names, required oracles) |
 | Media/render/hot path | Above plus the ticket benchmark; report speed and output quality (VMAF/SSIM, loudness/peaks, pixel diff or tick drift) against its baseline |
-| Reviewer code fix or Rust conflict resolution | One full local CI run on the resulting tree |
+| Fix round after `changes` | Touched crates' tests and Clippy plus the reviewer's reproductions; no full CI |
+| Merge of a tree without a full-CI receipt (fix round, reviewer fix, Rust conflict resolution) | The merger runs one full local CI on the final tree before push |
 | T1 merge | Smallest covering check on the exact rebased SHA before push |
 | Clean rebase | Reuse the receipt; no full CI rerun |
 
