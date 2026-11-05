@@ -22,6 +22,33 @@ pub(super) fn cache() -> Result<PathBuf, String> {
     crate::archives::cache("ffmpeg")
 }
 
+/// Append one encoded rustc flag without dropping the caller's flags.
+pub(super) fn append_encoded_flag(command: &mut Command, flag: &str) {
+    let existing = command
+        .get_envs()
+        .filter(|(key, _)| *key == std::ffi::OsStr::new("CARGO_ENCODED_RUSTFLAGS"))
+        .last()
+        .and_then(|(_, value)| value)
+        .and_then(|value| value.to_str())
+        .map(str::to_owned);
+    let mut flags = existing.unwrap_or_else(|| {
+        let mut flags = env::var("CARGO_ENCODED_RUSTFLAGS").unwrap_or_default();
+        if flags.is_empty() {
+            flags = env::var("RUSTFLAGS")
+                .unwrap_or_default()
+                .split_whitespace()
+                .collect::<Vec<_>>()
+                .join("\x1f");
+        }
+        flags
+    });
+    if !flags.is_empty() {
+        flags.push('\x1f');
+    }
+    flags.push_str(flag);
+    command.env("CARGO_ENCODED_RUSTFLAGS", flags);
+}
+
 fn run(command: &mut Command) -> Result<(), String> {
     if cfg!(windows) {
         command
@@ -233,6 +260,12 @@ pub fn environment_at(command: &mut Command, prefix: &Path) -> Result<(), String
             flags.push_str(&link_arg);
         }
         command.env("CARGO_ENCODED_RUSTFLAGS", flags);
+    }
+    #[cfg(all(target_os = "linux", target_arch = "aarch64"))]
+    {
+        // candle's gemm-f16 needs ARMv8.2 FP16, which rustc leaves off the
+        // baseline aarch64 target; supported Linux ARM hosts implement it.
+        append_encoded_flag(command, "-C\x1ftarget-feature=+fp16");
     }
     Ok(())
 }
