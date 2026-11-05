@@ -81,7 +81,9 @@ region reaches zero. English/Vietnamese, theme, panel proportions and
 property-section open state use one bounded, versioned preference store;
 `ui.prefs.set` edits have app-owned undo/redo and never touch Project JSON. A
 damaged layout restores its defaults with a visible warning, while an unreadable
-document restores the system defaults.
+document restores the system defaults. Unversioned and unsupported versions are
+refused without rewriting their bytes on load or save. Edits and writes share the 4 KiB
+read budget, so a saved document always remains readable.
 
 The selection inspector shows audio gain and text size/colour for compatible
 selected items, with a dash for mixed values and the compatible/selected count.

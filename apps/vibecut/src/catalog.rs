@@ -634,7 +634,8 @@ pub fn validate_panels(panels: [f32; 3]) -> Result<[f32; 3]> {
     let preview = 1.0 - assets - properties;
     if !(PANEL_MIN..=PANEL_MAX).contains(&assets)
         || !(PANEL_MIN..=PANEL_MAX).contains(&properties)
-        || !(PREVIEW_MIN..=PREVIEW_MAX).contains(&preview)
+        // Subtracting both side ratios can round one ULP below the limit.
+        || !((PREVIEW_MIN - f32::EPSILON)..=PREVIEW_MAX).contains(&preview)
         || !(TIMELINE_MIN..=TIMELINE_MAX).contains(&timeline)
     {
         return Err(Error::Invalid("panel ratios"));
@@ -645,8 +646,8 @@ pub fn validate_panels(panels: [f32; 3]) -> Result<[f32; 3]> {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Preferences {
-    /// Versioned local document; older files default the missing field to v1.
-    #[serde(default = "preferences_version")]
+    /// Missing versions are refused as version zero.
+    #[serde(default)]
     pub version: u32,
     #[serde(default)]
     pub export: crate::export::ExportOptions,
@@ -657,9 +658,6 @@ pub struct Preferences {
     /// Open/closed state by property-section key.
     #[serde(default)]
     pub sections: BTreeMap<String, bool>,
-}
-const fn preferences_version() -> u32 {
-    PREFERENCES_VERSION
 }
 impl Default for Preferences {
     fn default() -> Self {
@@ -686,7 +684,11 @@ impl Preferences {
             return Err(Error::Unsupported("preferences version"));
         }
         validate_panels(self.panels)?;
-        self.validate_sections()
+        self.validate_sections()?;
+        if serde_json::to_vec(self)?.len() as u64 > MAX_PREFERENCES_BYTES {
+            return Err(Error::Invalid("preference size"));
+        }
+        Ok(())
     }
     fn validate_sections(&self) -> Result<()> {
         if self.sections.len() > MAX_SECTIONS
@@ -702,9 +704,6 @@ impl Preferences {
     pub fn section_open(&self, key: &str, default: bool) -> bool {
         self.sections.get(key).copied().unwrap_or(default)
     }
-    pub fn set_section(&mut self, key: &str, value: bool) {
-        self.sections.insert(key.to_owned(), value);
-    }
     /// Typed `ui.prefs.set` payload access used by the app history.
     pub fn get(&self, key: &str) -> Result<serde_json::Value> {
         match key {
@@ -717,17 +716,19 @@ impl Preferences {
         }
     }
     pub fn set(&mut self, key: &str, value: serde_json::Value) -> Result<()> {
+        let mut next = self.clone();
+        next.set_value(key, value)?;
+        next.validate()?;
+        *self = next;
+        Ok(())
+    }
+    fn set_value(&mut self, key: &str, value: serde_json::Value) -> Result<()> {
         match key {
             "locale" => self.locale = serde_json::from_value(value)?,
             "dark" => self.dark = serde_json::from_value(value)?,
             "panels" => self.panels = validate_panels(serde_json::from_value(value)?)?,
             "sections" => {
-                let sections: BTreeMap<String, bool> = serde_json::from_value(value)?;
-                let previous = std::mem::replace(&mut self.sections, sections);
-                if let Err(error) = self.validate_sections() {
-                    self.sections = previous;
-                    return Err(error);
-                }
+                self.sections = serde_json::from_value(value)?;
             }
             "export" => self.export = serde_json::from_value(value)?,
             _ => return Err(Error::Unsupported("preference key")),
@@ -811,6 +812,11 @@ impl PreferenceStore {
     }
     pub fn save(&self, value: &Preferences) -> Result<()> {
         value.validate()?;
+        if let Ok(previous) = self.read()
+            && previous.version != PREFERENCES_VERSION
+        {
+            return Err(Error::Unsupported("preferences version"));
+        }
         if let Some(parent) = self.path.parent() {
             std::fs::create_dir_all(parent)?;
         }
@@ -1048,6 +1054,36 @@ mod tests {
         )
         .expect("write newer preferences");
         assert_eq!(store.load_with_warning().1, Some(PreferenceIssue::Version));
+    }
+
+    #[test]
+    fn repeated_splitter_drags_always_produce_valid_preferences() {
+        // Unequal side panels expose subtraction round-off at the preview minimum.
+        let boundary = drag_panel([0.37875625, 0.25, 0.5], 1, -10.0);
+        assert!(validate_panels(boundary).is_ok(), "{boundary:?}");
+        for first in [0, 1] {
+            let mut panels =
+                drag_panel(DEFAULT_PANELS, first, if first == 0 { 10.0 } else { -10.0 });
+            for axis in [1 - first, first, 2, 0, 1] {
+                for delta in [-10.0, 0.00001, 10.0, -0.00001] {
+                    panels = drag_panel(panels, axis, delta);
+                    assert!(validate_panels(panels).is_ok(), "{panels:?}");
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn oversized_preference_save_preserves_previous_document() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = PreferenceStore::new(dir.path().join("preferences.json"));
+        let mut preferences = Preferences::default();
+        store.save(&preferences).unwrap();
+        for index in 0..128 {
+            preferences.sections.insert(format!("{index:064}"), false);
+        }
+        assert!(store.save(&preferences).is_err());
+        assert_eq!(store.load().unwrap(), Preferences::default());
     }
 
     #[test]

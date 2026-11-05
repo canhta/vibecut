@@ -206,13 +206,18 @@ struct TimelineLayout {
 }
 impl TimelineLayout {
     fn new(rect: Rect) -> Self {
-        let toolbar = Rect::from_min_size(rect.min, Vec2::new(rect.width(), TOOLBAR_HEIGHT));
+        let toolbar = Rect::from_min_size(
+            rect.min,
+            Vec2::new(rect.width(), TOOLBAR_HEIGHT.min(rect.height())),
+        );
         let top = toolbar.bottom();
-        let right = (rect.right() - SCROLLBAR).max(rect.left() + LABEL_WIDTH);
-        let bottom = (rect.bottom() - SCROLLBAR).max(top + RULER_HEIGHT);
+        let label_right = (rect.left() + LABEL_WIDTH).min(rect.right());
+        let ruler_bottom = (top + RULER_HEIGHT).min(rect.bottom());
+        let right = (rect.right() - SCROLLBAR).max(label_right);
+        let bottom = (rect.bottom() - SCROLLBAR).max(ruler_bottom);
         let ruler = Rect::from_min_max(
-            egui::pos2(rect.left() + LABEL_WIDTH, top),
-            egui::pos2(right, top + RULER_HEIGHT),
+            egui::pos2(label_right, top),
+            egui::pos2(right, ruler_bottom),
         );
         let body = Rect::from_min_max(
             egui::pos2(ruler.left(), ruler.bottom()),
@@ -1192,23 +1197,21 @@ impl Editor {
     }
     /// Section keys are dynamic; the whole open/closed map is one history entry.
     pub fn set_section_open(&mut self, key: &str, open: bool) -> Result<()> {
-        let before = self.preferences.get("sections")?;
-        self.preferences.set_section(key, open);
-        let after = self.preferences.get("sections")?;
-        if before != after {
-            self.preference_history
-                .record(PreferenceCommand::new("sections", before, after));
-        }
-        Ok(())
+        let mut sections = self.preferences.sections.clone();
+        sections.insert(key.to_owned(), open);
+        self.dispatch(
+            PREFERENCE_COMMAND,
+            serde_json::json!({"key": "sections", "value": sections}),
+        )
     }
     fn record_layout_change(&mut self, before: [f32; 3]) {
         let after = self.preferences.panels;
-        if before != after {
-            self.preference_history.record(PreferenceCommand::new(
-                "panels",
-                serde_json::json!(before),
-                serde_json::json!(after),
-            ));
+        self.preferences.panels = before;
+        if let Err(error) = self.dispatch(
+            PREFERENCE_COMMAND,
+            serde_json::json!({"key": "panels", "value": after}),
+        ) {
+            self.error = Some(error.to_string());
         }
     }
     fn select_single(&mut self, item: ItemId) {
@@ -1971,9 +1974,10 @@ impl Editor {
             self.keyboard(ui.ctx());
         }
         let rect = ui.max_rect();
+        let rect = Rect::from_min_size(rect.min, rect.size().max(Vec2::ZERO));
         ui.painter()
             .rect_filled(rect, 0.0, theme::window(self.preferences.dark));
-        let top = Rect::from_min_size(rect.min, Vec2::new(rect.width(), 52.0));
+        let top = Rect::from_min_size(rect.min, Vec2::new(rect.width(), rect.height().min(52.0)));
         let body = Rect::from_min_max(egui::pos2(rect.left(), top.bottom()), rect.max);
         let timeline_height = body.height() * self.preferences.panels[2];
         let upper = Rect::from_min_max(
@@ -2003,12 +2007,16 @@ impl Editor {
                 theme::panel(self.preferences.dark)
             };
             ui.painter().rect_filled(area, 0.0, fill);
-            let mut child = ui.new_child(
-                egui::UiBuilder::new()
-                    .id_salt(id)
-                    .max_rect(area.shrink(12.0)),
-            );
+            let mut child = ui.new_child(egui::UiBuilder::new().id_salt(id).max_rect(
+                area.shrink2(Vec2::new(
+                    12.0_f32.min(area.width() / 2.0),
+                    12.0_f32.min(area.height() / 2.0),
+                )),
+            ));
             child.set_clip_rect(area);
+            if area.width() <= 0.0 || area.height() <= 0.0 {
+                continue;
+            }
             match id {
                 "header" => self.header(&mut child),
                 "media" => self.media(&mut child),
@@ -2180,11 +2188,12 @@ impl Editor {
         let Some(dialog) = &mut self.export else {
             return;
         };
+        let mut options = self.preferences.export;
         let output = dialog.ui(
             ctx,
             self.preferences.locale,
             self.preferences.dark,
-            &mut self.preferences.export,
+            &mut options,
             self.session.project(),
             self.texture.as_ref(),
         );
@@ -2196,13 +2205,21 @@ impl Editor {
                 let result = if self.session.transaction_active() {
                     Err(Error::Engine(engine::EditError::TransactionActive))
                 } else {
-                    dialog.start(self.session.project().clone(), self.preferences.export)
+                    dialog.start(self.session.project().clone(), options)
                 };
                 if let Err(error) = result {
                     dialog.failed(error);
                 }
             }
             None => {}
+        }
+        if options != self.preferences.export
+            && let Err(error) = self.dispatch(
+                PREFERENCE_COMMAND,
+                serde_json::json!({"key": "export", "value": options}),
+            )
+        {
+            self.error = Some(error.to_string());
         }
         for (id, response) in output.widgets {
             self.remember(id, &response);
@@ -3952,7 +3969,8 @@ impl Editor {
         let content = (duration.seconds() as f32).max(view) + 1.0;
         let max = (content - view).max(0.0);
         let track = layout.horizontal.shrink2(Vec2::new(0.0, 3.0));
-        let thumb_width = ((view / content) * track.width()).clamp(12.0, track.width());
+        let thumb_width =
+            ((view / content) * track.width()).clamp(12.0_f32.min(track.width()), track.width());
         let fraction = if max > 0.0 { self.scroll / max } else { 0.0 };
         let thumb_x = track.left() + fraction * (track.width() - thumb_width);
         let thumb = Rect::from_min_size(
@@ -3972,6 +3990,7 @@ impl Editor {
         if (response.clicked() || response.dragged())
             && let Some(pointer) = response.interact_pointer_pos()
             && max > 0.0
+            && track.width() > 0.0
         {
             let fraction = ((pointer.x - track.left()) / track.width()).clamp(0.0, 1.0);
             self.scroll = fraction * max;
@@ -3980,7 +3999,8 @@ impl Editor {
         let max_vertical = (content_height - TRACK_GAP - layout.body.height()).max(0.0);
         let track = layout.vertical.shrink2(Vec2::new(3.0, 0.0));
         let thumb_height = if content_height > 0.0 {
-            ((layout.body.height() / content_height) * track.height()).clamp(12.0, track.height())
+            ((layout.body.height() / content_height) * track.height())
+                .clamp(12.0_f32.min(track.height()), track.height())
         } else {
             track.height()
         };
@@ -4010,6 +4030,7 @@ impl Editor {
         if (response.clicked() || response.dragged())
             && let Some(pointer) = response.interact_pointer_pos()
             && max_vertical > 0.0
+            && track.height() > 0.0
         {
             let fraction = ((pointer.y - track.top()) / track.height()).clamp(0.0, 1.0);
             self.vertical_scroll = fraction * max_vertical;
