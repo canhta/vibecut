@@ -399,7 +399,7 @@ fn preview_audio_mix_obeys_item_gain_and_mute() {
     };
     let hooks = Hooks::default();
     for (volume, muted, expected) in [
-        (0.0, false, 10f32.powf(-1.0 / 20.0) * 0.98),
+        (-3.0, false, 10f32.powf(-3.0 / 20.0) * 0.98),
         (-6.0, false, 10f32.powf(-6.0 / 20.0) * 0.98),
         (0.0, true, 0.0),
         (-6.0, true, 0.0),

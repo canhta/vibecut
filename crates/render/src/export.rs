@@ -531,6 +531,7 @@ fn encoded_export(
     drop(first_frame);
     let mut audio = if settings.include_audio {
         Some(AudioEncoder::new(AudioEncoderSettings {
+            bit_rate: 192_000,
             webm: matches!(settings.container, Container::WebM),
             ..AudioEncoderSettings::aac(
                 project.data().settings.audio_sample_rate,
@@ -719,6 +720,7 @@ fn copy_export(
     }
     let mut audio = if settings.include_audio {
         Some(AudioEncoder::new(AudioEncoderSettings {
+            bit_rate: 192_000,
             webm: matches!(settings.container, Container::WebM),
             ..AudioEncoderSettings::aac(
                 project.data().settings.audio_sample_rate,

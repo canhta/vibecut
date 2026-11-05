@@ -45,10 +45,15 @@ working directory changes never reinterpret them.
 
 Names, notes and text use captions' NFC text owner. Canvas frames must have exact,
 positive integer tick durations. Canvas area is at most 2^26 pixels; output audio
+<<<<<<< HEAD
 admits 8–192 kHz. Audio gain admits −120..24 dB; font sizes admit 1..4096 pixels.
 Text items also carry a 1..256-byte font-family name, an optional padded RGBA
 background box, and x/y canvas percentages in 0..=100 (default 50/84.5 reproduces
 the original lower-third box). Typed invalid/unsupported/limit errors refuse a whole candidate.
+=======
+admits 8–192 kHz. Audio/video source volume and master volume admit -60..20 dB on a 0.01 dB grid; font sizes admit 1..4096 pixels.
+Typed invalid/unsupported/limit errors refuse a whole candidate.
+>>>>>>> aecd912 (feat(audio): enforce 192k export audio and document graph contracts)
 
 `ProjectData.original_canvas_size` is the optional first visual media size, not a
 second user canvas setting. It starts null and retains the first inserted media's
@@ -92,13 +97,13 @@ engine, rendering, audio automation and graph consumers. None means absent,
 not zero. No render/CLI execution is introduced by this data contract.
 
 `AnimationPath::new` admits `transform.positionX/Y`, `transform.scaleX/Y`,
-`transform.rotate`, `opacity`, `volume`, `color`, `background.color`,
+`transform.rotate`, `opacity`, `volume`, `muted`, `color`, `background.color`,
 `background.paddingX/Y`, `background.offsetX/Y`, `background.cornerRadius`,
 `params.<name>` and `effects.<id>.params.<name>`. Extension ids/names are 1..=64 ASCII
 letters/digits/underscore/hyphen; complete paths are at most 160 bytes. These
 extension namespaces reserve animation data, not an effect/graphic implementation
 or catalog entry. Future owners resolve ids against their admitted implementations.
-Built-in numeric paths require scalars; color paths accept linear RGBA composites
+`volume` is scalar dB (consumers clamp overshoot to -60..20); `muted` requires a held bool. Built-in numeric paths require scalars; color paths accept linear RGBA composites
 or discrete text values. Extension paths admit all parameter kinds.
 
 `ParamValue` holds scalar, bool, NFC text or linear-light unpremultiplied RGBA.
@@ -151,10 +156,16 @@ or renderer output claim is made.
 ## Persistence and limits
 
 `encode`/`decode` use one JSON envelope: `format`, `schema_version`, `generator`,
+<<<<<<< HEAD
 `project`. Current schema 10 stores text font, background and position fields alongside
 `original_canvas_size` and the media-owned `ephemeral` flag.
 ProjectId is stored as a canonical decimal string, preserving
 all u64 identity bits for control clients; other IDs remain numeric. Schemas 1-9
+=======
+`project`. Current schema 10 renames audio `gain_db` to `volume`, adds video source `volume`/`muted`, and adds project `master_volume`/`master_muted` settings.
+ProjectId is stored as a canonical decimal string, preserving
+all u64 identity bits for control clients; other IDs remain numeric. Schemas 1–9
+>>>>>>> aecd912 (feat(audio): enforce 192k export audio and document graph contracts)
 are refused rather than migrated or silently defaulted. Older schemas return `TooOld`, newer schemas `TooNew`; there are no
 migration or compatibility paths. Unknown current-schema project/envelope fields
 are refused. `WriterLease::save` serializes completely before touching the destination;

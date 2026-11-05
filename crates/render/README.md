@@ -110,14 +110,37 @@ stereo to mono averages L/R. Other source layouts are explicitly unsupported.
 Media resamples each continuous source from its original clock, retaining filter
 phase across arbitrary block partitions, splits and trims. Seeking backwards
 restarts that source cursor. Source-rate decode and AAC priming are media-owned;
-render never reapplies priming. Accumulation is f32 with constant item dB gain,
-no normalization, clipping or limiter. Nonfinite input/overflow refuses the mix.
-Preview can inspect `AudioBlock::peak`; export returns `AudioOverload` above
-unity, preserving the old destination. `ExportSettings::audio_cut_fade_ms`
-optionally applies linear ramps at every audible item edge on the absolute sample
-grid (0 disables, maximum 1000 ms, capped at half each item duration). Clip batch
-exports use 10 ms; ordinary preview/export remains unchanged. Audio fades require
-encoding and disable stream copy. Limiter policy belongs to /42.
+render never reapplies priming. Accumulation is f32 with per-item dB gain and
+held mute evaluation through project's item-local animation evaluator. Each
+sample maps from the absolute output sample index to ticks before evaluation;
+block size and other tracks ending cannot change its gain. Video source audio
+uses the same volume/muted controls; `source_audio_enabled=false` excludes it
+regardless of picture visibility. Nonfinite input/overflow refuses the mix.
+
+`AudioMixer::new(snapshot, channels, fade_ms, hooks)` retains bounded DSP state for
+sequential realtime or offline blocks. Its linked master chain uses a -1 dBFS
+threshold, 20:1 hard knee, one-pole 1 ms attack / 120 ms release, 5 ms lookahead
+plus eight samples of FIR detector alignment, and a final hard sample clamp.
+A Kaiser-windowed polyphase detector estimates intersample peaks; this is not a
+certified output true-peak ceiling. Post-limiter gain is 0.98. Below-threshold
+signals are unchanged by dynamics and still receive that post gain. All paths
+apply the chain, including quiet offline exports; no block-dependent bypass.
+`latency_samples` reports the full delay, removed by priming and feeding ahead,
+so returned PCM stays on the requested output sample grid without leading delay
+or lost final samples. Gaps/empty content stay bit-exact zero.
+
+Retain one mixer for an immutable snapshot. Discontinuous seeks deterministically
+replay from timeline zero in bounded, cancellable blocks to reconstruct the full
+release envelope; cost grows with seek position. `mix_audio` is a convenience
+for independent windows and uses this same graph. Playback owns one mixer per
+request epoch; export owns one per operation. Sources and DSP leases remain
+caller-owned; a failed read invalidates the graph cursor before retry.
+
+`ExportSettings::audio_cut_fade_ms` optionally applies linear ramps at audible
+item edges on the absolute sample grid (0 disables, maximum 1000 ms, capped at
+half item duration). Clip batch exports use 10 ms. All included export audio
+runs through the graph and encodes AAC at 192 kbit/s for MP4/MOV or Opus for
+WebM, even when unchanged video packets copy. Media owns codec priming/FIFO.
 
 Horizontal interpolation retains only two destination-width rows per active
 pixel task and reuses them when adjacent output rows share source neighbors.
@@ -181,8 +204,7 @@ hardware-preferred or platform software encoder, audio and overwrite policy.
 WebM encodes VP9 + Opus using media's existing encoders. Output is selected by the
 settings, never guessed from the filename. Auto copies only an admitted container
 video codec (H.264/HEVC/MPEG-4 for MP4/MOV; VP8/VP9/AV1 for WebM); otherwise it
-encodes, and forced copy refuses. Compatible unchanged AAC (MP4/MOV) or
-Opus/Vorbis (WebM) may copy; incompatible audio is mixed/reencoded for the target.
+encodes, and forced copy refuses. Included audio always mixes and encodes for the target so mastering cannot be bypassed.
 Optional `degraded_consent` binds an interactive caller's `allow_degraded` to the
 accepted typed asset/item/range/reason diagnostics. Any additional unavailable
 range or changed reason refuses, so a retry cannot silently expand that consent.
@@ -194,8 +216,7 @@ same absolute sample grid as preview. AAC delay/padding remain FFmpeg-owned.
 
 Auto copies unchanged video when a single visible source covers the output with
 no pixel changes. An opacity override (including a channel with no keys) disables
-video copy; Auto encodes it and forced stream copy refuses it. It copies compatible unchanged audio, or reencodes the exact
-mixed/resampled audio window while retaining video packet bytes. Only the first
+video copy; Auto encodes it and forced stream copy refuses it. It encodes the exact mastered audio window while retaining video packet bytes. Only the first
 video/audio stream selected by decode is published. An explicitly accepted
 keyframe cut additionally requires exact start/end keys (or source EOF), regular
 requested fps and PTS==DTS; reordered/open-GOP candidates refuse forced copy and

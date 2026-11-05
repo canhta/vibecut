@@ -1407,3 +1407,15 @@ and completed input. After the fence a committed destination reports Completed.
 The adapter retains the input until the job terminates and joins the runner before
 cleanup on shutdown. Individual filesystem calls cannot be interrupted; external
 processes racing path replacement are outside the atomic owner's guarantees.
+
+## Audio controls
+
+`timeline.set_item_param` and `timeline.set_item_param_many` accept `volume`
+(finite -60..20 dB, step 0.01) and `muted` (bool) patches on audio and video
+items. The Rust variants remain `AudioGain`/`AudioMuted`; old transport field
+names are refused. Constant edits replace the corresponding animation override;
+keyframe commands edit scalar `volume` or held bool `muted` paths through the
+same evaluator. Locked/missing targets and invalid grids refuse atomically.
+`audio.set_master {volume, muted}` changes project-level master controls.
+All three edits use ordinary gestures, transactions, undo/redo and persistence;
+render owns mastering, sample timing and latency compensation.

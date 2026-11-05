@@ -954,7 +954,20 @@ fn copy_publishes_only_the_streams_selected_by_decode() {
                 packets
             };
             assert_eq!(payloads(&input, 0), payloads(&output, 0));
-            assert_eq!(payloads(&input, 2), payloads(&output, 1));
+            assert!(
+                payloads(&input, 2) != payloads(&output, 1),
+                "audio bypassed mastering"
+            );
+            let reference = pcm(&input, None);
+            let actual = pcm(&output, None);
+            let common = reference.len().min(actual.len());
+            let mse = reference[..common]
+                .iter()
+                .zip(&actual[..common])
+                .map(|(a, b)| f64::from(*a * 0.98 - *b).powi(2))
+                .sum::<f64>()
+                / common as f64;
+            assert!(mse < 0.0002, "selected audio PCM MSE {mse}");
         }
         // The dialog always applies its quality by encoding; verify the same target with/without audio.
         settings.mode = ExportMode::Encode;
