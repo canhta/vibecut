@@ -125,6 +125,14 @@ fn set_range(item: &mut Item, range: SourceRange, sources: &mut TrimSources) -> 
     item.source_range = range;
     Ok(())
 }
+// Preserve negative input for validation; first placement onto empty main has no leading gap.
+fn placement_start(timeline: &project::Timeline, target: TrackId, start: Tick) -> Tick {
+    if target == timeline.main.id && timeline.main.items.is_empty() && start > Tick::ZERO {
+        Tick::ZERO
+    } else {
+        start
+    }
+}
 fn move_items(data: &mut ProjectData, moves: Vec<Move>) -> Result<()> {
     let mut seen = BTreeSet::new();
     let mut items = Vec::with_capacity(moves.len());
@@ -136,7 +144,19 @@ fn move_items(data: &mut ProjectData, moves: Vec<Move>) -> Result<()> {
         item.start = m.start;
         items.push((m.track, item));
     }
-    for (id, item) in items {
+    let main = data.timeline.main.id;
+    let shift = items
+        .iter()
+        .filter(|(id, _)| *id == main)
+        .map(|(_, item)| item.start)
+        .min()
+        .map(|start| sub(start, placement_start(&data.timeline, main, start)))
+        .transpose()?
+        .unwrap_or(Tick::ZERO);
+    for (id, mut item) in items {
+        if id == main {
+            item.start = sub(item.start, shift)?;
+        }
         let dest = track(data, id)?;
         unlocked(dest)?;
         dest.items.push(item);
@@ -325,17 +345,13 @@ pub(crate) fn apply(
                 created,
                 next,
             )?;
-            let main = target == data.timeline.main.id;
+            let start = placement_start(&data.timeline, target, new.start);
             let t = track(&mut data, target)?;
             unlocked(t)?;
             if t.kind != kind {
                 return Err(EditError::Invalid("incompatible track"));
             }
             let id = ItemId(alloc(next)?);
-            let mut start = new.start;
-            if main && t.items.is_empty() {
-                start = Tick::ZERO;
-            }
             let index = if magnetic {
                 // Choose the nearest edge of the clip under the pointer; ties go before.
                 let mut index = t.items.len();

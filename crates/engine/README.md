@@ -59,8 +59,10 @@ With magnet disabled, or for other kinds, auto chooses the first unlocked
 compatible track whose requested half-open range is free: main, overlays in
 screen order, then audio in screen order. If none fits it creates a secondary
 track at the top of its group. Locked main falls back to secondary tracks.
-The first insertion into empty main clamps to zero even with magnet disabled;
-subsequent explicit placements retain their requested time. Explicit track
+The first insertion or move into empty main clamps to zero even with magnet
+disabled. Simultaneous moves shift the earliest main-targeted item to zero and
+preserve relative spacing; other destination tracks keep their requested times.
+Subsequent explicit placements onto occupied main retain their requested time. Explicit track
 placement refuses overlaps and incompatible kinds. Negative starts and checked
 arithmetic overflow refuse atomically, including track/ID allocation.
 

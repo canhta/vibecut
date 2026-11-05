@@ -1309,9 +1309,13 @@ fn compatible_audio_gain_inspector_skips_video_and_preserves_mute() {
 
 #[test]
 fn drop_at_track_edges_creates_one_track_and_one_undo_step() {
-    for below in [false, true] {
+    for edge in [Some(false), Some(true), None] {
         let fixture = fixture();
-        let moving = fixture.video_a;
+        let moving = if edge.is_some() {
+            fixture.video_a
+        } else {
+            fixture.video_b
+        };
         let mut h = Harness::builder()
             .with_size(egui::vec2(1728.0, 1200.0))
             .build_ui_state(|ui, e: &mut Editor| e.ui(ui), fixture.editor);
@@ -1333,29 +1337,38 @@ fn drop_at_track_edges_creates_one_track_and_one_undo_step() {
             .iter()
             .position(|t| t.id == source)
             .unwrap()
-            + usize::from(below);
+            + usize::from(edge == Some(true));
         let body = widget(&h, &format!("timeline.item.{}", moving.0));
-        let header = widget(&h, &format!("track.{}.header", source.0));
+        let target_track = if edge.is_some() {
+            source
+        } else {
+            before.data().timeline.main.id
+        };
+        let header = widget(&h, &format!("track.{}.header", target_track.0));
         let target = egui::pos2(
             body.center().x,
-            if below {
-                header.bottom() - 1.0
-            } else {
-                header.top() + 1.0
+            match edge {
+                Some(true) => header.bottom() - 1.0,
+                Some(false) => header.top() + 1.0,
+                None => header.center().y,
             },
         );
         drag(&mut h, body.center(), target);
         let after = h.state().session.project().clone();
         assert_eq!(
             after.data().timeline.track_count(),
-            before.data().timeline.track_count() + 1
+            before.data().timeline.track_count() + usize::from(edge.is_some())
         );
-        let new = &after.data().timeline.overlays[index];
+        let new = if edge.is_some() {
+            &after.data().timeline.overlays[index]
+        } else {
+            &after.data().timeline.main
+        };
         assert_eq!(new.items.len(), 1);
         assert_eq!(new.items[0].id, moving);
         assert_eq!(new.items[0].start, Tick::ZERO);
         assert_eq!(h.state().session.history_len().0, history.0 + 1);
-        if below {
+        if edge == Some(true) {
             let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
                 .join("../../target/p1-14-placement.png");
             std::fs::create_dir_all(path.parent().unwrap()).unwrap();

@@ -1512,7 +1512,6 @@ fn placement_is_atomic_and_respects_groups_locks_and_main_magnet() {
         100,
     )
     .unwrap();
-    let initial = s.project().clone();
     for (at, duration) in [(50, 10), (100, 20), (5, 4)] {
         let outcome = s
             .execute(
@@ -1663,31 +1662,114 @@ fn placement_is_atomic_and_respects_groups_locks_and_main_magnet() {
     })
     .unwrap();
     assert_eq!(s.project().data().timeline.track_count(), tracks + 1);
-    // Main's first explicit clip clamps even with magnet disabled; later clips keep their requested time.
-    let mut blank = Session::new((*initial).clone(), 10).unwrap();
-    blank
-        .apply(Command::SetTrackMagnet { enabled: false })
-        .unwrap();
-    for at in [100, 200] {
-        blank
-            .apply(Command::InsertItem {
-                placement: Placement::Track { track: TrackId(0) },
-                item: new_item(at, 10),
-            })
-            .unwrap();
+    // Every placement entry point clamps empty main; occupied main keeps normal timing.
+    for magnet in [false, true] {
+        for (occupied, command, starts) in [
+            (
+                false,
+                Command::InsertItem {
+                    placement: Placement::Track { track: TrackId(0) },
+                    item: new_item(100, 10),
+                },
+                vec![0],
+            ),
+            (
+                false,
+                Command::MoveItem {
+                    item: ItemId(10),
+                    track: TrackId(0),
+                    start: Tick(100),
+                },
+                vec![0],
+            ),
+            (
+                false,
+                Command::MoveItems {
+                    moves: vec![
+                        Move {
+                            item: ItemId(10),
+                            track: TrackId(0),
+                            start: Tick(100),
+                        },
+                        Move {
+                            item: ItemId(11),
+                            track: TrackId(0),
+                            start: Tick(160),
+                        },
+                    ],
+                },
+                vec![0, 60],
+            ),
+            (
+                true,
+                Command::InsertItem {
+                    placement: Placement::Track { track: TrackId(0) },
+                    item: new_item(100, 10),
+                },
+                vec![0, 100],
+            ),
+            (
+                true,
+                Command::MoveItem {
+                    item: ItemId(10),
+                    track: TrackId(0),
+                    start: Tick(100),
+                },
+                vec![0, 100],
+            ),
+            (
+                true,
+                Command::MoveItems {
+                    moves: vec![
+                        Move {
+                            item: ItemId(10),
+                            track: TrackId(0),
+                            start: Tick(100),
+                        },
+                        Move {
+                            item: ItemId(11),
+                            track: TrackId(0),
+                            start: Tick(160),
+                        },
+                    ],
+                },
+                vec![0, 100, 160],
+            ),
+        ] {
+            let mut placed = session();
+            placed
+                .apply(Command::SetTrackMagnet { enabled: magnet })
+                .unwrap();
+            if occupied {
+                placed
+                    .apply(Command::InsertItem {
+                        placement: Placement::Track { track: TrackId(0) },
+                        item: new_item(0, 10),
+                    })
+                    .unwrap();
+            }
+            let before = placed.project().clone();
+            let history = placed.history_len();
+            placed.apply(command).unwrap();
+            let after = placed.project().clone();
+            assert_eq!(
+                after
+                    .data()
+                    .timeline
+                    .main
+                    .items
+                    .iter()
+                    .map(|item| item.start.0)
+                    .collect::<Vec<_>>(),
+                starts
+            );
+            assert_eq!(placed.history_len().0, history.0 + 1);
+            placed.undo().unwrap();
+            assert_eq!(placed.project(), &before);
+            placed.redo().unwrap();
+            assert_eq!(placed.project(), &after);
+        }
     }
-    assert_eq!(
-        blank
-            .project()
-            .data()
-            .timeline
-            .main
-            .items
-            .iter()
-            .map(|i| i.start.0)
-            .collect::<Vec<_>>(),
-        vec![0, 200]
-    );
     assert!(magnetic.data().timeline.magnet);
 }
 
