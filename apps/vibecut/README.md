@@ -15,8 +15,8 @@ The desktop binary is `vibecut`; the headless CLI is `vibecut-cli`.
 `cargo run -p vibecut -- /native/path/to/project.json` acquires the project writer
 lease before loading. With no file it opens the minimal Home new/open entry points.
 Project listing and thumbnail storage belong to the projects-page feature. Preview,
-timeline basics and transport are present; text/audio controls and export are
-integrated by their owning feature tickets.
+timeline basics, transport and the export dialog are present; text/audio controls
+are integrated by their owning feature tickets.
 
 Media import uses one native multi-file picker or a file drop. One batch is capped
 at 128 paths (32 KiB each), must admit a 256 MiB probe/work lease from the shared
@@ -212,3 +212,37 @@ are headless here; their frontend controls belong to the scene-name feature.
 `tests/scenes_ui.rs` operates the real widgets and engine at 1x/2x density, checks
 switching, protected main and atomic multi-delete/undo, and writes
 `target/p1-48-scenes.png` separately from behavioral assertions.
+## Export dialog
+
+The header Export action opens a modal with format, quality and audio disclosures
+closed initially. Choices use the existing English/Vietnamese catalog and app
+preference store: MP4 by default, MOV or WebM; low/medium/high/very_high quality
+(default high); audio included by default. The presets request quality 55/70/85/95
+and 3/6/12/24 Mb/s respectively through media's existing encoder contract. These
+are explicit encoder requests, not measured perceptual guarantees. Canvas geometry
+and exact frame rate follow the project. The dialog always encodes so a selected
+quality is applied; the core retains its separate Auto/copy modes.
+
+Choose destination uses the existing nonblocking native save picker;
+`Editor::export_picked_file` / `Workspace::export_picked_file` inject its result
+without driving an OS dialog. Replacing an existing path needs a separate checked
+confirmation. Source/path, overwrite and degraded consent are transient and never
+saved to preferences. An empty timeline shows a catalog error and refuses start.
+
+`ExportDialog` submits through engine's one export job path and shares playback's
+byte budget. Inspection exposes the real job snapshot, typed submission failure,
+missing/changed source asset/item/range diagnostics, consent and widget state.
+Running output disables settings and shows engine stage/progress plus Cancel;
+Escape requests cancellation and leaves progress visible until engine acknowledges
+it. A late cancellation can lose to the existing publication fence and then reports
+Completed. A failed/refused/cancelled attempt preserves the destination through
+render/project's staging owner. A degraded retry requires an explicit toggle over
+the listed diagnostics; a project/audio-scope change clears consent and newly
+unavailable source ranges refuse again. Errors remain in the modal for retry.
+
+`tests/export_ui.rs` asserts real widget and engine state, never pixels. Run
+`cargo xtask ui-audit [OUTPUT_DIR]` separately for offscreen 1x dark English and
+2x light Vietnamese collapsed/expanded/empty export scenes; it opens no window,
+produces only audit evidence and is excluded from CI. Production source failures
+are injected through the same render source-factory boundary for deterministic
+start/cancel/failure tests; no second job state machine is introduced.

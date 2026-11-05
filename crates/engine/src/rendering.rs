@@ -130,6 +130,22 @@ pub fn submit_export(
     settings: render::ExportSettings,
     path: PathBuf,
 ) -> Result<(JobId, CancelToken), EditError> {
+    submit_export_with_sources(runner, input, project, range, settings, path, || {
+        Box::new(render::FileSources::default())
+    })
+}
+/// Same export job with an injected render source factory. The factory runs on
+/// the engine worker; production and injected adapters share cancellation,
+/// accounting and the atomic publication fence.
+pub fn submit_export_with_sources(
+    runner: &mut JobRunner,
+    input: CacheKey,
+    project: Arc<project::Project>,
+    range: time::TimeRange,
+    settings: render::ExportSettings,
+    path: PathBuf,
+    sources: impl Fn() -> Box<dyn render::SourceProvider> + Send + Sync + 'static,
+) -> Result<(JobId, CancelToken), EditError> {
     runner.submit(
         JobSpec {
             kind: JobKind::Export,
@@ -138,7 +154,14 @@ pub fn submit_export(
             bytes: JobBytes::default(),
         },
         move |context| {
-            render::export(&project, range, &settings, &path, context)?;
+            render::export_with_sources(
+                &project,
+                range,
+                &settings,
+                &path,
+                sources().as_mut(),
+                context,
+            )?;
             Ok(Vec::new())
         },
     )

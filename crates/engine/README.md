@@ -705,6 +705,11 @@ the fence, cancellation/unwind drops staging and preserves the existing file.
 render hooks, worker unwind, persistent-cache reclamation and oversized-frame
 refusal before allocation. This does not establish crash/power-loss durability.
 
+`submit_export_with_sources` is the existing export job with an injected render
+source factory, constructed on the engine worker. `submit_export` supplies
+`FileSources`; desktop tests supply gated sources to order cancellation/failure.
+Both share one scheduler, byte accounting, typed result and publication fence.
+
 ## Subtitle export commands
 
 The existing `registry()` also declares `export_subtitles` and `burn_subtitles`.

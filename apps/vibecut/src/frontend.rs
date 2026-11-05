@@ -67,6 +67,8 @@ pub struct Inspection {
     pub import_error: Option<Arc<engine::EditError>>,
     pub import_toast: Option<String>,
     pub media_selection: Vec<AssetId>,
+    pub export: Option<crate::export::ExportInspection>,
+    pub export_options: crate::export::ExportOptions,
 }
 #[derive(Clone, Debug)]
 struct Toast {
@@ -224,6 +226,7 @@ pub struct Editor {
     scene_select: bool,
     scene_selected: BTreeSet<project::SceneId>,
     scene_confirm: bool,
+    pub export: Option<crate::export::ExportDialog>,
 }
 impl Editor {
     pub fn new(session: Session, playback: Playback, preferences: Preferences) -> Self {
@@ -287,6 +290,7 @@ impl Editor {
             scene_select: false,
             scene_selected: BTreeSet::new(),
             scene_confirm: false,
+            export: None,
         }
     }
     /// Attach the engine autosave owner without duplicating its Session.
@@ -339,6 +343,11 @@ impl Editor {
                 None => toast.text.clone(),
             }),
             media_selection: self.media_selection.iter().copied().collect(),
+            export_options: self.preferences.export,
+            export: self
+                .export
+                .as_ref()
+                .map(crate::export::ExportDialog::inspect),
         })
     }
     /// Last frame submitted by the frontend for presentation, independent of decode-ahead.
@@ -795,6 +804,16 @@ impl Editor {
                         .execute("scene.switch", serde_json::json!({"scene":scene}))?;
                     self.selection.clear();
                     self.selection_scopes = SelectionScopes::default();
+                }
+            }
+            "file.export" => {
+                if self.export.is_none() {
+                    self.export = Some(crate::export::ExportDialog::new(
+                        self.playback.budget().clone(),
+                    )?);
+                }
+                if let Some(dialog) = &mut self.export {
+                    dialog.show(self.session.project());
                 }
             }
             "project.save" => self.lifecycle_action = Some(crate::lifecycle::EditorAction::Save),
@@ -1700,6 +1719,11 @@ impl Editor {
         if let Err(e) = self.playback.poll() {
             self.error = Some(e.to_string());
         }
+        if let Some(dialog) = &mut self.export
+            && let Err(error) = dialog.tick(self.session.project(), self.preferences.export)
+        {
+            dialog.failed(error);
+        }
         self.apply_import_events();
         self.truncate_toast();
         if let Err(error) = self.remember_view() {
@@ -1738,7 +1762,9 @@ impl Editor {
         self.widgets.clear();
         self.panels.clear();
         self.tick();
-        self.keyboard(ui.ctx());
+        if !self.export.as_ref().is_some_and(|d| d.open) {
+            self.keyboard(ui.ctx());
+        }
         let rect = ui.max_rect();
         ui.painter()
             .rect_filled(rect, 0.0, theme::window(self.preferences.dark));
@@ -1839,6 +1865,7 @@ impl Editor {
         self.import_overlay(ui.ctx());
         self.drop_overlay(ui.ctx(), hovering);
         self.toast(ui.ctx());
+        self.export_dialog(ui.ctx());
         ui.ctx()
             .request_repaint_after(std::time::Duration::from_millis(
                 if self.playback.playing() { 8 } else { 33 },
@@ -1930,6 +1957,45 @@ impl Editor {
             }
         }
     }
+    /// Accept the native export picker's result without opening OS UI in tests.
+    pub fn export_picked_file(&mut self, path: PathBuf) -> Result<()> {
+        self.export
+            .as_mut()
+            .ok_or(Error::Invalid("export dialog closed"))?
+            .set_destination(path)
+    }
+    fn export_dialog(&mut self, ctx: &egui::Context) {
+        let Some(dialog) = &mut self.export else {
+            return;
+        };
+        let output = dialog.ui(
+            ctx,
+            self.preferences.locale,
+            self.preferences.dark,
+            &mut self.preferences.export,
+            self.session.project(),
+            self.texture.as_ref(),
+        );
+        match output.action {
+            Some(crate::export::Action::Pick) => {
+                self.lifecycle_action = Some(crate::lifecycle::EditorAction::ExportDestination)
+            }
+            Some(crate::export::Action::Start) => {
+                let result = if self.session.transaction_active() {
+                    Err(Error::Engine(engine::EditError::TransactionActive))
+                } else {
+                    dialog.start(self.session.project().clone(), self.preferences.export)
+                };
+                if let Err(error) = result {
+                    dialog.failed(error);
+                }
+            }
+            None => {}
+        }
+        for (id, response) in output.widgets {
+            self.remember(id, &response);
+        }
+    }
     fn header(&mut self, ui: &mut egui::Ui) {
         ui.horizontal_centered(|ui| {
             ui.label(egui::RichText::new("VibeCut").strong().size(18.0));
@@ -1982,7 +2048,9 @@ impl Editor {
                 }
             }
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                self.button(ui, "file.export", Icon::Export, Text::Export, false);
+                if self.button(ui, "file.export", Icon::Export, Text::Export, true) {
+                    self.action("file.export");
+                }
                 if self.button(
                     ui,
                     "project.save_as",

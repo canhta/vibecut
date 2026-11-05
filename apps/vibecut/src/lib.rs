@@ -2,6 +2,7 @@
 pub mod capture;
 pub mod catalog;
 pub mod effects;
+pub mod export;
 mod frontend;
 mod icons;
 pub mod import;
@@ -15,6 +16,8 @@ pub use frontend::{Editor, Inspection, WidgetState};
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
+    #[error("empty timeline cannot be exported")]
+    EmptyTimeline,
     #[error("unsupported desktop capability: {0}")]
     Unsupported(&'static str),
     #[error("operation cancelled")]

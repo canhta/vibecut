@@ -37,4 +37,5 @@ pub enum EditorAction {
     SaveAs,
     Leave,
     ImportMedia,
+    ExportDestination,
 }

@@ -32,6 +32,8 @@ pub enum HdrPolicy {
 pub struct ExportSettings {
     pub render: RenderSettings,
     pub fps: FrameRate,
+    /// Output container; MP4/MOV encode H.264 + AAC, WebM encodes VP9 + Opus.
+    pub container: Container,
     pub bit_rate: usize,
     pub quality: u8,
     pub encoder: EncodePreference,
@@ -39,6 +41,8 @@ pub struct ExportSettings {
     pub channels: u16,
     pub overwrite: Overwrite,
     pub allow_degraded: bool,
+    /// Optional exact diagnostics accepted by an interactive caller; new degradation refuses.
+    pub degraded_consent: Option<Vec<Unavailable>>,
     pub mode: ExportMode,
     pub accept_keyframe_cuts: bool,
     pub hdr: HdrPolicy,
@@ -53,6 +57,7 @@ impl ExportSettings {
         Self {
             render: RenderSettings::from_project(project),
             fps: project.data().canvas.fps,
+            container: Container::Mp4,
             bit_rate: 12_000_000,
             quality: 85,
             encoder: EncodePreference::Hardware,
@@ -60,6 +65,7 @@ impl ExportSettings {
             channels: 2,
             overwrite: Overwrite::Refuse,
             allow_degraded: false,
+            degraded_consent: None,
             mode: ExportMode::Auto,
             accept_keyframe_cuts: false,
             hdr: HdrPolicy::Refuse,
@@ -140,7 +146,13 @@ pub fn export_with_sources(
     let stage = StreamingStage::new(path, settings.overwrite, settings.max_bytes)?;
     hooks.progress(Stage::Admit, 0.0)?;
     let unavailable = admission(project, range, sources, settings.include_audio, true, hooks)?;
-    if !unavailable.is_empty() && !settings.allow_degraded {
+    if !unavailable.is_empty()
+        && (!settings.allow_degraded
+            || settings
+                .degraded_consent
+                .as_ref()
+                .is_some_and(|accepted| unavailable.iter().any(|item| !accepted.contains(item))))
+    {
         return Err(Error::Unavailable(unavailable));
     }
     let omitted: BTreeSet<_> = unavailable.iter().map(|u| u.asset).collect();
@@ -230,7 +242,10 @@ pub fn export_with_sources(
                 false,
                 hooks,
             )?;
-            if !missing.is_empty() {
+            if missing
+                .iter()
+                .any(|item| !source.omitted.contains(&item.asset))
+            {
                 return Err(Error::Unavailable(missing));
             }
             return Err(error);
@@ -391,7 +406,14 @@ fn copy_plan<'a>(
         .video
         .as_ref()
         .ok_or(Error::Invalid("copy dimensions"))?;
-    if shape.width != settings.render.width
+    let compatible = match settings.container {
+        Container::Mp4 | Container::Mov => {
+            matches!(video.codec.as_str(), "h264" | "hevc" | "mpeg4")
+        }
+        Container::WebM => matches!(video.codec.as_str(), "vp8" | "vp9" | "av1"),
+    };
+    if !compatible
+        || shape.width != settings.render.width
         || shape.height != settings.render.height
         || video.frame_rate != Some(settings.fps)
     {
@@ -497,6 +519,7 @@ fn encoded_export(
     )?;
     drop(rgba);
     let video_settings = VideoEncoderSettings {
+        webm: matches!(settings.container, Container::WebM),
         bit_rate: settings.bit_rate,
         quality: settings.quality,
         conversion_threads: threads,
@@ -510,14 +533,17 @@ fn encoded_export(
     let mut video = VideoEncoder::with_preference(video_settings, &first_frame, settings.encoder)?;
     drop(first_frame);
     let mut audio = if settings.include_audio {
-        Some(AudioEncoder::new(AudioEncoderSettings::aac(
-            project.data().settings.audio_sample_rate,
-            settings.channels,
-        ))?)
+        Some(AudioEncoder::new(AudioEncoderSettings {
+            webm: matches!(settings.container, Container::WebM),
+            ..AudioEncoderSettings::aac(
+                project.data().settings.audio_sample_rate,
+                settings.channels,
+            )
+        })?)
     } else {
         None
     };
-    let mut mux = Muxer::new(file, Container::Mp4)?;
+    let mut mux = Muxer::new(file, settings.container)?;
     let vi = mux.add_parameters(&video.parameters(), video.time_base())?;
     let ai = audio
         .as_ref()
@@ -672,7 +698,7 @@ fn copy_export(
 ) -> Result<ExportReceipt> {
     let _packets = hooks.reserve(MemoryKind::Export, 128 << 20)?;
     let mut reader = PacketReader::open(plan.asset.path())?;
-    let mut mux = Muxer::new(file, Container::Mp4)?;
+    let mut mux = Muxer::new(file, settings.container)?;
     let other_audio = project
         .data()
         .scene()
@@ -690,7 +716,17 @@ fn copy_export(
                     _ => false,
                 }
         });
-    let copy_audio = settings.include_audio
+    let compatible_audio = reader
+        .probe()
+        .streams
+        .iter()
+        .find(|s| s.kind == StreamKind::Audio)
+        .is_some_and(|s| match settings.container {
+            Container::Mp4 | Container::Mov => s.codec == "aac",
+            Container::WebM => matches!(s.codec.as_str(), "opus" | "vorbis"),
+        });
+    let copy_audio = compatible_audio
+        && settings.include_audio
         && plan.whole
         && plan.source_audio
         && !other_audio
@@ -725,10 +761,13 @@ fn copy_export(
         }
     }
     let mut audio = if settings.include_audio && !copy_audio {
-        Some(AudioEncoder::new(AudioEncoderSettings::aac(
-            project.data().settings.audio_sample_rate,
-            settings.channels,
-        ))?)
+        Some(AudioEncoder::new(AudioEncoderSettings {
+            webm: matches!(settings.container, Container::WebM),
+            ..AudioEncoderSettings::aac(
+                project.data().settings.audio_sample_rate,
+                settings.channels,
+            )
+        })?)
     } else {
         None
     };

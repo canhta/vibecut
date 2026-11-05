@@ -37,7 +37,7 @@ pub use commands::{
     Command, CommandSpec, CreatedId, Effect, Example, Fixture, ItemParamPatch, ItemPlacement, Move,
     NewItem, Outcome, Placement, TrackPlacement, registry,
 };
-pub use rendering::{submit_export, subtitle_file};
+pub use rendering::{submit_export, submit_export_with_sources, subtitle_file};
 pub use session::{JobTarget, Session};
 
 /// Safe diagnostic categories: never include parameter values or user text.

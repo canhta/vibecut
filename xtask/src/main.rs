@@ -369,6 +369,14 @@ fn run() -> Result<(), String> {
         .collect::<Vec<_>>()
         .as_slice()
     {
+        ["ui-audit"] | ["ui-audit", _] => {
+            let mut command=Command::new(env::var_os("CARGO").ok_or("run via cargo xtask")?);
+            command.current_dir(root).args(["run","-p","vibecut","--example","ui_audit","--"]);
+            if let Some(destination)=args.get(1){command.arg(destination);}
+            ffmpeg::environment(&mut command)?;
+            let status=command.status().map_err(|e|e.to_string())?;
+            if status.success(){Ok(())}else{Err(format!("UI audit failed: {status}"))}
+        }
         ["media-bench"] => benchmark::media(root),
         ["clip-eval", ..] => clip_eval::run(root, args.get(1..).unwrap_or(&[])),
         ["ffmpeg"] => ffmpeg::provision(None),
@@ -389,7 +397,7 @@ fn run() -> Result<(), String> {
         ["ci"] => ci(root, false),
         ["ci", "--require-oracles"] => ci(root, true),
         _ => Err(
-            "usage: cargo xtask <ffmpeg [--target PLATFORM|--cache-key]|media-bench|clip-eval SET [OPTIONS]|ci [--require-oracles]|checks|clippy|lint|test|docs|layers|assets|new-crate NAME>"
+            "usage: cargo xtask <ffmpeg [--target PLATFORM|--cache-key]|ui-audit [OUTPUT_DIR]|media-bench|clip-eval SET [OPTIONS]|ci [--require-oracles]|checks|clippy|lint|test|docs|layers|assets|new-crate NAME>"
                 .into(),
         ),
     }

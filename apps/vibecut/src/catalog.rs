@@ -13,6 +13,54 @@ pub enum Locale {
 }
 #[derive(Clone, Copy)]
 pub enum Text {
+    ExportMemory,
+    ExportCapability,
+    ExportOverload,
+    ExportStorage,
+    ExportTextFailure,
+
+    ExportTitle,
+    ExportFormat,
+    ExportQuality,
+    ExportMp4,
+    ExportMov,
+    ExportWebm,
+    QualityLow,
+    QualityMedium,
+    QualityHigh,
+    QualityVeryHigh,
+    IncludeAudio,
+    ExportDestination,
+    ChooseDestination,
+    ExportReplace,
+    ExportDegraded,
+    ExportBlocked,
+    ExportEmpty,
+    ExportProgress,
+    ExportComplete,
+    ExportCancelled,
+    ExportFailure,
+    ExportCancelling,
+    ExportDone,
+    SourceMissing,
+    SourceChanged,
+    SourceMetadata,
+    SourceVideo,
+    SourceAudio,
+    SourceAsset,
+    SourceItem,
+    SourceRange,
+    ExportQueued,
+    ExportAdmit,
+    ExportRender,
+    ExportMix,
+    ExportEncode,
+    ExportFinalize,
+    ExportPublish,
+    ExportDuration,
+    ExportSettingsHint,
+    ExportChoosePath,
+
     ChooseProject,
     Projects,
     NewProject,
@@ -141,6 +189,134 @@ pub fn text(locale: Locale, key: Text) -> &'static str {
         (Locale::Vi, DeleteScenesPrompt) => {
             "Xóa các cảnh đã chọn? Bạn có thể hoàn tác thao tác này."
         }
+
+        (Locale::En, ExportMemory) => {
+            "Not enough memory for export. Pause playback or reduce the project canvas, then retry."
+        }
+        (Locale::Vi, ExportMemory) => {
+            "Không đủ bộ nhớ để xuất. Tạm dừng phát hoặc giảm kích thước khung hình rồi thử lại."
+        }
+        (Locale::En, ExportCapability) => {
+            "The selected format or source cannot be encoded on this system. Try another format or restore the source."
+        }
+        (Locale::Vi, ExportCapability) => {
+            "Hệ thống không mã hóa được định dạng hoặc nguồn đã chọn. Thử định dạng khác hoặc khôi phục nguồn."
+        }
+        (Locale::En, ExportOverload) => {
+            "Audio is too loud to export safely. Reduce clip volume and retry."
+        }
+        (Locale::Vi, ExportOverload) => {
+            "Âm thanh quá lớn để xuất an toàn. Giảm âm lượng của đoạn rồi thử lại."
+        }
+        (Locale::En, ExportStorage) => {
+            "Cannot write the destination. Check free space and folder permissions, or choose another path."
+        }
+        (Locale::Vi, ExportStorage) => {
+            "Không thể ghi tệp đích. Kiểm tra dung lượng trống và quyền thư mục hoặc chọn đường dẫn khác."
+        }
+        (Locale::En, ExportTextFailure) => {
+            "Text cannot fit or render with these settings. Check caption layout and retry."
+        }
+        (Locale::Vi, ExportTextFailure) => {
+            "Không thể hiển thị văn bản với thiết lập này. Kiểm tra bố cục phụ đề rồi thử lại."
+        }
+
+        (Locale::En, ExportTitle) => "Export project",
+        (Locale::Vi, ExportTitle) => "Xuất dự án",
+        (Locale::En, ExportFormat) => "Format",
+        (Locale::Vi, ExportFormat) => "Định dạng",
+        (Locale::En, ExportQuality) => "Quality",
+        (Locale::Vi, ExportQuality) => "Chất lượng",
+        (Locale::En, ExportMp4) => "MP4 · H.264 / AAC",
+        (Locale::Vi, ExportMp4) => "MP4 · H.264 / AAC",
+        (Locale::En, ExportMov) => "MOV · H.264 / AAC",
+        (Locale::Vi, ExportMov) => "MOV · H.264 / AAC",
+        (Locale::En, ExportWebm) => "WebM · VP9 / Opus",
+        (Locale::Vi, ExportWebm) => "WebM · VP9 / Opus",
+        (Locale::En, QualityLow) => "Low",
+        (Locale::Vi, QualityLow) => "Thấp",
+        (Locale::En, QualityMedium) => "Medium",
+        (Locale::Vi, QualityMedium) => "Trung bình",
+        (Locale::En, QualityHigh) => "High",
+        (Locale::Vi, QualityHigh) => "Cao",
+        (Locale::En, QualityVeryHigh) => "Very high",
+        (Locale::Vi, QualityVeryHigh) => "Rất cao",
+        (Locale::En, IncludeAudio) => "Include audio in export",
+        (Locale::Vi, IncludeAudio) => "Xuất kèm âm thanh",
+        (Locale::En, ExportDestination) => "Destination",
+        (Locale::Vi, ExportDestination) => "Tệp đích",
+        (Locale::En, ChooseDestination) => "Choose destination…",
+        (Locale::Vi, ChooseDestination) => "Chọn tệp đích…",
+        (Locale::En, ExportReplace) => "Replace the existing destination file",
+        (Locale::Vi, ExportReplace) => "Thay thế tệp đích hiện có",
+        (Locale::En, ExportDegraded) => {
+            "I accept black frames / silence for the listed source ranges"
+        }
+        (Locale::Vi, ExportDegraded) => {
+            "Tôi chấp nhận khung hình đen / im lặng cho các đoạn nguồn đã liệt kê"
+        }
+        (Locale::En, ExportBlocked) => {
+            "Export blocked: restore these sources or explicitly accept degraded output."
+        }
+        (Locale::Vi, ExportBlocked) => {
+            "Không thể xuất: khôi phục các nguồn này hoặc chấp nhận xuất suy giảm."
+        }
+        (Locale::En, ExportEmpty) => "The timeline is empty. Add media before exporting.",
+        (Locale::Vi, ExportEmpty) => "Dòng thời gian trống. Thêm tư liệu trước khi xuất.",
+        (Locale::En, ExportProgress) => "Exporting…",
+        (Locale::Vi, ExportProgress) => "Đang xuất…",
+        (Locale::En, ExportComplete) => "Export complete",
+        (Locale::Vi, ExportComplete) => "Xuất hoàn tất",
+        (Locale::En, ExportCancelled) => "Export cancelled. Your previous file is preserved.",
+        (Locale::Vi, ExportCancelled) => "Đã hủy xuất. Tệp cũ của bạn được giữ nguyên.",
+        (Locale::En, ExportFailure) => {
+            "Export failed. Your previous file is preserved. Choose another destination or retry."
+        }
+        (Locale::Vi, ExportFailure) => {
+            "Xuất thất bại. Tệp cũ được giữ nguyên. Chọn tệp đích khác hoặc thử lại."
+        }
+        (Locale::En, ExportCancelling) => "Cancelling…",
+        (Locale::Vi, ExportCancelling) => "Đang hủy…",
+        (Locale::En, ExportDone) => "Done",
+        (Locale::Vi, ExportDone) => "Xong",
+        (Locale::En, SourceMissing) => "Missing source",
+        (Locale::Vi, SourceMissing) => "Thiếu nguồn",
+        (Locale::En, SourceChanged) => "Source changed",
+        (Locale::Vi, SourceChanged) => "Nguồn đã thay đổi",
+        (Locale::En, SourceMetadata) => "Unsupported source metadata",
+        (Locale::Vi, SourceMetadata) => "Siêu dữ liệu nguồn không được hỗ trợ",
+        (Locale::En, SourceVideo) => "Video unavailable",
+        (Locale::Vi, SourceVideo) => "Video không khả dụng",
+        (Locale::En, SourceAudio) => "Audio unavailable",
+        (Locale::Vi, SourceAudio) => "Âm thanh không khả dụng",
+        (Locale::En, SourceAsset) => "Asset",
+        (Locale::Vi, SourceAsset) => "Tư liệu",
+        (Locale::En, SourceItem) => "Item",
+        (Locale::Vi, SourceItem) => "Mục",
+        (Locale::En, SourceRange) => "Source range (seconds)",
+        (Locale::Vi, SourceRange) => "Đoạn nguồn (giây)",
+        (Locale::En, ExportQueued) => "Queued",
+        (Locale::Vi, ExportQueued) => "Đang chờ",
+        (Locale::En, ExportAdmit) => "Checking sources",
+        (Locale::Vi, ExportAdmit) => "Đang kiểm tra nguồn",
+        (Locale::En, ExportRender) => "Rendering video",
+        (Locale::Vi, ExportRender) => "Đang dựng video",
+        (Locale::En, ExportMix) => "Mixing audio",
+        (Locale::Vi, ExportMix) => "Đang trộn âm thanh",
+        (Locale::En, ExportEncode) => "Encoding",
+        (Locale::Vi, ExportEncode) => "Đang mã hóa",
+        (Locale::En, ExportFinalize) => "Finalizing",
+        (Locale::Vi, ExportFinalize) => "Đang hoàn tất",
+        (Locale::En, ExportPublish) => "Publishing file",
+        (Locale::Vi, ExportPublish) => "Đang ghi tệp",
+        (Locale::En, ExportDuration) => "Duration",
+        (Locale::Vi, ExportDuration) => "Thời lượng",
+        (Locale::En, ExportSettingsHint) => "Canvas size and frame rate follow the project.",
+        (Locale::Vi, ExportSettingsHint) => {
+            "Kích thước khung hình và tốc độ khung hình theo dự án."
+        }
+        (Locale::En, ExportChoosePath) => "Choose a destination before exporting.",
+        (Locale::Vi, ExportChoosePath) => "Chọn tệp đích trước khi xuất.",
 
         (Locale::En, AudioGain) => "Volume (dB)",
         (Locale::Vi, AudioGain) => "Âm lượng (dB)",
@@ -349,6 +525,8 @@ pub fn text(locale: Locale, key: Text) -> &'static str {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Preferences {
+    #[serde(default)]
+    pub export: crate::export::ExportOptions,
     pub locale: Locale,
     pub dark: bool,
     /// Ratios of the full content rectangle; validated when loaded.
@@ -357,6 +535,7 @@ pub struct Preferences {
 impl Default for Preferences {
     fn default() -> Self {
         Self {
+            export: crate::export::ExportOptions::default(),
             locale: Locale::En,
             dark: true,
             panels: [0.25, 0.25, 0.4],
@@ -403,5 +582,29 @@ impl PreferenceStore {
         }
         project::atomic_write(&self.path, &serde_json::to_vec(value)?)?;
         Ok(())
+    }
+}
+
+/// Export measurements stay in the catalog alongside their unit and locale.
+pub fn export_duration(locale: Locale, seconds: f64) -> String {
+    let number = export_decimal(locale, seconds, 2);
+    match locale {
+        Locale::En => format!("{}: {number} s", text(locale, Text::ExportDuration)),
+        Locale::Vi => format!("{}: {number} giây", text(locale, Text::ExportDuration)),
+    }
+}
+pub fn export_range(locale: Locale, start: f64, end: f64) -> String {
+    format!(
+        "{}: {}–{}",
+        text(locale, Text::SourceRange),
+        export_decimal(locale, start, 3),
+        export_decimal(locale, end, 3)
+    )
+}
+fn export_decimal(locale: Locale, value: f64, precision: usize) -> String {
+    let number = format!("{value:.precision$}");
+    match locale {
+        Locale::En => number,
+        Locale::Vi => number.replace('.', ","),
     }
 }

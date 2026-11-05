@@ -369,6 +369,34 @@ fn portrait_center_and_manual_crop_and_missing_source_admission() {
     ));
     assert_eq!(std::fs::read(&output).unwrap(), b"previous");
     s.allow_degraded = true;
+    for accepted in [
+        vec![],
+        vec![Unavailable {
+            asset: media::AssetId(999),
+            item: project::ItemId(0),
+            range: TimeRange::new(Tick::ZERO, tick(1, 1)).unwrap(),
+            reason: UnavailableReason::Missing,
+        }],
+    ] {
+        s.degraded_consent = Some(accepted);
+        assert!(matches!(
+            export(
+                &p,
+                TimeRange::new(Tick::ZERO, tick(1, 1)).unwrap(),
+                &s,
+                &output,
+                &Hooks::default()
+            ),
+            Err(Error::Unavailable(_))
+        ));
+        assert_eq!(std::fs::read(&output).unwrap(), b"previous");
+    }
+    s.degraded_consent = Some(vec![Unavailable {
+        asset: media::AssetId(1),
+        item: project::ItemId(0),
+        range: TimeRange::new(Tick::ZERO, tick(1, 1)).unwrap(),
+        reason: UnavailableReason::Missing,
+    }]);
     let receipt = export(
         &p,
         TimeRange::new(Tick::ZERO, tick(1, 1)).unwrap(),
@@ -378,6 +406,38 @@ fn portrait_center_and_manual_crop_and_missing_source_admission() {
     )
     .unwrap();
     assert!(!receipt.degraded.is_empty());
+    // An accepted offline source must not hide a separate render failure on retry.
+    let previous = std::fs::read(&output).unwrap();
+    for cancelled in [false, true] {
+        let hooks = Hooks {
+            event: Some(Arc::new(move |stage| {
+                if stage == Stage::Render {
+                    if cancelled {
+                        Err(Error::Cancelled)
+                    } else {
+                        Err(Error::Unsupported("injected render failure"))
+                    }
+                } else {
+                    Ok(())
+                }
+            })),
+            ..Default::default()
+        };
+        let error = export(
+            &p,
+            TimeRange::new(Tick::ZERO, tick(1, 1)).unwrap(),
+            &s,
+            &output,
+            &hooks,
+        )
+        .unwrap_err();
+        assert!(if cancelled {
+            matches!(error, Error::Cancelled)
+        } else {
+            matches!(error, Error::Unsupported(_))
+        });
+        assert_eq!(std::fs::read(&output).unwrap(), previous);
+    }
 }
 #[test]
 fn changed_hash_and_mid_job_disappearance_refuse_publication() {
@@ -799,33 +859,74 @@ fn copy_publishes_only_the_streams_selected_by_decode() {
     let mut settings = ExportSettings::from_project(&p);
     settings.mode = ExportMode::StreamCopy;
     settings.overwrite = project::atomic::Overwrite::Replace;
-    let output = root().join("selected-streams.mp4");
-    let receipt = export(
-        &p,
-        TimeRange::new(Tick::ZERO, p.duration()).unwrap(),
-        &settings,
-        &output,
-        &Hooks::default(),
-    )
-    .unwrap();
-    assert!(receipt.stream_copied);
-    assert_eq!(receipt.video_frames, 30);
-    let info = probe(&output);
-    assert_eq!(info["streams"].as_array().unwrap().len(), 2);
-    let pixel = rgba(&output);
-    assert!(pixel[0] > 200 && pixel[2] < 10);
-    let payloads = |path: &Path, stream: usize| {
-        let mut r = media::PacketReader::open(path).unwrap();
-        let mut packets = Vec::new();
-        while let Some(p) = r.next_packet().unwrap() {
-            if p.stream() == stream {
-                packets.push(p.data().to_vec());
-            }
+    for (container, extension, video_codec, audio_codec) in [
+        (media::Container::Mp4, "mp4", "h264", "aac"),
+        (media::Container::Mov, "mov", "h264", "aac"),
+        (media::Container::WebM, "webm", "vp9", "opus"),
+    ] {
+        settings.container = container;
+        settings.mode = ExportMode::StreamCopy;
+        let output = root().join(format!("selected-streams.{extension}"));
+        let range = TimeRange::new(Tick::ZERO, p.duration()).unwrap();
+        if matches!(container, media::Container::WebM) {
+            std::fs::write(&output, b"previous").unwrap();
+            assert!(matches!(
+                export(&p, range, &settings, &output, &Hooks::default()),
+                Err(Error::Unsupported(_))
+            ));
+            assert_eq!(std::fs::read(&output).unwrap(), b"previous");
+            settings.mode = ExportMode::Auto;
+        } else {
+            settings.mode = ExportMode::StreamCopy;
         }
-        packets
-    };
-    assert_eq!(payloads(&input, 0), payloads(&output, 0));
-    assert_eq!(payloads(&input, 2), payloads(&output, 1));
+        let receipt = export(&p, range, &settings, &output, &Hooks::default()).unwrap();
+        assert_eq!(
+            receipt.stream_copied,
+            !matches!(container, media::Container::WebM)
+        );
+        assert_eq!(receipt.video_frames, 30);
+        let info = probe(&output);
+        assert_eq!(info["streams"].as_array().unwrap().len(), 2);
+        assert_eq!(info["streams"][0]["codec_name"], video_codec);
+        assert_eq!(info["streams"][1]["codec_name"], audio_codec);
+        assert!(
+            info["format"]["format_name"]
+                .as_str()
+                .unwrap()
+                .contains(if extension == "webm" { "webm" } else { "mov" })
+        );
+        let pixel = rgba(&output);
+        assert!(pixel[0] > 200 && pixel[2] < 10);
+        if receipt.stream_copied {
+            let payloads = |path: &Path, stream: usize| {
+                let mut r = media::PacketReader::open(path).unwrap();
+                let mut packets = Vec::new();
+                while let Some(p) = r.next_packet().unwrap() {
+                    if p.stream() == stream {
+                        packets.push(p.data().to_vec());
+                    }
+                }
+                packets
+            };
+            assert_eq!(payloads(&input, 0), payloads(&output, 0));
+            assert_eq!(payloads(&input, 2), payloads(&output, 1));
+        }
+        // The dialog always applies its quality by encoding; verify the same target with/without audio.
+        settings.mode = ExportMode::Encode;
+        for audio in [true, false] {
+            settings.include_audio = audio;
+            let encoded = root().join(format!("encoded-selected-{audio}.{extension}"));
+            let receipt = export(&p, range, &settings, &encoded, &Hooks::default()).unwrap();
+            assert!(!receipt.stream_copied);
+            let info = probe(&encoded);
+            assert_eq!(info["streams"][0]["codec_name"], video_codec);
+            assert_eq!(
+                info["streams"].as_array().unwrap().len(),
+                if audio { 2 } else { 1 }
+            );
+        }
+        settings.include_audio = true;
+    }
 }
 
 #[test]

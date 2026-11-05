@@ -1,6 +1,6 @@
 # render
 
-CPU reference compositor, shared sample-window mixer and bounded MP4 export.
+CPU reference compositor, shared sample-window mixer and bounded MP4/MOV/WebM export.
 Consumes immutable project snapshots and renders/mixes only their active scene; media owns codecs/conversion/mux, text owns
 shaping/rasterization, project owns atomic publication, engine owns scheduling and
 aggregate byte policy. No UI, device or persisted render state; it evaluates
@@ -169,6 +169,17 @@ measure peak RSS separately. Sources and renderer release at completion/failure.
 `export` uses `FileSources`; `export_with_sources` accepts an explicit source
 owner. Settings select exact range, canvas/crop, fps, bitrate/quality,
 hardware-preferred or platform software encoder, audio and overwrite policy.
+`ExportSettings::container` defaults to MP4. MP4/MOV encode H.264 + AAC;
+WebM encodes VP9 + Opus using media's existing encoders. Output is selected by the
+settings, never guessed from the filename. Auto copies only an admitted container
+video codec (H.264/HEVC/MPEG-4 for MP4/MOV; VP8/VP9/AV1 for WebM); otherwise it
+encodes, and forced copy refuses. Compatible unchanged AAC (MP4/MOV) or
+Opus/Vorbis (WebM) may copy; incompatible audio is mixed/reencoded for the target.
+Optional `degraded_consent` binds an interactive caller's `allow_degraded` to the
+accepted typed asset/item/range/reason diagnostics. Any additional unavailable
+range or changed reason refuses, so a retry cannot silently expand that consent.
+CLI callers can retain their explicit whole-export `allow_degraded` switch.
+
 Frames are sampled at range.start + n/fps; output timestamps start at zero. Exact
 non-keyframe cuts seek to a preceding keyframe and decode forward. Audio uses the
 same absolute sample grid as preview. AAC delay/padding remain FFmpeg-owned.
