@@ -273,12 +273,13 @@ fn resampling_split_trim_offset_and_irregular_blocks_are_identical() {
     let mut source = FileSources::default();
     let whole = mix_audio(&p, 0, 48000, 2, &mut source, &h).unwrap();
     let mut parts = vec![Vec::new(), Vec::new()];
+    let mut realtime = AudioMixer::new(&p, 2, 0, &h).unwrap();
     let pattern = [1, 7, 1031, 4093, 5, 23999];
     let mut at = 0usize;
     let mut index = 0;
     while at < 48000 {
         let n = pattern[index % pattern.len()].min(48000 - at);
-        let b = mix_audio(&p, at as i64, n, 2, &mut source, &h).unwrap();
+        let b = realtime.mix(at as i64, n, &mut source, &h).unwrap();
         for (dst, src) in parts.iter_mut().zip(b.planes()) {
             dst.extend_from_slice(src);
         }
@@ -941,7 +942,7 @@ fn copy_publishes_only_the_streams_selected_by_decode() {
 }
 
 #[test]
-fn stereo_policy_keeps_headroom_and_export_refuses_overload() {
+fn stereo_policy_keeps_headroom_and_export_limits_overload() {
     if !tools() {
         return;
     }
@@ -985,10 +986,10 @@ fn stereo_policy_keeps_headroom_and_export_refuses_overload() {
     let p = project::Project::new(d.clone()).unwrap();
     let h = Hooks::default();
     let stereo = mix_audio(&p, 0, 32, 2, &mut FileSources::default(), &h).unwrap();
-    assert_eq!(stereo.planes()[0], [0.75; 32]);
-    assert_eq!(stereo.planes()[1], [0.25; 32]);
+    assert_eq!(stereo.planes()[0], [0.75 * 0.98; 32]);
+    assert_eq!(stereo.planes()[1], [0.25 * 0.98; 32]);
     let mono = mix_audio(&p, 0, 32, 1, &mut FileSources::default(), &h).unwrap();
-    assert_eq!(mono.planes()[0], [0.5; 32]);
+    assert_eq!(mono.planes()[0], [0.5 * 0.98; 32]);
     let mut decoded = Vec::new();
     for (fade, block) in [(0, 2048), (10, 2048), (10, 137)] {
         let output = root().join(format!("cut-fade-{fade}-{block}.mp4"));
@@ -1036,15 +1037,20 @@ fn stereo_policy_keeps_headroom_and_export_refuses_overload() {
     d.scene_mut().timeline.insert_track(extra);
     let p = project::Project::new(d).unwrap();
     let mixed = mix_audio(&p, 0, 32, 2, &mut FileSources::default(), &h).unwrap();
-    assert_eq!(mixed.peak(), 1.5);
-    let output = root().join("overload-preserved.mp4");
-    std::fs::write(&output, b"existing").unwrap();
-    let mut s = ExportSettings::from_project(&p);
-    s.overwrite = project::atomic::Overwrite::Replace;
-    assert!(
-        matches!(export(&p,TimeRange::new(Tick::ZERO,tick(1,1)).unwrap(),&s,&output,&h),Err(Error::AudioOverload{peak}) if peak == 1.5)
-    );
-    assert_eq!(std::fs::read(output).unwrap(), b"existing");
+    assert!(mixed.peak() <= 10f32.powf(-1.0 / 20.0) * 0.98);
+    let output = root().join("limited-mix.mp4");
+    let mut settings = ExportSettings::from_project(&p);
+    settings.overwrite = project::atomic::Overwrite::Replace;
+    export(
+        &p,
+        TimeRange::new(Tick::ZERO, tick(1, 1)).unwrap(),
+        &settings,
+        &output,
+        &h,
+    )
+    .unwrap();
+    let decoded = pcm(&output, None);
+    assert!(decoded.iter().all(|v| v.is_finite() && v.abs() < 1.0));
 }
 
 struct FullSources(FileSources);

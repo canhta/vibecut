@@ -334,7 +334,6 @@ fn admission(
                     .ok_or(Error::Invalid("diagnostic range"))?;
                 out.push(Unavailable {
                     asset: id,
-                    item: item.id,
                     range: TimeRange::new(start, end)?,
                     reason,
                 });
@@ -345,7 +344,6 @@ fn admission(
 }
 struct CopyPlan<'a> {
     asset: &'a media::SourceAsset,
-    item: project::ItemId,
     source: TimeRange,
     whole: bool,
 }
@@ -371,7 +369,7 @@ fn copy_plan<'a>(
                 && i.end().is_ok_and(|end| end > range.start())
         })
         .collect();
-    let Some(&(track, item)) = items.first() else {
+    let Some(&(_, item)) = items.first() else {
         return Ok(None);
     };
     if item.blend_mode != project::BlendMode::Normal
@@ -387,7 +385,7 @@ fn copy_plan<'a>(
     {
         return Ok(None);
     }
-    let ItemParams::Video(params) = &item.content else {
+    let ItemParams::Video(_) = &item.content else {
         return Ok(None);
     };
     let asset = project
@@ -436,7 +434,6 @@ fn copy_plan<'a>(
     }
     Ok(Some(CopyPlan {
         asset,
-        item: item.id,
         source,
         whole,
     }))
@@ -704,7 +701,6 @@ fn copy_export(
     let _packets = hooks.reserve(MemoryKind::Export, 128 << 20)?;
     let mut reader = PacketReader::open(plan.asset.path())?;
     let mut mux = Muxer::new(file, settings.container)?;
-    let copy_audio = false;
     // Timeline sources select the first video/audio stream, just like decode.
     // Alternate angles and audio languages must not leak into the final movie.
     let video_index = reader
@@ -714,19 +710,13 @@ fn copy_export(
         .find(|s| s.kind == StreamKind::Video)
         .ok_or(Error::Invalid("copy video stream"))?
         .index;
-    let audio_index = reader
-        .probe()
-        .streams
-        .iter()
-        .find(|s| s.kind == StreamKind::Audio)
-        .map(|s| s.index);
     let mut tracks = BTreeMap::new();
     for stream in &reader.probe().streams {
-        if stream.index == video_index || (copy_audio && Some(stream.index) == audio_index) {
+        if stream.index == video_index {
             tracks.insert(stream.index, mux.add_stream(stream)?);
         }
     }
-    let mut audio = if settings.include_audio && !copy_audio {
+    let mut audio = if settings.include_audio {
         Some(AudioEncoder::new(AudioEncoderSettings {
             webm: matches!(settings.container, Container::WebM),
             ..AudioEncoderSettings::aac(
@@ -741,12 +731,6 @@ fn copy_export(
         .as_ref()
         .map(|a| mux.add_parameters(&a.parameters(), a.time_base()))
         .transpose()?;
-    let mut mixer = crate::AudioMixer::new(
-        project,
-        settings.channels,
-        settings.audio_cut_fade_ms,
-        hooks,
-    )?;
     let mut frames = 0u64;
     let mut mixer = crate::AudioMixer::new(
         project,
@@ -859,11 +843,7 @@ fn copy_export(
     mux.finish()?;
     Ok(ExportReceipt {
         video_frames: frames,
-        audio_samples: if copy_audio {
-            total as u64
-        } else {
-            samples as u64
-        },
+        audio_samples: samples as u64,
         stream_copied: true,
         degraded: Vec::new(),
     })

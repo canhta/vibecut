@@ -2534,8 +2534,8 @@ fn audio_controls_are_atomic_undoable_persisted_and_strict() {
         assert_eq!(&before, session.project());
         session.redo().unwrap();
         assert_eq!(&after, session.project());
-        let encoded = project::encode(session.project()).unwrap();
-        assert_eq!(project::decode(&encoded).unwrap(), after);
+        let encoded = project::encode(session.project(), false).unwrap();
+        assert_eq!(&project::decode(&encoded).unwrap().project, after.as_ref());
     }
     assert_eq!(session.project().data().settings.master_volume, -1.25);
     assert!(session.project().data().settings.master_muted);
@@ -2570,7 +2570,7 @@ fn audio_controls_are_atomic_undoable_persisted_and_strict() {
             .is_err()
     );
     let mut encoded: serde_json::Value =
-        serde_json::from_slice(&project::encode(session.project()).unwrap()).unwrap();
+        serde_json::from_slice(&project::encode(session.project(), false).unwrap()).unwrap();
     encoded["schema_version"] = json!(9);
     assert!(matches!(
         project::decode(&serde_json::to_vec(&encoded).unwrap()),

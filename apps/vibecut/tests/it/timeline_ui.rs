@@ -1605,7 +1605,7 @@ fn audio_mute_and_volume_controls_commit_one_step_and_persist() {
 }
 
 #[test]
-fn compatible_audio_gain_inspector_skips_video_and_preserves_mute() {
+fn compatible_audio_gain_inspector_edits_video_and_preserves_mute() {
     let fixture = fixture();
     let video = fixture.video_a;
     let audio = fixture
@@ -1635,7 +1635,6 @@ fn compatible_audio_gain_inspector_skips_video_and_preserves_mute() {
             .click_modifiers(modifiers);
         harness.run_steps(2);
     }
-    let before = item(harness.state(), video).clone();
     harness
         .get(By::new().predicate(|n| n.author_id() == Some("inspector.audio_gain")))
         .click();
@@ -1649,7 +1648,11 @@ fn compatible_audio_gain_inspector_skips_video_and_preserves_mute() {
         harness.state().selection,
         [video, audio].into_iter().collect()
     );
-    assert_eq!(item(harness.state(), video), &before);
+    let ItemParams::Video(video_params) = &item(harness.state(), video).content else {
+        panic!("video")
+    };
+    assert_eq!(video_params.volume, -6.0);
+    assert!(!video_params.muted);
     let ItemParams::Audio(p) = &item(harness.state(), audio).content else {
         panic!("audio")
     };
