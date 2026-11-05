@@ -121,6 +121,7 @@ pub fn source_at(offset: i64) -> ReviewSource {
                         translation_ref: None,
                     },
                 )]),
+                style: None,
             })
             .collect(),
     };

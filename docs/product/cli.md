@@ -17,6 +17,7 @@ Build with `cargo build -p vibecut-cli` through the [build wrapper](../agents/or
 | `vibecut-cli export <project> --out <mp4>` | Export the saved active scene to MP4 |
 | `vibecut-cli batch <job-file>` | Render the validated export jobs in a JSON job file |
 | `vibecut-cli subtitle <in> --to <lang>` | Transcribe, translate and export SRT/burned subtitles |
+| `vibecut-cli captions import <project> <file.ass>` | Import ASS cues and styles as one caption item and print counts |
 | `vibecut-cli clips <in>` | Suggest ranked shorts from a long video and optionally export them |
 | `vibecut-cli providers` | List transcription/translation/clip providers and capabilities offline |
 | `vibecut-cli model list\|info\|download` | Inspect or install pinned local model files |
@@ -34,6 +35,10 @@ Add `--json` to any command for a machine-readable result on stdout. Without it,
 `vibecut-cli fonts list [--query <text>]` lists families whose name contains the text, prefix matches first and then alphabetical: bundled families, OS-installed families and the curated downloadable catalog, one entry per name (bundled over a cached download over a system install over a download not cached yet). Each entry carries `origin` (`bundled`, `system`, `google`), `state` (`available` or `not_downloaded`), `styles`, and for bundled and catalog families the `license` id and `source` URL. `fonts resolve <family>` loads a family the way a render would and prints `state` (`loaded`, `not_downloaded`, `cache_invalid` or `unknown`) and the `effective_family` layout will use; any state other than `loaded` exits 4 and layout falls back to Inter. Neither command uses the network.
 
 `fonts download <family> --accept-license` is the only network action. It prints the family, licence id, source URL and byte count to stderr and refuses with exit 5 unless the flag acknowledges them. Files are fetched over HTTPS, verified against their pinned size and SHA-256, stored with a licence file and a per-file attribution record under the per-user cache `<cache>/VibeCut/fonts`, and published as one directory; a failed or interrupted download leaves nothing behind. A cached family whose files no longer match their pins reports `cache_invalid` until it is downloaded again. The same operations are the `fonts.list`, `fonts.load` and `fonts.download` entries of the command registry in a `control` session.
+
+## Captions
+
+`vibecut-cli captions import <project> <file.ass|file.ssa> [--language <tag>] [--start <ticks>] [--track <id>] [--name <name>]` parses the script through `captions::parse_ass`, prints cue/style/skipped counts and line-numbered warnings, and applies the registered `captions.import` command. The asset, caption track and caption item are one undo step; `--track` targets an existing text track and `--name` labels a newly allocated one (`Captions` by default). `--language` is the cue source language (default `en`) and `--start` offsets the caption item in output ticks. Input is capped at 16 MiB; malformed lines warn and skip, while an oversized file or a document with no surviving cue fails with a typed error and leaves the project unchanged.
 
 ## Subtitles
 

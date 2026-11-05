@@ -196,6 +196,34 @@ Collapsed durations expand to 1 ms and push following starts as needed; overflow
 errors. After canonical export, SRT import/export is byte-stable. Sub-millisecond
 source precision and file formatting/metadata are not preserved.
 
+## ASS import and style mapping
+
+`parse_ass(bytes)` imports Advanced SubStation Alpha/SSA text as typed `AssCue`
+values with an optional static `CueStyle`; it is deliberately as forgiving as
+`parse`. It reads `[Script Info]` PlayResX/PlayResY (defaults 384x288), both
+`[V4 Styles]` and `[V4+ Styles]` formats, and `[Events]` dialogue records. The
+same encoding rules apply, including UTF-8/UTF-16 BOM and Windows-1252
+fallback. Documents are capped at 16 MiB, 100,000 cues and 10,000 styles; a
+single line over 1 MiB is skipped. Warnings retain one-based line numbers and
+are capped at 1,000 with a suppressed count.
+
+Style mapping keeps font family, font size as a ratio of PlayResY, primary,
+outline and background colours as RGBA, numpad alignment plus resolved
+horizontal/vertical placement, left/right/vertical margins as ratios of PlayResX
+or PlayResY, border style, bold, italic, underline and strikeout. Unknown or
+missing styles fall back to the built-in/default style with a warning. Cue
+overrides adjust the same fields for `\b`, `\i`, `\u`, `\s`, `\fs`, `\an`,
+`\c`/`\1c`, `\3c` and `\4c`; transform, karaoke, clipping, scaling and
+animation tags (`\pos`, `\move`, `\fad`, `\t`, `\k`, `\clip`, ...) are
+stripped and reported instead of inventing static rendering. `\N`, `\n` and
+`\h` become visible text and override blocks never leak into cue text.
+
+Malformed fields, timestamps, zero/backward durations, empty text and
+non-dialogue events warn and skip; parsing never panics on truncated input.
+Parse cost is linear in line count. Engine `captions.import` turns a parsed
+document into one caption item and one undo step; the UI import dialog remains
+owned by its ticket.
+
 ## Verification
 
 `cargo test -p captions` exercises model persistence/NFC/edit protection, language

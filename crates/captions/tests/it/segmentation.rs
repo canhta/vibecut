@@ -239,6 +239,7 @@ fn translations_are_proportional_estimates_and_keep_flags() {
         range: range(100, 160),
         source_lang: lang("en"),
         texts: BTreeMap::new(),
+        style: None,
     };
     let translated = CueText {
         text: "一二三四五六".into(),

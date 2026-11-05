@@ -1,10 +1,12 @@
 //! Source-timed transcripts, multilingual cues and forgiving subtitle interchange.
+pub mod ass;
 mod io;
 mod language;
 mod mapping;
 mod segment;
 mod span;
 mod timing;
+pub use ass::{AssCue, AssImport, AssWarning, AssWarningKind, parse_ass};
 pub use io::{Export, Format, Import, export, parse};
 pub use language::{LanguageProfile, LanguageRegistry, LanguageTag};
 pub use mapping::{CueFragmentId, EditMapping, MappedRange, MappedTick};
@@ -120,12 +122,76 @@ pub struct CueText {
     pub edited: bool,
     pub translation_ref: Option<NfcText>,
 }
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum HorizontalAlignment {
+    Left,
+    Center,
+    Right,
+}
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum VerticalAlignment {
+    Top,
+    Middle,
+    Bottom,
+}
+/// Numpad alignment plus its resolved horizontal/vertical placement.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct CueAlignment {
+    /// ASS numpad alignment, 1..=9.
+    pub numpad: u8,
+    pub horizontal: HorizontalAlignment,
+    pub vertical: VerticalAlignment,
+}
+/// Imported static cue styling. Sizes and margins are ratios of the ASS script
+/// resolution so the values survive a different project canvas; `None` style
+/// means the caller owns presentation defaults.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct CueStyle {
+    pub font_family: NfcText,
+    /// Font size divided by PlayResY.
+    pub font_size_ratio: f32,
+    pub primary_color: [u8; 4],
+    pub outline_color: [u8; 4],
+    pub background_color: [u8; 4],
+    /// 1 = outline/shadow, 3 = opaque box.
+    pub border_style: u8,
+    pub alignment: CueAlignment,
+    pub margin_left_ratio: f32,
+    pub margin_right_ratio: f32,
+    pub margin_vertical_ratio: f32,
+    pub bold: bool,
+    pub italic: bool,
+    pub underline: bool,
+    pub strikeout: bool,
+}
+impl CueStyle {
+    /// Parser and persistence guard for hostile finite values.
+    pub fn is_valid(&self) -> bool {
+        let bounded = |value: f32, max: f32| value.is_finite() && (0.0..=max).contains(&value);
+        !self.font_family.as_str().trim().is_empty()
+            && self.font_family.as_str().len() <= 256
+            && bounded(self.font_size_ratio, 10.0)
+            && self.font_size_ratio > 0.0
+            && (1..=3).contains(&self.border_style)
+            && (1..=9).contains(&self.alignment.numpad)
+            && bounded(self.margin_left_ratio, 10.0)
+            && bounded(self.margin_right_ratio, 10.0)
+            && bounded(self.margin_vertical_ratio, 10.0)
+    }
+}
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct Cue {
     pub id: NfcText,
     pub range: SourceRange,
     pub source_lang: LanguageTag,
     pub texts: BTreeMap<LanguageTag, CueText>,
+    /// Static style preserved from an ASS import; absent for generated/SRT/VTT cues.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub style: Option<CueStyle>,
 }
 impl Cue {
     /// Automatic results refuse to overwrite edited text; explicit replacement opts in.
@@ -137,7 +203,7 @@ impl Cue {
         true
     }
 }
-#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct CueTrack {
     pub cues: Vec<Cue>,
 }

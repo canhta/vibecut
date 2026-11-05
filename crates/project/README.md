@@ -161,9 +161,9 @@ or renderer output claim is made.
 ## Persistence and limits
 
 `encode`/`decode` use one JSON envelope: `format`, `schema_version`, `generator`,
-`project`. Current schema 13 adds text weight, italic, letter spacing and line height (and the same fields on text masks) to schema 12, which added the audio `source` (upload or library provenance) to schema 11 audio/video volume and mute plus master controls.
+`project`. Current schema 14 adds optional imported cue style to schema 13 text weight, italic, letter spacing and line height (also on text masks), which followed schema 12 audio `source` (upload or library provenance), volume/mute and master controls.
 ProjectId is stored as a canonical decimal string, preserving
-all u64 identity bits for control clients; other IDs remain numeric. Schemas 1-12
+all u64 identity bits for control clients; other IDs remain numeric. Schemas 1-13
 are refused rather than migrated or silently defaulted. Older schemas return `TooOld`, newer schemas `TooNew`; there are no
 migration or compatibility paths. Unknown current-schema project/envelope fields
 are refused. `WriterLease::save` serializes completely before touching the destination;
@@ -373,7 +373,7 @@ whitespace-only text masks are inactive while retaining their editable data. The
 admits 1,024 entries for resource safety; presentation limits do not define the
 model. Audio items refuse masks. Modes are None/Add/Subtract/Intersect/Lighten/
 Darken/Difference; render owns their coverage math. Commands/history belong to
-engine. Schema 12 requires scene arrays, per-item mask vectors, `blendMode`, text style, audio control fields (audio source is optional, default upload); schema 11 and earlier refuse with `TooOld`.
+engine. Schema 14 requires scene arrays, per-item mask vectors, `blendMode`, text style and typography, audio control fields (audio source is optional, default upload) and optional imported cue style; schema 13 and earlier refuse with `TooOld`.
 
 Shapes include split, cinematic band, rectangle, ellipse, heart, diamond, star,
 text and a cubic `MaskPath`. Text masks currently persist content and font size

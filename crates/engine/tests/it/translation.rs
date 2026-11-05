@@ -70,6 +70,7 @@ fn session() -> Session {
                 ),
             ]
             .into(),
+            style: None,
         })
         .collect();
     data.scene_mut().timeline.insert_track(Track {

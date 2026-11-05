@@ -1109,6 +1109,7 @@ fn caption_project() -> Project {
                 translation_ref: Some("ref".into()),
             },
         )]),
+        style: None,
     };
     data.scene_mut().timeline.insert_track(Track {
         id: TrackId(1),
@@ -2687,4 +2688,192 @@ fn audio_controls_are_atomic_undoable_persisted_and_strict() {
         project::decode(&serde_json::to_vec(&encoded).unwrap()),
         Err(project::Error::TooOld { .. })
     ));
+}
+
+fn ass_style() -> captions::CueStyle {
+    captions::CueStyle {
+        font_family: "Arial".into(),
+        font_size_ratio: 0.05,
+        primary_color: [255, 255, 255, 255],
+        outline_color: [0, 0, 0, 255],
+        background_color: [0, 0, 0, 0],
+        border_style: 1,
+        alignment: captions::CueAlignment {
+            numpad: 2,
+            horizontal: captions::HorizontalAlignment::Center,
+            vertical: captions::VerticalAlignment::Bottom,
+        },
+        margin_left_ratio: 0.0,
+        margin_right_ratio: 0.0,
+        margin_vertical_ratio: 0.0,
+        bold: true,
+        italic: false,
+        underline: false,
+        strikeout: false,
+    }
+}
+
+fn ass_asset() -> SourceAsset {
+    SourceAsset::try_from(AssetData {
+        ephemeral: true,
+        id: AssetId(30),
+        path: std::env::temp_dir().join("captions.ass"),
+        content_hash: ContentHash::from_bytes(b"ass"),
+        probe: SourceProbe {
+            format: "ass".into(),
+            duration: Some(Tick(254_016_000_000)),
+            streams: Vec::new(),
+        },
+    })
+    .unwrap()
+}
+
+fn ass_import() -> Command {
+    Command::ImportCaptions {
+        asset: ass_asset(),
+        language: captions::LanguageTag::parse("en").unwrap(),
+        start: Tick(100),
+        track: None,
+        name: Some("Imported captions".into()),
+        cues: vec![
+            captions::AssCue {
+                range: range(0, 254_016_000_000),
+                text: "Hello".into(),
+                style: ass_style(),
+            },
+            captions::AssCue {
+                range: range(508_032_000_000, 762_048_000_000),
+                text: "World".into(),
+                style: ass_style(),
+            },
+        ],
+    }
+}
+
+#[test]
+fn captions_import_is_one_undo_step_and_persists_style() {
+    let mut s = session();
+    let before = s.history_len();
+    let outcome = s.apply(ass_import()).unwrap();
+    assert!(outcome.changed);
+    assert_eq!(s.history_len(), (before.0 + 1, 0));
+    assert_eq!(outcome.placements.len(), 1);
+    assert!(
+        outcome
+            .created
+            .iter()
+            .any(|id| matches!(id, CreatedId::Track(_)))
+    );
+    assert!(
+        outcome
+            .created
+            .iter()
+            .any(|id| matches!(id, CreatedId::Item(_)))
+    );
+
+    let item = s
+        .project()
+        .data()
+        .scene()
+        .timeline
+        .iter()
+        .flat_map(|track| &track.items)
+        .find(|item| matches!(item.content, ItemParams::Caption(_)))
+        .unwrap();
+    let ItemParams::Caption(params) = &item.content else {
+        panic!("expected caption item")
+    };
+    assert_eq!(params.cues.cues.len(), 2);
+    assert_eq!(
+        params.cues.cues[0]
+            .texts
+            .values()
+            .next()
+            .unwrap()
+            .text
+            .as_str(),
+        "Hello"
+    );
+    assert_eq!(
+        params.cues.cues[0]
+            .style
+            .as_ref()
+            .unwrap()
+            .font_family
+            .as_str(),
+        "Arial"
+    );
+    assert_eq!(item.start, Tick(100));
+    assert_eq!(item.source_range, range(0, 762_048_000_000));
+
+    let encoded = project::encode(s.project().as_ref(), false).unwrap();
+    let loaded = project::decode(&encoded).unwrap();
+    assert_eq!(loaded.project, **s.project());
+    let ItemParams::Caption(reloaded) = &loaded
+        .project
+        .data()
+        .scene()
+        .timeline
+        .iter()
+        .flat_map(|track| &track.items)
+        .find(|item| matches!(item.content, ItemParams::Caption(_)))
+        .unwrap()
+        .content
+    else {
+        panic!("expected caption item")
+    };
+    assert_eq!(reloaded.cues.cues[0].style, Some(ass_style()));
+
+    s.apply(Command::Undo {}).unwrap();
+    assert!(
+        !s.project()
+            .data()
+            .scene()
+            .timeline
+            .iter()
+            .any(|track| track.kind == TrackKind::Text)
+    );
+    assert!(
+        !s.project()
+            .data()
+            .assets
+            .iter()
+            .any(|asset| asset.id() == AssetId(30))
+    );
+}
+
+#[test]
+fn captions_import_command_admits_json_and_rejects_bad_cues_atomically() {
+    let mut s = session();
+    let command = ass_import();
+    let Command::ImportCaptions {
+        asset,
+        language,
+        start,
+        track,
+        name,
+        cues,
+    } = command
+    else {
+        panic!("expected import command")
+    };
+    let params = json!({
+        "asset": serde_json::to_value(&asset).unwrap(),
+        "language": language.as_str(),
+        "start": start.0,
+        "track": track,
+        "name": name,
+        "cues": serde_json::to_value(&cues).unwrap(),
+    });
+    let before = s.project().clone();
+    let outcome = s.execute("captions.import", params.clone()).unwrap();
+    assert!(outcome.changed);
+    assert_eq!(s.project().data().scene().timeline.track_count(), 4);
+
+    let mut bad = params;
+    bad["cues"][0]["range"]["end"] = json!(0);
+    let after = s.project().clone();
+    assert!(s.execute("captions.import", bad).is_err());
+    assert_eq!(s.project(), &after);
+    assert_ne!(after, before);
 }

@@ -38,6 +38,7 @@ pub fn cues(source: &str) -> CueTrack {
                         translation_ref: None,
                     },
                 )]),
+                style: None,
             })
             .collect(),
     }

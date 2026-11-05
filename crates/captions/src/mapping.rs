@@ -210,6 +210,7 @@ mod tests {
                             },
                         ),
                     ]),
+                    style: None,
                 })
                 .collect(),
         }

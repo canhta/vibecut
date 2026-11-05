@@ -129,6 +129,7 @@ fn populated(path: PathBuf) -> Project {
                 translation_ref: Some("translation-1".into()),
             },
         )]),
+        style: None,
     };
     let contents = [
         ItemParams::Video(VideoParams {

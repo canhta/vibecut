@@ -97,12 +97,18 @@ implicitly; `model download` requires `--yes-download` after printing the exact
 licence, source, size and hashes. A completed export/subtitle run reports its
 output paths, not render's detailed receipt.
 
+`captions import` calls the [engine ASS adapter](../../crates/engine/README.md#ass-caption-import),
+which parses and maps styles through the captions owner and returns the
+registered `captions.import` command. The CLI prints counts and line-numbered
+warnings, applies the command under the same lease/save path and never
+reimplements ASS parsing or style mapping.
+
 `cargo test -p vibecut-cli` covers command dispatch, Unicode/space paths, refused
 parameters, subprocess lease contention, progress, export geometry, keyframed
 opacity decoded from an export, rectangle masks applied by `exec` and decoded
 from an encoded export, degraded consent and source loss before/during
 export, offline provider/model catalogs,
-subtitle argument refusals and credential refusal before any upload. It also
+subtitle argument refusals and credential refusal before any upload, plus ASS import counts, style persistence and extension refusal. It also
 covers clip argument refusals, the offline clip provider catalog and the
 suggestion-credential refusal before any media work. Mid-job source loss
 uses a synchronous render hook after admission and the first decoded frame,

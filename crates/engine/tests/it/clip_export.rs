@@ -109,6 +109,7 @@ fn cue(id: &str, start: i64, end: i64, entries: &[(&str, &str)]) -> Cue {
             .iter()
             .map(|(language, value)| (lang(language), text(value)))
             .collect::<BTreeMap<_, _>>(),
+        style: None,
     }
 }
 fn runner(concurrency: usize) -> JobRunner {
@@ -781,6 +782,7 @@ fn bilingual_ordered_segments_export_mp4_and_subtitle_sidecars() {
             .into_iter()
             .map(|(language, value)| (lang(language), text(value)))
             .collect(),
+            style: None,
         }],
     };
     let request = ClipBatchRequest {
@@ -1152,6 +1154,7 @@ fn retry_resumes_after_sidecar_publication_failure_without_overwrite() {
                         .into_iter()
                         .map(|(language, value)| (lang(language), text(value)))
                         .collect(),
+                    style: None,
                 }],
             },
             &out,

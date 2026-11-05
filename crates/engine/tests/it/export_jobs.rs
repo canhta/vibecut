@@ -342,6 +342,7 @@ fn caption_project() -> project::Project {
         range,
         source_lang: LanguageTag::parse("vi").unwrap(),
         texts,
+        style: None,
     };
     // Two retained occurrences with an output gap; source is never opened for interchange.
     d.scene_mut().timeline.insert_track(Track {

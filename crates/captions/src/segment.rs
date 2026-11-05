@@ -80,7 +80,7 @@ pub enum TimingKind {
     SourceSegment,
     Estimated,
 }
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct SegmentedCue {
     pub cue: Cue,
     pub timing: TimingKind,
@@ -743,6 +743,7 @@ fn append_groups(
                         translation_ref: reference.clone(),
                     },
                 )]),
+                style: None,
             },
             timing,
         });

@@ -24,7 +24,7 @@ pub struct Export {
 fn warn(warnings: &mut Vec<Warning>, position: usize, kind: WarningKind) {
     warnings.push(Warning { position, kind });
 }
-fn decode(bytes: &[u8], warnings: &mut Vec<Warning>) -> Result<String, Error> {
+pub(crate) fn decode(bytes: &[u8], warnings: &mut Vec<Warning>) -> Result<String, Error> {
     if bytes.len() > 16 * 1024 * 1024 {
         return Err(Error::TooLarge);
     }
@@ -182,6 +182,7 @@ pub fn parse(bytes: &[u8], format: Format, language: LanguageTag) -> Result<Impo
                     translation_ref: None,
                 },
             )]),
+            style: None,
         });
     }
     let mut track = CueTrack { cues };

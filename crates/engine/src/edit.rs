@@ -1,4 +1,6 @@
-use crate::{AssetUsage, Command, CreatedId, EditError, Move, Placement, Result, TrackPlacement};
+use crate::{
+    AssetUsage, Command, CreatedId, EditError, Move, NewItem, Placement, Result, TrackPlacement,
+};
 use project::{
     Bookmark, BookmarkId, Item, ItemId, ItemParams, ProjectData, Track, TrackId, TrackKind,
 };
@@ -510,6 +512,126 @@ fn placement_track(
     )?;
     Ok((id, false))
 }
+/// Import parsed ASS cues as one caption item on a text track. The asset,
+/// optional track allocation and item insertion form one command and therefore
+/// one undo step. File parsing and asset probing stay with the adapter.
+#[allow(clippy::too_many_arguments)]
+fn import_captions(
+    mut data: ProjectData,
+    asset: media::SourceAsset,
+    language: captions::LanguageTag,
+    start: Tick,
+    track: Option<TrackId>,
+    name: Option<captions::NfcText>,
+    cues: Vec<captions::AssCue>,
+    created: &mut Vec<CreatedId>,
+    next: &mut Option<u64>,
+    sources: &mut TrimSources,
+    copied_text_bytes: &mut usize,
+) -> Result<ProjectData> {
+    if cues.is_empty() || cues.len() > captions::ass::MAX_ASS_CUES {
+        return Err(EditError::Limit);
+    }
+    if start < Tick::ZERO {
+        return Err(EditError::Invalid("negative output start"));
+    }
+    let asset_id = asset.id();
+    let mut end = Tick::ZERO;
+    let mut converted = Vec::with_capacity(cues.len());
+    for (index, cue) in cues.into_iter().enumerate() {
+        if !cue.style.is_valid() || cue.range.start() < Tick::ZERO {
+            return Err(EditError::Invalid("imported cue style or timing"));
+        }
+        end = end.max(cue.range.end());
+        let id = format!("ass-{}", index.saturating_add(1)).into();
+        converted.push(captions::Cue {
+            id,
+            range: cue.range,
+            source_lang: language.clone(),
+            texts: std::collections::BTreeMap::from([(
+                language.clone(),
+                captions::CueText {
+                    text: cue.text,
+                    edited: false,
+                    translation_ref: None,
+                },
+            )]),
+            style: Some(cue.style),
+        });
+    }
+    let source_range = SourceRange::new(Tick::ZERO, end)?;
+
+    data = apply(
+        data,
+        Command::AddAsset { asset },
+        created,
+        next,
+        sources,
+        copied_text_bytes,
+    )?
+    .into_data();
+    let target = match track {
+        Some(track) => {
+            let value = data
+                .scene()
+                .timeline
+                .iter()
+                .find(|value| value.id == track)
+                .ok_or(EditError::Invalid("import track not found"))?;
+            if value.kind != TrackKind::Text {
+                return Err(EditError::Invalid("import requires a text track"));
+            }
+            track
+        }
+        None => {
+            let mark = created.len();
+            data = apply(
+                data,
+                Command::AddTrack {
+                    name: name.unwrap_or_else(|| "Captions".into()),
+                    kind: TrackKind::Text,
+                    placement: TrackPlacement::Auto,
+                },
+                created,
+                next,
+                sources,
+                copied_text_bytes,
+            )?
+            .into_data();
+            created
+                .get(mark..)
+                .unwrap_or_default()
+                .iter()
+                .find_map(|id| match id {
+                    CreatedId::Track(track) => Some(*track),
+                    _ => None,
+                })
+                .ok_or(EditError::Invalid("import track was not created"))?
+        }
+    };
+    data = apply(
+        data,
+        Command::InsertItem {
+            placement: Placement::Track { track: target },
+            item: NewItem {
+                animations: project::Animations::default(),
+                source_asset: Some(asset_id),
+                source_range,
+                start,
+                content: ItemParams::Caption(project::CaptionParams {
+                    cues: captions::CueTrack { cues: converted },
+                }),
+            },
+        },
+        created,
+        next,
+        sources,
+        copied_text_bytes,
+    )?
+    .into_data();
+    Ok(data)
+}
+
 pub(crate) fn apply(
     mut data: ProjectData,
     command: Command,
@@ -616,6 +738,28 @@ pub(crate) fn apply(
         }
         Command::ReorderTrack { track: id, index } => {
             reorder_track(&mut data, id, index)?;
+        }
+        Command::ImportCaptions {
+            asset,
+            language,
+            start,
+            track,
+            name,
+            cues,
+        } => {
+            data = import_captions(
+                data,
+                asset,
+                language,
+                start,
+                track,
+                name,
+                cues,
+                created,
+                next,
+                sources,
+                copied_text_bytes,
+            )?;
         }
         // Session commits this as one grouped transaction before reaching edit.
         Command::AddLibrarySound { .. } => {

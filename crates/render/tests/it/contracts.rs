@@ -859,6 +859,7 @@ fn caption_expansion_is_refused_before_raster_allocation() {
             range,
             source_lang: captions::LanguageTag::parse("vi").unwrap(),
             texts: std::collections::BTreeMap::new(),
+            style: None,
         })
         .collect();
     d.scene_mut().timeline.insert_track(project::Track {

@@ -1,4 +1,5 @@
 //! Headless project commands and bounded, atomic snapshot history.
+pub mod ass_import;
 mod budget;
 pub mod cache;
 pub mod clip_boundaries;
@@ -36,7 +37,8 @@ pub use ai::clips::{
     ClipDropReason, ClipProposal, ClipRole, ClipSettings, ClipSource, ClipSourceSegment,
     DroppedClip,
 };
-pub use captions::{Format, NfcText};
+pub use ass_import::{AssImportReport, AssImportRequest, prepare_ass_import};
+pub use captions::{AssWarning, AssWarningKind, Format, NfcText};
 mod edit;
 pub mod effect_thumbnails;
 mod publication;

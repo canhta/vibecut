@@ -73,6 +73,25 @@ and its item IDs. Refusal preserves the entire project and history; successful
 removal deletes records only, retaining source files and unrelated content.
 Undo restores the exact records and their project order; redo removes them again.
 
+## ASS caption import
+
+`captions.import { asset, language, start, track, name, cues }` inserts parsed
+`captions::AssCue` values as one `CaptionParams` item on an existing text track
+or a newly allocated track named `name` (default `Captions`). The asset is the
+already-read script identity; no path or file IO runs inside the command. The
+item starts at `start`; source ranges stay in script coordinates and cue styles
+remain per cue. The asset, optional track and item form one command and one undo
+step, so undo removes all three. Empty cue lists, more than 100,000 cues,
+negative starts and invalid cue styles refuse atomically.
+
+`ass_import::prepare_ass_import` reads at most 16 MiB, parses through the
+captions owner and returns the registered command plus cue/style/skipped counts
+and line-numbered warnings for headless adapters. It returns `Limit` for an
+oversized file and `Unsupported` when no cue survives. `captions.import` works
+inside a batch. `docs/engineering/commands.md`, `catalog.digest` and
+`cargo run -p engine --example control_catalog` remain the generated source of
+truth.
+
 ## Timeline placement
 
 `timeline.insert { placement, item }` performs track choice, optional allocation

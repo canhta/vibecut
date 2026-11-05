@@ -221,6 +221,7 @@ fn seed() -> Session {
                             )]
                             .into_iter()
                             .collect(),
+                            style: None,
                         }],
                     },
                 }),

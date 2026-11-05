@@ -54,6 +54,7 @@ fn scene(texts: &[(&str, &str)]) -> project::Project {
                                 )
                             })
                             .collect(),
+                        style: None,
                     }],
                 },
             }),

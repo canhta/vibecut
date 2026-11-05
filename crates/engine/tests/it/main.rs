@@ -1,5 +1,6 @@
 //! Integration tests share one binary and one copy of their helpers.
 
+mod ass_import;
 mod clip_boundaries;
 mod clip_export;
 mod clip_suggest;

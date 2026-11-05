@@ -842,6 +842,11 @@ fn validate(data: &ProjectData) -> Result<()> {
                                 text(reference)?;
                             }
                         }
+                        if let Some(style) = &cue.style
+                            && !style.is_valid()
+                        {
+                            return Err(Error::Invalid("cue style"));
+                        }
                     }
                 }
                 ItemParams::Overlay(_) => {}
