@@ -1,6 +1,5 @@
 #![allow(clippy::unwrap_used, clippy::panic, clippy::indexing_slicing)]
-mod common;
-use common::*;
+use crate::common::*;
 use project::{AnimationPath, BlendMode, Param, ParamValue};
 use render::*;
 use serde::Deserialize;
@@ -19,7 +18,7 @@ struct Golden {
     pixels: Vec<[f32; 4]>,
 }
 fn pair() -> Pair {
-    serde_json::from_str(include_str!("fixtures/blend-linear.json")).unwrap()
+    serde_json::from_str(include_str!("../fixtures/blend-linear.json")).unwrap()
 }
 fn difference(a: &Image, b: &Image) -> f32 {
     a.pixels()

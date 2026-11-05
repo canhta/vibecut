@@ -372,7 +372,7 @@ evaluated in this editor's established linear space.
 f64 expected pixels for all 17 modes at opacity 0/0.5/1. CPU tolerance is 3e-6
 absolute per working channel. The desktop WGSL path uses the same fixtures and
 additional mixed-alpha grids at 1x/2x, with maximum absolute error 2e-5.
-`tests/blend.rs` checks mask/opacity order and preview identity. Its WebM/VP9
+`tests/it/blend.rs` checks mask/opacity order and preview identity. Its WebM/VP9
 encoded edge and patch oracle compares final decoded RGBA to opaque BT.709 output:
 maximum channel difference 20/255, RGBA MSE 8 and flat-patch channel difference
 6/255, allowing 4:2:0 chroma edge

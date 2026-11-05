@@ -22,8 +22,8 @@ The ignored live test exports this capture when
 set -a; . .privates/.env; set +a
 VIBECUT_LIVE_AI=1 VIBECUT_ELEVENLABS_VOICE_ID=EXAVITQu4vr4xnSDxMaL \
 VIBECUT_ELEVENLABS_CAPTURE_DIR=/tmp/elevenlabs-capture \
-cargo test -p ai --test it elevenlabs_speech:: \
-  live_elevenlabs_speech_uses_production_transport -- --ignored --nocapture
+cargo test -p ai --test it \
+  elevenlabs_speech::live_elevenlabs_speech_uses_production_transport -- --ignored --nocapture
 ```
 
 `success.wav` remains a synthetic 0.25 s 440 Hz sine probe (6,000 samples, 12,044
