@@ -3,6 +3,7 @@
 use crate::archives::{fetch, sha256};
 use sha2::{Digest, Sha256};
 use std::env;
+use std::ffi::OsStr;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -126,6 +127,16 @@ pub fn prefix() -> Result<PathBuf, String> {
         return Err("FFmpeg cache is incomplete; rerun cargo xtask ffmpeg".into());
     }
     Ok(prefix)
+}
+
+/// External tools must load their own libraries, not the provisioned SDK that
+/// an inherited wrapped environment points at.
+pub fn external(program: impl AsRef<OsStr>) -> Command {
+    let mut command = Command::new(program);
+    command
+        .env_remove("DYLD_LIBRARY_PATH")
+        .env_remove("LD_LIBRARY_PATH");
+    command
 }
 
 /// Give every workspace Cargo process the same shared-library installation.
@@ -685,6 +696,22 @@ fn record_patches(prefix: &Path, patches: &[PathBuf]) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn external_tools_drop_the_managed_runtime_search_path() {
+        let command = external("ffmpeg");
+        let cleared: Vec<_> = command
+            .get_envs()
+            .filter(|(_, value)| value.is_none())
+            .map(|(key, _)| key.to_string_lossy().into_owned())
+            .collect();
+        for variable in ["DYLD_LIBRARY_PATH", "LD_LIBRARY_PATH"] {
+            assert!(
+                cleared.iter().any(|key| key == variable),
+                "{variable} was not cleared for an external tool"
+            );
+        }
+    }
 
     #[cfg(windows)]
     #[test]

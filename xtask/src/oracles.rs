@@ -5,7 +5,6 @@ use std::fmt::Write as _;
 use std::fs;
 use std::io::{self, Read};
 use std::path::{Path, PathBuf};
-use std::process::Command;
 
 const MINIMUM_MAJOR: u32 = 6;
 const TOOLS: [&str; 2] = ["ffmpeg", "ffprobe"];
@@ -102,7 +101,7 @@ fn inspect(name: &'static str) -> Tool {
             problem: Some("not found on PATH".into()),
         };
     };
-    match Command::new(&path).arg("-version").output() {
+    match crate::ffmpeg::external(&path).arg("-version").output() {
         Ok(output) if output.status.success() => {
             let text = String::from_utf8_lossy(&output.stdout);
             let version = parse_version(&text);

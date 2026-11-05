@@ -17,7 +17,7 @@ pub fn media(root: &Path) -> Result<(), String> {
     let input = dir.join("source-1080p60s.mp4");
     let output = dir.join("export-1080p60s.mp4");
     if !input.exists() {
-        run(Command::new("ffmpeg")
+        run(ffmpeg::external("ffmpeg")
             .args([
                 "-y",
                 "-v",
@@ -44,7 +44,7 @@ pub fn media(root: &Path) -> Result<(), String> {
             ])
             .arg(&input))?;
     }
-    run(Command::new("ffmpeg").arg("-version"))?;
+    run(ffmpeg::external("ffmpeg").arg("-version"))?;
     let mut command = Command::new(std::env::var_os("CARGO").ok_or("run via cargo xtask")?);
     command
         .current_dir(root)
@@ -62,7 +62,7 @@ pub fn media(root: &Path) -> Result<(), String> {
     ffmpeg::environment(&mut command)?;
     run(&mut command)?;
     for metric in ["ssim", "psnr"] {
-        run(Command::new("ffmpeg")
+        run(ffmpeg::external("ffmpeg")
             .args(["-hide_banner", "-i"])
             .arg(&output)
             .arg("-i")
