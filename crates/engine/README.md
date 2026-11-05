@@ -534,7 +534,9 @@ session. Live sessions (including other windows in one process) are never offere
 by `discover()`. After process death the OS releases the lock; discovery holds it
 until the returned Candidate is dropped/discarded, preventing two instances from
 claiming the same abandoned session. Unsupported locking is a typed error, never
-assumed stale. Scanning is bounded to 10,000 entries; corrupt candidates yield
+assumed stale. Dropping an Autosave (after worker shutdown) or Candidate explicitly
+unlocks its session, even while a concurrently spawned child retains an inherited
+descriptor before exec. Scanning is bounded to 10,000 entries; corrupt candidates yield
 retained typed diagnostics, without deleting their files. Names/paths have no
 Debug representation and are never logged.
 
@@ -597,6 +599,9 @@ truncated descriptors/snapshots, digest/path/schema refusal, original-byte
 preservation, save-as promotion, stale save completion, switch barriers, undo to
 saved state, injected StorageFull and worker unwind, and refusal to rotate after
 failure. These are synthetic lifecycle checks, not a storage throughput benchmark.
+The debounce/deadline test advances an injected monotonic clock. A Unix-only
+retained-descriptor case deterministically checks session/candidate release and
+continued exclusion while a replacement candidate is held, without timing margins.
 The app owns recovery presentation and user choices; project writer leases remain
 project-owned and are composed here without a second lock protocol. Additional
 integration tests cover before-load Busy refusal, retained leases across edits and

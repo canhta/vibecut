@@ -51,7 +51,7 @@ pub struct Journal {
 /// Holds the abandoned session lock until the caller recovers/discards or drops it.
 pub struct Candidate {
     directory: PathBuf,
-    _lock: File,
+    _lock: SessionLock,
     pub journal: Journal,
     project: Project,
 }
@@ -78,11 +78,19 @@ fn regular(path: &Path) -> Result<()> {
     }
     Ok(())
 }
-fn lock(path: &Path) -> Result<Option<File>> {
+struct SessionLock(File);
+impl Drop for SessionLock {
+    fn drop(&mut self) {
+        // A concurrent fork may retain the open-file description until exec.
+        // Release at the owner's boundary rather than its last descriptor close.
+        let _ = self.0.unlock();
+    }
+}
+fn lock(path: &Path) -> Result<Option<SessionLock>> {
     regular(path)?;
     let file = File::options().read(true).write(true).open(path)?;
     match file.try_lock() {
-        Ok(()) => Ok(Some(file)),
+        Ok(()) => Ok(Some(SessionLock(file))),
         Err(TryLockError::WouldBlock) => Ok(None),
         Err(TryLockError::Error(e)) => Err(lock_error(e)),
     }
@@ -103,7 +111,7 @@ fn read_bounded(path: &Path, max: u64) -> Result<Vec<u8>> {
     }
     Ok(bytes)
 }
-fn candidate(directory: PathBuf, file: File) -> Result<Candidate> {
+fn candidate(directory: PathBuf, file: SessionLock) -> Result<Candidate> {
     let bytes = read_bounded(&directory.join(JOURNAL), MAX_META)?;
     #[derive(Deserialize)]
     struct Version {
@@ -299,7 +307,7 @@ pub struct Autosave {
     runner: JobRunner,
     budget: ByteBudget,
     directory: PathBuf,
-    _lock: File,
+    _lock: SessionLock,
     clock: Arc<dyn Clock>,
     schedule: Schedule,
     writer: Option<WriterLease>,
@@ -387,6 +395,7 @@ impl Autosave {
             TryLockError::Error(e) => lock_error(e),
             TryLockError::WouldBlock => EditError::RecoveryBusy,
         })?;
+        let file = SessionLock(file);
         let runner = JobRunner::new(
             RunnerConfig {
                 concurrency: [1, 1, 1],
@@ -831,6 +840,38 @@ mod tests {
             Schedule::default(),
         )
         .unwrap()
+    }
+    #[cfg(unix)]
+    #[test]
+    fn dropped_session_and_candidate_release_inherited_locks() {
+        for claimed in [false, true] {
+            let dir = tempfile::tempdir().unwrap();
+            let mut autosave = open(dir.path());
+            let revision = autosave.flush().unwrap();
+            // Pin the shared open-file description as a concurrent fork can
+            // before exec, without depending on subprocess scheduling.
+            let inherited = if claimed {
+                drop(autosave);
+                let candidate = discover(dir.path()).unwrap().candidates.pop().unwrap();
+                let inherited = candidate._lock.0.try_clone().unwrap();
+                assert!(discover(dir.path()).unwrap().candidates.is_empty());
+                drop(candidate);
+                inherited
+            } else {
+                let inherited = autosave._lock.0.try_clone().unwrap();
+                assert!(discover(dir.path()).unwrap().candidates.is_empty());
+                drop(autosave);
+                inherited
+            };
+            let discovery = discover(dir.path()).unwrap();
+            assert!(discovery.diagnostics.is_empty());
+            assert_eq!(discovery.candidates.len(), 1, "claimed: {claimed}");
+            assert_eq!(discovery.candidates[0].journal.revision, revision);
+            drop(inherited);
+            assert!(discover(dir.path()).unwrap().candidates.is_empty());
+            drop(discovery);
+            assert_eq!(discover(dir.path()).unwrap().candidates.len(), 1);
+        }
     }
     #[test]
     fn worker_lease_transfer_survives_unwind_without_poisoning_the_slot() {
