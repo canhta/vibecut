@@ -988,6 +988,10 @@ pub fn validate_output_path(
         std::fs::canonicalize(parent)?
             .join(path.file_name().ok_or(Error::Invalid("output filename"))?)
     };
+    // A destination that names a source is a definite alias even when another
+    // source happens to hold identical bytes. Decide path identity for every
+    // asset before the content fallback below can classify the destination as
+    // a possible alias.
     for asset in &project.data().assets {
         let source = std::fs::canonicalize(asset.path()).or_else(|_| {
             let parent = asset.path().parent().unwrap_or(Path::new("."));
@@ -1000,6 +1004,12 @@ pub fn validate_output_path(
         {
             return Err(Error::Invalid("output aliases a source"));
         }
+    }
+    // Where canonical paths do not prove identity, refuse a destination that
+    // shares a source's file identity or, on platforms without file identity,
+    // its complete content. These checks stay conservative: an overwrite that
+    // may touch source bytes is refused before any staging.
+    for asset in &project.data().assets {
         #[cfg(unix)]
         if let (Ok(output), Ok(source)) = (std::fs::metadata(path), std::fs::metadata(asset.path()))
         {
