@@ -237,7 +237,8 @@ fn cache() -> Result<PathBuf, String> {
 }
 
 const STALE_AGE: Duration = Duration::from_secs(2 * 24 * 60 * 60);
-pub(crate) const CACHE_SLOT_LIMIT: u64 = 16 * GIB;
+// A warm slot holds 14-21 GiB after one workspace test build; stay above it so cleanup keeps warm caches.
+pub(crate) const CACHE_SLOT_LIMIT: u64 = 40 * GIB;
 
 /// Prune the shared build cache: sessions and whole slots untouched for two
 /// days go first; a free slot over the size budget is cleared under its lock.
