@@ -54,7 +54,7 @@ decoder returns `UnsupportedReason::DecoderUnavailable`; no filename or browser
 codec hint is inferred.
 
 `thumbnail` / `thumbnail_at` decode the first frame at a requested position
-(`seek_keyframe` plus decode forward for a later position) through the existing
+(`seek` plus decode forward for a later position) through the existing
 `VideoReader` and `RgbaConverter`, then scale to a 320 px maximum edge. This is
 the one frame decoder shared with ticket 18; no second decoder exists.
 `Thumbnail::encode`/`decode` is the bounded cache payload (1024 px ceiling),

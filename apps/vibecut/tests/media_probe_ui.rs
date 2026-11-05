@@ -311,6 +311,43 @@ fn unsupported_codec_is_typed_before_timeline_use_and_gets_a_placeholder() {
 }
 
 #[test]
+fn unsupported_audio_in_a_decodable_video_keeps_the_unsupported_badge() {
+    struct MixedProbe;
+    impl ImportProbe for MixedProbe {
+        fn import(
+            &self,
+            id: AssetId,
+            path: PathBuf,
+            _cancelled: Arc<AtomicBool>,
+        ) -> media::Result<ImportedSource> {
+            let mut data = AssetData::from(asset(id.0, 17, true, path.clone()));
+            let mut audio = asset(id.0, 17, false, path).probe().streams[0].clone();
+            audio.index = 1;
+            data.probe.streams.push(audio);
+            let asset = SourceAsset::try_from(data)?;
+            let mut capabilities = capabilities(&asset, true);
+            capabilities.streams[1].decodability =
+                Decodability::Unsupported(UnsupportedReason::DecoderUnavailable);
+            Ok(ImportedSource {
+                asset,
+                capabilities,
+            })
+        }
+    }
+    let thumbs = Arc::new(Thumbs::ready());
+    let mut editor = new_editor();
+    editor.set_import_probe(Arc::new(MixedProbe)).unwrap();
+    editor.set_thumbnailer(thumbs.clone()).unwrap();
+    editor
+        .start_import(vec!["C:/vibecut-test/mixed.mp4".into()])
+        .unwrap();
+    finish(&mut editor);
+    assert_eq!(state(&editor, 0), "unsupported");
+    assert!(!editor.inspect().unwrap().assets[0].thumbnail);
+    assert_eq!(thumbs.calls(), 0);
+}
+
+#[test]
 fn failed_thumbnail_leaves_the_asset_ready_with_a_placeholder() {
     let thumbs = Arc::new(Thumbs::failing());
     let mut editor = new_editor();

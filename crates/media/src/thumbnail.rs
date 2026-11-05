@@ -128,7 +128,7 @@ pub fn thumbnail_at_with_read_bytes(
     }
     let mut reader = VideoReader::open_with_cancel(path, cancelled.clone())?;
     if at > Tick::ZERO {
-        reader.seek_keyframe(at)?;
+        reader.seek(at)?;
     }
     let frame = reader
         .next_frame()?

@@ -301,6 +301,23 @@ fn hevc_capability_is_a_typed_supported_or_unsupported_result() {
 }
 
 #[test]
+fn thumbnail_position_decodes_forward_past_the_preceding_keyframe() {
+    let Some(path) = h264_audio() else {
+        return;
+    };
+    let at = Tick(time::TICKS_PER_SECOND / 2);
+    let (thumbnail, _) = thumbnail_at_with_read_bytes(
+        &path,
+        at,
+        THUMBNAIL_MAX_EDGE,
+        std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
+    )
+    .unwrap();
+    assert!(thumbnail.frame >= at, "returned the preceding keyframe");
+    assert!(thumbnail.frame.0 - at.0 < time::TICKS_PER_SECOND / 20);
+}
+
+#[test]
 fn probe_and_thumbnail_read_a_bounded_prefix_of_a_large_file() {
     let Some(path) = common::generate(
         "metadata bounds",

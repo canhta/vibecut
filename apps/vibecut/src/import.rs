@@ -10,10 +10,7 @@ use engine::jobs::{
 };
 use engine::thumbnails::{ThumbnailCache, thumbnail_key};
 use engine::{ByteBudget, ByteLease, ByteOwner};
-use media::{
-    AssetId, ImportedSource, MediaError, ProbeCapabilities, SourceAsset, THUMBNAIL_MAX_EDGE,
-    Thumbnail,
-};
+use media::{AssetId, ImportedSource, MediaError, SourceAsset, THUMBNAIL_MAX_EDGE, Thumbnail};
 use std::{
     collections::{BTreeMap, BTreeSet},
     path::PathBuf,
@@ -582,13 +579,7 @@ pub fn needs_thumbnail(imported: &ImportedSource) -> bool {
     imported
         .metadata()
         .is_ok_and(|metadata| metadata.needs_thumbnail())
-        && video_decodable(&imported.capabilities)
-}
-
-fn video_decodable(capabilities: &ProbeCapabilities) -> bool {
-    capabilities
-        .video()
-        .is_none_or(|stream| stream.decodability.is_decodable())
+        && imported.capabilities.is_decodable()
 }
 
 fn job_key(
