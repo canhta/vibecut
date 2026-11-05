@@ -1,6 +1,7 @@
 //! Native bundles extend the cache protocol; only a verified marker authorizes a lease.
 use super::{
-    ArtifactCache, ArtifactKind, ArtifactPin, CacheKey, HEADER, KeyInputs, StoredArtifact,
+    ArtifactCache, ArtifactKind, ArtifactPin, CacheKey, CacheLock, HEADER, KeyInputs,
+    StoredArtifact,
 };
 use crate::{ByteOwner, EditError};
 use ai::models::Model;
@@ -85,7 +86,7 @@ pub struct ModelLease {
     directory: PathBuf,
     model: Model,
     _pin: ArtifactPin,
-    _root_lock: Arc<fs::File>,
+    _root_lock: Arc<CacheLock>,
 }
 impl ModelLease {
     pub fn directory(&self) -> &Path {

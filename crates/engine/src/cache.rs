@@ -179,10 +179,20 @@ impl Drop for ArtifactPin {
 /// Files are untrusted, size capped before reads and digest checked before reuse.
 pub struct ArtifactCache {
     root: PathBuf,
-    root_lock: Arc<fs::File>,
+    root_lock: Arc<CacheLock>,
     budget: ByteBudget,
     entries: BTreeMap<CacheKey, Arc<StoredArtifact>>,
     max_entries: usize,
+}
+
+/// Shared by the writer and native model leases; the final logical owner unlocks.
+struct CacheLock(fs::File);
+impl Drop for CacheLock {
+    fn drop(&mut self) {
+        // Closing alone can retain flock through a concurrently spawned child's
+        // inherited descriptor. Match the lock lifetime to our logical owners.
+        let _ = self.0.unlock();
+    }
 }
 /// Explicit pin: eviction/clear skips this entry until all leases are dropped.
 /// Bytes remain charged separately from disk for the entire reader lifetime.
@@ -231,8 +241,8 @@ impl ArtifactCache {
             use std::os::unix::fs::OpenOptionsExt;
             options.mode(0o600);
         }
-        let root_lock = Arc::new(options.open(lock_path)?);
-        root_lock.try_lock().map_err(|e| match e {
+        let root_lock = Arc::new(CacheLock(options.open(lock_path)?));
+        root_lock.0.try_lock().map_err(|e| match e {
             fs::TryLockError::WouldBlock => EditError::CacheBusy,
             fs::TryLockError::Error(e) => EditError::Io(e),
         })?;
@@ -480,5 +490,36 @@ impl ArtifactCache {
             self.remove(key)?;
         }
         Ok(self.entries.len())
+    }
+}
+
+#[cfg(all(test, unix))]
+mod tests {
+    #![allow(clippy::unwrap_used)]
+    use super::{ArtifactCache, ByteBudget, EditError};
+
+    #[test]
+    fn cache_reopen_waits_for_last_owner_but_not_retained_descriptors() {
+        let root = tempfile::tempdir().unwrap();
+        let budget = ByteBudget::new(1024 * 1024).unwrap();
+        let (cache, _) = ArtifactCache::open(root.path(), budget.clone(), 32).unwrap();
+        let owner = cache.root_lock.clone();
+        // A duplicated open file description pins the same flock, just as a
+        // concurrent fork can before its child execs or closes the descriptor.
+        let retained = owner.0.try_clone().unwrap();
+        drop(cache);
+        assert!(matches!(
+            ArtifactCache::open(root.path(), budget.clone(), 32),
+            Err(EditError::CacheBusy)
+        ));
+        drop(owner);
+        let (reopened, _) = ArtifactCache::open(root.path(), budget.clone(), 32).unwrap();
+        drop(retained);
+        assert!(matches!(
+            ArtifactCache::open(root.path(), budget.clone(), 32),
+            Err(EditError::CacheBusy)
+        ));
+        drop(reopened);
+        assert!(ArtifactCache::open(root.path(), budget, 32).is_ok());
     }
 }

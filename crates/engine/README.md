@@ -480,7 +480,9 @@ without a generic dependency graph. Artifact kinds and their additional identity
 `ArtifactCache::open` owns one exclusive cache directory and rebuilds bounded
 metadata after restart. Use only one live writer per directory; application
 placement chooses the directory and an OS file lock enforces exclusivity (`CacheBusy`
-on contention). It removes atomic staging debris and malformed
+on contention). Cache writers and native model leases share the lock; the last
+logical owner explicitly unlocks it, so inherited or duplicated OS descriptors
+cannot keep a dropped cache busy. It removes atomic staging debris and malformed
 canonical entries with a diagnostic count. Unrecognized files are skipped and
 never deleted; they are outside cache accounting. Directory scanning streams metadata;
 excess entries evict without reading their payloads. Headers bind the canonical
