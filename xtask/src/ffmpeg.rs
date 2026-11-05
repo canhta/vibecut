@@ -198,10 +198,9 @@ pub fn environment(command: &mut Command) -> Result<(), String> {
         // already-configured developer shell supplies INCLUDE by inheritance.
         // Keep our DLL PATH: importing the compiler's full environment loses it.
         let include = compiler
-            .env()
-            .iter()
-            .find(|(key, _)| key == "INCLUDE")
-            .map(|(_, value)| value.clone())
+            .get_envs()
+            .rfind(|(key, _)| *key == "INCLUDE")
+            .map(|(_, value)| value.to_os_string())
             .or_else(|| env::var_os("INCLUDE"))
             .filter(|value| !value.is_empty())
             .ok_or("MSVC INCLUDE is empty; install the Windows SDK or use a Visual Studio developer shell")?;
