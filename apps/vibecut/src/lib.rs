@@ -1,4 +1,5 @@
 //! Native editor frontend. Device creation and window ownership stay in main.
+mod ai_task;
 pub mod capture;
 pub mod catalog;
 pub mod crop;
@@ -14,6 +15,7 @@ pub mod panels;
 pub mod playback;
 pub mod selection;
 pub mod shorts;
+pub mod subtitles;
 mod theme;
 pub mod workspace;
 pub use eframe::egui;

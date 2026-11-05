@@ -16,3 +16,4 @@ mod timeline_ui;
 mod tracks_ui;
 
 mod media_probe_ui;
+mod subtitles_ui;

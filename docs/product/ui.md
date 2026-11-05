@@ -161,3 +161,17 @@ A UI ticket that hits a gap captures a real desktop screenshot first.
 ## Evidence
 
 Reference screenshots and behaviour notes live in `.spikes/ui-reference/` (local). UI behaviour tests and design-review captures follow [verification](../engineering/verification.md#test-selection).
+
+### Captions workflow
+
+Captions lives in the assets-panel tab. Generate and translation settings use
+compact disclosures above a scrollable cue list; import and SRT/VTT/MP4 export
+share the top action row. Times, source text and each target language stack at
+panel width, with full fields on selected rows, compact unselected text, edited marks and profile-based CPS
+warnings. Selection tools sit above the list; long lists page in groups of 50.
+The exact-upload approval modal stays global while another tab is visible.
+This extends the captured web captions/language entry in
+`.spikes/ui-reference/live/06-text-captions/` using the existing desktop tokens
+and field geometry. Cue editing, bilingual controls and glossary placement fill
+uncaptured reference states under the coordinator-approved Captions-tab design;
+the app's named captions audit scenes provide our rendered evidence.

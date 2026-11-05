@@ -86,6 +86,61 @@ macro_rules! catalog {
 
 #[rustfmt::skip]
 catalog! {
+    SubFileBase { key: "sub_file_base", en: "captions", vi: "phu-de" },
+    SubDraftRecovery { key: "sub_draft_recovery", en: "Your retained draft", vi: "Bản nháp được giữ lại" },
+    SubDraftConflict { key: "sub_draft_conflict", en: "This caption changed elsewhere. Copy your draft, then Dismiss to reload the current text.", vi: "Phụ đề này đã thay đổi ở nơi khác. Sao chép bản nháp, rồi Đóng thông báo để nạp văn bản hiện tại." },
+    SubMp4 { key: "sub_mp4", en: "MP4", vi: "MP4" },
+    SubProviderLocal { key: "sub_provider_local", en: "{provider} (local)", vi: "{provider} (cục bộ)" },
+    SubExportScope { key: "sub_export_scope", en: "SRT/VTT exports the selected caption track. MP4 burns visible captions.", vi: "SRT/VTT xuất rãnh phụ đề đã chọn. MP4 ghi các phụ đề đang hiện." },
+    SubAttempts { key: "sub_attempts", en: "At most {count} attempts for this translation request.", vi: "Tối đa {count} lần thử cho yêu cầu dịch này." },
+    SubRunnerMissing { key: "sub_runner_missing", en: "The local ASR helper is missing. Install a complete app distribution or choose whisper.cpp.", vi: "Thiếu trình nhận dạng cục bộ. Cài bản ứng dụng đầy đủ hoặc chọn whisper.cpp." },
+    SubOverwrite { key: "sub_overwrite", en: "Replace the existing file?", vi: "Thay thế tệp hiện có?" },
+    SubPage { key: "sub_page", en: "Page {page} / {pages}", vi: "Trang {page} / {pages}" },
+    SubVietnamese { key: "sub_vietnamese", en: "Vietnamese", vi: "Tiếng Việt" },
+    SubEnglish { key: "sub_english", en: "English", vi: "Tiếng Anh" },
+    SubPrevious { key: "sub_previous", en: "Previous page", vi: "Trang trước" },
+    SubNext { key: "sub_next", en: "Next page", vi: "Trang sau" },
+    SubGenerate { key: "sub_generate", en: "Generate captions", vi: "Tạo phụ đề" },
+    SubImport { key: "sub_import", en: "Import SRT / VTT", vi: "Nhập SRT / VTT" },
+    SubSrt { key: "sub_srt", en: "SRT", vi: "SRT" },
+    SubVtt { key: "sub_vtt", en: "VTT", vi: "VTT" },
+    SubBurn { key: "sub_burn", en: "Burn into MP4", vi: "Ghi vào MP4" },
+    SubTranslate { key: "sub_translate", en: "Translate", vi: "Dịch" },
+    SubTarget { key: "sub_target", en: "Target / export language", vi: "Ngôn ngữ đích / xuất" },
+    SubTranslator { key: "sub_translator", en: "Translation provider / model", vi: "Nhà cung cấp / mô hình dịch" },
+    SubBilingual { key: "sub_bilingual", en: "Bilingual export", vi: "Xuất song ngữ" },
+    SubReplaceEdited { key: "sub_replace_edited", en: "Replace manually edited translations", vi: "Thay bản dịch đã sửa thủ công" },
+    SubTranslateSelected { key: "sub_translate_selected", en: "Select cues below to translate. Unselected cues stay unchanged.", vi: "Chọn các câu bên dưới để dịch. Các câu khác được giữ nguyên." },
+    SubSelectMedia { key: "sub_select_media", en: "Select a video or audio clip on the timeline.", vi: "Chọn đoạn video hoặc âm thanh trên dòng thời gian." },
+    SubChooseProvider { key: "sub_choose_provider", en: "Choose a supported provider", vi: "Chọn nhà cung cấp phù hợp" },
+    SubEmpty { key: "sub_empty", en: "Generate from a selected clip or import an SRT / VTT file to start editing.", vi: "Tạo từ đoạn đã chọn hoặc nhập tệp SRT / VTT để bắt đầu sửa." },
+    SubHans { key: "sub_hans", en: "Chinese (Simplified)", vi: "Tiếng Trung (Giản thể)" },
+    SubHant { key: "sub_hant", en: "Chinese (Traditional)", vi: "Tiếng Trung (Phồn thể)" },
+    SubChinese { key: "sub_chinese", en: "Chinese", vi: "Tiếng Trung" },
+    SubItem { key: "sub_item", en: "Captions {id}", vi: "Phụ đề {id}" },
+    SubSelectAll { key: "sub_select_all", en: "Select all cues", vi: "Chọn tất cả câu" },
+    SubMerge { key: "sub_merge", en: "Merge", vi: "Gộp" },
+    SubEarlier { key: "sub_earlier", en: "Earlier 1 frame", vi: "Sớm 1 khung hình" },
+    SubLater { key: "sub_later", en: "Later 1 frame", vi: "Muộn 1 khung hình" },
+    SubSelectionHelp { key: "sub_selection_help", en: "Click a time to seek. Shift selects a range; Cmd/Ctrl toggles. Split at the playhead. Text saves when focus leaves the field.", vi: "Bấm thời gian để tua. Shift chọn khoảng; Cmd/Ctrl bật tắt chọn. Tách tại con trỏ. Văn bản lưu khi rời ô." },
+    SubGlossary { key: "sub_glossary", en: "Glossary", vi: "Bảng thuật ngữ" },
+    SubGlossaryHelp { key: "sub_glossary_help", en: "Terms apply to this translation session. Leave the translation blank to preserve a name.", vi: "Thuật ngữ áp dụng trong phiên dịch này. Để trống bản dịch để giữ nguyên tên." },
+    SubTerm { key: "sub_term", en: "Source term", vi: "Thuật ngữ nguồn" },
+    SubTermTranslation { key: "sub_term_translation", en: "Translation (blank: keep original)", vi: "Bản dịch (trống: giữ nguyên)" },
+    SubAddTerm { key: "sub_add_term", en: "Add term", vi: "Thêm thuật ngữ" },
+    SubEdited { key: "sub_edited", en: "Edited", vi: "Đã sửa" },
+    SubCps { key: "sub_cps", en: "Reading speed too high", vi: "Tốc độ đọc quá cao" },
+    SubDone { key: "sub_done", en: "Done · {count} cues", vi: "Hoàn tất · {count} câu" },
+    SubStale { key: "sub_stale", en: "The project changed during processing. Select the current cues and retry.", vi: "Dự án đã đổi trong khi xử lý. Chọn các câu hiện tại và thử lại." },
+    SubFailed { key: "sub_failed", en: "Subtitle processing failed. Check the source, provider setup or destination and retry.", vi: "Xử lý phụ đề thất bại. Kiểm tra nguồn, thiết lập nhà cung cấp hoặc nơi lưu rồi thử lại." },
+    SubEditFailed { key: "sub_edit_failed", en: "Cannot apply this edit. Check selection, timing, languages and unlocked tracks, then retry.", vi: "Không thể sửa. Kiểm tra vùng chọn, thời gian, ngôn ngữ và khóa rãnh rồi thử lại." },
+    SubApprove { key: "sub_approve", en: "Approve this upload", vi: "Cho phép lần tải lên này" },
+    SubDisclosure { key: "sub_disclosure", en: "{bytes} bytes · {seconds} seconds of audio · cost ceiling per attempt: {cost}", vi: "{bytes} byte · {seconds} giây âm thanh · chi phí tối đa mỗi lần thử: {cost}" },
+    SubProviderPolicy { key: "sub_provider_policy", en: "Provider policy / request details", vi: "Chính sách / chi tiết yêu cầu" },
+    SubTranscribing { key: "sub_transcribing", en: "Transcribing…", vi: "Đang nhận dạng…" },
+    SubAligning { key: "sub_aligning", en: "Aligning speech timing…", vi: "Đang căn thời gian lời nói…" },
+    SubTranslating { key: "sub_translating", en: "Translating…", vi: "Đang dịch…" },
+    SubAssembling { key: "sub_assembling", en: "Preparing cues…", vi: "Đang tạo câu phụ đề…" },
     BlendMode { key: "blend_mode", en: "Blend mode", vi: "Chế độ hòa trộn" },
     Opacity { key: "opacity", en: "Opacity (0–1)", vi: "Độ mờ (0–1)" },
     BlendNormal { key: "blend_normal", en: "Normal", vi: "Bình thường" },
@@ -752,6 +807,8 @@ pub struct Preferences {
     pub export: crate::export::ExportOptions,
     #[serde(default)]
     pub export_directory: Option<PathBuf>,
+    #[serde(default)]
+    pub subtitles: crate::subtitles::Options,
     pub locale: Locale,
     pub dark: bool,
     /// Ratios of the full content rectangle; validated when loaded and set.
@@ -773,6 +830,7 @@ impl Default for Preferences {
             version: PREFERENCES_VERSION,
             export: crate::export::ExportOptions::default(),
             export_directory: None,
+            subtitles: crate::subtitles::Options::default(),
             locale: Locale::En,
             dark: true,
             panels: DEFAULT_PANELS,
@@ -795,6 +853,7 @@ impl Preferences {
             return Err(Error::Unsupported("preferences version"));
         }
         validate_panels(self.panels)?;
+        self.subtitles.validate()?;
         self.validate_sections()?;
         self.validate_properties_tabs()?;
         if serde_json::to_vec(self)?.len() as u64 > MAX_PREFERENCES_BYTES {
@@ -839,6 +898,7 @@ impl Preferences {
             "export" => Ok(serde_json::to_value(self.export)?),
             "assets_tab" => Ok(serde_json::to_value(self.assets_tab)?),
             "properties_tabs" => Ok(serde_json::to_value(&self.properties_tabs)?),
+            "subtitles" => Ok(serde_json::to_value(&self.subtitles)?),
             _ => Err(Error::Unsupported("preference key")),
         }
     }
@@ -860,6 +920,7 @@ impl Preferences {
             "export" => self.export = serde_json::from_value(value)?,
             "assets_tab" => self.assets_tab = serde_json::from_value(value)?,
             "properties_tabs" => self.properties_tabs = serde_json::from_value(value)?,
+            "subtitles" => self.subtitles = serde_json::from_value(value)?,
             _ => return Err(Error::Unsupported("preference key")),
         }
         Ok(())

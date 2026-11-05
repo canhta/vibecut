@@ -1077,6 +1077,15 @@ run, remote consent refusal with zero calls, credential refusal, catalog filteri
 and a real generated fixture. They establish composition and failure contracts,
 not model accuracy, live provider quality or Windows behavior.
 
+The desktop also consumes `subtitles::SubtitleTranslator` without opening an ASR
+adapter or model lease. `translate_selected` composes the same translation window,
+request disclosure, `TranslationRun` attempt budget and `Retranslate` application
+for an explicit `TranslationSelection` (cue IDs, target, glossary, force). The
+CLI's whole-track translation delegates to it. Callers requiring atomic multi-window
+application stage a snapshot Session and apply its final command against the live
+Session's captured job target; a failed/cancelled staging run is never applied.
+
+
 ## Project lifecycle and view state
 
 `Session::create(Command::CreateProject { id, name }, history_limit)` consumes the

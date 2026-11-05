@@ -16,12 +16,12 @@ use engine::{
         CancelToken, JobId, JobKind, JobRunner, JobSpec, JobState, ResourceClass, RunnerConfig,
         SystemClock,
     },
-    subtitles::{Cancellation, ConsentPrompt, Progress, Stage, UploadRequest},
+    subtitles::Cancellation,
 };
 use std::{
     collections::VecDeque,
     path::PathBuf,
-    sync::{Arc, Mutex, mpsc},
+    sync::{Arc, mpsc},
     time::Duration,
 };
 use time::{SourceRange, TICKS_PER_SECOND, Tick};
@@ -95,66 +95,7 @@ pub trait Generator: Send + Sync + 'static {
         cancel: &Cancellation,
     ) -> engine::Result<ReviewSource>;
 }
-struct Upload {
-    request: UploadRequest,
-    reply: mpsc::SyncSender<bool>,
-}
-#[derive(Default)]
-struct EventState {
-    stage: Option<Stage>,
-    fraction: Option<f32>,
-    upload: Option<Upload>,
-}
-/// One coalescing progress slot and one consent request. No unbounded event queue.
-pub struct TaskEvents {
-    state: Mutex<EventState>,
-    cancel: Cancellation,
-}
-impl TaskEvents {
-    fn new(cancel: Cancellation) -> Self {
-        Self {
-            state: Mutex::new(EventState::default()),
-            cancel,
-        }
-    }
-}
-impl Progress for TaskEvents {
-    fn stage(&self, stage: Stage) {
-        if let Ok(mut state) = self.state.lock() {
-            state.stage = Some(stage);
-            state.fraction = None;
-        }
-    }
-    fn job(&self, snapshot: &engine::jobs::JobSnapshot) {
-        if let Ok(mut state) = self.state.lock() {
-            state.fraction = Some(snapshot.progress);
-        }
-    }
-}
-impl ConsentPrompt for TaskEvents {
-    fn approve(&self, request: &UploadRequest) -> std::result::Result<(), engine::EditError> {
-        let (send, receive) = mpsc::sync_channel(1);
-        self.state
-            .lock()
-            .map_err(|_| engine::EditError::JobPoisoned)?
-            .upload = Some(Upload {
-            request: request.clone(),
-            reply: send,
-        });
-        loop {
-            if self.cancel.cancelled() {
-                return Err(engine::EditError::Cancelled);
-            }
-            match receive.recv_timeout(Duration::from_millis(20)) {
-                Ok(true) => return Ok(()),
-                Ok(false) | Err(mpsc::RecvTimeoutError::Disconnected) => {
-                    return Err(engine::EditError::ConsentRequired);
-                }
-                Err(mpsc::RecvTimeoutError::Timeout) => {}
-            }
-        }
-    }
-}
+pub use crate::ai_task::TaskEvents;
 struct Generating {
     id: JobId,
     runner_cancel: CancelToken,

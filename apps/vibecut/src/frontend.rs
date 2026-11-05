@@ -116,6 +116,7 @@ pub struct Inspection {
     pub export: Option<crate::export::ExportInspection>,
     pub export_options: crate::export::ExportOptions,
     pub models: Option<crate::model_manager::ModelInspection>,
+    pub subtitles: Option<crate::subtitles::Inspection>,
 }
 #[derive(Clone, Debug)]
 struct PreferenceCommand {
@@ -457,6 +458,7 @@ pub struct Editor {
     restoring_asset: Option<AssetId>,
     thumbnail_textures: BTreeMap<AssetId, egui::TextureHandle>,
     thumbnail_root: Option<PathBuf>,
+    pub subtitles: Option<crate::subtitles::Subtitles>,
 }
 impl Editor {
     pub fn new(session: Session, playback: Playback, preferences: Preferences) -> Self {
@@ -544,6 +546,7 @@ impl Editor {
             restoring_asset: None,
             thumbnail_textures: BTreeMap::new(),
             thumbnail_root: None,
+            subtitles: None,
         }
     }
     /// Attach the engine autosave owner without duplicating its Session.
@@ -638,6 +641,7 @@ impl Editor {
                 .export
                 .as_ref()
                 .map(crate::export::ExportDialog::inspect),
+            subtitles: self.subtitles.as_ref().map(|s| s.inspect(&self.session)),
             models: self
                 .models
                 .as_ref()
@@ -1298,6 +1302,24 @@ impl Editor {
     /// All control inputs (including tests/agents) use the same action path.
     /// Project edits are engine registry calls; transport/preferences are app state.
     pub fn activate(&mut self, id: &str) -> Result<()> {
+        let flushed = if let Some(subtitles) = &mut self.subtitles {
+            if matches!(
+                id,
+                "subtitles.dismiss"
+                    | "subtitles.cancel"
+                    | "subtitles.consent.approve"
+                    | "subtitles.consent.deny"
+            ) {
+                false
+            } else {
+                subtitles.flush_drafts(&mut self.session)?
+            }
+        } else {
+            false
+        };
+        if flushed {
+            self.sync_preview();
+        }
         self.session.set_selection(self.selection.clone())?;
         self.remember_view()?;
         let at = self.playback.position()?;
@@ -1305,6 +1327,30 @@ impl Editor {
         let playing = self.playback.playing();
         let before = self.session.project().clone();
         match id {
+            action if action.starts_with("subtitles.") => {
+                self.prepare_subtitles()?;
+                let mut options = self.preferences.subtitles.clone();
+                if let Some(panel) = &mut self.subtitles {
+                    panel.activate(
+                        &mut self.session,
+                        &mut options,
+                        self.selection.iter().next().copied(),
+                        at,
+                        action,
+                    )?;
+                    let seek = panel.requested_seek.take();
+                    let model = panel.requested_model.take();
+                    if let Some(at) = seek {
+                        self.seek(at)?;
+                    }
+                    if let Some(id) = model {
+                        self.open_model(&id)?;
+                    }
+                }
+                if options != self.preferences.subtitles {
+                    self.set_preference("subtitles", serde_json::to_value(options)?)?;
+                }
+            }
             "scene.open" => self.scenes_open = true,
             "scene.close" => {
                 self.scenes_open = false;
@@ -2463,9 +2509,16 @@ impl Editor {
                 "../../../assets/fonts/Inter-Regular.ttf"
             ))),
         );
-        fonts
-            .families
-            .insert(egui::FontFamily::Proportional, vec!["Inter".into()]);
+        fonts.font_data.insert(
+            "CJK".into(),
+            Arc::new(egui::FontData::from_static(include_bytes!(
+                "../../../assets/fonts/VibeCutSansCJK-Regular.otf"
+            ))),
+        );
+        fonts.families.insert(
+            egui::FontFamily::Proportional,
+            vec!["Inter".into(), "CJK".into()],
+        );
         fonts
             .families
             .insert(egui::FontFamily::Monospace, vec!["Inter".into()]);
@@ -2490,6 +2543,27 @@ impl Editor {
             && let Err(error) = dialog.tick(self.session.project(), self.preferences.export)
         {
             dialog.failed(error);
+        }
+        if let Some(subtitles) = &mut self.subtitles {
+            subtitles.invalidate_options(&self.preferences.subtitles);
+            let result = subtitles.tick(&mut self.session);
+            let notice = subtitles.notice.take();
+            match result {
+                Ok(true) => self.sync_preview(),
+                Ok(false) => {}
+                Err(e) => self.error = Some(e.to_string()),
+            }
+            if let Some(count) = notice {
+                let message = catalog::format(
+                    self.preferences.locale,
+                    Text::SubDone,
+                    &[(
+                        "count",
+                        &catalog::number(self.preferences.locale, count as u64),
+                    )],
+                );
+                self.set_toast(&message, None);
+            }
         }
         self.apply_import_events();
         self.restore_asset_state();
@@ -2568,7 +2642,9 @@ impl Editor {
         {
             self.scene_rename = None;
         }
-        if !self.export.as_ref().is_some_and(|d| d.open) {
+        if !self.export.as_ref().is_some_and(|d| d.open)
+            && !self.subtitles.as_ref().is_some_and(|s| s.modal_open())
+        {
             self.keyboard(ui.ctx());
         }
         let rect = ui.max_rect();
@@ -2683,6 +2759,17 @@ impl Editor {
         self.drop_overlay(ui.ctx(), hovering);
         self.toast(ui.ctx());
         self.export_dialog(ui.ctx());
+        if let Some(subtitles) = &mut self.subtitles {
+            let widgets = subtitles.dialogs(
+                ui.ctx(),
+                &self.session,
+                &self.preferences.subtitles,
+                self.preferences.locale,
+            );
+            for (id, response) in widgets {
+                self.remember(id, &response);
+            }
+        }
         self.model_dialog(ui.ctx());
         if self
             .scrub
@@ -2728,7 +2815,8 @@ impl Editor {
             self.track_rename_focus = false;
             return;
         }
-        if self.rename.is_some()
+        if self.subtitles.as_ref().is_some_and(|s| s.editing(ctx))
+            || self.rename.is_some()
             || self.property_focus.is_some()
             || self.track_rename.is_some()
             || ctx.memory(|m| m.focused()).is_some_and(|id| {
@@ -2936,6 +3024,62 @@ impl Editor {
     pub fn models(&self) -> Option<&crate::model_manager::ModelManager> {
         self.models.as_ref()
     }
+    /// Initialize the panel without any download or provider construction.
+    pub fn prepare_subtitles(&mut self) -> Result<()> {
+        if self.subtitles.is_none() {
+            self.subtitles = Some(crate::subtitles::Subtitles::new(
+                self.playback.budget().clone(),
+            )?);
+        }
+        Ok(())
+    }
+    fn captions_panel(&mut self, ui: &mut egui::Ui) {
+        if let Err(e) = self.prepare_subtitles() {
+            self.error = Some(e.to_string());
+            return;
+        }
+        let before = self.session.project().clone();
+        let mut options = self.preferences.subtitles.clone();
+        let at = self.playback.position().unwrap_or(Tick::ZERO);
+        if let Some(subtitles) = &mut self.subtitles {
+            let widgets = subtitles.ui(
+                ui,
+                &mut self.session,
+                &mut options,
+                &self.selection,
+                at,
+                self.preferences.locale,
+                self.preferences.dark,
+            );
+            let seek = subtitles.requested_seek.take();
+            let model = subtitles.requested_model.take();
+            for (id, response) in widgets {
+                self.remember(id, &response);
+            }
+            if let Some(at) = seek
+                && let Err(e) = self.seek(at)
+            {
+                self.error = Some(e.to_string());
+            }
+            if let Some(model) = model
+                && let Err(e) = self.open_model(&model)
+            {
+                self.error = Some(e.to_string());
+            }
+        }
+        if options != self.preferences.subtitles {
+            match serde_json::to_value(options)
+                .map_err(Error::from)
+                .and_then(|value| self.set_preference("subtitles", value))
+            {
+                Ok(()) => {}
+                Err(e) => self.error = Some(e.to_string()),
+            }
+        }
+        if !Arc::ptr_eq(&before, self.session.project()) {
+            self.sync_preview();
+        }
+    }
     fn model_dialog(&mut self, ctx: &egui::Context) {
         let Some(models) = &mut self.models else {
             return;
@@ -3088,6 +3232,7 @@ impl Editor {
                 |ui| match self.preferences.assets_tab {
                     AssetsTab::Media => self.media_view(ui),
                     AssetsTab::Effects => self.effects_view(ui),
+                    AssetsTab::Captions => self.captions_panel(ui),
                     tab => self.assets_stub(ui, tab),
                 },
             );
@@ -3312,6 +3457,14 @@ impl Editor {
     }
     fn remember_assets_tab(&mut self, tab: AssetsTab) -> Result<()> {
         if self.preferences.assets_tab != tab {
+            let flushed = if let Some(panel) = &mut self.subtitles {
+                panel.flush_drafts(&mut self.session)?
+            } else {
+                false
+            };
+            if flushed {
+                self.sync_preview();
+            }
             self.preferences
                 .set("assets_tab", serde_json::to_value(tab)?)?;
         }

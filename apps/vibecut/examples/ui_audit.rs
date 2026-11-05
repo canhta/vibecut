@@ -6,6 +6,8 @@
 //! This is an audit tool, not a test: it never runs in `cargo xtask ci`.
 #[path = "../tests/it/support/shorts.rs"]
 mod shorts_fixture;
+#[path = "../tests/it/support/subtitles.rs"]
+mod subtitles_fixture;
 use egui_kittest::{
     Harness,
     kittest::{By, Queryable},
@@ -156,6 +158,30 @@ impl Scene {
 }
 
 const SCENES: &[Scene] = &[
+    Scene {
+        name: "captions-empty",
+        reference_dark: Some("live/06-text-captions/shots/web/06-web-captions-panel.png"),
+        reference_light: Some("live/06-text-captions/shots/web/06-web-captions-panel.png"),
+        build: |theme, scale| captions_scene(theme, scale, Locale::En, false),
+    },
+    Scene {
+        name: "captions-empty-vi",
+        reference_dark: Some("live/06-text-captions/shots/web/06-web-captions-panel.png"),
+        reference_light: Some("live/06-text-captions/shots/web/06-web-captions-panel.png"),
+        build: |theme, scale| captions_scene(theme, scale, Locale::Vi, false),
+    },
+    Scene {
+        name: "captions-editor",
+        reference_dark: Some("live/06-text-captions/shots/web/06-web-captions-panel.png"),
+        reference_light: Some("live/06-text-captions/shots/web/06-web-captions-panel.png"),
+        build: |theme, scale| captions_scene(theme, scale, Locale::En, true),
+    },
+    Scene {
+        name: "captions-editor-vi",
+        reference_dark: Some("live/06-text-captions/shots/web/06-web-captions-panel.png"),
+        reference_light: Some("live/06-text-captions/shots/web/06-web-captions-panel.png"),
+        build: |theme, scale| captions_scene(theme, scale, Locale::Vi, true),
+    },
     Scene {
         name: "timeline-zoom-low",
         reference_dark: None,
@@ -413,6 +439,40 @@ fn empty_editor(theme: Theme, locale: Locale) -> Result<Editor, Failure> {
 
 fn editor_empty(theme: Theme, scale: f32) -> Result<AppHarness, Failure> {
     Ok(app_editor(empty_editor(theme, Locale::En)?, scale))
+}
+
+fn captions_scene(
+    theme: Theme,
+    scale: f32,
+    locale: Locale,
+    filled: bool,
+) -> Result<AppHarness, Failure> {
+    let mut editor = if filled {
+        subtitles_fixture::editor("vi")
+    } else {
+        empty_editor(theme, locale)?
+    };
+    editor.preferences = preferences(theme, locale);
+    editor.preferences.assets_tab = vibecut::panels::AssetsTab::Captions;
+    editor.prepare_subtitles()?;
+    if filled {
+        let mut panel = editor.subtitles.take().ok_or("captions missing")?;
+        panel.tick(&mut editor.session)?;
+        panel.edit_text(
+            &mut editor.session,
+            &"cue-0".into(),
+            captions::LanguageTag::parse("en")?,
+            "Hello, and welcome to the caption editor.",
+        )?;
+        panel.select_cue(&editor.session, 0, false, false)?;
+        editor.subtitles = Some(panel);
+        editor
+            .playback
+            .seek(Tick(2 * SECOND), false, editor.session.project().clone())?;
+    }
+    let mut app = harness_sized(App::Editor(Box::new(editor)), scale, [1280.0, 800.0]);
+    app.run_steps(4);
+    Ok(app)
 }
 
 struct NoTransfer;
