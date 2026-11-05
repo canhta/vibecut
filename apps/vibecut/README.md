@@ -42,6 +42,9 @@ Provision FFmpeg with `cargo xtask ffmpeg`. Build with that installation's
 `FFMPEG_DIR`, `PKG_CONFIG_PATH` and native library path, as used by
 [workspace verification](../../docs/engineering/verification.md).
 The desktop binary is `vibecut`; the headless CLI is `vibecut-cli`.
+The optional control listener and background attach launch compose the CLI-owned
+adapter over this app's live Workspace; syntax and boundaries are owned by
+[MCP control](../../docs/product/mcp.md).
 `cargo run -p vibecut -- /native/path/to/project.json` acquires the project writer
 lease before loading. With no file the managed Projects page lists the catalog
 with thumbnails, name, main-scene duration and created date in a persisted grid

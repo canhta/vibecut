@@ -13,6 +13,7 @@ Build with `cargo build -p vibecut-cli` through the [build wrapper](../agents/or
 | `vibecut-cli project info <path>` | Summary plus optional view metadata under the project writer lease |
 | `vibecut-cli exec <project> <command_id> <json>` | Run one engine command and save the result |
 | `vibecut-cli control <project>` | Run a revision-bound control session over newline-delimited JSON |
+| `vibecut-cli mcp <project>` / `mcp --attach --socket <endpoint>` | Serve [MCP control](mcp.md) over stdio, headless or attached to the app |
 | `vibecut-cli export <project> --out <mp4>` | Export the saved active scene to MP4 |
 | `vibecut-cli batch <job-file>` | Render the validated export jobs in a JSON job file |
 | `vibecut-cli subtitle <in> --to <lang>` | Transcribe, translate and export SRT/burned subtitles |

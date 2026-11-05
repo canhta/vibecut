@@ -51,6 +51,8 @@ fn audio(port: Arc<AudioPort>, rate: u32) -> Result<cpal::Stream> {
     Ok(stream)
 }
 struct Native {
+    control: Option<vibecut_cli::mcp::Server>,
+    control_options: Option<(PathBuf, vibecut_cli::mcp::Grants)>,
     workspace: Workspace,
     effects: Option<Arc<vibecut::effects::GpuEffects>>,
     store: PreferenceStore,
@@ -74,6 +76,26 @@ impl eframe::App for Native {
     fn logic(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         ctx.request_repaint_after(Duration::from_millis(8));
         self.workspace.tick();
+        if let Some(editor) = self.workspace.active_editor_mut() {
+            if let Some((endpoint, grants)) = self.control_options.take() {
+                match vibecut_cli::mcp::Server::bind(
+                    &endpoint,
+                    grants,
+                    editor.playback.budget().clone(),
+                ) {
+                    Ok(server) => self.control = Some(server),
+                    Err(_) => tracing::warn!(
+                        category = "control_listener_failed",
+                        "Control listener unavailable"
+                    ),
+                }
+            }
+            if let Some(control) = &mut self.control
+                && vibecut::control::poll(editor, &mut control.inbox).is_err()
+            {
+                tracing::warn!(category = "control_failed", "Control tick failed");
+            }
+        }
         if self.observe_create && !self.workspace.busy() && self.workspace.error().is_none() {
             self.observe_create = false;
             if let Err(e) = self.workspace.create() {
@@ -262,6 +284,14 @@ fn headless_smoke(root: PathBuf) -> Result<()> {
 }
 fn run() -> Result<()> {
     let arguments: Vec<_> = std::env::args_os().skip(1).collect();
+    // The actual app composition, without creating an OS window or audio device.
+    // Background attach tests cannot activate a window that never exists.
+    if arguments
+        .first()
+        .is_some_and(|arg| arg == "--control-background")
+    {
+        return vibecut::control::background(arguments.into_iter().skip(1).collect());
+    }
     if arguments
         .first()
         .is_some_and(|arg| arg == "--headless-smoke")
@@ -275,8 +305,19 @@ fn run() -> Result<()> {
     let mut args = arguments.into_iter();
     let mut file = None;
     let mut smoke = None;
+    let mut control_socket = None;
+    let mut control_output = None;
     while let Some(arg) = args.next() {
-        if arg == "--observe" {
+        if arg == "--control-socket" {
+            control_socket = Some(PathBuf::from(
+                args.next().ok_or(Error::Invalid("control socket"))?,
+            ));
+        } else if arg == "--control-output-dir" {
+            control_output = Some(PathBuf::from(
+                args.next()
+                    .ok_or(Error::Invalid("control output directory"))?,
+            ));
+        } else if arg == "--observe" {
             let seconds = args
                 .next()
                 .and_then(|s| s.to_str().and_then(|s| s.parse::<u64>().ok()))
@@ -314,6 +355,16 @@ fn run() -> Result<()> {
         workspace.warn_preferences_reset();
     }
     let saved_preferences = workspace.preferences.clone();
+    let control_options = control_socket
+        .map(|endpoint| {
+            let grants = match control_output.as_deref() {
+                Some(path) => vibecut_cli::mcp::Grants::output(path)
+                    .map_err(|_| Error::Invalid("control output directory"))?,
+                None => vibecut_cli::mcp::Grants::default(),
+            };
+            Ok::<_, Error>((endpoint, grants))
+        })
+        .transpose()?;
     #[cfg(target_os = "macos")]
     let icon_bytes = include_bytes!("../../../assets/app-icon/vibecut-macos-512.png").as_slice();
     #[cfg(not(target_os = "macos"))]
@@ -348,6 +399,8 @@ fn run() -> Result<()> {
                 }
             });
             Ok(Box::new(Native {
+                control: None,
+                control_options,
                 workspace,
                 effects,
                 store,

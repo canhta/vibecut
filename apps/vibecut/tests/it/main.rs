@@ -19,5 +19,6 @@ mod shorts_ui;
 mod timeline_ui;
 mod tracks_ui;
 
+mod mcp_control;
 mod media_probe_ui;
 mod subtitles_ui;

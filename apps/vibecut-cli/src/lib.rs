@@ -1,5 +1,6 @@
 //! Headless CLI adapter: arguments, dispatch through engine, typed exit codes.
 mod batch;
+pub mod mcp;
 use engine::cache::{ArtifactCache, ArtifactKind, CacheKey, KeyInputs};
 use engine::clip_suggest;
 use engine::control::{
@@ -36,6 +37,8 @@ Usage:
   vibecut-cli project info <path>
   vibecut-cli exec <project> <command_id> <json>
   vibecut-cli control <project> [--allow-overwrite] [--no-save]
+  vibecut-cli mcp <project> [--output-dir <directory>] [--all-tools] [--no-save]
+  vibecut-cli mcp --attach --socket <endpoint>
   vibecut-cli export <project> --out <mp4> [--aspect 9:16] [--allow-degraded] [--overwrite]
   vibecut-cli batch <job-file> [--allow-degraded] [--allow-overwrite]
   vibecut-cli subtitle <in> [--from vi|en|zh|auto] --to vi|en|zh [--bilingual]
@@ -283,6 +286,7 @@ pub fn run(args: Vec<OsString>) -> Result<Output, CliError> {
         "project" => project(rest),
         "exec" => exec(rest),
         "control" => control(rest),
+        "mcp" => mcp::run(rest),
         "export" => export(rest),
         "batch" => batch::run(rest),
         "subtitle" => subtitle(rest),

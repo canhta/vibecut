@@ -5,6 +5,12 @@ edits through the engine registry, composes project writer leases and engine exp
 jobs, and maps typed results to stdout/stderr and stable exit codes. It owns no
 timeline, codec, export-admission or provider logic and has no UI dependencies.
 
+`mcp` owns the stdio protocol adapter and OS-permissioned attach transport, composed
+by the desktop app through this library. [MCP control](../../docs/product/mcp.md)
+owns the tool surface, grants, bounds, lifecycle, cancellation/retry rules and
+Claude Code/Codex/OpenCode configuration. Engine remains the schema, revision,
+receipt, job and rendering owner; no shared control crate is introduced.
+
 The [CLI contract](../../docs/product/cli.md) owns syntax, supported commands,
 flags, output shapes and exit codes. `run(Vec<OsString>)` returns `Output` or
 `CliError`; the binary removes the global JSON flag, writes the selected result
