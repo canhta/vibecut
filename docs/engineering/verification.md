@@ -52,7 +52,7 @@ Run a module with `cargo test -p <crate> --test it <module>::`.
 
 Inject codec/provider adapters at public interfaces. Order concurrent tests with controlled gates/channels. Inject OS boundaries at their seam: picker results or `RawInput.dropped_files` enter the same app path; native dialogs/Finder/osascript/coordinate clicks are not test tools.
 
-UI reports attach `cargo xtask ui-audit` offscreen named scenes at 1x/2x for changed screens; this separate design audit runs outside local/hosted CI. Real-app checks use the control socket (p2-platform ticket 02), background launch without activation or a visible window. The maintainer grants the screen for one native dialog smoke per milestone.
+UI reports attach `cargo xtask ui-audit` offscreen named scenes at 1x/2x for changed screens; this separate design audit runs outside local/hosted CI. Each changed screen also gets a side-by-side image: our scene next to the cited reference shot at the same logical size, with every layout, spacing, type, colour and icon difference either fixed or listed with its reason. Values come from a measured reference shot or the implementation reference's source (its component classes and constants), never from defaults or invention. A reviewer returns `changes` for a UI change without the side-by-side, or with an unlisted difference. Real-app checks use the control socket (p2-platform ticket 02), background launch without activation or a visible window. The maintainer grants the screen for one native dialog smoke per milestone.
 
 ## Fixtures
 
