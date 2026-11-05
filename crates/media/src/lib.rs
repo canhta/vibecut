@@ -100,9 +100,12 @@ fn init() -> Result<()> {
         .as_ref()
         .map_err(|source| error("initialize FFmpeg")(*source))?;
     let config = ffmpeg_next::format::configuration();
-    if config.contains("--enable-gpl") || config.contains("--enable-nonfree") {
+    let gpl = config.contains("--enable-gpl");
+    // Linux admits the GPL build for libx264; every other host stays LGPL-only.
+    let admitted = !config.contains("--enable-nonfree") && (!gpl || cfg!(target_os = "linux"));
+    if !admitted {
         return Err(MediaError::Unsupported(
-            "FFmpeg build is missing required codecs; run cargo xtask ffmpeg",
+            "FFmpeg build has an unadmitted licence configuration; run cargo xtask ffmpeg",
         ));
     }
     Ok(())
