@@ -1,5 +1,6 @@
 //! Workspace checks and admitted crate scaffolding.
 mod benchmark;
+#[cfg(unix)]
 mod build;
 mod checkout;
 mod clip_eval;
@@ -367,9 +368,14 @@ fn run() -> Result<ExitCode, String> {
         .ok_or("xtask must live in workspace root")?;
     let raw: Vec<_> = env::args_os().skip(1).collect();
     if raw.first().is_some_and(|arg| arg == "build") {
+        #[cfg(not(unix))]
+        return Err(
+            "cargo xtask build is Unix-only; run cargo commands directly on Windows".into(),
+        );
+        #[cfg(unix)]
         return match raw.get(1).filter(|arg| *arg == "--") {
             Some(_) if raw.len() > 2 => build::run(root, raw.get(2..).unwrap_or(&[])),
-            _ => Err("usage: cargo xtask build -- COMMAND [ARGS...]".into()),
+            _ => Err("usage: cargo xtask build -- COMMAND [ARGS...] (Unix-only; on Windows run cargo directly)".into()),
         };
     }
     let args: Vec<_> = raw
@@ -417,7 +423,7 @@ fn run() -> Result<ExitCode, String> {
         ["ci"] => ci(root, false),
         ["ci", "--require-oracles"] => ci(root, true),
         _ => Err(
-            "usage: cargo xtask <build -- COMMAND [ARGS...]|frontier [ASSIGNEE]|board [PORT]|ffmpeg [--target PLATFORM|--cache-key]|ui-audit [OUTPUT_DIR]|media-bench|clip-eval SET [OPTIONS]|ci [--require-oracles]|checks|clippy|lint|test|docs|layers|assets|new-crate NAME>"
+            "usage: cargo xtask <build -- COMMAND [ARGS...] (Unix-only; on Windows run cargo directly)|frontier [ASSIGNEE]|board [PORT]|ffmpeg [--target PLATFORM|--cache-key]|ui-audit [OUTPUT_DIR]|media-bench|clip-eval SET [OPTIONS]|ci [--require-oracles]|checks|clippy|lint|test|docs|layers|assets|new-crate NAME>"
                 .into(),
         ),
     }.map(|()| ExitCode::SUCCESS)

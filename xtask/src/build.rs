@@ -3,17 +3,31 @@ use std::ffi::{OsStr, OsString};
 use std::fs::{self, File, TryLockError};
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
-use std::process::{Command, ExitCode};
+use std::process::{Command, ExitCode, ExitStatus};
 use std::time::{Duration, Instant, SystemTime};
 
 const SLOTS: usize = 3;
 const GIB: u64 = 1 << 30;
 
-// Explicit unlock also covers retained/duplicated descriptors at a process boundary.
-struct Lock(File);
+struct Lock {
+    file: File,
+    unlock_on_drop: bool,
+}
+
+impl Lock {
+    fn new(file: File) -> Self {
+        Self {
+            file,
+            unlock_on_drop: true,
+        }
+    }
+}
+
 impl Drop for Lock {
     fn drop(&mut self) {
-        let _ = self.0.unlock();
+        if self.unlock_on_drop {
+            let _ = self.file.unlock();
+        }
     }
 }
 
@@ -28,7 +42,7 @@ fn open(path: &Path) -> io::Result<File> {
 
 fn try_lock(file: File) -> io::Result<Option<Lock>> {
     match file.try_lock() {
-        Ok(()) => Ok(Some(Lock(file))),
+        Ok(()) => Ok(Some(Lock::new(file))),
         Err(TryLockError::WouldBlock) => Ok(None),
         Err(TryLockError::Error(error)) => Err(error),
     }
@@ -72,14 +86,14 @@ impl Queue {
         Ok(Self {
             locks: locks.to_path_buf(),
             path,
-            held: Some(Lock(file)),
+            held: Some(Lock::new(file)),
         })
     }
 
     fn admission(locks: &Path) -> io::Result<Lock> {
         let file = open(&locks.join("admission"))?;
         file.lock()?;
-        Ok(Lock(file))
+        Ok(Lock::new(file))
     }
 
     fn first(&self) -> io::Result<bool> {
@@ -91,7 +105,7 @@ impl Queue {
             if path == self.path {
                 return Ok(true);
             }
-            // A held lock is the liveness signal on all platforms. PIDs are
+            // A held lock is the liveness signal. PIDs are
             // neither used nor trusted; a crashed waiter leaves an unlocked file.
             let file = File::options().read(true).write(true).open(&path)?;
             match try_lock(file)? {
@@ -106,7 +120,7 @@ impl Queue {
     }
 
     fn leave(&mut self) -> io::Result<()> {
-        // Close before unlink, including on Windows. Caller holds admission.
+        // Close before unlink. Caller holds admission.
         drop(self.held.take());
         fs::remove_file(&self.path)
     }
@@ -123,8 +137,28 @@ impl Drop for Queue {
 }
 
 struct Slot {
-    _lock: Lock,
+    lock: Lock,
     number: usize,
+}
+
+impl Slot {
+    fn execute(&mut self, command: &mut Command) -> io::Result<ExitStatus> {
+        // Only this slot descriptor crosses exec. Queue/admission descriptors
+        // retain CLOEXEC. Closing the launcher must not explicitly unlock the
+        // shared open-file description while a child/descendant still holds it.
+        self.lock.unlock_on_drop = false;
+        let file = &self.lock.file;
+        let flags = rustix::io::fcntl_getfd(file)?;
+        rustix::io::fcntl_setfd(file, flags & !rustix::io::FdFlags::CLOEXEC)?;
+        let child = command.spawn();
+        // Descriptor flags are per-process; restore the parent's CLOEXEC before
+        // spawning receipt commands, without changing the child's copy.
+        let restored = rustix::io::fcntl_setfd(file, flags);
+        // Even if flag restoration fails, wait for a successfully spawned child.
+        let status = child?.wait();
+        restored?;
+        status
+    }
 }
 
 fn owner(locks: &Path, number: usize) -> PathBuf {
@@ -188,18 +222,14 @@ fn claim(
         .next()
         .ok_or_else(|| io::Error::other("no build slot"))?;
     fs::write(queue.locks.join("last-start"), b"")?;
-    lock.0.set_len(0)?;
-    writeln!(lock.0, "{}", root.display())?;
+    lock.file.set_len(0)?;
+    writeln!(lock.file, "{}", root.display())?;
     queue.leave()?;
-    Ok(Some(Slot {
-        _lock: lock,
-        number,
-    }))
+    Ok(Some(Slot { lock, number }))
 }
 
 fn cache() -> Result<PathBuf, String> {
-    // Same per-user cache owner as native provisioning (including native
-    // USERPROFILE on Windows, independently of MSYS HOME).
+    // Same per-user cache owner as native provisioning.
     crate::ffmpeg::cache()?
         .parent()
         .map(Path::to_path_buf)
@@ -223,14 +253,9 @@ fn used_bytes(path: &Path) -> io::Result<u64> {
         let size = if metadata.is_dir() {
             used_bytes(&path)?
         } else {
-            #[cfg(unix)]
             {
                 use std::os::unix::fs::MetadataExt;
                 metadata.blocks().saturating_mul(512)
-            }
-            #[cfg(not(unix))]
-            {
-                metadata.len()
             }
         };
         total = total.saturating_add(size);
@@ -239,26 +264,12 @@ fn used_bytes(path: &Path) -> io::Result<u64> {
 }
 
 fn disk_free(path: &Path) -> Result<u64, String> {
-    #[cfg(windows)]
-    let result = Command::new("powershell.exe")
-        .args([
-            "-NoProfile",
-            "-NonInteractive",
-            "-Command",
-            "(Get-Item -LiteralPath $env:VIBECUT_BUILD_PATH).PSDrive.Free",
-        ])
-        .env("VIBECUT_BUILD_PATH", path)
-        .output();
-    #[cfg(not(windows))]
     let result = Command::new("df").args(["-Pk"]).arg(path).output();
     let result = result.map_err(|e| format!("disk free-space query: {e}"))?;
     if !result.status.success() {
         return Err("disk free-space query failed".into());
     }
     let text = String::from_utf8(result.stdout).map_err(|e| e.to_string())?;
-    #[cfg(windows)]
-    let value = text.trim().parse::<u64>().map_err(|e| e.to_string())?;
-    #[cfg(not(windows))]
     let value = text
         .lines()
         .nth(1)
@@ -304,7 +315,7 @@ fn prepare(
         let owner_file = locks.join(format!("slot-{number}.owner"));
         fs::write(&owner_file, b"").map_err(|e| e.to_string())?;
         let manifests = crate::checked(root, "git", &["ls-files", "-z", "*/Cargo.toml"])?;
-        let members: Vec<_> = paths(&manifests)?
+        let members: Vec<_> = paths(&manifests)
             .iter()
             .filter_map(|path| path.parent()?.file_name()?.to_str())
             .map(|name| name.replace('-', "_"))
@@ -343,10 +354,10 @@ fn prepare(
         }
         let tracked = crate::checked(root, "git", &["ls-files", "-z"])?;
         let now = SystemTime::now();
-        for path in paths(&tracked)? {
+        for path in paths(&tracked) {
             // The launcher has a per-worktree target and is already fresh.
-            // Touching it would make a nested `cargo xtask ci` rebuild the
-            // executing launcher, which Windows refuses to replace.
+            // Touching it would needlessly rebuild the executing launcher in
+            // a nested `cargo xtask ci`.
             if path.starts_with("xtask") {
                 continue;
             }
@@ -373,23 +384,12 @@ fn prepare(
     Ok(target)
 }
 
-fn paths(bytes: &[u8]) -> Result<Vec<PathBuf>, String> {
+fn paths(bytes: &[u8]) -> Vec<PathBuf> {
+    use std::os::unix::ffi::OsStrExt;
     bytes
         .split(|b| *b == 0)
         .filter(|s| !s.is_empty())
-        .map(|bytes| {
-            #[cfg(unix)]
-            {
-                use std::os::unix::ffi::OsStrExt;
-                Ok(PathBuf::from(std::ffi::OsStr::from_bytes(bytes)))
-            }
-            #[cfg(not(unix))]
-            {
-                String::from_utf8(bytes.to_vec())
-                    .map(PathBuf::from)
-                    .map_err(|e| e.to_string())
-            }
-        })
+        .map(|bytes| PathBuf::from(OsStr::from_bytes(bytes)))
         .collect()
 }
 
@@ -424,7 +424,10 @@ fn receipt(root: &Path, base: &Path, args: &[OsString]) -> Result<Option<PathBuf
 }
 
 pub fn run(root: &Path, args: &[OsString]) -> Result<ExitCode, String> {
-    let base = cache()?;
+    run_in(root, args, cache()?, cfg!(target_os = "macos"))
+}
+
+fn run_in(root: &Path, args: &[OsString], base: PathBuf, macos: bool) -> Result<ExitCode, String> {
     fs::create_dir_all(&base).map_err(|e| e.to_string())?;
     let before = receipt(root, &base, args)?;
     if let Some(path) = &before
@@ -436,11 +439,9 @@ pub fn run(root: &Path, args: &[OsString]) -> Result<ExitCode, String> {
     let started = Instant::now();
     let mut queue = Queue::enter(&base.join("locks")).map_err(|e| e.to_string())?;
     let mut said = false;
-    let slot = loop {
-        if let Some(slot) = claim(&mut queue, root, cfg!(target_os = "macos"), || {
-            memory_available("sysctl")
-        })
-        .map_err(|e| e.to_string())?
+    let mut slot = loop {
+        if let Some(slot) = claim(&mut queue, root, macos, || memory_available("sysctl"))
+            .map_err(|e| e.to_string())?
         {
             break slot;
         }
@@ -471,8 +472,8 @@ pub fn run(root: &Path, args: &[OsString]) -> Result<ExitCode, String> {
     if std::env::var_os("CARGO_BUILD_JOBS").is_none() {
         command.env("CARGO_BUILD_JOBS", "4");
     }
-    let status = command
-        .status()
+    let status = slot
+        .execute(&mut command)
         .map_err(|e| format!("build command: {e}"))?;
     if status.success()
         && let Some(path) = before
@@ -573,6 +574,19 @@ mod tests {
         };
         let root = PathBuf::from(root);
         let label = std::env::var("VIBECUT_BUILD_TEST_LABEL").unwrap();
+        if matches!(label.as_str(), "wrapped" | "detached") {
+            let args = vec![
+                std::env::current_exe().unwrap().into_os_string(),
+                "--exact".into(),
+                "build::tests::controlled_command".into(),
+                "--nocapture".into(),
+            ];
+            assert_eq!(
+                run_in(&root, &args, root.clone(), false).unwrap(),
+                ExitCode::SUCCESS
+            );
+            return;
+        }
         let mut queue = Queue::enter(&root.join("locks")).unwrap();
         fs::write(root.join(format!("{label}.ready")), b"").unwrap();
         let slot = loop {
@@ -588,6 +602,34 @@ mod tests {
         .unwrap();
         wait(&root.join(format!("{label}.release")));
         drop(slot);
+    }
+
+    #[test]
+    #[allow(
+        clippy::zombie_processes,
+        reason = "this subprocess exits immediately to exercise a descendant outliving its command; the test owns the descendant's input pipe"
+    )]
+    fn controlled_command() {
+        use std::io::Read;
+        let Some(root) = std::env::var_os("VIBECUT_BUILD_TEST_ROOT") else {
+            return;
+        };
+        let root = PathBuf::from(root);
+        if std::env::var("VIBECUT_BUILD_TEST_LABEL").as_deref() == Ok("detached") {
+            Command::new(std::env::current_exe().unwrap())
+                .args(["--exact", "build::tests::controlled_command", "--nocapture"])
+                .env("VIBECUT_BUILD_TEST_LABEL", "leaf")
+                .spawn()
+                .unwrap();
+            return;
+        }
+        let _live = try_lock(open(&root.join("command-live")).unwrap())
+            .unwrap()
+            .unwrap();
+        fs::write(root.join("wrapped.ready"), b"").unwrap();
+        // The parent owns the write end even after the wrapper dies. Closing it
+        // also guarantees cleanup if an assertion unwinds in the parent test.
+        let _ = std::io::stdin().read(&mut [0u8]);
     }
 
     #[test]
@@ -625,6 +667,62 @@ mod tests {
         fs::write(root.join("second.release"), b"").unwrap();
         assert!(second.0.wait().unwrap().success());
         assert_eq!(fs::read_dir(locks.join("build-queue")).unwrap().count(), 0);
+
+        // Exercise the actual wrapper command path, not just a process holding
+        // a Slot: its controlled build child survives a launcher-only crash.
+        crate::checked(root, "git", &["init", "-q"]).unwrap();
+        for label in ["wrapped", "detached"] {
+            let _ = fs::remove_file(root.join("wrapped.ready"));
+            let mut wrapped = Process(
+                Command::new(std::env::current_exe().unwrap())
+                    .args(["--exact", "build::tests::build_process", "--nocapture"])
+                    .env("VIBECUT_BUILD_TEST_ROOT", root)
+                    .env("VIBECUT_BUILD_TEST_LABEL", label)
+                    .stdin(Stdio::piped())
+                    .stdout(Stdio::null())
+                    .spawn()
+                    .unwrap(),
+            );
+            let input = wrapped.0.stdin.take().unwrap();
+            wait(&root.join("wrapped.ready"));
+            if label == "wrapped" {
+                wrapped.0.kill().unwrap();
+                wrapped.0.wait().unwrap();
+            } else {
+                assert!(wrapped.0.wait().unwrap().success());
+            }
+            let child_is_alive = try_lock(open(&root.join("command-live")).unwrap())
+                .unwrap()
+                .is_none();
+            assert!(
+                child_is_alive,
+                "controlled build must still be waiting on its input pipe"
+            );
+            let mut queued = Queue::enter(&locks).unwrap();
+            assert!(
+                claim(&mut queued, root, false, || false).unwrap().is_none(),
+                "wrapper death made the surviving command's slot reusable"
+            );
+            drop(input);
+            let deadline = Instant::now() + Duration::from_secs(15);
+            loop {
+                if claim(&mut queued, root, false, || false).unwrap().is_some() {
+                    break;
+                }
+                assert!(
+                    Instant::now() < deadline,
+                    "slot did not release after command exit"
+                );
+                std::thread::sleep(Duration::from_millis(5));
+            }
+        }
+        let missing = vec![root.join("missing-command").into_os_string()];
+        assert!(run_in(root, &missing, root.clone(), false).is_err());
+        let mut queued = Queue::enter(&locks).unwrap();
+        assert!(
+            claim(&mut queued, root, false, || false).unwrap().is_some(),
+            "failed spawn retained its slot"
+        );
     }
 
     #[test]
