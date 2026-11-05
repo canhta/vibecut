@@ -127,6 +127,76 @@ fn scenes_len(h: &Harness<'_, Editor>) -> usize {
     h.state().session.project().data().scenes.iter().count()
 }
 #[test]
+fn deleting_a_scene_with_a_rename_draft_preserves_escape_dismissal() {
+    for (cancel_confirmation, press_enter) in [(false, false), (true, false), (true, true)] {
+        let mut h = Harness::builder()
+            .with_size(egui::vec2(1728.0, 1200.0))
+            .build_ui_state(|ui, e: &mut Editor| e.ui(ui), editor_with_scene_session());
+        click(&mut h, "scene.open");
+        click(&mut h, "scene.create");
+        let created = h.state().session.project().data().current_scene_id;
+        let row = format!("scene.row.{}", created.0);
+        click(&mut h, "scene.select");
+        click(&mut h, &row);
+        h.get(By::new().predicate(|n| n.author_id() == Some(row.as_str())))
+            .click_secondary();
+        h.run_steps(3);
+        click(&mut h, &format!("scene.rename.{}", created.0));
+        h.get(By::new().predicate(|n| n.author_id() == Some("scene.rename.input")))
+            .type_text(" draft");
+        click(&mut h, "scene.delete");
+        if cancel_confirmation {
+            if press_enter {
+                h.key_press(egui::Key::Enter);
+                h.run_steps(3);
+                assert!(
+                    h.state()
+                        .inspect()
+                        .unwrap()
+                        .widgets
+                        .iter()
+                        .any(|w| w.id == "scene.confirm_delete")
+                );
+            }
+            h.key_press(egui::Key::Escape);
+            h.run_steps(3);
+            let inspect = h.state().inspect().unwrap();
+            assert!(
+                !inspect
+                    .widgets
+                    .iter()
+                    .any(|w| w.id == "scene.confirm_delete")
+            );
+            assert!(inspect.widgets.iter().any(|w| w.id == "scene.rename.input"));
+            assert_eq!(
+                h.state()
+                    .session
+                    .project()
+                    .data()
+                    .scenes
+                    .get(created)
+                    .unwrap()
+                    .name
+                    .as_str(),
+                "Scene 2"
+            );
+            click(&mut h, "scene.delete");
+        }
+        click(&mut h, "scene.confirm_delete");
+        assert_eq!(scenes_len(&h), 1);
+        h.key_press(egui::Key::Escape);
+        h.run_steps(3);
+        assert!(
+            !h.state()
+                .inspect()
+                .unwrap()
+                .widgets
+                .iter()
+                .any(|w| w.id == "scene.create")
+        );
+    }
+}
+#[test]
 fn create_switches_to_an_empty_scene_and_history_keeps_the_project_exact() {
     let mut h = Harness::builder()
         .with_size(egui::vec2(1728.0, 1200.0))

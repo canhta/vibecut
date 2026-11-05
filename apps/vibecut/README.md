@@ -312,10 +312,14 @@ opens an inline rename editor for any scene, including main: Enter commits throu
 `scene.rename` and Escape cancels. New scenes inherit the project canvas, frame
 rate and background and start with an empty timeline. English/Vietnamese copy uses
 the existing catalog.
+A delete confirmation takes Escape before the rename editor; deleting a scene
+discards its pending name edit.
 
 `tests/it/scenes_ui.rs` operates the real widgets and engine at 1x/2x density, checks
 switching, protected main, create/rename history, persistence and atomic
 multi-delete/undo without writing images.
+`cargo xtask ui-audit scene-create scene-rename` captures the created scene and
+inline editor separately in both themes at 1x/2x.
 
 ## Export dialog
 

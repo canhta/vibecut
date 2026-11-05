@@ -1286,6 +1286,7 @@ impl Editor {
                 self.scene_selected.clear();
                 self.scene_select = false;
                 self.scene_confirm = false;
+                self.scene_rename = None;
                 self.selection.clear();
                 self.selection_scopes = SelectionScopes::default();
             }
@@ -2592,7 +2593,8 @@ impl Editor {
     }
     fn keyboard(&mut self, ctx: &egui::Context) {
         if self.scenes_open {
-            if self.scene_rename.is_none() && consume(ctx, egui::Modifiers::NONE, egui::Key::Escape)
+            if (self.scene_confirm || self.scene_rename.is_none())
+                && consume(ctx, egui::Modifiers::NONE, egui::Key::Escape)
             {
                 if self.scene_confirm {
                     self.scene_confirm = false;
@@ -4277,8 +4279,10 @@ impl Editor {
                                     response.request_focus();
                                     self.scene_rename_focus = false;
                                 }
-                                let cancel = ui.input(|i| i.key_pressed(egui::Key::Escape));
-                                let commit = ui.input(|i| i.key_pressed(egui::Key::Enter));
+                                let cancel = !self.scene_confirm
+                                    && ui.input(|i| i.key_pressed(egui::Key::Escape));
+                                let commit = !self.scene_confirm
+                                    && ui.input(|i| i.key_pressed(egui::Key::Enter));
                                 if commit && !cancel {
                                     match self.session.execute(
                                         "scene.rename",
@@ -4318,7 +4322,14 @@ impl Editor {
                             let mut request_rename = false;
                             let mut menu_item = None;
                             response.context_menu(|ui| {
-                                let item = ui.button(self.tr(Text::RenameScene));
+                                let item = ui.add(egui::Button::image_and_text(
+                                    icons::tinted(
+                                        Icon::PencilSimple,
+                                        BUTTON_ICON,
+                                        self.text_color(),
+                                    ),
+                                    self.tr(Text::RenameScene),
+                                ));
                                 if item.clicked() {
                                     request_rename = true;
                                     ui.close();
@@ -4326,7 +4337,11 @@ impl Editor {
                                 menu_item = Some(item);
                             });
                             if let Some(item) = menu_item {
-                                self.remember(&rename_id, &item);
+                                self.remember_with_icon(
+                                    &rename_id,
+                                    Some(Icon::PencilSimple.name()),
+                                    &item,
+                                );
                             }
                             if request_rename {
                                 self.action(&rename_id);

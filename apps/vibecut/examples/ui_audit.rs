@@ -325,6 +325,18 @@ const SCENES: &[Scene] = &[
         build: scene_delete,
     },
     Scene {
+        name: "scene-create",
+        reference_dark: None,
+        reference_light: None,
+        build: scene_create,
+    },
+    Scene {
+        name: "scene-rename",
+        reference_dark: None,
+        reference_light: None,
+        build: scene_rename,
+    },
+    Scene {
         name: "placement",
         reference_dark: Some("capcut/illustrations/capcut-desktop-editor-keyframes.png"),
         reference_light: Some("capcut/illustrations/capcut-desktop-editor-keyframes.png"),
@@ -1028,6 +1040,43 @@ fn tracks(theme: Theme, scale: f32) -> Result<AppHarness, Failure> {
     let editor = Editor::new(session, playback, preferences(theme, Locale::En));
     let mut app = harness_sized(App::Editor(Box::new(editor)), scale, TRACKS_WINDOW);
     app.run_steps(4);
+    Ok(app)
+}
+
+fn scene_create(theme: Theme, scale: f32) -> Result<AppHarness, Failure> {
+    let mut app = app_editor(empty_editor(theme, Locale::En)?, scale);
+    app.run_steps(3);
+    for id in ["scene.open", "scene.create"] {
+        app.query_all(By::new().predicate(|node| node.author_id() == Some(id)))
+            .next()
+            .ok_or_else(|| format!("missing automation id {id}"))?
+            .click();
+        app.run_steps(3);
+    }
+    Ok(app)
+}
+
+fn scene_rename(theme: Theme, scale: f32) -> Result<AppHarness, Failure> {
+    let mut app = scene_create(theme, scale)?;
+    let created = app
+        .state()
+        .session()
+        .ok_or("scene rename requires an editor")?
+        .project()
+        .data()
+        .current_scene_id;
+    let row = format!("scene.row.{}", created.0);
+    app.query_all(By::new().predicate(|node| node.author_id() == Some(row.as_str())))
+        .next()
+        .ok_or("missing created scene row")?
+        .click_secondary();
+    app.run_steps(3);
+    let rename = format!("scene.rename.{}", created.0);
+    app.query_all(By::new().predicate(|node| node.author_id() == Some(rename.as_str())))
+        .next()
+        .ok_or("missing scene rename action")?
+        .click();
+    app.run_steps(3);
     Ok(app)
 }
 
