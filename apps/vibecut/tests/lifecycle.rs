@@ -183,18 +183,6 @@ fn inline_rename_commit_cancel_and_window_close_guard_use_real_widgets() {
         .click();
     h.run_steps(3);
     assert!(!h.state().ready_to_close());
-    let screenshot =
-        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target/p1-02-lifecycle.png");
-    std::fs::create_dir_all(screenshot.parent().unwrap()).unwrap();
-    h.render().unwrap().save(&screenshot).unwrap();
-    h.state_mut().editor.as_mut().unwrap().preferences.locale = vibecut::catalog::Locale::Vi;
-    h.set_size(egui::vec2(1280.0, 800.0));
-    h.state_mut().request_close();
-    h.run_steps(3);
-    h.render()
-        .unwrap()
-        .save(screenshot.with_file_name("p1-02-close-vi.png"))
-        .unwrap();
 }
 #[test]
 fn recovery_prompt_recovers_copy_and_requires_save_as() {

@@ -359,6 +359,30 @@ fn names(root: &Path) -> Result<(), String> {
     Ok(())
 }
 
+/// Render the offscreen UI audit scenes. This deliberately sits outside `ci`:
+/// screenshots are design-review evidence, never a build gate.
+fn ui_audit(root: &Path, scenes: &[&str]) -> Result<(), String> {
+    let mut command = Command::new(env::var_os("CARGO").ok_or("run via cargo xtask")?);
+    command
+        .args([
+            "run",
+            "--quiet",
+            "--package",
+            "vibecut",
+            "--example",
+            "ui_audit",
+            "--",
+        ])
+        .args(scenes)
+        .current_dir(root);
+    ffmpeg::environment(&mut command)?;
+    let status = command.status().map_err(|e| e.to_string())?;
+    if !status.success() {
+        return Err(format!("cargo run --example ui_audit failed: {status}"));
+    }
+    Ok(())
+}
+
 fn new_crate(root: &Path, name: &str) -> Result<(), String> {
     let rules = policy(root)?;
     let (path, _) = rules
@@ -416,14 +440,6 @@ fn run() -> Result<ExitCode, String> {
         .collect::<Vec<_>>()
         .as_slice()
     {
-        ["ui-audit"] | ["ui-audit", _] => {
-            let mut command=Command::new(env::var_os("CARGO").ok_or("run via cargo xtask")?);
-            command.current_dir(root).args(["run","-p","vibecut","--example","ui_audit","--"]);
-            if let Some(destination)=args.get(1){command.arg(destination);}
-            ffmpeg::environment(&mut command)?;
-            let status=command.status().map_err(|e|e.to_string())?;
-            if status.success(){Ok(())}else{Err(format!("UI audit failed: {status}"))}
-        }
         ["dist", ..] => distribution::run(root, args.get(1..).unwrap_or(&[])),
         ["media-bench"] => benchmark::media(root),
         ["frontier"] => tickets::frontier(root, None),
@@ -458,10 +474,12 @@ fn run() -> Result<ExitCode, String> {
         }
         ["i18n"] => i18n::check(root),
         ["new-crate", name] => new_crate(root, name),
+        ["ui-audit"] => ui_audit(root, &[]),
+        ["ui-audit", scenes @ ..] => ui_audit(root, scenes),
         ["ci"] => ci(root, false),
         ["ci", "--require-oracles"] => ci(root, true),
         _ => Err(
-            "usage: cargo xtask <dist COMMAND [OPTIONS]|build -- COMMAND [ARGS...] (Unix-only; on Windows run cargo directly)|frontier [ASSIGNEE]|board [PORT]|ffmpeg [--target PLATFORM|--cache-key]|ui-audit [OUTPUT_DIR]|sherpa [--arch x86_64|aarch64]|media-bench|clip-eval SET [OPTIONS]|cleanup [--environment NAME] [--dry-run] TARGET...|pull-reports [--environment NAME] [--ssh HOST] [--dry-run] WORKTREE...|ci [--require-oracles]|checks|clippy|lint|test|docs|i18n|layers|assets|new-crate NAME>"
+            "usage: cargo xtask <dist COMMAND [OPTIONS]|build -- COMMAND [ARGS...] (Unix-only; on Windows run cargo directly)|frontier [ASSIGNEE]|board [PORT]|ffmpeg [--target PLATFORM|--cache-key]|ui-audit [SCENE...]|sherpa [--arch x86_64|aarch64]|media-bench|clip-eval SET [OPTIONS]|cleanup [--environment NAME] [--dry-run] TARGET...|pull-reports [--environment NAME] [--ssh HOST] [--dry-run] WORKTREE...|ci [--require-oracles]|checks|clippy|lint|test|docs|i18n|layers|assets|new-crate NAME>"
                 .into(),
         ),
     }.map(|()| ExitCode::SUCCESS)

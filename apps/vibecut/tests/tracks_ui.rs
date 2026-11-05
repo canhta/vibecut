@@ -160,12 +160,5 @@ fn track_headers_remain_operable_at_display_density() {
                 .iter()
                 .any(|t| t.id == id)
         );
-        if scale == 1.0 {
-            let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-                .join("../../target/p1-17-tracks.png");
-            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
-            h.render().unwrap().save(&path).unwrap();
-            println!("track screenshot: {}", path.display());
-        }
     }
 }

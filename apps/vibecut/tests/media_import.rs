@@ -25,7 +25,7 @@ use std::{
 use time::{FrameRate, TICKS_PER_SECOND, Tick};
 use vibecut::{
     Editor, Error,
-    catalog::{Locale, Preferences},
+    catalog::Preferences,
     egui,
     import::{ImportEvent, ImportProbe, ImportQueue, MAX_IMPORT_FILES},
     playback::{Files, Playback},
@@ -904,84 +904,5 @@ fn insert_refreshes_playback_with_the_new_project_snapshot() {
             .filter(|item| item.source_asset == Some(AssetId(1)))
             .count(),
         1
-    );
-}
-
-fn screenshot_dir() -> PathBuf {
-    if let Some(target) = std::env::var_os("CARGO_TARGET_DIR") {
-        PathBuf::from(target).join("screenshots")
-    } else {
-        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../target/screenshots")
-    }
-}
-
-#[test]
-fn media_import_screenshot_and_receipt() {
-    let mut editor = editor();
-    editor.set_import_probe(Arc::new(Probe::default())).unwrap();
-    editor.preferences.locale = Locale::Vi;
-    editor
-        .drop_files(vec![
-            PathBuf::from("/tmp/vibecut-import/video-a.mp4"),
-            PathBuf::from("/tmp/vibecut-import/bad-clip.mp4"),
-            PathBuf::from("/tmp/vibecut-import/audio-a.wav"),
-        ])
-        .unwrap();
-    let inspection = wait_import(&mut editor);
-    assert_eq!(inspection.import_imported, 2);
-    editor.select_media([AssetId(1)]);
-    let mut harness = Harness::builder()
-        .with_size(egui::vec2(1440.0, 900.0))
-        .build_ui_state(|ui, editor: &mut Editor| editor.ui(ui), editor);
-    harness.run_steps(4);
-    let inspection = harness.state().inspect().unwrap();
-    let image = harness.render().unwrap();
-    assert_eq!(image.width(), 1440);
-    assert_eq!(image.height(), 900);
-    let mut colors = std::collections::BTreeSet::new();
-    for pixel in image.pixels().step_by(97) {
-        colors.insert(pixel.0);
-    }
-    assert!(colors.len() > 32, "screenshot must show the drawn editor");
-    let widgets: Vec<serde_json::Value> = inspection
-        .widgets
-        .iter()
-        .map(|widget| {
-            serde_json::json!({
-                "id": widget.id,
-                "enabled": widget.enabled,
-                "rect": [
-                    widget.rect.min.x,
-                    widget.rect.min.y,
-                    widget.rect.max.x,
-                    widget.rect.max.y
-                ],
-            })
-        })
-        .collect();
-    let receipt = serde_json::json!({
-        "name": "p0-13-import",
-        "locale": "vi",
-        "theme": "dark",
-        "importing": inspection.importing,
-        "import_total": inspection.import_total,
-        "import_imported": inspection.import_imported,
-        "import_failures": inspection.import_failures,
-        "import_toast": inspection.import_toast,
-        "media_selection": inspection.media_selection.iter().map(|id| id.0).collect::<Vec<_>>(),
-        "widgets": widgets,
-    });
-    let dir = screenshot_dir();
-    std::fs::create_dir_all(&dir).unwrap();
-    let image_path = dir.join("p0-13-import.png");
-    let receipt_path = dir.join("p0-13-import.json");
-    image.save(&image_path).unwrap();
-    std::fs::write(&receipt_path, serde_json::to_vec_pretty(&receipt).unwrap()).unwrap();
-    assert!(image_path.is_file());
-    assert!(receipt_path.is_file());
-    println!(
-        "media import screenshot: {} {}",
-        image_path.display(),
-        receipt_path.display()
     );
 }

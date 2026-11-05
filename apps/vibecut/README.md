@@ -163,10 +163,13 @@ rules](../../docs/engineering/open-source.md#ffmpeg-distribution).
 
 `cargo test -p vibecut` covers stable ID accessibility/uniqueness, real
 split/trim/move/delete/undo/redo through automation IDs, locale retention,
-transport/seek/clear, byte refusal and worker shutdown. The timeline evidence test
-renders dark/light headless kittest PNGs and an automation-ID geometry receipt into
-`$CARGO_TARGET_DIR/screenshots/` (or `target/screenshots/`); it opens no native
-window. `cargo xtask ci` is the handoff check. The local ticket report records observed
+transport/seek/clear, byte refusal and worker shutdown. It asserts widget and
+engine state only; no test writes an image. `cargo xtask ui-audit [SCENE...]`
+renders the named Home, editor, import-progress and export-dialog scenes offscreen through the same automation IDs at
+1x and 2x into `$CARGO_TARGET_DIR/ui-audit/` (or `target/ui-audit/`) with an
+`index.html` placing each render beside its `.spikes/ui-reference/` counterpart;
+it opens no native window and never runs in `cargo xtask ci`. `cargo xtask ci` is
+the handoff check. The local ticket report records observed
 native screenshots, ten-minute A/V frame lag, underruns and peak RSS separately
 from source-documented API contracts; tests alone establish no device performance.
 `--observe SECONDS OUTPUT_DIR [PROJECT]` records at most 3,601 one-second samples
@@ -198,7 +201,7 @@ candidate; the original project is untouched. Other candidates remain deferred
 while that recovered editor is active, and reappear after Save As/leave. Recovery
 cannot replace an active editor outside its normal save/leave boundary. rfd 0.17.2 is MIT and is the one
 native picker dependency. `tests/lifecycle.rs` exercises lifecycle boundaries and
-real rename/close/recovery widgets, and renders `target/p1-02-lifecycle.png`.
+real rename/close/recovery widgets without writing images.
 Native picker interaction and Windows runtime need separate observed evidence.
 
 ## GPU effects
@@ -239,9 +242,9 @@ Session metadata view; item/keyframe/mask-point selection clears on switching.
 English/Vietnamese copy uses the existing catalog. Creation and rename commands
 are headless here; their frontend controls belong to the scene-name feature.
 
-`tests/scenes_ui.rs` operates the real widgets and engine at 1x/2x density, checks
-switching, protected main and atomic multi-delete/undo, and writes
-`target/p1-48-scenes.png` separately from behavioral assertions.
+`tests/scenes_ui.rs` operates the real widgets and engine at 1x/2x density and
+checks switching, protected main and atomic multi-delete/undo without writing
+images.
 ## Export dialog
 
 The header Export action opens a modal with format, quality and audio disclosures
@@ -274,11 +277,10 @@ a still-missing source refuses again and preserves the prior destination. Stale
 diagnostics clear when that strict retry is submitted. Errors remain in the modal
 for retry.
 
-`tests/export_ui.rs` asserts real widget and engine state, never pixels. Run
-`cargo xtask ui-audit [OUTPUT_DIR]` separately for offscreen dark English and
-light Vietnamese at both 1x and 2x, with collapsed/expanded/empty export scenes;
-it opens no window,
-produces only audit evidence and is excluded from CI. Production source failures
+`tests/export_ui.rs` asserts real widget and engine state, never pixels.
+`cargo xtask ui-audit export-dialog` renders the modal offscreen in dark and
+light at 1x and 2x beside the export reference; it opens no window, produces only
+audit evidence and is excluded from CI. Production source failures
 are injected through the same render source-factory boundary for deterministic
 start/cancel/failure tests; no second job state machine is introduced.
 

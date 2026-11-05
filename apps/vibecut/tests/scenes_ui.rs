@@ -88,13 +88,6 @@ fn scene_sheet_switches_and_multideletes_with_main_protected() {
         h.get(By::new().predicate(|n| n.author_id() == Some("scene.delete")))
             .click();
         h.run_steps(3);
-        if scale == 1.0 {
-            let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-                .join("../../target/p1-48-scenes.png");
-            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
-            h.render().unwrap().save(&path).unwrap();
-            println!("scene screenshot: {}", path.display());
-        }
         h.get(By::new().predicate(|n| n.author_id() == Some("scene.confirm_delete")))
             .click();
         h.run_steps(3);

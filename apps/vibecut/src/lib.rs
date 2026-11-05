@@ -14,6 +14,12 @@ pub mod workspace;
 pub use eframe::egui;
 pub use frontend::{Editor, Inspection, WidgetState};
 
+/// Window background token. Host adapters and offscreen audits paint it behind a
+/// shell that only draws its own content (Home does not fill the window).
+pub fn window_color(dark: bool) -> egui::Color32 {
+    theme::window(dark)
+}
+
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
     #[error("empty timeline cannot be exported")]

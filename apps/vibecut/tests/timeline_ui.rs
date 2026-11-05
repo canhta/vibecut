@@ -14,11 +14,11 @@ use media::{
     TimeBase, VideoInfo,
 };
 use project::{Color, ItemId, ItemParams, Project, ProjectId, TrackId, TrackKind};
-use std::{collections::BTreeSet, path::PathBuf, sync::Arc};
+use std::{path::PathBuf, sync::Arc};
 use time::{FrameRate, SourceRange, TICKS_PER_SECOND, Tick};
 use vibecut::{
     Editor,
-    catalog::{Locale, Preferences},
+    catalog::Preferences,
     egui,
     playback::{Files, Playback},
 };
@@ -468,110 +468,6 @@ fn item_opt(editor: &Editor, id: ItemId) -> Option<&project::Item> {
         .iter()
         .flat_map(|track| track.items.iter())
         .find(|item| item.id == id)
-}
-
-fn screenshot_dir() -> PathBuf {
-    if let Some(target) = std::env::var_os("CARGO_TARGET_DIR") {
-        PathBuf::from(target).join("screenshots")
-    } else {
-        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../target/screenshots")
-    }
-}
-
-fn render_receipt(
-    editor: Editor,
-    name: &str,
-    dark: bool,
-    locale: Locale,
-    select: ItemId,
-) -> (PathBuf, PathBuf) {
-    let mut editor = editor;
-    editor.preferences.dark = dark;
-    editor.preferences.locale = locale;
-    let project = editor.session.project().clone();
-    editor
-        .playback
-        .seek(Tick(10 * SECOND), false, project)
-        .unwrap();
-    let mut harness = harness(editor);
-    harness.run_steps(4);
-    harness
-        .get(By::new().predicate(|node| {
-            node.author_id() == Some(format!("timeline.item.{}", select.0).as_str())
-        }))
-        .click();
-    harness.run_steps(2);
-    let inspection = harness.state().inspect().unwrap();
-    let image = harness.render().unwrap();
-    assert_eq!(image.width(), 1440);
-    assert_eq!(image.height(), 900);
-    let mut colors = BTreeSet::new();
-    for pixel in image.pixels().step_by(97) {
-        colors.insert(pixel.0);
-    }
-    assert!(
-        colors.len() > 32,
-        "{name} screenshot must contain the drawn editor, found {} colours",
-        colors.len()
-    );
-    let widgets: Vec<serde_json::Value> = inspection
-        .widgets
-        .iter()
-        .map(|widget| {
-            serde_json::json!({
-                "id": widget.id,
-                "enabled": widget.enabled,
-                "rect": [widget.rect.min.x, widget.rect.min.y, widget.rect.max.x, widget.rect.max.y],
-            })
-        })
-        .collect();
-    let receipt = serde_json::json!({
-        "name": name,
-        "theme": if dark { "dark" } else { "light" },
-        "locale": if locale == Locale::En { "en" } else { "vi" },
-        "playhead_ticks": inspection.position.0,
-        "zoom_px_per_second": inspection.zoom,
-        "snapping": inspection.snapping,
-        "selection": inspection.selection.iter().map(|id| id.0).collect::<Vec<_>>(),
-        "widgets": widgets,
-    });
-    let dir = screenshot_dir();
-    std::fs::create_dir_all(&dir).unwrap();
-    let image_path = dir.join(format!("{name}.png"));
-    let receipt_path = dir.join(format!("{name}.json"));
-    image.save(&image_path).unwrap();
-    std::fs::write(&receipt_path, serde_json::to_vec_pretty(&receipt).unwrap()).unwrap();
-    (image_path, receipt_path)
-}
-
-#[test]
-fn timeline_screenshot_proof_after_automation_id_edits() {
-    let dark_fixture = fixture();
-    let video = dark_fixture.video_a;
-    let (dark_path, dark_receipt) = render_receipt(
-        dark_fixture.editor,
-        "timeline-dark",
-        true,
-        Locale::En,
-        video,
-    );
-    assert!(dark_path.is_file());
-    assert!(dark_receipt.is_file());
-    let light_fixture = fixture();
-    let (light_path, light_receipt) = render_receipt(
-        light_fixture.editor,
-        "timeline-light-vi",
-        false,
-        Locale::Vi,
-        light_fixture.video_a,
-    );
-    assert!(light_path.is_file());
-    assert!(light_receipt.is_file());
-    println!(
-        "timeline screenshots: {} {}",
-        dark_path.display(),
-        light_path.display()
-    );
 }
 
 #[test]
@@ -1204,74 +1100,6 @@ fn mixed_text_inspector_applies_one_field_and_restores_selected_items() {
 }
 
 #[test]
-#[ignore = "offscreen visual audit, run explicitly outside CI"]
-fn selection_inspector_visual_audit() {
-    for (scale, dark, locale, filename) in [
-        (1.0, true, Locale::En, "p1-19-selection.png"),
-        (2.0, false, Locale::Vi, "p1-19-selection-light-vi-2x.png"),
-    ] {
-        let (mut fixture, first, second) = two_text_fixture();
-        fixture.editor.preferences.dark = dark;
-        fixture.editor.preferences.locale = locale;
-        let media: Vec<_> = fixture
-            .editor
-            .session
-            .project()
-            .data()
-            .scene()
-            .timeline
-            .iter()
-            .flat_map(|t| &t.items)
-            .filter(|i| matches!(i.content, ItemParams::Video(_) | ItemParams::Audio(_)))
-            .map(|i| i.id)
-            .collect();
-        fixture
-            .editor
-            .session
-            .apply(Command::Delete { items: media })
-            .unwrap();
-        let main = fixture
-            .editor
-            .session
-            .project()
-            .data()
-            .scene()
-            .timeline
-            .main
-            .id;
-        let background = insert(
-            &mut fixture.editor.session,
-            main,
-            Tick::ZERO,
-            SourceRange::new(Tick::ZERO, Tick(10 * SECOND)).unwrap(),
-            None,
-            ItemParams::Overlay(project::OverlayParams {
-                color: Color([35, 45, 65, 255]),
-            }),
-        );
-        fixture.editor.selection = [first, second, background].into_iter().collect();
-        let project = fixture.editor.session.project().clone();
-        fixture
-            .editor
-            .playback
-            .seek(Tick(3 * SECOND), false, project)
-            .unwrap();
-        let mut harness = Harness::builder()
-            .with_size(egui::vec2(1440.0, 900.0))
-            .with_pixels_per_point(scale)
-            .build_ui_state(|ui, editor: &mut Editor| editor.ui(ui), fixture.editor);
-        harness.run_steps(4);
-        let image = harness.render().unwrap();
-        let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("../../target")
-            .join(filename);
-        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
-        image.save(&path).unwrap();
-        println!("selection audit: {}", path.display());
-    }
-}
-
-#[test]
 fn compatible_audio_gain_inspector_skips_video_and_preserves_mute() {
     let fixture = fixture();
     let video = fixture.video_a;
@@ -1387,13 +1215,6 @@ fn drop_at_track_edges_creates_one_track_and_one_undo_step() {
         assert_eq!(new.items[0].id, moving);
         assert_eq!(new.items[0].start, Tick::ZERO);
         assert_eq!(h.state().session.history_len().0, history.0 + 1);
-        if edge == Some(true) {
-            let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-                .join("../../target/p1-14-placement.png");
-            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
-            h.render().unwrap().save(&path).unwrap();
-            println!("placement screenshot: {}", path.display());
-        }
         h.state_mut().session.undo().unwrap();
         assert_eq!(h.state().session.project(), &before);
         h.state_mut().session.redo().unwrap();
