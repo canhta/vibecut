@@ -683,6 +683,7 @@ fn multi_select_insert_targets_only_selected_assets_in_one_undo_step() {
         (1, StreamKind::Video),
         (2, StreamKind::Audio),
         (3, StreamKind::Video),
+        (4, StreamKind::Video),
     ] {
         session
             .apply(Command::AddAsset {
@@ -711,9 +712,11 @@ fn multi_select_insert_targets_only_selected_assets_in_one_undo_step() {
     harness.run_steps(2);
     widget(&harness, "media.asset.2").click_modifiers(egui::Modifiers::COMMAND);
     harness.run_steps(2);
+    widget(&harness, "media.asset.4").click_modifiers(egui::Modifiers::COMMAND);
+    harness.run_steps(2);
     assert_eq!(
         harness.state().inspect().unwrap().media_selection,
-        vec![AssetId(1), AssetId(2)]
+        vec![AssetId(1), AssetId(2), AssetId(4)]
     );
     widget(&harness, "media.insert").click();
     harness.run_steps(3);
@@ -724,22 +727,27 @@ fn multi_select_insert_targets_only_selected_assets_in_one_undo_step() {
         .flat_map(|track| track.items.iter())
         .map(|item| (item.source_asset.unwrap(), item.content.kind()))
         .collect();
-    assert_eq!(inserted.len(), 2);
+    assert_eq!(inserted.len(), 3);
     assert!(inserted.contains(&(AssetId(1), TrackKind::Video)));
     assert!(inserted.contains(&(AssetId(2), TrackKind::Audio)));
     assert!(
         !inserted.iter().any(|(asset, _)| *asset == AssetId(3)),
         "unselected asset must stay out of the timeline"
     );
-    for track in data.timeline.iter() {
-        assert_eq!(track.items.len(), 1);
-        assert_eq!(track.items[0].start, Tick::ZERO);
-        assert_eq!(
-            track.items[0].end().unwrap(),
-            Tick(4 * SECOND),
-            "each selected clip lands on its compatible track without overlap"
-        );
-    }
+    assert!(data.timeline.overlays.is_empty());
+    assert_eq!(
+        data.timeline
+            .main
+            .items
+            .iter()
+            .map(|i| (i.source_asset, i.start))
+            .collect::<Vec<_>>(),
+        vec![
+            (Some(AssetId(1)), Tick::ZERO),
+            (Some(AssetId(4)), Tick(4 * SECOND))
+        ]
+    );
+    assert_eq!(data.timeline.audio[0].items[0].start, Tick::ZERO);
     harness.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::Z);
     harness.run_steps(3);
     assert!(
@@ -755,7 +763,7 @@ fn multi_select_insert_targets_only_selected_assets_in_one_undo_step() {
     );
     assert_eq!(
         harness.state().session.project().data().assets.len(),
-        3,
+        4,
         "undo restores the timeline without touching imported assets"
     );
 }
@@ -808,6 +816,7 @@ fn insert_refreshes_playback_with_the_new_project_snapshot() {
         Session::new(Project::empty(ProjectId(16), "Refresh".into()).unwrap(), 20).unwrap();
     let overlay = session
         .apply(Command::AddTrack {
+            placement: engine::TrackPlacement::Auto,
             name: "Overlay".into(),
             kind: TrackKind::Video,
         })
@@ -817,7 +826,7 @@ fn insert_refreshes_playback_with_the_new_project_snapshot() {
     };
     session
         .apply(Command::InsertItem {
-            track,
+            placement: engine::Placement::Track { track },
             item: engine::NewItem {
                 animations: Default::default(),
                 source_asset: None,

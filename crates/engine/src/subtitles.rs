@@ -1797,7 +1797,7 @@ pub(crate) fn build_session(
         let video = session.project().data().timeline.main.id;
         let range = SourceRange::new(Tick::ZERO, duration)?;
         session.apply(Command::InsertItem {
-            track: video,
+            placement: crate::Placement::Track { track: video },
             item: NewItem {
                 animations: Animations::default(),
                 source_asset: Some(asset.id()),
@@ -1810,12 +1810,13 @@ pub(crate) fn build_session(
         })?;
     }
     let captions = track_id(session.apply(Command::AddTrack {
+        placement: crate::TrackPlacement::Auto,
         name: "Captions".into(),
         kind: TrackKind::Text,
     })?)?;
     let range = SourceRange::new(Tick::ZERO, duration)?;
     session.apply(Command::InsertItem {
-        track: captions,
+        placement: crate::Placement::Track { track: captions },
         item: NewItem {
             animations: Animations::default(),
             source_asset: Some(asset.id()),

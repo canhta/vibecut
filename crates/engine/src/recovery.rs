@@ -771,6 +771,7 @@ impl Autosave {
             Ok(crate::Outcome {
                 changed: false,
                 created: Vec::new(),
+                placements: Vec::new(),
             })
         } else {
             self.session.execute(id, params)
@@ -909,6 +910,7 @@ mod tests {
             let before = fs::read(a.directory.join(JOURNAL)).unwrap();
             a.session_mut()
                 .apply(crate::Command::AddTrack {
+                    placement: crate::TrackPlacement::Auto,
                     name: "".into(),
                     kind: project::TrackKind::Video,
                 })

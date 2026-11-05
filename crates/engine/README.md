@@ -31,7 +31,7 @@ JSON integer admission is limited to ±(2^53−1), including nested values. Proj
 has one decimal-string encoding at its owner, including project persistence;
 other IDs and Tick remain numbers. No adapter-specific encoding exists.
 
-For example, `execute("track.add", {"name":"Video", "kind":"video"})`
+For example, `execute("timeline.add_track", {"name":"Video", "kind":"video"})`
 returns `Outcome { changed, created }`. `created` lists engine-allocated typed
 track/item/bookmark IDs in execution order (including batch children). IDs share
 a checked increasing counter initialized above all loaded track/item/bookmark
@@ -41,6 +41,38 @@ Media supplies asset identity; `add_asset` registers a validated SourceAsset and
 does not perform probe/hash IO. A failed command/batch consumes no IDs; successful
 preview/group children retire their IDs even when their outer operation rolls back. ID exhaustion returns
 a typed error. Reloading a project starts a new Session/identity lifetime.
+
+## Timeline placement
+
+`timeline.insert { placement, item }` performs track choice, optional allocation
+and insertion as one atomic undo step. `placement` is a tagged object with
+`mode: auto` (the default), `track` with a track ID, or `above`/`below` with a
+reference track ID. `Outcome.placements` reports the final track and item IDs
+for allocated items still present after the command/batch; `created` continues
+to report only new IDs in allocation order.
+
+Auto video insertion uses the unlocked main track when magnet is enabled.
+It picks the nearest clip edge at the requested start (ties before), inserts
+without replacing content, then packs the main track from zero. This is an
+engine placement policy, separate from same-track ripple deletion/trim.
+With magnet disabled, or for other kinds, auto chooses the first unlocked
+compatible track whose requested half-open range is free: main, overlays in
+screen order, then audio in screen order. If none fits it creates a secondary
+track at the top of its group. Locked main falls back to secondary tracks.
+The first insertion into empty main clamps to zero even with magnet disabled;
+subsequent explicit placements retain their requested time. Explicit track
+placement refuses overlaps and incompatible kinds. Negative starts and checked
+arithmetic overflow refuse atomically, including track/ID allocation.
+
+`timeline.add_track { name, kind, placement }` uses `mode: auto` by default,
+or `above`/`below` with a reference ID. Relative placement respects the project
+owner's groups: non-audio above main, audio below main; crossing these boundaries
+refuses. Creating a track does not edit its reference, even when it is locked.
+Compatibility is determined by `ItemParams::kind()` in project; empty reserved
+track kinds remain available but cannot receive unsupported item kinds.
+
+Command integration and fixed-seed random insertion tests cover compatibility,
+ordering/non-overlap, first-main clamping, undo/redo and persistence round trips.
 
 ## Transient selection and shared fields
 
@@ -201,14 +233,14 @@ JSON dispatch additionally caps depth at 32, nodes at 200,000, each collection a
 The caller already owns the Value; these caps bound added processing, not its
 initial allocation. Project and source constructors retain their own limits.
 
-- `track.add` inserts a secondary track at the highest position for its group;
+- `timeline.add_track` inserts a secondary track at the highest position for its group;
   `track.remove` refuses the mandatory main track and removes secondary contents
   in the same undo step. `track.set_muted` accepts Video/Audio;
   `track.set_hidden` accepts all kinds except Audio. Hidden filters visual output;
   muted filters audio, independently, for preview and export.
   `track.set_magnet` persists main-track magnet state, undoable with the project;
   gap-closing execution belongs to the ripple edit policy, not this preference.
-- `insert_item` places an item without shifting or overwriting its neighbors.
+- `timeline.insert` places an item without shifting or overwriting its neighbors.
 - `move_item` / `move_items` set absolute output positions and destination tracks.
   Multi-move removes all selected items first, permitting swaps. Duplicate IDs
   fail; wrong track kinds, overlap and missing references fail whole-candidate

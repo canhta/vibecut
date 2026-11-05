@@ -295,6 +295,7 @@ fn retries_cannot_reset_operation_budget_and_late_results_refuse_changed_session
     let (run, _) = self::run(&s, selected(&s, false), 0, 1, 1_000_000);
     let (id, _) = run.submit(&mut r, &s).unwrap();
     s.apply(Command::AddTrack {
+        placement: engine::TrackPlacement::Auto,
         name: "".into(),
         kind: TrackKind::Video,
     })
@@ -341,6 +342,7 @@ fn consent_preparation_cannot_rebind_old_source_to_a_new_session_revision() {
     ));
     let (run, transport) = run(&s, selected(&s, false), 0, 1, 1_000_000);
     s.apply(Command::AddTrack {
+        placement: engine::TrackPlacement::Auto,
         name: "edit during consent".into(),
         kind: TrackKind::Video,
     })

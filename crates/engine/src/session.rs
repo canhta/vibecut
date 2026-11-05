@@ -233,6 +233,7 @@ impl Session {
         Ok(Outcome {
             changed: false,
             created: Vec::new(),
+            placements: Vec::new(),
         })
     }
     /// Publish a gesture as exactly one bounded undo step and one change event.
@@ -259,6 +260,7 @@ impl Session {
         Ok(Outcome {
             changed,
             created: Vec::new(),
+            placements: Vec::new(),
         })
     }
     /// Stage commands as one undo step. An error or unwind restores project, undo/redo,
@@ -308,6 +310,7 @@ impl Session {
         Ok(Outcome {
             changed,
             created: Vec::new(),
+            placements: Vec::new(),
         })
     }
     /// Strict JSON dispatch. All timing values are integer ticks; malformed/oversized
@@ -418,6 +421,7 @@ impl Session {
                 return Ok(Outcome {
                     changed,
                     created: Vec::new(),
+                    placements: Vec::new(),
                 });
             }
             Command::BeginGesture {} => {
@@ -472,6 +476,7 @@ impl Session {
             return Ok(Outcome {
                 changed: false,
                 created: Vec::new(),
+                placements: Vec::new(),
             });
         }
         let next = Arc::new(next);
@@ -487,9 +492,45 @@ impl Session {
             self.state.trim_sources.clear();
         }
         self.state.next_id = next_id;
+        let allocated: std::collections::BTreeSet<_> = created
+            .iter()
+            .filter_map(|id| match id {
+                crate::CreatedId::Item(id) => Some(*id),
+                _ => None,
+            })
+            .collect();
+        let locations: std::collections::BTreeMap<_, _> = if allocated.is_empty() {
+            Default::default()
+        } else {
+            self.project()
+                .data()
+                .timeline
+                .iter()
+                .flat_map(|track| {
+                    track
+                        .items
+                        .iter()
+                        .filter(|item| allocated.contains(&item.id))
+                        .map(|item| (item.id, track.id))
+                })
+                .collect()
+        };
+        let placements = created
+            .iter()
+            .filter_map(|id| {
+                let crate::CreatedId::Item(id) = id else {
+                    return None;
+                };
+                locations.get(id).map(|track| crate::ItemPlacement {
+                    track: *track,
+                    item: *id,
+                })
+            })
+            .collect();
         Ok(Outcome {
             changed: true,
             created,
+            placements,
         })
     }
     fn publish(&mut self, next: Arc<Project>, key: Option<&str>) {
@@ -551,6 +592,7 @@ impl Session {
         Ok(Outcome {
             changed: true,
             created: Vec::new(),
+            placements: Vec::new(),
         })
     }
 }
@@ -617,6 +659,7 @@ mod tests {
         let result: Result<()> = session.boundary(|s| {
             s.commit(
                 Command::AddTrack {
+                    placement: crate::TrackPlacement::Auto,
                     name: "".into(),
                     kind: project::TrackKind::Video,
                 },

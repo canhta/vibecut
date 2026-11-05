@@ -22,6 +22,7 @@ fn session() -> Session {
         Session::new(Project::empty(ProjectId(1), "Test".into()).unwrap(), 10).unwrap();
     let outcome = session
         .apply(Command::AddTrack {
+            placement: engine::TrackPlacement::Auto,
             name: "Overlay".into(),
             kind: TrackKind::Video,
         })
@@ -31,7 +32,7 @@ fn session() -> Session {
     };
     session
         .apply(Command::InsertItem {
-            track,
+            placement: engine::Placement::Track { track },
             item: NewItem {
                 animations: Default::default(),
                 source_asset: None,

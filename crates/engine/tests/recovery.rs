@@ -51,6 +51,7 @@ fn open(root: &Path, id: u64, path: Option<std::path::PathBuf>, clock: Arc<TestC
 fn edit(a: &mut Autosave) {
     a.session_mut()
         .apply(Command::AddTrack {
+            placement: engine::TrackPlacement::Auto,
             name: "Track".into(),
             kind: TrackKind::Video,
         })

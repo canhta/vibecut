@@ -51,11 +51,11 @@ fn new_project(path: &Path) -> Value {
     stdout_json(&output)
 }
 fn add_track(project: &Path, name: &str) -> Value {
-    let params = json!({"name": name, "kind": "video"}).to_string();
+    let params = json!({"name": name, "kind": "video", "placement":{"mode":"auto"}}).to_string();
     let output = cli(&[
         os("exec"),
         project.as_os_str(),
-        os("track.add"),
+        os("timeline.add_track"),
         OsStr::new(&params),
         os("--json"),
     ]);
@@ -217,6 +217,19 @@ fn exec_mutates_through_engine_and_reports_created_ids() {
     let value = info(&project);
     assert_eq!(value["tracks"], 2);
     assert_eq!(value["items"], 0);
+    let placed = exec(
+        &project,
+        "timeline.insert",
+        json!({
+            "placement":{"mode":"auto"},
+            "item":{"source_asset":null,"source_range":{"start":0,"end":100},"start":50,
+                "animations":{},"content":{"kind":"overlay","params":{"color":[10,20,30,255]}}}
+        }),
+    );
+    assert_eq!(placed["placements"][0]["track"], 0);
+    assert_eq!(placed["placements"][0]["item"], 2);
+    let loaded = project::load(&project).unwrap().project;
+    assert_eq!(loaded.data().timeline.main.items[0].start, Tick::ZERO);
 }
 
 #[test]
@@ -239,7 +252,7 @@ fn exec_refuses_bad_input_without_writing() {
     let invalid = cli(&[
         os("exec"),
         project.as_os_str(),
-        os("track.add"),
+        os("timeline.add_track"),
         os("{not json"),
         os("--json"),
     ]);
@@ -249,7 +262,7 @@ fn exec_refuses_bad_input_without_writing() {
     let params = cli(&[
         os("exec"),
         project.as_os_str(),
-        os("track.add"),
+        os("timeline.add_track"),
         os("{}"),
         os("--json"),
     ]);
@@ -270,7 +283,7 @@ fn busy_writer_refuses_with_typed_exit_and_no_write() {
     let output = cli(&[
         os("exec"),
         project.as_os_str(),
-        os("track.add"),
+        os("timeline.add_track"),
         OsStr::new(&params),
         os("--json"),
     ]);
@@ -285,7 +298,7 @@ fn busy_writer_refuses_with_typed_exit_and_no_write() {
         .args([
             os("exec"),
             os("busy.vibecut"),
-            os("track.add"),
+            os("timeline.add_track"),
             OsStr::new(&params),
             os("--json"),
         ])
@@ -300,7 +313,7 @@ fn busy_writer_refuses_with_typed_exit_and_no_write() {
         let linked = cli(&[
             os("exec"),
             alias.as_os_str(),
-            os("track.add"),
+            os("timeline.add_track"),
             OsStr::new(&params),
             os("--json"),
         ]);
@@ -352,14 +365,14 @@ fn two_subprocesses_interleave_one_commit_one_refusal() {
         let first = spawn(&[
             os("exec"),
             trial.as_os_str(),
-            os("track.add"),
+            os("timeline.add_track"),
             OsStr::new(&params_a),
         ]);
         let second = Command::new(bin())
             .args([
                 os("exec"),
                 trial.as_os_str(),
-                os("track.add"),
+                os("timeline.add_track"),
                 OsStr::new(&params_b),
             ])
             .stdout(Stdio::piped())
@@ -402,7 +415,7 @@ fn commands_prints_the_generated_registry() {
     let entries = value.as_array().unwrap();
     let add_track = entries
         .iter()
-        .find(|entry| entry["id"] == "track.add")
+        .find(|entry| entry["id"] == "timeline.add_track")
         .unwrap();
     assert_eq!(
         add_track["params_schema"]["$defs"]["NfcText"]["type"],

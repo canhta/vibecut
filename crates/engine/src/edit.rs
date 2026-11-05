@@ -1,5 +1,7 @@
-use crate::{Command, CreatedId, EditError, Move, Result};
-use project::{Bookmark, BookmarkId, Item, ItemId, ItemParams, ProjectData, Track, TrackId};
+use crate::{Command, CreatedId, EditError, Move, Placement, Result, TrackPlacement};
+use project::{
+    Bookmark, BookmarkId, Item, ItemId, ItemParams, ProjectData, Track, TrackId, TrackKind,
+};
 use std::{
     collections::{BTreeMap, BTreeSet},
     sync::Arc,
@@ -141,6 +143,120 @@ fn move_items(data: &mut ProjectData, moves: Vec<Move>) -> Result<()> {
     }
     Ok(())
 }
+/// Resolve a screen-order insertion without crossing the main/audio boundary.
+fn add_track(
+    data: &mut ProjectData,
+    name: captions::NfcText,
+    kind: TrackKind,
+    placement: TrackPlacement,
+    created: &mut Vec<CreatedId>,
+    next: &mut Option<u64>,
+) -> Result<TrackId> {
+    let audio = kind == TrackKind::Audio;
+    let group = if audio {
+        &data.timeline.audio
+    } else {
+        &data.timeline.overlays
+    };
+    let index = match placement {
+        TrackPlacement::Auto => 0,
+        TrackPlacement::Above { track } | TrackPlacement::Below { track } => {
+            let below = matches!(placement, TrackPlacement::Below { .. });
+            if track == data.timeline.main.id {
+                match (audio, below) {
+                    (false, false) => group.len(),
+                    (true, true) => 0,
+                    _ => return Err(EditError::Invalid("track group boundary")),
+                }
+            } else {
+                let reference = data
+                    .timeline
+                    .iter()
+                    .find(|t| t.id == track)
+                    .ok_or(EditError::NoTrack(track))?;
+                if (reference.kind == TrackKind::Audio) != audio {
+                    return Err(EditError::Invalid("track group boundary"));
+                }
+                group
+                    .iter()
+                    .position(|t| t.id == track)
+                    .ok_or(EditError::NoTrack(track))?
+                    + usize::from(below)
+            }
+        }
+    };
+    let id = TrackId(alloc(next)?);
+    let track = Track {
+        id,
+        name,
+        kind,
+        muted: false,
+        hidden: false,
+        locked: false,
+        items: Vec::new(),
+    };
+    if matches!(placement, TrackPlacement::Auto) {
+        data.timeline.insert_track(track);
+    } else {
+        let group = if audio {
+            &mut data.timeline.audio
+        } else {
+            &mut data.timeline.overlays
+        };
+        group.insert(index, track);
+    }
+    created.push(CreatedId::Track(id));
+    Ok(id)
+}
+fn placement_track(
+    data: &mut ProjectData,
+    placement: Placement,
+    kind: TrackKind,
+    start: Tick,
+    duration: Tick,
+    created: &mut Vec<CreatedId>,
+    next: &mut Option<u64>,
+) -> Result<(TrackId, bool)> {
+    let secondary = match placement {
+        Placement::Track { track } => return Ok((track, false)),
+        Placement::Above { track } => TrackPlacement::Above { track },
+        Placement::Below { track } => TrackPlacement::Below { track },
+        Placement::Auto => {
+            let main = &data.timeline.main;
+            if kind == TrackKind::Video
+                && !main.locked
+                && (data.timeline.magnet || main.items.is_empty())
+            {
+                return Ok((main.id, data.timeline.magnet));
+            }
+            let end = add(start, duration)?;
+            // Main first, then overlays top-to-bottom, then audio top-to-bottom.
+            if let Some(track) = std::iter::once(main)
+                .chain(&data.timeline.overlays)
+                .chain(&data.timeline.audio)
+                .find(|t| {
+                    t.kind == kind
+                        && !t.locked
+                        && t.items
+                            .iter()
+                            .all(|item| item.end().is_ok_and(|e| e <= start || item.start >= end))
+                })
+            {
+                return Ok((track.id, false));
+            }
+            TrackPlacement::Auto
+        }
+    };
+    let id = add_track(
+        data,
+        format!("{kind:?}").into(),
+        kind,
+        secondary,
+        created,
+        next,
+    )?;
+    Ok((id, false))
+}
 pub(crate) fn apply(
     mut data: ProjectData,
     command: Command,
@@ -151,18 +267,12 @@ pub(crate) fn apply(
     match command {
         Command::RenameProject { name } => data.name = name,
         Command::AddAsset { asset } => data.assets.push(asset),
-        Command::AddTrack { name, kind } => {
-            let id = TrackId(alloc(next)?);
-            data.timeline.insert_track(Track {
-                id,
-                name,
-                kind,
-                muted: false,
-                hidden: false,
-                locked: false,
-                items: Vec::new(),
-            });
-            created.push(CreatedId::Track(id));
+        Command::AddTrack {
+            name,
+            kind,
+            placement,
+        } => {
+            add_track(&mut data, name, kind, placement, created, next)?;
         }
         Command::RemoveTrack { track: id } => {
             if data.timeline.main.id == id {
@@ -199,22 +309,72 @@ pub(crate) fn apply(
             t.locked = locked;
         }
         Command::InsertItem {
-            track: id,
+            placement,
             item: new,
         } => {
-            let t = track(&mut data, id)?;
+            if new.start < Tick::ZERO {
+                return Err(EditError::Invalid("negative output start"));
+            }
+            let kind = new.content.kind();
+            let (target, magnetic) = placement_track(
+                &mut data,
+                placement,
+                kind,
+                new.start,
+                new.source_range.duration(),
+                created,
+                next,
+            )?;
+            let main = target == data.timeline.main.id;
+            let t = track(&mut data, target)?;
             unlocked(t)?;
+            if t.kind != kind {
+                return Err(EditError::Invalid("incompatible track"));
+            }
             let id = ItemId(alloc(next)?);
-            t.items.push(Item {
-                masks: Vec::new(),
-                effects: Vec::new(),
-                animations: new.animations,
-                id,
-                source_asset: new.source_asset,
-                source_range: new.source_range,
-                start: new.start,
-                content: new.content,
-            });
+            let mut start = new.start;
+            if main && t.items.is_empty() {
+                start = Tick::ZERO;
+            }
+            let index = if magnetic {
+                // Choose the nearest edge of the clip under the pointer; ties go before.
+                let mut index = t.items.len();
+                for (i, item) in t.items.iter().enumerate() {
+                    let end = item.end()?;
+                    if start < end {
+                        index =
+                            if start <= item.start || sub(start, item.start)? <= sub(end, start)? {
+                                i
+                            } else {
+                                i + 1
+                            };
+                        break;
+                    }
+                }
+                index
+            } else {
+                t.items.partition_point(|item| item.start <= start)
+            };
+            t.items.insert(
+                index,
+                Item {
+                    masks: Vec::new(),
+                    effects: Vec::new(),
+                    animations: new.animations,
+                    id,
+                    source_asset: new.source_asset,
+                    source_range: new.source_range,
+                    start,
+                    content: new.content,
+                },
+            );
+            if magnetic {
+                let mut at = Tick::ZERO;
+                for item in &mut t.items {
+                    item.start = at;
+                    at = item.end()?;
+                }
+            }
             created.push(CreatedId::Item(id));
         }
         Command::MoveItem { item, track, start } => {

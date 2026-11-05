@@ -20,6 +20,7 @@ fn key(n: u8) -> CacheKey {
 }
 fn add() -> Command {
     Command::AddTrack {
+        placement: engine::TrackPlacement::Auto,
         name: "".into(),
         kind: project::TrackKind::Video,
     }

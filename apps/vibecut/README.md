@@ -27,7 +27,8 @@ media's FFmpeg probe interrupt and 64 KiB hash reads; each successful file becom
 an asset immediately, so a later refusal or cancel keeps earlier assets. The media
 panel shows the probe type/duration/resolution/audio format, multi-select assets,
 and an "Add to timeline" action that inserts only the selected assets in one undo
-step on compatible tracks. While a batch runs, an overlay shows completed/total
+step through engine auto placement. The engine chooses compatible tracks and
+creates secondary tracks on demand; the app owns no placement policy. While a batch runs, an overlay shows completed/total
 progress and a 2 px accent bar, disables import/insert, and offers Cancel. Partial
 failures remain listed with their typed media reason and close with a toast counting
 imported, failed and unfinished files; a terminal runner failure stays a typed

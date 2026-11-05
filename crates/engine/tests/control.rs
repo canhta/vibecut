@@ -92,7 +92,7 @@ fn add(s: &mut Session, r: &mut JobRunner, key: &str) {
     ok(run(
         s,
         r,
-        "track.add",
+        "timeline.add_track",
         json!({"name":"Added","kind":"video"}),
         key,
     ));
@@ -374,17 +374,17 @@ fn invalid_shape_version_unknown_and_nested_extra_refuse_before_effects() {
     let mut cases = vec![
         ("absent", json!({}), ErrorCode::UnknownCommand),
         (
-            "track.add",
+            "timeline.add_track",
             json!({"name":"x","kind":"wrong"}),
             ErrorCode::InvalidParams,
         ),
         (
-            "track.add",
+            "timeline.add_track",
             json!({"name":1,"kind":"overlay"}),
             ErrorCode::InvalidParams,
         ),
         (
-            "track.add",
+            "timeline.add_track",
             json!({"name":"x","kind":"video","extra":"secret"}),
             ErrorCode::InvalidParams,
         ),
@@ -392,13 +392,13 @@ fn invalid_shape_version_unknown_and_nested_extra_refuse_before_effects() {
     ];
     let mut insert = registry()
         .iter()
-        .find(|s| s.id == "insert_item")
+        .find(|s| s.id == "timeline.insert")
         .unwrap()
         .example
         .params
         .clone();
     insert["item"]["source_range"]["extra"] = true.into();
-    cases.push(("insert_item", insert, ErrorCode::InvalidParams));
+    cases.push(("timeline.insert", insert, ErrorCode::InvalidParams));
     for (id, params, code) in cases {
         error(run(&mut s, &mut r, id, params, "invalid"), code);
         assert_eq!(s.project(), &initial);
@@ -407,7 +407,7 @@ fn invalid_shape_version_unknown_and_nested_extra_refuse_before_effects() {
     }
     let mut bad = request(
         &s,
-        "track.add",
+        "timeline.add_track",
         json!({"name":"x","kind":"video"}),
         "bad-version",
     );
@@ -418,7 +418,7 @@ fn invalid_shape_version_unknown_and_nested_extra_refuse_before_effects() {
     );
     let mut bad = request(
         &s,
-        "track.add",
+        "timeline.add_track",
         json!({"name":"x","kind":"video"}),
         "bad-hash",
     );
@@ -438,7 +438,7 @@ fn loss_replay_conflict_principal_and_current_authorization() {
     let mut r = runner();
     let req = request(
         &s,
-        "track.add",
+        "timeline.add_track",
         json!({"name":"once","kind":"video"}),
         "once",
     );
@@ -503,7 +503,7 @@ fn ledger_exhaustion_has_no_eviction_and_no_effect() {
         run(
             &mut s,
             &mut r,
-            "track.add",
+            "timeline.add_track",
             json!({"name":"never","kind":"video"}),
             "full",
         ),
@@ -526,7 +526,7 @@ fn stale_batch_and_external_gestures_cannot_bypass_admission() {
     let old = request(
         &s,
         "batch",
-        json!({"commands":[{"command":"track.add","params":{"name":"stale","kind":"video"}}]}),
+        json!({"commands":[{"command":"timeline.add_track","params":{"name":"stale","kind":"video"}}]}),
         "batch",
     );
     add(&mut s, &mut r, "ui");
@@ -551,14 +551,14 @@ fn stale_batch_and_external_gestures_cannot_bypass_admission() {
         run(
             &mut s,
             &mut r,
-            "track.add",
+            "timeline.add_track",
             json!({"name":"blocked","kind":"video"}),
             "gesture-edit",
         ),
         ErrorCode::TransactionActive,
     );
     s.cancel_gesture().unwrap();
-    let malformed = json!({"commands":[{"command":"track.add","params":{"name":"early","kind":"video"}},{"command":"export","params":{"range":{"start":0,"end":1},"path":"/never","overwrite":false}}]});
+    let malformed = json!({"commands":[{"command":"timeline.add_track","params":{"name":"early","kind":"video"}},{"command":"export","params":{"range":{"start":0,"end":1},"path":"/never","overwrite":false}}]});
     assert!(matches!(
         run(&mut s, &mut r, "batch", malformed, "mixed").value,
         ResponseValue::Error(_)
@@ -864,7 +864,7 @@ fn policy_refusal_and_nested_policy_are_safe_before_io() {
         json!({"range":{"start":0,"end":1},"path":"/secret/private","overwrite":true}),
         "denied",
     )];
-    requests.push(request(&s,"batch",json!({"commands":[{"command":"track.add","params":{"name":"private text","kind":"video"}}]}),"batch-denied"));
+    requests.push(request(&s,"batch",json!({"commands":[{"command":"timeline.add_track","params":{"name":"private text","kind":"video"}}]}),"batch-denied"));
     let before = s.project().clone();
     for req in requests {
         let result = s.control_request(req, caller(&Deny), &mut r).unwrap();
@@ -920,7 +920,7 @@ fn concurrent_duplicate_requests_execute_once_under_the_session_boundary() {
     let s = session();
     let req = request(
         &s,
-        "track.add",
+        "timeline.add_track",
         json!({"name":"Concurrent","kind":"video"}),
         "concurrent",
     );
@@ -964,7 +964,7 @@ fn every_child_failure_restores_content_history_revision_and_ids() {
                 if index == failed {
                     json!({"command":"track.remove","params":{"track":1000}})
                 } else {
-                    json!({"command":"track.add","params":{"name":"Candidate","kind":"video"}})
+                    json!({"command":"timeline.add_track","params":{"name":"Candidate","kind":"video"}})
                 }
             })
             .collect();
@@ -991,7 +991,7 @@ fn every_child_failure_restores_content_history_revision_and_ids() {
         let result = ok(run(
             &mut s,
             &mut r,
-            "track.add",
+            "timeline.add_track",
             json!({"name":"After","kind":"video"}),
             "after",
         ));
@@ -1061,14 +1061,19 @@ fn malformed_envelope_and_batch_depth_have_no_effect() {
     let mut r = runner();
     let initial = s.project().clone();
     let revision = s.revision();
-    let req = request(&s, "track.add", json!({"name":"x","kind":"video"}), "shape");
+    let req = request(
+        &s,
+        "timeline.add_track",
+        json!({"name":"x","kind":"video"}),
+        "shape",
+    );
     let mut value = serde_json::to_value(req).unwrap();
     value["caller"] = "self-authorized".into();
     assert!(
         s.control_json(&serde_json::to_vec(&value).unwrap(), caller(&Allow), &mut r)
             .is_err()
     );
-    let command = json!({"command":"track.add","params":{"name":"x","kind":"video"}});
+    let command = json!({"command":"timeline.add_track","params":{"name":"x","kind":"video"}});
     for count in [1024, 1025] {
         let batch = json!({"commands":vec![command.clone();count]});
         let result = run(&mut s, &mut r, "batch", batch, &format!("count-{count}"));
@@ -1327,7 +1332,7 @@ fn review_integer_generated_id_is_refused_atomically_at_safe_limit() {
     assert_integer_candidate_refusal(
         &mut s,
         &mut r,
-        "track.add",
+        "timeline.add_track",
         json!({"name":"Next","kind":"video"}),
     );
 }
@@ -1368,7 +1373,7 @@ fn review_integer_derived_source_ticks_and_batch_are_refused_atomically() {
                 &mut s,
                 &mut r,
                 "batch",
-                json!({"commands":[{"command":"project.rename","params":{"name":"Must roll back"}},{"command":"track.add","params":{"name":"Must not consume ID","kind":"video"}},{"command":"trim_end","params":{"item":1,"at":20}}]}),
+                json!({"commands":[{"command":"project.rename","params":{"name":"Must roll back"}},{"command":"timeline.add_track","params":{"name":"Must not consume ID","kind":"video"}},{"command":"trim_end","params":{"item":1,"at":20}}]}),
             );
         } else {
             assert_integer_candidate_refusal(&mut s, &mut r, "trim_end", json!({"item":1,"at":20}));
@@ -1377,7 +1382,7 @@ fn review_integer_derived_source_ticks_and_batch_are_refused_atomically() {
             let result = ok(run(
                 &mut s,
                 &mut r,
-                "track.add",
+                "timeline.add_track",
                 json!({"name":"After refusal","kind":"video"}),
                 "after-batch",
             ));
@@ -1405,7 +1410,7 @@ fn review_integer_last_safe_created_id_matches_schema_then_next_id_refuses() {
     let result = ok(run(
         &mut s,
         &mut r,
-        "track.add",
+        "timeline.add_track",
         json!({"name":"Last safe","kind":"video"}),
         "last-safe",
     ));
@@ -1414,7 +1419,7 @@ fn review_integer_last_safe_created_id_matches_schema_then_next_id_refuses() {
     );
     let schema = &registry()
         .iter()
-        .find(|spec| spec.id == "track.add")
+        .find(|spec| spec.id == "timeline.add_track")
         .unwrap()
         .output_schema;
     assert!(
@@ -1428,7 +1433,7 @@ fn review_integer_last_safe_created_id_matches_schema_then_next_id_refuses() {
     assert_integer_candidate_refusal(
         &mut s,
         &mut r,
-        "track.add",
+        "timeline.add_track",
         json!({"name":"Unsafe","kind":"video"}),
     );
 }

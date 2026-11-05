@@ -4,6 +4,49 @@ use project::{BookmarkId, Color, ItemId, ItemParams, TrackId, TrackKind};
 use serde::{Deserialize, Serialize};
 use time::{SourceRange, Tick};
 
+/// Secondary-track position in screen order. Group boundaries cannot be crossed.
+#[derive(
+    Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema,
+)]
+#[serde(tag = "mode", rename_all = "snake_case", deny_unknown_fields)]
+pub enum TrackPlacement {
+    #[default]
+    Auto,
+    Above {
+        track: TrackId,
+    },
+    Below {
+        track: TrackId,
+    },
+}
+
+/// Auto uses main video with magnet, otherwise the first free compatible track.
+/// Explicit tracks refuse overlaps; above/below allocates a secondary track atomically.
+#[derive(
+    Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema,
+)]
+#[serde(tag = "mode", rename_all = "snake_case", deny_unknown_fields)]
+pub enum Placement {
+    #[default]
+    Auto,
+    Track {
+        track: TrackId,
+    },
+    Above {
+        track: TrackId,
+    },
+    Below {
+        track: TrackId,
+    },
+}
+
+/// Final location of an item allocated by a command, including nested batches.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, schemars::JsonSchema)]
+pub struct ItemPlacement {
+    pub track: TrackId,
+    pub item: ItemId,
+}
+
 /// A shared field edit; incompatible item kinds are left unchanged.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(
@@ -115,7 +158,6 @@ impl CommandSpec {
                         .iter()
                         .any(|i| !matches!(i.content, ItemParams::Audio(_)))
             }),
-            "insert_item" => session.project().data().timeline.iter().any(|t| !t.locked),
             "move_item"
             | "move_items"
             | "split_at"
@@ -189,13 +231,13 @@ commands! {
     ExportSubtitles, "export_subtitles", "Export subtitle file", FilePublish { track: TrackId, format: captions::Format, languages: Vec<captions::LanguageTag>, path: std::path::PathBuf, overwrite: bool } => Timeline, serde_json::json!({"track":4,"format":"srt","languages":["en"],"path":"$output/subtitles.srt","overwrite":false});
     BurnSubtitles, "burn_subtitles", "Burn subtitles into MP4", FilePublish { range: time::TimeRange, languages: Vec<captions::LanguageTag>, style: render::CaptionStyle, portrait: bool, path: std::path::PathBuf, overwrite: bool } => Timeline, serde_json::json!({"range":{"start":0,"end":8467200000_i64},"languages":["en"],"style":{"font":"Inter","font_style":"SemiBold","size":48.0,"color":[255,255,255,255],"outline":null,"background":null,"position":"bottom","safe_area_percent":5.0,"max_lines":2},"portrait":false,"path":"$output/burn.mp4","overwrite":false});
     AddAsset, "add_asset", "Add asset", Edit { asset: SourceAsset } => Timeline, serde_json::json!({"asset":{"id":99,"path":"$output/offline.mp4","content_hash":[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],"probe":{"format":"mp4","duration":null,"streams":[]}}});
-    AddTrack, "track.add", "Add track", Edit { name: NfcText, kind: TrackKind } => Timeline, serde_json::json!({"name":"Added","kind":"video"});
+    AddTrack, "timeline.add_track", "Add track", Edit { name: NfcText, kind: TrackKind, #[serde(default)] placement: TrackPlacement } => Timeline, serde_json::json!({"name":"Added","kind":"video"});
     RemoveTrack, "track.remove", "Remove track", Edit { track: TrackId } => Timeline, serde_json::json!({"track":3});
     SetTrackMuted, "track.set_muted", "Mute track", Edit { track: TrackId, muted: bool } => Timeline, serde_json::json!({"track":3,"muted":true});
     SetTrackHidden, "track.set_hidden", "Hide track", Edit { track: TrackId, hidden: bool } => Timeline, serde_json::json!({"track":3,"hidden":true});
     SetTrackMagnet, "track.set_magnet", "Main track magnet", Edit { enabled: bool } => Timeline, serde_json::json!({"enabled":false});
     SetTrackFlags, "track.set_flags", "Set track flags", Edit { track: TrackId, muted: bool, hidden: bool, locked: bool } => Timeline, serde_json::json!({"track":3,"muted":true,"hidden":false,"locked":false});
-    InsertItem, "insert_item", "Insert item", Edit { track: TrackId, item: NewItem } => Timeline, serde_json::json!({"track":3,"item":{"animations":{},"source_asset":null,"source_range":{"start":0,"end":8467200000_i64},"start":0,"content":{"kind":"overlay","params":{"color":[255,0,0,255]}}}});
+    InsertItem, "timeline.insert", "Insert item", Edit { #[serde(default)] placement: Placement, item: NewItem } => Timeline, serde_json::json!({"placement":{"mode":"auto"},"item":{"animations":{},"source_asset":null,"source_range":{"start":0,"end":8467200000_i64},"start":0,"content":{"kind":"overlay","params":{"color":[255,0,0,255]}}}});
     MoveItem, "move_item", "Move item", Edit { item: ItemId, track: TrackId, start: Tick } => Timeline, serde_json::json!({"item":1,"track":3,"start":0});
     MoveItems, "move_items", "Move items", Edit { moves: Vec<Move> } => Timeline, serde_json::json!({"moves":[{"item":1,"track":3,"start":0}]});
     SplitAt, "split_at", "Split item", Edit { item: ItemId, at: Tick } => Timeline, serde_json::json!({"item":1,"at":8467200000_i64});
@@ -220,7 +262,7 @@ commands! {
     ScaleKeyframeTime, "keyframes.scale_time", "Stretch animation time", Edit { item: ItemId, numerator: i64, denominator: i64 } => Timeline, serde_json::json!({"item":1,"numerator":2,"denominator":1});
     Retranslate, "retranslate", "Apply selected cue translations", Edit { item: ItemId, target_language: captions::LanguageTag, texts: std::collections::BTreeMap<NfcText, NfcText>, translation_ref: NfcText, force: bool } => Timeline, serde_json::json!({"item":4,"target_language":"vi","texts":{"cue-1":"Xin chào"},"translation_ref":"example","force":true});
     AddBookmark, "add_bookmark", "Add bookmark", Edit { start: Tick, duration: Tick, note: NfcText, color: Color } => Timeline, serde_json::json!({"start":0,"duration":0,"note":"Mark","color":[255,255,0,255]});
-    Batch, "batch", "Batch edit", Edit { commands: Vec<Command> } => Timeline, serde_json::json!({"commands":[{"command":"track.add","params":{"name":"Batch","kind":"video"}}]});
+    Batch, "batch", "Batch edit", Edit { commands: Vec<Command> } => Timeline, serde_json::json!({"commands":[{"command":"timeline.add_track","params":{"name":"Batch","kind":"video"}}]});
     BeginGesture, "begin_gesture", "Begin gesture", SessionControl {} => Timeline, serde_json::json!({});
     CommitGesture, "commit_gesture", "Commit gesture", SessionControl {} => Gesture, serde_json::json!({});
     CancelGesture, "cancel_gesture", "Cancel gesture", SessionControl {} => Gesture, serde_json::json!({});
@@ -343,4 +385,5 @@ pub enum CreatedId {
 pub struct Outcome {
     pub changed: bool,
     pub created: Vec<CreatedId>,
+    pub placements: Vec<ItemPlacement>,
 }

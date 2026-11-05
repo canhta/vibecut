@@ -526,8 +526,7 @@ impl Editor {
         );
         self.session.end_merge();
     }
-    /// Add only selected assets, in library order, appending after existing
-    /// compatible items so insertion can never overlap or reorder a track.
+    /// Insert selected assets in library order; engine owns track and overlap policy.
     fn insert_selected_assets(&mut self) {
         let selected: Vec<SourceAsset> = self
             .session
@@ -550,6 +549,8 @@ impl Editor {
         };
         let result = self.session.transaction(|session| {
             let mut created = Vec::new();
+            let mut video_at = at;
+            let mut audio_at = at;
             for asset in &selected {
                 let kind = asset_kind(asset)?;
                 let duration = asset
@@ -559,54 +560,15 @@ impl Editor {
                     .ok_or(engine::EditError::Unsupported(
                         "media duration is unavailable",
                     ))?;
-                let existing = session
-                    .project()
-                    .data()
-                    .timeline
-                    .iter()
-                    .find(|track| {
-                        track.kind == kind
-                            && !track.locked
-                            && at.checked_add(duration).is_some_and(|end| {
-                                track.items.iter().all(|item| {
-                                    item.end()
-                                        .is_ok_and(|item_end| item_end <= at || item.start >= end)
-                                })
-                            })
-                    })
-                    .map(|track| (track.id, at));
-                let (track, start) = match existing {
-                    Some((track, end)) => (track, at.max(end)),
-                    None => {
-                        let count = session
-                            .project()
-                            .data()
-                            .timeline
-                            .iter()
-                            .filter(|track| track.kind == kind)
-                            .count();
-                        let name = match kind {
-                            TrackKind::Video => format!("Video {}", count + 1),
-                            _ => format!("Audio {}", count + 1),
-                        };
-                        let outcome = session.apply(Command::AddTrack {
-                            name: name.into(),
-                            kind,
-                        })?;
-                        let track = match outcome.created.first().copied() {
-                            Some(CreatedId::Track(track)) => track,
-                            _ => {
-                                return Err(engine::EditError::Unsupported("track allocation"));
-                            }
-                        };
-                        (track, at)
-                    }
-                };
                 let item = NewItem {
                     animations: Default::default(),
                     source_asset: Some(asset.id()),
                     source_range: SourceRange::new(Tick::ZERO, duration)?,
-                    start,
+                    start: if kind == TrackKind::Video {
+                        video_at
+                    } else {
+                        audio_at
+                    },
                     content: match kind {
                         TrackKind::Video => ItemParams::Video(project::VideoParams {
                             source_audio_enabled: true,
@@ -617,7 +579,28 @@ impl Editor {
                         }),
                     },
                 };
-                let outcome = session.apply(Command::InsertItem { track, item })?;
+                let outcome = session.apply(Command::InsertItem {
+                    placement: engine::Placement::Auto,
+                    item,
+                })?;
+                let placed = outcome
+                    .placements
+                    .first()
+                    .ok_or(engine::EditError::Invalid("item placement"))?;
+                let end = session
+                    .project()
+                    .data()
+                    .timeline
+                    .iter()
+                    .find(|track| track.id == placed.track)
+                    .and_then(|track| track.items.iter().find(|item| item.id == placed.item))
+                    .ok_or(engine::EditError::NoItem(placed.item))?
+                    .end()?;
+                if kind == TrackKind::Video {
+                    video_at = end;
+                } else {
+                    audio_at = end;
+                }
                 created.extend(outcome.created.into_iter().filter_map(|id| match id {
                     CreatedId::Item(item) => Some(item),
                     _ => None,
@@ -1149,7 +1132,7 @@ impl Editor {
     }
     /// Drive the active gesture from global pointer state. Release and update do not
     /// depend on the item or handle still being visible or hit-testable this frame.
-    fn advance_drag(&mut self, ui: &egui::Ui, body_left: f32) {
+    fn advance_drag(&mut self, ui: &egui::Ui, layout: &TimelineLayout, rows: &[TrackRow]) {
         if self.drag.is_none() {
             return;
         }
@@ -1161,11 +1144,106 @@ impl Editor {
             )
         });
         if let Some(pointer) = pointer {
-            self.update_drag(pointer, body_left, bypass);
+            self.update_drag(pointer, layout.body.left(), bypass);
         }
         if !down {
+            if let Some(pointer) = pointer
+                && let Err(error) = self.drop_track(pointer, layout, rows, bypass)
+            {
+                self.error = Some(error.to_string());
+                self.cancel_interaction();
+                return;
+            }
             self.finish_drag();
         }
+    }
+    fn drop_track(
+        &mut self,
+        pointer: egui::Pos2,
+        layout: &TimelineLayout,
+        rows: &[TrackRow],
+        bypass: bool,
+    ) -> Result<()> {
+        let Some(drag) = self.drag.clone() else {
+            return Ok(());
+        };
+        if drag.mode != DragMode::Move || drag.origins.len() != 1 || !layout.body.contains(pointer)
+        {
+            return Ok(());
+        }
+        let Some(origin) = drag.origins.first() else {
+            return Ok(());
+        };
+        let mut destination = None;
+        for row in rows {
+            let top = layout.body.top() + row.top - self.vertical_scroll;
+            let bottom = top + row.height;
+            if pointer.y < top + 3.0 {
+                destination = Some((
+                    row.id,
+                    Some(engine::TrackPlacement::Above { track: row.id }),
+                ));
+                break;
+            }
+            if pointer.y <= bottom - 3.0 {
+                destination = Some((row.id, None));
+                break;
+            }
+            destination = Some((
+                row.id,
+                Some(engine::TrackPlacement::Below { track: row.id }),
+            ));
+            if pointer.y <= bottom + TRACK_GAP / 2.0 {
+                break;
+            }
+        }
+        let Some((target, placement)) = destination else {
+            return Ok(());
+        };
+        if placement.is_none() && target == origin.track {
+            return Ok(());
+        }
+        let raw = Tick::from_seconds_f64(
+            f64::from(pointer.x - drag.press_x) / f64::from(self.zoom),
+            Rounding::Nearest,
+        )?;
+        let (delta, _) = self.snap_delta(raw, &drag.origins, bypass);
+        let start = origin
+            .start
+            .checked_add(delta)
+            .ok_or(engine::EditError::Invalid("time overflow"))?
+            .max(Tick::ZERO);
+        let target = if let Some(placement) = placement {
+            let kind = self
+                .session
+                .project()
+                .data()
+                .timeline
+                .iter()
+                .find(|t| t.id == origin.track)
+                .ok_or(engine::EditError::NoTrack(origin.track))?
+                .kind;
+            let outcome = self.session.apply(Command::AddTrack {
+                name: format!("{kind:?}").into(),
+                kind,
+                placement,
+            })?;
+            match outcome.created.first() {
+                Some(CreatedId::Track(id)) => *id,
+                _ => return Err(engine::EditError::Invalid("track allocation").into()),
+            }
+        } else {
+            target
+        };
+        self.session.apply(Command::MoveItem {
+            item: drag.item,
+            track: target,
+            start,
+        })?;
+        if let Some(drag) = &mut self.drag {
+            drag.moved = true;
+        }
+        Ok(())
     }
     fn update_drag(&mut self, pointer: egui::Pos2, body_left: f32, bypass: bool) {
         let Some(mut drag) = self.drag.clone() else {
@@ -2389,7 +2467,7 @@ impl Editor {
         let (rows, items, duration, bookmarks) = self.timeline_views(&layout);
         self.paint_ruler(ui, &layout, bookmarks.as_slice());
         self.paint_tracks(ui, &layout, &rows, &items);
-        self.advance_drag(ui, layout.body.left());
+        self.advance_drag(ui, &layout, &rows);
         self.paint_playhead(ui, &layout);
         self.timeline_playhead_interaction(ui, &layout);
         self.timeline_scrollbars(ui, &layout, duration, &rows);

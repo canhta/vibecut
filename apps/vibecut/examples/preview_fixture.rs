@@ -14,6 +14,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     )?;
     session.apply(Command::AddAsset { asset })?;
     let outcome = session.apply(Command::AddTrack {
+        placement: engine::TrackPlacement::Auto,
         name: "Video 1".into(),
         kind: TrackKind::Video,
     })?;
@@ -29,7 +30,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         })
         .ok_or("track id")?;
     session.apply(Command::InsertItem {
-        track,
+        placement: engine::Placement::Track { track },
         item: NewItem {
             animations: Default::default(),
             source_asset: Some(media::AssetId(1)),

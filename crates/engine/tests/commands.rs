@@ -81,7 +81,10 @@ fn get(s: &Session, id: u64) -> &Item {
 fn all_commands_share_registry_and_strict_json_dispatch() {
     let mut s = Session::new(Project::empty(ProjectId(0), "".into()).unwrap(), 10).unwrap();
     let r = s
-        .execute("track.add", json!({"name":"Tiếng", "kind":"video"}))
+        .execute(
+            "timeline.add_track",
+            json!({"name":"Tiếng", "kind":"video"}),
+        )
         .unwrap();
     assert_eq!(r.created, vec![CreatedId::Track(TrackId(1))]);
     assert_eq!(
@@ -96,7 +99,10 @@ fn all_commands_share_registry_and_strict_json_dispatch() {
         "Tiếng"
     );
     let r = s
-        .execute("insert_item", json!({"track":1,"item":new_item(0,10)}))
+        .execute(
+            "timeline.insert",
+            json!({"placement":{"mode":"track","track":1},"item":new_item(0,10)}),
+        )
         .unwrap();
     assert_eq!(r.created, vec![CreatedId::Item(ItemId(2))]);
     s.execute("move_item", json!({"item":2,"track":1,"start":10}))
@@ -238,7 +244,7 @@ fn simultaneous_moves_can_swap_but_never_leave_overlap_or_touch_locked_tracks() 
             start: Tick(0),
         },
         Command::InsertItem {
-            track: TrackId(2),
+            placement: engine::Placement::Track { track: TrackId(2) },
             item: new_item(0, 10),
         },
         Command::Delete {
@@ -364,14 +370,14 @@ fn continuous_gestures_merge_and_ids_do_not_alias_after_undo() {
     assert_eq!(s.history_len(), (2, 0));
     let first = s
         .apply(Command::InsertItem {
-            track: TrackId(2),
+            placement: engine::Placement::Track { track: TrackId(2) },
             item: new_item(500, 10),
         })
         .unwrap();
     s.undo().unwrap();
     let second = s
         .apply(Command::InsertItem {
-            track: TrackId(2),
+            placement: engine::Placement::Track { track: TrackId(2) },
             item: new_item(500, 10),
         })
         .unwrap();
@@ -395,7 +401,10 @@ fn hostile_parameters_and_limits_leave_project_and_history_intact() {
         ("trim_end", json!({"item":10,"at":0})),
         ("split_at", json!({"item":10,"at":40})),
         ("undo", json!({"unexpected":true})),
-        ("insert_item", json!({"track":1,"item":null})),
+        (
+            "timeline.insert",
+            json!({"placement":{"mode":"track","track":1},"item":null}),
+        ),
     ] {
         assert!(s.execute(id, params).is_err(), "{id}");
         assert!(Arc::ptr_eq(&before, s.project()));
@@ -417,6 +426,7 @@ fn hostile_parameters_and_limits_leave_project_and_history_intact() {
     let mut s = Session::new(Project::new(data).unwrap(), 1).unwrap();
     assert!(matches!(
         s.apply(Command::AddTrack {
+            placement: engine::TrackPlacement::Auto,
             name: "".into(),
             kind: TrackKind::Video
         }),
@@ -435,7 +445,7 @@ proptest! {
         let initial=s.project().clone();
         for (op,id,tick) in ops {
             let cmd=match op {
-                0=>Command::InsertItem {track:TrackId(id%2 + 1),item:new_item(tick,10)},
+                0=>Command::InsertItem {placement: engine::Placement::Track { track: TrackId(id%2 + 1) },item:new_item(tick,10)},
                 1=>Command::MoveItem {item:ItemId(id),track:TrackId(id%2 + 1),start:Tick(tick)},
                 2=>Command::SplitAt {item:ItemId(id),at:Tick(tick)},
                 3=>Command::TrimStart {item:ItemId(id),at:Tick(tick)},
@@ -533,7 +543,7 @@ fn media_handles_and_typed_parameter_validation_are_atomic() {
     let mut s = Session::new(Project::new(data).unwrap(), 20).unwrap();
     let out = s
         .apply(Command::InsertItem {
-            track: TrackId(1),
+            placement: engine::Placement::Track { track: TrackId(1) },
             item: NewItem {
                 animations: Default::default(),
                 source_asset: Some(AssetId(1)),
@@ -580,7 +590,7 @@ fn media_handles_and_typed_parameter_validation_are_atomic() {
             }),
         },
         Command::InsertItem {
-            track: TrackId(2),
+            placement: engine::Placement::Track { track: TrackId(2) },
             item: NewItem {
                 animations: Default::default(),
                 source_asset: Some(AssetId(99)),
@@ -593,7 +603,7 @@ fn media_handles_and_typed_parameter_validation_are_atomic() {
             },
         },
         Command::InsertItem {
-            track: TrackId(2),
+            placement: engine::Placement::Track { track: TrackId(2) },
             item: NewItem {
                 animations: Default::default(),
                 source_asset: Some(AssetId(1)),
@@ -1280,6 +1290,7 @@ fn track_output_controls_enforce_kind_capabilities() {
     ] {
         let result = s
             .apply(Command::AddTrack {
+                placement: engine::TrackPlacement::Auto,
                 name: "Track".into(),
                 kind,
             })
@@ -1490,4 +1501,237 @@ fn shared_field_refuses_locked_compatible_target_without_partial_edit() {
         .unwrap()
         .changed
     );
+}
+
+#[test]
+#[allow(clippy::indexing_slicing, clippy::panic)]
+fn placement_is_atomic_and_respects_groups_locks_and_main_magnet() {
+    use engine::{Placement, TrackPlacement};
+    let mut s = Session::new(
+        Project::empty(ProjectId(9), "Placement".into()).unwrap(),
+        100,
+    )
+    .unwrap();
+    let initial = s.project().clone();
+    for (at, duration) in [(50, 10), (100, 20), (5, 4)] {
+        let outcome = s
+            .execute(
+                "timeline.insert",
+                json!({"placement":{"mode":"auto"},"item":new_item(at,duration)}),
+            )
+            .unwrap();
+        assert_eq!(outcome.placements.len(), 1);
+        assert_eq!(outcome.placements[0].track, TrackId(0));
+    }
+    assert!(s.project().data().timeline.overlays.is_empty());
+    assert_eq!(
+        s.project()
+            .data()
+            .timeline
+            .main
+            .items
+            .iter()
+            .map(|i| i.start.0)
+            .collect::<Vec<_>>(),
+        vec![0, 4, 14]
+    );
+    let magnetic = s.project().clone();
+    s.apply(Command::SetTrackMagnet { enabled: false }).unwrap();
+    // Occupied main range falls back to a secondary track; next free range reuses it.
+    let a = s
+        .apply(Command::InsertItem {
+            placement: Placement::Auto,
+            item: new_item(5, 10),
+        })
+        .unwrap();
+    let overlay = a.placements[0].track;
+    assert_ne!(overlay, TrackId(0));
+    let b = s
+        .apply(Command::InsertItem {
+            placement: Placement::Auto,
+            item: new_item(15, 10),
+        })
+        .unwrap();
+    assert_eq!(b.placements[0].track, overlay);
+    let before = s.project().clone();
+    let history = s.history_len();
+    for placement in [
+        Placement::Below { track: TrackId(0) },
+        Placement::Track { track: overlay },
+        Placement::Above {
+            track: TrackId(999),
+        },
+    ] {
+        assert!(
+            s.apply(Command::InsertItem {
+                placement,
+                item: new_item(5, 10)
+            })
+            .is_err()
+        );
+        assert_eq!(s.project(), &before);
+        assert_eq!(s.history_len(), history);
+    }
+    assert!(
+        s.apply(Command::InsertItem {
+            placement: Placement::Above { track: overlay },
+            item: new_item(i64::MAX, 10)
+        })
+        .is_err()
+    );
+    assert_eq!(s.project(), &before);
+    assert_eq!(s.history_len(), history);
+    let result = s
+        .apply(Command::InsertItem {
+            placement: Placement::Above { track: overlay },
+            item: new_item(5, 10),
+        })
+        .unwrap();
+    assert_eq!(result.created.len(), 2);
+    let layout = s.project().clone();
+    assert_eq!(
+        layout.data().timeline.overlays[0].id,
+        result.placements[0].track
+    );
+    s.undo().unwrap();
+    assert_eq!(s.project(), &before);
+    s.redo().unwrap();
+    assert_eq!(s.project(), &layout);
+    assert_eq!(
+        project::decode(&project::encode(&layout, false).unwrap())
+            .unwrap()
+            .project,
+        *layout
+    );
+    // Explicit secondary creation supports both sides and refuses crossing groups.
+    let lower = s
+        .apply(Command::AddTrack {
+            placement: TrackPlacement::Below { track: overlay },
+            name: "Lower".into(),
+            kind: TrackKind::Text,
+        })
+        .unwrap();
+    assert_eq!(
+        s.project().data().timeline.overlays.last().unwrap().id,
+        match lower.created[0] {
+            CreatedId::Track(id) => id,
+            _ => panic!("track"),
+        }
+    );
+    s.apply(Command::SetTrackFlags {
+        track: TrackId(0),
+        muted: false,
+        hidden: false,
+        locked: true,
+    })
+    .unwrap();
+    let result = s
+        .apply(Command::InsertItem {
+            placement: Placement::Auto,
+            item: new_item(100, 10),
+        })
+        .unwrap();
+    assert_ne!(result.placements[0].track, TrackId(0));
+    assert!(
+        s.apply(Command::InsertItem {
+            placement: Placement::Track { track: TrackId(0) },
+            item: new_item(100, 10)
+        })
+        .is_err()
+    );
+    let ids: Vec<_> = s.project().data().timeline.iter().map(|t| t.id).collect();
+    for track in ids {
+        s.apply(Command::SetTrackFlags {
+            track,
+            muted: false,
+            hidden: false,
+            locked: true,
+        })
+        .unwrap();
+    }
+    assert!(
+        registry()
+            .iter()
+            .find(|spec| spec.id == "timeline.insert")
+            .unwrap()
+            .enabled(&s)
+    );
+    let tracks = s.project().data().timeline.track_count();
+    s.apply(Command::InsertItem {
+        placement: Placement::Auto,
+        item: new_item(100, 10),
+    })
+    .unwrap();
+    assert_eq!(s.project().data().timeline.track_count(), tracks + 1);
+    // Main's first explicit clip clamps even with magnet disabled; later clips keep their requested time.
+    let mut blank = Session::new((*initial).clone(), 10).unwrap();
+    blank
+        .apply(Command::SetTrackMagnet { enabled: false })
+        .unwrap();
+    for at in [100, 200] {
+        blank
+            .apply(Command::InsertItem {
+                placement: Placement::Track { track: TrackId(0) },
+                item: new_item(at, 10),
+            })
+            .unwrap();
+    }
+    assert_eq!(
+        blank
+            .project()
+            .data()
+            .timeline
+            .main
+            .items
+            .iter()
+            .map(|i| i.start.0)
+            .collect::<Vec<_>>(),
+        vec![0, 200]
+    );
+    assert!(magnetic.data().timeline.magnet);
+}
+
+proptest! {
+    #![proptest_config(ProptestConfig { cases: 64, rng_seed: proptest::test_runner::RngSeed::Fixed(14002021), ..ProptestConfig::default() })]
+    #[test]
+    fn random_placements_preserve_layout_and_history(operations in prop::collection::vec((0u8..5,0i64..300,1i64..30,any::<bool>()),1..60)) {
+        use engine::Placement;
+        let mut s = Session::new(Project::empty(ProjectId(9), "Placement".into()).unwrap(), 1000).unwrap();
+        let mut snapshots = vec![s.project().clone()];
+        for (mode, at, duration, text) in operations {
+            if s.apply(Command::SetTrackMagnet { enabled: mode % 2 == 0 }).unwrap().changed { snapshots.push(s.project().clone()); }
+            let placement = match mode {
+                0 => Placement::Above {track: TrackId(0)},
+                1 => Placement::Below {track: TrackId(0)},
+                2 => Placement::Track {track: TrackId(0)},
+                _ => Placement::Auto,
+            };
+            let mut item = new_item(at,duration);
+            if text { item.content = ItemParams::Text(project::TextParams {content:"Tiếng Việt".into(),font_size:24.0,color:Color([255;4])}); }
+            let before = s.project().clone();
+            match s.apply(Command::InsertItem {placement,item}) {
+                Ok(outcome) => {
+                    prop_assert!(outcome.changed);
+                    prop_assert_eq!(outcome.placements.len(),1);
+                    snapshots.push(s.project().clone());
+                }
+                Err(_) => prop_assert_eq!(s.project(), &before),
+            }
+            let timeline = &s.project().data().timeline;
+            for track in timeline.iter() {
+                let mut end=Tick::ZERO;
+                for item in &track.items {
+                    prop_assert!(item.start>=end);
+                    prop_assert_eq!(item.content.kind(),track.kind);
+                    end=item.end().unwrap();
+                }
+            }
+            if let Some(first)=timeline.main.items.first(){ prop_assert_eq!(first.start,Tick::ZERO); }
+        }
+        let final_layout = s.project().clone();
+        for before in snapshots.iter().rev().skip(1) { s.undo().unwrap(); prop_assert_eq!(s.project(),before); }
+        for after in snapshots.iter().skip(1) { s.redo().unwrap(); prop_assert_eq!(s.project(),after); }
+        prop_assert_eq!(s.project(),&final_layout);
+        prop_assert_eq!(&project::decode(&project::encode(&final_layout, false).unwrap()).unwrap().project,final_layout.as_ref());
+    }
 }

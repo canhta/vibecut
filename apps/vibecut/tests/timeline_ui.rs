@@ -85,7 +85,7 @@ fn insert(
 ) -> ItemId {
     let outcome = session
         .apply(Command::InsertItem {
-            track,
+            placement: engine::Placement::Track { track },
             item: NewItem {
                 animations: Default::default(),
                 source_asset: asset,
@@ -104,6 +104,7 @@ fn insert(
 fn track(session: &mut Session, name: &str, kind: TrackKind) -> TrackId {
     let outcome = session
         .apply(Command::AddTrack {
+            placement: engine::TrackPlacement::Auto,
             name: name.into(),
             kind,
         })
@@ -1304,4 +1305,79 @@ fn compatible_audio_gain_inspector_skips_video_and_preserves_mute() {
     };
     assert_eq!(p.gain_db, -6.0);
     assert!(!p.muted);
+}
+
+#[test]
+fn drop_at_track_edges_creates_one_track_and_one_undo_step() {
+    for below in [false, true] {
+        let fixture = fixture();
+        let moving = fixture.video_a;
+        let mut h = Harness::builder()
+            .with_size(egui::vec2(1728.0, 1200.0))
+            .build_ui_state(|ui, e: &mut Editor| e.ui(ui), fixture.editor);
+        h.run_steps(3);
+        let before = h.state().session.project().clone();
+        let history = h.state().session.history_len();
+        let source = before
+            .data()
+            .timeline
+            .overlays
+            .iter()
+            .find(|t| t.items.iter().any(|i| i.id == moving))
+            .unwrap()
+            .id;
+        let index = before
+            .data()
+            .timeline
+            .overlays
+            .iter()
+            .position(|t| t.id == source)
+            .unwrap()
+            + usize::from(below);
+        let body = widget(&h, &format!("timeline.item.{}", moving.0));
+        let header = widget(&h, &format!("track.{}.header", source.0));
+        let target = egui::pos2(
+            body.center().x,
+            if below {
+                header.bottom() - 1.0
+            } else {
+                header.top() + 1.0
+            },
+        );
+        drag(&mut h, body.center(), target);
+        let after = h.state().session.project().clone();
+        assert_eq!(
+            after.data().timeline.track_count(),
+            before.data().timeline.track_count() + 1
+        );
+        let new = &after.data().timeline.overlays[index];
+        assert_eq!(new.items.len(), 1);
+        assert_eq!(new.items[0].id, moving);
+        assert_eq!(new.items[0].start, Tick::ZERO);
+        assert_eq!(h.state().session.history_len().0, history.0 + 1);
+        if below {
+            let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("../../target/p1-14-placement.png");
+            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+            h.render().unwrap().save(&path).unwrap();
+            println!("placement screenshot: {}", path.display());
+        }
+        h.state_mut().session.undo().unwrap();
+        assert_eq!(h.state().session.project(), &before);
+        h.state_mut().session.redo().unwrap();
+        assert_eq!(h.state().session.project(), &after);
+        // A video cannot create an overlay inside the audio group; roll back the whole gesture.
+        h.run_steps(3);
+        let audio = after.data().timeline.audio[0].id;
+        let audio_header = widget(&h, &format!("track.{}.header", audio.0));
+        let body = widget(&h, &format!("timeline.item.{}", moving.0));
+        let history = h.state().session.history_len();
+        drag(
+            &mut h,
+            body.center(),
+            egui::pos2(body.center().x + 20.0, audio_header.bottom() - 1.0),
+        );
+        assert_eq!(h.state().session.project(), &after);
+        assert_eq!(h.state().session.history_len(), history);
+    }
 }

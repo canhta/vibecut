@@ -25,6 +25,7 @@ fn editor() -> Editor {
         TrackKind::Audio,
     ] {
         s.apply(Command::AddTrack {
+            placement: engine::TrackPlacement::Auto,
             name: format!("Private {kind:?} name").into(),
             kind,
         })

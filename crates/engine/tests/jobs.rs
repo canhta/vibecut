@@ -299,6 +299,7 @@ fn stale_result_rejected_after_edit_undo_save_or_session_switch() {
     let p = project::Project::empty(project::ProjectId(0), "".into()).unwrap();
     let mut s = Session::new(p.clone(), 10).unwrap();
     let command = || Command::AddTrack {
+        placement: engine::TrackPlacement::Auto,
         name: "".into(),
         kind: project::TrackKind::Video,
     };
@@ -505,6 +506,7 @@ fn submitted_output_carries_original_session_revision_through_completion() {
     let budget = ByteBudget::new(1000).unwrap();
     let (mut r, _) = runner(&budget);
     let command = || Command::AddTrack {
+        placement: engine::TrackPlacement::Auto,
         name: "".into(),
         kind: project::TrackKind::Video,
     };
@@ -576,6 +578,7 @@ fn every_group_exit_invalidates_captured_preview_targets_and_submitted_outputs()
         let mut target = None;
         let mut job = None;
         let add = || Command::AddTrack {
+            placement: engine::TrackPlacement::Auto,
             name: "".into(),
             kind: project::TrackKind::Video,
         };
@@ -627,6 +630,7 @@ fn every_group_exit_invalidates_captured_preview_targets_and_submitted_outputs()
         .unwrap();
         s.begin_gesture().unwrap();
         s.apply(Command::AddTrack {
+            placement: engine::TrackPlacement::Auto,
             name: "".into(),
             kind: project::TrackKind::Video,
         })
@@ -643,6 +647,7 @@ fn every_group_exit_invalidates_captured_preview_targets_and_submitted_outputs()
             s.apply_job_result(
                 &target,
                 Command::AddTrack {
+                    placement: engine::TrackPlacement::Auto,
                     name: "".into(),
                     kind: project::TrackKind::Video
                 }
