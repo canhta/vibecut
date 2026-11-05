@@ -235,7 +235,7 @@ mod tests {
         SourceAsset::try_from(AssetData {
             ephemeral: false,
             id: AssetId(id),
-            path: std::path::PathBuf::from("C:/media/fixture.mp4"),
+            path: std::env::temp_dir().join("fixture.mp4"),
             content_hash: ContentHash([hash; 32]),
             probe: SourceProbe {
                 format: "mov,mp4".into(),
