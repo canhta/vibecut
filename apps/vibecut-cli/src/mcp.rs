@@ -153,6 +153,10 @@ impl Policy for Grants {
             | Command::SetCanvasBackground { .. }
             | Command::SetItemParamMany { .. }
             | Command::SetFade { .. }
+            | Command::AddTransition { .. }
+            | Command::MoveTransition { .. }
+            | Command::SetTransitionDuration { .. }
+            | Command::RemoveTransition { .. }
             | Command::AddMask { .. }
             | Command::RemoveMask { .. }
             | Command::UpdateMask { .. }

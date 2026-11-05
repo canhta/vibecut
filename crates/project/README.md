@@ -444,6 +444,5 @@ source duration permits no extension after the cut. Generated overlays have no
 media-handle constraint. `set_duration` clamps positive ticks to those bounds,
 following alignment; an odd centered duration puts floor(duration/2) before the
 cut. Custom duration changes keep the span's centre, clamped to stay over the cut.
-Zero duration/handles and invalid spans refuse. Transitions on one track cannot
-overlap, including multiple transitions on the same cut. Validation never repairs
+Zero duration/handles and invalid spans refuse. Only one transition may name a cut, and spans on one track cannot overlap. Validation never repairs
 untrusted persisted data. Edit-time revalidation belongs to [engine](../engine/README.md#video-transitions).

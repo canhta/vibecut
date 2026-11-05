@@ -285,8 +285,38 @@ mod tests {
         assert!(Project::new(d.clone()).is_err());
         d.scene_mut().timeline.transitions[1].id = TransitionId(2);
         assert!(Project::new(d.clone()).is_err());
+        // Nonoverlapping end-at-cut and start-at-cut spans still name the same
+        // cut: allowing both would jump from B back to A at their shared edge.
+        d.scene_mut().timeline.transitions[0].start = Tick(60);
+        d.scene_mut().timeline.transitions[0].alignment = End;
+        d.scene_mut().timeline.transitions[1].start = Tick(100);
+        d.scene_mut().timeline.transitions[1].alignment = Start;
+        assert!(matches!(
+            Project::new(d.clone()),
+            Err(Error::Invalid("duplicate transition cut"))
+        ));
         d.scene_mut().timeline.main.items.pop();
         assert!(Project::new(d).is_err());
+        let mut d = data();
+        let mut third = d.scene().timeline.main.items[1].clone();
+        third.id = ItemId(3);
+        third.start = Tick(200);
+        d.scene_mut().timeline.main.items.push(third);
+        let mut a = transition();
+        a.start = Tick(20);
+        a.duration = Tick(160);
+        let mut b = transition();
+        b.id = TransitionId(2);
+        b.from = ItemId(2);
+        b.to = ItemId(3);
+        b.start = Tick(150);
+        b.duration = Tick(50);
+        b.alignment = End;
+        d.scene_mut().timeline.transitions = vec![a, b];
+        assert!(matches!(
+            Project::new(d),
+            Err(Error::Invalid("overlapping transitions"))
+        ));
     }
     #[test]
     fn media_handles_bound_both_sides_and_zero_handles_refuse() {

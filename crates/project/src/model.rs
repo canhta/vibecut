@@ -705,9 +705,13 @@ fn validate(data: &ProjectData) -> Result<()> {
         if transition_ids.len().saturating_add(transitions.len()) > 100_000 {
             return Err(Error::TooLarge("transitions"));
         }
+        let mut cuts = BTreeSet::new();
         let mut spans = Vec::with_capacity(transitions.len());
         for tr in transitions {
             tr.validate(&scene.timeline, data)?;
+            if !cuts.insert((tr.track, tr.from, tr.to)) {
+                return Err(Error::Invalid("duplicate transition cut"));
+            }
             if !transition_ids.insert(tr.id) {
                 return Err(Error::Invalid("duplicate transition ID"));
             }
