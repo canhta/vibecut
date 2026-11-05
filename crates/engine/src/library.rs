@@ -58,6 +58,7 @@ impl ProjectLibrary {
         }
         let root = root.canonicalize()?;
         let lease = WriterLease::acquire(&root.join("catalog.vibecut"))?;
+        WriterLease::enable_directory_moves(&root)?;
         Ok(Self {
             root,
             _lease: lease,
@@ -208,8 +209,7 @@ impl ProjectLibrary {
                 // Confirmation belongs to the caller. No undo promise is made.
                 let lease = self.lease(target)?;
                 let tomb = self.unique("delete")?;
-                fs::rename(self.directory(target), &tomb)?;
-                drop(lease);
+                lease.move_directory(&tomb)?;
                 self.clear_history();
                 let _ = fs::remove_dir_all(tomb);
             }
@@ -388,10 +388,11 @@ impl ProjectLibrary {
                     {
                         return Err(EditError::Invalid("library history entry"));
                     }
-                    if fingerprint(&project::load(&hidden.join(PROJECT))?.project)? != *hash {
+                    let lease = WriterLease::acquire(&hidden.join(PROJECT))?;
+                    if fingerprint(&lease.load()?.project)? != *hash {
                         return Err(project::Error::Conflict.into());
                     }
-                    fs::rename(hidden, destination)?;
+                    lease.move_directory(&destination)?;
                 } else {
                     let lease = self.lease(*id)?;
                     let project = lease.load()?.project;
@@ -406,8 +407,7 @@ impl ProjectLibrary {
                         }
                     }
                     checkpoint(cancelled)?;
-                    fs::rename(destination, hidden)?;
-                    drop(lease);
+                    lease.move_directory(hidden)?;
                 }
             }
         }

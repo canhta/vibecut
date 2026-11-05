@@ -43,6 +43,7 @@ pub struct WriterLease {
 }
 
 struct WriterLock(File);
+const DIRECTORY_MOVES: &str = ".vibecut-directory-moves.lock";
 impl Drop for WriterLock {
     fn drop(&mut self) {
         // Closing alone retains flock while another thread's spawned child has
@@ -65,6 +66,15 @@ impl WriterLease {
     /// attempts. Timeout/cancellation returns Busy, without reading/writing project
     /// data. Call off the UI thread; individual filesystem calls are not interruptible.
     pub fn acquire_wait(path: &Path, wait: Duration, cancelled: &dyn Fn() -> bool) -> Result<Self> {
+        Self::acquire_wait_with(path, wait, cancelled, || {})
+    }
+
+    fn acquire_wait_with(
+        path: &Path,
+        wait: Duration,
+        cancelled: &dyn Fn() -> bool,
+        before_lock: impl FnOnce(),
+    ) -> Result<Self> {
         if cancelled() {
             return Err(Error::Busy);
         }
@@ -72,6 +82,13 @@ impl WriterLease {
             .checked_add(wait)
             .ok_or(Error::Invalid("lease wait duration"))?;
         let path = resolve(path)?;
+        // A managed library keeps this permanent barrier outside its movable
+        // children. Retain shared admission until the adjacent lease is locked.
+        let _admission = directory_admission(&path)?;
+        if resolve(&path)? != path {
+            return Err(Error::Conflict);
+        }
+        before_lock();
         if path.file_name().is_some_and(|name| {
             name.as_encoded_bytes()
                 .get(name.as_encoded_bytes().len().saturating_sub(10)..)
@@ -135,6 +152,13 @@ impl WriterLease {
         if cancelled() {
             return Err(Error::Busy);
         }
+        // An acquisition begun before a library first installed its barrier
+        // must not slip through a subsequent move's handle-close interval.
+        let _late_admission = if _admission.is_none() {
+            directory_admission(&path)?
+        } else {
+            None
+        };
         let identity = held_identity(&lock.0, &lock_path).map_err(Error::LockUnavailable)?;
         let mut writer = Self {
             path,
@@ -151,6 +175,62 @@ impl WriterLease {
 
     pub fn path(&self) -> &Path {
         &self.path
+    }
+
+    /// Enable sibling-directory moves beneath an existing private library root.
+    /// Call before publishing projects. The empty control file must never be
+    /// removed/replaced; ordinary WriterLease acquisition automatically honors it.
+    pub fn enable_directory_moves(root: &Path) -> Result<()> {
+        let path = root.canonicalize()?.join(DIRECTORY_MOVES);
+        let lock = open_control(&path, true)?;
+        lock.try_lock().map_err(lock_error)?;
+        let _lock = WriterLock(lock);
+        Ok(())
+    }
+
+    /// Consume this project lease to atomically move its containing directory
+    /// to an absent sibling. Requires enable_directory_moves on their common root.
+    /// A root-level exclusive barrier excludes source/destination acquisition
+    /// while the adjacent Windows handle is closed and through the rename.
+    /// Busy, conflict or IO errors leave history publication to the caller.
+    pub fn move_directory(self, destination: &Path) -> Result<()> {
+        self.move_directory_with(destination, || {})
+    }
+
+    fn move_directory_with(self, destination: &Path, mut boundary: impl FnMut()) -> Result<()> {
+        let source = self
+            .path
+            .parent()
+            .ok_or(Error::Invalid("project directory"))?
+            .to_owned();
+        let root = source.parent().ok_or(Error::Invalid("library root"))?;
+        if destination
+            .parent()
+            .ok_or(Error::Invalid("move destination"))?
+            .canonicalize()?
+            != root
+        {
+            return Err(Error::Unsupported("project move must stay in its library"));
+        }
+        crate::atomic::admit_destination(destination)?;
+        let gate_path = root.join(DIRECTORY_MOVES);
+        let gate = open_control(&gate_path, false)?;
+        gate.try_lock().map_err(lock_error)?;
+        let gate = WriterLock(gate);
+        let identity = held_identity(&gate.0, &gate_path).map_err(Error::LockUnavailable)?;
+        self.validate()?;
+        match fs::symlink_metadata(destination) {
+            Ok(_) => return Err(Error::Conflict),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            Err(error) => return Err(error.into()),
+        }
+        boundary();
+        drop(self);
+        boundary();
+        check_control(&gate.0, &gate_path, identity)?;
+        fs::rename(source, destination)?;
+        boundary();
+        Ok(())
     }
 
     /// Validate the held lease identity and unchanged content, including absent targets.
@@ -234,6 +314,71 @@ impl WriterLease {
         }
         Ok(())
     }
+}
+
+fn lock_error(error: TryLockError) -> Error {
+    match error {
+        TryLockError::WouldBlock => Error::Busy,
+        TryLockError::Error(error) => Error::LockUnavailable(error),
+    }
+}
+
+fn open_control(path: &Path, create: bool) -> Result<File> {
+    match fs::symlink_metadata(path) {
+        Ok(meta) if !meta.file_type().is_file() => return Err(Error::Conflict),
+        Ok(_) => {}
+        Err(error) if create && error.kind() == std::io::ErrorKind::NotFound => {}
+        Err(error) => return Err(Error::LockUnavailable(error)),
+    }
+    let mut options = File::options();
+    options
+        .read(true)
+        .write(true)
+        .create(create)
+        .truncate(false);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.mode(0o600);
+    }
+    #[cfg(windows)]
+    {
+        use std::os::windows::fs::OpenOptionsExt;
+        options.share_mode(0x00000001 | 0x00000002);
+    }
+    let file = options.open(path).map_err(Error::LockUnavailable)?;
+    let identity = held_identity(&file, path).map_err(Error::LockUnavailable)?;
+    check_control(&file, path, identity)?;
+    Ok(file)
+}
+
+fn check_control(file: &File, path: &Path, identity: LockIdentity) -> Result<()> {
+    let metadata = fs::symlink_metadata(path).map_err(Error::LockUnavailable)?;
+    if !metadata.file_type().is_file()
+        || !file.metadata().map_err(Error::LockUnavailable)?.is_file()
+        || named_identity(path, &metadata).map_err(Error::LockUnavailable)? != identity
+    {
+        return Err(Error::Conflict);
+    }
+    Ok(())
+}
+
+fn directory_admission(path: &Path) -> Result<Option<WriterLock>> {
+    let Some(root) = path.parent().and_then(Path::parent) else {
+        return Ok(None);
+    };
+    let gate_path = root.join(DIRECTORY_MOVES);
+    match fs::symlink_metadata(&gate_path) {
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(error) => return Err(Error::LockUnavailable(error)),
+        Ok(_) => {}
+    }
+    let gate = open_control(&gate_path, false)?;
+    gate.try_lock_shared().map_err(lock_error)?;
+    let gate = WriterLock(gate);
+    let identity = held_identity(&gate.0, &gate_path).map_err(Error::LockUnavailable)?;
+    check_control(&gate.0, &gate_path, identity)?;
+    Ok(Some(gate))
 }
 impl std::fmt::Debug for WriterLease {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -321,8 +466,153 @@ fn named_identity(_: &Path, _: &fs::Metadata) -> std::io::Result<LockIdentity> {
     Err(std::io::ErrorKind::Unsupported.into())
 }
 
-#[cfg(all(test, unix))]
+#[cfg(test)]
 mod tests {
+    use super::*;
+
+    #[test]
+    #[allow(
+        clippy::unwrap_used,
+        reason = "gated first-open admission race fixture"
+    )]
+    fn writer_started_before_barrier_installation_cannot_enter_a_move() {
+        let root = tempfile::tempdir().unwrap();
+        let source = root.path().join("source");
+        fs::create_dir(&source).unwrap();
+        let path = source.join("project.vibecut");
+        let mut writer = WriterLease::acquire(&path).unwrap();
+        writer
+            .save(&Project::empty(crate::ProjectId(1), "retained".into()).unwrap())
+            .unwrap();
+        let (ready_tx, ready_rx) = std::sync::mpsc::channel();
+        let (resume_tx, resume_rx) = std::sync::mpsc::channel();
+        let (result_tx, result_rx) = std::sync::mpsc::channel();
+        let pending = std::thread::spawn(move || {
+            let result = WriterLease::acquire_wait_with(&path, Duration::ZERO, &|| false, || {
+                ready_tx.send(()).unwrap();
+                resume_rx.recv_timeout(Duration::from_secs(10)).unwrap();
+            });
+            result_tx.send(matches!(result, Err(Error::Busy))).unwrap();
+        });
+        ready_rx.recv_timeout(Duration::from_secs(10)).unwrap();
+        WriterLease::enable_directory_moves(root.path()).unwrap();
+        let mut phase = 0;
+        writer
+            .move_directory_with(&root.path().join(".undo-copy"), || {
+                phase += 1;
+                if phase == 2 {
+                    resume_tx.send(()).unwrap();
+                    assert!(result_rx.recv_timeout(Duration::from_secs(10)).unwrap());
+                }
+            })
+            .unwrap();
+        pending.join().unwrap();
+    }
+
+    #[test]
+    #[allow(clippy::unwrap_used, reason = "synthetic move-boundary fixtures")]
+    fn directory_move_excludes_writers_before_close_through_publication() {
+        for target in [".undo-copy", ".delete-copy"] {
+            let root = tempfile::tempdir().unwrap();
+            WriterLease::enable_directory_moves(root.path()).unwrap();
+            let source = root.path().join("source");
+            fs::create_dir(&source).unwrap();
+            let path = source.join("project.vibecut");
+            let mut writer = WriterLease::acquire(&path).unwrap();
+            let project = Project::empty(crate::ProjectId(1), "original".into()).unwrap();
+            writer.save(&project).unwrap();
+            let destination = root.path().join(target);
+            let mut phases = 0;
+            writer
+                .move_directory_with(&destination, || {
+                    phases += 1;
+                    assert!(WriterLease::acquire(&path).is_err());
+                    assert!(WriterLease::acquire(&destination.join("project.vibecut")).is_err());
+                    if phases < 3 {
+                        assert!(matches!(WriterLease::acquire(&path), Err(Error::Busy)));
+                    } else {
+                        assert!(matches!(
+                            WriterLease::acquire(&destination.join("project.vibecut")),
+                            Err(Error::Busy)
+                        ));
+                    }
+                })
+                .unwrap();
+            assert_eq!(phases, 3);
+            assert!(!source.exists());
+            assert_eq!(
+                WriterLease::acquire(&destination.join("project.vibecut"))
+                    .unwrap()
+                    .load()
+                    .unwrap()
+                    .project,
+                project
+            );
+        }
+    }
+
+    #[test]
+    #[allow(clippy::unwrap_used, reason = "synthetic interrupted-move fixtures")]
+    fn interrupted_directory_move_keeps_complete_reacquirable_project() {
+        const CHILD_ROOT: &str = "VIBECUT_MOVE_CRASH_ROOT";
+        const CHILD_PHASE: &str = "VIBECUT_MOVE_CRASH_PHASE";
+        if let Some(root) = std::env::var_os(CHILD_ROOT) {
+            let root = PathBuf::from(root);
+            let interruption: u32 = std::env::var(CHILD_PHASE).unwrap().parse().unwrap();
+            let writer = WriterLease::acquire(&root.join("source/project.vibecut")).unwrap();
+            let mut phase = 0;
+            writer
+                .move_directory_with(&root.join(".undo-copy"), || {
+                    phase += 1;
+                    if phase == interruption {
+                        // Abrupt exit: no Rust destructors release either lock.
+                        std::process::exit(77);
+                    }
+                })
+                .unwrap();
+            return;
+        }
+        for interruption in [2, 3] {
+            let root = tempfile::tempdir().unwrap();
+            WriterLease::enable_directory_moves(root.path()).unwrap();
+            let source = root.path().join("source");
+            fs::create_dir(&source).unwrap();
+            let path = source.join("project.vibecut");
+            let mut writer = WriterLease::acquire(&path).unwrap();
+            let project = Project::empty(crate::ProjectId(1), "recoverable".into()).unwrap();
+            writer.save(&project).unwrap();
+            drop(writer);
+            fs::write(source.join("media"), b"complete media").unwrap();
+            let destination = root.path().join(".undo-copy");
+            let child = std::process::Command::new(std::env::current_exe().unwrap())
+                .args([
+                    "--exact",
+                    "writer::tests::interrupted_directory_move_keeps_complete_reacquirable_project",
+                ])
+                .env(CHILD_ROOT, root.path())
+                .env(CHILD_PHASE, interruption.to_string())
+                .output()
+                .unwrap();
+            assert_eq!(child.status.code(), Some(77), "{child:?}");
+            assert_ne!(source.exists(), destination.exists());
+            let retained = if source.exists() {
+                &source
+            } else {
+                &destination
+            };
+            assert_eq!(
+                WriterLease::acquire(&retained.join("project.vibecut"))
+                    .unwrap()
+                    .load()
+                    .unwrap()
+                    .project,
+                project
+            );
+            assert_eq!(fs::read(retained.join("media")).unwrap(), b"complete media");
+        }
+    }
+
+    #[cfg(unix)]
     #[test]
     #[allow(clippy::unwrap_used, reason = "synthetic lease descriptor fixture")]
     fn dropping_lease_releases_lock_while_duplicate_descriptor_remains_open() {

@@ -1306,7 +1306,19 @@ refuse undo, and open-project writer leases refuse catalog mutations. Delete is
 **permanent, not undoable** and clears library history: the adapter must obtain
 its confirmation before sending the command. Failed post-delete cleanup can leave
 an unlisted hidden directory; it is never promoted or automatically reused.
-Windows filesystem/lease behavior remains unverified.
+Undo, redo and delete use the project-owned
+[directory-move barrier](../project/README.md#writer-lease-and-save-acknowledgement).
+The library enables it before publishing entries; it excludes new project writers
+across the adjacent-handle close and atomic sibling rename on Windows. Redo also
+leases and validates its hidden source. Existing targets (even empty directories)
+and missing sources refuse without advancing history. An interrupted move leaves
+one complete source or hidden destination, including project, metadata and media.
+After restart, hidden directories remain unlisted and untouched; recovery can
+inspect their project identity and restore a complete `.undo-*` directory to its
+absent ID directory while the library is closed. `.delete-*` directories reflect
+confirmed permanent deletion and are never automatically restored. Windows tests
+cover catalog/control execution, busy writers, hostile moves and interruption
+boundaries; macOS verification remains a separate review receipt.
 
 `project.thumbnail` captures the active scene at output tick zero through the
 production CPU compositor, at most 128 pixels per edge, independent of playhead

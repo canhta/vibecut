@@ -233,8 +233,34 @@ before publication, but do not provide atomic compare-and-swap against another
 application racing the final check and rename. Lock-file/directory replacement
 observed at a validation boundary invalidates the lease. Hard-link preservation
 remains outside the atomic writer contract.
-macOS local-filesystem behavior is observed; Windows and remote filesystem locking
-remain unverified.
+Local-filesystem writer behavior is exercised by macOS and Windows tests;
+remote filesystem locking remains unverified.
+
+Managed-directory moves opt in with `WriterLease::enable_directory_moves(root)`
+before projects are published. This creates the permanent private control file
+`<root>/.vibecut-directory-moves.lock`, outside every movable child. All ordinary
+writer acquisitions beneath a child take shared admission on that file through
+adjacent-lock acquisition, then release admission; independent open projects do
+not block each other. Acquisitions begun before barrier installation recheck
+admission after locking the sidecar, before reading or exposing a writer.
+`WriterLease::move_directory(destination)` consumes a held
+project lease, takes exclusive admission, validates source/content and an absent
+sibling destination, closes the adjacent handle, and renames while still holding
+exclusive admission. New writers at either path receive Busy throughout that
+interval; existing writers remain excluded by the adjacent project lease. This
+preserves Windows sidecar identity protection without delete sharing or an
+unprotected unlock-before-rename interval. Admission files share the reserved
+writer-control namespace and must never be deleted/replaced. External-file
+projects without this opt-in retain the ordinary adjacent-lock protocol.
+
+A refused move leaves its source and the caller's history unchanged. A process
+interruption before/after the atomic sibling rename leaves the complete directory
+at its source/destination; OS locks release on process death. The library owns
+hidden-directory retention/recovery and permanent deletion. Physical power-loss
+durability and noncooperating directory/control-file replacement races remain
+outside this advisory protocol. Windows library integration and deterministic
+close/rename interruption tests exercise this protocol; macOS review and remote
+filesystem behavior require separate receipts.
 
 `autosave::save(path, project, keep)` writes into `<path>.autosave`, with increasing
 20-digit snapshot numbers and no clock dependency. Retention admits 1..=1000.

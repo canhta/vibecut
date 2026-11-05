@@ -36,6 +36,14 @@ fn catalog_commands_preserve_content_and_history_and_permanent_delete() {
         project::encode(&Project::new(data).unwrap(), false).unwrap(),
         project::encode(&source, false).unwrap()
     );
+    let writer = WriterLease::acquire(&entries[1].path).unwrap();
+    let unrelated_writer = WriterLease::acquire(&entries[0].path).unwrap();
+    assert!(matches!(
+        lib.undo(),
+        Err(EditError::Project(project::Error::Busy))
+    ));
+    assert_eq!(lib.history_len(), (1, 0));
+    drop(writer);
     lib.undo().unwrap();
     assert_eq!(lib.list().unwrap().len(), 1);
     lib.redo().unwrap();
@@ -57,12 +65,73 @@ fn catalog_commands_preserve_content_and_history_and_permanent_delete() {
                 .is_err()
         );
     }
+    let writer = WriterLease::acquire(&entries[1].path).unwrap();
+    assert!(matches!(
+        lib.execute(ProjectId(2), Command::DeleteProject {}),
+        Err(EditError::Project(project::Error::Busy))
+    ));
+    assert!(entries[1].path.exists());
+    drop(writer);
     lib.execute(ProjectId(2), Command::DeleteProject {})
         .unwrap();
     assert!(!entries[1].path.exists());
+    assert_eq!(unrelated_writer.load().unwrap().project, source);
+    drop(unrelated_writer);
     assert!(matches!(lib.undo(), Err(EditError::NoHistory)));
     drop(lib);
     assert_eq!(library(root.path()).list().unwrap().len(), 1);
+}
+
+#[test]
+fn directory_move_refusals_preserve_history_and_recoverable_bytes() {
+    let root = tempfile::tempdir().unwrap();
+    let mut lib = library(root.path());
+    create(&mut lib, 1);
+    lib.execute(ProjectId(1), Command::DuplicateProject { id: ProjectId(2) })
+        .unwrap();
+    let path = lib.list().unwrap()[1].path.clone();
+    let directory = path.parent().unwrap();
+    let retained = root.path().join(".retained");
+    fs::rename(directory, &retained).unwrap();
+    assert!(lib.undo().is_err());
+    assert_eq!(lib.history_len(), (1, 0));
+    assert_eq!(
+        project::load(&retained.join("project.vibecut"))
+            .unwrap()
+            .project
+            .data()
+            .id,
+        ProjectId(2)
+    );
+    fs::rename(&retained, directory).unwrap();
+    lib.undo().unwrap();
+    let hidden = fs::read_dir(root.path())
+        .unwrap()
+        .map(|e| e.unwrap().path())
+        .find(|p| {
+            p.file_name()
+                .unwrap()
+                .to_string_lossy()
+                .starts_with(".undo-")
+        })
+        .unwrap();
+    let bytes = fs::read(hidden.join("project.vibecut")).unwrap();
+    // Even an empty target must not be replaced (Unix rename would allow it).
+    fs::create_dir(directory).unwrap();
+    assert!(matches!(
+        lib.redo(),
+        Err(EditError::Project(project::Error::Conflict))
+    ));
+    assert_eq!(lib.history_len(), (0, 1));
+    assert_eq!(fs::read(hidden.join("project.vibecut")).unwrap(), bytes);
+    fs::remove_dir(directory).unwrap();
+    fs::rename(&hidden, &retained).unwrap();
+    assert!(lib.redo().is_err());
+    assert_eq!(lib.history_len(), (0, 1));
+    fs::rename(&retained, &hidden).unwrap();
+    lib.redo().unwrap();
+    assert_eq!(fs::read(&path).unwrap(), bytes);
+    assert_eq!(lib.history_len(), (1, 0));
 }
 
 #[test]
