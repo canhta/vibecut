@@ -31,6 +31,24 @@ fn output_grant_rejects_unselected_parent_before_filesystem_resolution() {
         grant.authorize(&export(root.path().join("other/out.mp4")), &project),
         Err(EditError::Permission)
     ));
+    // Every path-publishing command shares the grant; none may write outside it.
+    let snapshot = |path| Command::Snapshot {
+        time: time::Tick::ZERO,
+        path,
+    };
+    assert!(
+        grant
+            .authorize(&snapshot(output.join("frame.png")), &project)
+            .is_ok()
+    );
+    assert!(matches!(
+        grant.authorize(&snapshot(root.path().join("other/frame.png")), &project),
+        Err(EditError::Permission)
+    ));
+    assert!(matches!(
+        Grants::default().authorize(&snapshot(output.join("frame.png")), &project),
+        Err(EditError::Permission)
+    ));
     #[cfg(unix)]
     {
         let alias = root.path().join("unselected-alias");

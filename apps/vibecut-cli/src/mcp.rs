@@ -64,6 +64,39 @@ impl Grants {
             }),
         })
     }
+
+    fn output_path(
+        &self,
+        path: &Path,
+        overwrite: bool,
+        project: &project::Project,
+    ) -> engine::Result<()> {
+        let root = self.output.as_ref().ok_or(EditError::Permission)?;
+        if overwrite || !path.is_absolute() || path.file_name().is_none() {
+            return Err(EditError::Permission);
+        }
+        let parent = path.parent().ok_or(EditError::Permission)?;
+        // Only resolve a directory explicitly selected by the human.
+        // Resolving an arbitrary client parent first could touch an
+        // ungranted filesystem or initiate a Windows UNC connection.
+        if parent != root && Some(parent) != self.selected_output.as_deref() {
+            return Err(EditError::Permission);
+        }
+        let parent = std::fs::canonicalize(parent).map_err(|_| EditError::Permission)?;
+        if &parent != root {
+            return Err(EditError::Permission);
+        }
+        // An output must not replace even a currently missing source path.
+        if project
+            .data()
+            .assets
+            .iter()
+            .any(|asset| asset.path() == path)
+        {
+            return Err(EditError::Permission);
+        }
+        Ok(())
+    }
 }
 impl Policy for Grants {
     fn authorize(&self, command: &Command, project: &project::Project) -> engine::Result<()> {
@@ -86,33 +119,10 @@ impl Policy for Grants {
             }
             | Command::BurnSubtitles {
                 path, overwrite, ..
-            } => {
-                let root = self.output.as_ref().ok_or(EditError::Permission)?;
-                if *overwrite || !path.is_absolute() || path.file_name().is_none() {
-                    return Err(EditError::Permission);
-                }
-                let parent = path.parent().ok_or(EditError::Permission)?;
-                // Only resolve a directory explicitly selected by the human.
-                // Resolving an arbitrary client parent first could touch an
-                // ungranted filesystem or initiate a Windows UNC connection.
-                if parent != root && Some(parent) != self.selected_output.as_deref() {
-                    return Err(EditError::Permission);
-                }
-                let parent = std::fs::canonicalize(parent).map_err(|_| EditError::Permission)?;
-                if &parent != root {
-                    return Err(EditError::Permission);
-                }
-                // An output must not replace even a currently missing source path.
-                if project
-                    .data()
-                    .assets
-                    .iter()
-                    .any(|asset| asset.path() == path)
-                {
-                    return Err(EditError::Permission);
-                }
-                Ok(())
-            }
+            } => self.output_path(path, *overwrite, project),
+            Command::Snapshot { path, .. } => self.output_path(path, false, project),
+            // Fail closed: a path-publishing command added later is refused until it is granted here.
+            other if other.effect() == engine::Effect::FilePublish => Err(EditError::Permission),
             _ => Ok(()),
         }
     }
