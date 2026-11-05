@@ -4,10 +4,10 @@ use crate::{
     catalog::{self, Locale, Preferences, Text, drag_panel},
     egui::{self, Align2, Color32, FontId, Id, Rect, Vec2},
     icons::{self, Icon},
-    panels::{AssetsTab, ElementKind, PropertiesTab},
     import::{
         ImportEvent, ImportFailure, ImportProbe, ImportQueue, ThumbnailOutcome, ThumbnailSource,
     },
+    panels::{AssetsTab, ElementKind, PropertiesTab},
     playback::Playback,
     theme,
 };

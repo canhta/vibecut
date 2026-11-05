@@ -205,6 +205,12 @@ impl PacketReader {
                 .min((32_u64 << 20).saturating_sub(self.bytes_read())),
             Ordering::Relaxed,
         );
+        let primary_video = self
+            .probe
+            .streams
+            .iter()
+            .find(|stream| stream.kind == StreamKind::Video)
+            .map(|stream| stream.index);
         for index in missing {
             let stream = self
                 .probe
@@ -224,9 +230,16 @@ impl PacketReader {
                 }
                 decoder.push_packet(&packet)?;
                 if let Some(frame) = decoder.pull_frame()? {
-                    self.recovered_thumbnail =
-                        crate::thumbnail::from_frame(&frame, Tick::ZERO, crate::THUMBNAIL_MAX_EDGE)
-                            .ok();
+                    // Consumers thumbnail the first video stream. Secondary
+                    // geometry recovery must neither supply nor replace it.
+                    if primary_video == Some(index) {
+                        self.recovered_thumbnail = crate::thumbnail::from_frame(
+                            &frame,
+                            Tick::ZERO,
+                            crate::THUMBNAIL_MAX_EDGE,
+                        )
+                        .ok();
+                    }
                     geometry = Some((
                         frame.width(),
                         frame.height(),
@@ -773,6 +786,63 @@ mod recovery_benchmark {
 #[allow(clippy::unwrap_used, clippy::indexing_slicing)]
 mod import_regressions {
     use super::*;
+    #[test]
+    fn recovered_thumbnail_belongs_to_the_first_video_stream() {
+        let Some(path) = super::oracle_common::generate(
+            "multi-stream recovery thumbnail",
+            "recovery-two-videos.mkv",
+            &[
+                "-f",
+                "lavfi",
+                "-i",
+                "color=blue:size=64x48:rate=1:duration=2",
+                "-f",
+                "lavfi",
+                "-i",
+                "color=red:size=32x24:rate=1:duration=2",
+                "-map",
+                "0:v",
+                "-map",
+                "1:v",
+                "-c:v",
+                "mjpeg",
+            ],
+        ) else {
+            return;
+        };
+        let expected = crate::thumbnail_at(
+            &path,
+            Tick::ZERO,
+            crate::THUMBNAIL_MAX_EDGE,
+            Arc::new(AtomicBool::new(false)),
+        )
+        .unwrap();
+        for first_missing in [false, true] {
+            let mut reader = PacketReader::open(&path).unwrap();
+            assert_eq!(reader.probe.streams.len(), 2);
+            if first_missing {
+                reader.probe.streams[0].video = None;
+            }
+            reader.probe.streams[1].video = None;
+            reader.recover_video_dimensions().unwrap();
+            assert!(
+                reader
+                    .probe
+                    .streams
+                    .iter()
+                    .all(|stream| stream.video.is_some())
+            );
+            if first_missing {
+                assert_eq!(reader.recovered_thumbnail.take().unwrap(), expected);
+            } else {
+                assert!(
+                    reader.recovered_thumbnail.is_none(),
+                    "a secondary stream cannot supply the primary thumbnail"
+                );
+            }
+        }
+    }
+
     #[test]
     fn jpeg_cold_import_delivers_one_frame_and_cached_probe_delivers_none() {
         let Some(path) = super::oracle_common::generate(
