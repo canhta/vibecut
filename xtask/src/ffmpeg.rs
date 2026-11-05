@@ -180,6 +180,36 @@ pub fn environment(command: &mut Command) -> Result<(), String> {
         library_var,
         env::join_paths(paths).map_err(|e| e.to_string())?,
     );
+    if cfg!(windows) {
+        // bindgen 0.73.2 translates Clang's packed AMX vector field to an
+        // unaligned array, emitting E0587 and an invalid tile offset (p0-core/50).
+        // Remove when ffmpeg-sys-next/bindgen handles this layout. AMX intrinsics
+        // are outside the FFmpeg API; their dependent headers need guarding too.
+        // https://github.com/llvm/llvm-project/blob/main/clang/lib/Headers/amxintrin.h
+        const AMX_GUARDS: &str = concat!(
+            "-D__AMXINTRIN_H -D__AMX_FP16INTRIN_H -D__AMX_COMPLEXINTRIN_H ",
+            "-D__AMXFP8INTRIN_H -D__AMX_TF32INTRIN_H -D__AMXMOVRSINTRIN_H ",
+            "-D__AMX_AVX512INTRIN_H -D__AMX_TRANSPOSEINTRIN_H ",
+            "-D__AMX_BF16TRANSPOSEINTRIN_H -D__AMX_COMPLEXTRANSPOSEINTRIN_H ",
+            "-D__AMX_FP16TRANSPOSEINTRIN_H -D__AMX_TF32TRANSPOSEINTRIN_H ",
+            "-D__AMX_MOVRS_TRANSPOSEINTRIN_H",
+        );
+        let variable = "BINDGEN_EXTRA_CLANG_ARGS";
+        let target = format!("{}-pc-windows-msvc", env::consts::ARCH);
+        let fallback = env::var(variable).unwrap_or_default();
+        // bindgen prefers target-specific settings; retain caller arguments for
+        // either supported spelling instead of letting one bypass the guards.
+        for key in [
+            variable.to_owned(),
+            format!("{variable}_{target}"),
+            format!("{variable}_{}", target.replace('-', "_")),
+        ] {
+            let mut args = env::var(&key).unwrap_or_else(|_| fallback.clone());
+            args.push(' ');
+            args.push_str(AMX_GUARDS);
+            command.env(key, args);
+        }
+    }
     if cfg!(target_os = "macos") {
         let mut flags = env::var("CARGO_ENCODED_RUSTFLAGS").unwrap_or_default();
         if flags.is_empty() {
