@@ -7,7 +7,7 @@
 | Claude coordinator | Plans with the maintainer, writes tickets, dispatches, answers questions, cleans up; implementation, review and merge belong to workers |
 | opencode | Default implementer up to its tier for the ticket's work type |
 | Codex | Implements above opencode's tier (new contracts, file publication, T4); reviews code branches it did not implement |
-| Claude Sonnet worker | Reviews and fixes by default; implements complex work only while the weekly Claude budget is under 5%. Its own implementations self-merge after their checks when it is confident, and request a separate review when it is not (it states which and why in the report) |
+| Claude Sonnet worker | Equal to Codex for complex work, chosen by budget: implements it while the weekly Claude budget is under 5%, otherwise only reviews and fixes. Its own implementations self-merge after their checks when it is confident, and request a separate review when it is not (it states which and why in the report) |
 | Maintainer | Product decisions, credentials, hardware, assets |
 
 | Tier | Work |
@@ -17,7 +17,7 @@
 | T3 | New contracts, pipelines, persistence formats |
 | T4 | unsafe/FFI, concurrency, job engine, render and A/V sync core |
 
-Cost order is opencode, then Codex, then Claude. The coordinator watches the weekly Claude use of each account (the sweep prints it): from 5% no new Claude implementers (hard work goes to Codex; Sonnet only reviews and fixes), at 10% no Claude workers at all and running ones stop at a safe point; the maintainer is pinged at each crossing.
+Cost order is opencode, then Codex, then Claude. The coordinator watches the weekly Claude use of each account (the sweep prints it): from 5% no new Claude implementers (hard work goes to Codex, which is equal to Sonnet; Sonnet only reviews and fixes), at 10% no Claude workers at all and running ones stop at a safe point; the maintainer is pinged at each crossing.
 
 opencode holds one tier per work type, not an overall tier. Promote a work type one tier after two consecutive reviewed tickets of that type merge without design-level `changes`; demote it one tier after that verdict or a reverted merge. The coordinator updates `.scratch/agents.md` on every verdict with the per-work-type tier, evidence and routing. Work types with design-level or robustness findings route to Codex until their profile changes. A work type with two consecutive clean T3 merges may trial T4 one ticket at a time under a close Codex review whose acceptance includes race, mid-operation cancellation and hostile-input tests; unsafe/FFI stays Codex until a concurrency or job-engine trial merges clean.
 
