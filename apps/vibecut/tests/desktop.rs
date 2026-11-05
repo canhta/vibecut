@@ -57,6 +57,17 @@ fn editor() -> Editor {
     playback.set_device_available(true);
     Editor::new(session, playback, Preferences::default())
 }
+fn empty_editor() -> Editor {
+    let session = Session::new(Project::empty(ProjectId(1), "Test".into()).unwrap(), 10).unwrap();
+    let mut playback = Playback::new(
+        &session,
+        ByteBudget::new(64 << 20).unwrap(),
+        Arc::new(Files),
+    )
+    .unwrap();
+    playback.set_device_available(true);
+    Editor::new(session, playback, Preferences::default())
+}
 #[test]
 fn every_widget_has_unique_locale_stable_id_and_input_reaches_engine() {
     let mut harness = Harness::builder()
@@ -104,6 +115,7 @@ fn every_widget_has_unique_locale_stable_id_and_input_reaches_engine() {
         harness.query_all(By::new().label("Tư liệu")).count() > 0,
         "Vietnamese catalog label is visible after switching without a restart"
     );
+    assert_eq!(harness.state().session.project(), &initial);
     assert_eq!(
         harness
             .state()
@@ -116,6 +128,26 @@ fn every_widget_has_unique_locale_stable_id_and_input_reaches_engine() {
         ids
     );
     harness
+        .get(By::new().predicate(|n| n.author_id() == Some("edit.undo")))
+        .click();
+    harness.run_steps(3);
+    assert_eq!(harness.state().preferences.locale, Locale::En);
+    assert_eq!(harness.state().session.project(), &initial);
+    assert!(
+        harness.query_all(By::new().label("Media")).count() > 0,
+        "locale undo restores the English catalog"
+    );
+    harness
+        .get(By::new().predicate(|n| n.author_id() == Some("edit.redo")))
+        .click();
+    harness.run_steps(3);
+    assert_eq!(harness.state().preferences.locale, Locale::Vi);
+    assert_eq!(harness.state().session.project(), &initial);
+    assert!(
+        harness.query_all(By::new().label("Tư liệu")).count() > 0,
+        "locale redo restores the Vietnamese catalog"
+    );
+    harness
         .get(By::new().predicate(|n| n.author_id() == Some("transport.forward")))
         .click();
     harness.run_steps(3);
@@ -123,6 +155,51 @@ fn every_widget_has_unique_locale_stable_id_and_input_reaches_engine() {
         harness.state().playback.position().unwrap(),
         Tick(TICKS_PER_SECOND)
     );
+}
+#[test]
+fn locale_change_uses_app_history_and_leaves_project_history_untouched() {
+    let mut harness = Harness::builder()
+        .with_size(egui::vec2(1440.0, 900.0))
+        .build_ui_state(|ui, editor: &mut Editor| editor.ui(ui), empty_editor());
+    harness.run_steps(3);
+    let initial = harness.state().session.project().clone();
+    assert!(!harness.state().session.can_undo());
+    harness
+        .get(By::new().predicate(|n| n.author_id() == Some("appearance.locale")))
+        .click();
+    harness.run_steps(3);
+    assert_eq!(harness.state().preferences.locale, Locale::Vi);
+    assert_eq!(harness.state().session.project(), &initial);
+    assert!(
+        !harness.state().session.can_undo(),
+        "a locale change must not enter Project history"
+    );
+    let enabled = |harness: &Harness<Editor>, id: &str| {
+        harness
+            .state()
+            .inspect()
+            .unwrap()
+            .widgets
+            .into_iter()
+            .find(|widget| widget.id == id)
+            .unwrap_or_else(|| panic!("missing widget {id}"))
+            .enabled
+    };
+    assert!(enabled(&harness, "edit.undo"));
+    harness
+        .get(By::new().predicate(|n| n.author_id() == Some("edit.undo")))
+        .click();
+    harness.run_steps(3);
+    assert_eq!(harness.state().preferences.locale, Locale::En);
+    assert_eq!(harness.state().session.project(), &initial);
+    assert!(enabled(&harness, "edit.redo"));
+    harness
+        .get(By::new().predicate(|n| n.author_id() == Some("edit.redo")))
+        .click();
+    harness.run_steps(3);
+    assert_eq!(harness.state().preferences.locale, Locale::Vi);
+    assert_eq!(harness.state().session.project(), &initial);
+    assert!(!harness.state().session.can_redo());
 }
 #[test]
 fn preview_uses_budget_skips_late_video_and_invalidates_seek_and_clear() {

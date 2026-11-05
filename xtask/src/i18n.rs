@@ -2,11 +2,17 @@
 //!
 //! The app's `Text` table is compiler-checked at call sites; this check covers
 //! what the compiler cannot see: empty or duplicate rows, keys no source file
-//! uses, and direct string literals passed to visible egui widgets.
+//! uses, and direct string literals passed to visible egui widgets. Rust is
+//! parsed as syntax, so comments, strings, multiline arguments and raw strings
+//! cannot hide a key use or a literal.
 use std::{
     collections::BTreeSet,
     fs,
     path::{Path, PathBuf},
+};
+use syn::{
+    Attribute, Expr, ExprCall, ExprLit, ExprMethodCall, ItemMod, Lit, LitStr, Path as SynPath,
+    visit::Visit,
 };
 
 #[derive(Debug, PartialEq, Eq)]
@@ -46,20 +52,23 @@ pub fn check(root: &Path) -> Result<(), String> {
     let sources = rust_sources(&root.join("apps/vibecut/src"))?;
     let mut used = BTreeSet::new();
     for (path, text) in &sources {
-        if path.file_name().is_some_and(|name| name == "catalog.rs") {
-            continue;
+        let parsed = syn::parse_file(text)
+            .map_err(|error| format!("{}: invalid Rust: {error}", path.display()))?;
+        let mut audit = Audit {
+            path,
+            used: BTreeSet::new(),
+            errors: Vec::new(),
+        };
+        audit.visit_file(&parsed);
+        if path.file_name().is_none_or(|name| name != "catalog.rs") {
+            used.extend(audit.used);
         }
-        for entry in &entries {
-            if text.contains(&format!("Text::{}", entry.variant)) {
-                used.insert(entry.variant.clone());
-            }
-        }
-        visible_literals(path, text, &mut errors);
+        errors.extend(audit.errors);
     }
     for entry in &entries {
         if !used.contains(&entry.variant) {
             errors.push(format!(
-                "unused catalog key `{}` (Text::{} is not referenced by the frontend)",
+                "unused catalog key `{}` (Text::{} is not referenced by production frontend code)",
                 entry.key, entry.variant
             ));
         }
@@ -96,32 +105,151 @@ fn rust_sources(dir: &Path) -> Result<Vec<(PathBuf, String)>, String> {
     Ok(out)
 }
 
-const VISIBLE_CALLS: &[&str] = &[
-    "ui.label(\"",
-    "ui.heading(\"",
-    "egui::RichText::new(\"",
-    "egui::Button::new(\"",
-    ".on_hover_text(\"",
-    ".on_disabled_hover_text(\"",
-    ".hint_text(\"",
-    "egui::Window::new(\"",
-    "add_filter(\"",
-    ".set_file_name(\"",
-    "run_native(\"",
+const VISIBLE_TYPES: &[&str] = &[
+    "RichText",
+    "Button",
+    "Label",
+    "SelectableLabel",
+    "Checkbox",
+    "RadioButton",
+    "CollapsingHeader",
+    "Window",
+    "Hyperlink",
+    "Link",
+    "ComboBox",
 ];
+const FIRST_ARG_METHODS: &[&str] = &[
+    "label",
+    "heading",
+    "button",
+    "small_button",
+    "menu_button",
+    "hyperlink",
+    "on_hover_text",
+    "on_disabled_hover_text",
+    "hint_text",
+    "add_filter",
+    "set_file_name",
+    "from_label",
+];
+const ALL_ARG_METHODS: &[&str] = &[
+    "selectable_label",
+    "checkbox",
+    "radio_value",
+    "toggle_value",
+    "text",
+];
+const FIRST_ARG_FUNCTIONS: &[&str] = &["run_native", "from_label"];
 
-fn visible_literals(path: &Path, source: &str, errors: &mut Vec<String>) {
-    for (index, line) in source.lines().enumerate() {
-        for call in VISIBLE_CALLS {
-            if line.contains(call) {
-                errors.push(format!(
-                    "{}:{}: string literal in `{call}`; route it through the catalog",
-                    path.display(),
-                    index + 1
-                ));
-            }
+struct Audit<'a> {
+    path: &'a Path,
+    used: BTreeSet<String>,
+    errors: Vec<String>,
+}
+
+impl Audit<'_> {
+    fn literal(&mut self, expression: &Expr, callee: &str) {
+        let Expr::Lit(ExprLit {
+            lit: Lit::Str(value),
+            ..
+        }) = expression
+        else {
+            return;
+        };
+        self.report(value, callee);
+    }
+    fn first_literal(
+        &mut self,
+        args: &syn::punctuated::Punctuated<Expr, syn::Token![,]>,
+        callee: &str,
+    ) {
+        if let Some(expression) = args.first() {
+            self.literal(expression, callee);
         }
     }
+    fn all_literals(
+        &mut self,
+        args: &syn::punctuated::Punctuated<Expr, syn::Token![,]>,
+        callee: &str,
+    ) {
+        for expression in args {
+            self.literal(expression, callee);
+        }
+    }
+    fn report(&mut self, value: &LitStr, callee: &str) {
+        let line = value.span().start().line;
+        self.errors.push(format!(
+            "{}:{line}: string literal in `{callee}`; route it through the catalog",
+            self.path.display()
+        ));
+    }
+}
+impl<'ast> Visit<'ast> for Audit<'_> {
+    fn visit_path(&mut self, path: &'ast SynPath) {
+        let segments: Vec<String> = path
+            .segments
+            .iter()
+            .map(|segment| segment.ident.to_string())
+            .collect();
+        if let Some(owner) = segments.get(segments.len().saturating_sub(2))
+            && owner == "Text"
+            && let Some(variant) = segments.last()
+        {
+            self.used.insert(variant.clone());
+        }
+        syn::visit::visit_path(self, path);
+    }
+
+    fn visit_item_mod(&mut self, item: &'ast ItemMod) {
+        if is_cfg_test(&item.attrs) {
+            return;
+        }
+        syn::visit::visit_item_mod(self, item);
+    }
+
+    fn visit_expr_call(&mut self, call: &'ast ExprCall) {
+        if let Expr::Path(path) = call.func.as_ref() {
+            let segments: Vec<String> = path
+                .path
+                .segments
+                .iter()
+                .map(|segment| segment.ident.to_string())
+                .collect();
+            let callee = segments.join("::");
+            let last = segments.last().map_or("", String::as_str);
+            if FIRST_ARG_FUNCTIONS.contains(&last) {
+                self.first_literal(&call.args, &callee);
+            } else if segments
+                .iter()
+                .any(|segment| VISIBLE_TYPES.contains(&segment.as_str()))
+            {
+                self.all_literals(&call.args, &callee);
+            }
+        }
+        syn::visit::visit_expr_call(self, call);
+    }
+
+    fn visit_expr_method_call(&mut self, call: &'ast ExprMethodCall) {
+        let callee = call.method.to_string();
+        if FIRST_ARG_METHODS.contains(&callee.as_str()) {
+            self.first_literal(&call.args, &callee);
+        } else if ALL_ARG_METHODS.contains(&callee.as_str()) {
+            self.all_literals(&call.args, &callee);
+        }
+        syn::visit::visit_expr_method_call(self, call);
+    }
+}
+
+fn is_cfg_test(attrs: &[Attribute]) -> bool {
+    attrs.iter().any(|attr| {
+        if !attr.path().is_ident("cfg") {
+            return false;
+        }
+        let syn::Meta::List(list) = &attr.meta else {
+            return false;
+        };
+        list.tokens.to_string().contains("test")
+    })
 }
 
 fn parse(source: &str) -> Result<Vec<Entry>, String> {
@@ -225,7 +353,7 @@ fn quoted(source: &str, at: usize) -> Result<(String, usize), String> {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::panic)]
+#[allow(clippy::unwrap_used, clippy::panic, clippy::indexing_slicing)]
 mod tests {
     use super::*;
     use std::fs;
@@ -263,23 +391,48 @@ mod tests {
     }
 
     #[test]
-    fn audit_reports_empty_unused_and_visible_literals() {
+    fn audit_uses_exact_keys_and_catches_multiline_and_raw_literals() {
         let root = tempdir();
         let catalog = r#"catalog! {
-            Used { key: "used", en: "Used", vi: "Dùng" },
+            Save { key: "save", en: "Save", vi: "Lưu" },
+            SaveAs { key: "save_as", en: "Save as", vi: "Lưu thành" },
             Empty { key: "empty", en: "", vi: "Trống" },
             Unused { key: "unused", en: "Unused", vi: "Không dùng" },
         }"#;
         fs::write(root.join("apps/vibecut/src/catalog.rs"), catalog).unwrap();
         fs::write(
             root.join("apps/vibecut/src/frontend.rs"),
-            "fn ui() { Text::Used; ui.label(\"literal\"); }\n",
+            r##"
+fn ui() {
+    Text::SaveAs;
+    // Text::Save must not count: comments are not production uses.
+    ui.label(
+        "Hard-coded English",
+    );
+    ui.label ( r#"Hard-coded raw"# );
+    egui::RichText::new(
+        "Hard-coded rich",
+    );
+    builder.add_filter("Hard-coded filter", &["vibecut", "json"]);
+    builder.set_file_name("project.vibecut");
+    egui::Button::image_and_text(image, "Hard-coded button");
+}
+"##,
         )
         .unwrap();
         let error = check(&root).unwrap_err();
         assert!(error.contains("empty English row"), "{error}");
+        assert!(error.contains("unused catalog key `save`"), "{error}");
         assert!(error.contains("unused catalog key `unused`"), "{error}");
-        assert!(error.contains("string literal"), "{error}");
+        for callee in [
+            "label",
+            "RichText::new",
+            "add_filter",
+            "set_file_name",
+            "image_and_text",
+        ] {
+            assert!(error.contains(callee), "{callee}: {error}");
+        }
         fs::remove_dir_all(root).unwrap();
     }
 }

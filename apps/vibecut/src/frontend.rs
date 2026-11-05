@@ -70,6 +70,57 @@ pub struct Inspection {
     pub export: Option<crate::export::ExportInspection>,
     pub export_options: crate::export::ExportOptions,
 }
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum PreferenceCommand {
+    SetLocale { before: Locale, after: Locale },
+}
+impl PreferenceCommand {
+    fn before(self) -> Locale {
+        match self {
+            Self::SetLocale { before, .. } => before,
+        }
+    }
+    fn after(self) -> Locale {
+        match self {
+            Self::SetLocale { after, .. } => after,
+        }
+    }
+}
+/// App-owned preference history, deliberately separate from the Project's
+/// command history: locale changes never mutate Project JSON.
+#[derive(Default)]
+struct PreferenceHistory {
+    undo: Vec<PreferenceCommand>,
+    redo: Vec<PreferenceCommand>,
+}
+impl PreferenceHistory {
+    fn record(&mut self, command: PreferenceCommand) {
+        self.undo.push(command);
+        self.redo.clear();
+    }
+    fn can_undo(&self) -> bool {
+        !self.undo.is_empty()
+    }
+    fn can_redo(&self) -> bool {
+        !self.redo.is_empty()
+    }
+    fn undo(&mut self, preferences: &mut Preferences) -> bool {
+        let Some(command) = self.undo.pop() else {
+            return false;
+        };
+        preferences.locale = command.before();
+        self.redo.push(command);
+        true
+    }
+    fn redo(&mut self, preferences: &mut Preferences) -> bool {
+        let Some(command) = self.redo.pop() else {
+            return false;
+        };
+        preferences.locale = command.after();
+        self.undo.push(command);
+        true
+    }
+}
 #[derive(Clone, Debug)]
 struct Toast {
     text: String,
@@ -186,6 +237,7 @@ pub struct Editor {
     pub session: crate::lifecycle::EditorSession,
     pub playback: Playback,
     pub preferences: Preferences,
+    preference_history: PreferenceHistory,
     pub selection: BTreeSet<ItemId>,
     pub selection_scopes: SelectionScopes,
     marquee: Option<(egui::Pos2, BTreeSet<ItemId>, bool)>,
@@ -250,6 +302,7 @@ impl Editor {
             session,
             playback,
             preferences,
+            preference_history: PreferenceHistory::default(),
             selection,
             selection_scopes: SelectionScopes::default(),
             marquee: None,
@@ -870,13 +923,20 @@ impl Editor {
             "transport.start" => self.seek(Tick::ZERO)?,
             "transport.end" => self.seek(duration)?,
             "edit.undo" | "edit.redo" => {
-                self.session.execute(
-                    if id == "edit.undo" { "undo" } else { "redo" },
-                    serde_json::json!({}),
-                )?;
-                self.selection = self.session.selection().clone();
-                self.selection_scopes = SelectionScopes::default();
-                self.property_drafts.clear();
+                let preference_changed = if id == "edit.undo" {
+                    self.preference_history.undo(&mut self.preferences)
+                } else {
+                    self.preference_history.redo(&mut self.preferences)
+                };
+                if !preference_changed {
+                    self.session.execute(
+                        if id == "edit.undo" { "undo" } else { "redo" },
+                        serde_json::json!({}),
+                    )?;
+                    self.selection = self.session.selection().clone();
+                    self.selection_scopes = SelectionScopes::default();
+                    self.property_drafts.clear();
+                }
             }
             "timeline.split" => self.split_at_playhead()?,
             "timeline.delete" => self.delete_selected(self.ripple)?,
@@ -893,11 +953,15 @@ impl Editor {
             "timeline.zoom_out" => self.zoom_by(1.0 / ZOOM_STEP),
             "appearance.theme" => self.preferences.dark = !self.preferences.dark,
             "appearance.locale" => {
-                self.preferences.locale = if self.preferences.locale == Locale::En {
+                let before = self.preferences.locale;
+                let after = if before == Locale::En {
                     Locale::Vi
                 } else {
                     Locale::En
-                }
+                };
+                self.preferences.locale = after;
+                self.preference_history
+                    .record(PreferenceCommand::SetLocale { before, after });
             }
             "layout.reset" => self.preferences.panels = Preferences::default().panels,
             "preview.retry" => {
@@ -2846,8 +2910,8 @@ impl Editor {
                     .strong(),
             );
             ui.spacing_mut().item_spacing.x = TOOLBAR_SPACING;
-            let can_undo = self.session.can_undo();
-            let can_redo = self.session.can_redo();
+            let can_undo = self.session.can_undo() || self.preference_history.can_undo();
+            let can_redo = self.session.can_redo() || self.preference_history.can_redo();
             if self.icon_only(
                 ui,
                 "edit.undo",
