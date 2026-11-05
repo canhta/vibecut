@@ -227,6 +227,11 @@ fn attach_lost_response_replays_once_and_matches_stdio_results() {
         Some(&rev),
         Some("lost"),
     );
+    assert_eq!(applied.pointer("/value/status"), Some(&json!("result")));
+    assert_eq!(
+        applied.pointer("/value/value/outcome/changed"),
+        Some(&json!(true))
+    );
     assert_eq!(applied["rev_after"], committed_revision);
     assert_eq!(
         attach.call(
@@ -238,13 +243,40 @@ fn attach_lost_response_replays_once_and_matches_stdio_results() {
         applied
     );
     let mut stdio = Client::start(&["mcp".as_ref(), path.as_os_str(), "--no-save".as_ref()]);
-    let mut a = attach.call("provider_catalog", json!({}), None, None);
-    let mut b = stdio.call("provider_catalog", json!({}), None, None);
-    for field in ["rev_before", "rev_after", "session_id"] {
-        a.as_object_mut().unwrap().remove(field);
-        b.as_object_mut().unwrap().remove(field);
+    let stdio_initial = stdio.call("inspect", json!({}), None, None);
+    let stdio_applied = stdio.call(
+        "project.rename",
+        json!({"name":"once"}),
+        Some(&stdio_initial["rev_after"]),
+        Some("lost"),
+    );
+    assert_eq!(applied["value"], stdio_applied["value"]);
+    for command in ["inspect", "provider_catalog"] {
+        let mut a = attach.call(command, json!({}), None, None);
+        let mut b = stdio.call(command, json!({}), None, None);
+        for field in ["rev_before", "rev_after", "session_id"] {
+            a.as_object_mut().unwrap().remove(field);
+            b.as_object_mut().unwrap().remove(field);
+        }
+        assert_eq!(a, b);
     }
-    assert_eq!(a, b);
+    let stale_attach = attach.call(
+        "project.rename",
+        json!({"name":"must not change"}),
+        Some(&rev),
+        Some("stale-after"),
+    );
+    let stale_stdio = stdio.call(
+        "project.rename",
+        json!({"name":"must not change"}),
+        Some(&stdio_initial["rev_after"]),
+        Some("stale-after"),
+    );
+    assert_eq!(stale_attach["value"], stale_stdio["value"]);
+    assert_eq!(
+        stale_attach.pointer("/value/value"),
+        Some(&json!("stale_revision"))
+    );
     assert!(
         commits.try_recv().is_err(),
         "retry caused a second engine revision"

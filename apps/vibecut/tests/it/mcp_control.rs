@@ -1,7 +1,7 @@
 #![allow(clippy::unwrap_used, clippy::panic, clippy::indexing_slicing)]
 use serde_json::{Value, json};
 use std::{
-    io::{BufRead, BufReader, Write},
+    io::{BufRead, BufReader, Read as _, Write},
     process::{Child, Command, Stdio},
     time::{Duration, Instant},
 };
@@ -44,7 +44,7 @@ fn mcp_real_app_background_attach_never_creates_a_window_or_takes_focus() {
         .arg(root.path().join("recovery"))
         .arg("20")
         .stdout(Stdio::null())
-        .stderr(Stdio::null());
+        .stderr(Stdio::piped());
     #[cfg(windows)]
     {
         use std::os::windows::process::CommandExt;
@@ -59,10 +59,13 @@ fn mcp_real_app_background_attach_never_creates_a_window_or_takes_focus() {
     );
     let deadline = Instant::now() + Duration::from_secs(15);
     loop {
-        assert!(
-            app.0.try_wait().unwrap().is_none(),
-            "background app exited early"
-        );
+        if let Some(status) = app.0.try_wait().unwrap() {
+            let mut diagnostics = String::new();
+            if let Some(mut stderr) = app.0.stderr.take() {
+                stderr.read_to_string(&mut diagnostics).unwrap();
+            }
+            panic!("background app exited early: {status}: {diagnostics}");
+        }
         let mut child = Process(
             Command::new(&cli)
                 .args(["mcp", "--attach", "--socket"])

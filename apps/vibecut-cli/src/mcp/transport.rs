@@ -7,35 +7,75 @@ use rmcp::{
 use std::{
     collections::BTreeSet,
     io,
-    sync::Arc,
     time::{Duration, Instant},
 };
 use tokio::{
     io::{AsyncBufReadExt, AsyncRead, AsyncWrite, AsyncWriteExt, BufReader},
-    sync::{Mutex, Semaphore},
+    sync::{mpsc, oneshot},
 };
 
-pub(super) struct Framed<R, W> {
+struct Outgoing {
+    item: TxJsonRpcMessage<RoleServer>,
+    reply: oneshot::Sender<io::Result<()>>,
+}
+
+pub(super) struct Framed<R> {
     read: BufReader<R>,
-    write: Arc<Mutex<W>>,
+    write: Option<mpsc::Sender<Outgoing>>,
+    writer: Option<tokio::task::JoinHandle<io::Result<()>>>,
     window: Instant,
     count: usize,
     pending: Vec<u8>,
     started: Option<Instant>,
-    outstanding: Arc<std::sync::Mutex<BTreeSet<String>>>,
-    writes: Arc<Semaphore>,
+    outstanding: BTreeSet<String>,
 }
-impl<R: AsyncRead, W> Framed<R, W> {
-    pub fn new(read: R, write: W) -> Self {
+impl<R: AsyncRead> Framed<R> {
+    pub fn new<W: AsyncWrite + Unpin + Send + 'static>(read: R, write: W) -> Self {
+        let (send, receive) = mpsc::channel(4);
         Self {
             read: BufReader::new(read),
-            write: Arc::new(Mutex::new(write)),
+            write: Some(send),
+            writer: Some(tokio::spawn(write_frames(write, receive))),
             window: Instant::now(),
             count: 0,
             pending: Vec::new(),
             started: None,
-            outstanding: Arc::new(std::sync::Mutex::new(BTreeSet::new())),
-            writes: Arc::new(Semaphore::new(4)),
+            outstanding: BTreeSet::new(),
+        }
+    }
+}
+
+// One task owns the writer. There is no state lock held across IO or await.
+async fn write_frames<W: AsyncWrite + Unpin>(
+    mut write: W,
+    mut receive: mpsc::Receiver<Outgoing>,
+) -> io::Result<()> {
+    while let Some(frame) = receive.recv().await {
+        let result = tokio::time::timeout(Duration::from_secs(5), async {
+            let mut bytes = bounded_json(&frame.item, MAX_RESPONSE_BYTES - 1)
+                .map_err(|_| io::ErrorKind::InvalidData)?;
+            bytes.push(b'\n');
+            write.write_all(&bytes).await?;
+            write.flush().await
+        })
+        .await
+        .map_err(|_| io::Error::from(io::ErrorKind::TimedOut))
+        .and_then(|result| result);
+        let failed = result.is_err();
+        let _ = frame.reply.send(result);
+        if failed {
+            return Err(io::ErrorKind::BrokenPipe.into());
+        }
+    }
+    tokio::time::timeout(Duration::from_secs(1), write.shutdown())
+        .await
+        .map_err(|_| io::ErrorKind::TimedOut)?
+}
+
+impl<R> Drop for Framed<R> {
+    fn drop(&mut self) {
+        if let Some(writer) = &self.writer {
+            writer.abort();
         }
     }
 }
@@ -83,19 +123,15 @@ async fn read_frame<R: AsyncRead + Unpin>(
     }
 }
 
-impl<R, W> Transport<RoleServer> for Framed<R, W>
+impl<R> Transport<RoleServer> for Framed<R>
 where
     R: AsyncRead + Unpin + Send,
-    W: AsyncWrite + Unpin + Send + 'static,
 {
     type Error = io::Error;
     fn send(
         &mut self,
         item: TxJsonRpcMessage<RoleServer>,
     ) -> impl Future<Output = io::Result<()>> + Send + 'static {
-        let write = self.write.clone();
-        let outstanding = self.outstanding.clone();
-        let permit = self.writes.clone().try_acquire_owned();
         let response_id = match &item {
             rmcp::model::JsonRpcMessage::Response(response) => {
                 serde_json::to_string(&response.id).ok()
@@ -106,26 +142,27 @@ where
                 .and_then(|id| serde_json::to_string(id).ok()),
             _ => None,
         };
+        // Release the completed handler's ID before publishing bytes. A client
+        // may receive them and reuse the ID before the writer's flush wakes us.
+        if let Some(id) = response_id {
+            self.outstanding.remove(&id);
+        }
+        let (reply, receive) = oneshot::channel();
+        let queued = self
+            .write
+            .as_ref()
+            .ok_or_else(|| io::Error::from(io::ErrorKind::BrokenPipe))
+            .and_then(|writer| {
+                writer
+                    .try_send(Outgoing { item, reply })
+                    .map_err(|_| io::Error::from(io::ErrorKind::WouldBlock))
+            });
         async move {
-            let _permit = permit.map_err(|_| io::ErrorKind::WouldBlock)?;
-            // The handler has completed. Release its ID before publishing bytes:
-            // a client may receive them and reuse the ID before flush wakes us.
-            if let Some(id) = response_id {
-                outstanding
-                    .lock()
-                    .map_err(|_| io::ErrorKind::Other)?
-                    .remove(&id);
-            }
-            let result = tokio::time::timeout(Duration::from_secs(5), async {
-                let mut write = write.lock().await;
-                let mut bytes = bounded_json(&item, MAX_RESPONSE_BYTES)
-                    .map_err(|_| io::ErrorKind::InvalidData)?;
-                bytes.push(b'\n');
-                write.write_all(&bytes).await?;
-                write.flush().await
-            })
-            .await;
-            result.map_err(|_| io::ErrorKind::TimedOut)?
+            queued?;
+            tokio::time::timeout(Duration::from_secs(5), receive)
+                .await
+                .map_err(|_| io::ErrorKind::TimedOut)?
+                .map_err(|_| io::ErrorKind::BrokenPipe)?
         }
     }
     async fn receive(&mut self) -> Option<RxJsonRpcMessage<RoleServer>> {
@@ -161,19 +198,27 @@ where
         };
         let message = serde_json::from_value(value).ok()?;
         if let Some(id) = cancelled_id {
-            self.outstanding.lock().ok()?.remove(&id);
+            self.outstanding.remove(&id);
         }
-        if let Some(id) = request_id {
-            let mut outstanding = self.outstanding.lock().ok()?;
-            if id.len() > 128 || outstanding.len() >= 4 || !outstanding.insert(id) {
-                return None;
-            }
+        if let Some(id) = request_id
+            && (id.len() > 128 || self.outstanding.len() >= 4 || !self.outstanding.insert(id))
+        {
+            return None;
         }
         Some(message)
     }
     async fn close(&mut self) -> io::Result<()> {
-        tokio::time::timeout(Duration::from_secs(1), self.write.lock().await.shutdown())
-            .await
-            .map_err(|_| io::ErrorKind::TimedOut)?
+        drop(self.write.take());
+        let Some(mut writer) = self.writer.take() else {
+            return Ok(());
+        };
+        match tokio::time::timeout(Duration::from_secs(1), &mut writer).await {
+            Ok(result) => result.map_err(|_| io::ErrorKind::Other)?,
+            Err(_) => {
+                writer.abort();
+                let _ = writer.await;
+                Err(io::ErrorKind::TimedOut.into())
+            }
+        }
     }
 }

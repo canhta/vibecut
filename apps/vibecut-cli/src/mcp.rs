@@ -46,6 +46,7 @@ const CURATED: &[&str] = &[
 #[derive(Clone, Default)]
 pub struct Grants {
     output: Option<PathBuf>,
+    selected_output: Option<PathBuf>,
 }
 impl Grants {
     /// Admit a pre-existing output directory. Overwrites and imported paths remain refused.
@@ -56,6 +57,11 @@ impl Grants {
         }
         Ok(Self {
             output: Some(output),
+            selected_output: Some(if directory.is_absolute() {
+                directory.to_owned()
+            } else {
+                std::env::current_dir()?.join(directory)
+            }),
         })
     }
 }
@@ -86,6 +92,12 @@ impl Policy for Grants {
                     return Err(EditError::Permission);
                 }
                 let parent = path.parent().ok_or(EditError::Permission)?;
+                // Only resolve a directory explicitly selected by the human.
+                // Resolving an arbitrary client parent first could touch an
+                // ungranted filesystem or initiate a Windows UNC connection.
+                if parent != root && Some(parent) != self.selected_output.as_deref() {
+                    return Err(EditError::Permission);
+                }
                 let parent = std::fs::canonicalize(parent).map_err(|_| EditError::Permission)?;
                 if &parent != root {
                     return Err(EditError::Permission);

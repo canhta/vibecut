@@ -2,6 +2,46 @@
 use super::*;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 
+#[test]
+fn output_grant_rejects_unselected_parent_before_filesystem_resolution() {
+    let root = tempfile::tempdir().unwrap();
+    let output = root.path().join("output");
+    std::fs::create_dir(&output).unwrap();
+    let grant = Grants::output(&output).unwrap();
+    let project = project::Project::empty(project::ProjectId(1), "grant".into()).unwrap();
+    let export = |path| Command::Export {
+        range: time::TimeRange::new(time::Tick::ZERO, time::Tick(1)).unwrap(),
+        path,
+        overwrite: false,
+    };
+    assert!(
+        grant
+            .authorize(&export(output.join("out.mp4")), &project)
+            .is_ok()
+    );
+    assert!(
+        grant
+            .authorize(
+                &export(std::fs::canonicalize(&output).unwrap().join("out.mp4")),
+                &project
+            )
+            .is_ok()
+    );
+    assert!(matches!(
+        grant.authorize(&export(root.path().join("other/out.mp4")), &project),
+        Err(EditError::Permission)
+    ));
+    #[cfg(unix)]
+    {
+        let alias = root.path().join("unselected-alias");
+        std::os::unix::fs::symlink(&output, &alias).unwrap();
+        assert!(matches!(
+            grant.authorize(&export(alias.join("out.mp4")), &project),
+            Err(EditError::Permission)
+        ));
+    }
+}
+
 async fn send(write: &mut tokio::io::WriteHalf<tokio::io::DuplexStream>, value: Value) {
     write
         .write_all(format!("{value}\n").as_bytes())
@@ -120,4 +160,26 @@ async fn message_flood_closes_before_unbounded_sdk_task_creation() {
         assert!(transport.receive().await.is_some());
     }
     assert!(transport.receive().await.is_none());
+}
+
+#[tokio::test(start_paused = true)]
+async fn slow_reader_bounds_output_and_close_cancels_the_writer() {
+    use rmcp::transport::Transport as _;
+    let (server, _client) = tokio::io::duplex(1);
+    let (read, write) = tokio::io::split(server);
+    let mut transport = transport::Framed::new(read, write);
+    let message: rmcp::model::ServerJsonRpcMessage =
+        serde_json::from_value(json!({"jsonrpc":"2.0","id":1,"result":{"tools":[]}})).unwrap();
+    // No await until the queue is full: the writer has not been scheduled yet.
+    for _ in 0..4 {
+        drop(transport.send(message.clone()));
+    }
+    assert_eq!(
+        transport.send(message).await.unwrap_err().kind(),
+        std::io::ErrorKind::WouldBlock
+    );
+    assert_eq!(
+        transport.close().await.unwrap_err().kind(),
+        std::io::ErrorKind::TimedOut
+    );
 }

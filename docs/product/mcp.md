@@ -81,14 +81,17 @@ variable exists in client config.
 MCP cannot admit new source paths. Media already in a human-opened project is
 trusted for rendering. File publication requires an explicit pre-existing output
 directory grant, an absolute immediate-child destination and `overwrite: false`.
-Canonical parent checks refuse directory/symlink escapes; render's existing
+The parent must name the selected directory or its canonical path exactly, checked
+before filesystem resolution; client-selected aliases and other roots are refused.
+Canonical parent revalidation refuses directory/symlink escapes; render's existing
 admission and publication fence remain authoritative. The client cannot create
 directories, overwrite files, upload media or grant itself provider consent.
 
 Limits are 8 MiB per incoming/outgoing JSON-RPC frame, 64 incoming messages per
 second per connection, eight attached connections and 16 queued engine calls
 shared across clients. Each connection permits four outstanding protocol requests
-and refuses duplicate/oversized protocol IDs by closing. A partial frame has five seconds to finish; initialization,
+and four queued replies, with one task owning output IO. Duplicate or oversized
+protocol IDs close the connection. A partial frame has five seconds to finish; initialization,
 connect and writes also have five-second deadlines. Calls have a 30-second
 deadline. Oversize, duplicate-key, truncated, excessively deep or rate-exceeding
 frames close that transport; accepted app mutations remain in the ledger.
