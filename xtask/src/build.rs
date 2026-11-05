@@ -181,7 +181,14 @@ fn owner(locks: &Path, number: usize) -> PathBuf {
         .unwrap_or_default()
 }
 
-#[cfg(any(unix, test))]
+// Each platform reads free physical memory from exactly one source. The
+// `memory_available` dispatcher below is the only admission path: every gated
+// platform feeds the same `MIN_FREE_PERCENT` threshold and `START_RAMP` in
+// `admit_extra`. macOS reads the `sysctl` level, Linux parses `/proc/meminfo`,
+// Windows calls `GlobalMemoryStatusEx`. A source that cannot be read or parsed
+// returns `false` (fail closed), which holds the extra build slot.
+
+#[cfg(any(target_os = "macos", test))]
 fn sysctl_memory_available(program: impl AsRef<OsStr>) -> bool {
     Command::new(program)
         .args(["-n", "kern.memorystatus_level"])
@@ -193,7 +200,57 @@ fn sysctl_memory_available(program: impl AsRef<OsStr>) -> bool {
         .is_some_and(|level| level >= MIN_FREE_PERCENT)
 }
 
+/// Read Linux free memory from `/proc/meminfo`. A missing or unreadable file
+/// fails closed (holds the extra slot), as a failed macOS/Windows probe does.
+#[cfg(any(target_os = "linux", test))]
+fn proc_meminfo_available(path: impl AsRef<Path>) -> bool {
+    fs::read_to_string(path).is_ok_and(|text| meminfo_memory_available(&text))
+}
+
+/// Pure `/proc/meminfo` parser: decide whether `MemAvailable` meets
+/// `MIN_FREE_PERCENT` of `MemTotal`. A trustworthy line is exactly
+/// `"Key: <u64> kB"`. Missing keys, a zero total, or any hostile value
+/// (overflow, non-numeric, missing/wrong `kB` suffix, trailing tokens) fails
+/// the whole probe rather than being ignored. `u128` keeps the comparison from
+/// overflowing on adversarial `u64` values.
+#[cfg(any(target_os = "linux", test))]
+fn meminfo_memory_available(text: &str) -> bool {
+    let (mut total_kb, mut available_kb) = (None, None);
+    for line in text.lines() {
+        let mut fields = line.split_whitespace();
+        let slot = match fields.next() {
+            Some("MemTotal:") => &mut total_kb,
+            Some("MemAvailable:") => &mut available_kb,
+            _ => continue,
+        };
+        let value = fields.next();
+        let unit = fields.next();
+        let parsed = match (value, unit) {
+            (Some(value), Some("kB")) if fields.next().is_none() => value.parse::<u64>().ok(),
+            _ => None,
+        };
+        match parsed {
+            Some(kb) => *slot = Some(kb),
+            None => return false,
+        }
+    }
+    match (total_kb, available_kb) {
+        (Some(total), Some(available)) if total > 0 && available <= total => {
+            u128::from(available) * 100 >= u128::from(total) * u128::from(MIN_FREE_PERCENT)
+        }
+        _ => false,
+    }
+}
+
 fn memory_available() -> bool {
+    #[cfg(target_os = "macos")]
+    {
+        sysctl_memory_available("sysctl")
+    }
+    #[cfg(target_os = "linux")]
+    {
+        proc_meminfo_available("/proc/meminfo")
+    }
     #[cfg(windows)]
     {
         winsafe::GlobalMemoryStatusEx().is_ok_and(|memory| {
@@ -202,9 +259,12 @@ fn memory_available() -> bool {
                     >= u128::from(memory.ullTotalPhys) * u128::from(MIN_FREE_PERCENT)
         })
     }
-    #[cfg(unix)]
+    // Unix platforms without a memory probe keep the historical "admit by
+    // available slots alone" behaviour: `run_in` passes `memory_gated = false`
+    // there, so this dispatcher is never called. Fail closed regardless.
+    #[cfg(not(any(target_os = "macos", target_os = "linux", windows)))]
     {
-        sysctl_memory_available("sysctl")
+        false
     }
 }
 
@@ -759,7 +819,7 @@ pub fn run(root: &Path, args: &[OsString]) -> Result<ExitCode, String> {
         root,
         args,
         cache()?,
-        cfg!(any(target_os = "macos", windows)),
+        cfg!(any(target_os = "macos", target_os = "linux", windows)),
         disk_free,
         crate::ffmpeg::environment,
     )
@@ -1225,6 +1285,150 @@ mod tests {
             claim(&mut third, root, true, || true).unwrap().is_none(),
             "the next build must observe the ramp again"
         );
+    }
+
+    // Must 1/3: Linux reads `/proc/meminfo` `MemTotal`/`MemAvailable` with the
+    // same 30% `MIN_FREE_PERCENT` as the other platforms. One parser covers the
+    // normal file, missing keys, zero total, hostile values and the exact
+    // threshold boundary; every malformed input fails closed.
+    #[test]
+    fn linux_meminfo_parser_covers_normal_missing_zero_hostile_and_threshold() {
+        let normal = concat!(
+            "MemTotal:       1000 kB\n",
+            "MemFree:         100 kB\n",
+            "MemAvailable:    900 kB\n",
+            "Buffers:          50 kB\n",
+            "Cached:          700 kB\n",
+        );
+        let meminfo = |total: &str, available: &str| {
+            format!("MemTotal: {total} kB\nMemAvailable: {available} kB\n")
+        };
+        // 30% of 1000 = 300, so 300 admits (>=) and 299 holds the slot.
+        // A realistic kB scale (host ~ 64 GiB) exercises the u128 comparison.
+        for (label, text, expected) in [
+            ("normal-high-free", normal.to_string(), true),
+            ("normal-low-free", meminfo("1000", "100"), false),
+            (
+                "boundary-exactly-at-threshold",
+                meminfo("1000", "300"),
+                true,
+            ),
+            (
+                "boundary-one-below-threshold",
+                meminfo("1000", "299"),
+                false,
+            ),
+            (
+                "boundary-realistic-at-threshold",
+                meminfo("64639456", "19391837"),
+                true,
+            ),
+            (
+                "boundary-realistic-one-below",
+                meminfo("64639456", "19391836"),
+                false,
+            ),
+            (
+                "missing-MemTotal",
+                "MemAvailable: 900 kB\n".to_string(),
+                false,
+            ),
+            (
+                "missing-MemAvailable",
+                "MemTotal: 1000 kB\n".to_string(),
+                false,
+            ),
+            ("empty-file", String::new(), false),
+            ("no-relevant-keys", "MemFree: 500 kB\n".to_string(), false),
+            ("zero-total", meminfo("0", "0"), false),
+            ("zero-total-with-available", meminfo("0", "100"), false),
+            (
+                "overflow-total",
+                meminfo("99999999999999999999999999999999", "900"),
+                false,
+            ),
+            (
+                "overflow-available",
+                meminfo("1000", "99999999999999999999999999999999"),
+                false,
+            ),
+            ("non-numeric-total", meminfo("not_a_number", "900"), false),
+            ("non-numeric-available", meminfo("1000", "NaN"), false),
+            (
+                "negative-value",
+                "MemTotal: -1 kB\nMemAvailable: 900 kB\n".to_string(),
+                false,
+            ),
+            (
+                "kB-suffix-absent-total",
+                "MemTotal: 1000\nMemAvailable: 900 kB\n".to_string(),
+                false,
+            ),
+            (
+                "kB-suffix-absent-available",
+                "MemTotal: 1000 kB\nMemAvailable: 900\n".to_string(),
+                false,
+            ),
+            (
+                "wrong-unit",
+                "MemTotal: 1000 MB\nMemAvailable: 900 kB\n".to_string(),
+                false,
+            ),
+            (
+                "trailing-tokens",
+                "MemTotal: 1000 kB junk\nMemAvailable: 900 kB\n".to_string(),
+                false,
+            ),
+            ("available-exceeds-total", meminfo("1000", "2000"), false),
+        ] {
+            assert_eq!(meminfo_memory_available(&text), expected, "{label}");
+        }
+    }
+
+    // Must 2: a missing, unreadable or non-UTF-8 `/proc/meminfo` holds the
+    // extra slot (fail closed), while a readable file goes through the same
+    // 30% threshold as the parser above.
+    #[test]
+    fn linux_proc_meminfo_source_fails_closed_on_bad_file() {
+        let directory = Directory::new();
+        let good = directory.0.join("meminfo");
+        fs::write(&good, "MemTotal: 1000 kB\nMemAvailable: 900 kB\n").unwrap();
+        assert!(proc_meminfo_available(&good));
+        let low = directory.0.join("low-meminfo");
+        fs::write(&low, "MemTotal: 1000 kB\nMemAvailable: 100 kB\n").unwrap();
+        assert!(!proc_meminfo_available(&low));
+        // Missing path, a directory and invalid UTF-8 all fail closed.
+        assert!(!proc_meminfo_available(directory.0.join("missing-meminfo")));
+        assert!(!proc_meminfo_available(&directory.0));
+        let binary = directory.0.join("binary-meminfo");
+        fs::write(&binary, [0xff, 0xfe, 0x00]).unwrap();
+        assert!(!proc_meminfo_available(&binary));
+    }
+
+    // Must 1/2: the Linux probe feeds the one shared admission path, so a
+    // fail-closed parse holds the extra slot and sufficient memory admits it
+    // only after the 20-second ramp, exactly like macOS and Windows.
+    #[test]
+    fn linux_memory_probe_uses_shared_admission_path() {
+        let old = SystemTime::now() - Duration::from_secs(30);
+        let good = "MemTotal: 1000 kB\nMemAvailable: 900 kB\n";
+        let bad = "MemTotal: 0 kB\nMemAvailable: 0 kB\n";
+        assert!(!admit_extra(true, true, Some(old), || {
+            meminfo_memory_available(bad)
+        }));
+        assert!(admit_extra(true, true, Some(old), || {
+            meminfo_memory_available(good)
+        }));
+        assert!(
+            !admit_extra(true, true, Some(SystemTime::now()), || {
+                meminfo_memory_available(good)
+            }),
+            "the ramp still gates extra admission on Linux"
+        );
+        // The first build is never gated; only extra slots consult the probe.
+        assert!(admit_extra(true, false, None, || meminfo_memory_available(
+            bad
+        )));
     }
 
     #[test]

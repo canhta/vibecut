@@ -34,10 +34,13 @@ directories. The `locks/build-queue` directory holds numbered, locked waiter
 files; `locks/admission` serializes enqueue, stale-entry cleanup and slot claims.
 No process IDs establish liveness. Crashed waiters release their locks automatically;
 dead queue files are removed by the next waiter. Admission retains FIFO order, preferring a
-free slot already owned by the checkout. On macOS and Windows, only the first active
-build bypasses the 30% free physical memory and 20-second ramp checks. Probe failure
-blocks extra admission. macOS uses `sysctl kern.memorystatus_level`; Windows uses
-`GlobalMemoryStatusEx`. Other Unix systems admit by available slots alone.
+free slot already owned by the checkout. On macOS, Linux and Windows, only the first
+active build bypasses the 30% free physical memory and 20-second ramp checks. Probe
+failure blocks extra admission (fail closed): macOS uses
+`sysctl kern.memorystatus_level`, Linux reads `MemAvailable`/`MemTotal` from
+`/proc/meminfo` (a missing, zero-total or unparsable source holds the slot), and
+Windows uses `GlobalMemoryStatusEx`. One memory-source function per platform feeds
+the single admission path. Other Unix systems admit by available slots alone.
 
 On Unix, the wrapped command inherits only its slot descriptor, using safe `rustix`
 descriptor APIs. Queue and admission descriptors retain close-on-exec. The
@@ -111,8 +114,10 @@ remote timestamp is newer; equal or newer local reports are kept.
 `cargo test -p xtask` covers policy gates, graph boundaries, build admission with
 independent processes (waiter/holder crashes, a surviving wrapped command after
 launcher death, a surviving descendant after normal launcher exit, FIFO and the
-last-slot race), child exit/kill lease release, memory admission/probe failure,
-receipt cleanliness and worktree/disk cleanup. Launcher and descendant survival
+last-slot race), child exit/kill lease release, memory admission/probe failure and
+the Linux `/proc/meminfo` parser (normal, missing keys, zero total, hostile values
+and the exact 30% threshold boundary), receipt cleanliness and worktree/disk cleanup.
+Launcher and descendant survival
 tests apply to Unix; the shared queue and child lifetime tests run on Windows too.
 
 ## Distribution
