@@ -207,14 +207,22 @@ fn staging_directory() -> PathBuf {
 }
 
 fn scp_command(ssh: &str, source: &Path, staging: &Path) -> CommandLine {
+    // `-p` preserves the remote modification times. Without it every staged
+    // report looks freshly downloaded and the merge below would treat stale
+    // remote content as newer than a local edit.
     CommandLine::new(
         "scp",
         [
+            "-p".to_owned(),
             "-r".to_owned(),
             format!("{ssh}:{}", source.display()),
             staging.to_string_lossy().into_owned(),
         ],
     )
+}
+
+fn merge_download(staging: &Path, destination: &Path, dry_run: bool) -> Result<Merge, String> {
+    merge_tree(&staging.join(".scratch"), destination, dry_run)
 }
 
 fn pull_remote(
@@ -239,11 +247,8 @@ fn pull_remote(
         return Ok(Merge::default());
     }
     fs::create_dir_all(&staging).map_err(|error| format!("{}: {error}", staging.display()))?;
-    let result = orca::perform(&scp, false).and_then(|()| {
-        let downloaded = staging.join(".scratch");
-        let merge = merge_tree(&downloaded, destination, false)?;
-        Ok(merge)
-    });
+    let result =
+        orca::perform(&scp, false).and_then(|()| merge_download(&staging, destination, false));
     if let Err(error) = fs::remove_dir_all(&staging) {
         eprintln!("[pull-reports] {}: {error}", staging.display());
     }
@@ -386,8 +391,33 @@ mod tests {
                 Path::new("/tmp/staging")
             )
             .render(),
-            "scp -r builder@host:C:/work/VibeCut/ticket-58/.scratch /tmp/staging"
+            "scp -p -r builder@host:C:/work/VibeCut/ticket-58/.scratch /tmp/staging"
         );
+    }
+
+    #[test]
+    fn staged_download_preserves_remote_times_so_a_newer_local_report_wins() {
+        let root = Directory::new();
+        let staging = root.0.join("staging");
+        let destination = root.0.join("main/.scratch");
+        fs::create_dir_all(staging.join(".scratch")).unwrap();
+        fs::create_dir_all(&destination).unwrap();
+        let remote = staging.join(".scratch/report.md");
+        let local = destination.join("report.md");
+        fs::write(&remote, b"stale remote").unwrap();
+        fs::write(&local, b"newer local").unwrap();
+        set_modified(&remote, -60);
+        set_modified(&local, 0);
+
+        let scp = scp_command("builder@host", Path::new("remote/.scratch"), &staging);
+        assert!(
+            scp.args.iter().any(|arg| arg == "-p"),
+            "scp must preserve remote modification times"
+        );
+        let merge = merge_download(&staging, &destination, false).unwrap();
+        assert_eq!(merge.copied, 0);
+        assert_eq!(merge.kept_newer, 1);
+        assert_eq!(fs::read_to_string(local).unwrap(), "newer local");
     }
 
     #[test]

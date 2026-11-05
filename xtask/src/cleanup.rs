@@ -70,22 +70,15 @@ fn parse(args: &[String]) -> Result<Options, String> {
     Ok(options)
 }
 
-fn release_commands(
-    environment: Option<&str>,
-    dispatch: &str,
-    terminal: Option<&str>,
-) -> Vec<CommandLine> {
-    let mut commands = vec![orca::command(
+fn release_command(environment: Option<&str>, dispatch: &str) -> CommandLine {
+    orca::command(
         environment,
         &["orchestration", "worker-release", "--dispatch", dispatch],
-    )];
-    if let Some(terminal) = terminal {
-        commands.push(orca::command(
-            environment,
-            &["terminal", "close", "--terminal", terminal],
-        ));
-    }
-    commands
+    )
+}
+
+fn terminal_close_command(environment: Option<&str>, terminal: &str) -> CommandLine {
+    orca::command(environment, &["terminal", "close", "--terminal", terminal])
 }
 
 fn worktree_remove_command(environment: Option<&str>, path: &Path) -> CommandLine {
@@ -96,11 +89,14 @@ fn worktree_remove_command(environment: Option<&str>, path: &Path) -> CommandLin
     )
 }
 
+type Perform<'a> = &'a mut dyn FnMut(&CommandLine, bool) -> Result<(), String>;
+
 fn release_dispatch(
     environment: Option<&str>,
     dry_run: bool,
     workers: &[Worker],
     dispatch: &str,
+    perform: Perform<'_>,
 ) -> Result<(), String> {
     let terminal = workers
         .iter()
@@ -109,17 +105,15 @@ fn release_dispatch(
     if dry_run && terminal.is_none() {
         eprintln!("[cleanup] {dispatch}: no terminal reported; worker-release only");
     }
-    let mut errors = Vec::new();
-    for command in release_commands(environment, dispatch, terminal) {
-        if let Err(error) = orca::perform(&command, dry_run) {
-            errors.push(error);
-        }
+    // Closing the terminal is dependent on the release succeeding. A refused
+    // release can mean the worker started again; never close its terminal in
+    // that case. Independent target arguments still continue in `run_with`.
+    perform(&release_command(environment, dispatch), dry_run)
+        .map_err(|error| format!("worker-release failed; terminal left open: {error}"))?;
+    if let Some(terminal) = terminal {
+        perform(&terminal_close_command(environment, terminal), dry_run)?;
     }
-    if errors.is_empty() {
-        Ok(())
-    } else {
-        Err(errors.join("; "))
-    }
+    Ok(())
 }
 
 fn remove_scratch(path: &Path, dry_run: bool) -> Result<(), String> {
@@ -165,6 +159,7 @@ fn remove_worktree(
     worktrees: &[orca::Worktree],
     workspaces: Option<&Path>,
     name: &str,
+    perform: Perform<'_>,
 ) -> Result<(), String> {
     let path = resolve_worktree(worktrees, workspaces, name)?;
     // A paired server owns the remote directory; `worktree rm` deletes its
@@ -173,7 +168,7 @@ fn remove_worktree(
     if environment.is_none() {
         remove_scratch(&path, dry_run)?;
     }
-    orca::perform(&worktree_remove_command(environment, &path), dry_run)
+    perform(&worktree_remove_command(environment, &path), dry_run)
 }
 
 fn pull(main: &Path, dry_run: bool) -> Result<(), String> {
@@ -200,14 +195,33 @@ fn prune(_dry_run: bool) -> Result<(), String> {
     Ok(())
 }
 
-pub fn run(root: &Path, args: &[String]) -> Result<(), String> {
-    let options = parse(args)?;
+struct Discovery {
+    worktrees: Result<Vec<orca::Worktree>, String>,
+    workers: Result<Vec<Worker>, String>,
+}
+
+fn run_with<F, P, L>(
+    main: &Path,
+    options: &Options,
+    discovery: Discovery,
+    mut perform: F,
+    prune: P,
+    pull: L,
+) -> Result<(), String>
+where
+    F: FnMut(&CommandLine, bool) -> Result<(), String>,
+    P: FnOnce(bool) -> Result<(), String>,
+    L: FnOnce(&Path, bool) -> Result<(), String>,
+{
     let environment = options.environment.as_deref();
-    let main = crate::checkout::main(root)?;
-    let worktrees = match orca::worktrees(environment) {
+    let mut failures = 0usize;
+    // Discovery is a cleanup step in its own right: an incomplete view must
+    // never turn into a successful exit just because later commands ran.
+    let worktrees = match discovery.worktrees {
         Ok(worktrees) => worktrees,
         Err(error) => {
             eprintln!("[cleanup] worktree list: {error}");
+            failures += 1;
             Vec::new()
         }
     };
@@ -217,28 +231,33 @@ pub fn run(root: &Path, args: &[String]) -> Result<(), String> {
         .iter()
         .any(|target| matches!(target, Target::Dispatch(_)));
     let workers = if needs_workers {
-        match orca::workers(environment) {
+        match discovery.workers {
             Ok(workers) => workers,
             Err(error) => {
                 eprintln!("[cleanup] worker list: {error}");
+                failures += 1;
                 Vec::new()
             }
         }
     } else {
         Vec::new()
     };
-    let mut failures = 0usize;
     for target in &options.targets {
         let result = match target {
-            Target::Dispatch(dispatch) => {
-                release_dispatch(environment, options.dry_run, &workers, dispatch)
-            }
+            Target::Dispatch(dispatch) => release_dispatch(
+                environment,
+                options.dry_run,
+                &workers,
+                dispatch,
+                &mut perform,
+            ),
             Target::Worktree(name) => remove_worktree(
                 environment,
                 options.dry_run,
                 &worktrees,
                 workspaces.as_deref(),
                 name,
+                &mut perform,
             ),
         };
         if let Err(error) = result {
@@ -250,7 +269,7 @@ pub fn run(root: &Path, args: &[String]) -> Result<(), String> {
         eprintln!("[cleanup] build cache: {error}");
         failures += 1;
     }
-    if let Err(error) = pull(&main, options.dry_run) {
+    if let Err(error) = pull(main, options.dry_run) {
         eprintln!("[cleanup] pull: {error}");
         failures += 1;
     }
@@ -259,6 +278,30 @@ pub fn run(root: &Path, args: &[String]) -> Result<(), String> {
     } else {
         Err(format!("{failures} cleanup step(s) failed"))
     }
+}
+
+pub fn run(root: &Path, args: &[String]) -> Result<(), String> {
+    let options = parse(args)?;
+    let environment = options.environment.as_deref();
+    let main = crate::checkout::main(root)?;
+    let worktrees = orca::worktrees(environment);
+    let needs_workers = options
+        .targets
+        .iter()
+        .any(|target| matches!(target, Target::Dispatch(_)));
+    let workers = if needs_workers {
+        orca::workers(environment)
+    } else {
+        Ok(Vec::new())
+    };
+    run_with(
+        &main,
+        &options,
+        Discovery { worktrees, workers },
+        orca::perform,
+        prune,
+        pull,
+    )
 }
 
 #[cfg(test)]
@@ -335,23 +378,82 @@ mod tests {
         );
     }
 
+    fn reported_worker() -> Vec<Worker> {
+        vec![Worker {
+            dispatch_id: "ctx_abc".into(),
+            terminal: Some("term_x".into()),
+        }]
+    }
+
     #[test]
-    fn dispatch_commands_release_then_close_the_reported_terminal() {
-        let commands = release_commands(Some("Window"), "ctx_abc", Some("term_x"));
+    fn successful_release_then_closes_the_reported_terminal() {
+        let workers = reported_worker();
+        let mut commands = Vec::new();
+        release_dispatch(
+            Some("Window"),
+            false,
+            &workers,
+            "ctx_abc",
+            &mut |command, _| {
+                commands.push(command.render());
+                Ok(())
+            },
+        )
+        .unwrap();
         assert_eq!(
-            commands.iter().map(CommandLine::render).collect::<Vec<_>>(),
+            commands,
             [
                 "orca orchestration worker-release --dispatch ctx_abc --environment Window",
                 "orca terminal close --terminal term_x --environment Window",
             ]
         );
+    }
+
+    #[test]
+    fn refused_release_leaves_the_terminal_open_and_reports_the_failure() {
+        let workers = reported_worker();
+        let mut commands = Vec::new();
+        let error = release_dispatch(None, false, &workers, "ctx_abc", &mut |command, _| {
+            commands.push(command.render());
+            if command.args.iter().any(|arg| arg == "worker-release") {
+                Err("refused: worker still running".into())
+            } else {
+                Ok(())
+            }
+        })
+        .unwrap_err();
+        assert!(error.contains("refused"), "{error}");
         assert_eq!(
-            release_commands(None, "ctx_abc", None)
-                .iter()
-                .map(CommandLine::render)
-                .collect::<Vec<_>>(),
+            commands,
             ["orca orchestration worker-release --dispatch ctx_abc"]
         );
+    }
+
+    #[test]
+    fn discovery_failures_keep_the_exit_code_non_zero_after_targets_continue() {
+        let options = Options {
+            environment: None,
+            dry_run: true,
+            targets: vec![Target::Dispatch("ctx_ok".into())],
+        };
+        let mut performed = 0usize;
+        let error = run_with(
+            Path::new("/main"),
+            &options,
+            Discovery {
+                worktrees: Err("worktree list down".into()),
+                workers: Err("worker list down".into()),
+            },
+            |_, _| {
+                performed += 1;
+                Ok(())
+            },
+            |_| Ok(()),
+            |_, _| Ok(()),
+        )
+        .unwrap_err();
+        assert_eq!(performed, 1, "an independent dispatch target was skipped");
+        assert!(error.contains("2 cleanup step(s) failed"), "{error}");
     }
 
     #[test]
