@@ -218,7 +218,9 @@ pub fn cache_dir() -> Result<PathBuf, Error> {
     #[cfg(target_os = "windows")]
     let base = std::env::var_os("LOCALAPPDATA").map(PathBuf::from);
     #[cfg(not(any(target_os = "macos", target_os = "windows")))]
-    let base: Option<PathBuf> = None;
+    let base = std::env::var_os("XDG_CACHE_HOME")
+        .map(PathBuf::from)
+        .or_else(|| std::env::var_os("HOME").map(|p| PathBuf::from(p).join(".cache")));
     let base = base.filter(|p| p.is_absolute()).ok_or(Error::Unsupported)?;
     Ok(base.join("VibeCut").join("models"))
 }

@@ -418,7 +418,8 @@ weight licences remain opt-in and ineligible as defaults. `models::verify_file`
 rejects truncation, excess bytes and hash mismatches, checks cancellation between
 reads, and never writes/promotes files. `models::storage_error` maps disk-full and
 other storage failures to safe typed categories. `models::cache_dir` resolves macOS
-`~/Library/Caches/VibeCut/models` or Windows `%LOCALAPPDATA%/VibeCut/models`, without
+`~/Library/Caches/VibeCut/models`, Windows `%LOCALAPPDATA%/VibeCut/models` or Linux
+`$XDG_CACHE_HOME/VibeCut/models` (default `~/.cache/VibeCut/models`), without
 creating directories. Engine owns downloads, scheduling, resume/retry/checkpoints,
 cache identity/storage/promotion and model-manager wiring; these are not implemented
 by this crate.
