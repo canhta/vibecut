@@ -94,11 +94,15 @@ preserved as exceptions to the assigned-jobs bound, even above the host budget.
 Such commands reserve the entire budget and wait until all other leases release;
 no default-jobs command overlaps them. Job flags are conservatively recognized
 anywhere in the wrapped command arguments, including nested xtask commands.
-Each slot's `locks/slot-N.jobs` records its reservation under the admission lock.
+Each slot's `locks/slot-N.jobs` records its job count or an `exclusive` marker under
+the admission lock; the marker prevents overlap even when wrappers observe different
+CPU availability (for example, because of process affinity).
 Only a held lease makes that record live; a release or crash frees its jobs without
 metadata cleanup. Missing or invalid metadata for a live lease reserves the whole
-budget and holds admission until that lease exits. This also protects admission
-while an older wrapper without reservation metadata is still running.
+budget and holds admission until that lease exits. All wrappers must implement the
+reservation protocol: drain older binaries and rebuild their launchers before
+relying on the shared budget or override exclusivity. Older binaries can reuse
+slots with stale records and do not enforce the new reservations themselves.
 
 Successful exact `cargo xtask ci [--require-oracles]` commands leave receipts in
 `ci-receipts`, keyed by Git tree and oracle mode. Only trees clean before waiting,

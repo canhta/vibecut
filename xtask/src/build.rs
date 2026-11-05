@@ -320,7 +320,16 @@ fn active_slots(locks: &Path, budget: usize) -> io::Result<(usize, usize)> {
             // or damaged metadata holds admission until that lease exits.
             let reserved = fs::read_to_string(entry.path().with_extension("jobs"))
                 .ok()
-                .and_then(|text| text.trim().parse::<usize>().ok())
+                .and_then(|text| {
+                    if text.trim() == "exclusive" {
+                        // Available parallelism can differ between wrappers
+                        // (for example, process affinity). Exclusivity must not
+                        // depend on the originating wrapper's CPU count.
+                        Some(budget)
+                    } else {
+                        text.trim().parse::<usize>().ok()
+                    }
+                })
                 .filter(|jobs| *jobs > 0)
                 .unwrap_or(budget);
             jobs = jobs.saturating_add(reserved);
@@ -667,7 +676,11 @@ fn claim(
     writeln!(lock.file, "{}", root.display())?;
     fs::write(
         queue.locks.join(format!("slot-{number}.jobs")),
-        jobs.to_string(),
+        if admission.caller_jobs {
+            "exclusive".to_owned()
+        } else {
+            jobs.to_string()
+        },
     )?;
     queue.leave()?;
     Ok(Some(Slot { lock, number, jobs }))
@@ -2318,11 +2331,24 @@ mod tests {
         assert_eq!(held.jobs, 16);
         let mut next = Queue::enter(&locks).unwrap();
         let default = test_admission(8, false);
-        assert!(
-            claim(&mut next, root, default, || false, || None)
+        for cpus in [8, 16, 4] {
+            assert!(
+                claim(
+                    &mut next,
+                    root,
+                    Admission {
+                        cpus,
+                        max_slots: cpus.min(default.max_slots),
+                        ..default
+                    },
+                    || false,
+                    || None
+                )
                 .unwrap()
-                .is_none()
-        );
+                .is_none(),
+                "an explicit job override must stay exclusive when available CPUs change"
+            );
+        }
         drop(held);
         let held = claim(&mut next, root, default, || false, || None)
             .unwrap()
