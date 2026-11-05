@@ -51,15 +51,18 @@ impl Session {
         }
         let data = project.data();
         let next_id = data
-            .timeline
+            .scenes
             .iter()
-            .map(|t| t.id.0)
-            .chain(
-                data.timeline
-                    .iter()
-                    .flat_map(|t| t.items.iter().map(|i| i.id.0)),
-            )
-            .chain(data.bookmarks.iter().map(|b| b.id.0))
+            .flat_map(|s| {
+                std::iter::once(s.id.0)
+                    .chain(s.timeline.iter().map(|t| t.id.0))
+                    .chain(
+                        s.timeline
+                            .iter()
+                            .flat_map(|t| t.items.iter().map(|i| i.id.0)),
+                    )
+                    .chain(s.bookmarks.iter().map(|b| b.id.0))
+            })
             .max()
             .map_or(Some(0), |id| id.checked_add(1));
         let mut entropy = [0u8; 32];
@@ -165,6 +168,7 @@ impl Session {
         let existing: BTreeSet<_> = self
             .project()
             .data()
+            .scene()
             .timeline
             .iter()
             .flat_map(|t| t.items.iter().map(|i| i.id))
@@ -180,6 +184,7 @@ impl Session {
         let existing: BTreeSet<_> = self
             .project()
             .data()
+            .scene()
             .timeline
             .iter()
             .flat_map(|t| t.items.iter().map(|i| i.id))
@@ -396,6 +401,34 @@ impl Session {
                     "lifecycle command requires create or autosave",
                 ));
             }
+            Command::SwitchScene { scene } => {
+                if self.transaction_active() {
+                    return Err(EditError::TransactionActive);
+                }
+                if self.project().data().scenes.get(scene).is_none() {
+                    return Err(EditError::Invalid("scene not found"));
+                }
+                let mut data = self.project().data().clone();
+                if wire {
+                    crate::control::validate_wire(&data)?;
+                }
+                let changed = data.current_scene_id != scene;
+                if changed {
+                    data.current_scene_id = scene;
+                    if wire {
+                        crate::control::validate_wire(&data)?;
+                    }
+                    self.change_scene_view(&data);
+                    self.state.project = Arc::new(Project::new(data)?);
+                    self.state.selection = Arc::default();
+                    self.end_merge();
+                    self.state.change = Some(self.state.project.clone());
+                }
+                return Ok(Outcome {
+                    changed,
+                    created: Vec::new(),
+                });
+            }
             Command::SetViewState {
                 zoom,
                 scroll,
@@ -504,6 +537,7 @@ impl Session {
         } else {
             self.project()
                 .data()
+                .scene()
                 .timeline
                 .iter()
                 .flat_map(|track| {
@@ -533,6 +567,21 @@ impl Session {
             placements,
         })
     }
+    fn change_scene_view(&mut self, next: &project::ProjectData) {
+        let old = self.project().data().current_scene_id;
+        if old != next.current_scene_id {
+            self.metadata.scene_views.insert(old, self.metadata.view);
+            self.metadata.view = self
+                .metadata
+                .scene_views
+                .get(&next.current_scene_id)
+                .copied()
+                .unwrap_or_default();
+        }
+        self.metadata
+            .scene_views
+            .retain(|id, _| next.scenes.get(*id).is_some());
+    }
     fn publish(&mut self, next: Arc<Project>, key: Option<&str>) {
         if key.is_none() || self.state.merge_key.as_deref() != key {
             self.state.undo.push_back(Snapshot {
@@ -543,6 +592,7 @@ impl Session {
                 self.state.undo.pop_front();
             }
         }
+        self.change_scene_view(next.data());
         self.state.project = next;
         self.prune_selection();
         self.state.redo.clear();
@@ -568,12 +618,24 @@ impl Session {
             .ok_or(EditError::NoHistory)?;
             crate::control::validate_wire(candidate.project.data())?;
         }
-        let snapshot = if redo {
+        let mut snapshot = if redo {
             self.state.redo.pop()
         } else {
             self.state.undo.pop_back()
         }
         .ok_or(EditError::NoHistory)?;
+        let current = self.project().data().current_scene_id;
+        if snapshot.project.data().current_scene_id != current
+            && snapshot.project.data().scenes.get(current).is_some()
+        {
+            let mut data = snapshot.project.data().clone();
+            data.current_scene_id = current;
+            snapshot.project = Arc::new(Project::new(data)?);
+        }
+        if wire {
+            crate::control::validate_wire(snapshot.project.data())?;
+        }
+        self.change_scene_view(snapshot.project.data());
         // Each entry remembers the selection that produced its edit, even if the
         // user subsequently deselected everything before invoking history.
         let old = Snapshot {

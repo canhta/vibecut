@@ -39,7 +39,15 @@ fn rollback_must_invalidate_target_captured_in_discarded_preview() {
         Err(EditError::Cancelled)
     });
     assert!(result.is_err());
-    assert!(session.project().data().timeline.overlays.is_empty());
+    assert!(
+        session
+            .project()
+            .data()
+            .scene()
+            .timeline
+            .overlays
+            .is_empty()
+    );
     assert!(
         matches!(
             session.apply_job_result(&target.unwrap(), add()),

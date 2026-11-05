@@ -108,10 +108,40 @@ pub enum Text {
     NoSharedFields,
     MaskPoints,
     Keyframes,
+    Scenes,
+    SelectScenes,
+    SelectScenesHint,
+    SwitchScenesHint,
+    Select,
+    CancelSelection,
+    CloseScenes,
+    MainScene,
+    DeleteScenesPrompt,
 }
 pub fn text(locale: Locale, key: Text) -> &'static str {
     use Text::*;
     match (locale, key) {
+        (Locale::En, CloseScenes) => "Close",
+        (Locale::Vi, CloseScenes) => "Đóng",
+        (Locale::En, Scenes) => "Scenes",
+        (Locale::Vi, Scenes) => "Cảnh",
+        (Locale::En, SelectScenes) => "Select scenes",
+        (Locale::Vi, SelectScenes) => "Chọn cảnh",
+        (Locale::En, SelectScenesHint) => "Select scenes to delete",
+        (Locale::Vi, SelectScenesHint) => "Chọn các cảnh để xóa",
+        (Locale::En, SwitchScenesHint) => "Switch between scenes in your project",
+        (Locale::Vi, SwitchScenesHint) => "Chuyển cảnh trong dự án",
+        (Locale::En, Select) => "Select",
+        (Locale::Vi, Select) => "Chọn",
+        (Locale::En, CancelSelection) => "Cancel selection",
+        (Locale::Vi, CancelSelection) => "Hủy chọn",
+        (Locale::En, MainScene) => "Main",
+        (Locale::Vi, MainScene) => "Chính",
+        (Locale::En, DeleteScenesPrompt) => "Delete selected scenes? You can undo this action.",
+        (Locale::Vi, DeleteScenesPrompt) => {
+            "Xóa các cảnh đã chọn? Bạn có thể hoàn tác thao tác này."
+        }
+
         (Locale::En, AudioGain) => "Volume (dB)",
         (Locale::Vi, AudioGain) => "Âm lượng (dB)",
         (Locale::En, TextSize) => "Font size (px)",

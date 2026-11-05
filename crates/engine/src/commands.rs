@@ -127,7 +127,7 @@ impl CommandSpec {
         match self.id {
             "export_subtitles" | "burn_subtitles" => {
                 !session.transaction_active()
-                    && session.project().data().timeline.iter().any(|t| {
+                    && session.project().data().scene().timeline.iter().any(|t| {
                         t.items
                             .iter()
                             .any(|i| matches!(i.content, ItemParams::Caption(_)))
@@ -141,10 +141,11 @@ impl CommandSpec {
             "track.remove" => session
                 .project()
                 .data()
+                .scene()
                 .timeline
                 .overlays
                 .iter()
-                .chain(&session.project().data().timeline.audio)
+                .chain(&session.project().data().scene().timeline.audio)
                 .any(|t| !t.locked),
             "effects.add"
             | "effects.remove"
@@ -152,7 +153,7 @@ impl CommandSpec {
             | "masks.add"
             | "masks.remove"
             | "masks.update"
-            | "masks.reorder" => session.project().data().timeline.iter().any(|t| {
+            | "masks.reorder" => session.project().data().scene().timeline.iter().any(|t| {
                 !t.locked
                     && t.items
                         .iter()
@@ -175,6 +176,7 @@ impl CommandSpec {
             | "keyframes.scale_time" => session
                 .project()
                 .data()
+                .scene()
                 .timeline
                 .iter()
                 .any(|t| !t.locked && !t.items.is_empty()),
@@ -225,6 +227,10 @@ fn required_option<'de, D: serde::Deserializer<'de>, T: Deserialize<'de>>(
 }
 commands! {
     CreateProject, "project.create", "Create project", SessionControl { id: project::ProjectId, name: NfcText } => Create, serde_json::json!({"id":"18446744073709551615","name":"Created"});
+    CreateScene, "scene.create", "Create scene", Edit { name: NfcText } => Timeline, serde_json::json!({"name":"Scene 2"});
+    DeleteScenes, "scene.delete", "Delete scenes", Edit { scenes: Vec<project::SceneId> } => Timeline, serde_json::json!({"scenes":[]});
+    SwitchScene, "scene.switch", "Switch scene", SessionControl { scene: project::SceneId } => Timeline, serde_json::json!({"scene":0});
+    RenameScene, "scene.rename", "Rename scene", Edit { scene: project::SceneId, name: NfcText } => Timeline, serde_json::json!({"scene":0,"name":"Renamed scene"});
     RenameProject, "project.rename", "Rename project", Edit { name: NfcText } => Timeline, serde_json::json!({"name":"Renamed"});
     SaveProject, "project.save", "Save project", SessionControl {} => Save, serde_json::json!({});
     SetViewState, "project.set_view_state", "Set timeline view", SessionControl { zoom: f64, scroll: f64, playhead: Tick } => Timeline, serde_json::json!({"zoom":2.0,"scroll":10.0,"playhead":0});
@@ -377,6 +383,7 @@ pub struct Move {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, schemars::JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum CreatedId {
+    Scene(project::SceneId),
     Track(TrackId),
     Item(ItemId),
     Bookmark(BookmarkId),

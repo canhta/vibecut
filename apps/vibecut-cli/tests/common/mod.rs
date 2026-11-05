@@ -110,7 +110,7 @@ pub(super) fn media_project(project_path: &Path, video: &Path, audio: Option<&Pa
     data.canvas.height = stream.height;
     data.canvas.fps = fps;
     data.assets.push(video_asset);
-    data.timeline.insert_track(project::Track {
+    data.scene_mut().timeline.insert_track(project::Track {
         id: project::TrackId(1),
         name: "Video".into(),
         kind: project::TrackKind::Video,
@@ -134,7 +134,7 @@ pub(super) fn media_project(project_path: &Path, video: &Path, audio: Option<&Pa
         let audio_asset = media::SourceAsset::import(media::AssetId(2), audio.to_owned()).unwrap();
         let audio_duration = audio_asset.probe().duration.unwrap();
         data.assets.push(audio_asset);
-        data.timeline.insert_track(project::Track {
+        data.scene_mut().timeline.insert_track(project::Track {
             id: project::TrackId(2),
             name: "Audio".into(),
             kind: project::TrackKind::Audio,

@@ -166,7 +166,7 @@ impl crate::Session {
                 overwrite,
             } => {
                 let project = self.project().clone();
-                if !project.data().timeline.iter().any(|t| {
+                if !project.data().scene().timeline.iter().any(|t| {
                     !t.hidden
                         && t.items.iter().any(|i| {
                             matches!(i.content, project::ItemParams::Caption(_))
@@ -197,6 +197,7 @@ impl crate::Session {
                 let project = self.project().clone();
                 let selected = project
                     .data()
+                    .scene()
                     .timeline
                     .iter()
                     .find(|t| t.id == track)
@@ -323,6 +324,7 @@ pub fn subtitle_file(
 ) -> Result<captions::Export, EditError> {
     let track = project
         .data()
+        .scene()
         .timeline
         .iter()
         .find(|t| t.id == track)

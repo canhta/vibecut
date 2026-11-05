@@ -1,7 +1,7 @@
 # render
 
 CPU reference compositor, shared sample-window mixer and bounded MP4 export.
-Consumes immutable project snapshots; media owns codecs/conversion/mux, text owns
+Consumes immutable project snapshots and renders/mixes only their active scene; media owns codecs/conversion/mux, text owns
 shaping/rasterization, project owns atomic publication, engine owns scheduling and
 aggregate byte policy. No UI, device or persisted render state; it evaluates
 project-owned keyframed opacity.

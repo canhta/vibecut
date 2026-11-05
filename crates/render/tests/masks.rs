@@ -203,7 +203,8 @@ fn hostile_degenerate_budget_and_cancellation_inputs_refuse() {
         },
     );
     let mut data = masked_scene(40, 40, vec![mask]).into_data();
-    data.timeline
+    data.scene_mut()
+        .timeline
         .main
         .items
         .first_mut()
@@ -603,7 +604,7 @@ fn ordered_modes_and_unclipped_strokes_keep_premultiplied_channels() {
     let mask = Mask::new("animated", MaskShape::Rectangle);
     let path = mask.path("opacity").unwrap();
     let mut data = masked_scene(40, 40, vec![mask]).into_data();
-    let item = data.timeline.main.items.first_mut().unwrap();
+    let item = data.scene_mut().timeline.main.items.first_mut().unwrap();
     let frame = |n| time::FrameRate::FPS_30.tick_of(n).unwrap();
     item.start = frame(5);
     let mut param = project::Param::new(project::ParamValue::Scalar(0.2)).unwrap();
@@ -645,7 +646,7 @@ fn masked_scene(width: u32, height: u32, masks: Vec<project::Mask>) -> project::
     data.canvas.width = width;
     data.canvas.height = height;
     data.canvas.background = project::Color([0; 4]);
-    data.timeline.main.items.push(project::Item {
+    data.scene_mut().timeline.main.items.push(project::Item {
         id: project::ItemId(1),
         masks,
         effects: vec![],

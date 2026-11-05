@@ -121,6 +121,7 @@ impl RenderSettings {
                 || !(0.0..=1.0).contains(&p.opacity)
                 || !project
                     .data()
+                    .scene()
                     .timeline
                     .iter()
                     .any(|t| t.items.iter().any(|i| i.id == *id))
@@ -284,6 +285,7 @@ impl<'a> Renderer<'a> {
         let project = self.project;
         let active: Vec<_> = project
             .data()
+            .scene()
             .timeline
             .iter()
             .filter(|t| !t.hidden)

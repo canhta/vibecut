@@ -1794,7 +1794,7 @@ pub(crate) fn build_session(
         asset: asset.clone(),
     })?;
     if with_video {
-        let video = session.project().data().timeline.main.id;
+        let video = session.project().data().scene().timeline.main.id;
         let range = SourceRange::new(Tick::ZERO, duration)?;
         session.apply(Command::InsertItem {
             placement: crate::Placement::Track { track: video },
@@ -1846,6 +1846,7 @@ fn caption_track_id(session: &Session) -> Result<TrackId, EditError> {
     session
         .project()
         .data()
+        .scene()
         .timeline
         .iter()
         .find(|track| {
@@ -1861,6 +1862,7 @@ pub(crate) fn caption_item_id(session: &Session) -> Result<project::ItemId, Edit
     session
         .project()
         .data()
+        .scene()
         .timeline
         .iter()
         .filter(|track| track.kind == TrackKind::Text)
@@ -1888,6 +1890,7 @@ pub(crate) fn translate_cues(
         let project = session.project();
         let item = project
             .data()
+            .scene()
             .timeline
             .iter()
             .flat_map(|track| &track.items)
@@ -2002,6 +2005,7 @@ pub(crate) fn translate_track(
     session
         .project()
         .data()
+        .scene()
         .timeline
         .iter()
         .flat_map(|track| &track.items)

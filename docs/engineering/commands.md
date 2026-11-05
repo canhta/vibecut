@@ -15,6 +15,47 @@ Effect: `SessionControl`. Fixture: `Create`.
 }
 ```
 
+## `scene.create` — Create scene
+
+Effect: `Edit`. Fixture: `Timeline`.
+
+```json
+{
+  "name": "Scene 2"
+}
+```
+
+## `scene.delete` — Delete scenes
+
+Effect: `Edit`. Fixture: `Timeline`.
+
+```json
+{
+  "scenes": []
+}
+```
+
+## `scene.switch` — Switch scene
+
+Effect: `SessionControl`. Fixture: `Timeline`.
+
+```json
+{
+  "scene": 0
+}
+```
+
+## `scene.rename` — Rename scene
+
+Effect: `Edit`. Fixture: `Timeline`.
+
+```json
+{
+  "name": "Renamed scene",
+  "scene": 0
+}
+```
+
 ## `project.rename` — Rename project
 
 Effect: `Edit`. Fixture: `Timeline`.

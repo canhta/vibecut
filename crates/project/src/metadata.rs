@@ -8,7 +8,7 @@ use std::{
 };
 use time::Tick;
 
-pub const METADATA_VERSION: u32 = 1;
+pub const METADATA_VERSION: u32 = 2;
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ViewState {
@@ -46,6 +46,7 @@ impl ViewState {
 pub struct Metadata {
     pub version: u32,
     pub view: ViewState,
+    pub scene_views: std::collections::BTreeMap<crate::SceneId, ViewState>,
     pub created_unix_ms: u64,
     pub modified_unix_ms: u64,
 }
@@ -55,6 +56,7 @@ impl Default for Metadata {
         Self {
             version: METADATA_VERSION,
             view: ViewState::default(),
+            scene_views: Default::default(),
             created_unix_ms: now,
             modified_unix_ms: now,
         }
@@ -64,6 +66,12 @@ impl Metadata {
     pub fn validate(&self) -> Result<()> {
         if self.version != METADATA_VERSION || self.modified_unix_ms < self.created_unix_ms {
             return Err(Error::Invalid("metadata version or timestamps"));
+        }
+        if self.scene_views.len() > 256 {
+            return Err(Error::TooLarge("scene views"));
+        }
+        for view in self.scene_views.values() {
+            view.validate()?;
         }
         self.view.validate()
     }
@@ -96,9 +104,9 @@ pub(crate) fn load(project: &Path) -> Metadata {
         }
         let mut bytes = Vec::new();
         std::fs::File::open(path)?
-            .take(4097)
+            .take(65537)
             .read_to_end(&mut bytes)?;
-        if bytes.len() > 4096 {
+        if bytes.len() > 65536 {
             return Err(Error::TooLarge("metadata"));
         }
         let value: Metadata = serde_json::from_slice(&bytes)?;
@@ -114,7 +122,7 @@ pub(crate) fn save(
 ) -> Result<()> {
     value.validate()?;
     let bytes = serde_json::to_vec(value)?;
-    if bytes.len() > 4096 {
+    if bytes.len() > 65536 {
         return Err(Error::TooLarge("metadata"));
     }
     crate::atomic::atomic_write_checked(&path(project)?, &bytes, check)

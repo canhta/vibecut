@@ -235,6 +235,7 @@ fn item(editor: &Editor, id: ItemId) -> &project::Item {
         .session
         .project()
         .data()
+        .scene()
         .timeline
         .iter()
         .flat_map(|track| track.items.iter())
@@ -247,6 +248,7 @@ fn count(editor: &Editor) -> usize {
         .session
         .project()
         .data()
+        .scene()
         .timeline
         .iter()
         .map(|track| track.items.len())
@@ -312,6 +314,7 @@ fn ruler_click_split_and_undo_redo_use_automation_ids_and_engine_commands() {
         .session
         .project()
         .data()
+        .scene()
         .timeline
         .iter()
         .flat_map(|track| track.items.iter())
@@ -460,6 +463,7 @@ fn item_opt(editor: &Editor, id: ItemId) -> Option<&project::Item> {
         .session
         .project()
         .data()
+        .scene()
         .timeline
         .iter()
         .flat_map(|track| track.items.iter())
@@ -665,6 +669,7 @@ fn text_item_id(editor: &Editor) -> ItemId {
         .session
         .project()
         .data()
+        .scene()
         .timeline
         .iter()
         .flat_map(|track| track.items.iter())
@@ -1079,6 +1084,7 @@ fn two_text_fixture() -> (Fixture, ItemId, ItemId) {
         .session
         .project()
         .data()
+        .scene()
         .timeline
         .iter()
         .find(|t| t.kind == TrackKind::Text)
@@ -1089,6 +1095,7 @@ fn two_text_fixture() -> (Fixture, ItemId, ItemId) {
         .session
         .project()
         .data()
+        .scene()
         .timeline
         .iter()
         .find(|t| t.id == text)
@@ -1211,6 +1218,7 @@ fn selection_inspector_visual_audit() {
             .session
             .project()
             .data()
+            .scene()
             .timeline
             .iter()
             .flat_map(|t| &t.items)
@@ -1222,7 +1230,15 @@ fn selection_inspector_visual_audit() {
             .session
             .apply(Command::Delete { items: media })
             .unwrap();
-        let main = fixture.editor.session.project().data().timeline.main.id;
+        let main = fixture
+            .editor
+            .session
+            .project()
+            .data()
+            .scene()
+            .timeline
+            .main
+            .id;
         let background = insert(
             &mut fixture.editor.session,
             main,
@@ -1264,6 +1280,7 @@ fn compatible_audio_gain_inspector_skips_video_and_preserves_mute() {
         .session
         .project()
         .data()
+        .scene()
         .timeline
         .iter()
         .find(|t| t.kind == TrackKind::Audio)
@@ -1324,6 +1341,7 @@ fn drop_at_track_edges_creates_one_track_and_one_undo_step() {
         let history = h.state().session.history_len();
         let source = before
             .data()
+            .scene()
             .timeline
             .overlays
             .iter()
@@ -1332,6 +1350,7 @@ fn drop_at_track_edges_creates_one_track_and_one_undo_step() {
             .id;
         let index = before
             .data()
+            .scene()
             .timeline
             .overlays
             .iter()
@@ -1342,7 +1361,7 @@ fn drop_at_track_edges_creates_one_track_and_one_undo_step() {
         let target_track = if edge.is_some() {
             source
         } else {
-            before.data().timeline.main.id
+            before.data().scene().timeline.main.id
         };
         let header = widget(&h, &format!("track.{}.header", target_track.0));
         let target = egui::pos2(
@@ -1356,13 +1375,13 @@ fn drop_at_track_edges_creates_one_track_and_one_undo_step() {
         drag(&mut h, body.center(), target);
         let after = h.state().session.project().clone();
         assert_eq!(
-            after.data().timeline.track_count(),
-            before.data().timeline.track_count() + usize::from(edge.is_some())
+            after.data().scene().timeline.track_count(),
+            before.data().scene().timeline.track_count() + usize::from(edge.is_some())
         );
         let new = if edge.is_some() {
-            &after.data().timeline.overlays[index]
+            &after.data().scene().timeline.overlays[index]
         } else {
-            &after.data().timeline.main
+            &after.data().scene().timeline.main
         };
         assert_eq!(new.items.len(), 1);
         assert_eq!(new.items[0].id, moving);
@@ -1381,7 +1400,7 @@ fn drop_at_track_edges_creates_one_track_and_one_undo_step() {
         assert_eq!(h.state().session.project(), &after);
         // A video cannot create an overlay inside the audio group; roll back the whole gesture.
         h.run_steps(3);
-        let audio = after.data().timeline.audio[0].id;
+        let audio = after.data().scene().timeline.audio[0].id;
         let audio_header = widget(&h, &format!("track.{}.header", audio.0));
         let body = widget(&h, &format!("timeline.item.{}", moving.0));
         let history = h.state().session.history_len();

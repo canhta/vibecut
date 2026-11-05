@@ -133,7 +133,7 @@ fn populated(path: PathBuf) -> Project {
             ItemParams::Video(_) | ItemParams::Audio(_) | ItemParams::Caption(_)
         )
         .then_some(AssetId(3));
-        data.timeline.insert_track(Track {
+        data.scene_mut().timeline.insert_track(Track {
             id: TrackId(i as u64 + 1),
             name: "Track".into(),
             kind: content.kind(),
@@ -161,7 +161,7 @@ fn populated(path: PathBuf) -> Project {
     .into_iter()
     .enumerate()
     {
-        data.timeline.insert_track(Track {
+        data.scene_mut().timeline.insert_track(Track {
             id: TrackId(index as u64 + 6),
             name: "Empty overlay".into(),
             kind,
@@ -171,10 +171,10 @@ fn populated(path: PathBuf) -> Project {
             items: vec![],
         });
     }
-    data.timeline.main.muted = true;
-    data.timeline.main.hidden = true;
-    data.timeline.magnet = false;
-    data.bookmarks.push(Bookmark {
+    data.scene_mut().timeline.main.muted = true;
+    data.scene_mut().timeline.main.hidden = true;
+    data.scene_mut().timeline.magnet = false;
+    data.scene_mut().bookmarks.push(Bookmark {
         id: BookmarkId(1),
         start: Tick(5),
         duration: Tick(10),
@@ -219,11 +219,12 @@ fn invalid_candidates_are_refused_without_changing_original() {
     ];
     for items in cases {
         let mut d = initial.clone().into_data();
-        d.timeline.insert_track(track(items));
+        d.scene_mut().timeline.insert_track(track(items));
         assert!(Project::new(d).is_err());
     }
     let mut d = initial.clone().into_data();
-    d.timeline
+    d.scene_mut()
+        .timeline
         .insert_track(track(vec![item(1, 0), item(2, 10)]));
     assert_eq!(Project::new(d).unwrap().duration(), Tick(20));
     assert_eq!(initial.duration(), Tick::ZERO);
@@ -247,11 +248,12 @@ fn model_trust_boundaries() {
     d.assets.push(d.assets.first().unwrap().clone());
     cases.push(d);
     let mut d = base.clone();
-    d.timeline
-        .insert_track(d.timeline.overlays.first().unwrap().clone());
+    let duplicate = d.scene().timeline.overlays.first().unwrap().clone();
+    d.scene_mut().timeline.insert_track(duplicate);
     cases.push(d);
     let mut d = base.clone();
-    d.timeline
+    d.scene_mut()
+        .timeline
         .iter_mut()
         .flat_map(|track| &mut track.items)
         .find(|item| item.id == ItemId(0))
@@ -259,7 +261,8 @@ fn model_trust_boundaries() {
         .source_asset = Some(AssetId(999));
     cases.push(d);
     let mut d = base.clone();
-    d.timeline
+    d.scene_mut()
+        .timeline
         .iter_mut()
         .find(|track| {
             track
@@ -274,10 +277,11 @@ fn model_trust_boundaries() {
         .source_range = range(0, 1001);
     cases.push(d);
     let mut d = base.clone();
-    d.bookmarks.first_mut().unwrap().duration = Tick(-1);
+    d.scene_mut().bookmarks.first_mut().unwrap().duration = Tick(-1);
     cases.push(d);
     let mut d = base.clone();
-    d.timeline
+    d.scene_mut()
+        .timeline
         .audio
         .first_mut()
         .unwrap()
@@ -291,6 +295,7 @@ fn model_trust_boundaries() {
     cases.push(d);
     let mut d = base.clone();
     let title = d
+        .scene_mut()
         .timeline
         .iter_mut()
         .flat_map(|track| &mut track.items)
@@ -301,13 +306,13 @@ fn model_trust_boundaries() {
     }
     cases.push(d);
     let mut d = base.clone();
-    d.timeline.main.kind = TrackKind::Audio;
+    d.scene_mut().timeline.main.kind = TrackKind::Audio;
     cases.push(d);
     let mut d = base.clone();
-    d.timeline.main.name = "Renamed main".into();
+    d.scene_mut().timeline.main.name = "Renamed main".into();
     cases.push(d);
     let mut d = base.clone();
-    d.timeline.main.id = TrackId(1);
+    d.scene_mut().timeline.main.id = TrackId(1);
     cases.push(d);
     for (audio_group, wrong_kind) in [(true, TrackKind::Text), (false, TrackKind::Audio)] {
         let mut d = base.clone();
@@ -321,9 +326,9 @@ fn model_trust_boundaries() {
             items: vec![],
         };
         if audio_group {
-            d.timeline.audio.push(wrong);
+            d.scene_mut().timeline.audio.push(wrong);
         } else {
-            d.timeline.overlays.push(wrong);
+            d.scene_mut().timeline.overlays.push(wrong);
         }
         cases.push(d);
     }
@@ -334,7 +339,8 @@ fn model_trust_boundaries() {
         TrackKind::Adjustment,
     ] {
         let mut d = base.clone();
-        d.timeline
+        d.scene_mut()
+            .timeline
             .overlays
             .iter_mut()
             .find(|track| {
@@ -362,6 +368,7 @@ fn schema_errors_precede_interpreting_an_unknown_project_body() {
         ),
         (4, "null", true),
         (5, "null", true),
+        (6, "null", true),
         (SCHEMA_VERSION + 1, "null", false),
     ] {
         let bytes = format!(
@@ -508,7 +515,7 @@ proptest::proptest! {
             let mut next = item(id as u64, end);
             next.source_range = range(0, duration); end += duration; items.push(next);
         }
-        data.timeline.insert_track(track(items)); let project = Project::new(data).unwrap();
+        data.scene_mut().timeline.insert_track(track(items)); let project = Project::new(data).unwrap();
         proptest::prop_assert_eq!(project.duration(), Tick(end));
         proptest::prop_assert_eq!(decode(&encode(&project, false).unwrap()).unwrap().project, project);
     }
@@ -526,7 +533,7 @@ fn encoding_limit_failure_never_replaces_saved_project_or_rotates_snapshots() {
         let mut track = track(Vec::new());
         track.id = TrackId(id + 1);
         track.name = "a".repeat(900000).into();
-        data.timeline.insert_track(track);
+        data.scene_mut().timeline.insert_track(track);
     }
     let oversized = Project::new(data).unwrap();
     assert!(matches!(

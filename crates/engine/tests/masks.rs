@@ -7,7 +7,7 @@ fn session() -> Session {
     let mut data = Project::empty(ProjectId(1), "Masks".into())
         .unwrap()
         .into_data();
-    data.timeline.insert_track(Track {
+    data.scene_mut().timeline.insert_track(Track {
         id: TrackId(1),
         name: "V".into(),
         kind: TrackKind::Video,
@@ -55,6 +55,7 @@ fn mask_commands_validate_persist_order_and_restore_history_atomically() {
     let mut order: Vec<_> = s
         .project()
         .data()
+        .scene()
         .timeline
         .overlays
         .first()
@@ -95,6 +96,7 @@ fn mask_commands_validate_persist_order_and_restore_history_atomically() {
     assert!(
         s.project()
             .data()
+            .scene()
             .timeline
             .overlays
             .first()

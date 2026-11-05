@@ -93,7 +93,7 @@ fn overlay_project_color(
         .into_data();
     data.canvas.width = width;
     data.canvas.height = height;
-    data.timeline.insert_track(project::Track {
+    data.scene_mut().timeline.insert_track(project::Track {
         id: project::TrackId(1),
         name: "Overlay".into(),
         kind: project::TrackKind::Video,
@@ -229,7 +229,7 @@ fn exec_mutates_through_engine_and_reports_created_ids() {
     assert_eq!(placed["placements"][0]["track"], 0);
     assert_eq!(placed["placements"][0]["item"], 2);
     let loaded = project::load(&project).unwrap().project;
-    assert_eq!(loaded.data().timeline.main.items[0].start, Tick::ZERO);
+    assert_eq!(loaded.data().scene().timeline.main.items[0].start, Tick::ZERO);
 }
 
 #[test]
@@ -333,7 +333,7 @@ fn two_subprocesses_interleave_one_commit_one_refusal() {
     let mut data = project::Project::empty(project::ProjectId(0), "base".into())
         .unwrap()
         .into_data();
-    data.timeline.overlays = (0..250)
+    data.scene_mut().timeline.overlays = (0..250)
         .map(|index| project::Track {
             id: project::TrackId(index + 1),
             name: format!("Base {index}").into(),
@@ -344,7 +344,7 @@ fn two_subprocesses_interleave_one_commit_one_refusal() {
             items: Vec::new(),
         })
         .collect();
-    data.bookmarks = (0..10_000)
+    data.scene_mut().bookmarks = (0..10_000)
         .map(|index| project::Bookmark {
             id: project::BookmarkId(index),
             start: Tick(index as i64),
@@ -396,7 +396,7 @@ fn two_subprocesses_interleave_one_commit_one_refusal() {
             String::from_utf8_lossy(&second_output.stderr)
         );
         let loaded = project::load(&trial).unwrap();
-        let tracks: Vec<_> = loaded.project.data().timeline.iter().collect();
+        let tracks: Vec<_> = loaded.project.data().scene().timeline.iter().collect();
         assert_eq!(tracks.len() as u64, base_tracks + 1);
         let winner = if first_code == 0 { "A" } else { "B" };
         let loser = if first_code == 0 { "B" } else { "A" };
@@ -470,6 +470,54 @@ fn export_writes_a_completed_file_and_keeps_progress_on_stderr() {
     let project = dir.path().join("overlay.vibecut");
     let output_path = dir.path().join("export.mp4");
     overlay_project(&project, 64, 64, Tick(time::TICKS_PER_SECOND));
+    // A longer red main scene must not leak into the selected green scene's export.
+    let mut data = project::load(&project).unwrap().project.into_data();
+    let mut secondary = data.scene().clone();
+    secondary.id = project::SceneId(2);
+    secondary.name = "Export scene".into();
+    secondary.is_main = false;
+    secondary.timeline.main.id = project::TrackId(3);
+    secondary
+        .timeline
+        .overlays
+        .first_mut()
+        .unwrap()
+        .items
+        .first_mut()
+        .unwrap()
+        .content = project::ItemParams::Overlay(project::OverlayParams {
+        color: project::Color([0, 255, 0, 255]),
+    });
+    secondary.timeline.overlays.first_mut().unwrap().id = project::TrackId(4);
+    secondary
+        .timeline
+        .overlays
+        .first_mut()
+        .unwrap()
+        .items
+        .first_mut()
+        .unwrap()
+        .id = project::ItemId(5);
+    let item = data
+        .scene_mut()
+        .timeline
+        .overlays
+        .first_mut()
+        .unwrap()
+        .items
+        .first_mut()
+        .unwrap();
+    item.source_range = TimeRange::new(Tick::ZERO, Tick(2 * time::TICKS_PER_SECOND)).unwrap();
+    item.content = project::ItemParams::Overlay(project::OverlayParams {
+        color: project::Color([255, 0, 0, 255]),
+    });
+    data.scenes.insert(secondary).unwrap();
+    data.current_scene_id = project::SceneId(2);
+    fs::write(
+        &project,
+        project::encode(&project::Project::new(data).unwrap(), false).unwrap(),
+    )
+    .unwrap();
     let output = cli(&[
         os("export"),
         project.as_os_str(),
@@ -486,6 +534,30 @@ fn export_writes_a_completed_file_and_keeps_progress_on_stderr() {
     assert_eq!(stdout_json(&output)["status"], "completed");
     assert!(fs::metadata(&output_path).unwrap().len() > 0);
     assert!(String::from_utf8_lossy(&output.stderr).contains("progress"));
+    if tools() {
+        let frame = decoded_rgb(&output_path, 64, 64, &[0]);
+        let rgb = &frame.first().unwrap()[..3];
+        for (actual, expected) in rgb.iter().zip([0, 255, 0]) {
+            assert!(
+                (i32::from(*actual) - expected).abs() <= 12,
+                "decoded {rgb:?} expected green"
+            );
+        }
+        let probe = tool_command("ffprobe")
+            .args([
+                os("-v"),
+                os("error"),
+                os("-show_entries"),
+                os("stream=nb_frames"),
+                os("-of"),
+                os("json"),
+                output_path.as_os_str(),
+            ])
+            .output()
+            .unwrap();
+        let value: Value = serde_json::from_slice(&probe.stdout).unwrap();
+        assert_eq!(value["streams"][0]["nb_frames"], "30");
+    }
 }
 
 #[test]
@@ -1002,7 +1074,7 @@ fn exec_shared_field_id_list_persists_only_compatible_item_fields() {
     let mut data = project::Project::empty(project::ProjectId(0), "Batch".into())
         .unwrap()
         .into_data();
-    data.timeline.insert_track(project::Track {
+    data.scene_mut().timeline.insert_track(project::Track {
         id: project::TrackId(1),
         name: "Text".into(),
         kind: project::TrackKind::Text,
@@ -1037,10 +1109,11 @@ fn exec_shared_field_id_list_persists_only_compatible_item_fields() {
     let saved = project::decode(&fs::read(&path).unwrap()).unwrap().project;
     for (before, after) in original
         .data()
+        .scene()
         .timeline
         .iter()
         .flat_map(|t| &t.items)
-        .zip(saved.data().timeline.iter().flat_map(|t| &t.items))
+        .zip(saved.data().scene().timeline.iter().flat_map(|t| &t.items))
     {
         let project::ItemParams::Text(p) = &after.content else {
             panic!("text")

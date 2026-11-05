@@ -71,7 +71,7 @@ fn session() -> Session {
             .into(),
         })
         .collect();
-    data.timeline.insert_track(Track {
+    data.scene_mut().timeline.insert_track(Track {
         id: TrackId(1),
         name: "captions".into(),
         kind: TrackKind::Text,
@@ -94,7 +94,8 @@ fn session() -> Session {
     Session::new(Project::new(data).unwrap(), 10).unwrap()
 }
 fn cues(s: &Session) -> &[Cue] {
-    let ItemParams::Caption(p) = &s.project().data().timeline.overlays[0].items[0].content else {
+    let ItemParams::Caption(p) = &s.project().data().scene().timeline.overlays[0].items[0].content
+    else {
         panic!("fixture")
     };
     &p.cues.cues
@@ -470,7 +471,7 @@ fn translation_preserves_partial_and_hidden_cues_across_every_trim_retention_lif
                     expected,
                     "{mode} start={start} edge={edge} force={force}"
                 );
-                let item = &s.project().data().timeline.overlays[0].items[0];
+                let item = &s.project().data().scene().timeline.overlays[0].items[0];
                 assert_eq!(item.start, Tick(0));
                 assert_eq!(
                     item.source_range,

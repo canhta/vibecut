@@ -12,7 +12,7 @@ macro_rules! id {
         pub struct $name(pub u64);
     )+};
 }
-id!(TrackId, ItemId, BookmarkId);
+id!(TrackId, ItemId, BookmarkId, SceneId);
 
 /// Decimal-string identity, including on disk, so control clients retain every bit.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, schemars::JsonSchema)]
@@ -249,6 +249,127 @@ impl Item {
     }
 }
 
+/// One independently editable timeline; canvas and assets remain project-wide.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct Scene {
+    pub id: SceneId,
+    pub name: NfcText,
+    pub is_main: bool,
+    pub timeline: Timeline,
+    pub bookmarks: Vec<Bookmark>,
+}
+impl Scene {
+    /// End of content in output ticks; bookmarks do not extend the scene.
+    pub fn duration(&self) -> Tick {
+        self.timeline
+            .iter()
+            .flat_map(|t| &t.items)
+            .filter_map(|i| i.end().ok())
+            .max()
+            .unwrap_or(Tick::ZERO)
+    }
+}
+/// Explicit export selection; output UI and adapters choose output paths separately.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
+#[serde(
+    tag = "scope",
+    content = "scenes",
+    rename_all = "snake_case",
+    deny_unknown_fields
+)]
+pub enum SceneScope {
+    Active,
+    All,
+    Selected(Vec<SceneId>),
+}
+/// Nonempty scene array with exactly one main scene. Main is never deletable.
+#[derive(Clone, Debug, PartialEq, Deserialize, schemars::JsonSchema)]
+#[serde(try_from = "Vec<Scene>")]
+#[schemars(with = "Vec<Scene>")]
+pub struct Scenes {
+    main: Scene,
+    others: Vec<Scene>,
+}
+impl TryFrom<Vec<Scene>> for Scenes {
+    type Error = Error;
+    fn try_from(mut scenes: Vec<Scene>) -> Result<Self> {
+        if scenes.len() > 256 {
+            return Err(Error::TooLarge("scenes"));
+        }
+        if scenes.iter().filter(|s| s.is_main).count() != 1 {
+            return Err(Error::Invalid("exactly one main scene required"));
+        }
+        let index = scenes
+            .iter()
+            .position(|s| s.is_main)
+            .ok_or(Error::Invalid("main scene"))?;
+        let main = scenes.remove(index);
+        Ok(Self {
+            main,
+            others: scenes,
+        })
+    }
+}
+impl Serialize for Scenes {
+    fn serialize<S: serde::Serializer>(
+        &self,
+        serializer: S,
+    ) -> std::result::Result<S::Ok, S::Error> {
+        serializer.collect_seq(self.iter())
+    }
+}
+impl Default for Scenes {
+    fn default() -> Self {
+        Self {
+            main: Scene {
+                id: SceneId(0),
+                name: "Main scene".into(),
+                is_main: true,
+                timeline: Timeline::default(),
+                bookmarks: Vec::new(),
+            },
+            others: Vec::new(),
+        }
+    }
+}
+impl Scenes {
+    pub fn iter(&self) -> impl Iterator<Item = &Scene> {
+        std::iter::once(&self.main).chain(&self.others)
+    }
+    pub fn iter_mut(&mut self) -> impl Iterator<Item = &mut Scene> {
+        std::iter::once(&mut self.main).chain(&mut self.others)
+    }
+    pub fn main(&self) -> &Scene {
+        &self.main
+    }
+    pub fn get(&self, id: SceneId) -> Option<&Scene> {
+        self.iter().find(|s| s.id == id)
+    }
+    pub fn get_mut(&mut self, id: SceneId) -> Option<&mut Scene> {
+        self.iter_mut().find(|s| s.id == id)
+    }
+    pub fn insert(&mut self, scene: Scene) -> Result<()> {
+        if scene.is_main || self.get(scene.id).is_some() {
+            return Err(Error::Invalid("scene identity"));
+        }
+        if self.others.len() >= 255 {
+            return Err(Error::TooLarge("scenes"));
+        }
+        self.others.push(scene);
+        Ok(())
+    }
+    pub fn delete(&mut self, ids: &BTreeSet<SceneId>) -> Result<()> {
+        if ids.contains(&self.main.id) {
+            return Err(Error::Invalid("main scene cannot be deleted"));
+        }
+        if ids.iter().any(|id| self.get(*id).is_none()) {
+            return Err(Error::Invalid("scene not found"));
+        }
+        self.others.retain(|s| !ids.contains(&s.id));
+        Ok(())
+    }
+}
 /// Editable candidate data; committing through `Project::new` validates the whole snapshot.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
@@ -257,9 +378,27 @@ pub struct ProjectData {
     pub name: NfcText,
     pub canvas: Canvas,
     pub assets: Vec<SourceAsset>,
-    pub timeline: Timeline,
-    pub bookmarks: Vec<Bookmark>,
+    pub scenes: Scenes,
+    pub current_scene_id: SceneId,
     pub settings: Settings,
+}
+impl ProjectData {
+    /// Candidates with an invalid current ID read main; validation still refuses them.
+    pub fn scene(&self) -> &Scene {
+        self.scenes
+            .get(self.current_scene_id)
+            .unwrap_or(self.scenes.main())
+    }
+    pub fn scene_mut(&mut self) -> &mut Scene {
+        if self.current_scene_id == self.scenes.main.id {
+            return &mut self.scenes.main;
+        }
+        self.scenes
+            .others
+            .iter_mut()
+            .find(|s| s.id == self.current_scene_id)
+            .unwrap_or(&mut self.scenes.main)
+    }
 }
 /// An immutable validated snapshot. Commands build a candidate and commit once.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
@@ -282,8 +421,8 @@ impl Project {
             name,
             canvas: Canvas::default(),
             assets: Vec::new(),
-            timeline: Timeline::default(),
-            bookmarks: Vec::new(),
+            scenes: Scenes::default(),
+            current_scene_id: SceneId(0),
             settings: Settings::default(),
         })
     }
@@ -294,13 +433,36 @@ impl Project {
         self.0
     }
     pub fn duration(&self) -> Tick {
-        self.0
-            .timeline
-            .iter()
-            .flat_map(|t| &t.items)
-            .filter_map(|i| i.end().ok())
-            .max()
-            .unwrap_or(Tick::ZERO)
+        self.0.scene().duration()
+    }
+    /// Validate the complete explicit export scope before scheduling any output.
+    pub fn scene_ids(&self, scope: &SceneScope) -> Result<Vec<SceneId>> {
+        match scope {
+            SceneScope::Active => Ok(vec![self.0.current_scene_id]),
+            SceneScope::All => Ok(self.0.scenes.iter().map(|s| s.id).collect()),
+            SceneScope::Selected(ids) => {
+                if ids.is_empty() || ids.len() > 256 {
+                    return Err(Error::Invalid("scene export selection"));
+                }
+                let mut seen = BTreeSet::new();
+                if ids
+                    .iter()
+                    .any(|id| self.0.scenes.get(*id).is_none() || !seen.insert(*id))
+                {
+                    return Err(Error::Invalid("scene export selection"));
+                }
+                Ok(ids.clone())
+            }
+        }
+    }
+    /// Immutable scene-specific snapshot for the shared preview/export pipeline.
+    pub fn for_scene(&self, scene: SceneId) -> Result<Self> {
+        if self.0.scenes.get(scene).is_none() {
+            return Err(Error::Invalid("scene not found"));
+        }
+        let mut data = self.0.clone();
+        data.current_scene_id = scene;
+        Self::new(data)
     }
 }
 fn text(value: &NfcText) -> Result<()> {
@@ -329,8 +491,13 @@ fn validate(data: &ProjectData) -> Result<()> {
         return Err(Error::Invalid("audio sample rate"));
     }
     if data.assets.len() > 10000
-        || data.timeline.track_count() > 256
-        || data.bookmarks.len() > 100000
+        || data
+            .scenes
+            .iter()
+            .map(|s| s.timeline.track_count())
+            .sum::<usize>()
+            > 256
+        || data.scenes.iter().map(|s| s.bookmarks.len()).sum::<usize>() > 100000
     {
         return Err(Error::TooLarge("project collections"));
     }
@@ -340,25 +507,38 @@ fn validate(data: &ProjectData) -> Result<()> {
             return Err(Error::Invalid("duplicate asset ID"));
         }
     }
-    if data.timeline.main.kind != TrackKind::Video
-        || data.timeline.main.name.as_str() != "Main Track"
-        || data
-            .timeline
-            .overlays
-            .iter()
-            .any(|t| t.kind == TrackKind::Audio)
-        || data
-            .timeline
-            .audio
-            .iter()
-            .any(|t| t.kind != TrackKind::Audio)
-    {
-        return Err(Error::Invalid("track layout"));
+    if data.scenes.get(data.current_scene_id).is_none() {
+        return Err(Error::Invalid("current scene not found"));
+    }
+    if !data.scenes.main().is_main || data.scenes.iter().filter(|s| s.is_main).count() != 1 {
+        return Err(Error::Invalid("main scene invariant"));
+    }
+    let mut scene_ids = BTreeSet::new();
+    for scene in data.scenes.iter() {
+        text(&scene.name)?;
+        if !scene_ids.insert(scene.id) {
+            return Err(Error::Invalid("duplicate scene ID"));
+        }
+        if scene.timeline.main.kind != TrackKind::Video
+            || scene.timeline.main.name.as_str() != "Main Track"
+            || scene
+                .timeline
+                .overlays
+                .iter()
+                .any(|t| t.kind == TrackKind::Audio)
+            || scene
+                .timeline
+                .audio
+                .iter()
+                .any(|t| t.kind != TrackKind::Audio)
+        {
+            return Err(Error::Invalid("track layout"));
+        }
     }
     let mut track_ids = BTreeSet::new();
     let mut item_ids = BTreeSet::new();
     let mut keys = 0usize;
-    for track in data.timeline.iter() {
+    for track in data.scenes.iter().flat_map(|s| s.timeline.iter()) {
         text(&track.name)?;
         if !track_ids.insert(track.id) {
             return Err(Error::Invalid("duplicate track ID"));
@@ -498,7 +678,7 @@ fn validate(data: &ProjectData) -> Result<()> {
         }
     }
     let mut bookmark_ids = BTreeSet::new();
-    for b in &data.bookmarks {
+    for b in data.scenes.iter().flat_map(|s| &s.bookmarks) {
         text(&b.note)?;
         if !bookmark_ids.insert(b.id)
             || b.start < Tick::ZERO

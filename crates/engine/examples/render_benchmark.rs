@@ -97,7 +97,7 @@ fn text_benchmark(
     let mut d = project::Project::empty(project::ProjectId(0), "".into())?.into_data();
     d.canvas.width = 640;
     d.canvas.height = 360;
-    d.timeline.insert_track(project::Track {
+    d.scene_mut().timeline.insert_track(project::Track {
         id: project::TrackId(1),
         name: "".into(),
         kind: project::TrackKind::Text,
@@ -193,7 +193,7 @@ fn export_benchmark(
         .ok_or(EditError::Invalid("fixture duration"))?;
     let mut d = project::Project::empty(project::ProjectId(0), "".into())?.into_data();
     d.assets.push(asset);
-    d.timeline.insert_track(project::Track {
+    d.scene_mut().timeline.insert_track(project::Track {
         id: project::TrackId(1),
         name: "".into(),
         kind: project::TrackKind::Video,
@@ -215,6 +215,7 @@ fn export_benchmark(
     });
     if blur
         && let Some(item) = d
+            .scene_mut()
             .timeline
             .overlays
             .first_mut()

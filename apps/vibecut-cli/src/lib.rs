@@ -385,8 +385,13 @@ fn project_info(path: PathBuf) -> Result<Output, CliError> {
     let metadata = lease.metadata();
     let data = loaded.project.data();
     let duration = loaded.project.duration();
-    let tracks = data.timeline.track_count();
-    let items = data.timeline.iter().map(|t| t.items.len()).sum::<usize>();
+    let tracks = data.scene().timeline.track_count();
+    let items = data
+        .scene()
+        .timeline
+        .iter()
+        .map(|t| t.items.len())
+        .sum::<usize>();
     let fps = data.canvas.fps;
     let value = json!({
         "path": json_path(&path)?,
@@ -402,7 +407,7 @@ fn project_info(path: PathBuf) -> Result<Output, CliError> {
         "assets": data.assets.len(),
         "tracks": tracks,
         "items": items,
-        "bookmarks": data.bookmarks.len(),
+        "bookmarks": data.scene().bookmarks.len(),
         "schema_version": loaded.schema_version,
         "metadata": metadata,
     });
@@ -418,7 +423,7 @@ fn project_info(path: PathBuf) -> Result<Output, CliError> {
         data.assets.len(),
         tracks,
         items,
-        data.bookmarks.len(),
+        data.scene().bookmarks.len(),
         loaded.schema_version,
     );
     Ok(Output { value, human })
@@ -491,6 +496,7 @@ fn outcome_human(outcome: &engine::Outcome) -> String {
 
 fn created_human(created: &CreatedId) -> String {
     match created {
+        CreatedId::Scene(id) => format!("scene {}", id.0),
         CreatedId::Track(id) => format!("track {}", id.0),
         CreatedId::Item(id) => format!("item {}", id.0),
         CreatedId::Bookmark(id) => format!("bookmark {}", id.0),

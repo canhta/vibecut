@@ -593,7 +593,7 @@ fn every_group_exit_invalidates_captured_preview_targets_and_submitted_outputs()
                 0 => Err(EditError::Cancelled),
                 1 => panic!("unwind after preview target capture"),
                 2 => {
-                    let track = s.project().data().timeline.overlays[0].id;
+                    let track = s.project().data().scene().timeline.overlays[0].id;
                     s.apply(Command::RemoveTrack { track })?;
                     Ok(())
                 }
@@ -635,7 +635,7 @@ fn every_group_exit_invalidates_captured_preview_targets_and_submitted_outputs()
             kind: project::TrackKind::Video,
         })
         .unwrap();
-        let track = s.project().data().timeline.overlays[0].id;
+        let track = s.project().data().scene().timeline.overlays[0].id;
         s.apply(Command::RemoveTrack { track }).unwrap();
         let target = s.job_target();
         if cancel {

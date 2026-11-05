@@ -185,6 +185,7 @@ fn recover_discard_and_save_as_preserve_original_then_promote() {
             .unwrap()
             .project
             .data()
+            .scene()
             .timeline
             .overlays
             .len(),
@@ -200,6 +201,7 @@ fn recover_discard_and_save_as_preserve_original_then_promote() {
             .unwrap()
             .project
             .data()
+            .scene()
             .timeline
             .overlays
             .len(),
@@ -240,6 +242,7 @@ fn stale_save_completion_cannot_acknowledge_new_edits() {
             .unwrap()
             .project()
             .data()
+            .scene()
             .timeline
             .overlays
             .len(),
@@ -268,6 +271,7 @@ fn switch_flushes_pending_and_gestures_cannot_cross_a_boundary() {
             .unwrap()
             .project()
             .data()
+            .scene()
             .timeline
             .overlays
             .len(),
@@ -353,6 +357,7 @@ fn journal_survives_forced_process_termination_and_another_live_instance() {
             .unwrap()
             .project()
             .data()
+            .scene()
             .timeline
             .overlays
             .len(),
@@ -444,12 +449,16 @@ fn stale_same_path_save_with_undo(undo_after_completion: bool) {
             a.session_mut().undo().unwrap();
             a.session_mut().undo().unwrap();
         }
-        assert_eq!(a.session().project().data().timeline.overlays.len(), 0);
+        assert_eq!(
+            a.session().project().data().scene().timeline.overlays.len(),
+            0
+        );
         assert_eq!(
             project::load(&path)
                 .unwrap()
                 .project
                 .data()
+                .scene()
                 .timeline
                 .overlays
                 .len(),
@@ -471,6 +480,7 @@ fn stale_same_path_save_with_undo(undo_after_completion: bool) {
                     .unwrap()
                     .project
                     .data()
+                    .scene()
                     .timeline
                     .overlays
                     .len(),
@@ -499,6 +509,7 @@ fn stale_same_path_save_with_undo(undo_after_completion: bool) {
                     .unwrap()
                     .project()
                     .data()
+                    .scene()
                     .timeline
                     .overlays
                     .len(),
@@ -694,6 +705,7 @@ fn acknowledged_save_as_transfers_lease_and_receipt_together() {
             .unwrap()
             .project
             .data()
+            .scene()
             .timeline
             .overlays
             .len(),

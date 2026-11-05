@@ -15,7 +15,7 @@ candidate for an engine command. Revalidate before committing. Serde
 construction also validates; use `decode`/`load` for untrusted JSON ingestion so
 allocation and nesting budgets apply before typed deserialization.
 
-Project, track, item and bookmark IDs are separate `u64` newtypes; media owns
+Project, scene, track, item and bookmark IDs are separate `u64` newtypes; media owns
 asset IDs. IDs are unique within their type across a project. Zero is permitted;
 engine owns allocation. `Timeline` owns `overlays` (topmost first), one mandatory
 `main` Video track named `Main Track`, `audio` (topmost first), and persisted
@@ -28,7 +28,7 @@ Effect, Filter and Adjustment accept empty tracks until their item owners land.
 Groups, main kind/name and unique IDs are validated on every candidate. Items
 within each track are sorted by output start, nonnegative and nonoverlapping.
 Touching half-open intervals are valid. Item end uses checked arithmetic. There
-is no retiming: output duration equals `source_range.duration()`. A project's
+is no retiming: output duration equals `source_range.duration()`. An active scene's
 output duration is the maximum item end, excluding bookmarks.
 
 Each item's typed `ItemParams` determines its track kind. Video/audio require an
@@ -46,6 +46,30 @@ Names, notes and text use captions' NFC text owner. Canvas frames must have exac
 positive integer tick durations. Canvas area is at most 2^26 pixels; output audio
 admits 8–192 kHz. Audio gain admits −120..24 dB; font sizes admit 1..4096 pixels.
 Typed invalid/unsupported/limit errors refuse a whole candidate.
+
+## Scenes
+
+`ProjectData.scenes` is a nonempty JSON array, represented by `Scenes` with one
+protected main scene and up to 255 secondary scenes. `current_scene_id` identifies
+an existing scene. Scene IDs are unique; track, item and bookmark IDs remain
+unique across the entire project, including inactive scenes. All existing item,
+track, animation and bookmark validation and aggregate budgets span every scene.
+A candidate with no main, multiple mains, duplicate IDs or a missing active scene
+is refused; loading never repairs it.
+
+`Scene` owns its NFC name, `is_main`, timeline and bookmarks. Assets, canvas
+(width, height, fps, background) and output audio settings remain project-level.
+`ProjectData::scene` / `scene_mut` access the current scene; incomplete candidates
+read main when their current ID is invalid, but `Project::new` still refuses those
+candidates. `Scene::duration` derives content duration. `Project::duration` uses
+the active scene. `Scenes::main().duration()` supplies main-scene duration to
+project cards without changing the active scene.
+
+`Project::scene_ids(SceneScope)` resolves Active, All or an explicit nonempty,
+unique Selected list before any export scheduling. Unknown/duplicate IDs and
+more than 256 selections refuse. `for_scene` creates a validated immutable
+snapshot for the selected scene; preview, mixing and export consume that same
+active-scene snapshot. Export settings UI owns output scope controls and paths.
 
 ## Animated parameters
 
@@ -118,8 +142,8 @@ or renderer output claim is made.
 ## Persistence and limits
 
 `encode`/`decode` use one JSON envelope: `format`, `schema_version`, `generator`,
-`project`. Current schema 6 stores ProjectId as a canonical decimal string, preserving
-all u64 identity bits for control clients; other IDs remain numeric. Schemas 1–4
+`project`. Current schema 7 stores ProjectId as a canonical decimal string, preserving
+all u64 identity bits for control clients; other IDs remain numeric. Schemas 1–6
 are refused rather than migrated or silently defaulted. Older schemas return `TooOld`, newer schemas `TooNew`; there are no
 migration or compatibility paths. Unknown current-schema project/envelope fields
 are refused. `WriterLease::save` serializes completely before touching the destination;
@@ -254,9 +278,9 @@ filesystem, not survival of physical power loss. No performance claim is made.
 ## Optional project metadata
 
 `WriterLease::metadata` reads `<canonical project filename>.meta.json`, bounded to
-4 KiB, with metadata schema version 1. Missing, unreadable, corrupt, oversized or
+64 KiB, with metadata schema version 2. Missing, unreadable, corrupt, oversized or
 unsupported metadata defaults without blocking the project. `Metadata` contains
-created/modified Unix milliseconds and `ViewState` (positive zoom at most 1000, horizontal
+created/modified Unix milliseconds, the current `ViewState` and up to 256 scene-ID-keyed views (positive zoom at most 1000, horizontal
 scroll 0–1e9 logical pixels, nonnegative integer-tick playhead). Nonfinite values
 are refused. This sidecar is outside the editable project envelope and does not
 change its schema. No project index or thumbnail bytes are stored here.
@@ -291,7 +315,7 @@ whitespace-only text masks are inactive while retaining their editable data. The
 admits 1,024 entries for resource safety; presentation limits do not define the
 model. Audio items refuse masks. Modes are None/Add/Subtract/Intersect/Lighten/
 Darken/Difference; render owns their coverage math. Commands/history belong to
-engine. Schema 6 requires mask vectors; schema 5 and earlier refuse with `TooOld`.
+engine. Schema 7 requires scene arrays and per-item mask vectors; schema 6 and earlier refuse with `TooOld`.
 
 Shapes include split, cinematic band, rectangle, ellipse, heart, diamond, star,
 text and a cubic `MaskPath`. Text masks currently persist content and font size

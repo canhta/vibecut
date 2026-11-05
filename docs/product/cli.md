@@ -12,7 +12,7 @@ Build with `cargo build -p vibecut-cli` through the [build wrapper](../agents/or
 | `vibecut-cli project new <path>` | Create an empty project, refusing to replace an existing file |
 | `vibecut-cli project info <path>` | Summary plus optional view metadata under the project writer lease |
 | `vibecut-cli exec <project> <command_id> <json>` | Run one engine command and save the result |
-| `vibecut-cli export <project> --out <mp4>` | Export the saved timeline to MP4 |
+| `vibecut-cli export <project> --out <mp4>` | Export the saved active scene to MP4 |
 | `vibecut-cli subtitle <in> --to <lang>` | Transcribe, translate and export SRT/burned subtitles |
 | `vibecut-cli clips <in>` | Suggest ranked shorts from a long video and optionally export them |
 | `vibecut-cli providers` | List transcription/translation/clip providers and capabilities offline |

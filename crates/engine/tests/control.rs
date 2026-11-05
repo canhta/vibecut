@@ -129,7 +129,7 @@ fn seed() -> Session {
         })
         .unwrap(),
     );
-    data.timeline.overlays = vec![
+    data.scene_mut().timeline.overlays = vec![
         Track {
             id: TrackId(1),
             name: "Overlay".into(),
@@ -200,7 +200,7 @@ fn seed() -> Session {
             }],
         },
     ];
-    data.timeline.overlays.reverse();
+    data.scene_mut().timeline.overlays.reverse();
     Session::new(Project::new(data).unwrap(), 10).unwrap()
 }
 fn replace_paths(v: &mut Value, root: &std::path::Path) {
@@ -509,7 +509,7 @@ fn ledger_exhaustion_has_no_eviction_and_no_effect() {
         ),
         ErrorCode::ReceiptCapacity,
     );
-    assert!(s.project().data().timeline.overlays.is_empty());
+    assert!(s.project().data().scene().timeline.overlays.is_empty());
     assert_eq!(s.revision(), before);
     assert_eq!(s.history_len(), (0, 0));
     let replay = s.control_request(req, caller(&Allow), &mut r).unwrap();
@@ -948,7 +948,7 @@ fn concurrent_duplicate_requests_execute_once_under_the_session_boundary() {
     assert!(values.windows(2).all(|pair| pair[0] == pair[1]));
     let guard = state.lock().unwrap();
     assert_eq!(guard.0.history_len(), (1, 0));
-    assert_eq!(guard.0.project().data().timeline.overlays.len(), 1);
+    assert_eq!(guard.0.project().data().scene().timeline.overlays.len(), 1);
 }
 
 #[test]
@@ -1317,7 +1317,7 @@ fn assert_integer_candidate_refusal(s: &mut Session, r: &mut JobRunner, id: &str
 #[test]
 fn review_integer_generated_id_is_refused_atomically_at_safe_limit() {
     let mut data = session().project().data().clone();
-    data.timeline.insert_track(Track {
+    data.scene_mut().timeline.insert_track(Track {
         id: TrackId(control::MAX_SAFE_INTEGER as u64),
         name: "Boundary".into(),
         kind: TrackKind::Video,
@@ -1341,7 +1341,7 @@ fn review_integer_generated_id_is_refused_atomically_at_safe_limit() {
 fn review_integer_derived_source_ticks_and_batch_are_refused_atomically() {
     for batch in [false, true] {
         let mut data = session().project().data().clone();
-        data.timeline.insert_track(Track {
+        data.scene_mut().timeline.insert_track(Track {
             id: TrackId(1),
             name: "Boundary".into(),
             kind: TrackKind::Video,
@@ -1396,7 +1396,7 @@ fn review_integer_derived_source_ticks_and_batch_are_refused_atomically() {
 #[test]
 fn review_integer_last_safe_created_id_matches_schema_then_next_id_refuses() {
     let mut data = session().project().data().clone();
-    data.timeline.insert_track(Track {
+    data.scene_mut().timeline.insert_track(Track {
         id: TrackId(control::MAX_SAFE_INTEGER as u64 - 1),
         name: "Boundary".into(),
         kind: TrackKind::Video,
@@ -1442,7 +1442,8 @@ fn review_integer_last_safe_created_id_matches_schema_then_next_id_refuses() {
 fn review_integer_derived_keyframe_ticks_refuse_before_commit() {
     let mut data = seed().project().data().clone();
     let path = project::AnimationPath::new("opacity").unwrap();
-    data.timeline
+    data.scene_mut()
+        .timeline
         .iter_mut()
         .flat_map(|track| &mut track.items)
         .find(|item| item.id == ItemId(1))
@@ -1471,7 +1472,7 @@ fn review_integer_derived_keyframe_ticks_refuse_before_commit() {
 #[test]
 fn review_integer_history_destination_and_legacy_json_share_candidate_validation() {
     let mut data = session().project().data().clone();
-    data.timeline.insert_track(Track {
+    data.scene_mut().timeline.insert_track(Track {
         id: TrackId(1),
         name: "Boundary".into(),
         kind: TrackKind::Video,

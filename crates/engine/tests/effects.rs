@@ -7,7 +7,7 @@ fn session() -> Session {
     let mut data = Project::empty(ProjectId(1), "Effects".into())
         .unwrap()
         .into_data();
-    data.timeline.insert_track(Track {
+    data.scene_mut().timeline.insert_track(Track {
         id: TrackId(1),
         name: "V".into(),
         kind: TrackKind::Video,
@@ -73,6 +73,7 @@ fn registry_effect_edits_persist_and_undo_atomically() {
     let item = s
         .project()
         .data()
+        .scene()
         .timeline
         .overlays
         .first()

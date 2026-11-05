@@ -50,7 +50,7 @@ fn track_headers_remain_operable_at_display_density() {
             .unwrap();
         assert_eq!(main.rect.width(), 112.0);
         assert_eq!(main.rect.height(), 65.0);
-        for track in h.state().session.project().data().timeline.iter() {
+        for track in h.state().session.project().data().scene().timeline.iter() {
             let w = inspect
                 .widgets
                 .iter()
@@ -85,19 +85,37 @@ fn track_headers_remain_operable_at_display_density() {
         h.get(By::new().predicate(|n| n.author_id() == Some("track.0.muted")))
             .click();
         h.run_steps(3);
-        assert!(h.state().session.project().data().timeline.main.muted);
+        assert!(
+            h.state()
+                .session
+                .project()
+                .data()
+                .scene()
+                .timeline
+                .main
+                .muted
+        );
         h.get(By::new().predicate(|n| n.author_id() == Some("track.0.hidden")))
             .click();
         h.run_steps(3);
-        assert!(h.state().session.project().data().timeline.main.hidden);
+        assert!(
+            h.state()
+                .session
+                .project()
+                .data()
+                .scene()
+                .timeline
+                .main
+                .hidden
+        );
         h.get(By::new().predicate(|n| n.author_id() == Some("track.0.magnet")))
             .click();
         h.run_steps(3);
-        assert!(!h.state().session.project().data().timeline.magnet);
+        assert!(!h.state().session.project().data().scene().timeline.magnet);
         h.get(By::new().predicate(|n| n.author_id() == Some("timeline.magnet")))
             .click();
         h.run_steps(3);
-        assert!(h.state().session.project().data().timeline.magnet);
+        assert!(h.state().session.project().data().scene().timeline.magnet);
         assert!(
             !h.state()
                 .inspect()
@@ -106,7 +124,7 @@ fn track_headers_remain_operable_at_display_density() {
                 .iter()
                 .any(|w| w.id == "track.7.hidden")
         );
-        let id = h.state().session.project().data().timeline.overlays[0].id;
+        let id = h.state().session.project().data().scene().timeline.overlays[0].id;
         h.get(
             By::new()
                 .predicate(|n| n.author_id() == Some(format!("track.{}.header", id.0).as_str())),
@@ -124,6 +142,7 @@ fn track_headers_remain_operable_at_display_density() {
                 .session
                 .project()
                 .data()
+                .scene()
                 .timeline
                 .iter()
                 .any(|t| t.id == id)
@@ -136,6 +155,7 @@ fn track_headers_remain_operable_at_display_density() {
                 .session
                 .project()
                 .data()
+                .scene()
                 .timeline
                 .iter()
                 .any(|t| t.id == id)

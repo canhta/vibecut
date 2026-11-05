@@ -31,7 +31,7 @@ fn project() -> Project {
         .unwrap()
         .into_data();
     for id in [1, 0] {
-        data.timeline.insert_track(Track {
+        data.scene_mut().timeline.insert_track(Track {
             id: TrackId(id + 1),
             name: "track".into(),
             kind: TrackKind::Video,
@@ -41,7 +41,12 @@ fn project() -> Project {
             items: Vec::new(),
         });
     }
-    data.timeline.overlays.first_mut().unwrap().items = vec![
+    data.scene_mut()
+        .timeline
+        .overlays
+        .first_mut()
+        .unwrap()
+        .items = vec![
         Item {
             masks: Vec::new(),
             effects: Vec::new(),
@@ -71,6 +76,7 @@ fn session() -> Session {
 fn get(s: &Session, id: u64) -> &Item {
     s.project()
         .data()
+        .scene()
         .timeline
         .iter()
         .flat_map(|t| &t.items)
@@ -90,6 +96,7 @@ fn all_commands_share_registry_and_strict_json_dispatch() {
     assert_eq!(
         s.project()
             .data()
+            .scene()
             .timeline
             .overlays
             .first()
@@ -422,7 +429,7 @@ fn hostile_parameters_and_limits_leave_project_and_history_intact() {
     assert!(Session::new(project(), 0).is_err());
     assert!(Session::new(project(), 1001).is_err());
     let mut data = project().into_data();
-    data.timeline.overlays.first_mut().unwrap().id = TrackId(u64::MAX);
+    data.scene_mut().timeline.overlays.first_mut().unwrap().id = TrackId(u64::MAX);
     let mut s = Session::new(Project::new(data).unwrap(), 1).unwrap();
     assert!(matches!(
         s.apply(Command::AddTrack {
@@ -479,9 +486,9 @@ fn media_handles_and_typed_parameter_validation_are_atomic() {
     use media::{AudioInfo, ColorInfo, SourceStream, StreamKind, TimeBase, VideoInfo};
     use project::{AudioParams, VideoParams};
     let mut data = project().into_data();
-    data.timeline.overlays.clear();
+    data.scene_mut().timeline.overlays.clear();
     for (id, kind) in [(0, TrackKind::Video), (1, TrackKind::Audio)] {
-        data.timeline.insert_track(Track {
+        data.scene_mut().timeline.insert_track(Track {
             id: TrackId(id + 1),
             name: "".into(),
             kind,
@@ -700,7 +707,7 @@ fn noops_preserve_redo_and_refusals_preserve_merge_state() {
 #[ignore = "manual metadata-edit benchmark; no wall-clock assertion"]
 fn measure_large_project_gesture() {
     let mut data = project().into_data();
-    let track = data.timeline.overlays.first_mut().unwrap();
+    let track = data.scene_mut().timeline.overlays.first_mut().unwrap();
     track.items = (0..10000)
         .map(|n| Item {
             masks: Vec::new(),
@@ -1007,7 +1014,7 @@ fn caption_project() -> Project {
     use project::CaptionParams;
     use std::collections::BTreeMap;
     let mut data = project().into_data();
-    data.timeline.overlays.clear();
+    data.scene_mut().timeline.overlays.clear();
     data.assets.push(
         SourceAsset::try_from(AssetData {
             id: AssetId(1),
@@ -1035,7 +1042,7 @@ fn caption_project() -> Project {
             },
         )]),
     };
-    data.timeline.insert_track(Track {
+    data.scene_mut().timeline.insert_track(Track {
         id: TrackId(1),
         name: "".into(),
         kind: TrackKind::Text,
@@ -1314,6 +1321,7 @@ fn track_output_controls_enforce_kind_capabilities() {
                 let value = s
                     .project()
                     .data()
+                    .scene()
                     .timeline
                     .iter()
                     .find(|value| value.id == track)
@@ -1336,7 +1344,7 @@ fn shared_fields_are_atomic_and_history_restores_transient_selection() {
     use engine::ItemParamPatch;
     use std::collections::BTreeSet;
     let mut data = project().into_data();
-    let track = data.timeline.overlays.first_mut().unwrap();
+    let track = data.scene_mut().timeline.overlays.first_mut().unwrap();
     track.kind = TrackKind::Text;
     for (item, size) in track.items.iter_mut().zip([20.0, 30.0]) {
         item.content = ItemParams::Text(project::TextParams {
@@ -1373,6 +1381,7 @@ fn shared_fields_are_atomic_and_history_restores_transient_selection() {
         assert_eq!(p.color, Color([10, 20, 30, 255]));
         let ItemParams::Text(p) = &before
             .data()
+            .scene()
             .timeline
             .overlays
             .first()
@@ -1463,7 +1472,7 @@ fn shared_fields_are_atomic_and_history_restores_transient_selection() {
 fn shared_field_refuses_locked_compatible_target_without_partial_edit() {
     use engine::ItemParamPatch;
     let mut data = project().into_data();
-    let source = data.timeline.overlays.first_mut().unwrap();
+    let source = data.scene_mut().timeline.overlays.first_mut().unwrap();
     source.kind = TrackKind::Text;
     for item in &mut source.items {
         item.content = ItemParams::Text(project::TextParams {
@@ -1473,7 +1482,7 @@ fn shared_field_refuses_locked_compatible_target_without_partial_edit() {
         });
     }
     let second = source.items.pop().unwrap();
-    data.timeline.insert_track(Track {
+    data.scene_mut().timeline.insert_track(Track {
         id: TrackId(99),
         name: "Locked".into(),
         kind: TrackKind::Text,
@@ -1522,10 +1531,11 @@ fn placement_is_atomic_and_respects_groups_locks_and_main_magnet() {
         assert_eq!(outcome.placements.len(), 1);
         assert_eq!(outcome.placements[0].track, TrackId(0));
     }
-    assert!(s.project().data().timeline.overlays.is_empty());
+    assert!(s.project().data().scene().timeline.overlays.is_empty());
     assert_eq!(
         s.project()
             .data()
+            .scene()
             .timeline
             .main
             .items
@@ -1589,7 +1599,7 @@ fn placement_is_atomic_and_respects_groups_locks_and_main_magnet() {
     assert_eq!(result.created.len(), 2);
     let layout = s.project().clone();
     assert_eq!(
-        layout.data().timeline.overlays[0].id,
+        layout.data().scene().timeline.overlays[0].id,
         result.placements[0].track
     );
     s.undo().unwrap();
@@ -1611,7 +1621,7 @@ fn placement_is_atomic_and_respects_groups_locks_and_main_magnet() {
         })
         .unwrap();
     assert_eq!(
-        s.project().data().timeline.overlays.last().unwrap().id,
+        s.project().data().scene().timeline.overlays.last().unwrap().id,
         match lower.created[0] {
             CreatedId::Track(id) => id,
             _ => panic!("track"),
@@ -1638,7 +1648,7 @@ fn placement_is_atomic_and_respects_groups_locks_and_main_magnet() {
         })
         .is_err()
     );
-    let ids: Vec<_> = s.project().data().timeline.iter().map(|t| t.id).collect();
+    let ids: Vec<_> = s.project().data().scene().timeline.iter().map(|t| t.id).collect();
     for track in ids {
         s.apply(Command::SetTrackFlags {
             track,
@@ -1655,13 +1665,13 @@ fn placement_is_atomic_and_respects_groups_locks_and_main_magnet() {
             .unwrap()
             .enabled(&s)
     );
-    let tracks = s.project().data().timeline.track_count();
+    let tracks = s.project().data().scene().timeline.track_count();
     s.apply(Command::InsertItem {
         placement: Placement::Auto,
         item: new_item(100, 10),
     })
     .unwrap();
-    assert_eq!(s.project().data().timeline.track_count(), tracks + 1);
+    assert_eq!(s.project().data().scene().timeline.track_count(), tracks + 1);
     // Every placement entry point clamps empty main; occupied main keeps normal timing.
     for magnet in [false, true] {
         for (occupied, command, starts) in [
@@ -1755,6 +1765,7 @@ fn placement_is_atomic_and_respects_groups_locks_and_main_magnet() {
             assert_eq!(
                 after
                     .data()
+                    .scene()
                     .timeline
                     .main
                     .items
@@ -1770,7 +1781,7 @@ fn placement_is_atomic_and_respects_groups_locks_and_main_magnet() {
             assert_eq!(placed.project(), &after);
         }
     }
-    assert!(magnetic.data().timeline.magnet);
+    assert!(magnetic.data().scene().timeline.magnet);
 }
 
 proptest! {
@@ -1799,7 +1810,7 @@ proptest! {
                 }
                 Err(_) => prop_assert_eq!(s.project(), &before),
             }
-            let timeline = &s.project().data().timeline;
+            let timeline = &s.project().data().scene().timeline;
             for track in timeline.iter() {
                 let mut end=Tick::ZERO;
                 for item in &track.items {

@@ -44,7 +44,7 @@ fn session() -> Session {
         .unwrap()
         .into_data();
     data.canvas.fps = FrameRate::FPS_29_97;
-    data.timeline.insert_track(Track {
+    data.scene_mut().timeline.insert_track(Track {
         id: TrackId(2),
         name: "V".into(),
         kind: TrackKind::Video,
@@ -69,6 +69,7 @@ fn session() -> Session {
 fn item(s: &Session, id: ItemId) -> &Item {
     s.project()
         .data()
+        .scene()
         .timeline
         .iter()
         .flat_map(|t| &t.items)
@@ -189,7 +190,15 @@ fn trim_split_and_move_preserve_curves_at_2997_without_tick_drift() {
         at: frame(200),
     })
     .unwrap();
-    let items = &s.project().data().timeline.overlays.first().unwrap().items;
+    let items = &s
+        .project()
+        .data()
+        .scene()
+        .timeline
+        .overlays
+        .first()
+        .unwrap()
+        .items;
     let right = items.get(1).unwrap();
     let right_id = right.id;
     assert_eq!(right.source_range.start(), frame(150));
@@ -269,6 +278,7 @@ fn trim_gesture_reversal_and_cancel_keep_original_curves_and_history() {
 }
 fn item_from_project(p: &Project) -> &Item {
     p.data()
+        .scene()
         .timeline
         .overlays
         .first()
@@ -383,7 +393,7 @@ proptest::proptest! {
         s.apply(Command::TrimStart{item:ItemId(2),at:frame(100+trim)}).unwrap();
         s.apply(Command::SplitAt{item:ItemId(2),at:frame(100+cut)}).unwrap();
         let time=trim+sample%(600-trim);
-        let selected=s.project().data().timeline.overlays.first().unwrap().items.iter().find(|i|frame(100+time)>=i.start && frame(100+time)<i.end().unwrap()).unwrap();
+        let selected=s.project().data().scene().timeline.overlays.first().unwrap().items.iter().find(|i|frame(100+time)>=i.start && frame(100+time)<i.end().unwrap()).unwrap();
         let id=selected.id;let local=frame(100+time).checked_sub(selected.start).unwrap();
         let expected=value(&original,frame(time));
         proptest::prop_assert!((value(&selected.animations,local)-expected).abs()<1e-8);

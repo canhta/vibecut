@@ -499,8 +499,15 @@ fn prepare_clip(
         name: short.title.clone(),
         canvas: source.data().canvas.clone(),
         assets: vec![options.asset.clone()],
-        timeline,
-        bookmarks: Vec::new(),
+        scenes: vec![project::Scene {
+            id: project::SceneId(0),
+            name: "Main scene".into(),
+            is_main: true,
+            timeline,
+            bookmarks: Vec::new(),
+        }]
+        .try_into()?,
+        current_scene_id: project::SceneId(0),
         settings: source.data().settings.clone(),
     })?;
     let mut settings = render::ExportSettings::from_project(&project);
@@ -513,6 +520,7 @@ fn prepare_clip(
         };
         for item in project
             .data()
+            .scene()
             .timeline
             .iter()
             .filter(|track| track.kind == TrackKind::Video)

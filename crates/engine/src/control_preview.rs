@@ -56,6 +56,7 @@ pub(crate) fn preview(
                 let at = fps.tick_of(*frame)?;
                 let clips: Vec<_> = project
                     .data()
+                    .scene()
                     .timeline
                     .iter()
                     .filter(|t| !t.hidden)
@@ -85,11 +86,13 @@ pub(crate) fn preview(
                 .max(1) as u32;
                 let mut data = project.data().clone();
                 let next = data
+                    .scene()
                     .timeline
                     .iter()
                     .map(|t| t.id.0)
                     .chain(
-                        data.timeline
+                        data.scene()
+                            .timeline
                             .iter()
                             .flat_map(|t| t.items.iter().map(|i| i.id.0)),
                     )
@@ -120,7 +123,7 @@ pub(crate) fn preview(
                 {
                     return Err(EditError::Limit);
                 }
-                data.timeline.insert_track(project::Track {
+                data.scene_mut().timeline.insert_track(project::Track {
                     id: project::TrackId(next),
                     name: "Preview label background".into(),
                     kind: project::TrackKind::Video,
@@ -152,7 +155,7 @@ pub(crate) fn preview(
                         ..Default::default()
                     },
                 );
-                data.timeline.insert_track(project::Track {
+                data.scene_mut().timeline.insert_track(project::Track {
                     id: label_track,
                     name: "Preview evidence".into(),
                     kind: project::TrackKind::Text,

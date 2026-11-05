@@ -220,6 +220,10 @@ pub struct Editor {
     toast: Option<Toast>,
     media_selection: BTreeSet<AssetId>,
     media_anchor: Option<AssetId>,
+    scenes_open: bool,
+    scene_select: bool,
+    scene_selected: BTreeSet<project::SceneId>,
+    scene_confirm: bool,
 }
 impl Editor {
     pub fn new(session: Session, playback: Playback, preferences: Preferences) -> Self {
@@ -279,6 +283,10 @@ impl Editor {
             toast: None,
             media_selection: BTreeSet::new(),
             media_anchor: None,
+            scenes_open: false,
+            scene_select: false,
+            scene_selected: BTreeSet::new(),
+            scene_confirm: false,
         }
     }
     /// Attach the engine autosave owner without duplicating its Session.
@@ -590,6 +598,7 @@ impl Editor {
                 let end = session
                     .project()
                     .data()
+                    .scene()
                     .timeline
                     .iter()
                     .find(|track| track.id == placed.track)
@@ -741,6 +750,53 @@ impl Editor {
         let playing = self.playback.playing();
         let before = self.session.project().clone();
         match id {
+            "scene.open" => self.scenes_open = true,
+            "scene.close" => {
+                self.scenes_open = false;
+                self.scene_confirm = false;
+            }
+            "scene.select" => {
+                self.scene_select = !self.scene_select;
+                self.scene_selected.clear();
+            }
+            "scene.delete" => self.scene_confirm = !self.scene_selected.is_empty(),
+            "scene.cancel_delete" => self.scene_confirm = false,
+            "scene.confirm_delete" => {
+                self.session.execute(
+                    "scene.delete",
+                    serde_json::json!({"scenes":self.scene_selected}),
+                )?;
+                self.scene_selected.clear();
+                self.scene_select = false;
+                self.scene_confirm = false;
+                self.selection.clear();
+                self.selection_scopes = SelectionScopes::default();
+            }
+            row if row.starts_with("scene.row.") => {
+                let scene = project::SceneId(
+                    row.trim_start_matches("scene.row.")
+                        .parse()
+                        .map_err(|_| Error::Unsupported("scene identity"))?,
+                );
+                let target = self
+                    .session
+                    .project()
+                    .data()
+                    .scenes
+                    .get(scene)
+                    .ok_or(Error::Unsupported("scene not found"))?;
+                if self.scene_select {
+                    if !target.is_main && !self.scene_selected.remove(&scene) {
+                        self.scene_selected.insert(scene);
+                    }
+                } else {
+                    self.cancel_interaction();
+                    self.session
+                        .execute("scene.switch", serde_json::json!({"scene":scene}))?;
+                    self.selection.clear();
+                    self.selection_scopes = SelectionScopes::default();
+                }
+            }
             "project.save" => self.lifecycle_action = Some(crate::lifecycle::EditorAction::Save),
             "project.save_as" => {
                 self.lifecycle_action = Some(crate::lifecycle::EditorAction::SaveAs)
@@ -824,6 +880,7 @@ impl Editor {
                     .session
                     .project()
                     .data()
+                    .scene()
                     .timeline
                     .iter()
                     .any(|t| t.items.iter().any(|i| i.id == item))
@@ -950,6 +1007,7 @@ impl Editor {
             .session
             .project()
             .data()
+            .scene()
             .timeline
             .iter()
             .flat_map(|track| track.items.iter().map(|item| item.id))
@@ -968,6 +1026,7 @@ impl Editor {
             .session
             .project()
             .data()
+            .scene()
             .timeline
             .iter()
             .flat_map(|track| track.items.iter().map(|item| item.id))
@@ -984,7 +1043,7 @@ impl Editor {
         let at = self.playback.position()?;
         let mut under = Vec::new();
         let mut selected_under = Vec::new();
-        for track in self.session.project().data().timeline.iter() {
+        for track in self.session.project().data().scene().timeline.iter() {
             if track.locked {
                 continue;
             }
@@ -1049,6 +1108,7 @@ impl Editor {
             .session
             .project()
             .data()
+            .scene()
             .timeline
             .iter()
             .flat_map(|track| track.items.iter())
@@ -1094,7 +1154,7 @@ impl Editor {
         }
         let mut origins = Vec::new();
         let mut source_range = None;
-        for track in self.session.project().data().timeline.iter() {
+        for track in self.session.project().data().scene().timeline.iter() {
             for candidate in &track.items {
                 let wanted = if mode == DragMode::Move {
                     self.selection.contains(&candidate.id)
@@ -1218,6 +1278,7 @@ impl Editor {
                 .session
                 .project()
                 .data()
+                .scene()
                 .timeline
                 .iter()
                 .find(|t| t.id == origin.track)
@@ -1377,7 +1438,7 @@ impl Editor {
         // One shared delta keeps the selected group rigid at the timeline zero edge.
         let mut low = Tick(earliest.0.saturating_neg());
         let mut high = Tick(i64::MAX / 4);
-        for track in self.session.project().data().timeline.iter() {
+        for track in self.session.project().data().scene().timeline.iter() {
             if !tracks.contains(&track.id) {
                 continue;
             }
@@ -1432,7 +1493,7 @@ impl Editor {
             DragMode::TrimEnd => Tick(i64::MAX / 4),
             DragMode::Move => return (Tick::ZERO, Tick::ZERO),
         };
-        for track in self.session.project().data().timeline.iter() {
+        for track in self.session.project().data().scene().timeline.iter() {
             if track.id != origin.track {
                 continue;
             }
@@ -1471,6 +1532,7 @@ impl Editor {
         self.session
             .project()
             .data()
+            .scene()
             .timeline
             .iter()
             .flat_map(|track| track.items.iter())
@@ -1483,12 +1545,14 @@ impl Editor {
         let mut points = vec![Tick::ZERO, self.playback.position().unwrap_or(Tick::ZERO)];
         points.push(project.duration());
         points.extend(
-            data.bookmarks
+            data.scene()
+                .bookmarks
                 .iter()
                 .flat_map(|bookmark| [bookmark.start, bookmark.start + bookmark.duration]),
         );
         points.extend(
-            data.timeline
+            data.scene()
+                .timeline
                 .iter()
                 .flat_map(|track| track.items.iter())
                 .filter(|item| !exclude.contains(&item.id))
@@ -1771,6 +1835,7 @@ impl Editor {
             ui.painter()
                 .line_segment([a, b], egui::Stroke::new(1.0, separator));
         }
+        self.scenes_sheet(ui.ctx());
         self.import_overlay(ui.ctx());
         self.drop_overlay(ui.ctx(), hovering);
         self.toast(ui.ctx());
@@ -1780,6 +1845,16 @@ impl Editor {
             ));
     }
     fn keyboard(&mut self, ctx: &egui::Context) {
+        if self.scenes_open {
+            if consume(ctx, egui::Modifiers::NONE, egui::Key::Escape) {
+                if self.scene_confirm {
+                    self.scene_confirm = false;
+                } else {
+                    self.scenes_open = false;
+                }
+            }
+            return;
+        }
         if self.marquee.is_some() {
             if consume(ctx, egui::Modifiers::NONE, egui::Key::Escape) {
                 self.cancel_interaction();
@@ -2485,6 +2560,123 @@ impl Editor {
             );
         }
     }
+    fn scenes_sheet(&mut self, ctx: &egui::Context) {
+        if !self.scenes_open {
+            return;
+        }
+        let scenes: Vec<_> = self
+            .session
+            .project()
+            .data()
+            .scenes
+            .iter()
+            .map(|s| (s.id, s.name.as_str().to_owned(), s.is_main))
+            .collect();
+        let active = self.session.project().data().current_scene_id;
+        let sheet_id = Id::unique("scenes.sheet");
+        let sheet = egui::Modal::new(sheet_id)
+            .area(egui::Modal::default_area(sheet_id).anchor(egui::Align2::RIGHT_TOP, Vec2::ZERO))
+            .show(ctx, |ui| {
+                ui.set_width(320.0);
+                ui.set_min_height((ctx.content_rect().height() - 16.0).max(200.0));
+                ui.heading(self.tr(if self.scene_select {
+                    Text::SelectScenes
+                } else {
+                    Text::Scenes
+                }));
+                ui.label(self.tr(if self.scene_select {
+                    Text::SelectScenesHint
+                } else {
+                    Text::SwitchScenesHint
+                }));
+                ui.horizontal(|ui| {
+                    let response = ui.button(self.tr(if self.scene_select {
+                        Text::CancelSelection
+                    } else {
+                        Text::Select
+                    }));
+                    self.remember("scene.select", &response);
+                    if response.clicked() {
+                        self.action("scene.select");
+                    }
+                    let response = ui.button(self.tr(Text::CloseScenes));
+                    self.remember("scene.close", &response);
+                    if response.clicked() {
+                        self.action("scene.close");
+                    }
+                });
+                egui::ScrollArea::vertical()
+                    .max_height(420.0)
+                    .show(ui, |ui| {
+                        for (id, name, main) in scenes {
+                            let selected = if self.scene_select {
+                                self.scene_selected.contains(&id)
+                            } else {
+                                active == id
+                            };
+                            let label = if main {
+                                format!("{name} ({})", self.tr(Text::MainScene))
+                            } else {
+                                name
+                            };
+                            let response = ui.add_enabled(
+                                !self.scene_select || !main,
+                                egui::Button::new(label)
+                                    .truncate()
+                                    .selected(selected)
+                                    .min_size(Vec2::new(296.0, 40.0)),
+                            );
+                            let row = format!("scene.row.{}", id.0);
+                            self.remember(&row, &response);
+                            if response.clicked() {
+                                self.action(&row);
+                            }
+                        }
+                    });
+                if self.scene_select {
+                    let response = ui.add_enabled(
+                        !self.scene_selected.is_empty(),
+                        egui::Button::image_and_text(
+                            egui::Image::new(icon(ui, "trash"))
+                                .fit_to_exact_size(Vec2::splat(16.0)),
+                            format!("{} ({})", self.tr(Text::Delete), self.scene_selected.len()),
+                        ),
+                    );
+                    self.remember("scene.delete", &response);
+                    if response.clicked() {
+                        self.action("scene.delete");
+                    }
+                }
+            });
+        if sheet.backdrop_response.clicked() && !self.scene_confirm {
+            self.action("scene.close");
+        }
+        if self.scene_confirm {
+            egui::Modal::new(Id::unique("scene.delete_dialog")).show(ctx, |ui| {
+                ui.set_max_width(360.0);
+                ui.heading(format!(
+                    "{} {}",
+                    self.tr(Text::Delete),
+                    self.tr(Text::Scenes)
+                ));
+                ui.label(self.tr(Text::DeleteScenesPrompt));
+                ui.horizontal(|ui| {
+                    let response =
+                        ui.add_sized([90.0, 34.0], egui::Button::new(self.tr(Text::Cancel)));
+                    self.remember("scene.cancel_delete", &response);
+                    if response.clicked() {
+                        self.action("scene.cancel_delete");
+                    }
+                    let response =
+                        ui.add_sized([90.0, 34.0], egui::Button::new(self.tr(Text::Delete)));
+                    self.remember("scene.confirm_delete", &response);
+                    if response.clicked() {
+                        self.action("scene.confirm_delete");
+                    }
+                });
+            });
+        }
+    }
     fn timeline_toolbar(&mut self, ui: &mut egui::Ui, layout: &TimelineLayout) {
         let mut child = ui.new_child(
             egui::UiBuilder::new()
@@ -2527,6 +2719,7 @@ impl Editor {
                 .session
                 .project()
                 .data()
+                .scene()
                 .timeline
                 .iter()
                 .any(|track| !track.items.is_empty());
@@ -2564,7 +2757,7 @@ impl Editor {
             ) {
                 self.action("timeline.snap");
             }
-            let magnet = self.session.project().data().timeline.magnet;
+            let magnet = self.session.project().data().scene().timeline.magnet;
             if self.icon_only(
                 ui,
                 "timeline.magnet",
@@ -2610,6 +2803,37 @@ impl Editor {
                 self.action("timeline.zoom_in");
             }
         });
+        let bounds = Rect::from_center_size(layout.toolbar.center(), Vec2::new(178.0, 28.0));
+        ui.scope_builder(egui::UiBuilder::new().max_rect(bounds), |ui| {
+            ui.horizontal(|ui| {
+                ui.spacing_mut().item_spacing.x = 0.0;
+                let name = self
+                    .session
+                    .project()
+                    .data()
+                    .scene()
+                    .name
+                    .as_str()
+                    .to_owned();
+                let response = ui
+                    .add_sized([140.0, 26.0], egui::Button::new(name).truncate())
+                    .on_hover_text(self.tr(Text::Scenes));
+                self.remember("scene.open", &response);
+                if response.clicked() {
+                    self.action("scene.open");
+                }
+                let response = ui
+                    .add(egui::Button::image(
+                        egui::Image::new(icon(ui, "film-strip"))
+                            .fit_to_exact_size(Vec2::splat(16.0)),
+                    ))
+                    .on_hover_text(self.tr(Text::Scenes));
+                self.remember("scene.open_list", &response);
+                if response.clicked() {
+                    self.action("scene.open");
+                }
+            });
+        });
     }
     fn timeline_scroll_input(&mut self, ui: &egui::Ui, layout: &TimelineLayout) {
         if self.drag.is_some() {
@@ -2653,11 +2877,11 @@ impl Editor {
             let mut rows = Vec::new();
             let mut raw_items = Vec::new();
             let mut offset = 0.0;
-            for (row_index, track) in data.timeline.iter().rev().enumerate() {
+            for (row_index, track) in data.scene().timeline.iter().rev().enumerate() {
                 let height = track_height(track.kind);
                 rows.push(TrackRow {
                     id: track.id,
-                    main: track.id == data.timeline.main.id,
+                    main: track.id == data.scene().timeline.main.id,
                     muted: track.muted,
                     hidden: track.hidden,
                     locked: track.locked,
@@ -2693,7 +2917,8 @@ impl Editor {
                 rows,
                 raw_items,
                 self.session.project().duration(),
-                data.bookmarks
+                data.scene()
+                    .bookmarks
                     .iter()
                     .map(|bookmark| bookmark.start)
                     .collect(),
@@ -2886,7 +3111,7 @@ impl Editor {
                 );
             }
             if row.main {
-                let enabled = self.session.project().data().timeline.magnet;
+                let enabled = self.session.project().data().scene().timeline.magnet;
                 // A separate control fits below the main header's output toggles.
                 let mut magnet_row = row.clone();
                 magnet_row.top += 18.0;

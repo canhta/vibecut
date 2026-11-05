@@ -30,7 +30,7 @@ fn project() -> Arc<project::Project> {
         .into_data();
     d.canvas.width = 64;
     d.canvas.height = 64;
-    d.timeline.insert_track(project::Track {
+    d.scene_mut().timeline.insert_track(project::Track {
         id: project::TrackId(1),
         name: "".into(),
         kind: project::TrackKind::Video,
@@ -342,7 +342,7 @@ fn caption_project() -> project::Project {
         texts,
     };
     // Two retained occurrences with an output gap; source is never opened for interchange.
-    d.timeline.insert_track(Track {
+    d.scene_mut().timeline.insert_track(Track {
         id: TrackId(2),
         name: "".into(),
         kind: TrackKind::Text,
@@ -383,7 +383,8 @@ fn registered_subtitle_export_maps_repeated_items_and_preserves_gaps_without_med
         let dir = tempfile::tempdir().unwrap();
         let mut data = caption_project().into_data();
         if ordinary_title {
-            data.timeline
+            data.scene_mut()
+                .timeline
                 .overlays
                 .iter_mut()
                 .find(|track| track.id == project::TrackId(2))
@@ -553,6 +554,7 @@ fn registered_burn_job_exports_and_typed_missing_media_preserves_previous_output
     });
     data.assets[0] = media::SourceAsset::try_from(asset).unwrap();
     let video = data
+        .scene_mut()
         .timeline
         .iter_mut()
         .flat_map(|track| &mut track.items)

@@ -1033,3 +1033,26 @@ permutation. Missing/duplicate identities, invalid parameters and locked tracks
 refuse the entire command or batch. Removal also removes that mask's animation
 channels; undo restores both. Registry schemas and CLI execution share these
 commands and their examples. No app-only mask state or evaluator is introduced.
+
+## Scene commands
+
+`scene.create {name}` appends an empty secondary scene without switching and
+returns its allocated `CreatedId::Scene`. `scene.rename {scene,name}` edits a
+scene name. `scene.delete {scenes}` atomically deletes the selected non-main
+scenes; any unknown or main ID refuses the whole edit. Deleting the active scene
+selects main. Create, rename and multi-delete each use one ordinary undo step;
+delete undo restores scene timelines, items and bookmarks together.
+
+`scene.switch {scene}` selects an existing scene, clears item selection and
+terminates edit coalescing without adding undo history or clearing redo. It is
+refused during gestures/transactions and inside batches. Undo/redo preserves the
+currently selected scene when that scene exists in the restored snapshot;
+otherwise it uses the snapshot's valid scene choice. All timeline commands target
+the active scene; allocation scans every scene on load and never reuses a live
+scene, track, item or bookmark ID.
+
+Switching retains zoom, horizontal scroll and playhead per scene in project's
+optional metadata sidecar, outside undo. New scenes start with default views;
+removed scenes' views are pruned. Canvas/fps/background remain shared. Rendering,
+audio mixing and CLI export use the active scene by default; export settings can
+resolve explicit scopes through project's `SceneScope` and `for_scene` contract.

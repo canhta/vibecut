@@ -373,7 +373,7 @@ impl render::ExecutionHooks for Hooks {
 fn transparent_canvas_preview_matches_black_backed_render() {
     let mut data = session().project().as_ref().clone().into_data();
     data.canvas.background = Color([0, 0, 0, 0]);
-    data.timeline.overlays[0].items[0].content = ItemParams::Overlay(OverlayParams {
+    data.scene_mut().timeline.overlays[0].items[0].content = ItemParams::Overlay(OverlayParams {
         color: Color([255, 0, 0, 128]),
     });
     let project = Project::new(data).unwrap();

@@ -345,7 +345,10 @@ fn picker_result_imports_through_workspace_and_real_editor_widgets() {
         .project()
         .data();
     assert_eq!(data.assets.len(), 1);
-    assert_eq!(data.timeline.main.items[0].source_asset, Some(AssetId(1)));
+    assert_eq!(
+        data.scene().timeline.main.items[0].source_asset,
+        Some(AssetId(1))
+    );
 }
 
 #[test]
@@ -722,6 +725,7 @@ fn multi_select_insert_targets_only_selected_assets_in_one_undo_step() {
     harness.run_steps(3);
     let data = harness.state().session.project().data();
     let inserted: Vec<_> = data
+        .scene()
         .timeline
         .iter()
         .flat_map(|track| track.items.iter())
@@ -734,9 +738,9 @@ fn multi_select_insert_targets_only_selected_assets_in_one_undo_step() {
         !inserted.iter().any(|(asset, _)| *asset == AssetId(3)),
         "unselected asset must stay out of the timeline"
     );
-    assert!(data.timeline.overlays.is_empty());
+    assert!(data.scene().timeline.overlays.is_empty());
     assert_eq!(
-        data.timeline
+        data.scene().timeline
             .main
             .items
             .iter()
@@ -747,7 +751,7 @@ fn multi_select_insert_targets_only_selected_assets_in_one_undo_step() {
             (Some(AssetId(4)), Tick(4 * SECOND))
         ]
     );
-    assert_eq!(data.timeline.audio[0].items[0].start, Tick::ZERO);
+    assert_eq!(data.scene().timeline.audio[0].items[0].start, Tick::ZERO);
     harness.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::Z);
     harness.run_steps(3);
     assert!(
@@ -756,6 +760,7 @@ fn multi_select_insert_targets_only_selected_assets_in_one_undo_step() {
             .session
             .project()
             .data()
+            .scene()
             .timeline
             .overlays
             .is_empty(),
@@ -804,10 +809,10 @@ fn insert_refusal_keeps_assets_and_the_timeline_unchanged() {
     let data = editor.session.project().data();
     assert_eq!(data.assets.len(), 1, "the imported asset stays available");
     assert!(
-        data.timeline.overlays.is_empty(),
+        data.scene().timeline.overlays.is_empty(),
         "refused insert is atomic"
     );
-    assert_eq!(data.timeline.overlays.len(), 0);
+    assert_eq!(data.scene().timeline.overlays.len(), 0);
 }
 
 #[test]
@@ -876,7 +881,13 @@ fn insert_refreshes_playback_with_the_new_project_snapshot() {
         "insert fences the old generation before the next frame"
     );
     assert_eq!(
-        editor.session.project().data().timeline.track_count(),
+        editor
+            .session
+            .project()
+            .data()
+            .scene()
+            .timeline
+            .track_count(),
         2,
         "the inserted video gets its own compatible track"
     );
@@ -885,6 +896,7 @@ fn insert_refreshes_playback_with_the_new_project_snapshot() {
             .session
             .project()
             .data()
+            .scene()
             .timeline
             .iter()
             .flat_map(|track| track.items.iter())

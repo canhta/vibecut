@@ -14,7 +14,8 @@ unsupported error.
 
 `exec` uses [engine commands](../../crates/engine/README.md#public-entry-points)
 and holds the [project lease](../../crates/project/README.md#writer-lease-and-save-acknowledgement)
-from load through save. Export uses the saved snapshot and
+from load through save. Scene commands use that same registry. Export uses the saved
+active scene (including its derived duration) and
 [render admission](../../crates/render/README.md#export-and-publication) through
 engine jobs, with a fixed 2 GiB aggregate budget. `subtitle`, `providers` and
 `model` are adapters over the [engine subtitle workflow](../../crates/engine/README.md#subtitle-workflow):

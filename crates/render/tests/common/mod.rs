@@ -160,7 +160,7 @@ pub fn solid_project(seconds: i64, width: u32, height: u32, color: [u8; 4]) -> p
         .into_data();
     data.canvas.width = width;
     data.canvas.height = height;
-    data.timeline.insert_track(project::Track {
+    data.scene_mut().timeline.insert_track(project::Track {
         id: project::TrackId(1),
         name: "".into(),
         kind: project::TrackKind::Video,

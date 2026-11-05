@@ -16,12 +16,19 @@ fn optional_metadata_roundtrips_without_changing_project_bytes() {
         scroll: 77.0,
         playhead: Tick(42),
     };
+    metadata.scene_views.insert(
+        project::SceneId(7),
+        ViewState {
+            zoom: 3.0,
+            ..Default::default()
+        },
+    );
     lease.save_metadata(&metadata).unwrap();
     drop(lease);
     let lease = WriterLease::acquire(&path).unwrap();
     assert_eq!(lease.metadata(), metadata);
     assert_eq!(std::fs::read(&path).unwrap(), bytes);
-    for value in [b"{".as_slice(), b"{}", &[b' '; 4097]] {
+    for value in [b"{".as_slice(), b"{}", &[b' '; 65537]] {
         std::fs::write(root.path().join("Tiếng Việt.vibecut.meta.json"), value).unwrap();
         assert_eq!(lease.metadata().view, ViewState::default());
         assert!(lease.load().is_ok());

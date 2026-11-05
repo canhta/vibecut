@@ -102,7 +102,7 @@ fn scene() -> project::Project {
             None,
         ),
     ] {
-        d.timeline.insert_track(project::Track {
+        d.scene_mut().timeline.insert_track(project::Track {
             id: project::TrackId(id + 1),
             name: "".into(),
             kind,
@@ -132,6 +132,7 @@ fn transparent_edge_half_opacity_scaled_text_and_color_survive_encoded_decode() 
         let mut data = scene().into_data();
         if masked {
             let item = data
+                .scene_mut()
                 .timeline
                 .iter_mut()
                 .flat_map(|t| &mut t.items)
@@ -274,8 +275,8 @@ fn blur_background_stays_below_lower_timeline_layers() {
     let mut d = scene().into_data();
     // Put an opaque blue overlay below an inset video. A global background
     // prepared while visiting the video must not erase that overlay.
-    d.timeline.overlays.remove(0);
-    d.timeline.overlays.push(project::Track {
+    d.scene_mut().timeline.overlays.remove(0);
+    d.scene_mut().timeline.overlays.push(project::Track {
         id: project::TrackId(3),
         name: "".into(),
         kind: project::TrackKind::Video,
@@ -322,7 +323,7 @@ fn blur_background_stays_below_lower_timeline_layers() {
 #[test]
 fn separable_sampling_preserves_fractional_crops_and_transparent_borders() {
     let mut d = scene().into_data();
-    d.timeline.overlays.remove(0);
+    d.scene_mut().timeline.overlays.remove(0);
     let p = project::Project::new(d).unwrap();
     let h = Hooks::default();
     // Baselines captured from the scalar public renderer before optimization.

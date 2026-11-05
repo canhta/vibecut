@@ -37,7 +37,7 @@ fn video_project(path: &Path) -> project::Project {
         .unwrap();
     let duration = asset.probe().duration.unwrap();
     d.assets.push(asset);
-    d.timeline.insert_track(project::Track {
+    d.scene_mut().timeline.insert_track(project::Track {
         id: project::TrackId(1),
         name: "".into(),
         kind: project::TrackKind::Video,
@@ -248,7 +248,7 @@ fn resampling_split_trim_offset_and_irregular_blocks_are_identical() {
             });
         }
         assert!(end > Tick::ZERO);
-        d.timeline.insert_track(project::Track {
+        d.scene_mut().timeline.insert_track(project::Track {
             id: project::TrackId(n),
             name: "".into(),
             kind: project::TrackKind::Audio,
@@ -528,7 +528,7 @@ fn missing_audio_only_is_required_only_when_audio_is_requested() {
     let asset = media::SourceAsset::import(media::AssetId(3), path.clone()).unwrap();
     let mut d = solid_project(1, 64, 64, [20, 60, 90, 255]).into_data();
     d.assets.push(asset);
-    d.timeline.insert_track(project::Track {
+    d.scene_mut().timeline.insert_track(project::Track {
         id: project::TrackId(2),
         name: "".into(),
         kind: project::TrackKind::Audio,
@@ -848,7 +848,7 @@ fn stereo_policy_keeps_headroom_and_export_refuses_overload() {
     let asset = media::SourceAsset::import(media::AssetId(7), input).unwrap();
     let mut d = solid_project(1, 64, 64, [0, 0, 0, 255]).into_data();
     d.assets.push(asset);
-    d.timeline.insert_track(project::Track {
+    d.scene_mut().timeline.insert_track(project::Track {
         id: project::TrackId(8),
         name: "".into(),
         kind: project::TrackKind::Audio,
@@ -876,10 +876,10 @@ fn stereo_policy_keeps_headroom_and_export_refuses_overload() {
     assert_eq!(stereo.planes()[1], [0.25; 32]);
     let mono = mix_audio(&p, 0, 32, 1, &mut FileSources::default(), &h).unwrap();
     assert_eq!(mono.planes()[0], [0.5; 32]);
-    let mut extra = d.timeline.audio.last().unwrap().clone();
+    let mut extra = d.scene_mut().timeline.audio.last().unwrap().clone();
     extra.id = project::TrackId(9);
     extra.items[0].id = project::ItemId(8);
-    d.timeline.insert_track(extra);
+    d.scene_mut().timeline.insert_track(extra);
     let p = project::Project::new(d).unwrap();
     let mixed = mix_audio(&p, 0, 32, 2, &mut FileSources::default(), &h).unwrap();
     assert_eq!(mixed.peak(), 1.5);
@@ -1082,7 +1082,7 @@ fn opacity_animation_disables_video_stream_copy() {
         project::Param::new(project::ParamValue::Scalar(0.0)).unwrap(),
     ] {
         let mut candidate = data.clone();
-        candidate.timeline.overlays[0].items[0]
+        candidate.scene_mut().timeline.overlays[0].items[0]
             .animations
             .set(project::AnimationPath::new("opacity").unwrap(), param)
             .unwrap();
@@ -1121,7 +1121,7 @@ fn effect_stack_refuses_forced_copy_and_preserves_destination() {
     let path = root().join("blur-copy-source.mp4");
     av_fixture(&path);
     let mut data = video_project(&path).into_data();
-    data.timeline.overlays[0].items[0]
+    data.scene_mut().timeline.overlays[0].items[0]
         .effects
         .push(project::EffectInstance {
             id: "blur".into(),
@@ -1167,20 +1167,22 @@ fn export_keeps_track_picture_and_audio_flags_independent() {
         (true, true, true),
     ] {
         let mut data = base.clone().into_data();
-        data.timeline.main.items = data.timeline.overlays.remove(0).items;
-        data.timeline.main.hidden = hidden;
-        data.timeline.main.muted = muted;
+        data.scene_mut().timeline.main.items = data.scene_mut().timeline.overlays.remove(0).items;
+        data.scene_mut().timeline.main.hidden = hidden;
+        data.scene_mut().timeline.main.muted = muted;
         if audio_track {
-            let mut audio = data.timeline.main.items[0].clone();
+            let mut audio = data.scene_mut().timeline.main.items[0].clone();
             audio.id = project::ItemId(1);
             audio.content = project::ItemParams::Audio(project::AudioParams {
                 gain_db: 0.0,
                 muted: false,
             });
-            if let project::ItemParams::Video(params) = &mut data.timeline.main.items[0].content {
+            if let project::ItemParams::Video(params) =
+                &mut data.scene_mut().timeline.main.items[0].content
+            {
                 params.source_audio_enabled = false;
             }
-            data.timeline.insert_track(project::Track {
+            data.scene_mut().timeline.insert_track(project::Track {
                 id: project::TrackId(1),
                 name: "Audio".into(),
                 kind: project::TrackKind::Audio,

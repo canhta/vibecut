@@ -8,7 +8,7 @@ The core runs headless: editing, tests and the CLI need no window or UI toolkit;
 |---|---|---|---|
 | time | crates/time | Ticks, rational rates, source ranges | - |
 | media | crates/media | Safe FFmpeg I/O: probe, demux/mux, decode/encode, hardware acceleration, conversion, speech and vision media preparation | time |
-| project | crates/project | Timeline/animation model, validation/evaluation, persistence, atomic file writes | time, media, captions |
+| project | crates/project | Scene/timeline/animation model, validation/evaluation, persistence, atomic file writes | time, media, captions |
 | captions | crates/captions | Transcript and cue model, segmentation, mapping, language profiles, SRT/VTT | time |
 | text | crates/text | Unicode shaping and rasterization | - |
 | render | crates/render | CPU compositor, caption overlay, audio mix, export execution | time, media, project, captions, text |
@@ -27,7 +27,7 @@ The [glossary](../../GLOSSARY.md) owns domain definitions; crate READMEs own con
 | Area | Contract owner |
 |---|---|
 | SourceAsset, codecs, probe, packet/frame timing | [media](../../crates/media/README.md#entry-points-and-timing) |
-| Project, validation, persistence, writer lease | [project](../../crates/project/README.md#writer-lease-and-save-acknowledgement) |
+| Project, scenes, validation, persistence, writer lease | [project](../../crates/project/README.md#writer-lease-and-save-acknowledgement) |
 | Param and keyframes | [project animation](../../crates/project/README.md#animated-parameters) |
 | SourceRange | [time](../../crates/time/README.md) |
 | Transcript, Cue, EditMapping, LanguageProfile | [captions](../../crates/captions/README.md) |

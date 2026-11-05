@@ -38,6 +38,7 @@ pub fn window(
     let item = session
         .project()
         .data()
+        .scene()
         .timeline
         .iter()
         .flat_map(|t| &t.items)
@@ -135,6 +136,7 @@ impl TranslationRun {
             .session
             .project()
             .data()
+            .scene()
             .timeline
             .iter()
             .flat_map(|t| &t.items)

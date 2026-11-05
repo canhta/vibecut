@@ -260,6 +260,7 @@ fn joins_play_order_excludes_gaps_and_matches_one_concatenated_mapping() {
     let prepared = batch.project(0).unwrap();
     let video = prepared
         .data()
+        .scene()
         .timeline
         .iter()
         .find(|track| track.kind == project::TrackKind::Video)
@@ -278,6 +279,7 @@ fn joins_play_order_excludes_gaps_and_matches_one_concatenated_mapping() {
     );
     let captions = prepared
         .data()
+        .scene()
         .timeline
         .iter()
         .find(|track| track.kind == project::TrackKind::Text)
@@ -363,6 +365,7 @@ fn applies_one_normalized_crop_to_every_piece() {
     let prepared = batch.project(0).unwrap();
     let items: Vec<_> = prepared
         .data()
+        .scene()
         .timeline
         .iter()
         .filter(|track| track.kind == project::TrackKind::Video)

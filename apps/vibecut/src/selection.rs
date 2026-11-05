@@ -126,6 +126,7 @@ pub struct SharedField {
 pub fn shared_fields(project: &Project, selection: &BTreeSet<ItemId>) -> Vec<SharedField> {
     let items: Vec<_> = project
         .data()
+        .scene()
         .timeline
         .iter()
         .flat_map(|t| &t.items)
@@ -168,7 +169,7 @@ mod tests {
     fn shared_fields_distinguish_mixed_values_from_equal_values() {
         use project::{Color, Item, ProjectId, TextParams, Track, TrackId, TrackKind};
         let mut data = Project::empty(ProjectId(1), "".into()).unwrap().into_data();
-        data.timeline.insert_track(Track {
+        data.scene_mut().timeline.insert_track(Track {
             id: TrackId(1),
             name: "Text".into(),
             kind: TrackKind::Text,

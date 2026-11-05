@@ -19,7 +19,7 @@ fn scene(texts: &[(&str, &str)]) -> project::Project {
         })
         .unwrap(),
     );
-    d.timeline.insert_track(project::Track {
+    d.scene_mut().timeline.insert_track(project::Track {
         id: project::TrackId(2),
         name: "".into(),
         kind: project::TrackKind::Text,
@@ -514,8 +514,8 @@ fn long_cues_fit_portrait_landscape_and_partial_source_items() {
 fn extreme_font_scaling_is_a_typed_refusal_before_raster_scratch() {
     let mut d = scene(&[("vi", "X")]).into_data();
     d.canvas.width = 1;
-    d.timeline.overlays[0].kind = project::TrackKind::Text;
-    let item = &mut d.timeline.overlays[0].items[0];
+    d.scene_mut().timeline.overlays[0].kind = project::TrackKind::Text;
+    let item = &mut d.scene_mut().timeline.overlays[0].items[0];
     item.source_asset = None;
     item.content = project::ItemParams::Text(project::TextParams {
         content: "X".into(),

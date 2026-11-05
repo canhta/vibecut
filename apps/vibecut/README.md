@@ -197,3 +197,18 @@ refresh the shared preview snapshot. Paste is supplied by the clipboard owner.
 Media insertion reuses an unlocked compatible track only when the playhead range
 fits; otherwise it creates a secondary track at the top of its group. Solid colour
 is generated Video content, distinct from Sticker tracks.
+
+## Scene switcher
+
+The timeline toolbar centres a split button with the current scene name and a
+scene-list control. The sheet lists all scenes and switches through
+`scene.switch`; Select mode permits multi-delete while disabling main. Delete
+opens a confirmation dialog explaining that the action can be undone. Closing or
+Escape dismisses the sheet. Per-scene zoom/scroll/playhead restore through the
+Session metadata view; item/keyframe/mask-point selection clears on switching.
+English/Vietnamese copy uses the existing catalog. Creation and rename commands
+are headless here; their frontend controls belong to the scene-name feature.
+
+`tests/scenes_ui.rs` operates the real widgets and engine at 1x/2x density, checks
+switching, protected main and atomic multi-delete/undo, and writes
+`target/p1-48-scenes.png` separately from behavioral assertions.

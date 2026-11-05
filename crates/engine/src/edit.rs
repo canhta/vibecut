@@ -47,6 +47,7 @@ pub(crate) fn check_budget(command: &Command) -> Result<()> {
             Command::CreateProject { .. }
             | Command::SaveProject {}
             | Command::SetViewState { .. }
+            | Command::SwitchScene { .. }
             | Command::Undo {}
             | Command::Redo {}
             | Command::BeginGesture {}
@@ -65,7 +66,8 @@ fn alloc(next: &mut Option<u64>) -> Result<u64> {
     Ok(id)
 }
 fn track(data: &mut ProjectData, id: TrackId) -> Result<&mut Track> {
-    data.timeline
+    data.scene_mut()
+        .timeline
         .iter_mut()
         .find(|t| t.id == id)
         .ok_or(EditError::NoTrack(id))
@@ -78,7 +80,7 @@ fn unlocked(track: &Track) -> Result<()> {
     }
 }
 fn item(data: &mut ProjectData, id: ItemId) -> Result<&mut Item> {
-    for t in data.timeline.iter_mut() {
+    for t in data.scene_mut().timeline.iter_mut() {
         if t.items.iter().any(|i| i.id == id) {
             unlocked(t)?;
             return t
@@ -91,7 +93,7 @@ fn item(data: &mut ProjectData, id: ItemId) -> Result<&mut Item> {
     Err(EditError::NoItem(id))
 }
 fn take_item(data: &mut ProjectData, id: ItemId) -> Result<Item> {
-    for t in data.timeline.iter_mut() {
+    for t in data.scene_mut().timeline.iter_mut() {
         if let Some(index) = t.items.iter().position(|i| i.id == id) {
             unlocked(t)?;
             return Ok(t.items.remove(index));
@@ -144,13 +146,13 @@ fn move_items(data: &mut ProjectData, moves: Vec<Move>) -> Result<()> {
         item.start = m.start;
         items.push((m.track, item));
     }
-    let main = data.timeline.main.id;
+    let main = data.scene().timeline.main.id;
     let shift = items
         .iter()
         .filter(|(id, _)| *id == main)
         .map(|(_, item)| item.start)
         .min()
-        .map(|start| sub(start, placement_start(&data.timeline, main, start)))
+        .map(|start| sub(start, placement_start(&data.scene().timeline, main, start)))
         .transpose()?
         .unwrap_or(Tick::ZERO);
     for (id, mut item) in items {
@@ -174,15 +176,15 @@ fn add_track(
 ) -> Result<TrackId> {
     let audio = kind == TrackKind::Audio;
     let group = if audio {
-        &data.timeline.audio
+        &data.scene().timeline.audio
     } else {
-        &data.timeline.overlays
+        &data.scene().timeline.overlays
     };
     let index = match placement {
         TrackPlacement::Auto => 0,
         TrackPlacement::Above { track } | TrackPlacement::Below { track } => {
             let below = matches!(placement, TrackPlacement::Below { .. });
-            if track == data.timeline.main.id {
+            if track == data.scene().timeline.main.id {
                 match (audio, below) {
                     (false, false) => group.len(),
                     (true, true) => 0,
@@ -190,6 +192,7 @@ fn add_track(
                 }
             } else {
                 let reference = data
+                    .scene()
                     .timeline
                     .iter()
                     .find(|t| t.id == track)
@@ -216,12 +219,12 @@ fn add_track(
         items: Vec::new(),
     };
     if matches!(placement, TrackPlacement::Auto) {
-        data.timeline.insert_track(track);
+        data.scene_mut().timeline.insert_track(track);
     } else {
         let group = if audio {
-            &mut data.timeline.audio
+            &mut data.scene_mut().timeline.audio
         } else {
-            &mut data.timeline.overlays
+            &mut data.scene_mut().timeline.overlays
         };
         group.insert(index, track);
     }
@@ -242,18 +245,18 @@ fn placement_track(
         Placement::Above { track } => TrackPlacement::Above { track },
         Placement::Below { track } => TrackPlacement::Below { track },
         Placement::Auto => {
-            let main = &data.timeline.main;
+            let main = &data.scene().timeline.main;
             if kind == TrackKind::Video
                 && !main.locked
-                && (data.timeline.magnet || main.items.is_empty())
+                && (data.scene().timeline.magnet || main.items.is_empty())
             {
-                return Ok((main.id, data.timeline.magnet));
+                return Ok((main.id, data.scene().timeline.magnet));
             }
             let end = add(start, duration)?;
             // Main first, then overlays top-to-bottom, then audio top-to-bottom.
             if let Some(track) = std::iter::once(main)
-                .chain(&data.timeline.overlays)
-                .chain(&data.timeline.audio)
+                .chain(&data.scene().timeline.overlays)
+                .chain(&data.scene().timeline.audio)
                 .find(|t| {
                     t.kind == kind
                         && !t.locked
@@ -285,6 +288,39 @@ pub(crate) fn apply(
     sources: &mut TrimSources,
 ) -> Result<project::Project> {
     match command {
+        Command::CreateScene { name } => {
+            let id = project::SceneId(alloc(next)?);
+            let mut timeline = project::Timeline::default();
+            timeline.main.id = TrackId(alloc(next)?);
+            data.scenes.insert(project::Scene {
+                id,
+                name,
+                is_main: false,
+                timeline,
+                bookmarks: Vec::new(),
+            })?;
+            created.push(CreatedId::Scene(id));
+        }
+        Command::DeleteScenes { scenes } => {
+            if scenes.len() > 256 {
+                return Err(EditError::Limit);
+            }
+            let count = scenes.len();
+            let ids: BTreeSet<_> = scenes.into_iter().collect();
+            if ids.len() != count {
+                return Err(EditError::Invalid("duplicate scene ID"));
+            }
+            data.scenes.delete(&ids)?;
+            if ids.contains(&data.current_scene_id) {
+                data.current_scene_id = data.scenes.main().id;
+            }
+        }
+        Command::RenameScene { scene, name } => {
+            data.scenes
+                .get_mut(scene)
+                .ok_or(EditError::Invalid("scene not found"))?
+                .name = name;
+        }
         Command::RenameProject { name } => data.name = name,
         Command::AddAsset { asset } => data.assets.push(asset),
         Command::AddTrack {
@@ -295,12 +331,12 @@ pub(crate) fn apply(
             add_track(&mut data, name, kind, placement, created, next)?;
         }
         Command::RemoveTrack { track: id } => {
-            if data.timeline.main.id == id {
+            if data.scene_mut().timeline.main.id == id {
                 return Err(EditError::Invalid("main track cannot be removed"));
             }
             unlocked(track(&mut data, id)?)?;
-            data.timeline.overlays.retain(|t| t.id != id);
-            data.timeline.audio.retain(|t| t.id != id);
+            data.scene_mut().timeline.overlays.retain(|t| t.id != id);
+            data.scene_mut().timeline.audio.retain(|t| t.id != id);
         }
         Command::SetTrackMuted { track: id, muted } => {
             let t = track(&mut data, id)?;
@@ -316,7 +352,7 @@ pub(crate) fn apply(
             }
             t.hidden = hidden;
         }
-        Command::SetTrackMagnet { enabled } => data.timeline.magnet = enabled,
+        Command::SetTrackMagnet { enabled } => data.scene_mut().timeline.magnet = enabled,
         Command::SetTrackFlags {
             track: id,
             muted,
@@ -345,7 +381,7 @@ pub(crate) fn apply(
                 created,
                 next,
             )?;
-            let start = placement_start(&data.timeline, target, new.start);
+            let start = placement_start(&data.scene().timeline, target, new.start);
             let t = track(&mut data, target)?;
             unlocked(t)?;
             if t.kind != kind {
@@ -422,6 +458,7 @@ pub(crate) fn apply(
             }
             created.push(CreatedId::Item(right.id));
             let t = data
+                .scene_mut()
                 .timeline
                 .iter_mut()
                 .find(|t| t.items.iter().any(|i| i.id == id))
@@ -455,6 +492,7 @@ pub(crate) fn apply(
         }
         Command::RippleDelete { item: id } => {
             let t = data
+                .scene_mut()
                 .timeline
                 .iter_mut()
                 .find(|t| t.items.iter().any(|i| i.id == id))
@@ -488,7 +526,7 @@ pub(crate) fn apply(
                 return Err(EditError::Invalid("duplicate item selection"));
             }
             // Walk the candidate once: large selections must not rescan the timeline per ID.
-            for track in data.timeline.iter_mut() {
+            for track in data.scene_mut().timeline.iter_mut() {
                 for target in &mut track.items {
                     if !remaining.remove(&target.id) || !patch.compatible(&target.content) {
                         continue;
@@ -669,7 +707,7 @@ pub(crate) fn apply(
             color,
         } => {
             let id = BookmarkId(alloc(next)?);
-            data.bookmarks.push(Bookmark {
+            data.scene_mut().bookmarks.push(Bookmark {
                 id,
                 start,
                 duration,
@@ -758,6 +796,7 @@ pub(crate) fn apply(
         Command::CreateProject { .. }
         | Command::SaveProject {}
         | Command::SetViewState { .. }
+        | Command::SwitchScene { .. }
         | Command::Undo {}
         | Command::Redo {}
         | Command::BeginGesture {}
@@ -770,7 +809,7 @@ pub(crate) fn apply(
     Ok(project::Project::new(data)?)
 }
 fn check_timeline(data: &mut ProjectData) -> Result<()> {
-    for track in data.timeline.iter_mut() {
+    for track in data.scene_mut().timeline.iter_mut() {
         track.items.sort_by_key(|i| i.start);
         let mut end = Tick::ZERO;
         for item in &track.items {
