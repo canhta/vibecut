@@ -535,6 +535,20 @@ impl Workspace {
                 self.error = Some(Error::Worker(error.clone()));
             }
         }
+        self.poll_pending();
+        // Discovery and the managed catalog finish independently. Keep the
+        // startup path until both owners are idle, and retry on later ticks.
+        if self.editor.is_none()
+            && !self.busy()
+            && self.candidates.is_empty()
+            && self.error.is_none()
+            && let Some(path) = self.startup_path.take()
+            && let Err(e) = self.open(path)
+        {
+            self.error = Some(e);
+        }
+    }
+    fn poll_pending(&mut self) {
         if let Err(e) = self.runner.tick() {
             self.error = Some(e.into());
             return;
@@ -607,14 +621,6 @@ impl Workspace {
                 Err(e) => self.error = Some(e),
             },
             Err(e) => self.error = Some(e),
-        }
-        if self.editor.is_none()
-            && self.candidates.is_empty()
-            && self.error.is_none()
-            && let Some(path) = self.startup_path.take()
-            && let Err(e) = self.open(path)
-        {
-            self.error = Some(e);
         }
     }
     fn tr(&self, text: Text) -> &'static str {
@@ -1089,6 +1095,68 @@ fn run(
 #[allow(clippy::unwrap_used, clippy::panic)]
 mod tests {
     use super::*;
+    use std::time::Instant;
+    #[test]
+    fn startup_opens_once_after_both_discovery_and_catalog_are_ready() {
+        for catalog_first in [false, true] {
+            let root = tempfile::tempdir().unwrap();
+            let path = root.path().join("startup.json");
+            let project =
+                project::Project::empty(project::ProjectId(42), "startup".into()).unwrap();
+            let bytes = project::encode(&project, true).unwrap();
+            std::fs::write(&path, &bytes).unwrap();
+            let mut workspace = Workspace::new(
+                root.path().join("recovery"),
+                Preferences::default(),
+                Some(path.clone()),
+            )
+            .unwrap();
+            let release_catalog = workspace.projects.defer_initial_catalog();
+            let discovery = workspace.pending.as_ref().unwrap().id;
+            let deadline = Instant::now() + Duration::from_secs(10);
+            loop {
+                workspace.runner.tick().unwrap();
+                if workspace.runner.snapshot(discovery).unwrap().state == JobState::Completed {
+                    break;
+                }
+                assert!(Instant::now() < deadline);
+                std::thread::yield_now();
+            }
+            if catalog_first {
+                release_catalog();
+                workspace.tick();
+            } else {
+                workspace.tick();
+                assert!(workspace.error().is_none(), "{:?}", workspace.error());
+                assert_eq!(workspace.startup_path.as_ref(), Some(&path));
+                assert!(workspace.pending.is_none());
+                assert!(workspace.editor.is_none());
+                release_catalog();
+            }
+            while workspace.editor.is_none() || workspace.busy() {
+                workspace.tick();
+                assert!(workspace.error().is_none(), "{:?}", workspace.error());
+                assert!(Instant::now() < deadline);
+                std::thread::yield_now();
+            }
+            assert_eq!(
+                workspace
+                    .editor
+                    .as_ref()
+                    .unwrap()
+                    .session
+                    .project()
+                    .data()
+                    .id,
+                project::ProjectId(42)
+            );
+            assert!(workspace.startup_path.is_none());
+            workspace.tick();
+            assert!(workspace.error().is_none(), "{:?}", workspace.error());
+            assert!(workspace.pending.is_none());
+            assert_eq!(std::fs::read(&path).unwrap(), bytes);
+        }
+    }
     #[test]
     fn unwind_returns_the_active_editor_before_reporting_worker_failure() {
         let session = Session::new(

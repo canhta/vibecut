@@ -172,6 +172,14 @@ impl ProjectsPage {
         !self.ready || self.pending > 0
     }
 
+    #[cfg(test)]
+    pub(crate) fn defer_initial_catalog(&mut self) -> impl Fn() + use<> {
+        let (send, events) = mpsc::channel();
+        self.events = events;
+        self.ready = false;
+        move || assert!(send.send(Event::Ready(Ok(Vec::new()))).is_ok())
+    }
+
     pub fn entries(&self) -> &[ProjectEntry] {
         &self.entries
     }

@@ -30,6 +30,12 @@ hour. It never creates a native window or activates the app; macOS uses accessor
 activation policy. Background attach tests use this route. Normal launches retain
 the visible editor.
 
+Keep the background attach regression in the default suite: it checks the shipped
+process entry point, app-owned Workspace and authenticated IPC without native UI
+interaction. An in-process kittest cannot cover process launch or foreground
+ownership. Widget interactions remain offscreen kittests; background startup
+ordering is also covered deterministically in the in-process Workspace tests.
+
 ## Tools and results
 
 The default surface is `command_list`, `command_run`, `inspect`, `preview`,

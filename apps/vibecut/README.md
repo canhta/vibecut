@@ -46,7 +46,9 @@ The optional control listener and background attach launch compose the CLI-owned
 adapter over this app's live Workspace; syntax and boundaries are owned by
 [MCP control](../../docs/product/mcp.md).
 `cargo run -p vibecut -- /native/path/to/project.json` acquires the project writer
-lease before loading. With no file the managed Projects page lists the catalog
+lease before loading. Startup keeps a supplied project path pending until
+recovery discovery and the managed catalog are both idle, regardless of which
+worker finishes first. With no file the managed Projects page lists the catalog
 with thumbnails, name, main-scene duration and created date in a persisted grid
 or list view and sort order. Search filters names live; click and shift-click
 select, and the toolbar duplicates or permanently deletes selected projects.
