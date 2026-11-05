@@ -100,14 +100,17 @@ settled dispatch with no terminal is reported cleaned without a release call; a
 `retained` receipt with `reason=ownership_transferred` is cleaned when the
 follow-up owner is also targeted or already released, and its terminal is left
 for that owner. Other retained, pending, unknown or malformed receipts leave the
-terminal open and fail that target. Dispatch records belong to the local
-runtime, so releases run locally (Orca federates a remote terminal) while
-`--environment` still selects remote worktrees and terminal handles. The
-remaining arguments continue; any failed step makes the command exit non-zero. A
+terminal open and fail that target. Discovery prefers the local dispatch record;
+Orca federates releases for its remote terminals. A dispatch found only on the
+paired runtime is released there. `--environment` selects remote worktrees and
+terminal handles. The remaining arguments continue; any failed step makes the
+command exit non-zero. A
 local worktree drops its ignored `.scratch` before removal. Its branch is
 deleted locally and on `origin` when it is an ancestor of `origin/main` or
 `git cherry origin/main` proves it has no unique patches; unmerged branches are
-retained. The main checkout's `git pull --ff-only` runs before branch cleanup so
+retained. Remote deletion validates the advertised remote tip and uses an exact
+lease so a newer unmerged push is retained. The main checkout's
+`git pull --ff-only` runs before branch cleanup so
 those checks see a freshly merged `origin/main`. Build cache slots held by a live
 build are skipped.
 An idle slot over the size budget first drops dependency artifacts older than

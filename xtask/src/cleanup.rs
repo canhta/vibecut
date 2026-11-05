@@ -338,16 +338,20 @@ fn branch_is_merged(main: &Path, branch: &str) -> Result<bool, String> {
     } else {
         return Ok(false);
     };
+    reference_is_merged(main, &reference)
+}
+
+fn reference_is_merged(main: &Path, reference: &str) -> Result<bool, String> {
     if git_output(
         main,
-        &["merge-base", "--is-ancestor", &reference, "origin/main"],
+        &["merge-base", "--is-ancestor", reference, "origin/main"],
     )?
     .status
     .success()
     {
         return Ok(true);
     }
-    let cherry = git_output(main, &["cherry", "origin/main", &reference])?;
+    let cherry = git_output(main, &["cherry", "origin/main", reference])?;
     if !cherry.status.success() {
         return Err(format!(
             "git cherry failed: {}",
@@ -359,8 +363,9 @@ fn branch_is_merged(main: &Path, branch: &str) -> Result<bool, String> {
     )))
 }
 
-fn remote_branch_delete_command(main: &Path, branch: &str) -> CommandLine {
-    git_command(main, &["push", "origin", "--delete", branch])
+fn remote_branch_delete_command(main: &Path, branch: &str, tip: &str) -> CommandLine {
+    let lease = format!("--force-with-lease=refs/heads/{branch}:{tip}");
+    git_command(main, &["push", &lease, "origin", "--delete", branch])
 }
 
 fn local_branch_delete_command(main: &Path, branch: &str) -> CommandLine {
@@ -376,10 +381,33 @@ fn delete_remote_merged_branch(
     // Deleting the remote name is a no-op if somebody already removed it.
     let remote = git_output(
         main,
-        &["ls-remote", "--exit-code", "--heads", "origin", branch],
+        &[
+            "ls-remote",
+            "--exit-code",
+            "--heads",
+            "origin",
+            &format!("refs/heads/{branch}"),
+        ],
     )?;
     if remote.status.success() {
-        perform(&remote_branch_delete_command(main, branch), dry_run)?;
+        // A same-named local branch can be older than the actual remote tip.
+        // Fetch the advertised object, validate that exact tip, and lease the
+        // deletion so concurrent pushes cannot lose unmerged work.
+        let listing = String::from_utf8_lossy(&remote.stdout);
+        let tip = listing
+            .split_whitespace()
+            .next()
+            .ok_or("missing remote branch tip")?;
+        let fetched = git_output(main, &["fetch", "--no-tags", "origin", tip])?;
+        if !fetched.status.success() {
+            return Err(format!("cannot fetch remote branch tip for {branch}"));
+        }
+        if !reference_is_merged(main, tip)? {
+            return Err(format!(
+                "remote branch {branch} has unique patches; retained"
+            ));
+        }
+        perform(&remote_branch_delete_command(main, branch, tip), dry_run)?;
     } else if remote.status.code() != Some(2) {
         return Err(format!(
             "git ls-remote failed: {}",
@@ -1021,8 +1049,9 @@ mod tests {
             "orca worktree rm --worktree path:/workspaces/repo/ticket-58 --delete-branch --environment Window"
         );
         assert_eq!(
-            remote_branch_delete_command(Path::new("/repo"), "fix/p0-core-63-cleanup").render(),
-            "git -C /repo push origin --delete fix/p0-core-63-cleanup"
+            remote_branch_delete_command(Path::new("/repo"), "fix/p0-core-63-cleanup", "abc123")
+                .render(),
+            "git -C /repo push --force-with-lease=refs/heads/fix/p0-core-63-cleanup:abc123 origin --delete fix/p0-core-63-cleanup"
         );
         assert_eq!(
             local_branch_delete_command(Path::new("/repo"), "fix/p0-core-63-cleanup").render(),
@@ -1130,13 +1159,71 @@ mod tests {
         directory.git(&["add", "."]);
         directory.git(&["commit", "-q", "-m", "rebased"]);
         directory.git(&["checkout", "-q", "main"]);
+        fs::write(directory.0.join("main-only.txt"), "main-only\n").unwrap();
+        directory.git(&["add", "."]);
+        directory.git(&["commit", "-q", "-m", "advance main"]);
         directory.git(&["cherry-pick", "rebased"]);
         directory.git(&["update-ref", "refs/remotes/origin/main", "HEAD"]);
+        assert!(
+            !git_output(
+                &directory.0,
+                &["merge-base", "--is-ancestor", "rebased", "origin/main"]
+            )
+            .unwrap()
+            .status
+            .success()
+        );
         assert!(
             branch_is_merged(&directory.0, "rebased").unwrap(),
             "an equivalent patch counted as unique"
         );
         assert!(!branch_is_merged(&directory.0, "missing").unwrap());
+
+        let remote = GitDirectory::new();
+        directory.git(&["remote", "add", "origin", remote.0.to_str().unwrap()]);
+        for (branch, advanced, racing, allowed) in [
+            ("merged-remote", false, false, true),
+            ("advanced-remote", true, false, false),
+            ("racing-remote", false, true, false),
+        ] {
+            directory.git(&["branch", branch, "main"]);
+            directory.git(&["push", "-q", "origin", &format!("main:refs/heads/{branch}")]);
+            if advanced {
+                directory.git(&[
+                    "push",
+                    "-q",
+                    "--force",
+                    "origin",
+                    &format!("unique:refs/heads/{branch}"),
+                ]);
+            }
+            assert!(branch_is_merged(&directory.0, branch).unwrap());
+            let result =
+                delete_remote_merged_branch(&directory.0, false, branch, &mut |command, dry| {
+                    if racing {
+                        directory.git(&[
+                            "push",
+                            "-q",
+                            "--force",
+                            "origin",
+                            &format!("unique:refs/heads/{branch}"),
+                        ]);
+                    }
+                    perform(command, dry)
+                });
+            assert_eq!(result.is_ok(), allowed, "{branch}: {result:?}");
+            let remaining = git_output(
+                &remote.0,
+                &[
+                    "rev-parse",
+                    "--verify",
+                    "--quiet",
+                    &format!("refs/heads/{branch}"),
+                ],
+            )
+            .unwrap();
+            assert_eq!(remaining.status.success(), !allowed, "{branch}");
+        }
     }
 
     #[test]
