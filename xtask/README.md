@@ -29,18 +29,37 @@ so direct and aggregate checks share Cargo fingerprints.
 
 ## Build slots
 
-The per-user cache is `.cache/vibecut` beneath `HOME` (`USERPROFILE` on Windows). Three OS-locked slots own warm `target/slot-N`
-directories. The `locks/build-queue` directory holds numbered, locked waiter
-files; `locks/admission` serializes enqueue, stale-entry cleanup and slot claims.
-No process IDs establish liveness. Crashed waiters release their locks automatically;
-dead queue files are removed by the next waiter. Admission retains FIFO order, preferring a
-free slot already owned by the checkout. On macOS, Linux and Windows, only the first
-active build bypasses the 30% free physical memory and 20-second ramp checks. Probe
-failure blocks extra admission (fail closed): macOS uses
-`sysctl kern.memorystatus_level`, Linux reads `MemAvailable`/`MemTotal` from
-`/proc/meminfo` (a missing, zero-total or unparsable source holds the slot), and
-Windows uses `GlobalMemoryStatusEx`. One memory-source function per platform feeds
-the single admission path. Other Unix systems admit by available slots alone.
+The per-user cache is `.cache/vibecut` beneath `HOME` (`USERPROFILE` on Windows). A
+host-derived number of OS-locked slots own warm `target/slot-N` directories. The
+`locks/build-queue` directory holds numbered, locked waiter files; `locks/admission`
+serializes enqueue, stale-entry cleanup and slot claims. No process IDs establish
+liveness. Crashed waiters release their locks automatically; dead queue files are
+removed by the next waiter. Admission retains FIFO order, preferring a free slot
+already owned by the checkout. Shrinking capacity stops new admissions but never
+releases or kills a running build; slots above a smaller count stay reusable and
+`cleanup` ages them out.
+
+The ceiling is derived from host facts when the wrapper starts and enforced at each
+admission: `min(logical CPUs, floor(total_memory * 0.70 / 1.5 GiB), 64)`. The
+numerator keeps the existing 30% free-memory reservation; 1.5 GiB is the worst
+measured workspace-build footprint (builds measure 0.3-1.5 GiB). The CPU term is the
+runaway bound for aggregate Cargo jobs: each admitted command runs
+`max(2, logical CPUs / ceiling)` jobs, so `ceiling * jobs` never exceeds twice the
+logical CPUs. `VIBECUT_BUILD_SLOTS=1..=logical CPUs` (capped at 64) overrides the
+ceiling for tests and emergencies; zero, out-of-range, non-numeric or non-UTF-8
+values are rejected with a typed error before queueing.
+
+On macOS, Linux and Windows, only the first active build bypasses the resource gates.
+Every extra slot requires all of: a 20-second ramp since the last admission, free
+physical memory at or above 30%, and load below the documented bound (1-minute
+loadavg below twice the logical CPUs on Unix; aggregate processor load below 90% on
+Windows, sampled from two `GetSystemTimes` readings). Probe failure blocks extra
+admission (fail closed): macOS uses `sysctl kern.memorystatus_level` and `hw.memsize`,
+Linux reads `MemAvailable`/`MemTotal` from `/proc/meminfo` and the first field of
+`/proc/loadavg` (a missing, zero-total, truncated or unparsable source holds the
+slot), and Windows uses `GlobalMemoryStatusEx` with `GetSystemTimes`. One source
+function per platform feeds the single admission path. Other Unix systems admit by
+available slots alone within their CPU-derived ceiling.
 
 On Unix, the wrapped command inherits only its slot descriptor, using safe `rustix`
 descriptor APIs. Queue and admission descriptors retain close-on-exec. The
@@ -65,8 +84,8 @@ cannot restore 30 GiB free, the build is refused. Only the held slot is deleted;
 other running builds retain their artifacts. Disk queries use `df -Pk` on Unix and
 `GetDiskFreeSpaceEx` on Windows; query failure refuses the build. Cache accounting
 uses allocated blocks on Unix and logical file sizes on Windows. Child builds
-default to `max(2, logical CPUs / slot count)` Cargo jobs, preserve a caller's
-`CARGO_BUILD_JOBS`, and clear `RUSTC_WRAPPER`.
+default to `max(2, logical CPUs / admission ceiling)` Cargo jobs, preserve a
+caller's `CARGO_BUILD_JOBS`, and clear `RUSTC_WRAPPER`.
 
 Successful exact `cargo xtask ci [--require-oracles]` commands leave receipts in
 `ci-receipts`, keyed by Git tree and oracle mode. Only trees clean before waiting,
@@ -129,10 +148,12 @@ remote timestamp is newer; equal or newer local reports are kept.
 `cargo test -p xtask` covers policy gates, graph boundaries, build admission with
 independent processes (waiter/holder crashes, a surviving wrapped command after
 launcher death, a surviving descendant after normal launcher exit, FIFO and the
-last-slot race), child exit/kill lease release, memory admission/probe failure and
-the Linux `/proc/meminfo` parser (normal, missing keys, zero total, hostile values
-and the exact 30% threshold boundary), receipt cleanliness and worktree/disk cleanup.
-Launcher and descendant survival
+last-slot race), child exit/kill lease release, capacity derivation and override
+validation, shrinking capacity without killing running builds, reuse of slots above
+a shrunk count, memory admission/probe failure, the Linux `/proc/meminfo` and
+`/proc/loadavg` parsers (normal, missing keys, truncated, zero total, hostile values
+and exact thresholds), Windows processor-load arithmetic, receipt cleanliness and
+worktree/disk cleanup. Launcher and descendant survival
 tests apply to Unix; the shared queue and child lifetime tests run on Windows too.
 
 ## Distribution

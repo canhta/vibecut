@@ -1,17 +1,57 @@
 //! Cross-process FIFO build admission, warm slots and clean-tree CI receipts.
-#[cfg(any(unix, test))]
-use std::ffi::OsStr;
-use std::ffi::OsString;
+use std::ffi::{OsStr, OsString};
 use std::fs::{self, File, TryLockError};
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Command, ExitCode, ExitStatus};
 use std::time::{Duration, Instant, SystemTime};
 
-const SLOTS: usize = 3;
+/// Hard ceiling for the per-host slot count and for `VIBECUT_BUILD_SLOTS`.
+const MAX_SLOTS: usize = 64;
 const MIN_FREE_PERCENT: u32 = 30;
 const START_RAMP: Duration = Duration::from_secs(20);
 const GIB: u64 = 1 << 30;
+/// Worst measured workspace-build memory from verification history (0.3-1.5 GiB).
+const WORST_BUILD_BYTES: u64 = GIB + GIB / 2;
+/// Unix 1-minute load average must stay below this multiple of logical CPUs.
+#[cfg(not(windows))]
+const MAX_LOAD_PER_CPU: f64 = 2.0;
+/// Windows exposes aggregate processor time rather than a run-queue length.
+/// Admission holds at or above this average busy percentage per logical CPU.
+#[cfg(any(windows, test))]
+const MAX_PROCESSOR_LOAD_PERCENT: f64 = 90.0;
+
+/// Capacity facts fixed for one admission attempt.
+#[derive(Clone, Copy)]
+struct Admission {
+    max_slots: usize,
+    cpus: usize,
+    memory_gated: bool,
+}
+
+/// An invalid `VIBECUT_BUILD_SLOTS` override, rejected before queueing.
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum SlotsError {
+    NotAnInteger(String),
+    OutOfRange { value: String, max: usize },
+}
+
+impl std::fmt::Display for SlotsError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::NotAnInteger(value) => write!(
+                formatter,
+                "VIBECUT_BUILD_SLOTS must be an integer, got {value:?}"
+            ),
+            Self::OutOfRange { value, max } => write!(
+                formatter,
+                "VIBECUT_BUILD_SLOTS must be between 1 and {max} on this host, got {value:?}"
+            ),
+        }
+    }
+}
+
+impl std::error::Error for SlotsError {}
 
 struct Lock {
     file: File,
@@ -181,6 +221,103 @@ fn owner(locks: &Path, number: usize) -> PathBuf {
         .unwrap_or_default()
 }
 
+/// Upper bound from host facts alone. CPU is the bound because each admitted
+/// command runs at least two Cargo jobs, so `max_slots * max(2, cpus/max_slots)`
+/// never exceeds twice the logical CPUs. Memory keeps the 30% admission
+/// reservation and divides the rest by the worst measured build footprint.
+/// An unreadable total memory returns `None`, which holds extra admission.
+fn derived_slots(cpus: usize, total_memory: Option<u64>) -> Option<usize> {
+    let total = total_memory?;
+    let cpu_bound = cpus.max(1);
+    let budget = total.saturating_mul(u64::from(100 - MIN_FREE_PERCENT)) / 100;
+    let memory_bound = usize::try_from(budget / WORST_BUILD_BYTES).unwrap_or(usize::MAX);
+    Some(cpu_bound.min(memory_bound).clamp(1, MAX_SLOTS))
+}
+
+/// Resolve `VIBECUT_BUILD_SLOTS` or derive the ceiling. A non-gated Unix host
+/// keeps its CPU-derived capacity and admits by available slots alone.
+fn configured_slots(
+    memory_gated: bool,
+    override_value: Option<&OsStr>,
+    cpus: usize,
+    total_memory: Option<u64>,
+) -> Result<usize, SlotsError> {
+    if let Some(value) = override_value {
+        let text = value
+            .to_str()
+            .ok_or_else(|| SlotsError::NotAnInteger(value.to_string_lossy().into_owned()))?;
+        let slots = text
+            .parse::<usize>()
+            .map_err(|_| SlotsError::NotAnInteger(text.to_owned()))?;
+        // An override may not exceed the CPU bound: every command still runs at
+        // least two jobs, so aggregate jobs stay within twice the logical CPUs.
+        let max = cpus.clamp(1, MAX_SLOTS);
+        if !(1..=max).contains(&slots) {
+            return Err(SlotsError::OutOfRange {
+                value: text.to_owned(),
+                max,
+            });
+        }
+        return Ok(slots);
+    }
+    if memory_gated {
+        Ok(derived_slots(cpus, total_memory).unwrap_or(1))
+    } else {
+        Ok(cpus.clamp(1, MAX_SLOTS))
+    }
+}
+
+/// Unix load average bound: a finite, non-negative 1-minute load below
+/// twice the logical CPUs.
+#[cfg(not(windows))]
+fn loadavg_within_bound(load: Option<f64>, cpus: usize) -> bool {
+    load.is_some_and(|load| {
+        load.is_finite() && load >= 0.0 && load < MAX_LOAD_PER_CPU * cpus.max(1) as f64
+    })
+}
+
+/// Windows processor-load bound: a finite, non-negative aggregate busy
+/// percentage below the documented per-CPU ceiling.
+#[cfg(any(windows, test))]
+fn processor_load_within_bound(load: Option<f64>) -> bool {
+    load.is_some_and(|load| load.is_finite() && (0.0..MAX_PROCESSOR_LOAD_PERCENT).contains(&load))
+}
+
+fn load_within_bound(load: Option<f64>, cpus: usize) -> bool {
+    #[cfg(windows)]
+    {
+        let _ = cpus;
+        processor_load_within_bound(load)
+    }
+    #[cfg(not(windows))]
+    {
+        loadavg_within_bound(load, cpus)
+    }
+}
+
+/// Number of slots currently leased by running commands across every number,
+/// including numbers above a shrunk capacity. Such builds keep running.
+fn active_slots(locks: &Path) -> io::Result<usize> {
+    let mut active = 0;
+    for entry in fs::read_dir(locks)? {
+        let entry = entry?;
+        let name = entry.file_name();
+        let is_slot = name
+            .to_str()
+            .and_then(|name| name.strip_prefix("slot-"))
+            .and_then(|number| number.parse::<usize>().ok())
+            .is_some();
+        if !is_slot {
+            continue;
+        }
+        let file = open(&entry.path())?;
+        if try_lock(file)?.is_none() {
+            active += 1;
+        }
+    }
+    Ok(active)
+}
+
 // Each platform reads free physical memory from exactly one source. The
 // `memory_available` dispatcher below is the only admission path: every gated
 // platform feeds the same `MIN_FREE_PERCENT` threshold and `START_RAMP` in
@@ -207,14 +344,20 @@ fn proc_meminfo_available(path: impl AsRef<Path>) -> bool {
     fs::read_to_string(path).is_ok_and(|text| meminfo_memory_available(&text))
 }
 
-/// Pure `/proc/meminfo` parser: decide whether `MemAvailable` meets
-/// `MIN_FREE_PERCENT` of `MemTotal`. A trustworthy line is exactly
+/// Pure `/proc/meminfo` parser. A trustworthy line is exactly
 /// `"Key: <u64> kB"`. Missing keys, a zero total, or any hostile value
 /// (overflow, non-numeric, missing/wrong `kB` suffix, trailing tokens) fails
 /// the whole probe rather than being ignored. `u128` keeps the comparison from
 /// overflowing on adversarial `u64` values.
 #[cfg(any(target_os = "linux", test))]
-fn meminfo_memory_available(text: &str) -> bool {
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct Meminfo {
+    total_kb: u64,
+    available_kb: u64,
+}
+
+#[cfg(any(target_os = "linux", test))]
+fn parse_meminfo(text: &str) -> Option<Meminfo> {
     let (mut total_kb, mut available_kb) = (None, None);
     for line in text.lines() {
         let mut fields = line.split_whitespace();
@@ -229,16 +372,176 @@ fn meminfo_memory_available(text: &str) -> bool {
             (Some(value), Some("kB")) if fields.next().is_none() => value.parse::<u64>().ok(),
             _ => None,
         };
-        match parsed {
-            Some(kb) => *slot = Some(kb),
-            None => return false,
-        }
+        *slot = Some(parsed?);
     }
     match (total_kb, available_kb) {
-        (Some(total), Some(available)) if total > 0 && available <= total => {
-            u128::from(available) * 100 >= u128::from(total) * u128::from(MIN_FREE_PERCENT)
+        (Some(total_kb), Some(available_kb)) if total_kb > 0 && available_kb <= total_kb => {
+            Some(Meminfo {
+                total_kb,
+                available_kb,
+            })
         }
-        _ => false,
+        _ => None,
+    }
+}
+
+/// Decide whether `MemAvailable` meets `MIN_FREE_PERCENT` of `MemTotal`.
+#[cfg(any(target_os = "linux", test))]
+fn meminfo_memory_available(text: &str) -> bool {
+    parse_meminfo(text).is_some_and(|meminfo| {
+        u128::from(meminfo.available_kb) * 100
+            >= u128::from(meminfo.total_kb) * u128::from(MIN_FREE_PERCENT)
+    })
+}
+
+/// Read total physical memory from `/proc/meminfo`; an unreadable or
+/// unparsable source holds extra admission instead of guessing capacity.
+#[cfg(any(target_os = "linux", test))]
+fn proc_meminfo_total(path: impl AsRef<Path>) -> Option<u64> {
+    let text = fs::read_to_string(path).ok()?;
+    parse_meminfo(&text).map(|meminfo| meminfo.total_kb.saturating_mul(1024))
+}
+
+/// Read total physical memory from `sysctl hw.memsize`.
+#[cfg(any(target_os = "macos", test))]
+fn sysctl_total_memory(program: impl AsRef<OsStr>) -> Option<u64> {
+    Command::new(program)
+        .args(["-n", "hw.memsize"])
+        .output()
+        .ok()
+        .filter(|out| out.status.success())
+        .and_then(|out| String::from_utf8(out.stdout).ok())
+        .and_then(|text| text.trim().parse::<u64>().ok())
+        .filter(|bytes| *bytes > 0)
+}
+
+/// Pure first field of `/proc/loadavg`: the 1-minute run-queue length.
+/// Truncated, non-numeric, negative, infinite or NaN input fails closed.
+#[cfg(any(target_os = "linux", test))]
+fn parse_loadavg(text: &str) -> Option<f64> {
+    let fields: Vec<_> = text.split_whitespace().collect();
+    if fields.len() < 3 {
+        return None;
+    }
+    for field in fields.iter().take(3) {
+        let value = field.parse::<f64>().ok()?;
+        if !value.is_finite() || value < 0.0 {
+            return None;
+        }
+    }
+    fields.first()?.parse::<f64>().ok()
+}
+
+/// Read the Linux 1-minute load average. A missing or malformed source
+/// returns `None`, which holds extra admission.
+#[cfg(any(target_os = "linux", test))]
+fn proc_loadavg(path: impl AsRef<Path>) -> Option<f64> {
+    fs::read_to_string(path)
+        .ok()
+        .and_then(|text| parse_loadavg(&text))
+}
+
+/// Parse `sysctl vm.loadavg` output `{ <1m> <5m> <15m> }`.
+#[cfg(any(target_os = "macos", test))]
+fn parse_sysctl_load(text: &str) -> Option<f64> {
+    let mut fields = text.trim().trim_start_matches('{').split_whitespace();
+    let load = fields.next()?.parse::<f64>().ok()?;
+    for field in fields.by_ref().take(2) {
+        let value = field.trim_end_matches('}').parse::<f64>().ok()?;
+        if !value.is_finite() || value < 0.0 {
+            return None;
+        }
+    }
+    (load.is_finite() && load >= 0.0).then_some(load)
+}
+
+/// Read the macOS 1-minute load average from `sysctl vm.loadavg`, whose output
+/// is `{ <1m> <5m> <15m> }`.
+#[cfg(any(target_os = "macos", test))]
+fn sysctl_load(program: impl AsRef<OsStr>) -> Option<f64> {
+    let text = Command::new(program)
+        .args(["-n", "vm.loadavg"])
+        .output()
+        .ok()
+        .filter(|out| out.status.success())
+        .and_then(|out| String::from_utf8(out.stdout).ok())?;
+    parse_sysctl_load(&text)
+}
+
+/// Windows processor load from two `GetSystemTimes` samples. On multiprocessor
+/// systems each value is summed over all processors, and kernel time includes
+/// idle time (Microsoft, `GetSystemTimes`), so busy fraction is
+/// `1 - idle_delta / (kernel_delta + user_delta)`.
+#[cfg(any(windows, test))]
+fn processor_load(idle: (u64, u64), kernel: (u64, u64), user: (u64, u64)) -> Option<f64> {
+    let idle = u128::from(idle.1.checked_sub(idle.0)?);
+    let kernel = u128::from(kernel.1.checked_sub(kernel.0)?);
+    let user = u128::from(user.1.checked_sub(user.0)?);
+    let total = kernel.checked_add(user)?;
+    if total == 0 || idle > total {
+        return None;
+    }
+    Some((total - idle) as f64 / total as f64)
+}
+
+/// One Windows processor-load sample in percent, separated by the short
+/// interval the counters need to advance.
+#[cfg(windows)]
+fn windows_processor_load() -> Option<f64> {
+    let sample = || {
+        winsafe::GetSystemTimes()
+            .ok()
+            .map(|(idle, kernel, user)| (u64::from(idle), u64::from(kernel), u64::from(user)))
+    };
+    let first = sample()?;
+    std::thread::sleep(Duration::from_millis(250));
+    let second = sample()?;
+    processor_load(
+        (first.0, second.0),
+        (first.1, second.1),
+        (first.2, second.2),
+    )
+    .map(|fraction| fraction * 100.0)
+}
+
+fn total_memory() -> Option<u64> {
+    #[cfg(target_os = "macos")]
+    {
+        sysctl_total_memory("sysctl")
+    }
+    #[cfg(target_os = "linux")]
+    {
+        proc_meminfo_total("/proc/meminfo")
+    }
+    #[cfg(windows)]
+    {
+        winsafe::GlobalMemoryStatusEx()
+            .ok()
+            .map(|memory| memory.ullTotalPhys)
+            .filter(|bytes| *bytes > 0)
+    }
+    #[cfg(not(any(target_os = "macos", target_os = "linux", windows)))]
+    {
+        None
+    }
+}
+
+fn load() -> Option<f64> {
+    #[cfg(target_os = "macos")]
+    {
+        sysctl_load("sysctl")
+    }
+    #[cfg(target_os = "linux")]
+    {
+        proc_loadavg("/proc/loadavg")
+    }
+    #[cfg(windows)]
+    {
+        windows_processor_load()
+    }
+    #[cfg(not(any(target_os = "macos", target_os = "linux", windows)))]
+    {
+        None
     }
 }
 
@@ -272,7 +575,9 @@ fn admit_extra(
     memory_gated: bool,
     busy: bool,
     last_start: Option<SystemTime>,
+    cpus: usize,
     memory: impl FnOnce() -> bool,
+    load: impl FnOnce() -> Option<f64>,
 ) -> bool {
     if !memory_gated || !busy {
         return true;
@@ -281,29 +586,46 @@ fn admit_extra(
         .and_then(|time| time.elapsed().ok())
         .is_some_and(|age| age >= START_RAMP)
         && memory()
+        && load_within_bound(load(), cpus)
 }
 
 fn claim(
     queue: &mut Queue,
     root: &Path,
-    memory_gated: bool,
+    admission: Admission,
     memory: impl FnOnce() -> bool,
+    load: impl FnOnce() -> Option<f64>,
 ) -> io::Result<Option<Slot>> {
     let _admission = Queue::admission(&queue.locks)?;
     if !queue.first()? {
         return Ok(None);
     }
+    // Count every running lease, including numbers above a capacity that has
+    // since shrunk. Shrinking never releases or kills those builds.
+    let active = active_slots(&queue.locks)?;
+    if active >= admission.max_slots {
+        return Ok(None);
+    }
     let mut free = Vec::new();
-    for number in 1..=SLOTS {
+    for number in 1..=admission.max_slots {
         if let Some(lock) = try_lock(open(&queue.locks.join(format!("slot-{number}")))?)? {
             free.push((number, lock));
         }
     }
-    let busy = free.len() < SLOTS;
+    let busy = active > 0;
     let last = fs::metadata(queue.locks.join("last-start"))
         .and_then(|m| m.modified())
         .ok();
-    if free.is_empty() || !admit_extra(memory_gated, busy, last, memory) {
+    if free.is_empty()
+        || !admit_extra(
+            admission.memory_gated,
+            busy,
+            last,
+            admission.cpus,
+            memory,
+            load,
+        )
+    {
         return Ok(None);
     }
     free.sort_by_key(|(number, _)| (owner(&queue.locks, *number) != root, *number));
@@ -529,6 +851,26 @@ fn remove_slot(slot: &Path, dry_run: bool, reason: &str) -> Result<(), String> {
     Ok(())
 }
 
+/// Parse existing `target/slot-N` directory names. Cleanup enumerates the
+/// cache instead of a fixed range, so slots left by a larger past capacity
+/// still age out and a later larger capacity reuses them.
+fn slot_numbers(target: &Path) -> io::Result<Vec<usize>> {
+    let mut numbers = Vec::new();
+    for entry in fs::read_dir(target)? {
+        let entry = entry?;
+        if let Some(number) = entry
+            .file_name()
+            .to_str()
+            .and_then(|name| name.strip_prefix("slot-"))
+            .and_then(|number| number.parse::<usize>().ok())
+        {
+            numbers.push(number);
+        }
+    }
+    numbers.sort_unstable();
+    Ok(numbers)
+}
+
 fn prune_slots(base: &Path, now: SystemTime, size_limit: u64, dry_run: bool) -> Result<(), String> {
     let target = base.join("target");
     if !target.is_dir() {
@@ -536,7 +878,9 @@ fn prune_slots(base: &Path, now: SystemTime, size_limit: u64, dry_run: bool) -> 
     }
     let locks = base.join("locks");
     fs::create_dir_all(&locks).map_err(|error| format!("{}: {error}", locks.display()))?;
-    for number in 1..=SLOTS {
+    let numbers =
+        slot_numbers(&target).map_err(|error| format!("{}: {error}", target.display()))?;
+    for number in numbers {
         let slot = target.join(format!("slot-{number}"));
         if !slot.is_dir() {
             continue;
@@ -815,11 +1159,24 @@ fn receipt(root: &Path, base: &Path, args: &[OsString]) -> Result<Option<PathBuf
 }
 
 pub fn run(root: &Path, args: &[OsString]) -> Result<ExitCode, String> {
+    let cpus = std::thread::available_parallelism().map_or(1, usize::from);
+    let memory_gated = cfg!(any(target_os = "macos", target_os = "linux", windows));
+    let max_slots = configured_slots(
+        memory_gated,
+        std::env::var_os("VIBECUT_BUILD_SLOTS").as_deref(),
+        cpus,
+        total_memory(),
+    )
+    .map_err(|error| error.to_string())?;
     run_in(
         root,
         args,
         cache()?,
-        cfg!(any(target_os = "macos", target_os = "linux", windows)),
+        Admission {
+            max_slots,
+            cpus,
+            memory_gated,
+        },
         disk_free,
         crate::ffmpeg::environment,
     )
@@ -829,7 +1186,7 @@ fn run_in(
     root: &Path,
     args: &[OsString],
     base: PathBuf,
-    memory_gated: bool,
+    admission: Admission,
     free_space: impl FnMut(&Path) -> Result<u64, String>,
     native: impl FnOnce(&mut Command) -> Result<(), String>,
 ) -> Result<ExitCode, String> {
@@ -846,12 +1203,15 @@ fn run_in(
     let mut said = false;
     let mut slot = loop {
         if let Some(slot) =
-            claim(&mut queue, root, memory_gated, memory_available).map_err(|e| e.to_string())?
+            claim(&mut queue, root, admission, memory_available, load).map_err(|e| e.to_string())?
         {
             break slot;
         }
         if !said {
-            eprintln!("[build] waiting (FIFO; extra builds need 30% free memory and 20s ramp)");
+            eprintln!(
+                "[build] waiting (FIFO; {}-slot capacity, extra builds need 30% free memory, bounded load and a 20s ramp)",
+                admission.max_slots
+            );
             said = true;
         }
         std::thread::sleep(Duration::from_secs(1));
@@ -873,8 +1233,10 @@ fn run_in(
         .env("CARGO_TARGET_DIR", target)
         .env_remove("RUSTC_WRAPPER");
     if std::env::var_os("CARGO_BUILD_JOBS").is_none() {
-        let cpus = std::thread::available_parallelism().map_or(1, usize::from);
-        command.env("CARGO_BUILD_JOBS", (cpus / SLOTS).max(2).to_string());
+        // Divide by the admission ceiling, not the current count: a late slot
+        // must not push aggregate jobs past the documented bound.
+        let jobs = (admission.cpus / admission.max_slots).max(2);
+        command.env("CARGO_BUILD_JOBS", jobs.to_string());
     }
     // The wrapper owns both the warm slot and the provisioned native
     // environment: compile-time discovery and runtime library loading must
@@ -949,6 +1311,27 @@ mod tests {
         }
     }
 
+    const TEST_CPUS: usize = 8;
+
+    fn overloaded_load() -> f64 {
+        #[cfg(windows)]
+        {
+            MAX_PROCESSOR_LOAD_PERCENT
+        }
+        #[cfg(not(windows))]
+        {
+            MAX_LOAD_PER_CPU * TEST_CPUS as f64
+        }
+    }
+
+    fn test_admission(max_slots: usize, memory_gated: bool) -> Admission {
+        Admission {
+            max_slots,
+            cpus: TEST_CPUS,
+            memory_gated,
+        }
+    }
+
     fn wait(path: &Path) {
         let start = Instant::now();
         while !path.exists() {
@@ -989,7 +1372,7 @@ mod tests {
                     &root,
                     &args,
                     root.clone(),
-                    false,
+                    test_admission(3, false),
                     |_| Ok(31 * GIB),
                     |_| Ok(())
                 )
@@ -1009,7 +1392,7 @@ mod tests {
                     &root,
                     &args,
                     root.clone(),
-                    false,
+                    test_admission(3, false),
                     |_| Ok(31 * GIB),
                     |command| {
                         command.env("VIBECUT_BUILD_TEST_NATIVE", "provisioned");
@@ -1035,7 +1418,7 @@ mod tests {
                     &root,
                     &args,
                     root.clone(),
-                    false,
+                    test_admission(3, false),
                     |_| Ok(31 * GIB),
                     |_| Ok(())
                 )
@@ -1048,7 +1431,15 @@ mod tests {
         let mut queue = Queue::enter(&root.join("locks")).unwrap();
         fs::write(root.join(format!("{label}.ready")), b"").unwrap();
         let slot = loop {
-            if let Some(slot) = claim(&mut queue, &root, false, || false).unwrap() {
+            if let Some(slot) = claim(
+                &mut queue,
+                &root,
+                test_admission(3, false),
+                || false,
+                || None,
+            )
+            .unwrap()
+            {
                 break slot;
             }
             std::thread::sleep(Duration::from_millis(5));
@@ -1119,9 +1510,19 @@ mod tests {
         let root = &directory.0;
         let locks = root.join("locks");
         let mut slots = Vec::new();
-        for _ in 0..SLOTS {
+        for _ in 0..3 {
             let mut queue = Queue::enter(&locks).unwrap();
-            slots.push(claim(&mut queue, root, false, || false).unwrap().unwrap());
+            slots.push(
+                claim(
+                    &mut queue,
+                    root,
+                    test_admission(3, false),
+                    || false,
+                    || None,
+                )
+                .unwrap()
+                .unwrap(),
+            );
         }
         let mut dead = worker(root, "dead");
         let mut first = worker(root, "first");
@@ -1169,11 +1570,9 @@ mod tests {
                 "provisioned",
                 "wrapper did not pass the native environment to its command"
             );
-            let expected = jobs.map(str::to_owned).unwrap_or_else(|| {
-                (std::thread::available_parallelism().map_or(1, usize::from) / SLOTS)
-                    .max(2)
-                    .to_string()
-            });
+            let expected = jobs
+                .map(str::to_owned)
+                .unwrap_or_else(|| (TEST_CPUS / 3).max(2).to_string());
             assert_eq!(
                 fs::read_to_string(root.join("native.jobs")).unwrap(),
                 expected
@@ -1213,13 +1612,30 @@ mod tests {
             );
             let mut queued = Queue::enter(&locks).unwrap();
             assert!(
-                claim(&mut queued, root, false, || false).unwrap().is_none(),
+                claim(
+                    &mut queued,
+                    root,
+                    test_admission(3, false),
+                    || false,
+                    || None
+                )
+                .unwrap()
+                .is_none(),
                 "wrapper death made the surviving command's slot reusable"
             );
             drop(input);
             let deadline = Instant::now() + Duration::from_secs(15);
             loop {
-                if claim(&mut queued, root, false, || false).unwrap().is_some() {
+                if claim(
+                    &mut queued,
+                    root,
+                    test_admission(3, false),
+                    || false,
+                    || None,
+                )
+                .unwrap()
+                .is_some()
+                {
                     break;
                 }
                 assert!(
@@ -1241,7 +1657,15 @@ mod tests {
         assert!(status.success());
         let mut queued = Queue::enter(&locks).unwrap();
         assert!(
-            claim(&mut queued, root, false, || false).unwrap().is_some(),
+            claim(
+                &mut queued,
+                root,
+                test_admission(3, false),
+                || false,
+                || None
+            )
+            .unwrap()
+            .is_some(),
             "failed spawn retained its slot"
         );
     }
@@ -1251,21 +1675,28 @@ mod tests {
         let directory = Directory::new();
         assert!(!sysctl_memory_available(directory.0.join("missing-sysctl")));
         let old = SystemTime::now() - Duration::from_secs(30);
-        for (memory_gated, busy, start, memory, expected) in [
-            (true, false, None, false, true),
-            (true, true, Some(old), false, false),
-            (true, true, Some(old), true, true),
-            (true, true, Some(SystemTime::now()), true, false),
-            (true, true, None, true, false),
-            (false, true, None, false, true),
+        for (memory_gated, busy, start, memory, load, expected) in [
+            (true, false, None, false, None, true),
+            (true, true, Some(old), false, Some(0.0), false),
+            (true, true, Some(old), true, Some(0.0), true),
+            (true, true, Some(old), true, None, false),
+            (true, true, Some(old), true, Some(overloaded_load()), false),
+            (true, true, Some(SystemTime::now()), true, Some(0.0), false),
+            (true, true, None, true, Some(0.0), false),
+            (false, true, None, false, None, true),
         ] {
-            assert_eq!(admit_extra(memory_gated, busy, start, || memory), expected);
+            assert_eq!(
+                admit_extra(memory_gated, busy, start, 4, || memory, || load),
+                expected
+            );
         }
 
         let root = &directory.0;
         let locks = root.join("locks");
         let mut first = Queue::enter(&locks).unwrap();
-        let held = claim(&mut first, root, true, || false).unwrap().unwrap();
+        let held = claim(&mut first, root, test_admission(3, true), || false, || None)
+            .unwrap()
+            .unwrap();
         let mut second = Queue::enter(&locks).unwrap();
         let mut third = Queue::enter(&locks).unwrap();
         File::options()
@@ -1274,15 +1705,55 @@ mod tests {
             .unwrap()
             .set_modified(old)
             .unwrap();
-        assert!(claim(&mut second, root, true, || false).unwrap().is_none());
         assert!(
-            claim(&mut third, root, true, || true).unwrap().is_none(),
+            claim(
+                &mut second,
+                root,
+                test_admission(3, true),
+                || false,
+                || Some(0.0)
+            )
+            .unwrap()
+            .is_none()
+        );
+        assert!(
+            claim(
+                &mut third,
+                root,
+                test_admission(3, true),
+                || true,
+                || Some(0.0)
+            )
+            .unwrap()
+            .is_none(),
             "low memory must not let a later waiter overtake the second build"
         );
-        let admitted = claim(&mut second, root, true, || true).unwrap().unwrap();
+        assert!(
+            claim(&mut second, root, test_admission(3, true), || true, || None)
+                .unwrap()
+                .is_none(),
+            "an unreadable load source must hold the extra slot"
+        );
+        let admitted = claim(
+            &mut second,
+            root,
+            test_admission(3, true),
+            || true,
+            || Some(0.0),
+        )
+        .unwrap()
+        .unwrap();
         assert_ne!(held.number, admitted.number);
         assert!(
-            claim(&mut third, root, true, || true).unwrap().is_none(),
+            claim(
+                &mut third,
+                root,
+                test_admission(3, true),
+                || true,
+                || Some(0.0)
+            )
+            .unwrap()
+            .is_none(),
             "the next build must observe the ramp again"
         );
     }
@@ -1413,22 +1884,295 @@ mod tests {
         let old = SystemTime::now() - Duration::from_secs(30);
         let good = "MemTotal: 1000 kB\nMemAvailable: 900 kB\n";
         let bad = "MemTotal: 0 kB\nMemAvailable: 0 kB\n";
-        assert!(!admit_extra(true, true, Some(old), || {
-            meminfo_memory_available(bad)
-        }));
-        assert!(admit_extra(true, true, Some(old), || {
-            meminfo_memory_available(good)
-        }));
+        assert!(!admit_extra(
+            true,
+            true,
+            Some(old),
+            4,
+            || meminfo_memory_available(bad),
+            || Some(0.0)
+        ));
+        assert!(admit_extra(
+            true,
+            true,
+            Some(old),
+            4,
+            || meminfo_memory_available(good),
+            || Some(0.0)
+        ));
         assert!(
-            !admit_extra(true, true, Some(SystemTime::now()), || {
-                meminfo_memory_available(good)
-            }),
+            !admit_extra(
+                true,
+                true,
+                Some(SystemTime::now()),
+                4,
+                || meminfo_memory_available(good),
+                || Some(0.0)
+            ),
             "the ramp still gates extra admission on Linux"
         );
         // The first build is never gated; only extra slots consult the probe.
-        assert!(admit_extra(true, false, None, || meminfo_memory_available(
-            bad
-        )));
+        assert!(admit_extra(
+            true,
+            false,
+            None,
+            4,
+            || meminfo_memory_available(bad),
+            || None
+        ));
+    }
+
+    // Must 1: capacity is the smaller of the CPU bound and the memory budget,
+    // with a hard ceiling. Unreadable total memory yields no derived capacity,
+    // which holds extra admission (the first build still runs).
+    #[test]
+    fn slot_ceiling_follows_cpu_memory_and_the_hard_bound() {
+        assert_eq!(derived_slots(16, Some(64 * GIB)), Some(16));
+        // 32 GiB host: (32*0.70)/1.5 = 14 memory slots, below 20 CPUs.
+        assert_eq!(derived_slots(20, Some(32 * GIB)), Some(14));
+        // 4 GiB host: the 30% reservation leaves less than one 1.5 GiB build.
+        assert_eq!(derived_slots(64, Some(4 * GIB)), Some(1));
+        assert_eq!(derived_slots(200, Some(1024 * GIB)), Some(MAX_SLOTS));
+        assert_eq!(derived_slots(8, None), None);
+        assert_eq!(derived_slots(8, Some(WORST_BUILD_BYTES)), Some(1));
+        assert_eq!(derived_slots(8, Some(0)), Some(1));
+        assert_eq!(derived_slots(0, Some(64 * GIB)), Some(1));
+        let directory = Directory::new();
+        assert_eq!(
+            sysctl_total_memory(directory.0.join("missing-sysctl")),
+            None
+        );
+    }
+
+    // Must 1/3: a supported override wins; zero, out-of-range or non-numeric
+    // values are typed errors before any queue work; non-gated Unix keeps its
+    // CPU-derived capacity and admits by available slots alone.
+    #[test]
+    fn build_slot_override_is_validated_with_a_typed_error() {
+        let total = Some(64 * GIB);
+        assert_eq!(configured_slots(true, None, 16, total), Ok(16));
+        assert_eq!(
+            configured_slots(true, Some(OsStr::new("3")), 16, total),
+            Ok(3)
+        );
+        assert_eq!(
+            configured_slots(true, Some(OsStr::new("16")), 16, total),
+            Ok(16)
+        );
+        assert_eq!(
+            configured_slots(true, Some(OsStr::new("64")), 64, total),
+            Ok(MAX_SLOTS)
+        );
+        assert_eq!(
+            configured_slots(true, Some(OsStr::new("0")), 16, total),
+            Err(SlotsError::OutOfRange {
+                value: "0".into(),
+                max: 16,
+            })
+        );
+        assert_eq!(
+            configured_slots(true, Some(OsStr::new("17")), 16, total),
+            Err(SlotsError::OutOfRange {
+                value: "17".into(),
+                max: 16,
+            })
+        );
+        assert_eq!(
+            configured_slots(true, Some(OsStr::new("65")), 64, total),
+            Err(SlotsError::OutOfRange {
+                value: "65".into(),
+                max: MAX_SLOTS,
+            })
+        );
+        for value in ["-1", "not-a-number", "", " 3", "999999999999999999999"] {
+            assert_eq!(
+                configured_slots(true, Some(OsStr::new(value)), 16, total),
+                Err(SlotsError::NotAnInteger(value.into())),
+                "{value:?}"
+            );
+        }
+        #[cfg(unix)]
+        {
+            use std::os::unix::ffi::OsStrExt;
+            let invalid = OsStr::from_bytes(&[0xff, 0xfe]);
+            assert_eq!(
+                configured_slots(true, Some(invalid), 16, total),
+                Err(SlotsError::NotAnInteger("\u{fffd}\u{fffd}".into()))
+            );
+        }
+        assert_eq!(configured_slots(true, None, 8, None), Ok(1));
+        assert_eq!(configured_slots(false, None, 8, None), Ok(8));
+        assert_eq!(
+            configured_slots(false, Some(OsStr::new("2")), 8, None),
+            Ok(2)
+        );
+    }
+
+    // Must 1/3: Linux loadavg and macOS vm.loadavg parse only finite,
+    // non-negative, complete samples; every malformed or unreadable source
+    // returns `None` so admission fails closed.
+    #[test]
+    fn load_sources_parse_complete_samples_or_fail_closed() {
+        for (text, expected) in [
+            ("0.42 0.57 1.86 1/563 123", Some(0.42)),
+            ("0 0 0", Some(0.0)),
+            ("2.50 2.00 1.50 4/100 9", Some(2.5)),
+            ("", None),
+            ("0.5", None),
+            ("0.5 0.4", None),
+            ("1.0 nope 2.0", None),
+            ("-1 0 0", None),
+            ("NaN 0 0", None),
+            ("inf 0 0", None),
+        ] {
+            assert_eq!(parse_loadavg(text), expected, "{text:?}");
+        }
+        for (text, expected) in [
+            ("{ 1.50 2.00 3.00 }", Some(1.5)),
+            ("1.50 2.00 3.00", Some(1.5)),
+            ("{ 1.5 2.0 }", None),
+            ("", None),
+            ("{ nope 2.0 3.0 }", None),
+            ("{ -1 2.0 3.0 }", None),
+        ] {
+            assert_eq!(parse_sysctl_load(text), expected, "{text:?}");
+        }
+        let directory = Directory::new();
+        assert_eq!(sysctl_load(directory.0.join("missing-sysctl")), None);
+        assert_eq!(proc_loadavg(directory.0.join("missing-loadavg")), None);
+        let good = directory.0.join("loadavg");
+        fs::write(&good, "0.25 0.50 0.75 1/100 7\n").unwrap();
+        assert_eq!(proc_loadavg(&good), Some(0.25));
+        let binary = directory.0.join("binary-loadavg");
+        fs::write(&binary, [0xff, 0xfe]).unwrap();
+        assert_eq!(proc_loadavg(&binary), None);
+    }
+
+    // Must 1: Windows busy fraction is `1 - idle/(kernel+user)`; backwards,
+    // zero-delta and idle-exceeding-total counters fail closed, and the
+    // documented 90% bound is strict.
+    #[test]
+    fn windows_processor_load_handles_samples_and_hostile_counters() {
+        assert_eq!(
+            processor_load((100, 200), (300, 450), (100, 150)),
+            Some(0.5)
+        );
+        assert_eq!(processor_load((10, 10), (20, 20), (5, 5)), None);
+        assert_eq!(processor_load((50, 10), (20, 20), (5, 10)), None);
+        assert_eq!(processor_load((0, 500), (0, 100), (0, 100)), None);
+        assert_eq!(
+            processor_load((0, 0), (0, u64::MAX), (0, u64::MAX)),
+            Some(1.0)
+        );
+        assert!(processor_load_within_bound(Some(89.9)));
+        assert!(!processor_load_within_bound(Some(90.0)));
+        assert!(!processor_load_within_bound(Some(100.0)));
+        assert!(!processor_load_within_bound(Some(-1.0)));
+        assert!(!processor_load_within_bound(Some(f64::NAN)));
+        assert!(!processor_load_within_bound(None));
+    }
+
+    // Must 3: shrinking capacity stops new admissions but never releases a
+    // running build's lease, and the freed slot is usable when capacity grows.
+    #[test]
+    fn shrinking_capacity_never_kills_running_builds() {
+        let directory = Directory::new();
+        let root = &directory.0;
+        let locks = root.join("locks");
+        let mut first = Queue::enter(&locks).unwrap();
+        let mut second = Queue::enter(&locks).unwrap();
+        let held_a = claim(
+            &mut first,
+            root,
+            test_admission(4, false),
+            || false,
+            || None,
+        )
+        .unwrap()
+        .unwrap();
+        let held_b = claim(
+            &mut second,
+            root,
+            test_admission(4, false),
+            || false,
+            || None,
+        )
+        .unwrap()
+        .unwrap();
+        assert_ne!(held_a.number, held_b.number);
+        // A stray name is not a slot lease.
+        fs::write(locks.join("slot-x"), b"").unwrap();
+        assert_eq!(active_slots(&locks).unwrap(), 2);
+
+        let mut shrunk = Queue::enter(&locks).unwrap();
+        assert!(
+            claim(
+                &mut shrunk,
+                root,
+                test_admission(1, false),
+                || false,
+                || None
+            )
+            .unwrap()
+            .is_none(),
+            "shrunk capacity admitted another build"
+        );
+        assert!(
+            try_lock(open(&locks.join(format!("slot-{}", held_a.number))).unwrap())
+                .unwrap()
+                .is_none(),
+            "shrinking released a running build"
+        );
+        assert!(
+            try_lock(open(&locks.join(format!("slot-{}", held_b.number))).unwrap())
+                .unwrap()
+                .is_none(),
+            "shrinking released a running build"
+        );
+
+        let freed_number = held_b.number;
+        drop(held_b);
+        assert_eq!(active_slots(&locks).unwrap(), 1);
+        let regrown = claim(
+            &mut shrunk,
+            root,
+            test_admission(2, false),
+            || false,
+            || None,
+        )
+        .unwrap()
+        .unwrap();
+        assert_eq!(regrown.number, freed_number);
+    }
+
+    // Must 2: a slot number beyond an earlier, smaller capacity is reusable
+    // when capacity grows; admission does not delete its warm directory.
+    #[test]
+    fn slots_beyond_a_shrunk_count_are_reused_not_deleted() {
+        let directory = Directory::new();
+        let root = &directory.0;
+        let locks = root.join("locks");
+        fs::create_dir_all(&locks).unwrap();
+        fs::create_dir_all(root.join("target/slot-9/debug")).unwrap();
+        fs::write(root.join("target/slot-9/debug/artifact"), b"warm").unwrap();
+        let mut _held = Vec::new();
+        for number in 1..=8 {
+            let file = open(&locks.join(format!("slot-{number}"))).unwrap();
+            file.lock().unwrap();
+            _held.push(file);
+        }
+        let mut queue = Queue::enter(&locks).unwrap();
+        let slot = claim(
+            &mut queue,
+            root,
+            test_admission(9, false),
+            || false,
+            || None,
+        )
+        .unwrap()
+        .unwrap();
+        assert_eq!(slot.number, 9);
+        assert!(root.join("target/slot-9/debug/artifact").is_file());
     }
 
     #[test]
@@ -1674,6 +2418,30 @@ mod cache_tests {
         assert!(
             base.join("target/slot-1").exists(),
             "the slot was cleared even though stale entries restored the budget"
+        );
+        fs::remove_dir_all(base).unwrap();
+    }
+
+    #[test]
+    fn cache_prune_ages_out_slots_beyond_the_current_count() {
+        let base = cache_base();
+        let old = SystemTime::now() - Duration::from_secs(3 * 24 * 60 * 60);
+        let beyond = base.join("target/slot-9/debug");
+        fs::create_dir_all(&beyond).unwrap();
+        fs::write(beyond.join("artifact"), b"old").unwrap();
+        age_tree(&base.join("target/slot-9"), old);
+        let fresh = base.join("target/slot-12/debug");
+        fs::create_dir_all(&fresh).unwrap();
+        fs::write(fresh.join("artifact"), b"new").unwrap();
+
+        prune_slots(&base, SystemTime::now(), 1 << 40, false).unwrap();
+        assert!(
+            !base.join("target/slot-9").exists(),
+            "a stale slot beyond the current capacity was kept"
+        );
+        assert!(
+            base.join("target/slot-12").exists(),
+            "a fresh slot beyond the current capacity was pruned"
         );
         fs::remove_dir_all(base).unwrap();
     }
