@@ -8,36 +8,20 @@ Run the smallest check that covers what changed; commit only green.
 |---|---|
 | Markdown, tickets, assets only | `cargo xtask docs` (crate layers, asset sidecars, name gate; ~1 s) |
 | Rust inside one crate, while iterating | `cargo test -p <crate>` and `cargo clippy -p <crate> --all-targets` |
-| Before handoff or merge | Push the frozen SHA to `canhta/**` or `feat/**`; `.scratch/bin/hosted-ci <sha>` waits for hosted CI (fmt, Clippy, all tests, layers, assets, name gate, required oracles) |
-| Media, render or other hot path | Hosted CI plus the benchmark its ticket names, run locally |
+| Before handoff or merge | `cargo xtask ci --require-oracles` locally through the build lock on the exact SHA (fmt, Clippy, all tests, layers, assets, name gate, required oracles); push the branch so hosted CI also runs, without waiting for it |
+| Media, render or other hot path | The above plus the benchmark its ticket names |
 
 Run `cargo xtask ffmpeg` once per machine before the first local Rust build.
-While iterating, use crate-scoped tests and Clippy. Before handoff, push the frozen
-SHA and start review while hosted CI runs; reviewers run only targeted
-reproductions locally. Run the helper from the ticket worktree (the executable
-lives in the main checkout's `.scratch/bin/`). It reports pass/fail and the run
-URL, and exits 0 for success, 1 for failure or inspection errors, or 2 after
-45 minutes queued with `fallback: run locally`. Missing runs and queued macOS
-jobs count toward that queue limit; an API failure is not fallback permission.
+While iterating, use crate-scoped tests and Clippy.
 
-Merge requires hosted green on the reviewed SHA. After a rebase, rerun full hosted
-CI only when both your branch and the commits added to `main` since your run
-touched Rust, manifests or `xtask`; each side alone was already tested. Otherwise,
-the docs check on the rebased SHA plus the earlier hosted green and the unchanged
-branch patch cover that SHA. Record the reviewed-SHA run URL and any rebase
-receipts.
-Local full `cargo xtask ci --require-oracles` substitutes only after the helper's
-queue timeout, or when a test needs local hardware (benchmarks, native smoke).
-Keep benchmarks and GPU parity runs local.
-
-Hosted macOS full runs always use `cargo xtask ci --require-oracles`: it fails
-when external `ffmpeg`/`ffprobe` are missing, older than 6.0 or cannot report a
-version, sets `VIBECUT_REQUIRE_ORACLES=1` so skipped oracles fail, and prints tool
-paths/versions and fixture size/SHA-256 receipts. Windows remains advisory.
-Fast/offline `cargo xtask ci` labels skipped oracles; a skip is never a pass.
-
-The name gate reads local regexes from `.scratch/forbidden-names.txt` and rejects
-matches in tracked files and branch commit messages.
+Merge requires local `cargo xtask ci --require-oracles` green on the exact SHA being
+merged; hosted CI is not waited for. It runs on every push and on `main` after the
+merge: a red hosted run on `main` is fixed or reverted at once by whoever merged.
+After a rebase, rerun local CI only when both your branch and the commits added to
+`main` since your run touched Rust, manifests or `xtask`; each side alone was already
+tested. Otherwise the docs check on the rebased SHA covers it. Record the CI receipt
+(command, SHA, counts) in the report. `.scratch/bin/hosted-ci <sha>` remains for
+platforms this machine cannot run (Windows).
 
 ## AI model integrations
 
