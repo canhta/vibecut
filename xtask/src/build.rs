@@ -446,7 +446,8 @@ fn proc_loadavg(path: impl AsRef<Path>) -> Option<f64> {
 fn parse_sysctl_load(text: &str) -> Option<f64> {
     let mut fields = text.trim().trim_start_matches('{').split_whitespace();
     let load = fields.next()?.parse::<f64>().ok()?;
-    for field in fields.by_ref().take(2) {
+    for _ in 0..2 {
+        let field = fields.next()?;
         let value = field.trim_end_matches('}').parse::<f64>().ok()?;
         if !value.is_finite() || value < 0.0 {
             return None;
@@ -1865,11 +1866,16 @@ mod tests {
         let good = directory.0.join("meminfo");
         fs::write(&good, "MemTotal: 1000 kB\nMemAvailable: 900 kB\n").unwrap();
         assert!(proc_meminfo_available(&good));
+        assert_eq!(proc_meminfo_total(&good), Some(1000 * 1024));
         let low = directory.0.join("low-meminfo");
         fs::write(&low, "MemTotal: 1000 kB\nMemAvailable: 100 kB\n").unwrap();
         assert!(!proc_meminfo_available(&low));
         // Missing path, a directory and invalid UTF-8 all fail closed.
         assert!(!proc_meminfo_available(directory.0.join("missing-meminfo")));
+        assert_eq!(
+            proc_meminfo_total(directory.0.join("missing-meminfo")),
+            None
+        );
         assert!(!proc_meminfo_available(&directory.0));
         let binary = directory.0.join("binary-meminfo");
         fs::write(&binary, [0xff, 0xfe, 0x00]).unwrap();
@@ -2031,6 +2037,9 @@ mod tests {
             ("{ 1.50 2.00 3.00 }", Some(1.5)),
             ("1.50 2.00 3.00", Some(1.5)),
             ("{ 1.5 2.0 }", None),
+            ("1.5", None),
+            ("1.5 2.0", None),
+            ("{ 1.5", None),
             ("", None),
             ("{ nope 2.0 3.0 }", None),
             ("{ -1 2.0 3.0 }", None),
