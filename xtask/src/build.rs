@@ -27,6 +27,7 @@ struct Admission {
     max_slots: usize,
     cpus: usize,
     memory_gated: bool,
+    caller_jobs: bool,
 }
 
 /// An invalid `VIBECUT_BUILD_SLOTS` override, rejected before queueing.
@@ -183,6 +184,7 @@ impl Drop for Queue {
 struct Slot {
     lock: Lock,
     number: usize,
+    jobs: usize,
 }
 
 impl Slot {
@@ -221,9 +223,8 @@ fn owner(locks: &Path, number: usize) -> PathBuf {
         .unwrap_or_default()
 }
 
-/// Upper bound from host facts alone. CPU is the bound because each admitted
-/// command runs at least two Cargo jobs, so `max_slots * max(2, cpus/max_slots)`
-/// never exceeds twice the logical CPUs. Memory keeps the 30% admission
+/// Upper bound from host facts alone. CPU bounds the number of slots; the shared
+/// job reservations independently bound aggregate jobs. Memory keeps the 30% admission
 /// reservation and divides the rest by the worst measured build footprint.
 /// An unreadable total memory returns `None`, which holds extra admission.
 fn derived_slots(cpus: usize, total_memory: Option<u64>) -> Option<usize> {
@@ -297,8 +298,9 @@ fn load_within_bound(load: Option<f64>, cpus: usize) -> bool {
 
 /// Number of slots currently leased by running commands across every number,
 /// including numbers above a shrunk capacity. Such builds keep running.
-fn active_slots(locks: &Path) -> io::Result<usize> {
+fn active_slots(locks: &Path, budget: usize) -> io::Result<(usize, usize)> {
     let mut active = 0;
+    let mut jobs = 0usize;
     for entry in fs::read_dir(locks)? {
         let entry = entry?;
         let name = entry.file_name();
@@ -313,9 +315,18 @@ fn active_slots(locks: &Path) -> io::Result<usize> {
         let file = open(&entry.path())?;
         if try_lock(file)?.is_none() {
             active += 1;
+            // Only held leases count. A release during the snapshot can only
+            // overcount; claims and publication serialize on admission. Missing
+            // or damaged metadata holds admission until that lease exits.
+            let reserved = fs::read_to_string(entry.path().with_extension("jobs"))
+                .ok()
+                .and_then(|text| text.trim().parse::<usize>().ok())
+                .filter(|jobs| *jobs > 0)
+                .unwrap_or(budget);
+            jobs = jobs.saturating_add(reserved);
         }
     }
-    Ok(active)
+    Ok((active, jobs))
 }
 
 // Each platform reads free physical memory from exactly one source. The
@@ -603,10 +614,25 @@ fn claim(
     }
     // Count every running lease, including numbers above a capacity that has
     // since shrunk. Shrinking never releases or kills those builds.
-    let active = active_slots(&queue.locks)?;
+    let budget = admission.cpus.max(1).saturating_mul(2);
+    let (active, reserved) = active_slots(&queue.locks, budget)?;
     if active >= admission.max_slots {
         return Ok(None);
     }
+    let remaining = budget.saturating_sub(reserved);
+    let jobs = if admission.caller_jobs {
+        // Explicit Cargo job settings retain their semantics, including counts
+        // above the bound, but run exclusively with respect to default jobs.
+        if active != 0 {
+            return Ok(None);
+        }
+        budget
+    } else {
+        if remaining < 2 {
+            return Ok(None);
+        }
+        (admission.cpus / admission.max_slots).max(2).min(remaining)
+    };
     let mut free = Vec::new();
     for number in 1..=admission.max_slots {
         if let Some(lock) = try_lock(open(&queue.locks.join(format!("slot-{number}")))?)? {
@@ -639,8 +665,12 @@ fn claim(
     open(&queue.locks.join("last-start"))?.set_modified(SystemTime::now())?;
     lock.file.set_len(0)?;
     writeln!(lock.file, "{}", root.display())?;
+    fs::write(
+        queue.locks.join(format!("slot-{number}.jobs")),
+        jobs.to_string(),
+    )?;
     queue.leave()?;
-    Ok(Some(Slot { lock, number }))
+    Ok(Some(Slot { lock, number, jobs }))
 }
 
 fn cache() -> Result<PathBuf, String> {
@@ -1159,6 +1189,14 @@ fn receipt(root: &Path, base: &Path, args: &[OsString]) -> Result<Option<PathBuf
     Ok(clean_tree(root)?.map(|tree| base.join(format!("ci-receipts/{tree}-{mode}"))))
 }
 
+fn caller_jobs(args: &[OsString], override_value: Option<&OsStr>) -> bool {
+    override_value.is_some()
+        || args
+            .iter()
+            .filter_map(|arg| arg.to_str())
+            .any(|arg| arg == "--jobs" || arg.starts_with("--jobs=") || arg.starts_with("-j"))
+}
+
 pub fn run(root: &Path, args: &[OsString]) -> Result<ExitCode, String> {
     let cpus = std::thread::available_parallelism().map_or(1, usize::from);
     let memory_gated = cfg!(any(target_os = "macos", target_os = "linux", windows));
@@ -1177,6 +1215,7 @@ pub fn run(root: &Path, args: &[OsString]) -> Result<ExitCode, String> {
             max_slots,
             cpus,
             memory_gated,
+            caller_jobs: false,
         },
         disk_free,
         crate::ffmpeg::environment,
@@ -1187,10 +1226,11 @@ fn run_in(
     root: &Path,
     args: &[OsString],
     base: PathBuf,
-    admission: Admission,
+    mut admission: Admission,
     free_space: impl FnMut(&Path) -> Result<u64, String>,
     native: impl FnOnce(&mut Command) -> Result<(), String>,
 ) -> Result<ExitCode, String> {
+    admission.caller_jobs = caller_jobs(args, std::env::var_os("CARGO_BUILD_JOBS").as_deref());
     fs::create_dir_all(&base).map_err(|e| e.to_string())?;
     let before = receipt(root, &base, args)?;
     if let Some(path) = &before
@@ -1234,10 +1274,7 @@ fn run_in(
         .env("CARGO_TARGET_DIR", target)
         .env_remove("RUSTC_WRAPPER");
     if std::env::var_os("CARGO_BUILD_JOBS").is_none() {
-        // Divide by the admission ceiling, not the current count: a late slot
-        // must not push aggregate jobs past the documented bound.
-        let jobs = (admission.cpus / admission.max_slots).max(2);
-        command.env("CARGO_BUILD_JOBS", jobs.to_string());
+        command.env("CARGO_BUILD_JOBS", slot.jobs.to_string());
     }
     // The wrapper owns both the warm slot and the provisioned native
     // environment: compile-time discovery and runtime library loading must
@@ -1330,6 +1367,7 @@ mod tests {
             max_slots,
             cpus: TEST_CPUS,
             memory_gated,
+            caller_jobs: false,
         }
     }
 
@@ -1431,22 +1469,21 @@ mod tests {
         }
         let mut queue = Queue::enter(&root.join("locks")).unwrap();
         fs::write(root.join(format!("{label}.ready")), b"").unwrap();
+        let admission = if label.starts_with("budget-") {
+            wait(&root.join("budget.go"));
+            test_admission(8, false)
+        } else {
+            test_admission(3, false)
+        };
         let slot = loop {
-            if let Some(slot) = claim(
-                &mut queue,
-                &root,
-                test_admission(3, false),
-                || false,
-                || None,
-            )
-            .unwrap()
-            {
+            if let Some(slot) = claim(&mut queue, &root, admission, || false, || None).unwrap() {
                 break slot;
             }
             std::thread::sleep(Duration::from_millis(5));
         };
         let acquired = root.join(format!("{label}.acquired"));
         let pending = acquired.with_extension("pending");
+        fs::write(root.join(format!("{label}.jobs")), slot.jobs.to_string()).unwrap();
         fs::write(&pending, slot.number.to_string()).unwrap();
         fs::rename(pending, acquired).unwrap();
         wait(&root.join(format!("{label}.release")));
@@ -1488,6 +1525,15 @@ mod tests {
             return;
         };
         let root = PathBuf::from(root);
+        let expected = if std::env::var("CARGO_BUILD_JOBS").as_deref() == Ok("7") {
+            2 * TEST_CPUS
+        } else {
+            (TEST_CPUS / 3).max(2)
+        };
+        assert_eq!(
+            active_slots(&root.join("locks"), 2 * TEST_CPUS).unwrap(),
+            (1, expected)
+        );
         fs::write(
             root.join("native.environment"),
             std::env::var("VIBECUT_BUILD_TEST_NATIVE").unwrap_or_default(),
@@ -1550,6 +1596,7 @@ mod tests {
         fs::write(root.join("second.release"), b"").unwrap();
         assert!(second.0.wait().unwrap().success());
         assert_eq!(fs::read_dir(locks.join("build-queue")).unwrap().count(), 0);
+        drop(slots);
 
         // Exercise the actual wrapper command path, not just a process holding
         // a Slot: its controlled build child survives a launcher-only crash.
@@ -1580,9 +1627,24 @@ mod tests {
             );
             assert_eq!(
                 PathBuf::from(fs::read_to_string(root.join("native.target")).unwrap()),
-                root.join("target/slot-3")
+                root.join("target/slot-1")
             );
         }
+        #[cfg(unix)]
+        let _held = (0..2)
+            .map(|_| {
+                let mut queue = Queue::enter(&locks).unwrap();
+                claim(
+                    &mut queue,
+                    root,
+                    test_admission(3, false),
+                    || false,
+                    || None,
+                )
+                .unwrap()
+                .unwrap()
+            })
+            .collect::<Vec<_>>();
         #[cfg(unix)]
         for label in ["wrapped", "detached"] {
             let _ = fs::remove_file(root.join("wrapped.ready"));
@@ -1591,6 +1653,7 @@ mod tests {
                     .args(["--exact", "build::tests::build_process", "--nocapture"])
                     .env("VIBECUT_BUILD_TEST_ROOT", root)
                     .env("VIBECUT_BUILD_TEST_LABEL", label)
+                    .env_remove("CARGO_BUILD_JOBS")
                     .stdin(Stdio::piped())
                     .stdout(Stdio::null())
                     .spawn()
@@ -1653,6 +1716,7 @@ mod tests {
             .args(["--exact", "build::tests::build_process", "--nocapture"])
             .env("VIBECUT_BUILD_TEST_ROOT", root)
             .env("VIBECUT_BUILD_TEST_LABEL", "missing")
+            .env_remove("CARGO_BUILD_JOBS")
             .status()
             .unwrap();
         assert!(status.success());
@@ -2081,6 +2145,215 @@ mod tests {
         assert!(!processor_load_within_bound(None));
     }
 
+    #[test]
+    fn mixed_capacities_reserve_only_remaining_host_jobs() {
+        let directory = Directory::new();
+        let root = &directory.0;
+        let locks = root.join("locks");
+        let mut held = Vec::new();
+        for (ceiling, expected) in [(1, 20), (2, 10), (3, 6), (4, 4)] {
+            let mut queue = Queue::enter(&locks).unwrap();
+            let slot = claim(
+                &mut queue,
+                root,
+                Admission {
+                    cpus: 20,
+                    ..test_admission(ceiling, false)
+                },
+                || false,
+                || None,
+            )
+            .unwrap()
+            .unwrap();
+            assert_eq!(slot.jobs, expected);
+            held.push(slot);
+            assert!(active_slots(&locks, 40).unwrap().1 <= 40);
+        }
+        let mut next = Queue::enter(&locks).unwrap();
+        let admission = Admission {
+            cpus: 20,
+            ..test_admission(20, false)
+        };
+        assert!(
+            claim(&mut next, root, admission, || false, || None)
+                .unwrap()
+                .is_none()
+        );
+        // A released lease frees its entire reservation; stale metadata does
+        // not consume jobs, even when another slot number is selected.
+        drop(held.remove(1));
+        let replacement = claim(&mut next, root, admission, || false, || None)
+            .unwrap()
+            .unwrap();
+        assert_eq!(replacement.jobs, 2);
+        assert_eq!(active_slots(&locks, 40).unwrap().1, 32);
+
+        let directory = Directory::new();
+        let root = &directory.0;
+        let locks = root.join("locks");
+        let mut held = Vec::new();
+        for ceiling in [1, 2] {
+            let mut queue = Queue::enter(&locks).unwrap();
+            held.push(
+                claim(
+                    &mut queue,
+                    root,
+                    Admission {
+                        cpus: 3,
+                        ..test_admission(ceiling, false)
+                    },
+                    || false,
+                    || None,
+                )
+                .unwrap()
+                .unwrap(),
+            );
+        }
+        assert_eq!(active_slots(&locks, 6).unwrap().1, 5);
+        let mut next = Queue::enter(&locks).unwrap();
+        assert!(
+            claim(
+                &mut next,
+                root,
+                Admission {
+                    cpus: 3,
+                    ..test_admission(3, false)
+                },
+                || false,
+                || None
+            )
+            .unwrap()
+            .is_none(),
+            "one remaining job cannot admit a two-job build"
+        );
+    }
+
+    #[test]
+    fn caller_job_settings_select_exclusive_admission() {
+        for (args, override_value, expected) in [
+            (vec!["cargo", "check"], None, false),
+            (vec!["cargo", "check"], Some("999"), true),
+            (vec!["cargo", "check"], Some("-1"), true),
+            (vec!["cargo", "check", "--jobs", "999"], None, true),
+            (vec!["cargo", "check", "--jobs=999"], None, true),
+            (vec!["cargo", "check", "-j", "999"], None, true),
+            (
+                vec!["cargo", "xtask", "build", "--", "cargo", "check", "-j999"],
+                None,
+                true,
+            ),
+        ] {
+            let args: Vec<OsString> = args.into_iter().map(OsString::from).collect();
+            assert_eq!(caller_jobs(&args, override_value.map(OsStr::new)), expected);
+        }
+    }
+
+    #[test]
+    fn concurrent_admission_and_release_preserve_fifo_and_job_budget() {
+        let directory = Directory::new();
+        let root = &directory.0;
+        let locks = root.join("locks");
+        let mut held = Vec::new();
+        for ceiling in [1, 2, 3] {
+            let mut queue = Queue::enter(&locks).unwrap();
+            held.push(
+                claim(
+                    &mut queue,
+                    root,
+                    test_admission(ceiling, false),
+                    || false,
+                    || None,
+                )
+                .unwrap()
+                .unwrap(),
+            );
+        }
+        assert_eq!(active_slots(&locks, 16).unwrap().1, 14);
+        // Independent processes contend for the final two jobs, with ample
+        // free slot numbers. Their enqueue order is controlled, claims race.
+        let mut first = worker(root, "budget-first");
+        let mut second = worker(root, "budget-second");
+        let mut third = worker(root, "budget-third");
+        fs::write(root.join("budget.go"), b"").unwrap();
+        wait(&root.join("budget-first.acquired"));
+        assert!(!root.join("budget-second.acquired").exists());
+        assert!(!root.join("budget-third.acquired").exists());
+        assert_eq!(active_slots(&locks, 16).unwrap().1, 16);
+        // Release races with both pending claimers. Only the FIFO head may
+        // reuse the reservation; killing it must then free jobs for the next.
+        fs::write(root.join("budget-first.release"), b"").unwrap();
+        assert!(first.0.wait().unwrap().success());
+        wait(&root.join("budget-second.acquired"));
+        assert!(!root.join("budget-third.acquired").exists());
+        assert_eq!(active_slots(&locks, 16).unwrap().1, 16);
+        second.0.kill().unwrap();
+        second.0.wait().unwrap();
+        wait(&root.join("budget-third.acquired"));
+        assert_eq!(active_slots(&locks, 16).unwrap().1, 16);
+        for label in ["budget-first", "budget-second", "budget-third"] {
+            assert_eq!(
+                fs::read_to_string(root.join(format!("{label}.jobs"))).unwrap(),
+                "2"
+            );
+        }
+        fs::write(root.join("budget-third.release"), b"").unwrap();
+        assert!(third.0.wait().unwrap().success());
+        drop(held);
+        assert_eq!(active_slots(&locks, 16).unwrap(), (0, 0));
+    }
+
+    #[test]
+    fn caller_jobs_and_unreadable_reservations_hold_default_admission() {
+        let directory = Directory::new();
+        let root = &directory.0;
+        let locks = root.join("locks");
+        let mut queue = Queue::enter(&locks).unwrap();
+        let explicit = Admission {
+            caller_jobs: true,
+            ..test_admission(8, false)
+        };
+        let held = claim(&mut queue, root, explicit, || false, || None)
+            .unwrap()
+            .unwrap();
+        assert_eq!(held.jobs, 16);
+        let mut next = Queue::enter(&locks).unwrap();
+        let default = test_admission(8, false);
+        assert!(
+            claim(&mut next, root, default, || false, || None)
+                .unwrap()
+                .is_none()
+        );
+        drop(held);
+        let held = claim(&mut next, root, default, || false, || None)
+            .unwrap()
+            .unwrap();
+        let mut next = Queue::enter(&locks).unwrap();
+        assert!(
+            claim(&mut next, root, explicit, || false, || None)
+                .unwrap()
+                .is_none()
+        );
+        let metadata = locks.join(format!("slot-{}.jobs", held.number));
+        for invalid in [None, Some(""), Some("0"), Some("broken")] {
+            if let Some(text) = invalid {
+                fs::write(&metadata, text).unwrap();
+            } else {
+                fs::remove_file(&metadata).unwrap();
+            }
+            assert!(
+                claim(&mut next, root, default, || false, || None)
+                    .unwrap()
+                    .is_none()
+            );
+        }
+        drop(held);
+        assert!(
+            claim(&mut next, root, explicit, || false, || None)
+                .unwrap()
+                .is_some()
+        );
+    }
+
     // Must 3: shrinking capacity stops new admissions but never releases a
     // running build's lease, and the freed slot is usable when capacity grows.
     #[test]
@@ -2111,7 +2384,7 @@ mod tests {
         assert_ne!(held_a.number, held_b.number);
         // A stray name is not a slot lease.
         fs::write(locks.join("slot-x"), b"").unwrap();
-        assert_eq!(active_slots(&locks).unwrap(), 2);
+        assert_eq!(active_slots(&locks, 16).unwrap().0, 2);
 
         let mut shrunk = Queue::enter(&locks).unwrap();
         assert!(
@@ -2141,7 +2414,7 @@ mod tests {
 
         let freed_number = held_b.number;
         drop(held_b);
-        assert_eq!(active_slots(&locks).unwrap(), 1);
+        assert_eq!(active_slots(&locks, 16).unwrap().0, 1);
         let regrown = claim(
             &mut shrunk,
             root,
@@ -2168,13 +2441,17 @@ mod tests {
         for number in 1..=8 {
             let file = open(&locks.join(format!("slot-{number}"))).unwrap();
             file.lock().unwrap();
+            fs::write(locks.join(format!("slot-{number}.jobs")), "2").unwrap();
             _held.push(file);
         }
         let mut queue = Queue::enter(&locks).unwrap();
         let slot = claim(
             &mut queue,
             root,
-            test_admission(9, false),
+            Admission {
+                cpus: 16,
+                ..test_admission(9, false)
+            },
             || false,
             || None,
         )

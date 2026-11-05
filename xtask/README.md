@@ -43,9 +43,13 @@ The ceiling is derived from host facts when the wrapper starts and enforced at e
 admission: `min(logical CPUs, floor(total_memory * 0.70 / 1.5 GiB), 64)`. The
 numerator keeps the existing 30% free-memory reservation; 1.5 GiB is the worst
 measured workspace-build footprint (builds measure 0.3-1.5 GiB). The CPU term is the
-runaway bound for aggregate Cargo jobs: each admitted command runs
-`max(2, logical CPUs / ceiling)` jobs, so `ceiling * jobs` never exceeds twice the
-logical CPUs. `VIBECUT_BUILD_SLOTS=1..=logical CPUs` (capped at 64) overrides the
+runaway bound for slot count. Aggregate default Cargo jobs have a separate shared
+budget of twice the logical CPUs. Under the admission lock, each command reserves
+`min(max(2, logical CPUs / ceiling), remaining jobs)`; fewer than two remaining jobs
+holds admission. Reservations cover all live slot leases, including those above
+a reduced ceiling, so overlapping wrappers with different ceilings cannot exceed
+the budget. A reservation stays fixed until its lease releases; existing children
+are never resized or killed. `VIBECUT_BUILD_SLOTS=1..=logical CPUs` (capped at 64) overrides the
 ceiling for tests and emergencies; zero, out-of-range, non-numeric or non-UTF-8
 values are rejected with a typed error before queueing.
 
@@ -84,8 +88,17 @@ cannot restore 30 GiB free, the build is refused. Only the held slot is deleted;
 other running builds retain their artifacts. Disk queries use `df -Pk` on Unix and
 `GetDiskFreeSpaceEx` on Windows; query failure refuses the build. Cache accounting
 uses allocated blocks on Unix and logical file sizes on Windows. Child builds
-default to `max(2, logical CPUs / admission ceiling)` Cargo jobs, preserve a
-caller's `CARGO_BUILD_JOBS`, and clear `RUSTC_WRAPPER`.
+receive their reserved Cargo jobs and clear `RUSTC_WRAPPER`. Explicit caller
+`CARGO_BUILD_JOBS` or command arguments `--jobs`, `--jobs=N`, `-j N`, `-jN` are
+preserved as exceptions to the assigned-jobs bound, even above the host budget.
+Such commands reserve the entire budget and wait until all other leases release;
+no default-jobs command overlaps them. Job flags are conservatively recognized
+anywhere in the wrapped command arguments, including nested xtask commands.
+Each slot's `locks/slot-N.jobs` records its reservation under the admission lock.
+Only a held lease makes that record live; a release or crash frees its jobs without
+metadata cleanup. Missing or invalid metadata for a live lease reserves the whole
+budget and holds admission until that lease exits. This also protects admission
+while an older wrapper without reservation metadata is still running.
 
 Successful exact `cargo xtask ci [--require-oracles]` commands leave receipts in
 `ci-receipts`, keyed by Git tree and oracle mode. Only trees clean before waiting,
@@ -148,7 +161,9 @@ remote timestamp is newer; equal or newer local reports are kept.
 `cargo test -p xtask` covers policy gates, graph boundaries, build admission with
 independent processes (waiter/holder crashes, a surviving wrapped command after
 launcher death, a surviving descendant after normal launcher exit, FIFO and the
-last-slot race), child exit/kill lease release, capacity derivation and override
+last-slot race), mixed-capacity job reservations, concurrent claims and releases
+at the shared job bound, exclusive caller jobs and fail-closed reservation metadata,
+child exit/kill lease release, capacity derivation and override
 validation, shrinking capacity without killing running builds, reuse of slots above
 a shrunk count, memory admission/probe failure, the Linux `/proc/meminfo` and
 `/proc/loadavg` parsers (normal, missing keys, truncated, zero total, hostile values
