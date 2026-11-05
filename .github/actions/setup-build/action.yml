@@ -32,6 +32,21 @@ runs:
         # A tooling-only or metadata-only snapshot would leave an immutable
         # exact-hit cache missing compiled dependencies for every later build.
         save-if: ${{ inputs.save-rust-cache == 'true' && github.event_name != 'pull_request' }}
+    - id: sherpa
+      if: inputs.rust-cache == 'true'
+      # sherpa-onnx-sys stores native archives outside Cargo's build OUT_DIR.
+      # Save separately: rust-cache recursively cleans these non-Cargo files.
+      # This action's post step runs before rust-cache's cleanup post step.
+      uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: target/sherpa-onnx-prebuilt
+        key: sherpa-v1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml') }}
+    - name: Reprovision Sherpa when its native cache is absent
+      if: inputs.rust-cache == 'true' && steps.sherpa.outputs.cache-hit != 'true'
+      shell: bash
+      # A restored sys-crate fingerprint can otherwise refer to absent native
+      # archives, including when this separate cache was independently evicted.
+      run: cargo clean -p sherpa-onnx-sys
     - name: Install Windows source build tools
       if: runner.os == 'Windows'
       uses: msys2/setup-msys2@ec48f7c5447b3140e2b088413ae3a55687bccb6e # v2.33.0

@@ -127,7 +127,7 @@ impl Tools {
                     .stderr
                     .contains("MAC verification failed during PKCS12 import")
             {
-                return Err("Developer ID certificate import rejected its PKCS#12 password; verify MACOS_CERT_PASSWORD matches MACOS_CERT_P12 (native diagnostics suppressed)".into());
+                return Err("Developer ID certificate import rejected PKCS#12 encryption or password; verify MACOS_CERT_PASSWORD matches MACOS_CERT_P12 and use macOS-compatible PKCS#12 encryption (native diagnostics suppressed)".into());
             }
             let operation = if program == "security" {
                 command

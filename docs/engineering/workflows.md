@@ -39,6 +39,12 @@ belong to [ai's native build contract](../../crates/ai/README.md#local-gipformer
 
 Cargo/native/fixture keys omit branches. Native jobs share `Swatinem/rust-cache` with an explicit key; only successful full-workspace Clippy/test producers save it, media-only jobs restore. Environment/manifest hashes cover compiler, lockfile, target environment/configuration and OS/architecture. Ticket branches restore main caches; main cannot restore sibling ticket caches.
 
+Sherpa's native prebuilt directory under `target/` has a separate OS/architecture,
+lockfile and toolchain cache, saved before Rust cache cleanup. That cleanup removes
+non-Cargo files even when named as an extra cache directory. On a missing native
+cache, clean `sherpa-onnx-sys` so its restored build fingerprint cannot retain a
+link path to missing libraries; its next build provisions the native archive.
+
 Native LGPL cache keys use resolved FFmpeg/Opus/libvpx versions plus recipe/patch/toolchain hashes and platform, with exact matches. Provisioning resolves stable tags even on hits, saves successful native builds before later failures, and skips source-build-only macOS tools on hits. Synthetic fixture keys follow `crates/media/tests/`; rendered outputs are uncached. Log exact-hit receipts in logs/step summaries.
 
 Release/media/render dispatches set `require-oracles`; ordinary manual CI also requires macOS oracles, with Windows following the input. Oracle admission and evidence follow [verification](verification.md#checks).
