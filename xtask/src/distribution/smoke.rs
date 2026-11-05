@@ -5,7 +5,10 @@ fn sanitized(tools: &Tools, program: &Path, cwd: &Path) -> Command {
     let mut command = Command::new(program);
     command.current_dir(cwd);
     for key in tools.env.keys().filter(|key| {
-        key.starts_with("DYLD_") || key.starts_with("FFMPEG_") || key.starts_with("PKG_CONFIG_")
+        key.starts_with("DYLD_")
+            || key.starts_with("FFMPEG_")
+            || key.starts_with("PKG_CONFIG_")
+            || key.starts_with("LD_")
     }) {
         command.env_remove(key);
     }
@@ -13,6 +16,8 @@ fn sanitized(tools: &Tools, program: &Path, cwd: &Path) -> Command {
         "PATH",
         if tools.host == Host::Mac {
             PathBuf::from("/usr/bin:/bin:/usr/sbin:/sbin")
+        } else if tools.host == Host::Linux {
+            PathBuf::from("/usr/bin:/bin")
         } else {
             PathBuf::from(tools.variable("SystemRoot").unwrap_or("C:\\Windows")).join("System32")
         },
@@ -54,12 +59,14 @@ fn verify_signed(tools: &mut Tools, app: &Path) -> Result<()> {
 }
 pub(super) fn run(tools: &mut Tools, o: &Options) -> Result<()> {
     if tools.host == Host::Other {
-        return Err("distribution smoke requires macOS or Windows".into());
+        return Err("distribution smoke requires macOS, Windows or Linux".into());
     }
     let installed = canonical(&o.path("--installed")?)?;
     let output = fresh(&o.path("--output")?)?;
     let binaries = if tools.host == Host::Mac {
         installed.join("Contents/MacOS")
+    } else if tools.host == Host::Linux {
+        installed.join("bin")
     } else {
         installed.clone()
     };
@@ -270,6 +277,8 @@ pub(super) fn install(tools: &mut Tools, o: &Options) -> Result<()> {
     let downloaded = tools.root.join("target/download");
     let suffix = if tools.host == Host::Mac {
         if o.has("--signed") { "dmg" } else { "pkg" }
+    } else if tools.host == Host::Linux {
+        "gz"
     } else {
         "zip"
     };
@@ -321,6 +330,26 @@ pub(super) fn install(tools: &mut Tools, o: &Options) -> Result<()> {
     } else if tools.host == Host::Mac {
         run!(tools, "sudo", "installer", "-pkg", file, "-target", "/")?;
         installed_smoke(tools, "/Applications/VibeCut.app", false)
+    } else if tools.host == Host::Linux {
+        let target = tools.root.join("target/installed");
+        if target.exists() {
+            fs::remove_dir_all(&target).map_err(|e| e.to_string())?;
+        }
+        fs::create_dir_all(&target).map_err(|e| e.to_string())?;
+        run!(tools, "tar", "-xzf", file, "-C", &target)?;
+        let roots: Vec<_> = entries(&target)?
+            .into_iter()
+            .filter(|path| path.is_dir())
+            .collect();
+        if roots.len() != 1 {
+            return Err("expected one extracted distribution".into());
+        }
+        let root = roots.first().ok_or("extracted distribution missing")?;
+        installed_smoke(
+            tools,
+            root.to_str().ok_or("installed path is not UTF-8")?,
+            false,
+        )
     } else {
         let target = tools.root.join("target/installed");
         let mut command = Command::new("powershell");

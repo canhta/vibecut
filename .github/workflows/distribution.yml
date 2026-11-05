@@ -17,10 +17,11 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - { name: macos-arm64, runner: macos-15, arch: aarch64, windows: false }
-          - { name: macos-x86_64, runner: macos-15-intel, arch: x86_64, windows: false }
-          - { name: windows-x86_64, runner: windows-latest, arch: x86_64, windows: true }
-          - { name: windows-arm64, runner: windows-11-arm, arch: aarch64, windows: true }
+          - { name: macos-arm64, runner: macos-15, arch: aarch64, windows: false, macos: true }
+          - { name: macos-x86_64, runner: macos-15-intel, arch: x86_64, windows: false, macos: true }
+          - { name: linux-x86_64, runner: ubuntu-latest, arch: x86_64, windows: false, macos: false }
+          - { name: windows-x86_64, runner: windows-latest, arch: x86_64, windows: true, macos: false }
+          - { name: windows-arm64, runner: windows-11-arm, arch: aarch64, windows: true, macos: false }
     runs-on: ${{ matrix.runner }}
     continue-on-error: ${{ matrix.windows }}
     timeout-minutes: 120
@@ -29,7 +30,7 @@ jobs:
         with:
           persist-credentials: false
       - name: Validate signing credentials before provisioning
-        if: inputs.signed && !matrix.windows
+        if: inputs.signed && matrix.macos
         env:
           MACOS_CERT_P12: ${{ secrets.MACOS_CERT_P12 }}
           MACOS_CERT_PASSWORD: ${{ secrets.MACOS_CERT_PASSWORD }}
@@ -62,7 +63,7 @@ jobs:
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: cargo xtask dist native --arch ${{ matrix.arch }} ${{ inputs.signed && '--signed' || '' }}
       - name: Remove temporary signing material
-        if: always() && inputs.signed && !matrix.windows
+        if: always() && inputs.signed && matrix.macos
         run: cargo xtask dist signing cleanup
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: '!inputs.signed || !matrix.windows'
@@ -72,7 +73,7 @@ jobs:
           if-no-files-found: error
           retention-days: 3
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        if: '!matrix.windows'
+        if: matrix.macos
         with:
           name: native-${{ matrix.arch }}
           path: target/native
@@ -134,6 +135,7 @@ jobs:
           - { name: macos-x86_64, runner: macos-15-intel, tool: macos-x86_64, windows: false }
           - { name: macos-universal, runner: macos-15, tool: macos-arm64, windows: false }
           - { name: macos-universal, runner: macos-15-intel, tool: macos-x86_64, windows: false }
+          - { name: linux-x86_64, runner: ubuntu-latest, tool: linux-x86_64, windows: false }
           - { name: windows-x86_64, runner: windows-latest, tool: windows-x86_64, windows: true }
           - { name: windows-arm64, runner: windows-11-arm, tool: windows-arm64, windows: true }
     runs-on: ${{ matrix.runner }}
@@ -160,7 +162,7 @@ jobs:
         env:
           CARGO_MANIFEST_DIR: ${{ github.workspace }}/xtask
         run: |
-          if [ "${{ runner.os }}" = macOS ]; then chmod +x target/smoke-tool/xtask; fi
+          if [ "${{ runner.os }}" != Windows ]; then chmod +x target/smoke-tool/xtask; fi
           target/smoke-tool/xtask${{ runner.os == 'Windows' && '.exe' || '' }} dist install-smoke ${{ inputs.signed && '--signed' || '' }}
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always() && (!inputs.signed || !matrix.windows)

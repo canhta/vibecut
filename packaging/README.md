@@ -7,9 +7,12 @@ source archives, recipes, backports and license/asset notices. Version comes fro
 the workspace package. No Python, model weights or extra codec binaries are used.
 Normal builds consume committed icons; `cargo xtask dist icons` regenerates them.
 
-Linux has no package format yet: provision with `cargo xtask ffmpeg` and run
-`cargo run --release -p vibecut` from source. The stages below cover macOS and
-Windows artifacts.
+Linux ships as `VibeCut-<version>-linux-<arch>.tar.gz`: `bin/` with `vibecut` and
+`vibecut-cli`, `lib/` with the bundled LGPL FFmpeg libraries, `compliance/`, a
+desktop entry, icon and `install.sh` (default prefix `~/.local`). The binaries
+carry an `$ORIGIN/../lib` runpath, so extracting the tarball is enough to run it.
+No `.deb`, `.rpm` or AppImage is built yet; the stages below cover macOS and
+Windows packaging.
 
 ## Local build and stage
 

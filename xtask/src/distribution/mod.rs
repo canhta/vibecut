@@ -33,6 +33,7 @@ mod universal;
 enum Host {
     Mac,
     Windows,
+    Linux,
     Other,
 }
 impl Host {
@@ -40,6 +41,7 @@ impl Host {
         match env::consts::OS {
             "macos" => Self::Mac,
             "windows" => Self::Windows,
+            "linux" => Self::Linux,
             _ => Self::Other,
         }
     }
@@ -467,6 +469,22 @@ fn build(tools: &mut Tools, prefix: &Path, output: &Path, debug: bool) -> Result
     }
     if tools.host == Host::Mac {
         command.env("MACOSX_DEPLOYMENT_TARGET", macos::MINIMUM);
+    }
+    if tools.host == Host::Linux {
+        // The package keeps its LGPL libraries beside the binaries.
+        let mut flags = env::var("CARGO_ENCODED_RUSTFLAGS").unwrap_or_default();
+        if flags.is_empty() {
+            flags = env::var("RUSTFLAGS")
+                .unwrap_or_default()
+                .split_whitespace()
+                .collect::<Vec<_>>()
+                .join("\x1f");
+        }
+        if !flags.is_empty() {
+            flags.push('\x1f');
+        }
+        flags.push_str("-C\x1flink-arg=-Wl,-rpath,$ORIGIN/../lib");
+        command.env("CARGO_ENCODED_RUSTFLAGS", flags);
     }
     crate::ffmpeg::environment_at(&mut command, &prefix)?;
     for key in tools.env.keys().filter(|key| {

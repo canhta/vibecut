@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=VibeCut
+Comment=Open-source video editor your AI agents can drive
+Exec=vibecut
+Icon=vibecut
+Terminal=false
+Categories=AudioVideo;Video;Editor;
+StartupWMClass=vibecut

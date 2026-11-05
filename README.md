@@ -120,8 +120,8 @@ hardware-accelerated encoding.
 
 ## Install
 
-Download the latest macOS or Windows build from
-[Releases](https://github.com/canhta/vibecut/releases/latest); Linux builds from source.
+Download the latest macOS or Windows build, or the Linux tarball, from
+[Releases](https://github.com/canhta/vibecut/releases/latest).
 
 Build from source on any of the three platforms:
 

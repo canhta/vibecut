@@ -113,10 +113,10 @@ fn finish(
     signed: bool,
 ) -> Result<()> {
     let request = package::Request {
-        os: if tools.host == Host::Mac {
-            "macos"
-        } else {
-            "windows"
+        os: match tools.host {
+            Host::Mac => "macos",
+            Host::Windows => "windows",
+            _ => "linux",
         }
         .into(),
         arch: arch.into(),
@@ -133,6 +133,8 @@ fn finish(
         "dmg"
     } else if tools.host == Host::Mac {
         "pkg"
+    } else if tools.host == Host::Linux {
+        "gz"
     } else {
         "zip"
     };
