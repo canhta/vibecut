@@ -26,32 +26,82 @@ fn project(assets: Vec<media::SourceAsset>) -> project::Project {
     project::Project::new(data).unwrap()
 }
 
+/// Destination admission: definite path aliases keep `output aliases a source`
+/// whatever other sources hold, and a distinct destination is admitted.
 #[test]
-fn exact_path_alias_wins_over_an_identical_sibling_source() {
-    let directory = tempfile::tempdir().unwrap();
-    let source = directory.path().join("source.mp4");
-    let destination = directory.path().join("output.mp4");
-    std::fs::write(&source, b"identical source and destination bytes").unwrap();
-    std::fs::write(&destination, b"identical source and destination bytes").unwrap();
-    // The identical sibling is ordered first, as it is in the clip-export
-    // regression: content similarity must not pre-empt the definite alias.
-    let project = project(vec![
-        asset(1, &source, b"identical source and destination bytes"),
-        asset(2, &destination, b"identical source and destination bytes"),
-    ]);
-    let error = validate_output_path(&project, &destination, &Hooks::default()).unwrap_err();
-    assert!(
-        matches!(error, Error::Invalid("output aliases a source")),
-        "{error:?}"
+fn destination_admission_by_path_identity() {
+    let same = b"identical source and destination bytes";
+    // (destination relative to the directory, sources: (relative path, exists), expected)
+    type Case = (
+        &'static str,
+        &'static [(&'static str, bool)],
+        Option<&'static str>,
     );
-    assert_eq!(
-        std::fs::read(&source).unwrap(),
-        b"identical source and destination bytes"
-    );
-    assert_eq!(
-        std::fs::read(&destination).unwrap(),
-        b"identical source and destination bytes"
-    );
+    let cases: &[Case] = &[
+        // An identical sibling is ordered first, as in the clip-export regression:
+        // content similarity must not pre-empt the definite alias.
+        (
+            "output.mp4",
+            &[("source.mp4", true), ("output.mp4", true)],
+            Some("output aliases a source"),
+        ),
+        (
+            "./source.mp4",
+            &[("source.mp4", true)],
+            Some("output aliases a source"),
+        ),
+        (
+            "missing.mp4",
+            &[("missing.mp4", false)],
+            Some("output aliases a source"),
+        ),
+        ("new-output.mp4", &[("source.mp4", true)], None),
+    ];
+    for (destination, sources, expected) in cases {
+        let directory = tempfile::tempdir().unwrap();
+        let mut assets = Vec::new();
+        for (index, (name, exists)) in sources.iter().enumerate() {
+            let path = directory.path().join(name);
+            if *exists {
+                std::fs::write(&path, same).unwrap();
+                assets.push(asset(index as u64 + 1, &path, same));
+            } else {
+                assets.push(
+                    media::SourceAsset::try_from(media::AssetData {
+                        ephemeral: false,
+                        id: media::AssetId(index as u64 + 1),
+                        path,
+                        content_hash: media::ContentHash([0; 32]),
+                        probe: media::SourceProbe {
+                            format: "fixture".into(),
+                            duration: None,
+                            streams: Vec::new(),
+                        },
+                    })
+                    .unwrap(),
+                );
+            }
+        }
+        let destination = directory.path().join(destination);
+        let result = validate_output_path(&project(assets), &destination, &Hooks::default());
+        match (expected, result) {
+            (Some(message), Err(Error::Invalid(got))) => {
+                assert_eq!(*message, got, "{destination:?}")
+            }
+            (None, Ok(())) => {}
+            (_, other) => panic!("{destination:?}: {other:?}"),
+        }
+        for (name, exists) in *sources {
+            let path = directory.path().join(name);
+            assert_eq!(path.exists(), *exists, "{name} existence changed");
+            if *exists {
+                assert_eq!(std::fs::read(&path).unwrap(), same);
+            }
+        }
+        if expected.is_none() {
+            assert!(!destination.exists());
+        }
+    }
 }
 
 #[cfg(not(unix))]
@@ -76,58 +126,6 @@ fn content_equal_distinct_destination_is_still_refused() {
         std::fs::read(&destination).unwrap(),
         b"same content in a distinct file"
     );
-}
-
-#[test]
-fn dot_component_alias_is_refused_after_normalization() {
-    let directory = tempfile::tempdir().unwrap();
-    let source = directory.path().join("source.mp4");
-    std::fs::write(&source, b"source bytes").unwrap();
-    let destination = directory.path().join(".").join("source.mp4");
-    let project = project(vec![asset(1, &source, b"source bytes")]);
-    let error = validate_output_path(&project, &destination, &Hooks::default()).unwrap_err();
-    assert!(
-        matches!(error, Error::Invalid("output aliases a source")),
-        "{error:?}"
-    );
-    assert_eq!(std::fs::read(&source).unwrap(), b"source bytes");
-}
-
-#[test]
-fn missing_source_path_still_refuses_its_own_destination() {
-    let directory = tempfile::tempdir().unwrap();
-    let path = directory.path().join("missing.mp4");
-    let project = project(vec![
-        media::SourceAsset::try_from(media::AssetData {
-            ephemeral: false,
-            id: media::AssetId(1),
-            path: path.clone(),
-            content_hash: media::ContentHash([0; 32]),
-            probe: media::SourceProbe {
-                format: "fixture".into(),
-                duration: None,
-                streams: Vec::new(),
-            },
-        })
-        .unwrap(),
-    ]);
-    let error = validate_output_path(&project, &path, &Hooks::default()).unwrap_err();
-    assert!(
-        matches!(error, Error::Invalid("output aliases a source")),
-        "{error:?}"
-    );
-    assert!(!path.exists());
-}
-
-#[test]
-fn missing_destination_that_is_not_a_source_is_admitted() {
-    let directory = tempfile::tempdir().unwrap();
-    let source = directory.path().join("source.mp4");
-    std::fs::write(&source, b"source bytes").unwrap();
-    let destination = directory.path().join("new-output.mp4");
-    let project = project(vec![asset(1, &source, b"source bytes")]);
-    validate_output_path(&project, &destination, &Hooks::default()).unwrap();
-    assert!(!destination.exists());
 }
 
 #[test]
