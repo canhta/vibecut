@@ -39,15 +39,10 @@ def smoke(installed, output):
             data['project']['canvas']['width'] = 64
             data['project']['canvas']['height'] = 64
             project.write_text(json.dumps(data))
-            invoke('exec', project, 'track.add', '{"name":"Synthetic","kind":"video"}')
-            invoke('project', 'info', project)
-            # Read the saved project rather than hardcoding the allocated track id.
-            data = json.loads(project.read_text())
-            track = data['project']['timeline']['overlays'][0]['id']
-            params = {'track': track, 'item': {'animations': {}, 'source_asset': None,
+            params = {'placement': {'mode': 'auto'}, 'item': {'animations': {}, 'source_asset': None,
                       'source_range': {'start': 0, 'end': 508032000000}, 'start': 0,
                       'content': {'kind': 'overlay', 'params': {'color': [30, 160, 90, 255]}}}}
-            invoke('exec', project, 'insert_item', json.dumps(params))
+            invoke('exec', project, 'timeline.insert', json.dumps(params))
             exported = output / 'synthetic.mp4'
             invoke('export', project, '--out', exported)
             probe = invoke('probe', exported)
