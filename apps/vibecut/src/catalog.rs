@@ -99,6 +99,14 @@ catalog! {
     BlendSaturation { key: "blend_saturation", en: "Saturation", vi: "Độ bão hòa" },
     BlendColor { key: "blend_color", en: "Color", vi: "Màu sắc" },
     BlendLuminosity { key: "blend_luminosity", en: "Luminosity", vi: "Độ sáng" },
+    ShortsJobFailed { key: "shorts_job_failed", en: "Failed", vi: "Thất bại" },
+    ShortsDismiss { key: "shorts_dismiss", en: "Dismiss", vi: "Đóng thông báo" },
+    ShortsProviderModel { key: "shorts_provider_model", en: "{provider} / {model}", vi: "{provider} / {model}" },
+    ShortsUploadIdentity { key: "shorts_upload_identity", en: "{provider} / {model} · {languages}", vi: "{provider} / {model} · {languages}" },
+    ShortsValue { key: "shorts_value", en: "{label}: {value}", vi: "{label}: {value}" },
+    ShortsMetadata { key: "shorts_metadata", en: "{duration_label} {duration} · {score_label} {score}%", vi: "{duration_label} {duration} · {score_label} {score}%" },
+    ShortsRanks { key: "shorts_ranks", en: "{play_label} {play} · {source_label} {source} · {role}", vi: "{play_label} {play} · {source_label} {source} · {role}" },
+    ShortsMoney { key: "shorts_money", en: "{currency} {amount}", vi: "{currency} {amount}" },
 
     // Long-video Shorts workflow.
     ShortsBack { key: "shorts_back", en: "Back to setup", vi: "Về thiết lập" },
@@ -474,6 +482,62 @@ pub fn decimal(locale: Locale, value: f64, decimals: usize) -> String {
     out
 }
 
+/// Parse a finite decimal in the same notation as [`decimal`]. Grouping,
+/// when present, must use complete groups of three; exponent notation and
+/// malformed/mixed separators refuse. Input is bounded to 128 bytes.
+pub fn parse_decimal(locale: Locale, input: &str) -> Result<f64> {
+    let invalid = || Error::Invalid("localized decimal");
+    if input.len() > 128 {
+        return Err(invalid());
+    }
+    let value = input.trim();
+    if value.is_empty() {
+        return Err(invalid());
+    }
+    let (grouping, decimal) = separators(locale);
+    let (sign, value) = value
+        .strip_prefix('-')
+        .map_or(("", value), |rest| ("-", rest));
+    let mut parts = value.split(decimal);
+    let integer = parts.next().ok_or_else(invalid)?;
+    let fraction = parts.next();
+    if parts.next().is_some()
+        || fraction.is_some_and(|s| s.is_empty() || !s.bytes().all(|b| b.is_ascii_digit()))
+    {
+        return Err(invalid());
+    }
+    let digits = if integer.contains(grouping) {
+        let mut groups = integer.split(grouping);
+        let first = groups.next().ok_or_else(invalid)?;
+        if first.is_empty()
+            || first.len() > 3
+            || !first.bytes().all(|b| b.is_ascii_digit())
+            || groups.any(|g| g.len() != 3 || !g.bytes().all(|b| b.is_ascii_digit()))
+        {
+            return Err(invalid());
+        }
+        integer.replace(grouping, "")
+    } else {
+        if !integer.bytes().all(|b| b.is_ascii_digit())
+            || (integer.is_empty() && fraction.is_none())
+        {
+            return Err(invalid());
+        }
+        if integer.is_empty() {
+            "0".into()
+        } else {
+            integer.into()
+        }
+    };
+    let value = std::format!("{sign}{digits}.{}", fraction.unwrap_or("0"))
+        .parse::<f64>()
+        .map_err(|_| invalid())?;
+    if !value.is_finite() {
+        return Err(invalid());
+    }
+    Ok(value)
+}
+
 /// A short date in the locale's convention, from Unix milliseconds. The app
 /// stores timestamps in UTC; this is display only, never edit or timing math.
 pub fn date(locale: Locale, unix_ms: u64) -> String {
@@ -664,6 +728,22 @@ mod tests {
 
     #[test]
     fn numbers_dates_and_plurals_follow_the_locale() {
+        for (locale, input, expected) in [
+            (Locale::En, "1,014.500", 1014.5),
+            (Locale::Vi, "1.014,500", 1014.5),
+            (Locale::En, ".5", 0.5),
+            (Locale::Vi, ",5", 0.5),
+            (Locale::En, "-1,014.500", -1014.5),
+            (Locale::Vi, "-1.014,500", -1014.5),
+        ] {
+            assert_eq!(parse_decimal(locale, input).unwrap(), expected);
+        }
+        for locale in [Locale::En, Locale::Vi] {
+            for input in ["", "NaN", "inf", "1e3", "1.01,4", "1,,000", "1..000", "--1"] {
+                assert!(parse_decimal(locale, input).is_err(), "{locale:?} {input}");
+            }
+            assert!(parse_decimal(locale, &"1".repeat(129)).is_err());
+        }
         assert_eq!(number(Locale::En, 1_234_567), "1,234,567");
         assert_eq!(number(Locale::Vi, 1_234_567), "1.234.567");
         assert_eq!(decimal(Locale::En, 23.976, 3), "23.976");

@@ -3,7 +3,7 @@ mod view;
 mod workflow;
 use crate::{
     Editor, Error, Result,
-    catalog::{Preferences, Text},
+    catalog::{self, Locale, Preferences, Text},
     crop, egui,
     playback::{Files, Playback, Sources},
 };
@@ -191,6 +191,7 @@ pub struct Shorts {
     crop_cancelled: bool,
     crop_focused: bool,
     trim_drafts: Vec<(String, String)>,
+    draft_locale: Option<Locale>,
     preview: Option<Editor>,
     preview_dirty: bool,
     preview_index: Option<usize>,
@@ -259,6 +260,7 @@ impl Shorts {
             crop_cancelled: false,
             crop_focused: false,
             trim_drafts: Vec::new(),
+            draft_locale: None,
             preview: None,
             preview_dirty: false,
             preview_index: None,
@@ -461,6 +463,9 @@ impl Shorts {
         upload.reply.send(approve).map_err(|_| Error::Cancelled)
     }
     pub fn tick(&mut self) {
+        if self.draft_locale != Some(self.preferences.locale) {
+            self.reset_drafts();
+        }
         self.poll_picker();
         if let Err(e) = self.runner.tick() {
             self.fail(e.into(), Text::ShortsError);
@@ -571,13 +576,19 @@ impl Shorts {
         self.error = Some(error);
     }
     fn reset_drafts(&mut self) {
+        self.draft_locale = Some(self.preferences.locale);
         self.trim_drafts = self
             .reviews
             .get(self.selected)
             .map(|r| {
                 r.segments
                     .iter()
-                    .map(|s| (seconds(s.range.start()), seconds(s.range.end())))
+                    .map(|s| {
+                        (
+                            seconds(self.preferences.locale, s.range.start()),
+                            seconds(self.preferences.locale, s.range.end()),
+                        )
+                    })
                     .collect()
             })
             .unwrap_or_default();
@@ -889,16 +900,12 @@ fn terminal(state: JobState) -> bool {
         JobState::Completed | JobState::Failed | JobState::Cancelled
     )
 }
-fn seconds(tick: Tick) -> String {
-    format!("{:.3}", tick.0 as f64 / TICKS_PER_SECOND as f64)
+fn seconds(locale: Locale, tick: Tick) -> String {
+    catalog::decimal(locale, tick.0 as f64 / TICKS_PER_SECOND as f64, 3)
 }
-fn parse_seconds(value: &str) -> Result<Tick> {
-    let value = value
-        .trim()
-        .replace(',', ".")
-        .parse::<f64>()
-        .map_err(|_| Error::Invalid("trim seconds"))?;
-    if !value.is_finite() || !(0.0..=10800.0).contains(&value) {
+fn parse_seconds(locale: Locale, value: &str) -> Result<Tick> {
+    let value = catalog::parse_decimal(locale, value)?;
+    if !(0.0..=10800.0).contains(&value) {
         return Err(Error::Invalid("trim seconds"));
     }
     Ok(Tick((value * TICKS_PER_SECOND as f64).round() as i64))

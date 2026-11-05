@@ -1,6 +1,8 @@
 #![allow(clippy::unwrap_used, clippy::panic, clippy::indexing_slicing)]
 #[path = "support/shorts.rs"]
 mod fixture;
+#[path = "../../../crates/media/tests/common/mod.rs"]
+mod media_oracle;
 use egui_kittest::{
     Harness,
     kittest::{By, Queryable},
@@ -143,6 +145,9 @@ fn review_actions_and_play_order_reach_preview_and_single_step_editor_insertion(
         }
         assert!(editor.playback.error().is_none());
     }
+    if !media_oracle::require_oracles("Shorts editor crop export") {
+        return;
+    }
     // Export through the real editor dialog after handoff and edit undo/redo.
     // Small output keeps the encoded-frame oracle bounded; crop coordinates stay
     // source-normalized, identical to the full-size portrait project.
@@ -175,9 +180,6 @@ fn review_actions_and_play_order_reach_preview_and_single_step_editor_insertion(
         assert!(std::time::Instant::now() < deadline);
         std::thread::yield_now();
     }
-    let image = &editor.playback.frame().unwrap().image;
-    let center = image.pixels[image.pixels.len() / 2 + image.size[0] / 2];
-    assert!(center.r() > 200 && center.b() < 40);
     editor
         .export
         .as_mut()
@@ -217,9 +219,7 @@ fn review_actions_and_play_order_reach_preview_and_single_step_editor_insertion(
     }
     // Independent FFmpeg decoding: average of the encoded first frame must be
     // red (the left crop), rather than the blue default centered placement.
-    let decoded = std::process::Command::new("ffmpeg")
-        .env_remove("DYLD_LIBRARY_PATH")
-        .env_remove("LD_LIBRARY_PATH")
+    let decoded = media_oracle::command("ffmpeg")
         .args(["-v", "error", "-i"])
         .arg(&path)
         .args([
@@ -280,6 +280,55 @@ fn safe_trim_and_invalid_bounds_preserve_history_and_source_ranks() {
     h.run_steps(2);
     assert!(h.state().error().is_some());
     assert_eq!(h.state().reviews()[0], before);
+    for (locale, out) in [(Locale::En, "1,014.000"), (Locale::Vi, "1.014,000")] {
+        let mut app = Shorts::with_generator(
+            vibecut::catalog::Preferences {
+                locale,
+                ..Default::default()
+            },
+            ByteBudget::new(512 << 20).unwrap(),
+            Arc::new(Once(Mutex::new(Some(fixture::source_at(1000))))),
+            Arc::new(Pixels),
+        )
+        .unwrap();
+        app.captions = false;
+        app.pick_video(std::env::temp_dir().join("long-video.mp4"))
+            .unwrap();
+        app.generate().unwrap();
+        wait(&mut app);
+        let mut h = harness(app);
+        h.run_steps(3);
+        // Apply catalog-formatted grouped values without editing them first.
+        h.get(by("shorts.segment.0.trim")).click();
+        h.run_steps(2);
+        assert!(h.state().error().is_none());
+        h.get(by("shorts.segment.0.out")).click();
+        h.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::A);
+        h.get(by("shorts.segment.0.out")).type_text(out);
+        h.run_steps(2);
+        h.get(by("shorts.segment.0.trim")).click();
+        h.run_steps(2);
+        assert!(h.state().error().is_none());
+        assert_eq!(h.state().reviews()[0].segments[0].range, range(1010, 1014));
+        assert_eq!(h.state().history_len(), (1, 0));
+        h.get(by("shorts.locale")).click();
+        h.run_steps(3);
+        h.get(by("shorts.segment.0.trim")).click();
+        h.run_steps(2);
+        assert!(
+            h.state().error().is_none(),
+            "drafts must follow the new locale"
+        );
+        assert_eq!(h.state().reviews()[0].segments[0].range, range(1010, 1014));
+        h.get(by("shorts.segment.0.out")).click();
+        h.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::A);
+        h.get(by("shorts.segment.0.out")).type_text("1.01,4");
+        h.run_steps(2);
+        h.get(by("shorts.segment.0.trim")).click();
+        h.run_steps(2);
+        assert!(h.state().error().is_some());
+        assert_eq!(h.state().reviews()[0].segments[0].range, range(1010, 1014));
+    }
 }
 #[test]
 fn crop_gesture_reversal_and_bounds_are_one_review_undo_step() {

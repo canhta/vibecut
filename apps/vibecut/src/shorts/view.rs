@@ -138,7 +138,13 @@ impl Shorts {
         }
         if self.error.is_some() {
             ui.colored_label(ui.visuals().error_fg_color, self.tr(self.error_text));
-            if self.button(ui, "shorts.error.dismiss", Text::Close, Icon::X, true) {
+            if self.button(
+                ui,
+                "shorts.error.dismiss",
+                Text::ShortsDismiss,
+                Icon::X,
+                true,
+            ) {
                 self.error = None;
             }
         }
@@ -201,7 +207,7 @@ impl Shorts {
                     }
                     ui.add_space(20.0);
                     ui.label(self.tr(Text::ShortsSourceLanguage));
-                    let combo = egui::ComboBox::from_id_salt("shorts.language")
+                    let combo = egui::ComboBox::from_id_salt(egui::Id::unique("shorts.language"))
                         .selected_text(&self.request.language)
                         .show_ui(ui, |ui| {
                             for language in ["vi", "en", "zh"] {
@@ -278,17 +284,18 @@ impl Shorts {
         let language = captions::LanguageTag::parse(&self.request.language).ok();
         ui.label(self.tr(Text::ShortsTranscriber));
         let transcription = provider_options_for(CatalogOperation::Transcribe, language.as_ref());
-        let text = format!(
-            "{} / {}",
-            self.request.transcription_provider, self.request.transcription_model
+        let text = provider_label(
+            self.preferences.locale,
+            &self.request.transcription_provider,
+            &self.request.transcription_model,
         );
-        let combo = egui::ComboBox::from_id_salt("shorts.transcriber")
+        let combo = egui::ComboBox::from_id_salt(egui::Id::unique("shorts.transcriber"))
             .width(400.0)
             .selected_text(text)
             .show_ui(ui, |ui| {
                 for option in &transcription {
                     for model in &option.models {
-                        let label = format!("{} / {}", option.id, model);
+                        let label = provider_label(self.preferences.locale, option.id, model);
                         let selected = option.id == self.request.transcription_provider
                             && model == &self.request.transcription_model;
                         let response =
@@ -314,13 +321,14 @@ impl Shorts {
         let label = if self.request.suggestion_provider == "heuristic" {
             local.to_owned()
         } else {
-            format!(
-                "{} / {}",
-                self.request.suggestion_provider, self.request.suggestion_model
+            provider_label(
+                self.preferences.locale,
+                &self.request.suggestion_provider,
+                &self.request.suggestion_model,
             )
         };
         let options = engine::clip_suggest::suggestion_options();
-        let combo = egui::ComboBox::from_id_salt("shorts.suggester")
+        let combo = egui::ComboBox::from_id_salt(egui::Id::unique("shorts.suggester"))
             .width(400.0)
             .selected_text(label)
             .show_ui(ui, |ui| {
@@ -329,7 +337,7 @@ impl Shorts {
                         let label = if option.local {
                             local.to_owned()
                         } else {
-                            format!("{} / {}", option.id, model)
+                            provider_label(self.preferences.locale, option.id, model)
                         };
                         let selected = option.id == self.request.suggestion_provider
                             && *model == self.request.suggestion_model;
@@ -392,24 +400,51 @@ impl Shorts {
             {
                 ui.separator();
                 ui.label(self.tr(Text::ShortsUploadScope));
-                ui.label(format!(
-                    "{} / {} · {}",
-                    upload.request.provider, upload.request.model, upload.request.languages
+                ui.label(catalog::format(
+                    self.preferences.locale,
+                    Text::ShortsUploadIdentity,
+                    &[
+                        ("provider", &upload.request.provider),
+                        ("model", &upload.request.model),
+                        ("languages", &upload.request.languages),
+                    ],
                 ));
-                ui.label(format!(
-                    "{}: {:.2}",
-                    self.tr(Text::ShortsSeconds),
-                    upload.request.audio_seconds
+                ui.label(catalog::format(
+                    self.preferences.locale,
+                    Text::ShortsValue,
+                    &[
+                        ("label", self.tr(Text::ShortsSeconds)),
+                        (
+                            "value",
+                            &catalog::decimal(
+                                self.preferences.locale,
+                                upload.request.audio_seconds,
+                                2,
+                            ),
+                        ),
+                    ],
                 ));
-                ui.label(format!(
-                    "{}: {}",
-                    self.tr(Text::ShortsBytes),
-                    upload.request.upload_bytes
+                ui.label(catalog::format(
+                    self.preferences.locale,
+                    Text::ShortsValue,
+                    &[
+                        ("label", self.tr(Text::ShortsBytes)),
+                        (
+                            "value",
+                            &catalog::number(self.preferences.locale, upload.request.upload_bytes),
+                        ),
+                    ],
                 ));
-                ui.label(format!(
-                    "{}: {}",
-                    self.tr(Text::ShortsCost),
-                    cost_text(self.preferences.locale, &upload.request.cost)
+                ui.label(catalog::format(
+                    self.preferences.locale,
+                    Text::ShortsValue,
+                    &[
+                        ("label", self.tr(Text::ShortsCost)),
+                        (
+                            "value",
+                            &cost_text(self.preferences.locale, &upload.request.cost),
+                        ),
+                    ],
                 ));
                 ui.label(self.tr(
                     if upload.request.operation == engine::subtitles::CatalogOperation::Transcribe {
@@ -552,12 +587,25 @@ impl Shorts {
                                         .segments
                                         .iter()
                                         .fold(Tick::ZERO, |sum, s| sum + s.range.duration());
-                                    ui.label(format!(
-                                        "{} {} · {} {:.0}%",
-                                        self.tr(Text::ShortsDuration),
-                                        seconds(duration),
-                                        self.tr(Text::ShortsScore),
-                                        candidate.proposal.score * 100.0
+                                    ui.label(catalog::format(
+                                        self.preferences.locale,
+                                        Text::ShortsMetadata,
+                                        &[
+                                            ("duration_label", self.tr(Text::ShortsDuration)),
+                                            (
+                                                "duration",
+                                                &seconds(self.preferences.locale, duration),
+                                            ),
+                                            ("score_label", self.tr(Text::ShortsScore)),
+                                            (
+                                                "score",
+                                                &catalog::decimal(
+                                                    self.preferences.locale,
+                                                    candidate.proposal.score * 100.0,
+                                                    0,
+                                                ),
+                                            ),
+                                        ],
                                     ));
                                     ui.label(self.tr(match candidate.source {
                                         ClipSource::Heuristic => Text::ShortsHeuristic,
@@ -672,13 +720,25 @@ impl Shorts {
             .unwrap_or_default();
         let mut trim = None;
         for (index, segment) in segments.iter().enumerate() {
-            ui.label(format!(
-                "{} {} · {} {} · {}",
-                self.tr(Text::ShortsPlayOrder),
-                index + 1,
-                self.tr(Text::ShortsSourceOrder),
-                segment.source_order + 1,
-                self.tr(role_text(segment.role))
+            ui.label(catalog::format(
+                self.preferences.locale,
+                Text::ShortsRanks,
+                &[
+                    ("play_label", self.tr(Text::ShortsPlayOrder)),
+                    (
+                        "play",
+                        &catalog::number(self.preferences.locale, (index + 1) as u64),
+                    ),
+                    ("source_label", self.tr(Text::ShortsSourceOrder)),
+                    (
+                        "source",
+                        &catalog::number(
+                            self.preferences.locale,
+                            (segment.source_order + 1) as u64,
+                        ),
+                    ),
+                    ("role", self.tr(role_text(segment.role))),
+                ],
             ));
             let in_label = self.tr(Text::ShortsIn);
             let out_label = self.tr(Text::ShortsOut);
@@ -716,7 +776,12 @@ impl Shorts {
                 .trim_drafts
                 .get(index)
                 .ok_or(Error::Invalid("trim draft"))
-                .and_then(|(s, e)| Ok((parse_seconds(s)?, parse_seconds(e)?)))
+                .and_then(|(s, e)| {
+                    Ok((
+                        parse_seconds(self.preferences.locale, s)?,
+                        parse_seconds(self.preferences.locale, e)?,
+                    ))
+                })
                 .and_then(|(s, e)| self.trim(index, s, e));
             if let Err(e) = result {
                 self.fail(e, Text::ShortsTrimError);
@@ -832,7 +897,7 @@ impl Shorts {
                             }
                             let key = match snapshot.state {
                                 JobState::Completed => Text::ShortsDone,
-                                JobState::Failed => Text::Failed,
+                                JobState::Failed => Text::ShortsJobFailed,
                                 JobState::Cancelled => Text::ShortsJobCancelled,
                                 _ => Text::Processing,
                             };
@@ -924,9 +989,17 @@ fn cost_text(locale: Locale, cost: &Cost) -> String {
     match cost {
         Cost::Free => catalog::text(locale, Text::ShortsFree).into(),
         Cost::Unknown => catalog::text(locale, Text::ShortsUnknownCost).into(),
-        Cost::UpperBound { currency, micros } => {
-            format!("{currency} {:.6}", *micros as f64 / 1_000_000.0)
-        }
+        Cost::UpperBound { currency, micros } => catalog::format(
+            locale,
+            Text::ShortsMoney,
+            &[
+                ("currency", currency),
+                (
+                    "amount",
+                    &catalog::decimal(locale, *micros as f64 / 1_000_000.0, 6),
+                ),
+            ],
+        ),
     }
 }
 
@@ -943,4 +1016,12 @@ fn choice_label(ui: &egui::Ui, selected: bool, text: impl Into<String>) -> egui:
     } else {
         ui.visuals().text_color()
     })
+}
+
+fn provider_label(locale: Locale, provider: &str, model: &str) -> String {
+    catalog::format(
+        locale,
+        Text::ShortsProviderModel,
+        &[("provider", provider), ("model", model)],
+    )
 }

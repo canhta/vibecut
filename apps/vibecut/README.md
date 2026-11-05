@@ -320,6 +320,9 @@ Refusal or cancellation sends no approval and never selects another provider.
 Missing models and credentials are actionable errors; no implicit downloads occur.
 
 Candidates show title, duration, editorial score, reason and heuristic/AI source.
+The shared catalog formats metadata and numeric fields; trim values parse the
+same en/vi decimal and grouping notation, refusing malformed or mixed input.
+Changing the runtime locale refreshes trim drafts without changing source ticks.
 Review retains roles and both play/source ranks, safe engine boundary snapping,
 accept/reject and a source-normalized 9:16 crop. The reusable `crop` control moves
 within source bounds, with keyboard arrows and Escape rollback. Review actions
@@ -331,9 +334,11 @@ editing a review does not alter an already submitted immutable batch.
 
 Open in editor inserts every video segment and mapped source-caption item into a
 fresh portrait project through one engine transaction, then uses the existing
-nonblocking recovery/autosave owner. Editor preview and export share the same transient render-state owner, resolving
+nonblocking recovery/autosave owner. Editor preview and export share the same
+transient render-state owner, resolving
 placements against each immutable snapshot so deleting items and undo/redo do
-not leave stale placement IDs or recenter editor exports. Review crops are transient (preview/export);
+not leave stale placement IDs or recenter editor exports. Review crops are
+transient (preview/export);
 persisted crop channels and subsequent full-editor crop edits belong to the crop
 controls feature. Source-language captions can be burned and exported as SRT.
 `tests/shorts_ui.rs` injects generation and preview sources, uses real automation

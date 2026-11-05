@@ -28,22 +28,25 @@ pub fn range(start: i64, end: i64) -> SourceRange {
     SourceRange::new(tick(start), tick(end)).unwrap()
 }
 pub fn source() -> ReviewSource {
+    source_at(0)
+}
+pub fn source_at(offset: i64) -> ReviewSource {
     let asset = SourceAsset::try_from(AssetData {
         id: AssetId(1),
         path: std::env::temp_dir().join("vibecut-shorts-missing.mp4"),
         content_hash: ContentHash([0; 32]),
         probe: SourceProbe {
             format: "fixture".into(),
-            duration: Some(tick(20)),
+            duration: Some(tick(offset + 20)),
             streams: vec![SourceStream {
                 index: 0,
                 kind: StreamKind::Video,
                 codec: "h264".into(),
                 time_base: TimeBase::new(1, 30).unwrap(),
-                duration: Some(tick(20)),
+                duration: Some(tick(offset + 20)),
                 start: Some(Tick::ZERO),
                 frame_rate: Some(FrameRate::FPS_30),
-                frame_count: Some(600),
+                frame_count: Some(((offset + 20) * 30) as u64),
                 variable_frame_rate: Some(false),
                 video: Some(VideoInfo {
                     width: 320,
@@ -73,14 +76,14 @@ pub fn source() -> ReviewSource {
         segments: vec![
             Segment {
                 id: "context".into(),
-                range: range(1, 3),
+                range: range(offset + 1, offset + 3),
                 text: "Một câu chuyện.".into(),
                 words: Vec::new(),
                 spans: None,
             },
             Segment {
                 id: "hook".into(),
-                range: range(10, 12),
+                range: range(offset + 10, offset + 12),
                 text: "Điều đáng nhớ.".into(),
                 words: Vec::new(),
                 spans: None,
@@ -89,13 +92,13 @@ pub fn source() -> ReviewSource {
     };
     let pieces = vec![
         ClipSourceSegment {
-            range: range(10, 13),
+            range: range(offset + 10, offset + 13),
             role: ClipRole::Hook,
             source_order: 1,
             repair: None,
         },
         ClipSourceSegment {
-            range: range(0, 4),
+            range: range(offset, offset + 4),
             role: ClipRole::Context,
             source_order: 0,
             repair: None,
@@ -127,7 +130,7 @@ pub fn source() -> ReviewSource {
         cues,
         energy: Vec::new(),
         boundaries: ClipBoundarySettings {
-            source_range: range(0, 20),
+            source_range: range(0, offset + 20),
             frame_rate: FrameRate::FPS_30,
             tolerance: Tick(TICKS_PER_SECOND / 2),
             silence_rms: 0.01,
