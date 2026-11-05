@@ -10,6 +10,7 @@ use crate::{
     AudioDecoder, AudioFrame, AudioResampler, AudioSampleFormat, MediaError, PacketReader,
     PixelFormat, Result, RgbaConverter, SourceAsset, StreamKind, VideoFrame, VideoReader, init,
 };
+use ffmpeg_next as ff;
 use std::sync::{
     Arc,
     atomic::{AtomicBool, Ordering},
@@ -602,18 +603,58 @@ impl<F: FnMut(MfccFrame) -> Result<()>> MfccSink<'_, F> {
     }
 }
 
-fn sample_index_for(origin: Tick, tick: Tick, ticks_per_sample: i64) -> Result<i64> {
-    if ticks_per_sample <= 0 {
+/// Recover the input sample index of a decoded frame.
+///
+/// Exact containers (for example 1/44100 MP4 audio) give a sample-aligned PTS.
+/// Coarse containers (Matroska milliseconds) round packet timestamps, so treat
+/// the nearest estimated sample as a cursor and quantize it to the decoded
+/// frame's sample count. Any fixed-frame codec then has one unique legal frame
+/// boundary inside the timestamp's rounding window. If a timestamp is too
+/// coarse to distinguish a boundary, refuse instead of guessing the phase.
+fn recover_input_sample_index(
+    origin: Tick,
+    tick: Tick,
+    ticks_per_sample: i64,
+    frame_samples: i64,
+    max_error_samples: i64,
+) -> Result<i64> {
+    if ticks_per_sample <= 0 || frame_samples <= 0 {
         return Err(MediaError::Invalid("audio sample clock"));
     }
     let delta = tick
         .checked_sub(origin)
         .ok_or(MediaError::Invalid("audio sample clock"))?
         .0;
-    if delta < 0 || delta % ticks_per_sample != 0 {
+    if delta < 0 {
         return Err(MediaError::Invalid("audio sample clock"));
     }
-    Ok(delta / ticks_per_sample)
+    if delta % ticks_per_sample == 0 {
+        return Ok(delta / ticks_per_sample);
+    }
+    if max_error_samples.saturating_mul(2) >= frame_samples {
+        return Err(MediaError::Unsupported("audio timestamp precision"));
+    }
+    let estimated =
+        (i128::from(delta) + i128::from(ticks_per_sample / 2)) / i128::from(ticks_per_sample);
+    let estimated =
+        i64::try_from(estimated).map_err(|_| MediaError::TooLarge("audio sample clock"))?;
+    let quotient = estimated.div_euclid(frame_samples);
+    let remainder = estimated.rem_euclid(frame_samples);
+    let candidate = if remainder.saturating_mul(2) <= frame_samples {
+        quotient
+            .checked_mul(frame_samples)
+            .ok_or(MediaError::TooLarge("audio sample clock"))?
+    } else {
+        quotient
+            .checked_add(1)
+            .and_then(|value| value.checked_mul(frame_samples))
+            .ok_or(MediaError::TooLarge("audio sample clock"))?
+    };
+    if candidate >= 0 && (candidate - estimated).abs() <= max_error_samples {
+        Ok(candidate)
+    } else {
+        Err(MediaError::Unsupported("audio timestamp precision"))
+    }
 }
 fn sample_tick_for(origin: Tick, index: i64, ticks_per_sample: i64) -> Result<Tick> {
     let delta = index
@@ -663,6 +704,50 @@ fn output_sample_index(input_index: i64, input_rate: u32) -> Result<i64> {
     let value = value / i128::from(input_rate);
     i64::try_from(value).map_err(|_| MediaError::TooLarge("audio sample index"))
 }
+/// Convert one decoded frame to planar f32 at its source rate.
+///
+/// Decoder frames may carry an unspecified channel layout; build the default
+/// layout for the actual channel count instead of asking the resampler to
+/// change layout mid-stream.
+fn audio_planes_f32(frame: &AudioFrame) -> Result<Vec<Vec<f32>>> {
+    let channels = frame.channels();
+    if channels == 0 || channels > 32 {
+        return Err(MediaError::Invalid("audio channels"));
+    }
+    let layout = frame.inner.channel_layout();
+    let layout = if layout.is_empty() {
+        ff::ChannelLayout::default(i32::from(channels))
+    } else {
+        layout
+    };
+    let mut source = crate::ffi::reference_audio(&frame.inner)?;
+    source.set_channel_layout(layout);
+    let mut converter = ff::software::resampling::Context::get(
+        source.format(),
+        layout,
+        source.rate(),
+        ff::format::Sample::F32(ff::format::sample::Type::Planar),
+        layout,
+        source.rate(),
+    )
+    .map_err(crate::error("convert planar audio"))?;
+    let mut output = ff::frame::Audio::empty();
+    converter
+        .run(&source, &mut output)
+        .map_err(crate::error("convert planar audio"))?;
+    if output.samples() > 65_536 || output.channels() > 32 {
+        return Err(MediaError::TooLarge("audio planar conversion"));
+    }
+    if output.samples() != frame.samples() {
+        return Err(MediaError::Unsupported(
+            "audio planar conversion changed sample count",
+        ));
+    }
+    Ok((0..usize::from(output.channels()))
+        .map(|channel| output.plane::<f32>(channel).to_vec())
+        .collect())
+}
+
 fn emit_mfcc_audio(
     frame: &AudioFrame,
     index: &mut i64,
@@ -737,19 +822,23 @@ fn decode_mfcc_audio(
             .0,
         ticks_per_input,
     )?;
+    let time_base_ticks = stream.time_base.ticks(1)?.0;
+    let half_unit = time_base_ticks.saturating_abs() / 2 + 1;
+    let max_error_samples = (half_unit + ticks_per_input - 1) / ticks_per_input + 1;
     let mut state = MfccAudioState {
         origin,
         input_rate,
         ticks_per_input,
         step,
+        max_error_samples,
         aligned_index: round_up(target_index, step)?,
         last_sample,
         resampler: None,
         out_index: 0,
+        next_input: None,
         cancel,
         push,
     };
-    let mut source_converter: Option<AudioResampler> = None;
     loop {
         if cancel.load(Ordering::Relaxed) {
             return Err(MediaError::Cancelled);
@@ -764,39 +853,14 @@ fn decode_mfcc_audio(
             if cancel.load(Ordering::Relaxed) {
                 return Err(MediaError::Cancelled);
             }
-            if source_converter.is_none() {
-                let rate = frame.sample_rate();
-                if rate != input_rate {
-                    return Err(MediaError::Unsupported("audio sample rate changed"));
-                }
-                let channels = frame.channels().min(8);
-                if channels == 0 {
-                    return Err(MediaError::Invalid("audio channels"));
-                }
-                source_converter = Some(AudioResampler::new(
-                    &frame,
-                    rate,
-                    channels,
-                    AudioSampleFormat::PlanarF32,
-                )?);
+            if frame.sample_rate() != input_rate {
+                return Err(MediaError::Unsupported("audio sample rate changed"));
             }
-            let converter = source_converter
-                .as_mut()
-                .ok_or(MediaError::Invalid("audio source converter"))?;
-            for output in converter.convert(&frame)? {
-                if state.feed(output)? {
-                    return Ok(());
-                }
+            if state.feed(frame)? {
+                return Ok(());
             }
         }
         if reached_end {
-            if let Some(mut converter) = source_converter.take() {
-                while let Some(output) = converter.flush()? {
-                    if state.feed(output)? {
-                        return Ok(());
-                    }
-                }
-            }
             state.finish()?;
             return Ok(());
         }
@@ -808,17 +872,32 @@ struct MfccAudioState<'a, F> {
     input_rate: u32,
     ticks_per_input: i64,
     step: i64,
+    max_error_samples: i64,
     aligned_index: i64,
     last_sample: i64,
     resampler: Option<AudioResampler>,
     out_index: i64,
+    next_input: Option<i64>,
     cancel: &'a AtomicBool,
     push: &'a mut F,
 }
 impl<F: FnMut(&[f32], i64) -> Result<()>> MfccAudioState<'_, F> {
     fn feed(&mut self, frame: AudioFrame) -> Result<bool> {
+        let samples =
+            i64::try_from(frame.samples()).map_err(|_| MediaError::TooLarge("audio samples"))?;
         if let Some(active) = self.resampler.as_mut() {
-            for output in active.convert(&frame)? {
+            let index = self
+                .next_input
+                .ok_or(MediaError::Invalid("audio sample cursor"))?;
+            let pts = sample_tick_for(self.origin, index, self.ticks_per_input)?;
+            let planes = audio_planes_f32(&frame)?;
+            let input = AudioFrame::from_planar_f32(pts, self.input_rate, &planes)?;
+            self.next_input = Some(
+                index
+                    .checked_add(samples)
+                    .ok_or(MediaError::TooLarge("audio sample cursor"))?,
+            );
+            for output in active.convert(&input)? {
                 emit_mfcc_audio(&output, &mut self.out_index, &mut *self.push)?;
                 if self.out_index >= self.last_sample {
                     return Ok(true);
@@ -826,16 +905,29 @@ impl<F: FnMut(&[f32], i64) -> Result<()>> MfccAudioState<'_, F> {
             }
             return Ok(false);
         }
-        let pts = frame
-            .pts()?
-            .ok_or(MediaError::Unsupported("audio timestamp unavailable"))?;
-        let start_index = sample_index_for(self.origin, pts, self.ticks_per_input)?;
-        let samples =
-            i64::try_from(frame.samples()).map_err(|_| MediaError::TooLarge("audio samples"))?;
+        let start_index = if let Some(index) = self.next_input {
+            index
+        } else {
+            let pts = frame
+                .pts()?
+                .ok_or(MediaError::Unsupported("audio timestamp unavailable"))?;
+            recover_input_sample_index(
+                self.origin,
+                pts,
+                self.ticks_per_input,
+                samples,
+                self.max_error_samples,
+            )?
+        };
         if start_index
             .checked_add(samples)
             .is_none_or(|end| end <= self.aligned_index)
         {
+            self.next_input = Some(
+                start_index
+                    .checked_add(samples)
+                    .ok_or(MediaError::TooLarge("audio sample cursor"))?,
+            );
             return Ok(false);
         }
         if start_index > self.aligned_index {
@@ -844,9 +936,14 @@ impl<F: FnMut(&[f32], i64) -> Result<()>> MfccAudioState<'_, F> {
         let skip = usize::try_from(self.aligned_index - start_index)
             .map_err(|_| MediaError::Invalid("audio sample trim"))?;
         if skip >= frame.samples() {
+            self.next_input = Some(
+                start_index
+                    .checked_add(samples)
+                    .ok_or(MediaError::TooLarge("audio sample cursor"))?,
+            );
             return Ok(false);
         }
-        let planes = frame.planar_f32()?;
+        let planes = audio_planes_f32(&frame)?;
         let mut trimmed = Vec::with_capacity(planes.len());
         for plane in planes {
             let remainder = plane
@@ -855,6 +952,11 @@ impl<F: FnMut(&[f32], i64) -> Result<()>> MfccAudioState<'_, F> {
             trimmed.push(remainder.to_vec());
         }
         if trimmed.first().is_none_or(|plane| plane.is_empty()) {
+            self.next_input = Some(
+                start_index
+                    .checked_add(samples)
+                    .ok_or(MediaError::TooLarge("audio sample cursor"))?,
+            );
             return Ok(false);
         }
         let aligned_tick = sample_tick_for(self.origin, self.aligned_index, self.ticks_per_input)?;
@@ -862,6 +964,11 @@ impl<F: FnMut(&[f32], i64) -> Result<()>> MfccAudioState<'_, F> {
         let mut active =
             AudioResampler::new(&first, VISION_SAMPLE_RATE, 1, AudioSampleFormat::PlanarF32)?;
         self.out_index = output_sample_index(self.aligned_index, self.input_rate)?;
+        self.next_input = Some(
+            start_index
+                .checked_add(samples)
+                .ok_or(MediaError::TooLarge("audio sample cursor"))?,
+        );
         for output in active.convert(&first)? {
             emit_mfcc_audio(&output, &mut self.out_index, &mut *self.push)?;
             if self.out_index >= self.last_sample {

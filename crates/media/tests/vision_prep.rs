@@ -287,7 +287,7 @@ fn mfcc_range_is_globally_anchored() {
         Err(MediaError::TooLarge(_))
     ));
 
-    for (name, path, tolerance, id) in [
+    for (name, path, tolerance, id, part_start, offset) in [
         (
             "44.1 kHz PCM",
             common::generate(
@@ -304,6 +304,8 @@ fn mfcc_range_is_globally_anchored() {
             ),
             1.0e-4,
             20,
+            5.0,
+            500,
         ),
         (
             "44.1 kHz AAC",
@@ -323,6 +325,29 @@ fn mfcc_range_is_globally_anchored() {
             ),
             1.0e-3,
             21,
+            5.0,
+            500,
+        ),
+        (
+            "44.1 kHz Matroska PCM",
+            common::generate(
+                "vision mfcc coarse matroska",
+                "vision_mfcc_44100_coarse.mkv",
+                &[
+                    "-f",
+                    "lavfi",
+                    "-i",
+                    "sine=frequency=440:sample_rate=44100:duration=8",
+                    "-c:a",
+                    "pcm_s16le",
+                    "-cluster_time_limit",
+                    "1000",
+                ],
+            ),
+            1.0e-4,
+            23,
+            6.0,
+            600,
         ),
     ] {
         let Some(path) = path else {
@@ -337,13 +362,13 @@ fn mfcc_range_is_globally_anchored() {
         );
         let part = collect_mfcc(
             &source,
-            SourceRange::new(seconds(5.0), seconds(6.0)).unwrap(),
+            SourceRange::new(seconds(part_start), seconds(part_start + 1.0)).unwrap(),
             &VisionPrepLimits::default(),
             cancel(),
         );
         assert_eq!(part.len(), 100, "{name}");
         let mut max = 0.0f32;
-        for (actual, expected) in part.iter().zip(full[500..].iter()) {
+        for (actual, expected) in part.iter().zip(full[offset..].iter()) {
             for (left, right) in actual.coefficients.iter().zip(expected.coefficients.iter()) {
                 max = max.max((left - right).abs());
             }

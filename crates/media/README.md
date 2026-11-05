@@ -303,7 +303,12 @@ suffix of a full-range call and pre-emphasis uses the sample before the first
 window. Samples are interpreted as 16-bit full-scale PCM. A seek starts the
 resampler on an input sample whose phase matches the stream-global 16 kHz grid
 and runs at least one second before the first requested window, preserving the
-full-range coefficients for ordinary 44.1/48 kHz sources. At end of input the
+full-range coefficients for ordinary 44.1/48 kHz sources. Container timestamps
+are cursors, not sample counters: when a coarse time base (for example Matroska
+milliseconds) cannot represent the exact sample instant, the nearest decoded
+frame boundary from the frame's sample count recovers the legal start, and the
+source converter uses sequential sample counts rather than rounded timestamps
+after that point. At end of input the
 final window count comes from the actual received samples, so unknown-duration
 audio is padded only at its real last window, never extended with synthetic
 windows. Only windows starting inside the requested range are emitted; a range
