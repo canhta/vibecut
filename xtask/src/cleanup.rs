@@ -73,8 +73,44 @@ fn parse(args: &[String]) -> Result<Options, String> {
 fn release_command(environment: Option<&str>, dispatch: &str) -> CommandLine {
     orca::command(
         environment,
-        &["orchestration", "worker-release", "--dispatch", dispatch],
+        &[
+            "orchestration",
+            "worker-release",
+            "--dispatch",
+            dispatch,
+            "--json",
+            "--full",
+        ],
     )
+}
+
+fn confirm_release(receipt: &serde_json::Value, dispatch: &str) -> Result<(), String> {
+    let result = receipt
+        .get("result")
+        .ok_or("worker-release returned no result")?;
+    if result.get("dispatchId").and_then(serde_json::Value::as_str) != Some(dispatch) {
+        return Err("worker-release returned a different or missing dispatch ID".into());
+    }
+    match result.get("state").and_then(serde_json::Value::as_str) {
+        Some("released" | "already_released") => Ok(()),
+        state => Err(format!("worker-release did not confirm release: {state:?}")),
+    }
+}
+
+fn perform(command: &CommandLine, dry_run: bool) -> Result<(), String> {
+    if !dry_run
+        && command
+            .args
+            .get(1)
+            .is_some_and(|arg| arg == "worker-release")
+    {
+        let dispatch = command
+            .args
+            .get(3)
+            .ok_or("worker-release has no dispatch ID")?;
+        return confirm_release(&orca::command_json(command)?, dispatch);
+    }
+    orca::perform(command, dry_run)
 }
 
 fn terminal_close_command(environment: Option<&str>, terminal: &str) -> CommandLine {
@@ -298,7 +334,7 @@ pub fn run(root: &Path, args: &[String]) -> Result<(), String> {
         &main,
         &options,
         Discovery { worktrees, workers },
-        orca::perform,
+        perform,
         prune,
         pull,
     )
@@ -403,7 +439,7 @@ mod tests {
         assert_eq!(
             commands,
             [
-                "orca orchestration worker-release --dispatch ctx_abc --environment Window",
+                "orca orchestration worker-release --dispatch ctx_abc --json --full --environment Window",
                 "orca terminal close --terminal term_x --environment Window",
             ]
         );
@@ -425,7 +461,55 @@ mod tests {
         assert!(error.contains("refused"), "{error}");
         assert_eq!(
             commands,
-            ["orca orchestration worker-release --dispatch ctx_abc"]
+            ["orca orchestration worker-release --dispatch ctx_abc --json --full"]
+        );
+    }
+
+    #[test]
+    fn only_confirmed_release_receipts_allow_terminal_closure() {
+        for (state, dispatch, allowed) in [
+            ("released", "ctx_abc", true),
+            ("already_released", "ctx_abc", true),
+            ("retained", "ctx_abc", false),
+            ("release_pending", "ctx_abc", false),
+            ("release_unknown", "ctx_abc", false),
+            ("unexpected", "ctx_abc", false),
+            ("released", "ctx_other", false),
+        ] {
+            let receipt = serde_json::json!({"result": {"state": state, "dispatchId": dispatch}});
+            let mut commands = Vec::new();
+            let result = release_dispatch(
+                None,
+                false,
+                &reported_worker(),
+                "ctx_abc",
+                &mut |command, _| {
+                    commands.push(command.render());
+                    if command
+                        .args
+                        .get(1)
+                        .is_some_and(|arg| arg == "worker-release")
+                    {
+                        confirm_release(&receipt, "ctx_abc")
+                    } else {
+                        Ok(())
+                    }
+                },
+            );
+            assert_eq!(result.is_ok(), allowed, "{state} / {dispatch}");
+            assert_eq!(
+                commands.len(),
+                if allowed { 2 } else { 1 },
+                "{state} / {dispatch}"
+            );
+        }
+        assert!(confirm_release(&serde_json::json!({}), "ctx_abc").is_err());
+        assert!(
+            confirm_release(
+                &serde_json::json!({"result": {"dispatchId": "ctx_abc"}}),
+                "ctx_abc"
+            )
+            .is_err()
         );
     }
 

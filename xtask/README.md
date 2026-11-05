@@ -77,9 +77,11 @@ this is not a public or multi-user server.
 
 `cleanup` resolves the Orca workspaces directory and the main checkout from
 `orca worktree list` and Git, never from a compiled path. It resolves each
-`ctx_` dispatch in `orca orchestration worker-list`, releases it, closes its
-terminal, then continues with the remaining arguments; any failed step makes the
-command exit non-zero. A local worktree drops its ignored `.scratch` before
+`ctx_` dispatch in `orca orchestration worker-list`, releases it, and closes its
+terminal only after a matching `released` or `already_released` receipt. Retained,
+pending, unknown or malformed release receipts leave the terminal open and fail
+that target. The remaining arguments continue; any failed step makes the command
+exit non-zero. A local worktree drops its ignored `.scratch` before
 removal; a paired environment passes `--environment` to every Orca call. Build
 cache slots held by a live build are skipped, and the final
 `git pull --ff-only` runs in the main checkout.

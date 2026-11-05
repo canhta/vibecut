@@ -80,7 +80,11 @@ pub fn command(environment: Option<&str>, args: &[&str]) -> CommandLine {
 }
 
 fn json(environment: Option<&str>, args: &[&str]) -> Result<serde_json::Value, String> {
-    let command = command(environment, args);
+    command_json(&command(environment, args))
+}
+
+/// Execute an Orca command and require its structured receipt.
+pub fn command_json(command: &CommandLine) -> Result<serde_json::Value, String> {
     let output = command.run()?;
     if !output.status.success() {
         return Err(format!(
