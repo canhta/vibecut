@@ -298,6 +298,15 @@ Media insertion reuses an unlocked compatible track only when the playhead range
 fits; otherwise it creates a secondary track at the top of its group. Solid colour
 is generated Video content, distinct from Sticker tracks.
 
+Header context menus also rename tracks inline (Enter commits, Escape cancels)
+and toggle the engine's lock barrier. Lock protects item structure and properties,
+masks, effects and keyframes; selection, playback and track metadata stay usable.
+Dragging a header reorders within its overlay or audio section; main stays fixed.
+Escape cancels the reorder. The explicit Add track toolbar action uses the active
+item's compatible kind above its track, or Video at the overlay section end when
+there is no active item. Commands and undo/persistence belong to
+[engine](../../crates/engine/README.md#edit-semantics-and-limits).
+
 ## Scene switcher
 
 The timeline toolbar centres a split button with the current scene name and a

@@ -2136,6 +2136,12 @@ fn track_rename_reorder_lock_and_add_persist_and_undo_exactly() {
     assert_eq!(s.project().data().scene().timeline.overlays.len(), 2);
     assert_eq!(s.project().data().scene().timeline.overlays[0].id, b);
 
+    let original_main = s.project().data().scene().timeline.main.clone();
+    s.execute(
+        "track.rename",
+        json!({"track":original_main.id,"name":"Renamed main"}),
+    )
+    .unwrap();
     s.execute("track.rename", json!({"track":a,"name":"Rãnh đã đổi"}))
         .unwrap();
     s.execute("track.reorder", json!({"track":b,"index":1}))
@@ -2153,16 +2159,24 @@ fn track_rename_reorder_lock_and_add_persist_and_undo_exactly() {
     let bytes = project::encode(&changed, false).unwrap();
     let loaded = project::decode(&bytes).unwrap().project;
     assert_eq!(&loaded, changed.as_ref());
+    assert_eq!(
+        loaded.data().scene().timeline.main.name.as_str(),
+        "Renamed main"
+    );
 
-    for _ in 0..3 {
+    for _ in 0..4 {
         s.undo().unwrap();
     }
+    assert_eq!(s.project().data().scene().timeline.main, original_main);
     let original = s.project().data().scene().timeline.overlays.clone();
     assert_eq!(original[0].id, b);
     assert_eq!(original[0].name.as_str(), "Second");
     assert_eq!(original[1].name.as_str(), "First");
     assert!(original.iter().all(|track| !track.locked));
-    for _ in 0..3 {
+    s.undo().unwrap();
+    s.undo().unwrap();
+    assert!(s.project().data().scene().timeline.overlays.is_empty());
+    for _ in 0..6 {
         s.redo().unwrap();
     }
     assert_eq!(s.project(), &changed);
@@ -2190,6 +2204,15 @@ fn locked_tracks_refuse_structural_item_edits_but_allow_metadata_and_unlock() {
     let CreatedId::Item(one) = outcome.created[0] else {
         panic!("item id")
     };
+    let outcome = s
+        .execute(
+            "timeline.insert",
+            json!({"placement":{"mode":"track","track":0},"item":new_item(0,20)}),
+        )
+        .unwrap();
+    let CreatedId::Item(other) = outcome.created[0] else {
+        panic!("item id")
+    };
     s.execute("track.set_locked", json!({"track":track,"locked":true}))
         .unwrap();
     let before = s.project().clone();
@@ -2200,6 +2223,8 @@ fn locked_tracks_refuse_structural_item_edits_but_allow_metadata_and_unlock() {
             json!({"placement":{"mode":"track","track":track},"item":new_item(30,10)}),
         ),
         ("move_item", json!({"item":one,"track":track,"start":5})),
+        ("move_item", json!({"item":one,"track":0,"start":30})),
+        ("move_item", json!({"item":other,"track":track,"start":30})),
         (
             "move_items",
             json!({"moves":[{"item":one,"track":track,"start":5}]}),
@@ -2209,6 +2234,11 @@ fn locked_tracks_refuse_structural_item_edits_but_allow_metadata_and_unlock() {
         ("trim_end", json!({"item":one,"at":10})),
         ("delete", json!({"items":[one]})),
         ("ripple_delete", json!({"item":one})),
+        ("track.remove", json!({"track":track})),
+        (
+            "batch",
+            json!({"commands":[{"command":"track.rename","params":{"track":0,"name":"Must roll back"}},{"command":"delete","params":{"items":[one]}}]}),
+        ),
         (
             "set_item_param",
             json!({"item":one,"content":{"kind":"overlay","params":{"color":[1,2,3,255]}}}),

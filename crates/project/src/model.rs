@@ -537,7 +537,6 @@ fn validate(data: &ProjectData) -> Result<()> {
             return Err(Error::Invalid("duplicate scene ID"));
         }
         if scene.timeline.main.kind != TrackKind::Video
-            || scene.timeline.main.name.as_str() != "Main Track"
             || scene
                 .timeline
                 .overlays

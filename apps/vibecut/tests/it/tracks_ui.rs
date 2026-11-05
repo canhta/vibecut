@@ -349,6 +349,91 @@ fn drag_reorder_stays_inside_the_overlay_section() {
         h.state().session.project().data().scene().timeline.overlays,
         before
     );
+    // Reversal, section boundaries and Escape must leave order/history intact.
+    let history = h.state().session.history_len();
+    h.drag_at(from);
+    h.run_steps(1);
+    h.hover_at(to);
+    h.run_steps(2);
+    h.drop_at(from);
+    h.run_steps(3);
+    let audio = h.state().session.project().data().scene().timeline.audio[0].id;
+    let audio_pos = header_rect(&h, audio).center();
+    drag(&mut h, from, audio_pos);
+    let main_pos = header_rect(&h, project::TrackId(0)).center();
+    drag(&mut h, main_pos, to);
+    h.drag_at(from);
+    h.run_steps(1);
+    h.hover_at(to);
+    h.run_steps(2);
+    h.key_press(egui::Key::Escape);
+    h.run_steps(2);
+    h.drop_at(to);
+    h.run_steps(3);
+    assert_eq!(h.state().session.history_len(), history);
+    assert_eq!(
+        h.state().session.project().data().scene().timeline.overlays,
+        before
+    );
+}
+
+#[test]
+fn leaving_or_removing_a_renamed_track_restores_keyboard_shortcuts() {
+    for remove in [false, true] {
+        let (editor, track, _) = track_editor();
+        let mut h = Harness::builder()
+            .with_size(egui::vec2(1728.0, 1200.0))
+            .build_ui_state(|ui, e: &mut Editor| e.ui(ui), editor);
+        h.run_steps(4);
+        h.get(
+            By::new()
+                .predicate(|n| n.author_id() == Some(format!("track.{}.header", track.0).as_str())),
+        )
+        .click_secondary();
+        h.run_steps(2);
+        h.get(By::new().predicate(|n| {
+            n.author_id() == Some(format!("track.{}.rename_action", track.0).as_str())
+        }))
+        .click();
+        h.run_steps(2);
+        h.event(egui::Event::Text("discarded draft".into()));
+        h.run_steps(2);
+        if remove {
+            h.state_mut()
+                .session
+                .apply(Command::RemoveTrack { track })
+                .unwrap();
+        } else {
+            let result = h
+                .state_mut()
+                .session
+                .execute("scene.create", serde_json::json!({"name":"Other"}))
+                .unwrap();
+            let engine::CreatedId::Scene(scene) = result.created[0] else {
+                panic!("scene")
+            };
+            h.state_mut()
+                .activate(&format!("scene.row.{}", scene.0))
+                .unwrap();
+        }
+        h.run_steps(3);
+        let before = h.state().snapping;
+        h.key_press(egui::Key::N);
+        h.run_steps(3);
+        assert_ne!(
+            h.state().snapping,
+            before,
+            "orphan rename must not capture shortcuts"
+        );
+        assert!(
+            !h.state()
+                .inspect()
+                .unwrap()
+                .widgets
+                .iter()
+                .any(|widget| widget.id == format!("track.{}.rename", track.0))
+        );
+    }
 }
 
 #[test]
@@ -399,6 +484,10 @@ fn lock_refuses_structural_edits_and_add_track_uses_the_active_kind() {
             .count()
     };
     let history = h.state().session.history_len().0;
+    assert!(matches!(
+        h.state_mut().activate("timeline.split"),
+        Err(vibecut::Error::Engine(engine::EditError::Locked(track))) if track == text_track
+    ));
     h.get(By::new().predicate(|n| n.author_id() == Some("timeline.split")))
         .click();
     h.run_steps(3);
@@ -422,6 +511,32 @@ fn lock_refuses_structural_edits_and_add_track_uses_the_active_kind() {
         .click();
     h.run_steps(3);
     assert_eq!(text_tracks(&h), before + 1);
+    let added_above = &h.state().session.project().data().scene().timeline.overlays;
+    let active_index = added_above
+        .iter()
+        .position(|track| track.id == text_track)
+        .unwrap();
+    assert_eq!(added_above[active_index - 1].kind, TrackKind::Text);
+
+    h.state_mut().selection.clear();
+    let old_ids: Vec<_> = h
+        .state()
+        .session
+        .project()
+        .data()
+        .scene()
+        .timeline
+        .overlays
+        .iter()
+        .map(|track| track.id)
+        .collect();
+    h.get(By::new().predicate(|n| n.author_id() == Some("timeline.add_track")))
+        .click();
+    h.run_steps(3);
+    let tracks = &h.state().session.project().data().scene().timeline.overlays;
+    assert_eq!(tracks.len(), old_ids.len() + 1);
+    assert_eq!(tracks.last().unwrap().kind, TrackKind::Video);
+    assert!(!old_ids.contains(&tracks.last().unwrap().id));
     let path =
         std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target/p1-54-track-mgmt.png");
     std::fs::create_dir_all(path.parent().unwrap()).unwrap();

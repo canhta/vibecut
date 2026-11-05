@@ -25,7 +25,8 @@ highest position of its group. Main is never removed by an engine edit. Track ki
 are Video, Audio, Text, Sticker, Effect, Filter and Adjustment. Captions share Text
 tracks; generated solid-colour `ItemParams::Overlay` uses Video tracks. Sticker,
 Effect, Filter and Adjustment accept empty tracks until their item owners land.
-Groups, main kind/name and unique IDs are validated on every candidate. Items
+Groups, main kind and unique IDs are validated on every candidate. The main track's
+name is editable like secondary track names. Items
 within each track are sorted by output start, nonnegative and nonoverlapping.
 Touching half-open intervals are valid. Item end uses checked arithmetic. There
 is no retiming: output duration equals `source_range.duration()`. An active scene's

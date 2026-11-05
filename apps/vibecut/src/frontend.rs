@@ -1730,9 +1730,6 @@ impl Editor {
         let mut under = Vec::new();
         let mut selected_under = Vec::new();
         for track in self.session.project().data().scene().timeline.iter() {
-            if track.locked {
-                continue;
-            }
             for item in &track.items {
                 if item.start < at && item.end().is_ok_and(|end| at < end) {
                     under.push(item.id);
@@ -2126,7 +2123,11 @@ impl Editor {
             }
             return;
         }
-        self.track_drag = None;
+        let track_drag = self.track_drag.take().is_some();
+        if self.track_rename.take().is_some() || track_drag {
+            self.track_rename_focus = false;
+            return;
+        }
         if let Some(drag) = self.drag.take() {
             if self.session.gesture_active()
                 && let Err(error) = self.session.cancel_gesture()
@@ -2440,6 +2441,20 @@ impl Editor {
             .is_some_and(|scrub| self.selected_item_id() != Some(scrub.item) || self.details)
         {
             self.finish_scrub(false);
+        }
+        // History and external commands can remove the track being renamed.
+        if self.track_rename.as_ref().is_some_and(|(id, _)| {
+            !self
+                .session
+                .project()
+                .data()
+                .scene()
+                .timeline
+                .iter()
+                .any(|track| track.id == *id)
+        }) {
+            self.track_rename = None;
+            self.track_rename_focus = false;
         }
         if !self.session.transaction_active()
             && let Err(e) = self.session.set_selection(self.selection.clone())
@@ -5055,7 +5070,7 @@ impl Editor {
             if header.drag_started() {
                 self.track_drag = Some(row.id);
             }
-            if header.drag_stopped() {
+            if header.drag_stopped() && self.track_drag == Some(row.id) {
                 self.track_drag = None;
                 let drop = ui.input(|input| input.pointer.interact_pos());
                 if !row.main
@@ -5175,7 +5190,7 @@ impl Editor {
     }
     /// Add a secondary track compatible with the active section: audio beside an
     /// audio track, otherwise the active overlay kind (Video when nothing is
-    /// selected). Above the active track, or the group top when none is active.
+    /// selected). Above the active track, or the overlay section end otherwise.
     fn add_track(&mut self) {
         let locale = self.preferences.locale;
         let (kind, placement, count) = {
@@ -5196,7 +5211,7 @@ impl Editor {
                 Some(track) if track.id != scene.timeline.main.id => {
                     serde_json::json!({"mode":"above","track":track.id})
                 }
-                _ => serde_json::json!({"mode":"auto"}),
+                _ => serde_json::json!({"mode":"above","track":scene.timeline.main.id}),
             };
             let count = scene
                 .timeline

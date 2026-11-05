@@ -328,9 +328,6 @@ fn model_trust_boundaries() {
     d.scene_mut().timeline.main.kind = TrackKind::Audio;
     cases.push(d);
     let mut d = base.clone();
-    d.scene_mut().timeline.main.name = "Renamed main".into();
-    cases.push(d);
-    let mut d = base.clone();
     d.scene_mut().timeline.main.id = TrackId(1);
     cases.push(d);
     for (audio_group, wrong_kind) in [(true, TrackKind::Text), (false, TrackKind::Audio)] {
