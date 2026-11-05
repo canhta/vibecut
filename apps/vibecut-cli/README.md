@@ -28,9 +28,10 @@ and epochs live exactly as long as this process. `project.save` is the explicit 
 point: `Session::control_lifecycle_save` applies the same envelope, policy, revision,
 request-ID, key, capacity and receipt rules as every other effect, while this CLI
 performs only project/metadata file publication in its callback. A refused or failed
-save therefore keeps the session dirty and can be retried with the same key; otherwise
-a changed project and metadata are saved once on clean EOF. `--no-save` suppresses
-that final save. `--allow-overwrite` is the trusted grant for `export`,
+save keeps the session dirty; success and typed execution errors are both receipted,
+so the same request replays its error and a retry that must execute again uses a fresh
+key. Otherwise a changed project and metadata are saved once on clean EOF. `--no-save`
+suppresses that final save. `--allow-overwrite` is the trusted grant for `export`,
 `export_subtitles` and `burn_subtitles` with `overwrite: true`; without it engine
 policy returns `permission`. External gesture commands remain refused by engine
 policy, and agents use atomic batches plus undo. Oversized frames are drained and

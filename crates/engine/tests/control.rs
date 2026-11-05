@@ -1622,6 +1622,7 @@ fn lifecycle_save_uses_receipts_and_retries_after_publication_failure() {
     error(conflict, ErrorCode::IdempotencyConflict);
 
     let before_failure = s.revision();
+    let mut failure_publishes = 0;
     let failure = s
         .control_lifecycle_save(
             request_at(
@@ -1633,11 +1634,46 @@ fn lifecycle_save_uses_receipts_and_retries_after_publication_failure() {
                 &before_failure,
             ),
             caller(&Allow),
-            |_, _| Err(EditError::Io(std::io::Error::other("disk"))),
+            |_, _| {
+                failure_publishes += 1;
+                Err(EditError::Io(std::io::Error::other("disk")))
+            },
         )
         .unwrap();
+    assert_eq!(failure_publishes, 1);
     error(failure, ErrorCode::Failed);
     assert_eq!(s.revision(), before_failure);
+
+    let mut replay_publishes = 0;
+    let replay_failure = s
+        .control_lifecycle_save(
+            request_at(
+                &s,
+                "save-fail-replay",
+                "project.save",
+                json!({}),
+                "fail",
+                &before_failure,
+            ),
+            caller(&Allow),
+            |_, _| {
+                replay_publishes += 1;
+                Ok(())
+            },
+        )
+        .unwrap();
+    assert_eq!(replay_publishes, 0);
+    error(replay_failure, ErrorCode::Failed);
+    assert_eq!(s.revision(), before_failure);
+
+    let conflict = run(
+        &mut s,
+        &mut runner(),
+        "timeline.add_track",
+        json!({"name":"Conflict","kind":"video"}),
+        "fail",
+    );
+    error(conflict, ErrorCode::IdempotencyConflict);
 
     let retry = s
         .control_lifecycle_save(
@@ -1646,7 +1682,7 @@ fn lifecycle_save_uses_receipts_and_retries_after_publication_failure() {
                 "save-retry",
                 "project.save",
                 json!({}),
-                "fail",
+                "fresh",
                 &before_failure,
             ),
             caller(&Allow),

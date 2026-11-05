@@ -1820,3 +1820,71 @@ fn control_oversized_frame_is_refused_in_band_and_keeps_edits() {
     assert_eq!(code, 0, "{stderr}");
     assert_eq!(info(&project)["tracks"], 3);
 }
+
+#[test]
+fn control_save_failure_is_receipted_and_retry_needs_fresh_key() {
+    let dir = tempfile::tempdir().unwrap();
+    let project = dir.path().join("save-failure.vibecut");
+    new_project(&project);
+    let metadata_path = project.with_extension("vibecut.meta.json");
+    fs::remove_file(&metadata_path).unwrap();
+    fs::create_dir(&metadata_path).unwrap();
+
+    let mut control = ControlSession::start(&project, &[]);
+    let inspect = control.send(control_request("r0", "inspect", json!({}), None, None));
+    let rev0 = inspect["rev_after"].as_str().unwrap().to_owned();
+    let add = control.send(control_request(
+        "r1",
+        "timeline.add_track",
+        json!({"name":"Published before metadata failure","kind":"video"}),
+        Some(&rev0),
+        Some("add"),
+    ));
+    assert_eq!(add["exit_code"], 0);
+    let rev1 = add["rev_after"].as_str().unwrap().to_owned();
+
+    let save_request = control_request(
+        "save-fail",
+        "project.save",
+        json!({}),
+        Some(&rev1),
+        Some("save-fail"),
+    );
+    let failed = control.send(save_request.clone());
+    assert_eq!(response_error(&failed), "failed");
+    assert_eq!(failed["exit_code"], 7);
+    // Project bytes publish before the metadata directory refuses the sidecar.
+    let published = project::decode(&fs::read(&project).unwrap()).unwrap();
+    assert_eq!(published.project.data().scene().timeline.track_count(), 2);
+
+    let replay = control.send(save_request);
+    assert_eq!(response_error(&replay), "failed");
+    assert_eq!(replay["exit_code"], 7);
+    assert_eq!(replay["rev_after"], failed["rev_after"]);
+
+    let conflict = control.send(control_request(
+        "conflict",
+        "timeline.add_track",
+        json!({"name":"Conflicting key","kind":"video"}),
+        Some(&rev1),
+        Some("save-fail"),
+    ));
+    assert_eq!(response_error(&conflict), "idempotency_conflict");
+    assert_eq!(conflict["exit_code"], 5);
+
+    fs::remove_dir(&metadata_path).unwrap();
+    let retry = control.send(control_request(
+        "save-retry",
+        "project.save",
+        json!({}),
+        Some(&rev1),
+        Some("save-fresh"),
+    ));
+    assert_eq!(retry["exit_code"], 0);
+    assert_eq!(retry["value"]["value"]["kind"], "edit");
+    assert_ne!(retry["rev_after"], rev1);
+
+    let (code, stderr) = control.finish();
+    assert_eq!(code, 0, "{stderr}");
+    assert_eq!(info(&project)["tracks"], 2);
+}

@@ -695,8 +695,9 @@ impl Session {
     /// envelope, policy, revision and receipt rules as ordinary effects. The
     /// callback performs only project/metadata file publication; the engine owns
     /// admission and the receipt, so replay, conflicts, ID bounds and capacity do
-    /// not vary by command. A publication failure returns an unreceipted error so
-    /// the composition root keeps its dirty state and may retry the same key.
+    /// not vary by command. Once execution starts, success and typed execution
+    /// errors are both receipted; the composition root keeps its dirty state on
+    /// failure and a retry that must execute again uses a fresh key.
     pub fn control_lifecycle_save(
         &mut self,
         request: Request,
@@ -780,9 +781,23 @@ impl Session {
         let before = self.revision();
         let mut metadata = self.metadata().clone();
         metadata.touch();
-        publish(self.project(), &metadata)?;
-        self.restore_metadata(metadata)?;
-        self.saved()?;
+        let outcome = match publish(self.project(), &metadata) {
+            Ok(()) => match self.restore_metadata(metadata) {
+                Ok(()) => self.saved(),
+                Err(error) => Err(error),
+            },
+            Err(error) => Err(error),
+        };
+        let value = match outcome {
+            Ok(()) => ResponseValue::Result(ControlResult::Edit {
+                outcome: Outcome {
+                    changed: false,
+                    created: Vec::new(),
+                    placements: Vec::new(),
+                },
+            }),
+            Err(error) => ResponseValue::Error(ErrorCode::from_error(&error)),
+        };
         let response = Response {
             api_version: API_VERSION,
             registry_hash: registry_hash().into(),
@@ -790,13 +805,7 @@ impl Session {
             request_id: request.request_id.clone(),
             rev_before: before,
             rev_after: self.revision(),
-            value: ResponseValue::Result(ControlResult::Edit {
-                outcome: Outcome {
-                    changed: false,
-                    created: Vec::new(),
-                    placements: Vec::new(),
-                },
-            }),
+            value,
         };
         self.store_receipt(key, fingerprint, &response)?;
         self.push_control_event(&request.request_id, &response);
