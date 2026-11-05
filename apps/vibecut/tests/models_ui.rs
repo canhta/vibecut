@@ -458,6 +458,30 @@ fn disk_full_is_reported_before_any_bytes_are_written() {
 }
 
 #[test]
+fn dropping_the_manager_releases_the_cache_before_returning() {
+    let dir = tempfile::tempdir().unwrap();
+    let models = (0..128)
+        .map(|index| model(&format!("fixture-check-{index}"), "MIT", &[1]))
+        .collect();
+    let manager = manager(
+        dir.path(),
+        models,
+        Arc::new(Http::default()),
+        Arc::new(Io {
+            available: u64::MAX,
+        }),
+    );
+    // Closing/replacing the editor must finish its checker before another
+    // model owner can open the same cache; no timing allowance after Drop.
+    drop(manager);
+    let reopened = ArtifactCache::open(dir.path(), ByteBudget::new(4 << 20).unwrap(), 16);
+    assert!(
+        reopened.is_ok(),
+        "the checker must release its cache lock on drop"
+    );
+}
+
+#[test]
 fn editor_header_opens_the_manager_without_a_transfer() {
     let dir = tempfile::tempdir().unwrap();
     let data = vec![8u8; 32 * 1024];

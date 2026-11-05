@@ -373,7 +373,8 @@ total and per-file size/SHA-256, install state and the current job stage/progres
 Only MIT, Apache-2.0 and BSD weights can carry the Suggested default badge; every
 other licence shows its restriction and needs the explicit review checkbox before
 Download is enabled. A fresh manager hashes installed bundles on a background
-check; opening, selecting a model, accepting a licence or starting transcription
+check; dropping the manager cancels and joins that checker before releasing its
+cache ownership. Opening, selecting a model, accepting a licence or starting transcription
 never starts a transfer. The affirmative Download click is the only place a
 `DownloadConsent` is granted; closing while a transfer is active is refused, and
 Cancel leaves the engine checkpoint available for Resume.

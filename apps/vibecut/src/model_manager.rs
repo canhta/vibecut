@@ -97,6 +97,7 @@ pub struct ModelManager {
     checking: bool,
     check_rx: Option<Receiver<std::result::Result<CheckOutcome, EditError>>>,
     check_cancel: Arc<AtomicBool>,
+    check_worker: Option<std::thread::JoinHandle<()>>,
     transfers: Arc<ModelTransfers>,
     runner: JobRunner,
     job: Option<Download>,
@@ -112,6 +113,9 @@ pub(crate) struct ModelUi {
 impl Drop for ModelManager {
     fn drop(&mut self) {
         self.check_cancel.store(true, Ordering::Release);
+        if let Some(worker) = self.check_worker.take() {
+            let _ = worker.join();
+        }
     }
 }
 impl ModelManager {
@@ -168,6 +172,7 @@ impl ModelManager {
             checking: false,
             check_rx: None,
             check_cancel,
+            check_worker: None,
             transfers: Arc::new(transfers),
             runner,
             job: None,
@@ -190,7 +195,7 @@ impl ModelManager {
         let transfers = self.transfers.clone();
         let cancel = self.check_cancel.clone();
         self.checking = true;
-        std::thread::Builder::new()
+        let worker = std::thread::Builder::new()
             .name("vibecut-model-check".into())
             .spawn(move || {
                 let hooks = CheckHooks(cancel.clone());
@@ -217,6 +222,7 @@ impl ModelManager {
                 let _ = tx.send(outcome);
             })
             .map_err(Error::Io)?;
+        self.check_worker = Some(worker);
         self.check_rx = Some(rx);
         Ok(())
     }
