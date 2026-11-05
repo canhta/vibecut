@@ -172,6 +172,12 @@ pub enum ControlResult {
     Providers {
         entries: Vec<ProviderView>,
     },
+    Fonts {
+        entries: Vec<crate::fonts::FontEntry>,
+    },
+    Font {
+        font: crate::fonts::FontLoad,
+    },
     JobAccepted {
         job: JobId,
         revision: Revision,
@@ -211,6 +217,8 @@ impl std::fmt::Debug for ControlResult {
             Self::Inspection { .. } => "inspection",
             Self::Catalog { .. } => "catalog",
             Self::Providers { .. } => "providers",
+            Self::Fonts { .. } => "fonts",
+            Self::Font { .. } => "font",
             Self::JobAccepted { .. } => "job_accepted",
             Self::Job { .. } => "job",
             Self::Snapshot { .. } => "snapshot",
@@ -934,6 +942,27 @@ impl Session {
                     .map(ProviderView::from)
                     .collect(),
             }),
+            Command::FontsList { query } => Ok(ControlResult::Fonts {
+                entries: self
+                    .font_store()?
+                    .list(query.as_ref().map(captions::NfcText::as_str))?,
+            }),
+            Command::FontsLoad { family } => Ok(ControlResult::Font {
+                font: self.font_store()?.load(family.as_str())?,
+            }),
+            Command::FontsDownload {
+                family,
+                accept_license,
+            } => {
+                let (job, _) =
+                    self.font_store()?
+                        .submit_download(runner, family.as_str(), accept_license)?;
+                Ok(ControlResult::JobAccepted {
+                    job,
+                    revision: self.revision(),
+                    paths: Vec::new(),
+                })
+            }
             Command::JobStatus { job } => {
                 let mut snapshot =
                     JobView::from(runner.snapshot(job).ok_or(EditError::JobNotRetained)?);

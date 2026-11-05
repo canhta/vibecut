@@ -67,10 +67,33 @@ pub enum MaskShape {
     Heart,
     Diamond,
     Star,
-    Text { content: NfcText, font_size: f32 },
-    Path { path: MaskPath },
+    /// Text coverage; the typography fields mean what they do on `TextParams`.
+    Text {
+        content: NfcText,
+        font_size: f32,
+        font: NfcText,
+        weight: u16,
+        italic: bool,
+        letter_spacing: f32,
+        line_height: f32,
+    },
+    Path {
+        path: MaskPath,
+    },
 }
 impl MaskShape {
+    /// Text coverage in the default typography (regular Inter, natural spacing).
+    pub fn text(content: impl Into<NfcText>, font_size: f32) -> Self {
+        Self::Text {
+            content: content.into(),
+            font_size,
+            font: "Inter".into(),
+            weight: crate::typography::DEFAULT_WEIGHT,
+            italic: false,
+            letter_spacing: 0.0,
+            line_height: 0.0,
+        }
+    }
     pub fn name(&self) -> &'static str {
         match self {
             Self::Split => "split",
@@ -138,10 +161,23 @@ impl Mask {
         self.path("feather")?;
         self.validate_scalars()?;
         match &self.shape {
-            MaskShape::Text { content, font_size }
-                if content.as_str().len() > 4096
-                    || !font_size.is_finite()
-                    || !(1.0..=4096.0).contains(font_size) =>
+            MaskShape::Text {
+                content,
+                font_size,
+                font,
+                weight,
+                letter_spacing,
+                line_height,
+                ..
+            } if content.as_str().len() > 4096
+                || !font_size.is_finite()
+                || !(1.0..=4096.0).contains(font_size)
+                || !crate::typography::valid(
+                    font.as_str(),
+                    *weight,
+                    *letter_spacing,
+                    *line_height,
+                ) =>
             {
                 return Err(Error::Invalid("text mask"));
             }

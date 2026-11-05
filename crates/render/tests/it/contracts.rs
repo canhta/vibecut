@@ -304,6 +304,101 @@ fn text_item_font_background_and_position_reach_the_compositor() {
 }
 
 #[test]
+fn text_typography_reaches_the_compositor_and_a_newly_loaded_family_invalidates_cached_text() {
+    let mut data = solid_project(1, 320, 180, [0, 0, 0, 255]).into_data();
+    let mut text = project::TextParams::new(
+        "Vibe
+Cut",
+    );
+    // Two lines must fit the 45 px item box so line height is visible.
+    text.font_size = 12.0;
+    data.scene_mut().timeline.insert_track(project::Track {
+        id: project::TrackId(2),
+        name: "Text".into(),
+        kind: project::TrackKind::Text,
+        muted: false,
+        hidden: false,
+        locked: false,
+        items: vec![project::Item {
+            blend_mode: Default::default(),
+            masks: Vec::new(),
+            effects: Vec::new(),
+            animations: Default::default(),
+            id: project::ItemId(1),
+            source_asset: None,
+            source_range: time::SourceRange::new(Tick::ZERO, tick(1, 1)).unwrap(),
+            start: Tick::ZERO,
+            content: project::ItemParams::Text(text),
+        }],
+    });
+    let baseline = project::Project::new(data).unwrap();
+    let hooks = Hooks::default();
+    let render = |edit: &dyn Fn(&mut project::TextParams)| {
+        let mut data = baseline.clone().into_data();
+        let project::ItemParams::Text(text) =
+            &mut data.scene_mut().timeline.overlays[0].items[0].content
+        else {
+            panic!("text item")
+        };
+        edit(text);
+        let project = project::Project::new(data).unwrap();
+        Renderer::new(&project, RenderSettings::from_project(&project))
+            .unwrap()
+            .render_frame(Tick::ZERO, &mut Empty, &hooks)
+            .unwrap()
+    };
+    let plain = render(&|_| {});
+    type Edit<'a> = &'a dyn Fn(&mut project::TextParams);
+    let typography: [(&str, Edit); 5] = [
+        ("bold", &|t| t.weight = 700),
+        ("italic", &|t| t.italic = true),
+        ("letter spacing", &|t| t.letter_spacing = 6.0),
+        ("tight letter spacing", &|t| t.letter_spacing = -2.0),
+        ("line height", &|t| t.line_height = 30.0),
+    ];
+    for (label, edit) in typography {
+        assert_ne!(plain.pixels(), render(edit).pixels(), "{label}");
+    }
+
+    // A family nobody loaded renders exactly like the default family, every time.
+    let missing = |t: &mut project::TextParams| t.font = "Late Sample Family".into();
+    assert_eq!(plain.pixels(), render(&missing).pixels());
+
+    // Loading the family changes what the same project renders; a renderer that cached the
+    // fallback raster does not serve it afterwards.
+    let late = project::Project::new({
+        let mut data = baseline.clone().into_data();
+        let project::ItemParams::Text(text) =
+            &mut data.scene_mut().timeline.overlays[0].items[0].content
+        else {
+            panic!("text item")
+        };
+        text.font = "Late Sample Family".into();
+        data
+    })
+    .unwrap();
+    let mut renderer = Renderer::new(&late, RenderSettings::from_project(&late)).unwrap();
+    let before = renderer
+        .render_frame(Tick::ZERO, &mut Empty, &hooks)
+        .unwrap();
+    assert_eq!(plain.pixels(), before.pixels());
+    text::register(text::FontData {
+        family: "Late Sample Family".into(),
+        style: "Regular".into(),
+        weight: 400,
+        italic: false,
+        index: 0,
+        bytes: include_bytes!("../../../../assets/fonts/NotoSerif-Regular.ttf").to_vec(),
+    })
+    .unwrap();
+    let after = renderer
+        .render_frame(Tick::ZERO, &mut Empty, &hooks)
+        .unwrap();
+    assert_ne!(before.pixels(), after.pixels());
+    assert_eq!(after.pixels(), render(&missing).pixels());
+}
+
+#[test]
 fn preview_audio_mix_obeys_item_gain_and_mute() {
     struct ConstantAudio;
     impl SourceProvider for ConstantAudio {

@@ -298,8 +298,18 @@ impl Default for TextBackground {
 #[serde(deny_unknown_fields)]
 pub struct TextParams {
     pub content: NfcText,
+    /// Font family name, resolved by the text crate; an unavailable family renders in the
+    /// bundled default.
     pub font: NfcText,
     pub font_size: f32,
+    /// CSS weight 100..=900 (400 regular, 700 bold).
+    pub weight: u16,
+    pub italic: bool,
+    /// Extra advance after every grapheme cluster, in project canvas pixels (scaled with
+    /// the output like the font size); negative tightens.
+    pub letter_spacing: f32,
+    /// Baseline distance in project canvas pixels; zero uses the font's natural height.
+    pub line_height: f32,
     pub color: Color,
     pub background: Option<TextBackground>,
     pub position: TextPosition,
@@ -316,6 +326,10 @@ impl TextParams {
             content: content.into(),
             font: "Inter".into(),
             font_size: 48.0,
+            weight: crate::typography::DEFAULT_WEIGHT,
+            italic: false,
+            letter_spacing: 0.0,
+            line_height: 0.0,
             color: Color([255; 4]),
             background: None,
             position: TextPosition::default(),
@@ -783,9 +797,12 @@ fn validate(data: &ProjectData) -> Result<()> {
                 ItemParams::Text(p) => {
                     text(&p.content)?;
                     text(&p.font)?;
-                    if p.font.as_str().trim().is_empty()
-                        || p.font.as_str().len() > 256
-                        || !p.font_size.is_finite()
+                    if !crate::typography::valid(
+                        p.font.as_str(),
+                        p.weight,
+                        p.letter_spacing,
+                        p.line_height,
+                    ) || !p.font_size.is_finite()
                         || !(1.0..=4096.0).contains(&p.font_size)
                         || !p.position.x.is_finite()
                         || !p.position.y.is_finite()

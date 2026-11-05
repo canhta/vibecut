@@ -7,15 +7,20 @@ Unicode shaping, line layout and CPU rasterization for overlay titles and burn-i
 `layout(text, &LayoutOptions) -> Result<Layout, TextError>` normalizes the input to NFC, shapes
 it with the bundled faces, breaks lines, and returns positioned glyphs and line boxes.
 `LayoutOptions` carries the family, style, pixel size, maximum wrap width, alignment, baseline
-distance, line limit, an ordered fallback-family chain and a line-breaking mode. All layout
-coordinates are pixels with y down; the origin is the top-left of the text box.
+distance, line limit, an ordered fallback-family chain, a line-breaking mode and letter
+spacing. Letter spacing adds its pixel value after every grapheme cluster, including a line's
+last one (negative values tighten), and counts toward wrapping and line width; it is finite and
+at most 4096 px in magnitude. `style_name(weight, italic)` turns a CSS weight 100..=900 and an
+italic flag into the style vocabulary `resolve` understands. All layout coordinates are pixels
+with y down; the origin is the top-left of the text box.
 
 `render(&Layout, Canvas, origin, &Paint) -> Result<Image, RenderError>` rasterizes the glyphs
 into a premultiplied RGBA8 image with a fill colour, an optional outer/centre/inner outline and
 an optional rounded background box. Rendering uses no GPU, clock, network or filesystem input.
 
-Public entry points: `layout`, `render`, `resolve`, `fallback_chain`, `fallback_for`, `face`,
-`families`, `Layout`, `Line`, `Glyph`, `LayoutOptions`, `Align`, `LineBreak`, `TextError`,
+Public entry points: `layout`, `render`, `resolve`, `style_name`, `fallback_chain`,
+`fallback_for`, `face`, `families`, `register`, `generation`, `is_available`, `FontData`,
+`FontError`, `Layout`, `Line`, `Glyph`, `LayoutOptions`, `Align`, `LineBreak`, `TextError`,
 `Paint`, `Outline`, `StrokeKind`, `Rectangle`, `Canvas`, `Image`, `RenderError` and `Color`.
 Mask and path internals are private; callers paint through `render`.
 `coverage_signed_distance(width, height, coverage, cancelled)` shares the outline
@@ -35,6 +40,17 @@ supplies `LayoutOptions::fallbacks` (family names in order) and `LayoutOptions::
 profile data and font assets, not layout code. An empty chain uses the generic bundled order.
 
 ## Fonts
+
+`register(FontData)` adds a font file a catalog read (the catalog supplies family, style, weight
+and italic; nothing is parsed from the name table) so `resolve` and `fallback_chain` find the
+family. Registration is append-only for the process: identical bytes return the existing face,
+a different file under the same family and style is `Conflict`, bundled family names are
+reserved so bundled fallback order never changes, and at most 256 faces, 32 MiB per file and
+256 MiB in total are accepted (registered bytes are retained). Registered faces join only an
+explicit `fallbacks` chain, never the generic bundled order. `generation()` counts registered
+faces; a caller that caches layouts or rasters includes it in its key (render's text cache
+does). Enumeration, downloads and licences of non-bundled fonts belong to
+[engine](../engine/README.md#font-catalog).
 
 | Family | Faces | Source |
 |---|---|---|
@@ -62,6 +78,7 @@ characters stay on the preferred face.
 ## Limits
 
 - Left-to-right text only; bidirectional reordering and vertical layout are excluded.
+- Registered faces are never unloaded within a process.
 - No hyphenation, OpenType feature toggles, variable-font axes, colour emoji or hinting.
 - Input text is capped at 16 MiB; canvases at 64 M pixels (256 MiB of RGBA8); font size at
   4096 px and explicit line height at 16,384 px.
@@ -75,7 +92,8 @@ characters stay on the preferred face.
 
 ## Tests and goldens
 
-`cargo test -p text` covers raster coverage, strokes, metrics, fallback order, wrapping, long
+`cargo test -p text` covers raster coverage, strokes, metrics, fallback order, runtime face
+registration limits and conflicts, letter spacing per cluster, wrapping, long
 unbreakable words, complete-source line coverage, ligature- and kerning-safe per-line shaping
 against isolated spans, mandatory separators, bounded extreme sizes, narrow-wrap scaling,
 alignment, truncation and input validation. Integration tests cover:

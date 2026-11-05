@@ -26,6 +26,7 @@ fn two_line_vietnamese_frame_overlay_is_a_repeatable_golden() {
         max_lines: Some(2),
         fallbacks: &[],
         line_break: text::LineBreak::Unicode,
+        letter_spacing: 0.0,
     };
     let laid_out = layout(LINES, &options).expect("layout");
     assert_eq!(laid_out.lines.len(), 2, "{:?}", laid_out.lines);

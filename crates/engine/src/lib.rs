@@ -7,6 +7,7 @@ pub mod clip_suggest;
 mod commands;
 pub mod control;
 mod control_preview;
+pub mod fonts;
 pub mod jobs;
 pub mod library;
 pub mod models;
@@ -129,6 +130,8 @@ pub enum EditError {
     Ai(#[from] ai::Error),
     #[error("sound library failed: {0}")]
     Sounds(#[from] sounds::Error),
+    #[error("font catalog operation failed")]
+    Font(#[from] fonts::FontError),
     #[error("local model {0} is not installed; run `vibecut-cli model download {0}`")]
     ModelMissing(&'static str),
     #[error("local Gipformer runner is not installed")]

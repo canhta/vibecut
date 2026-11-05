@@ -235,7 +235,9 @@ fn seed() -> Session {
         note: "Mark".into(),
         color: Color([255, 255, 0, 255]),
     });
-    Session::new(Project::new(data).unwrap(), 10).unwrap()
+    let mut session = Session::new(Project::new(data).unwrap(), 10).unwrap();
+    session.set_fonts(crate::font_catalog::example_store());
+    session
 }
 fn replace_paths(v: &mut Value, root: &std::path::Path) {
     match v {
@@ -959,13 +961,13 @@ fn deterministic_catalog_and_schema_document_receipts() {
             .len()
     );
     assert!(first.len() < control::MAX_RESPONSE_BYTES);
-    assert_eq!(
-        registry()
-            .iter()
-            .filter(|s| s.effect == Effect::JobControl)
-            .count(),
-        2
-    );
+    let mut job_control: Vec<_> = registry()
+        .iter()
+        .filter(|s| s.effect == Effect::JobControl)
+        .map(|s| s.id)
+        .collect();
+    job_control.sort_unstable();
+    assert_eq!(job_control, ["fonts.download", "job_cancel", "preview"]);
 }
 
 #[test]
@@ -1738,4 +1740,105 @@ fn lifecycle_save_uses_receipts_and_retries_after_publication_failure() {
         |_, _| panic!("invalid request must not publish"),
     );
     assert!(matches!(invalid, Err(EditError::Limit)));
+}
+
+#[test]
+fn font_commands_return_typed_results_and_refuse_without_a_store_or_acceptance() {
+    let mut s = seed();
+    let mut r = runner();
+    let revision = s.revision();
+    let ControlResult::Fonts { entries } = ok(run(
+        &mut s,
+        &mut r,
+        "fonts.list",
+        json!({"query":"lob"}),
+        "a",
+    )) else {
+        panic!("fonts.list result");
+    };
+    assert_eq!(entries.len(), 1);
+    assert_eq!(entries[0].family, "Lobster");
+    assert_eq!(entries[0].state, engine::fonts::FontState::NotDownloaded);
+    // A null or omitted query lists every family.
+    for params in [json!({}), json!({"query":null})] {
+        let ControlResult::Fonts { entries } = ok(run(&mut s, &mut r, "fonts.list", params, "b"))
+        else {
+            panic!("fonts.list result");
+        };
+        assert!(entries.iter().any(|e| e.family == "Inter"));
+    }
+    let ControlResult::Font { font } = ok(run(
+        &mut s,
+        &mut r,
+        "fonts.load",
+        json!({"family":"Lobster"}),
+        "c",
+    )) else {
+        panic!("fonts.load result");
+    };
+    assert_eq!(font.state, engine::fonts::FontLoadState::NotDownloaded);
+    assert_eq!(font.effective_family, "Inter");
+
+    // Download needs the explicit acknowledgement and a catalog family.
+    error(
+        run(
+            &mut s,
+            &mut r,
+            "fonts.download",
+            json!({"family":"Lobster","accept_license":false}),
+            "d",
+        ),
+        ErrorCode::Permission,
+    );
+    error(
+        run(
+            &mut s,
+            &mut r,
+            "fonts.download",
+            json!({"family":"Inter","accept_license":true}),
+            "e",
+        ),
+        ErrorCode::Refused,
+    );
+    let ControlResult::JobAccepted { job, paths, .. } = ok(run(
+        &mut s,
+        &mut r,
+        "fonts.download",
+        json!({"family":"Lobster","accept_license":true}),
+        "f",
+    )) else {
+        panic!("fonts.download result");
+    };
+    assert!(paths.is_empty());
+    finish(&mut r, job);
+    assert_eq!(r.snapshot(job).unwrap().state, JobState::Completed);
+    let ControlResult::Font { font } = ok(run(
+        &mut s,
+        &mut r,
+        "fonts.load",
+        json!({"family":"lobster"}),
+        "g",
+    )) else {
+        panic!("fonts.load result");
+    };
+    assert_eq!(font.state, engine::fonts::FontLoadState::Loaded);
+
+    // A session without a store refuses every font command; none is a project edit.
+    let mut bare = session();
+    for (id, params) in [
+        ("fonts.list", json!({})),
+        ("fonts.load", json!({"family":"Inter"})),
+        (
+            "fonts.download",
+            json!({"family":"Lobster","accept_license":true}),
+        ),
+    ] {
+        error(run(&mut bare, &mut r, id, params, "h"), ErrorCode::Refused);
+    }
+    assert_eq!(
+        s.revision(),
+        revision,
+        "font commands are not project edits"
+    );
+    assert!(!s.can_undo());
 }

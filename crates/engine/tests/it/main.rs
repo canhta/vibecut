@@ -7,6 +7,7 @@ mod commands;
 mod control;
 mod effects;
 mod export_jobs;
+mod font_catalog;
 mod jobs;
 mod keyframes;
 mod library;

@@ -184,7 +184,7 @@ fn header<'a>(response: &'a HttpStreamResponse, name: &str) -> Result<Option<&'a
     }
     Ok(value)
 }
-fn response(
+pub(crate) fn response(
     http: &dyn DownloadTransport,
     url: &str,
     headers: &[(String, String)],

@@ -26,6 +26,7 @@ pub enum ArtifactKind {
     ModelBundle,
     ShotAnalysis,
     SoundAudio,
+    FontDownload,
 }
 /// Canonical semantic inputs, in addition to source content and adapter identity.
 /// Hash normalized owner serialization, never Debug/display strings or file paths.
@@ -63,6 +64,7 @@ impl CacheKey {
             ArtifactKind::ModelBundle => b"model-bundle",
             ArtifactKind::ShotAnalysis => b"shot-analysis",
             ArtifactKind::SoundAudio => b"sound-audio",
+            ArtifactKind::FontDownload => b"font-download",
         };
         let mut hash = blake3::Hasher::new();
         hash.update(b"vibecut-artifact-v1");

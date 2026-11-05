@@ -20,12 +20,19 @@ Build with `cargo build -p vibecut-cli` through the [build wrapper](../agents/or
 | `vibecut-cli providers` | List transcription/translation/clip providers and capabilities offline |
 | `vibecut-cli model list\|info\|download` | Inspect or install pinned local model files |
 | `vibecut-cli sounds search\|save\|unsave\|add` | Search Freesound with a user token or local saved sounds; save, unsave and add a cached sound |
+| `vibecut-cli fonts list\|resolve\|download` | Search bundled, system and catalog fonts, resolve a family, or download a catalog font |
 | `vibecut-cli commands` | Print the generated command registry |
 | `vibecut-cli schema` | Print the generated control request/response/event schema |
 
 Add `--json` to any command for a machine-readable result on stdout. Without it, results are human-readable on stdout. Progress and diagnostics are always on stderr, so stdout stays a single result. Errors use exit codes below and, with `--json`, one JSON object on the last stderr line.
 
 `export` options: `--aspect 9:16` renders 1080×1920 and `--aspect 16:9` renders 1920×1080; without it the project canvas is used. `--overwrite` replaces an existing output. `--allow-degraded` is the explicit consent described below.
+
+## Fonts
+
+`vibecut-cli fonts list [--query <text>]` lists families whose name contains the text, prefix matches first and then alphabetical: bundled families, OS-installed families and the curated downloadable catalog, one entry per name (bundled over a cached download over a system install over a download not cached yet). Each entry carries `origin` (`bundled`, `system`, `google`), `state` (`available` or `not_downloaded`), `styles`, and for bundled and catalog families the `license` id and `source` URL. `fonts resolve <family>` loads a family the way a render would and prints `state` (`loaded`, `not_downloaded`, `cache_invalid` or `unknown`) and the `effective_family` layout will use; any state other than `loaded` exits 4 and layout falls back to Inter. Neither command uses the network.
+
+`fonts download <family> --accept-license` is the only network action. It prints the family, licence id, source URL and byte count to stderr and refuses with exit 5 unless the flag acknowledges them. Files are fetched over HTTPS, verified against their pinned size and SHA-256, stored with a licence file and a per-file attribution record under the per-user cache `<cache>/VibeCut/fonts`, and published as one directory; a failed or interrupted download leaves nothing behind. A cached family whose files no longer match their pins reports `cache_invalid` until it is downloaded again. The same operations are the `fonts.list`, `fonts.load` and `fonts.download` entries of the command registry in a `control` session.
 
 ## Subtitles
 

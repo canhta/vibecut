@@ -1,0 +1,8 @@
+asset: VibeCutFixtureSans-Regular.ttf
+title: VibeCut Fixture Sans Regular (test subset)
+author: The Inter Project Authors (Rasmus Andersson et al.)
+source: https://github.com/rsms/inter
+license: OFL-1.1
+license-file: assets/fonts/OFL-Inter.txt
+added: p1-parity-28
+notes: Test-only subset of assets/fonts/Inter-Regular.ttf (SHA-256 40d692fce188e4471e2b3cba937be967878f631ad3ebbbdcd587687c7ebe0c82) renamed so it is not a bundled family. Built with fontTools 4.65.0: Subsetter with text ' ABHeloVWabcdr0123456789', layout_features=[], name_IDs=[1,2,3,4,6], hinting=False, notdef_outline=True; every name record replaced by 'VibeCut Fixture Sans' (IDs 1 and 4), 'Regular' (2), 'VibeCutFixtureSans-Regular' (3 and 6); head created/modified fixed to 3786825600. Output SHA-256 5023b90daa33f9e021bad69ac725f87f3a710a45d62bc0bf967ffaa95e6d3e57. Committed, not regenerated during a build.

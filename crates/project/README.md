@@ -153,9 +153,9 @@ or renderer output claim is made.
 ## Persistence and limits
 
 `encode`/`decode` use one JSON envelope: `format`, `schema_version`, `generator`,
-`project`. Current schema 12 adds the audio `source` (upload or library provenance) to schema 11 audio/video volume and mute plus master controls.
+`project`. Current schema 13 adds text weight, italic, letter spacing and line height (and the same fields on text masks) to schema 12, which added the audio `source` (upload or library provenance) to schema 11 audio/video volume and mute plus master controls.
 ProjectId is stored as a canonical decimal string, preserving
-all u64 identity bits for control clients; other IDs remain numeric. Schemas 1-11
+all u64 identity bits for control clients; other IDs remain numeric. Schemas 1-12
 are refused rather than migrated or silently defaulted. Older schemas return `TooOld`, newer schemas `TooNew`; there are no
 migration or compatibility paths. Unknown current-schema project/envelope fields
 are refused. `WriterLease::save` serializes completely before touching the destination;

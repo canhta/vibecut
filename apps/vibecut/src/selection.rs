@@ -232,6 +232,7 @@ mod tests {
                         color: Color([10, 20, 30, 255]),
                         background: None,
                         position: project::TextPosition::default(),
+                        ..TextParams::default()
                     }),
                 })
                 .collect(),

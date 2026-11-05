@@ -52,6 +52,9 @@ pub struct LayoutOptions<'a> {
     pub fallbacks: &'a [&'a str],
     /// Language-profile line-breaking mode.
     pub line_break: LineBreak,
+    /// Extra advance in pixels after every grapheme cluster, including the last one of a
+    /// line; negative values tighten. Finite and at most 4096 pixels in magnitude.
+    pub letter_spacing: f32,
 }
 
 impl Default for LayoutOptions<'_> {
@@ -66,6 +69,7 @@ impl Default for LayoutOptions<'_> {
             max_lines: None,
             fallbacks: &[],
             line_break: LineBreak::Unicode,
+            letter_spacing: 0.0,
         }
     }
 }
@@ -131,6 +135,8 @@ pub enum TextError {
     InvalidWidth,
     #[error("line height must be finite, not negative and at most {MAX_LINE_HEIGHT} pixels")]
     InvalidLineHeight,
+    #[error("letter spacing must be finite and at most {MAX_FONT_SIZE} pixels in magnitude")]
+    InvalidLetterSpacing,
     #[error("maximum lines must be greater than zero")]
     InvalidMaxLines,
     #[error("text exceeds the supported length of {limit} bytes")]
@@ -173,6 +179,9 @@ pub fn layout(text: &str, options: &LayoutOptions<'_>) -> Result<Layout, TextErr
         && options.line_height <= MAX_LINE_HEIGHT)
     {
         return Err(TextError::InvalidLineHeight);
+    }
+    if !(options.letter_spacing.is_finite() && options.letter_spacing.abs() <= MAX_FONT_SIZE) {
+        return Err(TextError::InvalidLetterSpacing);
     }
     if options.max_lines == Some(0) {
         return Err(TextError::InvalidMaxLines);
@@ -268,6 +277,7 @@ fn append_paragraph(
         base,
         context.primary,
         options.size,
+        options.letter_spacing,
         context.fallbacks,
         false,
     )?;
@@ -276,6 +286,7 @@ fn append_paragraph(
         base,
         context.primary,
         options.size,
+        options.letter_spacing,
         context.fallbacks,
         true,
     )?;
@@ -392,6 +403,7 @@ fn append_paragraph(
                 line_base,
                 context.primary,
                 options.size,
+                options.letter_spacing,
                 context.fallbacks,
                 false,
             )?;
@@ -491,6 +503,7 @@ fn shape_paragraph(
     base: usize,
     primary: Resolved,
     size: f32,
+    spacing: f32,
     fallbacks: &[fonts::FaceId],
     nominal: bool,
 ) -> Result<Vec<ShapedGlyph>, TextError> {
@@ -525,6 +538,16 @@ fn shape_paragraph(
             &mut out,
         )?;
         run_start = run_end;
+    }
+    if spacing != 0.0 {
+        // One spacing per cluster: it follows the cluster's last glyph.
+        let mut later = None;
+        for glyph in out.iter_mut().rev() {
+            if later != Some(glyph.cluster) {
+                glyph.advance += spacing;
+            }
+            later = Some(glyph.cluster);
+        }
     }
     Ok(out)
 }

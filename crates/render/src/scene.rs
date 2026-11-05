@@ -153,10 +153,33 @@ struct TextKey {
     height: u32,
     font: String,
     style: String,
+    letter_spacing: u32,
+    line_height: u32,
+    /// Registered-font generation: a newly loaded family changes what a name resolves to.
+    fonts: usize,
     outline: Option<(u32, [u8; 4])>,
     background: Option<(u32, u32, [u8; 4])>,
     position: CaptionPosition,
     max_lines: Option<usize>,
+}
+/// Family, style and spacing that select and space a text raster.
+#[derive(Clone, Copy)]
+struct TextFace<'a> {
+    family: &'a str,
+    style: &'a str,
+    /// Project canvas pixels (caption pixels for captions), scaled with the font size.
+    letter_spacing: f32,
+    line_height: f32,
+}
+impl Default for TextFace<'_> {
+    fn default() -> Self {
+        Self {
+            family: "Inter",
+            style: "Regular",
+            letter_spacing: 0.0,
+            line_height: 0.0,
+        }
+    }
 }
 struct TextEntry {
     image: Arc<Image>,
@@ -439,13 +462,19 @@ impl<'a> Renderer<'a> {
                         .background
                         .as_ref()
                         .map(|b| (b.padding * scale, b.radius * scale, b.color.0));
+                    let style = text::style_name(p.weight, p.italic);
                     let image = self.text(
                         p.content.as_str(),
                         p.font_size,
                         p.color.0,
                         placement,
                         None,
-                        p.font.as_str(),
+                        TextFace {
+                            family: p.font.as_str(),
+                            style: &style,
+                            letter_spacing: p.letter_spacing,
+                            line_height: p.line_height,
+                        },
                         background,
                         hooks,
                     )?;
@@ -507,7 +536,11 @@ impl<'a> Renderer<'a> {
                                 style.color,
                                 placement,
                                 Some(&style),
-                                style.font.as_str(),
+                                TextFace {
+                                    family: style.font.as_str(),
+                                    style: style.font_style.as_str(),
+                                    ..Default::default()
+                                },
                                 background,
                                 hooks,
                             )?;
@@ -545,9 +578,11 @@ impl<'a> Renderer<'a> {
                         local,
                         placement,
                         &project.data().canvas,
-                        |content, size, geometry| {
+                        |mask, size, geometry| {
+                            let canvas_height = project.data().canvas.height as f32;
+                            let face_style = text::style_name(mask.weight, mask.italic);
                             let style = CaptionStyle {
-                                font_style: "Regular".into(),
+                                font_style: face_style.clone(),
                                 outline: None,
                                 background: None,
                                 position: CaptionPosition::Middle,
@@ -555,8 +590,8 @@ impl<'a> Renderer<'a> {
                                 ..Default::default()
                             };
                             self.text(
-                                content,
-                                size * 1080.0 / project.data().canvas.height as f32,
+                                mask.content,
+                                size * 1080.0 / canvas_height,
                                 [255; 4],
                                 Placement {
                                     destination: Rect {
@@ -568,7 +603,12 @@ impl<'a> Renderer<'a> {
                                     ..Default::default()
                                 },
                                 Some(&style),
-                                "Inter",
+                                TextFace {
+                                    family: mask.font,
+                                    style: &face_style,
+                                    letter_spacing: mask.letter_spacing * 1080.0 / canvas_height,
+                                    line_height: mask.line_height * 1080.0 / canvas_height,
+                                },
                                 None,
                                 hooks,
                             )
@@ -657,10 +697,11 @@ impl<'a> Renderer<'a> {
         fill: [u8; 4],
         placement: Placement,
         caption: Option<&CaptionStyle>,
-        font: &str,
+        face: TextFace<'_>,
         background: Option<(f32, f32, [u8; 4])>,
         hooks: &dyn ExecutionHooks,
     ) -> Result<Arc<Image>> {
+        let font = face.family;
         if value.len() > 16384 {
             return Err(Error::Invalid("render text byte limit"));
         }
@@ -676,7 +717,7 @@ impl<'a> Renderer<'a> {
             self.settings.width as f32 / self.project.data().canvas.width as f32
         };
         let size = size * scale;
-        let font_style = caption.map_or("Regular", |s| s.font_style.as_str());
+        let font_style = caption.map_or(face.style, |s| s.font_style.as_str());
         let key_bytes = (value.len() + font.len() + font_style.len()) as u64 + 512;
         let key_lease = match hooks.reserve(MemoryKind::Compositor, key_bytes) {
             Err(Error::Budget { .. }) if !self.text_cache.is_empty() => {
@@ -693,6 +734,9 @@ impl<'a> Renderer<'a> {
             height: h,
             font: font.into(),
             style: font_style.into(),
+            letter_spacing: (face.letter_spacing * scale).to_bits(),
+            line_height: (face.line_height * scale).to_bits(),
+            fonts: text::generation(),
             outline: caption
                 .and_then(|s| s.outline.as_ref())
                 .map(|o| ((o.width * scale).to_bits(), o.color)),
@@ -791,6 +835,8 @@ fn raster_text(key: &TextKey, hooks: &dyn ExecutionHooks) -> Result<Image> {
     let mut options = text::LayoutOptions {
         family: &key.font,
         style: &key.style,
+        letter_spacing: f32::from_bits(key.letter_spacing),
+        line_height: f32::from_bits(key.line_height),
         size,
         max_width: w as f32 - pad * 2.0,
         align: text::Align::Center,

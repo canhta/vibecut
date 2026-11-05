@@ -27,10 +27,15 @@ pub fn read_metadata(path: &std::path::Path) -> Metadata {
 mod model;
 pub use metadata::{METADATA_VERSION, Metadata, Thumbnail, ViewState, path as metadata_path};
 mod persistence;
+mod typography;
 mod writer;
 pub use atomic::atomic_write;
 pub use model::*;
 pub use persistence::{FORMAT_ID, Loaded, SCHEMA_VERSION, decode, encode, load};
+pub use typography::{
+    DEFAULT_WEIGHT, MAX_LETTER_SPACING, MAX_LINE_HEIGHT, valid_letter_spacing, valid_line_height,
+    valid_weight,
+};
 pub use writer::{SaveReceipt, WriterLease};
 
 #[derive(Debug, thiserror::Error)]

@@ -71,7 +71,18 @@ fn source(path: PathBuf) -> SourceAsset {
 fn item(id: u64, start: i64) -> Item {
     Item {
         blend_mode: Default::default(),
-        masks: Vec::new(),
+        masks: vec![Mask::new(
+            "glyphs",
+            MaskShape::Text {
+                content: "Mask".into(),
+                font_size: 20.0,
+                font: "Lobster".into(),
+                weight: 600,
+                italic: true,
+                letter_spacing: 2.0,
+                line_height: 30.0,
+            },
+        )],
         effects: Vec::new(),
         animations: Default::default(),
         id: ItemId(id),
@@ -80,7 +91,12 @@ fn item(id: u64, start: i64) -> Item {
         start: Tick(start),
         content: ItemParams::Text(TextParams {
             content: "Tiếng Việt".into(),
+            font: "Be Vietnam Pro".into(),
             font_size: 32.0,
+            weight: 700,
+            italic: true,
+            letter_spacing: -1.5,
+            line_height: 52.0,
             color: Color([255; 4]),
             ..Default::default()
         }),
@@ -317,18 +333,67 @@ fn model_trust_boundaries() {
         source: Default::default(),
     });
     cases.push(d);
-    let mut d = base.clone();
-    let title = d
-        .scene_mut()
-        .timeline
-        .iter_mut()
-        .flat_map(|track| &mut track.items)
-        .find(|item| matches!(item.content, ItemParams::Text(_)))
-        .unwrap();
-    if let ItemParams::Text(params) = &mut title.content {
-        params.font_size = f32::INFINITY;
+    type Corrupt = fn(&mut TextParams);
+    let text_style: [Corrupt; 11] = [
+        |p| p.font_size = f32::INFINITY,
+        |p| p.font = "  ".into(),
+        |p| p.weight = 0,
+        |p| p.weight = 901,
+        |p| p.letter_spacing = f32::NAN,
+        |p| p.letter_spacing = project::MAX_LETTER_SPACING + 1.0,
+        |p| p.line_height = -1.0,
+        |p| p.line_height = f32::INFINITY,
+        |p| p.line_height = project::MAX_LINE_HEIGHT + 1.0,
+        |p| p.font = "x".repeat(257).into(),
+        |p| p.letter_spacing = f32::NEG_INFINITY,
+    ];
+    for corrupt in text_style {
+        let mut d = base.clone();
+        let title = d
+            .scene_mut()
+            .timeline
+            .iter_mut()
+            .flat_map(|track| &mut track.items)
+            .find(|item| matches!(item.content, ItemParams::Text(_)))
+            .unwrap();
+        if let ItemParams::Text(params) = &mut title.content {
+            corrupt(params);
+        }
+        cases.push(d);
     }
-    cases.push(d);
+    // Text masks share the same typography limits.
+    type CorruptMask = fn(&mut project::Mask);
+    let text_masks: [CorruptMask; 3] = [
+        |m| {
+            if let project::MaskShape::Text { weight, .. } = &mut m.shape {
+                *weight = 0;
+            }
+        },
+        |m| {
+            if let project::MaskShape::Text { letter_spacing, .. } = &mut m.shape {
+                *letter_spacing = f32::NAN;
+            }
+        },
+        |m| {
+            if let project::MaskShape::Text { font, .. } = &mut m.shape {
+                *font = "".into();
+            }
+        },
+    ];
+    for corrupt in text_masks {
+        let mut d = base.clone();
+        let item = d
+            .scene_mut()
+            .timeline
+            .iter_mut()
+            .flat_map(|track| &mut track.items)
+            .find(|item| matches!(item.content, ItemParams::Text(_)))
+            .unwrap();
+        let mut mask = project::Mask::new("text", project::MaskShape::text("Mask", 24.0));
+        corrupt(&mut mask);
+        item.masks.push(mask);
+        cases.push(d);
+    }
     let mut d = base.clone();
     d.scene_mut().timeline.main.kind = TrackKind::Audio;
     cases.push(d);

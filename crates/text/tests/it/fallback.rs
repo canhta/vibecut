@@ -11,6 +11,7 @@ fn options(family: &'static str) -> LayoutOptions<'static> {
         max_lines: None,
         fallbacks: &[],
         line_break: text::LineBreak::Unicode,
+        letter_spacing: 0.0,
     }
 }
 

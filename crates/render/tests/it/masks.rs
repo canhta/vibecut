@@ -152,13 +152,7 @@ fn hostile_degenerate_budget_and_cancellation_inputs_refuse() {
     m.pts.get_mut(0).unwrap()[0] = f32::NAN;
     assert!(m.coverage(40, 40, &h).is_err());
     for (shape, expected) in [
-        (
-            project::MaskShape::Text {
-                content: " \n".into(),
-                font_size: 12.,
-            },
-            1.,
-        ),
+        (project::MaskShape::text(" \n", 12.), 1.),
         (
             project::MaskShape::Path {
                 path: project::MaskPath {
@@ -194,13 +188,7 @@ fn hostile_degenerate_budget_and_cancellation_inputs_refuse() {
             Image::new(1, 1, [1.; 4], hooks)
         }
     }
-    let mask = project::Mask::new(
-        "glyph",
-        project::MaskShape::Text {
-            content: "Mask".into(),
-            font_size: 4096.,
-        },
-    );
+    let mask = project::Mask::new("glyph", project::MaskShape::text("Mask", 4096.));
     let mut data = masked_scene(40, 40, vec![mask]).into_data();
     data.scene_mut()
         .timeline
@@ -298,10 +286,7 @@ fn builtin_contours_appearance_and_strokes_at_two_resolutions() {
                     "heart" => MaskShape::Heart,
                     "diamond" => MaskShape::Diamond,
                     "star" => MaskShape::Star,
-                    "text" => MaskShape::Text {
-                        content: "Mask".into(),
-                        font_size: height as f32 * 0.4,
-                    },
+                    "text" => MaskShape::text("Mask", height as f32 * 0.4),
                     _ => MaskShape::Rectangle,
                 };
                 let mut mask = Mask::new("mask", shape);
@@ -635,6 +620,50 @@ fn ordered_modes_and_unclipped_strokes_keep_premultiplied_channels() {
             (alpha(&image, 20, 20) - expected).abs() < 1e-6,
             "item-local mask opacity at frame {at}"
         );
+    }
+}
+
+#[test]
+fn text_mask_typography_changes_coverage() {
+    let h = Hooks::default();
+    let render = |edit: &dyn Fn(&mut project::MaskShape)| {
+        let mut shape = project::MaskShape::text("Mask", 36.);
+        edit(&mut shape);
+        let mut mask = project::Mask::new("glyphs", shape);
+        mask.width = 1.;
+        mask.height = 1.;
+        let project = masked_scene(128, 64, vec![mask]);
+        render::Renderer::new(&project, render::RenderSettings::from_project(&project))
+            .unwrap()
+            .render_frame(time::Tick::ZERO, &mut crate::common::Empty, &h)
+            .unwrap()
+    };
+    let plain = render(&|_| {});
+    type Edit<'a> = &'a dyn Fn(&mut project::MaskShape);
+    let rows: [(&str, Edit); 4] = [
+        ("family", &|s| {
+            if let project::MaskShape::Text { font, .. } = s {
+                *font = "Noto Serif".into();
+            }
+        }),
+        ("weight", &|s| {
+            if let project::MaskShape::Text { weight, .. } = s {
+                *weight = 700;
+            }
+        }),
+        ("italic", &|s| {
+            if let project::MaskShape::Text { italic, .. } = s {
+                *italic = true;
+            }
+        }),
+        ("letter spacing", &|s| {
+            if let project::MaskShape::Text { letter_spacing, .. } = s {
+                *letter_spacing = 5.;
+            }
+        }),
+    ];
+    for (label, edit) in rows {
+        assert_ne!(plain.pixels(), render(edit).pixels(), "{label}");
     }
 }
 

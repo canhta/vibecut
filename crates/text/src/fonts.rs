@@ -4,7 +4,7 @@
 //! generic fallback order, so a missing glyph always resolves to the same face for a given
 //! request. Language profiles supply their own ordered fallback chain to [`fallback_for`].
 
-use std::sync::OnceLock;
+use std::sync::{OnceLock, PoisonError, RwLock, RwLockReadGuard};
 
 use skrifa::Font;
 
@@ -94,11 +94,12 @@ pub struct Face {
     pub weight: u16,
     pub italic: bool,
     bytes: &'static [u8],
+    index: u32,
 }
 
 impl Face {
     fn font(&self) -> Option<Font> {
-        Font::new(self.bytes, 0)
+        Font::new(self.bytes, self.index)
     }
 
     fn units_per_em(&self) -> f32 {
@@ -182,6 +183,7 @@ fn faces() -> &'static [Face] {
                 weight: face.weight,
                 italic: face.italic,
                 bytes: face.bytes,
+                index: 0,
             })
             .collect()
     })
@@ -194,17 +196,161 @@ static EMPTY_FACE: Face = Face {
     weight: 400,
     italic: false,
     bytes: INTER_REGULAR,
+    index: 0,
 };
 
 /// A face by identifier; unknown identifiers resolve to the default face.
 pub fn face(id: FaceId) -> &'static Face {
-    match faces().get(id) {
-        Some(face) => face,
-        None => match faces().first() {
-            Some(face) => face,
-            None => &EMPTY_FACE,
-        },
+    if let Some(face) = faces().get(id) {
+        return face;
     }
+    id.checked_sub(BUNDLED.len())
+        .and_then(|index| registered_read().faces.get(index).copied())
+        .or_else(|| faces().first())
+        .unwrap_or(&EMPTY_FACE)
+}
+
+/// Most faces a process may register.
+pub const MAX_REGISTERED_FACES: usize = 256;
+/// Largest accepted font file.
+pub const MAX_FONT_BYTES: usize = 32 << 20;
+/// Largest total of registered font bytes.
+pub const MAX_REGISTERED_BYTES: usize = 256 << 20;
+const MAX_NAME_BYTES: usize = 256;
+
+/// A font file read by a catalog, with the names that resolution matches.
+#[derive(Clone, Debug)]
+pub struct FontData {
+    pub family: String,
+    pub style: String,
+    /// CSS weight, 1..=1000.
+    pub weight: u16,
+    pub italic: bool,
+    /// Face index inside a collection; zero for a single font.
+    pub index: u32,
+    pub bytes: Vec<u8>,
+}
+
+/// Why a font file cannot be registered.
+#[derive(Debug, PartialEq, Eq, thiserror::Error)]
+pub enum FontError {
+    #[error("font family and style names must be nonempty and at most {MAX_NAME_BYTES} bytes")]
+    InvalidName,
+    #[error("font weight must be 1..=1000")]
+    InvalidWeight,
+    #[error("the family name belongs to a bundled font")]
+    BundledFamily,
+    #[error("font data is not a readable font face")]
+    Unreadable,
+    #[error("font file exceeds {MAX_FONT_BYTES} bytes")]
+    TooLarge,
+    #[error("a different file is already registered for this family and style")]
+    Conflict,
+    #[error(
+        "the process holds the maximum of {MAX_REGISTERED_FACES} faces or {MAX_REGISTERED_BYTES} bytes"
+    )]
+    Limit,
+}
+
+#[derive(Default)]
+struct Registered {
+    faces: Vec<&'static Face>,
+    bytes: usize,
+}
+
+fn registry() -> &'static RwLock<Registered> {
+    static REGISTERED: OnceLock<RwLock<Registered>> = OnceLock::new();
+    REGISTERED.get_or_init(RwLock::default)
+}
+
+fn registered_read() -> RwLockReadGuard<'static, Registered> {
+    // The registry only grows by whole entries under the write lock, so state behind a
+    // poisoned lock is still a valid list.
+    registry().read().unwrap_or_else(PoisonError::into_inner)
+}
+
+/// Number of registered faces. It changes whenever resolution results can change, so callers
+/// that cache layouts or rasters include it in their key.
+pub fn generation() -> usize {
+    registered_read().faces.len()
+}
+
+/// Register a font file so [`resolve`] and [`fallback_chain`] can find its family.
+///
+/// Registration is append-only for the life of the process (the bytes are retained), bounded
+/// by [`MAX_REGISTERED_FACES`] and [`MAX_REGISTERED_BYTES`]. Registering the identical file
+/// again returns the existing identifier. Bundled family names are reserved so bundled
+/// fallback order never depends on what a user installed.
+///
+/// # Errors
+///
+/// Returns [`FontError`] for invalid names or weights, bundled family names, unreadable or
+/// oversized data, a different file under the same family and style, and exhausted limits.
+pub fn register(data: FontData) -> Result<FaceId, FontError> {
+    let name_ok = |name: &str| !name.trim().is_empty() && name.len() <= MAX_NAME_BYTES;
+    if !name_ok(&data.family) || !name_ok(&data.style) {
+        return Err(FontError::InvalidName);
+    }
+    if !(1..=1000).contains(&data.weight) {
+        return Err(FontError::InvalidWeight);
+    }
+    if data.bytes.len() > MAX_FONT_BYTES {
+        return Err(FontError::TooLarge);
+    }
+    if BUNDLED
+        .iter()
+        .any(|face| face.family.eq_ignore_ascii_case(&data.family))
+    {
+        return Err(FontError::BundledFamily);
+    }
+    if skrifa::raw::FontRef::from_index(&data.bytes, data.index).is_err() {
+        return Err(FontError::Unreadable);
+    }
+    let mut registered = registry().write().unwrap_or_else(PoisonError::into_inner);
+    if let Some(existing) = registered.faces.iter().find(|face| {
+        face.family.eq_ignore_ascii_case(&data.family)
+            && face.style.eq_ignore_ascii_case(&data.style)
+    }) {
+        return if existing.bytes == data.bytes.as_slice() && existing.index == data.index {
+            Ok(existing.id)
+        } else {
+            Err(FontError::Conflict)
+        };
+    }
+    if registered.faces.len() >= MAX_REGISTERED_FACES
+        || registered.bytes.saturating_add(data.bytes.len()) > MAX_REGISTERED_BYTES
+    {
+        return Err(FontError::Limit);
+    }
+    let id = BUNDLED.len() + registered.faces.len();
+    registered.bytes += data.bytes.len();
+    // ponytail: registered faces live for the process (bounded above); unloading needs
+    // reference-counted faces threaded through layout and raster.
+    let face: &'static Face = Box::leak(Box::new(Face {
+        id,
+        family: Box::leak(data.family.into_boxed_str()),
+        style: Box::leak(data.style.into_boxed_str()),
+        weight: data.weight,
+        italic: data.italic,
+        bytes: Box::leak(data.bytes.into_boxed_slice()),
+        index: data.index,
+    }));
+    registered.faces.push(face);
+    Ok(id)
+}
+
+/// Whether a family is registered or bundled (case-insensitive).
+pub fn is_available(family: &str) -> bool {
+    all_faces()
+        .iter()
+        .any(|face| face.family.eq_ignore_ascii_case(family))
+}
+
+/// Bundled faces followed by registered faces, in identifier order.
+fn all_faces() -> Vec<&'static Face> {
+    let mut all: Vec<&'static Face> = faces().iter().collect();
+    all.extend(registered_read().faces.iter().copied());
+    all
 }
 
 type FamilyStyles = Vec<(String, Vec<(u16, bool, String)>)>;
@@ -274,6 +420,27 @@ fn style_wants(style: &str) -> (u16, bool) {
     (weight, italic)
 }
 
+/// The style name for a CSS weight and italic flag, in the vocabulary [`resolve`] understands.
+/// Weights round to the nearest hundred and clamp to 100..=900.
+pub fn style_name(weight: u16, italic: bool) -> String {
+    let name = match (weight.saturating_add(50) / 100).clamp(1, 9) {
+        1 => "Thin",
+        2 => "ExtraLight",
+        3 => "Light",
+        4 => "Regular",
+        5 => "Medium",
+        6 => "SemiBold",
+        7 => "Bold",
+        8 => "ExtraBold",
+        _ => "Black",
+    };
+    if italic {
+        format!("{name} Italic")
+    } else {
+        name.to_owned()
+    }
+}
+
 /// Resolve a family and style name. The match is case-insensitive; an unavailable style picks the
 /// nearest weight and synthesizes bold or italic. Unknown families substitute Inter.
 pub fn resolve(family: &str, style: &str) -> Resolved {
@@ -291,8 +458,8 @@ pub fn resolve(family: &str, style: &str) -> Resolved {
 }
 
 fn resolve_in(family: &str, style: &str) -> Option<Resolved> {
-    let members: Vec<&Face> = faces()
-        .iter()
+    let members: Vec<&Face> = all_faces()
+        .into_iter()
         .filter(|face| face.family.eq_ignore_ascii_case(family))
         .collect();
     if members.is_empty() {

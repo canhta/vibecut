@@ -21,6 +21,7 @@ fn options() -> LayoutOptions<'static> {
         max_lines: None,
         fallbacks: &["VibeCut Sans CJK"],
         line_break: LineBreak::Unicode,
+        letter_spacing: 0.0,
     }
 }
 
@@ -110,6 +111,7 @@ fn simplified_and_traditional_chinese_wrap_and_render() -> Result<(), Box<dyn Er
     // The profile's line-breaking mode is data: breaking every grapheme stays inside clusters.
     let grapheme_options = LayoutOptions {
         line_break: LineBreak::Grapheme,
+        letter_spacing: 0.0,
         ..options()
     };
     let grapheme = layout(SIMPLIFIED, &grapheme_options)?;

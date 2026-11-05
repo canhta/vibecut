@@ -35,6 +35,7 @@ The [glossary](../../GLOSSARY.md) owns domain definitions; crate READMEs own con
 | Session, registry, transactions, gestures, undo/redo | [engine](../../crates/engine/README.md#transactions-gestures-and-changes) |
 | Control schemas, revisions, receipts, resync events | [engine control](../../crates/engine/README.md#control-admission-revisions-and-receipts) |
 | Job runner, scheduling, retries, checkpoints, aggregate bytes | [engine jobs](../../crates/engine/README.md#background-jobs-and-byte-policy) |
+| Font catalog, system/bundled/Google fonts, download cache, `fonts.*` commands | [engine fonts](../../crates/engine/README.md#font-catalog); resolution and raster in [text](../../crates/text/README.md#fonts) |
 | Row tasks and native conversion worker allowance | [engine kernel execution](../../crates/engine/README.md#render-kernel-execution) |
 | Export execution | [render](../../crates/render/README.md#export-and-publication) |
 | Clip naming, cue mapping, per-short cancel/retry | [engine batch export](../../crates/engine/README.md#clip-batch-export) |

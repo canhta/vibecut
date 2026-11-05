@@ -1506,6 +1506,10 @@ fn text_style_patches_update_one_field_and_validate() {
     for patch in [
         ItemParamPatch::TextContent("Xin chào".into()),
         ItemParamPatch::TextFont("Noto Serif".into()),
+        ItemParamPatch::TextWeight(700),
+        ItemParamPatch::TextItalic(true),
+        ItemParamPatch::TextLetterSpacing(-2.5),
+        ItemParamPatch::TextLineHeight(60.0),
         ItemParamPatch::TextBackground(Some(project::TextBackground {
             color: Color([9, 8, 7, 128]),
             padding: 6.0,
@@ -1529,6 +1533,10 @@ fn text_style_patches_update_one_field_and_validate() {
     };
     assert_eq!(p.content.as_str(), "Xin chào");
     assert_eq!(p.font.as_str(), "Noto Serif");
+    assert_eq!(
+        (p.weight, p.italic, p.letter_spacing, p.line_height),
+        (700, true, -2.5, 60.0)
+    );
     assert_eq!(p.font_size, 24.0);
     assert_eq!(p.color, Color([1, 2, 3, 255]));
     assert_eq!(p.background.as_ref().unwrap().color, Color([7, 6, 5, 128]));
@@ -1539,6 +1547,12 @@ fn text_style_patches_update_one_field_and_validate() {
     let after = s.project().clone();
     for patch in [
         ItemParamPatch::TextFont("".into()),
+        ItemParamPatch::TextWeight(0),
+        ItemParamPatch::TextWeight(1000),
+        ItemParamPatch::TextLetterSpacing(f32::NAN),
+        ItemParamPatch::TextLetterSpacing(project::MAX_LETTER_SPACING + 1.0),
+        ItemParamPatch::TextLineHeight(-1.0),
+        ItemParamPatch::TextLineHeight(f32::INFINITY),
         ItemParamPatch::TextPositionX(101.0),
         ItemParamPatch::TextPositionY(f32::NAN),
         ItemParamPatch::TextBackground(Some(project::TextBackground {

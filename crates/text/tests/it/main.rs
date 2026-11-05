@@ -3,5 +3,6 @@
 mod chinese;
 mod common;
 mod fallback;
+mod fonts;
 mod overlay;
 mod vietnamese;

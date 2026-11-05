@@ -65,6 +65,10 @@ pub enum ItemParamPatch {
     AudioMuted(bool),
     TextContent(NfcText),
     TextFont(NfcText),
+    TextWeight(u16),
+    TextItalic(bool),
+    TextLetterSpacing(f32),
+    TextLineHeight(f32),
     TextSize(f32),
     TextColor(Color),
     TextBackground(Option<project::TextBackground>),
@@ -85,6 +89,10 @@ impl ItemParamPatch {
             ) | (
                 Self::TextContent(_)
                     | Self::TextFont(_)
+                    | Self::TextWeight(_)
+                    | Self::TextItalic(_)
+                    | Self::TextLetterSpacing(_)
+                    | Self::TextLineHeight(_)
                     | Self::TextSize(_)
                     | Self::TextColor(_)
                     | Self::TextBackground(_)
@@ -103,6 +111,10 @@ impl ItemParamPatch {
             Self::AudioMuted(_) => true,
             Self::TextContent(v) => v.as_str().len() <= 1 << 20,
             Self::TextFont(v) => !v.as_str().trim().is_empty() && v.as_str().len() <= 256,
+            Self::TextWeight(v) => project::valid_weight(*v),
+            Self::TextItalic(_) => true,
+            Self::TextLetterSpacing(v) => project::valid_letter_spacing(*v),
+            Self::TextLineHeight(v) => project::valid_line_height(*v),
             Self::TextSize(v) => v.is_finite() && (1.0..=4096.0).contains(v),
             Self::TextColor(_) | Self::TextBackgroundColor(_) => true,
             Self::TextBackground(background) => background.as_ref().is_none_or(|background| {
@@ -360,6 +372,9 @@ commands! {
     JobCancel, "job_cancel", "Cancel job", JobControl { job: crate::jobs::JobId } => Job, serde_json::json!({"job":0});
     Catalog, "catalog", "Command catalog", Read {} => Timeline, serde_json::json!({});
     ProviderCatalog, "provider_catalog", "Provider catalog", Read {} => Timeline, serde_json::json!({});
+    FontsList, "fonts.list", "List fonts", Read { #[serde(default)] query: Option<NfcText> } => Timeline, serde_json::json!({"query":"lob"});
+    FontsLoad, "fonts.load", "Load font family", Read { family: NfcText } => Timeline, serde_json::json!({"family":"Lobster"});
+    FontsDownload, "fonts.download", "Download font family", JobControl { family: NfcText, accept_license: bool } => Timeline, serde_json::json!({"family":"Lobster","accept_license":true});
 }
 
 pub fn registry() -> &'static [CommandSpec] {

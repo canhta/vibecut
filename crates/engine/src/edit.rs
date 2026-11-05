@@ -63,6 +63,26 @@ fn apply_patch(
                 p.font = v.clone();
             }
         }
+        crate::ItemParamPatch::TextWeight(v) => {
+            if let ItemParams::Text(p) = &mut target.content {
+                p.weight = *v;
+            }
+        }
+        crate::ItemParamPatch::TextItalic(v) => {
+            if let ItemParams::Text(p) = &mut target.content {
+                p.italic = *v;
+            }
+        }
+        crate::ItemParamPatch::TextLetterSpacing(v) => {
+            if let ItemParams::Text(p) = &mut target.content {
+                p.letter_spacing = *v;
+            }
+        }
+        crate::ItemParamPatch::TextLineHeight(v) => {
+            if let ItemParams::Text(p) = &mut target.content {
+                p.line_height = *v;
+            }
+        }
         crate::ItemParamPatch::TextBackground(v) => {
             if let ItemParams::Text(p) = &mut target.content {
                 p.background = v.clone();
@@ -131,6 +151,9 @@ pub(crate) fn check_budget(command: &Command) -> Result<()> {
             | Command::JobCancel { .. }
             | Command::Catalog {}
             | Command::ProviderCatalog {}
+            | Command::FontsList { .. }
+            | Command::FontsLoad { .. }
+            | Command::FontsDownload { .. }
             | Command::ExportSubtitles { .. }
             | Command::BurnSubtitles { .. } => {
                 return Err(EditError::Invalid("export commands require job submission"));
@@ -1074,6 +1097,9 @@ pub(crate) fn apply(
         | Command::JobCancel { .. }
         | Command::Catalog {}
         | Command::ProviderCatalog {}
+        | Command::FontsList { .. }
+        | Command::FontsLoad { .. }
+        | Command::FontsDownload { .. }
         | Command::ExportSubtitles { .. }
         | Command::BurnSubtitles { .. } => {
             return Err(EditError::Invalid("export commands require job submission"));

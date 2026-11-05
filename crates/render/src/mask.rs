@@ -751,6 +751,15 @@ impl Prepared {
         }
     }
 }
+/// Text mask content and typography handed to the caller's glyph rasterizer.
+pub(crate) struct MaskText<'a> {
+    pub content: &'a str,
+    pub font: &'a str,
+    pub weight: u16,
+    pub italic: bool,
+    pub letter_spacing: f32,
+    pub line_height: f32,
+}
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn apply(
     image: &mut Image,
@@ -758,7 +767,7 @@ pub(crate) fn apply(
     local: time::Tick,
     placement: crate::Placement,
     canvas: &project::Canvas,
-    mut glyph: impl FnMut(&str, f32, Geometry) -> Result<std::sync::Arc<Image>>,
+    mut glyph: impl FnMut(MaskText<'_>, f32, Geometry) -> Result<std::sync::Arc<Image>>,
     hooks: &dyn ExecutionHooks,
 ) -> Result<()> {
     let Some(first) = item.masks.iter().find(|m| m.active()) else {
@@ -808,8 +817,27 @@ pub(crate) fn apply(
                     inverted: m.inverted,
                 })
             }
-            project::MaskShape::Text { content, font_size } => {
-                let raster = glyph(content.as_str(), *font_size * m.scale as f32, geometry)?;
+            project::MaskShape::Text {
+                content,
+                font_size,
+                font,
+                weight,
+                italic,
+                letter_spacing,
+                line_height,
+            } => {
+                let raster = glyph(
+                    MaskText {
+                        content: content.as_str(),
+                        font: font.as_str(),
+                        weight: *weight,
+                        italic: *italic,
+                        letter_spacing: *letter_spacing,
+                        line_height: *line_height,
+                    },
+                    *font_size * m.scale as f32,
+                    geometry,
+                )?;
                 let mut placed = Image::new(w, h, [0.; 4], hooks)?;
                 let (sin, cos) = geometry.rotation.sin_cos();
                 for (y, row) in placed.pixels.chunks_mut(w as usize).enumerate() {
