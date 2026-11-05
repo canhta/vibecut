@@ -8,20 +8,19 @@ Run the smallest check that covers what changed; commit only green.
 |---|---|
 | Markdown, tickets, assets only | `cargo xtask docs` (crate layers, asset sidecars, name gate; ~1 s) |
 | Rust inside one crate, while iterating | `cargo test -p <crate>` and `cargo clippy -p <crate> --all-targets` |
-| Before handoff or merge | `cargo xtask ci --require-oracles` locally through the build lock on the exact SHA (fmt, Clippy, all tests, layers, assets, name gate, required oracles); push the branch so hosted CI also runs, without waiting for it |
+| Before handoff | `.scratch/bin/build cargo xtask ci --require-oracles` once on the frozen SHA (fmt, Clippy, all tests, layers, assets, name gate, required oracles) |
 | Media, render or other hot path | The above plus the benchmark its ticket names |
 
 Run `cargo xtask ffmpeg` once per machine before the first local Rust build.
 While iterating, use crate-scoped tests and Clippy.
 
-Merge requires local `cargo xtask ci --require-oracles` green on the exact SHA being
-merged; hosted CI is not waited for. It runs on every push and on `main` after the
-merge: a red hosted run on `main` is fixed or reverted at once by whoever merged.
-After a rebase, rerun local CI only when both your branch and the commits added to
-`main` since your run touched Rust, manifests or `xtask`; each side alone was already
-tested. Otherwise the docs check on the rebased SHA covers it. Record the CI receipt
-(command, SHA, counts) in the report. `.scratch/bin/hosted-ci <sha>` remains for
-platforms this machine cannot run (Windows).
+CI runs once per change, by the implementer, on the frozen SHA:
+`.scratch/bin/build cargo xtask ci --require-oracles` leaves a receipt for that tree,
+and asking again for the same tree returns the receipt instead of rebuilding. A
+reviewer reads the receipt and runs only targeted reproductions; a reviewer's own fix
+commit gets one CI run. A clean rebase merges without another run. Hosted CI runs on
+`main` after every merge (and on demand for Windows via `.scratch/bin/hosted-ci`); a
+red `main` is fixed or reverted at once by whoever merged last.
 
 ## AI model integrations
 

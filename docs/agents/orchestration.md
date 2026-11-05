@@ -88,8 +88,7 @@ Load `orca skills get orchestration` for CLI details; use handles from receipts.
    and boundary inputs, cancellation mid-operation, gesture reversal, and every
    metric the ticket names against its recorded baseline (no language, format or backend may
    regress). Fix what you find first.
-3. Push the frozen SHA to the ticket branch (hosted CI runs on its own; nobody waits
-   for it) and hand off. Pushing ticket branches and `main` is part of the
+3. Push the frozen SHA to the ticket branch and hand off with the CI receipt. Pushing ticket branches and `main` is part of the
    loop; GitHub comments, issues and PRs are not. Reviewers run only targeted reproductions locally.
    Finish the ticket on one of the two [merge paths](#review-and-merge). A ticket
    that needs review ends the turn right away with `worker_done`, so its review starts
@@ -125,12 +124,9 @@ fast-forward to `main`. T2–T4 tickets go to review.
 - A failure called "known" cites its ticket; with none, the reviewer files a `Type: bug` ticket first.
 
 **Merging.** An approved branch merges as soon as it is ready: rebase on
-`origin/main`; if the [rebase rule](../engineering/verification.md#checks) needs no
-CI rerun (not both sides touched Rust, manifests or `xtask`),
-push fast-forward at once; a rejected push means rebase and repeat. Ask the
-coordinator for a merge window only when two ready branches both change Rust, or
-share a persistent format, schema version or contract: the coordinator orders those
-and the later one runs local CI on the earlier one's candidate while it waits.
+`origin/main`, resolve conflicts (a conflict in Rust gets one local CI run), push
+fast-forward; a rejected push means rebase and repeat. No merge windows: hosted CI on
+`main` catches the rare semantic clash, and the last merger fixes it at once.
 
 After either path the merger writes `## Answer` (SHA, evidence path), sets
 `Status: resolved` and adds one decision line to the milestone `map.md`.
