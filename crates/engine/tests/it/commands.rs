@@ -1855,6 +1855,32 @@ proptest! {
         prop_assert_eq!(s.project(),&final_layout);
         prop_assert_eq!(&project::decode(&project::encode(&final_layout, false).unwrap()).unwrap().project,final_layout.as_ref());
     }
+
+}
+
+#[test]
+fn imported_asset_is_one_undo_step_and_restores_the_exact_record() {
+    let mut s = Session::new(Project::empty(ProjectId(9), "Assets".into()).unwrap(), 8).unwrap();
+    let asset = SourceAsset::try_from(AssetData {
+        id: AssetId(3),
+        path: std::env::temp_dir().join("import record.mp4"),
+        content_hash: ContentHash([3; 32]),
+        probe: SourceProbe {
+            format: "mov,mp4".into(),
+            duration: Some(Tick(2_000)),
+            streams: vec![],
+        },
+    })
+    .unwrap();
+    s.apply(Command::AddAsset {
+        asset: asset.clone(),
+    })
+    .unwrap();
+    assert_eq!(s.project().data().assets, vec![asset.clone()]);
+    s.execute("undo", json!({})).unwrap();
+    assert!(s.project().data().assets.is_empty());
+    s.execute("redo", json!({})).unwrap();
+    assert_eq!(s.project().data().assets, vec![asset]);
 }
 
 fn policy_asset(id: u64, format: &str, rate: Option<time::FrameRate>) -> SourceAsset {

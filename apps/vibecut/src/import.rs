@@ -1,23 +1,30 @@
 //! Background media import: probe/hash on the engine job runner, publish one
-//! typed event per file, and keep already-imported assets on cancel/failure.
+//! typed event per file, then generate bounded thumbnails in a second job. The
+//! content-keyed thumbnail cache lives in the engine artifact policy; already
+//! imported assets survive cancel, failure or a failed thumbnail.
 use crate::{Error, Result};
 use engine::cache::{ArtifactKind, CacheKey, KeyInputs};
 use engine::jobs::{
-    CancelToken, JobId, JobKind, JobRunner, JobSpec, JobState, ResourceClass, RunnerConfig,
-    SystemClock,
+    CancelToken, JobId, JobKind, JobRunner, JobSpec, JobStage, JobState, ResourceClass,
+    RunnerConfig, SystemClock,
 };
+use engine::thumbnails::{ThumbnailCache, thumbnail_key};
 use engine::{ByteBudget, ByteLease, ByteOwner};
-use media::{AssetId, MediaError, SourceAsset};
+use media::{
+    AssetId, ImportedSource, MediaError, ProbeCapabilities, SourceAsset, THUMBNAIL_MAX_EDGE,
+    Thumbnail,
+};
 use std::{
-    collections::BTreeSet,
+    collections::{BTreeMap, BTreeSet},
     path::PathBuf,
     sync::{
-        Arc,
+        Arc, Mutex,
         atomic::{AtomicBool, Ordering},
         mpsc,
     },
     time::Duration,
 };
+use time::Tick;
 
 /// Native picker and drop filters. Probing remains the authority; an extension
 /// outside this list can still be dropped and produce a typed media refusal.
@@ -36,6 +43,9 @@ const EVENT_QUEUE: usize = 8;
 /// admission. The lease covers FFmpeg probe internals, the hash buffer and the
 /// bounded queued metadata for the life of the batch.
 const WORK_ALLOWANCE: u64 = 256 << 20;
+/// One thumbnail's cache payload is far below this; the decode itself is capped
+/// by media's 2^26-pixel frame ceiling.
+const MAX_THUMBNAIL_ENTRIES: usize = 4096;
 
 /// Injected media boundary so tests drive import outcomes without decoding files.
 /// Production passes the same cooperative token into media's interruptible probe
@@ -46,10 +56,11 @@ pub trait ImportProbe: Send + Sync + 'static {
         id: AssetId,
         path: PathBuf,
         cancelled: Arc<AtomicBool>,
-    ) -> media::Result<SourceAsset>;
+    ) -> media::Result<ImportedSource>;
 }
 
-/// Production probe: the existing media owner canonicalizes, probes and hashes.
+/// Production probe: the existing media owner canonicalizes, probes, hashes and
+/// opens decoders once to report capability.
 pub struct MediaProbe;
 impl ImportProbe for MediaProbe {
     fn import(
@@ -57,8 +68,32 @@ impl ImportProbe for MediaProbe {
         id: AssetId,
         path: PathBuf,
         cancelled: Arc<AtomicBool>,
-    ) -> media::Result<SourceAsset> {
-        SourceAsset::import_with_cancel(id, path, cancelled)
+    ) -> media::Result<ImportedSource> {
+        SourceAsset::import_with_summary(id, path, cancelled)
+    }
+}
+
+/// Injected thumbnail generator. Production reuses media's one frame decoder.
+pub trait ThumbnailSource: Send + Sync + 'static {
+    fn thumbnail(
+        &self,
+        asset: &SourceAsset,
+        at: Tick,
+        max_edge: u32,
+        cancelled: Arc<AtomicBool>,
+    ) -> media::Result<Thumbnail>;
+}
+
+pub struct MediaThumbnails;
+impl ThumbnailSource for MediaThumbnails {
+    fn thumbnail(
+        &self,
+        asset: &SourceAsset,
+        at: Tick,
+        max_edge: u32,
+        cancelled: Arc<AtomicBool>,
+    ) -> media::Result<Thumbnail> {
+        media::thumbnail(asset, at, max_edge, cancelled)
     }
 }
 
@@ -88,12 +123,23 @@ impl ImportFailure {
     }
 }
 
+#[derive(Debug)]
+pub enum ThumbnailOutcome {
+    Ready(Thumbnail),
+    /// The asset stays usable; the library shows a placeholder.
+    Failed(Arc<MediaError>),
+}
+
 /// Events are applied by the UI thread, so project mutation/cancellation keep
 /// the same single-owner boundary as every other edit.
 #[derive(Debug)]
 pub enum ImportEvent {
-    Imported(SourceAsset),
+    Imported(ImportedSource),
     Failed(ImportFailure),
+    Thumbnail {
+        asset: AssetId,
+        outcome: ThumbnailOutcome,
+    },
     Done {
         cancelled: bool,
         /// Typed terminal runner failure, e.g. worker unwind. File-level media
@@ -102,14 +148,73 @@ pub enum ImportEvent {
     },
 }
 
+impl ImportEvent {
+    fn done(&self) -> Option<(bool, Option<Arc<engine::EditError>>)> {
+        match self {
+            Self::Done { cancelled, error } => Some((*cancelled, error.clone())),
+            _ => None,
+        }
+    }
+}
+
 struct Job {
     id: JobId,
     cancel: CancelToken,
     cancelled: Arc<AtomicBool>,
     receive: mpsc::Receiver<ImportEvent>,
-    total: usize,
     finished: bool,
-    _work: ByteLease,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Phase {
+    Idle,
+    Probe,
+    Thumbnail,
+}
+
+/// Cache hits are answered from the engine cache; the small in-memory map keeps
+/// repeated imports in one session from touching the disk again.
+#[derive(Default)]
+struct ThumbnailStore {
+    cache: Option<ThumbnailCache>,
+    memo: BTreeMap<CacheKey, Thumbnail>,
+}
+impl ThumbnailStore {
+    fn lookup(&mut self, asset: &SourceAsset, at: Tick) -> Option<Thumbnail> {
+        let Ok(key) = thumbnail_key(asset.content_hash(), at, THUMBNAIL_MAX_EDGE) else {
+            return None;
+        };
+        if let Some(thumbnail) = self.memo.get(&key) {
+            return Some(thumbnail.clone());
+        }
+        let Some(cache) = &mut self.cache else {
+            return None;
+        };
+        match cache.get(asset, at, THUMBNAIL_MAX_EDGE) {
+            Ok(Some(thumbnail)) => {
+                self.memo.insert(key, thumbnail.clone());
+                Some(thumbnail)
+            }
+            Ok(None) => None,
+            Err(error) => {
+                tracing::warn!(category = "thumbnail_cache_read", error = %error, "thumbnail cache miss");
+                None
+            }
+        }
+    }
+
+    fn insert(&mut self, asset: &SourceAsset, at: Tick, thumbnail: &Thumbnail) {
+        let Ok(key) = thumbnail_key(asset.content_hash(), at, THUMBNAIL_MAX_EDGE) else {
+            return;
+        };
+        self.memo.insert(key, thumbnail.clone());
+        let Some(cache) = &mut self.cache else {
+            return;
+        };
+        if let Err(error) = cache.put(asset, at, THUMBNAIL_MAX_EDGE, thumbnail) {
+            tracing::warn!(category = "thumbnail_cache_write", error = %error, "thumbnail not cached");
+        }
+    }
 }
 
 /// One bounded import batch. The runner owns worker lifetime and cancellation;
@@ -120,19 +225,26 @@ pub struct ImportQueue {
     job: Option<Job>,
     runner: JobRunner,
     probe: Arc<dyn ImportProbe>,
+    thumbnailer: Arc<dyn ThumbnailSource>,
+    thumbnails: Arc<Mutex<ThumbnailStore>>,
+    thumbnail_root: Option<PathBuf>,
     budget: ByteBudget,
+    work: Option<ByteLease>,
+    phase: Phase,
+    pending: Vec<SourceAsset>,
+    total: usize,
 }
 impl Drop for ImportQueue {
     fn drop(&mut self) {
         if let Some(job) = self.job.take() {
             job.cancelled.store(true, Ordering::Release);
             job.cancel.cancel();
-            let Job { receive, _work, .. } = job;
+            let Job { receive, .. } = job;
             // Release a blocked sender, but keep its allowance until it exits.
             drop(receive);
             self.runner.shutdown();
-            drop(_work);
         }
+        self.work = None;
     }
 }
 impl ImportQueue {
@@ -140,8 +252,8 @@ impl ImportQueue {
         let runner = JobRunner::new(
             RunnerConfig {
                 concurrency: [1, 1, 1],
-                queue: 1,
-                retained: 1,
+                queue: 2,
+                retained: 2,
                 network_attempts: 1,
                 backoff: Duration::from_secs(1),
                 progress_interval: Duration::from_millis(20),
@@ -153,17 +265,38 @@ impl ImportQueue {
             job: None,
             runner,
             probe: Arc::new(MediaProbe),
+            thumbnailer: Arc::new(MediaThumbnails),
+            thumbnails: Arc::new(Mutex::new(ThumbnailStore::default())),
+            thumbnail_root: None,
             budget,
+            work: None,
+            phase: Phase::Idle,
+            pending: Vec::new(),
+            total: 0,
         })
     }
     pub fn set_probe(&mut self, probe: Arc<dyn ImportProbe>) {
         self.probe = probe;
     }
+    pub fn set_thumbnailer(&mut self, thumbnailer: Arc<dyn ThumbnailSource>) {
+        self.thumbnailer = thumbnailer;
+    }
+    /// Persistent cache directory; without one, thumbnails are memoized for the
+    /// session only. Opening is deferred and a busy/corrupt directory degrades to
+    /// memo-only rather than failing the import.
+    pub fn set_thumbnail_root(&mut self, root: PathBuf) {
+        if self.thumbnail_root.as_ref() != Some(&root) {
+            self.thumbnail_root = Some(root);
+            if let Ok(mut store) = self.thumbnails.lock() {
+                store.cache = None;
+            }
+        }
+    }
     pub fn active(&self) -> bool {
         self.job.is_some()
     }
     pub fn total(&self) -> usize {
-        self.job.as_ref().map_or(0, |job| job.total)
+        self.total
     }
     pub fn cancel(&self) {
         if let Some(job) = &self.job {
@@ -195,46 +328,39 @@ impl ImportQueue {
         if paths.is_empty() {
             return Ok(());
         }
+        self.open_thumbnail_cache();
         let work = self.budget.reserve(ByteOwner::JobResults, WORK_ALLOWANCE)?;
         let total = paths.len();
+        self.total = total;
+        self.pending.clear();
+        self.phase = Phase::Probe;
         let (send, receive) = mpsc::sync_channel(EVENT_QUEUE);
         let probe = self.probe.clone();
         let cancelled = Arc::new(AtomicBool::new(false));
         let worker_cancel = cancelled.clone();
-        // Import publishes no cached artifact; this key only satisfies the
-        // engine job contract, matching the app's other scheduling-only jobs.
-        let key = CacheKey::new(KeyInputs {
-            kind: ArtifactKind::Preview,
-            source: [0; 32],
-            provider: "desktop",
-            model: "media-import",
-            version: "1",
-            settings: &[],
-            transcript: [0; 32],
-            cues: [0; 32],
-            clip_range: [0; 32],
-            translation: [0; 32],
-        })?;
+        let key = job_key(ArtifactKind::Preview, "media-probe")?;
         let submitted = self.runner.submit(
             JobSpec {
-                kind: JobKind::Import,
+                kind: JobKind::Probe,
                 class: ResourceClass::Cpu,
                 input: key,
                 bytes: Default::default(),
             },
             move |ctx| {
                 let mut next = first_id;
-                for path in &paths {
+                for (index, path) in paths.iter().enumerate() {
                     if ctx.cancelled() {
                         worker_cancel.store(true, Ordering::Release);
                     }
                     if worker_cancel.load(Ordering::Acquire) {
                         return finish(&send, true, None);
                     }
+                    ctx.progress(JobStage::Probe, index as f32 / total.max(1) as f32)
+                        .ok();
                     match probe.import(AssetId(next), path.clone(), worker_cancel.clone()) {
-                        Ok(asset) => {
+                        Ok(imported) => {
                             next = next.checked_add(1).ok_or(engine::EditError::Limit)?;
-                            if send.send(ImportEvent::Imported(asset)).is_err() {
+                            if send.send(ImportEvent::Imported(imported)).is_err() {
                                 return Ok(Vec::new());
                             }
                         }
@@ -260,16 +386,32 @@ impl ImportQueue {
             },
         );
         let (id, cancel) = submitted?;
+        self.work = Some(work);
         self.job = Some(Job {
             id,
             cancel,
             cancelled,
             receive,
-            total,
             finished: false,
-            _work: work,
         });
         Ok(())
+    }
+    fn open_thumbnail_cache(&mut self) {
+        let Some(root) = self.thumbnail_root.clone() else {
+            return;
+        };
+        let Ok(mut store) = self.thumbnails.lock() else {
+            return;
+        };
+        if store.cache.is_some() {
+            return;
+        }
+        match ThumbnailCache::open(&root, self.budget.clone(), MAX_THUMBNAIL_ENTRIES) {
+            Ok(cache) => store.cache = Some(cache),
+            Err(error) => {
+                tracing::warn!(category = "thumbnail_cache_open", error = %error, "thumbnail cache unavailable");
+            }
+        }
     }
     /// Drain completed events. A worker panic or terminal runner state still
     /// closes the batch with one typed `Done`, so the UI cannot stay busy.
@@ -278,43 +420,195 @@ impl ImportQueue {
             if let Some(job) = self.job.take() {
                 let _ = self.runner.take_output(job.id);
             }
+            self.finish();
             return Err(Arc::new(error));
         }
         let mut events = Vec::new();
-        let Some(job) = &mut self.job else {
+        let mut terminal = None;
+        if let Some(job) = &mut self.job {
+            while let Ok(event) = job.receive.try_recv() {
+                if let Some(done) = event.done() {
+                    job.finished = true;
+                    terminal = Some(done);
+                } else {
+                    if let ImportEvent::Imported(imported) = &event
+                        && needs_thumbnail(imported)
+                    {
+                        self.pending.push(imported.asset.clone());
+                    }
+                    events.push(event);
+                }
+            }
+            if !job.finished
+                && let Some(snapshot) = self.runner.snapshot(job.id)
+                && matches!(
+                    snapshot.state,
+                    JobState::Completed | JobState::Failed | JobState::Cancelled
+                )
+            {
+                job.finished = true;
+                terminal = Some((
+                    snapshot.state == JobState::Cancelled,
+                    if snapshot.state == JobState::Failed {
+                        snapshot.error
+                    } else {
+                        None
+                    },
+                ));
+            }
+        }
+        let Some((cancelled, error)) = terminal else {
             return Ok(events);
         };
-        while let Ok(event) = job.receive.try_recv() {
-            if matches!(event, ImportEvent::Done { .. }) {
-                job.finished = true;
-            }
-            events.push(event);
-        }
-        if !job.finished
-            && let Some(snapshot) = self.runner.snapshot(job.id)
-            && matches!(
-                snapshot.state,
-                JobState::Completed | JobState::Failed | JobState::Cancelled
-            )
-        {
-            job.finished = true;
-            events.push(ImportEvent::Done {
-                cancelled: snapshot.state == JobState::Cancelled,
-                error: if snapshot.state == JobState::Failed {
-                    snapshot.error
-                } else {
-                    None
-                },
-            });
-        }
-        if job.finished
-            && let Some(job) = self.job.take()
-        {
+        if let Some(job) = self.job.take() {
             let _ = self.runner.take_output(job.id);
         }
+        let phase = self.phase;
+        self.phase = Phase::Idle;
+        if phase == Phase::Probe && !cancelled && error.is_none() && !self.pending.is_empty() {
+            match self.start_thumbnails() {
+                Ok(()) => {}
+                Err(error) => {
+                    events.push(ImportEvent::Done {
+                        cancelled: false,
+                        error: Some(Arc::new(error)),
+                    });
+                    self.finish();
+                }
+            }
+            return Ok(events);
+        }
+        events.push(ImportEvent::Done { cancelled, error });
+        self.finish();
         Ok(events)
     }
+    fn finish(&mut self) {
+        self.work = None;
+        self.pending.clear();
+        self.phase = Phase::Idle;
+        self.total = 0;
+    }
+    /// Thumbnails run as a second registered job after probing, so the library
+    /// can show `probing` badges before decode starts.
+    fn start_thumbnails(&mut self) -> std::result::Result<(), engine::EditError> {
+        let assets = std::mem::take(&mut self.pending);
+        let total = assets.len();
+        self.phase = Phase::Thumbnail;
+        let (send, receive) = mpsc::sync_channel(EVENT_QUEUE);
+        let cancelled = Arc::new(AtomicBool::new(false));
+        let worker_cancel = cancelled.clone();
+        let store = self.thumbnails.clone();
+        let thumbnailer = self.thumbnailer.clone();
+        let key = job_key(ArtifactKind::Thumbnail, "media-thumbnail")?;
+        let submitted = self.runner.submit(
+            JobSpec {
+                kind: JobKind::Thumbnail,
+                class: ResourceClass::Cpu,
+                input: key,
+                bytes: Default::default(),
+            },
+            move |ctx| {
+                for (index, asset) in assets.iter().enumerate() {
+                    if ctx.cancelled() {
+                        worker_cancel.store(true, Ordering::Release);
+                    }
+                    if worker_cancel.load(Ordering::Acquire) {
+                        return finish(&send, true, None);
+                    }
+                    ctx.progress(JobStage::Thumbnail, index as f32 / total.max(1) as f32)
+                        .ok();
+                    let outcome = match store.lock() {
+                        Ok(mut memo) => match memo.lookup(asset, Tick::ZERO) {
+                            Some(thumbnail) => ThumbnailOutcome::Ready(thumbnail),
+                            None => {
+                                drop(memo);
+                                match thumbnailer.thumbnail(
+                                    asset,
+                                    Tick::ZERO,
+                                    THUMBNAIL_MAX_EDGE,
+                                    worker_cancel.clone(),
+                                ) {
+                                    Ok(thumbnail) => {
+                                        if let Ok(mut memo) = store.lock() {
+                                            memo.insert(asset, Tick::ZERO, &thumbnail);
+                                        }
+                                        ThumbnailOutcome::Ready(thumbnail)
+                                    }
+                                    Err(MediaError::Cancelled) => {
+                                        return finish(&send, true, None);
+                                    }
+                                    Err(error) => ThumbnailOutcome::Failed(Arc::new(error)),
+                                }
+                            }
+                        },
+                        Err(_) => ThumbnailOutcome::Failed(Arc::new(MediaError::Invalid(
+                            "thumbnail cache lock",
+                        ))),
+                    };
+                    if send
+                        .send(ImportEvent::Thumbnail {
+                            asset: asset.id(),
+                            outcome,
+                        })
+                        .is_err()
+                    {
+                        return Ok(Vec::new());
+                    }
+                }
+                finish(&send, ctx.cancelled(), None)
+            },
+        );
+        match submitted {
+            Ok((id, cancel)) => {
+                self.job = Some(Job {
+                    id,
+                    cancel,
+                    cancelled,
+                    receive,
+                    finished: false,
+                });
+                Ok(())
+            }
+            Err(error) => {
+                self.phase = Phase::Idle;
+                Err(error)
+            }
+        }
+    }
 }
+
+/// Video and image assets need a thumbnail; audio-only assets are ready at once.
+pub fn needs_thumbnail(imported: &ImportedSource) -> bool {
+    imported
+        .metadata()
+        .is_ok_and(|metadata| metadata.needs_thumbnail())
+        && video_decodable(&imported.capabilities)
+}
+
+fn video_decodable(capabilities: &ProbeCapabilities) -> bool {
+    capabilities
+        .video()
+        .is_none_or(|stream| stream.decodability.is_decodable())
+}
+
+fn job_key(
+    kind: ArtifactKind,
+    model: &'static str,
+) -> std::result::Result<CacheKey, engine::EditError> {
+    CacheKey::new(KeyInputs {
+        kind,
+        source: [0; 32],
+        provider: "desktop",
+        model,
+        version: "1",
+        settings: &[],
+        transcript: [0; 32],
+        cues: [0; 32],
+        clip_range: [0; 32],
+        translation: [0; 32],
+    })
+}
+
 fn finish(
     send: &mpsc::SyncSender<ImportEvent>,
     cancelled: bool,

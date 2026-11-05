@@ -250,24 +250,38 @@ impl SourceAsset {
         path: PathBuf,
         cancelled: Arc<AtomicBool>,
     ) -> Result<Self> {
+        Self::import_with_summary(id, path, cancelled).map(|imported| imported.asset)
+    }
+    /// Like [`Self::import_with_cancel`], plus transient decoder capabilities for
+    /// this machine. Probe and hash run once; capability checks only open codecs.
+    pub fn import_with_summary(
+        id: AssetId,
+        path: PathBuf,
+        cancelled: Arc<AtomicBool>,
+    ) -> Result<crate::summary::ImportedSource> {
         if cancelled.load(Ordering::Relaxed) {
             return Err(MediaError::Cancelled);
         }
         let path = std::fs::canonicalize(path)?;
         let reader = crate::PacketReader::open_with_cancel(&path, cancelled.clone())?;
         let probe = SourceProbe::from(reader.probe());
+        let capabilities = crate::summary::ProbeCapabilities::from_probe(reader.probe());
         drop(reader);
         if cancelled.load(Ordering::Relaxed) {
             return Err(MediaError::Cancelled);
         }
         let content_hash =
             ContentHash::read_with_cancel(&path, || cancelled.load(Ordering::Relaxed))?;
-        Self::try_from(AssetData {
+        let asset = Self::try_from(AssetData {
             ephemeral: false,
             id,
             path,
             content_hash,
             probe,
+        })?;
+        Ok(crate::summary::ImportedSource {
+            asset,
+            capabilities,
         })
     }
     /// A successful relink preserves identity and only accepts identical content.

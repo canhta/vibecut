@@ -4,13 +4,15 @@ use crate::{
     catalog::{self, Locale, Preferences, Text, drag_panel},
     egui::{self, Align2, Color32, FontId, Id, Rect, Vec2},
     icons::{self, Icon},
-    import::{ImportEvent, ImportFailure, ImportProbe, ImportQueue},
     panels::{AssetsTab, ElementKind, PropertiesTab},
+    import::{
+        ImportEvent, ImportFailure, ImportProbe, ImportQueue, ThumbnailOutcome, ThumbnailSource,
+    },
     playback::Playback,
     theme,
 };
 use engine::{Command, CreatedId, ItemParamPatch, NewItem, Session};
-use media::{AssetId, SourceAsset, StreamKind};
+use media::{AssetId, SourceAsset, StreamKind, Thumbnail, UnsupportedReason};
 use project::{ItemId, ItemParams, TrackId, TrackKind};
 use std::{
     collections::{BTreeMap, BTreeSet},
@@ -61,6 +63,28 @@ pub struct WidgetState {
     /// Action and shortcut shown for icon-only controls.
     pub tooltip: Option<String>,
 }
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum AssetState {
+    Probing,
+    Ready,
+    Unsupported(UnsupportedReason),
+}
+impl AssetState {
+    pub const fn code(self) -> &'static str {
+        match self {
+            Self::Probing => "probing",
+            Self::Ready => "ready",
+            Self::Unsupported(_) => "unsupported",
+        }
+    }
+}
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct AssetInspection {
+    pub id: AssetId,
+    pub state: &'static str,
+    pub thumbnail: bool,
+    pub detail: Option<String>,
+}
 #[derive(Clone, Debug)]
 pub struct Inspection {
     pub widgets: Vec<WidgetState>,
@@ -87,6 +111,7 @@ pub struct Inspection {
     pub import_error: Option<Arc<engine::EditError>>,
     pub import_toast: Option<String>,
     pub media_selection: Vec<AssetId>,
+    pub assets: Vec<AssetInspection>,
     pub export: Option<crate::export::ExportInspection>,
     pub export_options: crate::export::ExportOptions,
     pub models: Option<crate::model_manager::ModelInspection>,
@@ -165,6 +190,7 @@ struct AssetRow {
     name: String,
     info: String,
     icon: Icon,
+    state: AssetState,
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum DragMode {
@@ -388,6 +414,10 @@ pub struct Editor {
     scene_confirm: bool,
     pub export: Option<crate::export::ExportDialog>,
     models: Option<crate::model_manager::ModelManager>,
+    asset_states: BTreeMap<AssetId, AssetState>,
+    thumbnails: BTreeMap<AssetId, Thumbnail>,
+    thumbnail_textures: BTreeMap<AssetId, egui::TextureHandle>,
+    thumbnail_root: Option<PathBuf>,
 }
 impl Editor {
     pub fn new(session: Session, playback: Playback, preferences: Preferences) -> Self {
@@ -459,6 +489,10 @@ impl Editor {
             scene_confirm: false,
             export: None,
             models: None,
+            asset_states: BTreeMap::new(),
+            thumbnails: BTreeMap::new(),
+            thumbnail_textures: BTreeMap::new(),
+            thumbnail_root: None,
         }
     }
     /// Attach the engine autosave owner without duplicating its Session.
@@ -514,6 +548,29 @@ impl Editor {
                 None => toast.text.clone(),
             }),
             media_selection: self.media_selection.iter().copied().collect(),
+            assets: self
+                .session
+                .project()
+                .data()
+                .assets
+                .iter()
+                .map(|asset| {
+                    let state = self
+                        .asset_states
+                        .get(&asset.id())
+                        .copied()
+                        .unwrap_or(AssetState::Ready);
+                    AssetInspection {
+                        id: asset.id(),
+                        state: state.code(),
+                        thumbnail: self.thumbnails.contains_key(&asset.id()),
+                        detail: match state {
+                            AssetState::Unsupported(reason) => Some(reason.label().to_owned()),
+                            _ => None,
+                        },
+                    }
+                })
+                .collect(),
             export_options: self.preferences.export,
             export: self
                 .export
@@ -533,6 +590,19 @@ impl Editor {
     pub fn set_import_probe(&mut self, probe: Arc<dyn ImportProbe>) -> Result<()> {
         self.import_queue()?.set_probe(probe);
         Ok(())
+    }
+    /// Replace thumbnail decoding in tests; production reuses media's decoder.
+    pub fn set_thumbnailer(&mut self, thumbnailer: Arc<dyn ThumbnailSource>) -> Result<()> {
+        self.import_queue()?.set_thumbnailer(thumbnailer);
+        Ok(())
+    }
+    /// Persistent content-keyed thumbnail directory. Without one thumbnails are
+    /// memoized for this session only.
+    pub fn set_thumbnail_root(&mut self, root: PathBuf) {
+        if let Some(queue) = &mut self.imports {
+            queue.set_thumbnail_root(root.clone());
+        }
+        self.thumbnail_root = Some(root);
     }
     pub fn importing(&self) -> bool {
         self.imports.as_ref().is_some_and(ImportQueue::active)
@@ -566,6 +636,11 @@ impl Editor {
     fn import_queue(&mut self) -> Result<&mut ImportQueue> {
         if self.imports.is_none() {
             self.imports = Some(ImportQueue::new(self.playback.budget().clone())?);
+            if let Some(root) = &self.thumbnail_root
+                && let Some(queue) = &mut self.imports
+            {
+                queue.set_thumbnail_root(root.clone());
+            }
         }
         self.imports
             .as_mut()
@@ -581,7 +656,7 @@ impl Editor {
             .max()
             .map_or(1, |id| id.saturating_add(1))
     }
-    fn add_imported_asset(&mut self, asset: SourceAsset) -> Result<()> {
+    fn add_imported_asset(&mut self, asset: SourceAsset) -> Result<AssetId> {
         let next = self.next_asset_id();
         let asset = if asset.id().0 == next {
             asset
@@ -591,8 +666,9 @@ impl Editor {
             SourceAsset::try_from(data)
                 .map_err(|error| Error::Engine(engine::EditError::Media(error)))?
         };
+        let id = asset.id();
         self.session.apply(Command::AddAsset { asset })?;
-        Ok(())
+        Ok(id)
     }
     fn apply_import_events(&mut self) {
         let before = self.session.project().clone();
@@ -614,20 +690,43 @@ impl Editor {
         };
         for event in events {
             match event {
-                ImportEvent::Imported(asset) => {
-                    let path = asset.path().to_owned();
+                ImportEvent::Imported(imported) => {
+                    let path = imported.asset.path().to_owned();
                     self.import_completed += 1;
-                    if let Err(error) = self.add_imported_asset(asset) {
-                        self.import_failures
-                            .push(ImportFailure::local(path, error_detail(&error)));
-                    } else {
-                        self.import_imported += 1;
+                    let unsupported = imported.capabilities.unsupported();
+                    let thumbnail = crate::import::needs_thumbnail(&imported);
+                    match self.add_imported_asset(imported.asset) {
+                        Ok(id) => {
+                            let state = match unsupported {
+                                Some(reason) => AssetState::Unsupported(reason),
+                                None if thumbnail => AssetState::Probing,
+                                None => AssetState::Ready,
+                            };
+                            self.asset_states.insert(id, state);
+                            self.import_imported += 1;
+                        }
+                        Err(error) => {
+                            self.import_failures
+                                .push(ImportFailure::local(path, error_detail(&error)));
+                        }
                     }
                 }
                 ImportEvent::Failed(failure) => {
                     self.import_completed += 1;
                     self.import_failures.push(failure);
                 }
+                ImportEvent::Thumbnail { asset, outcome } => match outcome {
+                    ThumbnailOutcome::Ready(thumbnail) => {
+                        self.thumbnails.insert(asset, thumbnail);
+                        self.thumbnail_textures.remove(&asset);
+                        self.asset_states.insert(asset, AssetState::Ready);
+                    }
+                    ThumbnailOutcome::Failed(error) => {
+                        // The asset stays usable with a placeholder.
+                        self.asset_states.insert(asset, AssetState::Ready);
+                        tracing::warn!(category = "thumbnail_generation", error = %error, "thumbnail unavailable");
+                    }
+                },
                 ImportEvent::Done { cancelled, error } => {
                     self.import_cancelled = cancelled;
                     if let Some(error) = error {
@@ -638,6 +737,7 @@ impl Editor {
                 }
             }
         }
+        self.prune_asset_state();
         self.prune_media_selection();
         if !Arc::ptr_eq(&before, self.session.project()) {
             self.sync_preview();
@@ -705,6 +805,20 @@ impl Editor {
             self.media_anchor = None;
         }
     }
+    fn prune_asset_state(&mut self) {
+        let existing: BTreeSet<AssetId> = self
+            .session
+            .project()
+            .data()
+            .assets
+            .iter()
+            .map(SourceAsset::id)
+            .collect();
+        self.asset_states.retain(|id, _| existing.contains(id));
+        self.thumbnails.retain(|id, _| existing.contains(id));
+        self.thumbnail_textures
+            .retain(|id, _| existing.contains(id));
+    }
     /// Replace the media selection; tests and agents use the same state as clicks.
     pub fn select_media(&mut self, ids: impl IntoIterator<Item = AssetId>) {
         self.media_selection = ids.into_iter().collect();
@@ -752,11 +866,21 @@ impl Editor {
                 return;
             }
         };
+        let unsupported: BTreeSet<AssetId> = self
+            .asset_states
+            .iter()
+            .filter_map(|(id, state)| matches!(state, AssetState::Unsupported(_)).then_some(*id))
+            .collect();
         let result = self.session.transaction(|session| {
             let mut created = Vec::new();
             let mut video_at = at;
             let mut audio_at = at;
             for asset in &selected {
+                if unsupported.contains(&asset.id()) {
+                    return Err(engine::EditError::Unsupported(
+                        "media codec is unsupported in this build",
+                    ));
+                }
                 let kind = asset_kind(asset)?;
                 let duration = asset
                     .probe()
@@ -2752,7 +2876,14 @@ impl Editor {
             .assets
             .iter()
             .filter(|asset| !asset.ephemeral())
-            .map(|asset| asset_row(asset, locale))
+            .map(|asset| {
+                let state = self
+                    .asset_states
+                    .get(&asset.id())
+                    .copied()
+                    .unwrap_or(AssetState::Ready);
+                asset_row(asset, locale, state)
+            })
             .collect();
         if rows.is_empty() {
             ui.label(self.tr(Text::EmptyMedia));
@@ -2770,7 +2901,12 @@ impl Editor {
                             } else {
                                 self.text_color()
                             };
-                            let image = icons::tinted(row.icon, BUTTON_ICON, color);
+                            let image = match self.thumbnail_texture(ui.ctx(), row.id) {
+                                Some(texture) => {
+                                    egui::Image::new((texture.id(), egui::vec2(64.0, 36.0)))
+                                }
+                                None => icons::tinted(row.icon, BUTTON_ICON, color),
+                            };
                             let mut button = egui::Button::image_and_text(
                                 image,
                                 egui::RichText::new(format!("{}\n{}", row.name, row.info))
@@ -2783,15 +2919,28 @@ impl Editor {
                             }
                             let response = ui
                                 .push_id(("media.asset", row.id.0), |ui| {
-                                    ui.add_sized([ui.available_width(), 46.0], button)
+                                    let response =
+                                        ui.add_sized([ui.available_width(), 46.0], button);
+                                    let state_color = if is_selected {
+                                        theme::on_accent(self.preferences.dark)
+                                    } else {
+                                        asset_state_color(row.state, self.preferences.dark)
+                                    };
+                                    let badge = ui.label(
+                                        egui::RichText::new(asset_state_text(locale, row.state))
+                                            .small()
+                                            .color(state_color),
+                                    );
+                                    (response, badge)
                                 })
                                 .inner;
                             self.remember_with_icon(
                                 format!("media.asset.{}", row.id.0),
                                 Some(row.icon.name()),
-                                &response,
+                                &response.0,
                             );
-                            if response.clicked() {
+                            self.remember(format!("media.asset.{}.status", row.id.0), &response.1);
+                            if response.0.clicked() {
                                 let modifiers = ui.ctx().input(|input| input.modifiers);
                                 self.select_asset(row.id, modifiers);
                             }
@@ -4919,6 +5068,28 @@ impl Editor {
     fn secondary(&self) -> Color32 {
         theme::secondary(self.preferences.dark)
     }
+    /// Upload one decoded thumbnail on first use; later frames reuse the handle.
+    fn thumbnail_texture(
+        &mut self,
+        ctx: &egui::Context,
+        id: AssetId,
+    ) -> Option<egui::TextureHandle> {
+        if let Some(texture) = self.thumbnail_textures.get(&id) {
+            return Some(texture.clone());
+        }
+        let thumbnail = self.thumbnails.get(&id)?;
+        let image = egui::ColorImage::from_rgba_unmultiplied(
+            [thumbnail.width as usize, thumbnail.height as usize],
+            &thumbnail.pixels,
+        );
+        let texture = ctx.load_texture(
+            format!("media.thumbnail.{}", id.0),
+            image,
+            egui::TextureOptions::LINEAR,
+        );
+        self.thumbnail_textures.insert(id, texture.clone());
+        Some(texture)
+    }
 }
 /// Paint top/bottom fades over a scroll view whose content continues past the edge.
 fn scroll_fades<F>(ui: &egui::Ui, output: &egui::scroll_area::ScrollAreaOutput<F>, dark: bool) {
@@ -5023,7 +5194,31 @@ fn asset_kind(asset: &SourceAsset) -> std::result::Result<TrackKind, engine::Edi
         ))
     }
 }
-fn asset_row(asset: &SourceAsset, locale: Locale) -> AssetRow {
+fn asset_state_text(locale: Locale, state: AssetState) -> String {
+    match state {
+        AssetState::Probing => catalog::text(locale, Text::AssetProbing).to_owned(),
+        AssetState::Ready => catalog::text(locale, Text::AssetReady).to_owned(),
+        AssetState::Unsupported(reason) => {
+            let reason = match reason {
+                UnsupportedReason::DecoderUnavailable => {
+                    catalog::text(locale, Text::UnsupportedDecoder).to_owned()
+                }
+                UnsupportedReason::OpenFailed => {
+                    catalog::text(locale, Text::UnsupportedOpenFailed).to_owned()
+                }
+            };
+            catalog::format(locale, Text::AssetUnsupported, &[("reason", &reason)])
+        }
+    }
+}
+fn asset_state_color(state: AssetState, dark: bool) -> Color32 {
+    match state {
+        AssetState::Probing => theme::secondary(dark),
+        AssetState::Ready => theme::success(dark),
+        AssetState::Unsupported(_) => theme::warning(dark),
+    }
+}
+fn asset_row(asset: &SourceAsset, locale: Locale, state: AssetState) -> AssetRow {
     let mut info = Vec::new();
     let video = asset
         .probe()
@@ -5090,6 +5285,7 @@ fn asset_row(asset: &SourceAsset, locale: Locale) -> AssetRow {
         name: file_name(asset.path()),
         info: info.join(" · "),
         icon,
+        state,
     }
 }
 fn file_name(path: &std::path::Path) -> String {

@@ -152,13 +152,82 @@ impl PacketReader {
             streams,
             bytes_read: bytes.load(Ordering::Relaxed),
         };
-        Ok(Self {
+        let mut reader = Self {
             input,
             probe,
             cancel,
             bytes,
             budget,
-        })
+        };
+        reader.recover_video_dimensions()?;
+        Ok(reader)
+    }
+    /// Some image demuxers report coded dimensions only after the first frame.
+    /// Decode exactly that frame, record the real geometry, and rewind the input
+    /// so packet consumers still start at the beginning.
+    fn recover_video_dimensions(&mut self) -> Result<()> {
+        let missing: Vec<usize> = self
+            .probe
+            .streams
+            .iter()
+            .filter(|stream| stream.kind == StreamKind::Video && stream.video.is_none())
+            .map(|stream| stream.index)
+            .collect();
+        if missing.is_empty() {
+            return Ok(());
+        }
+        for index in missing {
+            let stream = self
+                .probe
+                .streams
+                .iter()
+                .find(|stream| stream.index == index)
+                .cloned()
+                .ok_or(MediaError::Invalid("probe stream"))?;
+            let mut decoder = crate::VideoDecoder::open_for_probe(&stream)?;
+            let mut geometry = None;
+            loop {
+                let Some(packet) = self.next_packet()? else {
+                    break;
+                };
+                if packet.stream() != stream.index {
+                    continue;
+                }
+                decoder.push_packet(&packet)?;
+                if let Some(frame) = decoder.pull_frame()? {
+                    geometry = Some((
+                        frame.width(),
+                        frame.height(),
+                        frame.color(),
+                        frame.bit_depth(),
+                    ));
+                    break;
+                }
+            }
+            let Some((width, height, color, bit_depth)) = geometry else {
+                return Err(MediaError::Unsupported(
+                    "video dimensions unavailable before first frame",
+                ));
+            };
+            if width == 0 || height == 0 || u64::from(width) * u64::from(height) > 1 << 26 {
+                return Err(MediaError::TooLarge("video dimensions"));
+            }
+            let stream = self
+                .probe
+                .streams
+                .iter_mut()
+                .find(|stream| stream.index == index)
+                .ok_or(MediaError::Invalid("probe stream"))?;
+            stream.video = Some(crate::VideoInfo {
+                width,
+                height,
+                color,
+                bit_depth,
+            });
+        }
+        self.seek(Tick::ZERO)?;
+        self.probe.bytes_read = self.bytes.load(Ordering::Relaxed);
+        Ok(())
     }
     pub fn probe(&self) -> &Probe {
         &self.probe
@@ -266,6 +335,11 @@ impl VideoReader {
     }
     pub fn stream(&self) -> &StreamInfo {
         &self.stream
+    }
+    /// Bytes read from the file so far; probe and first-frame decode stay far
+    /// below the whole-file size for long media.
+    pub fn bytes_read(&self) -> u64 {
+        self.packets.bytes_read()
     }
     pub fn seek(&mut self, target: Tick) -> Result<()> {
         self.packets.seek(target)?;

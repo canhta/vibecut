@@ -436,6 +436,11 @@ catalog! {
     AssetDimensions { key: "asset_dimensions", en: "{width}×{height}", vi: "{width}×{height}" },
     AssetFps { key: "asset_fps", en: "{rate} fps", vi: "{rate} fps" },
     AssetAudio { key: "asset_audio", en: "{rate} Hz · {channels} ch", vi: "{rate} Hz · {channels} kênh" },
+    AssetProbing { key: "asset_probing", en: "Probing…", vi: "Đang kiểm tra…" },
+    AssetReady { key: "asset_ready", en: "Ready", vi: "Sẵn sàng" },
+    AssetUnsupported { key: "asset_unsupported", en: "Unsupported: {reason}", vi: "Không hỗ trợ: {reason}" },
+    UnsupportedDecoder { key: "unsupported_decoder", en: "decoder unavailable in this build", vi: "bộ giải mã không có trong bản này" },
+    UnsupportedOpenFailed { key: "unsupported_open_failed", en: "codec could not be opened", vi: "không thể mở bộ giải mã" },
 }
 
 /// The message for `key` in `locale`.

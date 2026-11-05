@@ -15,6 +15,7 @@ pub mod recovery;
 pub mod shot_analysis;
 pub mod subtitles;
 mod thumbnail;
+pub mod thumbnails;
 pub mod translation;
 pub use budget::{BudgetSnapshot, ByteBudget, ByteLease, ByteOwner};
 pub use clip_export::{

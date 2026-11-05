@@ -10,8 +10,8 @@ use egui_kittest::{
 };
 use engine::{ByteBudget, Command, Session};
 use media::{
-    AssetData, AssetId, AudioInfo, ColorInfo, ContentHash, MediaError, SourceAsset, SourceProbe,
-    SourceStream, StreamKind, TimeBase, VideoInfo,
+    AssetData, AssetId, AudioInfo, ColorInfo, ContentHash, ImportedSource, MediaError,
+    ProbeCapabilities, SourceAsset, SourceProbe, SourceStream, StreamKind, TimeBase, VideoInfo,
 };
 use project::{ItemParams, Project, ProjectId, TrackKind};
 use std::{
@@ -32,6 +32,12 @@ use vibecut::{
 };
 
 const SECOND: i64 = TICKS_PER_SECOND;
+
+fn path(name: impl std::fmt::Display) -> PathBuf {
+    std::env::temp_dir()
+        .join("vibecut-import")
+        .join(name.to_string())
+}
 
 fn stream(kind: StreamKind, duration: Tick) -> SourceStream {
     SourceStream {
@@ -81,7 +87,21 @@ fn source_asset(
             streams: vec![stream(kind, duration.unwrap_or(Tick::ZERO))],
         },
     })
-    .unwrap()
+    .unwrap_or_else(|error| panic!("source asset: {error:?}"))
+}
+
+fn imported(asset: SourceAsset) -> ImportedSource {
+    let streams: Vec<_> = asset
+        .probe()
+        .streams
+        .iter()
+        .filter(|stream| stream.kind != StreamKind::Other)
+        .map(|stream| (stream.index, stream.kind, stream.codec.clone()))
+        .collect();
+    ImportedSource {
+        asset,
+        capabilities: ProbeCapabilities::decodable(streams),
+    }
 }
 
 #[derive(Default)]
@@ -94,14 +114,14 @@ impl ImportProbe for Probe {
         id: AssetId,
         path: PathBuf,
         _cancelled: Arc<AtomicBool>,
-    ) -> media::Result<SourceAsset> {
+    ) -> media::Result<ImportedSource> {
         self.calls.lock().unwrap().push(path.clone());
         let name = path.file_name().unwrap().to_string_lossy().to_string();
         if name.contains("bad") {
             return Err(MediaError::Unsupported("test codec"));
         }
         if name.contains("noduration") {
-            return Ok(source_asset(id.0, StreamKind::Video, None, path));
+            return Ok(imported(source_asset(id.0, StreamKind::Video, None, path)));
         }
         let kind = if name.contains("audio") {
             StreamKind::Audio
@@ -145,7 +165,7 @@ impl ImportProbe for GateProbe {
         id: AssetId,
         path: PathBuf,
         _cancelled: Arc<AtomicBool>,
-    ) -> media::Result<SourceAsset> {
+    ) -> media::Result<ImportedSource> {
         if self.calls.fetch_add(1, Ordering::SeqCst) == 1 {
             *self.second.0.lock().unwrap() = true;
             self.second.1.notify_all();
@@ -154,12 +174,12 @@ impl ImportProbe for GateProbe {
                 released = self.release.1.wait(released).unwrap();
             }
         }
-        Ok(source_asset(
+        Ok(imported(source_asset(
             id.0,
             StreamKind::Video,
             Some(Tick(4 * SECOND)),
             path,
-        ))
+        )))
     }
 }
 
@@ -184,7 +204,7 @@ impl ImportProbe for BlockingProbe {
         _id: AssetId,
         _path: PathBuf,
         cancelled: Arc<AtomicBool>,
-    ) -> media::Result<SourceAsset> {
+    ) -> media::Result<ImportedSource> {
         self.started.store(true, Ordering::Release);
         while !cancelled.load(Ordering::Acquire) {
             std::thread::sleep(Duration::from_millis(1));
@@ -262,7 +282,7 @@ fn drag_drop_imports_good_files_and_reports_typed_partial_failure() {
         harness
             .input_mut()
             .dropped_files
-            .push(drop_file(format!("/tmp/vibecut-import/{name}")));
+            .push(drop_file(path(name)));
     }
     let inspection = wait_harness_import(&mut harness);
     assert_eq!(inspection.import_total, 3);
@@ -316,10 +336,7 @@ fn picker_result_imports_through_workspace_and_real_editor_widgets() {
     // Inject the OS picker's returned paths at the production result seam.
     harness
         .state_mut()
-        .import_picked_files(vec![
-            "/tmp/vibecut-import/picker-video.mp4".into(),
-            "/tmp/vibecut-import/picker-bad.mp4".into(),
-        ])
+        .import_picked_files(vec![path("picker-video.mp4"), path("picker-bad.mp4")])
         .unwrap();
     loop {
         harness.run_steps(1);
@@ -365,7 +382,7 @@ fn cancel_mid_batch_keeps_completed_assets_and_stops_the_rest() {
     editor
         .drop_files(
             (1..=4)
-                .map(|index| PathBuf::from(format!("/tmp/vibecut-import/slow-{index}.mp4")))
+                .map(|index| path(format!("slow-{index}.mp4")))
                 .collect(),
         )
         .unwrap();
@@ -400,7 +417,7 @@ fn import_batches_are_capped_and_require_shared_budget_admission() {
     let budget = ByteBudget::new(512 << 20).unwrap();
     let mut queue = ImportQueue::new(budget).unwrap();
     let oversized: Vec<PathBuf> = (0..=MAX_IMPORT_FILES)
-        .map(|index| PathBuf::from(format!("/tmp/vibecut-import/many-{index}.mp4")))
+        .map(|index| path(format!("many-{index}.mp4")))
         .collect();
     assert!(matches!(
         queue.start(oversized, 1),
@@ -429,7 +446,7 @@ fn unpolled_import_backpressure_bounds_completed_metadata() {
     queue
         .start(
             (0..32)
-                .map(|index| format!("/tmp/vibecut-import/backpressure-{index}.mp4").into())
+                .map(|index| path(format!("backpressure-{index}.mp4")))
                 .collect(),
             1,
         )
@@ -467,10 +484,7 @@ fn cancel_interrupts_the_current_probe_and_shutdown_joins_it() {
     let probe = Arc::new(BlockingProbe::new());
     editor.set_import_probe(probe.clone()).unwrap();
     editor
-        .start_import(vec![
-            "/tmp/vibecut-import/cancel-a.mp4".into(),
-            "/tmp/vibecut-import/cancel-b.mp4".into(),
-        ])
+        .start_import(vec![path("cancel-a.mp4"), path("cancel-b.mp4")])
         .unwrap();
     let deadline = Instant::now() + Duration::from_secs(5);
     while !probe.started() {
@@ -495,7 +509,7 @@ fn cancel_interrupts_the_current_probe_and_shutdown_joins_it() {
     let probe = Arc::new(BlockingProbe::new());
     second_editor.set_import_probe(probe.clone()).unwrap();
     second_editor
-        .start_import(vec!["/tmp/vibecut-import/shutdown.mp4".into()])
+        .start_import(vec![path("shutdown.mp4")])
         .unwrap();
     while !probe.started() {
         second_editor.tick();
@@ -516,7 +530,7 @@ fn cancel_before_worker_starts_reports_cancellation_without_failure() {
     let mut editor = editor();
     editor.set_import_probe(Arc::new(Probe::default())).unwrap();
     editor
-        .start_import(vec!["/tmp/vibecut-import/cancel-before-start.mp4".into()])
+        .start_import(vec![path("cancel-before-start.mp4")])
         .unwrap();
     editor.activate("import.cancel").unwrap();
     let inspection = wait_import(&mut editor);
@@ -542,7 +556,7 @@ fn shutdown_keeps_work_allowance_until_probe_exits() {
             _: AssetId,
             _: PathBuf,
             cancelled: Arc<AtomicBool>,
-        ) -> media::Result<SourceAsset> {
+        ) -> media::Result<ImportedSource> {
             self.started.send(()).unwrap();
             while !cancelled.load(Ordering::Acquire) {
                 std::thread::sleep(Duration::from_millis(1));
@@ -562,9 +576,7 @@ fn shutdown_keeps_work_allowance_until_probe_exits() {
         cancelled: cancelled_send,
         release: Mutex::new(release_receive),
     }));
-    queue
-        .start(vec!["/tmp/vibecut-import/shutdown-lease.mp4".into()], 1)
-        .unwrap();
+    queue.start(vec![path("shutdown-lease.mp4")], 1).unwrap();
     queue.poll().unwrap();
     started_receive
         .recv_timeout(Duration::from_secs(5))
@@ -588,15 +600,18 @@ fn shutdown_keeps_work_allowance_until_probe_exits() {
 fn worker_panic_is_a_typed_failure_not_complete() {
     struct PanicProbe;
     impl ImportProbe for PanicProbe {
-        fn import(&self, _: AssetId, _: PathBuf, _: Arc<AtomicBool>) -> media::Result<SourceAsset> {
+        fn import(
+            &self,
+            _: AssetId,
+            _: PathBuf,
+            _: Arc<AtomicBool>,
+        ) -> media::Result<ImportedSource> {
             panic!("review injected failure");
         }
     }
     let mut editor = editor();
     editor.set_import_probe(Arc::new(PanicProbe)).unwrap();
-    editor
-        .start_import(vec!["/tmp/vibecut-import/panic.mp4".into()])
-        .unwrap();
+    editor.start_import(vec![path("panic.mp4")]).unwrap();
     let inspection = wait_import(&mut editor);
     assert_eq!(inspection.import_completed, 0);
     assert_eq!(inspection.import_imported, 0);
@@ -628,7 +643,7 @@ fn import_overlay_disables_import_and_insert_and_cancel_stops_batch() {
                 1,
                 StreamKind::Video,
                 Some(Tick(4 * SECOND)),
-                "/tmp/vibecut-import/existing.mp4",
+                path("existing.mp4"),
             ),
         })
         .unwrap();
@@ -638,7 +653,7 @@ fn import_overlay_disables_import_and_insert_and_cancel_stops_batch() {
     editor
         .drop_files(
             (1..=3)
-                .map(|index| PathBuf::from(format!("/tmp/vibecut-import/gate-{index}.mp4")))
+                .map(|index| path(format!("gate-{index}.mp4")))
                 .collect(),
         )
         .unwrap();
@@ -704,7 +719,7 @@ fn multi_select_insert_targets_only_selected_assets_in_one_undo_step() {
                     id,
                     kind,
                     Some(Tick(4 * SECOND)),
-                    format!("/tmp/vibecut-import/asset-{id}.mp4"),
+                    path(format!("asset-{id}.mp4")),
                 ),
             })
             .unwrap();
@@ -790,12 +805,7 @@ fn insert_refusal_keeps_assets_and_the_timeline_unchanged() {
         Session::new(Project::empty(ProjectId(15), "Refusal".into()).unwrap(), 20).unwrap();
     session
         .apply(Command::AddAsset {
-            asset: source_asset(
-                1,
-                StreamKind::Video,
-                None,
-                "/tmp/vibecut-import/noduration.mp4",
-            ),
+            asset: source_asset(1, StreamKind::Video, None, path("noduration.mp4")),
         })
         .unwrap();
     let mut playback = Playback::new(

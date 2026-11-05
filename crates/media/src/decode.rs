@@ -151,13 +151,29 @@ pub struct VideoDecoder {
 }
 impl VideoDecoder {
     pub fn new(stream: &StreamInfo, preference: DecodePreference) -> Result<Self> {
-        Self::with_backend(stream, preference, ffi::hardware_decoder, |builder| {
-            builder.video()
-        })
+        Self::with_backend(
+            stream,
+            preference,
+            false,
+            ffi::hardware_decoder,
+            |builder| builder.video(),
+        )
+    }
+    /// Probe-only open for streams whose coded dimensions are not in codec
+    /// parameters (image demuxers leave them at zero until the first frame).
+    pub(crate) fn open_for_probe(stream: &StreamInfo) -> Result<Self> {
+        Self::with_backend(
+            stream,
+            DecodePreference::Software,
+            true,
+            ffi::hardware_decoder,
+            |builder| builder.video(),
+        )
     }
     fn with_backend(
         stream: &StreamInfo,
         preference: DecodePreference,
+        allow_unknown_dimensions: bool,
         setup: impl FnOnce(&mut ff::codec::context::Context),
         mut open: impl FnMut(ff::decoder::Decoder) -> std::result::Result<ff::decoder::Video, ff::Error>,
     ) -> Result<Self> {
@@ -168,13 +184,15 @@ impl VideoDecoder {
         let mut context = ff::codec::context::Context::from_parameters(stream.parameters.0.clone())
             .map_err(error("create video decoder"))?;
         ffi::thread_and_limits(&mut context);
-        let info = stream
-            .video
-            .as_ref()
-            .ok_or(MediaError::Invalid("video metadata"))?;
-        let area = u64::from(info.width) * u64::from(info.height);
-        if area == 0 || area > 1 << 26 {
-            return Err(MediaError::TooLarge("video dimensions"));
+        match stream.video.as_ref() {
+            Some(info) => {
+                let area = u64::from(info.width) * u64::from(info.height);
+                if area == 0 || area > 1 << 26 {
+                    return Err(MediaError::TooLarge("video dimensions"));
+                }
+            }
+            None if allow_unknown_dimensions => {}
+            None => return Err(MediaError::Invalid("video metadata")),
         }
         // Keep thread_and_limits' native pixel ceiling: FFmpeg also applies it
         // to codec scratch buffers, which can exceed the visible frame's area.
@@ -537,6 +555,7 @@ mod acceleration_tests {
             let mut decoder = VideoDecoder::with_backend(
                 &stream,
                 DecodePreference::Hardware,
+                false,
                 |context| {
                     if fail_open {
                         ffi::hardware_decoder(context);

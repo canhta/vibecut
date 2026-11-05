@@ -22,7 +22,12 @@ pub(super) fn parameter_info(
             return Err(MediaError::TooLarge("codec extradata"));
         }
         if p.codec_type == AVMediaType::AVMEDIA_TYPE_VIDEO {
-            if p.width <= 0 || p.height <= 0 || i64::from(p.width) * i64::from(p.height) > 1 << 26 {
+            // Image demuxers may leave coded dimensions at zero until the first
+            // frame; the probe recovery decodes that one frame below.
+            if p.width <= 0 || p.height <= 0 {
+                return Ok((None, None));
+            }
+            if i64::from(p.width) * i64::from(p.height) > 1 << 26 {
                 return Err(MediaError::TooLarge("video dimensions"));
             }
             let depth = u8::try_from(p.bits_per_raw_sample).ok().filter(|n| *n > 0);

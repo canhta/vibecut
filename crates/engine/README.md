@@ -457,6 +457,20 @@ Call `saved()` after a successful save; it refuses an active transaction and
 invalidates pre-save targets. Opening another Session gives a new identity.
 A valid old artifact may remain cached without being applied.
 
+## Import jobs and thumbnails
+
+The desktop import composer submits `JobKind::Probe` for canonicalize/probe/hash
+and capability checks, publishes each asset before the batch ends, then submits
+`JobKind::Thumbnail` for video/image assets. Both use the existing runner,
+progress stages (`Probe`, `Thumbnail`), cancellation and the aggregate budget;
+the UI keeps completed assets on cancel or failure. `thumbnails::thumbnail_key`
+binds the source content hash, requested frame position and output edge through
+the one artifact-cache policy. `ThumbnailCache::get_or_generate` decodes only on
+a miss; corrupt envelopes or payloads count as misses and regenerate. The CLI's
+`probe` command prints the same metadata and capability matrix, while the app
+maps capabilities to its localized `probing`/`ready`/`unsupported` badges and
+keeps a placeholder when thumbnail generation fails.
+
 ## Reuse and ASR checkpoints
 
 `cache::CacheKey::new(KeyInputs)` hashes versioned, length-delimited BLAKE3 inputs.
@@ -475,6 +489,7 @@ without a generic dependency graph. Artifact kinds and their additional identity
 | Translation | transcript/text content, source/target language, provider/model/version/settings |
 | Cues | transcript, translations, language profile and segmentation settings/version |
 | Preview | cues, clip/source ranges, compositor/version and pixel/audio settings |
+| Thumbnail | source content hash, requested frame position and output edge |
 | ModelBundle | complete ai catalog record including named-file SHA-256, size, source and licence |
 
 `ArtifactCache::open` owns one exclusive cache directory and rebuilds bounded

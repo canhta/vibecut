@@ -22,6 +22,7 @@ pub enum ArtifactKind {
     Translation,
     Cues,
     Preview,
+    Thumbnail,
     ModelBundle,
     ShotAnalysis,
 }
@@ -57,6 +58,7 @@ impl CacheKey {
             ArtifactKind::Translation => b"translation",
             ArtifactKind::Cues => b"cues",
             ArtifactKind::Preview => b"preview",
+            ArtifactKind::Thumbnail => b"thumbnail",
             ArtifactKind::ModelBundle => b"model-bundle",
             ArtifactKind::ShotAnalysis => b"shot-analysis",
         };

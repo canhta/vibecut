@@ -988,11 +988,9 @@ fn run(
         false,
         autosave.session().project().clone(),
     )?;
-    Ok(Completed::Opened(Box::new(Editor::persisted(
-        autosave,
-        playback,
-        preferences,
-    ))))
+    let mut editor = Editor::persisted(autosave, playback, preferences);
+    editor.set_thumbnail_root(root.parent().unwrap_or(root).join("thumbnails"));
+    Ok(Completed::Opened(Box::new(editor)))
 }
 
 #[cfg(test)]
@@ -1079,6 +1077,15 @@ mod tests {
             playback,
             Preferences::default(),
         )));
+        if let Some(editor) = &mut workspace.editor {
+            editor.set_thumbnail_root(
+                workspace
+                    .root
+                    .parent()
+                    .unwrap_or(&workspace.root)
+                    .join("thumbnails"),
+            );
+        }
         workspace.picker = Some(Picker {
             future: Box::pin(std::future::pending()),
             action: PickerAction::Save {

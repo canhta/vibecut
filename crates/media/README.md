@@ -37,6 +37,30 @@ checks cooperative cancellation throughout streaming full-content hashing.
 Project persistence retains
 these media-owned contracts; it does not recreate probe or asset models.
 
+## Import metadata and thumbnails
+
+`SourceAsset::import_with_summary` runs the same canonicalize/probe/hash pass and
+also returns transient `ProbeCapabilities`, which opens (never decodes) every
+audio/video decoder in this FFmpeg build. `MediaMetadata::from_probe` derives the
+persistable summary: `MediaKind` (video/image/audio), container duration, video
+dimensions, `has_audio` and `DisplayFrameRate` (the exact rational plus the
+nearest integer chosen for compact display, so `24000/1001` shows 24 and
+`30000/1001` shows 30). Capabilities never enter the persisted asset.
+
+Image demuxers may report coded dimensions only after the first frame. The probe
+therefore decodes exactly one frame in that case, records its real geometry and
+rewinds the input before any packet consumer runs. A build without a required
+decoder returns `UnsupportedReason::DecoderUnavailable`; no filename or browser
+codec hint is inferred.
+
+`thumbnail` / `thumbnail_at` decode the first frame at a requested position
+(`seek_keyframe` plus decode forward for a later position) through the existing
+`VideoReader` and `RgbaConverter`, then scale to a 320 px maximum edge. This is
+the one frame decoder shared with ticket 18; no second decoder exists.
+`Thumbnail::encode`/`decode` is the bounded cache payload (1024 px ceiling),
+and `thumbnail_at_with_read_bytes` reports how many source bytes the first frame
+needed for streaming evidence.
+
 ## Entry points and timing
 
 - `probe(path)` / `PacketReader`: native `File` paths through seekable AVIO,
@@ -200,7 +224,10 @@ only; provider upload and transcription remain unverified.
 ## Bounds and verification
 
 Individual native FFmpeg allocations are capped at 256 MiB before media I/O.
-AVIO uses 32 KiB buffers; probing reads at most 32 MiB. Stream count is capped at
+AVIO uses 32 KiB buffers; probing reads at most 32 MiB. A first-frame thumbnail
+reads only the packets needed for that frame and retains one source frame plus
+one bounded RGBA thumbnail; it never reads the file for hashing (the import job
+hashes separately by design). Stream count is capped at
 256, extradata at 1 MiB, packets at 64 MiB, decoded frame area at 2^26 pixels,
 audio frames at 65,536 samples/channel and 32 channels, and one receive batch at
 64 frames. Audio encoding admits up to eight channels and caps its FIFO at

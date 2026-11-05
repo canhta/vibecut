@@ -54,6 +54,8 @@ pub enum JobKind {
     EffectThumbnail,
     Export,
     Import,
+    Probe,
+    Thumbnail,
     Persist,
     DownloadModel,
 }
@@ -72,6 +74,8 @@ pub enum JobStage {
     SuggestClips,
     Assemble,
     Process,
+    Probe,
+    Thumbnail,
     Admit,
     Render,
     Mix,

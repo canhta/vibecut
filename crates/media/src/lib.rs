@@ -11,6 +11,8 @@ mod model;
 mod mux;
 mod read;
 mod resample;
+mod summary;
+mod thumbnail;
 mod vision_prep;
 
 pub use asset::{
@@ -36,6 +38,13 @@ pub use model::{
 pub use mux::{Container, MuxSink, Muxer};
 pub use read::{PacketReader, VideoReader, probe};
 pub use resample::{AudioResampler, AudioSampleFormat};
+pub use summary::{
+    Decodability, DisplayFrameRate, ImportedSource, MediaKind, MediaMetadata, ProbeCapabilities,
+    StreamCapability, UnsupportedReason,
+};
+pub use thumbnail::{
+    THUMBNAIL_MAX_EDGE, Thumbnail, thumbnail, thumbnail_at, thumbnail_at_with_read_bytes,
+};
 pub use vision_prep::{
     FACE_CROP_SIZE, FaceBox, FaceCrop, FaceTensor, MFCC_COEFFICIENTS, MfccFrame, MfccProgress,
     VISION_SAMPLE_RATE, VisionFrame, VisionPrepLimits, decode_frame_at, decode_shot_frames,

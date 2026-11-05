@@ -587,6 +587,24 @@ fn probe_reports_decoded_stream_metadata() {
             .iter()
             .any(|stream| stream["kind"] == "audio")
     );
+    assert_eq!(value["metadata"]["kind"], "video");
+    assert_eq!(value["metadata"]["width"], 128);
+    assert_eq!(value["metadata"]["height"], 96);
+    assert_eq!(value["metadata"]["has_audio"], true);
+    assert_eq!(value["metadata"]["frame_rate"]["num"], 30);
+    assert_eq!(value["metadata"]["frame_rate"]["den"], 1);
+    assert_eq!(value["metadata"]["frame_rate"]["display_rounded"], 30);
+    let capabilities = value["capabilities"].as_array().unwrap();
+    assert!(
+        capabilities
+            .iter()
+            .any(|stream| stream["kind"] == "video" && stream["decodable"] == true)
+    );
+    assert!(
+        capabilities
+            .iter()
+            .any(|stream| stream["kind"] == "audio" && stream["decodable"] == true)
+    );
 }
 
 #[test]
