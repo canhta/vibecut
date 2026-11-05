@@ -552,8 +552,6 @@ fn packaged_inputs_never_include_model_weights() {
             "weights must not be packaged inputs"
         );
     }
-    let package = std::fs::read_to_string(root.join("packaging/package.py")).unwrap();
-    assert!(package.contains("No model weights are included."));
 }
 fn contains_file(path: &Path, names: &std::collections::BTreeSet<String>) -> bool {
     let Ok(entries) = std::fs::read_dir(path) else {

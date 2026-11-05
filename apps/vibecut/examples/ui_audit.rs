@@ -1462,6 +1462,7 @@ fn shorts_scene(
         .with_pixels_per_point(scale)
         .build_eframe(|_| AuditApp {
             app: App::Shorts(Box::new(shorts)),
+            _model_cache: None,
         });
     app.run_steps(3);
     if scene == "review" {
