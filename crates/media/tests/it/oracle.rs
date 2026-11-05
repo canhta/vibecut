@@ -311,8 +311,11 @@ fn audio_encode_and_resample_preserve_clock_and_sample_counts() {
         "AAC duration including priming",
     );
     assert!(crate::common::decodes(&output));
+    // FFmpeg before 9 decodes the trailing AAC frame padding that the edit list
+    // excludes (fixed in 68b53a8dbfdf). Bound the oracle to the fixture's 1 s
+    // presentation interval so every admitted version reports the same samples.
     let reference = crate::common::command("ffmpeg")
-        .args(["-v", "error", "-i"])
+        .args(["-v", "error", "-t", "1.0", "-i"])
         .arg(&path)
         .args(["-vn", "-ac", "1", "-ar", "16000", "-f", "f32le", "-"])
         .output()
