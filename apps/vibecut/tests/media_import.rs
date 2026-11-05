@@ -418,7 +418,7 @@ fn import_batches_are_capped_and_require_shared_budget_admission() {
 fn unpolled_import_backpressure_bounds_completed_metadata() {
     let budget = ByteBudget::new(512 << 20).unwrap();
     let mut queue = ImportQueue::new(budget.clone()).unwrap();
-    let probe = Arc::new(Probe::default());
+    let probe = Arc::new(GateProbe::new());
     queue.set_probe(probe.clone());
     queue
         .start(
@@ -429,8 +429,12 @@ fn unpolled_import_backpressure_bounds_completed_metadata() {
         )
         .unwrap();
     let _ = queue.poll().unwrap();
+    // The initial poll starts the worker and can consume its first event.
+    // Release the second probe only afterwards so the bound excludes racing
+    // production and draining during that poll.
+    probe.release();
     std::thread::sleep(Duration::from_millis(100));
-    let produced = probe.calls.lock().unwrap().len();
+    let produced = probe.calls.load(Ordering::SeqCst);
     assert!(
         produced <= 10,
         "an unpolled batch must block on its bounded event channel, produced {produced}"
