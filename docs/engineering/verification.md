@@ -61,7 +61,7 @@ Keep reports local and hand over paths. Open with `## TL;DR`, at most 10 lines c
 
 | Report | Required contents |
 |---|---|
-| Done | Ticket, branch, SHAs, diff stat; every Verify item → command → result; dependency lookups; observed/unverified behaviour; follow-ups and remaining work |
+| Done | Ticket, branch, SHAs, diff stat; every Must and Verify item → the test or command that exercises it → result; dependency lookups; observed/unverified behaviour; follow-ups and remaining work |
 | Review | Ticket, SHA, scope, checks; findings with critical/high/medium/low severity, `file:line`, reproduction, impact, fix; verdict `approve` or `changes` |
 
 Correctness, security and data-loss findings block approval.
