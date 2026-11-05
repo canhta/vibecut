@@ -2876,4 +2876,49 @@ fn captions_import_command_admits_json_and_rejects_bad_cues_atomically() {
     assert!(s.execute("captions.import", bad).is_err());
     assert_eq!(s.project(), &after);
     assert_ne!(after, before);
+
+    // Hostile placement and size: refused whole, never a panic or an unsaveable project.
+    let make = |count: usize, start: Tick| {
+        let Command::ImportCaptions {
+            asset,
+            language,
+            track,
+            name,
+            ..
+        } = ass_import()
+        else {
+            panic!("expected import command")
+        };
+        let cues = (0..count)
+            .map(|index| captions::AssCue {
+                range: range(index as i64 * 1_000_000, index as i64 * 1_000_000 + 500_000),
+                text: format!("line {index}").into(),
+                style: ass_style(),
+            })
+            .collect();
+        Command::ImportCaptions {
+            asset,
+            language,
+            start,
+            track,
+            name,
+            cues,
+        }
+    };
+    for (count, start) in [(5_000, Tick(0)), (1, Tick(i64::MAX - 10)), (1, Tick(-1))] {
+        let mut fresh = session();
+        let untouched = fresh.project().clone();
+        assert!(
+            fresh.apply(make(count, start)).is_err(),
+            "{count} cues at {start:?}"
+        );
+        assert_eq!(fresh.project(), &untouched);
+    }
+    assert!(matches!(
+        session().apply(make(5_000, Tick(0))),
+        Err(engine::EditError::Limit)
+    ));
+    let mut fresh = session();
+    fresh.apply(make(1_000, Tick(0))).unwrap();
+    project::decode(&project::encode(fresh.project().as_ref(), false).unwrap()).unwrap();
 }

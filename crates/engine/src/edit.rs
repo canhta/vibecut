@@ -629,6 +629,9 @@ fn import_captions(
         copied_text_bytes,
     )?
     .into_data();
+    // Per-cue styles are large: a result that cannot be encoded could not be
+    // saved or re-opened, so refuse it before the session accepts it.
+    project::encode(&project::Project::new(data.clone())?, false).map_err(|_| EditError::Limit)?;
     Ok(data)
 }
 

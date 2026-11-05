@@ -82,7 +82,10 @@ already-read script identity; no path or file IO runs inside the command. The
 item starts at `start`; source ranges stay in script coordinates and cue styles
 remain per cue. The asset, optional track and item form one command and one undo
 step, so undo removes all three. Empty cue lists, more than 100,000 cues,
-negative starts and invalid cue styles refuse atomically.
+negative starts and invalid cue styles refuse atomically. Every cue stores its
+full style, so a result the project encoder would refuse (about 3,000 cues
+under the 200,000-separator bound) is refused with `Limit` instead of leaving
+a session that cannot be saved; a shared per-item style table would lift that.
 
 `ass_import::prepare_ass_import` reads at most 16 MiB, parses through the
 captions owner and returns the registered command plus cue/style/skipped counts

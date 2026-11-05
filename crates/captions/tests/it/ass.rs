@@ -122,6 +122,7 @@ Dialogue: 0,not-a-time,0:00:01.00,Default,,0,0,0,,Bad start\n\
 Dialogue: 0,0:00:02.00,0:00:02.00,Default,,0,0,0,,Zero\n\
 Dialogue: 0,0:00:03.00,0:00:04.00,Default,,0,0,0,,   {\\i1}   \n\
 Comment: 0,0:00:00.00,0:00:01.00,Default,,0,0,0,,metadata\n\
+Picture: 0,0:00:00.00,0:00:01.00,Default,,0,0,0,,logo.png\n\
 Dialogue: 0,0:00:04.00,0:00:05.00,Default,,0,0,0,,Good\n";
     let import = parse_ass(text.as_bytes()).unwrap();
     assert_eq!(import.cues.len(), 1);
@@ -133,7 +134,11 @@ Dialogue: 0,0:00:04.00,0:00:05.00,Default,,0,0,0,,Good\n";
     assert!(lines.contains(&(10, AssWarningKind::MalformedCue)));
     assert!(lines.contains(&(11, AssWarningKind::MalformedCue)));
     assert!(lines.contains(&(12, AssWarningKind::EmptyText)));
-    assert!(lines.contains(&(13, AssWarningKind::UnsupportedEvent)));
+    assert!(
+        !lines.iter().any(|(line, _)| *line == 13),
+        "comments are not warnings"
+    );
+    assert!(lines.contains(&(14, AssWarningKind::UnsupportedEvent)));
 }
 
 #[test]
@@ -313,4 +318,95 @@ fn empty_and_minimal_documents_are_not_errors() {
     assert_eq!(import.play_res_y, 288);
     let import = parse_ass(b"[Script Info]\nTitle: X\n").unwrap();
     assert!(import.cues.is_empty());
+}
+
+const DEFAULT_STYLE: &str = "Style: Default,Arial,60,&H80FFFFFF,&H000000FF,&H00000000,&H00000000,-1,0,0,0,100,100,0,0,1,0,0,2,0,0,0,1";
+
+fn one_cue(style: &str, text: &str) -> captions::AssImport {
+    let dialogue = format!("Dialogue: 0,0:00:00.00,0:00:01.00,Default,,0,0,0,,{text}");
+    parse_ass(doc("PlayResX: 1920\nPlayResY: 1080", style, &dialogue).as_bytes()).unwrap()
+}
+
+#[test]
+fn override_tags_follow_ass_semantics() {
+    // Tags inside a `\t(...)` transform never reach the static style.
+    let import = one_cue(DEFAULT_STYLE, "{\\t(0,500,\\fs90\\i1)\\u1}Hi");
+    let style = &import.cues[0].style;
+    assert!((style.font_size_ratio - 60.0 / 1080.0).abs() < 1e-6);
+    assert!(!style.italic && style.underline);
+    // A bare `\b` restores the style value; repeating it never toggles.
+    let import = one_cue(DEFAULT_STYLE, "{\\b0}{\\b}{\\b}Hi");
+    assert!(import.cues[0].style.bold);
+    // `\c` keeps the style's alpha.
+    let import = one_cue(DEFAULT_STYLE, "{\\c&H0000FF&}Hi");
+    assert_eq!(import.cues[0].style.primary_color, [255, 0, 0, 127]);
+    // Vector drawings are shapes, not text.
+    let import = one_cue(DEFAULT_STYLE, "{\\p1}m 0 0 l 100 0 100 100{\\p0}Logo");
+    assert_eq!(import.cues[0].text.as_str(), "Logo");
+    let import = one_cue(DEFAULT_STYLE, "{\\p1}m 0 0 l 100 0 100 100");
+    assert!(import.cues.is_empty());
+    assert!(
+        import
+            .warnings
+            .iter()
+            .any(|w| w.kind == AssWarningKind::EmptyText)
+    );
+}
+
+#[test]
+fn hostile_style_values_are_replaced_with_a_warning() {
+    for (style, flagged) in [
+        (
+            "Style: Default,Arial,1e9,&H00FFFFFF,&H000000FF,&H00000000,&H00000000,0,0,0,0,100,100,0,0,1,0,0,2,0,0,0,1",
+            true,
+        ),
+        (
+            "Style: Default,Arial,-5,&H00FFFFFF,&H000000FF,&H00000000,&H00000000,0,0,0,0,100,100,0,0,1,0,0,2,1e12,0,0,1",
+            true,
+        ),
+        (
+            "Style: Default,Arial,1e999,&H00FFFFFF,&H000000FF,&H00000000,&H00000000,0,0,0,0,100,100,0,0,1,0,0,2,0,0,0,1",
+            true,
+        ),
+        (DEFAULT_STYLE, false),
+    ] {
+        let import = one_cue(style, "Hi");
+        let cue = &import.cues[0];
+        assert!(cue.style.is_valid(), "{style}");
+        assert!(cue.style.font_size_ratio > 0.01, "{style}");
+        let warned = import.warnings.iter().any(|w| {
+            matches!(
+                w.kind,
+                AssWarningKind::Limit | AssWarningKind::MalformedStyle
+            )
+        });
+        assert_eq!(warned, flagged, "{style}");
+    }
+    // BorderStyle 0 is not a reason to drop the whole style.
+    let import = one_cue(
+        "Style: Default,Courier,40,&H00FFFFFF,&H000000FF,&H00000000,&H00000000,0,0,0,0,100,100,0,0,0,0,0,2,0,0,0,1",
+        "Hi",
+    );
+    assert_eq!(import.cues[0].style.font_family.as_str(), "Courier");
+    assert!(import.warnings.is_empty());
+    // Mismatched numpad/horizontal/vertical never validates.
+    let mut style = import.cues[0].style.clone();
+    style.alignment.horizontal = HorizontalAlignment::Right;
+    assert!(!style.is_valid());
+}
+
+#[test]
+fn legacy_ssa_styles_use_ssa_alignment_and_decimal_colours() {
+    let text = "[V4 Styles]\n\
+Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, TertiaryColour, BackColour, Bold, Italic, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, AlphaLevel, Encoding\n\
+Style: Default,Arial,20,16711680,0,255,0,0,0,1,2,0,6,0,0,0,0,0\n\
+[Events]\nFormat: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\n\
+Dialogue: 0,0:00:00.00,0:00:01.00,Default,,0,0,0,,Hi\n";
+    let style = &parse_ass(text.as_bytes()).unwrap().cues[0].style;
+    // SSA 6 is top centre, i.e. numpad 8.
+    assert_eq!(style.alignment.numpad, 8);
+    assert_eq!(style.alignment.vertical, VerticalAlignment::Top);
+    // Decimal BGR 16711680 = 0x00FF0000 is blue; TertiaryColour is the outline.
+    assert_eq!(style.primary_color, [0, 0, 255, 255]);
+    assert_eq!(style.outline_color, [255, 0, 0, 255]);
 }

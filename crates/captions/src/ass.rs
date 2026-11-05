@@ -136,6 +136,8 @@ pub fn parse_ass(bytes: &[u8]) -> Result<AssImport, Error> {
     let mut play_res_y = DEFAULT_PLAY_RES_Y;
 
     let mut section = Section::Other;
+    // `[V4 Styles]` (SSA) numbers alignment differently from `[V4+ Styles]`.
+    let mut legacy_styles = false;
     let mut style_format: Option<Vec<String>> = None;
     let mut event_format: Option<Vec<String>> = None;
     let mut styles: std::collections::BTreeMap<String, StyleRecord> =
@@ -161,6 +163,7 @@ pub fn parse_ass(bytes: &[u8]) -> Result<AssImport, Error> {
         }
         if let Some(name) = line.strip_prefix('[').and_then(|v| v.strip_suffix(']')) {
             section = Section::from_name(name.trim());
+            legacy_styles = name.trim().eq_ignore_ascii_case("v4 styles");
             continue;
         }
         match section {
@@ -254,26 +257,59 @@ pub fn parse_ass(bytes: &[u8]) -> Result<AssImport, Error> {
                             marginv: None,
                         };
                         let mut name = None;
+                        let mut bad = false;
                         for (field, value) in fields.iter().zip(values.iter()) {
                             let value = value.trim();
                             match field.as_str() {
                                 "name" => name = Some(value.to_owned()),
                                 "fontname" => record.fontname = value.to_owned(),
-                                "fontsize" => record.fontsize = number(value),
-                                "primarycolour" => record.primarycolour = color(value),
-                                "outlinecolour" => record.outlinecolour = color(value),
-                                "backcolour" => record.backcolour = color(value),
-                                "bold" => record.bold = boolean(value),
-                                "italic" => record.italic = boolean(value),
-                                "underline" => record.underline = boolean(value),
-                                "strikeout" => record.strikeout = boolean(value),
-                                "borderstyle" => record.borderstyle = number(value),
-                                "alignment" => record.alignment = number(value),
-                                "marginl" => record.marginl = number(value),
-                                "marginr" => record.marginr = number(value),
-                                "marginv" => record.marginv = number(value),
+                                "fontsize" => {
+                                    record.fontsize = track(number(value), value, &mut bad)
+                                }
+                                "primarycolour" => {
+                                    record.primarycolour = track(color(value), value, &mut bad);
+                                }
+                                // SSA calls the outline colour "Tertiary".
+                                "outlinecolour" | "tertiarycolour" => {
+                                    record.outlinecolour = track(color(value), value, &mut bad);
+                                }
+                                "backcolour" => {
+                                    record.backcolour = track(color(value), value, &mut bad);
+                                }
+                                "bold" => record.bold = track(boolean(value), value, &mut bad),
+                                "italic" => record.italic = track(boolean(value), value, &mut bad),
+                                "underline" => {
+                                    record.underline = track(boolean(value), value, &mut bad);
+                                }
+                                "strikeout" => {
+                                    record.strikeout = track(boolean(value), value, &mut bad);
+                                }
+                                "borderstyle" => {
+                                    record.borderstyle = track(number(value), value, &mut bad);
+                                }
+                                "alignment" => {
+                                    record.alignment =
+                                        track(number(value), value, &mut bad).map(|v| {
+                                            if legacy_styles {
+                                                legacy_alignment(v)
+                                            } else {
+                                                v
+                                            }
+                                        });
+                                }
+                                "marginl" => record.marginl = track(number(value), value, &mut bad),
+                                "marginr" => record.marginr = track(number(value), value, &mut bad),
+                                "marginv" => record.marginv = track(number(value), value, &mut bad),
                                 _ => {}
                             }
+                        }
+                        if bad {
+                            warn(
+                                &mut warnings,
+                                &mut suppressed,
+                                line_number,
+                                AssWarningKind::MalformedStyle,
+                            );
                         }
                         let Some(name) =
                             name.filter(|name| !name.trim().is_empty() && name.len() <= 256)
@@ -432,10 +468,18 @@ pub fn parse_ass(bytes: &[u8]) -> Result<AssImport, Error> {
                                 AssWarningKind::MissingStyle,
                             );
                         }
-                        let mut style = base.map_or_else(
-                            || default_style(play_res_x, play_res_y),
+                        let (mut style, clamped) = base.map_or_else(
+                            || (default_style(play_res_x, play_res_y), false),
                             |record| map_style(record, play_res_x, play_res_y),
                         );
+                        if clamped {
+                            warn(
+                                &mut warnings,
+                                &mut suppressed,
+                                line_number,
+                                AssWarningKind::Limit,
+                            );
+                        }
                         if let Some(overrides) = stripped.overrides {
                             apply_overrides(
                                 &mut style,
@@ -475,6 +519,7 @@ pub fn parse_ass(bytes: &[u8]) -> Result<AssImport, Error> {
                             style,
                         });
                     }
+                    "comment" => {}
                     _ => {
                         if line.contains(':') {
                             warn(
@@ -593,6 +638,12 @@ fn split_fields(value: &str, expected: usize) -> Option<Vec<&str>> {
     Some(fields)
 }
 
+/// Flag a non-empty field that failed to parse; an empty field is just absent.
+fn track<T>(parsed: Option<T>, raw: &str, bad: &mut bool) -> Option<T> {
+    *bad |= parsed.is_none() && !raw.is_empty();
+    parsed
+}
+
 fn number(value: &str) -> Option<f64> {
     value.trim().parse::<f64>().ok().filter(|v| v.is_finite())
 }
@@ -608,9 +659,16 @@ fn boolean(value: &str) -> Option<bool> {
 /// ASS colours are `&HAABBGGRR`; the alpha byte is inverted (00 opaque).
 fn color(value: &str) -> Option<u32> {
     let value = value.trim();
-    let value = value
+    let Some(value) = value
         .strip_prefix("&H")
-        .or_else(|| value.strip_prefix("&h"))?;
+        .or_else(|| value.strip_prefix("&h"))
+    else {
+        // SSA and some ASS writers store the colour as a decimal integer.
+        return value
+            .parse::<i64>()
+            .ok()
+            .and_then(|v| u32::try_from(v & 0xffff_ffff).ok());
+    };
     let value = value.trim_end_matches('&');
     if value.is_empty() || value.len() > 8 || !value.bytes().all(|b| b.is_ascii_hexdigit()) {
         return None;
@@ -636,59 +694,80 @@ fn rgba(value: Option<u32>, fallback: [u8; 4]) -> [u8; 4] {
 }
 
 fn alignment(value: f64) -> crate::CueAlignment {
-    let numpad = (value.round() as i64).clamp(1, 9);
-    let (horizontal, vertical) = match numpad {
-        1 | 4 | 7 => (HorizontalAlignment::Left, vertical_for(numpad)),
-        3 | 6 | 9 => (HorizontalAlignment::Right, vertical_for(numpad)),
-        _ => (HorizontalAlignment::Center, vertical_for(numpad)),
-    };
-    crate::CueAlignment {
-        numpad: u8::try_from(numpad).unwrap_or(2),
-        horizontal,
-        vertical,
-    }
+    let numpad = u8::try_from((value.round() as i64).clamp(1, 9)).unwrap_or(2);
+    crate::CueAlignment::from_numpad(numpad).unwrap_or_else(default_alignment)
 }
-fn vertical_for(numpad: i64) -> VerticalAlignment {
-    match numpad {
-        7..=9 => VerticalAlignment::Top,
-        4..=6 => VerticalAlignment::Middle,
-        _ => VerticalAlignment::Bottom,
+
+fn default_alignment() -> crate::CueAlignment {
+    crate::CueAlignment {
+        numpad: 2,
+        horizontal: HorizontalAlignment::Center,
+        vertical: VerticalAlignment::Bottom,
     }
 }
 
-fn ratio(value: Option<f64>, play_res: f64) -> f32 {
+/// SSA `[V4 Styles]` alignment: 1-3 bottom, 5-7 top, 9-11 middle (left, centre,
+/// right). Returns the equivalent numpad value; anything else is bottom centre.
+fn legacy_alignment(value: f64) -> f64 {
+    match value.round() as i64 {
+        v @ 1..=3 => v as f64,
+        v @ 5..=7 => (v + 2) as f64,
+        v @ 9..=11 => (v - 5) as f64,
+        _ => 2.0,
+    }
+}
+
+/// Value over script resolution, or `None` when it is not finite, negative or
+/// above ten script heights.
+fn ratio(value: Option<f64>, play_res: f64) -> Option<f32> {
     value
         .filter(|v| v.is_finite() && *v >= 0.0)
         .map(|v| (v / play_res) as f32)
         .filter(|v| v.is_finite() && (0.0..=10.0).contains(v))
-        .unwrap_or(0.0)
 }
 
-fn map_style(record: &StyleRecord, play_res_x: f64, play_res_y: f64) -> CueStyle {
-    CueStyle {
+/// [`ratio`] where a present but out-of-range value sets `clamped`.
+fn checked_ratio(value: Option<f64>, play_res: f64, clamped: &mut bool) -> Option<f32> {
+    let result = ratio(value, play_res);
+    *clamped |= value.is_some() && result.is_none();
+    result
+}
+
+/// Map a style record; the flag is set when a hostile value was replaced.
+fn map_style(record: &StyleRecord, play_res_x: f64, play_res_y: f64) -> (CueStyle, bool) {
+    let mut clamped = false;
+    let font_size_ratio = checked_ratio(record.fontsize, play_res_y, &mut clamped)
+        .filter(|v| *v > 0.0)
+        .unwrap_or_else(|| {
+            clamped |= record.fontsize.is_some();
+            default_style(play_res_x, play_res_y).font_size_ratio
+        });
+    let style = CueStyle {
         font_family: NfcText::from(if record.fontname.trim().is_empty() {
             "Arial"
         } else {
             record.fontname.trim()
         }),
-        font_size_ratio: ratio(record.fontsize, play_res_y).max(0.0001),
+        font_size_ratio,
         primary_color: rgba(record.primarycolour, [255; 4]),
         outline_color: rgba(record.outlinecolour, [0, 0, 0, 255]),
         background_color: rgba(record.backcolour, [0, 0, 0, 0]),
         border_style: record
             .borderstyle
             .map(|v| v.round() as u8)
-            .filter(|v| *v <= 3)
+            .filter(|v| (1..=3).contains(v))
             .unwrap_or(1),
         alignment: alignment(record.alignment.unwrap_or(2.0)),
-        margin_left_ratio: ratio(record.marginl, play_res_x),
-        margin_right_ratio: ratio(record.marginr, play_res_x),
-        margin_vertical_ratio: ratio(record.marginv, play_res_y),
+        margin_left_ratio: checked_ratio(record.marginl, play_res_x, &mut clamped).unwrap_or(0.0),
+        margin_right_ratio: checked_ratio(record.marginr, play_res_x, &mut clamped).unwrap_or(0.0),
+        margin_vertical_ratio: checked_ratio(record.marginv, play_res_y, &mut clamped)
+            .unwrap_or(0.0),
         bold: record.bold.unwrap_or(false),
         italic: record.italic.unwrap_or(false),
         underline: record.underline.unwrap_or(false),
         strikeout: record.strikeout.unwrap_or(false),
-    }
+    };
+    (style, clamped)
 }
 
 fn default_style(_play_res_x: f64, play_res_y: f64) -> CueStyle {
@@ -699,7 +778,7 @@ fn default_style(_play_res_x: f64, play_res_y: f64) -> CueStyle {
         outline_color: [0, 0, 0, 255],
         background_color: [0, 0, 0, 0],
         border_style: 1,
-        alignment: alignment(2.0),
+        alignment: default_alignment(),
         margin_left_ratio: 0.0,
         margin_right_ratio: 0.0,
         margin_vertical_ratio: 0.0,
@@ -748,8 +827,13 @@ fn strip_text(input: &str) -> StrippedText {
     let mut overrides = Vec::new();
     let mut unsupported = false;
     let mut truncated = false;
+    let mut drawing = false;
     let mut chars = input.chars().peekable();
     while let Some(character) = chars.next() {
+        // Vector drawing commands (`\p1`) are shapes, not caption text.
+        if drawing && character != '{' {
+            continue;
+        }
         match character {
             '{' => {
                 let mut block = String::new();
@@ -771,6 +855,9 @@ fn strip_text(input: &str) -> StrippedText {
                 if block.len() > MAX_ASS_TEXT_BYTES {
                     truncated = true;
                     continue;
+                }
+                if let Some(on) = drawing_mode(&block) {
+                    drawing = on;
                 }
                 if !block.is_empty() {
                     overrides.push(block);
@@ -835,10 +922,9 @@ fn apply_overrides(
     line: usize,
 ) {
     let mut unsupported = false;
+    let base = style.clone();
     for block in overrides {
-        let mut commands = block.split('\\');
-        let _ = commands.next();
-        for command in commands {
+        for command in commands(block).into_iter().skip(1) {
             let command = command.trim();
             if command.is_empty() {
                 continue;
@@ -846,13 +932,17 @@ fn apply_overrides(
             let (tag, argument) = split_tag(command);
             let argument = argument.trim();
             match tag {
-                "b" => style.bold = override_bool(argument, style.bold),
-                "i" => style.italic = override_bool(argument, style.italic),
-                "u" => style.underline = override_bool(argument, style.underline),
-                "s" => style.strikeout = override_bool(argument, style.strikeout),
+                "b" => style.bold = override_bool(argument, style.bold, base.bold),
+                "i" => style.italic = override_bool(argument, style.italic, base.italic),
+                "u" => style.underline = override_bool(argument, style.underline, base.underline),
+                "s" => style.strikeout = override_bool(argument, style.strikeout, base.strikeout),
                 "fs" => {
-                    if let Some(value) = number(argument).filter(|v| *v > 0.0) {
-                        style.font_size_ratio = ratio(Some(value), play_res_y).max(0.0001);
+                    if let Some(value) = number(argument)
+                        .filter(|v| *v > 0.0)
+                        .and_then(|v| ratio(Some(v), play_res_y))
+                        .filter(|v| *v > 0.0)
+                    {
+                        style.font_size_ratio = value;
                     } else {
                         unsupported = true;
                     }
@@ -866,21 +956,21 @@ fn apply_overrides(
                 }
                 "c" | "1c" => {
                     if let Some(value) = color(argument) {
-                        style.primary_color = rgba(Some(value), style.primary_color);
+                        style.primary_color = keep_alpha(value, style.primary_color);
                     } else {
                         unsupported = true;
                     }
                 }
                 "3c" => {
                     if let Some(value) = color(argument) {
-                        style.outline_color = rgba(Some(value), style.outline_color);
+                        style.outline_color = keep_alpha(value, style.outline_color);
                     } else {
                         unsupported = true;
                     }
                 }
                 "4c" => {
                     if let Some(value) = color(argument) {
-                        style.background_color = rgba(Some(value), style.background_color);
+                        style.background_color = keep_alpha(value, style.background_color);
                     } else {
                         unsupported = true;
                     }
@@ -925,9 +1015,50 @@ fn split_tag(command: &str) -> (&str, &str) {
     command.split_at(end)
 }
 
-fn override_bool(argument: &str, current: bool) -> bool {
+/// `\c` sets the colour channels only; alpha stays with the style.
+fn keep_alpha(value: u32, current: [u8; 4]) -> [u8; 4] {
+    let [red, green, blue, _] = rgba(Some(value), current);
+    [red, green, blue, current[3]]
+}
+
+/// Split an override block on `\` outside parentheses, so a `\t(0,1,\fs50)`
+/// transform stays one command. The first piece precedes the first `\`.
+fn commands(block: &str) -> Vec<&str> {
+    let mut pieces = Vec::new();
+    let mut depth = 0usize;
+    let mut start = 0;
+    for (index, character) in block.char_indices() {
+        match character {
+            '(' => depth = depth.saturating_add(1),
+            ')' => depth = depth.saturating_sub(1),
+            '\\' if depth == 0 => {
+                pieces.push(&block[start..index]);
+                start = index + 1;
+            }
+            _ => {}
+        }
+    }
+    pieces.push(&block[start..]);
+    pieces
+}
+
+/// Last `\p<n>` in a block: `Some(true)` starts drawing mode, `Some(false)` ends it.
+fn drawing_mode(block: &str) -> Option<bool> {
+    commands(block)
+        .into_iter()
+        .skip(1)
+        .filter_map(|command| {
+            let digits = command.trim().strip_prefix('p')?;
+            (!digits.is_empty() && digits.bytes().all(|b| b.is_ascii_digit()))
+                .then(|| !digits.trim_start_matches('0').is_empty())
+        })
+        .next_back()
+}
+
+/// A bare `\b`/`\i`/`\u`/`\s` restores the style's own value.
+fn override_bool(argument: &str, current: bool, base: bool) -> bool {
     match argument.trim() {
-        "" => !current,
+        "" => base,
         value => value.parse::<i64>().map(|v| v != 0).unwrap_or(current),
     }
 }

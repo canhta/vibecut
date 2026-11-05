@@ -145,6 +145,27 @@ pub struct CueAlignment {
     pub horizontal: HorizontalAlignment,
     pub vertical: VerticalAlignment,
 }
+impl CueAlignment {
+    /// The one consistent alignment for an ASS numpad value; `None` outside 1..=9.
+    pub fn from_numpad(numpad: u8) -> Option<Self> {
+        let horizontal = match numpad {
+            1 | 4 | 7 => HorizontalAlignment::Left,
+            2 | 5 | 8 => HorizontalAlignment::Center,
+            3 | 6 | 9 => HorizontalAlignment::Right,
+            _ => return None,
+        };
+        let vertical = match numpad {
+            7..=9 => VerticalAlignment::Top,
+            4..=6 => VerticalAlignment::Middle,
+            _ => VerticalAlignment::Bottom,
+        };
+        Some(Self {
+            numpad,
+            horizontal,
+            vertical,
+        })
+    }
+}
 /// Imported static cue styling. Sizes and margins are ratios of the ASS script
 /// resolution so the values survive a different project canvas; `None` style
 /// means the caller owns presentation defaults.
@@ -177,7 +198,7 @@ impl CueStyle {
             && bounded(self.font_size_ratio, 10.0)
             && self.font_size_ratio > 0.0
             && (1..=3).contains(&self.border_style)
-            && (1..=9).contains(&self.alignment.numpad)
+            && CueAlignment::from_numpad(self.alignment.numpad) == Some(self.alignment)
             && bounded(self.margin_left_ratio, 10.0)
             && bounded(self.margin_right_ratio, 10.0)
             && bounded(self.margin_vertical_ratio, 10.0)
