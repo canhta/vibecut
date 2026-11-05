@@ -40,6 +40,8 @@ jobs:
               raise SystemExit('Release tag must match workspace.package.version')
           PY
       - uses: ./.github/actions/setup-build
+        with:
+          save-rust-cache: 'true'
       - name: Verify required media oracles
         run: |
           brew install ffmpeg

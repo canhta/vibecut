@@ -91,7 +91,9 @@ so ticket runs can restore default-branch caches. Fork PRs use `pull_request`, n
 as described in [contributing](../../CONTRIBUTING.md).
 
 The shared native setup uses `Swatinem/rust-cache` with an explicit shared key
-across build/lint/release jobs; its environment/manifest hash includes the Rust
+across build/lint/release jobs. Only successful full workspace producers save
+Rust caches; lint and media-only setup restore them without writing incomplete
+immutable snapshots. Its environment/manifest hash includes the Rust
 compiler, lockfile, target environment and configuration, with OS/architecture
 separation. GitHub permits ticket branches to restore main's caches, but main
 cannot restore sibling ticket caches. Native LGPL FFmpeg is keyed by resolved

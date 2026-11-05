@@ -4,6 +4,9 @@ inputs:
   rust-cache:
     description: Restore Rust build dependencies (disable for archive-only runners)
     default: 'true'
+  save-rust-cache:
+    description: Save only after a successful full workspace build
+    default: 'false'
 outputs:
   rust-hit:
     description: Exact Rust dependency cache hit
@@ -25,9 +28,10 @@ runs:
       uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
       with:
         # Replace the automatic job key: lint/build/release can reuse main's deps.
-        shared-key: deps-${{ runner.os }}-${{ runner.arch }}
-        cache-on-failure: true
-        save-if: ${{ github.event_name != 'pull_request' }}
+        shared-key: deps-v2-${{ runner.os }}-${{ runner.arch }}
+        # A tooling-only or metadata-only snapshot would leave an immutable
+        # exact-hit cache missing compiled dependencies for every later build.
+        save-if: ${{ inputs.save-rust-cache == 'true' && github.event_name != 'pull_request' }}
     - name: Install macOS media build tools
       if: runner.os == 'macOS'
       shell: bash
