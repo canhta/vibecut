@@ -87,6 +87,9 @@ exit non-zero. A local worktree drops its ignored `.scratch` before
 removal; a paired environment passes `--environment` to every Orca call. Build
 cache slots held by a live build are skipped, and the final
 `git pull --ff-only` runs in the main checkout.
+An idle slot over the size budget first drops dependency artifacts older than
+two days, retaining fresh artifacts when that restores the budget; dry runs
+account for the same reclaimed bytes before reporting whole-slot removal.
 
 `pull-reports` copies a local worktree's reports directly. A paired Orca server
 has no file-transfer command, so a remote source requires `--ssh HOST` and uses

@@ -241,7 +241,8 @@ const STALE_AGE: Duration = Duration::from_secs(2 * 24 * 60 * 60);
 pub(crate) const CACHE_SLOT_LIMIT: u64 = 40 * GIB;
 
 /// Prune the shared build cache: sessions and whole slots untouched for two
-/// days go first; a free slot over the size budget is cleared under its lock.
+/// days go first; an over-budget free slot drops stale dependencies before
+/// being cleared under its lock if it still exceeds the budget.
 /// Held slots are left alone because a build is using their artifacts.
 pub(crate) fn prune_cache(dry_run: bool) -> Result<(), String> {
     prune_slots(&cache()?, SystemTime::now(), CACHE_SLOT_LIMIT, dry_run)
@@ -405,7 +406,17 @@ fn prune_stale_dep_entries(deps: &Path, now: SystemTime, dry_run: bool) -> io::R
         if !stale {
             continue;
         }
-        let bytes = used_bytes(&path)?;
+        let metadata = match fs::symlink_metadata(&path) {
+            Ok(metadata) => metadata,
+            Err(error) if changed_under_us(&error) => continue,
+            Err(error) => return Err(error),
+        };
+        let bytes = if metadata.is_dir() {
+            used_bytes(&path)?
+        } else {
+            use std::os::unix::fs::MetadataExt;
+            metadata.blocks().saturating_mul(512)
+        };
         if dry_run {
             eprintln!("[cleanup] would remove stale dependency {}", path.display());
         } else {
@@ -1263,6 +1274,15 @@ mod cache_tests {
         fs::write(&stale, vec![0u8; 8192]).unwrap();
         fs::write(&fresh, vec![0u8; 4096]).unwrap();
         age_tree(&stale, old);
+
+        // Dry-run budgeting must account for regular dependency files too.
+        let used = used_bytes(&base.join("target/slot-1")).unwrap();
+        let freed =
+            prune_stale_deps(&base.join("target/slot-1"), 4, SystemTime::now(), true).unwrap();
+        assert!(freed >= 8192, "dry run did not count the stale file");
+        assert!(used.saturating_sub(freed) <= 5000);
+        assert!(stale.exists(), "dry run removed the stale file");
+        assert!(fresh.exists(), "dry run removed the fresh file");
 
         // Total exceeds the budget; the fresh artifact alone does not.
         prune_slots(&base, SystemTime::now(), 5000, false).unwrap();

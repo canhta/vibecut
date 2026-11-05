@@ -856,7 +856,7 @@ fn live_speech() -> Option<Vec<f32>> {
     if !status.success() {
         return None;
     }
-    let status = std::process::Command::new("ffmpeg")
+    let status = crate::media_oracle::command("ffmpeg")
         .args(["-hide_banner", "-loglevel", "error", "-y", "-i"])
         .arg(&aiff)
         .args(["-ar", "16000", "-ac", "1", "-f", "f32le"])
