@@ -78,6 +78,15 @@ fn stable_tag(repository: &str, prefix: &str) -> Result<String, String> {
         .ok_or_else(|| format!("no stable release in {repository}"))
 }
 
+/// Resolve the versions used by provisioning before restoring its hosted cache.
+pub fn cache_key() -> Result<(), String> {
+    let version = stable_tag("https://github.com/FFmpeg/FFmpeg.git", "n")?;
+    let opus = stable_tag("https://github.com/xiph/opus.git", "v")?;
+    let vpx = stable_tag("https://github.com/webmproject/libvpx.git", "v")?;
+    println!("ffmpeg{version}-opus{opus}-vpx{vpx}");
+    Ok(())
+}
+
 fn fetch(url: &str, destination: &Path) -> Result<(), String> {
     let tmp = destination.with_extension("part");
     run(Command::new("curl")

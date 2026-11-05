@@ -27,12 +27,28 @@ fn ci(root: &Path, require_oracles: bool) -> Result<(), String> {
     checks.and(fixtures)
 }
 
-fn run_checks(root: &Path, require_oracles: bool) -> Result<(), String> {
+fn cargo_check(root: &Path, args: &[&str], require_oracles: bool) -> Result<(), String> {
+    eprintln!("cargo {}", args.join(" "));
+    let mut command = Command::new(env::var_os("CARGO").ok_or("run via cargo xtask")?);
+    command.args(args).current_dir(root);
+    if require_oracles {
+        command.env("VIBECUT_REQUIRE_ORACLES", "1");
+    }
+    ffmpeg::environment(&mut command)?;
+    let status = command.status().map_err(|e| e.to_string())?;
+    if !status.success() {
+        return Err(format!("cargo {} failed: {status}", args.join(" ")));
+    }
+    Ok(())
+}
+
+fn lint(root: &Path) -> Result<(), String> {
     layers(root)?;
     assets(root)?;
     names(root)?;
-    for args in [
-        &["fmt", "--all", "--", "--check"][..],
+    cargo_check(root, &["fmt", "--all", "--", "--check"], false)?;
+    cargo_check(
+        root,
         &[
             "clippy",
             "--workspace",
@@ -41,21 +57,24 @@ fn run_checks(root: &Path, require_oracles: bool) -> Result<(), String> {
             "-D",
             "warnings",
         ],
-        &["test", "--workspace"],
-    ] {
-        eprintln!("cargo {}", args.join(" "));
-        let mut command = Command::new(env::var_os("CARGO").ok_or("run via cargo xtask")?);
-        command.args(args).current_dir(root);
-        if require_oracles {
-            command.env("VIBECUT_REQUIRE_ORACLES", "1");
-        }
-        ffmpeg::environment(&mut command)?;
-        let status = command.status().map_err(|e| e.to_string())?;
-        if !status.success() {
-            return Err(format!("cargo {} failed: {status}", args.join(" ")));
-        }
-    }
-    Ok(())
+        false,
+    )
+}
+
+fn tests(root: &Path, args: &[&str], required: bool) -> Result<(), String> {
+    let checks = oracles::begin(required).and_then(|()| cargo_check(root, args, required));
+    let fixtures = oracles::print_fixtures(root);
+    checks.and(fixtures)
+}
+
+fn run_checks(root: &Path, require_oracles: bool) -> Result<(), String> {
+    lint(root)?;
+    cargo_check(
+        root,
+        &["nextest", "run", "--workspace", "--no-fail-fast"],
+        require_oracles,
+    )?;
+    cargo_check(root, &["test", "--workspace", "--doc"], require_oracles)
 }
 
 fn output(root: &Path, program: &str, args: &[&str]) -> Result<Output, String> {
@@ -349,6 +368,29 @@ fn run() -> Result<(), String> {
         ["media-bench"] => benchmark::media(root),
         ["clip-eval", ..] => clip_eval::run(root, args.get(1..).unwrap_or(&[])),
         ["ffmpeg"] => ffmpeg::provision(None),
+        ["ffmpeg", "--cache-key"] => ffmpeg::cache_key(),
+        ["lint"] => lint(root),
+        ["test"] => tests(root, &["nextest", "run", "--workspace", "--no-fail-fast"], true),
+        ["doctest"] => tests(root, &["test", "--workspace", "--doc"], true),
+        ["archive", path] => cargo_check(
+            root,
+            &["nextest", "archive", "--workspace", "--locked", "--archive-file", path],
+            false,
+        ),
+        ["test-shard", path, partition] => {
+            let workspace = root.to_str().ok_or("workspace path must be UTF-8 for nextest")?;
+            // Tests embed Cargo executable paths at compile time. Extract at the
+            // same workspace path on identical hosted runners to preserve them.
+            tests(
+                root,
+                &[
+                    "nextest", "run", "--archive-file", path,
+                    "--workspace-remap", workspace, "--extract-to", workspace,
+                    "--extract-overwrite", "--partition", partition, "--no-fail-fast",
+                ],
+                true,
+            )
+        }
         ["ffmpeg", "--target", target] => ffmpeg::provision(Some(target)),
         ["layers"] => layers(root),
         ["assets"] => assets(root),
@@ -361,7 +403,7 @@ fn run() -> Result<(), String> {
         ["ci"] => ci(root, false),
         ["ci", "--require-oracles"] => ci(root, true),
         _ => Err(
-            "usage: cargo xtask <ffmpeg [--target PLATFORM]|media-bench|clip-eval SET [OPTIONS]|ci [--require-oracles]|docs|layers|assets|new-crate NAME>"
+            "usage: cargo xtask <ffmpeg [--target PLATFORM|--cache-key]|media-bench|clip-eval SET [OPTIONS]|ci [--require-oracles]|lint|test|doctest|archive PATH|test-shard PATH PARTITION|docs|layers|assets|new-crate NAME>"
                 .into(),
         ),
     }

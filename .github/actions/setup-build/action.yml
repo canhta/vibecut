@@ -1,14 +1,32 @@
 name: Native build dependencies
 description: Install Rust and reuse the current source-built LGPL FFmpeg
+inputs:
+  rust-cache:
+    description: Restore Rust build dependencies (disable for archive-only runners)
+    default: 'true'
+outputs:
+  rust-hit:
+    description: Exact Rust dependency cache hit
+    value: ${{ steps.rust.outputs.cache-hit }}
+  media-hit:
+    description: Exact native media cache hit
+    value: ${{ steps.media.outputs.cache-hit }}
+  fixtures-hit:
+    description: Exact fixture cache hit
+    value: ${{ steps.fixtures.outputs.cache-hit }}
 runs:
   using: composite
   steps:
     - name: Install pinned Rust toolchain
       shell: bash
       run: rustup toolchain install
-    - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+    - id: rust
+      if: inputs.rust-cache == 'true'
+      uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
       with:
-        # No branch component: ticket runs can restore the default branch cache.
+        # Replace the automatic job key: lint/build/release can reuse main's deps.
+        shared-key: deps-${{ runner.os }}-${{ runner.arch }}
+        cache-on-failure: true
         save-if: ${{ github.event_name != 'pull_request' }}
     - name: Install macOS media build tools
       if: runner.os == 'macOS'
@@ -22,16 +40,15 @@ runs:
         path-type: inherit
         install: make diffutils git tar
         pacboy: clang:p llvm:p lld:p cmake:p ninja:p pkgconf:p nasm:p
-    - name: Media cache epoch
-      id: epoch
+    - name: Resolve upstream media versions
+      id: versions
       shell: bash
-      run: echo "day=$(date -u +%Y-%m-%d)" >> "$GITHUB_OUTPUT"
-    - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      run: echo "key=$(cargo xtask ffmpeg --cache-key)" >> "$GITHUB_OUTPUT"
+    - id: media
+      uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
       with:
         path: ~/.cache/vibecut/ffmpeg
-        key: media-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('xtask/src/ffmpeg.rs', 'xtask/patches/**', 'rust-toolchain.toml') }}-${{ steps.epoch.outputs.day }}
-        restore-keys: |
-          media-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('xtask/src/ffmpeg.rs', 'xtask/patches/**', 'rust-toolchain.toml') }}-
+        key: media-${{ runner.os }}-${{ runner.arch }}-${{ steps.versions.outputs.key }}-${{ hashFiles('xtask/src/ffmpeg.rs', 'xtask/patches/**', 'rust-toolchain.toml', '.github/actions/setup-build/action.yml') }}
     - name: Resolve and provision current LGPL media libraries (macOS)
       # Always resolve stable upstream tags, even after a cache hit.
       if: runner.os == 'macOS'
@@ -41,8 +58,24 @@ runs:
       if: runner.os == 'Windows'
       shell: msys2 {0}
       run: cargo xtask ffmpeg
+    - name: Save provisioned media before downstream checks
+      if: steps.media.outputs.cache-hit != 'true' && github.event_name != 'pull_request'
+      uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: ~/.cache/vibecut/ffmpeg
+        key: ${{ steps.media.outputs.cache-primary-key }}
     - name: Cache synthetic media fixtures
+      id: fixtures
       uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
       with:
         path: target/fixtures/media
-        key: fixtures-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('crates/**/tests/**', 'rust-toolchain.toml') }}
+        key: fixtures-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('crates/media/tests/common/**') }}
+    - name: Cache receipt
+      shell: bash
+      env:
+        RUST_HIT: ${{ steps.rust.outputs.cache-hit }}
+        MEDIA_HIT: ${{ steps.media.outputs.cache-hit }}
+        FIXTURES_HIT: ${{ steps.fixtures.outputs.cache-hit }}
+      run: |
+        echo "cache rust=$RUST_HIT media=$MEDIA_HIT fixtures=$FIXTURES_HIT"
+        echo "Cache exact hits: Rust=$RUST_HIT; media=$MEDIA_HIT; fixtures=$FIXTURES_HIT" >> "$GITHUB_STEP_SUMMARY"

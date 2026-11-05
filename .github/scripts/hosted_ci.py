@@ -37,7 +37,7 @@ def wait(sha):
                 return 0 if passed else 1
             jobs = gh('run', 'view', str(run['databaseId']), '--json', 'jobs')['jobs']
             # Workflow status can be in_progress while the macOS runner is queued.
-            waiting = not any(job['name'] == 'Rust (macos-latest)' and
+            waiting = not any(job['name'] == 'build tests (macos-arm64)' and
                               job['status'] in ('in_progress', 'completed') for job in jobs)
         else:
             waiting = True

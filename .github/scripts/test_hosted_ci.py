@@ -47,7 +47,7 @@ class HostedCiTest(unittest.TestCase):
                     if command[2] == 'list':
                         self.assertEqual(command[command.index('--commit') + 1], SHA)
                         return json.dumps(next(responses))
-                    return json.dumps({'jobs': [{'name': 'Rust (macos-latest)',
+                    return json.dumps({'jobs': [{'name': 'build tests (macos-arm64)',
                                       'status': 'in_progress' if name == 'running macOS' else 'queued'}]})
                 with patch.object(ci.sys, 'argv', ['hosted-ci', SHA]), \
                      patch.object(ci.subprocess, 'check_output', side_effect=output), \
