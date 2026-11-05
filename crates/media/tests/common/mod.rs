@@ -9,7 +9,7 @@
 )]
 
 use std::path::{Path, PathBuf};
-use std::process::Command;
+use std::process::{Command, Output};
 
 pub fn command(program: &str) -> Command {
     let mut command = Command::new(program);
@@ -31,25 +31,25 @@ pub fn fixtures_dir() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target/fixtures/media")
 }
 
+fn assert_success(output: &Output, context: &str) {
+    const DIAGNOSTIC_BYTES: usize = 4096;
+    assert!(
+        output.status.success(),
+        "{context} failed: status={}; stdout (first {} of {} bytes)={:?}; stderr (first {} of {} bytes)={:?}",
+        output.status,
+        output.stdout.len().min(DIAGNOSTIC_BYTES),
+        output.stdout.len(),
+        String::from_utf8_lossy(&output.stdout[..output.stdout.len().min(DIAGNOSTIC_BYTES)]),
+        output.stderr.len().min(DIAGNOSTIC_BYTES),
+        output.stderr.len(),
+        String::from_utf8_lossy(&output.stderr[..output.stderr.len().min(DIAGNOSTIC_BYTES)])
+    );
+}
+
 fn tool_available(tool: &str) -> bool {
     match command(tool).arg("-version").output() {
         Ok(output) => {
-            const DIAGNOSTIC_BYTES: usize = 4096;
-            assert!(
-                output.status.success(),
-                "found {tool} but -version failed: status={}; stdout (first {} of {} bytes)={:?}; stderr (first {} of {} bytes)={:?}",
-                output.status,
-                output.stdout.len().min(DIAGNOSTIC_BYTES),
-                output.stdout.len(),
-                String::from_utf8_lossy(
-                    &output.stdout[..output.stdout.len().min(DIAGNOSTIC_BYTES)]
-                ),
-                output.stderr.len().min(DIAGNOSTIC_BYTES),
-                output.stderr.len(),
-                String::from_utf8_lossy(
-                    &output.stderr[..output.stderr.len().min(DIAGNOSTIC_BYTES)]
-                )
-            );
+            assert_success(&output, &format!("{tool} -version"));
             true
         }
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => false,
@@ -95,11 +95,7 @@ pub fn generate(test: &str, name: &str, args: &[&str]) -> Option<PathBuf> {
         .arg(&path)
         .output()
         .expect("run ffmpeg");
-    assert!(
-        output.status.success(),
-        "ffmpeg failed for {name}: {}",
-        String::from_utf8_lossy(&output.stderr)
-    );
+    assert_success(&output, &format!("ffmpeg fixture {name}"));
     Some(path)
 }
 
@@ -110,11 +106,7 @@ fn ffprobe(path: &Path, args: &[&str]) -> String {
         .arg(path)
         .output()
         .expect("run ffprobe");
-    assert!(
-        output.status.success(),
-        "ffprobe failed: {}",
-        String::from_utf8_lossy(&output.stderr)
-    );
+    assert_success(&output, "ffprobe");
     String::from_utf8_lossy(&output.stdout).trim().to_string()
 }
 
@@ -177,7 +169,7 @@ pub fn decodes(path: &Path) -> bool {
         .output()
         .expect("run ffmpeg decode");
     let stderr = String::from_utf8_lossy(&output.stderr);
-    assert!(output.status.success(), "decode failed: {stderr}");
+    assert_success(&output, "ffmpeg decode");
     stderr.trim().is_empty()
 }
 
