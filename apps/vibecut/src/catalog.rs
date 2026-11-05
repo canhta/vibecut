@@ -3,7 +3,10 @@
 //! The [`Text`] table is the stable key set. Both locales must fill every key,
 //! so a missing Vietnamese row is a compile error; `cargo xtask i18n` also
 //! rejects empty rows, duplicate keys and keys no frontend code uses.
-use crate::{Error, Result};
+use crate::{
+    Error, Result,
+    panels::{AssetsTab, ElementKind, PropertiesTab},
+};
 use serde::{Deserialize, Serialize};
 use std::{
     collections::BTreeMap,
@@ -224,6 +227,18 @@ catalog! {
 
     // Panels and empty states.
     Media { key: "media", en: "Media", vi: "Tư liệu" },
+    Sounds { key: "sounds", en: "Sounds", vi: "Âm thanh" },
+    Stickers { key: "stickers", en: "Stickers", vi: "Nhãn dán" },
+    Effects { key: "effects", en: "Effects", vi: "Hiệu ứng" },
+    Transitions { key: "transitions", en: "Transitions", vi: "Chuyển cảnh" },
+    Adjustment { key: "adjustment", en: "Adjustment", vi: "Điều chỉnh" },
+    Settings { key: "settings", en: "Settings", vi: "Cài đặt" },
+    Transform { key: "transform", en: "Transform", vi: "Biến đổi" },
+    Speed { key: "speed", en: "Speed", vi: "Tốc độ" },
+    Blending { key: "blending", en: "Blending", vi: "Hòa trộn" },
+    Masks { key: "masks", en: "Masks", vi: "Mặt nạ" },
+    Graphic { key: "graphic", en: "Graphic", vi: "Đồ họa" },
+    PanelStub { key: "panel_stub", en: "This panel arrives with a later feature.", vi: "Bảng này sẽ có ở tính năng sau." },
     Preview { key: "preview", en: "Player", vi: "Trình phát" },
     Timeline { key: "timeline", en: "Timeline", vi: "Dòng thời gian" },
     Project { key: "project", en: "Project", vi: "Dự án" },
@@ -281,6 +296,7 @@ catalog! {
     AudioGain { key: "audio_gain", en: "Volume (dB)", vi: "Âm lượng (dB)" },
     TextSize { key: "text_size", en: "Font size (px)", vi: "Cỡ chữ (px)" },
     TextColor { key: "text_color", en: "Text colour (RGBA)", vi: "Màu chữ (RGBA)" },
+    DragToAdjust { key: "drag_to_adjust", en: "Drag to adjust", vi: "Kéo để điều chỉnh" },
     CompatibleCount { key: "compatible_count", en: "Compatible: {compatible} / {total}", vi: "Tương thích: {compatible} / {total}" },
     NoSharedFields { key: "no_shared_fields", en: "No editable shared fields for this selection.", vi: "Không có thuộc tính chung có thể sửa cho lựa chọn này." },
     MaskPoints { key: "mask_points", en: "Mask points selected", vi: "Đã chọn điểm mặt nạ" },
@@ -622,7 +638,7 @@ fn civil_from_days(days: i64) -> (i64, u32, u32) {
 }
 
 /// Bumped when the local preference document changes incompatibly.
-pub const PREFERENCES_VERSION: u32 = 1;
+pub const PREFERENCES_VERSION: u32 = 2;
 const MAX_PREFERENCES_BYTES: u64 = 4096;
 const MAX_SECTIONS: usize = 128;
 
@@ -638,7 +654,15 @@ pub const TIMELINE_MAX: f32 = 0.70;
 pub const DEFAULT_PANELS: [f32; 3] = [0.25, 0.25, 0.50];
 
 /// Every user-visible preference key in the one versioned document.
-pub const PREFERENCE_KEYS: &[&str] = &["locale", "dark", "panels", "sections", "export"];
+pub const PREFERENCE_KEYS: &[&str] = &[
+    "locale",
+    "dark",
+    "panels",
+    "sections",
+    "export",
+    "assets_tab",
+    "properties_tabs",
+];
 
 /// A splitter drag that keeps every region non-empty and inside its limits.
 pub fn drag_panel(panels: [f32; 3], axis: usize, delta: f32) -> [f32; 3] {
@@ -697,6 +721,13 @@ pub struct Preferences {
     /// Open/closed state by property-section key.
     #[serde(default)]
     pub sections: BTreeMap<String, bool>,
+    /// Last assets-panel tab. Presentation state, never a project edit.
+    #[serde(default)]
+    pub assets_tab: AssetsTab,
+    /// Last properties tab by persisted element-kind id. Applying it to a kind
+    /// that does not offer that tab falls back to the kind's default.
+    #[serde(default)]
+    pub properties_tabs: BTreeMap<String, String>,
 }
 impl Default for Preferences {
     fn default() -> Self {
@@ -708,6 +739,8 @@ impl Default for Preferences {
             dark: true,
             panels: DEFAULT_PANELS,
             sections: BTreeMap::new(),
+            assets_tab: AssetsTab::default(),
+            properties_tabs: BTreeMap::new(),
         }
     }
 }
@@ -725,8 +758,22 @@ impl Preferences {
         }
         validate_panels(self.panels)?;
         self.validate_sections()?;
+        self.validate_properties_tabs()?;
         if serde_json::to_vec(self)?.len() as u64 > MAX_PREFERENCES_BYTES {
             return Err(Error::Invalid("preference size"));
+        }
+        Ok(())
+    }
+    fn validate_properties_tabs(&self) -> Result<()> {
+        if self.properties_tabs.len() > ElementKind::ALL.len() {
+            return Err(Error::Invalid("preference tabs"));
+        }
+        for (kind, tab) in &self.properties_tabs {
+            let kind = ElementKind::from_id(kind).ok_or(Error::Invalid("preference tabs"))?;
+            let tab = PropertiesTab::from_id(tab).ok_or(Error::Invalid("preference tabs"))?;
+            if !kind.tabs().contains(&tab) {
+                return Err(Error::Invalid("preference tabs"));
+            }
         }
         Ok(())
     }
@@ -752,6 +799,8 @@ impl Preferences {
             "panels" => Ok(serde_json::to_value(self.panels)?),
             "sections" => Ok(serde_json::to_value(&self.sections)?),
             "export" => Ok(serde_json::to_value(self.export)?),
+            "assets_tab" => Ok(serde_json::to_value(self.assets_tab)?),
+            "properties_tabs" => Ok(serde_json::to_value(&self.properties_tabs)?),
             _ => Err(Error::Unsupported("preference key")),
         }
     }
@@ -771,6 +820,8 @@ impl Preferences {
                 self.sections = serde_json::from_value(value)?;
             }
             "export" => self.export = serde_json::from_value(value)?,
+            "assets_tab" => self.assets_tab = serde_json::from_value(value)?,
+            "properties_tabs" => self.properties_tabs = serde_json::from_value(value)?,
             _ => return Err(Error::Unsupported("preference key")),
         }
         Ok(())
@@ -827,6 +878,10 @@ impl PreferenceStore {
         }
         if value.validate_sections().is_err() {
             value.sections.clear();
+            issue = Some(PreferenceIssue::Layout);
+        }
+        if value.validate_properties_tabs().is_err() {
+            value.properties_tabs.clear();
             issue = Some(PreferenceIssue::Layout);
         }
         (value, issue)
@@ -1045,6 +1100,8 @@ mod tests {
             ("dark", serde_json::json!(false)),
             ("panels", serde_json::json!([0.30, 0.20, 0.35])),
             ("sections", serde_json::json!({"inspector.canvas": false})),
+            ("assets_tab", serde_json::json!("captions")),
+            ("properties_tabs", serde_json::json!({"text": "transform"})),
             (
                 "export",
                 serde_json::json!({
@@ -1076,7 +1133,7 @@ mod tests {
         let store = PreferenceStore::new(dir.path().join("preferences.json"));
         std::fs::write(
             store.path(),
-            br#"{"version":1,"locale":"vi","dark":false,"panels":[0.9,0.9,0.9]}"#,
+            br#"{"version":2,"locale":"vi","dark":false,"panels":[0.9,0.9,0.9]}"#,
         )
         .expect("write preferences");
         let (preferences, issue) = store.load_with_warning();
@@ -1094,6 +1151,72 @@ mod tests {
         )
         .expect("write newer preferences");
         assert_eq!(store.load_with_warning().1, Some(PreferenceIssue::Version));
+    }
+
+    #[test]
+    fn older_preference_version_is_refused_and_bytes_are_retained() {
+        let dir = tempfile::tempdir().expect("temporary preferences");
+        let store = PreferenceStore::new(dir.path().join("preferences.json"));
+        std::fs::write(
+            store.path(),
+            br#"{"version":1,"locale":"vi","dark":false,"panels":[0.25,0.25,0.5]}"#,
+        )
+        .expect("write old preferences");
+        let bytes = std::fs::read(store.path()).expect("read old preferences");
+        assert!(matches!(
+            store.load(),
+            Err(Error::Unsupported("preferences version"))
+        ));
+        assert_eq!(store.load_with_warning().1, Some(PreferenceIssue::Version));
+        assert!(store.save(&Preferences::default()).is_err());
+        assert_eq!(std::fs::read(store.path()).expect("retained bytes"), bytes);
+    }
+
+    #[test]
+    fn tab_preferences_validate_kind_and_tab_ids_atomically() {
+        let mut preferences = Preferences::default();
+        preferences
+            .set(
+                "properties_tabs",
+                serde_json::json!({
+                    "text": "transform",
+                    "video": "audio",
+                    "graphic": "graphic"
+                }),
+            )
+            .expect("valid tab memory");
+        assert_eq!(
+            preferences.properties_tabs.get("text").map(String::as_str),
+            Some("transform")
+        );
+        for value in [
+            serde_json::json!({"unknown": "transform"}),
+            serde_json::json!({"text": "masks"}),
+            serde_json::json!({"text": "unknown"}),
+        ] {
+            let before = preferences.clone();
+            assert!(preferences.set("properties_tabs", value).is_err());
+            assert_eq!(preferences, before);
+        }
+        let mut unknown = Preferences::default();
+        unknown
+            .properties_tabs
+            .insert("text".into(), "masks".into());
+        let dir = tempfile::tempdir().expect("temporary preferences");
+        let store = PreferenceStore::new(dir.path().join("preferences.json"));
+        std::fs::write(
+            store.path(),
+            serde_json::to_vec(&Preferences {
+                properties_tabs: unknown.properties_tabs,
+                ..Default::default()
+            })
+            .expect("encode preferences"),
+        )
+        .expect("write preferences");
+        let (loaded, issue) = store.load_with_warning();
+        assert_eq!(issue, Some(PreferenceIssue::Layout));
+        assert!(loaded.properties_tabs.is_empty());
+        assert_eq!(loaded.assets_tab, AssetsTab::Media);
     }
 
     #[test]

@@ -5,6 +5,7 @@ use crate::{
     egui::{self, Align2, Color32, FontId, Id, Rect, Vec2},
     icons::{self, Icon},
     import::{ImportEvent, ImportFailure, ImportProbe, ImportQueue},
+    panels::{AssetsTab, ElementKind, PropertiesTab},
     playback::Playback,
     theme,
 };
@@ -187,6 +188,67 @@ struct DragState {
     source_range: SourceRange,
     moved: bool,
 }
+/// One scrub field's unit contract. Pixels per step are recorded in the app
+/// README; the inventory leaves the exact sensitivity unverified.
+#[derive(Clone, Copy, Debug)]
+struct ScrubSpec {
+    field: &'static str,
+    label: Text,
+    min: f64,
+    max: f64,
+    step: f64,
+    pixels_per_step: f32,
+    decimals: usize,
+    suffix: &'static str,
+}
+impl ScrubSpec {
+    fn quantize(self, value: f64) -> f64 {
+        if !value.is_finite() {
+            return self.min;
+        }
+        let steps = ((value.clamp(self.min, self.max) - self.min) / self.step).round();
+        (self.min + steps * self.step).clamp(self.min, self.max)
+    }
+    fn format(self, value: f64) -> String {
+        format!("{:.*}", self.decimals, self.quantize(value))
+    }
+}
+const OPACITY_SCRUB: ScrubSpec = ScrubSpec {
+    field: "opacity",
+    label: Text::Opacity,
+    min: 0.0,
+    max: 1.0,
+    step: 0.01,
+    pixels_per_step: 4.0,
+    decimals: 2,
+    suffix: "",
+};
+const TEXT_SIZE_SCRUB: ScrubSpec = ScrubSpec {
+    field: "text_size",
+    label: Text::TextSize,
+    min: 1.0,
+    max: 4096.0,
+    step: 1.0,
+    pixels_per_step: 2.0,
+    decimals: 0,
+    suffix: "px",
+};
+const AUDIO_GAIN_SCRUB: ScrubSpec = ScrubSpec {
+    field: "audio_gain",
+    label: Text::AudioGain,
+    min: -120.0,
+    max: 24.0,
+    step: 1.0,
+    pixels_per_step: 4.0,
+    decimals: 1,
+    suffix: "dB",
+};
+#[derive(Clone, Copy, Debug)]
+struct ScrubDrag {
+    field: &'static str,
+    start: f64,
+    last: f64,
+}
 #[derive(Clone, Debug)]
 struct TrackRow {
     id: TrackId,
@@ -279,6 +341,10 @@ pub struct Editor {
     marquee: Option<(egui::Pos2, BTreeSet<ItemId>, bool)>,
     property_drafts: BTreeMap<&'static str, String>,
     property_selection: BTreeSet<ItemId>,
+    /// Last inspector field that held keyboard focus. Egui surrenders focus on
+    /// Escape before app UI runs, so the next frame must still defer shortcuts.
+    property_focus: Option<&'static str>,
+    scrub: Option<ScrubDrag>,
     pub snapping: bool,
     pub ripple: bool,
     zoom: f32,
@@ -350,6 +416,8 @@ impl Editor {
             marquee: None,
             property_drafts: BTreeMap::new(),
             property_selection: BTreeSet::new(),
+            property_focus: None,
+            scrub: None,
             snapping: true,
             ripple: false,
             zoom,
@@ -866,7 +934,7 @@ impl Editor {
     fn icon_only(
         &mut self,
         ui: &mut egui::Ui,
-        id: &'static str,
+        id: &str,
         icon: Icon,
         label: &str,
         shortcut: Option<&str>,
@@ -1745,6 +1813,20 @@ impl Editor {
         self.prune_selection();
     }
     fn cancel_interaction(&mut self) {
+        if let Some(scrub) = self.scrub.take() {
+            let changed = scrub.last != scrub.start;
+            if self.session.gesture_active()
+                && let Err(error) = self.session.cancel_gesture()
+            {
+                self.error = Some(error.to_string());
+            }
+            self.property_drafts.remove(scrub.field);
+            self.property_focus = None;
+            if changed {
+                self.sync_preview();
+            }
+            return;
+        }
         if let Some(drag) = self.drag.take() {
             if self.session.gesture_active()
                 && let Err(error) = self.session.cancel_gesture()
@@ -2130,7 +2212,7 @@ impl Editor {
             }
             match id {
                 "header" => self.header(&mut child),
-                "media" => self.media(&mut child),
+                "media" => self.assets(&mut child),
                 "preview" => self.preview(&mut child),
                 "inspector" => self.inspector(&mut child),
                 _ => self.timeline(&mut child),
@@ -2220,6 +2302,7 @@ impl Editor {
             return;
         }
         if self.rename.is_some()
+            || self.property_focus.is_some()
             || ctx.memory(|m| m.focused()).is_some_and(|id| {
                 [
                     "inspector.audio_gain",
@@ -2526,7 +2609,82 @@ impl Editor {
             });
         });
     }
-    fn media(&mut self, ui: &mut egui::Ui) {
+    /// The assets panel: a scrollable vertical tab bar and the selected view.
+    fn assets(&mut self, ui: &mut egui::Ui) {
+        let height = ui.available_height();
+        ui.horizontal_top(|ui| {
+            ui.spacing_mut().item_spacing.x = 0.0;
+            let bar = egui::vec2(36.0, height);
+            let mut clicked = None;
+            let mut shown = None;
+            ui.allocate_ui_with_layout(bar, egui::Layout::top_down(egui::Align::Center), |ui| {
+                ui.add_space(6.0);
+                let output = egui::ScrollArea::vertical()
+                    .id_salt("assets.tabs")
+                    .scroll_bar_visibility(egui::scroll_area::ScrollBarVisibility::AlwaysHidden)
+                    .show(ui, |ui| {
+                        ui.spacing_mut().item_spacing.y = 2.0;
+                        for tab in AssetsTab::ALL {
+                            let id = format!("assets.tab.{}", tab.id());
+                            let active = self.preferences.assets_tab == tab;
+                            let label = self.tr(tab.label());
+                            if self.icon_only(ui, &id, tab.icon(), label, None, Some(active), true)
+                            {
+                                clicked = Some(tab);
+                            }
+                        }
+                    });
+                shown = Some(output);
+            });
+            if let Some(tab) = clicked
+                && let Err(error) = self.remember_assets_tab(tab)
+            {
+                self.error = Some(error.to_string());
+            }
+            if let Some(output) = shown {
+                let dark = self.preferences.dark;
+                scroll_fades(ui, &output, dark);
+            }
+            let separator = theme::separator(self.preferences.dark);
+            ui.painter().line_segment(
+                [
+                    egui::pos2(ui.cursor().min.x, ui.cursor().min.y),
+                    egui::pos2(ui.cursor().min.x, ui.cursor().min.y + height),
+                ],
+                egui::Stroke::new(1.0, separator),
+            );
+            ui.add_space(12.0);
+            ui.allocate_ui_with_layout(
+                egui::vec2(ui.available_width(), height),
+                egui::Layout::top_down(egui::Align::Min),
+                |ui| match self.preferences.assets_tab {
+                    AssetsTab::Media => self.media_view(ui),
+                    tab => self.assets_stub(ui, tab),
+                },
+            );
+        });
+    }
+    fn assets_stub(&mut self, ui: &mut egui::Ui, tab: AssetsTab) {
+        ui.label(
+            egui::RichText::new(self.tr(tab.label()))
+                .size(16.0)
+                .strong(),
+        );
+        ui.add_space(8.0);
+        ui.label(
+            egui::RichText::new(self.tr(Text::PanelStub))
+                .small()
+                .color(self.secondary()),
+        );
+    }
+    fn remember_assets_tab(&mut self, tab: AssetsTab) -> Result<()> {
+        if self.preferences.assets_tab != tab {
+            self.preferences
+                .set("assets_tab", serde_json::to_value(tab)?)?;
+        }
+        Ok(())
+    }
+    fn media_view(&mut self, ui: &mut egui::Ui) {
         ui.label(
             egui::RichText::new(self.tr(Text::Media))
                 .size(16.0)
@@ -2666,6 +2824,7 @@ impl Editor {
         ui.separator();
         ui.add_space(8.0);
         if self.details {
+            self.property_focus = None;
             self.section(
                 ui,
                 "inspector.section.canvas",
@@ -2729,8 +2888,12 @@ impl Editor {
                 },
             );
         } else if self.selection.is_empty() {
+            self.property_focus = None;
             ui.label(self.tr(Text::EmptyInspector));
+        } else if self.selection.len() == 1 {
+            self.properties(ui);
         } else {
+            self.property_focus = None;
             self.section(
                 ui,
                 "inspector.section.selection",
@@ -2739,6 +2902,465 @@ impl Editor {
                 true,
                 |editor, ui| editor.shared_inspector(ui),
             );
+        }
+    }
+    /// One selected element: its type's tab set, remembered per element type.
+    fn properties(&mut self, ui: &mut egui::Ui) {
+        let Some(item) = self.selected_item_id() else {
+            return;
+        };
+        let Some((kind, has_audio)) = self.element_kind(item) else {
+            return;
+        };
+        if self.property_selection != self.selection {
+            self.property_drafts.clear();
+            self.property_focus = None;
+            self.property_selection = self.selection.clone();
+        }
+        let tabs: Vec<PropertiesTab> = kind
+            .tabs()
+            .iter()
+            .copied()
+            .filter(|tab| {
+                !(*tab == PropertiesTab::Audio && kind == ElementKind::Video && !has_audio)
+            })
+            .collect();
+        let stored = self
+            .preferences
+            .properties_tabs
+            .get(kind.id())
+            .and_then(|id| PropertiesTab::from_id(id))
+            .filter(|tab| tabs.contains(tab));
+        let active = stored.unwrap_or_else(|| kind.default_tab());
+        match self.selection_scopes.active(&self.selection) {
+            SelectionScope::MaskPoints => {
+                ui.label(self.tr(Text::MaskPoints));
+            }
+            SelectionScope::Keyframes => {
+                ui.label(self.tr(Text::Keyframes));
+            }
+            _ => {}
+        }
+        let mut clicked = None;
+        ui.horizontal_wrapped(|ui| {
+            ui.spacing_mut().item_spacing.x = 8.0;
+            for tab in &tabs {
+                let id = format!("inspector.tab.{}", tab.id());
+                let color = if *tab == active {
+                    self.accent()
+                } else {
+                    self.secondary()
+                };
+                let label = egui::RichText::new(self.tr(tab.label()))
+                    .size(14.0)
+                    .color(color);
+                let response = ui
+                    .push_id(id.clone(), |ui| {
+                        ui.add(
+                            egui::Button::new(label)
+                                .frame(false)
+                                .wrap_mode(egui::TextWrapMode::Extend)
+                                .min_size(Vec2::new(0.0, 32.0)),
+                        )
+                    })
+                    .inner;
+                self.remember(&id, &response);
+                if *tab == active {
+                    ui.painter().line_segment(
+                        [response.rect.left_bottom(), response.rect.right_bottom()],
+                        egui::Stroke::new(2.0, self.accent()),
+                    );
+                }
+                if response.clicked() {
+                    clicked = Some(*tab);
+                }
+            }
+        });
+        if let Some(tab) = clicked {
+            self.property_focus = None;
+            let mut next = self.preferences.properties_tabs.clone();
+            next.insert(kind.id().to_owned(), tab.id().to_owned());
+            let value = serde_json::to_value(next).map_err(|_| Error::Invalid("tabs"));
+            match value.and_then(|value| self.preferences.set("properties_tabs", value)) {
+                Ok(()) => {}
+                Err(error) => self.error = Some(error.to_string()),
+            }
+        }
+        ui.separator();
+        ui.add_space(8.0);
+        egui::ScrollArea::vertical()
+            .id_salt("inspector.properties")
+            .show(ui, |ui| self.properties_tab(ui, item, kind, active));
+    }
+    fn properties_tab(
+        &mut self,
+        ui: &mut egui::Ui,
+        item: ItemId,
+        kind: ElementKind,
+        tab: PropertiesTab,
+    ) {
+        match tab {
+            PropertiesTab::Text if self.item_value(item, TEXT_SIZE_SCRUB.field).is_some() => {
+                self.scrub_field(ui, item, TEXT_SIZE_SCRUB);
+                self.text_color_field(ui, item);
+            }
+            PropertiesTab::Audio if kind == ElementKind::Audio => {
+                self.scrub_field(ui, item, AUDIO_GAIN_SCRUB);
+            }
+            PropertiesTab::Blending => {
+                self.blend_control(ui, item);
+                self.scrub_field(ui, item, OPACITY_SCRUB);
+            }
+            _ => self.properties_stub(ui),
+        }
+    }
+    fn properties_stub(&mut self, ui: &mut egui::Ui) {
+        ui.label(
+            egui::RichText::new(self.tr(Text::PanelStub))
+                .small()
+                .color(self.secondary()),
+        );
+    }
+    fn selected_item_id(&self) -> Option<ItemId> {
+        if self.selection.len() != 1 {
+            return None;
+        }
+        self.selection.iter().next().copied()
+    }
+    fn element_kind(&self, id: ItemId) -> Option<(ElementKind, bool)> {
+        let data = self.session.project().data();
+        let (track, item) = data.scene().timeline.iter().find_map(|track| {
+            track
+                .items
+                .iter()
+                .find(|item| item.id == id)
+                .map(|item| (track, item))
+        })?;
+        let kind = match (&item.content, track.kind) {
+            (ItemParams::Text(_) | ItemParams::Caption(_), _) => ElementKind::Text,
+            (ItemParams::Audio(_), _) => ElementKind::Audio,
+            (_, TrackKind::Sticker) => ElementKind::Sticker,
+            (_, TrackKind::Effect) => ElementKind::Effect,
+            (_, TrackKind::Filter | TrackKind::Adjustment) => ElementKind::Graphic,
+            (ItemParams::Overlay(_), _) => ElementKind::Graphic,
+            (ItemParams::Video(_), _) => {
+                let Some(asset) = item
+                    .source_asset
+                    .and_then(|asset| data.assets.iter().find(|candidate| candidate.id() == asset))
+                else {
+                    return Some((ElementKind::Graphic, false));
+                };
+                let video = asset
+                    .probe()
+                    .streams
+                    .iter()
+                    .find(|stream| stream.kind == StreamKind::Video);
+                match video {
+                    Some(stream) if stream.frame_count == Some(1) => ElementKind::Image,
+                    Some(_) => ElementKind::Video,
+                    None => ElementKind::Image,
+                }
+            }
+        };
+        let has_audio = kind == ElementKind::Video
+            && item.source_asset.is_some_and(|asset| {
+                data.assets.iter().any(|candidate| {
+                    candidate.id() == asset
+                        && candidate
+                            .probe()
+                            .streams
+                            .iter()
+                            .any(|stream| stream.kind == StreamKind::Audio)
+                })
+            });
+        Some((kind, has_audio))
+    }
+    fn blend_control(&mut self, ui: &mut egui::Ui, item: ItemId) {
+        let Some(current) = self
+            .session
+            .project()
+            .data()
+            .scene()
+            .timeline
+            .iter()
+            .flat_map(|track| &track.items)
+            .find(|candidate| candidate.id == item)
+            .map(|item| item.blend_mode)
+        else {
+            return;
+        };
+        ui.add_space(12.0);
+        let caption = ui.label(self.tr(Text::BlendMode));
+        let label = self.tr(catalog::blend_label(current));
+        let response = ui
+            .scope(|ui| {
+                ui.spacing_mut().interact_size.y = 26.0;
+                egui::ComboBox::from_id_salt(Id::unique("inspector.blendMode"))
+                    .selected_text(label)
+                    .width(ui.available_width())
+                    .show_ui(ui, |ui| {
+                        for mode in project::BlendMode::ALL {
+                            let response = ui.selectable_label(
+                                current == mode,
+                                self.tr(catalog::blend_label(mode)),
+                            );
+                            self.remember(format!("inspector.blendMode.{}", mode.id()), &response);
+                            if response.clicked() {
+                                if let Err(error) =
+                                    self.set_item_field(item, "blendMode", mode.id())
+                                {
+                                    self.error = Some(error.to_string());
+                                }
+                                ui.close();
+                            }
+                        }
+                    })
+                    .response
+                    .labelled_by(caption.id)
+            })
+            .inner;
+        self.remember("inspector.blendMode", &response);
+    }
+    fn text_color_field(&mut self, ui: &mut egui::Ui, item: ItemId) {
+        let Some(value) = self
+            .session
+            .project()
+            .data()
+            .scene()
+            .timeline
+            .iter()
+            .flat_map(|track| &track.items)
+            .find(|candidate| candidate.id == item)
+            .and_then(|item| match &item.content {
+                ItemParams::Text(params) => {
+                    let [r, g, b, a] = params.color.0;
+                    Some(format!("#{r:02X}{g:02X}{b:02X}{a:02X}"))
+                }
+                _ => None,
+            })
+        else {
+            return;
+        };
+        ui.add_space(12.0);
+        let caption = ui.label(self.tr(Text::TextColor));
+        let draft = self
+            .property_drafts
+            .get("text_color")
+            .cloned()
+            .unwrap_or(value);
+        let mut next = draft;
+        let response = ui
+            .add_sized(
+                [ui.available_width(), 26.0],
+                egui::TextEdit::singleline(&mut next)
+                    .char_limit(64)
+                    .background_color(self.control_fill())
+                    .id(Id::unique("inspector.text_color"))
+                    .hint_text(
+                        egui::RichText::new(self.tr(Text::EmptyValue)).color(self.secondary()),
+                    ),
+            )
+            .labelled_by(caption.id);
+        self.remember("inspector.text_color", &response);
+        if response.has_focus() {
+            self.property_focus = Some("text_color");
+        }
+        if response.changed() {
+            self.property_drafts.insert("text_color", next.clone());
+        }
+        let editing = response.has_focus() || self.property_focus == Some("text_color");
+        if editing && ui.input(|i| i.key_pressed(egui::Key::Escape)) {
+            self.property_drafts.remove("text_color");
+            self.property_focus = None;
+            response.surrender_focus();
+            return;
+        }
+        let enter = response.has_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
+        if enter || response.lost_focus() {
+            self.property_focus = None;
+            if let Some(draft) = self.property_drafts.remove("text_color")
+                && let Err(error) = self.set_item_field(item, "text_color", &draft)
+            {
+                self.error = Some(error.to_string());
+            }
+        }
+    }
+    /// A numeric field whose left icon scrubs, whose text commits on Enter or
+    /// blur, and whose gesture is one engine undo step from preview to release.
+    fn scrub_field(&mut self, ui: &mut egui::Ui, item: ItemId, spec: ScrubSpec) {
+        let Some(current) = self.item_value(item, spec.field) else {
+            return;
+        };
+        ui.add_space(12.0);
+        let caption = ui.label(self.tr(spec.label));
+        ui.horizontal(|ui| {
+            let handle_id = format!("inspector.{}.scrub", spec.field);
+            let (rect, handle) =
+                ui.allocate_exact_size(Vec2::new(28.0, 26.0), egui::Sense::click_and_drag());
+            if handle.hovered() || handle.dragged() {
+                ui.painter().rect_filled(rect, 4.0, self.control_fill());
+            }
+            icons::tinted(Icon::ArrowsHorizontal, BUTTON_ICON, self.secondary()).paint_at(
+                ui,
+                Rect::from_center_size(rect.center(), Vec2::splat(BUTTON_ICON)),
+            );
+            let handle = handle.on_hover_text(self.tr(Text::DragToAdjust));
+            self.remember_with_icon(
+                handle_id.clone(),
+                Some(Icon::ArrowsHorizontal.name()),
+                &handle,
+            );
+            if handle.drag_started() {
+                self.start_scrub(spec, current);
+            }
+            if handle.dragged()
+                && let Some(mut scrub) = self.scrub.take()
+            {
+                if scrub.field == spec.field {
+                    let steps = f64::from(handle.total_drag_delta().map_or(0.0, |delta| delta.x))
+                        / f64::from(spec.pixels_per_step);
+                    let value = spec.quantize(scrub.start + steps * spec.step);
+                    if value != scrub.last {
+                        match self.set_item_field(item, spec.field, &spec.format(value)) {
+                            Ok(()) => scrub.last = value,
+                            Err(error) => self.error = Some(error.to_string()),
+                        }
+                    }
+                }
+                self.scrub = Some(scrub);
+            }
+            if handle.drag_stopped() {
+                self.finish_scrub(true);
+            }
+            let width =
+                (ui.available_width() - if spec.suffix.is_empty() { 0.0 } else { 30.0 }).max(60.0);
+            let id = format!("inspector.{}", spec.field);
+            let mut next = self
+                .property_drafts
+                .get(spec.field)
+                .cloned()
+                .unwrap_or_else(|| spec.format(current));
+            let response = ui
+                .add_sized(
+                    [width, 26.0],
+                    egui::TextEdit::singleline(&mut next)
+                        .char_limit(32)
+                        .background_color(self.control_fill())
+                        .id(Id::unique(&id))
+                        .hint_text(
+                            egui::RichText::new(self.tr(Text::EmptyValue)).color(self.secondary()),
+                        ),
+                )
+                .labelled_by(caption.id);
+            self.remember(id.clone(), &response);
+            if response.has_focus() {
+                self.property_focus = Some(spec.field);
+            }
+            if response.changed() {
+                self.property_drafts.insert(spec.field, next);
+            }
+            if !spec.suffix.is_empty() {
+                ui.label(
+                    egui::RichText::new(spec.suffix)
+                        .small()
+                        .color(self.secondary()),
+                );
+            }
+            let editing = response.has_focus() || self.property_focus == Some(spec.field);
+            if editing && ui.input(|i| i.key_pressed(egui::Key::Escape)) {
+                self.property_drafts.remove(spec.field);
+                self.property_focus = None;
+                response.surrender_focus();
+                return;
+            }
+            let enter = response.has_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
+            if enter || response.lost_focus() {
+                self.property_focus = None;
+                if let Some(draft) = self.property_drafts.remove(spec.field) {
+                    let Ok(parsed) = draft.trim().parse::<f64>() else {
+                        self.error = Some(Error::Invalid("scrub value").to_string());
+                        return;
+                    };
+                    if !parsed.is_finite() {
+                        self.error = Some(Error::Invalid("scrub value").to_string());
+                        return;
+                    }
+                    let value = spec.quantize(parsed);
+                    if let Err(error) = self.set_item_field(item, spec.field, &spec.format(value)) {
+                        self.error = Some(error.to_string());
+                    }
+                }
+            }
+        });
+    }
+    fn item_value(&self, item: ItemId, field: &str) -> Option<f64> {
+        let item = self
+            .session
+            .project()
+            .data()
+            .scene()
+            .timeline
+            .iter()
+            .flat_map(|track| &track.items)
+            .find(|candidate| candidate.id == item)?;
+        match (field, &item.content) {
+            ("opacity", content) if !matches!(content, ItemParams::Audio(_)) => {
+                let path = project::AnimationPath::new("opacity").ok()?;
+                Some(
+                    match item.animations.value_at(&path, Tick::ZERO).ok().flatten() {
+                        Some(project::ParamValue::Scalar(value)) => value.clamp(0.0, 1.0),
+                        _ => 1.0,
+                    },
+                )
+            }
+            ("text_size", ItemParams::Text(params)) => Some(f64::from(params.font_size)),
+            ("audio_gain", ItemParams::Audio(params)) => Some(f64::from(params.gain_db)),
+            _ => None,
+        }
+    }
+    fn start_scrub(&mut self, spec: ScrubSpec, value: f64) {
+        if self.scrub.is_some() {
+            self.finish_scrub(false);
+        }
+        self.session.end_merge();
+        if self.session.transaction_active()
+            && let Err(error) = self.session.cancel_gesture()
+        {
+            self.error = Some(error.to_string());
+            return;
+        }
+        if let Err(error) = self
+            .session
+            .set_selection(self.selection.clone())
+            .and_then(|_| self.session.begin_gesture())
+        {
+            self.error = Some(error.to_string());
+            return;
+        }
+        self.property_drafts.remove(spec.field);
+        self.property_focus = None;
+        self.scrub = Some(ScrubDrag {
+            field: spec.field,
+            start: value,
+            last: value,
+        });
+    }
+    fn finish_scrub(&mut self, commit: bool) {
+        let Some(scrub) = self.scrub.take() else {
+            return;
+        };
+        let changed = scrub.last != scrub.start;
+        let result = if commit && changed {
+            self.session.commit_gesture()
+        } else {
+            self.session.cancel_gesture()
+        };
+        if let Err(error) = result {
+            self.error = Some(error.to_string());
+        }
+        self.property_drafts.remove(scrub.field);
+        if changed {
+            self.sync_preview();
         }
     }
     fn shared_inspector(&mut self, ui: &mut egui::Ui) {
@@ -2865,52 +3487,22 @@ impl Editor {
     }
     /// The inspector and automation use the same registered atomic field edit.
     pub fn set_shared_field(&mut self, field: &str, value: &str) -> Result<()> {
-        let patch = match field {
-            "blendMode" => ItemParamPatch::BlendMode(
-                serde_json::from_value(serde_json::json!(value))
-                    .map_err(|_| Error::Invalid("blend mode"))?,
-            ),
-            "opacity" => ItemParamPatch::Opacity(
-                value
-                    .trim()
-                    .parse()
-                    .map_err(|_| Error::Invalid("opacity"))?,
-            ),
-            "audio_gain" => ItemParamPatch::AudioGain(
-                value
-                    .trim()
-                    .parse()
-                    .map_err(|_| Error::Invalid("audio gain"))?,
-            ),
-            "text_size" => ItemParamPatch::TextSize(
-                value
-                    .trim()
-                    .parse()
-                    .map_err(|_| Error::Invalid("text size"))?,
-            ),
-            "text_color" => {
-                let value = value.trim().trim_start_matches('#');
-                if !matches!(value.len(), 6 | 8) || !value.is_ascii() {
-                    return Err(Error::Invalid("RGBA colour"));
-                }
-                let mut rgba = [255u8; 4];
-                for (i, byte) in rgba.iter_mut().enumerate().take(value.len() / 2) {
-                    *byte = u8::from_str_radix(
-                        value
-                            .get(i * 2..i * 2 + 2)
-                            .ok_or(Error::Invalid("RGBA colour"))?,
-                        16,
-                    )
-                    .map_err(|_| Error::Invalid("RGBA colour"))?;
-                }
-                ItemParamPatch::TextColor(project::Color(rgba))
-            }
-            _ => return Err(Error::Invalid("shared field")),
-        };
+        let patch = item_patch(field, value)?;
         self.session.set_selection(self.selection.clone())?;
         self.session.execute(
             "timeline.set_item_param_many",
             serde_json::json!({"items":self.selection,"patch":patch}),
+        )?;
+        self.sync_preview();
+        Ok(())
+    }
+    /// One element's committed field edit, through the singular registered command.
+    pub fn set_item_field(&mut self, item: ItemId, field: &str, value: &str) -> Result<()> {
+        let patch = item_patch(field, value)?;
+        self.session.set_selection(self.selection.clone())?;
+        self.session.execute(
+            "timeline.set_item_param",
+            serde_json::json!({"item":item,"patch":patch}),
         )?;
         self.sync_preview();
         Ok(())
@@ -4306,6 +4898,88 @@ impl Editor {
     }
     fn secondary(&self) -> Color32 {
         theme::secondary(self.preferences.dark)
+    }
+}
+/// Paint top/bottom fades over a scroll view whose content continues past the edge.
+fn scroll_fades<F>(ui: &egui::Ui, output: &egui::scroll_area::ScrollAreaOutput<F>, dark: bool) {
+    const STRIPS: usize = 6;
+    const FADE_HEIGHT: f32 = 24.0;
+    let view = output.inner_rect;
+    let offset = output.state.clamped_offset().y;
+    let show_top = offset > 0.5;
+    let show_bottom = offset + view.height() < output.content_size.y - 0.5;
+    if !show_top && !show_bottom {
+        return;
+    }
+    let base = theme::panel(dark);
+    let strip = (FADE_HEIGHT / STRIPS as f32).min(view.height() / 2.0);
+    for index in 0..STRIPS {
+        let alpha = (255.0 * (1.0 - index as f32 / STRIPS as f32)).round() as u8;
+        let color = Color32::from_rgba_unmultiplied(base.r(), base.g(), base.b(), alpha);
+        if show_top {
+            ui.painter().rect_filled(
+                Rect::from_min_size(
+                    egui::pos2(view.left(), view.top() + index as f32 * strip),
+                    Vec2::new(view.width(), strip),
+                ),
+                0.0,
+                color,
+            );
+        }
+        if show_bottom {
+            ui.painter().rect_filled(
+                Rect::from_min_size(
+                    egui::pos2(view.left(), view.bottom() - (index as f32 + 1.0) * strip),
+                    Vec2::new(view.width(), strip),
+                ),
+                0.0,
+                color,
+            );
+        }
+    }
+}
+fn item_patch(field: &str, value: &str) -> Result<ItemParamPatch> {
+    match field {
+        "blendMode" => Ok(ItemParamPatch::BlendMode(
+            serde_json::from_value(serde_json::json!(value))
+                .map_err(|_| Error::Invalid("blend mode"))?,
+        )),
+        "opacity" => Ok(ItemParamPatch::Opacity(
+            value
+                .trim()
+                .parse()
+                .map_err(|_| Error::Invalid("opacity"))?,
+        )),
+        "audio_gain" => Ok(ItemParamPatch::AudioGain(
+            value
+                .trim()
+                .parse()
+                .map_err(|_| Error::Invalid("audio gain"))?,
+        )),
+        "text_size" => Ok(ItemParamPatch::TextSize(
+            value
+                .trim()
+                .parse()
+                .map_err(|_| Error::Invalid("text size"))?,
+        )),
+        "text_color" => {
+            let value = value.trim().trim_start_matches('#');
+            if !matches!(value.len(), 6 | 8) || !value.is_ascii() {
+                return Err(Error::Invalid("RGBA colour"));
+            }
+            let mut rgba = [255u8; 4];
+            for (i, byte) in rgba.iter_mut().enumerate().take(value.len() / 2) {
+                *byte = u8::from_str_radix(
+                    value
+                        .get(i * 2..i * 2 + 2)
+                        .ok_or(Error::Invalid("RGBA colour"))?,
+                    16,
+                )
+                .map_err(|_| Error::Invalid("RGBA colour"))?;
+            }
+            Ok(ItemParamPatch::TextColor(project::Color(rgba)))
+        }
+        _ => Err(Error::Invalid("shared field")),
     }
 }
 fn asset_kind(asset: &SourceAsset) -> std::result::Result<TrackKind, engine::EditError> {

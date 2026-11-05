@@ -217,6 +217,10 @@ fn blend_dropdown_and_opacity_field_dispatch_real_edits() {
         .click();
     harness.run_steps(2);
     harness
+        .get(By::new().predicate(|n| n.author_id() == Some("inspector.tab.blending")))
+        .click();
+    harness.run_steps(2);
+    harness
         .get(By::new().predicate(|n| n.author_id() == Some("inspector.blendMode")))
         .click();
     harness.run_steps(2);

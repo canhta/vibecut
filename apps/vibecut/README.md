@@ -94,9 +94,22 @@ arrows step one frame; Shift+arrows jump one second; Home/End seek the timeline
 ends. Scrubbing uses the same seek path. Two resizable columns and a horizontal
 divider start at the UI design's 25/50/25 and 50/50 proportions. Drags clamp
 assets/properties to 15–40%, preview to 30–85% and the timeline to 15–70%, so no
-region reaches zero. English/Vietnamese, theme, panel proportions and
-property-section open state use one bounded, versioned preference store;
-`ui.prefs.set` edits have app-owned undo/redo and never touch Project JSON. A
+region reaches zero. The assets panel has the reference's nine-tab vertical icon
+bar (Media, Sounds, Text, Stickers, Effects, Transitions, Captions, Adjustment,
+Settings) with tooltips and top/bottom scroll fades; Media owns the live library,
+Transitions and Adjustment are thin stubs until their feature tickets, and the
+remaining tabs show the same catalog stub until their owners land. A single
+selection shows that element type's properties tabs, and the last tab is
+remembered per type. Text, video with/without source audio, image, sticker,
+graphic, audio and effect have the reference tab sets in `src/panels.rs`; image
+currently means a source video stream reporting one frame, and sticker/effect
+items await their item contracts (p1-parity/30 and /33) before those two sets are
+reachable from a real project. English/Vietnamese, theme, panel proportions,
+property-section open state, the active assets tab and per-type properties tabs
+use one bounded, versioned preference store;
+`ui.prefs.set` edits have app-owned undo/redo and never touch Project JSON.
+Tab navigation is presentation state: it persists through the same validated
+store but stays out of app undo history so it cannot shadow a project edit. A
 damaged layout restores its defaults with a visible warning, while an unreadable
 document restores the system defaults. Unversioned and unsupported versions are
 refused without rewriting their bytes on load or save. Edits and writes share the 4 KiB
@@ -104,10 +117,18 @@ read budget, so a saved document always remains readable.
 
 The selection inspector shows audio gain and text size/colour for compatible
 selected items, with a dash for mixed values and the compatible/selected count.
-Enter or blur commits a typed shared-field patch through the engine registry in
-one undo step; invalid input refuses without changing any item. Text editing owns
-keyboard input while focused. Font family and video volume await their owning
-contracts before joining the same inspector.
+A single element uses the per-type tabs above instead: Text has a size scrub and
+colour entry, Blending a blend menu and opacity scrub, and Audio a gain scrub.
+Each scrub field has a left drag handle, a click-to-type entry and clamps; the
+drag previews through an engine gesture, commits as one registered
+`timeline.set_item_param` undo step on release, and Escape cancels the gesture or
+the typed draft. Invalid or non-finite input refuses without changing the item.
+Drag sensitivity is our recorded decision because the inventory leaves it
+unverified: opacity and audio gain move one 0.01/1 dB step per 4 px, and text size
+one px per 2 px. Enter or blur commits a typed shared-field patch through the
+engine registry in one undo step. Text editing owns keyboard input while focused.
+Font family and video volume await their owning contracts before joining the same
+inspector.
 
 An empty-track drag selects intersecting visible items; Cmd/Ctrl/Shift adds to
 the selection at gesture entry. Reversing the drag recomputes intersections, and

@@ -1266,6 +1266,87 @@ fn exec_shared_field_id_list_persists_only_compatible_item_fields() {
 }
 
 #[test]
+fn exec_scrub_equivalent_params_use_the_single_item_command() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("scrub.vibecut");
+    let mut data = project::Project::empty(project::ProjectId(0), "Scrub".into())
+        .unwrap()
+        .into_data();
+    data.scene_mut().timeline.insert_track(project::Track {
+        id: project::TrackId(1),
+        name: "Text".into(),
+        kind: project::TrackKind::Text,
+        muted: false,
+        hidden: false,
+        locked: false,
+        items: vec![project::Item {
+            blend_mode: Default::default(),
+            masks: Vec::new(),
+            effects: vec![],
+            animations: Default::default(),
+            id: project::ItemId(10),
+            source_asset: None,
+            source_range: TimeRange::new(Tick::ZERO, Tick(100)).unwrap(),
+            start: Tick::ZERO,
+            content: project::ItemParams::Text(project::TextParams {
+                content: "Scrub".into(),
+                font_size: 32.0,
+                color: project::Color([255; 4]),
+            }),
+        }],
+    });
+    let original = project::Project::new(data).unwrap();
+    fs::write(&path, project::encode(&original, true).unwrap()).unwrap();
+
+    let changed = exec(
+        &path,
+        "timeline.set_item_param",
+        json!({"item":10,"patch":{"field":"text_size","value":64}}),
+    );
+    assert_eq!(changed["changed"], true);
+    let changed = exec(
+        &path,
+        "timeline.set_item_param",
+        json!({"item":10,"patch":{"field":"opacity","value":0.37}}),
+    );
+    assert_eq!(changed["changed"], true);
+    let saved = project::decode(&fs::read(&path).unwrap()).unwrap().project;
+    let item = saved
+        .data()
+        .scene()
+        .timeline
+        .iter()
+        .flat_map(|track| &track.items)
+        .find(|item| item.id == project::ItemId(10))
+        .unwrap();
+    let project::ItemParams::Text(params) = &item.content else {
+        panic!("text")
+    };
+    assert_eq!(params.font_size, 64.0);
+    let opacity = item
+        .animations
+        .value_at(&project::AnimationPath::new("opacity").unwrap(), Tick::ZERO)
+        .unwrap();
+    assert!(matches!(
+        opacity,
+        Some(project::ParamValue::Scalar(value)) if (value - 0.37).abs() < 1e-9
+    ));
+
+    // Hostile clamp inputs refuse before writing the project.
+    let before = fs::read(&path).unwrap();
+    let params = json!({"item":10,"patch":{"field":"text_size","value":0}}).to_string();
+    let output = cli(&[
+        os("exec"),
+        path.as_os_str(),
+        OsStr::new("timeline.set_item_param"),
+        OsStr::new(&params),
+        os("--json"),
+    ]);
+    assert_ne!(code(&output), 0);
+    assert_eq!(fs::read(&path).unwrap(), before);
+}
+
+#[test]
 fn clips_validation_refuses_before_media_or_network_work() {
     let root = tempfile::tempdir().unwrap();
     let missing = root.path().join("missing.mp4");

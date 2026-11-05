@@ -119,7 +119,8 @@ spacing as proposed until the next UI audit.
 - Footer: `Duration: Ns | Size: about N MB` at 14 px, then a 90x34 px `Export` button and a 90x34 px `Cancel` button.
 - Video section: Resolution (480P, 720P, 1080P, 2K, 4K, 8K), Bit rate, Codec, Format (MP4), Frame rate, Colour space; Audio is a collapsed section.
 - Settings is a 480 px modal: 34 px tab bar with Draft, Edit, Performance, General; [standard rows/fields](#density), 16 px checkboxes.
-- Properties tabs are `Project`, `Details`; geometry follows [layout](#layout-grid), styling follows [iconography](#iconography).
+- The assets panel leads with a 36 px vertical icon bar: Media, Sounds, Text, Stickers, Effects, Transitions, Captions, Adjustment, Settings at 28 px icon buttons with right-side tooltips and top/bottom scroll fades. A selected element's properties view shows its type tabs as 14 px text at 40 px row height (active tab accent, 2 px underline); the empty and multi-select views keep the existing shared-field presentation, and `Project`/`Details` remain the inspector header switch. Geometry follows [layout](#layout-grid), styling follows [iconography](#iconography).
+- Scrub number fields have a 28×26 px drag handle, a 26 px typed entry and optional unit suffix; the active value previews during the drag and commits once on release.
 
 ### Shortcuts
 
