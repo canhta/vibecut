@@ -5,6 +5,29 @@ use crate::{
 use ffmpeg_next as ff;
 use time::{FrameRate, Rounding};
 
+// Bound retained output by bytes, not by codec latency. Charge vector capacity
+// slack and packet metadata as well, so tiny/empty packets cannot grow forever.
+const MAX_ENCODED_VIDEO_BATCH_BYTES: usize = 64 * 1024 * 1024;
+const MAX_VIDEO_ENCODER_THREADS: usize = 8;
+
+fn encoded_video_batch_bytes(retained: usize, packet: &ff::Packet) -> Result<usize> {
+    let bytes = retained
+        .checked_add(4 * std::mem::size_of::<Packet>())
+        .and_then(|n| n.checked_add(ff::ffi::AV_INPUT_BUFFER_PADDING_SIZE as usize))
+        .and_then(|n| n.checked_add(packet.size()))
+        .and_then(|bytes| {
+            packet.side_data().try_fold(bytes, |bytes, side| {
+                bytes
+                    .checked_add(std::mem::size_of::<ff::ffi::AVPacketSideData>())
+                    .and_then(|n| n.checked_add(ff::ffi::AV_INPUT_BUFFER_PADDING_SIZE as usize))
+                    .and_then(|n| n.checked_add(side.data().len()))
+            })
+        });
+    bytes
+        .filter(|&n| n <= MAX_ENCODED_VIDEO_BATCH_BYTES)
+        .ok_or(MediaError::TooLarge("encoded video batch bytes"))
+}
+
 #[derive(Clone, Copy, Debug, Default)]
 pub enum EncodePreference {
     #[cfg_attr(not(windows), default)]
@@ -180,6 +203,11 @@ impl VideoEncoder {
                 encoder.set_bit_rate(settings.bit_rate);
                 encoder.set_gop(60);
                 encoder.set_max_b_frames(0);
+                // Avoid automatic thread counts (and retained frame queues)
+                // growing with host CPU count. This is independent of scaler workers.
+                let threads = std::thread::available_parallelism()
+                    .map_or(1, |n| n.get().min(MAX_VIDEO_ENCODER_THREADS));
+                encoder.set_threading(ff::codec::threading::Config::count(threads));
                 encoder.set_flags(ff::codec::Flags::GLOBAL_HEADER);
                 encoder.set_format(
                     if !settings.webm
@@ -359,13 +387,15 @@ impl VideoEncoder {
     }
     fn receive(&mut self) -> Result<Vec<Packet>> {
         let mut packets = Vec::new();
+        let mut retained_bytes = 0;
         loop {
             let mut inner = ff::Packet::empty();
             match self.encoder.receive_packet(&mut inner) {
                 Ok(()) => {
-                    if packets.len() >= 64 {
-                        return Err(MediaError::TooLarge("encoded packets"));
-                    }
+                    retained_bytes = encoded_video_batch_bytes(retained_bytes, &inner)?;
+                    packets
+                        .try_reserve(1)
+                        .map_err(|_| MediaError::TooLarge("encoded video batch allocation"))?;
                     if inner.duration() <= 0 {
                         inner.set_duration(1);
                     }
@@ -374,7 +404,9 @@ impl VideoEncoder {
                         time_base: self.time_base,
                     });
                 }
-                Err(e) if drained(e) => break,
+                Err(ff::Error::Eof) => break,
+                // After send_eof FFmpeg must drain through EOF, not EAGAIN.
+                Err(e) if !self.finished && drained(e) => break,
                 Err(e) => return Err(error("receive encoded video")(e)),
             }
         }
@@ -599,6 +631,103 @@ impl AudioEncoder {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn encoded_video_batch_refuses_only_when_its_byte_budget_is_exceeded() {
+        let packet = ff::Packet::copy(&[0; 32]);
+        let charge = encoded_video_batch_bytes(0, &packet).unwrap();
+        for (retained, accepted) in [
+            (0, true),
+            (MAX_ENCODED_VIDEO_BATCH_BYTES - charge - 1, true),
+            (MAX_ENCODED_VIDEO_BATCH_BYTES - charge, true),
+            (MAX_ENCODED_VIDEO_BATCH_BYTES - charge + 1, false),
+            (usize::MAX, false),
+        ] {
+            match encoded_video_batch_bytes(retained, &packet) {
+                Ok(bytes) => {
+                    assert!(accepted);
+                    assert_eq!(bytes, retained + charge);
+                }
+                Err(error) => {
+                    assert!(!accepted);
+                    assert!(matches!(
+                        error,
+                        MediaError::TooLarge("encoded video batch bytes")
+                    ));
+                }
+            }
+        }
+        // Even zero payloads consume budget for metadata and vector capacity.
+        assert!(encoded_video_batch_bytes(0, &ff::Packet::empty()).unwrap() > 0);
+        let mut bytes = 0;
+        for _ in 0..128 {
+            bytes = encoded_video_batch_bytes(bytes, &packet).unwrap();
+        }
+        assert_eq!(bytes, 128 * charge);
+    }
+
+    #[test]
+    fn threaded_final_flush_retains_more_than_64_packets() {
+        init().unwrap();
+        let codec = ff::encoder::find_by_name("libx264");
+        assert!(
+            codec.is_some() || !cfg!(target_os = "linux"),
+            "Linux requires libx264"
+        );
+        let Some(codec) = codec else {
+            // Only the Linux GPL build includes this encoder.
+            eprintln!("skipping threaded lookahead regression: libx264 absent on this platform");
+            return;
+        };
+        let rate = FrameRate::new(30, 1).unwrap();
+        let time_base = TimeBase::new(1, 30).unwrap();
+        let color = ColorInfo::default().resolved_sdr();
+        let settings = VideoEncoderSettings::h264(128, 96, rate, color);
+        let mut native = ff::codec::context::Context::new_with_codec(codec)
+            .encoder()
+            .video()
+            .unwrap();
+        native.set_width(128);
+        native.set_height(96);
+        native.set_format(ff::format::Pixel::NV12);
+        native.set_time_base(time_base.rational());
+        native.set_bit_rate(settings.bit_rate);
+        native.set_max_b_frames(0);
+        native.set_threading(ff::codec::threading::Config::count(2));
+        let mut options = ff::Dictionary::new();
+        // A long, real lookahead makes the final burst deterministic even on
+        // small hosts, without changing the production encoder's quality.
+        options.set("rc-lookahead", "80");
+        let mut encoder = VideoEncoder {
+            encoder: native.open_with(options).unwrap(),
+            time_base,
+            settings,
+            scaler: None,
+            finished: false,
+            name: "libx264 test".into(),
+            last_pts: None,
+        };
+        let first =
+            VideoFrame::from_rgba8(128, 96, time::Tick::ZERO, color, &vec![128; 128 * 96 * 4])
+                .unwrap();
+        let mut emitted = Vec::new();
+        for index in 0..128 {
+            let frame = first.with_pts(time_base.ticks(index).unwrap()).unwrap();
+            emitted.extend(encoder.encode(&frame).unwrap());
+        }
+        let delayed = encoder.flush().unwrap();
+        assert!(delayed.len() > 64, "burst must exercise the old cap");
+        println!("threaded final flush: {} delayed packets", delayed.len());
+        emitted.extend(delayed);
+        assert_eq!(emitted.len(), 128);
+        for (index, packet) in emitted.iter().enumerate() {
+            assert_eq!(
+                packet.pts().unwrap(),
+                Some(time_base.ticks(index as i64).unwrap())
+            );
+        }
+        assert!(encoder.flush().unwrap().is_empty());
+    }
 
     #[test]
     fn maximum_quality_never_selects_automatic_or_disabled_native_quality() {

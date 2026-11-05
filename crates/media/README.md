@@ -244,7 +244,19 @@ stricter bound than general playback's 2^26-pixel ceiling. It it never reads the
 hashes separately by design). Stream count is capped at
 256, extradata at 1 MiB, packets at 64 MiB, decoded frame area at 2^26 pixels,
 audio frames at 65,536 samples/channel and 32 channels, and one receive batch at
-64 frames. Audio encoding admits up to eight channels and caps its FIFO at
+64 decoded frames.
+
+Video encoding requests at most eight codec workers (also capped by available
+parallelism), independently of conversion workers. Each returned video packet
+batch admits at most 64 MiB of accounted payload, side data and metadata, including
+vector capacity slack; packet count is not a codec-delay limit. Oversized batches
+return `MediaError::TooLarge`; discard that execution after a refusal. Final
+video flush receives until EOF and repeated successful flushes are empty, as
+specified by [FFmpeg's send/receive contract](https://github.com/FFmpeg/FFmpeg/blob/master/libavcodec/avcodec.h).
+Regressions cover a two-thread encoder with more than 64 delayed packets and a
+60 s 1080p30 encode, including decoded frame count and mux duration.
+
+Audio encoding admits up to eight channels and caps its FIFO at
 131,072 samples/channel. Native FFmpeg allocation/codec limits still apply;
 these checks do not establish safety for every hostile C-library input. The decoder
 keeps the native 2^26-pixel ceiling rather than tightening it to the probed frame

@@ -245,6 +245,62 @@ fn timestamps_do_not_round_trip_through_float() {
 }
 
 #[test]
+fn long_1080p_encode_drains_every_delayed_frame() {
+    if !crate::common::require_oracles("long encoder drain") {
+        return;
+    }
+    let rate = time::FrameRate::new(30, 1).unwrap();
+    let first = media::VideoFrame::from_rgba8(
+        1920,
+        1080,
+        Tick::ZERO,
+        media::ColorInfo::default(),
+        &vec![128; 1920 * 1080 * 4],
+    )
+    .unwrap();
+    let settings = VideoEncoderSettings::h264(1920, 1080, rate, first.color());
+    let mut encoder =
+        VideoEncoder::with_preference(settings, &first, media::EncodePreference::Software).unwrap();
+    std::fs::create_dir_all(crate::common::fixtures_dir()).unwrap();
+    let output = crate::common::fixtures_dir().join("long_encoder_drain.mp4");
+    let mut mux = Muxer::create(&output, Container::Mp4).unwrap();
+    let track = mux
+        .add_parameters(&encoder.parameters(), encoder.time_base())
+        .unwrap();
+    let mut packets = 0;
+    for index in 0..1800 {
+        let frame = first
+            .with_pts(Tick::from_units(index, 30, time::Rounding::Nearest).unwrap())
+            .unwrap();
+        for packet in encoder.encode(&frame).unwrap() {
+            mux.write_packet(track, &packet).unwrap();
+            packets += 1;
+        }
+    }
+    let delayed = encoder.flush().unwrap();
+    println!("{}: {} delayed packets", encoder.name(), delayed.len());
+    for packet in delayed {
+        mux.write_packet(track, &packet).unwrap();
+        packets += 1;
+    }
+    assert_eq!(packets, 1800);
+    assert!(encoder.flush().unwrap().is_empty());
+    assert!(matches!(
+        encoder.encode(&first),
+        Err(media::MediaError::Invalid(_))
+    ));
+    mux.finish().unwrap();
+    assert_eq!(crate::common::decoded_frames(&output, "v:0"), 1800);
+    crate::common::approx(
+        crate::common::duration(&output),
+        60.0,
+        1.0 / 30.0,
+        "drained duration",
+    );
+    assert!(crate::common::decodes(&output));
+}
+
+#[test]
 fn audio_encode_and_resample_preserve_clock_and_sample_counts() {
     let Some(path) = source() else {
         return;
