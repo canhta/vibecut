@@ -60,7 +60,7 @@ impl ExportSettings {
             container: Container::Mp4,
             bit_rate: 12_000_000,
             quality: 85,
-            encoder: EncodePreference::Hardware,
+            encoder: EncodePreference::default(),
             include_audio: true,
             channels: 2,
             overwrite: Overwrite::Refuse,

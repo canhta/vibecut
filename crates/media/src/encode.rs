@@ -7,8 +7,11 @@ use time::{FrameRate, Rounding};
 
 #[derive(Clone, Copy, Debug, Default)]
 pub enum EncodePreference {
-    #[default]
+    #[cfg_attr(not(windows), default)]
     Hardware,
+    // Windows hardware MF can substitute future pictures; keep software as the
+    // default until sustained picture integrity is verified (p0-core/78).
+    #[cfg_attr(windows, default)]
     Software,
 }
 
@@ -110,7 +113,7 @@ pub struct VideoEncoder {
 }
 impl VideoEncoder {
     pub fn new(settings: VideoEncoderSettings, first: &VideoFrame) -> Result<Self> {
-        Self::with_preference(settings, first, EncodePreference::Hardware)
+        Self::with_preference(settings, first, EncodePreference::default())
     }
     pub fn with_preference(
         mut settings: VideoEncoderSettings,

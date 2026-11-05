@@ -125,6 +125,12 @@ fn exact_non_keyframe_cut_preserves_pcm_sync_and_frame_bounds() {
     let h = Hooks::default();
     let range = TimeRange::new(tick(12, 30), tick(24, 30)).unwrap();
     let mut settings = ExportSettings::from_project(&p);
+    if cfg!(windows) {
+        assert!(matches!(
+            settings.encoder,
+            media::EncodePreference::Software
+        ));
+    }
     settings.mode = ExportMode::Encode;
     settings.audio_block = 1031;
     let output = root().join("non-keyframe-cut.mp4");

@@ -160,7 +160,11 @@ perceptual quality across platforms.
 Hardware preference uses VideoToolbox on macOS and D3D11VA/QSV on Windows.
 Encoding tries platform hardware and then the platform software path (VideoToolbox
 `allow_sw`, or Media Foundation software), retaining requested settings. Missing
-capability is an error. `EncodePreference::Software` requires the platform software
+capability is an error. Windows defaults (`EncodePreference::default` and
+`VideoEncoder::new`) use software encoding while sustained Media Foundation
+hardware picture integrity remains blocked by p0-core/78; hardware decoding
+remains preferred. Explicit `EncodePreference::Hardware` is available for
+verification of that defect. `EncodePreference::Software` requires the platform software
 path (VideoToolbox `require_sw` on macOS), retaining the requested bitrate.
 VideoToolbox attempts QSCALE only on FFmpeg-supported arm64, with `allow_sw=0`
 to require hardware; a successful open proves that encoder accepts Quality. On

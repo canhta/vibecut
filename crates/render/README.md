@@ -6,6 +6,10 @@ shaping/rasterization, project owns atomic publication, engine owns scheduling a
 aggregate byte policy. No UI, device or persisted render state; it evaluates
 project-owned keyframed opacity.
 
+`ExportSettings::from_project` uses media's platform encoder default: software
+encoding on Windows pending p0-core/78 hardware picture-integrity verification.
+Hardware decoding remains enabled; requested quality and bitrate are retained.
+
 ## Working pixels and scene
 
 `Renderer::new(project, RenderSettings)` validates output geometry and per-item

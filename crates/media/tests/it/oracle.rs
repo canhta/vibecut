@@ -183,6 +183,9 @@ fn hardware_preference_encodes_and_preserves_color() {
     let hardware = first.is_hardware();
     let settings = VideoEncoderSettings::h264(128, 96, stream.frame_rate.unwrap(), first.color());
     let mut encoder = VideoEncoder::new(settings, first).unwrap();
+    if cfg!(windows) {
+        assert_eq!(encoder.name(), "h264_mf (software)");
+    }
     let output = crate::common::fixtures_dir().join("ffmpeg_encoded.mp4");
     let mut mux = Muxer::create(&output, Container::Mp4).unwrap();
     let track = mux
