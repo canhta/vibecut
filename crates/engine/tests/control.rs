@@ -1121,6 +1121,7 @@ fn labelled_preview_preserves_production_picture_outside_the_label_band() {
     s.apply(Command::AddTrack {
         name: "Inactive overlay".into(),
         kind: TrackKind::Video,
+        placement: Default::default(),
     })
     .unwrap();
     s.apply(Command::SwitchScene {

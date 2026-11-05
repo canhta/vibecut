@@ -43,7 +43,7 @@ fn scenes_isolate_content_and_views_and_delete_atomically_with_history() {
     .unwrap();
     let main = s.project().data().scene().timeline.main.id;
     s.apply(Command::InsertItem {
-        track: main,
+        placement: engine::Placement::Track { track: main },
         item: engine::NewItem {
             animations: Default::default(),
             source_asset: None,

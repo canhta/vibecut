@@ -740,7 +740,8 @@ fn multi_select_insert_targets_only_selected_assets_in_one_undo_step() {
     );
     assert!(data.scene().timeline.overlays.is_empty());
     assert_eq!(
-        data.scene().timeline
+        data.scene()
+            .timeline
             .main
             .items
             .iter()

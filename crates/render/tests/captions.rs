@@ -483,7 +483,7 @@ fn long_cues_fit_portrait_landscape_and_partial_source_items() {
             .render_frame(tick(3, 4), &mut Empty, &h)
             .unwrap();
         let mut data = p.clone().into_data();
-        let item = &mut data.timeline.overlays[0].items[0];
+        let item = &mut data.scene_mut().timeline.overlays[0].items[0];
         item.source_range = TimeRange::new(tick(1, 2), tick(1, 1)).unwrap();
         let project::ItemParams::Caption(params) = &mut item.content else {
             panic!("expected caption item")

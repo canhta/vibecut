@@ -1621,7 +1621,14 @@ fn placement_is_atomic_and_respects_groups_locks_and_main_magnet() {
         })
         .unwrap();
     assert_eq!(
-        s.project().data().scene().timeline.overlays.last().unwrap().id,
+        s.project()
+            .data()
+            .scene()
+            .timeline
+            .overlays
+            .last()
+            .unwrap()
+            .id,
         match lower.created[0] {
             CreatedId::Track(id) => id,
             _ => panic!("track"),
@@ -1648,7 +1655,14 @@ fn placement_is_atomic_and_respects_groups_locks_and_main_magnet() {
         })
         .is_err()
     );
-    let ids: Vec<_> = s.project().data().scene().timeline.iter().map(|t| t.id).collect();
+    let ids: Vec<_> = s
+        .project()
+        .data()
+        .scene()
+        .timeline
+        .iter()
+        .map(|t| t.id)
+        .collect();
     for track in ids {
         s.apply(Command::SetTrackFlags {
             track,
@@ -1671,7 +1685,10 @@ fn placement_is_atomic_and_respects_groups_locks_and_main_magnet() {
         item: new_item(100, 10),
     })
     .unwrap();
-    assert_eq!(s.project().data().scene().timeline.track_count(), tracks + 1);
+    assert_eq!(
+        s.project().data().scene().timeline.track_count(),
+        tracks + 1
+    );
     // Every placement entry point clamps empty main; occupied main keeps normal timing.
     for magnet in [false, true] {
         for (occupied, command, starts) in [

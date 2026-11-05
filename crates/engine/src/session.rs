@@ -427,6 +427,7 @@ impl Session {
                 return Ok(Outcome {
                     changed,
                     created: Vec::new(),
+                    placements: Vec::new(),
                 });
             }
             Command::SetViewState {

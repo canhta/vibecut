@@ -229,7 +229,10 @@ fn exec_mutates_through_engine_and_reports_created_ids() {
     assert_eq!(placed["placements"][0]["track"], 0);
     assert_eq!(placed["placements"][0]["item"], 2);
     let loaded = project::load(&project).unwrap().project;
-    assert_eq!(loaded.data().scene().timeline.main.items[0].start, Tick::ZERO);
+    assert_eq!(
+        loaded.data().scene().timeline.main.items[0].start,
+        Tick::ZERO
+    );
 }
 
 #[test]
