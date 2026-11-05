@@ -190,7 +190,23 @@ pub fn environment(command: &mut Command) -> Result<(), String> {
         env::join_paths(paths).map_err(|e| e.to_string())?,
     );
     #[cfg(windows)]
-    windows_bindgen_environment(command);
+    {
+        let compiler = cc::windows_registry::find_tool(env::consts::ARCH, "cl.exe").ok_or(
+            "install Visual Studio C++ build tools and a Windows SDK before workspace checks",
+        )?;
+        // cc discovers MSVC and SDK headers even from an MSYS2 shell. An
+        // already-configured developer shell supplies INCLUDE by inheritance.
+        // Keep our DLL PATH: importing the compiler's full environment loses it.
+        let include = compiler
+            .env()
+            .iter()
+            .find(|(key, _)| key == "INCLUDE")
+            .map(|(_, value)| value.clone())
+            .or_else(|| env::var_os("INCLUDE"))
+            .filter(|value| !value.is_empty())
+            .ok_or("MSVC INCLUDE is empty; install the Windows SDK or use a Visual Studio developer shell")?;
+        windows_bindgen_environment(command, &include);
+    }
     if cfg!(target_os = "macos") {
         let mut flags = env::var("CARGO_ENCODED_RUSTFLAGS").unwrap_or_default();
         if flags.is_empty() {
@@ -216,7 +232,8 @@ pub fn environment(command: &mut Command) -> Result<(), String> {
 }
 
 #[cfg(any(windows, test))]
-fn windows_bindgen_environment(command: &mut Command) {
+fn windows_bindgen_environment(command: &mut Command, include: &std::ffi::OsStr) {
+    command.env("INCLUDE", include);
     // bindgen 0.73.2 translates Clang's packed AMX vector field to an
     // unaligned array, emitting E0587 and an invalid tile offset (p0-core/50).
     // Remove when ffmpeg-sys-next/bindgen handles this layout. AMX intrinsics
@@ -719,13 +736,31 @@ mod tests {
     #[test]
     fn windows_bindgen_environment_preserves_caller_arguments() {
         const CHILD: &str = "VIBECUT_BINDGEN_ENV_CHILD";
+        const INCLUDE: &str = "VIBECUT_MSVC_INCLUDE_CHILD";
         let variable = "BINDGEN_EXTRA_CLANG_ARGS";
         let target = format!("{}-pc-windows-msvc", env::consts::ARCH);
         let hyphen = format!("{variable}_{target}");
         let underscore = format!("{variable}_{}", target.replace('-', "_"));
         if let Ok(expected) = env::var(CHILD) {
             let mut command = Command::new("cargo");
-            windows_bindgen_environment(&mut command);
+            command.env("PATH", "runtime DLL path");
+            windows_bindgen_environment(&mut command, &env::var_os(INCLUDE).unwrap());
+            let include = command
+                .get_envs()
+                .find(|(key, _)| *key == std::ffi::OsStr::new("INCLUDE"))
+                .unwrap()
+                .1
+                .unwrap();
+            assert_eq!(include, env::var_os(INCLUDE).unwrap());
+            assert_eq!(
+                command
+                    .get_envs()
+                    .find(|(key, _)| *key == std::ffi::OsStr::new("PATH"))
+                    .unwrap()
+                    .1
+                    .unwrap(),
+                "runtime DLL path"
+            );
             let (_, value) = command
                 .get_envs()
                 .find(|(key, _)| *key == std::ffi::OsStr::new(&hyphen))
@@ -737,34 +772,45 @@ mod tests {
             assert!(args.ends_with(&format!(" --target={target}")));
             return;
         }
-        for (general, underscored, hyphenated, expected) in [
-            (None, None, None, ""),
-            (Some("-DGENERAL"), None, None, "-DGENERAL"),
-            (None, Some("-DUNDERSCORE"), None, "-DUNDERSCORE"),
-            (None, None, Some("-DHYPHEN"), "-DHYPHEN"),
+        for (general, underscored, hyphenated, expected, include) in [
+            (None, None, None, "", None),
+            (Some("-DGENERAL"), None, None, "-DGENERAL", None),
+            (None, Some("-DUNDERSCORE"), None, "-DUNDERSCORE", None),
+            (None, None, Some("-DHYPHEN"), "-DHYPHEN", None),
+            (
+                None,
+                None,
+                None,
+                "",
+                Some(r"C:\Program Files\MSVC\include;C:\SDK\Tiếng Việt\ucrt"),
+            ),
             (
                 Some("--target=x86_64-w64-windows-gnu"),
                 None,
                 None,
                 "--target=x86_64-w64-windows-gnu",
+                None,
             ),
             (
                 Some("-DGENERAL"),
                 Some("-DUNDERSCORE"),
                 None,
                 "-DGENERAL -DUNDERSCORE",
+                None,
             ),
             (
                 None,
                 Some("-DUNDERSCORE"),
                 Some("-DHYPHEN"),
                 "-DUNDERSCORE -DHYPHEN",
+                None,
             ),
             (
                 Some("-I\"path with spaces\""),
                 Some("-DUNDERSCORE"),
                 Some("-DHYPHEN"),
                 "-I\"path with spaces\" -DUNDERSCORE -DHYPHEN",
+                None,
             ),
         ] {
             let mut child = Command::new(env::current_exe().unwrap());
@@ -774,7 +820,8 @@ mod tests {
                     "ffmpeg::tests::windows_bindgen_environment_preserves_caller_arguments",
                     "--nocapture",
                 ])
-                .env(CHILD, expected);
+                .env(CHILD, expected)
+                .env(INCLUDE, include.unwrap_or("MSVC include"));
             for (key, value) in [
                 (variable, general),
                 (&underscore, underscored),
