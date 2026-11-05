@@ -326,13 +326,14 @@ impl Editor {
                 .import_failures
                 .iter()
                 .map(|failure| {
-                    format!(
-                        "{}: {}",
-                        failure.path.file_name().map_or_else(
-                            || failure.path.to_string_lossy().into_owned(),
-                            |name| name.to_string_lossy().into_owned()
-                        ),
-                        failure.reason
+                    let name = failure.path.file_name().map_or_else(
+                        || failure.path.to_string_lossy().into_owned(),
+                        |name| name.to_string_lossy().into_owned(),
+                    );
+                    catalog::format(
+                        self.preferences.locale,
+                        Text::FailureDetail,
+                        &[("name", &name), ("reason", &failure.reason)],
                     )
                 })
                 .collect(),
@@ -465,20 +466,26 @@ impl Editor {
         self.prune_media_selection();
     }
     fn finish_import(&mut self) {
-        let failed = self.import_failures.len();
-        let unfinished = self.import_total.saturating_sub(self.import_completed);
-        let detail = format!(
-            "{}: {} · {}: {failed} · {}: {unfinished}",
-            self.tr(Text::Imported),
-            self.import_imported,
-            self.tr(Text::Failed),
-            self.tr(Text::Unfinished)
+        let failed_count = self.import_failures.len();
+        let unfinished_count = self.import_total.saturating_sub(self.import_completed);
+        let locale = self.preferences.locale;
+        let imported = catalog::number(locale, self.import_imported as u64);
+        let failed = catalog::number(locale, failed_count as u64);
+        let unfinished = catalog::number(locale, unfinished_count as u64);
+        let detail = catalog::format(
+            locale,
+            Text::ImportSummary,
+            &[
+                ("imported", &imported),
+                ("failed", &failed),
+                ("unfinished", &unfinished),
+            ],
         );
         let text = if self.import_error.is_some() {
             self.tr(Text::ImportFailed)
         } else if self.import_cancelled {
             self.tr(Text::ImportCancelled)
-        } else if failed > 0 || unfinished > 0 {
+        } else if failed_count > 0 || unfinished_count > 0 {
             self.tr(Text::ImportPartial)
         } else {
             self.tr(Text::ImportComplete)
@@ -710,7 +717,17 @@ impl Editor {
         selected: Option<bool>,
         enabled: bool,
     ) -> bool {
-        let tooltip = shortcut.map_or_else(|| label.to_owned(), |key| format!("{label} ({key})"));
+        let locale = self.preferences.locale;
+        let tooltip = shortcut.map_or_else(
+            || label.to_owned(),
+            |key| {
+                catalog::format(
+                    locale,
+                    Text::ActionShortcut,
+                    &[("action", label), ("shortcut", key)],
+                )
+            },
+        );
         let is_selected = selected.unwrap_or(false);
         let (rect, response) = ui
             .push_id(id, |ui| {
@@ -827,7 +844,7 @@ impl Editor {
             }
             "file.import" => {
                 if self.importing() {
-                    self.import_notice = Some("import already in progress".to_owned());
+                    self.import_notice = Some(self.tr(Text::ImportBusy).to_owned());
                 } else {
                     self.lifecycle_action = Some(crate::lifecycle::EditorAction::ImportMedia);
                 }
@@ -1998,7 +2015,11 @@ impl Editor {
     }
     fn header(&mut self, ui: &mut egui::Ui) {
         ui.horizontal_centered(|ui| {
-            ui.label(egui::RichText::new("VibeCut").strong().size(18.0));
+            ui.label(
+                egui::RichText::new(self.tr(Text::AppName))
+                    .strong()
+                    .size(18.0),
+            );
             ui.separator();
             if self.button(ui, "project.back", Icon::ArrowLeft, Text::Projects, true) {
                 self.action("project.back");
@@ -2111,10 +2132,11 @@ impl Editor {
         });
         if !importing && !self.media_selection.is_empty() {
             ui.label(
-                egui::RichText::new(format!(
-                    "{}: {}",
-                    self.tr(Text::Selected),
-                    self.media_selection.len()
+                egui::RichText::new(catalog::format_count(
+                    self.preferences.locale,
+                    self.media_selection.len() as u64,
+                    Text::SelectedCountOne,
+                    Text::SelectedCountOther,
                 ))
                 .small()
                 .color(self.secondary()),
@@ -2190,11 +2212,12 @@ impl Editor {
                     .strong(),
             );
             for failure in &self.import_failures {
+                let name = file_name(&failure.path);
                 ui.label(
-                    egui::RichText::new(format!(
-                        "{}: {}",
-                        file_name(&failure.path),
-                        failure.reason
+                    egui::RichText::new(catalog::format(
+                        self.preferences.locale,
+                        Text::FailureDetail,
+                        &[("name", &name), ("reason", &failure.reason)],
                     ))
                     .small()
                     .color(self.secondary()),
@@ -2218,14 +2241,48 @@ impl Editor {
         ui.separator();
         ui.add_space(32.0);
         if self.details {
+            let locale = self.preferences.locale;
             let data = self.session.project().data();
-            ui.label(format!("{} × {}", data.canvas.width, data.canvas.height));
-            ui.label(format!(
-                "{} / {} fps",
-                data.canvas.fps.num(),
-                data.canvas.fps.den()
+            let width = catalog::number(locale, u64::from(data.canvas.width));
+            let height = catalog::number(locale, u64::from(data.canvas.height));
+            ui.label(catalog::format(
+                locale,
+                Text::CanvasSize,
+                &[("width", &width), ("height", &height)],
             ));
-            ui.label(format!("{} Hz", data.settings.audio_sample_rate));
+            let numerator = catalog::signed(locale, data.canvas.fps.num());
+            let denominator = catalog::signed(locale, data.canvas.fps.den());
+            ui.label(catalog::format(
+                locale,
+                Text::FrameRate,
+                &[("num", &numerator), ("den", &denominator)],
+            ));
+            let rate = catalog::number(locale, u64::from(data.settings.audio_sample_rate));
+            ui.label(catalog::format(
+                locale,
+                Text::SampleRate,
+                &[("rate", &rate)],
+            ));
+            let created = catalog::date(locale, self.session.metadata().created_unix_ms);
+            let modified = catalog::date(locale, self.session.metadata().modified_unix_ms);
+            ui.label(
+                egui::RichText::new(catalog::format(
+                    locale,
+                    Text::CreatedDate,
+                    &[("date", &created)],
+                ))
+                .small()
+                .color(self.secondary()),
+            );
+            ui.label(
+                egui::RichText::new(catalog::format(
+                    locale,
+                    Text::ModifiedDate,
+                    &[("date", &modified)],
+                ))
+                .small()
+                .color(self.secondary()),
+            );
         } else if self.selection.is_empty() {
             ui.label(self.tr(Text::EmptyInspector));
         } else {
@@ -2237,10 +2294,11 @@ impl Editor {
             self.property_drafts.clear();
             self.property_selection = self.selection.clone();
         }
-        ui.label(format!(
-            "{}: {}",
-            self.tr(Text::Selected),
-            self.selection.len()
+        ui.label(catalog::format_count(
+            self.preferences.locale,
+            self.selection.len() as u64,
+            Text::SelectedCountOne,
+            Text::SelectedCountOther,
         ));
         match self.selection_scopes.active(&self.selection) {
             SelectionScope::MaskPoints => {
@@ -2274,18 +2332,21 @@ impl Editor {
                     .char_limit(64)
                     .background_color(self.control_fill())
                     .id(Id::unique(id))
-                    .hint_text(egui::RichText::new("—").color(self.secondary())),
+                    .hint_text(
+                        egui::RichText::new(self.tr(Text::EmptyValue)).color(self.secondary()),
+                    ),
             );
             self.remember(id, &response);
             if response.changed() {
                 self.property_drafts.insert(field.id, value.clone());
             }
+            let compatible = catalog::number(self.preferences.locale, field.compatible as u64);
+            let total = catalog::number(self.preferences.locale, self.selection.len() as u64);
             ui.label(
-                egui::RichText::new(format!(
-                    "{}: {} / {}",
-                    self.tr(Text::Compatible),
-                    field.compatible,
-                    self.selection.len()
+                egui::RichText::new(catalog::format(
+                    self.preferences.locale,
+                    Text::CompatibleCount,
+                    &[("compatible", &compatible), ("total", &total)],
                 ))
                 .small()
                 .color(self.secondary()),
@@ -2430,23 +2491,23 @@ impl Editor {
                 "transport.back",
                 Icon::SkipBack,
                 self.tr(Text::Back),
-                Some("J"),
+                Some(self.tr(Text::ShortcutBack)),
                 None,
                 true,
             ) {
                 self.action("transport.back");
             }
             let (play_icon, play_text, play_key) = if self.playback.playing() {
-                (Icon::Pause, Text::Pause, "K")
+                (Icon::Pause, Text::Pause, Text::ShortcutPause)
             } else {
-                (Icon::Play, Text::Play, "Space")
+                (Icon::Play, Text::Play, Text::ShortcutPlay)
             };
             if self.icon_only(
                 ui,
                 "transport.play",
                 play_icon,
                 self.tr(play_text),
-                Some(play_key),
+                Some(self.tr(play_key)),
                 None,
                 ready,
             ) {
@@ -2457,7 +2518,7 @@ impl Editor {
                 "transport.forward",
                 Icon::SkipForward,
                 self.tr(Text::Forward),
-                Some("L"),
+                Some(self.tr(Text::ShortcutForward)),
                 None,
                 true,
             ) {
@@ -2465,10 +2526,13 @@ impl Editor {
             }
         });
         let at = self.playback.position().unwrap_or(Tick::ZERO);
-        ui.label(format!(
-            "{} / {}",
-            display_time(at),
-            display_time(self.session.project().duration())
+        ui.label(catalog::format(
+            self.preferences.locale,
+            Text::TimePosition,
+            &[
+                ("current", &display_time(at)),
+                ("duration", &display_time(self.session.project().duration())),
+            ],
         ));
         if !self.playback.device_available() {
             ui.label(self.tr(Text::Offline));
@@ -2533,13 +2597,37 @@ impl Editor {
                             Vec2::new(bar.width() * percent as f32 / 100.0, bar.height()),
                         );
                         ui.painter().rect_filled(filled, 0.0, self.accent());
-                        ui.label(format!("{} {percent}%", self.tr(Text::Processing)));
+                        ui.label(catalog::format(
+                            self.preferences.locale,
+                            Text::ProcessingPercent,
+                            &[
+                                ("status", self.tr(Text::Processing)),
+                                (
+                                    "percent",
+                                    &catalog::number(self.preferences.locale, percent as u64),
+                                ),
+                            ],
+                        ));
                         ui.label(
-                            egui::RichText::new(format!(
-                                "{}: {} / {}",
-                                self.tr(Text::Imported),
-                                self.import_completed,
-                                self.import_total
+                            egui::RichText::new(catalog::format(
+                                self.preferences.locale,
+                                Text::ImportProgress,
+                                &[
+                                    (
+                                        "done",
+                                        &catalog::number(
+                                            self.preferences.locale,
+                                            self.import_completed as u64,
+                                        ),
+                                    ),
+                                    (
+                                        "total",
+                                        &catalog::number(
+                                            self.preferences.locale,
+                                            self.import_total as u64,
+                                        ),
+                                    ),
+                                ],
                             ))
                             .small()
                             .color(self.secondary()),
@@ -2765,7 +2853,7 @@ impl Editor {
                 "edit.undo",
                 Icon::ArrowCounterClockwise,
                 self.tr(Text::Undo),
-                Some("Cmd/Ctrl+Z"),
+                Some(self.tr(Text::ShortcutUndo)),
                 None,
                 can_undo,
             ) {
@@ -2776,7 +2864,7 @@ impl Editor {
                 "edit.redo",
                 Icon::ArrowClockwise,
                 self.tr(Text::Redo),
-                Some("Shift+Cmd/Ctrl+Z"),
+                Some(self.tr(Text::ShortcutRedo)),
                 None,
                 can_redo,
             ) {
@@ -2796,7 +2884,7 @@ impl Editor {
                 "timeline.split",
                 Icon::Scissors,
                 self.tr(Text::Split),
-                Some("Cmd/Ctrl+B"),
+                Some(self.tr(Text::ShortcutSplit)),
                 None,
                 has_items,
             ) {
@@ -2807,7 +2895,7 @@ impl Editor {
                 "timeline.delete",
                 Icon::Trash,
                 self.tr(Text::Delete),
-                Some("Delete"),
+                Some(self.tr(Text::ShortcutDelete)),
                 None,
                 has_selection,
             ) {
@@ -2818,7 +2906,7 @@ impl Editor {
                 "timeline.snap",
                 Icon::ArrowsInLineHorizontal,
                 self.tr(Text::Snap),
-                Some("N"),
+                Some(self.tr(Text::ShortcutSnap)),
                 Some(self.snapping),
                 true,
             ) {
@@ -2841,7 +2929,7 @@ impl Editor {
                 "timeline.ripple",
                 Icon::Waveform,
                 self.tr(Text::Ripple),
-                Some("Shift+Delete"),
+                Some(self.tr(Text::ShortcutRippleDelete)),
                 Some(self.ripple),
                 true,
             ) {
@@ -3358,7 +3446,11 @@ impl Editor {
             Id::unique(("track", row.id.0, suffix)),
             egui::Sense::click(),
         );
-        let tooltip = format!("{}: {}", self.tr(label), row.name);
+        let tooltip = catalog::format(
+            self.preferences.locale,
+            Text::TrackToggle,
+            &[("action", self.tr(label)), ("track", &row.name)],
+        );
         response.widget_info(|| {
             egui::WidgetInfo::selected(egui::Role::CheckBox, true, selected, tooltip.clone())
         });
@@ -3720,7 +3812,13 @@ fn asset_row(asset: &SourceAsset, locale: Locale) -> AssetRow {
         display_time,
     ));
     if let Some(video) = video {
-        info.push(format!("{}×{}", video.width, video.height));
+        let width = catalog::number(locale, u64::from(video.width));
+        let height = catalog::number(locale, u64::from(video.height));
+        info.push(catalog::format(
+            locale,
+            Text::AssetDimensions,
+            &[("width", &width), ("height", &height)],
+        ));
     }
     if let Some(rate) = asset
         .probe()
@@ -3728,14 +3826,21 @@ fn asset_row(asset: &SourceAsset, locale: Locale) -> AssetRow {
         .iter()
         .find_map(|stream| stream.frame_rate)
     {
-        info.push(if rate.den() == 1 {
-            format!("{} fps", rate.num())
+        let value = if rate.den() == 1 {
+            catalog::signed(locale, rate.num())
         } else {
-            format!("{:.3} fps", rate.num() as f64 / rate.den() as f64)
-        });
+            catalog::decimal(locale, rate.num() as f64 / rate.den() as f64, 3)
+        };
+        info.push(catalog::format(locale, Text::AssetFps, &[("rate", &value)]));
     }
     if let Some(audio) = audio {
-        info.push(format!("{} Hz · {} ch", audio.sample_rate, audio.channels));
+        let rate = catalog::number(locale, u64::from(audio.sample_rate));
+        let channels = catalog::number(locale, u64::from(audio.channels));
+        info.push(catalog::format(
+            locale,
+            Text::AssetAudio,
+            &[("rate", &rate), ("channels", &channels)],
+        ));
     }
     AssetRow {
         id: asset.id(),

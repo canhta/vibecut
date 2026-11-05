@@ -8,7 +8,7 @@ use std::{
 use vibecut::{
     Error, Result,
     capture::Capture,
-    catalog::{PreferenceStore, Preferences},
+    catalog::{Locale, PreferenceStore, Preferences, Text},
     egui,
     playback::AudioPort,
     workspace::Workspace,
@@ -238,7 +238,7 @@ fn run() -> Result<()> {
         Ok(p) => p,
         Err(e) => {
             tracing::warn!(category = "preference_load_failed", error = %e, "Preferences unavailable");
-            Preferences::default()
+            Preferences::system()
         }
     };
     let observe_create = smoke.is_some() && file.is_none();
@@ -267,7 +267,7 @@ fn run() -> Result<()> {
         ..Default::default()
     };
     eframe::run_native(
-        "VibeCut",
+        vibecut::catalog::text(Locale::En, Text::AppName),
         options,
         Box::new(move |cc| {
             let effects = cc.wgpu_render_state.as_ref().and_then(|state| {

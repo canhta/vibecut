@@ -63,6 +63,10 @@ fn every_widget_has_unique_locale_stable_id_and_input_reaches_engine() {
         .with_size(egui::vec2(1440.0, 900.0))
         .build_ui_state(|ui, editor: &mut Editor| editor.ui(ui), editor());
     harness.run_steps(3);
+    assert!(
+        harness.query_all(By::new().label("Media")).count() > 0,
+        "English catalog label is visible before switching"
+    );
     let before = harness.state().inspect().unwrap();
     let ids: BTreeSet<_> = before.widgets.iter().map(|w| w.id.clone()).collect();
     assert_eq!(ids.len(), before.widgets.len());
@@ -96,6 +100,10 @@ fn every_widget_has_unique_locale_stable_id_and_input_reaches_engine() {
         .click();
     harness.run_steps(3);
     assert_eq!(harness.state().preferences.locale, Locale::Vi);
+    assert!(
+        harness.query_all(By::new().label("Tư liệu")).count() > 0,
+        "Vietnamese catalog label is visible after switching without a restart"
+    );
     assert_eq!(
         harness
             .state()

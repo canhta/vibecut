@@ -5,6 +5,7 @@ mod build;
 mod checkout;
 mod clip_eval;
 mod ffmpeg;
+mod i18n;
 mod oracles;
 mod tickets;
 
@@ -49,6 +50,7 @@ fn cargo_check(root: &Path, args: &[&str], require_oracles: bool) -> Result<(), 
 fn checks(root: &Path) -> Result<(), String> {
     layers(root)?;
     assets(root)?;
+    i18n::check(root)?;
     names(root)?;
     checked(root, env!("CARGO"), &["fmt", "--all", "--", "--check"])?;
     Ok(())
@@ -417,13 +419,15 @@ fn run() -> Result<ExitCode, String> {
         ["docs"] => {
             layers(root)?;
             assets(root)?;
+            i18n::check(root)?;
             names(root)
         }
+        ["i18n"] => i18n::check(root),
         ["new-crate", name] => new_crate(root, name),
         ["ci"] => ci(root, false),
         ["ci", "--require-oracles"] => ci(root, true),
         _ => Err(
-            "usage: cargo xtask <build -- COMMAND [ARGS...] (Unix-only; on Windows run cargo directly)|frontier [ASSIGNEE]|board [PORT]|ffmpeg [--target PLATFORM|--cache-key]|ui-audit [OUTPUT_DIR]|media-bench|clip-eval SET [OPTIONS]|ci [--require-oracles]|checks|clippy|lint|test|docs|layers|assets|new-crate NAME>"
+            "usage: cargo xtask <build -- COMMAND [ARGS...] (Unix-only; on Windows run cargo directly)|frontier [ASSIGNEE]|board [PORT]|ffmpeg [--target PLATFORM|--cache-key]|ui-audit [OUTPUT_DIR]|media-bench|clip-eval SET [OPTIONS]|ci [--require-oracles]|checks|clippy|lint|test|docs|i18n|layers|assets|new-crate NAME>"
                 .into(),
         ),
     }.map(|()| ExitCode::SUCCESS)

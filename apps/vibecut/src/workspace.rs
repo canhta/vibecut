@@ -227,16 +227,17 @@ impl Workspace {
             Box<dyn std::future::Future<Output = Option<Vec<rfd::FileHandle>>>>,
         > = match action {
             PickerAction::Open => {
-                let dialog =
-                    rfd::AsyncFileDialog::new().add_filter("VibeCut", &["vibecut", "json"]);
+                let dialog = rfd::AsyncFileDialog::new()
+                    .add_filter(self.tr(Text::AppName), &["vibecut", "json"]);
                 Box::pin(async move { dialog.pick_file().await.map(|file| vec![file]) })
             }
             PickerAction::Save { .. } => {
-                let dialog =
-                    rfd::AsyncFileDialog::new().add_filter("VibeCut", &["vibecut", "json"]);
+                let dialog = rfd::AsyncFileDialog::new()
+                    .add_filter(self.tr(Text::AppName), &["vibecut", "json"]);
+                let file_name = self.tr(Text::DefaultProjectFileName);
                 Box::pin(async move {
                     dialog
-                        .set_file_name("project.vibecut")
+                        .set_file_name(file_name)
                         .save_file()
                         .await
                         .map(|file| vec![file])
@@ -259,7 +260,7 @@ impl Workspace {
             }
             PickerAction::ImportMedia => {
                 let dialog = rfd::AsyncFileDialog::new()
-                    .add_filter("Media", crate::import::MEDIA_EXTENSIONS);
+                    .add_filter(self.tr(Text::Media), crate::import::MEDIA_EXTENSIONS);
                 Box::pin(dialog.pick_files())
             }
         };
@@ -555,7 +556,7 @@ impl Workspace {
         } else {
             ui.vertical_centered(|ui| {
                 ui.add_space(100.0);
-                ui.heading(egui::RichText::new("VibeCut").size(28.0));
+                ui.heading(egui::RichText::new(self.tr(Text::AppName)).size(28.0));
                 ui.add_space(28.0);
                 if let Some(pending) = &self.pending {
                     ui.spinner();
@@ -642,6 +643,8 @@ impl Workspace {
                         | Some(Error::Project(project::Error::TooOld { .. })) => Text::TooOld,
                         Some(Error::Engine(EditError::Project(project::Error::Busy)))
                         | Some(Error::Project(project::Error::Busy)) => Text::Busy,
+                        Some(Error::Engine(EditError::Project(project::Error::Conflict)))
+                        | Some(Error::Project(project::Error::Conflict)) => Text::Conflict,
                         _ => Text::ProjectError,
                     };
                     ui.label(self.tr(text));
@@ -770,7 +773,11 @@ fn run(
             candidate.discard()?;
             autosave
         }
-        Work::New => session(root, fresh("New project")?, budget.clone())?,
+        Work::New => session(
+            root,
+            fresh(catalog::text(preferences.locale, Text::NewProject))?,
+            budget.clone(),
+        )?,
         Work::Open(path) => match Autosave::open(
             root,
             &path,
@@ -784,7 +791,11 @@ fn run(
                 if e.kind() == std::io::ErrorKind::NotFound
                     && path.parent().is_some_and(|parent| parent.is_dir()) =>
             {
-                session(root, fresh("Untitled Project")?, budget.clone())?
+                session(
+                    root,
+                    fresh(catalog::text(preferences.locale, Text::UntitledProject))?,
+                    budget.clone(),
+                )?
             }
             Err(e) => return Err(e.into()),
         },
