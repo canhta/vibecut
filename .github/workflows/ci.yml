@@ -1,8 +1,6 @@
 name: CI
 
 on:
-  push:
-    branches: [main]
   workflow_dispatch:
     inputs:
       require-oracles:
@@ -18,38 +16,7 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  changes:
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    outputs:
-      docs-only: ${{ steps.paths.outputs.docs-only }}
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          fetch-depth: 0
-          persist-credentials: false
-      - id: paths
-        shell: bash
-        env:
-          EVENT_NAME: ${{ github.event_name }}
-          BEFORE: ${{ github.event.before }}
-          AFTER: ${{ github.sha }}
-        run: |
-          docs_only=false
-          if [[ "$EVENT_NAME" == push && -n "$BEFORE" && ! "$BEFORE" =~ ^0+$ ]]; then
-            git diff -z --name-only --no-renames "$BEFORE..$AFTER" > "$RUNNER_TEMP/changed-paths"
-            count=0
-            docs_only=true
-            while IFS= read -r -d '' path; do
-              count=$((count + 1))
-              case "$path" in *.md|docs/*) ;; *) docs_only=false ;; esac
-            done < "$RUNNER_TEMP/changed-paths"
-            if [[ "$count" == 0 ]]; then docs_only=false; fi
-          fi
-          echo "docs-only=$docs_only" >> "$GITHUB_OUTPUT"
-
   docs:
-    needs: changes
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -60,7 +27,6 @@ jobs:
       - run: cargo xtask docs
 
   lint:
-    needs: changes
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -73,8 +39,6 @@ jobs:
 
   test:
     name: test (macos-arm64)
-    needs: changes
-    if: needs.changes.outputs.docs-only != 'true'
     runs-on: macos-latest
     timeout-minutes: 45
     steps:
@@ -93,8 +57,6 @@ jobs:
 
   windows:
     name: test (windows-x64, advisory)
-    needs: changes
-    if: needs.changes.outputs.docs-only != 'true'
     runs-on: windows-latest
     continue-on-error: true
     timeout-minutes: 90
@@ -122,7 +84,7 @@ jobs:
   gate:
     name: CI gate
     if: always()
-    needs: [changes, docs, lint, test]
+    needs: [docs, lint, test]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -136,7 +98,6 @@ jobs:
         run: |
           jq -e '
             . as $needs |
-            (["changes", "docs", "lint"] +
-              (if .changes.outputs["docs-only"] == "true" then [] else ["test"] end)) |
+            ["docs", "lint", "test"] |
             all(.[]; $needs[.].result == "success")
           ' <<< "$NEEDS_JSON"
