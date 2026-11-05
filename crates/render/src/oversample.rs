@@ -43,6 +43,10 @@ pub struct PolyphaseBank {
 }
 
 impl PolyphaseBank {
+    #[allow(
+        clippy::indexing_slicing,
+        reason = "coefficient indices are bounded by the internal two/four phase construction"
+    )]
     pub fn new(factor: usize) -> Self {
         let factor = factor.max(1);
         let len = factor * TAPS_PER_PHASE;
@@ -99,6 +103,10 @@ impl Interpolator {
     /// Push one input sample; returns the maximum absolute value of the `factor` interpolated
     /// output samples produced for it.
     #[inline]
+    #[allow(
+        clippy::indexing_slicing,
+        reason = "ring position is reduced modulo the fixed tap count"
+    )]
     pub fn push_peak(&mut self, bank: &PolyphaseBank, x: f32) -> f32 {
         if bank.factor == 1 {
             return x.abs();

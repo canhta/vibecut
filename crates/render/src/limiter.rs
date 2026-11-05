@@ -40,6 +40,10 @@ impl Limiter {
         self.look + self.bank.delay()
     }
 
+    #[allow(
+        clippy::indexing_slicing,
+        reason = "private rings and equal-sized mix planes are bounded by construction"
+    )]
     pub(crate) fn process(&mut self, planes: &mut [Vec<f32>]) {
         let frames = planes.first().map_or(0, Vec::len);
         let length = self.latency() + 1;

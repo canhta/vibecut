@@ -100,6 +100,17 @@ Effect: `SessionControl`. Fixture: `Save`.
 {}
 ```
 
+## `audio.set_master` — Set master audio
+
+Effect: `Edit`. Fixture: `Timeline`.
+
+```json
+{
+  "muted": false,
+  "volume": 0.0
+}
+```
+
 ## `project.set_view_state` — Set timeline view
 
 Effect: `SessionControl`. Fixture: `Timeline`.
@@ -463,7 +474,7 @@ Effect: `Edit`. Fixture: `Timeline`.
 }
 ```
 
-## `timeline.set_item_param` — Set visual item parameter
+## `timeline.set_item_param` — Set item parameter
 
 Effect: `Edit`. Fixture: `Timeline`.
 

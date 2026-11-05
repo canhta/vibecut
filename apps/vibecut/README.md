@@ -543,7 +543,6 @@ production composition instantiates the manager lazily on first open; `/09` uses
 `Editor::open_model` to open it on a missing model. `Editor::set_model_manager`
 injects another cache/transport composition for tests and `cargo xtask ui-audit`.
 
-<<<<<<< HEAD
 ## Captions panel
 
 The assets-panel Captions tab owns `subtitles` presentation. It reuses engine's
@@ -588,10 +587,9 @@ consent denial/cancellation/provider changes, stale output and oversized imports
 `cargo xtask ui-audit captions-empty captions-empty-vi captions-editor
 captions-editor-vi` captures the real minimum-size panel in both themes at 1x/2x;
 these audit scenes open no native window and make no provider requests.
-=======
+
 Audio and video source items share the batch inspector's volume/mute controls;
 volume uses a 0.01 dB step over -60..20 dB. Existing `inspector.audio_gain` and
 `inspector.audio_muted` automation IDs remain stable. Playback retains render's
 `AudioMixer` for each snapshot epoch; the app owns device IO and scheduling
 adapters, while render owns every DSP/sample decision.
->>>>>>> aecd912 (feat(audio): enforce 192k export audio and document graph contracts)

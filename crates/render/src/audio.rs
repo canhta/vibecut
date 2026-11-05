@@ -328,7 +328,8 @@ fn mix_raw(
                 } else {
                     1.0
                 };
-                *dst += value * gains[n] * envelope;
+                *dst +=
+                    value * gains.get(n).copied().ok_or(Error::Invalid("gain sample"))? * envelope;
                 if !dst.is_finite() {
                     return Err(Error::Invalid("audio mix overflow"));
                 }

@@ -45,15 +45,10 @@ working directory changes never reinterpret them.
 
 Names, notes and text use captions' NFC text owner. Canvas frames must have exact,
 positive integer tick durations. Canvas area is at most 2^26 pixels; output audio
-<<<<<<< HEAD
-admits 8–192 kHz. Audio gain admits −120..24 dB; font sizes admit 1..4096 pixels.
+admits 8–192 kHz. Audio/video source volume and master volume admit -60..20 dB on a 0.01 dB grid; font sizes admit 1..4096 pixels.
 Text items also carry a 1..256-byte font-family name, an optional padded RGBA
 background box, and x/y canvas percentages in 0..=100 (default 50/84.5 reproduces
 the original lower-third box). Typed invalid/unsupported/limit errors refuse a whole candidate.
-=======
-admits 8–192 kHz. Audio/video source volume and master volume admit -60..20 dB on a 0.01 dB grid; font sizes admit 1..4096 pixels.
-Typed invalid/unsupported/limit errors refuse a whole candidate.
->>>>>>> aecd912 (feat(audio): enforce 192k export audio and document graph contracts)
 
 `ProjectData.original_canvas_size` is the optional first visual media size, not a
 second user canvas setting. It starts null and retains the first inserted media's
@@ -156,16 +151,9 @@ or renderer output claim is made.
 ## Persistence and limits
 
 `encode`/`decode` use one JSON envelope: `format`, `schema_version`, `generator`,
-<<<<<<< HEAD
-`project`. Current schema 10 stores text font, background and position fields alongside
-`original_canvas_size` and the media-owned `ephemeral` flag.
+`project`. Current schema 11 adds audio/video volume and mute plus master controls to schema 10 text font, background and position fields.
 ProjectId is stored as a canonical decimal string, preserving
-all u64 identity bits for control clients; other IDs remain numeric. Schemas 1-9
-=======
-`project`. Current schema 10 renames audio `gain_db` to `volume`, adds video source `volume`/`muted`, and adds project `master_volume`/`master_muted` settings.
-ProjectId is stored as a canonical decimal string, preserving
-all u64 identity bits for control clients; other IDs remain numeric. Schemas 1–9
->>>>>>> aecd912 (feat(audio): enforce 192k export audio and document graph contracts)
+all u64 identity bits for control clients; other IDs remain numeric. Schemas 1-10
 are refused rather than migrated or silently defaulted. Older schemas return `TooOld`, newer schemas `TooNew`; there are no
 migration or compatibility paths. Unknown current-schema project/envelope fields
 are refused. `WriterLease::save` serializes completely before touching the destination;
@@ -375,7 +363,7 @@ whitespace-only text masks are inactive while retaining their editable data. The
 admits 1,024 entries for resource safety; presentation limits do not define the
 model. Audio items refuse masks. Modes are None/Add/Subtract/Intersect/Lighten/
 Darken/Difference; render owns their coverage math. Commands/history belong to
-engine. Schema 10 requires scene arrays, per-item mask vectors, `blendMode` and text style fields; schema 9 and earlier refuse with `TooOld`.
+engine. Schema 11 requires scene arrays, per-item mask vectors, `blendMode`, text style and audio control fields; schema 10 and earlier refuse with `TooOld`.
 
 Shapes include split, cinematic band, rectangle, ellipse, heart, diamond, star,
 text and a cubic `MaskPath`. Text masks currently persist content and font size
