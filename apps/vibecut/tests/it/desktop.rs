@@ -863,6 +863,7 @@ fn new_seek_cancels_audio_preroll_and_keeps_the_replacement_epoch_alive() {
             content: ItemParams::Audio(project::AudioParams {
                 volume: 0.0,
                 muted: false,
+                source: Default::default(),
             }),
         }],
     });

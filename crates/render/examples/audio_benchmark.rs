@@ -63,6 +63,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 content: project::ItemParams::Audio(project::AudioParams {
                     volume: -6.0,
                     muted: false,
+                    source: Default::default(),
                 }),
             }],
         });

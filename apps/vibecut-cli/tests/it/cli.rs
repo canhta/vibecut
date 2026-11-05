@@ -2741,6 +2741,7 @@ fn batch_refuses_an_output_hard_linked_to_another_jobs_source() {
     assert_eq!(fs::read(&source).unwrap(), source_before);
     assert_eq!(fs::read(&linked).unwrap(), source_before);
     assert!(!output_dir.join("media.mp4").exists());
+}
 fn wav_fixture() -> Vec<u8> {
     let samples = 800u32;
     let data_len = samples * 2;

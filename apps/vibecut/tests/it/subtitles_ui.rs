@@ -675,6 +675,7 @@ fn source_clip(e: &mut Editor) -> project::ItemId {
                 content: ItemParams::Audio(project::AudioParams {
                     volume: 0.0,
                     muted: false,
+                    source: Default::default(),
                 }),
             },
         })
