@@ -144,6 +144,7 @@ impl ErrorCode {
             EditError::QueueFull => Self::QueueFull,
             EditError::TransactionActive | EditError::NoGesture => Self::TransactionActive,
             EditError::Panicked | EditError::WorkerPanicked | EditError::Io(_) => Self::Failed,
+            EditError::Project(project::Error::Io(_)) => Self::Failed,
             _ => Self::Refused,
         }
     }
@@ -477,6 +478,14 @@ fn check_integers(value: &Value) -> Result<()> {
     Ok(())
 }
 
+fn control_fingerprint(request: &Request) -> Result<blake3::Hash> {
+    Ok(blake3::hash(
+        &serde_json::to_vec(&json!({"command":request.command,"params":request.params,
+            "base_rev":request.base_rev,"api_version":request.api_version,"registry_hash":request.registry_hash,"session_id":request.session_id}))
+        .map_err(|_| EditError::InvalidParams)?,
+    ))
+}
+
 pub(crate) fn decode_command(id: &str, params: Value) -> Result<Command> {
     crate::session::budget(&params)?;
     type Validators = BTreeMap<&'static str, jsonschema::Validator>;
@@ -630,8 +639,7 @@ impl Session {
                 pending.extend(commands);
             }
         }
-        let fingerprint = blake3::hash(&serde_json::to_vec(&json!({"command":request.command,"params":request.params,
-            "base_rev":request.base_rev,"api_version":request.api_version,"registry_hash":request.registry_hash,"session_id":request.session_id})).map_err(|_| EditError::InvalidParams)?);
+        let fingerprint = control_fingerprint(request)?;
         if let Command::Export { path, .. }
         | Command::ExportSubtitles { path, .. }
         | Command::BurnSubtitles { path, .. } = &command
@@ -647,23 +655,10 @@ impl Session {
                 return Err(EditError::Limit);
             }
             let key = (caller.principal.to_owned(), key.clone());
-            if let Some(receipt) = self.control.receipts.get(&key) {
-                if receipt.fingerprint != fingerprint {
-                    return Err(EditError::IdempotencyConflict);
-                }
-                let mut response = receipt.response.clone();
-                response.request_id.clone_from(&request.request_id);
+            if let Some(response) = self.replay_receipt(&key, fingerprint, &request.request_id)? {
                 return Ok(response);
             }
-            if self.control.receipts.len() >= MAX_RECEIPTS
-                || self
-                    .control
-                    .receipt_bytes
-                    .saturating_add(RECEIPT_RESERVATION)
-                    > MAX_RECEIPT_BYTES
-            {
-                return Err(EditError::ReceiptCapacity);
-            }
+            self.check_receipt_capacity()?;
             if request.base_rev.as_ref() != Some(&self.revision()) {
                 return Err(EditError::StaleRevision);
             }
@@ -691,21 +686,174 @@ impl Session {
             value,
         };
         if let Some(key) = key {
-            let bytes = serde_json::to_vec(&response)
-                .map_err(|_| EditError::InvalidParams)?
-                .len()
-                + key.0.len()
-                + key.1.len()
-                + 32;
-            self.control.receipt_bytes += bytes;
-            self.control.receipts.insert(
-                key,
-                Receipt {
-                    fingerprint,
-                    response: response.clone(),
-                },
-            );
+            self.store_receipt(key, fingerprint, &response)?;
         }
+        self.push_control_event(&request.request_id, &response);
+        Ok(response)
+    }
+    /// Admit and acknowledge one composition-root lifecycle save through the same
+    /// envelope, policy, revision and receipt rules as ordinary effects. The
+    /// callback performs only project/metadata file publication; the engine owns
+    /// admission and the receipt, so replay, conflicts, ID bounds and capacity do
+    /// not vary by command. A publication failure returns an unreceipted error so
+    /// the composition root keeps its dirty state and may retry the same key.
+    pub fn control_lifecycle_save(
+        &mut self,
+        request: Request,
+        caller: Caller<'_>,
+        publish: impl FnOnce(&project::Project, &project::Metadata) -> Result<()>,
+    ) -> Result<Response> {
+        crate::session::budget(&request.params)?;
+        let frame = bounded_json(&request, MAX_FRAME_BYTES)?;
+        parse_frame(&frame)?;
+        if request.request_id.is_empty()
+            || request.request_id.len() > MAX_KEY_BYTES
+            || caller.principal.is_empty()
+            || caller.principal.len() > MAX_KEY_BYTES
+        {
+            return Err(EditError::Limit);
+        }
+        let before = self.revision();
+        match self.admit_lifecycle_save(&request, &caller, publish) {
+            Ok(response) => Ok(response),
+            Err(error) => {
+                let code = ErrorCode::from_error(&error);
+                self.control.push(
+                    &self.identity.0,
+                    self.revision(),
+                    Payload::CommandError {
+                        request_id: request.request_id.clone(),
+                        code,
+                    },
+                );
+                Ok(Response {
+                    api_version: API_VERSION,
+                    registry_hash: registry_hash().into(),
+                    session_id: self.session_id().into(),
+                    request_id: request.request_id,
+                    rev_before: before,
+                    rev_after: self.revision(),
+                    value: ResponseValue::Error(code),
+                })
+            }
+        }
+    }
+    fn admit_lifecycle_save(
+        &mut self,
+        request: &Request,
+        caller: &Caller<'_>,
+        publish: impl FnOnce(&project::Project, &project::Metadata) -> Result<()>,
+    ) -> Result<Response> {
+        if request.api_version != API_VERSION {
+            return Err(EditError::SchemaMismatch);
+        }
+        if request.session_id != self.session_id() {
+            return Err(EditError::SessionGone);
+        }
+        let command = decode_command(&request.command, request.params.clone())?;
+        if !matches!(command, Command::SaveProject {}) {
+            return Err(EditError::InvalidParams);
+        }
+        if request.registry_hash.as_deref() != Some(registry_hash()) {
+            return Err(EditError::SchemaMismatch);
+        }
+        caller.policy.authorize(&command, self.project())?;
+        let fingerprint = control_fingerprint(request)?;
+        let key = request
+            .idempotency_key
+            .as_ref()
+            .ok_or(EditError::InvalidParams)?;
+        if key.is_empty() || key.len() > MAX_KEY_BYTES {
+            return Err(EditError::Limit);
+        }
+        let key = (caller.principal.to_owned(), key.clone());
+        if let Some(response) = self.replay_receipt(&key, fingerprint, &request.request_id)? {
+            return Ok(response);
+        }
+        self.check_receipt_capacity()?;
+        if request.base_rev.as_ref() != Some(&self.revision()) {
+            return Err(EditError::StaleRevision);
+        }
+        if self.transaction_active() {
+            return Err(EditError::TransactionActive);
+        }
+        let before = self.revision();
+        let mut metadata = self.metadata().clone();
+        metadata.touch();
+        publish(self.project(), &metadata)?;
+        self.restore_metadata(metadata)?;
+        self.saved()?;
+        let response = Response {
+            api_version: API_VERSION,
+            registry_hash: registry_hash().into(),
+            session_id: self.session_id().into(),
+            request_id: request.request_id.clone(),
+            rev_before: before,
+            rev_after: self.revision(),
+            value: ResponseValue::Result(ControlResult::Edit {
+                outcome: Outcome {
+                    changed: false,
+                    created: Vec::new(),
+                    placements: Vec::new(),
+                },
+            }),
+        };
+        self.store_receipt(key, fingerprint, &response)?;
+        self.push_control_event(&request.request_id, &response);
+        Ok(response)
+    }
+    fn check_receipt_capacity(&self) -> Result<()> {
+        if self.control.receipts.len() >= MAX_RECEIPTS
+            || self
+                .control
+                .receipt_bytes
+                .saturating_add(RECEIPT_RESERVATION)
+                > MAX_RECEIPT_BYTES
+        {
+            Err(EditError::ReceiptCapacity)
+        } else {
+            Ok(())
+        }
+    }
+    fn replay_receipt(
+        &self,
+        key: &(String, String),
+        fingerprint: blake3::Hash,
+        request_id: &str,
+    ) -> Result<Option<Response>> {
+        let Some(receipt) = self.control.receipts.get(key) else {
+            return Ok(None);
+        };
+        if receipt.fingerprint != fingerprint {
+            return Err(EditError::IdempotencyConflict);
+        }
+        let mut response = receipt.response.clone();
+        response.request_id = request_id.to_owned();
+        Ok(Some(response))
+    }
+    fn store_receipt(
+        &mut self,
+        key: (String, String),
+        fingerprint: blake3::Hash,
+        response: &Response,
+    ) -> Result<()> {
+        let bytes = serde_json::to_vec(response)
+            .map_err(|_| EditError::InvalidParams)?
+            .len()
+            + key.0.len()
+            + key.1.len()
+            + 32;
+        self.control.receipt_bytes += bytes;
+        self.control.receipts.insert(
+            key,
+            Receipt {
+                fingerprint,
+                response: response.clone(),
+            },
+        );
+        Ok(())
+    }
+    fn push_control_event(&mut self, request_id: &str, response: &Response) {
         match &response.value {
             ResponseValue::Result(result) => {
                 // Large read results use the response path; event consumers resync.
@@ -719,7 +867,7 @@ impl Session {
                         &self.identity.0,
                         self.revision(),
                         Payload::CommandResult {
-                            request_id: request.request_id.clone(),
+                            request_id: request_id.to_owned(),
                             result: result.clone(),
                         },
                     );
@@ -729,12 +877,11 @@ impl Session {
                 &self.identity.0,
                 self.revision(),
                 Payload::CommandError {
-                    request_id: request.request_id.clone(),
+                    request_id: request_id.to_owned(),
                     code: *code,
                 },
             ),
         }
-        Ok(response)
     }
     fn run_control(
         &mut self,

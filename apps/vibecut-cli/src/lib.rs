@@ -172,16 +172,6 @@ impl CliError {
     }
 }
 
-fn cli_error_code(error: &CliError) -> ErrorCode {
-    match error {
-        CliError::Engine(error) => ErrorCode::from_error(error),
-        CliError::Job(error) => ErrorCode::from_error(error),
-        CliError::Project(_) | CliError::Io(_) => ErrorCode::Failed,
-        CliError::Usage(_) | CliError::Json(_) => ErrorCode::InvalidParams,
-        _ => ErrorCode::Failed,
-    }
-}
-
 fn edit_code(error: &EditError) -> (&'static str, u8) {
     match error {
         EditError::Render(render::Error::Unavailable(_)) => ("unavailable", 4),
@@ -614,7 +604,21 @@ fn control(args: Vec<OsString>) -> Result<Output, CliError> {
     loop {
         runner.tick()?;
         session.observe_jobs(&runner);
-        let Some(bytes) = read_control_frame(&mut input, control::MAX_FRAME_BYTES)? else {
+        let frame = match read_control_frame(&mut input, control::MAX_FRAME_BYTES) {
+            Ok(frame) => frame,
+            Err(CliError::Engine(EditError::Limit)) => {
+                write_control_error(
+                    &mut out,
+                    None,
+                    ErrorCode::Limit,
+                    "control request exceeds the frame limit",
+                )?;
+                last_exit = control_exit(ErrorCode::Limit);
+                continue;
+            }
+            Err(error) => return Err(error),
+        };
+        let Some(bytes) = frame else {
             break;
         };
         if bytes.is_empty() {
@@ -646,15 +650,27 @@ fn control(args: Vec<OsString>) -> Result<Output, CliError> {
         let request_id = request.request_id.clone();
         let command_id = request.command.clone();
         let response = if command_id == "project.save" {
-            match save_control_request(&mut session, &mut lease, &request) {
-                Ok(response) => {
-                    project_dirty = false;
-                    metadata_dirty = false;
-                    response
-                }
+            let caller = Caller {
+                principal: "vibecut-cli",
+                external: true,
+                policy: &policy,
+            };
+            // The engine owns save admission and its receipt; this closure only
+            // publishes the bytes through the project owner.
+            match session.control_lifecycle_save(request, caller, |project, metadata| {
+                let _receipt = lease.save(project)?;
+                lease.save_metadata(metadata)?;
+                Ok(())
+            }) {
+                Ok(response) => response,
                 Err(error) => {
-                    let code = cli_error_code(&error);
-                    write_control_error(&mut out, Some(&request_id), code, "project save failed")?;
+                    let code = ErrorCode::from_error(&error);
+                    write_control_error(
+                        &mut out,
+                        Some(&request_id),
+                        code,
+                        "control request refused before admission",
+                    )?;
                     last_exit = control_exit(code);
                     continue;
                 }
@@ -695,6 +711,15 @@ fn control(args: Vec<OsString>) -> Result<Output, CliError> {
                 }
             }
         };
+        // A save clears dirty state only when it published the current revision.
+        // Replay of an older receipt after later edits must leave the session dirty.
+        if command_id == "project.save"
+            && matches!(&response.value, ResponseValue::Result(_))
+            && response.rev_after == session.revision()
+        {
+            project_dirty = false;
+            metadata_dirty = false;
+        }
         last_exit = control_response_exit(&response.value);
         write_control_response(&mut out, &response)?;
     }
@@ -726,60 +751,6 @@ fn build_control_request(session: &Session, mut value: Value) -> Result<Request,
         .or_insert_with(|| json!(session.session_id()));
     let request: Request = serde_json::from_value(value).map_err(|_| EditError::InvalidParams)?;
     Ok(request)
-}
-
-fn save_control_request(
-    session: &mut Session,
-    lease: &mut WriterLease,
-    request: &Request,
-) -> Result<Response, CliError> {
-    let before = session.revision();
-    let code = if request.api_version != control::API_VERSION {
-        Some(ErrorCode::SchemaMismatch)
-    } else if request.session_id != session.session_id() {
-        Some(ErrorCode::SessionGone)
-    } else if request.registry_hash.as_deref() != Some(control::registry_hash()) {
-        Some(ErrorCode::SchemaMismatch)
-    } else if request.params != json!({}) || request.idempotency_key.is_none() {
-        Some(ErrorCode::InvalidParams)
-    } else if request
-        .idempotency_key
-        .as_ref()
-        .is_some_and(|key| key.is_empty() || key.len() > control::MAX_KEY_BYTES)
-    {
-        Some(ErrorCode::Limit)
-    } else if request.base_rev.as_ref() != Some(&session.revision()) {
-        Some(ErrorCode::StaleRevision)
-    } else {
-        None
-    };
-    if let Some(code) = code {
-        return Ok(Response {
-            api_version: control::API_VERSION,
-            registry_hash: control::registry_hash().into(),
-            session_id: session.session_id().into(),
-            request_id: request.request_id.clone(),
-            rev_before: before,
-            rev_after: session.revision(),
-            value: ResponseValue::Error(code),
-        });
-    }
-    save_control_state(session, lease, true, true)?;
-    Ok(Response {
-        api_version: control::API_VERSION,
-        registry_hash: control::registry_hash().into(),
-        session_id: session.session_id().into(),
-        request_id: request.request_id.clone(),
-        rev_before: before,
-        rev_after: session.revision(),
-        value: ResponseValue::Result(ControlResult::Edit {
-            outcome: engine::Outcome {
-                changed: false,
-                created: Vec::new(),
-                placements: Vec::new(),
-            },
-        }),
-    })
 }
 
 fn save_control_state(

@@ -126,6 +126,12 @@ older descriptors are refused before model decoding, without deleting their file
 Session/project lifecycle creation and disk saves retain their existing
 `Session::create`/`Autosave` ownership; direct Session edit/control execution returns
 a typed refusal for those commands. Their registry examples declare those routes.
+A composition root that owns the project file may instead call
+`Session::control_lifecycle_save`: it applies the same version, hash, session,
+policy, request-ID, key, revision, capacity and receipt rules as other effects, then
+runs a closure that performs only project/metadata publication, acknowledges the
+save and stores the receipt. A publication failure returns an unreceipted error so
+the caller retains dirty state and may retry the same key.
 
 The composition root supplies `Caller` and a mandatory trusted `Policy`, outside
 client JSON. Engine invokes it on the command and every batch child before effects

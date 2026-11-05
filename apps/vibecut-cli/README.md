@@ -25,12 +25,17 @@ the engine `Response` plus the CLI's stable `exit_code`; a frame that cannot bec
 a request returns a safe error envelope instead. Revisions, receipts, replay,
 idempotency conflicts and receipt capacity are owned by the engine Session, so keys
 and epochs live exactly as long as this process. `project.save` is the explicit save
-point (the engine leaves disk saves to its composition root); otherwise a changed
-project and metadata are saved once on clean EOF. `--no-save` suppresses that final
-save. `--allow-overwrite` is the trusted grant for `export`, `export_subtitles` and
-`burn_subtitles` with `overwrite: true`; without it engine policy returns
-`permission`. External gesture commands remain refused by engine policy, and agents
-use atomic batches plus undo.
+point: `Session::control_lifecycle_save` applies the same envelope, policy, revision,
+request-ID, key, capacity and receipt rules as every other effect, while this CLI
+performs only project/metadata file publication in its callback. A refused or failed
+save therefore keeps the session dirty and can be retried with the same key; otherwise
+a changed project and metadata are saved once on clean EOF. `--no-save` suppresses
+that final save. `--allow-overwrite` is the trusted grant for `export`,
+`export_subtitles` and `burn_subtitles` with `overwrite: true`; without it engine
+policy returns `permission`. External gesture commands remain refused by engine
+policy, and agents use atomic batches plus undo. Oversized frames are drained and
+returned as an in-band `limit` error, so the session continues with earlier accepted
+edits intact.
 
 The control session ticks the engine job runner between requests, so `job_status`
 and `job_cancel` operate on real preview/export jobs. EOF cancels and joins

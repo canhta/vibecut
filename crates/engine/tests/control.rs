@@ -72,6 +72,25 @@ fn request(s: &Session, id: &str, params: Value, key: &str) -> Request {
         params,
     }
 }
+fn request_at(
+    s: &Session,
+    request_id: &str,
+    id: &str,
+    params: Value,
+    key: &str,
+    base: &control::Revision,
+) -> Request {
+    Request {
+        api_version: control::API_VERSION,
+        registry_hash: Some(control::registry_hash().into()),
+        session_id: s.session_id().into(),
+        request_id: request_id.into(),
+        idempotency_key: Some(key.into()),
+        base_rev: Some(base.clone()),
+        command: id.into(),
+        params,
+    }
+}
 fn run(s: &mut Session, r: &mut JobRunner, id: &str, params: Value, key: &str) -> Response {
     let req = request(s, id, params, key);
     s.control_request(req, caller(&Allow), r).unwrap()
@@ -1535,4 +1554,112 @@ fn review_integer_history_destination_and_legacy_json_share_candidate_validation
     assert_eq!(s.project(), &before);
     assert_eq!(s.history_len(), (0, 1));
     assert_integer_candidate_refusal(&mut s, &mut r, "redo", json!({}));
+}
+
+#[test]
+fn lifecycle_save_uses_receipts_and_retries_after_publication_failure() {
+    let mut s = session();
+    let initial = s.revision();
+    let mut published = 0;
+    let response = s
+        .control_lifecycle_save(
+            request_at(&s, "save-1", "project.save", json!({}), "save", &initial),
+            caller(&Allow),
+            |project, _metadata| {
+                assert_eq!(project.data().name.as_str(), "Test");
+                published += 1;
+                Ok(())
+            },
+        )
+        .unwrap();
+    assert_eq!(published, 1);
+    let ControlResult::Edit { outcome } = ok(response) else {
+        panic!("save result");
+    };
+    assert!(!outcome.changed);
+    let saved = s.revision();
+    assert_ne!(saved, initial);
+
+    let mut replayed = 0;
+    let replay = s
+        .control_lifecycle_save(
+            request_at(
+                &s,
+                "save-replay",
+                "project.save",
+                json!({}),
+                "save",
+                &initial,
+            ),
+            caller(&Allow),
+            |_, _| {
+                replayed += 1;
+                Ok(())
+            },
+        )
+        .unwrap();
+    assert_eq!(replayed, 0);
+    let ControlResult::Edit { outcome } = ok(replay.clone()) else {
+        panic!("replay result");
+    };
+    assert!(!outcome.changed);
+    assert_eq!(replay.rev_after, saved);
+
+    let conflict = s
+        .control_lifecycle_save(
+            request_at(
+                &s,
+                "save-conflict",
+                "project.save",
+                json!({}),
+                "save",
+                &s.revision(),
+            ),
+            caller(&Allow),
+            |_, _| panic!("conflicting save must not publish"),
+        )
+        .unwrap();
+    error(conflict, ErrorCode::IdempotencyConflict);
+
+    let before_failure = s.revision();
+    let failure = s
+        .control_lifecycle_save(
+            request_at(
+                &s,
+                "save-fail",
+                "project.save",
+                json!({}),
+                "fail",
+                &before_failure,
+            ),
+            caller(&Allow),
+            |_, _| Err(EditError::Io(std::io::Error::other("disk"))),
+        )
+        .unwrap();
+    error(failure, ErrorCode::Failed);
+    assert_eq!(s.revision(), before_failure);
+
+    let retry = s
+        .control_lifecycle_save(
+            request_at(
+                &s,
+                "save-retry",
+                "project.save",
+                json!({}),
+                "fail",
+                &before_failure,
+            ),
+            caller(&Allow),
+            |_, _| Ok(()),
+        )
+        .unwrap();
+    assert!(matches!(ok(retry), ControlResult::Edit { .. }));
+    assert_ne!(s.revision(), before_failure);
+
+    let invalid = s.control_lifecycle_save(
+        request_at(&s, "", "project.save", json!({}), "fresh", &s.revision()),
+        caller(&Allow),
+        |_, _| panic!("invalid request must not publish"),
+    );
+    assert!(matches!(invalid, Err(EditError::Limit)));
 }

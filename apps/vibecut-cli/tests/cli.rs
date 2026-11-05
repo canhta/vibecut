@@ -53,8 +53,11 @@ impl ControlSession {
         }
     }
     fn send(&mut self, request: Value) -> Value {
+        self.send_raw(&request.to_string())
+    }
+    fn send_raw(&mut self, line: &str) -> Value {
         use std::io::Write as _;
-        writeln!(self.stdin, "{request}").unwrap();
+        writeln!(self.stdin, "{line}").unwrap();
         self.stdin.flush().unwrap();
         let mut line = String::new();
         std::io::BufRead::read_line(&mut self.stdout, &mut line).unwrap();
@@ -1530,6 +1533,15 @@ fn control_refuses_new_effects_at_receipt_capacity() {
     ));
     assert_eq!(response_error(&refused), "receipt_capacity");
     assert_eq!(refused["exit_code"], 5);
+    let save = control.send(control_request(
+        "capacity-save",
+        "project.save",
+        json!({}),
+        Some(&rev),
+        Some("capacity-save"),
+    ));
+    assert_eq!(response_error(&save), "receipt_capacity");
+    assert_eq!(save["exit_code"], 5);
     let (code, stderr) = control.finish();
     assert_eq!(code, 5, "{stderr}");
 }
@@ -1670,4 +1682,141 @@ fn schema_prints_the_generated_contract_envelope() {
     assert!(value["contract_schema"]["request"].is_object());
     assert!(value["contract_schema"]["response"].is_object());
     assert!(value["contract_schema"]["event"].is_object());
+}
+
+#[test]
+fn control_refused_save_keeps_dirty_state_for_exit() {
+    let dir = tempfile::tempdir().unwrap();
+    let project = dir.path().join("refused-save.vibecut");
+    new_project(&project);
+    let mut control = ControlSession::start(&project, &[]);
+    let inspect = control.send(control_request("r0", "inspect", json!({}), None, None));
+    let rev = inspect["rev_after"].as_str().unwrap().to_owned();
+    let add = control.send(control_request(
+        "r1",
+        "timeline.add_track",
+        json!({"name":"Retained","kind":"video"}),
+        Some(&rev),
+        Some("add"),
+    ));
+    assert_eq!(add["exit_code"], 0);
+    let refused = control.send(control_request(
+        "r2",
+        "project.save",
+        json!({}),
+        Some(&rev),
+        Some("stale-save"),
+    ));
+    assert_eq!(response_error(&refused), "stale_revision");
+    assert_eq!(refused["exit_code"], 3);
+    let (code, stderr) = control.finish();
+    assert_eq!(code, 3, "{stderr}");
+    assert_eq!(info(&project)["tracks"], 2);
+}
+
+#[test]
+fn control_save_uses_engine_receipts() {
+    let dir = tempfile::tempdir().unwrap();
+    let project = dir.path().join("save-receipts.vibecut");
+    new_project(&project);
+    let mut control = ControlSession::start(&project, &[]);
+    let inspect = control.send(control_request("r0", "inspect", json!({}), None, None));
+    let rev0 = inspect["rev_after"].as_str().unwrap().to_owned();
+    let add = control.send(control_request(
+        "r1",
+        "timeline.add_track",
+        json!({"name":"Saved","kind":"video"}),
+        Some(&rev0),
+        Some("same"),
+    ));
+    assert_eq!(add["exit_code"], 0);
+    let rev1 = add["rev_after"].as_str().unwrap().to_owned();
+
+    let conflict = control.send(control_request(
+        "r2",
+        "project.save",
+        json!({}),
+        Some(&rev1),
+        Some("same"),
+    ));
+    assert_eq!(response_error(&conflict), "idempotency_conflict");
+    assert_eq!(conflict["exit_code"], 5);
+
+    let save = control.send(control_request(
+        "r3",
+        "project.save",
+        json!({}),
+        Some(&rev1),
+        Some("save"),
+    ));
+    assert_eq!(save["exit_code"], 0);
+    assert_eq!(save["value"]["value"]["kind"], "edit");
+    let rev2 = save["rev_after"].as_str().unwrap().to_owned();
+
+    let replay = control.send(control_request(
+        "replay",
+        "project.save",
+        json!({}),
+        Some(&rev1),
+        Some("save"),
+    ));
+    assert_eq!(replay["exit_code"], 0);
+    assert_eq!(replay["rev_after"], rev2);
+
+    let inspect = control.send(control_request("r4", "inspect", json!({}), None, None));
+    assert_eq!(inspect["rev_after"], rev2);
+
+    let empty_id = control.send(control_request(
+        "",
+        "project.save",
+        json!({}),
+        Some(&rev2),
+        Some("save-2"),
+    ));
+    assert_eq!(empty_id["status"], "error");
+    assert_eq!(empty_id["error"]["code"], "limit");
+    assert_eq!(empty_id["exit_code"], 2);
+
+    let (code, stderr) = control.finish();
+    assert_eq!(code, 2, "{stderr}");
+    assert_eq!(info(&project)["tracks"], 2);
+}
+
+#[test]
+fn control_oversized_frame_is_refused_in_band_and_keeps_edits() {
+    let dir = tempfile::tempdir().unwrap();
+    let project = dir.path().join("oversized.vibecut");
+    new_project(&project);
+    let mut control = ControlSession::start(&project, &[]);
+    let inspect = control.send(control_request("r0", "inspect", json!({}), None, None));
+    let rev = inspect["rev_after"].as_str().unwrap().to_owned();
+    let first = control.send(control_request(
+        "r1",
+        "timeline.add_track",
+        json!({"name":"Before","kind":"video"}),
+        Some(&rev),
+        Some("before"),
+    ));
+    assert_eq!(first["exit_code"], 0);
+
+    let oversized = "x".repeat(engine::control::MAX_FRAME_BYTES + 10);
+    let refused = control.send_raw(&oversized);
+    assert_eq!(refused["status"], "error");
+    assert_eq!(refused["error"]["code"], "limit");
+    assert_eq!(refused["exit_code"], 2);
+
+    let inspect = control.send(control_request("r2", "inspect", json!({}), None, None));
+    assert_eq!(inspect["exit_code"], 0);
+    let rev = inspect["rev_after"].as_str().unwrap().to_owned();
+    let second = control.send(control_request(
+        "r3",
+        "timeline.add_track",
+        json!({"name":"After","kind":"video"}),
+        Some(&rev),
+        Some("after"),
+    ));
+    assert_eq!(second["exit_code"], 0);
+    let (code, stderr) = control.finish();
+    assert_eq!(code, 0, "{stderr}");
+    assert_eq!(info(&project)["tracks"], 3);
 }
