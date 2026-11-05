@@ -360,7 +360,7 @@ pub(super) fn run(tools: &mut Tools, args: &[String]) -> Result<()> {
         .collect::<Vec<_>>()
         .as_slice()
     {
-        ["validate"] => validate(&tools.env),
+        ["validate"] => with_credentials(tools, |_, _| Ok(())),
         ["cleanup"] => cleanup(tools),
         ["sign", prefix, binaries, output, arch] => package(
             tools,
@@ -395,6 +395,23 @@ mod tests {
     #[test]
     fn certificate_decode_refuses_malformed_input() {
         assert_eq!(decode_base64("Y2VydA==").expect("base64"), b"cert");
+        for (encoded, decoded) in [
+            ("Zg==", "f"),
+            ("Zm8=", "fo"),
+            ("Zm9v", "foo"),
+            ("Zm9vYg==", "foob"),
+            ("Zm9vYmE=", "fooba"),
+            ("Zm9vYmFy", "foobar"),
+        ] {
+            assert_eq!(
+                decode_base64(encoded).expect("RFC vector"),
+                decoded.as_bytes()
+            );
+        }
+        assert_eq!(
+            decode_base64("AP8A").expect("binary vector"),
+            vec![0, 255, 0]
+        );
         for input in ["invalid!", "=AAA", "AA=A", "AAAA=AAA", "A==="] {
             assert!(decode_base64(input).is_err(), "{input}");
         }

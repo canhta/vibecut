@@ -122,8 +122,24 @@ impl Tools {
             };
         let result = self.execute(&mut command, timeout)?;
         if result.code != Some(0) {
+            if program == "security"
+                && result
+                    .stderr
+                    .contains("MAC verification failed during PKCS12 import")
+            {
+                return Err("Developer ID certificate import rejected its PKCS#12 password; verify MACOS_CERT_PASSWORD matches MACOS_CERT_P12 (native diagnostics suppressed)".into());
+            }
+            let operation = if program == "security" {
+                command
+                    .get_args()
+                    .next()
+                    .and_then(OsStr::to_str)
+                    .unwrap_or("operation")
+            } else {
+                "operation"
+            };
             return Err(format!(
-                "{program} failed ({:?}); {} bytes of sensitive tool diagnostics suppressed",
+                "{program} {operation} failed ({:?}); {} bytes of sensitive tool diagnostics suppressed",
                 result.code,
                 result.stderr.len()
             ));
@@ -599,6 +615,18 @@ mod process_environment_tests {
         assert_eq!(tools.variable("SystemRoot"), Some("C:\\Windows"));
         tools.host = Host::Mac;
         assert_eq!(tools.variable("SystemRoot"), None);
+    }
+    #[test]
+    fn certificate_password_diagnostic_does_not_expose_native_output() {
+        let mut tools = Tools::new(Path::new("."));
+        tools.runner = Box::new(|_, _| {
+            Ok(Captured{code:Some(1),stdout:String::new(),stderr:"security: SecKeychainItemImport: MAC verification failed during PKCS12 import (wrong password?) PRIVATE-IDENTITY".into()})
+        });
+        let message = tools
+            .run("security", vec![arg("import")])
+            .expect_err("password refusal");
+        assert!(message.contains("MACOS_CERT_PASSWORD"));
+        assert!(!message.contains("PRIVATE-IDENTITY"));
     }
     #[cfg(windows)]
     #[test]

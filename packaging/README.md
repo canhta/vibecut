@@ -91,6 +91,8 @@ refused. Publishing the draft remains the maintainer's action.
 
 Hosted signing requires `MACOS_CERT_P12` (base64), `MACOS_CERT_PASSWORD`,
 `APPLE_API_KEY_P8` (raw P8), `APPLE_API_KEY_ID`, `APPLE_API_ISSUER` and `APPLE_TEAM_ID`.
+The early `dist signing validate` preflight imports and verifies the certificate
+before media provisioning or workspace builds, then removes its private material.
 `dist signing` imports one Developer ID Application identity into an ephemeral
 keychain and restores the original keychain search list on success/failure. The
 workflow also calls `dist signing cleanup` after cancellation. Private files have
