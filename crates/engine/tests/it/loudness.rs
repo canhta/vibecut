@@ -110,6 +110,7 @@ fn session() -> Session {
             source_asset: Some(media::AssetId(1)),
             source_range: TimeRange::new(Tick::ZERO, seconds).unwrap(),
             start: Tick::ZERO,
+            retime: Default::default(),
             animations: Default::default(),
             effects: vec![],
             masks: vec![],

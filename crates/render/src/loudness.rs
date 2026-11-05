@@ -192,10 +192,22 @@ fn measure_window(
     let _blocks = hooks.reserve(MemoryKind::Compositor, 8 << 20)?;
     let mut meter = Meter::new(rate, 2);
     let mut at = start;
+    // Retimed clips stream across consecutive blocks exactly as production does.
+    let mut retimers = std::collections::BTreeMap::new();
     while at < end {
         check(hooks)?;
         let count = (end - at).min(WINDOW as i64) as usize;
-        let block = crate::audio::mix_raw(project, at, count, 2, sources, hooks, 0, chain)?;
+        let block = crate::audio::mix_raw(
+            project,
+            at,
+            count,
+            2,
+            sources,
+            hooks,
+            0,
+            chain,
+            &mut retimers,
+        )?;
         meter.push(block.planes())?;
         at += count as i64;
         progress(((at - start) as f64 / (end - start).max(1) as f64) as f32)?;

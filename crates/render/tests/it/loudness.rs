@@ -116,6 +116,7 @@ fn project_of(
                 source_asset: Some(media::AssetId(asset)),
                 source_range: TimeRange::new(Tick::ZERO, tick(seconds, 1)).unwrap(),
                 start: tick(start, 1),
+                retime: Default::default(),
                 animations: Default::default(),
                 effects: vec![],
                 masks: vec![],
