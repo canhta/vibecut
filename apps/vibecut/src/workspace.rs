@@ -107,6 +107,7 @@ pub struct Workspace {
     device_available: bool,
     retry_save: Option<(Option<PathBuf>, bool, bool, bool)>,
     retry_discovery: bool,
+    preference_warning: bool,
 }
 impl Workspace {
     pub fn new(root: PathBuf, preferences: Preferences, path: Option<PathBuf>) -> Result<Self> {
@@ -144,6 +145,7 @@ impl Workspace {
             device_available: false,
             retry_save: None,
             retry_discovery: false,
+            preference_warning: false,
         };
         app.submit(Work::Discover, Text::Discovering)?;
         Ok(app)
@@ -165,6 +167,10 @@ impl Workspace {
         }
         self.shorts_window = true;
         Ok(())
+    }
+    /// A damaged layout preference document was replaced at startup.
+    pub fn warn_preferences_reset(&mut self) {
+        self.preference_warning = true;
     }
     pub fn busy(&self) -> bool {
         self.pending.is_some() || self.picker.is_some()
@@ -719,6 +725,17 @@ impl Workspace {
                     }
                     if self.button(ui, "recovery.diagnostic.close", Icon::X, Text::Cancel) {
                         self.diagnostics.clear();
+                    }
+                });
+        }
+        if self.preference_warning {
+            egui::Window::new(self.tr(Text::PreferencesWarning))
+                .id(egui::Id::unique("preferences.warning"))
+                .collapsible(false)
+                .show(ui.ctx(), |ui| {
+                    ui.label(self.tr(Text::PreferencesReset));
+                    if self.button(ui, "preferences.warning.close", Icon::X, Text::Ok) {
+                        self.preference_warning = false;
                     }
                 });
         }

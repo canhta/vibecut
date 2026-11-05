@@ -75,8 +75,13 @@ bypasses snapping during a drag. Cmd/Ctrl+Z undoes and Shift+Cmd/Ctrl+Z or Cmd+Y
 redoes. Space toggles playback; K pauses; J/L seek one second backwards/forwards;
 arrows step one frame; Shift+arrows jump one second; Home/End seek the timeline
 ends. Scrubbing uses the same seek path. Two resizable columns and a horizontal
-divider start at the UI design's 25/50/25 and 60/40 proportions.
-English/Vietnamese, theme and panel proportions use one bounded preference store.
+divider start at the UI design's 25/50/25 and 50/50 proportions. Drags clamp
+assets/properties to 15–40%, preview to 30–85% and the timeline to 15–70%, so no
+region reaches zero. English/Vietnamese, theme, panel proportions and
+property-section open state use one bounded, versioned preference store;
+`ui.prefs.set` edits have app-owned undo/redo and never touch Project JSON. A
+damaged layout restores its defaults with a visible warning, while an unreadable
+document restores the system defaults.
 
 The selection inspector shows audio gain and text size/colour for compatible
 selected items, with a dash for mixed values and the compatible/selected count.

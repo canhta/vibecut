@@ -5,8 +5,11 @@
 //! rejects empty rows, duplicate keys and keys no frontend code uses.
 use crate::{Error, Result};
 use serde::{Deserialize, Serialize};
-use std::io::Read;
-use std::path::{Path, PathBuf};
+use std::{
+    collections::BTreeMap,
+    io::Read,
+    path::{Path, PathBuf},
+};
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -215,6 +218,9 @@ catalog! {
     Language { key: "language", en: "Tiếng Việt", vi: "English" },
     Reset { key: "reset_layout", en: "Reset layout", vi: "Đặt lại bố cục" },
     Export { key: "export", en: "Export", vi: "Xuất" },
+    PreferencesWarning { key: "preferences_warning", en: "Preferences", vi: "Tùy chọn" },
+    PreferencesReset { key: "preferences_reset", en: "Saved preferences could not be read; defaults were restored.", vi: "Không thể đọc tùy chọn đã lưu; đã khôi phục mặc định." },
+    Ok { key: "ok", en: "OK", vi: "OK" },
 
     // Panels and empty states.
     Media { key: "media", en: "Media", vi: "Tư liệu" },
@@ -280,6 +286,9 @@ catalog! {
     MaskPoints { key: "mask_points", en: "Mask points selected", vi: "Đã chọn điểm mặt nạ" },
     Keyframes { key: "keyframes", en: "Keyframes selected", vi: "Đã chọn khung hình chính" },
     EmptyValue { key: "empty_value", en: "—", vi: "—" },
+    Canvas { key: "canvas", en: "Canvas", vi: "Khung hình" },
+    Metadata { key: "metadata", en: "Metadata", vi: "Siêu dữ liệu" },
+    Selection { key: "selection", en: "Selection", vi: "Lựa chọn" },
     CanvasSize { key: "canvas_size", en: "{width} × {height}", vi: "{width} × {height}" },
     FrameRate { key: "frame_rate", en: "{num} / {den} fps", vi: "{num} / {den} fps" },
     SampleRate { key: "sample_rate", en: "{rate} Hz", vi: "{rate} Hz" },
@@ -575,23 +584,92 @@ fn civil_from_days(days: i64) -> (i64, u32, u32) {
     )
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+/// Bumped when the local preference document changes incompatibly.
+pub const PREFERENCES_VERSION: u32 = 1;
+const MAX_PREFERENCES_BYTES: u64 = 4096;
+const MAX_SECTIONS: usize = 128;
+
+/// Splitter bounds are fractions of the full content rectangle. The two side
+/// panels plus the preview always fill the upper row, so their limits imply the
+/// preview's 30–85% range (side panels keep at least 15% each).
+pub const PANEL_MIN: f32 = 0.15;
+pub const PANEL_MAX: f32 = 0.40;
+pub const PREVIEW_MIN: f32 = 0.30;
+pub const PREVIEW_MAX: f32 = 0.85;
+pub const TIMELINE_MIN: f32 = 0.15;
+pub const TIMELINE_MAX: f32 = 0.70;
+pub const DEFAULT_PANELS: [f32; 3] = [0.25, 0.25, 0.50];
+
+/// Every user-visible preference key in the one versioned document.
+pub const PREFERENCE_KEYS: &[&str] = &["locale", "dark", "panels", "sections", "export"];
+
+/// A splitter drag that keeps every region non-empty and inside its limits.
+pub fn drag_panel(panels: [f32; 3], axis: usize, delta: f32) -> [f32; 3] {
+    let Ok(mut next) = validate_panels(panels) else {
+        return DEFAULT_PANELS;
+    };
+    if !delta.is_finite() {
+        return next;
+    }
+    match axis {
+        0 => {
+            let max = PANEL_MAX.min(1.0 - PREVIEW_MIN - next[1]);
+            next[0] = (next[0] + delta).clamp(PANEL_MIN, max);
+        }
+        1 => {
+            let max = PANEL_MAX.min(1.0 - PREVIEW_MIN - next[0]);
+            next[1] = (next[1] - delta).clamp(PANEL_MIN, max);
+        }
+        2 => next[2] = (next[2] - delta).clamp(TIMELINE_MIN, TIMELINE_MAX),
+        _ => return next,
+    }
+    next
+}
+
+pub fn validate_panels(panels: [f32; 3]) -> Result<[f32; 3]> {
+    if panels.iter().any(|value| !value.is_finite()) {
+        return Err(Error::Invalid("panel ratios"));
+    }
+    let [assets, properties, timeline] = panels;
+    let preview = 1.0 - assets - properties;
+    if !(PANEL_MIN..=PANEL_MAX).contains(&assets)
+        || !(PANEL_MIN..=PANEL_MAX).contains(&properties)
+        || !(PREVIEW_MIN..=PREVIEW_MAX).contains(&preview)
+        || !(TIMELINE_MIN..=TIMELINE_MAX).contains(&timeline)
+    {
+        return Err(Error::Invalid("panel ratios"));
+    }
+    Ok(panels)
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Preferences {
+    /// Versioned local document; older files default the missing field to v1.
+    #[serde(default = "preferences_version")]
+    pub version: u32,
     #[serde(default)]
     pub export: crate::export::ExportOptions,
     pub locale: Locale,
     pub dark: bool,
-    /// Ratios of the full content rectangle; validated when loaded.
+    /// Ratios of the full content rectangle; validated when loaded and set.
     pub panels: [f32; 3],
+    /// Open/closed state by property-section key.
+    #[serde(default)]
+    pub sections: BTreeMap<String, bool>,
+}
+const fn preferences_version() -> u32 {
+    PREFERENCES_VERSION
 }
 impl Default for Preferences {
     fn default() -> Self {
         Self {
+            version: PREFERENCES_VERSION,
             export: crate::export::ExportOptions::default(),
             locale: Locale::En,
             dark: true,
-            panels: [0.25, 0.25, 0.4],
+            panels: DEFAULT_PANELS,
+            sections: BTreeMap::new(),
         }
     }
 }
@@ -603,7 +681,78 @@ impl Preferences {
             ..Self::default()
         }
     }
+    pub fn validate(&self) -> Result<()> {
+        if self.version != PREFERENCES_VERSION {
+            return Err(Error::Unsupported("preferences version"));
+        }
+        validate_panels(self.panels)?;
+        self.validate_sections()
+    }
+    fn validate_sections(&self) -> Result<()> {
+        if self.sections.len() > MAX_SECTIONS
+            || self
+                .sections
+                .keys()
+                .any(|key| key.is_empty() || key.len() > 64)
+        {
+            return Err(Error::Invalid("preference sections"));
+        }
+        Ok(())
+    }
+    pub fn section_open(&self, key: &str, default: bool) -> bool {
+        self.sections.get(key).copied().unwrap_or(default)
+    }
+    pub fn set_section(&mut self, key: &str, value: bool) {
+        self.sections.insert(key.to_owned(), value);
+    }
+    /// Typed `ui.prefs.set` payload access used by the app history.
+    pub fn get(&self, key: &str) -> Result<serde_json::Value> {
+        match key {
+            "locale" => Ok(serde_json::to_value(self.locale)?),
+            "dark" => Ok(serde_json::Value::Bool(self.dark)),
+            "panels" => Ok(serde_json::to_value(self.panels)?),
+            "sections" => Ok(serde_json::to_value(&self.sections)?),
+            "export" => Ok(serde_json::to_value(self.export)?),
+            _ => Err(Error::Unsupported("preference key")),
+        }
+    }
+    pub fn set(&mut self, key: &str, value: serde_json::Value) -> Result<()> {
+        match key {
+            "locale" => self.locale = serde_json::from_value(value)?,
+            "dark" => self.dark = serde_json::from_value(value)?,
+            "panels" => self.panels = validate_panels(serde_json::from_value(value)?)?,
+            "sections" => {
+                let sections: BTreeMap<String, bool> = serde_json::from_value(value)?;
+                let previous = std::mem::replace(&mut self.sections, sections);
+                if let Err(error) = self.validate_sections() {
+                    self.sections = previous;
+                    return Err(error);
+                }
+            }
+            "export" => self.export = serde_json::from_value(value)?,
+            _ => return Err(Error::Unsupported("preference key")),
+        }
+        Ok(())
+    }
 }
+
+/// Which part of a damaged preference document was replaced by defaults.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PreferenceIssue {
+    Read,
+    Version,
+    Layout,
+}
+impl std::fmt::Display for PreferenceIssue {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(match self {
+            Self::Read => "preferences could not be read",
+            Self::Version => "preferences use an unsupported version",
+            Self::Layout => "layout preferences were reset",
+        })
+    }
+}
+
 pub struct PreferenceStore {
     path: PathBuf,
 }
@@ -614,33 +763,54 @@ impl PreferenceStore {
     pub fn path(&self) -> &Path {
         &self.path
     }
+    /// Strict read used by tests and callers that must refuse a damaged file.
     pub fn load(&self) -> Result<Preferences> {
+        let value = self.read()?;
+        value.validate()?;
+        Ok(value)
+    }
+    /// Startup read: a damaged document is replaced wholesale, while a damaged
+    /// layout keeps unrelated preferences and is reported through the warning.
+    pub fn load_with_warning(&self) -> (Preferences, Option<PreferenceIssue>) {
+        let mut value = match self.read() {
+            Ok(value) => value,
+            Err(_) => return (Preferences::system(), Some(PreferenceIssue::Read)),
+        };
+        if value.version != PREFERENCES_VERSION {
+            return (Preferences::system(), Some(PreferenceIssue::Version));
+        }
+        let mut issue = None;
+        if validate_panels(value.panels).is_err() {
+            value.panels = DEFAULT_PANELS;
+            issue = Some(PreferenceIssue::Layout);
+        }
+        if value.validate_sections().is_err() {
+            value.sections.clear();
+            issue = Some(PreferenceIssue::Layout);
+        }
+        (value, issue)
+    }
+    fn read(&self) -> Result<Preferences> {
         let file = match std::fs::File::open(&self.path) {
             Ok(file) => file,
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
                 return Ok(Preferences::system());
             }
-            Err(e) => return Err(e.into()),
+            Err(error) => return Err(error.into()),
         };
-        if file.metadata()?.len() > 4096 {
+        if file.metadata()?.len() > MAX_PREFERENCES_BYTES {
             return Err(Error::Invalid("preference size"));
         }
         let mut bytes = Vec::new();
-        file.take(4097).read_to_end(&mut bytes)?;
-        if bytes.len() > 4096 {
+        file.take(MAX_PREFERENCES_BYTES + 1)
+            .read_to_end(&mut bytes)?;
+        if bytes.len() as u64 > MAX_PREFERENCES_BYTES {
             return Err(Error::Invalid("preference size"));
         }
-        let value: Preferences = serde_json::from_slice(&bytes)?;
-        if value.panels.iter().any(|v| !v.is_finite())
-            || !(0.15..=0.35).contains(&value.panels[0])
-            || !(0.15..=0.35).contains(&value.panels[1])
-            || !(0.15..=0.7).contains(&value.panels[2])
-        {
-            return Err(Error::Invalid("panel ratios"));
-        }
-        Ok(value)
+        Ok(serde_json::from_slice(&bytes)?)
     }
     pub fn save(&self, value: &Preferences) -> Result<()> {
+        value.validate()?;
         if let Some(parent) = self.path.parent() {
             std::fs::create_dir_all(parent)?;
         }
@@ -702,6 +872,10 @@ pub fn blend_label(mode: project::BlendMode) -> Text {
 mod tests {
     use super::*;
     use std::collections::BTreeSet;
+
+    fn valid_preview(panels: [f32; 3]) -> bool {
+        (PREVIEW_MIN..=PREVIEW_MAX).contains(&(1.0 - panels[0] - panels[1]))
+    }
 
     #[test]
     fn every_key_has_two_nonempty_rows_and_a_unique_id() {
@@ -786,7 +960,94 @@ mod tests {
     #[test]
     fn default_is_deterministic_and_system_preferences_follow_the_os() {
         assert_eq!(Preferences::default().locale, Locale::En);
+        assert_eq!(Preferences::default().panels, DEFAULT_PANELS);
         assert_eq!(Preferences::system().locale, Locale::from_system());
+    }
+
+    #[test]
+    fn splitter_drags_clamp_each_region_to_its_documented_limits() {
+        let start = DEFAULT_PANELS;
+        let far_right = drag_panel(start, 0, 10.0);
+        assert_eq!(far_right[0], PANEL_MAX);
+        assert!(valid_preview(far_right));
+        let far_left = drag_panel(start, 0, -10.0);
+        assert_eq!(far_left[0], PANEL_MIN);
+        assert!(valid_preview(far_left));
+        let inspector_narrow = drag_panel(start, 1, 10.0);
+        assert_eq!(inspector_narrow[1], PANEL_MIN);
+        let inspector_wide = drag_panel(start, 1, -10.0);
+        assert_eq!(inspector_wide[1], PANEL_MAX);
+        assert!(valid_preview(inspector_wide));
+        let timeline_high = drag_panel(start, 2, -10.0);
+        assert_eq!(timeline_high[2], TIMELINE_MAX);
+        let timeline_low = drag_panel(start, 2, 10.0);
+        assert_eq!(timeline_low[2], TIMELINE_MIN);
+        assert_eq!(drag_panel(start, 7, 0.1), start);
+        assert_eq!(drag_panel(start, 0, f32::NAN), start);
+        assert!(validate_panels([0.40, 0.40, 0.50]).is_err());
+        assert!(validate_panels([f32::NAN, 0.25, 0.50]).is_err());
+        assert!(validate_panels([0.25, 0.25, 0.80]).is_err());
+    }
+
+    #[test]
+    fn every_registered_preference_key_roundtrips_through_the_store() {
+        let dir = tempfile::tempdir().expect("temporary preferences");
+        let store = PreferenceStore::new(dir.path().join("preferences.json"));
+        let mut preferences = Preferences::default();
+        for (key, value) in [
+            ("locale", serde_json::json!("vi")),
+            ("dark", serde_json::json!(false)),
+            ("panels", serde_json::json!([0.30, 0.20, 0.35])),
+            ("sections", serde_json::json!({"inspector.canvas": false})),
+            (
+                "export",
+                serde_json::json!({
+                    "format": "webm",
+                    "quality": "very_high",
+                    "include_audio": false
+                }),
+            ),
+        ] {
+            assert!(PREFERENCE_KEYS.contains(&key), "unregistered key {key}");
+            preferences.set(key, value).expect("set preference");
+        }
+        store.save(&preferences).expect("save preferences");
+        let loaded = store.load().expect("load preferences");
+        assert_eq!(loaded.version, PREFERENCES_VERSION);
+        for key in PREFERENCE_KEYS {
+            assert_eq!(
+                loaded.get(key).expect("get preference"),
+                preferences.get(key).expect("get preference"),
+                "{key} must round-trip"
+            );
+        }
+        assert!(Preferences::default().get("unknown").is_err());
+    }
+
+    #[test]
+    fn corrupt_layout_falls_back_to_defaults_with_a_warning() {
+        let dir = tempfile::tempdir().expect("temporary preferences");
+        let store = PreferenceStore::new(dir.path().join("preferences.json"));
+        std::fs::write(
+            store.path(),
+            br#"{"version":1,"locale":"vi","dark":false,"panels":[0.9,0.9,0.9]}"#,
+        )
+        .expect("write preferences");
+        let (preferences, issue) = store.load_with_warning();
+        assert_eq!(issue, Some(PreferenceIssue::Layout));
+        assert_eq!(preferences.panels, DEFAULT_PANELS);
+        assert_eq!(preferences.locale, Locale::Vi);
+        assert!(!preferences.dark);
+        std::fs::write(store.path(), b"{").expect("write corrupt preferences");
+        let (preferences, issue) = store.load_with_warning();
+        assert_eq!(issue, Some(PreferenceIssue::Read));
+        assert_eq!(preferences, Preferences::system());
+        std::fs::write(
+            store.path(),
+            br#"{"version":9,"locale":"en","dark":true,"panels":[0.25,0.25,0.5]}"#,
+        )
+        .expect("write newer preferences");
+        assert_eq!(store.load_with_warning().1, Some(PreferenceIssue::Version));
     }
 
     #[test]

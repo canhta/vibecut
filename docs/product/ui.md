@@ -36,10 +36,10 @@ Evidence: `.spikes/ui-reference/screens-2026-11-04/`, `01-project-list/`, `02-ed
 - Baseline window 1728×1030 logical px [measured desktop capture above]; minimum 1280×800 remains [proposed], not verified by resizing this capture.
 - Top bar 52 px; panel header 44 px; properties tab row 40 px; timeline toolbar 40 px.
 - Default columns 25 / 50 / 25 percent: tools, preview, properties.
-- Rows 60 / 40 percent: main content, timeline.
+- Rows 50 / 50 percent: main content, timeline, matching the PNL-01 reference layout; the measured CapCut capture divides the same rows 60 / 40.
 - Separators are 1 px `#263031` [measured desktop rail at (20,264) in the Home shot above]; application to editor panel separators remains [proposed]. There is no gutter between panels.
 - Radii: 0 px on editor panels, 4 px on fields, 12 px on modals.
-- Panel dividers are draggable; reset restores the default columns above.
+- Panel dividers are draggable; assets and properties stop at 15–40%, preview at 30–85%, timeline at 15–70%, so a drag never collapses a region. Reset restores the default columns above.
 - Export is a 120x26 px button at the top-right of the top bar.
 - Home columns fill available width using the [measured rail and thumbnails](#measured-desktop-reference); Library asset-card geometry remains unmeasured.
 

@@ -1,7 +1,7 @@
 use crate::selection::{SelectionScope, SelectionScopes, shared_fields};
 use crate::{
     Error, Result,
-    catalog::{self, Locale, Preferences, Text},
+    catalog::{self, Locale, Preferences, Text, drag_panel},
     egui::{self, Align2, Color32, FontId, Id, Rect, Vec2},
     icons::{self, Icon},
     import::{ImportEvent, ImportFailure, ImportProbe, ImportQueue},
@@ -33,6 +33,9 @@ const DEFAULT_ZOOM: f32 = 40.0;
 const SNAP_PIXELS: f32 = 10.0;
 const ZOOM_STEP: f32 = 1.7;
 const LABEL_CHARS: usize = 120;
+
+/// App action id for every preference edit; engine history is untouched.
+pub const PREFERENCE_COMMAND: &str = "ui.prefs.set";
 
 #[derive(Clone, Debug)]
 pub struct WidgetState {
@@ -70,24 +73,23 @@ pub struct Inspection {
     pub export: Option<crate::export::ExportInspection>,
     pub export_options: crate::export::ExportOptions,
 }
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum PreferenceCommand {
-    SetLocale { before: Locale, after: Locale },
+#[derive(Clone, Debug)]
+struct PreferenceCommand {
+    key: String,
+    before: serde_json::Value,
+    after: serde_json::Value,
 }
 impl PreferenceCommand {
-    fn before(self) -> Locale {
-        match self {
-            Self::SetLocale { before, .. } => before,
-        }
-    }
-    fn after(self) -> Locale {
-        match self {
-            Self::SetLocale { after, .. } => after,
+    fn new(key: &str, before: serde_json::Value, after: serde_json::Value) -> Self {
+        Self {
+            key: key.to_owned(),
+            before,
+            after,
         }
     }
 }
 /// App-owned preference history, deliberately separate from the Project's
-/// command history: locale changes never mutate Project JSON.
+/// command history: `ui.prefs.set` edits never mutate Project JSON.
 #[derive(Default)]
 struct PreferenceHistory {
     undo: Vec<PreferenceCommand>,
@@ -108,7 +110,13 @@ impl PreferenceHistory {
         let Some(command) = self.undo.pop() else {
             return false;
         };
-        preferences.locale = command.before();
+        if preferences
+            .set(&command.key, command.before.clone())
+            .is_err()
+        {
+            self.undo.push(command);
+            return false;
+        }
         self.redo.push(command);
         true
     }
@@ -116,7 +124,13 @@ impl PreferenceHistory {
         let Some(command) = self.redo.pop() else {
             return false;
         };
-        preferences.locale = command.after();
+        if preferences
+            .set(&command.key, command.after.clone())
+            .is_err()
+        {
+            self.redo.push(command);
+            return false;
+        }
         self.undo.push(command);
         true
     }
@@ -251,6 +265,7 @@ pub struct Editor {
     last_view: project::ViewState,
     widgets: BTreeMap<String, WidgetState>,
     pub panels: BTreeMap<&'static str, Rect>,
+    layout_drag: Option<[f32; 3]>,
     drag: Option<DragState>,
     snap_indicator: Option<Tick>,
     texture: Option<egui::TextureHandle>,
@@ -316,6 +331,7 @@ impl Editor {
             last_view: view,
             widgets: BTreeMap::new(),
             panels: BTreeMap::new(),
+            layout_drag: None,
             drag: None,
             snap_indicator: None,
             texture: None,
@@ -759,6 +775,50 @@ impl Editor {
         self.remember(id, &response);
         response.clicked()
     }
+    /// A property section whose open state lives in the preference store, with
+    /// the same stable automation id across locale and layout changes.
+    fn section<R>(
+        &mut self,
+        ui: &mut egui::Ui,
+        id: &'static str,
+        key: &'static str,
+        label: Text,
+        default_open: bool,
+        body: impl FnOnce(&mut Self, &mut egui::Ui) -> R,
+    ) -> Option<R> {
+        let state_id = ui.make_persistent_id(("preferences.section", key));
+        let stored = self.preferences.section_open(key, default_open);
+        let mut state = egui::collapsing_header::CollapsingState::load_with_default_open(
+            ui.ctx(),
+            state_id,
+            default_open,
+        );
+        if state.is_open() != stored {
+            state.set_open(stored);
+            state.store(ui.ctx());
+        }
+        let label = self.tr(label);
+        let mut clicked = false;
+        let mut header = state.show_header(ui, |ui| {
+            let response = ui.add(egui::Label::new(label).sense(egui::Sense::click()));
+            clicked = response.clicked();
+        });
+        if clicked {
+            header.toggle();
+        }
+        let open = header.is_open();
+        let (toggle, _, body_response) = header.body(|ui| body(self, ui));
+        if open != stored
+            && let Err(error) = self.set_section_open(key, open)
+        {
+            self.error = Some(error.to_string());
+        }
+        toggle
+            .ctx
+            .accesskit_node_builder(toggle.id, |node| node.set_author_id(id));
+        self.remember(id, &toggle);
+        body_response.map(|response| response.inner)
+    }
     #[allow(clippy::too_many_arguments)]
     fn icon_only(
         &mut self,
@@ -952,19 +1012,33 @@ impl Editor {
             "timeline.ripple" => self.ripple = !self.ripple,
             "timeline.zoom_in" => self.zoom_by(ZOOM_STEP),
             "timeline.zoom_out" => self.zoom_by(1.0 / ZOOM_STEP),
-            "appearance.theme" => self.preferences.dark = !self.preferences.dark,
+            "appearance.theme" => {
+                let after = !self.preferences.dark;
+                self.dispatch(
+                    PREFERENCE_COMMAND,
+                    serde_json::json!({"key": "dark", "value": after}),
+                )?;
+            }
             "appearance.locale" => {
-                let before = self.preferences.locale;
-                let after = if before == Locale::En {
+                let after = if self.preferences.locale == Locale::En {
                     Locale::Vi
                 } else {
                     Locale::En
                 };
-                self.preferences.locale = after;
-                self.preference_history
-                    .record(PreferenceCommand::SetLocale { before, after });
+                self.dispatch(
+                    PREFERENCE_COMMAND,
+                    serde_json::json!({"key": "locale", "value": after}),
+                )?;
             }
-            "layout.reset" => self.preferences.panels = Preferences::default().panels,
+            "layout.reset" => {
+                self.dispatch(
+                    PREFERENCE_COMMAND,
+                    serde_json::json!({
+                        "key": "panels",
+                        "value": Preferences::default().panels,
+                    }),
+                )?;
+            }
             "preview.retry" => {
                 self.playback.clear()?;
                 self.error = None;
@@ -1086,6 +1160,55 @@ impl Editor {
     fn action(&mut self, id: &str) {
         if let Err(error) = self.activate(id) {
             self.error = Some(error.to_string());
+        }
+    }
+    /// App action dispatcher shared by UI and agents. Preference edits use
+    /// `ui.prefs.set` with `{"key": ..., "value": ...}` typed params.
+    pub fn dispatch(&mut self, id: &str, params: serde_json::Value) -> Result<()> {
+        if id == PREFERENCE_COMMAND {
+            let key = params
+                .get("key")
+                .and_then(serde_json::Value::as_str)
+                .ok_or(Error::Invalid("preference key"))?;
+            let value = params
+                .get("value")
+                .cloned()
+                .ok_or(Error::Invalid("preference value"))?;
+            return self.set_preference(key, value);
+        }
+        self.activate(id)
+    }
+    /// One command (`ui.prefs.set`) for every user-visible preference edit.
+    /// App history is separate from Project history and never changes Project JSON.
+    pub fn set_preference(&mut self, key: &str, value: serde_json::Value) -> Result<()> {
+        let before = self.preferences.get(key)?;
+        self.preferences.set(key, value)?;
+        let after = self.preferences.get(key)?;
+        if before != after {
+            self.preference_history
+                .record(PreferenceCommand::new(key, before, after));
+        }
+        Ok(())
+    }
+    /// Section keys are dynamic; the whole open/closed map is one history entry.
+    pub fn set_section_open(&mut self, key: &str, open: bool) -> Result<()> {
+        let before = self.preferences.get("sections")?;
+        self.preferences.set_section(key, open);
+        let after = self.preferences.get("sections")?;
+        if before != after {
+            self.preference_history
+                .record(PreferenceCommand::new("sections", before, after));
+        }
+        Ok(())
+    }
+    fn record_layout_change(&mut self, before: [f32; 3]) {
+        let after = self.preferences.panels;
+        if before != after {
+            self.preference_history.record(PreferenceCommand::new(
+                "panels",
+                serde_json::json!(before),
+                serde_json::json!(after),
+            ));
         }
     }
     fn select_single(&mut self, item: ItemId) {
@@ -1923,15 +2046,21 @@ impl Editor {
         ] {
             let response = ui.interact(area, Id::unique(id), egui::Sense::drag());
             self.remember(id, &response);
+            if response.drag_started() {
+                self.layout_drag = Some(self.preferences.panels);
+            }
             if response.dragged() {
                 let delta = response.drag_delta();
-                if let Some(v) = self.preferences.panels.get_mut(axis) {
-                    *v = match axis {
-                        0 => (*v + delta.x / upper.width()).clamp(0.15, 0.35),
-                        1 => (*v - delta.x / upper.width()).clamp(0.15, 0.35),
-                        _ => (*v - delta.y / body.height()).clamp(0.15, 0.7),
-                    };
-                }
+                let fraction = match axis {
+                    0 | 1 => delta.x / upper.width(),
+                    _ => delta.y / body.height(),
+                };
+                self.preferences.panels = drag_panel(self.preferences.panels, axis, fraction);
+            }
+            if response.drag_stopped()
+                && let Some(before) = self.layout_drag.take()
+            {
+                self.record_layout_change(before);
             }
         }
         for (a, b) in [
@@ -2305,54 +2434,81 @@ impl Editor {
             }
         });
         ui.separator();
-        ui.add_space(32.0);
+        ui.add_space(8.0);
         if self.details {
-            let locale = self.preferences.locale;
-            let data = self.session.project().data();
-            let width = catalog::number(locale, u64::from(data.canvas.width));
-            let height = catalog::number(locale, u64::from(data.canvas.height));
-            ui.label(catalog::format(
-                locale,
-                Text::CanvasSize,
-                &[("width", &width), ("height", &height)],
-            ));
-            let numerator = catalog::signed(locale, data.canvas.fps.num());
-            let denominator = catalog::signed(locale, data.canvas.fps.den());
-            ui.label(catalog::format(
-                locale,
-                Text::FrameRate,
-                &[("num", &numerator), ("den", &denominator)],
-            ));
-            let rate = catalog::number(locale, u64::from(data.settings.audio_sample_rate));
-            ui.label(catalog::format(
-                locale,
-                Text::SampleRate,
-                &[("rate", &rate)],
-            ));
-            let created = catalog::date(locale, self.session.metadata().created_unix_ms);
-            let modified = catalog::date(locale, self.session.metadata().modified_unix_ms);
-            ui.label(
-                egui::RichText::new(catalog::format(
-                    locale,
-                    Text::CreatedDate,
-                    &[("date", &created)],
-                ))
-                .small()
-                .color(self.secondary()),
+            self.section(
+                ui,
+                "inspector.section.canvas",
+                "inspector.canvas",
+                Text::Canvas,
+                true,
+                |editor, ui| {
+                    let locale = editor.preferences.locale;
+                    let data = editor.session.project().data();
+                    let width = catalog::number(locale, u64::from(data.canvas.width));
+                    let height = catalog::number(locale, u64::from(data.canvas.height));
+                    ui.label(catalog::format(
+                        locale,
+                        Text::CanvasSize,
+                        &[("width", &width), ("height", &height)],
+                    ));
+                    let numerator = catalog::signed(locale, data.canvas.fps.num());
+                    let denominator = catalog::signed(locale, data.canvas.fps.den());
+                    ui.label(catalog::format(
+                        locale,
+                        Text::FrameRate,
+                        &[("num", &numerator), ("den", &denominator)],
+                    ));
+                    let rate = catalog::number(locale, u64::from(data.settings.audio_sample_rate));
+                    ui.label(catalog::format(
+                        locale,
+                        Text::SampleRate,
+                        &[("rate", &rate)],
+                    ));
+                },
             );
-            ui.label(
-                egui::RichText::new(catalog::format(
-                    locale,
-                    Text::ModifiedDate,
-                    &[("date", &modified)],
-                ))
-                .small()
-                .color(self.secondary()),
+            self.section(
+                ui,
+                "inspector.section.metadata",
+                "inspector.metadata",
+                Text::Metadata,
+                false,
+                |editor, ui| {
+                    let locale = editor.preferences.locale;
+                    let created = catalog::date(locale, editor.session.metadata().created_unix_ms);
+                    let modified =
+                        catalog::date(locale, editor.session.metadata().modified_unix_ms);
+                    ui.label(
+                        egui::RichText::new(catalog::format(
+                            locale,
+                            Text::CreatedDate,
+                            &[("date", &created)],
+                        ))
+                        .small()
+                        .color(editor.secondary()),
+                    );
+                    ui.label(
+                        egui::RichText::new(catalog::format(
+                            locale,
+                            Text::ModifiedDate,
+                            &[("date", &modified)],
+                        ))
+                        .small()
+                        .color(editor.secondary()),
+                    );
+                },
             );
         } else if self.selection.is_empty() {
             ui.label(self.tr(Text::EmptyInspector));
         } else {
-            self.shared_inspector(ui);
+            self.section(
+                ui,
+                "inspector.section.selection",
+                "inspector.selection",
+                Text::Selection,
+                true,
+                |editor, ui| editor.shared_inspector(ui),
+            );
         }
     }
     fn shared_inspector(&mut self, ui: &mut egui::Ui) {

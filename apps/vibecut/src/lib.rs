@@ -14,7 +14,7 @@ pub mod shorts;
 mod theme;
 pub mod workspace;
 pub use eframe::egui;
-pub use frontend::{Editor, Inspection, WidgetState};
+pub use frontend::{Editor, Inspection, PREFERENCE_COMMAND, WidgetState};
 
 /// Window background token. Host adapters and offscreen audits paint it behind a
 /// shell that only draws its own content (Home does not fill the window).

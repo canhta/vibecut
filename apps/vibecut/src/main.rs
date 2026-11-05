@@ -54,6 +54,7 @@ struct Native {
     workspace: Workspace,
     effects: Option<Arc<vibecut::effects::GpuEffects>>,
     store: PreferenceStore,
+    saved_preferences: Preferences,
     _stream: Option<cpal::Stream>,
     audio_port: Option<Arc<AudioPort>>,
     smoke: Option<Smoke>,
@@ -177,6 +178,19 @@ impl eframe::App for Native {
     }
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         self.workspace.ui(ui);
+        // Persist a completed preference edit once, not on every drag frame.
+        if self.workspace.preferences != self.saved_preferences
+            && !ui.input(|input| input.pointer.any_down())
+        {
+            match self.store.save(&self.workspace.preferences) {
+                Ok(()) => self.saved_preferences = self.workspace.preferences.clone(),
+                Err(error) => {
+                    // Retry on the next edit instead of logging on every frame.
+                    self.saved_preferences = self.workspace.preferences.clone();
+                    tracing::warn!(category = "preference_save_failed", error = %error, "Preferences could not be saved")
+                }
+            }
+        }
     }
     fn on_exit(&mut self) {
         if let Some(smoke) = &self.smoke {
@@ -290,15 +304,16 @@ fn run() -> Result<()> {
         .or_else(|| std::env::var_os("APPDATA"))
         .ok_or(Error::Unsupported("preference directory"))?;
     let store = PreferenceStore::new(PathBuf::from(home).join(".config/vibecut/preferences.json"));
-    let preferences = match store.load() {
-        Ok(p) => p,
-        Err(e) => {
-            tracing::warn!(category = "preference_load_failed", error = %e, "Preferences unavailable");
-            Preferences::system()
-        }
-    };
+    let (preferences, warning) = store.load_with_warning();
+    if let Some(issue) = warning {
+        tracing::warn!(category = "preference_load_failed", %issue, "Preferences restored defaults");
+    }
     let observe_create = smoke.is_some() && file.is_none();
-    let workspace = Workspace::new(store.path().with_file_name("recovery"), preferences, file)?;
+    let mut workspace = Workspace::new(store.path().with_file_name("recovery"), preferences, file)?;
+    if warning.is_some() {
+        workspace.warn_preferences_reset();
+    }
+    let saved_preferences = workspace.preferences.clone();
     #[cfg(target_os = "macos")]
     let icon_bytes = include_bytes!("../../../assets/app-icon/vibecut-macos-512.png").as_slice();
     #[cfg(not(target_os = "macos"))]
@@ -336,6 +351,7 @@ fn run() -> Result<()> {
                 workspace,
                 effects,
                 store,
+                saved_preferences,
                 _stream: None,
                 audio_port: None,
                 smoke,
