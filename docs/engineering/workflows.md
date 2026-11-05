@@ -123,7 +123,7 @@ without restoring build/media caches. Only then does the workflow attach the DMG
 to a **draft** GitHub release; existing published releases and assets are refused.
 Running it and publishing the draft are the maintainer's. Every merge to `main`
 also runs `build.yml`: an unsigned test build that refreshes the rolling `nightly`
-pre-release. `ffmpeg.yml` (manual) builds the LGPL FFmpeg per platform for inspection.
+pre-release.
 
 For an act-free local release dry run, provision the native dependencies, run
 `cargo xtask ci --require-oracles`, build with `packaging/build.py`, and stage with
