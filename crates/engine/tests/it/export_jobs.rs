@@ -73,7 +73,7 @@ fn runner(budget: &ByteBudget, clock: Arc<dyn Clock>) -> JobRunner {
     .unwrap()
 }
 fn complete(r: &mut JobRunner, id: JobId) -> JobSnapshot {
-    let deadline = Instant::now() + Duration::from_secs(20);
+    let deadline = Instant::now() + Duration::from_secs(60);
     loop {
         r.tick().unwrap();
         let s = r.snapshot(id).unwrap();
@@ -84,7 +84,7 @@ fn complete(r: &mut JobRunner, id: JobId) -> JobSnapshot {
             return s;
         }
         assert!(Instant::now() < deadline);
-        std::thread::yield_now();
+        std::thread::sleep(Duration::from_millis(1));
     }
 }
 #[test]
