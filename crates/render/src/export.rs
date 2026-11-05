@@ -995,7 +995,7 @@ pub fn validate_output_path(
         {
             use std::os::unix::fs::MetadataExt;
             if output.dev() == source.dev() && output.ino() == source.ino() {
-                return Err(Error::Invalid("output hard-links a source"));
+                return Err(Error::Invalid("output aliases a source by hard link"));
             }
         }
         #[cfg(not(unix))]
