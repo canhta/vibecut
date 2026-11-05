@@ -14,7 +14,7 @@ use media::{
     TimeBase, VideoInfo,
 };
 use project::{Color, ItemId, ItemParams, Project, ProjectId, TrackId, TrackKind};
-use std::sync::Arc;
+use std::{path::PathBuf, sync::Arc};
 use time::{FrameRate, SourceRange, TICKS_PER_SECOND, Tick};
 use vibecut::{
     Editor,
