@@ -804,20 +804,27 @@ fn subtitle_remote_provider_without_key_refuses_before_upload() {
     let directory = tempfile::tempdir().unwrap();
     let input = directory.path().join("input.mp4");
     fs::write(&input, b"never read").unwrap();
-    let output = cli(&[
-        os("subtitle"),
-        input.as_os_str(),
-        os("--from"),
-        os("en"),
-        os("--to"),
-        os("vi"),
-        os("--provider"),
-        os("openai"),
-        os("--srt"),
-        directory.path().join("out.srt").as_os_str(),
-        os("--yes-upload"),
-        os("--json"),
-    ]);
+    // A parallel CLI run must not hold this credential check's cache lease.
+    let output = Command::new(bin())
+        .env("HOME", directory.path())
+        .env("LOCALAPPDATA", directory.path())
+        .env_remove("OPENAI_API_KEY")
+        .args([
+            os("subtitle"),
+            input.as_os_str(),
+            os("--from"),
+            os("en"),
+            os("--to"),
+            os("vi"),
+            os("--provider"),
+            os("openai"),
+            os("--srt"),
+            directory.path().join("out.srt").as_os_str(),
+            os("--yes-upload"),
+            os("--json"),
+        ])
+        .output()
+        .unwrap();
     assert_eq!(
         code(&output),
         4,
