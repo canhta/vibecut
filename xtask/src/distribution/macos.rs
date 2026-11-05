@@ -37,7 +37,11 @@ fn deployment(commands: &str, slices: usize) -> Result<()> {
                     .map_err(|_| "invalid Mach-O deployment version")?;
                 let major = *numbers.first().ok_or("missing deployment major")?;
                 let minor = *numbers.get(1).ok_or("missing deployment minor")?;
-                if (major, minor) > (11, 0) {
+                let patch = numbers.get(2).copied().unwrap_or(0);
+                if numbers.len() > 3 {
+                    return Err("invalid Mach-O deployment version".into());
+                }
+                if (major, minor, patch) > (11, 0, 0) {
                     return Err(format!("Mach-O deployment target exceeds macOS {MINIMUM}"));
                 }
                 versions.push((major, minor));
@@ -216,6 +220,10 @@ mod tests {
     fn every_slice_needs_an_admitted_deployment_version() {
         for (versions, slices, valid) in [
             (vec!["11.0"], 1, true),
+            (vec!["11.0.0"], 1, true),
+            (vec!["11.0.1"], 1, false),
+            (vec!["11.0.0.1"], 1, false),
+            (vec!["11.0", "11.0.1"], 2, false),
             (vec!["10.15"], 1, true),
             (vec!["11.0", "11.0"], 2, true),
             (vec!["11.0"], 2, false),

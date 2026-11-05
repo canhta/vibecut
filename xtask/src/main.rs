@@ -462,7 +462,6 @@ fn run() -> Result<ExitCode, String> {
         ["ci", "--require-oracles"] => ci(root, true),
         _ => Err(
             "usage: cargo xtask <dist COMMAND [OPTIONS]|build -- COMMAND [ARGS...] (Unix-only; on Windows run cargo directly)|frontier [ASSIGNEE]|board [PORT]|ffmpeg [--target PLATFORM|--cache-key]|ui-audit [OUTPUT_DIR]|sherpa [--arch x86_64|aarch64]|media-bench|clip-eval SET [OPTIONS]|cleanup [--environment NAME] [--dry-run] TARGET...|pull-reports [--environment NAME] [--ssh HOST] [--dry-run] WORKTREE...|ci [--require-oracles]|checks|clippy|lint|test|docs|i18n|layers|assets|new-crate NAME>"
-
                 .into(),
         ),
     }.map(|()| ExitCode::SUCCESS)
