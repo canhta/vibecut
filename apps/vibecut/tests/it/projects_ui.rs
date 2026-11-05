@@ -264,6 +264,23 @@ fn search_sort_and_view_persist_through_the_preference_store() {
     store.save(&harness.state().preferences).unwrap();
     let loaded = store.load().unwrap();
     assert_eq!(loaded.projects, harness.state().preferences.projects);
+
+    let unicode = Fixture::new(&[("Tiếng Việt", missing())]);
+    let mut harness = unicode.build(Preferences::default());
+    for query in ["tiếng", "tie\u{302}\u{301}ng"] {
+        harness.get(by("projects.search")).click();
+        harness.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::A);
+        harness.get(by("projects.search")).type_text(query);
+        harness.run_steps(2);
+        assert_eq!(
+            harness
+                .state()
+                .projects
+                .displayed_ids(&harness.state().preferences),
+            vec![ProjectId(1)],
+            "canonically equivalent Vietnamese search must match the stored name"
+        );
+    }
 }
 
 #[test]
@@ -300,6 +317,20 @@ fn shift_selection_enables_bulk_actions_and_delete_confirmation_lists_names() {
         3,
         "shift-click selects the inclusive display range"
     );
+    for (target, expected) in [
+        ("projects.card.0000000000000002", 2),
+        ("projects.card.0000000000000003", 3),
+    ] {
+        harness
+            .get(by(target))
+            .click_modifiers(egui::Modifiers::SHIFT);
+        harness.run_steps(2);
+        assert_eq!(
+            harness.state().projects.selection().len(),
+            expected,
+            "reversing the range replaces rather than accumulates targets"
+        );
+    }
     assert!(
         !harness
             .get(by("projects.toolbar.duplicate"))
@@ -328,6 +359,12 @@ fn shift_selection_enables_bulk_actions_and_delete_confirmation_lists_names() {
         3,
         "cancelling the confirmation keeps every selected project"
     );
+    harness.get(by("projects.toolbar.delete")).click();
+    harness.run_steps(2);
+    harness.key_press(egui::Key::Escape);
+    harness.run_steps(2);
+    assert!(harness.query_all(by("projects.delete.confirm")).count() == 0);
+    assert_eq!(harness.state().projects.entries().len(), 3);
     harness.get(by("projects.toolbar.delete")).click();
     harness.run_steps(2);
     let paths: Vec<PathBuf> = (0..3).map(|index| fixture.path(index)).collect();
@@ -384,6 +421,22 @@ fn rename_blank_collision_cancel_and_success_never_bypass_the_command() {
     );
     assert_eq!(harness.state().projects.entries()[0].name.as_str(), "Alpha");
 
+    harness.get(by("projects.rename.input")).click();
+    harness.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::A);
+    harness
+        .get(by("projects.rename.input"))
+        .type_text("../<demo> & tiếng Việt");
+    harness.get(by("projects.rename.save")).click();
+    idle(&mut harness);
+    assert_eq!(
+        harness.state().projects.entries()[0].name.as_str(),
+        "../<demo> & tiếng Việt"
+    );
+    assert!(
+        fixture.path(0).exists(),
+        "names are display text, never paths"
+    );
+    open_rename(&mut harness, 1);
     harness.get(by("projects.rename.input")).click();
     harness.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::A);
     harness.get(by("projects.rename.input")).type_text("Delta");
@@ -451,6 +504,25 @@ fn missing_and_unavailable_thumbnails_render_placeholders_and_ready_does_not() {
         ),
     ]);
     let mut harness = fixture.build(Preferences::default());
+    let held = WriterLease::acquire(&fixture.path(0)).unwrap();
+    harness
+        .get(by("projects.card.0000000000000001.menu"))
+        .click();
+    harness.run_steps(2);
+    harness
+        .get(by("projects.card.0000000000000001.thumbnail.refresh"))
+        .click();
+    idle(&mut harness);
+    assert!(
+        harness
+            .query_by_label("Could not refresh the thumbnail.")
+            .is_some()
+    );
+    assert!(matches!(
+        harness.state().projects.entries()[0].thumbnail,
+        Thumbnail::Missing
+    ));
+    drop(held);
     assert_eq!(
         harness
             .query_all(By::new().predicate(|node| {
@@ -481,12 +553,17 @@ fn missing_and_unavailable_thumbnails_render_placeholders_and_ready_does_not() {
         ),
         "the page refreshes project-owned thumbnails through project.thumbnail"
     );
+    assert!(
+        harness
+            .query_by_label("Could not refresh the thumbnail.")
+            .is_none(),
+        "a successful refresh clears the previous refusal"
+    );
 }
 
 #[test]
 fn duplicate_reports_progress_and_failure_without_mutating_the_source() {
     let fixture = Fixture::new(&[("Alpha", missing())]);
-    let source = fixture.path(0);
     let mut harness = fixture.build(Preferences::default());
     harness.get(by("projects.card.0000000000000001")).click();
     harness.run_steps(2);
@@ -514,40 +591,76 @@ fn duplicate_reports_progress_and_failure_without_mutating_the_source() {
     );
     assert_eq!(harness.state().projects.entries().len(), 2);
 
-    let held = WriterLease::acquire(&source).unwrap();
-    harness.get(by("projects.card.0000000000000001")).click();
-    harness.run_steps(2);
-    harness.get(by("projects.toolbar.duplicate")).click();
-    idle(&mut harness);
-    assert!(
+    drop(harness);
+    for held_index in [0, 1] {
+        let fixture = Fixture::new(&[("Alpha", missing()), ("Beta", missing())]);
+        let mut harness = fixture.build(Preferences::default());
+        let held = WriterLease::acquire(&fixture.path(held_index)).unwrap();
+        harness.get(by("projects.card.0000000000000001")).click();
+        harness.run_steps(2);
         harness
-            .query_by_label("Could not duplicate the project. It is unchanged.")
-            .is_some()
-    );
-    assert_eq!(harness.state().projects.entries().len(), 2);
-    drop(held);
+            .get(by("projects.card.0000000000000002"))
+            .click_modifiers(egui::Modifiers::SHIFT);
+        harness.run_steps(2);
+        harness.get(by("projects.toolbar.duplicate")).click();
+        idle(&mut harness);
+        assert!(
+            harness
+                .query_by_label(
+                    "Some projects could not be duplicated. Successful copies are kept."
+                )
+                .is_some()
+        );
+        let entries = harness.state().projects.entries();
+        assert_eq!(
+            entries.len(),
+            3,
+            "one locked source must not prevent the other copy"
+        );
+        assert_eq!(entries[0].name.as_str(), "Alpha");
+        assert_eq!(entries[1].name.as_str(), "Beta");
+        assert_eq!(
+            entries[2].name.as_str(),
+            if held_index == 0 { "Beta" } else { "Alpha" }
+        );
+        assert!(fixture.path(0).exists() && fixture.path(1).exists());
+        drop(held);
+    }
 }
 
 #[test]
 fn delete_failure_keeps_the_project_and_reports_it() {
-    let fixture = Fixture::new(&[("Alpha", missing())]);
-    let path = fixture.path(0);
-    let mut harness = fixture.build(Preferences::default());
-    let held = WriterLease::acquire(&path).unwrap();
-    harness.get(by("projects.card.0000000000000001")).click();
-    harness.run_steps(2);
-    harness.get(by("projects.toolbar.delete")).click();
-    harness.run_steps(2);
-    harness.get(by("projects.delete.confirm")).click();
-    idle(&mut harness);
-    assert!(
-        harness
-            .query_by_label("Could not delete the project. It remains in the library.")
-            .is_some()
-    );
-    assert_eq!(harness.state().projects.entries().len(), 1);
-    assert!(path.exists());
-    drop(held);
+    for names in [vec!["Alpha"], vec!["Alpha", "Beta"]] {
+        let projects: Vec<_> = names.iter().map(|name| (*name, missing())).collect();
+        let fixture = Fixture::new(&projects);
+        let path = fixture.path(0);
+        let mut harness = fixture.build(Preferences::default());
+        let held = WriterLease::acquire(&path).unwrap();
+        harness.get(by("projects.card.0000000000000001")).click();
+        harness.run_steps(2);
+        if names.len() == 2 {
+            harness
+                .get(by("projects.card.0000000000000002"))
+                .click_modifiers(egui::Modifiers::SHIFT);
+            harness.run_steps(2);
+        }
+        harness.get(by("projects.toolbar.delete")).click();
+        harness.run_steps(2);
+        harness.get(by("projects.delete.confirm")).click();
+        idle(&mut harness);
+        assert!(
+            harness
+                .query_by_label("Some projects could not be deleted. They remain in the library.")
+                .is_some()
+        );
+        assert_eq!(harness.state().projects.entries().len(), 1);
+        assert_eq!(harness.state().projects.entries()[0].id, ProjectId(1));
+        assert!(path.exists());
+        if names.len() == 2 {
+            assert!(!fixture.path(1).exists());
+        }
+        drop(held);
+    }
 }
 
 #[test]

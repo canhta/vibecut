@@ -183,6 +183,30 @@ const SCENES: &[Scene] = &[
         build: |theme, scale| captions_scene(theme, scale, Locale::Vi, true),
     },
     Scene {
+        name: "projects",
+        reference_dark: None,
+        reference_light: None,
+        build: |theme, scale| projects_scene(theme, scale, None),
+    },
+    Scene {
+        name: "projects-rename",
+        reference_dark: None,
+        reference_light: None,
+        build: |theme, scale| projects_scene(theme, scale, Some("rename")),
+    },
+    Scene {
+        name: "projects-delete",
+        reference_dark: None,
+        reference_light: None,
+        build: |theme, scale| projects_scene(theme, scale, Some("delete")),
+    },
+    Scene {
+        name: "projects-info",
+        reference_dark: None,
+        reference_light: None,
+        build: |theme, scale| projects_scene(theme, scale, Some("info")),
+    },
+    Scene {
         name: "timeline-zoom-low",
         reference_dark: None,
         reference_light: None,
@@ -415,6 +439,62 @@ fn home(theme: Theme, scale: f32) -> Result<AppHarness, Failure> {
         std::thread::sleep(Duration::from_millis(2));
     }
     app.run_steps(2);
+    Ok(app)
+}
+
+fn projects_scene(theme: Theme, scale: f32, dialog: Option<&str>) -> Result<AppHarness, Failure> {
+    let directory = tempfile::tempdir()?;
+    let root = directory.path().join("projects");
+    {
+        let mut library = engine::library::ProjectLibrary::open(&root, ByteBudget::new(64 << 20)?)?;
+        for (id, name) in [
+            (1, "Product launch"),
+            (2, "Tiếng Việt: bản dựng"),
+            (3, "Monthly recap"),
+        ] {
+            library.execute(
+                ProjectId(id),
+                Command::CreateProject {
+                    id: ProjectId(id),
+                    name: name.into(),
+                },
+            )?;
+        }
+    }
+    let workspace = Workspace::with_projects(
+        directory.path().join("recovery"),
+        root,
+        preferences(theme, Locale::En),
+        None,
+    )?;
+    let mut app = harness(
+        App::Home {
+            workspace: Box::new(workspace),
+            _directory: directory,
+        },
+        scale,
+    );
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while app.state().busy() {
+        app.run_steps(1);
+        if Instant::now() >= deadline {
+            return Err("projects audit timed out".into());
+        }
+        std::thread::sleep(Duration::from_millis(2));
+    }
+    app.run_steps(2);
+    if let Some(dialog) = dialog {
+        app.get(
+            By::new()
+                .predicate(|node| node.author_id() == Some("projects.card.0000000000000001.menu")),
+        )
+        .click();
+        app.run_steps(2);
+        let id = format!("projects.card.0000000000000001.{dialog}");
+        app.get(By::new().predicate(move |node| node.author_id() == Some(id.as_str())))
+            .click();
+        app.run_steps(2);
+    }
     Ok(app)
 }
 

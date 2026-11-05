@@ -53,19 +53,21 @@ enum Request {
 }
 
 enum Event {
+    Failed(engine::EditError),
     Ready(Result<Vec<ProjectEntry>, String>),
     Listed(Result<Vec<ProjectEntry>, String>),
     Created(Result<(PathBuf, Vec<ProjectEntry>), String>),
     Renamed(Result<Vec<ProjectEntry>, String>),
     Duplicated {
-        result: Result<Vec<ProjectEntry>, String>,
+        result: Result<(), String>,
     },
     DuplicateFinished {
         failures: Vec<String>,
+        entries: Result<Vec<ProjectEntry>, String>,
     },
     Deleted {
         failures: Vec<String>,
-        entries: Vec<ProjectEntry>,
+        entries: Result<Vec<ProjectEntry>, String>,
     },
     Thumbnail(Result<Vec<ProjectEntry>, String>),
 }
@@ -144,16 +146,23 @@ impl ProjectsPage {
         self.events = events;
         self.ready = false;
         self.worker = Some(std::thread::spawn(move || {
-            catalog_worker(root, budget, requests, sender);
+            let failure = sender.clone();
+            if std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                catalog_worker(root, budget, requests, sender);
+            }))
+            .is_err()
+            {
+                let _ = failure.send(Event::Failed(engine::EditError::WorkerPanicked));
+            }
         }));
     }
 
     /// Restart after a catalog-open failure; existing rows remain until replaced.
     fn retry(&mut self) {
+        self.request = None;
         if let Some(worker) = self.worker.take() {
             let _ = worker.join();
         }
-        self.request = None;
         self.pending = 0;
         self.list_error = None;
         self.spawn();
@@ -184,7 +193,9 @@ impl ProjectsPage {
     }
 
     fn order(&self, preferences: &Preferences) -> Vec<usize> {
-        let needle = self.search.trim().to_lowercase();
+        let needle = engine::NfcText::from(self.search.trim())
+            .as_str()
+            .to_lowercase();
         let mut order: Vec<usize> = self
             .entries
             .iter()
@@ -225,8 +236,12 @@ impl ProjectsPage {
 
     fn set_entries(&mut self, entries: Vec<ProjectEntry>) {
         let ids: BTreeSet<ProjectId> = entries.iter().map(|entry| entry.id).collect();
+        self.textures.retain(|id, _| {
+            let before = self.entries.iter().find(|entry| entry.id == *id);
+            let after = entries.iter().find(|entry| entry.id == *id);
+            matches!((before, after), (Some(before), Some(after)) if before.thumbnail == after.thumbnail)
+        });
         self.entries = entries;
-        self.textures.retain(|id, _| ids.contains(id));
         self.selection.retain(|id| ids.contains(id));
         if self.anchor.is_some_and(|id| !ids.contains(&id)) {
             self.anchor = None;
@@ -289,6 +304,7 @@ impl ProjectsPage {
             return;
         }
         if self.send(Request::Duplicate { sources: ids }) {
+            self.notice = None;
             self.pending += 1;
             let total = self.selection.len();
             self.duplicate = Some((0, total.max(1)));
@@ -300,12 +316,14 @@ impl ProjectsPage {
             return;
         }
         if self.send(Request::Delete { ids }) {
+            self.notice = None;
             self.pending += 1;
         }
     }
 
     fn request_thumbnail(&mut self, id: ProjectId) {
         if self.send(Request::Thumbnail { id }) {
+            self.notice = None;
             self.pending += 1;
         }
     }
@@ -320,8 +338,10 @@ impl ProjectsPage {
                     self.pending = 0;
                     self.duplicate = None;
                     self.creating = false;
-                    self.list_error = Some(String::new());
-                    self.worker = None;
+                    self.list_error.get_or_insert_with(String::new);
+                    if let Some(worker) = self.worker.take() {
+                        let _ = worker.join();
+                    }
                     self.request = None;
                     return;
                 }
@@ -331,6 +351,7 @@ impl ProjectsPage {
 
     fn apply(&mut self, event: Event) {
         match event {
+            Event::Failed(error) => self.list_error = Some(error.to_string()),
             Event::Ready(result) => {
                 self.ready = true;
                 match result {
@@ -380,22 +401,31 @@ impl ProjectsPage {
                     }
                 }
             }
-            Event::Duplicated { result } => match result {
-                Ok(entries) => self.set_entries(entries),
-                Err(error) => {
+            Event::Duplicated { result } => {
+                if let Some((done, _)) = &mut self.duplicate {
+                    *done += 1;
+                }
+                if let Err(error) = result {
                     self.notice = Some((Text::ProjectsDuplicateFailed, Some(error)));
                 }
-            },
-            Event::DuplicateFinished { failures } => {
+            }
+            Event::DuplicateFinished { failures, entries } => {
                 self.pending = self.pending.saturating_sub(1);
                 self.duplicate = None;
+                match entries {
+                    Ok(entries) => self.set_entries(entries),
+                    Err(error) => self.list_error = Some(error),
+                }
                 if !failures.is_empty() {
                     self.notice = Some((Text::ProjectsDuplicateFailed, Some(failures.join("; "))));
                 }
             }
             Event::Deleted { failures, entries } => {
                 self.pending = self.pending.saturating_sub(1);
-                self.set_entries(entries);
+                match entries {
+                    Ok(entries) => self.set_entries(entries),
+                    Err(error) => self.list_error = Some(error),
+                }
                 self.selection.clear();
                 self.anchor = None;
                 self.delete = None;
@@ -475,7 +505,13 @@ impl ProjectsPage {
         ui.horizontal(|ui| {
             ui.heading(egui::RichText::new(tr(Text::Projects)).size(28.0));
             ui.add_space(18.0);
-            if action_button(ui, "project.create", Icon::Plus, tr(Text::NewProject), true) {
+            if action_button(
+                ui,
+                "project.create",
+                Icon::Plus,
+                tr(Text::NewProject),
+                !self.busy(),
+            ) {
                 self.request_create(tr(Text::NewProject).to_owned());
             }
             if action_button(
@@ -483,7 +519,7 @@ impl ProjectsPage {
                 "project.open",
                 Icon::FolderOpen,
                 tr(Text::OpenProject),
-                true,
+                !self.busy(),
             ) {
                 self.action = Some(ProjectsAction::OpenFile);
             }
@@ -562,6 +598,9 @@ impl ProjectsPage {
         egui::ScrollArea::vertical()
             .auto_shrink([false, false])
             .show(ui, |ui| {
+                if self.busy() {
+                    ui.disable();
+                }
                 if shown.is_empty() {
                     let text = if self.entries.is_empty() {
                         Text::ProjectsEmpty
@@ -811,7 +850,7 @@ impl ProjectsPage {
         let dark = preferences.dark;
         let busy = self.busy();
         let escape = ctx.input(|input| input.key_pressed(egui::Key::Escape));
-        if escape {
+        if escape && !busy {
             self.rename = None;
             self.info = None;
             self.delete = None;
@@ -822,11 +861,9 @@ impl ProjectsPage {
             let mut save = false;
             let mut cancel = false;
             let title = catalog::text(locale, Text::ProjectsRenameTitle);
-            let response = egui::Window::new(title)
-                .id(egui::Id::unique("projects.rename.dialog"))
-                .collapsible(false)
-                .resizable(false)
-                .show(ctx, |ui| {
+            let response =
+                egui::Modal::new(egui::Id::unique("projects.rename.dialog")).show(ctx, |ui| {
+                    ui.heading(title);
                     let response =
                         ui.add(egui::TextEdit::singleline(&mut dialog.name).desired_width(320.0));
                     set_author_id(&response, "projects.rename.input");
@@ -858,15 +895,13 @@ impl ProjectsPage {
                             "projects.rename.cancel",
                             Icon::X,
                             catalog::text(locale, Text::Cancel),
-                            true,
+                            !busy,
                         ) {
                             cancel = true;
                         }
                     });
                 });
-            if let Some(response) = response {
-                set_author_id(&response.response, "projects.rename.dialog");
-            }
+            set_author_id(&response.response, "projects.rename.dialog");
             if save {
                 let name = dialog.name.trim().to_owned();
                 if name.is_empty() {
@@ -896,11 +931,10 @@ impl ProjectsPage {
             let short_id = entry.short_id.clone();
             let title = catalog::text(locale, Text::ProjectsInfoTitle);
             let mut close = false;
-            let response = egui::Window::new(title)
-                .id(egui::Id::unique("projects.info.dialog"))
-                .collapsible(false)
-                .resizable(false)
-                .show(ctx, |ui| {
+            let response =
+                egui::Modal::new(egui::Id::unique("projects.info.dialog")).show(ctx, |ui| {
+                    ui.set_width(420.0);
+                    ui.heading(title);
                     ui.label(egui::RichText::new(name).strong().size(16.0));
                     ui.label(catalog::format(
                         locale,
@@ -926,15 +960,13 @@ impl ProjectsPage {
                         ui,
                         "projects.info.close",
                         Icon::X,
-                        catalog::text(locale, Text::Close),
+                        catalog::text(locale, Text::ProjectsInfoClose),
                         true,
                     ) {
                         close = true;
                     }
                 });
-            if let Some(response) = response {
-                set_author_id(&response.response, "projects.info.dialog");
-            }
+            set_author_id(&response.response, "projects.info.dialog");
             if close {
                 self.info = None;
             }
@@ -954,14 +986,14 @@ impl ProjectsPage {
             let mut confirm = false;
             let mut cancel = false;
             let title = catalog::text(locale, Text::ProjectsDeleteTitle);
-            let response = egui::Window::new(title)
-                .id(egui::Id::unique("projects.delete.dialog"))
-                .collapsible(false)
-                .resizable(false)
-                .show(ctx, |ui| {
+            let response =
+                egui::Modal::new(egui::Id::unique("projects.delete.dialog")).show(ctx, |ui| {
+                    ui.set_width(420.0);
+                    ui.heading(title);
                     ui.label(catalog::text(locale, Text::ProjectsDeletePrompt));
                     let names_label = names.join(", ");
-                    let response = ui.label(egui::RichText::new(names_label).strong());
+                    let response =
+                        ui.add(egui::Label::new(egui::RichText::new(names_label).strong()).wrap());
                     set_author_id(&response, "projects.delete.names");
                     if let Some(error) = &dialog.error {
                         ui.label(egui::RichText::new(error).color(theme::error_text(dark)));
@@ -981,15 +1013,13 @@ impl ProjectsPage {
                             "projects.delete.cancel",
                             Icon::X,
                             catalog::text(locale, Text::Cancel),
-                            true,
+                            !busy,
                         ) {
                             cancel = true;
                         }
                     });
                 });
-            if let Some(response) = response {
-                set_author_id(&response.response, "projects.delete.dialog");
-            }
+            set_author_id(&response.response, "projects.delete.dialog");
             if confirm {
                 let ids = dialog.ids.clone();
                 self.request_delete(ids);
@@ -1178,6 +1208,7 @@ fn name_and_metadata(
     );
     let response = ui.add(
         egui::Label::new(egui::RichText::new(text).color(theme::text(dark)))
+            .wrap()
             .sense(egui::Sense::click()),
     );
     set_author_id(&response, &format!("projects.card.{:016x}", entry.id.0));
@@ -1466,7 +1497,7 @@ fn catalog_worker(
                                 id: ProjectId(next),
                             },
                         )?;
-                        library.list()
+                        Ok(())
                     })()
                     .map_err(|error: engine::EditError| error.to_string());
                     if let Err(error) = &result {
@@ -1474,7 +1505,8 @@ fn catalog_worker(
                     }
                     let _ = events.send(Event::Duplicated { result });
                 }
-                let _ = events.send(Event::DuplicateFinished { failures });
+                let entries = library.list().map_err(|error| error.to_string());
+                let _ = events.send(Event::DuplicateFinished { failures, entries });
             }
             Request::Delete { ids } => {
                 let mut failures = Vec::new();
@@ -1483,7 +1515,7 @@ fn catalog_worker(
                         failures.push(error.to_string());
                     }
                 }
-                let entries = library.list().unwrap_or_default();
+                let entries = library.list().map_err(|error| error.to_string());
                 let _ = events.send(Event::Deleted { failures, entries });
             }
             Request::Thumbnail { id } => {
@@ -1536,5 +1568,99 @@ mod tests {
             display_time(Tick::from_seconds_f64(3661.5, time::Rounding::Nearest).unwrap()),
             "01:01:01.500"
         );
+    }
+
+    #[test]
+    fn catalog_retry_retains_rows_after_a_failed_refresh() {
+        let root = tempfile::tempdir().expect("directory");
+        {
+            let mut catalog = library(root.path());
+            for id in [1, 2] {
+                catalog
+                    .execute(
+                        ProjectId(id),
+                        Command::CreateProject {
+                            id: ProjectId(id),
+                            name: format!("Project {id}").as_str().into(),
+                        },
+                    )
+                    .expect("create");
+            }
+        }
+        let mut page =
+            ProjectsPage::new(root.path().to_owned(), ByteBudget::new(64 << 20).unwrap());
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+        while page.busy() {
+            page.tick();
+            assert!(std::time::Instant::now() < deadline);
+            std::thread::yield_now();
+        }
+        // Corruption of another row makes the post-delete listing fail. The
+        // last successful rows remain, and Retry must stop the live worker.
+        let path = root.path().join("0000000000000002/project.vibecut");
+        let original = std::fs::read(&path).unwrap();
+        std::fs::write(&path, b"invalid project").unwrap();
+        page.request_delete(vec![ProjectId(1)]);
+        while page.busy() {
+            page.tick();
+            assert!(std::time::Instant::now() < deadline);
+            std::thread::yield_now();
+        }
+        assert_eq!(page.entries.len(), 2);
+        assert!(page.list_error.is_some());
+        std::fs::write(path, original).unwrap();
+        page.retry();
+        while page.busy() {
+            page.tick();
+            assert!(std::time::Instant::now() < deadline);
+            std::thread::yield_now();
+        }
+        assert!(page.list_error.is_none());
+    }
+
+    #[test]
+    fn thumbnail_refresh_replaces_only_changed_textures() {
+        let root = tempfile::tempdir().expect("directory");
+        let mut catalog = library(root.path());
+        catalog
+            .execute(
+                ProjectId(1),
+                Command::CreateProject {
+                    id: ProjectId(1),
+                    name: "Alpha".into(),
+                },
+            )
+            .expect("create");
+        let mut entries = catalog.list().expect("list");
+        entries[0].thumbnail = Thumbnail::Ready {
+            width: 1,
+            height: 1,
+            rgba: vec![255, 0, 0, 255],
+        };
+        drop(catalog);
+        let mut page =
+            ProjectsPage::new(root.path().to_owned(), ByteBudget::new(64 << 20).unwrap());
+        page.set_entries(entries);
+        let context = egui::Context::default();
+        for changed in [false, true] {
+            page.textures.insert(
+                ProjectId(1),
+                context.load_texture(
+                    "test thumbnail",
+                    egui::ColorImage::new([1, 1], vec![egui::Color32::RED]),
+                    egui::TextureOptions::LINEAR,
+                ),
+            );
+            let mut entries = page.entries.clone();
+            if changed {
+                entries[0].thumbnail = Thumbnail::Ready {
+                    width: 1,
+                    height: 1,
+                    rgba: vec![0, 255, 0, 255],
+                };
+            }
+            page.set_entries(entries);
+            assert_eq!(page.textures.contains_key(&ProjectId(1)), !changed);
+        }
     }
 }

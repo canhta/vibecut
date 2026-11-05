@@ -55,6 +55,9 @@ display ID) come from each card's actions. A catalog worker executes every
 project JSON itself. Opening a card and the new-project entry point then use the
 same lifecycle/autosave path as external project files. Managed project listing
 is supplied by [engine library](../../crates/engine/README.md#managed-project-library); the projects-page feature owns its presentation.
+`cargo xtask ui-audit projects projects-rename projects-delete projects-info`
+captures the populated page and its modal dialogs offscreen in both themes at
+1x/2x. Failed catalog refresh retains the last listing; Retry restarts its worker.
 Engine lifecycle hooks backfill and refresh project-owned thumbnails, including
 close without saving editable content. Preview,
 timeline basics, transport and the export dialog are present; text/audio controls
