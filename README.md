@@ -130,8 +130,7 @@ cargo xtask ffmpeg
 cargo run --release -p vibecut
 ```
 
-Linux builds need Bash, Make, Perl, pkg-config, Clang/LLVM, CMake, Ninja, NASM
-and the desktop development headers listed in
+Linux build packages are listed in
 [workflows](docs/engineering/workflows.md#ffmpeg-provisioning).
 
 ## Contributing

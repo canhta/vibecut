@@ -24,7 +24,7 @@ Document accepted third-party limitations. Only an unreleased upstream crash/sec
 
 `cargo xtask ffmpeg` resolves/builds latest stable FFmpeg from verified source and logs the version. Distribution obligations live in [open-source policy](open-source.md#ffmpeg-distribution).
 
-Linux builds the same verified FFmpeg from source as macOS, with the GPL build and libx264: `cargo xtask ffmpeg` admits only `linux-x86_64`/`linux-aarch64` on the running host and needs Bash, Make, Perl, pkg-config, Clang/LLVM (`clang`, `clang++`, `llvm-ar`, `llvm-nm`), CMake and Ninja, plus NASM on x86_64. Managed tools carry an `$ORIGIN/../lib` rpath, and Cargo children receive `FFMPEG_DIR`, `PKG_CONFIG_PATH` and `LD_LIBRARY_PATH`. External ffmpeg/ffprobe remain separately installed tools for oracle admission.
+Linux builds the same verified FFmpeg from source as macOS, with the GPL build and libx264: `cargo xtask ffmpeg` admits only `linux-x86_64`/`linux-aarch64` on the running host and needs Bash, Make, Perl, pkg-config, Clang/LLVM (`clang`, `clang++`, `llvm-ar`, `llvm-nm`), CMake, Ninja, NASM on x86_64, and the app's desktop dependencies: `libasound2-dev`, `libxkbcommon-dev`, `libwayland-dev`, `libudev-dev`, `libx11-dev`, `libxcursor-dev`, `libxrandr-dev`, `libxi-dev`, `libxinerama-dev`, `libgl1-mesa-dev` and `libegl1-mesa-dev`. Managed tools carry an `$ORIGIN/../lib` rpath, and Cargo children receive `FFMPEG_DIR`, `PKG_CONFIG_PATH` and `LD_LIBRARY_PATH`. External ffmpeg/ffprobe remain separately installed tools for oracle admission.
 
 Windows needs architecture-matched MSYS2 CLANG64 (x64) or CLANGARM64 (arm64), Bash, Make, Perl (libvpx configure), CMake, Ninja, pkg-config, NASM and Clang/LLVM; Rust uses MSVC. Native xtask caches under `USERPROFILE`, resolves Bash/Make/cygpath to absolute MSYS2 `usr/bin` paths on `PATH` and logs them; incomplete installations are refused rather than using Windows/WSL/Git Bash. Static Opus/libvpx builds request static pkg-config metadata, including private pthread links.
 
@@ -59,7 +59,7 @@ build provisions the native archive.
 
 Native media cache keys use resolved FFmpeg/Opus/libvpx/x264 versions plus recipe/patch/toolchain hashes and platform, with exact matches. Provisioning resolves stable tags even on hits, saves successful native builds before later failures, and skips source-build-only macOS tools on hits. Synthetic fixture keys follow `crates/media/tests/`; rendered outputs are uncached. Log exact-hit receipts in logs/step summaries.
 
-Release/media/render dispatches set `require-oracles`; ordinary manual CI also requires macOS oracles, with Windows following the input. Oracle admission and evidence follow [verification](verification.md#checks).
+Release/media/render dispatches set `require-oracles`; ordinary manual CI also requires oracles, which the macOS job installs with Homebrew and the Linux job with the distribution `ffmpeg` package, with Windows following the input. Oracle admission and evidence follow [verification](verification.md#checks).
 
 ## Distribution and release
 
