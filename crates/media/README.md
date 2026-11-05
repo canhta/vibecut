@@ -350,7 +350,7 @@ shorter than one window still yields the windows that start inside it.
 frames (including seek preroll and replay), 60,001 MFCC frames and a 16 Mi-pixel
 face-crop rectangle by default; callers may tighten these. The same packet/frame cancellation and native allocation ceilings
 as the rest of this crate apply. Observed on the `p1-clips/12` 180 s excerpt:
-all 17,999 MFCC frames were bit-exact in f32 against `python_speech_features`;
+all 17,999 MFCC frames were bit-exact in f32 against the upstream speech-features reference;
 face crops matched the saved reference tensors with a mean absolute difference of
 1.84 gray levels (maximum 9) in the final 112x112 crop, because the production
 FFmpeg hardware decode/color conversion is not OpenCV `VideoCapture`'s decode

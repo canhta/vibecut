@@ -49,10 +49,11 @@ Characters outside the subset resolve deterministically to the preferred face an
 missing glyph. A full-font or downloadable-font follow-up can extend coverage without changing
 layout logic. Every asset has a licence and attribution sidecar under `assets/fonts/`.
 
-`tools/subset-cjk-font.py` reproduces the subset from the pinned Sans2.004 archive with
-fontTools 4.68.0. It checks the source OTF and output SHA-256 values recorded in the attribution
-sidecar, so a regeneration mismatch is a hard failure. The source archive and OTF hashes are
-also recorded there.
+The [CJK attribution](../../assets/fonts/VibeCutSansCJK-Regular.otf.attribution) owns the
+external fontTools 4.68.0 regeneration procedure: pinned Sans2.004 archive/source/output
+SHA-256 values, exact GB2312 and Big5 byte ranges, Unicode ranges and explicit characters,
+literal `pyftsubset` options, renamed name IDs and timestamp handling. Verify those hashes
+before replacing the committed font; regeneration is outside the repository build.
 
 Fallback is deterministic: the preferred face wins when it covers the character; otherwise the
 profile chain is searched in order, then the bundled table order. Whitespace and control

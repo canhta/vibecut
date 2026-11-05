@@ -16,10 +16,10 @@ character), while the documented per-character price gives an actual cost of 1,7
 Micro-USD.
 
 The ignored live test exports this capture when
-`VIBECUT_ELEVENLABS_CAPTURE_DIR` is set; the committed file is the VI run. Replay:
+`VIBECUT_ELEVENLABS_CAPTURE_DIR` is set; the committed file is the VI run. Replay from the main checkout:
 
 ```sh
-set -a; . /Users/canh/Startup/VibeCut/.privates/.env; set +a
+set -a; . .privates/.env; set +a
 VIBECUT_LIVE_AI=1 VIBECUT_ELEVENLABS_VOICE_ID=EXAVITQu4vr4xnSDxMaL \
 VIBECUT_ELEVENLABS_CAPTURE_DIR=/tmp/elevenlabs-capture \
 cargo test -p ai --test elevenlabs_speech \
@@ -32,22 +32,11 @@ capture. The endpoint's `pcm_24000` response is headerless little-endian PCM16, 
 tests strip the WAV `data` chunk before replaying it as the response body. The WAV
 container exists so the audio can be inspected with ordinary tools.
 
-```sh
-python3 - <<'PY'
-import math, struct, wave
-rate, n = 24000, 6000
-samples = [
-    int(round(0.25 * min(1.0, i / 240.0, (n - 1 - i) / 240.0)
-              * 32767 * math.sin(2 * math.pi * 440.0 * i / rate)))
-    for i in range(n)
-]
-with wave.open('success.wav', 'wb') as w:
-    w.setnchannels(1)
-    w.setsampwidth(2)
-    w.setframerate(rate)
-    w.writeframes(b''.join(struct.pack('<h', s) for s in samples))
-PY
-```
+The synthetic sample at index `i` is round-to-nearest-even of
+`0.25 × min(1, i / 240, (5999 - i) / 240) × 32767 × sin(2π × 440 × i / 24000)`,
+for `i = 0..5999`. Samples are stored as little-endian signed 16-bit PCM in a
+mono 24 kHz WAV container. This formula records the original fixture generator;
+the committed bytes remain the replay input.
 
 ## JSON
 

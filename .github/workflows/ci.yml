@@ -28,10 +28,25 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: false
-      - name: Check workflow boundary behavior
-        run: python3 -m unittest discover -s .github/scripts -p 'test_*.py' -v
       - id: paths
-        run: python3 .github/scripts/changes.py
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BEFORE: ${{ github.event.before }}
+          AFTER: ${{ github.sha }}
+        run: |
+          docs_only=false
+          if [[ "$EVENT_NAME" == push && -n "$BEFORE" && ! "$BEFORE" =~ ^0+$ ]]; then
+            git diff -z --name-only --no-renames "$BEFORE..$AFTER" > "$RUNNER_TEMP/changed-paths"
+            count=0
+            docs_only=true
+            while IFS= read -r -d '' path; do
+              count=$((count + 1))
+              case "$path" in *.md|docs/*) ;; *) docs_only=false ;; esac
+            done < "$RUNNER_TEMP/changed-paths"
+            if [[ "$count" == 0 ]]; then docs_only=false; fi
+          fi
+          echo "docs-only=$docs_only" >> "$GITHUB_OUTPUT"
 
   docs:
     needs: changes
@@ -117,4 +132,11 @@ jobs:
       - name: Require every selected check
         env:
           NEEDS_JSON: ${{ toJSON(needs) }}
-        run: python3 .github/scripts/gate.py
+        shell: bash
+        run: |
+          jq -e '
+            . as $needs |
+            (["changes", "docs", "lint"] +
+              (if .changes.outputs["docs-only"] == "true" then [] else ["test"] end)) |
+            all(.[]; $needs[.].result == "success")
+          ' <<< "$NEEDS_JSON"

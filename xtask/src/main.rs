@@ -1,8 +1,11 @@
 //! Workspace checks and admitted crate scaffolding.
 mod benchmark;
+mod build;
+mod checkout;
 mod clip_eval;
 mod ffmpeg;
 mod oracles;
+mod tickets;
 
 use serde_json::Value;
 use std::collections::BTreeMap;
@@ -13,7 +16,7 @@ use std::process::{Command, ExitCode, Output};
 
 fn main() -> ExitCode {
     match run() {
-        Ok(()) => ExitCode::SUCCESS,
+        Ok(code) => code,
         Err(error) => {
             eprintln!("{error}");
             ExitCode::FAILURE
@@ -273,7 +276,7 @@ fn assets(root: &Path) -> Result<(), String> {
 }
 
 fn names(root: &Path) -> Result<(), String> {
-    let patterns = root.join(".scratch/forbidden-names.txt");
+    let patterns = checkout::main(root)?.join(".scratch/forbidden-names.txt");
     if !patterns.exists() {
         return Ok(());
     }
@@ -356,13 +359,26 @@ fn new_crate(root: &Path, name: &str) -> Result<(), String> {
     result
 }
 
-fn run() -> Result<(), String> {
+fn run() -> Result<ExitCode, String> {
     // Runtime, not env!: shared target dirs reuse this binary across worktrees.
     let manifest_dir = env::var_os("CARGO_MANIFEST_DIR").ok_or("run via cargo xtask")?;
     let root = Path::new(&manifest_dir)
         .parent()
         .ok_or("xtask must live in workspace root")?;
-    let args: Vec<_> = env::args().skip(1).collect();
+    let raw: Vec<_> = env::args_os().skip(1).collect();
+    if raw.first().is_some_and(|arg| arg == "build") {
+        return match raw.get(1).filter(|arg| *arg == "--") {
+            Some(_) if raw.len() > 2 => build::run(root, raw.get(2..).unwrap_or(&[])),
+            _ => Err("usage: cargo xtask build -- COMMAND [ARGS...]".into()),
+        };
+    }
+    let args: Vec<_> = raw
+        .into_iter()
+        .map(|s| {
+            s.into_string()
+                .map_err(|_| "command arguments must be UTF-8")
+        })
+        .collect::<Result<_, _>>()?;
     match args
         .iter()
         .map(String::as_str)
@@ -378,6 +394,10 @@ fn run() -> Result<(), String> {
             if status.success(){Ok(())}else{Err(format!("UI audit failed: {status}"))}
         }
         ["media-bench"] => benchmark::media(root),
+        ["frontier"] => tickets::frontier(root, None),
+        ["frontier", assignee] => tickets::frontier(root, Some(assignee)),
+        ["board"] => tickets::board(root, 8765),
+        ["board", port] => tickets::board(root, port.parse().map_err(|_| "invalid port")?),
         ["clip-eval", ..] => clip_eval::run(root, args.get(1..).unwrap_or(&[])),
         ["ffmpeg"] => ffmpeg::provision(None),
         ["ffmpeg", "--cache-key"] => ffmpeg::cache_key(),
@@ -397,10 +417,10 @@ fn run() -> Result<(), String> {
         ["ci"] => ci(root, false),
         ["ci", "--require-oracles"] => ci(root, true),
         _ => Err(
-            "usage: cargo xtask <ffmpeg [--target PLATFORM|--cache-key]|ui-audit [OUTPUT_DIR]|media-bench|clip-eval SET [OPTIONS]|ci [--require-oracles]|checks|clippy|lint|test|docs|layers|assets|new-crate NAME>"
+            "usage: cargo xtask <build -- COMMAND [ARGS...]|frontier [ASSIGNEE]|board [PORT]|ffmpeg [--target PLATFORM|--cache-key]|ui-audit [OUTPUT_DIR]|media-bench|clip-eval SET [OPTIONS]|ci [--require-oracles]|checks|clippy|lint|test|docs|layers|assets|new-crate NAME>"
                 .into(),
         ),
-    }
+    }.map(|()| ExitCode::SUCCESS)
 }
 
 #[cfg(test)]
@@ -626,8 +646,8 @@ mod tests {
     #[test]
     fn name_gate_checks_working_files_and_branch_messages_and_skips_missing_policy() {
         let ws = Workspace::new();
-        names(&ws.0).unwrap();
         checked(&ws.0, "git", &["init", "--initial-branch=main"]).unwrap();
+        names(&ws.0).unwrap();
         checked(&ws.0, "git", &["config", "user.name", "Harness test"]).unwrap();
         checked(
             &ws.0,

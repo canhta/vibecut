@@ -1,0 +1,60 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>VibeCut board</title><style>
+:root{--bg:#f6f7f9;--panel:#fff;--ink:#1d2128;--mute:#6b7280;--line:#e3e6ea;--p0:#d93636;--p1:#d98a1c;--p2:#5b7bd5;--ok:#2f9e5b;--ready:#0e8f8f}
+@media (prefers-color-scheme:dark){:root{--bg:#121417;--panel:#1b1e23;--ink:#e6e8eb;--mute:#9aa1ab;--line:#2c3138}}
+*{box-sizing:border-box}body{margin:0;font:13px/1.4 -apple-system,system-ui,sans-serif;background:var(--bg);color:var(--ink)}
+header{position:sticky;top:0;background:var(--panel);border-bottom:1px solid var(--line);padding:10px 16px;display:flex;gap:10px;align-items:center;flex-wrap:wrap;z-index:2}
+h1{font-size:15px;margin:0 8px 0 0}select,input{font:inherit;padding:4px 6px;border:1px solid var(--line);border-radius:6px;background:var(--panel);color:var(--ink)}
+.tabs button{font:inherit;border:1px solid var(--line);background:var(--panel);color:var(--ink);padding:4px 10px;border-radius:6px;cursor:pointer}.tabs button.on{background:var(--ink);color:var(--panel)}
+.meta{margin-left:auto;color:var(--mute)}main{padding:16px}
+.cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:12px}
+.ms{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:12px}.ms h3{margin:0 0 6px;font-size:14px}
+.bar{display:flex;height:10px;border-radius:5px;overflow:hidden;background:var(--line);margin:6px 0}.bar span{display:block}
+.legend{color:var(--mute);font-size:12px}.kpi{display:flex;gap:16px;margin-bottom:14px;flex-wrap:wrap}.kpi div{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:10px 14px}.kpi b{display:block;font-size:20px}
+.board{display:grid;grid-template-columns:repeat(5,minmax(200px,1fr));gap:10px;overflow-x:auto}
+.col{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:8px;min-height:120px}.col h2{font-size:12px;text-transform:uppercase;letter-spacing:.04em;color:var(--mute);margin:2px 4px 8px}
+.t{border:1px solid var(--line);border-left:4px solid var(--p2);border-radius:8px;padding:6px 8px;margin-bottom:6px;cursor:pointer;background:var(--bg)}
+.g{display:grid;gap:3px 0;align-items:center;background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:10px;overflow-x:auto}.g .lab{font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;padding-right:8px;cursor:pointer}.g .b{height:16px;border-radius:4px;cursor:pointer;margin:0 2px}.g .crit{outline:2px solid var(--p0)}.g .hd{font-size:11px;color:var(--mute);text-align:center}.g .ms{grid-column:1/-1;font-weight:600;margin-top:8px;border:0;padding:0;background:none}
+.t.P0{border-left-color:var(--p0)}.t.P1{border-left-color:var(--p1)}.t .id{font-weight:600}.t .sub{color:var(--mute);font-size:12px}
+.tag{display:inline-block;font-size:11px;padding:0 6px;border-radius:10px;border:1px solid var(--line);margin-right:4px}.tag.ready{border-color:var(--ready);color:var(--ready)}
+table{border-collapse:collapse;width:100%;background:var(--panel);border:1px solid var(--line);border-radius:10px;overflow:hidden}td,th{padding:6px 8px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}th{color:var(--mute);font-weight:500}
+dialog{max-width:900px;width:92vw;border:1px solid var(--line);border-radius:12px;background:var(--panel);color:var(--ink)}dialog pre{white-space:pre-wrap;font:12px/1.5 ui-monospace,monospace;max-height:70vh;overflow:auto}
+</style></head><body>
+<header><h1>VibeCut board</h1><span class="tabs"><button data-v="progress" class="on">Progress</button><button data-v="kanban">Kanban</button><button data-v="next">Next up</button><button data-v="gantt">Roadmap</button></span>
+<select id="fm"><option value="">All milestones</option></select><select id="fp"><option value="">All priorities</option><option>P0</option><option>P1</option><option>P2</option></select>
+<select id="fa"><option value="">All assignees</option><option>opencode</option><option>codex</option><option>human</option></select><input id="q" placeholder="Search…">
+<span class="meta" id="meta"></span></header><main id="main"></main><dialog id="dlg"><pre id="dtext"></pre><form method="dialog"><button>Close</button></form></dialog>
+<script>
+const COLS=['open','claimed','blocked','resolved','wontfix'],COLOR={resolved:'var(--ok)',claimed:'var(--p1)',open:'var(--line)',blocked:'var(--p0)',wontfix:'var(--mute)'},LABEL={open:'Open',claimed:'In progress',blocked:'Blocked',resolved:'Done',wontfix:"Won't fix"};
+const U=new URLSearchParams(location.search);let data=[],view=U.get('v')||'progress';const $=s=>document.querySelector(s);
+const esc=s=>s.replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
+function filt(){const m=$('#fm').value,p=$('#fp').value,a=$('#fa').value,q=$('#q').value.toLowerCase();
+ return data.filter(t=>(!m||t.milestone==m)&&(!p||t.priority==p)&&(!a||t.assignee==a)&&(!q||(t.id+' '+t.title).toLowerCase().includes(q)))}
+function card(t){return `<div class="t ${t.priority}" data-id="${t.id}"><div class="id">${t.id} <span class="tag">${t.priority}</span>${t.ready?'<span class="tag ready">ready</span>':''}</div>
+ <div>${esc(t.title.replace(/^\S+\s/,''))}</div><div class="sub">${t.assignee}${t.waitingOn.length&&t.status=='open'?' · waits '+t.waitingOn.join(', '):''}${t.unblocks?' · unblocks '+t.unblocks:''}</div></div>`}
+function bar(ts){const n=ts.length||1;return '<div class="bar">'+COLS.map(s=>{const c=ts.filter(t=>t.status==s).length;return c?`<span title="${LABEL[s]} ${c}" style="width:${c/n*100}%;background:${COLOR[s]}"></span>`:''}).join('')+'</div>'}
+function render(){const ts=filt(),done=ts.filter(t=>t.status=='resolved').length,live=ts.filter(t=>t.status!='wontfix').length;let h='';
+ if(view=='progress'){h+=`<div class="kpi"><div><b>${Math.round(done/(live||1)*100)}%</b>done (${done}/${live})</div><div><b>${ts.filter(t=>t.status=='claimed').length}</b>in progress</div><div><b>${ts.filter(t=>t.ready).length}</b>ready</div><div><b>${ts.filter(t=>t.status=='open'&&!t.ready).length}</b>waiting</div></div>`;
+  for(const p of ['P0','P1','P2']){const pt=ts.filter(t=>t.priority==p);if(!pt.length)continue;const ms=[...new Set(pt.map(t=>t.milestone))];
+   h+=`<h2>${p} <span class="legend">${pt.filter(t=>t.status=='resolved').length}/${pt.filter(t=>t.status!='wontfix').length} resolved</span></h2><div class="cards">`+ms.map(m=>{const mt=pt.filter(t=>t.milestone==m),d=mt.filter(t=>t.status=='resolved').length,l=mt.filter(t=>t.status!='wontfix').length;
+    return `<div class="ms"><h3>${m}</h3>${bar(mt)}<div class="legend">${d}/${l} resolved · ${mt.filter(t=>t.status=='claimed').length} in progress · ${mt.filter(t=>t.ready).length} ready</div></div>`}).join('')+'</div>'}
+  h+='<p class="legend">Bar: green resolved · amber claimed · grey open · red blocked.</p>'}
+ if(view=='kanban'){h='<div class="board">'+COLS.map(s=>{const c=ts.filter(t=>t.status==s).sort((a,b)=>a.priority.localeCompare(b.priority)||b.unblocks-a.unblocks);return `<div class="col"><h2>${LABEL[s]} (${c.length})</h2>${c.map(card).join('')}</div>`}).join('')+'</div>'}
+ if(view=='next'){const r=ts.filter(t=>t.status=='claimed'||t.ready).sort((a,b)=>(a.status=='claimed'?0:1)-(b.status=='claimed'?0:1)||a.priority.localeCompare(b.priority)||b.unblocks-a.unblocks);
+  h='<table><tr><th>Ticket</th><th>Title</th><th>Pri</th><th>State</th><th>Assignee</th><th>Unblocks</th></tr>'+r.map(t=>`<tr class="t ${t.priority}" data-id="${t.id}"><td>${t.id}</td><td>${esc(t.title)}</td><td>${t.priority}</td><td>${t.status=='claimed'?'in progress':'ready'}</td><td>${t.assignee}</td><td>${t.unblocks}</td></tr>`).join('')+'</table>'}
+ if(view=='gantt'){const W=Math.max(0,...ts.map(t=>t.wave))+1,ms=[...new Set(ts.map(t=>t.milestone))];
+  h=`<p class="legend">Columns are dependency waves (a ticket starts after everything it waits on), not calendar dates. Red outline: critical path. Colour: status.</p><div class="g" style="grid-template-columns:260px repeat(${W},minmax(28px,1fr))"><div></div>`+[...Array(W).keys()].map(i=>`<div class="hd">W${i}</div>`).join('');
+  for(const m of ms){h+=`<div class="ms">${m}</div>`;for(const t of ts.filter(x=>x.milestone==m).sort((a,b)=>a.wave-b.wave||a.priority.localeCompare(b.priority))){
+   h+=`<div class="lab" data-id="${t.id}" title="${esc(t.title)}">${t.priority} ${t.id.split('/')[1]} ${esc(t.title.replace(/^\S+\s/,''))}</div>`+[...Array(W).keys()].map(i=>i==t.wave?`<div class="b${t.critical?' crit':''}" data-id="${t.id}" title="${t.id} ${LABEL[t.status]||t.status}" style="background:${COLOR[t.status]}"></div>`:'<div></div>').join('')}}
+  h+='</div>'}
+ $('#main').innerHTML=h;document.querySelectorAll('[data-id]').forEach(e=>e.onclick=()=>{$('#dtext').textContent=data.find(t=>t.id==e.dataset.id).text;$('#dlg').showModal()})}
+async function load(){try{data=await (await fetch('data.json',{cache:'no-store'})).json();const ms=[...new Set(data.map(t=>t.milestone))],sel=$('#fm'),cur=sel.value;
+ sel.innerHTML='<option value="">All milestones</option>'+ms.map(m=>`<option>${m}</option>`).join('');sel.value=cur||U.get('m')||'';
+ $('#meta').textContent=`${data.length} tickets · updated ${new Date().toLocaleTimeString()}`;if(!$('#dlg').open)render()}catch(e){$('#meta').textContent='board server offline'}}
+const F={m:'#fm',p:'#fp',a:'#fa',q:'#q'};
+function save(){const u=new URLSearchParams();if(view!='progress')u.set('v',view);for(const k in F){const v=$(F[k]).value;if(v)u.set(k,v)}history.replaceState(null,'',u.toString()?'?'+u:location.pathname)}
+function tab(v){view=v;document.querySelectorAll('.tabs button').forEach(x=>x.classList.toggle('on',x.dataset.v==v))}
+for(const k of ['p','a','q'])if(U.get(k))$(F[k]).value=U.get(k);tab(view);
+document.querySelectorAll('.tabs button').forEach(b=>b.onclick=()=>{tab(b.dataset.v);save();render()});
+Object.values(F).forEach(s=>$(s).oninput=()=>{save();render()});load();setInterval(load,10000);
+</script></body></html>

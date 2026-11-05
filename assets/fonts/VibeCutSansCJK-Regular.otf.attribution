@@ -5,4 +5,33 @@ source: https://github.com/notofonts/noto-cjk/releases/tag/Sans2.004 (18_NotoSan
 license: OFL-1.1
 license-file: assets/fonts/OFL-NotoSansSC.txt
 added: p0-core-04-text
-notes: Modified subset of NotoSansSC-Regular.otf covering GB2312, Big5 level 1, ASCII, CJK punctuation and fullwidth forms (9,804 characters); renamed to VibeCut Sans CJK. Regenerate with tools/subset-cjk-font.py and fontTools 4.68.0; source archive sha256 4d107c09ada479d3e48b6e78c83835773cbd9214bf6e12cdb7b60f8e068292ec, source OTF sha256 faa6c9df652116dde789d351359f3d7e5d2285a2b2a1f04a2d7244df706d5ea9, output sha256 ad6c0e9b2a8c442c8022ed3d98e51d5fca76148a45d25f2970142003ab3c4bf6.
+notes: Modified subset of NotoSansSC-Regular.otf covering common Simplified and Traditional Chinese (9,804 characters); renamed to VibeCut Sans CJK. External fontTools 4.68.0 provenance is recorded below; the font is committed, not regenerated during a build.
+
+Pinned inputs and output (SHA-256):
+  Sans2.004 / 18_NotoSansSC.zip: 4d107c09ada479d3e48b6e78c83835773cbd9214bf6e12cdb7b60f8e068292ec
+  NotoSansSC-Regular.otf: faa6c9df652116dde789d351359f3d7e5d2285a2b2a1f04a2d7244df706d5ea9
+  VibeCutSansCJK-Regular.otf: ad6c0e9b2a8c442c8022ed3d98e51d5fca76148a45d25f2970142003ab3c4bf6
+
+Character set construction (union, sorted by Unicode scalar, UTF-8 characters.txt):
+  Decode every byte pair with lead 0x81..0xFE and trail 0x40..0xFF as GB2312,
+  ignoring invalid pairs; union every successfully decoded character.
+  Repeat for Big5 with lead 0xA4..0xC6 and trail 0x40..0xFF (level-1 range).
+  Add U+0020..U+007E, U+3000..U+303F and U+FF00..U+FFEF (inclusive).
+  Add the explicit string: 、。！？：；“”‘’（）《》【】…—·「」『』VibeCut越南语英语中文简体繁體
+
+External pyftsubset invocation (fontTools 4.68.0):
+  pyftsubset NotoSansSC-Regular.otf --text-file=characters.txt
+    --layout-features=kern,liga,clig,vert,vrt2 --glyph-names --symbol-cmap
+    --legacy-cmap --notdef-glyph --notdef-outline --recommended-glyphs
+    --name-IDs=* --name-legacy --name-languages=* --no-hinting
+    --output-file=subset.otf
+  Pass each option literally (quote shell wildcard values). After subsetting,
+  replace every existing name record with these name-ID values:
+    1,16,21: VibeCut Sans CJK
+    3: VibeCut Sans CJK; subset of Noto Sans SC Regular; p0-core-04-text
+    4,18: VibeCut Sans CJK Regular
+    6: VibeCutSansCJK-Regular
+    17,22: Regular
+  Preserve the source timestamp (fontTools TTFont.recalcTimestamp = false) when
+  saving the renamed face. Verify the source and output hashes before replacing
+  the committed font; a mismatch refuses the replacement.
