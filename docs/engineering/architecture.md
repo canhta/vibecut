@@ -2,13 +2,7 @@
 
 ## Crate map
 
-The core runs headless: editing, tests and the CLI need no window or UI toolkit;
-only `apps/*` may depend on UI, native window/dialog, audio-device or accessibility
-crates, including the app-owned wgpu adapter. Apps compose concrete adapters; the desktop app uses egui and wgpu. Admit each crate with
-its first working ticket. `cargo xtask layers` enforces this table: an edge not listed
-is forbidden (all dependency kinds count), and outside `apps/*` it denies the app-only
-UI/GPU, native window/dialog, audio-device and accessibility crates, admitting one to that list only
-with a named consumer.
+The core runs headless: editing, tests and the CLI need no window or UI toolkit; only `apps/*` may depend on UI, native window/dialog, audio-device or accessibility crates, including the app-owned wgpu adapter. Apps compose concrete adapters; the desktop app uses egui and wgpu. Admit each crate with its first working ticket. `cargo xtask layers` enforces this table: an edge not listed is forbidden (all dependency kinds count), and outside `apps/*` it denies the app-only UI/GPU, native window/dialog, audio-device and accessibility crates, admitting one to that list only with a named consumer.
 
 | Package | Path | Owns | May depend on |
 |---|---|---|---|
@@ -24,104 +18,44 @@ with a named consumer.
 | vibecut-cli | apps/vibecut-cli | Headless adapter: CLI arguments, typed exit codes, dispatch, project lease composition and export admission | engine, media, project, render, time |
 | vibecut | apps/vibecut | Desktop app: UI, playback, wgpu compositor, preferences, app controls and inspection | time, engine, media, project, captions, text, render, ai |
 
-Only `media` links FFmpeg. Render's CPU compositor is the reference shared by preview
-and export; the app owns the optional wgpu adapter behind render's interface. Update
-this table in the same change that adds a responsibility or edge.
+Only `media` links FFmpeg. Render's CPU compositor is the reference shared by preview and export; the app owns the optional wgpu adapter behind render's interface. Update this table in the same change that adds a responsibility or edge.
 
 ## Contracts
 
-Names here and in the [glossary](../../GLOSSARY.md) match the code; the owner crate's
-README holds the details.
+The [glossary](../../GLOSSARY.md) owns domain definitions; crate READMEs own contract details. This index records the seams:
 
-| Contract | Owner | Meaning |
-|---|---|---|
-| SourceAsset | media | Validated source identity, path, content hash, persistable probe |
-| Project | project | Immutable validated timeline snapshot, versioned persistence and writer lease; see [project contract](../../crates/project/README.md#writer-lease-and-save-acknowledgement) |
-| Param, keyframes | project | Item-relative parameter paths, validated channels, interpolation and time propagation; see [animation contract](../../crates/project/README.md#animated-parameters) |
-| SourceRange | time | Nonempty half-open `[start, end)` in source ticks |
-| Transcript | captions | Stable segments, optional word and token timing with raw/NFC/display correspondence, provider fingerprint |
-| Cue | captions | Source range and per-language text with edit flags; user edits survive unless a command overrides them |
-| EditMapping | captions | Pure source-to-output segments; one source range may appear several times |
-| LanguageProfile | captions | Per-language segmentation, punctuation and font fallback data |
-| Job | engine | Identity, input fingerprint, progress, cancellation, typed failure, checkpoint |
-| Session, commands | engine | Owns immutable Arc<Project> snapshots and bounded history; typed Command and `execute(command_id, params) -> Result<Outcome>`; see [engine contract](../../crates/engine/README.md) |
-| Codec interfaces | media | Reference-counted packets and frames, rational time bases, decode/encode/flush, seek |
-| Vision preparation | media | Bounded exact-time shot frames, face crops and 16 kHz MFCC grid; detector inference and tracking stay with their owners; see [media vision preparation](../../crates/media/README.md#vision-preparation) |
-| Export execution | render | Project snapshot, range and settings in; progress and cancellation hooks out |
-| Clip batch export | engine | One job per accepted ordered-segment short, with output naming, cue mapping, per-short cancel/retry; see [engine contract](../../crates/engine/README.md#clip-batch-export) |
-| Local models | ai + engine | ai owns catalog/download consent/integrity and shared transport; engine owns transfers and native ArtifactCache bundles; see [model transfer contract](../../crates/engine/README.md#local-model-transfers) |
-| Clip boundary adjustment | engine | Ordered source segments in; safe frame-snapped ranges and per-edge deltas out; captions owns speech groups, media owns energy measurements; see [engine contract](../../crates/engine/README.md#clip-boundary-adjustment) |
-| Vision detectors | ai | Bounded prepared tensors and shot results, tract inference, in-memory shape-plan cache; [vision contract](../../crates/ai/README.md#local-vision-detectors) |
-| Provider interfaces | ai | Transcriber, Aligner, Translator, ClipSuggester, SpeechSynthesizer; capabilities per model and language; request-scoped consent |
+| Area | Contract owner |
+|---|---|
+| SourceAsset, codecs, probe, packet/frame timing | [media](../../crates/media/README.md#entry-points-and-timing) |
+| Project, validation, persistence, writer lease | [project](../../crates/project/README.md#writer-lease-and-save-acknowledgement) |
+| Param and keyframes | [project animation](../../crates/project/README.md#animated-parameters) |
+| SourceRange | [time](../../crates/time/README.md) |
+| Transcript, Cue, EditMapping, LanguageProfile | [captions](../../crates/captions/README.md) |
+| Session, registry, transactions, gestures, undo/redo | [engine](../../crates/engine/README.md#transactions-gestures-and-changes) |
+| Control schemas, revisions, receipts, resync events | [engine control](../../crates/engine/README.md#control-admission-revisions-and-receipts) |
+| Job runner, scheduling, retries, checkpoints, aggregate bytes | [engine jobs](../../crates/engine/README.md#background-jobs-and-byte-policy) |
+| Row tasks and native conversion worker allowance | [engine kernel execution](../../crates/engine/README.md#render-kernel-execution) |
+| Export execution | [render](../../crates/render/README.md#export-and-publication) |
+| Clip naming, cue mapping, per-short cancel/retry | [engine batch export](../../crates/engine/README.md#clip-batch-export) |
+| Local model catalog, consent, integrity, transport / transfers, cache bundles | [ai catalog](../../crates/ai/README.md#model-catalog-and-language-neutral-weights) / [engine transfers](../../crates/engine/README.md#local-model-transfers) |
+| Clip boundary snapping / speech groups / energy | [engine](../../crates/engine/README.md#clip-boundary-adjustment) / [captions](../../crates/captions/README.md#source-cut-units) / [media](../../crates/media/README.md#speech-energy-windows) |
+| Vision preparation / inference and shape-plan cache | [media](../../crates/media/README.md#vision-preparation) / [ai detectors](../../crates/ai/README.md#local-vision-detectors) |
+| Provider capabilities, consent, cost / text timing / isolated Gipformer | [ai](../../crates/ai/README.md#consent-and-cost) / [recognition](../../crates/ai/README.md#recognition-and-time) / [local runner](../../crates/ai/README.md#local-gipformer) |
+| Translation windows and response validation / selection, retry, edit protection | [ai translation](../../crates/ai/README.md#contextual-text-translation) / [engine application](../../crates/engine/README.md#translation-selection-and-application) |
+| SpeechSynthesizer capabilities, requests, consent, PCM validation | [ai speech](../../crates/ai/README.md#speech-synthesis) |
 
-**Jobs.** Engine wraps all media, render and AI execution in its job runner and
-owns scheduling, retries, checkpoints and the aggregate byte policy; see the
-[engine job contract](../../crates/engine/README.md#background-jobs-and-byte-policy).
-Persistent job artifacts use content keys; frame/glyph caches stay with their data
-owners and share accounting leases. Processing crates receive
-progress and cancellation hooks and never build their own. Render row tasks run
-through engine-owned scoped execution; native conversion receives the same
-bounded worker allowance. See [kernel execution](../../crates/engine/README.md#render-kernel-execution).
+Engine wraps media/render/AI execution, supplying progress and cancellation hooks. Persistent artifacts use content keys; frame/glyph caches stay with data owners and share accounting leases. Engine owns speech provider selection, retry budgets, jobs and placement.
 
-**Commands.** Every project edit is an engine command with a stable ID, label,
-parameter schema and enabled predicate. UI, CLI, MCP and plugins all dispatch
-through the same registry. Commands validate, then commit all-or-nothing; a batch
-or closure group is one undo step; continuous drags merge by key or explicit
-gesture begin/commit/cancel. Engine restores project, history and deferred changes
-on refusal or unwind; see the [transaction contract](../../crates/engine/README.md#transactions-gestures-and-changes).
-Preferences and transient presentation state stay in the app. Per-project view
-state is outside editable Project content and undo: engine Session exposes its
-registered command, while project owns the optional bounded metadata sidecar
-under the WriterLease; see [project metadata](../../crates/project/README.md#optional-project-metadata).
+Every project mutation goes through the engine registry; UI/CLI/MCP/plugins translate their transport into it. CLI owns parsing/typed exit codes, MCP tools/transports, app widgets/preferences/transient state. A shared control library needs working CLI and MCP consumers; until then its first adapter owns the code.
 
-**Recovery.** Engine owns unsaved-session scheduling, OS session liveness and revision-bound save acknowledgement; project owns its one snapshot format, atomic writes and rotation. See the [session recovery contract](../../crates/engine/README.md#session-recovery-and-save-acknowledgement). The app presents recovery choices.
-
-**Control.** Engine owns command IDs, schemas, events, revision and idempotency
-rules, and every project mutation; dispatch is transport-neutral. Generated
-2020-12 schemas, strict admission, revision-bound no-eviction Session receipts and
-bounded snapshot-resync events share the existing registry/JobTarget/JobRunner
-owners; see the [engine control contract](../../crates/engine/README.md#control-admission-revisions-and-receipts). Adapters only
-translate: the CLI parses arguments and maps typed exit codes, MCP maps tools and
-transports, the app maps widgets and preferences. All dispatch through the one
-registry, never a second command catalog, and none mutates the project directly.
-A shared control library is admitted only with working CLI and MCP consumers;
-until then the first adapter owns the shared code.
-
-**Translation.** AI owns one contextual TranslationWindow contract and structured response validation; engine selects cues, budgets/retries work and applies the registered `retranslate` command with edit protection. See [AI translation](../../crates/ai/README.md#contextual-text-translation) and [engine application](../../crates/engine/README.md#translation-selection-and-application).
-
-**Speech synthesis.** `ai::speech` owns the blocking `SpeechSynthesizer` contract,
-IO-free exact voice/language capabilities and quotes, immutable NFC requests,
-policy-bound `SynthesisConsent`, and mono PCM/result validation. Engine owns
-provider selection, retry budgets, jobs and placement; synthesis never edits a
-project or selects a fallback. See [speech contract](../../crates/ai/README.md#speech-synthesis).
-
-**AI.** `ai` owns consent, cost estimates and capability checks once for every
-operation; consent binds provider, operation, content and languages, and retries
-stay inside it. Captions owns text correspondence and unit identity; translations
-never reuse source word timing. Wholly untimed raw tokens may precede segment alignment;
-measured token ranges require segment timing and an advertised capability.
-Local Gipformer runs in ai's isolated native runner; see the
-[local contract](../../crates/ai/README.md#local-gipformer). Details: [ai README](../../crates/ai/README.md).
+Per-project view state stays outside editable content and undo: engine Session exposes its command, project owns the bounded [metadata sidecar](../../crates/project/README.md#optional-project-metadata) under WriterLease. Engine owns [recovery scheduling, session liveness and save acknowledgement](../../crates/engine/README.md#session-recovery-and-save-acknowledgement); project owns snapshot format/writes/rotation, app presents recovery choices.
 
 ## Languages
 
-Languages are data. Tags are BCP 47 (`vi`, `en`, `zh-Hans`, `zh-Hant`); each has one
-LanguageProfile in `captions` (segmentation limits, reading speed, line breaking,
-punctuation, font fallback). Provider adapters declare language capabilities and
-keep per-language decode settings as profile data. Adding a language adds a
-profile, fonts and an optional UI catalog; unknown tags use the generic profile.
+Languages are BCP 47 data (`vi`, `en`, `zh-Hans`, `zh-Hant`), each with one [captions profile](../../crates/captions/README.md#entry-points-and-persistence). Provider adapters declare language capabilities and keep per-language decode settings as profile data. Adding a language adds a profile, fonts and an optional UI catalog; unknown tags use the generic profile.
 
 ## Media and time
 
-FFmpeg does probe, demux, decode, encode, mux, scaling and resampling. Codec
-availability is queried at runtime; a missing encoder returns `Unsupported` or a
-same-quality software path. Hardware frames stay on the GPU until CPU pixels are
-needed. Frame-accurate cuts seek to the preceding keyframe and decode forward;
-stream copy is used whenever the operation allows it.
+Runtime codec admission, software fallback, GPU frame lifetime, keyframe seeking, stream copy, probe fields and presentation timestamps follow the [media contract](../../crates/media/README.md#entry-points-and-timing).
 
-Probe reports format, duration when known, rational time bases, codec parameters
-including priming, and frame-count or VFR evidence; unknown stays unknown. Packet
-and frame PTS are presentation coordinates.
-
-Time is 254_016_000_000 integer ticks per second, exact for admitted frame and
-sample rates; conversions follow [standards](standards.md#time-and-text).
+Time units follow the [glossary](../../GLOSSARY.md); conversion rules follow [standards](standards.md#time-and-text).

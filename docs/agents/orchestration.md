@@ -1,133 +1,63 @@
 # Orchestration with Orca
 
-## Roles
+## Roles and routing
 
-| Role | Does |
+| Role | Responsibility |
 |---|---|
-| Claude coordinator | Plans with the maintainer, writes tickets, dispatches, answers questions, cleans up. Never implements, reviews or merges. |
-| opencode | Default implementer (cheapest): every ticket up to its current tier. |
-| Codex | Tickets above opencode's tier; reviews every code branch. |
-| Maintainer | Product decisions, credentials, hardware, assets. |
-
-## Tiers
+| Claude coordinator | Plans with the maintainer, writes tickets, dispatches, answers questions, cleans up; implementation, review and merge belong to workers |
+| opencode | Default implementer up to its current tier |
+| Codex | Implements above opencode's tier; reviews every code branch |
+| Maintainer | Product decisions, credentials, hardware, assets |
 
 | Tier | Work |
 |---|---|
 | T1 | Mechanical edits, docs, research, benchmarks, fixtures |
-| T2 | Features and adapters following an existing pattern; UI on settled contracts |
+| T2 | Features/adapters on existing patterns; UI on settled contracts |
 | T3 | New contracts, pipelines, persistence formats |
-| T4 | unsafe/FFI, concurrency and job engine, render and A/V sync core (Codex only) |
+| T4 | unsafe/FFI, concurrency, job engine, render and A/V sync core; Codex only |
 
-Route each ticket to opencode when its tier allows and its work type has no failing
-record. opencode rises one tier after two consecutive reviewed code tickets at its
-tier merge without a design-level `changes` verdict, and drops one tier after such a
-verdict or a reverted merge. The coordinator records tier, track record and a
-work-type profile (evidence and route per kind of work) in `.scratch/agents.md` on
-every verdict.
+Promote one tier after two consecutive reviewed code tickets at its tier merge without design-level `changes`; demote one tier after that verdict or a reverted merge. The coordinator updates `.scratch/agents.md` on every verdict with tier, track record and per-work-type evidence/routing. Work types with design-level or robustness findings route to Codex until the profile changes.
 
-An opencode ticket's acceptance names its failure paths and boundary inputs
-(failed publish, hostile sizes, every entry to cover); work types where reviews
-found design-level or robustness defects go to Codex until the profile changes.
+## Tickets and placement
 
-## Tickets
+Write tickets with owners already on `main` or explicit `Blocked by` dependencies so they can finish without ownership questions. Each ships working behaviour; research, audits and benchmarks serve a pending decision. Apply [structural admission](../engineering/standards.md#structural-admission): one cohesive responsibility; split mixed owners and critical-path contracts into early contract slices plus follow-ups, but keep inseparable test/review pieces together. Metrics follow [verification](../engineering/verification.md), each with a baseline. Opencode acceptance names failure paths and boundary inputs, including failed publication, hostile sizes and every entry to cover.
 
-Write each ticket so it can finish without a mid-ticket ownership question: every
-piece it reuses either exists on `main` or is listed in `Blocked by`; metrics appear only where
-[verification](../engineering/verification.md) asks for them (performance, our own AI
-logic), each with its baseline. Every ticket ships working behaviour; research,
-benchmarks and audits exist only when a decision waits on them. Split a critical-path ticket that blocks many
-others into a contract-first slice that merges early and follow-ups.
+Use one Orca-created worktree per ticket; its reviewer runs in a second terminal there while the implementer waits, reusing warm artifacts without another checkout. Start each pull-loop ticket from `origin/main` on `<type>/<milestone>-<NN>-<slug>`, lowercase with hyphens; `<type>` matches the main change's Conventional Commits type (`feat`, `fix`, `perf`, `refactor`, `test`, `docs`, `build`, `ci`, `chore`). [Conventional Commits](https://www.conventionalcommits.org/en/v1.0.0/) and [Conventional Branch](https://conventionalbranch.org/) define the conventions. Tracker access: [issue tracker](issue-tracker.md); `.spikes/` also lives only in the main checkout and uses absolute paths.
 
-One ticket = one cohesive responsibility (a crate, contract or user-facing feature)
-under [structural admission](../engineering/standards.md#structural-admission).
-Split a ticket that mixes responsibilities; merge pieces that cannot be tested or
-reviewed apart. Format and queries: [issue tracker](issue-tracker.md).
-
-Ask the coordinator for conflicting contracts, missing acceptance, absent hardware or
-credentials, licence questions about new dependencies or assets, and destructive or
-out-of-scope actions; keep working on independent parts meanwhile. Copied reference
-code is settled by [copy imports](../engineering/workflows.md#copy-imports).
-
-## Placement
-
-- One Orca-created worktree per ticket; its reviewer runs as a second terminal in that worktree (warm build artifacts, no second checkout) while the implementer waits for the verdict. A ticket branch is `<type>/<milestone>-<NN>-<slug>`, lowercase with hyphens (e.g. `feat/p1-clips-04-review-ui`), where `<type>` is the Conventional Commits type of the ticket's main change: `feat`, `fix`, `perf`, `refactor`, `test`, `docs`, `build`, `ci` or `chore` ([Conventional Commits](https://www.conventionalcommits.org/en/v1.0.0/), [Conventional Branch](https://conventionalbranch.org/)); commits use the same types. A pull loop starts each ticket on a fresh branch from `origin/main` in that worktree.
-- `.scratch/` and `.spikes/` exist only in the main checkout: read and write them by absolute path.
 - Every command that compiles Rust (`cargo xtask ci`, `cargo test`, `cargo clippy`, `cargo build`) runs through `/Users/canh/Startup/VibeCut/.scratch/bin/build <command>`: it waits for the build slot (a lock; one on this 16 GB machine), sets `CARGO_TARGET_DIR` to that slot's warm cache and runs the command. Never set `CARGO_TARGET_DIR` yourself.
 - At most 4 live workers, reviewers included (RAM: 16 GB), and no two live tickets own the same crate or file area (check `Ownership` in each ticket; serialize the overlap).
-- Spike hygiene: a spike keeps its report, outputs, labels and eval corpus. Its venvs, package/model caches and model weights are deleted when its ticket resolves, unless an open ticket names the path; weights are re-fetched by recorded revision and hash.
-- Build caches are kept only while used: `.scratch/bin/cleanup` prunes incremental sessions and slots untouched for 2+ days; slots in use stay warm.
+
+`.scratch/bin/cleanup` prunes incremental sessions and slots untouched for 2+ days, retaining active slots.
+
+A resolved spike retains reports, outputs, labels and eval corpus; remove venvs, package/model caches and weights unless an open ticket names them. Record weight revision and hash for re-fetching.
 
 ## Coordinator loop
 
-1. Dispatch with a one-line spec; the rest lives in this file:
-   - `Agent loop: <assignee> max <n> start: <milestone>/NN`
-   - `Review: <milestone>/NN <branch>@<sha7>`
-   Longer briefs go in a spec file (`--spec-file`). Start the reviewer with `--worktree` set to the implementer's worktree.
-2. End the turn; Orca wakes you for mail. `check` returns one message per call: repeat it until `No messages` (or read every `[unhandled]` line of `orca orchestration inbox`). Read the `worker_done` summary and the report TL;DR only. On every wake also run `orca orchestration worker-list` and `git worktree list`: a worker whose ticket merged or was dropped, or one idle without mail and without an open ticket, is stopped and its worktree cleaned (save untracked outputs first). `worker-stop` can leave the agent running: confirm with `worker-list` that its terminal is released, else `orca terminal close --terminal <id>`. A worker waiting on its own ticket's review is not stale.
-3. Answer questions with one batched reply; send no acknowledgements. Technical
-   decisions (runtime, library, contract, approach) are the coordinator's: when the
-   evidence is missing, dispatch research and decide from it. Bring the maintainer
-   only what the Maintainer row owns.
-4. Return work to the dispatch that already holds its context: re-reviews to the same reviewer's dispatch (`orca orchestration send` reopens a finished worker). Review `changes` go to the implementer's dispatch; start a new worker on the branch only when that dispatch is gone.
-5. After a merge, clean up with `.scratch/bin/cleanup <dispatch-id>... <worktree-name>...` (releases every dispatch of the ticket, closes their terminals, removes worktrees). A message to a finished dispatch may open a new dispatch id: address follow-ups to the id `worker-list` shows for that worktree. Keep the implementer and reviewer (dispatch and worktree) until the ticket merges or is dropped; only then are they removed.
+1. Dispatch `Agent loop: <assignee> max <n> start: <milestone>/NN` or `Review: <milestone>/NN <branch>@<sha7>`; put longer briefs in `--spec-file`. Start the reviewer with `--worktree` set to the implementer's worktree.
+2. End the turn for Orca mail. On wake, drain `check` to `No messages` (or read every `[unhandled]` inbox line); read only each worker's summary and report TL;DR. Also run `orca orchestration worker-list` and `git worktree list`. Save untracked outputs and stop/clean workers whose ticket merged or was dropped, or idle workers with neither mail nor an open ticket; retain workers awaiting review. Confirm terminal release after `worker-stop`, using `orca terminal close --terminal <id>` if needed.
+3. Answer questions in one batched reply; send only substantive replies. The coordinator owns technical decisions; dispatch research when evidence is missing, and bring the maintainer only decisions in its role.
+4. Return fixes and re-reviews to the dispatch holding context; create a replacement only when it is gone. `send` may reopen a finished worker under a new dispatch ID: use the current `worker-list` ID.
+5. After merge/drop, run `.scratch/bin/cleanup <dispatch-id>... <worktree-name>...` to release all ticket dispatches, terminals and worktrees. Retain implementer and reviewer until then.
 6. Dispatch what `.scratch/bin/frontier` lists, critical path first. Implementers are opencode unless the ticket is T3+ or its work type routes to Codex in `.scratch/agents.md`; live Codex implementers never outnumber opencode ones.
-7. Only the coordinator pauses or resumes workers, by message. A pause also kills
-   any app, `osascript` or build the worker started; workers never infer a pause from
-   other text.
-8. Anything outward-facing (posting upstream, changing repo visibility, publishing) needs the maintainer's explicit yes first.
-
-Load `orca skills get orchestration` for CLI details; use handles from receipts.
+7. Only the coordinator pauses/resumes by explicit message; a pause also kills apps, `osascript` and builds the worker started.
 
 ## Worker loop
 
-1. Claim: re-read the ticket in the main checkout, skip it unless `open`, set `Status: claimed`.
-2. Iterate with crate-scoped tests and Clippy locally; run full local CI once on the
-   frozen SHA ([checks](../engineering/verification.md#checks)).
-   Implement per the [development loop](../engineering/workflows.md#development-loop).
-   Before handing to review, attack your own branch the way a reviewer will: hostile
-   and boundary inputs, cancellation mid-operation, gesture reversal, and every
-   metric the ticket names against its recorded baseline (no language, format or backend may
-   regress). Fix what you find first.
-3. Push the frozen SHA to the ticket branch and hand off with the CI receipt. Pushing ticket branches and `main` is part of the
-   loop; GitHub comments, issues and PRs are not. Reviewers run only targeted reproductions locally.
-   Finish the ticket on one of the two [merge paths](#review-and-merge). A ticket
-   that needs review ends the turn right away with `worker_done`, so its review starts
-   while you wait; the coordinator sends `continue` to resume the loop.
-4. Claim the next frontier ticket with your `Assignee`: highest priority first, then
-   lowest number (`.scratch/bin/frontier <assignee>`), up to the spec's maximum.
-5. `worker_done` is at most three sentences (outcomes, report path, follow-ups) with `--report-path`. Then stop.
+1. Re-read the main-checkout ticket; claim only `open` tickets by setting `Status: claimed`.
+2. Implement the [development loop](../engineering/workflows.md#development-loop) and its [checks](../engineering/verification.md#checks). Before handoff, attack boundary/hostile inputs, mid-operation cancellation, gesture reversal and every ticket metric against its baseline; every language, format and backend must retain its behaviour.
+3. Push the frozen SHA to the ticket branch with its check receipt, then follow a merge path below. Ticket-branch and main pushes are authorized by this loop. When review is needed, send `worker_done` and end the turn immediately; the coordinator sends `continue` to resume.
+4. Claim the next assigned frontier ticket up to the dispatch maximum. Finish with `worker_done` (at most three sentences: outcome, report path, follow-ups; include `--report-path`), then stop.
 
-**Bugs found outside the ticket at hand** (any agent; a defect in the ticket under review stays a review finding):
-- Small or medium and contained (clear cause, fix stays inside one owner, no design change): fix it now, without asking, in its own commit with a regression test, and list it in your report.
-- A failure that does not reproduce on a local and a hosted attempt is closed as unreproduced (run ids recorded) and reopened when it fails again; no diagnostic campaigns.
-- Large (data loss, crash, security, cross-owner or design-level): create a ticket right away (`Type: bug`, priority by severity, reproduction included) and name it in `worker_done`; `ask` at once if it blocks your ticket or corrupts user data.
+Ask the coordinator through `ask` for conflicting contracts, missing acceptance, hardware/credentials, new dependency/asset licensing, or destructive/out-of-scope actions; continue independent work. A blocker sets `Status: blocked` with its reason before escalation. Worker communication uses only `ask`, blocker escalation and `worker_done`; load `orca skills get orchestration` for CLI syntax and use receipt handles.
 
-Talk to the coordinator only through `ask` (blocking question) and `worker_done`.
-A blocked ticket gets `Status: blocked` plus the reason, then an escalation.
+Outside-ticket bugs: fix small/medium defects with a clear cause, one owner and no design change now in a separate commit with a regression test, listing them in the report. File large defects (data loss, crash, security, cross-owner or design changes) immediately as prioritized bug tickets with reproduction; ask immediately if they block this ticket or corrupt user data. Close failures unreproduced on both a local and hosted attempt as unreproduced with run IDs; reopen on recurrence. Defects in the ticket under review remain review findings.
 
 ## Review and merge
 
-**Self-merge** T1 tickets once every Verify item holds: rebase on `origin/main`, run the
-[smallest covering check](../engineering/verification.md#checks) on the exact SHA, push
-fast-forward to `main`. T2–T4 tickets go to review.
+T1 self-merges after every Verify item holds. T2–T4 use a separate Codex review of the frozen SHA, written to `/Users/canh/Startup/VibeCut/.scratch/<milestone>/reviews/NN-<sha7>.md` with [review fields](../engineering/verification.md#reports). Read the implementer's receipt; run targeted reproductions only, following [checks](../engineering/verification.md#checks) for reviewer changes.
 
-**Review** the frozen SHA in a separate Codex dispatch. Write the review to
-`/Users/canh/Startup/VibeCut/.scratch/<milestone>/reviews/NN-<sha7>.md` using the
-[review fields](../engineering/verification.md#reports).
+Fix small, obvious findings with full context on the ticket branch. Larger/design findings get `changes` and return to the implementer for a new frozen SHA; re-review covers previous findings and the fix diff. Dual versions, legacy shims, deprecated paths and compatibility code get `changes`. Ask about unsettled product/policy questions rather than issuing `changes`; they do not affect implementer tiers. A failure called known must cite a bug ticket; file one first if absent.
 
-- Small, clear finding (obvious fix, full context, no design change): fix it on the ticket branch.
-- Larger or design-level finding: verdict `changes`; the coordinator returns it to the implementer, who fixes and resubmits a new frozen SHA.
-- Dual versions, legacy shims, deprecated paths and backward-compatibility code are `changes` findings.
-- Approved: merge immediately like a self-merge (regenerate `Cargo.lock` on conflict).
-- A re-review checks the earlier findings and the fix diff, not the whole ticket again.
-- A finding that turns on product scope or policy the docs do not settle is an `ask` to the coordinator, not a `changes` verdict; it never counts against the implementer's tier.
-- A failure called "known" cites its ticket; with none, the reviewer files a `Type: bug` ticket first.
+Approved work merges immediately: rebase onto `origin/main`, resolve conflicts (regenerate `Cargo.lock` on conflict), apply [checks](../engineering/verification.md#checks), and push fast-forward to `main`; repeat on rejected push. The last merger immediately fixes or reverts red main. Write `## Answer` with SHA/evidence, set `Status: resolved` and add one decision line to the milestone map.
 
-**Merging.** An approved branch merges as soon as it is ready: rebase on
-`origin/main`, resolve conflicts (a conflict in Rust gets one local CI run), push
-fast-forward; a rejected push means rebase and repeat. No merge windows: hosted CI on
-`main` catches the rare semantic clash, and the last merger fixes it at once.
-
-After either path the merger writes `## Answer` (SHA, evidence path), sets
-`Status: resolved` and adds one decision line to the milestone `map.md`.
-`main` only moves fast-forward.
+Outward-facing actions (upstream posts, visibility changes, publishing) require the maintainer's explicit approval; push authorization is defined in the worker loop.

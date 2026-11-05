@@ -1,11 +1,8 @@
 # CLI
 
-`vibecut-cli` is the headless adapter over the engine command registry. It opens
-projects, runs editor commands, probes media and exports MP4 without a window,
-UI toolkit or audio device. The same command IDs and parameters serve the
-desktop app, MCP and plugins; see [control](../engineering/architecture.md#contracts).
+`vibecut-cli` opens projects, runs editor commands, probes media and exports MP4; adapter boundaries follow [architecture](../engineering/architecture.md#contracts).
 
-Build it with `cargo build -p vibecut-cli`; the binary is `target/<profile>/vibecut-cli`.
+Build with `cargo build -p vibecut-cli` through the [build wrapper](../agents/orchestration.md#tickets-and-placement); output is `target/<profile>/vibecut-cli`.
 
 ## Commands
 
@@ -22,70 +19,25 @@ Build it with `cargo build -p vibecut-cli`; the binary is `target/<profile>/vibe
 | `vibecut-cli model list\|info\|download` | Inspect or install pinned local model files |
 | `vibecut-cli commands` | Print the generated command registry |
 
-Add `--json` to any command for a machine-readable result on stdout. Without it,
-results are human-readable on stdout. Progress and diagnostics are always on
-stderr, so stdout stays a single result. Errors use exit codes below and, with
-`--json`, one JSON object on the last stderr line.
+Add `--json` to any command for a machine-readable result on stdout. Without it, results are human-readable on stdout. Progress and diagnostics are always on stderr, so stdout stays a single result. Errors use exit codes below and, with `--json`, one JSON object on the last stderr line.
 
-`export` options: `--aspect 9:16` renders 1080×1920 and `--aspect 16:9` renders
-1920×1080; without it the project canvas is used. `--overwrite` replaces an
-existing output. `--allow-degraded` is the explicit consent described below.
+`export` options: `--aspect 9:16` renders 1080×1920 and `--aspect 16:9` renders 1920×1080; without it the project canvas is used. `--overwrite` replaces an existing output. `--allow-degraded` is the explicit consent described below.
 
 ## Subtitles
 
-`vibecut-cli subtitle <in> [--from vi|en|zh|auto] --to vi|en|zh [--bilingual]
-[--srt out.srt] [--burn out.mp4] [--aspect 9:16] [--provider <id>] [--model <id>]
-[--translate-provider openai|anthropic] [--translate-model <id>] [--yes-upload]
-[--overwrite]` runs the engine subtitle workflow: speech extraction, selected ASR,
-checkpointed chunks, local alignment when the provider has no native timing, cue
-segmentation, optional contextual translation, and the existing SRT/burn export
-paths. The input media is probed once; `--aspect 9:16` selects 1080×1920 for burn
-and `16:9` selects 1920×1080; without it the source geometry is used. At least one
-of `--srt` and `--burn` is required.
+`vibecut-cli subtitle <in> [--from vi|en|zh|auto] --to vi|en|zh [--bilingual] [--srt out.srt] [--burn out.mp4] [--aspect 9:16] [--provider <id>] [--model <id>] [--translate-provider openai|anthropic] [--translate-model <id>] [--yes-upload] [--overwrite]` runs the engine subtitle workflow: speech extraction, selected ASR, checkpointed chunks, local alignment when the provider has no native timing, cue segmentation, optional contextual translation, and the existing SRT/burn export paths. The input media is probed once; `--aspect 9:16` selects 1080×1920 for burn and `16:9` selects 1920×1080; without it the source geometry is used. At least one of `--srt` and `--burn` is required.
 
-Providers and models are explicit and are never switched automatically. `auto`
-language detection requires the local `whisper.cpp` provider and resolves the
-source before deciding whether a translator is needed; a same-language local run
-therefore needs no cloud translation credentials. A different-language run still
-requires the explicitly selected translation provider and its key. `vibecut-cli providers
---operation transcribe|translate --language <tag>` lists offline capability data;
-`--model` must be one of the listed models. Local defaults are
-`whisper-large-v3-turbo` (vi/en/zh) and `gipformer-68m-rnnt-int8` (vi); cloud
-choices are OpenAI `gpt-transcribe` and ElevenLabs `scribe_v2`. Translation choices
-are OpenAI `gpt-6.1-sol` and Anthropic `claude-sonnet-5-5`; `--to zh` selects
-Simplified (`zh-Hans`), and `zh-Hant` is available explicitly.
+Providers and models are explicit and are never switched automatically. `auto` language detection requires the local `whisper.cpp` provider and resolves the source before deciding whether a translator is needed; a same-language local run therefore needs no cloud translation credentials. A different-language run still requires the explicitly selected translation provider and its key. `vibecut-cli providers --operation transcribe|translate --language <tag>` lists offline capability data; `--model` must be one of the listed models. Local defaults are `whisper-large-v3-turbo` (vi/en/zh) and `gipformer-68m-rnnt-int8` (vi); cloud choices are OpenAI `gpt-transcribe` and ElevenLabs `scribe_v2`. Translation choices are OpenAI `gpt-6.1-sol` and Anthropic `claude-sonnet-5-5`; `--to zh` selects Simplified (`zh-Hans`), and `zh-Hant` is available explicitly.
 
-Remote requests are refused before any upload unless `--yes-upload` is present.
-The command prints the exact provider/model, languages, audio duration, upload
-payload bytes, per-invocation cost ceiling and the provider's official
-policy links for every request scope; the flag
-authorizes only those displayed scopes, never a model download or a different
-provider. Local providers need no upload consent.
+Remote requests are refused before any upload unless `--yes-upload` is present. The command prints the exact provider/model, languages, audio duration, upload payload bytes, per-invocation cost ceiling and the provider's official policy links for every request scope; the flag authorizes only those displayed scopes, never a model download or a different provider. Local providers need no upload consent.
 
-ASR checkpoints are content-addressed complete windows in the default model cache.
-A restarted command reuses valid windows and executes only missing ones; the
-outcome reports the reused count. Checksum failure or an incomplete window is
-recomputed; an alignment failure keeps the completed recognition checkpoint and
-alignment is retried next run. The engine workflow also exposes an operation-wide
-cooperative cancellation token connected to extraction, active jobs, translation
-and export; the CLI has no signal-driven cancel gesture, so process interruption
-remains crash semantics. Local weights are separate from checkpoints and are never downloaded
-implicitly: `vibecut-cli model download <id> --yes-download` prints licence, source,
-size, every file SHA-256 and requires the explicit flag. A missing model returns
-an actionable `setup` error naming the download command.
+ASR checkpoints are content-addressed complete windows in the default model cache. A restarted command reuses valid windows and executes only missing ones; the outcome reports the reused count. Checksum failure or an incomplete window is recomputed; an alignment failure keeps the completed recognition checkpoint and alignment is retried next run. The engine workflow also exposes an operation-wide cooperative cancellation token connected to extraction, active jobs, translation and export; the CLI has no signal-driven cancel gesture, so process interruption remains crash semantics. Local weights are separate from checkpoints and are never downloaded implicitly: `vibecut-cli model download <id> --yes-download` prints licence, source, size, every file SHA-256 and requires the explicit flag. A missing model returns an actionable `setup` error naming the download command.
 
-`VIBECUT_ASR_THREADS` selects 1–32 local threads (default 4). `VIBECUT_ASR_GPU=0`
-forces the CPU path. `VIBECUT_LOCAL_ASR` names the shipped Gipformer runner; without
-it the Gipformer provider returns a typed setup error. Credentials come from
-`OPENAI_API_KEY`, `ELEVENLABS_API_KEY` and `ANTHROPIC_API_KEY`; keys are never
-printed. Credential absence is a `setup` refusal before media or network work.
+`VIBECUT_ASR_THREADS` selects 1–32 local threads (default 4). `VIBECUT_ASR_GPU=0` forces the CPU path. `VIBECUT_LOCAL_ASR` names the shipped Gipformer runner; without it the Gipformer provider returns a typed setup error. Credentials come from `OPENAI_API_KEY`, `ELEVENLABS_API_KEY` and `ANTHROPIC_API_KEY`; keys are never printed. Credential absence is a `setup` refusal before media or network work.
 
 ## Commands and schemas
 
-`vibecut-cli commands --json` is the authoritative generated schema: every command
-ID, label, effect, JSON Schema 2020-12 input/output shapes and fixture examples. It comes from the same
-single declaration as typed and JSON dispatch, so do not maintain a second command
-list. `exec` takes that command ID and its `params` object:
+`vibecut-cli commands --json` is the authoritative generated schema: every command ID, label, effect, JSON Schema 2020-12 input/output shapes and fixture examples. Registry ownership follows [architecture](../engineering/architecture.md#contracts). `exec` takes that command ID and its `params` object:
 
 ```sh
 vibecut-cli project new demo.vibecut
@@ -97,52 +49,23 @@ vibecut-cli exec demo.vibecut batch '{"commands":[
 vibecut-cli project info demo.vibecut --json
 ```
 
-`project.set_view_state` takes `{"zoom":2,"scroll":40,"playhead":0}` (logical-pixel
-scroll, integer-tick playhead), persists optional metadata and leaves editable
-project bytes unchanged. `project.rename` takes `{"name":"My project"}`;
-`project.save` takes `{}`. Missing/corrupt metadata defaults on open. `project new`
-uses the registered creation command; `exec` refuses creation inside an existing
-session. Project info and edits refuse a busy writer instead of reading stale
-state or overwriting another session.
+`project.set_view_state` takes `{"zoom":2,"scroll":40,"playhead":0}` (logical-pixel scroll, integer-tick playhead), persists optional metadata and leaves editable project bytes unchanged. `project.rename` takes `{"name":"My project"}`; `project.save` takes `{}`. Missing/corrupt metadata defaults on open. `project new` uses the registered creation command; `exec` refuses creation inside an existing session. Project info and edits refuse a busy writer instead of reading stale state or overwriting another session.
 
-Keyframed item parameters are ordinary registry commands: `keyframes.set_param`,
-`keyframes.add`, `keyframes.remove`, `keyframes.retime`, `keyframes.set_handle`
-and `keyframes.scale_time` accept the project animation shapes. `export` evaluates
-the saved curves through render's single project evaluator; for example an
-`opacity` channel animates a clip in the exported frames.
+Keyframed item parameters are ordinary registry commands: `keyframes.set_param`, `keyframes.add`, `keyframes.remove`, `keyframes.retime`, `keyframes.set_handle` and `keyframes.scale_time` accept the project animation shapes. `export` evaluates the saved curves through render's single project evaluator; for example an `opacity` channel animates a clip in the exported frames.
 
-Fields are required; unknown command, parameter and model fields are refused.
-Model wire types are the Serde shapes owned by their crates; the
-[engine contract](../../crates/engine/README.md#public-entry-points) describes the
-registry and JSON limits. The CLI adds no project logic of its own.
+Fields are required; unknown command, parameter and model fields are refused. Model wire types are the Serde shapes owned by their crates; the [engine contract](../../crates/engine/README.md#public-entry-points) describes the registry and JSON limits.
 
 ## Project files and concurrency
 
-A project is the `.vibecut` file owned by the project crate. Its schema, atomic
-publication, recovery snapshots and writer lease are documented in the
-[project contract](../../crates/project/README.md#persistence-and-limits); the CLI
-does not define a second format page.
+A project is the `.vibecut` file owned by the project crate. Its schema, atomic publication, recovery snapshots and writer lease are documented in the [project contract](../../crates/project/README.md#persistence-and-limits); the CLI does not define a second format page.
 
-`project new` and every `exec` read-edit-save acquire the project writer lease
-before reading and hold it through the save. A concurrent desktop or CLI writer
-therefore gets a typed `busy` or `conflict` refusal, exit code 3, and no bytes are
-written. `project info` and `export` are read-only and do not take the lease; they
-observe the last atomically published project file.
+Lease admission for reads and writes follows the [CLI owner contract](../../apps/vibecut-cli/README.md).
 
 ## Export admission
 
-`export` uses render's finished-file path: output is staged and published only
-after encoding, muxing and a final source revalidation. A required source that is
-missing or whose content hash changed refuses the export with exit code 4 and
-`unavailable` entries naming the asset ID, item ID, source tick range and reason
-(`missing`, `changed`, `metadata`, `video` or `audio`). No partial final file is
-promoted and an existing destination is preserved.
+`export` uses render's finished-file path: output is staged and published only after encoding, muxing and a final source revalidation. A required source that is missing or whose content hash changed refuses the export with exit code 4 and `unavailable` entries naming the asset ID, item ID, source tick range and reason (`missing`, `changed`, `metadata`, `video` or `audio`). No partial final file is promoted and an existing destination is preserved.
 
-Degraded output is never a silent default. `--allow-degraded` is the explicit
-consent that admits initially missing or changed visual sources as black/silence;
-a source that fails during execution still refuses. Details of the admission and
-publication fence are in the
-[render contract](../../crates/render/README.md#export-and-publication).
+Degraded output is never a silent default. `--allow-degraded` is the explicit consent that admits initially missing or changed visual sources as black/silence; a source that fails during execution still refuses. Details of the admission and publication fence are in the [render contract](../../crates/render/README.md#export-and-publication).
 
 ## Exit codes
 
@@ -156,42 +79,12 @@ publication fence are in the
 | 6 | Media or render execution failed |
 | 7 | I/O or background job failure |
 
-With `--json`, an error is `{"status":"error","error":{"code":"busy","message":"…",
-"exit_code":3,"unavailable":[…]}}`; `unavailable` appears only for source
-admission failures. Messages never contain project text, media text, provider
-payloads or API keys. Subtitle errors add the stable codes `setup` (missing local
-model/runner/credential), `ai` (provider execution) and `rejected` (refused upload
-consent or unsupported language choice).
+With `--json`, an error is `{"status":"error","error":{"code":"busy","message":"…", "exit_code":3,"unavailable":[…]}}`; `unavailable` appears only for source admission failures. Messages never contain project text, media text, provider payloads or API keys. Subtitle errors add the stable codes `setup` (missing local model/runner/credential), `ai` (provider execution) and `rejected` (refused upload consent or unsupported language choice).
 
 ## Clip suggestions
 
-`vibecut-cli clips <in> [--from vi|en|zh|auto] [--count N] [--min 20s] [--max 60s]
-[--max-segments N] [--min-segment 2s] [--overlap R] [--keywords a,b]
-[--provider heuristic|openai|anthropic] [--model <id>] [--asr-provider <id>]
-[--asr-model <id>] [--export <dir> [--select 1,3] --subs vi|en|zh [--bilingual]
-[--aspect 9:16] [--translate-provider openai|anthropic] [--overwrite]
-[--allow-degraded]] [--yes-upload]` transcribes the input through the engine
-subtitle workflow, ranks ordered-segment shorts, snaps every source edge and
-prints the candidates as JSON. `--provider` selects the suggestion source
-explicitly; `heuristic` is the local default and needs no upload. Remote
-suggestion uploads only transcript segments, never audio, and require
-`--yes-upload` after the command prints the provider, endpoint, exact byte count,
-cost ceiling and the provider's data-retention/training policy link. A failed
-provider is a typed failure; the command never falls back to another provider or
-to the heuristic.
+`vibecut-cli clips <in> [--from vi|en|zh|auto] [--count N] [--min 20s] [--max 60s] [--max-segments N] [--min-segment 2s] [--overlap R] [--keywords a,b] [--provider heuristic|openai|anthropic] [--model <id>] [--asr-provider <id>] [--asr-model <id>] [--export <dir> [--select 1,3] --subs vi|en|zh [--bilingual] [--aspect 9:16] [--translate-provider openai|anthropic] [--overwrite] [--allow-degraded]] [--yes-upload]` transcribes the input through the engine subtitle workflow, ranks ordered-segment shorts, snaps every source edge and prints the candidates as JSON. `--provider` selects the suggestion source explicitly; `heuristic` is the local default and needs no upload. Remote suggestion uploads only transcript segments, never audio, and require `--yes-upload` after the command prints the provider, endpoint, exact byte count, cost ceiling and the provider's data-retention/training policy link. A failed provider is a typed failure; the command never falls back to another provider or to the heuristic.
 
-`--select` takes 1-based candidate indices; without it every candidate is
-exported. `--export` requires `--subs` and prepares one engine batch export per
-selected short at 1080×1920, burning the requested language. When `--subs`
-differs from the detected source, or `--bilingual` is set, the same subtitle
-translation path runs before export. Outputs are `<title>.mp4`; selected
-sidecars are none by default. Existing files are preserved unless `--overwrite`
-is set, and `--allow-degraded` is the explicit consent for initially
-missing/changed visual sources.
+`--select` takes 1-based candidate indices; without it every candidate is exported. `--export` requires `--subs` and prepares one engine batch export per selected short at 1080×1920, burning the requested language. When `--subs` differs from the detected source, or `--bilingual` is set, the same subtitle translation path runs before export. Outputs are `<title>.mp4`; selected sidecars are none by default. Existing files are preserved unless `--overwrite` is set, and `--allow-degraded` is the explicit consent for initially missing/changed visual sources.
 
-Candidate output preserves the AI ordered-segment contract: `pieces` are the
-provider's play-order pieces with roles, `segments` are the snapped source
-ranges, and `adjustments` carries the signed original/adjusted delta per edge.
-Rejected snap candidates and dropped suggestions are reported with typed
-reasons. `vibecut-cli providers --operation clips` lists the offline suggestion
-catalog, including each remote provider's policy link.
+Candidate output preserves the AI ordered-segment contract: `pieces` are the provider's play-order pieces with roles, `segments` are the snapped source ranges, and `adjustments` carries the signed original/adjusted delta per edge. Rejected snap candidates and dropped suggestions are reported with typed reasons. `vibecut-cli providers --operation clips` lists the offline suggestion catalog, including each remote provider's policy link.

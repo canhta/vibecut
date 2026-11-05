@@ -2,11 +2,8 @@
 
 ## Principles
 
-1. **Quality and stability first.** Correct picture, sound, timing and subtitles,
-   and an editor that never crashes or loses work. Features and speed never buy
-   these down.
-2. **Light and fast.** Why it is a native Rust app: small install, low memory, quick
-   startup, fast preview and export.
+1. **Quality and stability first.** Correct picture, sound, timing and subtitles, and an editor that never crashes or loses work. Features and speed never buy these down.
+2. **Light and fast.** Why it is a native Rust app: small install, low memory, quick startup, fast preview and export.
 
 ## Scope
 
@@ -20,8 +17,7 @@ Local-first desktop video editor for macOS and Windows; Linux comes later.
 | P1 | Better reframing, batch operations, output quality; full editor parity. |
 | P2 | Optional dubbing into Vietnamese, English or Chinese. |
 
-Out of scope: montage generation, automatic B-roll, voice cloning. AI suggestions
-always go through user review.
+Out of scope: montage generation, automatic B-roll, voice cloning. AI suggestions always go through user review.
 
 ## Providers
 
@@ -37,6 +33,4 @@ Each run uses one provider. A fallback runs only when the user configured it.
 
 ## Languages
 
-Optimized for Vietnamese, English and Chinese (Simplified and Traditional); more
-languages arrive as data. Every ordered pair translates; bilingual subtitles pair
-any two. The UI ships in English and Vietnamese.
+Optimized for Vietnamese, English and Chinese (Simplified and Traditional); more languages arrive as data. Every ordered pair translates; bilingual subtitles pair any two. The UI ships in English and Vietnamese.

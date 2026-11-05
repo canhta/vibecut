@@ -1,8 +1,8 @@
 # VibeCut
 
-Open-source CapCut alternative: a Rust desktop video editor for macOS and Windows.
+Rust desktop video editor for macOS and Windows.
 
-## Read when
+Read the owner before changing its area; keep each fact in one owner and link elsewhere.
 
 | When you | Read |
 |---|---|
@@ -12,26 +12,7 @@ Open-source CapCut alternative: a Rust desktop video editor for macOS and Window
 | write Rust | [standards](docs/engineering/standards.md), then the README of each crate you touch |
 | start, research, copy, upgrade or commit | [workflows](docs/engineering/workflows.md) |
 | test, benchmark or report | [verification](docs/engineering/verification.md) |
-| add a dependency, asset, model weight or remote AI call | [open-source policy](docs/engineering/open-source.md) |
+| add a dependency, asset, model weight or remote AI call; handle private data | [open-source policy](docs/engineering/open-source.md) |
+| claim or update a ticket | [issue tracker](docs/agents/issue-tracker.md) |
 | dispatch, review or merge agent work | [orchestration](docs/agents/orchestration.md) |
-| name a domain concept or revisit a decision | [glossary](GLOSSARY.md), [ADRs](docs/adr/README.md) |
-
-## Rules
-
-- Quality and stability first, then light and fast.
-- Research before deciding, Context7 first: [development loop](docs/engineering/workflows.md#development-loop).
-- Latest versions, replaced in place, one version of everything: [upgrade policy](docs/engineering/workflows.md#upgrade-policy).
-- One owner per fact; link to it elsewhere.
-- Label claims observed, source-documented, inferred, proposed or unverified. A green build proves only the build.
-- Keep reports local and hand over paths.
-- Secrets and private files: [privacy](docs/engineering/open-source.md#privacy).
-
-## Agent skills
-
-### Issue tracker
-
-Local markdown in `.scratch/`. See [issue tracker](docs/agents/issue-tracker.md).
-
-### Domain docs
-
-Single-context: `GLOSSARY.md` and `docs/adr/`. See [domain docs](docs/agents/domain.md).
+| name a domain concept or revisit a decision | [domain docs](docs/agents/domain.md) |
