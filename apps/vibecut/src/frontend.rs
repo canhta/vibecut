@@ -1147,6 +1147,7 @@ impl Editor {
         let stored = self.session.metadata().view;
         // Other adapters can issue the engine view command between frontend actions.
         if stored != self.last_view {
+            self.pre_anchor_scroll = None;
             self.zoom = (f64::from(DEFAULT_ZOOM) * stored.zoom)
                 .clamp(f64::from(MIN_ZOOM_FLOOR), f64::from(MAX_ZOOM))
                 as f32;
@@ -1493,18 +1494,25 @@ impl Editor {
         if self.drag.is_none() {
             return;
         }
-        let (pointer, bypass, down) = ui.ctx().input(|input| {
+        let (pointer, hover, bypass, down) = ui.ctx().input(|input| {
             (
                 input.pointer.interact_pos(),
+                input.pointer.hover_pos(),
                 input.modifiers.shift,
                 input.pointer.primary_down(),
             )
         });
         if let Some(pointer) = pointer {
             let (_, max_scroll) = self.scroll_bounds(layout, self.session.project().duration());
-            let step = edge_auto_scroll(Some(pointer), layout.body, self.scroll, max_scroll);
+            let step = if down {
+                edge_auto_scroll(hover, layout.body, self.scroll, max_scroll)
+            } else {
+                0.0
+            };
             if step != 0.0 {
+                let before = self.scroll;
                 self.scroll = (self.scroll + step / self.zoom).clamp(0.0, max_scroll);
+                let step = (self.scroll - before) * self.zoom;
                 if let Some(drag) = &mut self.drag
                     && drag.mode == DragMode::Move
                 {
@@ -3466,7 +3474,7 @@ impl Editor {
                 scroll.y
             };
             let delta = raw.clamp(-HORIZONTAL_WHEEL_STEP, HORIZONTAL_WHEEL_STEP);
-            self.scroll = (self.scroll + delta / self.zoom).clamp(0.0, max_scroll);
+            self.scroll = (self.scroll - delta / self.zoom).clamp(0.0, max_scroll);
         } else {
             self.vertical_scroll = (self.vertical_scroll - scroll.y).max(0.0);
         }
@@ -3577,9 +3585,9 @@ impl Editor {
             let x = if labelled {
                 snapped_seconds(seconds, rate)
             } else {
-                seconds as f32
+                seconds
             };
-            let x = layout.ruler.left() + (x - self.scroll) * self.zoom;
+            let x = layout.ruler.left() + ((x - start) * f64::from(self.zoom)) as f32;
             if x >= layout.ruler.left() - 1.0 && x <= layout.ruler.right() + 1.0 {
                 let height = if labelled { 8.0 } else { 4.0 };
                 painter.line_segment(
@@ -4418,7 +4426,11 @@ const SECOND_INTERVALS: [f64; 14] = [
 /// Dynamic fit minimum: content occupies 25% of the visible width at minimum.
 fn fit_zoom(viewport_width: f32, duration_seconds: f64) -> f32 {
     let width = f64::from(viewport_width.max(1.0));
-    let seconds = duration_seconds.max(1.0);
+    let seconds = if duration_seconds > 0.0 {
+        duration_seconds
+    } else {
+        1.0
+    };
     let fit = width * f64::from(1.0 - PADDING_MAX_RATIO) / seconds;
     if !fit.is_finite() {
         return MIN_ZOOM_FLOOR;
@@ -4469,8 +4481,8 @@ fn anchored_scroll(
     playhead: f32,
     pre_anchor: Option<f32>,
 ) -> (f32, Option<f32>) {
-    let old_percent = zoom_percent(old_zoom, min);
-    let new_percent = zoom_percent(new_zoom, min);
+    let old_percent = zoom_to_slider(old_zoom, min);
+    let new_percent = zoom_to_slider(new_zoom, min);
     let mut pre_anchor = pre_anchor;
     if old_percent < ZOOM_ANCHOR_THRESHOLD && new_percent >= ZOOM_ANCHOR_THRESHOLD {
         pre_anchor = Some(scroll * old_zoom);
@@ -4514,7 +4526,7 @@ fn edge_auto_scroll(
     }
 }
 fn ruler_config(zoom: f32, rate: FrameRate) -> RulerConfig {
-    let fps = rate.as_f64().max(1.0);
+    let fps = rate.as_f64();
     let pixels_per_second = f64::from(zoom.max(MIN_ZOOM_FLOOR));
     let pixels_per_frame = pixels_per_second / fps;
     let label_seconds = optimal_ruler_interval(
@@ -4590,11 +4602,11 @@ fn divides(label: f64, candidate: f64) -> bool {
     let ratio = label / candidate;
     (ratio - ratio.round()).abs() < 1e-6
 }
-fn snapped_seconds(seconds: f64, rate: FrameRate) -> f32 {
+fn snapped_seconds(seconds: f64, rate: FrameRate) -> f64 {
     Tick::from_seconds_f64(seconds, Rounding::Nearest)
         .ok()
         .and_then(|tick| rate.snap_nearest(tick).ok())
-        .map_or(seconds as f32, |tick| tick.seconds() as f32)
+        .map_or(seconds, |tick| tick.seconds())
 }
 fn drop_frame(rate: FrameRate) -> bool {
     matches!(rate, FrameRate::FPS_29_97 | FrameRate::FPS_59_94)
@@ -4635,12 +4647,16 @@ mod tests {
             FrameRate::FPS_29_97,
             FrameRate::FPS_30,
             FrameRate::FPS_60,
+            FrameRate::FPS_59_94,
+            FrameRate::new(1, 10).unwrap(),
+            FrameRate::new(TICKS_PER_SECOND, 1).unwrap(),
         ] {
             for factor in [0.1_f32, 1.0, 10.0, 100.0] {
                 let zoom = DEFAULT_ZOOM * factor;
                 let config = ruler_config(zoom, rate);
                 assert!(config.tick_seconds > 0.0);
                 assert!(config.label_multiple >= 1);
+                assert!(config.label_seconds * rate.as_f64() >= 1.0);
                 assert!(
                     (config.label_seconds - config.tick_seconds * config.label_multiple as f64)
                         .abs()
@@ -4651,12 +4667,24 @@ mod tests {
                 let tick_px = config.tick_seconds as f32 * zoom;
                 assert!(label_px >= RULER_LABEL_SPACING - 0.05);
                 assert!(tick_px >= RULER_TICK_SPACING - 0.05);
+                for offset in [0.0, 30_000_000.0] {
+                    let first = (offset / config.label_seconds).floor() * config.label_seconds;
+                    let gap = (snapped_seconds(first + config.label_seconds, rate)
+                        - snapped_seconds(first, rate))
+                        * f64::from(zoom);
+                    assert!(
+                        gap >= 70.0,
+                        "visible timecode labels must remain separated at long durations: {gap}"
+                    );
+                }
             }
         }
         let df = ruler_config(DEFAULT_ZOOM, FrameRate::FPS_29_97);
         assert!(df.label_multiple >= 1);
         assert!(ruler_label(1.0, FrameRate::FPS_29_97).contains(';'));
         assert!(ruler_label(1.0, FrameRate::FPS_30).contains(':'));
+        assert!(ruler_label(60.0, FrameRate::FPS_59_94).contains(';'));
+        assert!(!ruler_label(60.0, FrameRate::FPS_23_976).contains(';'));
     }
 
     #[test]
@@ -4667,7 +4695,11 @@ mod tests {
             assert!(close((duration * f64::from(min)) as f32, width * 0.25));
         }
         assert_eq!(fit_zoom(16_000.0, 1.0), MAX_ZOOM);
-        assert_eq!(fit_zoom(1600.0, 0.001), DEFAULT_ZOOM * 10.0);
+        assert_eq!(fit_zoom(1600.0, 0.001), MAX_ZOOM);
+        assert_eq!(fit_zoom(1600.0, 0.0), DEFAULT_ZOOM * 10.0);
+        let duration = Tick(i64::MAX).seconds();
+        assert!(fit_zoom(320.0, duration).is_finite());
+        assert!(max_scroll_seconds(duration, 320.0, MAX_ZOOM, MIN_ZOOM_FLOOR).is_finite());
         // A long timeline can fit below 0.1x; a short one above it.
         assert!(fit_zoom(320.0, 3600.0) < DEFAULT_ZOOM * 0.1);
         assert!(fit_zoom(1600.0, 4.0) > DEFAULT_ZOOM * 0.1);
@@ -4705,9 +4737,8 @@ mod tests {
     #[test]
     fn playhead_anchor_holds_offset_then_restores_pre_anchor_scroll() {
         let min = fit_zoom(1000.0, 40.0);
-        let threshold_zoom = min + (MAX_ZOOM - min) * ZOOM_ANCHOR_THRESHOLD;
-        let before = min + (MAX_ZOOM - min) * 0.1;
-        let after = threshold_zoom + (MAX_ZOOM - min) * 0.2;
+        let before = slider_to_zoom(0.1, min);
+        let after = slider_to_zoom(0.35, min);
         let playhead = 20.0;
         let scroll = 2.0;
         let (held, saved) = anchored_scroll(before, after, min, scroll, playhead, None);
@@ -4718,8 +4749,12 @@ mod tests {
         assert!(close(restored, scroll));
         assert_eq!(saved, None);
         // Below the threshold the same pixel offset is kept.
-        let (scaled, _) = anchored_scroll(100.0, 200.0, min, 3.0, playhead, None);
-        assert!(close(scaled, 1.5));
+        let (scaled, _) = anchored_scroll(min, before, min, 3.0, playhead, None);
+        assert!(close(scaled, 3.0 * min / before));
+        for target in [MAX_ZOOM, before, min] {
+            let (scroll, _) = anchored_scroll(after, target, min, held, 0.0, saved);
+            assert!(scroll.is_finite() && scroll >= 0.0);
+        }
     }
 
     #[test]

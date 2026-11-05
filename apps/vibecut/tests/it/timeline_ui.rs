@@ -956,6 +956,29 @@ fn engine_view_command_is_not_overwritten_by_the_next_editor_action() {
         (fixture.editor.inspect().unwrap().zoom - 204.0).abs() < 0.001,
         "a relative UI action starts from the latest engine-issued view"
     );
+    // An adapter or scene restoration replaces the navigation context, including
+    // the transient pre-anchor position from an earlier zoom gesture.
+    for (zoom, scroll) in [(1.0, 80.0), (25.0, 2000.0)] {
+        fixture
+            .editor
+            .session
+            .execute(
+                "project.set_view_state",
+                serde_json::json!({"zoom":zoom,"scroll":scroll,"playhead":0}),
+            )
+            .unwrap();
+        fixture.editor.activate("transport.pause").unwrap();
+        if zoom == 1.0 {
+            fixture.editor.activate("timeline.zoom_in").unwrap();
+        }
+    }
+    for _ in 0..8 {
+        fixture.editor.activate("timeline.zoom_out").unwrap();
+    }
+    assert!(
+        (fixture.editor.session.metadata().view.scroll - 2000.0).abs() < 0.01,
+        "external view restoration must discard the previous context's pre-anchor scroll"
+    );
 }
 
 #[test]
@@ -1340,7 +1363,7 @@ fn zoom_slider_buttons_and_wheel_navigation_persist_through_view_state() {
     let scroll_before = harness.state().inspect().unwrap().scroll;
     harness.event(egui::Event::MouseWheel {
         unit: egui::MouseWheelUnit::Point,
-        delta: egui::vec2(0.0, 40.0),
+        delta: egui::vec2(0.0, -40.0),
         phase: egui::TouchPhase::Move,
         source: egui::MouseWheelSource::Unknown,
         modifiers: egui::Modifiers::SHIFT,
@@ -1398,40 +1421,72 @@ fn edge_auto_scroll_follows_a_dragged_item_and_stops_when_the_pointer_leaves() {
         stopped,
         "leaving the timeline stops auto-scroll"
     );
+    harness.hover_at(edge);
+    harness.run_steps(2);
+    let gone = harness.state().inspect().unwrap().scroll;
+    harness.event(egui::Event::PointerGone);
+    harness.run_steps(1);
+    assert_eq!(
+        harness.state().inspect().unwrap().scroll,
+        gone,
+        "leaving the window must stop scrolling in the event frame"
+    );
+    harness.run_steps(3);
+    assert_eq!(
+        harness.state().inspect().unwrap().scroll,
+        gone,
+        "a pointer leaving the window must stop auto-scroll despite retained interaction position"
+    );
     harness.drop_at(egui::pos2(body.center().x, body.top() - 4.0));
     harness.run_steps(2);
 }
 
 #[test]
-fn timeline_navigation_screenshot_covers_two_zoom_levels() {
-    let fixture = fixture();
-    let mut harness = harness(fixture.editor);
-    harness.run_steps(3);
-    harness
-        .state_mut()
+fn edge_scroll_clamp_reversal_and_escape_preserve_drag_origin() {
+    let mut f = fixture();
+    f.editor
+        .session
+        .apply(Command::Delete {
+            items: vec![f.video_a],
+        })
+        .unwrap();
+    f.editor.snapping = false;
+    f.editor
         .session
         .execute(
             "project.set_view_state",
-            serde_json::json!({"zoom":0.5,"scroll":0,"playhead":0}),
+            serde_json::json!({"zoom":1,"scroll":0.4,"playhead":0}),
         )
         .unwrap();
-    harness.run_steps(3);
-    let low = harness.render().unwrap();
-    harness
-        .state_mut()
-        .session
-        .execute(
-            "project.set_view_state",
-            serde_json::json!({"zoom":100,"scroll":0,"playhead":0}),
-        )
-        .unwrap();
-    harness.run_steps(3);
-    let high = harness.render().unwrap();
-    let mut combined = image::RgbaImage::new(low.width(), low.height() + high.height());
-    image::imageops::replace(&mut combined, &low, 0, 0);
-    image::imageops::replace(&mut combined, &high, 0, i64::from(low.height()));
-    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../target/p1-13-timeline.png");
-    combined.save(&path).unwrap();
-    assert_eq!(combined.width(), low.width());
-    eprintln!("timeline navigation screenshot: {}", path.display());
+    let id = f.video_b;
+    let mut h = harness(f.editor);
+    h.run_steps(3);
+    let before = h.state().session.project().clone();
+    let rect = widget(&h, &format!("timeline.item.{}", id.0));
+    let body = widget(&h, "timeline.marquee");
+    let press = egui::pos2(rect.left() + 20.0, rect.center().y);
+    h.drag_at(press);
+    h.run_steps(1);
+    let edge = egui::pos2(body.left() + 80.0, press.y);
+    h.hover_at(edge);
+    h.run_steps(4);
+    assert_eq!(h.state().inspect().unwrap().scroll, 0.0);
+    let expected = Tick::from_seconds_f64(
+        6.0 + f64::from(edge.x - press.x) / 40.0 - 0.01,
+        time::Rounding::Nearest,
+    )
+    .unwrap();
+    let actual = item(h.state(), id).start;
+    assert!(
+        (actual.0 - expected.0).abs() <= SECOND / 30,
+        "scroll clamping must compensate only the actual viewport movement: {actual:?} vs {expected:?}"
+    );
+    h.hover_at(press + egui::vec2(0.4, 0.0));
+    h.run_steps(2);
+    assert_eq!(item(h.state(), id).start, Tick(6 * SECOND));
+    h.key_press(egui::Key::Escape);
+    h.run_steps(2);
+    assert_eq!(h.state().session.project(), &before);
+    assert!(!h.state().session.gesture_active());
+    assert!(h.state().playback.frame().is_none());
 }

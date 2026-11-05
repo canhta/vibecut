@@ -157,6 +157,18 @@ impl Scene {
 
 const SCENES: &[Scene] = &[
     Scene {
+        name: "timeline-zoom-low",
+        reference_dark: None,
+        reference_light: None,
+        build: |theme, scale| timeline_zoom(theme, scale, 0.5),
+    },
+    Scene {
+        name: "timeline-zoom-high",
+        reference_dark: None,
+        reference_light: None,
+        build: |theme, scale| timeline_zoom(theme, scale, 100.0),
+    },
+    Scene {
         name: "shorts-pick",
         reference_dark: Some("screens-2026-11-04/shorts-1-pick.png"),
         reference_light: Some("screens-2026-11-04/shorts-1-pick.png"),
@@ -674,6 +686,18 @@ fn media_editor(theme: Theme, locale: Locale) -> Result<(Editor, ItemId), Failur
     editor.playback.seek(Tick(3 * SECOND), false, project)?;
     wait_for_frame(&mut editor)?;
     Ok((editor, first))
+}
+
+fn timeline_zoom(theme: Theme, scale: f32, zoom: f64) -> Result<AppHarness, Failure> {
+    let (mut editor, _) = media_editor(theme, Locale::En)?;
+    editor.session.execute(
+        "project.set_view_state",
+        serde_json::json!({"zoom":zoom,"scroll":0,"playhead":0}),
+    )?;
+    let mut app = app_editor(editor, scale);
+    wait_for_presented(&mut app)?;
+    app.run_steps(3);
+    Ok(app)
 }
 
 fn editor_media(theme: Theme, scale: f32) -> Result<AppHarness, Failure> {

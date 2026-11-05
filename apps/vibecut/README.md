@@ -80,7 +80,11 @@ the playhead's viewport offset and crossing back below restores the pre-anchor
 scroll. Wheel scrolls vertically, Shift/horizontal wheel scrolls horizontally,
 and both clamp to content plus padding. Dragging near an edge auto-scrolls in a
 100 px zone at up to 15 px per frame and stops at the content boundary or when
-the pointer leaves. Zoom, horizontal scroll, frame-snapped ruler seeking,
+the pointer leaves. Movement compensates only the clamped viewport shift;
+horizontal wheel follows egui content direction.
+`cargo xtask ui-audit timeline-zoom-low timeline-zoom-high` captures both zoom
+levels in dark/light at 1x/2x outside CI. Zoom, horizontal scroll, frame-snapped
+ruler seeking,
 single/Cmd-or-Shift multi-selection, drag move, edge trims, split, delete and
 ripple delete all dispatch engine commands. Delete/Backspace removes, Shift+Delete
 ripple-deletes, Cmd/Ctrl+B splits at the playhead and N toggles snapping; Shift
