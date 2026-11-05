@@ -1141,7 +1141,9 @@ fn mixed_text_background_is_reported_as_indeterminate() {
 #[test]
 fn mixed_text_inspector_applies_one_field_and_restores_selected_items() {
     let (fixture, first, second) = two_text_fixture();
-    let mut harness = harness(fixture.editor);
+    let mut harness = Harness::builder()
+        .with_size(egui::vec2(1440.0, 1600.0))
+        .build_ui_state(|ui, editor: &mut Editor| editor.ui(ui), fixture.editor);
     harness.run_steps(3);
     for (id, modifiers) in [
         (first, egui::Modifiers::NONE),
