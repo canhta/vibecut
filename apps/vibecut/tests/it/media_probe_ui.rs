@@ -446,6 +446,22 @@ fn media_panel_renders_probing_ready_and_unsupported_badges() {
     let ready = harness.state().inspect().unwrap();
     assert_eq!(ready.assets[0].state, "ready");
     assert!(ready.assets[0].thumbnail);
+    for view in ["list", "grid"] {
+        harness
+            .state_mut()
+            .set_preference("media_view", serde_json::json!(view))
+            .unwrap();
+        harness.run_steps(3);
+        let widgets = harness.state().inspect().unwrap().widgets;
+        for suffix in ["thumbnail", "status"] {
+            assert!(
+                widgets
+                    .iter()
+                    .any(|widget| widget.id == format!("media.asset.1.{suffix}")),
+                "the {view} view must present the published {suffix}"
+            );
+        }
+    }
     let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target/p1-10-media.png");
     std::fs::create_dir_all(path.parent().unwrap()).unwrap();
     harness.render().unwrap().save(&path).unwrap();

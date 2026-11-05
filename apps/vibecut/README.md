@@ -88,8 +88,9 @@ mode; the sort dropdown orders by name, type, duration or file size, flips the
 active key between ascending and descending, and persists key plus direction in
 the versioned preference store. Sorting is stable, so equal keys keep project
 order. File size is filesystem metadata read for display only (missing files show
-no size); the project record stays unchanged. Cards and rows show the source type,
-duration and size plus the existing probe fields. Click, Shift range over the
+no size); the project record stays unchanged. Cards and rows reuse the import
+cache's decoded thumbnails and capability badges, with type, duration, size and
+probe fields. Click, Shift range over the
 displayed order, Cmd/Ctrl toggle, and a blank-area marquee share one asset
 selection with insert and delete; a blank click or Escape clears it. The context
 menu removes the whole selection through the registered `media.remove` command

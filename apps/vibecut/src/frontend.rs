@@ -32,7 +32,7 @@ const LABEL_WIDTH: f32 = 112.0;
 const SCROLLBAR: f32 = 12.0;
 const TRACK_GAP: f32 = 6.0;
 const MEDIA_CARD_WIDTH: f32 = 112.0;
-const MEDIA_CARD_HEIGHT: f32 = 104.0;
+const MEDIA_CARD_HEIGHT: f32 = 120.0;
 const MEDIA_CARD_GAP: f32 = 8.0;
 const MEDIA_ROW_HEIGHT: f32 = 46.0;
 const MEDIA_REVEAL: Duration = Duration::from_millis(1500);
@@ -3770,8 +3770,12 @@ impl Editor {
             String::new()
         };
         ui.add_sized(
-            [ui.available_width(), 16.0],
-            egui::Label::new(egui::RichText::new(count).small().color(self.secondary())),
+            [ui.available_width(), 20.0],
+            egui::Label::new(
+                egui::RichText::new(count)
+                    .size(14.0)
+                    .color(self.secondary()),
+            ),
         );
         ui.add_space(8.0);
         let locale = self.preferences.locale;
@@ -3788,12 +3792,14 @@ impl Editor {
         let mut rows: Vec<AssetRow> = order
             .iter()
             .filter_map(|id| {
-                by_id
-                    .get(id)
-                    .map(|asset| {
-                        let state = self.asset_states.get(id).copied().unwrap_or(AssetState::Probing);
-                        asset_row(asset, locale, sizes.get(id).copied().flatten(), state)
-                    })
+                by_id.get(id).map(|asset| {
+                    let state = self
+                        .asset_states
+                        .get(id)
+                        .copied()
+                        .unwrap_or(AssetState::Probing);
+                    asset_row(asset, locale, sizes.get(id).copied().flatten(), state)
+                })
             })
             .collect();
         rows.extend(self.pending_imports.iter().map(|(id, path)| AssetRow {
@@ -3952,12 +3958,13 @@ impl Editor {
         let content_height = rows.len().div_ceil(columns) as f32
             * (MEDIA_CARD_HEIGHT + MEDIA_CARD_GAP)
             - MEDIA_CARD_GAP;
+        let viewport_height = self.media_viewport_height(ui);
         egui::ScrollArea::vertical()
             .id_salt("media.grid")
-            .max_height(self.media_viewport_height(ui))
+            .max_height(viewport_height)
             .show(ui, |ui| {
                 let (content, _) = ui.allocate_exact_size(
-                    Vec2::new(width, content_height.max(0.0)),
+                    Vec2::new(width, content_height.max(viewport_height)),
                     egui::Sense::hover(),
                 );
                 let background = ui.interact(
@@ -4000,12 +4007,16 @@ impl Editor {
     }
     fn media_list(&mut self, ui: &mut egui::Ui, rows: &[AssetRow], importing: bool) {
         let width = (ui.clip_rect().right() - ui.cursor().min.x).max(0.0);
+        let viewport_height = self.media_viewport_height(ui);
         egui::ScrollArea::vertical()
             .id_salt("media.list")
-            .max_height(self.media_viewport_height(ui))
+            .max_height(viewport_height)
             .show(ui, |ui| {
                 let (content, _) = ui.allocate_exact_size(
-                    Vec2::new(width, rows.len() as f32 * MEDIA_ROW_HEIGHT),
+                    Vec2::new(
+                        width,
+                        (rows.len() as f32 * MEDIA_ROW_HEIGHT).max(viewport_height),
+                    ),
                     egui::Sense::hover(),
                 );
                 let background = ui.interact(
@@ -4176,7 +4187,7 @@ impl Editor {
                     Vec2::new(0.0, 0.0),
                 );
                 let galley =
-                    painter.layout_no_wrap(label, FontId::proportional(10.0), theme::on_scrim());
+                    painter.layout_no_wrap(label, FontId::proportional(14.0), theme::on_scrim());
                 let badge = Rect::from_min_size(
                     badge.min - Vec2::new(galley.size().x + 4.0, galley.size().y + 2.0),
                     galley.size() + Vec2::new(4.0, 2.0),
@@ -4188,14 +4199,14 @@ impl Editor {
                 egui::pos2(rect.left() + 5.0, thumbnail.bottom() + 5.0),
                 Align2::LEFT_TOP,
                 &row.name,
-                FontId::proportional(12.0),
+                FontId::proportional(14.0),
                 text,
             );
             painter.text(
-                egui::pos2(rect.left() + 5.0, thumbnail.bottom() + 21.0),
+                egui::pos2(rect.left() + 5.0, thumbnail.bottom() + 27.0),
                 Align2::LEFT_TOP,
                 &row.brief,
-                FontId::proportional(10.0),
+                FontId::proportional(14.0),
                 secondary,
             );
         } else {
@@ -4208,26 +4219,35 @@ impl Editor {
                 egui::pos2(rect.left() + 74.0, rect.center().y - 2.0),
                 Align2::LEFT_BOTTOM,
                 &row.name,
-                FontId::proportional(13.0),
+                FontId::proportional(14.0),
                 text,
             );
             painter.text(
                 egui::pos2(rect.left() + 74.0, rect.center().y + 2.0),
                 Align2::LEFT_TOP,
                 &row.info,
-                FontId::proportional(11.0),
+                FontId::proportional(14.0),
                 secondary,
             );
         }
         let status_rect = Rect::from_min_size(
-            if grid { rect.min + Vec2::splat(6.0) } else { egui::pos2(rect.right() - 102.0, rect.top() + 3.0) },
-            Vec2::new((rect.width() - 12.0).min(96.0), 14.0),
+            if grid {
+                rect.min + Vec2::splat(6.0)
+            } else {
+                egui::pos2(rect.right() - 102.0, rect.top() + 3.0)
+            },
+            Vec2::new((rect.width() - 12.0).min(96.0), 20.0),
         );
         painter.rect_filled(status_rect, 2.0, self.control_fill());
-        let status = ui.put(status_rect, egui::Label::new(
-            egui::RichText::new(asset_state_text(self.preferences.locale, row.state))
-                .size(10.0).color(asset_state_color(row.state, dark)),
-        ).truncate());
+        let status = ui.put(
+            status_rect,
+            egui::Label::new(
+                egui::RichText::new(asset_state_text(self.preferences.locale, row.state))
+                    .size(14.0)
+                    .color(asset_state_color(row.state, dark)),
+            )
+            .truncate(),
+        );
         self.remember(format!("media.asset.{}.status", row.id.0), &status);
         let ids: Vec<AssetId> = if selected {
             self.media_selection.iter().copied().collect()
@@ -4254,16 +4274,28 @@ impl Editor {
         });
         response
     }
-    fn media_thumbnail(&mut self, ui: &mut egui::Ui, row: &AssetRow, rect: Rect, fallback_size: f32, color: Color32) {
+    fn media_thumbnail(
+        &mut self,
+        ui: &mut egui::Ui,
+        row: &AssetRow,
+        rect: Rect,
+        fallback_size: f32,
+        color: Color32,
+    ) {
         if let Some(texture) = self.thumbnail_texture(ui.ctx(), row.id) {
             let size = texture.size_vec2();
             let scale = (rect.width() / size.x).min(rect.height() / size.y);
             let image_rect = Rect::from_center_size(rect.center(), size * scale);
-            let response = ui.put(image_rect, egui::Image::new((texture.id(), image_rect.size())));
+            let response = ui.put(
+                image_rect,
+                egui::Image::new((texture.id(), image_rect.size())),
+            );
             self.remember(format!("media.asset.{}.thumbnail", row.id.0), &response);
         } else {
-            icons::tinted(row.icon, fallback_size, color).paint_at(ui,
-                Rect::from_center_size(rect.center(), Vec2::splat(fallback_size)));
+            icons::tinted(row.icon, fallback_size, color).paint_at(
+                ui,
+                Rect::from_center_size(rect.center(), Vec2::splat(fallback_size)),
+            );
         }
     }
     fn inspector(&mut self, ui: &mut egui::Ui) {
@@ -7556,7 +7588,12 @@ fn asset_state_color(state: AssetState, dark: bool) -> Color32 {
         AssetState::Unsupported(_) => theme::warning(dark),
     }
 }
-fn asset_row(asset: &SourceAsset, locale: Locale, size: Option<u64>, state: AssetState) -> AssetRow {
+fn asset_row(
+    asset: &SourceAsset,
+    locale: Locale,
+    size: Option<u64>,
+    state: AssetState,
+) -> AssetRow {
     let mut info = Vec::new();
     let video = asset
         .probe()

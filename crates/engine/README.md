@@ -62,6 +62,13 @@ failed commands, cancelled gestures and failed batches publish none of them.
 Ephemeral assets remain in project storage and available to insert/render, while
 the desktop media library omits them and its selection uses only visible assets.
 
+`media.remove { assets }` removes a nonempty, unique list of at most 100,000
+existing asset IDs as one undo step. It refuses missing IDs with `NoAsset` and
+any reference in any scene with `AssetsInUse(Vec<AssetUsage>)`, listing the asset
+and its item IDs. Refusal preserves the entire project and history; successful
+removal deletes records only, retaining source files and unrelated content.
+Undo restores the exact records and their project order; redo removes them again.
+
 ## Timeline placement
 
 `timeline.insert { placement, item }` performs track choice, optional allocation

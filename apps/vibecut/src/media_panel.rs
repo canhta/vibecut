@@ -13,20 +13,6 @@ pub enum MediaView {
     Grid,
     List,
 }
-impl MediaView {
-    pub const fn id(self) -> &'static str {
-        match self {
-            Self::Grid => "grid",
-            Self::List => "list",
-        }
-    }
-    pub fn from_id(id: &str) -> Option<Self> {
-        [Self::Grid, Self::List]
-            .into_iter()
-            .find(|view| view.id() == id)
-    }
-}
-
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum MediaSortKey {
@@ -218,7 +204,7 @@ mod tests {
         SourceAsset::try_from(AssetData {
             ephemeral: false,
             id: AssetId(id),
-            path: std::path::PathBuf::from("/tmp").join(name),
+            path: std::env::temp_dir().join(name),
             content_hash: ContentHash([id as u8; 32]),
             probe: SourceProbe {
                 format: format.into(),
@@ -235,22 +221,18 @@ mod tests {
 
     #[test]
     fn equal_keys_keep_project_order_in_both_directions() {
+        let name = format!("{} Tiếng Việt 🎬.mp4", "a".repeat(4096));
         let assets = [
-            asset(
-                1,
-                "same.mp4",
-                Tick(10),
-                vec![stream(StreamKind::Video, None)],
-            ),
+            asset(1, &name, Tick(10), vec![stream(StreamKind::Video, None)]),
             asset(
                 2,
-                "same.mp4",
+                &name.to_lowercase(),
                 Tick(10),
                 vec![stream(StreamKind::Video, None)],
             ),
             asset(
                 3,
-                "same.mp4",
+                &name.to_uppercase(),
                 Tick(10),
                 vec![stream(StreamKind::Video, None)],
             ),
@@ -355,11 +337,18 @@ mod tests {
                 Tick(10),
                 vec![stream(StreamKind::Video, None)],
             ),
+            asset(
+                4,
+                "empty.mp4",
+                Tick(10),
+                vec![stream(StreamKind::Video, None)],
+            ),
         ];
         let sizes = BTreeMap::from([
-            (AssetId(1), Some(10)),
+            (AssetId(1), Some(u64::MAX)),
             (AssetId(2), None),
-            (AssetId(3), Some(5)),
+            (AssetId(3), Some(1 << 63)),
+            (AssetId(4), Some(0)),
         ]);
         assert_eq!(
             ordered_assets(
@@ -370,7 +359,7 @@ mod tests {
                 },
                 &sizes
             ),
-            vec![AssetId(2), AssetId(3), AssetId(1)]
+            vec![AssetId(2), AssetId(4), AssetId(3), AssetId(1)]
         );
         assert_eq!(
             ordered_assets(
@@ -381,7 +370,7 @@ mod tests {
                 },
                 &sizes
             ),
-            vec![AssetId(1), AssetId(3), AssetId(2)]
+            vec![AssetId(1), AssetId(3), AssetId(2), AssetId(4)]
         );
     }
 

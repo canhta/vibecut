@@ -10,8 +10,9 @@ use egui_kittest::{
 };
 use engine::{ByteBudget, Command, Session};
 use media::{
-    AssetData, AssetId, AudioInfo, ColorInfo, ContentHash, SourceAsset, SourceProbe, SourceStream,
-    StreamKind, TimeBase, VideoInfo,
+    AssetData, AssetId, AudioInfo, ColorInfo, ContentHash, Decodability, ImportedSource,
+    MediaError, ProbeCapabilities, SourceAsset, SourceProbe, SourceStream, StreamCapability,
+    StreamKind, Thumbnail, TimeBase, VideoInfo,
 };
 use project::{ItemParams, Project, ProjectId};
 use std::{
@@ -27,7 +28,7 @@ use vibecut::{
     Editor,
     catalog::{PreferenceStore, Preferences},
     egui,
-    import::ImportProbe,
+    import::{ImportProbe, ThumbnailSource},
     media_panel::{MediaSort, MediaSortKey, MediaSortOrder, MediaView},
     playback::{Files, Playback},
 };
@@ -68,7 +69,9 @@ fn source_asset(id: u64, name: &str, duration: Option<Tick>) -> SourceAsset {
     SourceAsset::try_from(AssetData {
         ephemeral: false,
         id: AssetId(id),
-        path: PathBuf::from("/tmp/vibecut-media-library").join(name),
+        path: std::env::temp_dir()
+            .join("vibecut-media-library")
+            .join(name),
         content_hash: ContentHash::from_bytes(&[id as u8; 8]),
         probe: SourceProbe {
             format: "mov,mp4".into(),
@@ -96,7 +99,81 @@ fn editor_with(preferences: Preferences, assets: &[(u64, &str)]) -> Editor {
     )
     .unwrap();
     playback.set_device_available(true);
-    Editor::new(session, playback, preferences)
+    let records = session.project().data().assets.clone();
+    let mut editor = Editor::new(session, playback, preferences);
+    editor
+        .set_import_probe(Arc::new(RestoredProbe(records)))
+        .unwrap();
+    editor.set_thumbnailer(Arc::new(NoThumbnails)).unwrap();
+    let deadline = Instant::now() + Duration::from_secs(10);
+    loop {
+        editor.tick();
+        if !editor.importing()
+            && editor
+                .inspect()
+                .unwrap()
+                .assets
+                .iter()
+                .all(|asset| asset.state == "ready")
+        {
+            break;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "fixture restoration did not finish"
+        );
+        std::thread::sleep(Duration::from_millis(2));
+    }
+    editor
+}
+
+struct RestoredProbe(Vec<SourceAsset>);
+impl ImportProbe for RestoredProbe {
+    fn import(
+        &self,
+        id: AssetId,
+        _path: PathBuf,
+        _cancelled: Arc<AtomicBool>,
+    ) -> media::Result<ImportedSource> {
+        let asset = self
+            .0
+            .iter()
+            .find(|asset| asset.id() == id)
+            .cloned()
+            .ok_or(MediaError::Invalid("fixture asset"))?;
+        Ok(imported(asset))
+    }
+}
+struct NoThumbnails;
+impl ThumbnailSource for NoThumbnails {
+    fn thumbnail(
+        &self,
+        _asset: &SourceAsset,
+        _at: Tick,
+        _max_edge: u32,
+        _cancelled: Arc<AtomicBool>,
+    ) -> media::Result<Thumbnail> {
+        Err(MediaError::Unsupported("fixture thumbnail"))
+    }
+}
+fn imported(asset: SourceAsset) -> ImportedSource {
+    let capabilities = ProbeCapabilities {
+        streams: asset
+            .probe()
+            .streams
+            .iter()
+            .map(|stream| StreamCapability {
+                index: stream.index,
+                kind: stream.kind,
+                codec: stream.codec.clone(),
+                decodability: Decodability::Decodable,
+            })
+            .collect(),
+    };
+    ImportedSource {
+        asset,
+        capabilities,
+    }
 }
 
 fn editor() -> Editor {
@@ -247,6 +324,12 @@ fn shift_range_marquee_blank_click_and_escape_follow_the_sorted_order() {
         vec![AssetId(1), AssetId(2), AssetId(3)],
         "shift extends over the displayed order"
     );
+    click_modifiers(&mut harness, "media.asset.1", egui::Modifiers::SHIFT);
+    assert_eq!(
+        harness.state().inspect().unwrap().media_selection,
+        vec![AssetId(1), AssetId(2)],
+        "reversing a Shift range retains the original anchor"
+    );
 
     let card = widget_rect(&harness, "media.asset.3");
     let start = egui::pos2(card.right() + 8.0, card.center().y);
@@ -256,12 +339,53 @@ fn shift_range_marquee_blank_click_and_escape_follow_the_sorted_order() {
     harness.run_steps(1);
     harness.hover_at(end);
     harness.run_steps(1);
+    harness.hover_at(start);
+    harness.run_steps(1);
+    assert!(
+        harness
+            .state()
+            .inspect()
+            .unwrap()
+            .media_selection
+            .is_empty(),
+        "reversing the marquee removes assets outside its current bounds"
+    );
+    harness.hover_at(end);
+    harness.run_steps(1);
     harness.drop_at(end);
     harness.run_steps(2);
     assert_eq!(
         harness.state().inspect().unwrap().media_selection,
         vec![AssetId(1), AssetId(2), AssetId(3)],
         "marquee intersects every card"
+    );
+
+    harness.hover_at(start);
+    harness.drag_at(start);
+    harness.run_steps(1);
+    harness.hover_at(end);
+    harness.run_steps(1);
+    harness.key_press(egui::Key::Escape);
+    harness.run_steps(2);
+    assert!(
+        harness
+            .state()
+            .inspect()
+            .unwrap()
+            .media_selection
+            .is_empty(),
+        "Escape cancels an active marquee and clears media selection"
+    );
+    harness.drop_at(end);
+    harness.run_steps(2);
+    assert!(
+        harness
+            .state()
+            .inspect()
+            .unwrap()
+            .media_selection
+            .is_empty(),
+        "release after cancellation must not reapply the marquee"
     );
 
     let blank = start;
@@ -292,6 +416,35 @@ fn shift_range_marquee_blank_click_and_escape_follow_the_sorted_order() {
             .is_empty(),
         "Escape clears"
     );
+}
+
+#[test]
+fn blank_space_below_media_clears_selection_in_both_views() {
+    for view in [MediaView::Grid, MediaView::List] {
+        let preferences = Preferences {
+            media_view: view,
+            ..Preferences::default()
+        };
+        let mut harness = build(editor_with(preferences, &[(1, "one.mp4")]));
+        harness.run_steps(3);
+        click(&mut harness, "media.asset.1");
+        let row = widget_rect(&harness, "media.asset.1");
+        let blank = egui::pos2(row.center().x, row.bottom() + 24.0);
+        harness.hover_at(blank);
+        harness.drag_at(blank);
+        harness.run_steps(1);
+        harness.drop_at(blank);
+        harness.run_steps(2);
+        assert!(
+            harness
+                .state()
+                .inspect()
+                .unwrap()
+                .media_selection
+                .is_empty(),
+            "blank space below the last asset must clear {view:?} selection"
+        );
+    }
 }
 
 #[test]
@@ -493,7 +646,7 @@ impl ImportProbe for GateProbe {
         id: AssetId,
         path: PathBuf,
         _cancelled: Arc<AtomicBool>,
-    ) -> media::Result<SourceAsset> {
+    ) -> media::Result<ImportedSource> {
         if self.calls.fetch_add(1, Ordering::SeqCst) == 1 {
             *self.second.0.lock().unwrap() = true;
             self.second.1.notify_all();
@@ -505,7 +658,8 @@ impl ImportProbe for GateProbe {
         let name = path
             .file_name()
             .map_or_else(String::new, |name| name.to_string_lossy().into_owned());
-        Ok(source_asset(id.0, &name, Some(Tick(4 * SECOND))))
+        let asset = source_asset(id.0, &name, Some(Tick(4 * SECOND)));
+        Ok(imported(asset))
     }
 }
 
@@ -518,7 +672,11 @@ fn import_batch_shows_progress_and_disables_view_sort_import_and_insert() {
     editor
         .drop_files(
             (1..=3)
-                .map(|index| PathBuf::from(format!("/tmp/vibecut-media-library/gate-{index}.mp4")))
+                .map(|index| {
+                    std::env::temp_dir()
+                        .join("vibecut-media-library")
+                        .join(format!("gate-{index}.mp4"))
+                })
                 .collect(),
         )
         .unwrap();
