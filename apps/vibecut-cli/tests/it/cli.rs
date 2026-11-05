@@ -657,6 +657,10 @@ fn export_writes_a_completed_file_and_keeps_progress_on_stderr() {
         String::from_utf8_lossy(&output.stderr)
     );
     assert_eq!(stdout_json(&output)["status"], "completed");
+    assert_eq!(
+        stdout_json(&output)["path"],
+        output_path.to_string_lossy().as_ref()
+    );
     assert!(fs::metadata(&output_path).unwrap().len() > 0);
     assert!(String::from_utf8_lossy(&output.stderr).contains("progress"));
     if tools() {

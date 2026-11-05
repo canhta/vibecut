@@ -651,3 +651,93 @@ fn subtitle_cancel_or_panic_after_finalization_preserves_destination_and_cleans_
         assert_eq!(budget.snapshot().unwrap().used, 0);
     }
 }
+
+#[test]
+fn publication_refuses_active_project_aliases_and_writer_namespace() {
+    let dir = tempfile::tempdir().unwrap();
+    let source = dir.path().join("finished.mp4");
+    std::fs::write(&source, b"completed movie").unwrap();
+    let project_path = dir.path().join("active.vibecut");
+    std::fs::write(&project_path, b"project JSON").unwrap();
+    let alias = dir.path().join("alias.vibecut");
+    std::fs::hard_link(&project_path, &alias).unwrap();
+    let metadata = dir.path().join("active.vibecut.meta.json");
+    let recovery = dir.path().join("recovery");
+    std::fs::create_dir(&recovery).unwrap();
+    let budget = ByteBudget::new(1 << 20).unwrap();
+    let mut runner = runner(&budget, Arc::new(SystemClock::default()));
+    for destination in [
+        project_path.clone(),
+        dir.path().join(".").join("active.vibecut"),
+        alias,
+        dir.path().join(".").join("active.vibecut.meta.json"),
+        dir.path().join(".active.vibecut.lock"),
+        recovery.join("journal.json"),
+    ] {
+        let (id, _) = engine::submit_export_publication(
+            &mut runner,
+            key(0),
+            project(),
+            source.clone(),
+            destination,
+            vec![project_path.clone(), metadata.clone(), recovery.clone()],
+            Arc::new(project::atomic::Fs),
+        )
+        .unwrap();
+        let result = complete(&mut runner, id);
+        assert_eq!(result.state, JobState::Failed, "{:?}", result.error);
+        assert_eq!(std::fs::read(&project_path).unwrap(), b"project JSON");
+        assert_eq!(std::fs::read(&source).unwrap(), b"completed movie");
+        assert!(!metadata.exists());
+    }
+    assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 4);
+}
+
+#[test]
+fn failed_publication_sync_preserves_completed_input_and_previous_destination() {
+    struct FullDisk;
+    impl project::atomic::AtomicFs for FullDisk {
+        fn sync(&self, _: &std::fs::File) -> std::io::Result<()> {
+            Err(std::io::Error::other("injected full disk"))
+        }
+    }
+    let dir = tempfile::tempdir().unwrap();
+    let source = dir.path().join("finished.mp4");
+    let destination = dir.path().join("prior.mp4");
+    std::fs::write(&source, b"completed movie").unwrap();
+    std::fs::write(&destination, b"prior movie").unwrap();
+    let budget = ByteBudget::new(1 << 20).unwrap();
+    let mut runner = runner(&budget, Arc::new(SystemClock::default()));
+    let (id, _) = engine::submit_export_publication(
+        &mut runner,
+        key(0),
+        project(),
+        source.clone(),
+        destination.clone(),
+        Vec::new(),
+        Arc::new(FullDisk),
+    )
+    .unwrap();
+    let result = complete(&mut runner, id);
+    assert_eq!(result.state, JobState::Failed);
+    assert!(matches!(
+        result.error.as_deref(),
+        Some(EditError::Project(project::Error::Io(_)))
+    ));
+    assert_eq!(std::fs::read(&source).unwrap(), b"completed movie");
+    assert_eq!(std::fs::read(&destination).unwrap(), b"prior movie");
+    assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 2);
+    let (id, _) = engine::submit_export_publication(
+        &mut runner,
+        key(0),
+        project(),
+        source.clone(),
+        destination.clone(),
+        Vec::new(),
+        Arc::new(project::atomic::Fs),
+    )
+    .unwrap();
+    assert_eq!(complete(&mut runner, id).state, JobState::Completed);
+    assert_eq!(std::fs::read(&destination).unwrap(), b"completed movie");
+    assert_eq!(std::fs::read(&source).unwrap(), b"completed movie");
+}

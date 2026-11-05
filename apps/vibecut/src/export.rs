@@ -100,21 +100,33 @@ impl ExportOptions {
         settings
     }
 }
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ExportPhase {
+    Settings,
+    Running,
+    Ready,
+    Failed,
+}
 #[derive(Clone)]
 pub struct ExportInspection {
     pub open: bool,
-    pub destination: Option<PathBuf>,
+    pub phase: ExportPhase,
     pub job: Option<JobSnapshot>,
     pub unavailable: Vec<render::Unavailable>,
     pub consent: bool,
-    pub replace: bool,
     pub empty: bool,
     pub error: Option<Arc<Error>>,
+    pub finished: Option<PathBuf>,
+    pub diagnostics: Option<String>,
+    pub saved: Option<PathBuf>,
+    pub attempt: Option<ExportOptions>,
+}
+#[derive(Clone, Debug)]
+pub struct SaveRequest {
+    pub name: String,
 }
 pub struct ExportDialog {
     pub(crate) open: bool,
-    destination: Option<PathBuf>,
-    replace: bool,
     consent: bool,
     unavailable: Vec<render::Unavailable>,
     refused: Option<(Arc<project::Project>, bool)>,
@@ -126,6 +138,15 @@ pub struct ExportDialog {
     job: Option<(JobId, CancelToken)>,
     snapshot: Option<JobSnapshot>,
     cancelling: bool,
+    temp: Option<PathBuf>,
+    finished: Option<PathBuf>,
+    pending_save: bool,
+    attempt: Option<ExportOptions>,
+    diagnostics: Option<String>,
+    saved: Option<PathBuf>,
+    publishing: Option<PathBuf>,
+    input: Option<CacheKey>,
+    publication_fs: Arc<dyn project::atomic::AtomicFs + Send + Sync>,
 }
 impl ExportDialog {
     pub(crate) fn new(
@@ -134,8 +155,6 @@ impl ExportDialog {
     ) -> Result<Self> {
         Ok(Self {
             open: false,
-            destination: None,
-            replace: false,
             consent: false,
             unavailable: Vec::new(),
             refused: None,
@@ -158,6 +177,15 @@ impl ExportDialog {
             job: None,
             snapshot: None,
             cancelling: false,
+            temp: None,
+            finished: None,
+            pending_save: false,
+            attempt: None,
+            diagnostics: None,
+            saved: None,
+            publishing: None,
+            input: None,
+            publication_fs: Arc::new(project::atomic::Fs),
         })
     }
     /// Inject only the render source boundary; scheduling stays with engine.
@@ -168,16 +196,46 @@ impl ExportDialog {
         self.sources = sources;
         Ok(())
     }
+    /// Inject the existing storage boundary; IO still runs on the engine worker.
+    pub fn set_publication_fs(
+        &mut self,
+        fs: Arc<dyn project::atomic::AtomicFs + Send + Sync>,
+    ) -> Result<()> {
+        if self.active() {
+            return Err(Error::Invalid("export in progress"));
+        }
+        self.publication_fs = fs;
+        Ok(())
+    }
+    pub fn phase(&self) -> ExportPhase {
+        if self.active() {
+            ExportPhase::Running
+        } else if self.error.is_some()
+            || self
+                .snapshot
+                .as_ref()
+                .is_some_and(|snapshot| snapshot.state == JobState::Failed)
+        {
+            ExportPhase::Failed
+        } else if self.finished.is_some() {
+            ExportPhase::Ready
+        } else {
+            ExportPhase::Settings
+        }
+    }
     pub fn inspect(&self) -> ExportInspection {
         ExportInspection {
             open: self.open,
-            destination: self.destination.clone(),
+            phase: self.phase(),
             job: self.snapshot.clone(),
             unavailable: self.unavailable.clone(),
             consent: self.consent,
-            replace: self.replace,
             empty: self.empty,
             error: self.error.clone(),
+            finished: self.finished.clone(),
+            diagnostics: self.diagnostics.clone(),
+            saved: self.saved.clone(),
+            attempt: self.attempt,
         }
     }
     pub fn active(&self) -> bool {
@@ -191,23 +249,13 @@ impl ExportDialog {
     pub fn show(&mut self, project: &project::Project) {
         if !self.open {
             self.consent = false;
-            self.replace = false;
+            if self.finished.is_none() {
+                self.error = None;
+                self.diagnostics = None;
+            }
         }
         self.open = true;
         self.empty = project.duration() == time::Tick::ZERO;
-    }
-    /// Inject the native save picker's result; choosing a path never authorizes replacement.
-    pub fn set_destination(&mut self, path: PathBuf) -> Result<()> {
-        if self.active() {
-            return Err(Error::Invalid("export in progress"));
-        }
-        if path.as_os_str().is_empty() || path.as_os_str().len() > 32768 {
-            return Err(Error::Invalid("export destination"));
-        }
-        self.destination = Some(path);
-        self.replace = false;
-        self.error = None;
-        Ok(())
     }
     pub fn cancel(&mut self) {
         if let Some((_, token)) = &self.job {
@@ -221,31 +269,73 @@ impl ExportDialog {
         if let Some((id, _)) = self.job {
             self.snapshot = self.runner.snapshot(id);
         }
-        if self
-            .refused
-            .as_ref()
-            .is_some_and(|(p, a)| !Arc::ptr_eq(p, project) || *a != options.include_audio)
-        {
+        if self.refused.as_ref().is_some_and(|(p, a)| {
+            self.finished.is_none() && (!Arc::ptr_eq(p, project) || *a != options.include_audio)
+        }) {
             self.consent = false;
             self.unavailable.clear();
             if !self.active() {
                 self.snapshot = None;
                 self.job = None;
                 self.refused = None;
+                self.temp = None;
+                self.finished = None;
+                self.pending_save = false;
+                self.diagnostics = None;
             }
             return Ok(());
         }
-        if let Some(snapshot) = &self.snapshot {
-            if !self.active() {
+        let state = self.snapshot.as_ref().map(|snapshot| snapshot.state);
+        let failure = self
+            .snapshot
+            .as_ref()
+            .and_then(|snapshot| snapshot.error.clone());
+        match state {
+            Some(JobState::Completed) => {
                 self.cancelling = false;
+                if let Some(path) = self.publishing.take() {
+                    self.discard_finished();
+                    self.saved = Some(path);
+                    self.open = false;
+                    self.snapshot = None;
+                    self.job = None;
+                    self.diagnostics = None;
+                    return Ok(());
+                }
+                if self.finished.is_none() {
+                    self.finished = self.temp.take();
+                    self.pending_save = self.finished.is_some();
+                }
             }
-            if let Some(error) = &snapshot.error
-                && let engine::EditError::Render(render::Error::Unavailable(items)) = error.as_ref()
-                && self.unavailable != *items
-            {
-                self.consent = false;
-                self.unavailable = items.clone();
+            Some(JobState::Failed) => {
+                self.cancelling = false;
+                if let Some(error) = &failure
+                    && let engine::EditError::Render(render::Error::Unavailable(items)) =
+                        error.as_ref()
+                    && self.unavailable != *items
+                {
+                    self.consent = false;
+                    self.unavailable = items.clone();
+                }
+                self.diagnostics = failure
+                    .as_ref()
+                    .map(|error| diagnostics(error, &self.unavailable));
             }
+            Some(JobState::Cancelled) => {
+                if let Some(temp) = self.temp.take() {
+                    let _ = std::fs::remove_file(temp);
+                }
+                self.cancelling = false;
+                self.snapshot = None;
+                self.job = None;
+                if self.publishing.take().is_none() {
+                    self.finished = None;
+                }
+                self.pending_save = false;
+                self.diagnostics = None;
+                self.error = None;
+            }
+            _ => {}
         }
         Ok(())
     }
@@ -257,18 +347,11 @@ impl ExportDialog {
         if self.empty {
             return Err(Error::EmptyTimeline);
         }
-        let path = self
-            .destination
-            .clone()
-            .ok_or(Error::Invalid("export destination required"))?;
+        let path = temp_output(options.format.extension());
         let range = time::TimeRange::new(time::Tick::ZERO, project.duration())?;
         let mut settings = options.settings(&project);
         settings.render = self.render_state.settings(&project)?;
-        settings.overwrite = if self.replace {
-            project::atomic::Overwrite::Replace
-        } else {
-            project::atomic::Overwrite::Refuse
-        };
+        settings.overwrite = project::atomic::Overwrite::Replace;
         let same = self
             .refused
             .as_ref()
@@ -297,7 +380,7 @@ impl ExportDialog {
             project.clone(),
             range,
             settings,
-            path,
+            path.clone(),
             move || sources.create(),
         )?;
         if strict {
@@ -308,13 +391,163 @@ impl ExportDialog {
         self.job = Some(job);
         self.cancelling = false;
         self.error = None;
+        self.temp = Some(path);
+        self.finished = None;
+        self.pending_save = false;
+        self.diagnostics = None;
+        self.attempt = Some(options);
+        self.input = Some(key);
+        self.publishing = None;
         self.refused = Some((project, options.include_audio));
         Ok(())
     }
+    pub fn retry(&mut self, project: Arc<project::Project>) -> Result<()> {
+        if self.phase() != ExportPhase::Failed {
+            return Err(Error::Invalid("no failed export to retry"));
+        }
+        if self.finished.is_some() {
+            // A save failure retries destination selection, preserving rendered bytes.
+            self.snapshot = None;
+            self.job = None;
+            self.publishing = None;
+            self.diagnostics = None;
+            self.pending_save = true;
+            self.error = None;
+            return Ok(());
+        }
+        let options = self
+            .attempt
+            .ok_or(Error::Invalid("no export settings to retry"))?;
+        self.start(project, options)
+    }
+    pub fn take_save_request(
+        &mut self,
+        project: &project::Project,
+        options: ExportOptions,
+    ) -> Option<SaveRequest> {
+        if !self.pending_save {
+            return None;
+        }
+        self.pending_save = false;
+        Some(SaveRequest {
+            name: default_file_name(
+                project.data().name.as_str(),
+                self.attempt.unwrap_or(options).format.extension(),
+            ),
+        })
+    }
+    pub fn save_to(&mut self, path: PathBuf, protected: Vec<PathBuf>) -> Result<()> {
+        if self.active() {
+            return Err(Error::Invalid("export in progress"));
+        }
+        let source = self
+            .finished
+            .clone()
+            .ok_or(Error::Invalid("no finished export"))?;
+        let project = self
+            .refused
+            .as_ref()
+            .ok_or(Error::Invalid("no export snapshot"))?
+            .0
+            .clone();
+        let key = self.input.ok_or(Error::Invalid("no export job"))?;
+        let job = engine::submit_export_publication(
+            &mut self.runner,
+            key,
+            project,
+            source,
+            path.clone(),
+            protected,
+            self.publication_fs.clone(),
+        )?;
+        self.snapshot = self.runner.snapshot(job.0);
+        self.job = Some(job);
+        self.publishing = Some(path);
+        self.pending_save = false;
+        self.diagnostics = None;
+        self.error = None;
+        Ok(())
+    }
+    pub fn save_cancelled(&mut self) {
+        self.pending_save = false;
+    }
+    pub fn take_saved(&mut self) -> Option<PathBuf> {
+        self.saved.take()
+    }
+    pub fn discard_finished(&mut self) {
+        if let Some(path) = self.finished.take() {
+            let _ = std::fs::remove_file(path);
+        }
+        self.pending_save = false;
+    }
+}
+
+fn temp_output(extension: &str) -> PathBuf {
+    let nanos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |elapsed| elapsed.as_nanos());
+    std::env::temp_dir().join(format!(
+        "vibecut-export-{}-{nanos}.{extension}",
+        std::process::id()
+    ))
+}
+fn diagnostics(error: &engine::EditError, unavailable: &[render::Unavailable]) -> String {
+    let mut text = format!("{error:?}");
+    for item in unavailable {
+        text.push_str(&format!(
+            "\nasset {} item {} range {}..{} {:?}",
+            item.asset.0,
+            item.item.0,
+            item.range.start().0,
+            item.range.end().0,
+            item.reason
+        ));
+    }
+    text
+}
+const RESERVED_FILE_NAMES: [&str; 22] = [
+    "CON", "PRN", "AUX", "NUL", "COM1", "COM2", "COM3", "COM4", "COM5", "COM6", "COM7", "COM8",
+    "COM9", "LPT1", "LPT2", "LPT3", "LPT4", "LPT5", "LPT6", "LPT7", "LPT8", "LPT9",
+];
+/// Keep Unicode and spaces, replace filesystem-special characters, trim names
+/// Windows refuses and escape its reserved device names.
+pub fn sanitize_file_name(name: &str) -> String {
+    let mut sanitized = String::with_capacity(name.len());
+    for character in name.chars() {
+        if character.is_control()
+            || matches!(
+                character,
+                '<' | '>' | ':' | '"' | '/' | '\\' | '|' | '?' | '*'
+            )
+        {
+            sanitized.push('_');
+        } else {
+            sanitized.push(character);
+        }
+    }
+    let trimmed = sanitized.trim().trim_end_matches(['.', ' ']).trim_end();
+    let trimmed = if trimmed.is_empty() {
+        "Untitled Project"
+    } else {
+        trimmed
+    };
+    let stem = trimmed.split('.').next().unwrap_or(trimmed).trim_end();
+    if RESERVED_FILE_NAMES
+        .iter()
+        .any(|reserved| reserved.eq_ignore_ascii_case(stem))
+    {
+        format!("_{trimmed}")
+    } else {
+        trimmed.to_owned()
+    }
+}
+pub fn default_file_name(project_name: &str, extension: &str) -> String {
+    format!("{}.{extension}", sanitize_file_name(project_name))
 }
 
 pub(crate) enum Action {
-    Pick,
+    Retry,
+    Save,
     Start,
 }
 pub(crate) struct DialogUi {
@@ -412,33 +645,6 @@ impl ExportDialog {
                             .max_height(body_height)
                             .show(ui, |ui| {
                                 ui.add_enabled_ui(!active, |ui| {
-                                    ui.label(tr(Text::ExportDestination));
-                                    if let Some(path) = &self.destination {
-                                        ui.add(egui::Label::new(path.to_string_lossy()).truncate())
-                                            .on_hover_text(path.to_string_lossy());
-                                    }
-                                    let r = ui.add(egui::Button::image_and_text(
-                                        crate::icons::tinted(
-                                            crate::icons::Icon::FolderOpen,
-                                            16.0,
-                                            if active {
-                                                theme::disabled(dark)
-                                            } else {
-                                                theme::text(dark)
-                                            },
-                                        ),
-                                        tr(Text::ChooseDestination),
-                                    ));
-                                    if r.clicked() {
-                                        result.action = Some(Action::Pick);
-                                    }
-                                    result.widgets.push(("export.destination", r));
-                                    if self.destination.as_ref().is_some_and(|p| p.exists()) {
-                                        let r =
-                                            ui.checkbox(&mut self.replace, tr(Text::ExportReplace));
-                                        result.widgets.push(("export.replace", r));
-                                    }
-                                    ui.add_space(12.0);
                                     let header = egui::CollapsingHeader::new(format!(
                                         "{} · {}",
                                         tr(Text::ExportFormat),
@@ -490,69 +696,18 @@ impl ExportDialog {
                                         .widgets
                                         .push(("export.quality", header.header_response));
                                     ui.add_space(14.0);
-                                    let header = egui::CollapsingHeader::new(tr(Text::Audio))
-                                        .id_salt("export.audio")
-                                        .default_open(false)
-                                        .show(ui, |ui| {
-                                            let r = ui.checkbox(
-                                                &mut options.include_audio,
-                                                tr(Text::IncludeAudio),
-                                            );
-                                            result.widgets.push(("export.audio.include", r));
-                                        });
-                                    result
-                                        .widgets
-                                        .push(("export.audio", header.header_response));
+                                    let r = ui.checkbox(
+                                        &mut options.include_audio,
+                                        tr(Text::IncludeAudio),
+                                    );
+                                    result.widgets.push(("export.audio.include", r));
                                     ui.add_space(14.0);
                                     if !self.unavailable.is_empty() {
                                         ui.colored_label(
                                             theme::warning(dark),
                                             tr(Text::ExportBlocked),
                                         );
-                                        for item in &self.unavailable {
-                                            if let Some(name) = project
-                                                .data()
-                                                .assets
-                                                .iter()
-                                                .find(|asset| asset.id() == item.asset)
-                                                .and_then(|asset| asset.path().file_name())
-                                            {
-                                                ui.add(
-                                                    egui::Label::new(name.to_string_lossy())
-                                                        .truncate(),
-                                                );
-                                            }
-                                            let reason = match item.reason {
-                                                render::UnavailableReason::Missing => {
-                                                    Text::SourceMissing
-                                                }
-                                                render::UnavailableReason::Changed => {
-                                                    Text::SourceChanged
-                                                }
-                                                render::UnavailableReason::Metadata => {
-                                                    Text::SourceMetadata
-                                                }
-                                                render::UnavailableReason::Video => {
-                                                    Text::SourceVideo
-                                                }
-                                                render::UnavailableReason::Audio => {
-                                                    Text::SourceAudio
-                                                }
-                                            };
-                                            ui.label(format!(
-                                                "{} {} · {} {} · {}",
-                                                tr(Text::SourceAsset),
-                                                item.asset.0,
-                                                tr(Text::SourceItem),
-                                                item.item.0,
-                                                tr(reason)
-                                            ));
-                                            ui.label(catalog::export_range(
-                                                locale,
-                                                item.range.start().seconds(),
-                                                item.range.end().seconds(),
-                                            ));
-                                        }
+                                        unavailable_details(ui, project, &self.unavailable, locale);
                                         let r = ui
                                             .checkbox(&mut self.consent, tr(Text::ExportDegraded));
                                         result.widgets.push(("export.consent", r));
@@ -568,100 +723,133 @@ impl ExportDialog {
                 if self.empty {
                     ui.colored_label(theme::error_text(dark), tr(Text::ExportEmpty));
                 }
-                if let Some(snapshot) = &self.snapshot {
-                    let label = match snapshot.state {
-                        JobState::Completed => Text::ExportComplete,
-                        JobState::Failed => snapshot
-                            .error
-                            .as_deref()
-                            .map_or(Text::ExportFailure, export_failure),
-                        JobState::Cancelled => Text::ExportCancelled,
-                        _ => {
-                            if self.cancelling {
+                match self.phase() {
+                    ExportPhase::Running => {
+                        if let Some(snapshot) = &self.snapshot {
+                            ui.label(tr(if self.cancelling {
                                 Text::ExportCancelling
                             } else {
                                 Text::ExportProgress
-                            }
+                            }));
+                            job_progress(ui, snapshot, locale);
                         }
-                    };
-                    ui.label(tr(label));
-                    if active {
-                        job_progress(ui, snapshot, locale);
                     }
-                }
-                if self.error.is_some() {
-                    ui.colored_label(theme::error_text(dark), tr(Text::ExportFailure));
-                }
-                if self.destination.is_none() {
-                    ui.weak(tr(Text::ExportChoosePath));
+                    ExportPhase::Failed => {
+                        let label = self
+                            .snapshot
+                            .as_ref()
+                            .and_then(|snapshot| snapshot.error.as_deref())
+                            .map_or(Text::ExportFailure, export_failure);
+                        ui.colored_label(theme::error_text(dark), tr(label));
+                        if !self.unavailable.is_empty() {
+                            unavailable_details(ui, project, &self.unavailable, locale);
+                        }
+                    }
+                    ExportPhase::Ready | ExportPhase::Settings => {
+                        if self.error.is_some() {
+                            ui.colored_label(theme::error_text(dark), tr(Text::ExportFailure));
+                        }
+                    }
                 }
                 ui.horizontal(|ui| {
                     ui.label(catalog::export_duration(
                         locale,
                         project.duration().seconds(),
                     ));
-                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        if active {
-                            let r = ui.add_enabled(
-                                !self.cancelling,
-                                egui::Button::new(tr(Text::Cancel))
+                    ui.with_layout(
+                        egui::Layout::right_to_left(egui::Align::Center),
+                        |ui| match self.phase() {
+                            ExportPhase::Running => {
+                                let r = ui.add_enabled(
+                                    !self.cancelling,
+                                    egui::Button::new(tr(Text::Cancel))
+                                        .min_size(egui::vec2(90.0, 34.0)),
+                                );
+                                if r.clicked() {
+                                    self.cancel();
+                                }
+                                result.widgets.push(("export.cancel", r));
+                            }
+                            ExportPhase::Failed => {
+                                let r = ui.add_sized(
+                                    [90.0, 34.0],
+                                    egui::Button::new(tr(Text::ExportRetry)),
+                                );
+                                if r.clicked() {
+                                    result.action = Some(Action::Retry);
+                                }
+                                result.widgets.push(("export.retry", r));
+                                let r = ui.add_sized(
+                                    [90.0, 34.0],
+                                    egui::Button::new(tr(Text::ExportCopy)),
+                                );
+                                if r.clicked()
+                                    && let Some(text) = &self.diagnostics
+                                {
+                                    ui.ctx().copy_text(text.clone());
+                                }
+                                result.widgets.push(("export.copy", r));
+                                let r = ui.add_sized(
+                                    [90.0, 34.0],
+                                    egui::Button::new(tr(Text::CloseScenes)),
+                                );
+                                if r.clicked() {
+                                    self.open = false;
+                                }
+                                result.widgets.push(("export.close", r));
+                            }
+                            ExportPhase::Ready => {
+                                let r =
+                                    ui.add_sized([90.0, 34.0], egui::Button::new(tr(Text::Save)));
+                                if r.clicked() {
+                                    result.action = Some(Action::Save);
+                                }
+                                result.widgets.push(("export.save", r));
+                                let r =
+                                    ui.add_sized([90.0, 34.0], egui::Button::new(tr(Text::Cancel)));
+                                if r.clicked() {
+                                    self.discard_finished();
+                                    self.open = false;
+                                }
+                                result.widgets.push(("export.close", r));
+                            }
+                            ExportPhase::Settings => {
+                                let r = ui.add_enabled(
+                                    !self.empty,
+                                    egui::Button::new(
+                                        egui::RichText::new(tr(Text::Export))
+                                            .color(theme::on_accent(dark)),
+                                    )
+                                    .fill(theme::accent(dark))
                                     .min_size(egui::vec2(90.0, 34.0)),
-                            );
-                            if r.clicked() {
-                                self.cancel();
+                                );
+                                if r.clicked() {
+                                    result.action = Some(Action::Start);
+                                }
+                                result.widgets.push(("export.run", r));
+                                let r =
+                                    ui.add_sized([90.0, 34.0], egui::Button::new(tr(Text::Cancel)));
+                                if r.clicked() {
+                                    self.open = false;
+                                }
+                                result.widgets.push(("export.close", r));
                             }
-                            result.widgets.push(("export.cancel", r));
-                        } else {
-                            // The render job rechecks sources, including after restoration.
-                            let ready = !self.empty
-                                && self.destination.is_some()
-                                && (!self.destination.as_ref().is_some_and(|p| p.exists())
-                                    || self.replace);
-                            let r = ui.add_enabled(
-                                ready,
-                                egui::Button::new(
-                                    egui::RichText::new(tr(Text::Export))
-                                        .color(theme::on_accent(dark)),
-                                )
-                                .fill(theme::accent(dark))
-                                .min_size(egui::vec2(90.0, 34.0)),
-                            );
-                            if r.clicked() {
-                                result.action = Some(Action::Start);
-                            }
-                            result.widgets.push(("export.start", r));
-                            let r = ui.add_sized(
-                                [90.0, 34.0],
-                                egui::Button::new(tr(
-                                    if self
-                                        .snapshot
-                                        .as_ref()
-                                        .is_some_and(|s| s.state == JobState::Completed)
-                                    {
-                                        Text::ExportDone
-                                    } else {
-                                        Text::Cancel
-                                    },
-                                )),
-                            );
-                            if r.clicked() {
-                                self.open = false;
-                            }
-                            result.widgets.push(("export.close", r));
-                        }
-                    });
+                        },
+                    );
                 });
             });
         if modal.should_close() {
             if active {
                 self.cancel();
             } else {
+                self.discard_finished();
                 self.open = false;
             }
         }
         result
     }
     pub(crate) fn failed(&mut self, error: Error) {
+        self.diagnostics = Some(format!("{error:?}"));
         self.error = Some(Arc::new(error));
     }
 }
@@ -670,10 +858,50 @@ impl std::fmt::Debug for ExportInspection {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("ExportInspection")
             .field("open", &self.open)
+            .field("phase", &self.phase)
             .field("state", &self.job.as_ref().map(|s| s.state))
             .field("unavailable", &self.unavailable)
             .field("consent", &self.consent)
+            .field("finished", &self.finished)
             .finish_non_exhaustive()
+    }
+}
+fn unavailable_details(
+    ui: &mut egui::Ui,
+    project: &project::Project,
+    unavailable: &[render::Unavailable],
+    locale: Locale,
+) {
+    for item in unavailable {
+        if let Some(name) = project
+            .data()
+            .assets
+            .iter()
+            .find(|asset| asset.id() == item.asset)
+            .and_then(|asset| asset.path().file_name())
+        {
+            ui.add(egui::Label::new(name.to_string_lossy()).truncate());
+        }
+        let reason = match item.reason {
+            render::UnavailableReason::Missing => Text::SourceMissing,
+            render::UnavailableReason::Changed => Text::SourceChanged,
+            render::UnavailableReason::Metadata => Text::SourceMetadata,
+            render::UnavailableReason::Video => Text::SourceVideo,
+            render::UnavailableReason::Audio => Text::SourceAudio,
+        };
+        ui.label(format!(
+            "{} {} · {} {} · {}",
+            catalog::text(locale, Text::SourceAsset),
+            item.asset.0,
+            catalog::text(locale, Text::SourceItem),
+            item.item.0,
+            catalog::text(locale, reason)
+        ));
+        ui.label(catalog::export_range(
+            locale,
+            item.range.start().seconds(),
+            item.range.end().seconds(),
+        ));
     }
 }
 
@@ -707,4 +935,14 @@ pub(crate) fn job_progress(ui: &mut egui::Ui, snapshot: &JobSnapshot, locale: Lo
     };
     ui.label(catalog::text(locale, stage));
     ui.add(egui::ProgressBar::new(snapshot.progress).show_percentage());
+}
+
+impl Drop for ExportDialog {
+    fn drop(&mut self) {
+        self.runner.shutdown();
+        self.discard_finished();
+        if let Some(path) = self.temp.take() {
+            let _ = std::fs::remove_file(path);
+        }
+    }
 }

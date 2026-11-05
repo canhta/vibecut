@@ -25,7 +25,7 @@ pub fn read_metadata(path: &std::path::Path) -> Metadata {
     metadata::load(path)
 }
 mod model;
-pub use metadata::{METADATA_VERSION, Metadata, Thumbnail, ViewState};
+pub use metadata::{METADATA_VERSION, Metadata, Thumbnail, ViewState, path as metadata_path};
 mod persistence;
 mod writer;
 pub use atomic::atomic_write;

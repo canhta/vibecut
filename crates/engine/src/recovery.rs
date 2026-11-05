@@ -279,6 +279,7 @@ fn save_on_worker(slot: &SaveSlot, project: &Project, metadata: &project::Metada
     Ok(())
 }
 struct SaveFlight {
+    destination: PathBuf,
     slot: SaveSlot,
     in_place: bool,
 }
@@ -454,6 +455,26 @@ impl Autosave {
     }
     pub fn saved_path(&self) -> Option<&Path> {
         self.saved_path.as_deref()
+    }
+    /// Snapshot of active writer and recovery paths for external publication admission.
+    /// Includes an in-flight Save As destination even while its lease is on a worker.
+    pub fn protected_export_paths(&self) -> Result<Vec<PathBuf>> {
+        let mut paths = vec![self.directory.clone()];
+        for path in self
+            .saved_path
+            .iter()
+            .chain(self.pending_save.iter())
+            .chain(
+                self.flight
+                    .as_ref()
+                    .and_then(|flight| flight.save.as_ref())
+                    .map(|save| &save.destination),
+            )
+        {
+            paths.push(path.clone());
+            paths.push(project::metadata_path(path)?);
+        }
+        Ok(paths)
     }
     /// Receipt of the last acknowledged save, absent after open or stale completion.
     pub fn saved_receipt(&self) -> Option<&SaveReceipt> {
@@ -664,6 +685,7 @@ impl Autosave {
                 WriterLease::acquire(&path)?
             };
             Some(SaveFlight {
+                destination: writer.path().to_owned(),
                 slot: Arc::new(Mutex::new(Some(SaveWork {
                     source: if in_place { None } else { self.writer.take() },
                     writer,

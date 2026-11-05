@@ -13,7 +13,7 @@ use media::{AssetId, SourceAsset, StreamKind};
 use project::{ItemId, ItemParams, TrackId, TrackKind};
 use std::{
     collections::{BTreeMap, BTreeSet},
-    path::PathBuf,
+    path::{Path, PathBuf},
     sync::Arc,
     time::Instant,
 };
@@ -989,6 +989,27 @@ impl Editor {
                 if let Some(dialog) = &mut self.export {
                     dialog.show(self.session.project());
                 }
+            }
+            "export.run" => {
+                if self.export.is_none() {
+                    self.export = Some(crate::export::ExportDialog::new(
+                        self.playback.budget().clone(),
+                        self.playback.render_state()?,
+                    )?);
+                }
+                let dialog = self
+                    .export
+                    .as_mut()
+                    .ok_or(Error::Unsupported("export dialog"))?;
+                dialog.show(self.session.project());
+                dialog.start(self.session.project().clone(), self.preferences.export)?;
+            }
+            "export.retry" => {
+                let dialog = self
+                    .export
+                    .as_mut()
+                    .ok_or(Error::Unsupported("export dialog"))?;
+                dialog.retry(self.session.project().clone())?;
             }
             "project.save" => self.lifecycle_action = Some(crate::lifecycle::EditorAction::Save),
             "project.save_as" => {
@@ -2268,12 +2289,46 @@ impl Editor {
             }
         }
     }
-    /// Accept the native export picker's result without opening OS UI in tests.
+    /// Accept the native export save picker's result without opening OS UI in tests.
     pub fn export_picked_file(&mut self, path: PathBuf) -> Result<()> {
-        self.export
+        let protected = self
+            .session
+            .autosave()
+            .map(|s| s.protected_export_paths())
+            .transpose()?
+            .unwrap_or_default();
+        let dialog = self
+            .export
             .as_mut()
-            .ok_or(Error::Invalid("export dialog closed"))?
-            .set_destination(path)
+            .ok_or(Error::Invalid("export dialog closed"))?;
+        if let Err(error) = dialog.save_to(path, protected) {
+            dialog.failed(error);
+        }
+        Ok(())
+    }
+
+    /// Cancelling the native save dialog keeps the finished job for a later save.
+    pub fn export_save_cancelled(&mut self) {
+        if let Some(dialog) = &mut self.export {
+            dialog.save_cancelled();
+        }
+    }
+    /// Default filename and last directory for the native save dialog.
+    pub fn export_save_defaults(&self) -> (String, Option<PathBuf>) {
+        (
+            crate::export::default_file_name(
+                self.session.project().data().name.as_str(),
+                self.export_save_format().extension(),
+            ),
+            self.preferences.export_directory.clone(),
+        )
+    }
+    /// The completed attempt owns its container even if settings changed after failure.
+    pub fn export_save_format(&self) -> crate::export::ExportFormat {
+        self.export
+            .as_ref()
+            .and_then(|dialog| dialog.inspect().attempt)
+            .map_or(self.preferences.export.format, |options| options.format)
     }
     fn export_dialog(&mut self, ctx: &egui::Context) {
         let Some(dialog) = &mut self.export else {
@@ -2289,9 +2344,6 @@ impl Editor {
             self.texture.as_ref(),
         );
         match output.action {
-            Some(crate::export::Action::Pick) => {
-                self.lifecycle_action = Some(crate::lifecycle::EditorAction::ExportDestination)
-            }
             Some(crate::export::Action::Start) => {
                 let result = if self.session.transaction_active() {
                     Err(Error::Engine(engine::EditError::TransactionActive))
@@ -2302,7 +2354,33 @@ impl Editor {
                     dialog.failed(error);
                 }
             }
+            Some(crate::export::Action::Retry) => {
+                let result = if self.session.transaction_active() {
+                    Err(Error::Engine(engine::EditError::TransactionActive))
+                } else {
+                    dialog.retry(self.session.project().clone())
+                };
+                if let Err(error) = result {
+                    dialog.failed(error);
+                }
+            }
+            Some(crate::export::Action::Save) => {
+                self.lifecycle_action = Some(crate::lifecycle::EditorAction::ExportSave);
+            }
             None => {}
+        }
+        if let Some(request) =
+            dialog.take_save_request(self.session.project(), self.preferences.export)
+        {
+            let _ = request;
+            self.lifecycle_action = Some(crate::lifecycle::EditorAction::ExportSave);
+        }
+        if let Some(saved) = dialog.take_saved() {
+            self.preferences.export_directory = saved.parent().map(Path::to_owned);
+            self.set_toast(
+                self.tr(Text::ExportSaved),
+                Some(saved.to_string_lossy().into_owned()),
+            );
         }
         if options != self.preferences.export
             && let Err(error) = self.dispatch(

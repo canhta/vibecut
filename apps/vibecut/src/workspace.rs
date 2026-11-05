@@ -27,7 +27,7 @@ enum PickerAction {
     Open,
     Save { leave: bool, close: bool },
     ImportMedia,
-    ExportDestination,
+    ExportSave,
 }
 struct Picker {
     future: std::pin::Pin<Box<dyn std::future::Future<Output = Option<Vec<rfd::FileHandle>>>>>,
@@ -272,19 +272,20 @@ impl Workspace {
                         .map(|file| vec![file])
                 })
             }
-            PickerAction::ExportDestination => {
+            PickerAction::ExportSave => {
                 let editor = self.editor.as_ref().ok_or(Error::Invalid("no project"))?;
-                let format = editor.preferences.export.format;
-                let dialog = rfd::AsyncFileDialog::new()
-                    .set_title(catalog::text(
-                        editor.preferences.locale,
-                        Text::ChooseDestination,
-                    ))
+                let format = editor.export_save_format();
+                let (file_name, directory) = editor.export_save_defaults();
+                let mut dialog = rfd::AsyncFileDialog::new()
+                    .set_title(catalog::text(editor.preferences.locale, Text::ExportTitle))
                     .add_filter(
                         catalog::text(editor.preferences.locale, Text::ExportFormat),
                         &[format.extension()],
                     )
-                    .set_file_name(format!("export.{}", format.extension()));
+                    .set_file_name(file_name);
+                if let Some(directory) = directory {
+                    dialog = dialog.set_directory(directory);
+                }
                 Box::pin(async move { dialog.save_file().await.map(|file| vec![file]) })
             }
             PickerAction::ImportMedia => {
@@ -333,6 +334,11 @@ impl Workspace {
             .ok_or(Error::Invalid("no project"))?
             .export_picked_file(path)
     }
+    pub fn export_save_cancelled(&mut self) {
+        if let Some(editor) = &mut self.editor {
+            editor.export_save_cancelled();
+        }
+    }
     fn poll_picker(&mut self) {
         let Some(mut picker) = self.picker.take() else {
             return;
@@ -356,9 +362,12 @@ impl Workspace {
                         }
                         None => Ok(()),
                     },
-                    PickerAction::ExportDestination => match files.pop() {
+                    PickerAction::ExportSave => match files.pop() {
                         Some(file) => self.export_picked_file(file.path().to_owned()),
-                        None => Ok(()),
+                        None => {
+                            self.export_save_cancelled();
+                            Ok(())
+                        }
                     },
                     PickerAction::ImportMedia => {
                         let paths = files
@@ -573,9 +582,7 @@ impl Workspace {
             self.preferences = editor.preferences.clone();
             if let Some(action) = editor.lifecycle_action.take() {
                 let result = match action {
-                    EditorAction::ExportDestination => {
-                        self.pick(ui.ctx(), PickerAction::ExportDestination)
-                    }
+                    EditorAction::ExportSave => self.pick(ui.ctx(), PickerAction::ExportSave),
                     EditorAction::ImportMedia => self.pick(ui.ctx(), PickerAction::ImportMedia),
                     EditorAction::Leave => self.save_from_ui(ui.ctx(), true, false, false),
                     EditorAction::SaveAs => self.save_from_ui(ui.ctx(), false, false, true),

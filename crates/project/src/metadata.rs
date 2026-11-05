@@ -118,7 +118,8 @@ fn now_ms() -> u64 {
         .and_then(|d| u64::try_from(d.as_millis()).ok())
         .unwrap_or(0)
 }
-pub(crate) fn path(project: &Path) -> Result<PathBuf> {
+/// Native metadata sidecar path for a project; refuses a missing filename.
+pub fn path(project: &Path) -> Result<PathBuf> {
     let mut name = project
         .file_name()
         .ok_or(Error::Invalid("metadata path"))?

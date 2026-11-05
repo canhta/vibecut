@@ -1289,3 +1289,20 @@ Unavailable, for which adapters show a placeholder. Autosave backfills Missing
 on open, refreshes on saves, and accepts the same command outside content history.
 Desktop exit invokes it even for journal-only close. The project sidecar owns the
 bounded raw RGBA bytes; no compressed image decoder runs during catalog reads.
+
+## Completed export publication
+
+`submit_export_publication` copies a retained completed render through a bounded
+64 KiB buffer on the job runner. It admits the captured project sources and the
+adapter's protected active project/metadata paths before staging and immediately
+before the publication fence. Canonical paths and conservative content identity
+checks refuse normalized, link and changed-source aliases; the project atomic
+owner also refuses reserved writer-control destinations. No admission, copy or
+sync runs on the UI thread. The existing `AtomicFs` boundary can inject storage
+failure or gate sync while the event loop ticks and cancels.
+
+Cancellation before the fence and storage failures preserve the prior destination
+and completed input. After the fence a committed destination reports Completed.
+The adapter retains the input until the job terminates and joins the runner before
+cleanup on shutdown. Individual filesystem calls cannot be interrupted; external
+processes racing path replacement are outside the atomic owner's guarantees.

@@ -1158,7 +1158,6 @@ impl ImportProbe for ProgressProbe {
 fn export_dialog(theme: Theme, scale: f32) -> Result<AppHarness, Failure> {
     let (mut editor, _) = media_editor(theme, Locale::En)?;
     editor.activate("file.export")?;
-    editor.export_picked_file(PathBuf::from("/media/launch-cut.mp4"))?;
     let mut app = app_editor(editor, scale);
     wait_for_presented(&mut app)?;
     app.run_steps(4);

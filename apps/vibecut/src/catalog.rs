@@ -349,18 +349,15 @@ catalog! {
     QualityHigh { key: "quality_high", en: "High", vi: "Cao" },
     QualityVeryHigh { key: "quality_very_high", en: "Very high", vi: "Rất cao" },
     IncludeAudio { key: "include_audio", en: "Include audio in export", vi: "Xuất kèm âm thanh" },
-    ExportDestination { key: "export_destination", en: "Destination", vi: "Tệp đích" },
-    ChooseDestination { key: "choose_destination", en: "Choose destination…", vi: "Chọn tệp đích…" },
-    ExportReplace { key: "export_replace", en: "Replace the existing destination file", vi: "Thay thế tệp đích hiện có" },
     ExportDegraded { key: "export_degraded", en: "I accept black frames / silence for the listed source ranges", vi: "Tôi chấp nhận khung hình đen / im lặng cho các đoạn nguồn đã liệt kê" },
     ExportBlocked { key: "export_blocked", en: "Export blocked: restore these sources or explicitly accept degraded output.", vi: "Không thể xuất: khôi phục các nguồn này hoặc chấp nhận xuất suy giảm." },
     ExportEmpty { key: "export_empty", en: "The timeline is empty. Add media before exporting.", vi: "Dòng thời gian trống. Thêm tư liệu trước khi xuất." },
     ExportProgress { key: "export_progress", en: "Exporting…", vi: "Đang xuất…" },
-    ExportComplete { key: "export_complete", en: "Export complete", vi: "Xuất hoàn tất" },
-    ExportCancelled { key: "export_cancelled", en: "Export cancelled. Your previous file is preserved.", vi: "Đã hủy xuất. Tệp cũ của bạn được giữ nguyên." },
-    ExportFailure { key: "export_failure", en: "Export failed. Your previous file is preserved. Choose another destination or retry.", vi: "Xuất thất bại. Tệp cũ được giữ nguyên. Chọn tệp đích khác hoặc thử lại." },
+    ExportFailure { key: "export_failure", en: "Export failed. Your previous file is preserved. Retry or check the listed sources.", vi: "Xuất thất bại. Tệp cũ được giữ nguyên. Thử lại hoặc kiểm tra các nguồn đã liệt kê." },
+    ExportRetry { key: "export_retry", en: "Retry", vi: "Thử lại" },
+    ExportCopy { key: "export_copy", en: "Copy", vi: "Sao chép" },
+    ExportSaved { key: "export_saved", en: "Export saved", vi: "Đã lưu bản xuất" },
     ExportCancelling { key: "export_cancelling", en: "Cancelling…", vi: "Đang hủy…" },
-    ExportDone { key: "export_done", en: "Done", vi: "Xong" },
     SourceMissing { key: "source_missing", en: "Missing source", vi: "Thiếu nguồn" },
     SourceChanged { key: "source_changed", en: "Source changed", vi: "Nguồn đã thay đổi" },
     SourceMetadata { key: "source_metadata", en: "Unsupported source metadata", vi: "Siêu dữ liệu nguồn không được hỗ trợ" },
@@ -378,7 +375,6 @@ catalog! {
     ExportPublish { key: "export_publish", en: "Publishing file", vi: "Đang ghi tệp" },
     ExportDuration { key: "export_duration", en: "Duration", vi: "Thời lượng" },
     ExportSettingsHint { key: "export_settings_hint", en: "Canvas size and frame rate follow the project.", vi: "Kích thước khung hình và tốc độ khung hình theo dự án." },
-    ExportChoosePath { key: "export_choose_path", en: "Choose a destination before exporting.", vi: "Chọn tệp đích trước khi xuất." },
 
     // Local models.
     Models { key: "models", en: "Models", vi: "Mô hình" },
@@ -692,6 +688,8 @@ pub struct Preferences {
     pub version: u32,
     #[serde(default)]
     pub export: crate::export::ExportOptions,
+    #[serde(default)]
+    pub export_directory: Option<PathBuf>,
     pub locale: Locale,
     pub dark: bool,
     /// Ratios of the full content rectangle; validated when loaded and set.
@@ -705,6 +703,7 @@ impl Default for Preferences {
         Self {
             version: PREFERENCES_VERSION,
             export: crate::export::ExportOptions::default(),
+            export_directory: None,
             locale: Locale::En,
             dark: true,
             panels: DEFAULT_PANELS,

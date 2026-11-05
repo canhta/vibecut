@@ -273,35 +273,55 @@ checks switching, protected main and atomic multi-delete/undo without writing
 images.
 ## Export dialog
 
-The header Export action opens a modal with format, quality and audio disclosures
-closed initially. Choices use the existing English/Vietnamese catalog and app
-preference store: MP4 by default, MOV or WebM; low/medium/high/very_high quality
-(default high); audio included by default. The presets request quality 55/70/85/95
-and 3/6/12/24 Mb/s respectively through media's existing encoder contract. These
-are explicit encoder requests, not measured perceptual guarantees. Canvas geometry
-and exact frame rate follow the project. The dialog always encodes so a selected
-quality is applied; the core retains its separate Auto/copy modes.
+The header Export action opens a modal with format and quality disclosures plus an
+inline Include audio switch that is on by default. Choices use the existing
+English/Vietnamese catalog and app preference store: MP4 by default, MOV or WebM;
+low/medium/high/very_high quality (default high); audio included by default. The
+presets request quality 55/70/85/95 and 3/6/12/24 Mb/s respectively through media's
+existing encoder contract. These are explicit encoder requests, not measured
+perceptual guarantees. Canvas geometry and exact frame rate follow the project. The
+dialog always encodes so a selected quality is applied; the core retains its
+separate Auto/copy modes.
 
-Choose destination uses the existing nonblocking native save picker;
-`Editor::export_picked_file` / `Workspace::export_picked_file` inject its result
-without driving an OS dialog. Replacing an existing path needs a separate checked
-confirmation. Source/path, overwrite and degraded consent are transient and never
-saved to preferences. An empty timeline shows a catalog error and refuses start.
+`export.run` writes only to a unique temporary output. On completion the app opens
+the asynchronous native save dialog with the sanitized `<ProjectName>.<ext>` and
+the last save directory, then submits background publication, shows a transient toast
+with the chosen path and closes the popover. Cancelling that save dialog writes
+nothing and keeps the finished job ready for a later save without re-exporting;
+closing the popover discards it. `Editor::export_picked_file`,
+`Editor::export_save_cancelled` and the `Workspace` picker inject native results
+without driving an OS dialog. Filenames keep Unicode and spaces, replace invalid
+filesystem characters, trim trailing dots/spaces and escape Windows reserved
+device names. `Editor::export_save_defaults` supplies the dialog name/directory.
+The format, quality, audio switch and last directory persist; source consent and
+overwrite authorization stay transient. An empty timeline shows a catalog error
+and refuses start.
+Saving submits engine's completed-export publication job with the rendered
+snapshot and Autosave's protected project/metadata/recovery paths. All admission,
+copy and sync run on the runner through project's atomic stage. Progress and
+cancellation remain in the export dialog; cancellation before commit and failed
+staging/publication retain the finished render and previous destination. Failures
+use the export diagnostics panel with text-only Copy and Retry. Publication Retry
+opens destination selection again without re-encoding. Only confirmed publication
+persists the directory, toasts the path and closes the modal. Shutdown joins the
+runner before cleaning up owned temporary files.
+The save filename and container filter follow the rendered attempt, including
+when current format preferences changed while the failure panel was visible.
 
-`ExportDialog` submits through engine's one export job path and shares playback's
-byte budget. Inspection exposes the real job snapshot, typed submission failure,
-missing/changed source asset/item/range diagnostics, consent and widget state.
-Running output disables settings and shows engine stage/progress plus Cancel;
-Escape requests cancellation and leaves progress visible until engine acknowledges
-it. A late cancellation can lose to the existing publication fence and then reports
-Completed. A failed/refused/cancelled attempt preserves the destination through
-render/project's staging owner. A degraded retry requires an explicit toggle over
-the listed diagnostics; a project/audio-scope change clears consent and newly
-unavailable source ranges refuse again. Strict retry always reruns render admission
-with consent off, so a restored source can export without accepting degradation;
-a still-missing source refuses again and preserves the prior destination. Stale
-diagnostics clear when that strict retry is submitted. Errors remain in the modal
-for retry.
+`export.run` / `export.retry` submit through engine's one export job path and share
+playback's byte budget. Inspection exposes the real job snapshot, phase, typed
+failure, missing/changed source asset/item/range diagnostics, consent, finished
+temp and attempt settings. Running output disables settings and shows engine
+stage/progress plus Cancel; cancel or close clears the temporary output and returns
+to settings with no final file. A refusal or failed attempt replaces progress with
+an inline typed error panel carrying Copy (diagnostics text only) and Retry. Retry
+reruns the same attempt settings into a new temp output, so a prior successful file
+is untouched. Retry refuses running, cancelled and successful attempts; a degraded
+retry requires an explicit toggle over the listed
+diagnostics, and a project/audio-scope change clears consent. Errors remain in the
+modal for retry. Successful explicitly consented degraded output follows the same
+native Save/toast/close path; affected ranges are disclosed before running, with
+no post-completion warning or failure screen.
 
 `tests/it/export_ui.rs` asserts real widget and engine state, never pixels.
 `cargo xtask ui-audit export-dialog` renders the modal offscreen in dark and

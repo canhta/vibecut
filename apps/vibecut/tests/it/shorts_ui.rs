@@ -199,12 +199,11 @@ fn review_actions_and_play_order_reach_preview_and_single_step_editor_insertion(
         .unwrap();
     let output = tempfile::tempdir().unwrap();
     let path = output.path().join("off-center.mp4");
-    editor.export_picked_file(path.clone()).unwrap();
     let mut exported = Harness::builder()
         .with_size(egui::vec2(1440.0, 1000.0))
         .build_ui_state(|ui, a: &mut vibecut::Editor| a.ui(ui), editor);
     exported.run_steps(3);
-    exported.get(by("export.start")).click();
+    exported.get(by("export.run")).click();
     exported.run_steps(2);
     let deadline = std::time::Instant::now() + std::time::Duration::from_secs(30);
     loop {
@@ -226,6 +225,25 @@ fn review_actions_and_play_order_reach_preview_and_single_step_editor_insertion(
             "export failed"
         );
         assert!(std::time::Instant::now() < deadline, "crop export timeout");
+        std::thread::yield_now();
+    }
+    exported
+        .state_mut()
+        .export_picked_file(path.clone())
+        .unwrap();
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(30);
+    loop {
+        exported.state_mut().tick();
+        let state = exported.state().export.as_ref().unwrap().inspect();
+        if !state.open {
+            break;
+        }
+        assert_ne!(
+            state.phase,
+            vibecut::export::ExportPhase::Failed,
+            "{state:?}"
+        );
+        assert!(std::time::Instant::now() < deadline, "crop save timeout");
         std::thread::yield_now();
     }
     // Independent FFmpeg decoding: average of the encoded first frame must be

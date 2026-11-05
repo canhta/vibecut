@@ -68,7 +68,8 @@ pub(crate) fn atomic_write_new(path: &Path, bytes: &[u8]) -> Result<()> {
 }
 // Data publication and permanent lock control files have disjoint namespaces.
 // Inspect native ASCII markers without converting/normalizing the filename.
-pub(crate) fn admit_destination(path: &Path) -> Result<()> {
+/// Refuse reserved writer-control names and native path aliases before publication.
+pub fn admit_destination(path: &Path) -> Result<()> {
     fn name(path: &Path) -> Result<()> {
         let bytes = path
             .file_name()
