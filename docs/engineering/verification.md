@@ -15,7 +15,7 @@ Commit only green; choose the smallest covering check. Rust compilations follow 
 | Merge of a tree without a full-CI receipt (fix round, reviewer fix, Rust conflict resolution) | The merger runs one full local CI on the final tree before push |
 | T1 merge | Smallest covering check on the exact rebased SHA before push |
 | Clean rebase | Reuse the receipt; no full CI rerun |
-| Platform scope of a receipt | A full-CI receipt from any supported OS counts; a change touching platform-specific code (`cfg` for an OS, native/FFI, file-system paths and locking, build or provisioning scripts) also needs a receipt from each affected OS |
+| Platform scope of a receipt | A full-CI receipt from any supported OS counts; a change touching platform-specific code (`cfg` for an OS, native/FFI, file-system paths and locking, build or provisioning scripts) also needs a receipt from each affected OS that has a local build host; an affected OS without one is listed unverified in the report and left to hosted CI on `main` |
 
 The build wrapper leaves a CI receipt and reuses it for the same tree. `cargo xtask ci [--require-oracles]` is the aggregate entry: `checks` (fmt/layers/assets/names), `clippy`, workspace tests/doctests. Hosted execution/triggers belong to [workflows](workflows.md#hosted-ci).
 
