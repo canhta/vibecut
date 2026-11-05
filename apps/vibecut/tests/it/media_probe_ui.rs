@@ -224,7 +224,7 @@ fn probing_badge_becomes_ready_with_a_thumbnail_and_iso_audio_finishes_immediate
         .unwrap();
     editor.set_thumbnailer(thumbs.clone()).unwrap();
     editor
-        .start_import(vec!["C:/vibecut-test/probing.mp4".into()])
+        .start_import(vec![std::env::temp_dir().join("vibecut-test/probing.mp4")])
         .unwrap();
     tick_until(&mut editor, |editor| {
         !editor.inspect().unwrap().assets.is_empty()
@@ -257,7 +257,7 @@ fn probing_badge_becomes_ready_with_a_thumbnail_and_iso_audio_finishes_immediate
         .unwrap();
     editor.set_thumbnailer(first.clone()).unwrap();
     editor
-        .start_import(vec!["C:/vibecut-test/reused.mp4".into()])
+        .start_import(vec![std::env::temp_dir().join("vibecut-test/reused.mp4")])
         .unwrap();
     finish(&mut editor);
     assert_eq!(first.calls(), 1);
@@ -274,7 +274,7 @@ fn probing_badge_becomes_ready_with_a_thumbnail_and_iso_audio_finishes_immediate
         .unwrap();
     editor.set_thumbnailer(second.clone()).unwrap();
     editor
-        .start_import(vec!["C:/vibecut-test/reused.mp4".into()])
+        .start_import(vec![std::env::temp_dir().join("vibecut-test/reused.mp4")])
         .unwrap();
     finish(&mut editor);
     assert_eq!(second.calls(), 0, "cached frame must not decode again");
@@ -326,7 +326,9 @@ fn unsupported_codec_is_typed_before_timeline_use_and_gets_a_placeholder() {
         .unwrap();
     editor.set_thumbnailer(thumbs.clone()).unwrap();
     editor
-        .start_import(vec!["C:/vibecut-test/unsupported.mp4".into()])
+        .start_import(vec![
+            std::env::temp_dir().join("vibecut-test/unsupported.mp4"),
+        ])
         .unwrap();
     finish(&mut editor);
     let inspection = editor.inspect().unwrap();
@@ -371,7 +373,7 @@ fn unsupported_audio_in_a_decodable_video_keeps_the_unsupported_badge() {
     editor.set_import_probe(Arc::new(MixedProbe)).unwrap();
     editor.set_thumbnailer(thumbs.clone()).unwrap();
     editor
-        .start_import(vec!["C:/vibecut-test/mixed.mp4".into()])
+        .start_import(vec![std::env::temp_dir().join("vibecut-test/mixed.mp4")])
         .unwrap();
     finish(&mut editor);
     assert_eq!(state(&editor, 0), "unsupported");
@@ -392,7 +394,7 @@ fn failed_thumbnail_leaves_the_asset_ready_with_a_placeholder() {
         .unwrap();
     editor.set_thumbnailer(thumbs).unwrap();
     editor
-        .start_import(vec!["C:/vibecut-test/no-thumb.mp4".into()])
+        .start_import(vec![std::env::temp_dir().join("vibecut-test/no-thumb.mp4")])
         .unwrap();
     finish(&mut editor);
     let inspection = editor.inspect().unwrap();
@@ -421,7 +423,7 @@ fn media_panel_renders_probing_ready_and_unsupported_badges() {
         .unwrap();
     editor.set_thumbnailer(thumbs.clone()).unwrap();
     editor
-        .start_import(vec!["C:/vibecut-test/shot.mp4".into()])
+        .start_import(vec![std::env::temp_dir().join("vibecut-test/shot.mp4")])
         .unwrap();
     tick_until(&mut editor, |_| thumbs.started());
     let mut harness = Harness::builder()
@@ -489,7 +491,7 @@ fn blocked_probe_has_a_pending_row_and_publishes_only_validated_metadata() {
         let mut editor = new_editor();
         editor.set_import_probe(probe.clone()).unwrap();
         editor
-            .start_import(vec!["C:/vibecut-test/pending.wav".into()])
+            .start_import(vec![std::env::temp_dir().join("vibecut-test/pending.wav")])
             .unwrap();
         tick_until(&mut editor, |_| probe.started.load(Ordering::Acquire));
         editor.tick();
@@ -534,7 +536,7 @@ fn undo_redo_and_reopen_revalidate_capabilities_before_timeline_use() {
         }))
         .unwrap();
     editor
-        .start_import(vec!["C:/vibecut-test/refused.mp4".into()])
+        .start_import(vec![std::env::temp_dir().join("vibecut-test/refused.mp4")])
         .unwrap();
     finish(&mut editor);
     assert_eq!(state(&editor, 0), "unsupported");
@@ -618,8 +620,8 @@ fn undo_releases_retained_thumbnail_and_texture_allowances() {
     editor.set_thumbnailer(thumbs.clone()).unwrap();
     editor
         .start_import(vec![
-            "C:/vibecut-test/pixels.mp4".into(),
-            "C:/vibecut-test/same-pixels.mp4".into(),
+            std::env::temp_dir().join("vibecut-test/pixels.mp4"),
+            std::env::temp_dir().join("vibecut-test/same-pixels.mp4"),
         ])
         .unwrap();
     finish(&mut editor);
@@ -693,7 +695,9 @@ fn cancelling_thumbnail_work_keeps_validated_assets_ready_with_a_placeholder() {
         .unwrap();
     editor.set_thumbnailer(thumbs.clone()).unwrap();
     editor
-        .start_import(vec!["C:/vibecut-test/cancel-thumb.mp4".into()])
+        .start_import(vec![
+            std::env::temp_dir().join("vibecut-test/cancel-thumb.mp4"),
+        ])
         .unwrap();
     tick_until(&mut editor, |_| thumbs.started());
     editor.activate("import.cancel").unwrap();
@@ -756,8 +760,8 @@ fn undo_during_probe_keeps_later_pending_and_thumbnail_identities() {
     editor.set_thumbnailer(Arc::new(Thumbs::ready())).unwrap();
     editor
         .start_import(vec![
-            "C:/vibecut-test/first.mp4".into(),
-            "C:/vibecut-test/second.mp4".into(),
+            std::env::temp_dir().join("vibecut-test/first.mp4"),
+            std::env::temp_dir().join("vibecut-test/second.mp4"),
         ])
         .unwrap();
     tick_until(&mut editor, |editor| {
