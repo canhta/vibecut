@@ -533,7 +533,7 @@ fn stapler_with_wait(
         let mut command = Command::new("xcrun");
         command.args([arg("stapler"), arg(operation), arg(path)]);
         command.current_dir(&tools.root);
-        let captured = tools.execute(&mut command, remaining.min(Duration::from_secs(30)))?;
+        let captured = tools.execute(&mut command, remaining)?;
         if captured.code == Some(0) {
             return Ok(());
         }
