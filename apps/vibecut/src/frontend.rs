@@ -4889,11 +4889,17 @@ impl Editor {
                     egui::StrokeKind::Inside,
                 );
             }
+            let name_on_top = row.kind.can_hide() && row.kind.can_mute();
             let name_rect = Rect::from_min_max(
                 egui::pos2(label_rect.left() + 4.0, label_rect.top() + 2.0),
                 egui::pos2(
-                    (label_rect.right() - 58.0).max(label_rect.left() + 4.0),
-                    label_rect.bottom() - 2.0,
+                    (label_rect.right() - if name_on_top { 4.0 } else { 58.0 })
+                        .max(label_rect.left() + 4.0),
+                    if name_on_top {
+                        label_rect.top() + 20.0
+                    } else {
+                        label_rect.bottom() - 2.0
+                    },
                 ),
             );
             let renaming = self
@@ -4905,12 +4911,22 @@ impl Editor {
                     .track_rename
                     .take()
                     .map_or_else(String::new, |(_, name)| name);
-                let response = header_ui.put(
-                    name_rect,
-                    egui::TextEdit::singleline(&mut name)
-                        .id_salt(("track.rename.input", row.id.0))
-                        .desired_width(name_rect.width()),
-                );
+                let response = header_ui
+                    .scope_builder(
+                        egui::UiBuilder::new().id_salt(("track.rename.editor", row.id.0)),
+                        |ui| {
+                            ui.spacing_mut().interact_size.y = name_rect.height();
+                            ui.put(
+                                name_rect,
+                                egui::TextEdit::singleline(&mut name)
+                                    .id_salt(("track.rename.input", row.id.0))
+                                    .font(FontId::proportional(12.0))
+                                    .margin(Vec2::splat(1.0))
+                                    .desired_width(name_rect.width()),
+                            )
+                        },
+                    )
+                    .inner;
                 self.remember(format!("track.{}.rename", row.id.0), &response);
                 if self.track_rename_focus {
                     response.request_focus();

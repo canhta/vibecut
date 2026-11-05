@@ -378,6 +378,73 @@ fn drag_reorder_stays_inside_the_overlay_section() {
 }
 
 #[test]
+fn video_and_main_rename_fields_do_not_cover_output_controls() {
+    let (editor, _, _) = track_editor();
+    let video = editor
+        .session
+        .project()
+        .data()
+        .scene()
+        .timeline
+        .overlays
+        .iter()
+        .find(|track| track.kind == TrackKind::Video)
+        .unwrap()
+        .id;
+    let mut h = Harness::builder()
+        .with_size(egui::vec2(1728.0, 1200.0))
+        .build_ui_state(|ui, e: &mut Editor| e.ui(ui), editor);
+    h.run_steps(4);
+    for track in [project::TrackId(0), video] {
+        // The header centre contains output controls; open its name area.
+        let pos = header_rect(&h, track).left_top() + egui::vec2(8.0, 8.0);
+        h.hover_at(pos);
+        for pressed in [true, false] {
+            h.event(egui::Event::PointerButton {
+                pos,
+                button: egui::PointerButton::Secondary,
+                pressed,
+                modifiers: egui::Modifiers::NONE,
+            });
+            h.run_steps(1);
+        }
+        h.run_steps(2);
+        h.get(By::new().predicate(|n| {
+            n.author_id() == Some(format!("track.{}.rename_action", track.0).as_str())
+        }))
+        .click();
+        h.run_steps(2);
+        let widgets = h.state().inspect().unwrap().widgets;
+        let rect = |suffix: &str| {
+            widgets
+                .iter()
+                .find(|widget| widget.id == format!("track.{}.{suffix}", track.0))
+                .unwrap()
+                .rect
+        };
+        for suffix in ["muted", "hidden"] {
+            assert!(
+                !rect("rename").intersects(rect(suffix)),
+                "rename overlaps {suffix}"
+            );
+        }
+        h.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::A);
+        h.event(egui::Event::Text("Readable name".into()));
+        h.key_press(egui::Key::Enter);
+        h.run_steps(3);
+        let data = h.state().session.project().data();
+        let renamed = data
+            .scene()
+            .timeline
+            .iter()
+            .find(|candidate| candidate.id == track)
+            .unwrap();
+        assert_eq!(renamed.name.as_str(), "Readable name");
+        assert!(!renamed.muted && !renamed.hidden);
+    }
+}
+
+#[test]
 fn leaving_or_removing_a_renamed_track_restores_keyboard_shortcuts() {
     for remove in [false, true] {
         let (editor, track, _) = track_editor();
