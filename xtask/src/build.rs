@@ -349,6 +349,74 @@ fn prune_incrementals(slot: &Path, now: SystemTime, dry_run: bool) -> io::Result
     Ok(())
 }
 
+/// Remove build artifacts older than the stale age under every profile's
+/// `deps` directory. Runs only for an idle slot that is over budget, so a warm
+/// slot is preserved when its stale entries alone bring it back under the
+/// limit. Returns the bytes removed (or that a dry run would remove).
+fn prune_stale_deps(path: &Path, depth: usize, now: SystemTime, dry_run: bool) -> io::Result<u64> {
+    if depth == 0 {
+        return Ok(0);
+    }
+    let entries = match fs::read_dir(path) {
+        Ok(entries) => entries,
+        Err(error) if changed_under_us(&error) => return Ok(0),
+        Err(error) => return Err(error),
+    };
+    let mut freed = 0;
+    for entry in entries {
+        let entry = match entry {
+            Ok(entry) => entry,
+            Err(error) if changed_under_us(&error) => continue,
+            Err(error) => return Err(error),
+        };
+        let path = entry.path();
+        let metadata = match fs::symlink_metadata(&path) {
+            Ok(metadata) => metadata,
+            Err(error) if changed_under_us(&error) => continue,
+            Err(error) => return Err(error),
+        };
+        if !metadata.is_dir() {
+            continue;
+        }
+        if path.file_name().is_some_and(|name| name == "deps") {
+            freed += prune_stale_dep_entries(&path, now, dry_run)?;
+        } else {
+            freed += prune_stale_deps(&path, depth - 1, now, dry_run)?;
+        }
+    }
+    Ok(freed)
+}
+
+fn prune_stale_dep_entries(deps: &Path, now: SystemTime, dry_run: bool) -> io::Result<u64> {
+    let entries = match fs::read_dir(deps) {
+        Ok(entries) => entries,
+        Err(error) if changed_under_us(&error) => return Ok(0),
+        Err(error) => return Err(error),
+    };
+    let mut freed = 0;
+    for entry in entries {
+        let entry = match entry {
+            Ok(entry) => entry,
+            Err(error) if changed_under_us(&error) => continue,
+            Err(error) => return Err(error),
+        };
+        let path = entry.path();
+        let stale = newest_modified(&path)?.is_some_and(|modified| older_than(modified, now));
+        if !stale {
+            continue;
+        }
+        let bytes = used_bytes(&path)?;
+        if dry_run {
+            eprintln!("[cleanup] would remove stale dependency {}", path.display());
+        } else {
+            eprintln!("[cleanup] remove stale dependency {}", path.display());
+            remove_entry(&path)?;
+        }
+        freed += bytes;
+    }
+    Ok(freed)
+}
+
 fn remove_slot(slot: &Path, dry_run: bool, reason: &str) -> Result<(), String> {
     if dry_run {
         eprintln!("[cleanup] would remove {} ({reason})", slot.display());
@@ -389,11 +457,28 @@ fn prune_slots(base: &Path, now: SystemTime, size_limit: u64, dry_run: bool) -> 
             .map_err(|error| format!("{}: {error}", slot.display()))?;
         let used = used_bytes(&slot).map_err(|error| format!("{}: {error}", slot.display()))?;
         if used > size_limit {
-            remove_slot(
-                &slot,
-                dry_run,
-                &format!("{:.1} GiB over the size budget", used as f64 / GIB as f64),
-            )?;
+            let freed = prune_stale_deps(&slot, 4, now, dry_run)
+                .map_err(|error| format!("{}: {error}", slot.display()))?;
+            let remaining = if dry_run {
+                used.saturating_sub(freed)
+            } else {
+                used_bytes(&slot).map_err(|error| format!("{}: {error}", slot.display()))?
+            };
+            if remaining > size_limit {
+                remove_slot(
+                    &slot,
+                    dry_run,
+                    &format!(
+                        "{:.1} GiB over the size budget",
+                        remaining as f64 / GIB as f64
+                    ),
+                )?;
+            } else if freed > 0 {
+                eprintln!(
+                    "[cleanup] slot retained after pruning {:.1} GiB of stale dependencies",
+                    freed as f64 / GIB as f64
+                );
+            }
         }
     }
     Ok(())
@@ -592,7 +677,14 @@ fn receipt(root: &Path, base: &Path, args: &[OsString]) -> Result<Option<PathBuf
 }
 
 pub fn run(root: &Path, args: &[OsString]) -> Result<ExitCode, String> {
-    run_in(root, args, cache()?, cfg!(target_os = "macos"), disk_free)
+    run_in(
+        root,
+        args,
+        cache()?,
+        cfg!(target_os = "macos"),
+        disk_free,
+        crate::ffmpeg::environment,
+    )
 }
 
 fn run_in(
@@ -601,6 +693,7 @@ fn run_in(
     base: PathBuf,
     macos: bool,
     free_space: impl FnMut(&Path) -> Result<u64, String>,
+    native: impl FnOnce(&mut Command) -> Result<(), String>,
 ) -> Result<ExitCode, String> {
     fs::create_dir_all(&base).map_err(|e| e.to_string())?;
     let before = receipt(root, &base, args)?;
@@ -646,6 +739,10 @@ fn run_in(
     if std::env::var_os("CARGO_BUILD_JOBS").is_none() {
         command.env("CARGO_BUILD_JOBS", "4");
     }
+    // The wrapper owns both the warm slot and the provisioned native
+    // environment: compile-time discovery and runtime library loading must
+    // agree with every command-specific xtask entry point.
+    native(&mut command)?;
     let status = slot
         .execute(&mut command)
         .map_err(|e| format!("build command: {e}"))?;
@@ -750,7 +847,41 @@ mod tests {
         let label = std::env::var("VIBECUT_BUILD_TEST_LABEL").unwrap();
         if label == "missing" {
             let args = vec![root.join("missing-command").into_os_string()];
-            assert!(run_in(&root, &args, root.clone(), false, |_| Ok(31 * GIB)).is_err());
+            assert!(
+                run_in(
+                    &root,
+                    &args,
+                    root.clone(),
+                    false,
+                    |_| Ok(31 * GIB),
+                    |_| Ok(())
+                )
+                .is_err()
+            );
+            return;
+        }
+        if label == "native" {
+            let args = vec![
+                std::env::current_exe().unwrap().into_os_string(),
+                "--exact".into(),
+                "build::tests::native_environment_probe".into(),
+                "--nocapture".into(),
+            ];
+            assert_eq!(
+                run_in(
+                    &root,
+                    &args,
+                    root.clone(),
+                    false,
+                    |_| Ok(31 * GIB),
+                    |command| {
+                        command.env("VIBECUT_BUILD_TEST_NATIVE", "provisioned");
+                        Ok(())
+                    }
+                )
+                .unwrap(),
+                ExitCode::SUCCESS
+            );
             return;
         }
         if matches!(label.as_str(), "wrapped" | "detached") {
@@ -763,7 +894,15 @@ mod tests {
             assert_eq!(
                 // Lease/process lifetime is independent of host disk capacity.
                 // The cache test below covers refusal with injected low space.
-                run_in(&root, &args, root.clone(), false, |_| Ok(31 * GIB)).unwrap(),
+                run_in(
+                    &root,
+                    &args,
+                    root.clone(),
+                    false,
+                    |_| Ok(31 * GIB),
+                    |_| Ok(())
+                )
+                .unwrap(),
                 ExitCode::SUCCESS
             );
             return;
@@ -814,6 +953,19 @@ mod tests {
     }
 
     #[test]
+    fn native_environment_probe() {
+        let Some(root) = std::env::var_os("VIBECUT_BUILD_TEST_ROOT") else {
+            return;
+        };
+        let root = PathBuf::from(root);
+        fs::write(
+            root.join("native.environment"),
+            std::env::var("VIBECUT_BUILD_TEST_NATIVE").unwrap_or_default(),
+        )
+        .unwrap();
+    }
+
+    #[test]
     fn fifo_survives_crashed_waiter_and_holder_without_overbooking_last_slot() {
         let directory = Directory::new();
         let root = &directory.0;
@@ -852,6 +1004,18 @@ mod tests {
         // Exercise the actual wrapper command path, not just a process holding
         // a Slot: its controlled build child survives a launcher-only crash.
         crate::checked(root, "git", &["init", "-q"]).unwrap();
+        let native = Command::new(std::env::current_exe().unwrap())
+            .args(["--exact", "build::tests::build_process", "--nocapture"])
+            .env("VIBECUT_BUILD_TEST_ROOT", root)
+            .env("VIBECUT_BUILD_TEST_LABEL", "native")
+            .status()
+            .unwrap();
+        assert!(native.success());
+        assert_eq!(
+            fs::read_to_string(root.join("native.environment")).unwrap(),
+            "provisioned",
+            "wrapper did not pass the native environment to its command"
+        );
         for label in ["wrapped", "detached"] {
             let _ = fs::remove_file(root.join("wrapped.ready"));
             let mut wrapped = Process(
@@ -1080,6 +1244,29 @@ mod cache_tests {
         assert!(mixed.join("fresh").exists());
         assert!(!stale.exists(), "an untouched whole slot was kept");
         drop(held);
+        fs::remove_dir_all(base).unwrap();
+    }
+
+    #[test]
+    fn cache_prune_drops_only_stale_dependencies_when_that_restores_the_budget() {
+        let base = cache_base();
+        let old = SystemTime::now() - Duration::from_secs(3 * 24 * 60 * 60);
+        let deps = base.join("target/slot-1/debug/deps");
+        fs::create_dir_all(&deps).unwrap();
+        let stale = deps.join("libstale-abc.rlib");
+        let fresh = deps.join("libfresh-def.rlib");
+        fs::write(&stale, vec![0u8; 8192]).unwrap();
+        fs::write(&fresh, vec![0u8; 4096]).unwrap();
+        age_tree(&stale, old);
+
+        // Total exceeds the budget; the fresh artifact alone does not.
+        prune_slots(&base, SystemTime::now(), 5000, false).unwrap();
+        assert!(!stale.exists(), "a stale dependency was kept");
+        assert!(fresh.exists(), "a fresh artifact was pruned");
+        assert!(
+            base.join("target/slot-1").exists(),
+            "the slot was cleared even though stale entries restored the budget"
+        );
         fs::remove_dir_all(base).unwrap();
     }
 

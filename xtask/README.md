@@ -8,8 +8,10 @@ Run from a checkout with `cargo xtask <command>`. The Cargo alias builds the
 launcher in `target/xtask`, independently of a running build's warm target slot.
 Product compilation commands on shared Unix developer machines use
 `cargo xtask build -- <command...>`; launcher compilation itself bootstraps outside
-the slots. This maintainer-machine wrapper is Unix-only; on Windows and dedicated
-hosted CI runners, run Cargo commands directly.
+the slots. The wrapper applies `ffmpeg::environment`, so every admitted command
+discovers and loads the provisioned LGPL SDK at build and run time without
+per-command paths. This maintainer-machine wrapper is Unix-only; on Windows and
+dedicated hosted CI runners, run Cargo commands directly.
 
 | Command | Behaviour |
 |---|---|
