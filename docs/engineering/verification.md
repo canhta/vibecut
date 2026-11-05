@@ -23,6 +23,19 @@ commit gets one CI run. A clean rebase merges without another run. Hosted CI run
 demand for Windows via `.scratch/bin/hosted-ci`; a red `main` is fixed or reverted at
 once by whoever merged last.
 
+`cargo xtask ci [--require-oracles]` stays the local aggregate entry point.
+Its shared steps are `cargo xtask checks` (fmt, layers, assets, names),
+`cargo xtask clippy`, and Cargo workspace tests (including doctests).
+Hosted `lint` and `docs` run on Ubuntu beside one macOS `test (macos-arm64)`
+job. That native job runs Clippy and `cargo xtask test` in the same target tree.
+Hosted tests require external oracles just like local required-oracle CI:
+missing, unusable or pre-6.0 ffmpeg/ffprobe fail admission;
+`VIBECUT_REQUIRE_ORACLES=1` makes skipped oracles fail, and the commands print
+paths/versions and fixture size/SHA-256 receipts. Windows remains advisory.
+Fast/offline `cargo xtask ci` labels skipped oracles; a skip is never a pass.
+The name gate reads local regexes from `.scratch/forbidden-names.txt` and rejects
+matches in tracked files and branch commit messages.
+
 ## AI model integrations
 
 - **Third-party models** (ASR, translation, TTS, LLM providers): prove the

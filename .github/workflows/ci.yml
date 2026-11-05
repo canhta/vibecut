@@ -2,8 +2,7 @@ name: CI
 
 on:
   push:
-    branches: [main, 'canhta/**', 'feat/**']
-  pull_request:
+    branches: [main]
   workflow_dispatch:
     inputs:
       require-oracles:
@@ -15,8 +14,8 @@ permissions:
   contents: read
 
 concurrency:
-  group: ci-${{ github.event_name }}-${{ github.ref == 'refs/heads/main' && github.run_id || github.ref }}
-  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+  group: ci-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   changes:

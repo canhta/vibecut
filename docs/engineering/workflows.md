@@ -74,21 +74,19 @@ handle those vector layouts.
 
 ## Hosted CI
 
-Pushes to `main`, `canhta/**` and `feat/**`, and pull requests run CI with read-only repository permissions.
-Require the stable `CI gate` status in branch protection. `ci.yml` (`CI`) runs
-Ubuntu `docs` and `lint` (fmt and repository policy) on every change;
-Markdown/`docs/`-only branches stop there. Code changes also run one Apple Silicon
-`test (macos-arm64)` job: Clippy, then workspace tests including doctests, sharing
-the same target tree and native setup. No archive upload/download or extra macOS
-runner is needed. `gate` fails closed if any selected job fails, cancels or skips.
-Windows runs as an advisory check until its runtime is in scope.
-Superseded PR and ticket-branch runs cancel per branch; main pushes finish.
-Ticket pushes classify the whole branch diff against its merge-base with
-`origin/main`; a docs follow-up on a code branch still runs the full required-oracle
-gate, while a branch containing only docs takes the docs path. Cargo, native media and synthetic media-fixture cache keys omit the branch
-so ticket runs can restore default-branch caches. Fork PRs use `pull_request`, never
-`pull_request_target`, and receive no release secrets. The PR gate requires a Signed-off-by trailer on every submitted commit,
-as described in [contributing](../../CONTRIBUTING.md).
+Pushes to `main` and manual `workflow_dispatch` run CI with read-only repository
+permissions. Ticket branches and pull requests use the local per-change checks in
+[verification](verification.md#checks). Require the stable `CI gate` status in branch
+protection. `ci.yml` (`CI`) runs Ubuntu `docs` and `lint` (fmt and repository policy)
+on every run; Markdown/`docs/`-only main pushes stop there. Code changes and manual
+dispatches also run one Apple Silicon `test (macos-arm64)` job: Clippy, then workspace
+tests including doctests, sharing the same target tree and native setup. No archive
+upload/download or extra macOS runner is needed. `gate` fails closed if any selected
+job fails, cancels or skips. Windows remains advisory and can also be run by manual
+dispatch. Superseded runs cancel per event and ref, including older main runs in a
+burst of merges. Main pushes classify the event diff; manual dispatches run the full
+gate. Cargo, native media and synthetic media-fixture cache keys omit the branch so
+manual ticket runs can restore default-branch caches.
 
 The shared native setup uses `Swatinem/rust-cache` with an explicit shared key
 across native test/release jobs. Only successful full workspace producers that
