@@ -133,9 +133,14 @@ window-weight normalization so item edges keep unity gain and source outside the
 trimmed window never leaks in. Every output sample depends only on the item, the
 speed and the source, so block partitions and seeks (which replay from timeline
 zero like the limiter) give identical audio, and source reads only move forward.
-The mixer keeps one bounded, leased retimer per active retimed item. Unmeasured:
-perceptual quality on speech or music (tests use pure tones, whose purity and
-click bounds live in `tests/it/retime_audio.rs`). Stream copy is refused for
+The mixer keeps one bounded, leased retimer per active retimed item. WSOLA checks
+cancellation between grains, including after a source pull; cancellation discards
+the mixer cursor so retry replays deterministically. `tests/it/retime_audio.rs`
+checks tone purity, chirp local pitch/duration, block boundaries and cancellation/retry.
+The retimer lease covers maximum-block 5x source read-ahead (stereo plus mono),
+pull buffers, overlap-add state and output staging; a constrained-budget regression
+refuses that working set before synthesis.
+Perceptual quality on speech or music remains unmeasured. Stream copy is refused for
 retimed items, and video frames use the nearest earlier source frame at the
 mapped source time.
 

@@ -244,6 +244,7 @@ fn every_registry_command_has_an_explicit_grant_and_effect() {
         ("ripple_delete", Effect::Edit, true, true),
         ("set_item_param", Effect::Edit, true, true),
         ("timeline.set_item_param", Effect::Edit, true, true),
+        ("timeline.set_speed", Effect::Edit, true, true),
         ("project.set_canvas_background", Effect::Edit, true, true),
         ("timeline.set_item_param_many", Effect::Edit, true, true),
         ("audio.set_fade", Effect::Edit, true, true),

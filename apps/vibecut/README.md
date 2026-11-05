@@ -215,6 +215,8 @@ pitch" is on while pitch follows speed (`maintain_pitch` off), as in the referen
 Speed edits go through `timeline.set_speed`, one undo step per commit; the timeline
 trim handles bound extension by the retimed output length. Caption generation
 refuses a retimed source item until captions gain a rate-aware mapping.
+`cargo xtask ui-audit inspector-speed` captures the populated Speed tab in both
+themes at 1x/2x.
 Each scrub field has a left drag handle, a click-to-type entry and clamps; the
 drag previews through an engine gesture, commits as one registered
 `timeline.set_item_param` undo step on release, and Escape cancels the gesture or

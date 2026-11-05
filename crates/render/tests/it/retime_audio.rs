@@ -399,3 +399,27 @@ fn retime_stretch_cancels_after_source_pull_and_recovers_for_retry() {
     let reference = render(&p, &mut source, &[4096]);
     assert_eq!(retried.planes()[0], reference[..1024]);
 }
+
+#[test]
+fn retime_large_follow_block_respects_working_set_budget() {
+    // At 5x, one maximum block retains 327,680 source frames in stereo plus
+    // a mono search plane, before its output planes: more than this 4 MiB budget.
+    let p = fixture(5000, false, 2.0);
+    let h = Hooks {
+        limit: 4 << 20,
+        ..Hooks::default()
+    };
+    let mut mixer = AudioMixer::new(&p, 2, 0, &h).unwrap();
+    let mut source = Tone {
+        hertz: TONE,
+        sweep: 0.0,
+        cancel: None,
+        requests: vec![],
+    };
+    assert!(matches!(
+        mixer.mix(0, 65536, &mut source, &h),
+        Err(Error::Budget { .. })
+    ));
+    drop(mixer);
+    assert_eq!(h.used.load(std::sync::atomic::Ordering::SeqCst), 0);
+}

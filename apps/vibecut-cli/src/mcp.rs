@@ -150,6 +150,7 @@ impl Policy for Grants {
             | Command::RippleDelete { .. }
             | Command::SetItemParam { .. }
             | Command::SetItemField { .. }
+            | Command::SetSpeed { .. }
             | Command::SetCanvasBackground { .. }
             | Command::SetItemParamMany { .. }
             | Command::SetFade { .. }
