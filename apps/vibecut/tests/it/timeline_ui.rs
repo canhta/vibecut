@@ -18,7 +18,7 @@ use std::{path::PathBuf, sync::Arc};
 use time::{FrameRate, SourceRange, TICKS_PER_SECOND, Tick};
 use vibecut::{
     Editor,
-    catalog::Preferences,
+    catalog::{Locale, Preferences},
     egui,
     playback::{Files, Playback},
 };
@@ -1140,13 +1140,16 @@ fn mixed_text_inspector_applies_one_field_and_restores_selected_items() {
         harness.state().session.project(),
         &harness.state().selection,
     );
-    assert_eq!(fields.len(), 4);
-    assert!(
-        fields
-            .iter()
-            .filter(|f| matches!(f.id, "text_size" | "text_color"))
-            .all(|f| f.value.is_none() && f.compatible == 2)
-    );
+    assert_eq!(fields.len(), 9);
+    for field in &fields {
+        assert_eq!(field.compatible, 2);
+        assert_eq!(
+            field.value.is_none(),
+            matches!(field.id, "text_content" | "text_size" | "text_color"),
+            "{} mixed state",
+            field.id
+        );
+    }
     let before = harness.state().session.project().clone();
     let history = harness.state().session.history_len().0;
     harness
@@ -1206,6 +1209,32 @@ fn mixed_text_inspector_applies_one_field_and_restores_selected_items() {
 }
 
 #[test]
+fn text_insert_button_fits_the_media_panel_in_both_locales() {
+    for locale in [Locale::En, Locale::Vi] {
+        for width in [1280.0, 1440.0] {
+            let mut fixture = fixture();
+            fixture.editor.preferences.locale = locale;
+            let mut harness = Harness::builder()
+                .with_size(egui::vec2(width, 900.0))
+                .build_ui_state(|ui, editor: &mut Editor| editor.ui(ui), fixture.editor);
+            harness.run_steps(3);
+            let button = widget(&harness, "text.insert");
+            assert!(
+                harness.state().panels["media"].contains_rect(button),
+                "{locale:?} at {width}: {button:?} outside {:?}",
+                harness.state().panels["media"]
+            );
+            let before = count(harness.state());
+            harness
+                .get(By::new().predicate(|node| node.author_id() == Some("text.insert")))
+                .click();
+            harness.run_steps(2);
+            assert_eq!(count(harness.state()), before + 1);
+        }
+    }
+}
+
+#[test]
 fn text_insert_and_style_controls_use_one_undo_step_per_edit() {
     let mut fixture = fixture();
     let before = fixture.editor.session.project().clone();
@@ -1216,9 +1245,13 @@ fn text_insert_and_style_controls_use_one_undo_step_per_edit() {
         .playback
         .seek(Tick(7 * SECOND), false, before.clone())
         .unwrap();
-    let mut harness = harness(fixture.editor);
+    let mut harness = Harness::builder()
+        .with_size(egui::vec2(1440.0, 1600.0))
+        .build_ui_state(|ui, editor: &mut Editor| editor.ui(ui), fixture.editor);
     harness.run_steps(3);
-    harness.state_mut().activate("text.insert").unwrap();
+    harness
+        .get(By::new().predicate(|n| n.author_id() == Some("text.insert")))
+        .click();
     harness.run_steps(2);
     assert_eq!(count(harness.state()), items_before + 1);
     assert_eq!(harness.state().session.history_len().0, history + 1);
@@ -1258,20 +1291,39 @@ fn text_insert_and_style_controls_use_one_undo_step_per_edit() {
     harness.run_steps(3);
     assert_eq!(harness.state().session.history_len().0, history + 1);
     let style_history = harness.state().session.history_len().0;
+    harness
+        .get(By::new().predicate(|n| n.author_id() == Some("inspector.text_font")))
+        .click();
+    harness.run_steps(2);
+    harness
+        .get(By::new().predicate(|n| n.author_id() == Some("inspector.text_font.Noto Serif")))
+        .click();
+    harness.run_steps(2);
+    harness
+        .get(By::new().predicate(|n| n.author_id() == Some("inspector.text_background")))
+        .click();
+    harness.run_steps(2);
     for (field, value) in [
         ("text_content", "Xin chào"),
-        ("text_font", "Noto Serif"),
         ("text_color", "#11223344"),
-        ("text_background", "#01020380"),
+        ("text_background_color", "#01020380"),
         ("text_position_x", "25"),
         ("text_position_y", "30"),
     ] {
-        harness.state_mut().set_shared_field(field, value).unwrap();
+        let id = format!("inspector.{field}");
+        harness
+            .get(By::new().predicate(|n| n.author_id() == Some(id.as_str())))
+            .click();
         harness.run_steps(1);
+        harness.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::A);
+        harness.event(egui::Event::Text(value.into()));
+        harness.run_steps(1);
+        harness.key_press(egui::Key::Tab);
+        harness.run_steps(2);
     }
     assert_eq!(
         harness.state().session.history_len().0,
-        style_history + 6,
+        style_history + 7,
         "each committed field edit is one undo step"
     );
     let ItemParams::Text(text) = &item(harness.state(), selected[0]).content else {
@@ -1303,11 +1355,11 @@ fn text_insert_and_style_controls_use_one_undo_step_per_edit() {
     let decoded = project::decode(&encoded).unwrap();
     assert_eq!(decoded.project, **harness.state().session.project());
 
-    for _ in 0..8 {
+    for _ in 0..9 {
         harness.state_mut().activate("edit.undo").unwrap();
     }
     assert_eq!(harness.state().session.project(), &before);
-    for _ in 0..8 {
+    for _ in 0..9 {
         harness.state_mut().activate("edit.redo").unwrap();
     }
     let ItemParams::Text(text) = &item(harness.state(), selected[0]).content else {

@@ -267,8 +267,8 @@ impl<'a> Renderer<'a> {
                     let y = f64::from(params.position.y) / 100.0 - height / 2.0;
                     Placement {
                         destination: Rect {
-                            x: x.clamp(0.0, 1.0 - width),
-                            y: y.clamp(0.0, 1.0 - height),
+                            x,
+                            y,
                             width,
                             height,
                         },

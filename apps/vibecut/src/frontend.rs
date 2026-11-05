@@ -3591,10 +3591,10 @@ impl Editor {
             ) {
                 self.action("media.insert");
             }
-            if self.button(ui, "text.insert", Icon::TextT, Text::TextItem, true) {
-                self.action("text.insert");
-            }
         });
+        if self.button(ui, "text.insert", Icon::TextT, Text::TextItem, true) {
+            self.action("text.insert");
+        }
         if !importing && !self.media_selection.is_empty() {
             ui.label(
                 egui::RichText::new(catalog::format_count(
@@ -4867,7 +4867,9 @@ impl Editor {
                     .show_ui(ui, |ui| {
                         for (family, _) in text::families() {
                             let selected = field.value.as_deref() == Some(family.as_str());
-                            if ui.selectable_label(selected, family.as_str()).clicked() {
+                            let response = ui.selectable_label(selected, family.as_str());
+                            self.remember(format!("inspector.text_font.{family}"), &response);
+                            if response.clicked() {
                                 chosen = Some(family);
                             }
                         }

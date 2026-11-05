@@ -48,7 +48,8 @@ Unchanged passthrough retains those source parameters instead. Output geometry
 must be positive and at most 2^26 pixels; encoded H.264 dimensions must be even.
 
 Text uses the item's bundled font family, centered inside its project-owned
-destination. Positions are canvas percentages; the default 50/84.5 reproduces the
+destination. Positions are canvas percentages of the box centre, with clipping at
+canvas edges rather than clamping the box; the default 50/84.5 reproduces the
 original lower-third box. An optional project-owned background box paints before
 the glyphs. Pixel size and box padding scale with output/project width. Immutable
 raster reuse is local to a Renderer, keyed by NFC text, font/fallback identity,

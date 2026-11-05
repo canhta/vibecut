@@ -218,19 +218,69 @@ fn text_item_font_background_and_position_reach_the_compositor() {
         .render_frame(Tick::ZERO, &mut Empty, &hooks)
         .unwrap();
 
+    for (axis, left, right) in [
+        ("x", 0.0, 25.0),
+        ("x", 75.0, 100.0),
+        ("y", 0.0, 10.0),
+        ("y", 90.0, 100.0),
+    ] {
+        let frames: Vec<_> = [left, right]
+            .into_iter()
+            .map(|position| {
+                let mut data = baseline.clone().into_data();
+                let project::ItemParams::Text(text) =
+                    &mut data.scene_mut().timeline.overlays[0].items[0].content
+                else {
+                    panic!("text item")
+                };
+                if axis == "x" {
+                    text.position.x = position;
+                } else {
+                    text.position.y = position;
+                }
+                let project = project::Project::new(data).unwrap();
+                Renderer::new(&project, RenderSettings::from_project(&project))
+                    .unwrap()
+                    .render_frame(Tick::ZERO, &mut Empty, &hooks)
+                    .unwrap()
+            })
+            .collect();
+        assert_ne!(
+            frames[0].pixels(),
+            frames[1].pixels(),
+            "{axis} {left} vs {right}"
+        );
+    }
+
+    let mut font_data = baseline.clone().into_data();
+    let project::ItemParams::Text(text) =
+        &mut font_data.scene_mut().timeline.overlays[0].items[0].content
+    else {
+        panic!("text item")
+    };
+    text.font = "Noto Serif".into();
+    let font_project = project::Project::new(font_data).unwrap();
+    let font_image = Renderer::new(&font_project, RenderSettings::from_project(&font_project))
+        .unwrap()
+        .render_frame(Tick::ZERO, &mut Empty, &hooks)
+        .unwrap();
+    assert_ne!(
+        plain.pixels(),
+        font_image.pixels(),
+        "font alone changes glyphs"
+    );
+
     let mut data = baseline.into_data();
     let project::ItemParams::Text(text) =
         &mut data.scene_mut().timeline.overlays[0].items[0].content
     else {
         panic!("text item")
     };
-    text.font = "Noto Serif".into();
     text.background = Some(project::TextBackground {
         color: project::Color([255, 0, 0, 255]),
         padding: 8.0,
         radius: 2.0,
     });
-    text.position = project::TextPosition { x: 50.0, y: 50.0 };
     let styled = project::Project::new(data).unwrap();
     let mut renderer = Renderer::new(&styled, RenderSettings::from_project(&styled)).unwrap();
     let decorated = renderer
