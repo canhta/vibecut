@@ -108,8 +108,14 @@ pub fn render_time(project: &Project, time: Tick) -> Result<Tick> {
     if time < Tick::ZERO {
         return Err(EditError::Invalid("snapshot time"));
     }
-    let frame = project.data().canvas.fps.frame_duration()?;
-    Ok(time.min(duration.saturating_sub(frame)))
+    if time < duration {
+        return Ok(time);
+    }
+    Ok(project
+        .data()
+        .canvas
+        .fps
+        .snap(duration.saturating_sub(Tick(1)))?)
 }
 
 fn local_budget(project: &Project) -> Result<ByteBudget> {

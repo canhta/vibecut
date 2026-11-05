@@ -142,23 +142,51 @@ fn reference(project: &Project, time: Tick) -> Vec<u8> {
 
 #[test]
 fn snapshot_png_matches_canvas_render_at_the_playhead() {
-    let dir = tempfile::tempdir().unwrap();
-    let out = dir.path().join("frame.png");
-    let project = project("Snapshot", 64, 48, Tick(TICKS_PER_SECOND));
-    let before = project::encode(&project, true).unwrap();
-    let at = Tick(TICKS_PER_SECOND / 2);
+    let frame = TICKS_PER_SECOND / 30;
+    for (duration, requested, captured, label) in [
+        (
+            TICKS_PER_SECOND,
+            TICKS_PER_SECOND / 2,
+            TICKS_PER_SECOND / 2,
+            "00:00:00:15",
+        ),
+        (1, 0, 0, "00:00:00:00"),
+        (
+            TICKS_PER_SECOND,
+            TICKS_PER_SECOND - 1,
+            TICKS_PER_SECOND - 1,
+            "00:00:00:29",
+        ),
+        (
+            TICKS_PER_SECOND,
+            TICKS_PER_SECOND,
+            TICKS_PER_SECOND - frame,
+            "00:00:00:29",
+        ),
+        (frame + frame / 2, frame, frame, "00:00:00:01"),
+        (frame + frame / 2, i64::MAX, frame, "00:00:00:01"),
+    ] {
+        let dir = tempfile::tempdir().unwrap();
+        let out = dir.path().join("frame.png");
+        let project = project("Snapshot", 64, 48, Tick(duration));
+        let before = project::encode(&project, true).unwrap();
 
-    let receipt = engine::snapshot::save(&project, at, &out, &[]).unwrap();
+        let receipt = engine::snapshot::save(&project, Tick(requested), &out, &[]).unwrap();
 
-    assert_eq!(receipt.path, out);
-    assert_eq!(receipt.time, at);
-    assert_eq!((receipt.width, receipt.height), (64, 48));
-    assert_eq!(receipt.timecode, "00:00:00:15");
-    let decoded = image::open(&out).unwrap().to_rgba8();
-    assert_eq!(decoded.dimensions(), (64, 48));
-    assert_eq!(decoded.as_raw(), &reference(&project, at));
-    assert_eq!(project::encode(&project, true).unwrap(), before);
-    assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 1);
+        assert_eq!(receipt.path, out);
+        assert_eq!(
+            receipt.time,
+            Tick(captured),
+            "duration={duration}, time={requested}"
+        );
+        assert_eq!((receipt.width, receipt.height), (64, 48));
+        assert_eq!(receipt.timecode, label);
+        let decoded = image::open(&out).unwrap().to_rgba8();
+        assert_eq!(decoded.dimensions(), (64, 48));
+        assert_eq!(decoded.as_raw(), &reference(&project, Tick(captured)));
+        assert_eq!(project::encode(&project, true).unwrap(), before);
+        assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 1);
+    }
 }
 
 #[test]
