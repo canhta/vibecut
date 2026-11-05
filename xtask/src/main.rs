@@ -4,10 +4,13 @@ mod benchmark;
 #[cfg(unix)]
 mod build;
 mod checkout;
+mod cleanup;
 mod clip_eval;
 mod ffmpeg;
 mod i18n;
 mod oracles;
+mod orca;
+mod reports;
 mod sherpa;
 mod tickets;
 
@@ -423,6 +426,8 @@ fn run() -> Result<ExitCode, String> {
         ["media-bench"] => benchmark::media(root),
         ["frontier"] => tickets::frontier(root, None),
         ["frontier", assignee] => tickets::frontier(root, Some(assignee)),
+        ["cleanup", ..] => cleanup::run(root, args.get(1..).unwrap_or(&[])),
+        ["pull-reports", ..] => reports::run(root, args.get(1..).unwrap_or(&[])),
         ["board"] => tickets::board(root, 8765),
         ["board", port] => tickets::board(root, port.parse().map_err(|_| "invalid port")?),
         ["clip-eval", ..] => clip_eval::run(root, args.get(1..).unwrap_or(&[])),
@@ -454,7 +459,7 @@ fn run() -> Result<ExitCode, String> {
         ["ci"] => ci(root, false),
         ["ci", "--require-oracles"] => ci(root, true),
         _ => Err(
-            "usage: cargo xtask <build -- COMMAND [ARGS...] (Unix-only; on Windows run cargo directly)|frontier [ASSIGNEE]|board [PORT]|ffmpeg [--target PLATFORM|--cache-key]|ui-audit [OUTPUT_DIR]|sherpa [--arch x86_64|aarch64]|media-bench|clip-eval SET [OPTIONS]|ci [--require-oracles]|checks|clippy|lint|test|docs|i18n|layers|assets|new-crate NAME>"
+            "usage: cargo xtask <build -- COMMAND [ARGS...] (Unix-only; on Windows run cargo directly)|frontier [ASSIGNEE]|board [PORT]|ffmpeg [--target PLATFORM|--cache-key]|ui-audit [OUTPUT_DIR]|sherpa [--arch x86_64|aarch64]|media-bench|clip-eval SET [OPTIONS]|cleanup [--environment NAME] [--dry-run] TARGET...|pull-reports [--environment NAME] [--ssh HOST] [--dry-run] WORKTREE...|ci [--require-oracles]|checks|clippy|lint|test|docs|i18n|layers|assets|new-crate NAME>"
                 .into(),
         ),
     }.map(|()| ExitCode::SUCCESS)

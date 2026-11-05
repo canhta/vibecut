@@ -22,13 +22,12 @@ USERPROFILE when HOME is absent). Keep that prefix and its sibling `sources/`.
 The following macOS example uses the wrapper required in managed worktrees:
 
 ```sh
-BUILD=/Users/canh/Startup/VibeCut/.scratch/bin/build
-"$BUILD" cargo xtask ffmpeg
+cargo xtask build -- cargo xtask ffmpeg
 PREFIX=$(cat "$HOME/.cache/vibecut/ffmpeg/macos-aarch64/current")
-"$BUILD" python3 packaging/build.py --ffmpeg "$PREFIX" --output target/package-inputs
+cargo xtask build -- python3 packaging/build.py --ffmpeg "$PREFIX" --output target/package-inputs
 python3 packaging/package.py --os macos --arch aarch64 \
   --binaries target/package-inputs --ffmpeg "$PREFIX" --output target/package-macos
-"$BUILD" cargo xtask ci --require-oracles
+cargo xtask build -- cargo xtask ci --require-oracles
 ```
 
 `build.py` collects executable paths from Cargo's JSON artifact records and names
@@ -41,12 +40,11 @@ licence, dependency, runpath, architecture and credential-redaction boundary che
 
 On native Windows, in the matching MSVC/Windows SDK developer shell, provision
 FFmpeg using the documented MSYS2 toolchain in [workflows](../docs/engineering/workflows.md#ffmpeg-provisioning).
-Run Rust compilation through the coordinator's build wrapper in managed sessions:
+Native Windows runs Rust compilation directly; the shared build wrapper is Unix-only:
 
 ```powershell
 $Prefix = Get-Content "$env:USERPROFILE\.cache\vibecut\ffmpeg\windows-x86_64\current" -Raw
 $Prefix = $Prefix.Trim()
-# In managed sessions prefix this command with the shared build wrapper:
 python packaging/build.py --ffmpeg $Prefix --output target/package-inputs
 python packaging/package.py --os windows --arch x86_64 --binaries target/package-inputs --ffmpeg $Prefix --output target/package-windows
 Expand-Archive target/package-windows/VibeCut-0.1.0-windows-x86_64.zip target/install-test

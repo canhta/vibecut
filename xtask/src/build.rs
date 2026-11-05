@@ -236,18 +236,185 @@ fn cache() -> Result<PathBuf, String> {
         .ok_or_else(|| "cache has no parent".into())
 }
 
+const STALE_AGE: Duration = Duration::from_secs(2 * 24 * 60 * 60);
+pub(crate) const CACHE_SLOT_LIMIT: u64 = 16 * GIB;
+
+/// Prune the shared build cache: sessions and whole slots untouched for two
+/// days go first; a free slot over the size budget is cleared under its lock.
+/// Held slots are left alone because a build is using their artifacts.
+pub(crate) fn prune_cache(dry_run: bool) -> Result<(), String> {
+    prune_slots(&cache()?, SystemTime::now(), CACHE_SLOT_LIMIT, dry_run)
+}
+
+fn older_than(modified: SystemTime, now: SystemTime) -> bool {
+    now.duration_since(modified)
+        .is_ok_and(|age| age >= STALE_AGE)
+}
+
+/// Cache entries are shared with live builds. A path that disappears or stops
+/// being a directory between two calls is simply no longer ours to inspect.
+fn changed_under_us(error: &io::Error) -> bool {
+    matches!(
+        error.kind(),
+        io::ErrorKind::NotFound | io::ErrorKind::NotADirectory
+    )
+}
+
+fn newest_modified(path: &Path) -> io::Result<Option<SystemTime>> {
+    let metadata = match fs::symlink_metadata(path) {
+        Ok(metadata) => metadata,
+        Err(error) if changed_under_us(&error) => return Ok(None),
+        Err(error) => return Err(error),
+    };
+    let mut newest = metadata.modified().ok();
+    if metadata.is_dir() {
+        let entries = match fs::read_dir(path) {
+            Ok(entries) => entries,
+            Err(error) if changed_under_us(&error) => return Ok(newest),
+            Err(error) => return Err(error),
+        };
+        for entry in entries {
+            let entry = match entry {
+                Ok(entry) => entry,
+                Err(error) if changed_under_us(&error) => continue,
+                Err(error) => return Err(error),
+            };
+            if let Some(modified) = newest_modified(&entry.path())?
+                && newest.is_none_or(|current| modified > current)
+            {
+                newest = Some(modified);
+            }
+        }
+    }
+    Ok(newest)
+}
+
+fn remove_entry(path: &Path) -> io::Result<()> {
+    let metadata = match fs::symlink_metadata(path) {
+        Ok(metadata) => metadata,
+        Err(error) if changed_under_us(&error) => return Ok(()),
+        Err(error) => return Err(error),
+    };
+    let result = if metadata.is_dir() {
+        remove_dir(path)
+    } else {
+        fs::remove_file(path)
+    };
+    match result {
+        Err(error) if changed_under_us(&error) => Ok(()),
+        result => result,
+    }
+}
+
+fn prune_incrementals(slot: &Path, now: SystemTime, dry_run: bool) -> io::Result<()> {
+    let profiles = match fs::read_dir(slot) {
+        Ok(profiles) => profiles,
+        Err(error) if changed_under_us(&error) => return Ok(()),
+        Err(error) => return Err(error),
+    };
+    for profile in profiles {
+        let profile = match profile {
+            Ok(profile) => profile,
+            Err(error) if changed_under_us(&error) => continue,
+            Err(error) => return Err(error),
+        };
+        let incremental = profile.path().join("incremental");
+        let sessions = match fs::read_dir(&incremental) {
+            Ok(sessions) => sessions,
+            Err(error) if changed_under_us(&error) => continue,
+            Err(error) => return Err(error),
+        };
+        for session in sessions {
+            let session = match session {
+                Ok(session) => session,
+                Err(error) if changed_under_us(&error) => continue,
+                Err(error) => return Err(error),
+            };
+            let path = session.path();
+            let modified = match fs::symlink_metadata(&path) {
+                Ok(metadata) => metadata.modified().ok(),
+                Err(error) if changed_under_us(&error) => continue,
+                Err(error) => return Err(error),
+            };
+            if modified.is_some_and(|modified| older_than(modified, now)) {
+                if dry_run {
+                    eprintln!("[cleanup] would remove stale session {}", path.display());
+                } else {
+                    remove_entry(&path)?;
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
+fn remove_slot(slot: &Path, dry_run: bool, reason: &str) -> Result<(), String> {
+    if dry_run {
+        eprintln!("[cleanup] would remove {} ({reason})", slot.display());
+    } else {
+        eprintln!("[cleanup] remove {} ({reason})", slot.display());
+        remove_entry(slot).map_err(|error| format!("{}: {error}", slot.display()))?;
+    }
+    Ok(())
+}
+
+fn prune_slots(base: &Path, now: SystemTime, size_limit: u64, dry_run: bool) -> Result<(), String> {
+    let target = base.join("target");
+    if !target.is_dir() {
+        return Ok(());
+    }
+    let locks = base.join("locks");
+    fs::create_dir_all(&locks).map_err(|error| format!("{}: {error}", locks.display()))?;
+    for number in 1..=SLOTS {
+        let slot = target.join(format!("slot-{number}"));
+        if !slot.is_dir() {
+            continue;
+        }
+        let lock = open(&locks.join(format!("slot-{number}")))
+            .and_then(try_lock)
+            .map_err(|error| format!("slot-{number} lock: {error}"))?;
+        if lock.is_none() {
+            eprintln!("[cleanup] slot-{number} is in use; keeping it");
+            continue;
+        }
+        let stale = newest_modified(&slot)
+            .map_err(|error| format!("{}: {error}", slot.display()))?
+            .is_some_and(|modified| older_than(modified, now));
+        if stale {
+            remove_slot(&slot, dry_run, "untouched for 2+ days")?;
+            continue;
+        }
+        prune_incrementals(&slot, now, dry_run)
+            .map_err(|error| format!("{}: {error}", slot.display()))?;
+        let used = used_bytes(&slot).map_err(|error| format!("{}: {error}", slot.display()))?;
+        if used > size_limit {
+            remove_slot(
+                &slot,
+                dry_run,
+                &format!("{:.1} GiB over the size budget", used as f64 / GIB as f64),
+            )?;
+        }
+    }
+    Ok(())
+}
+
 fn used_bytes(path: &Path) -> io::Result<u64> {
     let entries = match fs::read_dir(path) {
         Ok(entries) => entries,
-        Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(0),
+        Err(e) if changed_under_us(&e) => return Ok(0),
         Err(e) => return Err(e),
     };
     let mut total = 0u64;
     for entry in entries {
-        let path = entry?.path();
+        let entry = match entry {
+            Ok(entry) => entry,
+            Err(e) if changed_under_us(&e) => continue,
+            Err(e) => return Err(e),
+        };
+        let path = entry.path();
         let metadata = match fs::symlink_metadata(&path) {
             Ok(metadata) => metadata,
-            Err(e) if e.kind() == io::ErrorKind::NotFound => continue,
+            Err(e) if changed_under_us(&e) => continue,
             Err(e) => return Err(e),
         };
         let size = if metadata.is_dir() {
@@ -844,5 +1011,81 @@ mod cache_tests {
         prepare(&base, &root, 1, |_| Ok(headroom.next().unwrap())).unwrap();
         fs::remove_dir_all(root).unwrap();
     }
+
     use std::time::UNIX_EPOCH;
+
+    fn age_tree(path: &Path, when: SystemTime) {
+        let metadata = fs::symlink_metadata(path).unwrap();
+        if metadata.is_dir() {
+            for entry in fs::read_dir(path).unwrap() {
+                age_tree(&entry.unwrap().path(), when);
+            }
+        }
+        File::open(path)
+            .unwrap()
+            .set_modified(when)
+            .unwrap_or_else(|error| panic!("{}: {error}", path.display()));
+    }
+
+    fn cache_base() -> PathBuf {
+        let base = std::env::temp_dir().join(format!(
+            "vibecut-prune-{}-{}",
+            std::process::id(),
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let _ = fs::remove_dir_all(&base);
+        fs::create_dir_all(base.join("locks")).unwrap();
+        base
+    }
+
+    #[test]
+    fn cache_prune_drops_stale_sessions_and_slots_but_keeps_fresh_or_held_work() {
+        let base = cache_base();
+        let old = SystemTime::now() - Duration::from_secs(3 * 24 * 60 * 60);
+
+        let busy = base.join("target/slot-1/debug/incremental");
+        fs::create_dir_all(busy.join("stale")).unwrap();
+        fs::write(busy.join("stale/artifact"), b"old").unwrap();
+        age_tree(&busy.join("stale"), old);
+        let held = open(&base.join("locks/slot-1")).unwrap();
+        held.lock().unwrap();
+
+        let mixed = base.join("target/slot-2/debug/incremental");
+        fs::create_dir_all(mixed.join("stale")).unwrap();
+        fs::write(mixed.join("stale/artifact"), b"old").unwrap();
+        fs::create_dir_all(mixed.join("fresh")).unwrap();
+        fs::write(mixed.join("fresh/artifact"), b"new").unwrap();
+        age_tree(&mixed.join("stale"), old);
+
+        let stale = base.join("target/slot-3");
+        fs::create_dir_all(stale.join("debug/incremental/session")).unwrap();
+        fs::write(stale.join("debug/incremental/session/artifact"), b"old").unwrap();
+        age_tree(&stale, old);
+
+        prune_slots(&base, SystemTime::now(), 1 << 40, false).unwrap();
+        assert!(busy.join("stale").exists(), "a held slot was pruned");
+        assert!(!mixed.join("stale").exists());
+        assert!(mixed.join("fresh").exists());
+        assert!(!stale.exists(), "an untouched whole slot was kept");
+        drop(held);
+        fs::remove_dir_all(base).unwrap();
+    }
+
+    #[test]
+    fn cache_prune_clears_an_idle_slot_over_budget_and_dry_run_changes_nothing() {
+        let base = cache_base();
+        let slot = base.join("target/slot-1/debug");
+        fs::create_dir_all(&slot).unwrap();
+        fs::write(slot.join("artifact"), vec![0u8; 8192]).unwrap();
+
+        prune_slots(&base, SystemTime::now(), 0, true).unwrap();
+        assert!(slot.exists(), "dry run removed the slot");
+
+        prune_slots(&base, SystemTime::now(), 0, false).unwrap();
+        assert!(!base.join("target/slot-1").exists());
+        fs::remove_dir_all(base).unwrap();
+    }
 }

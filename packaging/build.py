@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Run inside .scratch/bin/build; collect real Cargo executable artifacts by package."""
+"""Collect real Cargo executable artifacts by package."""
 import argparse
 import json
 import os

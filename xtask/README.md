@@ -16,6 +16,8 @@ hosted CI runners, run Cargo commands directly.
 | `build -- COMMAND [ARGS...]` | Unix-only FIFO admission and command exit status; OS-native arguments, inherited standard streams; on Windows run Cargo directly |
 | `frontier [ASSIGNEE]` | Open, unblocked tickets ordered by priority and ID; missing/wontfix blocker diagnostics |
 | `board [PORT]` | Read-only live ticket page and `data.json` on IPv4 localhost, default port 8765 |
+| `cleanup [--environment NAME] [--dry-run] TARGET...` | Release settled worker dispatches or remove worktree targets, prune two-day-old build sessions/slots; `--dry-run` prints the plan |
+| `pull-reports [--environment NAME] [--ssh HOST] [--dry-run] <worktree>...` | Merge a worktree's `.scratch` reports into the main checkout without overwriting newer local files |
 | `checks`, `docs`, `layers`, `assets` | Repository policy; `checks` also checks formatting |
 | `clippy`, `test`, `lint`, `ci [--require-oracles]` | Individual or aggregate [verification](../docs/engineering/verification.md) |
 | `ffmpeg [--target PLATFORM]`, `ffmpeg --cache-key` | Resolve/provision native media dependencies and cache identity |
@@ -70,6 +72,22 @@ reloads tickets. The server only accepts GET for `/` and `/data.json`; it never
 serves filesystem paths or writes ticket data. Request lines are capped at 8 KiB
 and reads/writes time out after two seconds. Ticket files are trusted local data;
 this is not a public or multi-user server.
+
+## Maintenance
+
+`cleanup` resolves the Orca workspaces directory and the main checkout from
+`orca worktree list` and Git, never from a compiled path. It resolves each
+`ctx_` dispatch in `orca orchestration worker-list`, releases it, closes its
+terminal, then continues with the remaining arguments; any failed step makes the
+command exit non-zero. A local worktree drops its ignored `.scratch` before
+removal; a paired environment passes `--environment` to every Orca call. Build
+cache slots held by a live build are skipped, and the final
+`git pull --ff-only` runs in the main checkout.
+
+`pull-reports` copies a local worktree's reports directly. A paired Orca server
+has no file-transfer command, so a remote source requires `--ssh HOST` and uses
+`scp` into a temporary staging directory. The merge replaces only files whose
+remote timestamp is newer; equal or newer local reports are kept.
 
 `cargo test -p xtask` covers policy gates, graph boundaries, build admission with
 independent processes (waiter/holder crashes, a surviving wrapped command after
