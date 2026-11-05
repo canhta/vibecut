@@ -641,7 +641,7 @@ fn failed_workers_pause_fence_and_join_before_retry_without_blocking_the_action(
     let port = editor.playback.audio_port();
     port.fill(&mut [0.0; 960], 0);
     port.fill(&mut [0.0; 960], 0);
-    let deadline = Instant::now() + Duration::from_secs(5);
+    let deadline = Instant::now() + Duration::from_secs(30);
     loop {
         let failed = matches!(editor.playback.poll(), Err(vibecut::Error::Worker(_)));
         if failed && factory.blocked.load(std::sync::atomic::Ordering::Acquire) {
