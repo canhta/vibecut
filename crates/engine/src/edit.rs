@@ -928,13 +928,14 @@ pub(crate) fn apply(
         }
         Command::TrimStart { item: id, at } => {
             let item = item(&mut data, id)?;
+            let moved = item.start != at;
             let source = add(item.source_range.start(), sub(at, item.start)?)?;
             let range = SourceRange::new(source, item.source_range.end())?;
             set_range(item, range, sources)?;
             item.start = at;
             // A trimmed edge starts a fresh fade of the audible length, yielding to the other.
             let clip = item.source_range.duration();
-            if let Some(fades) = fades_mut(&mut item.content) {
+            if moved && let Some(fades) = fades_mut(&mut item.content) {
                 let curve = fades.fade_in.curve;
                 let window = fades.fade_in.window();
                 fades.set(project::FadeEdge::In, window, curve, clip)?;
@@ -942,6 +943,7 @@ pub(crate) fn apply(
         }
         Command::TrimEnd { item: id, at } => {
             let item = item(&mut data, id)?;
+            let moved = item.end()? != at;
             let end = add(item.source_range.start(), sub(at, item.start)?)?;
             set_range(
                 item,
@@ -949,7 +951,7 @@ pub(crate) fn apply(
                 sources,
             )?;
             let clip = item.source_range.duration();
-            if let Some(fades) = fades_mut(&mut item.content) {
+            if moved && let Some(fades) = fades_mut(&mut item.content) {
                 let curve = fades.fade_out.curve;
                 let window = fades.fade_out.window();
                 fades.set(project::FadeEdge::Out, window, curve, clip)?;

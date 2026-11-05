@@ -433,3 +433,31 @@ fn a_trim_that_would_overlap_the_fades_shrinks_the_trimmed_edge() {
     s.redo().unwrap();
     assert_eq!(fades(&s, 20), f);
 }
+
+#[test]
+fn trimming_to_the_current_edge_preserves_a_split_fade() {
+    for (cut, command) in [(150, "trim_start"), (800, "trim_end")] {
+        let mut s = session();
+        fade_edges(&mut s, "linear", "exponential");
+        s.execute("split_at", json!({"item":20,"at":cut})).unwrap();
+        let piece = pieces(&s)
+            .into_iter()
+            .find(|p| {
+                if command == "trim_start" {
+                    p.1 == Tick(cut)
+                } else {
+                    p.2 == Tick(cut)
+                }
+            })
+            .unwrap();
+        let before = s.project().clone();
+        let original = envelope(&s, time::TICKS_PER_SECOND);
+        s.execute(command, json!({"item":piece.0,"at":cut}))
+            .unwrap();
+        let after = envelope(&s, time::TICKS_PER_SECOND);
+        for (n, (original, after)) in original.iter().zip(&after).enumerate() {
+            assert_eq!(original, after, "{command} cut {cut}, sample {n}");
+        }
+        assert_eq!(&before, s.project());
+    }
+}

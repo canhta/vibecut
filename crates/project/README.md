@@ -126,10 +126,10 @@ clamps one edge to the clip duration minus the other edge's window and starts a
 fresh fade (offset 0). `Fades::split(start, at, end)` returns the two pieces' fades:
 each keeps the whole shape of any fade reaching it and records the part the other
 piece holds (an empty window is no fade). `Fades::spans(start, end, rate)` converts
-ticks to samples once, by absolute position with nearest rounding, so a piece lands
-on exactly the samples the whole clip had; windows clamp to the clip and overlapping
-windows (left by a trim) multiply, so there is never a step. `FadeSpans::gain(sample)`
-is the single per-sample gain used by preview and export: exactly 0 at the clip edge
+ticks to samples once, rounding both absolute endpoints with nearest rounding, so
+a piece lands on exactly the samples the whole clip had; windows clamp to the clip
+and overlapping stored windows multiply. `FadeSpans::gain(sample)` is the single
+per-sample gain used by preview and export: exactly 0 at the clip edge
 where a fade starts, exactly 1 in the body. Both pieces of a split together
 reproduce the original gain at every sample. A fade without `offset` loads as uncut. Curves: `sin(x·π/2)` (-3 dB midpoint), `x`, and `(e^{4x}-1)/(e^4-1)`.
 
@@ -185,7 +185,7 @@ or renderer output claim is made.
 `encode`/`decode` use one JSON envelope: `format`, `schema_version`, `generator`,
 `project`. Current schema 15 adds audio/video clip `fades` to schema 14, which added optional imported cue style to schema 13 text weight, italic, letter spacing and line height (also on text masks), which followed schema 12 audio `source` (upload or library provenance), volume/mute and master controls.
 ProjectId is stored as a canonical decimal string, preserving
-all u64 identity bits for control clients; other IDs remain numeric. Schemas 1-13
+all u64 identity bits for control clients; other IDs remain numeric. Schemas 1-14
 are refused rather than migrated or silently defaulted. Older schemas return `TooOld`, newer schemas `TooNew`; there are no
 migration or compatibility paths. Unknown current-schema project/envelope fields
 are refused. `WriterLease::save` serializes completely before touching the destination;

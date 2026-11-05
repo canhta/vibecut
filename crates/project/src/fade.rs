@@ -164,8 +164,11 @@ impl Fades {
         let at = |tick: Tick| tick.to_units(rate, Rounding::Nearest);
         let (i0, i1) = (at(start)?, at(end)?);
         let len = (i1 - i0).max(0);
-        let edge = |fade: &Fade, shift: i64| -> Result<Resolved> {
-            let size = at(fade.duration.max(Tick::ZERO))?;
+        let edge = |fade: &Fade, origin: Tick, limit: Tick, shift: i64| -> Result<Resolved> {
+            // Round both absolute endpoints, just as the clip and split positions are rounded.
+            // Rounding a duration alone can retain a sample beyond its nominal window, which
+            // would disappear when a split clears the fade at that window's boundary.
+            let size = at(limit)? - at(origin)?;
             Ok(Resolved {
                 size,
                 shift,
@@ -184,10 +187,16 @@ impl Fades {
         let out_origin = end
             .checked_add(behind(&self.fade_out))
             .ok_or(Error::Invalid("fade offset"))?;
+        let in_limit = in_origin
+            .checked_add(self.fade_in.duration)
+            .ok_or(Error::Invalid("fade endpoint"))?;
+        let out_start = out_origin
+            .checked_sub(self.fade_out.duration)
+            .ok_or(Error::Invalid("fade endpoint"))?;
         Ok(FadeSpans {
             len,
-            fade_in: edge(&self.fade_in, i0 - at(in_origin)?)?,
-            fade_out: edge(&self.fade_out, at(out_origin)? - i1)?,
+            fade_in: edge(&self.fade_in, in_origin, in_limit, i0 - at(in_origin)?)?,
+            fade_out: edge(&self.fade_out, out_start, out_origin, at(out_origin)? - i1)?,
         })
     }
 }
@@ -341,6 +350,23 @@ mod tests {
             .spans(Tick::ZERO, samples(100, rate), rate)
             .unwrap();
         assert!((0..100).all(|s| none.gain(s) == 1.0));
+        // Stored overlapping windows multiply; command-created fades are clamped separately.
+        let overlapping = Fades {
+            fade_in: Fade {
+                duration: samples(80, rate),
+                curve: FadeCurve::Linear,
+                ..Fade::default()
+            },
+            fade_out: Fade {
+                duration: samples(80, rate),
+                curve: FadeCurve::Linear,
+                ..Fade::default()
+            },
+        }
+        .spans(Tick::ZERO, samples(100, rate), rate)
+        .unwrap();
+        assert_eq!(overlapping.lengths(), (80, 80));
+        assert!((overlapping.gain(50) - 0.3828125).abs() < 1e-7);
     }
 
     #[test]
@@ -453,6 +479,49 @@ mod tests {
                     three.extend(envelope(&r1, at, mid, rate));
                     three.extend(envelope(&r2, mid, end, rate));
                     assert_eq!(whole, three, "rate {rate} cut {cut_ms} twice");
+                }
+            }
+        }
+
+        // A cut at (or one tick either side of) an off-grid fade endpoint must not
+        // clear a still-active rounded sample. Exercise all curve pairs.
+        for rate in [44_100, 48_000] {
+            let sample = time::TICKS_PER_SECOND / rate;
+            let start = Tick(sample * 8 / 10);
+            let end = Tick(start.0 + sample * 1000);
+            for in_curve in CURVES {
+                for out_curve in CURVES {
+                    let fades = Fades {
+                        fade_in: Fade {
+                            duration: Tick(sample * 300 + sample * 6 / 10),
+                            curve: in_curve,
+                            ..Fade::default()
+                        },
+                        fade_out: Fade {
+                            duration: Tick(sample * 400 + sample * 6 / 10),
+                            curve: out_curve,
+                            ..Fade::default()
+                        },
+                    };
+                    let whole = envelope(&fades, start, end, rate);
+                    for boundary in [
+                        start.0 + fades.fade_in.duration.0,
+                        end.0 - fades.fade_out.duration.0,
+                    ] {
+                        for delta in [-1, 0, 1] {
+                            let at = Tick(boundary + delta);
+                            let (left, right) = fades.split(start, at, end).unwrap();
+                            let mut both = envelope(&left, start, at, rate);
+                            both.extend(envelope(&right, at, end, rate));
+                            assert_eq!(whole.len(), both.len());
+                            for (original, split) in whole.iter().zip(&both) {
+                                assert_eq!(
+                                    original, split,
+                                    "rate {rate}, curves {in_curve:?}/{out_curve:?}, cut {at:?}"
+                                );
+                            }
+                        }
+                    }
                 }
             }
         }
