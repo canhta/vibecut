@@ -152,6 +152,7 @@ impl Policy for Grants {
             | Command::SetItemField { .. }
             | Command::SetCanvasBackground { .. }
             | Command::SetItemParamMany { .. }
+            | Command::SetFade { .. }
             | Command::AddMask { .. }
             | Command::RemoveMask { .. }
             | Command::UpdateMask { .. }
