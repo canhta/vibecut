@@ -57,7 +57,9 @@ Make, CMake, Ninja, pkg-config, NASM and matching Clang/LLVM, run on the matchin
 architecture; Rust keeps its MSVC toolchain. Native xtask uses `USERPROFILE`
 for its Windows cache and resolves Bash, Make and cygpath to absolute paths in the
 MSYS2 `usr/bin` on `PATH`, refusing an incomplete installation instead of using
-Windows/WSL or Git Bash. Provisioning logs the selected tool paths.
+Windows/WSL or Git Bash. Provisioning logs the selected tool paths. The Windows FFmpeg configure step
+requests static pkg-config metadata for its static Opus/libvpx dependencies,
+including libvpx’s private pthread link dependencies.
 
 ## Hosted CI
 

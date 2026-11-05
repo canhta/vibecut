@@ -419,6 +419,9 @@ fn build_source(
             "--ld=clang".into(),
             "--ar=llvm-ar".into(),
             "--nm=llvm-nm".into(),
+            // libvpx is static and its MinGW pthread/semaphore dependencies
+            // live in Libs.private; normal pkg-config output omits them.
+            "--pkg-config-flags=--static".into(),
             format!("--arch={arch}"),
             "--enable-d3d11va".into(),
             "--enable-dxva2".into(),
