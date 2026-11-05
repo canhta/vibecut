@@ -147,11 +147,34 @@ fn exact_non_keyframe_cut_preserves_pcm_sync_and_frame_bounds() {
         .parse()
         .unwrap();
     assert!((duration - 0.4).abs() < 1.0 / 30.0 + 0.0001);
-    let reference = pcm(
+    let external_reference = pcm(
         &input,
         Some("aresample=48000,atrim=start_sample=19200:end_sample=38400"),
     );
+    let reference = mix_audio(&p, 19200, 19200, 1, &mut FileSources::default(), &h)
+        .unwrap()
+        .planes()[0]
+        .clone();
+    assert_eq!(reference.len(), external_reference.len());
+    let input_mse = reference
+        .iter()
+        .zip(&external_reference)
+        .map(|(a, b)| f64::from(*a - *b * 0.98).powi(2))
+        .sum::<f64>()
+        / reference.len() as f64;
+    assert!(
+        input_mse < 0.00001,
+        "absolute source mapping MSE {input_mse}"
+    );
     let actual = pcm(&output, None);
+    let partitioned = root().join("non-keyframe-cut-odd.mp4");
+    settings.audio_block = 257;
+    export(&p, range, &settings, &partitioned, &h).unwrap();
+    assert_eq!(
+        actual,
+        pcm(&partitioned, None),
+        "encoded PCM changes with block size"
+    );
     assert!(actual.len().abs_diff(reference.len()) < 1024);
     let common = actual.len().min(reference.len());
     let mut best = (f64::INFINITY, 0i32);
@@ -217,7 +240,7 @@ fn resampling_split_trim_offset_and_irregular_blocks_are_identical() {
     for (n, rate) in [(1, 44100), (2, 48000)] {
         let path = dir.path().join(format!("impulses-{rate}.wav"));
         let signal = format!(
-            "aevalsrc=if(eq(n\\,0)+eq(n\\,{})+eq(n\\,24000)\\,0.5\\,0):s={rate}:d=1",
+            "aevalsrc=if(eq(n\\,0)+eq(n\\,{})+eq(n\\,123)+eq(n\\,24000)\\,0.5\\,0):s={rate}:d=1",
             rate / 2
         );
         generate(&path, &["-f", "lavfi", "-i", &signal, "-c:a", "pcm_f32le"]);
@@ -289,6 +312,16 @@ fn resampling_split_trim_offset_and_irregular_blocks_are_identical() {
     assert_eq!(whole.planes(), parts);
     assert!(whole.planes()[0].iter().any(|v| *v != 0.0));
     assert_eq!(whole.planes()[0], whole.planes()[1]);
+    assert!(
+        whole.planes()[0][100..107].iter().any(|v| v.abs() > 0.1),
+        "trim/offset impulse vanished"
+    );
+    assert!(
+        whole.planes()[0][23998..24003]
+            .iter()
+            .any(|v| v.abs() > 0.1),
+        "split impulse vanished"
+    );
 }
 #[test]
 fn portrait_center_and_manual_crop_and_missing_source_admission() {

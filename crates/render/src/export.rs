@@ -334,6 +334,7 @@ fn admission(
                     .ok_or(Error::Invalid("diagnostic range"))?;
                 out.push(Unavailable {
                     asset: id,
+                    item: item.id,
                     range: TimeRange::new(start, end)?,
                     reason,
                 });
