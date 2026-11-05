@@ -574,6 +574,11 @@ mod tests {
         };
         let root = PathBuf::from(root);
         let label = std::env::var("VIBECUT_BUILD_TEST_LABEL").unwrap();
+        if label == "missing" {
+            let args = vec![root.join("missing-command").into_os_string()];
+            assert!(run_in(&root, &args, root.clone(), false).is_err());
+            return;
+        }
         if matches!(label.as_str(), "wrapped" | "detached") {
             let args = vec![
                 std::env::current_exe().unwrap().into_os_string(),
@@ -716,8 +721,16 @@ mod tests {
                 std::thread::sleep(Duration::from_millis(5));
             }
         }
-        let missing = vec![root.join("missing-command").into_os_string()];
-        assert!(run_in(root, &missing, root.clone(), false).is_err());
+        // Production launches commands from a single-threaded process. Keep
+        // this case out of the parallel test harness, where another test's
+        // subprocess could inherit the briefly non-CLOEXEC slot descriptor.
+        let status = Command::new(std::env::current_exe().unwrap())
+            .args(["--exact", "build::tests::build_process", "--nocapture"])
+            .env("VIBECUT_BUILD_TEST_ROOT", root)
+            .env("VIBECUT_BUILD_TEST_LABEL", "missing")
+            .status()
+            .unwrap();
+        assert!(status.success());
         let mut queued = Queue::enter(&locks).unwrap();
         assert!(
             claim(&mut queued, root, false, || false).unwrap().is_some(),
