@@ -189,7 +189,7 @@ device-loss recovery remains unverified and requires its own runtime test.
 
 Media Foundation always receives CPU NV12 input, including when its hardware
 encoder is explicitly preferred. FFmpeg's
-[D3D11 sample wrapper](https://github.com/FFmpeg/FFmpeg/blob/n9.0.2/libavcodec/mfenc.c#L330)
+[D3D11 sample wrapper](https://github.com/FFmpeg/FFmpeg/blob/n9.0.2/libavcodec/mfenc.c#L357)
 retains a texture/subresource but not the decoded AVFrame's pool lease, and
 releases that frame after input acceptance. An asynchronous MFT may still read
 it: [ProcessInput's contract](https://learn.microsoft.com/en-us/windows/win32/api/mftransform/nf-mftransform-imftransform-processinput)
