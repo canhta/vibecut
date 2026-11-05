@@ -9,6 +9,10 @@ publish = false
 name = "vibecut"
 path = "src/main.rs"
 
+[[example]]
+name = "ui_audit"
+test = true
+
 [lints]
 workspace = true
 

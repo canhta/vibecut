@@ -639,6 +639,11 @@ fn inspector_mixed_locale(theme: Theme, scale: f32, locale: Locale) -> Result<Ap
         }),
     )?;
     editor.selection = [first, second, background].into_iter().collect();
+    // Setup edits use Session directly, so refresh the preview snapshot before
+    // accepting a frame from the populated-editor fixture.
+    let project = editor.session.project().clone();
+    editor.playback.seek(Tick(3 * SECOND), false, project)?;
+    wait_for_frame(&mut editor)?;
     let mut app = app_editor(editor, scale);
     wait_for_presented(&mut app)?;
     app.run_steps(3);
@@ -1237,4 +1242,23 @@ fn index_html(rows: &[Row]) -> String {
     }
     html.push_str("</body>\n</html>\n");
     html
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn mixed_selection_preview_matches_its_edited_timeline() -> Result<(), Failure> {
+        let app = inspector_mixed_vi(Theme::Light, 1.0)?;
+        let App::Editor(editor) = &app.state().app else {
+            return Err("expected editor scene".into());
+        };
+        let frame = editor.playback.frame().ok_or("missing preview frame")?;
+        // This corner lies outside the text. It must show the scene's solid
+        // overlay, rather than the synthetic video deleted during setup.
+        let corner = frame.image.pixels.first().ok_or("empty preview frame")?;
+        assert_eq!(*corner, egui::Color32::from_rgb(35, 45, 65));
+        Ok(())
+    }
 }

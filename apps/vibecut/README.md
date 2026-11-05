@@ -164,7 +164,9 @@ rules](../../docs/engineering/open-source.md#ffmpeg-distribution).
 `cargo test -p vibecut` covers stable ID accessibility/uniqueness, real
 split/trim/move/delete/undo/redo through automation IDs, locale retention,
 transport/seek/clear, byte refusal and worker shutdown. It asserts widget and
-engine state only; no test writes an image. `cargo xtask ui-audit [SCENE...]`
+engine state only; no test writes an image. The audit example's regression test
+also runs with workspace tests and checks that its preview matches its edited
+timeline without rendering or saving a screenshot. `cargo xtask ui-audit [SCENE...]`
 renders the named Home, editor, import, export, close-guard, track, scene and placement scenes offscreen through the same automation IDs at
 1x and 2x into `$CARGO_TARGET_DIR/ui-audit/` (or `target/ui-audit/`) with an
 `index.html` placing each render beside its `.spikes/ui-reference/` counterpart;
