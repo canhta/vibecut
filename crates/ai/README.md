@@ -912,8 +912,12 @@ Flash v2.5 and 80 for Multilingual v2, minimum one character. Because the provid
 does not publish whether non-BMP text is counted as scalars or UTF-16 units, such
 text quotes the larger count as an upper bound, so the approved budget still bounds
 pre-call spending. Graphemes are never used for cost. The `character-cost` response
-header is recorded as `billable_characters` when present and reconciles the actual
-cost; a header above the quote fails `Cost`. Requests longer than the model limit
+header is recorded as `billable_characters` when present, but it is the provider's
+billing-unit count, not the dollar price: the live Flash capture reports 22 units
+for a 44-character synthetic probe, while Multilingual v2 reports one unit per
+character. Actual cost therefore follows the documented input-character rate
+(40/80 micro-USD), not header x rate; multiplying the Flash header by the
+per-character price would underreport by half. Requests longer than the model limit
 (10,000 or 40,000 characters) split at cue (newline), sentence or whitespace
 boundaries. Adjacent chunks send bounded
 `previous_text`/`next_text` continuity context, and audio is concatenated only

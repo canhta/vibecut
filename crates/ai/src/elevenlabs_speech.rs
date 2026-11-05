@@ -78,8 +78,11 @@ impl SpeechSpeed {
     pub fn get(self) -> f64 {
         self.0
     }
+    /// Exact wire representation, so two accepted speeds can never share a
+    /// provider/capability identity. `serde_json` uses a round-trip float format;
+    /// the fallback is unreachable because construction rejects non-finite values.
     fn fingerprint(self) -> String {
-        format!("{:.2}", self.0)
+        serde_json::to_string(&self.0).unwrap_or_else(|_| self.0.to_string())
     }
 }
 
@@ -423,7 +426,8 @@ impl SpeechSynthesizer for ElevenLabsSpeech {
         let cap = response_cap(request)?;
         let max_samples = max_samples(request)?;
         let mut samples = Vec::new();
-        let mut billable = 0u64;
+        let mut characters = 0u64;
+        let mut provider_cost = Some(0u64);
         for (index, chunk) in chunks.iter().enumerate() {
             checked(hooks)?;
             let previous = match index.checked_sub(1).and_then(|i| chunks.get(i)) {
@@ -450,8 +454,14 @@ impl SpeechSynthesizer for ElevenLabsSpeech {
             if (200..=299).contains(&response.status) && response.body.len() / 2 > remaining {
                 return Err(Error::OutputRejected);
             }
-            let decoded = parse_chunk(&response, chunk)?;
-            billable = billable.checked_add(decoded.billable).ok_or(Error::Cost)?;
+            let decoded = parse_chunk(&response)?;
+            characters = characters
+                .checked_add(billable_count(chunk).0)
+                .ok_or(Error::Cost)?;
+            provider_cost = match (provider_cost, decoded.provider_cost) {
+                (Some(total), Some(cost)) => total.checked_add(cost),
+                _ => None,
+            };
             let total = samples
                 .len()
                 .checked_add(decoded.samples.len())
@@ -467,7 +477,11 @@ impl SpeechSynthesizer for ElevenLabsSpeech {
             checked(hooks)?;
         }
         let duration_micros = duration_micros(samples.len())?;
-        let Some(actual_micros) = billable
+        // `character-cost` is the provider's billing-unit count (Flash reports half
+        // a unit per input character), so it is recorded, not multiplied by the
+        // per-character list price. Actual cost follows the documented input-text
+        // character rate; otherwise Flash would be underreported by half.
+        let Some(actual_micros) = characters
             .max(1)
             .checked_mul(self.model.micros_per_character())
         else {
@@ -479,7 +493,7 @@ impl SpeechSynthesizer for ElevenLabsSpeech {
             duration_micros,
             fingerprint: capabilities.fingerprint.clone(),
             usage: SpeechUsage {
-                billable_characters: Some(billable.max(1)),
+                billable_characters: provider_cost,
                 input_tokens: None,
                 output_tokens: None,
                 actual_cost: Money::new("USD", actual_micros)?,
@@ -651,10 +665,10 @@ fn build_http(
 
 struct ChunkAudio {
     samples: Vec<f32>,
-    billable: u64,
+    provider_cost: Option<u64>,
 }
 
-fn parse_chunk(response: &HttpResponse, text: &str) -> Result<ChunkAudio, Error> {
+fn parse_chunk(response: &HttpResponse) -> Result<ChunkAudio, Error> {
     // This endpoint has no completion-status field: a single 200 response carries
     // the whole audio body. Other 2xx statuses (204, 206, ...) are incomplete or
     // partial and are rejected rather than treated as success.
@@ -678,10 +692,12 @@ fn parse_chunk(response: &HttpResponse, text: &str) -> Result<ChunkAudio, Error>
     for pair in response.body.as_chunks::<2>().0 {
         samples.push(f32::from(i16::from_le_bytes(*pair)) / 32768.0);
     }
-    let billable = header_value(&response.headers, "character-cost")
-        .and_then(|value| value.trim().parse().ok())
-        .unwrap_or_else(|| billable_count(text).0);
-    Ok(ChunkAudio { samples, billable })
+    let provider_cost = header_value(&response.headers, "character-cost")
+        .and_then(|value| value.trim().parse().ok());
+    Ok(ChunkAudio {
+        samples,
+        provider_cost,
+    })
 }
 
 fn header_value<'a>(headers: &'a [(String, String)], name: &str) -> Option<&'a str> {
@@ -706,9 +722,40 @@ fn declared_length(headers: &[(String, String)]) -> Result<Option<u64>, Error> {
 }
 
 fn status_error(response: &HttpResponse) -> Error {
+    // ElevenLabs documents `quota_exceeded` under both HTTP 400 and 401. Classify
+    // bounded provider codes before the generic status mapping so exhausted credits
+    // stay distinct from bad input and invalid credentials. Codes never enter the
+    // public error or logs.
+    if (400..=429).contains(&response.status) {
+        let codes = error_codes(&response.body);
+        if has_code(
+            &codes,
+            &[
+                "quota_exceeded",
+                "insufficient_credits",
+                "payment_required",
+                "quota",
+            ],
+        ) {
+            return Error::Quota;
+        }
+        if has_code(
+            &codes,
+            &["invalid_api_key", "authentication", "unauthorized"],
+        ) {
+            return Error::Auth;
+        }
+        if has_code(&codes, &["content_policy", "moderation", "safety"]) {
+            return Error::ContentPolicy;
+        }
+        if has_code(&codes, &["rate_limit", "too_many_requests"]) {
+            return Error::RateLimit {
+                retry_after_seconds: retry_after(&response.headers),
+            };
+        }
+    }
     match response.status {
         401 | 403 => Error::Auth,
-        400 if content_policy(&response.body) => Error::ContentPolicy,
         400 | 422 => Error::Payload,
         402 => Error::Quota,
         404 => Error::UnsupportedVoice,
@@ -724,19 +771,34 @@ fn status_error(response: &HttpResponse) -> Error {
     }
 }
 
-fn content_policy(body: &[u8]) -> bool {
+fn error_codes(body: &[u8]) -> Vec<String> {
     let Ok(value) = serde_json::from_slice::<serde_json::Value>(body) else {
-        return false;
+        return Vec::new();
     };
-    let detail = value.get("detail");
-    ["status", "code", "type"]
+    let mut codes = Vec::new();
+    for container in [Some(&value), value.get("detail")] {
+        let Some(container) = container else {
+            continue;
+        };
+        for key in ["status", "code", "type"] {
+            if let Some(code) = container.get(key).and_then(serde_json::Value::as_str) {
+                // Bound hostile code strings before lowercasing.
+                codes.push(
+                    code.chars()
+                        .take(128)
+                        .collect::<String>()
+                        .to_ascii_lowercase(),
+                );
+            }
+        }
+    }
+    codes
+}
+
+fn has_code(codes: &[String], needles: &[&str]) -> bool {
+    codes
         .iter()
-        .filter_map(|key| detail.and_then(|detail| detail.get(*key)))
-        .filter_map(|value| value.as_str())
-        .any(|value| {
-            let value = value.to_ascii_lowercase();
-            value.contains("content") || value.contains("moderation") || value.contains("safety")
-        })
+        .any(|code| needles.iter().any(|needle| code.contains(needle)))
 }
 
 fn hex(bytes: &[u8]) -> String {

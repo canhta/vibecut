@@ -9,8 +9,8 @@ use ai::elevenlabs_speech::{
     LoggingMode, MULTILINGUAL_MICROS_PER_CHARACTER, MULTILINGUAL_MODEL, SAMPLE_RATE, SpeechSpeed,
 };
 use ai::speech::{
-    SpeechFormat, SpeechLanguage, SpeechOutput, SpeechRequest, SpeechSynthesizer, SpeechVoice,
-    SynthesisConsent, SynthesisEstimate, VoiceCategory, synthesize,
+    SpeechAudio, SpeechFormat, SpeechLanguage, SpeechOutput, SpeechRequest, SpeechSynthesizer,
+    SpeechVoice, SynthesisConsent, SynthesisEstimate, VoiceCategory, synthesize,
 };
 use ai::transport::{ApiKey, HttpRequest, HttpResponse, HttpTransport, UreqTransport};
 use ai::{Error, ExecutionHooks, Location, Money, ProviderConfig, Stage};
@@ -274,13 +274,83 @@ fn body(value: &HttpRequest) -> Value {
     serde_json::from_slice(&value.body).unwrap()
 }
 
+/// Optional export for the ignored live test. Only the provider's decoded audio and
+/// sanitized request metadata are written; the API key never enters the file.
+fn write_capture(
+    dir: &Path,
+    tag: &str,
+    audio: &SpeechAudio,
+    request: &SpeechRequest,
+    model: &str,
+    voice: &str,
+) -> std::io::Result<()> {
+    std::fs::create_dir_all(dir)?;
+    let data_len = u32::try_from(
+        audio
+            .samples
+            .len()
+            .checked_mul(2)
+            .ok_or_else(|| std::io::Error::other("capture too large"))?,
+    )
+    .map_err(|_| std::io::Error::other("capture too large"))?;
+    let riff_len = data_len
+        .checked_add(36)
+        .ok_or_else(|| std::io::Error::other("capture too large"))?;
+    let byte_rate = audio
+        .sample_rate
+        .checked_mul(2)
+        .ok_or_else(|| std::io::Error::other("capture rate"))?;
+    let mut wav = Vec::with_capacity(44 + audio.samples.len() * 2);
+    wav.extend_from_slice(b"RIFF");
+    wav.extend_from_slice(&riff_len.to_le_bytes());
+    wav.extend_from_slice(b"WAVEfmt ");
+    wav.extend_from_slice(&16u32.to_le_bytes());
+    wav.extend_from_slice(&1u16.to_le_bytes());
+    wav.extend_from_slice(&1u16.to_le_bytes());
+    wav.extend_from_slice(&audio.sample_rate.to_le_bytes());
+    wav.extend_from_slice(&byte_rate.to_le_bytes());
+    wav.extend_from_slice(&2u16.to_le_bytes());
+    wav.extend_from_slice(&16u16.to_le_bytes());
+    wav.extend_from_slice(b"data");
+    wav.extend_from_slice(&data_len.to_le_bytes());
+    for sample in &audio.samples {
+        let value = (sample.clamp(-1.0, 1.0) * 32768.0)
+            .round()
+            .clamp(-32768.0, 32767.0) as i16;
+        wav.extend_from_slice(&value.to_le_bytes());
+    }
+    std::fs::write(dir.join(format!("provider-{tag}.wav")), wav)?;
+    let meta = json!({
+        "text": request.text().as_str(),
+        "language": request.language().language.as_str(),
+        "script": request.language().script.as_str(),
+        "model": model,
+        "voice": voice,
+        "sample_rate": audio.sample_rate,
+        "samples": audio.samples.len(),
+        "duration_micros": audio.duration_micros,
+        "character_cost": audio.usage.billable_characters,
+        "actual_micros": audio.usage.actual_cost.micros(),
+        "fingerprint": audio.fingerprint.as_str(),
+        "captured": "live production transport; synthetic text",
+    });
+    std::fs::write(
+        dir.join(format!("provider-{tag}.json")),
+        serde_json::to_vec_pretty(&meta).map_err(std::io::Error::other)?,
+    )?;
+    Ok(())
+}
+
 #[test]
 fn success_uses_production_seam_and_exact_request() {
-    let fixture = fixture_json("success.json");
+    let fixture = fixture_json("provider-success.json");
     let text = fixture["text"].as_str().unwrap();
     let character_cost = fixture["character_cost"].as_u64().unwrap();
+    let samples = fixture["samples"].as_u64().unwrap() as usize;
+    let duration_micros = fixture["duration_micros"].as_u64().unwrap();
+    let actual_micros = fixture["actual_micros"].as_u64().unwrap();
     let fake = Arc::new(FakeTransport::new(vec![pcm_reply(
-        pcm("success.wav"),
+        pcm("provider-success.wav"),
         Some(character_cost),
     )]));
     let adapter = build_adapter(fake.clone(), FLASH_MODEL, settings(), voices());
@@ -290,28 +360,31 @@ fn success_uses_production_seam_and_exact_request() {
         VOICE,
         language("vi", "Latn"),
         output(),
-        1_000_000,
+        15_000_000,
     );
     let approved = grant_consent(&adapter, &request, 1_000_000);
     let audio = synthesize(&adapter, &request, &approved, &Hooks::new()).unwrap();
 
-    assert_eq!(audio.samples.len(), 6000);
+    assert_eq!(audio.samples.len(), samples);
     assert_eq!(audio.sample_rate, SAMPLE_RATE);
-    assert_eq!(audio.duration_micros, 250_000);
+    assert_eq!(audio.duration_micros, duration_micros);
     assert_eq!(audio.transcript, None);
     assert!(audio.samples.iter().all(|sample| sample.is_finite()));
-    assert_eq!(audio.usage.billable_characters, Some(13));
-    assert_eq!(audio.usage.actual_cost, money(520));
+    // The provider-recorded header is Flash billing units (22 for 44 characters);
+    // actual cost uses the documented input-character price, not header * price.
+    assert_eq!(text.chars().count(), 44);
+    assert_eq!(character_cost, 22);
+    assert_eq!(audio.usage.billable_characters, Some(character_cost));
+    assert_eq!(audio.usage.actual_cost, money(actual_micros));
     assert_eq!(
         audio.fingerprint,
         adapter.capabilities(&request).fingerprint
     );
     assert_eq!(
         adapter.estimate(&request),
-        SynthesisEstimate::UpperBound(money(640))
+        SynthesisEstimate::Exact(money(actual_micros))
     );
-    // The contract counts extended graphemes; provider billing counts scalars.
-    assert_eq!(request.characters(), 10);
+    assert_eq!(request.characters(), 44);
 
     let calls = fake.take();
     assert_eq!(calls.len(), 1);
@@ -557,7 +630,10 @@ fn cost_is_exact_per_scalar_with_minimum_one() {
         SynthesisEstimate::Exact(money(10_001 * FLASH_MICROS_PER_CHARACTER))
     );
 
-    // The provider header is authoritative when present, even if it differs.
+    // `character-cost` is recorded as provider billing units. Flash reports half a
+    // unit per input character, so multiplying the header by the per-character
+    // price would underreport the actual cost; the documented input-character rate
+    // is used instead.
     let fake = Arc::new(FakeTransport::new(vec![
         pcm_reply(pcm("success.wav"), Some(17)),
         pcm_reply(pcm("success.wav"), None),
@@ -572,21 +648,17 @@ fn cost_is_exact_per_scalar_with_minimum_one() {
         1_000_000,
     );
     let approved = grant_consent(&adapter, &request, 1_000_000);
-    assert!(matches!(
-        synthesize(&adapter, &request, &approved, &Hooks::new()),
-        Err(Error::Cost)
-    ));
-
-    let approved = SynthesisConsent::grant(
-        &request,
-        &adapter.capabilities(&request),
-        adapter.estimate(&request),
-        money(1_000_000),
-    )
-    .unwrap();
     let audio = synthesize(&adapter, &request, &approved, &Hooks::new()).unwrap();
-    // Without the provider header, the conservative UTF-16 count is recorded.
-    assert_eq!(audio.usage.billable_characters, Some(16));
+    assert_eq!(audio.usage.billable_characters, Some(17));
+    assert_eq!(
+        audio.usage.actual_cost,
+        money(16 * FLASH_MICROS_PER_CHARACTER)
+    );
+
+    let approved = grant_consent(&adapter, &request, 1_000_000);
+    let audio = synthesize(&adapter, &request, &approved, &Hooks::new()).unwrap();
+    // Without the provider header, the usage stays explicitly unknown.
+    assert_eq!(audio.usage.billable_characters, None);
     assert_eq!(
         audio.usage.actual_cost,
         money(16 * FLASH_MICROS_PER_CHARACTER)
@@ -682,6 +754,67 @@ fn settings_and_normalization_are_consent_bound() {
             .fingerprint
             .as_str()
             .contains("speed=0.85")
+    );
+
+    // Closely spaced accepted speeds must keep distinct settings and capability
+    // identity; otherwise a stale consent could authorize a different wire value.
+    let slow = ElevenLabsSpeechSettings {
+        speed: Some(SpeechSpeed::new(0.851).unwrap()),
+        logging: LoggingMode::Default,
+    };
+    let fast = ElevenLabsSpeechSettings {
+        speed: Some(SpeechSpeed::new(0.854).unwrap()),
+        logging: LoggingMode::Default,
+    };
+    assert_ne!(slow.settings_fingerprint(), fast.settings_fingerprint());
+    let slow_adapter = build_adapter(
+        Arc::new(FakeTransport::new(Vec::new())),
+        FLASH_MODEL,
+        slow,
+        voices(),
+    );
+    let fast_fake = Arc::new(FakeTransport::new(vec![pcm_reply(
+        pcm("success.wav"),
+        Some(13),
+    )]));
+    let fast_adapter = build_adapter(fast_fake.clone(), FLASH_MODEL, fast, voices());
+    assert_ne!(slow_adapter.config(), fast_adapter.config());
+    let slow_request = build_request(
+        slow_adapter.config().clone(),
+        "Xin chào 👩🏽‍💻",
+        VOICE,
+        language("vi", "Latn"),
+        output(),
+        1_000_000,
+    );
+    let fast_request = build_request(
+        fast_adapter.config().clone(),
+        "Xin chào 👩🏽‍💻",
+        VOICE,
+        language("vi", "Latn"),
+        output(),
+        1_000_000,
+    );
+    assert_ne!(
+        slow_adapter.capabilities(&slow_request).fingerprint,
+        fast_adapter.capabilities(&fast_request).fingerprint
+    );
+    let slow_consent = grant_consent(&slow_adapter, &slow_request, 1_000_000);
+    assert!(matches!(
+        synthesize(&fast_adapter, &fast_request, &slow_consent, &Hooks::new()),
+        Err(Error::ConsentRequired)
+    ));
+    assert_eq!(fast_fake.calls(), 0);
+    let fast_consent = grant_consent(&fast_adapter, &fast_request, 1_000_000);
+    synthesize(&fast_adapter, &fast_request, &fast_consent, &Hooks::new()).unwrap();
+    let calls = fast_fake.take();
+    assert_eq!(body(&calls[0])["voice_settings"]["speed"], 0.854);
+    assert!(
+        fast_adapter
+            .capabilities(&fast_request)
+            .fingerprint
+            .as_str()
+            .contains("speed=0.854")
     );
 }
 
@@ -841,9 +974,13 @@ fn long_text_splits_at_boundaries_without_losing_text() {
 fn errors_are_typed_and_never_retried() {
     let cases = [
         ("error-auth.json", "auth"),
+        ("error-auth-400.json", "auth"),
         ("error-quota.json", "quota"),
+        ("error-quota-400.json", "quota"),
+        ("error-quota-401.json", "quota"),
         ("error-rate-limit.json", "rate"),
         ("error-content-policy.json", "content"),
+        ("error-payload.json", "payload"),
     ];
     for (file, kind) in cases {
         let fake = Arc::new(FakeTransport::new(vec![error_reply(file)]));
@@ -867,7 +1004,8 @@ fn errors_are_typed_and_never_retried() {
                     retry_after_seconds: Some(7)
                 }
             )),
-            _ => assert!(matches!(error, Error::ContentPolicy)),
+            "content" => assert!(matches!(error, Error::ContentPolicy)),
+            _ => assert!(matches!(error, Error::Payload)),
         }
         assert_eq!(fake.calls(), 1);
     }
@@ -1190,6 +1328,7 @@ fn live_elevenlabs_speech_uses_production_transport() {
     let key = std::env::var("ELEVENLABS_API_KEY").expect("ELEVENLABS_API_KEY");
     let voice = std::env::var("VIBECUT_ELEVENLABS_VOICE_ID")
         .expect("VIBECUT_ELEVENLABS_VOICE_ID (a premade/stock voice)");
+    let capture = std::env::var_os("VIBECUT_ELEVENLABS_CAPTURE_DIR").map(std::path::PathBuf::from);
     let cases = [
         (
             "vi",
@@ -1248,5 +1387,9 @@ fn live_elevenlabs_speech_uses_production_transport() {
         assert!(!audio.samples.is_empty());
         assert!(audio.samples.iter().all(|sample| sample.is_finite()));
         assert!(audio.duration_micros > 0);
+        if let Some(dir) = &capture {
+            write_capture(dir, tag, &audio, &request, model, &voice)
+                .expect("capture provider fixture");
+        }
     }
 }

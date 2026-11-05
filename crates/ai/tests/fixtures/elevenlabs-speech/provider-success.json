@@ -1,0 +1,15 @@
+{
+  "actual_micros": 1760,
+  "captured": "live production transport; synthetic text; 2026-11-05",
+  "character_cost": 22,
+  "provider_cost_units_note": "character-cost is the provider billing-unit count (22 for 44 Flash input characters); actual_micros uses the documented input-character rate.",
+  "duration_micros": 2182667,
+  "fingerprint": "elevenlabs-speech-v1;model=eleven_flash_v2_5;voice=EXAVITQu4vr4xnSDxMaL;language=vi/Latn;format=pcm_24000;normalization=auto;speed=none;logging=default;continuity=1000;split=chunk-v1",
+  "language": "vi",
+  "model": "eleven_flash_v2_5",
+  "sample_rate": 24000,
+  "samples": 52384,
+  "script": "Latn",
+  "text": "Xin chào, đây là một bài kiểm tra giọng nói.",
+  "voice": "EXAVITQu4vr4xnSDxMaL"
+}
