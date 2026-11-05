@@ -3875,8 +3875,17 @@ impl Editor {
     ) {
         match tab {
             PropertiesTab::Text if self.item_value(item, TEXT_SIZE_SCRUB.field).is_some() => {
-                self.scrub_field(ui, item, TEXT_SIZE_SCRUB);
-                self.text_color_field(ui, item);
+                for field in shared_fields(self.session.project(), &self.selection) {
+                    match field.id {
+                        "text_size" => self.scrub_field(ui, item, TEXT_SIZE_SCRUB),
+                        "text_color" => self.text_color_field(ui, item),
+                        "text_content" | "text_font" | "text_background" | "text_position_x"
+                        | "text_position_y" => {
+                            self.shared_field_controls(ui, std::iter::once(field));
+                        }
+                        _ => {}
+                    }
+                }
             }
             PropertiesTab::Audio if kind == ElementKind::Audio => {
                 self.scrub_field(ui, item, AUDIO_GAIN_SCRUB);
@@ -4767,6 +4776,13 @@ impl Editor {
         if fields.is_empty() {
             ui.label(self.tr(Text::NoSharedFields));
         }
+        self.shared_field_controls(ui, fields);
+    }
+    fn shared_field_controls(
+        &mut self,
+        ui: &mut egui::Ui,
+        fields: impl IntoIterator<Item = crate::selection::SharedField>,
+    ) {
         for field in fields {
             if field.id == "audio_muted" {
                 self.audio_mute_control(ui, &field);
@@ -4896,7 +4912,7 @@ impl Editor {
                     self.remember(id, &response);
                     if response.changed() {
                         self.property_drafts
-                            .insert("text_background_color", value.clone());
+                            .insert("text_background_color".to_owned(), value.clone());
                     }
                     if (response.lost_focus()
                         || (response.has_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter))))
@@ -5005,58 +5021,7 @@ impl Editor {
     }
     /// The inspector and automation use the same registered atomic field edit.
     pub fn set_shared_field(&mut self, field: &str, value: &str) -> Result<()> {
-        let patch = match field {
-            "blendMode" => ItemParamPatch::BlendMode(
-                serde_json::from_value(serde_json::json!(value))
-                    .map_err(|_| Error::Invalid("blend mode"))?,
-            ),
-            "opacity" => ItemParamPatch::Opacity(
-                value
-                    .trim()
-                    .parse()
-                    .map_err(|_| Error::Invalid("opacity"))?,
-            ),
-            "audio_gain" => ItemParamPatch::AudioGain(
-                value
-                    .trim()
-                    .parse()
-                    .map_err(|_| Error::Invalid("audio gain"))?,
-            ),
-            "text_content" => ItemParamPatch::TextContent(value.into()),
-            "text_font" => {
-                let font = value.trim();
-                if font.is_empty() || font.len() > 256 {
-                    return Err(Error::Invalid("font family"));
-                }
-                ItemParamPatch::TextFont(font.into())
-            }
-            "text_size" => ItemParamPatch::TextSize(
-                value
-                    .trim()
-                    .parse()
-                    .map_err(|_| Error::Invalid("text size"))?,
-            ),
-            "text_color" => ItemParamPatch::TextColor(parse_color(value)?),
-            "text_background" => {
-                let value = value.trim();
-                ItemParamPatch::TextBackground(if value.eq_ignore_ascii_case("none") {
-                    None
-                } else {
-                    Some(project::TextBackground {
-                        color: parse_color(value)?,
-                        ..Default::default()
-                    })
-                })
-            }
-            "text_background_color" => ItemParamPatch::TextBackgroundColor(parse_color(value)?),
-            "text_position_x" => ItemParamPatch::TextPositionX(
-                parse_percent(value).map_err(|_| Error::Invalid("horizontal position"))?,
-            ),
-            "text_position_y" => ItemParamPatch::TextPositionY(
-                parse_percent(value).map_err(|_| Error::Invalid("vertical position"))?,
-            ),
-            _ => return Err(Error::Invalid("shared field")),
-        };
+        let patch = item_patch(field, value)?;
         self.session.set_selection(self.selection.clone())?;
         self.session.execute(
             "timeline.set_item_param_many",
@@ -6858,56 +6823,66 @@ fn scroll_fades<F>(ui: &egui::Ui, output: &egui::scroll_area::ScrollAreaOutput<F
     }
 }
 fn item_patch(field: &str, value: &str) -> Result<ItemParamPatch> {
-    match field {
-        "blendMode" => Ok(ItemParamPatch::BlendMode(
+    Ok(match field {
+        "blendMode" => ItemParamPatch::BlendMode(
             serde_json::from_value(serde_json::json!(value))
                 .map_err(|_| Error::Invalid("blend mode"))?,
-        )),
-        "opacity" => Ok(ItemParamPatch::Opacity(
+        ),
+        "opacity" => ItemParamPatch::Opacity(
             value
                 .trim()
                 .parse()
                 .map_err(|_| Error::Invalid("opacity"))?,
-        )),
-        "audio_gain" => Ok(ItemParamPatch::AudioGain(
+        ),
+        "audio_gain" => ItemParamPatch::AudioGain(
             value
                 .trim()
                 .parse()
                 .map_err(|_| Error::Invalid("audio gain"))?,
-        )),
+        ),
         "audio_muted" => {
             let muted = match value.trim() {
                 "true" | "1" | "muted" => true,
                 "false" | "0" | "unmuted" => false,
                 _ => return Err(Error::Invalid("audio mute")),
             };
-            Ok(ItemParamPatch::AudioMuted(muted))
+            ItemParamPatch::AudioMuted(muted)
         }
-        "text_size" => Ok(ItemParamPatch::TextSize(
+        "text_content" => ItemParamPatch::TextContent(value.into()),
+        "text_font" => {
+            let font = value.trim();
+            if font.is_empty() || font.len() > 256 {
+                return Err(Error::Invalid("font family"));
+            }
+            ItemParamPatch::TextFont(font.into())
+        }
+        "text_size" => ItemParamPatch::TextSize(
             value
                 .trim()
                 .parse()
                 .map_err(|_| Error::Invalid("text size"))?,
-        )),
-        "text_color" => {
-            let value = value.trim().trim_start_matches('#');
-            if !matches!(value.len(), 6 | 8) || !value.is_ascii() {
-                return Err(Error::Invalid("RGBA colour"));
-            }
-            let mut rgba = [255u8; 4];
-            for (i, byte) in rgba.iter_mut().enumerate().take(value.len() / 2) {
-                *byte = u8::from_str_radix(
-                    value
-                        .get(i * 2..i * 2 + 2)
-                        .ok_or(Error::Invalid("RGBA colour"))?,
-                    16,
-                )
-                .map_err(|_| Error::Invalid("RGBA colour"))?;
-            }
-            Ok(ItemParamPatch::TextColor(project::Color(rgba)))
+        ),
+        "text_color" => ItemParamPatch::TextColor(parse_color(value)?),
+        "text_background" => {
+            let value = value.trim();
+            ItemParamPatch::TextBackground(if value.eq_ignore_ascii_case("none") {
+                None
+            } else {
+                Some(project::TextBackground {
+                    color: parse_color(value)?,
+                    ..Default::default()
+                })
+            })
         }
-        _ => Err(Error::Invalid("shared field")),
-    }
+        "text_background_color" => ItemParamPatch::TextBackgroundColor(parse_color(value)?),
+        "text_position_x" => ItemParamPatch::TextPositionX(
+            parse_percent(value).map_err(|_| Error::Invalid("horizontal position"))?,
+        ),
+        "text_position_y" => ItemParamPatch::TextPositionY(
+            parse_percent(value).map_err(|_| Error::Invalid("vertical position"))?,
+        ),
+        _ => return Err(Error::Invalid("shared field")),
+    })
 }
 fn asset_kind(asset: &SourceAsset) -> std::result::Result<TrackKind, engine::EditError> {
     if asset

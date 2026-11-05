@@ -198,6 +198,7 @@ fn fixture() -> Fixture {
             content: "Hello".into(),
             font_size: 48.0,
             color: Color([255, 255, 255, 255]),
+            ..Default::default()
         }),
     );
     let audio = insert(

@@ -1311,6 +1311,7 @@ fn exec_scrub_equivalent_params_use_the_single_item_command() {
                 content: "Scrub".into(),
                 font_size: 32.0,
                 color: project::Color([255; 4]),
+                ..Default::default()
             }),
         }],
     });
