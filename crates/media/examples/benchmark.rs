@@ -1,13 +1,25 @@
 //! Observed throughput through the same public decode/encode/mux interfaces.
 use media::{
-    Container, DecodePreference, Muxer, PacketReader, StreamKind, VideoDecoder, VideoEncoder,
-    VideoEncoderSettings, VideoFrame,
+    Container, DecodePreference, EncodePreference, Muxer, PacketReader, StreamKind, VideoDecoder,
+    VideoEncoder, VideoEncoderSettings, VideoFrame,
 };
 use std::path::Path;
 use std::time::{Duration, Instant};
 
-fn run(input: &Path, output: &Path) -> Result<(), Box<dyn std::error::Error>> {
+fn run(input: &Path, output: &Path, software: bool) -> Result<(), Box<dyn std::error::Error>> {
     let mut reader = PacketReader::open(input)?;
+    println!(
+        "codec_configuration={}",
+        ffmpeg_next::codec::configuration()
+    );
+    if cfg!(windows) {
+        for name in ["h264_nvenc", "h264_qsv", "h264_amf", "h264_mf"] {
+            println!(
+                "encoder_available name={name} available={}",
+                ffmpeg_next::encoder::find_by_name(name).is_some()
+            );
+        }
+    }
     let video = reader
         .probe()
         .streams
@@ -22,6 +34,13 @@ fn run(input: &Path, output: &Path) -> Result<(), Box<dyn std::error::Error>> {
     while let Some(packet) = reader.next_packet()? {
         if packet.stream() == video.index {
             for frame in decoder.decode(&packet)? {
+                if decoded == 0 {
+                    println!(
+                        "decode_format={:?} color={:?}",
+                        frame.pixel_format(),
+                        frame.color()
+                    );
+                }
                 decoded += 1;
                 hardware += usize::from(frame.is_hardware());
             }
@@ -63,7 +82,16 @@ fn run(input: &Path, output: &Path) -> Result<(), Box<dyn std::error::Error>> {
                 video.frame_rate.ok_or("unknown rate")?,
                 frame.color(),
             );
-            let enc = VideoEncoder::new(settings, &frame)?;
+            println!(
+                "requested_quality={} requested_bit_rate={} software={software}",
+                settings.quality, settings.bit_rate
+            );
+            let preference = if software {
+                EncodePreference::Software
+            } else {
+                EncodePreference::Hardware
+            };
+            let enc = VideoEncoder::with_preference(settings, &frame, preference)?;
             mux.add_parameters(&enc.parameters(), enc.time_base())?;
             *encoder = Some(enc);
         }
@@ -109,8 +137,11 @@ fn run(input: &Path, output: &Path) -> Result<(), Box<dyn std::error::Error>> {
 fn main() {
     let args: Vec<_> = std::env::args_os().skip(1).collect();
     let result = match args.as_slice() {
-        [input, output] => run(Path::new(input), Path::new(output)),
-        _ => Err("usage: benchmark INPUT OUTPUT".into()),
+        [input, output] => run(Path::new(input), Path::new(output), false),
+        [input, output, flag] if flag == "--software" => {
+            run(Path::new(input), Path::new(output), true)
+        }
+        _ => Err("usage: benchmark INPUT OUTPUT [--software]".into()),
     };
     if let Err(error) = result {
         eprintln!("{error}");

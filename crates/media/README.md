@@ -298,6 +298,17 @@ hardware scheduling affect results; these two samples are not a general latency
 or quality guarantee. Fixture generation: ffmpeg `testsrc2`, 60 s at 1080p30,
 libx264 ultrafast CRF 18, yuv420p with BT.709 tags. No media is committed.
 
+The `benchmark` example prints the actual first decoded pixel format, hardware
+frame count, selected encoder and requested quality/bitrate. Run it with
+`INPUT OUTPUT --software` to measure the explicit platform software encoder with
+the same settings and hardware-preferred decode. Compare both outputs against
+the same source with SSIM/PSNR; retaining settings does not establish equal
+perceptual quality. A missing SDK backend must be distinguished from an absent
+GPU, and a working external FFmpeg encoder does not establish that the managed
+SDK exposes it. Physical device loss and Windows N without Media Feature Pack
+require their own runtime environment; fault injection proves only recovery
+control flow.
+
 The task /09 software H.264 failure was caused by sending QSCALE/Quality to
 VideoToolbox's software encoder, rather than an absent codec (corrected by /31).
 Explicit software export uses the platform encoder with `require_sw=1` and the
