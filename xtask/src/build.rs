@@ -1201,13 +1201,18 @@ mod cache_tests {
     }
 
     fn cache_base() -> PathBuf {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        // Parallel tests may read the clock within its resolution; the counter
+        // keeps each fixture owned by exactly one test.
+        static NEXT: AtomicUsize = AtomicUsize::new(0);
         let base = std::env::temp_dir().join(format!(
-            "vibecut-prune-{}-{}",
+            "vibecut-prune-{}-{}-{}",
             std::process::id(),
             SystemTime::now()
                 .duration_since(UNIX_EPOCH)
                 .unwrap()
-                .as_nanos()
+                .as_nanos(),
+            NEXT.fetch_add(1, Ordering::Relaxed)
         ));
         let _ = fs::remove_dir_all(&base);
         fs::create_dir_all(base.join("locks")).unwrap();
