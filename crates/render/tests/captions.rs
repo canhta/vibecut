@@ -105,6 +105,26 @@ fn preview_export_bilingual_diacritics_cjk_gaps_and_style_goldens() {
             ],
         ),
         (
+            "caption-long-vi",
+            &[(
+                "vi",
+                "hôm nay chúng ta cùng tìm hiểu cách tạo phụ đề tiếng Việt cho video dọc thật dễ dàng",
+            )],
+        ),
+        (
+            "caption-long-bilingual",
+            &[
+                (
+                    "vi",
+                    "hôm nay chúng ta cùng tìm hiểu cách tạo phụ đề tiếng Việt cho video dọc thật dễ dàng",
+                ),
+                (
+                    "en",
+                    "today we learn how to create readable captions for a portrait video",
+                ),
+            ],
+        ),
+        (
             "caption-hans-hant",
             &[
                 ("zh-Hans", "这是简体中文字幕测试，我们一起学习。"),
@@ -134,10 +154,12 @@ fn preview_export_bilingual_diacritics_cjk_gaps_and_style_goldens() {
         let packed = preview.rgba8(1, &h).unwrap();
         assert_eq!(
             hash(&packed.bytes),
-            if name.contains("vi") {
-                0x22d92066556dd4c5
-            } else {
-                0x442017b175aa5544
+            match *name {
+                "caption-vi-en" => 0x22d92066556dd4c5,
+                "caption-hans-hant" => 0x442017b175aa5544,
+                "caption-long-vi" => 0x26e5c2c4450a1b31,
+                "caption-long-bilingual" => 0x61c1b0ec35120af3,
+                _ => panic!("unknown golden case"),
             },
             "visually inspected caption golden"
         );
@@ -166,7 +188,7 @@ fn preview_export_bilingual_diacritics_cjk_gaps_and_style_goldens() {
                 }
             }
         }
-        if name.contains("vi") {
+        if *name == "caption-vi-en" {
             let nfd = scene(&[
                 (
                     "vi",
@@ -192,85 +214,106 @@ fn styled_captions_survive_final_encoded_decode() {
     if !tools() {
         return;
     }
-    let p = scene(&[
-        ("vi", "Tiếng Việt: Ắ ằ ỡ ự đ"),
-        ("en", "Bilingual captions"),
-    ]);
-    let h = Hooks::default();
-    let mut s = ExportSettings::from_project(&p);
-    s.render = settings(&p);
-    s.render.caption_languages = vec![
-        captions::LanguageTag::parse("vi").unwrap(),
-        captions::LanguageTag::parse("en").unwrap(),
+    let cases: &[(&str, &[(&str, &str)])] = &[
+        (
+            "caption-burn",
+            &[
+                ("vi", "Tiếng Việt: Ắ ằ ỡ ự đ"),
+                ("en", "Bilingual captions"),
+            ],
+        ),
+        (
+            "caption-long-burn",
+            &[
+                (
+                    "vi",
+                    "hôm nay chúng ta cùng tìm hiểu cách tạo phụ đề tiếng Việt cho video dọc thật dễ dàng",
+                ),
+                (
+                    "en",
+                    "today we learn how to create readable captions for a portrait video",
+                ),
+            ],
+        ),
     ];
-    s.include_audio = false;
-    s.mode = ExportMode::Encode;
-    s.quality = 100;
-    s.overwrite = project::atomic::Overwrite::Replace;
-    let at = tick(1, 2);
-    let mut renderer = Renderer::new(&p, s.render.clone()).unwrap();
-    let preview = renderer.preview_frame(at, &mut Empty, &h).unwrap();
-    let boundary = preview.video_rgba8(1, &h).unwrap();
-    let path = root().join("caption-burn.mp4");
-    export_with_sources(
-        &p,
-        TimeRange::new(at, tick(3, 5)).unwrap(),
-        &s,
-        &path,
-        &mut Empty,
-        &h,
-    )
-    .unwrap();
-    let actual = rgba(&path);
-    assert_eq!(actual.len(), boundary.bytes.len());
-    let gap = renderer
-        .preview_frame(Tick::ZERO, &mut Empty, &h)
-        .unwrap()
-        .video_rgba8(1, &h)
+    for (name, texts) in cases {
+        let p = scene(texts);
+        let h = Hooks::default();
+        let mut s = ExportSettings::from_project(&p);
+        s.render = settings(&p);
+        s.render.caption_languages = vec![
+            captions::LanguageTag::parse("vi").unwrap(),
+            captions::LanguageTag::parse("en").unwrap(),
+        ];
+        s.include_audio = false;
+        s.mode = ExportMode::Encode;
+        s.quality = 100;
+        s.overwrite = project::atomic::Overwrite::Replace;
+        let at = tick(1, 2);
+        let mut renderer = Renderer::new(&p, s.render.clone()).unwrap();
+        let preview = renderer.preview_frame(at, &mut Empty, &h).unwrap();
+        let boundary = preview.video_rgba8(1, &h).unwrap();
+        let path = root().join(format!("{name}.mp4"));
+        export_with_sources(
+            &p,
+            TimeRange::new(at, tick(3, 5)).unwrap(),
+            &s,
+            &path,
+            &mut Empty,
+            &h,
+        )
         .unwrap();
-    let mut changed_error = 0.0;
-    let mut changed = 0;
-    for ((pixel, expected), background) in actual
-        .as_chunks::<4>()
-        .0
-        .iter()
-        .zip(boundary.bytes.as_chunks::<4>().0.iter())
-        .zip(gap.bytes.as_chunks::<4>().0.iter())
-    {
-        if expected != background {
-            changed_error += pixel
-                .iter()
-                .zip(expected)
-                .map(|(a, b)| (f64::from(*a) - f64::from(*b)).powi(2))
-                .sum::<f64>();
-            changed += 4;
+        let actual = rgba(&path);
+        assert_eq!(actual.len(), boundary.bytes.len());
+        let gap = renderer
+            .preview_frame(Tick::ZERO, &mut Empty, &h)
+            .unwrap()
+            .video_rgba8(1, &h)
+            .unwrap();
+        let mut changed_error = 0.0;
+        let mut changed = 0;
+        for ((pixel, expected), background) in actual
+            .as_chunks::<4>()
+            .0
+            .iter()
+            .zip(boundary.bytes.as_chunks::<4>().0.iter())
+            .zip(gap.bytes.as_chunks::<4>().0.iter())
+        {
+            if expected != background {
+                changed_error += pixel
+                    .iter()
+                    .zip(expected)
+                    .map(|(a, b)| (f64::from(*a) - f64::from(*b)).powi(2))
+                    .sum::<f64>();
+                changed += 4;
+            }
         }
+        assert!(
+            changed > 1000,
+            "golden must contain visible subtitle pixels"
+        );
+        let caption_mse = changed_error / changed as f64;
+        assert!(
+            caption_mse < 150.0,
+            "{name} caption-region encoded MSE {caption_mse}"
+        );
+        eprintln!("{name} caption-region encoded MSE {caption_mse}");
+        let mse = actual
+            .iter()
+            .zip(&boundary.bytes)
+            .map(|(a, b)| (f64::from(*a) - f64::from(*b)).powi(2))
+            .sum::<f64>()
+            / actual.len() as f64;
+        assert!(mse < 150.0, "{name} encoded subtitle MSE {mse}");
+        eprintln!("{name} encoded subtitle MSE {mse}");
+        ffmpeg(&[
+            "-i".as_ref(),
+            path.as_os_str(),
+            "-frames:v".as_ref(),
+            "1".as_ref(),
+            root().join(format!("{name}-decoded.png")).as_os_str(),
+        ]);
     }
-    assert!(
-        changed > 1000,
-        "golden must contain visible subtitle pixels"
-    );
-    let caption_mse = changed_error / changed as f64;
-    assert!(
-        caption_mse < 150.0,
-        "caption-region encoded MSE {caption_mse}"
-    );
-    eprintln!("caption-region encoded MSE {caption_mse}");
-    let mse = actual
-        .iter()
-        .zip(&boundary.bytes)
-        .map(|(a, b)| (f64::from(*a) - f64::from(*b)).powi(2))
-        .sum::<f64>()
-        / actual.len() as f64;
-    assert!(mse < 150.0, "encoded subtitle MSE {mse}");
-    eprintln!("encoded subtitle MSE {mse}");
-    ffmpeg(&[
-        "-i".as_ref(),
-        path.as_os_str(),
-        "-frames:v".as_ref(),
-        "1".as_ref(),
-        root().join("caption-burn-decoded.png").as_os_str(),
-    ]);
 }
 #[test]
 fn invalid_styles_and_line_overflow_refuse_without_silently_dropping_language() {
@@ -294,48 +337,61 @@ fn invalid_styles_and_line_overflow_refuse_without_silently_dropping_language() 
             .render_frame(tick(1, 2), &mut Empty, &h),
         Err(Error::Unsupported(_))
     ));
+    let hostile = scene(&[("vi", &"x".repeat(16_000))]);
+    assert!(matches!(
+        Renderer::new(&hostile, settings(&hostile))
+            .unwrap()
+            .render_frame(tick(1, 2), &mut Empty, &h),
+        Err(Error::Unsupported(_))
+    ));
 }
 
 #[test]
 #[ignore = "manual fixed-scene timing and peak RSS measurement"]
 fn caption_frame_benchmark() {
-    let p = scene(&[
-        ("vi", "Tiếng Việt: Ắ ằ ỡ ự đ"),
-        ("en", "Bilingual captions"),
-    ]);
-    let h = Hooks::default();
-    let mut s = settings(&p);
-    s.width = 1080;
-    s.height = 1920;
-    s.caption_languages = vec![
-        captions::LanguageTag::parse("vi").unwrap(),
-        captions::LanguageTag::parse("en").unwrap(),
-    ];
-    let mut reference = None;
-    for cached in [false, true] {
-        let mut config = s.clone();
-        if !cached {
-            config.text_cache_bytes = 0;
+    for (name, vi, en) in [
+        ("short", "Tiếng Việt: Ắ ằ ỡ ự đ", "Bilingual captions"),
+        (
+            "fitted",
+            "hôm nay chúng ta cùng tìm hiểu cách tạo phụ đề tiếng Việt cho video dọc thật dễ dàng",
+            "today we learn how to create readable captions for a portrait video",
+        ),
+    ] {
+        let p = scene(&[("vi", vi), ("en", en)]);
+        let h = Hooks::default();
+        let mut s = settings(&p);
+        s.width = 1080;
+        s.height = 1920;
+        s.caption_languages = vec![
+            captions::LanguageTag::parse("vi").unwrap(),
+            captions::LanguageTag::parse("en").unwrap(),
+        ];
+        let mut reference = None;
+        for cached in [false, true] {
+            let mut config = s.clone();
+            if !cached {
+                config.text_cache_bytes = 0;
+            }
+            let mut renderer = Renderer::new(&p, config).unwrap();
+            let start = std::time::Instant::now();
+            let first = renderer.render_frame(tick(1, 2), &mut Empty, &h).unwrap();
+            let cold = start.elapsed();
+            if let Some(previous) = &reference {
+                assert_eq!(first.pixels(), previous);
+            } else {
+                reference = Some(first.pixels().to_vec());
+            }
+            let start = std::time::Instant::now();
+            for _ in 0..20 {
+                let frame = renderer.render_frame(tick(1, 2), &mut Empty, &h).unwrap();
+                assert_eq!(first.pixels(), frame.pixels());
+            }
+            eprintln!(
+                "caption benchmark case={name} cached={cached} canvas=1080x1920 cold={cold:?} warm20={:?} stats={:?} pixel_diff=0",
+                start.elapsed(),
+                renderer.text_cache_stats()
+            );
         }
-        let mut renderer = Renderer::new(&p, config).unwrap();
-        let start = std::time::Instant::now();
-        let first = renderer.render_frame(tick(1, 2), &mut Empty, &h).unwrap();
-        let cold = start.elapsed();
-        if let Some(previous) = &reference {
-            assert_eq!(first.pixels(), previous);
-        } else {
-            reference = Some(first.pixels().to_vec());
-        }
-        let start = std::time::Instant::now();
-        for _ in 0..20 {
-            let frame = renderer.render_frame(tick(1, 2), &mut Empty, &h).unwrap();
-            assert_eq!(first.pixels(), frame.pixels());
-        }
-        eprintln!(
-            "caption benchmark cached={cached} canvas=1080x1920 cold={cold:?} warm20={:?} stats={:?} pixel_diff=0",
-            start.elapsed(),
-            renderer.text_cache_stats()
-        );
     }
 }
 
@@ -387,6 +443,71 @@ fn empty_captions_paint_nothing_and_position_font_and_color_are_applied() {
         .render_frame(tick(1, 2), &mut Empty, &h)
         .unwrap();
     assert_ne!(images[2].pixels(), standard.pixels());
+}
+
+#[test]
+fn long_cues_fit_portrait_landscape_and_partial_source_items() {
+    let p = scene(&[(
+        "vi",
+        "hôm nay chúng ta cùng tìm hiểu cách tạo phụ đề tiếng Việt cho video dọc thật dễ dàng",
+    )]);
+    let h = Hooks::default();
+    for (width, height, destination) in [
+        (360, 640, None),
+        (640, 360, None),
+        (
+            360,
+            640,
+            Some(Rect {
+                x: 0.2,
+                y: 0.6,
+                width: 0.6,
+                height: 0.1,
+            }),
+        ),
+    ] {
+        let mut s = RenderSettings::from_project(&p);
+        s.width = width;
+        s.height = height;
+        if let Some(destination) = destination {
+            s.placements.insert(
+                project::ItemId(1),
+                Placement {
+                    destination,
+                    ..Default::default()
+                },
+            );
+        }
+        let full = Renderer::new(&p, s.clone())
+            .unwrap()
+            .render_frame(tick(3, 4), &mut Empty, &h)
+            .unwrap();
+        let mut data = p.clone().into_data();
+        let item = &mut data.timeline.overlays[0].items[0];
+        item.source_range = TimeRange::new(tick(1, 2), tick(1, 1)).unwrap();
+        let project::ItemParams::Caption(params) = &mut item.content else {
+            panic!("expected caption item")
+        };
+        params.cues =
+            captions::EditMapping::new(vec![(item.source_range, item.source_range.start())])
+                .unwrap()
+                .map_cues(&params.cues)
+                .unwrap();
+        let partial = project::Project::new(data).unwrap();
+        let mut renderer = Renderer::new(&partial, s).unwrap();
+        let inside = renderer.render_frame(tick(1, 4), &mut Empty, &h).unwrap();
+        assert_eq!(
+            inside.pixels(),
+            full.pixels(),
+            "partial cues retain full text"
+        );
+        let outside = renderer.render_frame(tick(1, 2), &mut Empty, &h).unwrap();
+        assert_ne!(
+            inside.pixels(),
+            outside.pixels(),
+            "half-open clip end hides the caption"
+        );
+    }
 }
 
 #[test]

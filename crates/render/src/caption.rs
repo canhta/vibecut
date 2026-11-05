@@ -51,7 +51,7 @@ pub struct CaptionStyle {
     pub position: CaptionPosition,
     /// Percent inset on each canvas edge (0..=40), also applied in portrait output.
     pub safe_area_percent: f32,
-    /// Total lines across both languages; overflow refuses instead of dropping text.
+    /// Total lines across both languages; wrapped text shrinks to fit without dropping text.
     pub max_lines: usize,
 }
 impl Default for CaptionStyle {

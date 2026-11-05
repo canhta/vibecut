@@ -748,29 +748,48 @@ fn raster_text(key: &TextKey, hooks: &dyn ExecutionHooks) -> Result<Image> {
         MemoryKind::Compositor,
         bytes * 2 + key.value.len() as u64 * 512 + (f64::from(size).powi(2) * 32.0).ceil() as u64,
     )?;
-    let layout = text::layout(
-        &key.value,
-        &text::LayoutOptions {
-            family: &key.font,
-            style: &key.style,
-            size,
-            max_width: w as f32 - pad * 2.0,
-            align: text::Align::Center,
-            max_lines: key.max_lines,
-            ..Default::default()
-        },
-    )?;
-    let b = layout.bounds;
-    if key.max_lines.is_some()
-        && (layout.overflow
-            || b.x0 < 0.0
-            || b.x1 > w as f32 - 2.0 * pad
-            || b.y1 - b.y0 > h as f32 - pad * 2.0)
-    {
-        return Err(Error::Unsupported(
-            "caption exceeds line or destination limits",
-        ));
+    let mut options = text::LayoutOptions {
+        family: &key.font,
+        style: &key.style,
+        size,
+        max_width: w as f32 - pad * 2.0,
+        align: text::Align::Center,
+        max_lines: key.max_lines,
+        ..Default::default()
+    };
+    let fits = |layout: &text::Layout| {
+        let b = layout.bounds;
+        !layout.overflow
+            && b.x0 >= 0.0
+            && b.x1 <= options.max_width
+            && b.y1 - b.y0 <= h as f32 - pad * 2.0
+    };
+    let mut layout = text::layout(&key.value, &options)?;
+    if key.max_lines.is_some() && !fits(&layout) {
+        // Keep already-fitting captions pixel-identical. Only overflow pays for
+        // bounded fitting; cache the final raster under the requested style.
+        let mut low = size.min(1.0);
+        let mut high = size;
+        options.size = low;
+        layout = text::layout(&key.value, &options)?;
+        if !fits(&layout) {
+            return Err(Error::Unsupported(
+                "caption exceeds line or destination limits at minimum font size",
+            ));
+        }
+        for _ in 0..10 {
+            check(hooks)?;
+            options.size = (low + high) / 2.0;
+            let candidate = text::layout(&key.value, &options)?;
+            if fits(&candidate) {
+                low = options.size;
+                layout = candidate;
+            } else {
+                high = options.size;
+            }
+        }
     }
+    let b = layout.bounds;
     let y = if key.max_lines.is_none() {
         0.0
     } else {

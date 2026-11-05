@@ -69,9 +69,13 @@ raster. Settings are transient and do not change the project persistence schema.
 Selected language payloads join in display order with a mandatory line break.
 Unicode UAX #14 wrapping and bundled CJK fallback handle both Han scripts without
 inserted spaces; the text owner normalizes NFC and keeps graphemes intact. Empty
-payloads do not paint a box. Missing requested languages, a line-count overflow,
-or text that cannot fit its destination return typed refusals; output never
-silently drops the second language. Cue activity uses half-open source ranges,
+payloads do not paint a box. Captions wrap at the requested size first. When they
+exceed the line count or destination, a bounded ten-step search reduces the font
+size to fit all text, down to one output pixel (or the requested size if smaller).
+Already-fitting captions retain their exact pixels; outline and background padding
+stay fixed. Missing requested languages, mandatory breaks exceeding the line count,
+or text that still cannot fit at the minimum size return typed refusals; output
+never silently drops the second language. Cue activity uses half-open source ranges,
 so gaps have no caption pixels. Both `preview_frame` and `render_frame` call the
 same overlay path. Outline, box, font, size, position, line limit, text and pixel
 geometry participate in the existing bounded raster cache; there is no second
