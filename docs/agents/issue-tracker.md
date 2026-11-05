@@ -1,6 +1,6 @@
 # Issue tracker
 
-Tickets live in git-ignored `.scratch/` in the main checkout; `cargo xtask frontier [assignee]` lists ready work and `cargo xtask board [port]` serves the read-only live board on localhost from any linked worktree.
+Tickets live in git-ignored `.scratch/` in the main checkout of every host. `.scratch/`, `.spikes/` and `.samples/` are links into a clone of the maintainer's private workspace repository (`VibeCut-workspace/` beside the checkout); large media stay out of it (its `media.md`). Before reading tickets run `git pull --rebase` there; after changing any tracker file commit it with sign-off and push at once, so all hosts see one tracker; `cargo xtask frontier [assignee]` lists ready work and `cargo xtask board [port]` serves the read-only live board on localhost from any linked worktree.
 
 | Path under `.scratch/` | Owns |
 |---|---|
