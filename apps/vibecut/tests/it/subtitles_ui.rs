@@ -673,7 +673,7 @@ fn source_clip(e: &mut Editor) -> project::ItemId {
                 source_range: time::SourceRange::new(Tick::ZERO, duration).unwrap(),
                 start: Tick::ZERO,
                 content: ItemParams::Audio(project::AudioParams {
-                    gain_db: 0.0,
+                    volume: 0.0,
                     muted: false,
                 }),
             },

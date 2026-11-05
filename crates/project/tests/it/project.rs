@@ -391,6 +391,7 @@ fn schema_errors_precede_interpreting_an_unknown_project_body() {
         (7, "null", true),
         (8, "null", true),
         (9, "null", true),
+        (10, "null", true),
         (SCHEMA_VERSION + 1, "null", false),
     ] {
         let bytes = format!(

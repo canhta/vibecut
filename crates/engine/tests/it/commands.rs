@@ -2571,7 +2571,7 @@ fn audio_controls_are_atomic_undoable_persisted_and_strict() {
     );
     let mut encoded: serde_json::Value =
         serde_json::from_slice(&project::encode(session.project(), false).unwrap()).unwrap();
-    encoded["schema_version"] = json!(9);
+    encoded["schema_version"] = json!(10);
     assert!(matches!(
         project::decode(&serde_json::to_vec(&encoded).unwrap()),
         Err(project::Error::TooOld { .. })
