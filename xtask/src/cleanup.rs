@@ -220,15 +220,8 @@ fn pull(main: &Path, dry_run: bool) -> Result<(), String> {
     orca::perform(&command, dry_run)
 }
 
-#[cfg(unix)]
 fn prune(dry_run: bool) -> Result<(), String> {
     crate::build::prune_cache(dry_run)
-}
-
-#[cfg(not(unix))]
-fn prune(_dry_run: bool) -> Result<(), String> {
-    eprintln!("[cleanup] shared build-cache prune is Unix-only; skipped");
-    Ok(())
 }
 
 struct Discovery {

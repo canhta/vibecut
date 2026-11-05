@@ -1,5 +1,7 @@
 //! Cross-process FIFO build admission, warm slots and clean-tree CI receipts.
-use std::ffi::{OsStr, OsString};
+#[cfg(any(unix, test))]
+use std::ffi::OsStr;
+use std::ffi::OsString;
 use std::fs::{self, File, TryLockError};
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
@@ -7,6 +9,8 @@ use std::process::{Command, ExitCode, ExitStatus};
 use std::time::{Duration, Instant, SystemTime};
 
 const SLOTS: usize = 3;
+const MIN_FREE_PERCENT: u32 = 30;
+const START_RAMP: Duration = Duration::from_secs(20);
 const GIB: u64 = 1 << 30;
 
 struct Lock {
@@ -142,6 +146,7 @@ struct Slot {
 }
 
 impl Slot {
+    #[cfg(unix)]
     fn execute(&mut self, command: &mut Command) -> io::Result<ExitStatus> {
         // Only this slot descriptor crosses exec. Queue/admission descriptors
         // retain CLOEXEC. Closing the launcher must not explicitly unlock the
@@ -159,6 +164,15 @@ impl Slot {
         restored?;
         status
     }
+
+    #[cfg(windows)]
+    fn execute(&mut self, command: &mut Command) -> io::Result<ExitStatus> {
+        // Keep the lease until wait observes exit, including forced child exit.
+        // Windows launcher death is a documented limitation: std cannot safely
+        // inherit this lease and winsafe has no Job Object interface yet.
+        let _lease = &self.lock;
+        command.status()
+    }
 }
 
 fn owner(locks: &Path, number: usize) -> PathBuf {
@@ -167,7 +181,8 @@ fn owner(locks: &Path, number: usize) -> PathBuf {
         .unwrap_or_default()
 }
 
-fn memory_available(program: impl AsRef<OsStr>) -> bool {
+#[cfg(any(unix, test))]
+fn sysctl_memory_available(program: impl AsRef<OsStr>) -> bool {
     Command::new(program)
         .args(["-n", "kern.memorystatus_level"])
         .output()
@@ -175,28 +190,43 @@ fn memory_available(program: impl AsRef<OsStr>) -> bool {
         .filter(|out| out.status.success())
         .and_then(|out| String::from_utf8(out.stdout).ok())
         .and_then(|text| text.trim().parse::<u32>().ok())
-        .is_some_and(|level| level >= 30)
+        .is_some_and(|level| level >= MIN_FREE_PERCENT)
+}
+
+fn memory_available() -> bool {
+    #[cfg(windows)]
+    {
+        winsafe::GlobalMemoryStatusEx().is_ok_and(|memory| {
+            memory.ullTotalPhys > 0
+                && u128::from(memory.ullAvailPhys) * 100
+                    >= u128::from(memory.ullTotalPhys) * u128::from(MIN_FREE_PERCENT)
+        })
+    }
+    #[cfg(unix)]
+    {
+        sysctl_memory_available("sysctl")
+    }
 }
 
 fn admit_extra(
-    macos: bool,
+    memory_gated: bool,
     busy: bool,
     last_start: Option<SystemTime>,
     memory: impl FnOnce() -> bool,
 ) -> bool {
-    if !macos || !busy {
+    if !memory_gated || !busy {
         return true;
     }
     last_start
         .and_then(|time| time.elapsed().ok())
-        .is_some_and(|age| age >= Duration::from_secs(20))
+        .is_some_and(|age| age >= START_RAMP)
         && memory()
 }
 
 fn claim(
     queue: &mut Queue,
     root: &Path,
-    macos: bool,
+    memory_gated: bool,
     memory: impl FnOnce() -> bool,
 ) -> io::Result<Option<Slot>> {
     let _admission = Queue::admission(&queue.locks)?;
@@ -213,7 +243,7 @@ fn claim(
     let last = fs::metadata(queue.locks.join("last-start"))
         .and_then(|m| m.modified())
         .ok();
-    if free.is_empty() || !admit_extra(macos, busy, last, memory) {
+    if free.is_empty() || !admit_extra(memory_gated, busy, last, memory) {
         return Ok(None);
     }
     free.sort_by_key(|(number, _)| (owner(&queue.locks, *number) != root, *number));
@@ -221,7 +251,9 @@ fn claim(
         .into_iter()
         .next()
         .ok_or_else(|| io::Error::other("no build slot"))?;
-    fs::write(queue.locks.join("last-start"), b"")?;
+    // Empty writes do not reliably advance mtime on Windows. The ramp depends
+    // on the admission time, so set it explicitly while admission is locked.
+    open(&queue.locks.join("last-start"))?.set_modified(SystemTime::now())?;
     lock.file.set_len(0)?;
     writeln!(lock.file, "{}", root.display())?;
     queue.leave()?;
@@ -414,8 +446,7 @@ fn prune_stale_dep_entries(deps: &Path, now: SystemTime, dry_run: bool) -> io::R
         let bytes = if metadata.is_dir() {
             used_bytes(&path)?
         } else {
-            use std::os::unix::fs::MetadataExt;
-            metadata.blocks().saturating_mul(512)
+            file_bytes(&metadata)
         };
         if dry_run {
             eprintln!("[cleanup] would remove stale dependency {}", path.display());
@@ -517,16 +548,39 @@ fn used_bytes(path: &Path) -> io::Result<u64> {
         let size = if metadata.is_dir() {
             used_bytes(&path)?
         } else {
-            {
-                use std::os::unix::fs::MetadataExt;
-                metadata.blocks().saturating_mul(512)
-            }
+            file_bytes(&metadata)
         };
         total = total.saturating_add(size);
     }
     Ok(total)
 }
 
+fn file_bytes(metadata: &fs::Metadata) -> u64 {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::MetadataExt;
+        metadata.blocks().saturating_mul(512)
+    }
+    #[cfg(windows)]
+    {
+        metadata.len()
+    }
+}
+
+#[cfg(windows)]
+fn disk_free(path: &Path) -> Result<u64, String> {
+    let mut available = 0;
+    winsafe::GetDiskFreeSpaceEx(
+        Some(path.to_str().ok_or("cache path is not UTF-8")?),
+        Some(&mut available),
+        None,
+        None,
+    )
+    .map_err(|error| format!("disk free-space query: {error}"))?;
+    Ok(available)
+}
+
+#[cfg(unix)]
 fn disk_free(path: &Path) -> Result<u64, String> {
     let result = Command::new("df").args(["-Pk"]).arg(path).output();
     let result = result.map_err(|e| format!("disk free-space query: {e}"))?;
@@ -579,7 +633,7 @@ fn prepare(
         let owner_file = locks.join(format!("slot-{number}.owner"));
         fs::write(&owner_file, b"").map_err(|e| e.to_string())?;
         let manifests = crate::checked(root, "git", &["ls-files", "-z", "*/Cargo.toml"])?;
-        let members: Vec<_> = paths(&manifests)
+        let members: Vec<_> = paths(&manifests)?
             .iter()
             .filter_map(|path| path.parent()?.file_name()?.to_str())
             .map(|name| name.replace('-', "_"))
@@ -618,7 +672,7 @@ fn prepare(
         }
         let tracked = crate::checked(root, "git", &["ls-files", "-z"])?;
         let now = SystemTime::now();
-        for path in paths(&tracked) {
+        for path in paths(&tracked)? {
             // The launcher has a per-worktree target and is already fresh.
             // Touching it would needlessly rebuild the executing launcher in
             // a nested `cargo xtask ci`.
@@ -648,13 +702,26 @@ fn prepare(
     Ok(target)
 }
 
-fn paths(bytes: &[u8]) -> Vec<PathBuf> {
+#[cfg(unix)]
+fn paths(bytes: &[u8]) -> Result<Vec<PathBuf>, String> {
     use std::os::unix::ffi::OsStrExt;
-    bytes
+    Ok(bytes
         .split(|b| *b == 0)
         .filter(|s| !s.is_empty())
         .map(|bytes| PathBuf::from(OsStr::from_bytes(bytes)))
-        .collect()
+        .collect())
+}
+
+#[cfg(windows)]
+fn paths(bytes: &[u8]) -> Result<Vec<PathBuf>, String> {
+    std::str::from_utf8(bytes)
+        .map(|text| {
+            text.split('\0')
+                .filter(|s| !s.is_empty())
+                .map(PathBuf::from)
+                .collect()
+        })
+        .map_err(|error| format!("Git path is not UTF-8: {error}"))
 }
 
 fn clean_tree(root: &Path) -> Result<Option<String>, String> {
@@ -692,7 +759,7 @@ pub fn run(root: &Path, args: &[OsString]) -> Result<ExitCode, String> {
         root,
         args,
         cache()?,
-        cfg!(target_os = "macos"),
+        cfg!(any(target_os = "macos", windows)),
         disk_free,
         crate::ffmpeg::environment,
     )
@@ -702,7 +769,7 @@ fn run_in(
     root: &Path,
     args: &[OsString],
     base: PathBuf,
-    macos: bool,
+    memory_gated: bool,
     free_space: impl FnMut(&Path) -> Result<u64, String>,
     native: impl FnOnce(&mut Command) -> Result<(), String>,
 ) -> Result<ExitCode, String> {
@@ -718,15 +785,13 @@ fn run_in(
     let mut queue = Queue::enter(&base.join("locks")).map_err(|e| e.to_string())?;
     let mut said = false;
     let mut slot = loop {
-        if let Some(slot) = claim(&mut queue, root, macos, || memory_available("sysctl"))
-            .map_err(|e| e.to_string())?
+        if let Some(slot) =
+            claim(&mut queue, root, memory_gated, memory_available).map_err(|e| e.to_string())?
         {
             break slot;
         }
         if !said {
-            eprintln!(
-                "[build] waiting (FIFO; extra macOS builds need 30% free memory and 20s ramp)"
-            );
+            eprintln!("[build] waiting (FIFO; extra builds need 30% free memory and 20s ramp)");
             said = true;
         }
         std::thread::sleep(Duration::from_secs(1));
@@ -748,7 +813,8 @@ fn run_in(
         .env("CARGO_TARGET_DIR", target)
         .env_remove("RUSTC_WRAPPER");
     if std::env::var_os("CARGO_BUILD_JOBS").is_none() {
-        command.env("CARGO_BUILD_JOBS", "4");
+        let cpus = std::thread::available_parallelism().map_or(1, usize::from);
+        command.env("CARGO_BUILD_JOBS", (cpus / SLOTS).max(2).to_string());
     }
     // The wrapper owns both the warm slot and the provisioned native
     // environment: compile-time discovery and runtime library loading must
@@ -895,7 +961,7 @@ mod tests {
             );
             return;
         }
-        if matches!(label.as_str(), "wrapped" | "detached") {
+        if matches!(label.as_str(), "wrapped" | "detached" | "killed") {
             let args = vec![
                 std::env::current_exe().unwrap().into_os_string(),
                 "--exact".into(),
@@ -913,8 +979,9 @@ mod tests {
                     |_| Ok(31 * GIB),
                     |_| Ok(())
                 )
-                .unwrap(),
-                ExitCode::SUCCESS
+                .unwrap()
+                    == ExitCode::SUCCESS,
+                label != "killed"
             );
             return;
         }
@@ -926,11 +993,10 @@ mod tests {
             }
             std::thread::sleep(Duration::from_millis(5));
         };
-        fs::write(
-            root.join(format!("{label}.acquired")),
-            slot.number.to_string(),
-        )
-        .unwrap();
+        let acquired = root.join(format!("{label}.acquired"));
+        let pending = acquired.with_extension("pending");
+        fs::write(&pending, slot.number.to_string()).unwrap();
+        fs::rename(pending, acquired).unwrap();
         wait(&root.join(format!("{label}.release")));
         drop(slot);
     }
@@ -957,6 +1023,7 @@ mod tests {
         let _live = try_lock(open(&root.join("command-live")).unwrap())
             .unwrap()
             .unwrap();
+        fs::write(root.join("command.pid"), std::process::id().to_string()).unwrap();
         fs::write(root.join("wrapped.ready"), b"").unwrap();
         // The parent owns the write end even after the wrapper dies. Closing it
         // also guarantees cleanup if an assertion unwinds in the parent test.
@@ -972,6 +1039,16 @@ mod tests {
         fs::write(
             root.join("native.environment"),
             std::env::var("VIBECUT_BUILD_TEST_NATIVE").unwrap_or_default(),
+        )
+        .unwrap();
+        fs::write(
+            root.join("native.jobs"),
+            std::env::var("CARGO_BUILD_JOBS").unwrap(),
+        )
+        .unwrap();
+        fs::write(
+            root.join("native.target"),
+            std::env::var("CARGO_TARGET_DIR").unwrap(),
         )
         .unwrap();
     }
@@ -1015,18 +1092,38 @@ mod tests {
         // Exercise the actual wrapper command path, not just a process holding
         // a Slot: its controlled build child survives a launcher-only crash.
         crate::checked(root, "git", &["init", "-q"]).unwrap();
-        let native = Command::new(std::env::current_exe().unwrap())
-            .args(["--exact", "build::tests::build_process", "--nocapture"])
-            .env("VIBECUT_BUILD_TEST_ROOT", root)
-            .env("VIBECUT_BUILD_TEST_LABEL", "native")
-            .status()
-            .unwrap();
-        assert!(native.success());
-        assert_eq!(
-            fs::read_to_string(root.join("native.environment")).unwrap(),
-            "provisioned",
-            "wrapper did not pass the native environment to its command"
-        );
+        for jobs in [None, Some("7")] {
+            let mut command = Command::new(std::env::current_exe().unwrap());
+            command
+                .args(["--exact", "build::tests::build_process", "--nocapture"])
+                .env("VIBECUT_BUILD_TEST_ROOT", root)
+                .env("VIBECUT_BUILD_TEST_LABEL", "native")
+                .env_remove("CARGO_BUILD_JOBS");
+            if let Some(jobs) = jobs {
+                command.env("CARGO_BUILD_JOBS", jobs);
+            }
+            let native = command.status().unwrap();
+            assert!(native.success());
+            assert_eq!(
+                fs::read_to_string(root.join("native.environment")).unwrap(),
+                "provisioned",
+                "wrapper did not pass the native environment to its command"
+            );
+            let expected = jobs.map(str::to_owned).unwrap_or_else(|| {
+                (std::thread::available_parallelism().map_or(1, usize::from) / SLOTS)
+                    .max(2)
+                    .to_string()
+            });
+            assert_eq!(
+                fs::read_to_string(root.join("native.jobs")).unwrap(),
+                expected
+            );
+            assert_eq!(
+                PathBuf::from(fs::read_to_string(root.join("native.target")).unwrap()),
+                root.join("target/slot-3")
+            );
+        }
+        #[cfg(unix)]
         for label in ["wrapped", "detached"] {
             let _ = fs::remove_file(root.join("wrapped.ready"));
             let mut wrapped = Process(
@@ -1090,11 +1187,11 @@ mod tests {
     }
 
     #[test]
-    fn memory_probe_failure_blocks_only_extra_macos_slots_and_observes_ramp() {
+    fn memory_probe_failure_blocks_only_extra_slots_and_observes_ramp() {
         let directory = Directory::new();
-        assert!(!memory_available(directory.0.join("missing-sysctl")));
+        assert!(!sysctl_memory_available(directory.0.join("missing-sysctl")));
         let old = SystemTime::now() - Duration::from_secs(30);
-        for (macos, busy, start, memory, expected) in [
+        for (memory_gated, busy, start, memory, expected) in [
             (true, false, None, false, true),
             (true, true, Some(old), false, false),
             (true, true, Some(old), true, true),
@@ -1102,7 +1199,78 @@ mod tests {
             (true, true, None, true, false),
             (false, true, None, false, true),
         ] {
-            assert_eq!(admit_extra(macos, busy, start, || memory), expected);
+            assert_eq!(admit_extra(memory_gated, busy, start, || memory), expected);
+        }
+
+        let root = &directory.0;
+        let locks = root.join("locks");
+        let mut first = Queue::enter(&locks).unwrap();
+        let held = claim(&mut first, root, true, || false).unwrap().unwrap();
+        let mut second = Queue::enter(&locks).unwrap();
+        let mut third = Queue::enter(&locks).unwrap();
+        File::options()
+            .write(true)
+            .open(locks.join("last-start"))
+            .unwrap()
+            .set_modified(old)
+            .unwrap();
+        assert!(claim(&mut second, root, true, || false).unwrap().is_none());
+        assert!(
+            claim(&mut third, root, true, || true).unwrap().is_none(),
+            "low memory must not let a later waiter overtake the second build"
+        );
+        let admitted = claim(&mut second, root, true, || true).unwrap().unwrap();
+        assert_ne!(held.number, admitted.number);
+        assert!(
+            claim(&mut third, root, true, || true).unwrap().is_none(),
+            "the next build must observe the ramp again"
+        );
+    }
+
+    #[test]
+    fn child_exit_or_kill_releases_slot_lease() {
+        for label in ["wrapped", "killed"] {
+            let directory = Directory::new();
+            let root = &directory.0;
+            crate::checked(root, "git", &["init", "-q"]).unwrap();
+            let mut wrapper = Process(
+                Command::new(std::env::current_exe().unwrap())
+                    .args(["--exact", "build::tests::build_process", "--nocapture"])
+                    .env("VIBECUT_BUILD_TEST_ROOT", root)
+                    .env("VIBECUT_BUILD_TEST_LABEL", label)
+                    .stdin(Stdio::piped())
+                    .stdout(Stdio::null())
+                    .spawn()
+                    .unwrap(),
+            );
+            let input = wrapper.0.stdin.take().unwrap();
+            wait(&root.join("wrapped.ready"));
+            assert!(
+                try_lock(open(&root.join("locks/slot-1")).unwrap())
+                    .unwrap()
+                    .is_none()
+            );
+            if label == "killed" {
+                let pid = fs::read_to_string(root.join("command.pid")).unwrap();
+                #[cfg(windows)]
+                let status = Command::new("taskkill")
+                    .args(["/F", "/PID", pid.trim()])
+                    .status()
+                    .unwrap();
+                #[cfg(unix)]
+                let status = Command::new("kill")
+                    .args(["-KILL", pid.trim()])
+                    .status()
+                    .unwrap();
+                assert!(status.success());
+            }
+            drop(input);
+            assert!(wrapper.0.wait().unwrap().success());
+            assert!(
+                try_lock(open(&root.join("locks/slot-1")).unwrap())
+                    .unwrap()
+                    .is_some()
+            );
         }
     }
 
@@ -1205,7 +1373,18 @@ mod cache_tests {
                 age_tree(&entry.unwrap().path(), when);
             }
         }
-        File::open(path)
+        let mut options = File::options();
+        #[cfg(unix)]
+        options.read(true);
+        #[cfg(windows)]
+        {
+            use std::os::windows::fs::OpenOptionsExt;
+            // FILE_WRITE_ATTRIBUTES and FILE_FLAG_BACKUP_SEMANTICS permit
+            // setting directory timestamps without opening directory data.
+            options.access_mode(0x100).custom_flags(0x02000000);
+        }
+        options
+            .open(path)
             .unwrap()
             .set_modified(when)
             .unwrap_or_else(|error| panic!("{}: {error}", path.display()));
