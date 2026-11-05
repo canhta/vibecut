@@ -681,7 +681,7 @@ fn opacity_and_audio_gain_scrub_through_their_tabs() {
     let ItemParams::Audio(params) = &item(&harness, fixture.audio).content else {
         panic!("audio")
     };
-    assert_eq!(params.volume, 4.0);
+    assert_eq!(params.volume, 0.04);
 }
 
 #[test]

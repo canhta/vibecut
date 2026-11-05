@@ -514,32 +514,47 @@ impl Drop for Playback {
 fn read_request(request: &Mutex<Request>) -> Result<Request> {
     Ok(request.lock().map_err(|_| Error::Poisoned)?.clone())
 }
+/// Cancel a long seek's deterministic preroll when a newer request supersedes it.
+struct AudioEpoch<'a> {
+    context: &'a engine::jobs::JobContext,
+    port: &'a AudioPort,
+    epoch: u64,
+}
+impl render::ExecutionHooks for AudioEpoch<'_> {
+    fn cancelled(&self) -> bool {
+        self.context.cancelled() || self.port.epoch.load(Ordering::Acquire) != self.epoch
+    }
+    fn reserve(
+        &self,
+        kind: render::MemoryKind,
+        bytes: u64,
+    ) -> render::Result<Box<dyn render::Reservation>> {
+        render::ExecutionHooks::reserve(self.context, kind, bytes)
+    }
+}
 fn audio_loop(
     request: &Mutex<Request>,
     port: &AudioPort,
     factory: &dyn Sources,
     hooks: &engine::jobs::JobContext,
 ) -> Result<()> {
+    let r = read_request(request)?;
+    if !r.playing {
+        std::thread::sleep(Duration::from_millis(2));
+        return Ok(());
+    }
     let mut sources = factory.create();
-    let mut epoch = 0;
-    let mut cursor = 0;
-    let mut audio_project = read_request(request)?.project;
-    let mut mixer = render::AudioMixer::new(&audio_project, 2, 0, hooks)?;
-    while !hooks.cancelled() {
-        let r = read_request(request)?;
-        if !r.playing {
-            std::thread::sleep(Duration::from_millis(2));
-            continue;
-        }
+    let epoch = r.epoch;
+    let mut cursor = port.submitted.load(Ordering::Acquire);
+    let audio_hooks = AudioEpoch {
+        context: hooks,
+        port,
+        epoch,
+    };
+    // DSP state belongs only to a playing epoch, and drops on pause/seek.
+    let mut mixer = render::AudioMixer::new(&r.project, 2, 0, &audio_hooks)?;
+    while !hooks.cancelled() && port.epoch.load(Ordering::Acquire) == epoch {
         let submitted = port.submitted.load(Ordering::Acquire);
-        if epoch != r.epoch {
-            epoch = r.epoch;
-            cursor = submitted;
-            sources = factory.create();
-            drop(mixer);
-            audio_project = r.project.clone();
-            mixer = render::AudioMixer::new(&audio_project, 2, 0, hooks)?;
-        }
         cursor = cursor.max(submitted);
         let lead = u64::from(r.project.data().settings.audio_sample_rate) / 4;
         if cursor > submitted.saturating_add(lead) {
@@ -551,7 +566,7 @@ fn audio_loop(
             i64::from(r.project.data().settings.audio_sample_rate),
             Rounding::Nearest,
         )?;
-        let block = mixer.mix(start, BLOCK, sources.as_mut(), hooks)?;
+        let block = mixer.mix(start, BLOCK, sources.as_mut(), &audio_hooks)?;
         if port.epoch.load(Ordering::Acquire) == epoch {
             for n in 0..BLOCK {
                 let index = cursor.saturating_add(n as u64);

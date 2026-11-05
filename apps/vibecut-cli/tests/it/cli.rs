@@ -2181,7 +2181,7 @@ fn exec_import_and_insert_share_persisted_media_policy() {
         "timeline.insert",
         json!({"item":{
             "animations":{},"source_asset":1,"source_range":{"start":0,"end":1000},"start":0,
-            "content":{"kind":"video","params":{"source_audio_enabled":true}}
+            "content":{"kind":"video","params":{"source_audio_enabled":true,"volume":0.0,"muted":false}}
         }}),
     );
     let inserted = project::load(&path).unwrap().project;

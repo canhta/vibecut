@@ -1424,34 +1424,47 @@ fn export_item_mute_and_gain_change_samples() {
         locked: false,
         items: vec![audio],
     });
-    for (volume, muted) in [(0.0, false), (-6.0, false), (0.0, true), (-6.0, true)] {
-        if let Some(item) = data
-            .scene_mut()
-            .timeline
-            .audio
-            .first_mut()
-            .and_then(|track| track.items.first_mut())
-        {
-            item.content = project::ItemParams::Audio(project::AudioParams { volume, muted });
-        }
-        let project = project::Project::new(data.clone()).unwrap();
-        let output = dir.path().join(format!("item-{volume}-{muted}.mp4"));
-        export(
-            &project,
-            TimeRange::new(Tick::ZERO, tick(1, 1)).unwrap(),
-            &ExportSettings::from_project(&project),
-            &output,
-            &Hooks::default(),
-        )
-        .unwrap();
-        let samples = pcm(&output, None);
-        let peak = samples
-            .iter()
-            .fold(0.0f32, |peak, sample| peak.max(sample.abs()));
-        if muted {
-            assert!(peak <= 1e-5, "muted gain={volume} peak={peak}");
-        } else {
-            assert!(peak > 0.05, "audible gain={volume} peak={peak}");
+    for video_audio in [false, true] {
+        for (volume, muted) in [(0.0, false), (-6.0, false), (0.0, true), (-6.0, true)] {
+            if let Some(item) = data
+                .scene_mut()
+                .timeline
+                .audio
+                .first_mut()
+                .and_then(|track| track.items.first_mut())
+            {
+                item.content = project::ItemParams::Audio(project::AudioParams { volume, muted });
+            }
+            data.scene_mut().timeline.audio[0].muted = video_audio;
+            let project::ItemParams::Video(params) =
+                &mut data.scene_mut().timeline.main.items[0].content
+            else {
+                panic!("video fixture")
+            };
+            params.source_audio_enabled = video_audio;
+            params.volume = volume;
+            params.muted = muted;
+            let project = project::Project::new(data.clone()).unwrap();
+            let output = dir
+                .path()
+                .join(format!("item-{video_audio}-{volume}-{muted}.mp4"));
+            export(
+                &project,
+                TimeRange::new(Tick::ZERO, tick(1, 1)).unwrap(),
+                &ExportSettings::from_project(&project),
+                &output,
+                &Hooks::default(),
+            )
+            .unwrap();
+            let samples = pcm(&output, None);
+            let peak = samples
+                .iter()
+                .fold(0.0f32, |peak, sample| peak.max(sample.abs()));
+            if muted {
+                assert!(peak <= 1e-5, "muted gain={volume} peak={peak}");
+            } else {
+                assert!(peak > 0.05, "audible gain={volume} peak={peak}");
+            }
         }
     }
 }

@@ -108,16 +108,26 @@ fn fixture() -> project::Project {
 }
 #[test]
 fn limiter_ceiling_transparency_latency_and_irregular_partitions() {
-    let p = fixture();
     let h = Hooks::default();
-    for (level, impulse) in [(0.1, false), (8.0, false), (100.0, true), (-8.0, true)] {
+    for (level, impulse, master) in [
+        (0.1, false, 0.0),
+        (0.1, false, -6.0),
+        (0.1, false, 20.0),
+        (8.0, false, 0.0),
+        (100.0, true, 0.0),
+        (-8.0, true, 0.0),
+    ] {
+        let mut data = fixture().into_data();
+        data.settings.master_volume = master;
+        let p = project::Project::new(data).unwrap();
         let mut sources = Signal { level, impulse };
         let mut offline = AudioMixer::new(&p, 2, 0, &h).unwrap();
         assert_eq!(offline.latency_samples(), 248);
         let whole = offline.mix(0, 48000, &mut sources, &h).unwrap();
         assert!(whole.peak() <= 10f32.powf(-1.0 / 20.0) * 0.98);
-        if level == 0.1 {
-            assert!(whole.planes().iter().flatten().all(|&v| v == level * 0.98));
+        if level == 0.1 && master <= 0.0 {
+            let expected = level * 10f32.powf(master / 20.0) * 0.98;
+            assert!(whole.planes().iter().flatten().all(|&v| v == expected));
         }
         if impulse {
             assert!(whole.planes()[0][0].abs() > 0.01);

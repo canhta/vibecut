@@ -1480,17 +1480,11 @@ fn mixed_audio_mute_shows_indeterminate_and_undo_restores_each_item() {
         assert!(params.muted);
         assert_eq!(params.volume, gain);
     }
-    assert_eq!(
-        item(harness.state(), video),
-        before
-            .data()
-            .scene()
-            .timeline
-            .iter()
-            .flat_map(|track| &track.items)
-            .find(|item| item.id == video)
-            .unwrap()
-    );
+    let ItemParams::Video(params) = &item(harness.state(), video).content else {
+        panic!("video")
+    };
+    assert!(params.muted);
+    assert_eq!(params.volume, 0.0);
     let after = harness.state().session.project().clone();
     harness.state_mut().activate("edit.undo").unwrap();
     harness.run_steps(2);
@@ -1508,6 +1502,10 @@ fn mixed_audio_mute_shows_indeterminate_and_undo_restores_each_item() {
         harness.get(mute).accesskit_node().toggled(),
         Some(egui::accesskit::Toggled::False)
     );
+    let ItemParams::Video(params) = &item(harness.state(), video).content else {
+        panic!("video")
+    };
+    assert!(!params.muted);
     for id in [first, second] {
         let ItemParams::Audio(params) = &item(harness.state(), id).content else {
             panic!("audio")

@@ -748,3 +748,177 @@ fn packaged_app_startup_runs_without_display_or_audio_device() {
         .unwrap();
     assert!(!refused.status.success());
 }
+
+#[test]
+fn new_seek_cancels_audio_preroll_and_keeps_the_replacement_epoch_alive() {
+    use std::sync::atomic::{AtomicBool, Ordering};
+    struct Gate {
+        first: AtomicBool,
+        entered: AtomicBool,
+        cancelled: AtomicBool,
+    }
+    struct Factory(Arc<Gate>);
+    struct Source(Arc<Gate>);
+    impl vibecut::playback::Sources for Factory {
+        fn create(&self) -> Box<dyn render::SourceProvider> {
+            Box::new(Source(self.0.clone()))
+        }
+    }
+    impl render::SourceProvider for Source {
+        fn status(
+            &mut self,
+            _: &media::SourceAsset,
+            _: bool,
+            _: &dyn render::ExecutionHooks,
+        ) -> render::Result<Option<render::UnavailableReason>> {
+            Ok(None)
+        }
+        fn video(
+            &mut self,
+            _: &media::SourceAsset,
+            _: project::ItemId,
+            _: Tick,
+            _: &dyn render::ExecutionHooks,
+        ) -> render::Result<Option<render::Image>> {
+            Ok(None)
+        }
+        fn audio(
+            &mut self,
+            _: &media::SourceAsset,
+            _: project::ItemId,
+            _: i64,
+            frames: usize,
+            rate: u32,
+            hooks: &dyn render::ExecutionHooks,
+        ) -> render::Result<render::AudioBlock> {
+            if self.0.first.swap(false, Ordering::SeqCst) {
+                self.0.entered.store(true, Ordering::Release);
+                while !hooks.cancelled() {
+                    std::thread::sleep(Duration::from_millis(1));
+                }
+                self.0.cancelled.store(true, Ordering::Release);
+                return Err(render::Error::Cancelled);
+            }
+            let mut block =
+                render::AudioBlock::new(rate, 2, frames, render::MemoryKind::Decoded, hooks)?;
+            for plane in block.planes_mut() {
+                plane.fill(0.1);
+            }
+            Ok(block)
+        }
+    }
+    let duration = Tick(TICKS_PER_SECOND * 60);
+    let mut data = Project::empty(ProjectId(8), "Audio seek".into())
+        .unwrap()
+        .into_data();
+    data.canvas.width = 64;
+    data.canvas.height = 64;
+    data.assets.push(
+        media::SourceAsset::try_from(media::AssetData {
+            ephemeral: false,
+            id: media::AssetId(1),
+            path: std::env::temp_dir().join("vibecut-audio-seek.wav"),
+            content_hash: media::ContentHash::from_bytes(&[8]),
+            probe: media::SourceProbe {
+                format: "wav".into(),
+                duration: Some(duration),
+                streams: vec![media::SourceStream {
+                    index: 0,
+                    kind: media::StreamKind::Audio,
+                    codec: "pcm_f32le".into(),
+                    time_base: media::TimeBase::new(1, 48000).unwrap(),
+                    start: None,
+                    duration: Some(duration),
+                    frame_rate: None,
+                    frame_count: None,
+                    variable_frame_rate: None,
+                    video: None,
+                    audio: Some(media::AudioInfo {
+                        sample_rate: 48000,
+                        channels: 2,
+                        initial_padding: 0,
+                        trailing_padding: 0,
+                    }),
+                }],
+            },
+        })
+        .unwrap(),
+    );
+    data.scene_mut().timeline.insert_track(project::Track {
+        id: project::TrackId(1),
+        name: "".into(),
+        kind: TrackKind::Audio,
+        hidden: false,
+        muted: false,
+        locked: false,
+        items: vec![project::Item {
+            id: project::ItemId(1),
+            source_asset: Some(media::AssetId(1)),
+            source_range: SourceRange::new(Tick::ZERO, duration).unwrap(),
+            start: Tick::ZERO,
+            animations: Default::default(),
+            effects: vec![],
+            masks: vec![],
+            blend_mode: Default::default(),
+            content: ItemParams::Audio(project::AudioParams {
+                volume: 0.0,
+                muted: false,
+            }),
+        }],
+    });
+    let session = Session::new(Project::new(data).unwrap(), 10).unwrap();
+    let gate = Arc::new(Gate {
+        first: AtomicBool::new(true),
+        entered: AtomicBool::new(false),
+        cancelled: AtomicBool::new(false),
+    });
+    let mut playback = Playback::new(
+        &session,
+        ByteBudget::new(64 << 20).unwrap(),
+        Arc::new(Factory(gate.clone())),
+    )
+    .unwrap();
+    playback.set_device_available(true);
+    playback
+        .seek(Tick(30 * TICKS_PER_SECOND), true, session.project().clone())
+        .unwrap();
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while !gate.entered.load(Ordering::Acquire) {
+        assert!(Instant::now() < deadline);
+        std::thread::sleep(Duration::from_millis(1));
+    }
+    playback
+        .seek(Tick::ZERO, true, session.project().clone())
+        .unwrap();
+    let port = playback.audio_port();
+    loop {
+        let mut samples = [0.0; 64];
+        port.fill(&mut samples, 0);
+        playback.poll().unwrap();
+        if samples.iter().any(|v| *v != 0.0) {
+            assert!(gate.cancelled.load(Ordering::Acquire));
+            assert!(
+                samples
+                    .iter()
+                    .filter(|v| **v != 0.0)
+                    .all(|v| (*v - 0.098).abs() < 1e-6)
+            );
+            break;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "replacement audio did not arrive after cancelling preroll"
+        );
+        std::thread::sleep(Duration::from_millis(2));
+    }
+    assert!(playback.error().is_none());
+    playback
+        .seek(Tick::ZERO, false, session.project().clone())
+        .unwrap();
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while playback.budget().snapshot().unwrap().owners[1] != 0 {
+        assert!(Instant::now() < deadline);
+        playback.poll().unwrap();
+        std::thread::sleep(Duration::from_millis(2));
+    }
+}
