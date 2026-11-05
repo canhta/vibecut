@@ -2637,8 +2637,7 @@ impl Editor {
                     let response = ui.add_enabled(
                         !self.scene_selected.is_empty(),
                         egui::Button::image_and_text(
-                            egui::Image::new(icon(ui, "trash"))
-                                .fit_to_exact_size(Vec2::splat(16.0)),
+                            icons::tinted(Icon::Trash, BUTTON_ICON, self.text_color()),
                             format!("{} ({})", self.tr(Text::Delete), self.scene_selected.len()),
                         ),
                     );
@@ -2823,10 +2822,11 @@ impl Editor {
                     self.action("scene.open");
                 }
                 let response = ui
-                    .add(egui::Button::image(
-                        egui::Image::new(icon(ui, "film-strip"))
-                            .fit_to_exact_size(Vec2::splat(16.0)),
-                    ))
+                    .add(egui::Button::image(icons::tinted(
+                        Icon::FilmStrip,
+                        BUTTON_ICON,
+                        self.text_color(),
+                    )))
                     .on_hover_text(self.tr(Text::Scenes));
                 self.remember("scene.open_list", &response);
                 if response.clicked() {
