@@ -148,7 +148,7 @@ pub struct JobSpec {
     pub input: CacheKey,
     pub bytes: JobBytes,
 }
-/// Network retries apply only to Transcribe/Translate + NetworkTransient; local
+/// Network retries apply to transcription, translation, suggestions and downloads; local
 /// execution and Export are never retried. Every retry repeats consent validation
 /// in the adapter and releases worker/resources during backoff.
 #[derive(Clone, Copy)]
@@ -466,7 +466,10 @@ impl JobRunner {
                 && pending.spec.class == ResourceClass::Network
                 && matches!(
                     pending.spec.kind,
-                    JobKind::Transcribe | JobKind::Translate | JobKind::DownloadModel
+                    JobKind::Transcribe
+                        | JobKind::Translate
+                        | JobKind::SuggestClips
+                        | JobKind::DownloadModel
                 )
                 && pending.snapshot.attempts < self.config.network_attempts;
             // A retry must occupy one bounded pending slot. If that slot filled

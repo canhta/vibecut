@@ -749,16 +749,18 @@ suggestion.
 
 `choose_suggestion` accepts only the offline `suggestion_options` catalog rows:
 local `heuristic`, OpenAI `gpt-6-luna`/`gpt-6.1-sol`, or Anthropic
-`claude-sonnet-5-5`. There is no fallback list: one provider attempt runs, and a
-provider failure is returned unchanged. Remote adapters receive only transcript
+`claude-sonnet-5-5`. There is no fallback list. Suggestion runs as a bounded `SuggestClips` job;
+transient remote failures use the runner’s existing attempt/backoff policy, while
+local and permanent failures are returned. Retries retain the exact approved
+scopes and their per-invocation cost ceiling; reported cost includes all attempts. Remote adapters receive only transcript
 segments (IDs, text, ranges and settings), never audio. Before the first upload,
 `UploadRequest` names the provider, endpoint, model, exact payload bytes, cost
 ceiling and the provider's data-retention/training policy link; refusal stops
 before any adapter receives data. `DenyUploads` is the test default.
 
 `ClipRequest` resolves the source language (or asks local whisper), runs ASR,
-builds the AI `ClipInput` from the resulting cues, and executes the same
-`providers::suggest_clips` path as other consumers. Candidates then pass through
+builds the AI `ClipInput` from the resulting cues, and executes
+`ai::clips::suggest_clips` on the shared runner. Candidates then pass through
 `snap_clip_boundaries` with the source frame rate, caller tolerance/RMS and
 duration/segment limits. A snap refusal drops that candidate with a typed
 `RejectedClip` reason instead of publishing an unsnapped range; AI drops keep
@@ -903,15 +905,20 @@ ClipBoundarySettings. Suggestion generation is optional. The caller can submit
 media energy decoding through the existing JobRunner with its cancellation token;
 snapping itself performs no IO or project edits.
 
-Every source edge is adjusted independently to an output-fps frame within the
-configured tick tolerance. Selection prefers a sentence gap with low RMS, then a
-sentence gap, low RMS in another safe gap, then any word/segment gap; ties prefer
-nearest time, then earlier time. RMS threshold is an explicit amplitude ratio.
-A quiet sample never permits a cut inside a captions-owned indivisible speech
-unit. Quantization is constrained to the safe gap, rather than rounded into a
-word afterward. Missing/incomplete native timing protects the whole segment;
-proportional subtitle timing is never used for cuts. A gap with no frame in the
-tolerance is refused, rather than cutting speech.
+Every source edge is adjusted independently to an output-fps frame. Selection
+prefers a sentence gap with low RMS, then a sentence gap, low RMS in another safe
+gap, then any word/segment gap. Within a word-gap tier, measured RMS is ranked
+before distance and earlier time, even when every window exceeds the silence
+threshold. The threshold is an explicit amplitude ratio.
+
+Quantization prefers a frame inside a measured safe gap within the configured
+tick tolerance. If no such frame exists, the nearest frame to its lowest-energy
+point may overlap speech by at most half a frame, reported as `WordFade`. The gap
+search stays inside the tolerance; fallback frame rounding adds at most half a
+frame of movement. Clip exports apply 10 ms linear audio ramps at each piece
+edge, clipped to half the piece duration. Missing/incomplete native timing
+protects the whole segment; proportional subtitle timing is never used for cuts.
+A window without a measured word/segment boundary remains a typed refusal.
 
 SnappedShort keeps play order, roles, source-order ranks and repair metadata,
 with adjusted ranges, summed duration and signed original/adjusted tick deltas

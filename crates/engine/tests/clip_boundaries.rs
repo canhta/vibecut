@@ -157,23 +157,107 @@ fn no_word_timing_protects_whole_segment_even_with_silent_energy() {
         out[0].adjustments[0].start.kind,
         BoundaryKind::WordOrSegment
     );
+    for (first_end, second_start, expected) in [(0.8, 0.9, 0.8666666666666667), (0.811, 0.819, 0.8)]
+    {
+        let mut tr = transcript(true);
+        tr.segments[0].words[0].range = Some(range(0.2, first_end));
+        tr.segments[0].words[1].range = Some(range(second_start, 1.6));
+        let energy = [
+            SpeechEnergyWindow {
+                range: range(0.8, 0.85),
+                rms: 0.4,
+            },
+            SpeechEnergyWindow {
+                range: range(0.85, 0.9),
+                rms: 0.2,
+            },
+        ];
+        let out = snap(
+            &[vec![piece(0.81, 1.6, ClipRole::Payoff, 0)]],
+            &tr,
+            &energy,
+            &s,
+        )
+        .unwrap();
+        assert_eq!(out[0].segments[0].range.start(), t(expected));
+    }
 }
 
 #[test]
-fn frame_quantization_cannot_enter_words_or_exceed_tolerance() {
+fn frame_quantization_rounds_subframe_word_gaps_and_refuses_missing_gaps() {
     let mut tr = transcript(true);
     tr.segments[0].words[0].range = Some(range(0.2, 0.811));
     tr.segments[0].words[1].range = Some(range(0.819, 1.6));
     let mut s = settings();
     s.tolerance = t(0.01);
     let candidates = vec![vec![piece(0.815, 1.6, ClipRole::Payoff, 0)]];
-    assert!(matches!(
-        snap(&candidates, &tr, &quiet(), &s),
-        Err(EditError::ClipBoundary {
-            reason: BoundaryFailure::NoSafeFrame,
-            ..
-        })
-    ));
+    let result = snap(&candidates, &tr, &quiet(), &s).unwrap();
+    assert_eq!(result[0].segments[0].range.start(), t(24.0 / 30.0));
+    assert_eq!(result[0].adjustments[0].start.kind, BoundaryKind::WordFade);
+    // Timing-only maintainer-cut reproduction (synthetic text), beside a
+    // continuous 90-second shape. No transcript or private media is committed.
+    let maintainer = [
+        (0., 4.88),
+        (4.88, 9.54),
+        (9.54, 14.36),
+        (14.36, 19.96),
+        (19.96, 26.4),
+        (27.12, 30.54),
+        (30.54, 34.3),
+        (34.3, 36.82),
+        (36.82, 42.68),
+        (42.68, 43.84),
+        (43.84, 46.36),
+        (46.36, 51.02),
+        (51.02, 56.08),
+        (56.82, 60.14),
+        (60.14, 62.54),
+        (62.54, 67.02),
+        (67.02, 72.04),
+        (72.04, 75.7),
+        (75.7, 79.86),
+        (79.86, 84.62),
+        (86.52, 88.86),
+    ];
+    let synthetic: Vec<_> = (0..18)
+        .map(|i| (i as f64 * 4.88, (i + 1) as f64 * 4.88))
+        .collect();
+    for boundaries in [&maintainer[..], &synthetic[..]] {
+        for words in [false, true] {
+            let mut continuous = transcript(false);
+            continuous.segments = boundaries
+                .iter()
+                .enumerate()
+                .map(|(index, &(start, end))| {
+                    let middle = (start + end) / 2.;
+                    Segment {
+                        id: format!("continuous-{index}").into(),
+                        range: range(start, end),
+                        text: "one two".into(),
+                        words: if words {
+                            vec![word("one", start, middle), word("two", middle, end)]
+                        } else {
+                            vec![]
+                        },
+                        spans: None,
+                    }
+                })
+                .collect();
+            let mut limits = settings();
+            limits.source_range = range(0., 90.);
+            limits.max_duration = t(90.);
+            let end = boundaries[3].1;
+            let out = snap(
+                &[vec![piece(4.88, end, ClipRole::Payoff, 0)]],
+                &continuous,
+                &[],
+                &limits,
+            )
+            .unwrap();
+            assert_eq!(out[0].adjustments[0].start.kind, BoundaryKind::WordFade);
+            assert_eq!(out[0].segments[0].range.start(), t(146. / 30.));
+        }
+    }
     s.tolerance = Tick::ZERO;
     assert!(
         snap(
@@ -330,15 +414,20 @@ fn real_decoded_fixture_has_known_pauses_and_cancellation() {
 proptest::proptest! {
     #![proptest_config(proptest::test_runner::Config {cases:128,rng_seed:proptest::test_runner::RngSeed::Fixed(20902),..Default::default()})]
     #[test]
-    fn rational_rates_never_cut_speech_or_escape_tolerance(start in 0.0f64..0.7, end in 1.1f64..2.1, rate in 0usize..11) {
+    fn rational_rates_bound_speech_overlap_and_movement(start in 0.0f64..0.7, end in 1.1f64..2.1, rate in 0usize..11) {
         let tr=transcript(true); let mut s=settings(); s.frame_rate=FrameRate::COMMON[rate];
         if let Ok(output)=snap(&[vec![piece(start,end,ClipRole::Payoff,0)]],&tr,&quiet(),&s) {
             let registry=LanguageRegistry::standard().unwrap();
             let units=captions::source_speech_units(&tr,registry.profile(&tr.source_lang),&LayoutHooks::default()).unwrap();
             for a in [&output[0].adjustments[0].start,&output[0].adjustments[0].end] {
-                proptest::prop_assert!(a.delta.abs()<=s.tolerance);
+                let allowance = if a.kind == BoundaryKind::WordFade { Tick(s.frame_rate.tick_of(1).unwrap().0/2) } else { Tick::ZERO };
+                proptest::prop_assert!(a.delta.abs() <= s.tolerance + allowance);
                 proptest::prop_assert_eq!(s.frame_rate.snap(a.adjusted).unwrap(),a.adjusted);
-                proptest::prop_assert!(!units.iter().any(|u| u.range.start()<a.adjusted && a.adjusted<u.range.end()));
+                if a.kind != BoundaryKind::WordFade {
+                    proptest::prop_assert!(!units.iter().any(|u| u.range.start()<a.adjusted && a.adjusted<u.range.end()));
+                } else {
+                    proptest::prop_assert!(units.iter().any(|u| (u.range.end()-a.adjusted).abs() <= Tick(s.frame_rate.tick_of(1).unwrap().0/2) || (u.range.start()-a.adjusted).abs() <= Tick(s.frame_rate.tick_of(1).unwrap().0/2)));
+                }
             }
         }
     }

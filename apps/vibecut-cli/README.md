@@ -51,7 +51,8 @@ upload scope before any remote byte leaves the machine, and maps candidates or
 typed failures to stdout/stderr. It owns no segmentation, prompt, selection,
 snapping or export logic; `--provider` never falls back. Remote suggestion
 credentials are refused before media work, and `providers --operation clips`
-lists the same offline catalog without opening an adapter.
+lists the same offline catalog without opening an adapter. Boundary adjustment
+kinds, including sub-frame `word_fade`, follow the [CLI contract](../../docs/product/cli.md).
 
 Project lifecycle commands share engine's registry. `project new` creates through
 `project.create`; `project info` acquires the project writer lease before reading

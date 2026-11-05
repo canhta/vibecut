@@ -1,6 +1,6 @@
 use crate::{
     AudioBlock, Error, ExecutionHooks, FileSources, Image, MemoryKind, RenderSettings, Renderer,
-    Result, SourceProvider, Stage, Unavailable, check, mix_audio,
+    Result, SourceProvider, Stage, Unavailable, check,
 };
 use media::{
     AssetId, AudioEncoder, AudioEncoderSettings, Container, EncodePreference, Muxer, PacketReader,
@@ -45,6 +45,8 @@ pub struct ExportSettings {
     pub resume: bool,
     pub max_bytes: u64,
     pub audio_block: usize,
+    /// Linear fades at each audible source cut; 0 disables, at most 1000 ms.
+    pub audio_cut_fade_ms: u16,
 }
 impl ExportSettings {
     pub fn from_project(project: &Project) -> Self {
@@ -64,6 +66,7 @@ impl ExportSettings {
             resume: false,
             max_bytes: 64 << 30,
             audio_block: 2048,
+            audio_cut_fade_ms: 0,
         }
     }
 }
@@ -119,6 +122,7 @@ pub fn export_with_sources(
         || settings.bit_rate == 0
         || settings.audio_block == 0
         || settings.audio_block > 65536
+        || settings.audio_cut_fade_ms > 1000
         || settings.max_bytes == 0
         || settings.max_bytes > 1 << 40
         || !settings.render.width.is_multiple_of(2)
@@ -144,6 +148,11 @@ pub fn export_with_sources(
     let copy = if settings.mode != ExportMode::Encode {
         copy_plan(project, range, settings, hooks)?
             .filter(|plan| !omitted.contains(&plan.asset.id()))
+    } else {
+        None
+    };
+    let copy = if settings.audio_cut_fade_ms == 0 {
+        copy
     } else {
         None
     };
@@ -619,7 +628,7 @@ fn fill_audio(
         check(hooks)?;
         hooks.progress(Stage::Mix, 0.0)?;
         let count = (goal - *position).min(settings.audio_block as i64) as usize;
-        let block = mix_audio(
+        let block = crate::audio::mix_audio_with_cut_fade(
             project,
             origin
                 .checked_add(*position)
@@ -628,6 +637,7 @@ fn fill_audio(
             settings.channels,
             sources,
             hooks,
+            settings.audio_cut_fade_ms,
         )?;
         let peak = block.peak();
         if peak > 1.0 {

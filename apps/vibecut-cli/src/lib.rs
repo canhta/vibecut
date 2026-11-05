@@ -1778,6 +1778,7 @@ fn boundary_kind_name(kind: engine::clip_boundaries::BoundaryKind) -> &'static s
         engine::clip_boundaries::BoundaryKind::Sentence => "sentence",
         engine::clip_boundaries::BoundaryKind::Silence => "silence",
         engine::clip_boundaries::BoundaryKind::WordOrSegment => "word_or_segment",
+        engine::clip_boundaries::BoundaryKind::WordFade => "word_fade",
     }
 }
 fn boundary_failure_name(reason: engine::clip_boundaries::BoundaryFailure) -> &'static str {

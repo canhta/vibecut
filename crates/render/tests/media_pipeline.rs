@@ -876,6 +876,47 @@ fn stereo_policy_keeps_headroom_and_export_refuses_overload() {
     assert_eq!(stereo.planes()[1], [0.25; 32]);
     let mono = mix_audio(&p, 0, 32, 1, &mut FileSources::default(), &h).unwrap();
     assert_eq!(mono.planes()[0], [0.5; 32]);
+    let mut decoded = Vec::new();
+    for (fade, block) in [(0, 2048), (10, 2048), (10, 137)] {
+        let output = root().join(format!("cut-fade-{fade}-{block}.mp4"));
+        let mut settings = ExportSettings::from_project(&p);
+        settings.overwrite = project::atomic::Overwrite::Replace;
+        settings.mode = ExportMode::Encode;
+        settings.audio_cut_fade_ms = fade;
+        settings.audio_block = block;
+        export(
+            &p,
+            TimeRange::new(Tick::ZERO, tick(1, 1)).unwrap(),
+            &settings,
+            &output,
+            &h,
+        )
+        .unwrap();
+        let pcm = tool_command("ffmpeg")
+            .args(["-v", "error", "-i"])
+            .arg(&output)
+            .args(["-map", "0:a:0", "-f", "f32le", "-ac", "1", "-"])
+            .output()
+            .unwrap();
+        assert!(pcm.status.success());
+        decoded.push(
+            pcm.stdout
+                .as_chunks::<4>()
+                .0
+                .iter()
+                .map(|b| f32::from_le_bytes(*b))
+                .collect::<Vec<_>>(),
+        );
+    }
+    assert_eq!(
+        decoded[1], decoded[2],
+        "fade depends on audio block partition"
+    );
+    let rms = |samples: &[f32]| {
+        (samples.iter().map(|x| x * x).sum::<f32>() / samples.len() as f32).sqrt()
+    };
+    assert!(rms(&decoded[1][..240]) < rms(&decoded[0][..240]) * 0.7);
+    assert!((rms(&decoded[1][2400..4800]) - rms(&decoded[0][2400..4800])).abs() < 0.02);
     let mut extra = d.scene_mut().timeline.audio.last().unwrap().clone();
     extra.id = project::TrackId(9);
     extra.items[0].id = project::ItemId(8);

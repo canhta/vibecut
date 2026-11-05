@@ -204,12 +204,12 @@ pub struct ClipProposal {
     /// Ranking score only, never a probability.
     pub score: f64,
 }
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ClipRepairReason {
     AdjacentMerged,
 }
 /// Resolved piece in playback order; source_order is its zero-based source rank.
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ClipSourceSegment {
     pub range: SourceRange,
     pub role: ClipRole,
@@ -224,7 +224,7 @@ pub enum ClipSource {
     Llm,
     Heuristic,
 }
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ClipSuggestion {
     pub proposal: ClipProposal,
     pub segments: Vec<ClipSourceSegment>,
@@ -232,7 +232,7 @@ pub struct ClipSuggestion {
     pub duration: Tick,
     pub source: ClipSource,
 }
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ClipDropReason {
     Duration,
     SegmentDuration,
@@ -245,12 +245,12 @@ pub enum ClipDropReason {
     Overlap,
     CountLimit,
 }
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct DroppedClip {
     pub proposal: ClipProposal,
     pub reason: ClipDropReason,
 }
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ClipSuggestions {
     pub clips: Vec<ClipSuggestion>,
     pub dropped: Vec<DroppedClip>,

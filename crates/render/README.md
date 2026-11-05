@@ -105,7 +105,11 @@ restarts that source cursor. Source-rate decode and AAC priming are media-owned;
 render never reapplies priming. Accumulation is f32 with constant item dB gain,
 no normalization, clipping or limiter. Nonfinite input/overflow refuses the mix.
 Preview can inspect `AudioBlock::peak`; export returns `AudioOverload` above
-unity, preserving the old destination. Limiter/fade policy belongs to /42.
+unity, preserving the old destination. `ExportSettings::audio_cut_fade_ms`
+optionally applies linear ramps at every audible item edge on the absolute sample
+grid (0 disables, maximum 1000 ms, capped at half each item duration). Clip batch
+exports use 10 ms; ordinary preview/export remains unchanged. Audio fades require
+encoding and disable stream copy. Limiter policy belongs to /42.
 
 Horizontal interpolation retains only two destination-width rows per active
 pixel task and reuses them when adjacent output rows share source neighbors.

@@ -60,6 +60,23 @@ pub fn mix_audio(
     sources: &mut dyn SourceProvider,
     hooks: &dyn ExecutionHooks,
 ) -> Result<AudioBlock> {
+    mix_audio_with_cut_fade(project, start, frames, channels, sources, hooks, 0)
+}
+
+/// Same absolute sample grid, with linear ramps at each audible item's edges.
+#[allow(
+    clippy::too_many_arguments,
+    reason = "shared mixer plus transient cut policy"
+)]
+pub(crate) fn mix_audio_with_cut_fade(
+    project: &Project,
+    start: i64,
+    frames: usize,
+    channels: u16,
+    sources: &mut dyn SourceProvider,
+    hooks: &dyn ExecutionHooks,
+    fade_ms: u16,
+) -> Result<AudioBlock> {
     check(hooks)?;
     let rate = project.data().settings.audio_sample_rate;
     let end = start
@@ -136,6 +153,7 @@ pub fn mix_audio(
             _ => 1.0,
         };
         let offset = (a - start) as usize;
+        let fade = (i64::from(rate) * i64::from(fade_ms) / 1000).min((i1 - i0) / 2);
         for (channel, destination) in out.planes.iter_mut().enumerate() {
             for (n, dst) in destination
                 .iter_mut()
@@ -158,7 +176,13 @@ pub fn mix_audio(
                 } else {
                     get(channel)
                 };
-                *dst += value * gain;
+                let sample = a - i0 + n as i64;
+                let envelope = if fade > 0 {
+                    (sample.min(i1 - i0 - 1 - sample) as f32 / fade as f32).clamp(0.0, 1.0)
+                } else {
+                    1.0
+                };
+                *dst += value * gain * envelope;
                 if !dst.is_finite() {
                     return Err(Error::Invalid("audio mix overflow"));
                 }

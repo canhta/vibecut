@@ -530,6 +530,7 @@ fn prepare_clip(
         }
     }
     settings.mode = render::ExportMode::Encode;
+    settings.audio_cut_fade_ms = 10;
     settings.overwrite = if options.overwrite {
         project::atomic::Overwrite::Replace
     } else {
@@ -623,7 +624,7 @@ fn job_key(
         format!("{}:{}:{}:{}", crop.x, crop.y, crop.width, crop.height)
     });
     let settings_key = format!(
-        "{}x{}@{}:{}:{}:{}:{}:{}:{}:{}",
+        "{}x{}@{}:{}:{}:{}:{}:{}:{}:{}:fade{}",
         settings.render.width,
         settings.render.height,
         settings.fps.num(),
@@ -634,6 +635,7 @@ fn job_key(
         languages,
         formats,
         crop,
+        settings.audio_cut_fade_ms,
     );
     // Export files are user artifacts, not cache entries; this key identifies the job.
     CacheKey::new(KeyInputs {

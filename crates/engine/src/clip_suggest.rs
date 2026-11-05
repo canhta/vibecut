@@ -2,12 +2,12 @@
 //! source edges out. Export preparation reuses the 05 batch and the subtitle
 //! translation path; the CLI only parses arguments and prints this result.
 use crate::EditError;
-use crate::cache::ArtifactCache;
+use crate::cache::{ArtifactCache, ArtifactKind, CacheKey, KeyInputs};
 use crate::clip_boundaries::{
     BoundaryFailure, ClipBoundarySettings, SegmentAdjustment, snap_clip_boundaries,
 };
 use crate::clip_export::{ClipBatch, ClipBatchRequest, ClipPaths, ClipShort, MAX_BATCH_CLIPS};
-use crate::jobs::{JobRunner, JobState, ResourceClass};
+use crate::jobs::{JobBytes, JobKind, JobRunner, JobSpec, JobState, ResourceClass};
 use crate::providers as engine_providers;
 use crate::subtitles::{
     self, Cancellation, CatalogOperation, ConsentPrompt, Cost, Progress, Providers, Stage,
@@ -19,10 +19,7 @@ use ai::clips::{
     DroppedClip, HeuristicClipSuggester, MAX_WIRE, MODE, OPENAI_LUNA_MODEL, OPENAI_SETTINGS,
     OpenAiClipSuggester,
 };
-use ai::{
-    Consent, CostEstimate, ExecutionHooks, Location, Money, Operation, ProviderConfig,
-    ProviderSelection, SampleRange, Scope,
-};
+use ai::{Consent, CostEstimate, Location, Money, Operation, ProviderConfig, SampleRange, Scope};
 use captions::{Cue, CueTrack, Format, LanguageTag, NfcText};
 use media::SourceAsset;
 use project::Project;
@@ -311,14 +308,6 @@ impl engine_providers::Approval for PromptApproval<'_> {
     }
 }
 
-struct CancelHooks<'a>(&'a Cancellation);
-impl ExecutionHooks for CancelHooks<'_> {
-    fn cancelled(&self) -> bool {
-        self.0.cancelled()
-    }
-    fn stage(&self, _: ai::Stage) {}
-}
-
 fn clip_input(
     cues: &[Cue],
     language: &LanguageTag,
@@ -474,7 +463,7 @@ pub fn suggest(
         return Err(EditError::Limit);
     }
 
-    let provider = build_suggester(&request.provider, credentials)?;
+    let provider = Arc::new(build_suggester(&request.provider, credentials)?);
     let source_fingerprint = NfcText::from(fingerprint(&asset));
     let windows = input.windows()?;
     let mut scopes = Vec::with_capacity(windows.len());
@@ -489,30 +478,88 @@ pub fn suggest(
         }
         scopes.push(scope);
     }
-    let selection =
-        ProviderSelection::new(Operation::SuggestClips, provider.as_clip().config().clone());
-    let attempts = [engine_providers::ClipAttempt {
-        provider: provider.as_clip(),
-        scopes: &scopes,
-    }];
     let mut approval = PromptApproval {
         consent,
         requests,
         spent: Cost::Free,
         refusal: None,
     };
-    progress.stage(Stage::SuggestClips);
-    let suggested = engine_providers::suggest_clips(
-        &selection,
-        &attempts,
-        &input,
-        &mut approval,
-        &CancelHooks(cancel),
-    );
+    // Approval binds exact payloads. Retries reuse only these approved scopes,
+    // like transcription jobs; the runner owns their attempts and backoff.
+    let tokens = scopes
+        .iter()
+        .map(|scope| {
+            engine_providers::Approval::approve(
+                &mut approval,
+                scope,
+                &provider.as_clip().estimate(scope),
+                false,
+            )
+        })
+        .collect::<Result<Vec<_>, _>>();
     if let Some(error) = approval.refusal.take() {
         return Err(error);
     }
-    let suggested = suggested?;
+    let tokens = tokens?;
+    let settings_bytes = serde_json::to_vec(&(provider.as_clip().config(), &input))
+        .map_err(|_| EditError::Invalid("clip input serialization"))?;
+    let key = CacheKey::new(KeyInputs {
+        kind: ArtifactKind::Transcript,
+        source: asset.content_hash().0,
+        provider: provider.as_clip().config().id().as_str(),
+        model: provider.as_clip().config().model().as_str(),
+        version: "clip-suggestion-job-v1",
+        settings: &[],
+        transcript: *blake3::hash(&settings_bytes).as_bytes(),
+        cues: [0; 32],
+        clip_range: [0; 32],
+        translation: [0; 32],
+    })?;
+    progress.stage(Stage::SuggestClips);
+    let class = if request.provider.is_remote() {
+        ResourceClass::Network
+    } else {
+        ResourceClass::Cpu
+    };
+    let (id, token) = runner.submit(
+        JobSpec {
+            kind: JobKind::SuggestClips,
+            class,
+            input: key,
+            bytes: JobBytes {
+                compositor: 16 << 20,
+                result: 8 << 20,
+                ..Default::default()
+            },
+        },
+        move |hooks| {
+            let requests: Vec<_> = scopes
+                .iter()
+                .zip(&tokens)
+                .map(|(scope, consent)| ai::Request {
+                    scope,
+                    consent: consent.as_ref(),
+                })
+                .collect();
+            let result = ai::clips::suggest_clips(provider.as_clip(), &input, &requests, hooks)?;
+            serde_json::to_vec(&result).map_err(|_| EditError::Invalid("clip result serialization"))
+        },
+    )?;
+    let output = subtitles::wait_for_job(runner, id, &token, progress, cancel)?;
+    let suggested: ai::clips::ClipSuggestions = serde_json::from_slice(output.bytes())
+        .map_err(|_| EditError::Invalid("clip result serialization"))?;
+    // Account for every attempted invocation, including transient failures.
+    let attempts = runner.snapshot(id).ok_or(EditError::StaleResult)?.attempts;
+    let estimate = approval.spent.clone();
+    for _ in 1..attempts {
+        approval.spent.add(&match &estimate {
+            Cost::Free => CostEstimate::Free,
+            Cost::UpperBound { currency, micros } => {
+                CostEstimate::UpperBound(Money::new(currency, *micros)?)
+            }
+            Cost::Unknown => CostEstimate::Unknown,
+        });
+    }
     cancel.checkpoint()?;
 
     progress.stage(Stage::Snap);
@@ -526,9 +573,9 @@ pub fn suggest(
     let mut clips = Vec::new();
     let mut rejected = Vec::new();
     clips
-        .try_reserve_exact(suggested.output.clips.len())
+        .try_reserve_exact(suggested.clips.len())
         .map_err(|_| EditError::Limit)?;
-    for suggestion in &suggested.output.clips {
+    for suggestion in &suggested.clips {
         match snap_candidate(suggestion, &transcript, &profile, &energy, &boundaries) {
             Ok(candidate) => clips.push(candidate),
             Err(reason) => rejected.push(RejectedClip {
@@ -547,10 +594,10 @@ pub fn suggest(
         source_language,
         transcription_provider: providers.transcription().id().into(),
         transcription_model: providers.transcription().model().into(),
-        provider: suggested.provider.id().as_str().into(),
-        model: suggested.provider.model().as_str().into(),
+        provider: request.provider.id().into(),
+        model: request.provider.model().into(),
         clips,
-        dropped: suggested.output.dropped,
+        dropped: suggested.dropped,
         rejected,
         transcript_segments: transcript.segments.len(),
         cues: cues.len(),

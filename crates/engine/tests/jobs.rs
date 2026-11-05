@@ -172,60 +172,66 @@ fn retries_use_real_submission_and_deterministic_backoff_local_never_retries() {
 }
 #[test]
 fn ai_transient_failures_retry_with_retry_after_but_auth_fails_once() {
-    let budget = ByteBudget::new(1000).unwrap();
-    let (mut r, clock) = runner(&budget);
-    let count = Arc::new(AtomicUsize::new(0));
-    let attempts = count.clone();
-    let (id, _) = r
-        .submit(spec(ResourceClass::Network), move |_| {
-            if attempts.fetch_add(1, Ordering::SeqCst) == 0 {
-                Err(EditError::Ai(ai::Error::RateLimit {
-                    retry_after_seconds: Some(3),
-                }))
-            } else {
-                Ok(vec![7])
-            }
-        })
-        .unwrap();
-    assert_eq!(pump(&mut r, id).state, JobState::Backoff);
-    clock.advance(2_999);
-    r.tick().unwrap();
-    assert_eq!(count.load(Ordering::SeqCst), 1);
-    clock.advance(1);
-    assert_eq!(pump(&mut r, id).state, JobState::Completed);
-    assert_eq!(r.take_output(id).unwrap().bytes(), [7]);
+    for kind in [
+        JobKind::Transcribe,
+        JobKind::Translate,
+        JobKind::SuggestClips,
+    ] {
+        let budget = ByteBudget::new(1000).unwrap();
+        let (mut r, clock) = runner(&budget);
+        let count = Arc::new(AtomicUsize::new(0));
+        let attempts = count.clone();
+        let mut suggestion = spec(ResourceClass::Network);
+        suggestion.kind = kind;
+        let (id, _) = r
+            .submit(suggestion, move |_| {
+                if attempts.fetch_add(1, Ordering::SeqCst) == 0 {
+                    Err(EditError::Ai(ai::Error::RateLimit {
+                        retry_after_seconds: Some(3),
+                    }))
+                } else {
+                    Ok(vec![7])
+                }
+            })
+            .unwrap();
+        assert_eq!(pump(&mut r, id).state, JobState::Backoff);
+        clock.advance(2_999);
+        r.tick().unwrap();
+        assert_eq!(count.load(Ordering::SeqCst), 1);
+        clock.advance(1);
+        assert_eq!(pump(&mut r, id).state, JobState::Completed);
+        assert_eq!(r.take_output(id).unwrap().bytes(), [7]);
 
-    let (id, _) = r
-        .submit(spec(ResourceClass::Network), |_| {
-            Err(EditError::Ai(ai::Error::Auth))
-        })
-        .unwrap();
-    assert_eq!(pump(&mut r, id).attempts, 1);
-    assert!(matches!(
-        r.snapshot(id).unwrap().error.as_deref(),
-        Some(EditError::Ai(ai::Error::Auth))
-    ));
+        let (id, _) = r
+            .submit(suggestion, |_| Err(EditError::Ai(ai::Error::Auth)))
+            .unwrap();
+        assert_eq!(pump(&mut r, id).attempts, 1);
+        assert!(matches!(
+            r.snapshot(id).unwrap().error.as_deref(),
+            Some(EditError::Ai(ai::Error::Auth))
+        ));
 
-    let count = Arc::new(AtomicUsize::new(0));
-    let attempts = count.clone();
-    let (id, _) = r
-        .submit(spec(ResourceClass::Network), move |_| {
-            if attempts.fetch_add(1, Ordering::SeqCst) == 0 {
-                Err(EditError::Ai(ai::Error::RateLimit {
-                    retry_after_seconds: Some(3_600),
-                }))
-            } else {
-                Ok(vec![8])
-            }
-        })
-        .unwrap();
-    assert_eq!(pump(&mut r, id).state, JobState::Backoff);
-    clock.advance(299_999);
-    r.tick().unwrap();
-    assert_eq!(count.load(Ordering::SeqCst), 1);
-    clock.advance(1);
-    assert_eq!(pump(&mut r, id).state, JobState::Completed);
-    assert_eq!(r.take_output(id).unwrap().bytes(), [8]);
+        let count = Arc::new(AtomicUsize::new(0));
+        let attempts = count.clone();
+        let (id, _) = r
+            .submit(suggestion, move |_| {
+                if attempts.fetch_add(1, Ordering::SeqCst) == 0 {
+                    Err(EditError::Ai(ai::Error::RateLimit {
+                        retry_after_seconds: Some(3_600),
+                    }))
+                } else {
+                    Ok(vec![8])
+                }
+            })
+            .unwrap();
+        assert_eq!(pump(&mut r, id).state, JobState::Backoff);
+        clock.advance(299_999);
+        r.tick().unwrap();
+        assert_eq!(count.load(Ordering::SeqCst), 1);
+        clock.advance(1);
+        assert_eq!(pump(&mut r, id).state, JobState::Completed);
+        assert_eq!(r.take_output(id).unwrap().bytes(), [8]);
+    }
 }
 
 #[test]

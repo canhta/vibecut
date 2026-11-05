@@ -6,12 +6,13 @@ use media::SpeechEnergyWindow;
 use serde::Serialize;
 use time::{FrameRate, SourceRange, Tick};
 
-/// All durations and deltas are source ticks. Bounds are inclusive.
+/// All durations and deltas are source ticks. Bounds are inclusive; the fallback
+/// quantization allowance is documented on `tolerance`.
 #[derive(Clone, Debug)]
 pub struct ClipBoundarySettings {
     pub source_range: SourceRange,
     pub frame_rate: FrameRate,
-    /// Maximum absolute movement, including frame quantization.
+    /// Word-gap search radius; sub-frame fallback adds at most half a frame.
     pub tolerance: Tick,
     /// Mono RMS amplitude ratio in 0..=1; energy is a hint, never overrides words.
     pub silence_rms: f64,
@@ -28,6 +29,8 @@ pub enum BoundaryKind {
     Sentence,
     Silence,
     WordOrSegment,
+    /// Frame-rounded word gap; export must apply a short audio fade.
+    WordFade,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
@@ -71,8 +74,9 @@ struct Gap {
 /// Adjust explicit shorts without suggestion generation, IO or project mutation.
 /// Captions owns safe word/span grouping and profile punctuation; media owns RMS.
 /// Prefer sentence + silence, sentence, silence, then safe word/segment gaps,
-/// breaking ties by distance and then earlier time. Never enter measured speech,
-/// even after frame snapping. Incomplete timing protects the whole segment.
+/// ranking word gaps by measured RMS, distance and earlier time. If no safe frame
+/// exists, round the measured gap to its nearest frame (at most half-frame
+/// speech overlap), reporting WordFade for the clip exporter’s 10 ms audio ramp. Incomplete timing protects the whole segment.
 /// A short that becomes overlapping, too short/long or has no safe frame is
 /// refused atomically with its playback index; input is never changed.
 /// At most 32 shorts, 32 segments/short and 360,001 energy windows are admitted.
@@ -122,9 +126,9 @@ pub fn snap_clip_boundaries(
             duration: Tick::ZERO,
         };
         for (index, segment) in segments.iter().enumerate() {
-            let start = snap_edge(segment.range.start(), &gaps, &silence, settings)?
+            let start = snap_edge(segment.range.start(), &gaps, &silence, energy, settings)?
                 .ok_or_else(|| failure(short, index, BoundaryFailure::NoSafeFrame))?;
-            let end = snap_edge(segment.range.end(), &gaps, &silence, settings)?
+            let end = snap_edge(segment.range.end(), &gaps, &silence, energy, settings)?
                 .ok_or_else(|| failure(short, index, BoundaryFailure::NoSafeFrame))?;
             if end.adjusted <= start.adjusted
                 || end.adjusted - start.adjusted < settings.min_segment_duration
@@ -245,6 +249,7 @@ fn snap_edge(
     original: Tick,
     gaps: &[Gap],
     silence: &[SourceRange],
+    energy: &[SpeechEnergyWindow],
     s: &ClipBoundarySettings,
 ) -> Result<Option<BoundaryAdjustment>> {
     let low = original
@@ -253,12 +258,17 @@ fn snap_edge(
     let high = original
         .saturating_add(s.tolerance)
         .min(s.source_range.end());
-    let mut best: Option<(u8, i64, Tick)> = None;
-    let mut consider = |lo: Tick, hi: Tick, tier: u8| -> Result<()> {
+    let mut best: Option<(u8, u64, i64, Tick)> = None;
+    let mut consider = |lo: Tick, hi: Tick, tier: u8, rms: f64| -> Result<()> {
         let Some(tick) = safe_frame(lo.max(low), hi.min(high), original, s.frame_rate)? else {
             return Ok(());
         };
-        let key = (tier, (tick - original).abs().0, tick);
+        let key = (
+            tier,
+            if rms == 0.0 { 0 } else { rms.to_bits() },
+            (tick - original).abs().0,
+            tick,
+        );
         if best.is_none_or(|old| key < old) {
             best = Some(key);
         }
@@ -269,7 +279,12 @@ fn snap_edge(
         .skip(gaps.partition_point(|g| g.end < low))
         .take_while(|g| g.start <= high)
     {
-        consider(gap.start, gap.end, if gap.sentence { 1 } else { 3 })?;
+        consider(
+            gap.start,
+            gap.end,
+            if gap.sentence { 1 } else { 3 },
+            if gap.sentence { 0.0 } else { f64::MAX },
+        )?;
         let lo = gap.start.max(low);
         let hi = gap.end.min(high);
         for quiet in silence
@@ -277,14 +292,88 @@ fn snap_edge(
             .skip(silence.partition_point(|r| r.end() < lo))
             .take_while(|r| r.start() <= hi)
         {
+            if !gap.sentence {
+                continue;
+            }
             consider(
                 gap.start.max(quiet.start()),
                 gap.end.min(quiet.end()),
-                if gap.sentence { 0 } else { 2 },
+                0,
+                0.0,
             )?;
         }
     }
-    Ok(best.map(|(tier, _, adjusted)| BoundaryAdjustment {
+    // Rank measured inter-word energy even when no window is below the
+    // absolute silence threshold (normal continuous speech).
+    for gap in gaps
+        .iter()
+        .skip(gaps.partition_point(|g| g.end < low))
+        .take_while(|g| g.start <= high)
+        .filter(|g| !g.sentence)
+    {
+        for window in energy
+            .iter()
+            .skip(energy.partition_point(|w| w.range.end() < gap.start.max(low)))
+            .take_while(|w| w.range.start() <= gap.end.min(high))
+        {
+            consider(
+                gap.start.max(window.range.start()),
+                gap.end.min(window.range.end()),
+                if window.rms <= s.silence_rms { 2 } else { 3 },
+                window.rms,
+            )?;
+        }
+    }
+    // A sub-frame word gap still identifies a measured speech boundary. Keep
+    // video on its frame grid, with at most half a frame of speech overlap.
+    if best.is_none() {
+        let mut fallback: Option<(u64, i64, Tick)> = None;
+        for gap in gaps
+            .iter()
+            .skip(gaps.partition_point(|g| g.end < low))
+            .take_while(|g| g.start <= high)
+        {
+            let lo = gap.start.max(low);
+            let hi = gap.end.min(high);
+            if hi < lo {
+                continue;
+            }
+            let mut consider = |target: Tick, rms: f64| -> Result<()> {
+                let tick = s.frame_rate.snap_nearest(target)?;
+                if tick < s.source_range.start() || tick > s.source_range.end() {
+                    return Ok(());
+                }
+                let key = (
+                    if rms == 0.0 { 0 } else { rms.to_bits() },
+                    (tick - original).abs().0,
+                    tick,
+                );
+                if fallback.is_none_or(|old| key < old) {
+                    fallback = Some(key);
+                }
+                Ok(())
+            };
+            let mut measured = false;
+            for window in energy
+                .iter()
+                .skip(energy.partition_point(|w| w.range.end() < lo))
+                .take_while(|w| w.range.start() <= hi)
+            {
+                measured = true;
+                consider(
+                    original.clamp(lo.max(window.range.start()), hi.min(window.range.end())),
+                    window.rms,
+                )?;
+            }
+            if !measured {
+                consider(original.clamp(lo, hi), 1.0)?;
+            }
+        }
+        if let Some((_, distance, tick)) = fallback {
+            best = Some((4, 0, distance, tick));
+        }
+    }
+    Ok(best.map(|(tier, _, _, adjusted)| BoundaryAdjustment {
         original,
         adjusted,
         delta: adjusted - original,
@@ -292,7 +381,8 @@ fn snap_edge(
             0 => BoundaryKind::SentenceSilence,
             1 => BoundaryKind::Sentence,
             2 => BoundaryKind::Silence,
-            _ => BoundaryKind::WordOrSegment,
+            3 => BoundaryKind::WordOrSegment,
+            _ => BoundaryKind::WordFade,
         },
     }))
 }
