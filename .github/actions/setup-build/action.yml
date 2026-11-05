@@ -48,7 +48,7 @@ runs:
       uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
       with:
         path: ~/.cache/vibecut/ffmpeg
-        key: media-${{ runner.os }}-${{ runner.arch }}-${{ steps.versions.outputs.key }}-${{ hashFiles('xtask/src/ffmpeg.rs', 'xtask/patches/**', 'rust-toolchain.toml', '.github/actions/setup-build/action.yml') }}
+        key: media-${{ runner.os }}-${{ runner.arch }}-${{ steps.versions.outputs.key }}-${{ hashFiles('xtask/src/ffmpeg.rs', 'xtask/patches/**', 'rust-toolchain.toml') }}
     - name: Resolve and provision current LGPL media libraries (macOS)
       # Always resolve stable upstream tags, even after a cache hit.
       if: runner.os == 'macOS'
@@ -69,7 +69,7 @@ runs:
       uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
       with:
         path: target/fixtures/media
-        key: fixtures-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('crates/media/tests/common/**') }}
+        key: fixtures-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('crates/media/tests/**') }}
     - name: Cache receipt
       shell: bash
       env:

@@ -38,7 +38,7 @@ class ChangesTest(unittest.TestCase):
                     with self.assertRaises(SystemExit):
                         changes.require_signoffs(event)
 
-    def test_ticket_docs_push_runs_full_gate(self):
+    def test_ticket_classification_covers_the_entire_branch(self):
         script = Path(__file__).with_name('changes.py').resolve()
         with tempfile.TemporaryDirectory() as folder:
             def git(*args):
@@ -48,21 +48,31 @@ class ChangesTest(unittest.TestCase):
             git('config', 'user.email', 'test@example.invalid')
             Path(folder, 'README.md').write_text('before')
             git('add', '.')
-            git('commit', '-qm', 'before')
-            before = git('rev-parse', 'HEAD')
-            Path(folder, 'README.md').write_text('after')
-            git('commit', '-qam', 'after')
-            event = Path(folder, 'event.json')
-            event.write_text(json.dumps({'before': before, 'after': git('rev-parse', 'HEAD')}))
-            output = Path(folder, 'output')
-            for branch, expected in [('main', 'true'), ('canhta/ticket', 'false'),
-                                     ('feat/nested/ticket', 'false')]:
-                with self.subTest(branch=branch):
-                    output.write_text('')
-                    subprocess.run(['python3', str(script)], cwd=folder, check=True, env={
-                        **os.environ, 'GITHUB_EVENT_PATH': str(event), 'GITHUB_EVENT_NAME': 'push',
-                        'GITHUB_REF': 'refs/heads/' + branch, 'GITHUB_OUTPUT': str(output)})
-                    self.assertEqual(output.read_text(), f'docs-only={expected}\n')
+            git('commit', '-qm', 'base')
+            base = git('rev-parse', 'HEAD')
+            git('update-ref', 'refs/remotes/origin/main', base)
+            for code in (False, True):
+                if code:
+                    Path(folder, 'code.rs').write_text('fn main() {}')
+                    git('add', '.')
+                    git('commit', '-qm', 'code')
+                before = git('rev-parse', 'HEAD')
+                Path(folder, 'README.md').write_text(f'docs {code}')
+                git('commit', '-qam', 'docs follow-up')
+                after = git('rev-parse', 'HEAD')
+                event = Path(folder, 'event.json')
+                output = Path(folder, 'output')
+                for branch, expected in [('main', True), ('canhta/ticket', not code),
+                                         ('feat/nested/ticket', not code)]:
+                    for previous in (before, '0' * 40):
+                        expected_run = expected if previous == before or branch != 'main' else False
+                        with self.subTest(branch=branch, code=code, initial=previous == '0' * 40):
+                            event.write_text(json.dumps({'before': previous, 'after': after}))
+                            output.write_text('')
+                            subprocess.run(['python3', str(script)], cwd=folder, check=True, env={
+                                **os.environ, 'GITHUB_EVENT_PATH': str(event), 'GITHUB_EVENT_NAME': 'push',
+                                'GITHUB_REF': 'refs/heads/' + branch, 'GITHUB_OUTPUT': str(output)})
+                            self.assertEqual(output.read_text(), f'docs-only={str(expected_run).lower()}\n')
 
     def test_real_diff_preserves_deleted_renamed_and_hostile_paths(self):
         with tempfile.TemporaryDirectory() as folder:

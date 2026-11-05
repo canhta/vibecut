@@ -83,8 +83,9 @@ from that archive with required oracles; doctests run on the archive builder.
 `gate` fails closed if any selected job or partition fails, cancels or skips.
 Windows runs as an advisory check until its runtime is in scope.
 Superseded PR and ticket-branch runs cancel per branch; main pushes finish.
-Ticket pushes always run the full macOS required-oracle gate, including docs-only
-pushes. Cargo, native media and synthetic media-fixture cache keys omit the branch
+Ticket pushes classify the whole branch diff against its merge-base with
+`origin/main`; a docs follow-up on a code branch still runs the full required-oracle
+gate, while a branch containing only docs takes the docs path. Cargo, native media and synthetic media-fixture cache keys omit the branch
 so ticket runs can restore default-branch caches. Fork PRs use `pull_request`, never
 `pull_request_target`, and receive no release secrets. The PR gate requires a Signed-off-by trailer on every submitted commit,
 as described in [contributing](../../CONTRIBUTING.md).
@@ -98,7 +99,7 @@ FFmpeg/Opus/libvpx versions plus recipe/patch/toolchain/setup hashes and platfor
 with no date or stale-prefix fallback. Provisioning always resolves stable upstream
 tags, including after a cache hit, and saves successful native builds before
 later checks can fail. Media input fixtures are keyed by their owning generator
-(`crates/media/tests/common/`); generated render outputs are not cached.
+(`crates/media/tests/`); generated render outputs are not cached.
 Nextest 0.9.151 is installed from checksum-verified upstream binaries through the
 shared setup action. Archive runners restore only native/fixture caches; they do
 not compile the test suite again. CI cache receipts report exact hits in logs and
