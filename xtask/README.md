@@ -95,13 +95,21 @@ this is not a public or multi-user server.
 `cleanup` resolves the Orca workspaces directory and the main checkout from
 `orca worktree list` and Git, never from a compiled path. It resolves each
 `ctx_` dispatch in `orca orchestration worker-list`, releases it, and closes its
-terminal only after a matching `released` or `already_released` receipt. Retained,
-pending, unknown or malformed release receipts leave the terminal open and fail
-that target. The remaining arguments continue; any failed step makes the command
-exit non-zero. A local worktree drops its ignored `.scratch` before
-removal; a paired environment passes `--environment` to every Orca call. Build
-cache slots held by a live build are skipped, and the final
-`git pull --ff-only` runs in the main checkout.
+terminal only after a matching `released` or `already_released` receipt. A
+settled dispatch with no terminal is reported cleaned without a release call; a
+`retained` receipt with `reason=ownership_transferred` is cleaned when the
+follow-up owner is also targeted or already released, and its terminal is left
+for that owner. Other retained, pending, unknown or malformed receipts leave the
+terminal open and fail that target. Dispatch records belong to the local
+runtime, so releases run locally (Orca federates a remote terminal) while
+`--environment` still selects remote worktrees and terminal handles. The
+remaining arguments continue; any failed step makes the command exit non-zero. A
+local worktree drops its ignored `.scratch` before removal. Its branch is
+deleted locally and on `origin` when it is an ancestor of `origin/main` or
+`git cherry origin/main` proves it has no unique patches; unmerged branches are
+retained. The main checkout's `git pull --ff-only` runs before branch cleanup so
+those checks see a freshly merged `origin/main`. Build cache slots held by a live
+build are skipped.
 An idle slot over the size budget first drops dependency artifacts older than
 two days, retaining fresh artifacts when that restores the budget; dry runs
 account for the same reclaimed bytes before reporting whole-slot removal.
