@@ -87,7 +87,7 @@ impl eframe::App for Native {
                 .as_ref()
                 .is_none_or(|old| !Arc::ptr_eq(old, &port))
                 && let Some(effects) = &self.effects
-                && let Err(error) = editor.playback.set_effects(effects.clone())
+                && let Err(error) = editor.set_effects(effects.clone())
             {
                 tracing::warn!(category = "effects_unavailable", error = %error, "GPU effects unavailable");
             }

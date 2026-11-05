@@ -2,6 +2,7 @@
 pub mod capture;
 pub mod catalog;
 pub mod crop;
+pub mod effect_previews;
 pub mod effects;
 pub mod export;
 mod frontend;

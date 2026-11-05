@@ -285,6 +285,28 @@ CPU fallback. Submitted work retains its byte lease until GPU completion, even
 if the bounded readback wait times out. No unsafe mapping or buffer casts are used.
 `tests/it/effects.rs` compares f32 CPU/GPU output with max absolute tolerance 2e-5.
 
+## Effects panel
+
+The assets Effects tab lists `project::effect_definitions()` as draggable tiles;
+each tile shows a live preview scheduled through the engine `EffectThumbnails`
+job/cache with the CPU reference compositor headlessly; native startup attaches
+the playback GPU adapter and shares playback's byte budget. Pending, failed and ready
+states stay visible, and a failed tile offers Retry. A tile can be dragged onto a
+video, image, sticker or graphic clip, or added with `+` to the selected clip.
+
+The properties Effects tab lists the selected clip's ordered stack. Each header
+has a drag-to-reorder handle, enable/disable toggle and remove action; registered
+scalar parameters use the same scrub/typed field contract as other inspector
+fields. Reorder gestures move in either direction and cancel when the selection
+or inspector changes. Empty stacks, disabled effects, locked tracks, audio clips, unsupported
+kinds, missed drops and the project's 64-effect limit render an explicit state or
+localized refusal reason.
+
+Every edit goes through `effects.add`, `effects.reorder`, `effects.toggle`,
+`effects.remove` or `effects.update_param`; the UI never mutates a project copy.
+`tests/it/effects_ui.rs` covers drag/drop, reorder, toggle, remove, parameter
+gesture reversal/cancel/clamping, refusal boundaries and preview job states.
+
 ## Track controls
 
 Timeline header and row geometry follows the [UI design](../../docs/product/ui.md#density),

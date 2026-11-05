@@ -122,6 +122,17 @@ spacing as proposed until the next UI audit.
 - The assets panel leads with a 36 px vertical icon bar: Media, Sounds, Text, Stickers, Effects, Transitions, Captions, Adjustment, Settings at 28 px icon buttons with right-side tooltips and top/bottom scroll fades. A selected element's properties view shows its type tabs as 14 px text at 40 px row height (active tab accent, 2 px underline); the empty and multi-select views keep the existing shared-field presentation, and `Project`/`Details` remain the inspector header switch. Geometry follows [layout](#layout-grid), styling follows [iconography](#iconography).
 - Scrub number fields have a 28×26 px drag handle, a 26 px typed entry and optional unit suffix; the active value previews during the drag and commits once on release.
 
+### Effects
+
+The assets Effects tab is our own extension of the 36 px tool rail and panel card
+language [new]: a two-column grid of effect tiles with a live thumbnail, name and a
+28 px `+` action; the tile itself is the drag handle. The properties Effects tab
+reuses the 40 px tab row and 26 px field geometry: each stack row has a 28 px
+reorder handle, name, eye toggle and trash action, with scrub parameter fields
+below. Empty, pending, failed, disabled, locked, unsupported and limit states are
+explicit. Reference geometry for this panel is unmeasured; treat spacing as
+proposed until the next UI audit.
+
 ### Shortcuts
 
 - Cmd/Ctrl+B splits at the playhead.

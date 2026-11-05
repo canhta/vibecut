@@ -112,6 +112,7 @@ pub struct Inspection {
     pub import_toast: Option<String>,
     pub media_selection: Vec<AssetId>,
     pub assets: Vec<AssetInspection>,
+    pub effect_previews: BTreeMap<String, crate::effect_previews::EffectPreviewStatus>,
     pub export: Option<crate::export::ExportInspection>,
     pub export_options: crate::export::ExportOptions,
     pub models: Option<crate::model_manager::ModelInspection>,
@@ -214,6 +215,11 @@ struct DragState {
     source_range: SourceRange,
     moved: bool,
 }
+#[derive(Clone, Debug)]
+struct EffectReorder {
+    item: ItemId,
+    effect: String,
+}
 /// One scrub field's unit contract. Pixels per step are recorded in the app
 /// README; the inventory leaves the exact sensitivity unverified.
 #[derive(Clone, Copy, Debug)]
@@ -269,10 +275,29 @@ const AUDIO_GAIN_SCRUB: ScrubSpec = ScrubSpec {
     decimals: 1,
     suffix: "dB",
 };
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq)]
+enum ScrubTarget {
+    Item(&'static str),
+    Effect { effect: String, key: String },
+}
+impl ScrubTarget {
+    fn draft_key(&self) -> String {
+        match self {
+            Self::Item(field) => (*field).to_owned(),
+            Self::Effect { effect, key } => format!("effects.{effect}.param.{key}"),
+        }
+    }
+    fn widget_id(&self) -> String {
+        match self {
+            Self::Item(field) => format!("inspector.{field}.scrub"),
+            Self::Effect { effect, key } => format!("effects.{effect}.param.{key}.scrub"),
+        }
+    }
+}
+#[derive(Clone, Debug)]
 struct ScrubDrag {
     item: ItemId,
-    field: &'static str,
+    target: ScrubTarget,
     start: f64,
     last: f64,
 }
@@ -368,12 +393,17 @@ pub struct Editor {
     pub selection: BTreeSet<ItemId>,
     pub selection_scopes: SelectionScopes,
     marquee: Option<(egui::Pos2, BTreeSet<ItemId>, bool)>,
-    property_drafts: BTreeMap<&'static str, String>,
+    property_drafts: BTreeMap<String, String>,
     property_selection: BTreeSet<ItemId>,
     /// Last inspector field that held keyboard focus. Egui surrenders focus on
     /// Escape before app UI runs, so the next frame must still defer shortcuts.
-    property_focus: Option<&'static str>,
+    property_focus: Option<String>,
     scrub: Option<ScrubDrag>,
+    effect_previews: Option<crate::effect_previews::EffectPreviews>,
+    effect_textures: BTreeMap<String, egui::TextureHandle>,
+    effect_drag: Option<String>,
+    effect_reorder: Option<EffectReorder>,
+    effect_drop_targets: Vec<(ItemId, Rect)>,
     pub snapping: bool,
     pub ripple: bool,
     zoom: f32,
@@ -458,6 +488,11 @@ impl Editor {
             property_selection: BTreeSet::new(),
             property_focus: None,
             scrub: None,
+            effect_previews: crate::effect_previews::EffectPreviews::cpu().ok(),
+            effect_textures: BTreeMap::new(),
+            effect_drag: None,
+            effect_reorder: None,
+            effect_drop_targets: Vec::new(),
             snapping: true,
             ripple: false,
             zoom,
@@ -594,6 +629,10 @@ impl Editor {
                     detail: None,
                 }))
                 .collect(),
+            effect_previews: self
+                .effect_previews
+                .as_ref()
+                .map_or_else(BTreeMap::new, |previews| previews.statuses()),
             export_options: self.preferences.export,
             export: self
                 .export
@@ -626,6 +665,21 @@ impl Editor {
             queue.set_thumbnail_root(root.clone());
         }
         self.thumbnail_root = Some(root);
+    }
+    /// Attach the native effect adapter to playback and thumbnail jobs, sharing
+    /// playback's byte budget. Failure leaves the thumbnail composition unchanged.
+    pub fn set_effects(
+        &mut self,
+        effects: Arc<dyn render::effects::EffectCompositor>,
+    ) -> Result<()> {
+        let budget = self.playback.budget().clone();
+        let cache =
+            engine::effect_thumbnails::EffectThumbnails::new(effects.clone(), budget.clone());
+        let previews = crate::effect_previews::EffectPreviews::new(cache, budget)?;
+        self.playback.set_effects(effects)?;
+        self.effect_previews = Some(previews);
+        self.effect_textures.clear();
+        Ok(())
     }
     pub fn importing(&self) -> bool {
         self.imports.as_ref().is_some_and(ImportQueue::active)
@@ -2116,7 +2170,7 @@ impl Editor {
             {
                 self.error = Some(error.to_string());
             }
-            self.property_drafts.remove(scrub.field);
+            self.property_drafts.remove(&scrub.target.draft_key());
             self.property_focus = None;
             if changed {
                 self.sync_preview();
@@ -2126,6 +2180,12 @@ impl Editor {
         let track_drag = self.track_drag.take().is_some();
         if self.track_rename.take().is_some() || track_drag {
             self.track_rename_focus = false;
+            return;
+        }
+        if self.effect_drag.take().is_some() {
+            return;
+        }
+        if self.effect_reorder.take().is_some() {
             return;
         }
         if let Some(drag) = self.drag.take() {
@@ -2421,6 +2481,11 @@ impl Editor {
         if let Err(e) = self.playback.poll() {
             self.error = Some(e.to_string());
         }
+        if let Some(previews) = &mut self.effect_previews
+            && let Err(e) = previews.tick()
+        {
+            self.error = Some(e.to_string());
+        }
         if let Some(dialog) = &mut self.export
             && let Err(error) = dialog.tick(self.session.project(), self.preferences.export)
         {
@@ -2437,7 +2502,15 @@ impl Editor {
         // The gesture belongs to the item and field visible at pointer-down.
         // Agents can change selection or panel state between pointer events.
         if self
+            .effect_reorder
+            .as_ref()
+            .is_some_and(|drag| self.selected_item_id() != Some(drag.item) || self.details)
+        {
+            self.effect_reorder = None;
+        }
+        if self
             .scrub
+            .as_ref()
             .is_some_and(|scrub| self.selected_item_id() != Some(scrub.item) || self.details)
         {
             self.finish_scrub(false);
@@ -2611,13 +2684,21 @@ impl Editor {
         self.toast(ui.ctx());
         self.export_dialog(ui.ctx());
         self.model_dialog(ui.ctx());
-        if self.scrub.is_some_and(|scrub| {
-            !self
-                .widgets
-                .contains_key(&format!("inspector.{}.scrub", scrub.field))
-        }) {
+        if self
+            .scrub
+            .as_ref()
+            .is_some_and(|scrub| !self.widgets.contains_key(&scrub.target.widget_id()))
+        {
             self.finish_scrub(false);
         }
+        if self.effect_reorder.as_ref().is_some_and(|drag| {
+            !self
+                .widgets
+                .contains_key(&format!("effects.row.{}.handle", drag.effect))
+        }) {
+            self.effect_reorder = None;
+        }
+        self.finish_effect_drag(ui.ctx());
         ui.ctx()
             .request_repaint_after(std::time::Duration::from_millis(
                 if self.playback.playing() { 8 } else { 33 },
@@ -3006,10 +3087,215 @@ impl Editor {
                 egui::Layout::top_down(egui::Align::Min),
                 |ui| match self.preferences.assets_tab {
                     AssetsTab::Media => self.media_view(ui),
+                    AssetsTab::Effects => self.effects_view(ui),
                     tab => self.assets_stub(ui, tab),
                 },
             );
         });
+    }
+    fn effects_view(&mut self, ui: &mut egui::Ui) {
+        ui.label(
+            egui::RichText::new(self.tr(Text::Effects))
+                .size(16.0)
+                .strong(),
+        );
+        ui.add_space(4.0);
+        ui.label(
+            egui::RichText::new(self.tr(Text::EffectDropHint))
+                .small()
+                .color(self.secondary()),
+        );
+        ui.add_space(8.0);
+        let width = ((ui.available_width() - 8.0) / 2.0).clamp(112.0, 148.0);
+        egui::ScrollArea::vertical()
+            .id_salt("effects.tiles")
+            .show(ui, |ui| {
+                ui.horizontal_wrapped(|ui| {
+                    for definition in project::effect_definitions() {
+                        self.effect_tile(ui, definition, width);
+                    }
+                });
+            });
+    }
+    fn effect_tile(
+        &mut self,
+        ui: &mut egui::Ui,
+        definition: &project::EffectDefinition,
+        width: f32,
+    ) {
+        let kind = definition.kind;
+        let params = effect_preview_params(definition);
+        if let (Some(previews), Some(params)) = (&mut self.effect_previews, params.as_ref()) {
+            previews.ensure(kind, params);
+        }
+        let status = self
+            .effect_previews
+            .as_ref()
+            .and_then(|previews| previews.status(kind));
+        if !matches!(
+            status,
+            Some(crate::effect_previews::EffectPreviewStatus::Ready)
+        ) {
+            self.effect_textures.remove(kind);
+        } else if !self.effect_textures.contains_key(kind)
+            && let Some(image) = self
+                .effect_previews
+                .as_ref()
+                .and_then(|previews| previews.image(kind))
+        {
+            let texture = crate::effect_previews::preview_texture(ui.ctx(), kind, image);
+            self.effect_textures.insert(kind.to_owned(), texture);
+        }
+        let (rect, response) =
+            ui.allocate_exact_size(Vec2::new(width, 118.0), egui::Sense::click_and_drag());
+        self.remember(format!("effects.tile.{kind}"), &response);
+        let state = match status {
+            Some(crate::effect_previews::EffectPreviewStatus::Pending) => "pending",
+            Some(crate::effect_previews::EffectPreviewStatus::Ready) => "ready",
+            Some(crate::effect_previews::EffectPreviewStatus::Failed) => "failed",
+            None => "failed",
+        };
+        self.remember(format!("effects.tile.{kind}.{state}"), &response);
+        if response.drag_started() {
+            self.effect_drag = Some(kind.to_owned());
+        }
+        ui.painter().rect_filled(rect, 4.0, self.control_fill());
+        let preview = Rect::from_min_max(
+            egui::pos2(rect.left() + 6.0, rect.top() + 6.0),
+            egui::pos2(rect.right() - 6.0, rect.bottom() - 26.0),
+        );
+        match status {
+            Some(crate::effect_previews::EffectPreviewStatus::Ready) => {
+                if let Some(texture) = self.effect_textures.get(kind) {
+                    ui.painter().image(
+                        texture.id(),
+                        preview,
+                        Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0)),
+                        Color32::WHITE,
+                    );
+                }
+            }
+            Some(crate::effect_previews::EffectPreviewStatus::Pending) => {
+                ui.painter().text(
+                    preview.center(),
+                    Align2::CENTER_CENTER,
+                    self.tr(Text::EffectPreviewPending),
+                    FontId::proportional(11.0),
+                    self.secondary(),
+                );
+            }
+            Some(crate::effect_previews::EffectPreviewStatus::Failed) | None => {
+                ui.painter().text(
+                    preview.center(),
+                    Align2::CENTER_CENTER,
+                    self.tr(Text::EffectPreviewFailed),
+                    FontId::proportional(11.0),
+                    self.secondary(),
+                );
+                let retry = Rect::from_center_size(
+                    egui::pos2(preview.right() - 16.0, preview.bottom() - 16.0),
+                    Vec2::splat(24.0),
+                );
+                let response = ui.interact(
+                    retry,
+                    Id::unique(("effects.preview.retry", kind)),
+                    egui::Sense::click(),
+                );
+                let label = self.tr(Text::EffectPreviewRetry);
+                icons::tinted(Icon::ArrowClockwise, BUTTON_ICON, self.secondary())
+                    .paint_at(ui, retry);
+                let response = response.on_hover_text(label);
+                self.remember_with_icon(
+                    format!("effects.preview.retry.{kind}"),
+                    Some(Icon::ArrowClockwise.name()),
+                    &response,
+                );
+                if response.clicked() {
+                    if let (Some(previews), Some(params)) =
+                        (&mut self.effect_previews, params.as_ref())
+                    {
+                        previews.retry(kind, params);
+                    }
+                    self.effect_textures.remove(kind);
+                }
+            }
+        }
+        let plus = Rect::from_center_size(
+            egui::pos2(rect.right() - 15.0, rect.top() + 15.0),
+            Vec2::splat(24.0),
+        );
+        let response = ui.interact(
+            plus,
+            Id::unique(("effects.add", kind)),
+            egui::Sense::click(),
+        );
+        let label = self.tr(Text::EffectAdd);
+        ui.painter().circle_filled(
+            plus.center(),
+            9.0,
+            self.accent()
+                .gamma_multiply(if response.hovered() { 1.0 } else { 0.8 }),
+        );
+        icons::tinted(Icon::Plus, 12.0, theme::on_accent(self.preferences.dark))
+            .paint_at(ui, plus.shrink(6.0));
+        let response = response.on_hover_text(label);
+        self.remember_with_icon(
+            format!("effects.add.{kind}"),
+            Some(Icon::Plus.name()),
+            &response,
+        );
+        if response.clicked() {
+            self.add_effect_from_selection(kind);
+        }
+        ui.painter().text(
+            egui::pos2(rect.left() + 8.0, rect.bottom() - 14.0),
+            Align2::LEFT_CENTER,
+            self.effect_name(definition),
+            FontId::proportional(12.0),
+            self.text_color(),
+        );
+    }
+    fn add_effect_from_selection(&mut self, kind: &str) {
+        match self.selected_item_id() {
+            Some(item) => self.add_effect_to_item(item, kind),
+            None => {
+                let text = self.tr(Text::EffectSelectClip).to_owned();
+                self.set_toast(&text, None);
+            }
+        }
+    }
+    fn effect_name(&self, definition: &project::EffectDefinition) -> &'static str {
+        match definition.kind {
+            "blur" => self.tr(Text::EffectBlur),
+            _ => definition.name,
+        }
+    }
+    fn finish_effect_drag(&mut self, ctx: &egui::Context) {
+        let Some(kind) = self.effect_drag.clone() else {
+            return;
+        };
+        if !ctx.input(|input| input.pointer.any_released()) {
+            return;
+        }
+        self.effect_drag = None;
+        let position = ctx.input(|input| {
+            input
+                .pointer
+                .interact_pos()
+                .or_else(|| input.pointer.latest_pos())
+        });
+        let target = position.and_then(|position| {
+            self.effect_drop_targets
+                .iter()
+                .find(|(_, rect)| rect.contains(position))
+                .map(|(item, _)| *item)
+        });
+        if let Some(item) = target {
+            self.add_effect_to_item(item, &kind);
+        } else {
+            let text = self.tr(Text::EffectDropMiss).to_owned();
+            self.set_toast(&text, None);
+        }
     }
     fn assets_stub(&mut self, ui: &mut egui::Ui, tab: AssetsTab) {
         ui.label(
@@ -3396,8 +3682,286 @@ impl Editor {
                 self.blend_control(ui, item);
                 self.scrub_field(ui, item, OPACITY_SCRUB);
             }
+            PropertiesTab::Effects
+                if matches!(
+                    kind,
+                    ElementKind::Video
+                        | ElementKind::Image
+                        | ElementKind::Sticker
+                        | ElementKind::Graphic
+                ) =>
+            {
+                self.effects_stack(ui, item);
+            }
             _ => self.properties_stub(ui),
         }
+    }
+    fn effects_stack(&mut self, ui: &mut egui::Ui, item: ItemId) {
+        let effects = self
+            .session
+            .project()
+            .data()
+            .scene()
+            .timeline
+            .iter()
+            .flat_map(|track| &track.items)
+            .find(|candidate| candidate.id == item)
+            .map_or_else(Vec::new, |candidate| candidate.effects.clone());
+        if effects.is_empty() {
+            let response = ui.label(
+                egui::RichText::new(self.tr(Text::EffectEmptyStack))
+                    .small()
+                    .color(self.secondary()),
+            );
+            self.remember("effects.stack.empty", &response);
+            ui.add_space(8.0);
+            ui.label(
+                egui::RichText::new(self.tr(Text::EffectDropHint))
+                    .small()
+                    .color(self.secondary()),
+            );
+            return;
+        }
+        let mut rows: Vec<(String, Rect)> = Vec::new();
+        let mut released = false;
+        for effect in &effects {
+            let mut dropped = false;
+            let row = ui
+                .scope(|ui| {
+                    ui.horizontal(|ui| {
+                        let handle_id = format!("effects.row.{}.handle", effect.id);
+                        let (rect, handle) = ui.allocate_exact_size(
+                            Vec2::new(28.0, 26.0),
+                            egui::Sense::click_and_drag(),
+                        );
+                        if handle.hovered() || handle.dragged() {
+                            ui.painter().rect_filled(rect, 4.0, self.control_fill());
+                        }
+                        icons::tinted(Icon::ArrowsInLineHorizontal, BUTTON_ICON, self.secondary())
+                            .paint_at(
+                                ui,
+                                Rect::from_center_size(rect.center(), Vec2::splat(BUTTON_ICON)),
+                            );
+                        let handle = handle.on_hover_text(self.tr(Text::EffectReorder));
+                        self.remember_with_icon(
+                            handle_id,
+                            Some(Icon::ArrowsInLineHorizontal.name()),
+                            &handle,
+                        );
+                        if handle.drag_started() {
+                            self.effect_reorder = Some(EffectReorder {
+                                item,
+                                effect: effect.id.clone(),
+                            });
+                        }
+                        if handle.drag_stopped() {
+                            dropped = true;
+                        }
+                        let label_color = if effect.enabled {
+                            self.text_color()
+                        } else {
+                            self.secondary()
+                        };
+                        let name = effect_definition(&effect.params)
+                            .map_or("Effect", |definition| self.effect_name(definition));
+                        ui.label(egui::RichText::new(name).size(14.0).color(label_color));
+                        if !effect.enabled {
+                            let response = ui.label(
+                                egui::RichText::new(self.tr(Text::EffectDisabled))
+                                    .small()
+                                    .color(self.secondary()),
+                            );
+                            self.remember(format!("effects.row.{}.disabled", effect.id), &response);
+                        }
+                        let (icon, label) = if effect.enabled {
+                            (Icon::Eye, Text::EffectDisable)
+                        } else {
+                            (Icon::EyeSlash, Text::EffectEnable)
+                        };
+                        let enabled = self.icon_only(
+                            ui,
+                            &format!("effects.toggle.{}", effect.id),
+                            icon,
+                            self.tr(label),
+                            None,
+                            Some(effect.enabled),
+                            true,
+                        );
+                        if enabled {
+                            self.toggle_effect(item, &effect.id, !effect.enabled);
+                        }
+                        let remove = self.tr(Text::EffectRemove);
+                        if self.icon_only(
+                            ui,
+                            &format!("effects.remove.{}", effect.id),
+                            Icon::Trash,
+                            remove,
+                            None,
+                            None,
+                            true,
+                        ) {
+                            self.remove_effect(item, &effect.id);
+                        }
+                    });
+                    if let Some(definition) = effect_definition(&effect.params) {
+                        for parameter in definition.params {
+                            if self
+                                .effect_param_value(item, &effect.id, parameter.key)
+                                .is_some()
+                            {
+                                self.effect_scrub_field(ui, item, &effect.id, parameter);
+                            }
+                        }
+                    }
+                })
+                .response
+                .rect;
+            let full = Rect::from_min_max(
+                egui::pos2(ui.max_rect().left(), row.top()),
+                egui::pos2(ui.max_rect().right(), row.bottom()),
+            );
+            rows.push((effect.id.clone(), full));
+            released |= dropped;
+        }
+        if released {
+            let pointer = ui.input(|input| {
+                input
+                    .pointer
+                    .interact_pos()
+                    .or_else(|| input.pointer.latest_pos())
+            });
+            let target = pointer.and_then(|position| {
+                rows.iter()
+                    .find(|(id, rect)| {
+                        self.effect_reorder
+                            .as_ref()
+                            .is_none_or(|drag| drag.effect != *id)
+                            && rect.contains(position)
+                    })
+                    .map(|(id, _)| id.clone())
+            });
+            if let Some(drag) = self.effect_reorder.take()
+                && let Some(target) = target
+            {
+                self.reorder_effect(drag.item, &drag.effect, &target);
+            }
+        } else if self.effect_reorder.is_some() && ui.input(|input| input.pointer.any_released()) {
+            self.effect_reorder = None;
+        }
+    }
+    fn effect_scrub_field(
+        &mut self,
+        ui: &mut egui::Ui,
+        item: ItemId,
+        effect: &str,
+        parameter: &project::EffectParamDefinition,
+    ) {
+        let Some(current) = self.effect_param_value(item, effect, parameter.key) else {
+            return;
+        };
+        let spec = effect_scrub_spec(parameter);
+        ui.add_space(8.0);
+        let label = match parameter.key {
+            "intensity" => self.tr(Text::EffectIntensity),
+            _ => parameter.name,
+        };
+        let caption = ui.label(label);
+        let draft_key = format!("effects.{effect}.param.{}", parameter.key);
+        ui.horizontal(|ui| {
+            let handle_id = format!("effects.{effect}.param.{}.scrub", parameter.key);
+            let (rect, handle) =
+                ui.allocate_exact_size(Vec2::new(28.0, 26.0), egui::Sense::click_and_drag());
+            if handle.hovered() || handle.dragged() {
+                ui.painter().rect_filled(rect, 4.0, self.control_fill());
+            }
+            icons::tinted(Icon::ArrowsHorizontal, BUTTON_ICON, self.secondary()).paint_at(
+                ui,
+                Rect::from_center_size(rect.center(), Vec2::splat(BUTTON_ICON)),
+            );
+            let handle = handle.on_hover_text(self.tr(Text::DragToAdjust));
+            self.remember_with_icon(
+                handle_id.clone(),
+                Some(Icon::ArrowsHorizontal.name()),
+                &handle,
+            );
+            if handle.drag_started() {
+                self.start_effect_scrub(item, effect, parameter.key, current);
+            }
+            if handle.dragged()
+                && let Some(mut scrub) = self.scrub.take()
+            {
+                let target = ScrubTarget::Effect {
+                    effect: effect.to_owned(),
+                    key: parameter.key.to_owned(),
+                };
+                if scrub.target == target {
+                    let steps = f64::from(handle.total_drag_delta().map_or(0.0, |delta| delta.x))
+                        / f64::from(spec.pixels_per_step);
+                    let value = spec.quantize(scrub.start + steps * spec.step);
+                    if value != scrub.last {
+                        match self.set_effect_param(item, effect, parameter.key, value) {
+                            Ok(()) => scrub.last = value,
+                            Err(error) => self.error = Some(error.to_string()),
+                        }
+                    }
+                }
+                self.scrub = Some(scrub);
+            }
+            if handle.drag_stopped() {
+                self.finish_scrub(true);
+            }
+            let width = ui.available_width().max(60.0);
+            let mut next = self
+                .property_drafts
+                .get(&draft_key)
+                .cloned()
+                .unwrap_or_else(|| spec.format(current));
+            let response = ui
+                .add_sized(
+                    [width, 26.0],
+                    egui::TextEdit::singleline(&mut next)
+                        .char_limit(32)
+                        .background_color(self.control_fill())
+                        .id(Id::unique(&draft_key))
+                        .hint_text(
+                            egui::RichText::new(self.tr(Text::EmptyValue)).color(self.secondary()),
+                        ),
+                )
+                .labelled_by(caption.id);
+            self.remember(draft_key.clone(), &response);
+            if response.has_focus() {
+                self.property_focus = Some(draft_key.clone());
+            }
+            if response.changed() {
+                self.property_drafts.insert(draft_key.clone(), next);
+            }
+            let editing =
+                response.has_focus() || self.property_focus.as_deref() == Some(draft_key.as_str());
+            if editing && ui.input(|i| i.key_pressed(egui::Key::Escape)) {
+                self.property_drafts.remove(&draft_key);
+                self.property_focus = None;
+                response.surrender_focus();
+                return;
+            }
+            let enter = response.has_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
+            if enter || response.lost_focus() {
+                self.property_focus = None;
+                if let Some(draft) = self.property_drafts.remove(&draft_key) {
+                    let Ok(parsed) = draft.trim().parse::<f64>() else {
+                        self.error = Some(Error::Invalid("scrub value").to_string());
+                        return;
+                    };
+                    if !parsed.is_finite() {
+                        self.error = Some(Error::Invalid("scrub value").to_string());
+                        return;
+                    }
+                    let value = spec.quantize(parsed);
+                    if let Err(error) = self.set_effect_param(item, effect, parameter.key, value) {
+                        self.error = Some(error.to_string());
+                    }
+                }
+            }
+        });
     }
     fn properties_stub(&mut self, ui: &mut egui::Ui) {
         ui.label(
@@ -3459,6 +4023,212 @@ impl Editor {
                 })
             });
         Some((kind, has_audio))
+    }
+    fn effect_refusal(&self, id: ItemId) -> Option<Text> {
+        let data = self.session.project().data();
+        let track = data
+            .scene()
+            .timeline
+            .iter()
+            .find(|track| track.items.iter().any(|item| item.id == id))?;
+        let (kind, _) = self.element_kind(id)?;
+        if track.locked {
+            return Some(Text::EffectLocked);
+        }
+        if kind == ElementKind::Audio {
+            return Some(Text::EffectAudioUnsupported);
+        }
+        if !matches!(
+            kind,
+            ElementKind::Video | ElementKind::Image | ElementKind::Sticker | ElementKind::Graphic
+        ) {
+            return Some(Text::EffectKindUnsupported);
+        }
+        None
+    }
+    fn add_effect_to_item(&mut self, item: ItemId, kind: &str) {
+        if let Some(reason) = self.effect_refusal(item) {
+            let text = self.tr(reason).to_owned();
+            self.set_toast(&text, None);
+            return;
+        }
+        let Some(definition) = project::effect_definitions()
+            .iter()
+            .find(|definition| definition.kind == kind)
+        else {
+            let text = self.tr(Text::EffectKindUnsupported).to_owned();
+            self.set_toast(&text, None);
+            return;
+        };
+        let Some(params) = effect_params_from_definition(definition) else {
+            let text = self.tr(Text::EffectKindUnsupported).to_owned();
+            self.set_toast(&text, None);
+            return;
+        };
+        let Some(effect_id) = self.next_effect_id(item, kind) else {
+            let text = self.tr(Text::EffectLimit).to_owned();
+            self.set_toast(&text, None);
+            return;
+        };
+        let effect = project::EffectInstance {
+            id: effect_id,
+            enabled: true,
+            params,
+        };
+        let before = self.session.project().clone();
+        match self.session.execute(
+            "effects.add",
+            serde_json::json!({"item": item, "effect": effect}),
+        ) {
+            Ok(_) => {
+                self.select_single(item);
+                let text = self.tr(Text::EffectAdded).to_owned();
+                let name = self.effect_name(definition).to_owned();
+                self.set_toast(&text, Some(name));
+            }
+            Err(error) => {
+                let text = if matches!(
+                    &error,
+                    engine::EditError::Project(project::Error::TooLarge(_))
+                ) {
+                    self.tr(Text::EffectLimit).to_owned()
+                } else {
+                    error_detail(&error)
+                };
+                self.set_toast(&text, None);
+            }
+        }
+        if !Arc::ptr_eq(&before, self.session.project()) {
+            self.sync_preview();
+        }
+    }
+    fn next_effect_id(&self, item: ItemId, kind: &str) -> Option<String> {
+        let effects = self
+            .session
+            .project()
+            .data()
+            .scene()
+            .timeline
+            .iter()
+            .flat_map(|track| &track.items)
+            .find(|candidate| candidate.id == item)?
+            .effects
+            .iter()
+            .map(|effect| effect.id.as_str())
+            .collect::<BTreeSet<_>>();
+        (1..=256).find_map(|index| {
+            let candidate = if index == 1 {
+                kind.to_owned()
+            } else {
+                format!("{kind}{index}")
+            };
+            (candidate.len() <= 64 && !effects.contains(candidate.as_str())).then_some(candidate)
+        })
+    }
+    fn remove_effect(&mut self, item: ItemId, effect: &str) {
+        let before = self.session.project().clone();
+        match self.session.execute(
+            "effects.remove",
+            serde_json::json!({"item": item, "effect": effect}),
+        ) {
+            Ok(_) => {}
+            Err(error) => self.error = Some(error.to_string()),
+        }
+        if !Arc::ptr_eq(&before, self.session.project()) {
+            self.sync_preview();
+        }
+    }
+    fn toggle_effect(&mut self, item: ItemId, effect: &str, enabled: bool) {
+        let before = self.session.project().clone();
+        match self.session.execute(
+            "effects.toggle",
+            serde_json::json!({"item": item, "effect": effect, "enabled": enabled}),
+        ) {
+            Ok(_) => {}
+            Err(error) => self.error = Some(error.to_string()),
+        }
+        if !Arc::ptr_eq(&before, self.session.project()) {
+            self.sync_preview();
+        }
+    }
+    fn reorder_effect(&mut self, item: ItemId, effect: &str, target_effect: &str) {
+        let Some(current) = self
+            .session
+            .project()
+            .data()
+            .scene()
+            .timeline
+            .iter()
+            .flat_map(|track| &track.items)
+            .find(|candidate| candidate.id == item)
+            .map(|candidate| {
+                candidate
+                    .effects
+                    .iter()
+                    .map(|effect| effect.id.clone())
+                    .collect::<Vec<_>>()
+            })
+        else {
+            return;
+        };
+        let Some(from) = current.iter().position(|id| id == effect) else {
+            let text = self.tr(Text::EffectMissing).to_owned();
+            self.set_toast(&text, None);
+            return;
+        };
+        let Some(target) = current.iter().position(|id| id == target_effect) else {
+            return;
+        };
+        let mut order = current.clone();
+        let moved = order.remove(from);
+        order.insert(target, moved);
+        if order == current {
+            return;
+        }
+        let before_project = self.session.project().clone();
+        match self.session.execute(
+            "effects.reorder",
+            serde_json::json!({"item": item, "order": order}),
+        ) {
+            Ok(_) => {}
+            Err(error) => self.error = Some(error.to_string()),
+        }
+        if !Arc::ptr_eq(&before_project, self.session.project()) {
+            self.sync_preview();
+        }
+    }
+    fn set_effect_param(
+        &mut self,
+        item: ItemId,
+        effect: &str,
+        key: &str,
+        value: f64,
+    ) -> Result<()> {
+        self.session.set_selection(self.selection.clone())?;
+        self.session.execute(
+            "effects.update_param",
+            serde_json::json!({"item": item, "effect": effect, "key": key, "value": value}),
+        )?;
+        self.sync_preview();
+        Ok(())
+    }
+    fn effect_param_value(&self, item: ItemId, effect: &str, key: &str) -> Option<f64> {
+        let effect = self
+            .session
+            .project()
+            .data()
+            .scene()
+            .timeline
+            .iter()
+            .flat_map(|track| &track.items)
+            .find(|candidate| candidate.id == item)?
+            .effects
+            .iter()
+            .find(|candidate| candidate.id == effect)?;
+        match (&effect.params, key) {
+            (project::EffectParams::Blur { intensity }, "intensity") => Some(*intensity),
+            _ => None,
+        }
     }
     fn blend_control(&mut self, ui: &mut egui::Ui, item: ItemId) {
         let Some(current) = self
@@ -3548,12 +4318,13 @@ impl Editor {
             .labelled_by(caption.id);
         self.remember("inspector.text_color", &response);
         if response.has_focus() {
-            self.property_focus = Some("text_color");
+            self.property_focus = Some("text_color".to_owned());
         }
         if response.changed() {
-            self.property_drafts.insert("text_color", next.clone());
+            self.property_drafts
+                .insert("text_color".to_owned(), next.clone());
         }
-        let editing = response.has_focus() || self.property_focus == Some("text_color");
+        let editing = response.has_focus() || self.property_focus.as_deref() == Some("text_color");
         if editing && ui.input(|i| i.key_pressed(egui::Key::Escape)) {
             self.property_drafts.remove("text_color");
             self.property_focus = None;
@@ -3601,7 +4372,7 @@ impl Editor {
             if handle.dragged()
                 && let Some(mut scrub) = self.scrub.take()
             {
-                if scrub.field == spec.field {
+                if scrub.target == ScrubTarget::Item(spec.field) {
                     let steps = f64::from(handle.total_drag_delta().map_or(0.0, |delta| delta.x))
                         / f64::from(spec.pixels_per_step);
                     let value = spec.quantize(scrub.start + steps * spec.step);
@@ -3639,10 +4410,10 @@ impl Editor {
                 .labelled_by(caption.id);
             self.remember(id.clone(), &response);
             if response.has_focus() {
-                self.property_focus = Some(spec.field);
+                self.property_focus = Some(spec.field.to_owned());
             }
             if response.changed() {
-                self.property_drafts.insert(spec.field, next);
+                self.property_drafts.insert(spec.field.to_owned(), next);
             }
             if !spec.suffix.is_empty() {
                 ui.label(
@@ -3651,7 +4422,8 @@ impl Editor {
                         .color(self.secondary()),
                 );
             }
-            let editing = response.has_focus() || self.property_focus == Some(spec.field);
+            let editing =
+                response.has_focus() || self.property_focus.as_deref() == Some(spec.field);
             if editing && ui.input(|i| i.key_pressed(egui::Key::Escape)) {
                 self.property_drafts.remove(spec.field);
                 self.property_focus = None;
@@ -3704,6 +4476,19 @@ impl Editor {
         }
     }
     fn start_scrub(&mut self, item: ItemId, spec: ScrubSpec, value: f64) {
+        self.start_scrub_target(item, ScrubTarget::Item(spec.field), value);
+    }
+    fn start_effect_scrub(&mut self, item: ItemId, effect: &str, key: &str, value: f64) {
+        self.start_scrub_target(
+            item,
+            ScrubTarget::Effect {
+                effect: effect.to_owned(),
+                key: key.to_owned(),
+            },
+            value,
+        );
+    }
+    fn start_scrub_target(&mut self, item: ItemId, target: ScrubTarget, value: f64) {
         if self.scrub.is_some() {
             self.finish_scrub(false);
         }
@@ -3722,11 +4507,11 @@ impl Editor {
             self.error = Some(error.to_string());
             return;
         }
-        self.property_drafts.remove(spec.field);
+        self.property_drafts.remove(&target.draft_key());
         self.property_focus = None;
         self.scrub = Some(ScrubDrag {
             item,
-            field: spec.field,
+            target,
             start: value,
             last: value,
         });
@@ -3744,7 +4529,7 @@ impl Editor {
         if let Err(error) = result {
             self.error = Some(error.to_string());
         }
-        self.property_drafts.remove(scrub.field);
+        self.property_drafts.remove(&scrub.target.draft_key());
         if changed {
             self.sync_preview();
         }
@@ -3850,7 +4635,8 @@ impl Editor {
                 .labelled_by(caption.id);
             self.remember(id, &response);
             if response.changed() {
-                self.property_drafts.insert(field.id, value.clone());
+                self.property_drafts
+                    .insert(field.id.to_owned(), value.clone());
             }
             self.compatible_count(ui, field.compatible);
             if (response.lost_focus()
@@ -5156,6 +5942,20 @@ impl Editor {
             })
             .filter(|(_, rect)| rect.is_positive())
             .collect();
+        self.effect_drop_targets = item_rects.clone();
+        if self.effect_drag.is_some() {
+            let accent = self.accent();
+            for (id, rect) in &item_rects {
+                if self.effect_refusal(*id).is_none() {
+                    body_painter.rect_stroke(
+                        *rect,
+                        2.0,
+                        egui::Stroke::new(2.0, accent),
+                        egui::StrokeKind::Inside,
+                    );
+                }
+            }
+        }
         if background.drag_started()
             && self.drag.is_none()
             && let Some(origin) = ui.input(|i| i.pointer.press_origin())
@@ -5892,6 +6692,61 @@ fn track_icon(kind: TrackKind) -> Icon {
         TrackKind::Effect => Icon::Sparkle,
         TrackKind::Filter => Icon::Funnel,
         TrackKind::Adjustment => Icon::SlidersHorizontal,
+    }
+}
+fn effect_definition(params: &project::EffectParams) -> Option<&'static project::EffectDefinition> {
+    let kind = match params {
+        project::EffectParams::Blur { .. } => "blur",
+    };
+    project::effect_definitions()
+        .iter()
+        .find(|definition| definition.kind == kind)
+}
+fn effect_params_from_definition(
+    definition: &project::EffectDefinition,
+) -> Option<project::EffectParams> {
+    match definition.kind {
+        "blur" => {
+            let intensity = definition
+                .params
+                .iter()
+                .find(|parameter| parameter.key == "intensity")
+                .map_or(15.0, |parameter| parameter.default);
+            Some(project::EffectParams::Blur { intensity })
+        }
+        _ => None,
+    }
+}
+fn effect_preview_params(definition: &project::EffectDefinition) -> Option<project::EffectParams> {
+    match definition.kind {
+        "blur" => {
+            // A catalog tile must read as the effect at a glance, so use the
+            // admitted maximum rather than the insertion default.
+            let intensity = definition
+                .params
+                .iter()
+                .find(|parameter| parameter.key == "intensity")
+                .map_or(100.0, |parameter| parameter.max);
+            Some(project::EffectParams::Blur { intensity })
+        }
+        _ => None,
+    }
+}
+fn effect_scrub_spec(parameter: &project::EffectParamDefinition) -> ScrubSpec {
+    let step = if parameter.max - parameter.min <= 1.0 {
+        0.01
+    } else {
+        1.0
+    };
+    ScrubSpec {
+        field: "effect_param",
+        label: Text::EffectIntensity,
+        min: parameter.min,
+        max: parameter.max,
+        step,
+        pixels_per_step: 2.0,
+        decimals: if step < 1.0 { 2 } else { 0 },
+        suffix: "",
     }
 }
 fn item_label(content: &ItemParams, locale: Locale, dark: bool) -> (String, Option<[u8; 4]>) {
