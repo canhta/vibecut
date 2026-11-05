@@ -4,6 +4,8 @@
 //! [`Workspace`] widget paths at 1x and 2x, plus an `index.html` that places each
 //! render beside its matching `.spikes/ui-reference/` image when one exists.
 //! This is an audit tool, not a test: it never runs in `cargo xtask ci`.
+#[path = "../tests/support/shorts.rs"]
+mod shorts_fixture;
 use egui_kittest::{
     Harness,
     kittest::{By, Queryable},
@@ -45,36 +47,41 @@ const SCALES: [f32; 2] = [1.0, 2.0];
 type Failure = Box<dyn std::error::Error>;
 type AppHarness = Harness<'static, AuditApp>;
 
-/// Either app root: Home (no editor) or an active editor.
+/// Audit roots: Home, the full editor and the dedicated Shorts window.
 enum App {
     Home {
         workspace: Box<Workspace>,
         _directory: tempfile::TempDir,
     },
     Editor(Box<Editor>),
+    Shorts(Box<vibecut::shorts::Shorts>),
 }
 impl App {
     fn ui(&mut self, ui: &mut egui::Ui) {
         match self {
             Self::Home { workspace, .. } => workspace.ui(ui),
             Self::Editor(editor) => editor.ui(ui),
+            Self::Shorts(shorts) => shorts.ui(ui),
         }
     }
     fn busy(&self) -> bool {
         match self {
             Self::Home { workspace, .. } => workspace.busy(),
             Self::Editor(_) => false,
+            Self::Shorts(shorts) => shorts.busy(),
         }
     }
     fn inspect(&self) -> Result<Inspection, Failure> {
         match self {
             Self::Editor(editor) => Ok(editor.inspect()?),
             Self::Home { .. } => Err("the Home scene has no editor inspection".into()),
+            Self::Shorts(_) => Err("the Shorts scene has no editor inspection".into()),
         }
     }
     fn presented_frame(&self) -> Option<Tick> {
         match self {
             Self::Editor(editor) => editor.presented_frame(),
+            Self::Shorts(shorts) => shorts.preview().and_then(|editor| editor.presented_frame()),
             Self::Home { workspace, .. } => workspace
                 .editor
                 .as_ref()
@@ -103,6 +110,7 @@ impl AuditApp {
         match &self.app {
             App::Editor(editor) => Some(&editor.session),
             App::Home { .. } => None,
+            App::Shorts(shorts) => shorts.preview().map(|editor| &*editor.session),
         }
     }
 }
@@ -146,6 +154,42 @@ impl Scene {
 }
 
 const SCENES: &[Scene] = &[
+    Scene {
+        name: "shorts-pick",
+        reference_dark: Some("screens-2026-11-04/shorts-1-pick.png"),
+        reference_light: Some("screens-2026-11-04/shorts-1-pick.png"),
+        build: |theme, scale| shorts_scene(theme, scale, Locale::En, "pick"),
+    },
+    Scene {
+        name: "shorts-setup",
+        reference_dark: Some("screens-2026-11-04/shorts-2-setup.png"),
+        reference_light: Some("screens-2026-11-04/shorts-2-setup.png"),
+        build: |theme, scale| shorts_scene(theme, scale, Locale::En, "setup"),
+    },
+    Scene {
+        name: "shorts-review",
+        reference_dark: Some("screens-2026-11-04/shorts-7-quick-edit-layout.png"),
+        reference_light: Some("screens-2026-11-04/shorts-7-quick-edit-layout.png"),
+        build: |theme, scale| shorts_scene(theme, scale, Locale::En, "review"),
+    },
+    Scene {
+        name: "shorts-pick-vi",
+        reference_dark: Some("screens-2026-11-04/shorts-1-pick.png"),
+        reference_light: Some("screens-2026-11-04/shorts-1-pick.png"),
+        build: |theme, scale| shorts_scene(theme, scale, Locale::Vi, "pick"),
+    },
+    Scene {
+        name: "shorts-setup-vi",
+        reference_dark: Some("screens-2026-11-04/shorts-2-setup.png"),
+        reference_light: Some("screens-2026-11-04/shorts-2-setup.png"),
+        build: |theme, scale| shorts_scene(theme, scale, Locale::Vi, "setup"),
+    },
+    Scene {
+        name: "shorts-review-vi",
+        reference_dark: Some("screens-2026-11-04/shorts-7-quick-edit-layout.png"),
+        reference_light: Some("screens-2026-11-04/shorts-7-quick-edit-layout.png"),
+        build: |theme, scale| shorts_scene(theme, scale, Locale::Vi, "review"),
+    },
     Scene {
         name: "home",
         reference_dark: Some("capcut/capcut-desktop-my-projects.png"),
@@ -202,14 +246,14 @@ const SCENES: &[Scene] = &[
     },
     Scene {
         name: "import-progress",
-        reference_dark: Some("capcut/illustrations/capcut-desktop-modify-project.png"),
-        reference_light: Some("capcut/illustrations/capcut-desktop-modify-project.png"),
+        reference_dark: Some("capcut/illustrations/capcut-modify-project.png"),
+        reference_light: Some("capcut/illustrations/capcut-modify-project.png"),
         build: import_progress,
     },
     Scene {
         name: "import-complete-vi",
-        reference_dark: Some("capcut/illustrations/capcut-desktop-modify-project.png"),
-        reference_light: Some("capcut/illustrations/capcut-desktop-modify-project.png"),
+        reference_dark: Some("capcut/illustrations/capcut-modify-project.png"),
+        reference_light: Some("capcut/illustrations/capcut-modify-project.png"),
         build: import_complete_vi,
     },
     Scene {
@@ -1298,6 +1342,100 @@ fn index_html(rows: &[Row]) -> String {
     }
     html.push_str("</body>\n</html>\n");
     html
+}
+
+/// Shared fixture, real widget path; no provider calls or visible native window.
+fn shorts_scene(
+    theme: Theme,
+    scale: f32,
+    locale: Locale,
+    scene: &str,
+) -> Result<AppHarness, Failure> {
+    use vibecut::{
+        playback::Sources,
+        shorts::{Decision, Shorts},
+    };
+    static ASSET: std::sync::OnceLock<SourceAsset> = std::sync::OnceLock::new();
+    let mut source = shorts_fixture::source();
+    let preview: Arc<dyn Sources> = if let Some(path) = std::env::var_os("SHORTS_AUDIT_VIDEO") {
+        let asset = match ASSET.get() {
+            Some(asset) => asset.clone(),
+            None => {
+                let asset = SourceAsset::import(AssetId(1), PathBuf::from(path))?;
+                let _ = ASSET.set(asset.clone());
+                asset
+            }
+        };
+        let mut data = source.project.into_data();
+        data.assets = vec![asset];
+        source.project = Project::new(data)?;
+        Arc::new(Files)
+    } else {
+        Arc::new(shorts_fixture::Pixels)
+    };
+    let prefs = preferences(theme, locale);
+    let mut shorts = Shorts::with_generator(
+        prefs,
+        ByteBudget::new(768 << 20)?,
+        Arc::new(shorts_fixture::Once(Mutex::new(Some(source)))),
+        preview,
+    )?;
+    shorts.captions = false;
+    if scene != "pick" {
+        shorts.pick_video(std::env::temp_dir().join("Interview.mp4"))?;
+    }
+    let mut app = Harness::builder()
+        .with_size(egui::vec2(1280.0, 800.0))
+        .with_pixels_per_point(scale)
+        .build_eframe(|_| AuditApp {
+            app: App::Shorts(Box::new(shorts)),
+        });
+    app.run_steps(3);
+    if scene == "review" {
+        app.get(By::new().predicate(|n| n.author_id() == Some("shorts.generate")))
+            .click();
+        app.run_steps(1);
+        let App::Shorts(shorts) = &mut app.state_mut().app else {
+            return Err("missing Shorts audit app".into());
+        };
+        shorts_fixture::wait(shorts);
+        app.run_steps(3);
+        app.get(By::new().predicate(|n| n.author_id() == Some("shorts.accept")))
+            .click();
+        app.run_steps(2);
+        let deadline = std::time::Instant::now() + Duration::from_secs(60);
+        loop {
+            let App::Shorts(shorts) = &mut app.state_mut().app else {
+                return Err("missing Shorts audit app".into());
+            };
+            shorts.tick();
+            if let Some(error) = shorts.error() {
+                return Err(std::io::Error::other(error.to_string()).into());
+            }
+            if let Some(error) = shorts.preview().and_then(|p| p.playback.error()) {
+                return Err(std::io::Error::other(error).into());
+            }
+            if shorts
+                .preview()
+                .is_some_and(|p| p.playback.frame().is_some())
+            {
+                if shorts
+                    .reviews()
+                    .first()
+                    .is_none_or(|r| r.decision != Decision::Accepted)
+                {
+                    return Err("Shorts review action did not apply".into());
+                }
+                break;
+            }
+            if std::time::Instant::now() > deadline {
+                return Err("Shorts preview timeout".into());
+            }
+            std::thread::yield_now();
+        }
+        app.run_steps(3);
+    }
+    Ok(app)
 }
 
 #[cfg(test)]

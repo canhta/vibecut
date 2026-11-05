@@ -344,3 +344,10 @@ controls feature. Source-language captions can be burned and exported as SRT.
 `tests/shorts_ui.rs` injects generation and preview sources, uses real automation
 IDs and engine commands, and asserts state only. UI image evidence is an offscreen
 audit, separate from the test suite; no native window is opened by verification.
+
+`cargo xtask ui-audit shorts-pick shorts-setup shorts-review shorts-pick-vi
+shorts-setup-vi shorts-review-vi` captures the three Shorts screens in en/vi,
+dark/light, at 1x/2x and the minimum 1280×800 logical size. These shared scenes
+use injected candidates and synthetic frames by default; `SHORTS_AUDIT_VIDEO`
+optionally selects one local audit source, imported once for the run. The audit
+is separate from tests and never makes provider calls.
