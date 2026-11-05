@@ -121,9 +121,32 @@ impl AudioPort {
         self.underruns.load(Ordering::Relaxed)
     }
 }
+/// One transient render-state owner shared by editor preview and export.
+/// Each consumer freezes settings against the same immutable project snapshot;
+/// removed items are filtered without losing their placements for undo/redo.
+#[derive(Default)]
+pub(crate) struct RenderState(Mutex<Option<Arc<render::RenderSettings>>>);
+impl RenderState {
+    pub(crate) fn settings(&self, project: &project::Project) -> Result<render::RenderSettings> {
+        let retained = self.0.lock().map_err(|_| Error::Poisoned)?.clone();
+        let mut settings = retained
+            .as_deref()
+            .cloned()
+            .unwrap_or_else(|| render::RenderSettings::from_project(project));
+        settings.placements.retain(|id, _| {
+            project
+                .data()
+                .scene()
+                .timeline
+                .iter()
+                .any(|track| track.items.iter().any(|item| item.id == *id))
+        });
+        Ok(settings)
+    }
+}
 #[derive(Clone)]
 struct Request {
-    render_settings: Option<Arc<render::RenderSettings>>,
+    render_state: Arc<RenderState>,
     effects: Option<Arc<dyn render::effects::EffectCompositor>>,
     epoch: u64,
     project: Arc<project::Project>,
@@ -197,16 +220,16 @@ impl Playback {
     pub fn set_render_settings(&mut self, settings: render::RenderSettings) -> Result<()> {
         let request = read_request(&self.request)?;
         render::Renderer::new(&request.project, settings.clone())?;
-        self.request
-            .lock()
-            .map_err(|_| Error::Poisoned)?
-            .render_settings = Some(Arc::new(settings));
+        *request.render_state.0.lock().map_err(|_| Error::Poisoned)? = Some(Arc::new(settings));
         self.seek(self.position()?, false, request.project)
+    }
+    pub(crate) fn render_state(&self) -> Result<Arc<RenderState>> {
+        Ok(read_request(&self.request)?.render_state)
     }
     pub fn new(session: &Session, budget: ByteBudget, sources: Arc<dyn Sources>) -> Result<Self> {
         let port = Arc::new(AudioPort::new(&budget)?);
         let request = Arc::new(Mutex::new(Request {
-            render_settings: None,
+            render_state: Arc::new(RenderState::default()),
             effects: None,
             epoch: 1,
             project: session.project().clone(),
@@ -396,7 +419,7 @@ impl Playback {
             .checked_add(1)
             .ok_or(Error::Invalid("preview generation exhausted"))?;
         *request = Request {
-            render_settings: request.render_settings.clone(),
+            render_state: request.render_state.clone(),
             effects: request.effects.clone(),
             epoch,
             project,
@@ -572,21 +595,7 @@ fn video_loop(
         let mut sources = factory.create();
         let fps = r.project.data().canvas.fps;
         let mut next = fps.frame_at(r.at(port.audible.load(Ordering::Acquire))?)?;
-        let mut settings = r
-            .render_settings
-            .as_deref()
-            .cloned()
-            .unwrap_or_else(|| render::RenderSettings::from_project(&r.project));
-        // Retain the override for redo, but removed items have no placement in
-        // this snapshot. Render continues to validate the effective settings.
-        settings.placements.retain(|id, _| {
-            r.project
-                .data()
-                .scene()
-                .timeline
-                .iter()
-                .any(|track| track.items.iter().any(|item| item.id == *id))
-        });
+        let mut settings = r.render_state.settings(&r.project)?;
         let scale = (640.0 / f64::from(settings.width))
             .min(360.0 / f64::from(settings.height))
             .min(1.0);

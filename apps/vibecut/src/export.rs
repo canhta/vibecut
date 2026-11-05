@@ -120,6 +120,7 @@ pub struct ExportDialog {
     refused: Option<(Arc<project::Project>, bool)>,
     empty: bool,
     error: Option<Arc<Error>>,
+    render_state: Arc<crate::playback::RenderState>,
     runner: JobRunner,
     sources: Arc<dyn crate::playback::Sources>,
     job: Option<(JobId, CancelToken)>,
@@ -127,7 +128,10 @@ pub struct ExportDialog {
     cancelling: bool,
 }
 impl ExportDialog {
-    pub fn new(budget: ByteBudget) -> Result<Self> {
+    pub(crate) fn new(
+        budget: ByteBudget,
+        render_state: Arc<crate::playback::RenderState>,
+    ) -> Result<Self> {
         Ok(Self {
             open: false,
             destination: None,
@@ -137,6 +141,7 @@ impl ExportDialog {
             refused: None,
             empty: false,
             error: None,
+            render_state,
             runner: JobRunner::new(
                 RunnerConfig {
                     concurrency: [1, 1, 1],
@@ -258,6 +263,7 @@ impl ExportDialog {
             .ok_or(Error::Invalid("export destination required"))?;
         let range = time::TimeRange::new(time::Tick::ZERO, project.duration())?;
         let mut settings = options.settings(&project);
+        settings.render = self.render_state.settings(&project)?;
         settings.overwrite = if self.replace {
             project::atomic::Overwrite::Replace
         } else {

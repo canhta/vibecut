@@ -28,7 +28,6 @@ fn harness(app: Shorts) -> Harness<'static, Shorts> {
 fn review_actions_and_play_order_reach_preview_and_single_step_editor_insertion() {
     let mut h = harness(ready());
     h.run_steps(3);
-    let row = h.state().reviews()[0].clone();
     let preview = h.state().preview().unwrap().session.project();
     let items = &preview.data().scene().timeline.main.items;
     assert_eq!(items.len(), 2);
@@ -88,6 +87,11 @@ fn review_actions_and_play_order_reach_preview_and_single_step_editor_insertion(
             .iter()
             .any(|track| track.kind == project::TrackKind::Text)
     );
+    let mut off_center = h.state().reviews()[0].crop;
+    off_center.x = 0.0;
+    h.state_mut().set_crop(off_center).unwrap();
+    h.run_steps(2);
+    let row = h.state().reviews()[0].clone();
     h.get(by("shorts.edit")).click();
     h.run_steps(2);
     assert!(h.state().open_editor);
@@ -127,7 +131,7 @@ fn review_actions_and_play_order_reach_preview_and_single_step_editor_insertion(
     let budget = ByteBudget::new(512 << 20).unwrap();
     let mut playback =
         vibecut::playback::Playback::new(&session, budget, Arc::new(Pixels)).unwrap();
-    playback.set_render_settings(settings).unwrap();
+    playback.set_render_settings(settings.clone()).unwrap();
     let mut editor = vibecut::Editor::new(session, playback, Default::default());
     for command in ["edit.undo", "edit.redo"] {
         editor.activate(command).unwrap();
@@ -139,6 +143,105 @@ fn review_actions_and_play_order_reach_preview_and_single_step_editor_insertion(
         }
         assert!(editor.playback.error().is_none());
     }
+    // Export through the real editor dialog after handoff and edit undo/redo.
+    // Small output keeps the encoded-frame oracle bounded; crop coordinates stay
+    // source-normalized, identical to the full-size portrait project.
+    let mut data = editor.session.project().data().clone();
+    data.canvas.width = 64;
+    data.canvas.height = 114;
+    let session = engine::Session::new(project::Project::new(data).unwrap(), 100).unwrap();
+    let mut playback = vibecut::playback::Playback::new(
+        &session,
+        ByteBudget::new(512 << 20).unwrap(),
+        Arc::new(Spatial),
+    )
+    .unwrap();
+    let mut settings = settings;
+    settings.width = 64;
+    settings.height = 114;
+    playback.set_render_settings(settings).unwrap();
+    let mut editor = vibecut::Editor::new(session, playback, Default::default());
+    editor.preferences.export.include_audio = false;
+    editor.activate("file.export").unwrap();
+    let last = editor.session.project().data().scene().timeline.main.items[1].id;
+    editor.selection = std::collections::BTreeSet::from([last]);
+    editor.activate("timeline.delete").unwrap();
+    editor.activate("edit.undo").unwrap();
+    editor.activate("edit.redo").unwrap();
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+    while editor.playback.frame().is_none() {
+        editor.tick();
+        assert!(editor.playback.error().is_none());
+        assert!(std::time::Instant::now() < deadline);
+        std::thread::yield_now();
+    }
+    let image = &editor.playback.frame().unwrap().image;
+    let center = image.pixels[image.pixels.len() / 2 + image.size[0] / 2];
+    assert!(center.r() > 200 && center.b() < 40);
+    editor
+        .export
+        .as_mut()
+        .unwrap()
+        .set_sources(Arc::new(Spatial))
+        .unwrap();
+    let output = tempfile::tempdir().unwrap();
+    let path = output.path().join("off-center.mp4");
+    editor.export_picked_file(path.clone()).unwrap();
+    let mut exported = Harness::builder()
+        .with_size(egui::vec2(1440.0, 1000.0))
+        .build_ui_state(|ui, a: &mut vibecut::Editor| a.ui(ui), editor);
+    exported.run_steps(3);
+    exported.get(by("export.start")).click();
+    exported.run_steps(2);
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(30);
+    loop {
+        exported.state_mut().tick();
+        let state = exported.state().export.as_ref().unwrap().inspect();
+        if state
+            .job
+            .as_ref()
+            .is_some_and(|j| j.state == engine::jobs::JobState::Completed)
+        {
+            break;
+        }
+        assert!(state.error.is_none(), "{:?}", state.error);
+        assert!(
+            !state
+                .job
+                .as_ref()
+                .is_some_and(|j| j.state == engine::jobs::JobState::Failed),
+            "export failed"
+        );
+        assert!(std::time::Instant::now() < deadline, "crop export timeout");
+        std::thread::yield_now();
+    }
+    // Independent FFmpeg decoding: average of the encoded first frame must be
+    // red (the left crop), rather than the blue default centered placement.
+    let decoded = std::process::Command::new("ffmpeg")
+        .env_remove("DYLD_LIBRARY_PATH")
+        .env_remove("LD_LIBRARY_PATH")
+        .args(["-v", "error", "-i"])
+        .arg(&path)
+        .args([
+            "-frames:v",
+            "1",
+            "-vf",
+            "scale=1:1",
+            "-pix_fmt",
+            "rgb24",
+            "-f",
+            "rawvideo",
+            "-",
+        ])
+        .output()
+        .unwrap();
+    assert!(decoded.status.success(), "{:?}", decoded.stderr);
+    assert_eq!(decoded.stdout.len(), 3);
+    assert!(
+        decoded.stdout[0] > 200 && decoded.stdout[2] < 40,
+        "wrong crop: {:?}",
+        decoded.stdout
+    );
     h.state_mut().preferences.locale = Locale::Vi;
     h.run_steps(2);
     assert!(h.query_all(by("shorts.accept")).count() == 1);
@@ -451,5 +554,53 @@ fn home_card_opens_a_dedicated_viewport_and_native_drop_selects_one_video() {
     ] {
         assert!(h.state_mut().pick_video(invalid).is_err());
         assert_eq!(h.state().request.path, path);
+    }
+}
+
+struct Spatial;
+impl vibecut::playback::Sources for Spatial {
+    fn create(&self) -> Box<dyn render::SourceProvider> {
+        Box::new(Spatial)
+    }
+}
+impl render::SourceProvider for Spatial {
+    fn status(
+        &mut self,
+        _: &media::SourceAsset,
+        _: bool,
+        _: &dyn render::ExecutionHooks,
+    ) -> render::Result<Option<render::UnavailableReason>> {
+        Ok(None)
+    }
+    fn video(
+        &mut self,
+        _: &media::SourceAsset,
+        _: project::ItemId,
+        _: time::Tick,
+        hooks: &dyn render::ExecutionHooks,
+    ) -> render::Result<Option<render::Image>> {
+        Ok(Some(render::Image::from_working_pixels(
+            320,
+            180,
+            (0..320 * 180).map(|n| {
+                if n % 320 < 120 {
+                    [1.0, 0.0, 0.0, 1.0]
+                } else {
+                    [0.0, 0.0, 1.0, 1.0]
+                }
+            }),
+            hooks,
+        )?))
+    }
+    fn audio(
+        &mut self,
+        _: &media::SourceAsset,
+        _: project::ItemId,
+        _: i64,
+        frames: usize,
+        rate: u32,
+        hooks: &dyn render::ExecutionHooks,
+    ) -> render::Result<render::AudioBlock> {
+        render::AudioBlock::new(rate, 2, frames, render::MemoryKind::Decoded, hooks)
     }
 }

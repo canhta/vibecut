@@ -331,7 +331,9 @@ editing a review does not alter an already submitted immutable batch.
 
 Open in editor inserts every video segment and mapped source-caption item into a
 fresh portrait project through one engine transaction, then uses the existing
-nonblocking recovery/autosave owner. Review crops are transient (preview/export);
+nonblocking recovery/autosave owner. Editor preview and export share the same transient render-state owner, resolving
+placements against each immutable snapshot so deleting items and undo/redo do
+not leave stale placement IDs or recenter editor exports. Review crops are transient (preview/export);
 persisted crop channels and subsequent full-editor crop edits belong to the crop
 controls feature. Source-language captions can be burned and exported as SRT.
 `tests/shorts_ui.rs` injects generation and preview sources, uses real automation

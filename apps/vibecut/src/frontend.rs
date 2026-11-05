@@ -880,6 +880,7 @@ impl Editor {
                 if self.export.is_none() {
                     self.export = Some(crate::export::ExportDialog::new(
                         self.playback.budget().clone(),
+                        self.playback.render_state()?,
                     )?);
                 }
                 if let Some(dialog) = &mut self.export {
