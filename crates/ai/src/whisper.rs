@@ -33,6 +33,22 @@ fn decode_profile(language: &str) -> SamplingStrategy {
         .map_or_else(|| DEFAULT_DECODE.clone(), |(_, strategy)| strategy.clone())
 }
 
+/// Cache identity for the loaded model. The decode policy is hashed because the
+/// full `Debug` tables exceed the engine's 256-byte provider-version bound.
+fn settings_fingerprint(cpp_version: &str, model_sha: &str, threads: u8, device: Device) -> String {
+    use sha2::Digest as _;
+    let policy = format!(
+        "decode-default{DEFAULT_DECODE:?}:decode-languages{LANGUAGE_DECODE:?}:temperature0:fallback0:context-per-call:no-prompt:flash0:max300s:tokens-v2"
+    );
+    let digest = sha2::Sha256::digest(policy.as_bytes());
+    let mut text = String::with_capacity(2 * digest.len());
+    for byte in digest {
+        use std::fmt::Write as _;
+        let _ = write!(text, "{byte:02x}");
+    }
+    format!("whisper-rs-0.16.0:cpp{cpp_version}:{model_sha}:{text}:threads{threads}:{device:?}")
+}
+
 /// Explicit device choice. Engine selects software fallback; adapter never retries.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Device {
@@ -88,9 +104,11 @@ impl Whisper {
         let config = ProviderConfig::new(
             "local-whisper".into(),
             model.id.as_str().into(),
-            format!(
-                "whisper-rs-0.16.0:cpp{}:{}:decode-default{DEFAULT_DECODE:?}:decode-languages{LANGUAGE_DECODE:?}:temperature0:fallback0:context-per-call:no-prompt:flash0:max300s:tokens-v2:threads{threads}:{device:?}",
-                whisper_rs::WHISPER_CPP_VERSION, file.sha256
+            settings_fingerprint(
+                whisper_rs::WHISPER_CPP_VERSION,
+                &file.sha256,
+                threads,
+                device,
             )
             .into(),
             Location::Local {
@@ -315,6 +333,15 @@ fn timestamp_range(start: i64, end: i64, window: SampleRange) -> Result<SampleRa
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn settings_fingerprint_fits_cache_identity_bound() {
+        let model_sha = "f".repeat(64);
+        for device in [Device::Cpu, Device::Gpu] {
+            let value = settings_fingerprint("1.8.3", &model_sha, 32, device);
+            assert!(value.len() <= 256, "{} bytes: {value}", value.len());
+        }
+    }
+
     #[test]
     fn native_fragments_retain_missing_timing_and_shared_nfc_correspondence() {
         let window = SampleRange::new(160_000, 176_000).unwrap();
