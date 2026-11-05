@@ -13,7 +13,7 @@ use media::{
 };
 use std::path::{Path, PathBuf};
 use std::sync::{
-    Arc,
+    Arc, OnceLock,
     atomic::{AtomicBool, Ordering},
 };
 use time::{Rounding, SourceRange, TICKS_PER_SECOND, Tick};
@@ -52,17 +52,21 @@ fn wav_16k_mono(samples: &[i16]) -> Vec<u8> {
 }
 
 fn mfcc_fixture() -> PathBuf {
-    let dir = common::fixtures_dir().join("vision");
-    std::fs::create_dir_all(&dir).unwrap();
-    let path = dir.join("mfcc_reference.wav");
-    let mut state = 0x1234_5678u32;
-    let mut samples = Vec::with_capacity(16_000);
-    for _ in 0..16_000 {
-        state = state.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
-        samples.push((((state >> 16) & 0xffff) as i32 - 32_768) as i16);
-    }
-    std::fs::write(&path, wav_16k_mono(&samples)).unwrap();
-    path
+    static PATH: OnceLock<PathBuf> = OnceLock::new();
+    PATH.get_or_init(|| {
+        let dir = common::fixtures_dir().join("vision");
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("mfcc_reference.wav");
+        let mut state = 0x1234_5678u32;
+        let mut samples = Vec::with_capacity(16_000);
+        for _ in 0..16_000 {
+            state = state.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
+            samples.push((((state >> 16) & 0xffff) as i32 - 32_768) as i16);
+        }
+        std::fs::write(&path, wav_16k_mono(&samples)).unwrap();
+        path
+    })
+    .clone()
 }
 
 fn collect_mfcc(
