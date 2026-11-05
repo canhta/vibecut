@@ -1286,7 +1286,6 @@ impl Editor {
                 self.scene_selected.clear();
                 self.scene_select = false;
                 self.scene_confirm = false;
-                self.scene_rename = None;
                 self.selection.clear();
                 self.selection_scopes = SelectionScopes::default();
             }
@@ -2463,6 +2462,14 @@ impl Editor {
         self.widgets.clear();
         self.panels.clear();
         self.tick();
+        // Undo and commands can remove a scene without the sheet's delete action.
+        if self
+            .scene_rename
+            .as_ref()
+            .is_some_and(|(scene, _)| self.session.project().data().scenes.get(*scene).is_none())
+        {
+            self.scene_rename = None;
+        }
         if !self.export.as_ref().is_some_and(|d| d.open) {
             self.keyboard(ui.ctx());
         }

@@ -312,8 +312,8 @@ opens an inline rename editor for any scene, including main: Enter commits throu
 `scene.rename` and Escape cancels. New scenes inherit the project canvas, frame
 rate and background and start with an empty timeline. English/Vietnamese copy uses
 the existing catalog.
-A delete confirmation takes Escape before the rename editor; deleting a scene
-discards its pending name edit.
+A delete confirmation takes Escape before the rename editor. If a command or undo
+removes the edited scene, its pending name edit is discarded.
 
 `tests/it/scenes_ui.rs` operates the real widgets and engine at 1x/2x density, checks
 switching, protected main, create/rename history, persistence and atomic

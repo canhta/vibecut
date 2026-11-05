@@ -197,6 +197,81 @@ fn deleting_a_scene_with_a_rename_draft_preserves_escape_dismissal() {
     }
 }
 #[test]
+fn undoing_a_scene_creation_dismisses_its_rename_draft() {
+    let mut h = Harness::builder()
+        .with_size(egui::vec2(1728.0, 1200.0))
+        .build_ui_state(|ui, e: &mut Editor| e.ui(ui), editor_with_scene_session());
+    let before = h.state().session.project().clone();
+    click(&mut h, "scene.open");
+    click(&mut h, "scene.create");
+    let created = h.state().session.project().data().current_scene_id;
+    h.state_mut()
+        .activate(&format!("scene.rename.{}", created.0))
+        .unwrap();
+    h.run_steps(3);
+    h.get(By::new().predicate(|n| n.author_id() == Some("scene.rename.input")))
+        .type_text(" draft");
+    h.run_steps(3);
+    h.state_mut().activate("edit.undo").unwrap();
+    h.run_steps(3);
+    h.key_press(egui::Key::Escape);
+    h.run_steps(3);
+    assert_eq!(h.state().session.project().data(), before.data());
+    assert!(
+        !h.state()
+            .inspect()
+            .unwrap()
+            .widgets
+            .iter()
+            .any(|w| w.id == "scene.create")
+    );
+}
+#[test]
+fn deleting_another_scene_preserves_the_rename_draft() {
+    let mut h = Harness::builder()
+        .with_size(egui::vec2(1728.0, 1200.0))
+        .build_ui_state(|ui, e: &mut Editor| e.ui(ui), editor_with_scene_session());
+    click(&mut h, "scene.open");
+    click(&mut h, "scene.create");
+    let renamed = h.state().session.project().data().current_scene_id;
+    click(&mut h, "scene.create");
+    let deleted = h.state().session.project().data().current_scene_id;
+    click(&mut h, "scene.select");
+    click(&mut h, &format!("scene.row.{}", deleted.0));
+    let row = format!("scene.row.{}", renamed.0);
+    h.get(By::new().predicate(|n| n.author_id() == Some(row.as_str())))
+        .click_secondary();
+    h.run_steps(3);
+    click(&mut h, &format!("scene.rename.{}", renamed.0));
+    h.get(By::new().predicate(|n| n.author_id() == Some("scene.rename.input")))
+        .type_text(" draft");
+    click(&mut h, "scene.delete");
+    click(&mut h, "scene.confirm_delete");
+    assert_eq!(scenes_len(&h), 2);
+    assert!(
+        h.state()
+            .inspect()
+            .unwrap()
+            .widgets
+            .iter()
+            .any(|w| w.id == "scene.rename.input")
+    );
+    h.key_press(egui::Key::Enter);
+    h.run_steps(3);
+    assert_eq!(
+        h.state()
+            .session
+            .project()
+            .data()
+            .scenes
+            .get(renamed)
+            .unwrap()
+            .name
+            .as_str(),
+        "Scene 2 draft"
+    );
+}
+#[test]
 fn create_switches_to_an_empty_scene_and_history_keeps_the_project_exact() {
     let mut h = Harness::builder()
         .with_size(egui::vec2(1728.0, 1200.0))
