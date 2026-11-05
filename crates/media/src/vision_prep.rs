@@ -11,11 +11,53 @@ use crate::{
     PixelFormat, Result, RgbaConverter, SourceAsset, StreamKind, VideoFrame, VideoReader, init,
 };
 use ffmpeg_next as ff;
+use std::collections::BTreeMap;
 use std::sync::{
     Arc,
     atomic::{AtomicBool, Ordering},
 };
 use time::{SourceRange, TICKS_PER_SECOND, Tick};
+
+// Runtime-only, source-content-bound state; clones share it, persistence and
+// relinking start cold. No codec handles or lock are retained across I/O.
+#[derive(Default)]
+pub(crate) struct MfccAnchors {
+    entries: BTreeMap<i64, MfccAnchor>,
+    spacing: i64,
+}
+#[derive(Clone, Copy)]
+struct MfccAnchor {
+    index: i64,
+    tick: Tick,
+    position: isize,
+    ordinal: usize,
+    samples: usize,
+}
+impl MfccAnchors {
+    fn record(&mut self, anchor: MfccAnchor, rate: u32) {
+        self.spacing = self.spacing.max(i64::from(rate));
+        if self
+            .entries
+            .range(..=anchor.index)
+            .next_back()
+            .is_some_and(|(index, _)| anchor.index - index < self.spacing)
+        {
+            return;
+        }
+        if self.entries.len() >= 4096 {
+            // Thin uniformly rather than evicting the early-source anchors:
+            // ordered requests retain linear total work on long sources.
+            self.spacing = self.spacing.saturating_mul(2);
+            let mut keep = true;
+            self.entries.retain(|_, _| {
+                let result = keep;
+                keep = !keep;
+                result
+            });
+        }
+        self.entries.insert(anchor.index, anchor);
+    }
+}
 
 /// Mono sample rate used by the vision models.
 pub const VISION_SAMPLE_RATE: u32 = 16_000;
@@ -42,9 +84,9 @@ const RGBA_GRAY_G: u32 = 38_470;
 const RGBA_GRAY_B: u32 = 7_470;
 const RGBA_GRAY_ROUND: u32 = 1 << 15;
 
-/// Hard bounds for one preparation request. The defaults mirror the existing
-/// speech limits: ten minutes of source, one hundred thousand video frames and
-/// 60,001 MFCC frames (ten minutes at a 10 ms hop).
+/// Hard bounds for one preparation request: by default ten minutes of output,
+/// eleven minutes of decoded audio including preroll, one hundred thousand
+/// video frames and 60,001 MFCC frames (ten minutes at a 10 ms hop).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct VisionPrepLimits {
     /// Longest shot or audio range admitted by one call.
@@ -52,6 +94,10 @@ pub struct VisionPrepLimits {
     /// Maximum video frames decoded by one call, including seek preroll and
     /// replayed frames; emitted frames are a subset of this budget.
     pub max_frames: usize,
+    /// Maximum decoded audio duration per call, including anchor search and preroll.
+    pub max_audio_decode_duration: Tick,
+    /// Maximum demuxed input bytes per audio call, including probing and seeking.
+    pub max_audio_bytes: u64,
     /// Maximum number of MFCC frames emitted by one call.
     pub max_mfcc_frames: usize,
     /// Maximum pixel area of one face-crop rectangle before resizing.
@@ -62,6 +108,8 @@ impl Default for VisionPrepLimits {
         Self {
             max_shot_duration: Tick(600 * TICKS_PER_SECOND),
             max_frames: 100_000,
+            max_audio_decode_duration: Tick(660 * TICKS_PER_SECOND),
+            max_audio_bytes: 256 << 20,
             max_mfcc_frames: 60_001,
             max_face_crop_pixels: 1 << 24,
         }
@@ -72,6 +120,10 @@ impl VisionPrepLimits {
         if self.max_shot_duration <= Tick::ZERO
             || self.max_frames == 0
             || self.max_frames > 1_000_000
+            || self.max_audio_decode_duration <= Tick::ZERO
+            || self.max_audio_decode_duration > Tick(86_400 * TICKS_PER_SECOND)
+            || self.max_audio_bytes == 0
+            || self.max_audio_bytes > 4 << 30
             || self.max_mfcc_frames == 0
             || self.max_mfcc_frames > 1_000_000
             || self.max_face_crop_pixels == 0
@@ -376,11 +428,13 @@ pub fn decode_shot_frames(
 /// Only frames whose window starts inside `range` are emitted. A window that
 /// extends past the range but still has source audio is computed from the real
 /// source samples; only the source's real final window is zero-padded like the
-/// reference. Every call counts decoded samples from the beginning of the audio
-/// stream, independently of container timestamp precision. Resampling starts on
-/// the stream-global grid phase with at least one second of preroll. Late ranges
-/// therefore scan the preceding audio with bounded memory and cancellation;
-/// a sub-chunk range still yields the frames that start inside it.
+/// reference. Exact decoded-sample anchors are retained on the source asset and
+/// shared by its clones. Late calls seek before the nearest recorded anchor,
+/// match its packet/frame identity, and count samples from there; timestamps
+/// are only seek hints. Cold scans and anchor lookup obey the audio decode/byte
+/// limits, returning `TooLarge` when exhausted (anchors already learned remain
+/// reusable). Resampling keeps the global phase and one second of preroll.
+/// A sub-chunk range still yields the frames that start inside it.
 pub fn mfcc_range(
     asset: &SourceAsset,
     range: SourceRange,
@@ -462,6 +516,7 @@ pub fn mfcc_range(
         asset,
         first_sample,
         last_sample,
+        &limits,
         &cancel,
         &mut |samples, start| sink.push(samples, start),
     );
@@ -719,8 +774,8 @@ fn emit_mfcc_audio(
 ///
 /// A fresh `AudioResampler` starts on an input sample whose phase matches the
 /// stream-global output grid, then runs for at least one second before the
-/// first requested window. Decode from stream start and count samples: neither
-/// rounded PTS nor a decoded frame's size identifies an exact seek boundary.
+/// first requested window. Count from stream start or a verified recorded
+/// anchor: neither rounded PTS nor frame size alone identifies a seek boundary.
 /// Frames before the preroll are discarded without conversion. `push` receives
 /// contiguous absolute 16 kHz sample indexes; the caller caps the final window count from
 /// the actual received extent, so an unknown-duration EOF never fabricates
@@ -729,11 +784,13 @@ fn decode_mfcc_audio(
     asset: &SourceAsset,
     first_sample: i64,
     last_sample: i64,
+    limits: &VisionPrepLimits,
     cancel: &Arc<AtomicBool>,
     push: &mut impl FnMut(&[f32], i64) -> Result<()>,
 ) -> Result<()> {
     init()?;
-    let mut reader = PacketReader::open_with_cancel(asset.path(), cancel.clone())?;
+    let mut reader =
+        PacketReader::open_with_read_limit(asset.path(), cancel.clone(), limits.max_audio_bytes)?;
     let stream = reader
         .probe()
         .streams
@@ -768,6 +825,49 @@ fn decode_mfcc_audio(
             .0,
         ticks_per_input,
     )?;
+    let (mut resume, seek) = {
+        let anchors = asset
+            .1
+            .lock()
+            .map_err(|_| MediaError::Invalid("MFCC anchor state"))?;
+        let resume = anchors
+            .entries
+            .range(..=target_index)
+            .next_back()
+            .map(|(_, anchor)| *anchor)
+            .filter(|anchor| anchor.index > 0);
+        let seek = resume
+            .and_then(|anchor| {
+                anchors
+                    .entries
+                    .range(..anchor.index)
+                    .next_back()
+                    .map(|(_, earlier)| *earlier)
+            })
+            .filter(|anchor| anchor.index > 0);
+        (resume, seek)
+    };
+    if let Some(anchor) = seek {
+        // Warm the decoder before matching the exact anchor. Round the seek
+        // hint up to microseconds so a PCM demuxer cannot start one sample early.
+        let hint = anchor
+            .tick
+            .checked_add(Tick(TICKS_PER_SECOND / 1_000_000))
+            .ok_or(MediaError::TooLarge("MFCC anchor time"))?;
+        if reader.seek(hint).is_err() {
+            return Err(if reader.bytes_read() >= limits.max_audio_bytes {
+                MediaError::TooLarge("input read bytes")
+            } else if cancel.load(Ordering::Relaxed) {
+                MediaError::Cancelled
+            } else {
+                MediaError::Unsupported("MFCC anchor seek")
+            });
+        }
+    }
+    let max_samples = i128::from(limits.max_audio_decode_duration.0) * i128::from(input_rate)
+        / i128::from(TICKS_PER_SECOND);
+    let mut decoded_samples = 0i128;
+    let mut packets = 0usize;
     let mut state = MfccAudioState {
         origin,
         input_rate,
@@ -784,24 +884,76 @@ fn decode_mfcc_audio(
         if cancel.load(Ordering::Relaxed) {
             return Err(MediaError::Cancelled);
         }
+        packets += 1;
+        if packets > 1_000_000 {
+            return Err(MediaError::TooLarge("MFCC input packets"));
+        }
         let packet = reader.next_packet()?;
-        let (frames, reached_end) = match packet {
-            Some(packet) if packet.stream() == stream.index => (decoder.decode(&packet)?, false),
+        let (reached_end, position) = match packet {
+            Some(packet) if packet.stream() == stream.index => {
+                let position = packet.inner.position();
+                decoder.push_packet(&packet)?;
+                (false, position)
+            }
             Some(_) => continue,
-            None => (decoder.flush()?, true),
+            None => {
+                decoder.finish_input()?;
+                (true, -1)
+            }
         };
-        for frame in frames {
+        let mut frame_count = 0usize;
+        while let Some(frame) = decoder.pull_frame()? {
+            let ordinal = frame_count;
+            frame_count += 1;
+            if frame_count > 64 {
+                return Err(MediaError::TooLarge("audio output"));
+            }
             if cancel.load(Ordering::Relaxed) {
                 return Err(MediaError::Cancelled);
             }
+            decoded_samples += frame.samples() as i128;
+            if decoded_samples > max_samples {
+                return Err(MediaError::TooLarge("MFCC decoded audio"));
+            }
             if frame.sample_rate() != input_rate {
                 return Err(MediaError::Unsupported("audio sample rate changed"));
+            }
+            let tick = frame.pts()?;
+            if let Some(anchor) = resume {
+                if position != anchor.position
+                    || ordinal != anchor.ordinal
+                    || frame.samples() != anchor.samples
+                    || tick != Some(anchor.tick)
+                {
+                    continue;
+                }
+                state.next_input = anchor.index;
+                resume = None;
+            }
+            if let Some(tick) = tick.filter(|_| position >= 0) {
+                asset
+                    .1
+                    .lock()
+                    .map_err(|_| MediaError::Invalid("MFCC anchor state"))?
+                    .record(
+                        MfccAnchor {
+                            index: state.next_input,
+                            tick,
+                            position,
+                            ordinal,
+                            samples: frame.samples(),
+                        },
+                        input_rate,
+                    );
             }
             if state.feed(frame)? {
                 return Ok(());
             }
         }
         if reached_end {
+            if resume.is_some() {
+                return Err(MediaError::Unsupported("MFCC exact anchor unavailable"));
+            }
             state.finish()?;
             return Ok(());
         }

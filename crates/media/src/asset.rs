@@ -8,7 +8,7 @@ use std::{
     io::Read,
     path::{Path, PathBuf},
     sync::{
-        Arc,
+        Arc, Mutex,
         atomic::{AtomicBool, Ordering},
     },
 };
@@ -126,9 +126,29 @@ impl From<&Probe> for SourceProbe {
     }
 }
 
-#[derive(Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
+#[derive(Clone, Deserialize, schemars::JsonSchema)]
 #[serde(try_from = "AssetData")]
-pub struct SourceAsset(AssetData);
+#[schemars(with = "AssetData")]
+pub struct SourceAsset(
+    AssetData,
+    #[serde(skip)]
+    #[schemars(skip)]
+    pub(crate) Arc<Mutex<crate::vision_prep::MfccAnchors>>,
+);
+impl Serialize for SourceAsset {
+    fn serialize<S: serde::Serializer>(
+        &self,
+        serializer: S,
+    ) -> std::result::Result<S::Ok, S::Error> {
+        self.0.serialize(serializer)
+    }
+}
+impl PartialEq for SourceAsset {
+    fn eq(&self, other: &Self) -> bool {
+        self.0 == other.0
+    }
+}
+impl Eq for SourceAsset {}
 #[derive(Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct AssetData {
@@ -183,7 +203,7 @@ impl TryFrom<AssetData> for SourceAsset {
                 return Err(MediaError::Invalid("source stream kind or dimensions"));
             }
         }
-        Ok(Self(data))
+        Ok(Self(data, Arc::default()))
     }
 }
 impl From<SourceAsset> for AssetData {

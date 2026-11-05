@@ -300,15 +300,28 @@ geometry are checked; hostile boxes return typed errors.
 cepstral lifter 22 and `c0` equal to log frame energy. The analysis grid is
 anchored at the start of the source audio stream, so a subrange is the exact
 suffix of a full-range call and pre-emphasis uses the sample before the first
-window. Samples are interpreted as 16-bit full-scale PCM. Each call decodes
-sequentially from the beginning of the audio stream, counting decoded samples
-from that exact anchor rather than estimating a seek position from container
-PTS. This also works when a rounded timestamp happens to fall on the sample
-grid or decoded frames have different sample counts. Frames before the
-resampler preroll are discarded without conversion; the resampler starts on a
-stream-global 16 kHz grid phase at least one second before the requested window.
-Memory stays bounded, but late requests require decoding the preceding audio;
-cancellation is checked throughout the scan. At end of input the
+window. Samples are interpreted as 16-bit full-scale PCM. Decoding records exact
+sample anchors on the `SourceAsset`, shared by clones and excluded from asset
+identity, serialization and schema. The table retains at most 4,096 anchors,
+thinning uniformly as it grows. New imports, deserialization and relinks start
+cold; callers reuse the same asset for successive ranges. A late request seeks
+before the nearest recorded anchor and matches packet byte position, decoded
+frame ordinal, PTS and sample count before restoring its sample cursor. PTS is
+only a seek hint, never a rounded sample-position estimate. Unknown packet
+positions cannot establish a reusable anchor; an unavailable exact match is a
+typed refusal. No cache lock is held during I/O, decoding or callbacks.
+
+Each request charges all decoded audio (including anchor lookup and preroll)
+against `max_audio_decode_duration` (default 660 s, maximum one day), all input
+reads including probing/seeking against `max_audio_bytes` (default 256 MiB,
+maximum 4 GiB), and all packets including other streams against a one-million
+packet ceiling. Exhaustion returns `TooLarge`; anchors already learned remain
+available for subsequent requests. An initially distant cold request may refuse:
+callers can build anchors in bounded successive ranges or increase these limits.
+Repeated late requests reuse the anchors rather than scanning the source prefix.
+Frames before resampler preroll are discarded without conversion; the resampler
+starts on a stream-global 16 kHz grid phase at least one second before the window.
+Memory remains bounded and cancellation is checked throughout. At end of input the
 final window count comes from the actual received samples, so unknown-duration
 audio is padded only at its real last window, never extended with synthetic
 windows. Only windows starting inside the requested range are emitted; a range

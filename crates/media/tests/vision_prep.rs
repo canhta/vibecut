@@ -272,22 +272,33 @@ fn mfcc_range_is_globally_anchored() {
             .all(|value| value.is_finite())
     );
 
-    let limits = VisionPrepLimits {
-        max_mfcc_frames: 1,
-        ..VisionPrepLimits::default()
-    };
-    assert!(matches!(
-        mfcc_range(
-            &source,
-            SourceRange::new(Tick::ZERO, seconds(1.0)).unwrap(),
-            &limits,
-            cancel(),
-            |_| Ok(()),
-        ),
-        Err(MediaError::TooLarge(_))
-    ));
+    for limits in [
+        VisionPrepLimits {
+            max_mfcc_frames: 1,
+            ..VisionPrepLimits::default()
+        },
+        VisionPrepLimits {
+            max_audio_bytes: 1,
+            ..VisionPrepLimits::default()
+        },
+        VisionPrepLimits {
+            max_audio_decode_duration: Tick(1),
+            ..VisionPrepLimits::default()
+        },
+    ] {
+        assert!(matches!(
+            mfcc_range(
+                &source,
+                SourceRange::new(Tick::ZERO, seconds(1.0)).unwrap(),
+                &limits,
+                cancel(),
+                |_| Ok(()),
+            ),
+            Err(MediaError::TooLarge(_))
+        ));
+    }
 
-    for (name, path, tolerance, id, part_start, offset) in [
+    for (name, path, tolerance, id, part_start, offset, long_source) in [
         (
             "44.1 kHz PCM",
             common::generate(
@@ -306,6 +317,7 @@ fn mfcc_range_is_globally_anchored() {
             20,
             5.0,
             500,
+            false,
         ),
         (
             "44.1 kHz AAC",
@@ -327,6 +339,7 @@ fn mfcc_range_is_globally_anchored() {
             21,
             5.0,
             500,
+            false,
         ),
         (
             "44.1 kHz Matroska PCM",
@@ -348,6 +361,7 @@ fn mfcc_range_is_globally_anchored() {
             23,
             6.0,
             600,
+            false,
         ),
         (
             "44.1 kHz Matroska PCM sample-aligned rounded PTS",
@@ -369,12 +383,92 @@ fn mfcc_range_is_globally_anchored() {
             24,
             1.65,
             165,
+            false,
+        ),
+        (
+            "three-hour PCM with bounded anchor reuse",
+            common::generate(
+                "vision mfcc long source",
+                "vision_3h_silence.wav",
+                &[
+                    "-f",
+                    "lavfi",
+                    "-i",
+                    "anullsrc=r=16000:cl=mono",
+                    "-t",
+                    "10800",
+                    "-c:a",
+                    "pcm_s16le",
+                ],
+            ),
+            1.0e-4,
+            25,
+            10790.0,
+            1079000,
+            true,
         ),
     ] {
         let Some(path) = path else {
             return;
         };
         let source = asset(&path, id);
+        if long_source {
+            // A cold late call must refuse bounded work; successive ranges
+            // retain exact anchors, so a small budget admits warm late calls.
+            let bounded = VisionPrepLimits {
+                max_audio_decode_duration: seconds(45.0),
+                max_audio_bytes: 2 << 20,
+                ..VisionPrepLimits::default()
+            };
+            assert!(matches!(
+                mfcc_range(
+                    &source,
+                    SourceRange::new(seconds(10790.0), seconds(10791.0)).unwrap(),
+                    &bounded,
+                    cancel(),
+                    |_| Ok(())
+                ),
+                Err(MediaError::TooLarge(_))
+            ));
+            let indexing = VisionPrepLimits {
+                max_audio_decode_duration: seconds(4000.0),
+                max_audio_bytes: 128 << 20,
+                ..bounded
+            };
+            for start in [3600, 7200, 10790] {
+                let frames = collect_mfcc(
+                    &source,
+                    SourceRange::new(seconds(f64::from(start)), seconds(f64::from(start) + 1.0))
+                        .unwrap(),
+                    &indexing,
+                    cancel(),
+                );
+                assert_eq!(frames.len(), 100);
+            }
+            for start in [0.0, 3600.0, 7200.0, 10790.0, 10790.0, 10791.0] {
+                let began = std::time::Instant::now();
+                let frames = collect_mfcc(
+                    &source,
+                    SourceRange::new(seconds(start), seconds(start + 1.0)).unwrap(),
+                    &bounded,
+                    cancel(),
+                );
+                assert_eq!(frames.len(), 100);
+                assert!(
+                    frames
+                        .iter()
+                        .flat_map(|f| f.coefficients)
+                        .all(f32::is_finite)
+                );
+                // The deterministic decode duration/byte ceilings above are the work
+                // bound; retain a generous latency ceiling for this synthetic PCM case.
+                let elapsed = began.elapsed();
+                eprintln!("bounded MFCC start={start} elapsed={elapsed:?}");
+                assert!(elapsed < std::time::Duration::from_secs(2));
+            }
+
+            continue;
+        }
         let full = collect_mfcc(
             &source,
             SourceRange::new(Tick::ZERO, seconds(8.0)).unwrap(),

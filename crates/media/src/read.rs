@@ -46,6 +46,7 @@ pub struct PacketReader {
     probe: Probe,
     cancel: Arc<AtomicBool>,
     bytes: Arc<AtomicU64>,
+    budget: Arc<AtomicU64>,
 }
 impl PacketReader {
     pub fn open(path: impl AsRef<Path>) -> Result<Self> {
@@ -54,12 +55,19 @@ impl PacketReader {
     /// Opens native paths through Rust File + seekable AVIO (32 KiB buffer), with
     /// at most 32 MiB read while probing. The token also interrupts FFmpeg probing.
     pub fn open_with_cancel(path: impl AsRef<Path>, cancel: Arc<AtomicBool>) -> Result<Self> {
+        Self::open_with_read_limit(path, cancel, u64::MAX)
+    }
+    pub(crate) fn open_with_read_limit(
+        path: impl AsRef<Path>,
+        cancel: Arc<AtomicBool>,
+        max_bytes: u64,
+    ) -> Result<Self> {
         init()?;
         if cancel.load(Ordering::Relaxed) {
             return Err(MediaError::Cancelled);
         }
         let bytes = Arc::new(AtomicU64::new(0));
-        let budget = Arc::new(AtomicU64::new(32 << 20));
+        let budget = Arc::new(AtomicU64::new(max_bytes.min(32 << 20)));
         let io = ff::format::context::StreamIo::from_read_seek(Input {
             file: File::open(path)?,
             bytes: bytes.clone(),
@@ -79,11 +87,16 @@ impl PacketReader {
             .map_err(|source| {
                 if cancel.load(Ordering::Relaxed) {
                     MediaError::Cancelled
+                } else if budget.load(Ordering::Relaxed) == 0 {
+                    MediaError::TooLarge("input read bytes")
                 } else {
                     error("probe input")(source)
                 }
             })?;
-        budget.store(u64::MAX, Ordering::Relaxed);
+        budget.store(
+            max_bytes.saturating_sub(bytes.load(Ordering::Relaxed)),
+            Ordering::Relaxed,
+        );
         if input.nb_streams() > 256 {
             return Err(MediaError::TooLarge("stream count"));
         }
@@ -144,6 +157,7 @@ impl PacketReader {
             probe,
             cancel,
             bytes,
+            budget,
         })
     }
     pub fn probe(&self) -> &Probe {
@@ -159,10 +173,18 @@ impl PacketReader {
         let mut inner = ff::Packet::empty();
         match inner.read(&mut self.input) {
             Ok(()) => {}
-            Err(ff::Error::Eof) => return Ok(None),
+            Err(ff::Error::Eof) => {
+                return if self.budget.load(Ordering::Relaxed) == 0 {
+                    Err(MediaError::TooLarge("input read bytes"))
+                } else {
+                    Ok(None)
+                };
+            }
             Err(source) => {
                 return Err(if self.cancel.load(Ordering::Relaxed) {
                     MediaError::Cancelled
+                } else if self.budget.load(Ordering::Relaxed) == 0 {
+                    MediaError::TooLarge("input read bytes")
                 } else {
                     error("read packet")(source)
                 });
