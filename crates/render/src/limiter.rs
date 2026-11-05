@@ -19,7 +19,7 @@ pub(crate) struct Limiter {
 impl Limiter {
     pub(crate) fn new(rate: u32, channels: u16) -> Self {
         let bank = PolyphaseBank::new(true_peak_factor(f64::from(rate)).max(2));
-        let look = (rate as usize * 5 / 1000).max(1);
+        let look = ((rate as usize * 5 + 500) / 1000).max(1);
         let latency = look + bank.delay();
         Self {
             bank,

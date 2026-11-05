@@ -1087,6 +1087,21 @@ fn stereo_policy_keeps_headroom_and_export_limits_overload() {
         .mix(2400, 2400, &mut FileSources::default(), &h)
         .unwrap();
     assert_eq!(plain.planes(), faded.planes());
+    // Use an oscillating overload for the encoded peak check: AAC's DC
+    // reconstruction transient is not a property of the limiter's PCM ceiling.
+    let overload_input = dir.path().join("overload-sine.wav");
+    generate(
+        &overload_input,
+        &[
+            "-f",
+            "lavfi",
+            "-i",
+            "aevalsrc=0.75*sin(2*PI*997*t)|0.25*sin(2*PI*997*t):s=48000:d=1",
+            "-c:a",
+            "pcm_f32le",
+        ],
+    );
+    d.assets[0] = media::SourceAsset::import(media::AssetId(7), overload_input).unwrap();
     let mut extra = d.scene_mut().timeline.audio.last().unwrap().clone();
     extra.id = project::TrackId(9);
     extra.items[0].id = project::ItemId(8);

@@ -206,18 +206,16 @@ fn mix_raw(
         .checked_add(i64::try_from(frames).map_err(|_| Error::Invalid("sample count"))?)
         .ok_or(Error::Invalid("sample window"))?;
     let mut out = AudioBlock::new(rate, channels, frames, MemoryKind::Compositor, hooks)?;
+    if project.data().settings.master_muted {
+        return Ok(out);
+    }
     let mut spans = Vec::new();
     for track in project.data().scene().timeline.iter() {
         if track.muted {
             continue;
         }
         for item in &track.items {
-            let enabled = match &item.content {
-                ItemParams::Video(p) => p.source_audio_enabled,
-                ItemParams::Audio(_) => true,
-                _ => false,
-            };
-            if !enabled {
+            if !has_source_audio(item) {
                 continue;
             }
             let i0 = item.start.to_units(i64::from(rate), Rounding::Nearest)?;
@@ -340,4 +338,27 @@ fn mix_raw(
         }
     }
     Ok(out)
+}
+
+/// Conservative source admission: a held mute with no unmute key needs no IO.
+/// Any possible unmute keeps the source admitted, including before/after the window.
+pub(crate) fn has_source_audio(item: &project::Item) -> bool {
+    let muted = match &item.content {
+        ItemParams::Video(p) if p.source_audio_enabled => p.muted,
+        ItemParams::Audio(p) => p.muted,
+        _ => return false,
+    };
+    if let Some((_, project::Param::Value(channel))) = item
+        .animations
+        .iter()
+        .find(|(path, _)| path.as_str() == "muted")
+    {
+        channel.base() == &project::ParamValue::Bool(false)
+            || channel
+                .keys()
+                .iter()
+                .any(|key| key.value == project::ParamValue::Bool(false))
+    } else {
+        !muted
+    }
 }

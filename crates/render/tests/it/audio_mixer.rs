@@ -226,8 +226,24 @@ fn empty_muted_and_outside_timeline_are_exact_silence_and_failures_reset_state()
             d.settings.master_muted = true;
             project::Project::new(d).unwrap()
         },
+        {
+            let mut d = fixture().into_data();
+            d.scene_mut().timeline.audio[0].items[0]
+                .animations
+                .set(
+                    AnimationPath::new("muted").unwrap(),
+                    Param::new(ParamValue::Bool(true)).unwrap(),
+                )
+                .unwrap();
+            project::Project::new(d).unwrap()
+        },
     ] {
-        let block = mix_audio(&p, -5, 2003, 2, &mut source, &h).unwrap();
+        // NaN would refuse if a silent source were unnecessarily decoded.
+        let mut unavailable = Signal {
+            level: f32::NAN,
+            impulse: false,
+        };
+        let block = mix_audio(&p, -5, 2003, 2, &mut unavailable, &h).unwrap();
         assert!(block.planes().iter().flatten().all(|&v| v.to_bits() == 0));
     }
     let p = fixture();

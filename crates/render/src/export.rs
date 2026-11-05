@@ -297,11 +297,8 @@ fn admission(
             let video = !track.hidden && matches!(item.content, ItemParams::Video(_));
             let audio = include_audio
                 && !track.muted
-                && match &item.content {
-                    ItemParams::Video(p) => p.source_audio_enabled,
-                    ItemParams::Audio(_) => true,
-                    _ => false,
-                };
+                && !project.data().settings.master_muted
+                && crate::audio::has_source_audio(item);
             if (!video && !audio) || !range.overlaps(TimeRange::new(item.start, item.end()?)?) {
                 continue;
             }
