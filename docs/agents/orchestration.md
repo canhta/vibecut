@@ -26,6 +26,7 @@ Use one Orca-created worktree per ticket; its reviewer runs in a second terminal
 
 - Every command that compiles Rust (`cargo xtask ci`, `cargo test`, `cargo clippy`, `cargo build`) runs through `/Users/canh/Startup/VibeCut/.scratch/bin/build <command>`: it waits in FIFO order for a build slot (up to three, a second or third admitted only while free memory allows), sets `CARGO_TARGET_DIR` to that slot's warm cache and runs the command. Never set `CARGO_TARGET_DIR` yourself.
 - Size the live worker count by what you observe, not a fixed number: dispatch another worker while builds barely queue (`ls ~/.cache/vibecut/locks/queue | wc -l` at most 1), free memory stays high (`sysctl -n kern.memorystatus_level` at least 30) and no worker reports waiting on a build, a merge conflict or another ticket; when any of these slips, let workers finish before dispatching. Never run two live tickets that own the same crate or file area (check `Ownership`; serialize the overlap).
+- A connected Windows Orca server (`worker-start --on <environment>`) runs opencode tickets only, self-contained so work continues while the coordinator's machine is off: the tickets go inline in `--spec-file`, cargo runs directly, and reports land in that worktree's `.scratch/` for the coordinator to copy back. Connection details are maintainer-private.
 
 `.scratch/bin/cleanup` prunes incremental sessions and slots untouched for 2+ days, retaining active slots.
 
