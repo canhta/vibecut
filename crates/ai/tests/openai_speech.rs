@@ -432,80 +432,34 @@ fn payload_and_cost_bounds_refuse_before_network() {
     assert!(matches!(consent(&synth, &within, 8_534), Err(Error::Cost)));
     assert_eq!(fake.calls(), 0);
 
-    let too_long = request_with("Xin chào", "marin", "vi", "Latn", 1_000_000_000);
-    let approved = consent(&synth, &too_long, 10_000_000).unwrap();
-    assert!(matches!(
-        synthesize(&synth, &too_long, &approved, &NoHooks),
-        Err(Error::Payload)
-    ));
-    assert_eq!(fake.calls(), 0);
-
     let huge_text = "a".repeat(ai::speech::MAX_SPEECH_TEXT_BYTES);
-    let huge = request(&huge_text);
-    let approved = consent(&synth, &huge, 10_000_000_000).unwrap();
-    assert!(matches!(
-        synthesize(&synth, &huge, &approved, &NoHooks),
-        Err(Error::Payload)
-    ));
-    assert_eq!(fake.calls(), 0);
-}
-
-#[test]
-fn unicode_grapheme_quote_covers_prompt_bytes_and_refuses_before_io() {
-    // Reviewer reproduction: q + 10,000 U+0305 is one grapheme but 20,001 UTF-8
-    // bytes. A byte-BPE tokenizer can spend ~20,001 input tokens on it.
-    let text = format!("q{}", "\u{0305}".repeat(10_000));
-    let request = request_with(&text, "marin", "vi", "Latn", 1_000_000);
-    assert_eq!(request.characters(), 1);
-    assert_eq!(request.text().as_str().len(), 20_001);
-    let fake = Arc::new(FakeTransport::new(Vec::new()));
-    let synth = adapter(fake.clone());
-    let quote = match synth.estimate(&request) {
-        ai::speech::SynthesisEstimate::UpperBound(quote) => quote,
-        other => panic!("unexpected estimate: {other:?}"),
-    };
-    // 20,001 input tokens at $2.50/1M = 50,003 micro-USD, already above the old
-    // 8,003 quote that counted one grapheme.
-    assert!(
-        quote.micros() >= 50_003,
-        "quote {} does not cover input cost",
-        quote.micros()
-    );
-    assert!(matches!(consent(&synth, &request, 8_003), Err(Error::Cost)));
-    let approved = consent(&synth, &request, quote.micros()).unwrap();
-    // The byte-sized text-output headroom also exceeds the model's completion cap.
-    assert!(matches!(
-        synthesize(&synth, &request, &approved, &NoHooks),
-        Err(Error::Payload)
-    ));
-    assert_eq!(fake.calls(), 0);
-}
-
-#[test]
-fn unicode_prompt_overrun_is_refused_before_transport() {
-    // Reviewer reproduction: valid audio and a matching transcript with reported
-    // prompt usage of 20,001 tokens must not reach the transport on a shorter
-    // quote.
-    let text = format!("q{}", "\u{0305}".repeat(10_000));
-    let mut body: Value = serde_json::from_slice(&fixture("success.json")).unwrap();
-    body["choices"][0]["message"]["audio"]["transcript"] = text.clone().into();
-    body["usage"]["prompt_tokens"] = 20_001.into();
-    body["usage"]["prompt_tokens_details"]["text_tokens"] = 20_001.into();
-    let fake = Arc::new(FakeTransport::new(vec![FakeTransport::ok(
-        serde_json::to_vec(&body).unwrap(),
-    )]));
-    let synth = adapter(fake.clone());
-    let request = request_with(&text, "marin", "vi", "Latn", 6_000_000);
-    let quote = match synth.estimate(&request) {
-        ai::speech::SynthesisEstimate::UpperBound(quote) => quote,
-        other => panic!("unexpected estimate: {other:?}"),
-    };
-    let approved = consent(&synth, &request, quote.micros()).unwrap();
-    assert!(matches!(
-        synthesize(&synth, &request, &approved, &NoHooks),
-        Err(Error::Payload)
-    ));
-    assert_eq!(fake.calls(), 0);
+    // One grapheme can contain many byte-BPE tokens; its quote must cover bytes.
+    let combining_text = format!("q{}", "\u{0305}".repeat(10_000));
+    for (text, duration_micros, minimum_quote, refused_budget) in [
+        ("Xin chào", 1_000_000_000, 0, None),
+        (huge_text.as_str(), 1_000_000, 0, None),
+        (combining_text.as_str(), 1_000_000, 50_003, Some(8_003)),
+        (combining_text.as_str(), 6_000_000, 50_003, Some(14_403)),
+    ] {
+        let request = request_with(text, "marin", "vi", "Latn", duration_micros);
+        let quote = match synth.estimate(&request) {
+            ai::speech::SynthesisEstimate::UpperBound(quote) => quote,
+            other => panic!("unexpected estimate: {other:?}"),
+        };
+        assert!(quote.micros() >= minimum_quote);
+        if let Some(budget) = refused_budget {
+            assert!(matches!(
+                consent(&synth, &request, budget),
+                Err(Error::Cost)
+            ));
+        }
+        let approved = consent(&synth, &request, quote.micros()).unwrap();
+        assert!(matches!(
+            synthesize(&synth, &request, &approved, &NoHooks),
+            Err(Error::Payload)
+        ));
+        assert_eq!(fake.calls(), 0);
+    }
 }
 
 #[test]
