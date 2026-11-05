@@ -733,10 +733,11 @@ ranks and signed edge deltas.
 
 `prepare_export` validates 1..=1000 distinct candidate indices, translates the
 source cue track for each requested non-source language through the subtitle
-translation path, and calls 05's `ClipBatch::prepare`. `export` admits one short,
-waits for it, then admits the next, so a caller runner's bounded queue and
-retention are never exceeded by a large selection. A failed admission or job
-cancels the remaining batch and returns its typed error; already published
+translation path, and calls 05's `ClipBatch::prepare`. `export` keeps up to the
+runner's export concurrency in flight (capped by terminal-result retention),
+refilling slots as shorts complete and pumping the runner when its queue is full.
+A failed admission or job cancels and drains admitted siblings before returning
+its typed error; already published
 complete files remain. The CLI only selects candidates and prints paths.
 
 `cargo test -p engine --test clip_suggest` covers the ASR-to-snapped workflow,

@@ -419,6 +419,16 @@ impl JobRunner {
         });
         Ok((id, token))
     }
+    /// Bound a batch by both resource concurrency and retained terminal results.
+    pub(crate) fn batch_capacity(&self, class: ResourceClass) -> usize {
+        self.config
+            .concurrency
+            .get(class.index())
+            .copied()
+            .unwrap_or(1)
+            .min(self.config.retained)
+    }
+
     pub(crate) fn uses_budget(&self, budget: &ByteBudget) -> bool {
         self.budget.same_policy(budget)
     }

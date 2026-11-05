@@ -25,7 +25,7 @@ use engine::{
 use std::{
     collections::BTreeSet,
     path::{Path, PathBuf},
-    sync::{Arc, OnceLock},
+    sync::{Arc, Mutex, OnceLock},
     time::Duration,
 };
 use time::{FrameRate, Rounding, Tick};
@@ -232,13 +232,17 @@ fn providers(translation: bool) -> Providers {
 }
 
 fn runner() -> (JobRunner, ByteBudget) {
+    runner_with_exports(1, 8, 8)
+}
+
+fn runner_with_exports(exports: usize, queue: usize, retained: usize) -> (JobRunner, ByteBudget) {
     let budget = ByteBudget::new(2 << 30).unwrap();
     (
         JobRunner::new(
             RunnerConfig {
-                concurrency: [1, 1, 2],
-                queue: 8,
-                retained: 8,
+                concurrency: [1, exports, 2],
+                queue,
+                retained,
                 network_attempts: 1,
                 backoff: Duration::from_millis(10),
                 progress_interval: Duration::from_millis(10),
@@ -385,15 +389,26 @@ fn export_preparation_covers_source_and_translated_captions() {
     drop(prepare);
 
     // Table row: nine selected clips exceed the CLI's eight-slot runner queue.
-    // The workflow must drain each admission before the next, not leave orphans.
+    // Keep the configured export workers busy without overflowing the queue.
     let template = outcome.clips[0].clone();
     outcome.clips = (0..9)
         .map(|index| {
             let mut clip = template.clone();
             clip.proposal.title = format!("nine-{index}").into();
+            // Three frames cover scheduling without encoding nine full videos.
+            clip.segments.truncate(1);
+            let segment = &mut clip.segments[0];
+            segment.range = time::SourceRange::new(
+                segment.range.start(),
+                segment.range.start() + Tick::from_seconds_f64(0.1, Rounding::Nearest).unwrap(),
+            )
+            .unwrap();
+            clip.duration = segment.range.duration();
             clip
         })
         .collect();
+    let (mut runner, _) = runner_with_exports(2, 8, 8);
+    let progress = ExportProgress::default();
     let exported = clip_suggest::export(
         &outcome,
         ClipExportRequest {
@@ -408,17 +423,83 @@ fn export_preparation_covers_source_and_translated_captions() {
         &providers,
         &mut runner,
         &DenyUploads,
-        &SilentProgress,
+        &progress,
         &Cancellation::new(),
     )
     .unwrap();
     assert_eq!(exported.exports.len(), 9);
+    assert_eq!(progress.peak(), 2, "runner export capacity was underused");
     let (pending, active, _, _) = runner.counts();
     assert_eq!(
         (pending, active),
         (0, 0),
         "nine-clip export left admitted jobs pending or active"
     );
+
+    let cancelled_directory = tempfile::tempdir().unwrap();
+    let cancellation = Cancellation::new();
+    let progress = ExportProgress {
+        cancel: Some(cancellation.clone()),
+        ..Default::default()
+    };
+    let result = clip_suggest::export(
+        &outcome,
+        ClipExportRequest {
+            directory: cancelled_directory.path().to_path_buf(),
+            select: (0..9).collect(),
+            languages: Vec::new(),
+            formats: Vec::new(),
+            overwrite: false,
+            allow_degraded: false,
+            max_output_bytes: 1 << 30,
+        },
+        &providers,
+        &mut runner,
+        &DenyUploads,
+        &progress,
+        &cancellation,
+    );
+    assert!(matches!(result, Err(engine::EditError::Cancelled)));
+    let (pending, active, _, _) = runner.counts();
+    assert_eq!(
+        (pending, active),
+        (0, 0),
+        "cancelled exports were not drained"
+    );
+}
+
+#[derive(Default)]
+struct ExportProgress {
+    state: Mutex<(BTreeSet<engine::jobs::JobId>, usize)>,
+    cancel: Option<Cancellation>,
+}
+impl ExportProgress {
+    fn peak(&self) -> usize {
+        self.state.lock().unwrap().1
+    }
+}
+impl engine::subtitles::Progress for ExportProgress {
+    fn stage(&self, _: engine::subtitles::Stage) {}
+    fn job(&self, event: &engine::jobs::JobSnapshot) {
+        let mut state = self.state.lock().unwrap();
+        match event.state {
+            engine::jobs::JobState::Running => {
+                state.0.insert(event.id);
+            }
+            engine::jobs::JobState::Completed
+            | engine::jobs::JobState::Failed
+            | engine::jobs::JobState::Cancelled => {
+                state.0.remove(&event.id);
+            }
+            _ => {}
+        }
+        state.1 = state.1.max(state.0.len());
+        if state.0.len() == 2
+            && let Some(cancel) = &self.cancel
+        {
+            cancel.cancel();
+        }
+    }
 }
 
 #[test]

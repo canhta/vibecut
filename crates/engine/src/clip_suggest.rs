@@ -7,7 +7,7 @@ use crate::clip_boundaries::{
     BoundaryFailure, ClipBoundarySettings, SegmentAdjustment, snap_clip_boundaries,
 };
 use crate::clip_export::{ClipBatch, ClipBatchRequest, ClipPaths, ClipShort, MAX_BATCH_CLIPS};
-use crate::jobs::{JobRunner, JobState};
+use crate::jobs::{JobRunner, JobState, ResourceClass};
 use crate::providers as engine_providers;
 use crate::subtitles::{
     self, Cancellation, CatalogOperation, ConsentPrompt, Cost, Progress, Providers, Stage,
@@ -690,9 +690,9 @@ pub struct ClipExportOutcome {
     pub translation_cost: Cost,
 }
 
-/// Prepare, submit and wait for every selected short one at a time. The caller's
-/// runner queue and retention bounds are therefore never exceeded, and a failed
-/// admission or job cancels the rest without leaving pending work behind.
+/// Export with bounded parallelism, refilling slots as shorts complete. A failed
+/// admission or job cancels and drains admitted siblings before returning.
+/// Already published complete files remain.
 #[allow(clippy::too_many_arguments)]
 pub fn export(
     outcome: &ClipSuggestionOutcome,
@@ -707,73 +707,101 @@ pub fn export(
         outcome, request, providers, runner, consent, progress, cancel,
     )?;
     let mut batch = prep.batch;
+    let capacity = runner.batch_capacity(ResourceClass::GpuEncoder);
+    let mut active = Vec::with_capacity(capacity);
+    let mut next = 0;
+    let result = (|| {
+        while next < prep.selected.len() || !active.is_empty() {
+            cancel.checkpoint()?;
+            while active.len() < capacity && next < prep.selected.len() {
+                cancel.checkpoint()?;
+                match batch.submit_one(runner, next) {
+                    Ok(_) => {
+                        active.push(next);
+                        next += 1;
+                    }
+                    // Pump the caller's other work before retrying admission.
+                    Err(EditError::QueueFull) => break,
+                    Err(error) => return Err(error),
+                }
+            }
+            cancel.checkpoint()?;
+            runner.tick()?;
+            for event in runner.drain_events() {
+                if active
+                    .iter()
+                    .any(|slot| batch.job_id(*slot) == Some(event.id))
+                {
+                    progress.job(&event);
+                }
+            }
+            let mut index = 0;
+            while index < active.len() {
+                let slot = *active.get(index).ok_or(EditError::StaleResult)?;
+                let snapshot = batch.snapshot(runner, slot).ok_or(EditError::StaleResult)?;
+                match snapshot.state {
+                    JobState::Completed => {
+                        let _ = runner
+                            .take_output(snapshot.id)
+                            .ok_or(EditError::StaleResult)?;
+                        active.swap_remove(index);
+                    }
+                    JobState::Failed => {
+                        return Err(match snapshot.error {
+                            Some(error) => EditError::JobFailure(error),
+                            None => EditError::Invalid("clip job failed without diagnostics"),
+                        });
+                    }
+                    JobState::Cancelled => return Err(EditError::Cancelled),
+                    _ => index += 1,
+                }
+            }
+            if !active.is_empty() || next < prep.selected.len() {
+                std::thread::sleep(Duration::from_millis(5));
+            }
+        }
+        Ok(())
+    })();
+    if let Err(error) = result {
+        batch.cancel_all();
+        // Keep the batch alive until every admitted worker has reached a terminal
+        // state. Never shut down unrelated work in the caller's runner.
+        loop {
+            let running = (0..next).any(|slot| {
+                batch.snapshot(runner, slot).is_some_and(|snapshot| {
+                    !matches!(
+                        snapshot.state,
+                        JobState::Completed | JobState::Failed | JobState::Cancelled
+                    )
+                })
+            });
+            if !running {
+                break;
+            }
+            runner.tick()?;
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        for slot in 0..next {
+            if let Some(id) = batch.job_id(slot) {
+                let _ = runner.take_output(id);
+            }
+        }
+        return Err(error);
+    }
     let mut exports = Vec::with_capacity(prep.selected.len());
     for (slot, candidate) in prep.selected.iter().enumerate() {
-        if cancel.cancelled() {
-            batch.cancel_all();
-            return Err(EditError::Cancelled);
-        }
-        if let Err(error) = batch.submit_one(runner, slot) {
-            batch.cancel_all();
-            return Err(error);
-        }
-        if let Err(error) = wait_clip(&batch, runner, slot, progress, cancel) {
-            batch.cancel_all();
-            return Err(error);
-        }
-        let paths = batch
-            .paths(slot)
-            .ok_or(EditError::Invalid("clip paths"))?
-            .clone();
         exports.push(ClipExportPaths {
             candidate: *candidate,
-            paths,
+            paths: batch
+                .paths(slot)
+                .ok_or(EditError::Invalid("clip paths"))?
+                .clone(),
         });
     }
     Ok(ClipExportOutcome {
         exports,
         translation_cost: prep.translation_cost,
     })
-}
-
-fn wait_clip(
-    batch: &ClipBatch,
-    runner: &mut JobRunner,
-    index: usize,
-    progress: &dyn Progress,
-    cancel: &Cancellation,
-) -> Result<(), EditError> {
-    let id = batch
-        .job_id(index)
-        .ok_or(EditError::Invalid("clip not submitted"))?;
-    loop {
-        if cancel.cancelled() {
-            batch.cancel(index)?;
-        }
-        runner.tick()?;
-        for event in runner.drain_events() {
-            if event.id == id {
-                progress.job(&event);
-            }
-        }
-        let snapshot = batch
-            .snapshot(runner, index)
-            .ok_or(EditError::StaleResult)?;
-        match snapshot.state {
-            JobState::Completed => {
-                let _ = runner.take_output(id).ok_or(EditError::StaleResult)?;
-                return Ok(());
-            }
-            JobState::Failed => {
-                return Err(match snapshot.error {
-                    Some(error) => EditError::JobFailure(error),
-                    None => EditError::Invalid("clip job failed without diagnostics"),
-                });
-            }
-            JobState::Cancelled => return Err(EditError::Cancelled),
-            _ => std::thread::sleep(Duration::from_millis(5)),
-        }
-    }
 }
 
 fn hex(bytes: &[u8]) -> String {
