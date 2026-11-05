@@ -1642,4 +1642,51 @@ fn sound_library_attribution_and_licence_are_written_into_export_metadata() {
         .expect("licence comment tag");
     assert!(comment.contains("Whoosh by Freesound user (Attribution)"));
     assert!(comment.contains("https://freesound.org/s/42/"));
+    let published = std::fs::read(&output).unwrap();
+    for limit in ["bytes", "records"] {
+        let mut data = p.data().clone();
+        if limit == "bytes" {
+            let project::ItemParams::Audio(params) =
+                &mut data.scene_mut().timeline.audio[0].items[0].content
+            else {
+                panic!("audio item");
+            };
+            let project::AudioSource::Library { sound } = &mut params.source else {
+                panic!("library sound");
+            };
+            sound.attribution = "a".repeat(4096).into();
+            sound.source_url = format!("https://freesound.org/s/42/?padding={}", "x".repeat(5000));
+        } else {
+            let original = data.scene().timeline.audio[0].clone();
+            for id in 100..164 {
+                let mut track = original.clone();
+                track.id = project::TrackId(id);
+                track.items[0].id = project::ItemId(id);
+                let project::ItemParams::Audio(params) = &mut track.items[0].content else {
+                    panic!("audio item");
+                };
+                let project::AudioSource::Library { sound } = &mut params.source else {
+                    panic!("library sound");
+                };
+                sound.id = id;
+                sound.source_url = format!("https://freesound.org/s/{id}/");
+                data.scene_mut().timeline.audio.push(track);
+            }
+        }
+        let oversized = project::Project::new(data).unwrap();
+        assert!(
+            matches!(
+                export(
+                    &oversized,
+                    TimeRange::new(Tick::ZERO, oversized.duration()).unwrap(),
+                    &settings,
+                    &output,
+                    &Hooks::default(),
+                ),
+                Err(render::Error::Media(media::MediaError::TooLarge(_)))
+            ),
+            "{limit} must refuse rather than omit attribution"
+        );
+        assert_eq!(std::fs::read(&output).unwrap(), published);
+    }
 }

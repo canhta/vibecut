@@ -411,6 +411,7 @@ struct StoredLibrary {
 pub struct SoundLibrary {
     root: PathBuf,
     audio: PathBuf,
+    lease: project::WriterLease,
     state: Mutex<Vec<SavedSound>>,
 }
 impl SoundLibrary {
@@ -419,8 +420,16 @@ impl SoundLibrary {
         let root = fs::canonicalize(root)?;
         let audio = root.join("audio");
         private_directory(&audio)?;
+        // Lease a stable catalog identity, separately from library.json, whose
+        // format/publication is owned here rather than by project persistence.
+        let lease = project::WriterLease::acquire(&root.join("sounds.vibecut"))?;
         let state = Mutex::new(load_library(&root)?);
-        Ok(Self { root, audio, state })
+        Ok(Self {
+            root,
+            audio,
+            lease,
+            state,
+        })
     }
     pub fn root(&self) -> &Path {
         &self.root
@@ -449,11 +458,13 @@ impl SoundLibrary {
             saved_at_unix_ms: now_ms(),
         };
         let mut state = self.state.lock().map_err(|_| Error::LibraryCorrupt)?;
-        if let Some(existing) = state.iter_mut().find(|item| item.sound.id == sound.id) {
+        let mut next = state.clone();
+        if let Some(existing) = next.iter_mut().find(|item| item.sound.id == sound.id) {
             saved.saved_at_unix_ms = saved.saved_at_unix_ms.max(existing.saved_at_unix_ms);
             let old_url = existing.sound.audio_url.clone();
             *existing = saved.clone();
-            self.persist(&state)?;
+            self.persist(&next)?;
+            *state = next;
             if old_url != sound.audio_url
                 && !state.iter().any(|item| item.sound.audio_url == old_url)
             {
@@ -461,16 +472,17 @@ impl SoundLibrary {
             }
             return Ok(saved);
         }
-        if state.len() >= MAX_SAVED {
+        if next.len() >= MAX_SAVED {
             return Err(Error::Limit);
         }
-        state.push(saved.clone());
-        state.sort_by(|a, b| {
+        next.push(saved.clone());
+        next.sort_by(|a, b| {
             b.saved_at_unix_ms
                 .cmp(&a.saved_at_unix_ms)
                 .then_with(|| a.sound.id.cmp(&b.sound.id))
         });
-        self.persist(&state)?;
+        self.persist(&next)?;
+        *state = next;
         Ok(saved)
     }
     pub fn unsave(&self, id: u64) -> Sound<bool> {
@@ -480,10 +492,15 @@ impl SoundLibrary {
             .iter()
             .find(|item| item.sound.id == id)
             .map(|item| item.sound.audio_url.clone());
-        state.retain(|item| item.sound.id != id);
-        let changed = state.len() != before;
+        let next: Vec<_> = state
+            .iter()
+            .filter(|item| item.sound.id != id)
+            .cloned()
+            .collect();
+        let changed = next.len() != before;
         if changed {
-            self.persist(&state)?;
+            self.persist(&next)?;
+            *state = next;
             if let Some(url) = removed_url
                 && !state.iter().any(|item| item.sound.audio_url == url)
             {
@@ -496,8 +513,8 @@ impl SoundLibrary {
     pub fn clear_all(&self) -> Sound<usize> {
         let mut state = self.state.lock().map_err(|_| Error::LibraryCorrupt)?;
         let removed = state.len();
+        self.persist(&[])?;
         state.clear();
-        self.persist(&state)?;
         for entry in fs::read_dir(&self.audio)? {
             let entry = entry?;
             if entry.file_type()?.is_file() {
@@ -607,6 +624,7 @@ impl SoundLibrary {
         }
     }
     fn persist(&self, state: &[SavedSound]) -> Sound<()> {
+        self.lease.validate()?;
         let library = StoredLibrary {
             format: LIBRARY_FORMAT.into(),
             version: LIBRARY_VERSION,
@@ -930,7 +948,7 @@ impl SoundDownloads {
                 }
                 file.sync_all()?;
                 drop(file);
-                self.library.publish_temp(source, &temp)
+                self.library.publish_temp(source, &temp, cancelled)
             })();
             if result.is_err() {
                 let _ = fs::remove_file(&temp);
@@ -941,7 +959,15 @@ impl SoundDownloads {
     }
 }
 impl SoundLibrary {
-    fn publish_temp(&self, source: &str, temp: &Path) -> Sound<CachedSound> {
+    fn publish_temp(
+        &self,
+        source: &str,
+        temp: &Path,
+        cancelled: &dyn Fn() -> bool,
+    ) -> Sound<CachedSound> {
+        if cancelled() {
+            return Err(Error::Cancelled);
+        }
         let cached = cached_from_path(temp.to_owned(), Some(source))?;
         if cached.probe.duration.is_none_or(|d| d <= Tick::ZERO)
             || !cached
@@ -951,6 +977,9 @@ impl SoundLibrary {
                 .any(|s| s.kind == media::StreamKind::Audio)
         {
             return Err(Error::InvalidResponse);
+        }
+        if cancelled() {
+            return Err(Error::Cancelled);
         }
         fs::rename(temp, self.cache_path(source))?;
         cached_from_path(self.cache_path(source), Some(source))

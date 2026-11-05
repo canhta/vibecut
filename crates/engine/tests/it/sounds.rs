@@ -253,11 +253,12 @@ impl DownloadTransport for TrackedDownload {
 struct CancelReader {
     bytes: Vec<u8>,
     first: bool,
+    at_eof: bool,
     cancel: Arc<AtomicBool>,
 }
 impl Read for CancelReader {
     fn read(&mut self, out: &mut [u8]) -> std::io::Result<usize> {
-        if self.first {
+        if (self.first && !self.at_eof) || (self.bytes.is_empty() && self.at_eof) {
             self.first = false;
             self.cancel.store(true, Ordering::Release);
         }
@@ -276,6 +277,7 @@ impl Read for CancelReader {
 }
 struct CancellingDownload {
     bytes: Vec<u8>,
+    at_eof: bool,
     cancel: Arc<AtomicBool>,
 }
 impl DownloadTransport for CancellingDownload {
@@ -290,6 +292,7 @@ impl DownloadTransport for CancellingDownload {
             body: Box::new(CancelReader {
                 bytes: self.bytes.clone(),
                 first: true,
+                at_eof: self.at_eof,
                 cancel: self.cancel.clone(),
             }),
         })
@@ -335,6 +338,10 @@ fn saved_library_round_trips_offline_and_clear_all_removes_cache() {
     let sound = sound(7, "https://cdn.example/7.mp3");
     {
         let library = SoundLibrary::open(root.path()).unwrap();
+        assert!(matches!(
+            SoundLibrary::open(root.path()),
+            Err(engine::sounds::Error::Project(project::Error::Busy))
+        ));
         library.save(&sound).unwrap();
         assert!(library.is_saved(7).unwrap());
         library.store_cached(&sound.audio_url, &wav()).unwrap();
@@ -367,6 +374,28 @@ fn saved_library_round_trips_offline_and_clear_all_removes_cache() {
     assert_eq!(library.clear_all().unwrap(), 1);
     assert!(library.saved().unwrap().is_empty());
     assert!(library.cached(&sound.audio_url).unwrap().is_none());
+    library.save(&sound).unwrap();
+    library.store_cached(&sound.audio_url, &wav()).unwrap();
+    let saved = library.saved().unwrap();
+    let path = root.path().join("library.json");
+    std::fs::remove_file(&path).unwrap();
+    std::fs::create_dir(&path).unwrap();
+    for operation in ["insert", "update", "unsave", "clear"] {
+        let mut changed = sound.clone();
+        changed.audio_url.push_str("?updated=1");
+        let failed = match operation {
+            "insert" => {
+                changed.id += 1;
+                library.save(&changed).is_err()
+            }
+            "update" => library.save(&changed).is_err(),
+            "unsave" => library.unsave(sound.id).is_err(),
+            _ => library.clear_all().is_err(),
+        };
+        assert!(failed, "{operation} must report failed publication");
+        assert_eq!(library.saved().unwrap(), saved, "{operation}");
+        assert!(library.cached(&sound.audio_url).unwrap().is_some());
+    }
 }
 #[test]
 fn changed_source_url_invalidates_the_cached_preview() {
@@ -451,25 +480,31 @@ fn download_is_bounded_cancellable_and_publishes_only_complete_audio() {
         Err(engine::sounds::Error::Limit)
     ));
 
-    let cancel = Arc::new(AtomicBool::new(false));
-    let cancelling = CancellingDownload {
-        bytes: wav(),
-        cancel: cancel.clone(),
-    };
-    let downloads = SoundDownloads::new(library.clone(), Arc::new(cancelling));
-    assert!(matches!(
-        downloads.download(
-            "https://cdn.example/cancel.mp3",
-            &|| cancel.load(Ordering::Acquire),
-            &|_, _| {}
-        ),
-        Err(engine::sounds::Error::Cancelled)
-    ));
-    assert!(
-        !library
-            .cache_path("https://cdn.example/cancel.mp3")
-            .exists()
-    );
+    for at_eof in [false, true] {
+        let cancel = Arc::new(AtomicBool::new(false));
+        let cancelling = CancellingDownload {
+            bytes: wav(),
+            at_eof,
+            cancel: cancel.clone(),
+        };
+        let downloads = SoundDownloads::new(library.clone(), Arc::new(cancelling));
+        assert!(
+            matches!(
+                downloads.download(
+                    "https://cdn.example/cancel.mp3",
+                    &|| cancel.load(Ordering::Acquire),
+                    &|_, _| {}
+                ),
+                Err(engine::sounds::Error::Cancelled)
+            ),
+            "cancel at EOF: {at_eof}"
+        );
+        assert!(
+            !library
+                .cache_path("https://cdn.example/cancel.mp3")
+                .exists()
+        );
+    }
 
     let missing = Download {
         status: 404,

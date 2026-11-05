@@ -1001,7 +1001,10 @@ mutate the project.
 
 `SoundLibrary` owns a versioned `library.json` plus content-addressed preview bytes
 under the app-supplied root. Saving is an idempotent upsert; unsave and clear-all
-remove unreferenced previews. The cache key includes the exact preview URL, so a
+remove unreferenced previews. A project-owned writer lease excludes simultaneous
+handles/processes for the same root; sharing uses one `Arc<SoundLibrary>`.
+A failed library-file publication preserves the in-memory saved list.
+The cache key includes the exact preview URL, so a
 changed URL is a guaranteed miss and stale bytes are removed when no saved sound
 still cites them. Search responses are capped at 1 MiB, library files at 1 MiB
 and 1,024 entries, and previews at 32 MiB. `SoundDownloads` streams through the
@@ -1015,7 +1018,8 @@ and a missing device is a typed error.
 
 Container export writes deduplicated attribution/licence records from every library
 audio item into the MP4/WebM `comment` tag through media's bounded muxer metadata
-seam.
+seam. Export refuses more than 64 distinct records or 8 KiB of attribution text
+with a typed size error, preserving any existing output instead of omitting credits.
 
 ## Provider selection and fallback
 
