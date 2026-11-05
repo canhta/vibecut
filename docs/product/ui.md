@@ -100,6 +100,19 @@ Dark and light both ship in v1 with the same geometry, type and density; only co
 - Timeline: 22 px ruler, 65 px video track, 50 px audio track, 25 px text/sticker/effect/filter/adjustment track, 6 px gap, 112 px label column, 12 px scrollbar.
 - Clip trim handles are 8 px wide with a 12 px capture area.
 
+### Local models
+
+The model manager reuses the export modal's 12 px radius, 24 px inner margin and
+34 px footer buttons at an 880 px width. A scrollable model list shows each id and
+its installed/download state; the selected model's detail shows provider, language
+scope, exact size, licence and source links, per-file SHA-256 and the policy
+restriction. Only the affirmative footer Download click grants transfer consent;
+non-permissive licences add an explicit review checkbox first. Progress, Cancel,
+Resume and typed storage/network/integrity errors stay in the same footer. The
+layout is our own application of the [layout grid](#layout-grid) and
+[density](#density); no external reference capture exists for it, so treat its
+spacing as proposed until the next UI audit.
+
 ### Export and settings
 
 - Export is a 900x820 px modal: 227 px cover column plus settings, using [layout radii](#layout-grid) and [density](#density).

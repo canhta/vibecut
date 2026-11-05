@@ -16,7 +16,7 @@ The core runs headless: editing, tests and the CLI need no window or UI toolkit;
 | engine | crates/engine | Session, commands, history, recovery scheduling, jobs, cache, adapter selection, clip batch export and per-shot analysis | time, media, project, captions, text, render, ai |
 | clip-eval | crates/clip-eval | Fixed labelled clip-pipeline evaluation harness, metrics and local reports | time, media, captions, ai, engine |
 | vibecut-cli | apps/vibecut-cli | Headless adapter: CLI arguments, typed exit codes, dispatch, control-session lifetime, project lease composition and export admission | engine, media, project, render, time |
-| vibecut | apps/vibecut | Desktop app: UI, playback, wgpu compositor, preferences, app controls and inspection | time, engine, media, project, captions, text, render, ai |
+| vibecut | apps/vibecut | Desktop app: UI, playback, model-manager presentation, wgpu compositor, preferences, app controls and inspection | time, engine, media, project, captions, text, render, ai |
 
 Only `media` links FFmpeg. Render's CPU compositor is the reference shared by preview and export; the app owns the optional wgpu adapter behind render's interface. Update this table in the same change that adds a responsibility or edge.
 
@@ -37,7 +37,7 @@ The [glossary](../../GLOSSARY.md) owns domain definitions; crate READMEs own con
 | Row tasks and native conversion worker allowance | [engine kernel execution](../../crates/engine/README.md#render-kernel-execution) |
 | Export execution | [render](../../crates/render/README.md#export-and-publication) |
 | Clip naming, cue mapping, per-short cancel/retry | [engine batch export](../../crates/engine/README.md#clip-batch-export) |
-| Local model catalog, consent, integrity, transport / transfers, cache bundles | [ai catalog](../../crates/ai/README.md#model-catalog-and-language-neutral-weights) / [engine transfers](../../crates/engine/README.md#local-model-transfers) |
+| Local model catalog, consent, integrity, transport / transfers, cache bundles / manager presentation | [ai catalog](../../crates/ai/README.md#model-catalog-and-language-neutral-weights) / [engine transfers](../../crates/engine/README.md#local-model-transfers) / [app manager](../../apps/vibecut/README.md#local-model-manager) |
 | Clip boundary snapping / speech groups / energy | [engine](../../crates/engine/README.md#clip-boundary-adjustment) / [captions](../../crates/captions/README.md#source-cut-units) / [media](../../crates/media/README.md#speech-energy-windows) |
 | Shot analysis and complete artifact caching | [engine analysis](../../crates/engine/README.md#per-shot-analysis) |
 | Vision preparation / inference and shape-plan cache | [media](../../crates/media/README.md#vision-preparation) / [ai detectors](../../crates/ai/README.md#local-vision-detectors) |

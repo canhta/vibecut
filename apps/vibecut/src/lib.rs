@@ -8,6 +8,7 @@ mod frontend;
 mod icons;
 pub mod import;
 pub mod lifecycle;
+pub mod model_manager;
 pub mod playback;
 pub mod selection;
 pub mod shorts;
@@ -42,6 +43,10 @@ pub enum Error {
     Invalid(&'static str),
     #[error("engine operation failed")]
     Engine(#[from] engine::EditError),
+    #[error("AI operation failed")]
+    Ai(#[from] ai::Error),
+    #[error("caption data failed")]
+    Captions(#[from] captions::Error),
     #[error("preview worker failed")]
     Worker(#[source] std::sync::Arc<engine::EditError>),
     #[error("project operation failed")]

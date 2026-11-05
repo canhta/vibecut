@@ -36,6 +36,7 @@ use vibecut::{
     catalog::{Locale, Preferences},
     egui,
     import::ImportProbe,
+    model_manager::ModelManager,
     playback::{Files, Playback, Sources},
     workspace::Workspace,
 };
@@ -95,6 +96,7 @@ impl App {
 /// window does not have.
 struct AuditApp {
     app: App,
+    _model_cache: Option<tempfile::TempDir>,
 }
 impl AuditApp {
     fn busy(&self) -> bool {
@@ -189,6 +191,18 @@ const SCENES: &[Scene] = &[
         reference_dark: Some("screens-2026-11-04/shorts-7-quick-edit-layout.png"),
         reference_light: Some("screens-2026-11-04/shorts-7-quick-edit-layout.png"),
         build: |theme, scale| shorts_scene(theme, scale, Locale::Vi, "review"),
+    },
+    Scene {
+        name: "models",
+        reference_dark: None,
+        reference_light: None,
+        build: models,
+    },
+    Scene {
+        name: "models-vi",
+        reference_dark: None,
+        reference_light: None,
+        build: models_vi,
     },
     Scene {
         name: "home",
@@ -310,7 +324,10 @@ fn harness_sized(app: App, scale: f32, size: [f32; 2]) -> AppHarness {
     Harness::builder()
         .with_size(egui::vec2(size[0], size[1]))
         .with_pixels_per_point(scale)
-        .build_eframe(|_| AuditApp { app })
+        .build_eframe(|_| AuditApp {
+            app,
+            _model_cache: None,
+        })
 }
 
 fn home(theme: Theme, scale: f32) -> Result<AppHarness, Failure> {
@@ -360,6 +377,61 @@ fn empty_editor(theme: Theme, locale: Locale) -> Result<Editor, Failure> {
 
 fn editor_empty(theme: Theme, scale: f32) -> Result<AppHarness, Failure> {
     Ok(app_editor(empty_editor(theme, Locale::En)?, scale))
+}
+
+struct NoTransfer;
+impl ai::transport::DownloadTransport for NoTransfer {
+    fn get(
+        &self,
+        _: &str,
+        _: &[(String, String)],
+    ) -> Result<ai::transport::HttpStreamResponse, ai::Error> {
+        Err(ai::Error::Network)
+    }
+}
+
+fn models(theme: Theme, scale: f32) -> Result<AppHarness, Failure> {
+    models_locale(theme, scale, Locale::En)
+}
+
+fn models_vi(theme: Theme, scale: f32) -> Result<AppHarness, Failure> {
+    models_locale(theme, scale, Locale::Vi)
+}
+
+fn models_locale(theme: Theme, scale: f32, locale: Locale) -> Result<AppHarness, Failure> {
+    let cache = tempfile::tempdir()?;
+    let budget = ByteBudget::new(8 << 20)?;
+    let (artifacts, _) = engine::cache::ArtifactCache::open(cache.path(), budget.clone(), 8)?;
+    let transfers = engine::models::ModelTransfers::new(
+        artifacts,
+        Arc::new(NoTransfer),
+        Arc::new(engine::models::SystemModelIo),
+    );
+    let manager = ModelManager::with_transfers(budget, ai::models::catalog()?, transfers)?;
+    let mut editor = empty_editor(theme, locale)?;
+    editor.set_model_manager(manager);
+    editor.open_models()?;
+    let mut app = harness_sized(App::Editor(Box::new(editor)), scale, [1280.0, 800.0]);
+    app.state_mut()._model_cache = Some(cache);
+    let deadline = Instant::now() + Duration::from_secs(20);
+    loop {
+        app.run_steps(1);
+        if !app
+            .state()
+            .inspect()?
+            .models
+            .as_ref()
+            .is_some_and(|models| models.checking)
+        {
+            break;
+        }
+        if Instant::now() >= deadline {
+            return Err("model check did not finish before the audit deadline".into());
+        }
+        std::thread::sleep(Duration::from_millis(2));
+    }
+    app.run_steps(4);
+    Ok(app)
 }
 
 fn source_stream(kind: StreamKind, duration: Tick) -> Result<SourceStream, Failure> {

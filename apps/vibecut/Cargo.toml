@@ -25,6 +25,7 @@ egui_extras = { version = "0.37.0", features = ["svg"] }
 cpal = "0.18.2"
 media = { path = "../../crates/media" }
 engine = { path = "../../crates/engine" }
+ai = { path = "../../crates/ai", default-features = false }
 project = { path = "../../crates/project" }
 render = { path = "../../crates/render" }
 time = { path = "../../crates/time" }
