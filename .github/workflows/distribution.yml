@@ -38,6 +38,9 @@ jobs:
           APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: cargo xtask dist signing validate
+      - name: Check distribution boundaries
+        if: '!inputs.signed || !matrix.windows'
+        run: 'cargo test -p xtask distribution::'
       - uses: ./.github/actions/setup-build
         if: '!inputs.signed || !matrix.windows'
         with:

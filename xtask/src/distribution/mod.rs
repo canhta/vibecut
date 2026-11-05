@@ -136,6 +136,19 @@ impl Tools {
     fn version(&self) -> &'static str {
         env!("CARGO_PKG_VERSION")
     }
+    fn variable(&self, key: &str) -> Option<&str> {
+        if let Some(value) = self.env.get(key) {
+            return Some(value.as_str());
+        }
+        if self.host == Host::Windows {
+            self.env
+                .iter()
+                .find(|(name, _)| name.eq_ignore_ascii_case(key))
+                .map(|(_, value)| value.as_str())
+        } else {
+            None
+        }
+    }
 }
 fn capture(command: &mut Command, timeout: Duration) -> Result<Captured> {
     let mut child = command
@@ -228,7 +241,46 @@ fn fresh(path: &Path) -> Result<PathBuf> {
         fs::create_dir_all(parent).map_err(|e| e.to_string())?;
     }
     fs::create_dir(path).map_err(|e| format!("output must be new: {}: {e}", path.display()))?;
-    fs::canonicalize(path).map_err(|e| e.to_string())
+    canonical(path)
+}
+fn canonical(path: &Path) -> Result<PathBuf> {
+    let canonical = fs::canonicalize(path).map_err(|e| e.to_string())?;
+    #[cfg(windows)]
+    {
+        native_windows_path(&canonical)
+    }
+    #[cfg(not(windows))]
+    {
+        Ok(canonical)
+    }
+}
+#[cfg(windows)]
+fn native_windows_path(path: &Path) -> Result<PathBuf> {
+    use std::path::{Component, Prefix};
+    let mut components = path.components();
+    let Some(Component::Prefix(prefix)) = components.next() else {
+        return Ok(path.to_owned());
+    };
+    let mut output = match prefix.kind() {
+        Prefix::VerbatimDisk(drive) => PathBuf::from(format!("{}:\\", char::from(drive))),
+        Prefix::VerbatimUNC(server, share) => {
+            let mut name = OsString::from("\\\\");
+            name.push(server);
+            name.push("\\");
+            name.push(share);
+            PathBuf::from(name)
+        }
+        Prefix::Verbatim(_) | Prefix::DeviceNS(_) => {
+            return Err("native distribution tools require a drive or UNC path".into());
+        }
+        _ => return Ok(path.to_owned()),
+    };
+    for component in components {
+        if component != Component::RootDir {
+            output.push(component.as_os_str());
+        }
+    }
+    Ok(output)
 }
 fn entries(path: &Path) -> Result<Vec<PathBuf>> {
     let mut result = fs::read_dir(path)
@@ -381,7 +433,7 @@ impl Options {
 }
 fn build(tools: &mut Tools, prefix: &Path, output: &Path, debug: bool) -> Result<()> {
     let output = fresh(output)?;
-    let prefix = fs::canonicalize(prefix).map_err(|e| e.to_string())?;
+    let prefix = canonical(prefix)?;
     let mut command = Command::new(env::var_os("CARGO").unwrap_or_else(|| "cargo".into()));
     command
         .args([
@@ -531,5 +583,41 @@ pub fn run(root: &Path, args: &[String]) -> Result<()> {
             }
         }
         _ => Err("unknown distribution command".into()),
+    }
+}
+
+#[cfg(test)]
+#[allow(clippy::expect_used, clippy::wildcard_imports)]
+mod process_environment_tests {
+    use super::*;
+    #[test]
+    fn windows_environment_lookup_is_case_insensitive() {
+        let mut tools = Tools::new(Path::new("."));
+        tools.env.clear();
+        tools.host = Host::Windows;
+        tools.env.insert("SYSTEMROOT".into(), "C:\\Windows".into());
+        assert_eq!(tools.variable("SystemRoot"), Some("C:\\Windows"));
+        tools.host = Host::Mac;
+        assert_eq!(tools.variable("SystemRoot"), None);
+    }
+    #[cfg(windows)]
+    #[test]
+    fn native_compiler_paths_do_not_use_extended_length_namespaces() {
+        for (input, expected) in [
+            (
+                r"\\?\C:\SDK with spaces\Tiếng Việt",
+                r"C:\SDK with spaces\Tiếng Việt",
+            ),
+            (
+                r"\\?\UNC\server\share\SDK with spaces",
+                r"\\server\share\SDK with spaces",
+            ),
+            (r"C:\SDK", r"C:\SDK"),
+        ] {
+            assert_eq!(
+                native_windows_path(Path::new(input)).expect("native path"),
+                PathBuf::from(expected)
+            );
+        }
     }
 }

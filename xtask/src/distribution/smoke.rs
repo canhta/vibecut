@@ -14,14 +14,7 @@ fn sanitized(tools: &Tools, program: &Path, cwd: &Path) -> Command {
         if tools.host == Host::Mac {
             PathBuf::from("/usr/bin:/bin:/usr/sbin:/sbin")
         } else {
-            PathBuf::from(
-                tools
-                    .env
-                    .get("SystemRoot")
-                    .map(String::as_str)
-                    .unwrap_or("C:\\Windows"),
-            )
-            .join("System32")
+            PathBuf::from(tools.variable("SystemRoot").unwrap_or("C:\\Windows")).join("System32")
         },
     );
     command
@@ -63,7 +56,7 @@ pub(super) fn run(tools: &mut Tools, o: &Options) -> Result<()> {
     if tools.host == Host::Other {
         return Err("distribution smoke requires macOS or Windows".into());
     }
-    let installed = fs::canonicalize(o.path("--installed")?).map_err(|e| e.to_string())?;
+    let installed = canonical(&o.path("--installed")?)?;
     let output = fresh(&o.path("--output")?)?;
     let binaries = if tools.host == Host::Mac {
         installed.join("Contents/MacOS")
@@ -91,7 +84,7 @@ pub(super) fn run(tools: &mut Tools, o: &Options) -> Result<()> {
             &mut receipts,
         )?;
         if let Some(media) = o.values.get("--media") {
-            let media = fs::canonicalize(media).map_err(|e| e.to_string())?;
+            let media = canonical(Path::new(media))?;
             cli(
                 tools,
                 &binary,

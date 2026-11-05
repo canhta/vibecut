@@ -250,7 +250,7 @@ fn windows_audit(tools: &mut Tools, files: &[PathBuf], arch: &str) -> Result<()>
         .map(|name| name.to_string_lossy().to_lowercase())
         .collect();
     let system =
-        PathBuf::from(tools.env.get("SystemRoot").ok_or("missing SystemRoot")?).join("System32");
+        PathBuf::from(tools.variable("SystemRoot").ok_or("missing SystemRoot")?).join("System32");
     for path in files {
         let (machine, subsystem) = pe(path)?;
         if machine != expected {
@@ -318,7 +318,7 @@ pub(super) fn package(
         return Err("unsupported distribution architecture".into());
     }
     let output = fresh(&request.output)?;
-    let prefix = fs::canonicalize(&request.prefix).map_err(|e| e.to_string())?;
+    let prefix = canonical(&request.prefix)?;
     let revision = run!(tools, "git", "rev-parse", "HEAD")?;
     let mut receipt = json!({"version":tools.version(),"os":request.os,"arch":request.arch,"revision":revision.trim(),"release_acceptance":false,"input_sha256":manifest(&request.binaries)?});
     if request.binaries.join("build.json").is_file() {
