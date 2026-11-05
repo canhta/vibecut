@@ -50,7 +50,7 @@ code is settled by [copy imports](../engineering/workflows.md#copy-imports).
 
 ## Placement
 
-- One Orca-created worktree per worker. A ticket branch is `<type>/<milestone>-<NN>-<slug>`, lowercase with hyphens (e.g. `feat/p1-clips-04-review-ui`), where `<type>` is the Conventional Commits type of the ticket's main change: `feat`, `fix`, `perf`, `refactor`, `test`, `docs`, `build`, `ci` or `chore` ([Conventional Commits](https://www.conventionalcommits.org/en/v1.0.0/), [Conventional Branch](https://conventionalbranch.org/)); commits use the same types. A pull loop starts each ticket on a fresh branch from `origin/main` in that worktree.
+- One Orca-created worktree per ticket; its reviewer runs as a second terminal in that worktree (warm build artifacts, no second checkout) while the implementer waits for the verdict. A ticket branch is `<type>/<milestone>-<NN>-<slug>`, lowercase with hyphens (e.g. `feat/p1-clips-04-review-ui`), where `<type>` is the Conventional Commits type of the ticket's main change: `feat`, `fix`, `perf`, `refactor`, `test`, `docs`, `build`, `ci` or `chore` ([Conventional Commits](https://www.conventionalcommits.org/en/v1.0.0/), [Conventional Branch](https://conventionalbranch.org/)); commits use the same types. A pull loop starts each ticket on a fresh branch from `origin/main` in that worktree.
 - `.scratch/` and `.spikes/` exist only in the main checkout: read and write them by absolute path.
 - Every command that compiles Rust (`cargo xtask ci`, `cargo test`, `cargo clippy`, `cargo build`) runs through `/Users/canh/Startup/VibeCut/.scratch/bin/build <command>`: it waits for the build slot (a lock; one on this 16 GB machine), sets `CARGO_TARGET_DIR` to that slot's warm cache and runs the command. Never set `CARGO_TARGET_DIR` yourself.
 - At most 4 live workers, reviewers included (RAM: 16 GB), and no two live tickets own the same crate or file area (check `Ownership` in each ticket; serialize the overlap).
@@ -62,7 +62,7 @@ code is settled by [copy imports](../engineering/workflows.md#copy-imports).
 1. Dispatch with a one-line spec; the rest lives in this file:
    - `Agent loop: <assignee> max <n> start: <milestone>/NN`
    - `Review: <milestone>/NN <branch>@<sha7>`
-   Longer briefs go in a spec file (`--spec-file`). Reviewers get their own new worktree, never the implementer's.
+   Longer briefs go in a spec file (`--spec-file`). Start the reviewer with `--worktree` set to the implementer's worktree.
 2. End the turn; Orca wakes you for mail. `check` returns one message per call: repeat it until `No messages` (or read every `[unhandled]` line of `orca orchestration inbox`). Read the `worker_done` summary and the report TL;DR only. On every wake also run `orca orchestration worker-list` and `git worktree list`: a worker whose ticket merged or was dropped, or one idle without mail and without an open ticket, is stopped and its worktree cleaned (save untracked outputs first). `worker-stop` can leave the agent running: confirm with `worker-list` that its terminal is released, else `orca terminal close --terminal <id>`. A worker waiting on its own ticket's review is not stale.
 3. Answer questions with one batched reply; send no acknowledgements. Technical
    decisions (runtime, library, contract, approach) are the coordinator's: when the
