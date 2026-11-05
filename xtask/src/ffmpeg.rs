@@ -436,7 +436,13 @@ fn build_source(
     {
         let log = ffbuild.join("ffbuild/config.log");
         match fs::read_to_string(&log) {
-            Ok(log) => eprintln!("FFmpeg configure failure log:\n{log}"),
+            Ok(log) => {
+                // configure starts its log with a shell environment dump. Only
+                // emit compiler probes, never inherited credentials/settings.
+                if let Some((_, probes)) = log.split_once("\nBEGIN ") {
+                    eprintln!("FFmpeg configure compiler probes:\nBEGIN {probes}");
+                }
+            }
             Err(error) => eprintln!("cannot read {}: {error}", log.display()),
         }
         return Err(error);
