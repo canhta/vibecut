@@ -1089,7 +1089,7 @@ fn stereo_policy_keeps_headroom_and_export_limits_overload() {
     assert_eq!(plain.planes(), faded.planes());
     // Use an oscillating overload for the encoded peak check: AAC's DC
     // reconstruction transient is not a property of the limiter's PCM ceiling.
-    let overload_input = dir.path().join("overload-sine.wav");
+    let overload_input = root().join("overload-sine.wav");
     generate(
         &overload_input,
         &[
