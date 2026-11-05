@@ -74,9 +74,19 @@ runs:
       if: runner.os == 'macOS' && steps.media.outputs.cache-hit != 'true'
       shell: bash
       run: brew install cmake pkgconf nasm
+    - name: Install Linux media build tools
+      if: runner.os == 'Linux' && steps.media.outputs.cache-hit != 'true'
+      shell: bash
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y clang llvm lld cmake ninja-build nasm perl pkg-config make
     - name: Resolve and provision current LGPL media libraries (macOS)
       # Always resolve stable upstream tags, even after a cache hit.
       if: runner.os == 'macOS'
+      shell: bash
+      run: cargo xtask ffmpeg
+    - name: Resolve and provision current LGPL media libraries (Linux)
+      if: runner.os == 'Linux'
       shell: bash
       run: cargo xtask ffmpeg
     - name: Resolve and provision current LGPL media libraries (Windows)

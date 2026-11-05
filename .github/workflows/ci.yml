@@ -55,6 +55,26 @@ jobs:
       - name: Build and run workspace tests with required oracles
         run: cargo xtask test
 
+  test-linux:
+    name: test (linux-x64)
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup-build
+        with:
+          save-rust-cache: 'true'
+      - name: Install required media oracles
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg
+      - name: Check Clippy
+        run: cargo xtask clippy
+      - name: Build and run workspace tests with required oracles
+        run: cargo xtask test
+
   windows:
     name: test (windows-x64, advisory)
     runs-on: windows-latest
@@ -84,7 +104,7 @@ jobs:
   gate:
     name: CI gate
     if: always()
-    needs: [docs, lint, test]
+    needs: [docs, lint, test, test-linux]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -98,6 +118,6 @@ jobs:
         run: |
           jq -e '
             . as $needs |
-            ["docs", "lint", "test"] |
+            ["docs", "lint", "test", "test-linux"] |
             all(.[]; $needs[.].result == "success")
           ' <<< "$NEEDS_JSON"

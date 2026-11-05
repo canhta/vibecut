@@ -45,7 +45,7 @@ ffprobe remain separately installed tools required by oracle admission.
 
 ## Hosted CI
 
-`ci.yml` (`CI`) runs only on manual dispatch, with read-only permissions; it is informational: local [checks](verification.md#checks) are the merge gate. Ubuntu docs/lint run fmt and repository policy; one Apple Silicon `test (macos-arm64)` job runs Clippy then workspace tests/doctests sharing native setup and target tree. Windows is advisory. `gate` fails closed for failed, cancelled or skipped jobs. Superseded runs cancel per ref.
+`ci.yml` (`CI`) runs only on manual dispatch, with read-only permissions; it is informational: local [checks](verification.md#checks) are the merge gate. Ubuntu docs/lint run fmt and repository policy; a `test (linux-x64)` job provisions FFmpeg and runs Clippy then workspace tests/doctests; one Apple Silicon `test (macos-arm64)` job runs the same checks sharing native setup and target tree. Windows is advisory. `gate` fails closed for failed, cancelled or skipped jobs. Superseded runs cancel per ref.
 
 Cargo/native/fixture keys omit branches. Native jobs share `Swatinem/rust-cache` with an explicit key; only successful full-workspace Clippy/test producers save it, media-only jobs restore. Environment/manifest hashes cover compiler, lockfile, target environment/configuration and OS/architecture. Ticket branches restore main caches; main cannot restore sibling ticket caches.
 
