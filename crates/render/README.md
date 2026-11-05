@@ -433,3 +433,20 @@ The ignored `blend_frame_benchmark` measures 640x360, ten warm frames per mode.
 `Rect::validate_crop` exposes the compositor's existing source-normalized rectangle
 admission for reusable desktop crop controls; preview/export keep the same bounds
 and geometry validation. It adds no alternate crop renderer.
+
+## Video transitions
+
+The active transition replaces its two clips in track order over its half-open
+span. Both clips map output ticks into their actual source handles and pass
+through the existing item compositor (effects, masks, transform, opacity and blend)
+over the same backdrop. Premultiplied linear-light frames then interpolate, either
+directly or through the definition's opaque dip colour. Hidden tracks contribute
+no transition pixels; video mute remains an audio control. The exact end resumes
+the incoming clip with no extra frame or gap. Preview, CLI snapshots and export
+share this path; audio crossfades are excluded.
+
+Backdrop and outgoing images retain normal compositor byte leases. Cancellation
+checks during copying, item processing and each interpolation row release every
+partial image on failure. Deterministic transition goldens cover every admitted
+[project definition](../project/README.md#video-transitions), source-handle ticks,
+masked/effected opacity, hidden/muted tracks and cancellation/retry.

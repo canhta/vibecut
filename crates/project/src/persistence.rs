@@ -2,7 +2,7 @@ use crate::{Error, Project, Result, bounds};
 use serde::{Deserialize, Serialize};
 use std::{fs::File, io::Read, path::Path};
 pub const FORMAT_ID: &str = "vibecut.project";
-pub const SCHEMA_VERSION: u32 = 15;
+pub const SCHEMA_VERSION: u32 = 16;
 #[derive(Serialize)]
 struct EnvelopeOut<'a> {
     format: &'static str,
@@ -26,7 +26,7 @@ struct EnvelopeIn {
     _schema_version: u32,
     #[serde(rename = "generator")]
     _generator: String,
-    project: Project,
+    project: crate::ProjectData,
 }
 pub struct Loaded {
     pub project: Project,
@@ -85,7 +85,7 @@ pub fn decode(bytes: &[u8]) -> Result<Loaded> {
     let _ = header.project;
     let envelope: EnvelopeIn = serde_json::from_slice(bytes)?;
     Ok(Loaded {
-        project: envelope.project,
+        project: Project::new(envelope.project)?,
         schema_version: header.schema_version,
         generator: header.generator,
     })

@@ -1067,6 +1067,7 @@ fn outcome_human(outcome: &engine::Outcome) -> String {
 
 fn created_human(created: &CreatedId) -> String {
     match created {
+        CreatedId::Transition(id) => format!("transition {}", id.0),
         CreatedId::Scene(id) => format!("scene {}", id.0),
         CreatedId::Track(id) => format!("track {}", id.0),
         CreatedId::Item(id) => format!("item {}", id.0),

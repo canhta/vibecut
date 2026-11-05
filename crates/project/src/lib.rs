@@ -27,6 +27,11 @@ pub fn read_metadata(path: &std::path::Path) -> Metadata {
     metadata::load(path)
 }
 mod model;
+mod transition;
+pub use transition::{
+    TRANSITION_DEFINITIONS, Transition, TransitionAlignment, TransitionDefinition, TransitionId,
+    transition_definition,
+};
 mod transform;
 pub use metadata::{METADATA_VERSION, Metadata, Thumbnail, ViewState, path as metadata_path};
 pub use transform::TransformField;
@@ -54,6 +59,8 @@ pub enum Error {
     Invalid(&'static str),
     #[error("project limit exceeded: {0}")]
     TooLarge(&'static str),
+    #[error("unsupported transition kind: {0}")]
+    UnsupportedTransition(String),
     #[error("unsupported project capability: {0}")]
     Unsupported(&'static str),
     #[error("project schema {found} is older than supported schema {supported}")]

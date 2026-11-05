@@ -120,6 +120,7 @@ pub struct Track {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct Timeline {
+    pub transitions: Vec<crate::Transition>,
     /// Topmost overlay first. Audio tracks belong in `audio` instead.
     pub overlays: Vec<Track>,
     pub main: Track,
@@ -130,6 +131,7 @@ pub struct Timeline {
 impl Default for Timeline {
     fn default() -> Self {
         Self {
+            transitions: Vec::new(),
             overlays: Vec::new(),
             main: Track {
                 id: TrackId(0),
@@ -695,6 +697,29 @@ fn validate(data: &ProjectData) -> Result<()> {
                 .any(|t| t.kind != TrackKind::Audio)
         {
             return Err(Error::Invalid("track layout"));
+        }
+    }
+    let mut transition_ids = BTreeSet::new();
+    for scene in data.scenes.iter() {
+        let transitions = &scene.timeline.transitions;
+        if transition_ids.len().saturating_add(transitions.len()) > 100_000 {
+            return Err(Error::TooLarge("transitions"));
+        }
+        let mut spans = Vec::with_capacity(transitions.len());
+        for tr in transitions {
+            tr.validate(&scene.timeline, data)?;
+            if !transition_ids.insert(tr.id) {
+                return Err(Error::Invalid("duplicate transition ID"));
+            }
+            spans.push((tr.track, tr.start, tr.end()?));
+        }
+        spans.sort();
+        if spans.windows(2).any(|p| {
+            p.first()
+                .zip(p.get(1))
+                .is_some_and(|(a, b)| a.0 == b.0 && a.2 > b.1)
+        }) {
+            return Err(Error::Invalid("overlapping transitions"));
         }
     }
     let mut track_ids = BTreeSet::new();

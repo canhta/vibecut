@@ -157,3 +157,9 @@ Blend/opacity edits use `exec project.json timeline.set_item_param
 '{"item":0,"patch":{"field":"blendMode","value":"screen"}}'`; set
 `field` to `opacity` and `value` to a finite 0..=1 number for constant opacity.
 The ordinary export path evaluates both through the shared renderer.
+
+Video transition edits use `exec` or `control` with the four registered
+[`transition.*` commands](../../crates/engine/README.md#video-transitions).
+`preview.snapshot` renders transition frames through the shared compositor;
+`control_commands_render_a_transition_midpoint_frame` exercises add and PNG
+publication in a real CLI subprocess. No transition-specific adapter path exists.

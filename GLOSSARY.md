@@ -29,3 +29,5 @@ Language for the editor's privacy and execution boundaries.
 
 - **Face track**: Observations of one visible face within a single shot; its identifier is local to that shot.
 - **Cross-shot identity**: A confident link from a face track to an earlier face track serving as its anchor. An uncertain link stays Unknown; it is not a claim about a person's name.
+
+- **Transition**: a video-only timeline entity joining adjacent clips over their shared cut; [project](crates/project/README.md#video-transitions) owns its kinds, alignment and source-handle bounds.

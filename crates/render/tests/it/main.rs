@@ -12,3 +12,5 @@ mod masks;
 mod media_pipeline;
 mod output_alias;
 mod transform;
+
+mod transitions;

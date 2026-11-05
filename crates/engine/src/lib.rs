@@ -44,6 +44,7 @@ pub mod effect_thumbnails;
 mod publication;
 mod rendering;
 mod session;
+mod transitions;
 pub use commands::{
     Command, CommandKind, CommandSpec, CreatedId, Effect, Example, Fixture, ItemParamPatch,
     ItemPlacement, Move, NewItem, Outcome, Placement, TrackPlacement, registry,

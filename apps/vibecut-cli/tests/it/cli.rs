@@ -3223,3 +3223,54 @@ fn audio_set_fade_shapes_the_exported_tone_envelope() {
     );
     assert!((mid_out - 0.5).abs() < 0.12, "linear midpoint {mid_out}");
 }
+
+#[test]
+fn control_commands_render_a_transition_midpoint_frame() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("transition.vibecut");
+    overlay_project_color(&path, 4, 4, Tick(100), [255, 0, 0, 255]);
+    let mut d = project::load(&path).unwrap().project.into_data();
+    let track = &mut d.scene_mut().timeline.overlays[0];
+    let mut next = track.items[0].clone();
+    next.id = project::ItemId(2);
+    next.start = Tick(100);
+    next.content = project::ItemParams::Overlay(project::OverlayParams {
+        color: project::Color([0, 0, 255, 255]),
+    });
+    track.items.push(next);
+    fs::write(
+        &path,
+        project::encode(&project::Project::new(d).unwrap(), true).unwrap(),
+    )
+    .unwrap();
+    let mut control = ControlSession::start(&path, &[]);
+    let inspect = control.send(control_request("r0", "inspect", json!({}), None, None));
+    let rev = inspect["rev_after"].as_str().unwrap();
+    let added=control.send(control_request("a1","transition.add",json!({"track":1,"from":0,"to":2,"kind":"cross_dissolve","duration":40,"alignment":"center"}),Some(rev),Some("add")));
+    assert_eq!(added["exit_code"], 0, "{added}");
+    let out = dir.path().join("midpoint.png");
+    let snapshot = control.send(control_request(
+        "s1",
+        "preview.snapshot",
+        json!({"time":100,"path":out}),
+        Some(added["rev_after"].as_str().unwrap()),
+        Some("snapshot"),
+    ));
+    assert_eq!(snapshot["exit_code"], 0, "{snapshot}");
+    let bytes = fs::read(&out).unwrap();
+    assert_eq!(&bytes[..8], b"\x89PNG\r\n\x1a\n");
+    if tools() {
+        let pixels = decoded_rgb(&out, 4, 4, &[0]);
+        assert!(
+            pixels[0]
+                .as_chunks::<3>()
+                .0
+                .iter()
+                .all(|p| p[0].abs_diff(188) <= 1 && p[1] == 0 && p[2].abs_diff(188) <= 1),
+            "{:?}",
+            pixels[0]
+        );
+    }
+    let (code, stderr) = control.finish();
+    assert_eq!(code, 0, "{stderr}");
+}

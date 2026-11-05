@@ -393,6 +393,8 @@ fn registry_examples_validate_and_dispatch_without_an_id_table() {
             serde_json::from_value(json!({"command":spec.id,"params":params})).unwrap();
         assert_eq!(typed.id(), spec.id);
         match spec.example.fixture {
+            Fixture::TransitionCut => s = super::transitions::session(false),
+            Fixture::Transition => s = super::transitions::session(true),
             Fixture::Audio => s = with_audio(&s),
             Fixture::History => {
                 s.apply(Command::RenameProject {

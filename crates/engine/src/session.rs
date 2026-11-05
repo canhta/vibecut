@@ -58,6 +58,7 @@ impl Session {
             .iter()
             .flat_map(|s| {
                 std::iter::once(s.id.0)
+                    .chain(s.timeline.transitions.iter().map(|t| t.id.0))
                     .chain(s.timeline.iter().map(|t| t.id.0))
                     .chain(
                         s.timeline

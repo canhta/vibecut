@@ -1577,3 +1577,23 @@ audible length there. Trimming to its existing position preserves the fade phase
 Stored durations beyond the shortened clip stay, and render clamps the window.
 All three edits use ordinary gestures, transactions, undo/redo and persistence;
 render owns mastering, sample timing and latency compensation.
+
+## Video transitions
+
+`transition.add {track, from, to, kind, duration, alignment}` allocates a transition
+ID and clamps duration through project's handle rules. `transition.move
+{transition, start}` slides the existing span over its cut, clamping to available
+handles and updating its alignment. `transition.set_duration {transition,
+duration}` resizes following that alignment; `transition.remove {transition}`
+removes only the transition. Locked tracks refuse all four commands. IDs use the
+same nonreused session counter as items, tracks and bookmarks; `CreatedId::Transition`
+reports additions. Every command supports batches, gesture cancellation, undo/redo
+and persistence through the existing session snapshot path.
+
+Clip edits revalidate the affected active timeline before publishing: transitions
+follow moved cuts, clamp after shortening, and disappear when adjacency or handles
+are lost. Splitting an outgoing clip rebinds the transition to its new right piece;
+splitting an incoming clip keeps its original left piece. Failed edits publish
+neither item nor transition changes. Audio remains on its existing mixer path;
+these transitions are video-only. [Project](../project/README.md#video-transitions)
+owns the admitted kinds and invariant mathematics.

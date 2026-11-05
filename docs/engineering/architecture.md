@@ -28,6 +28,7 @@ The [glossary](../../GLOSSARY.md) owns domain definitions; crate READMEs own con
 |---|---|
 | SourceAsset, codecs, probe, packet/frame timing | [media](../../crates/media/README.md#entry-points-and-timing) |
 | Project, scenes, validation, persistence, writer lease | [project](../../crates/project/README.md#writer-lease-and-save-acknowledgement) |
+| Video transitions | [project model/invariants](../../crates/project/README.md#video-transitions), [engine edits](../../crates/engine/README.md#video-transitions), [render evaluation](../../crates/render/README.md#video-transitions) |
 | Param and keyframes | [project animation](../../crates/project/README.md#animated-parameters) |
 | SourceRange | [time](../../crates/time/README.md) |
 | Transcript, Cue, CueStyle, EditMapping, LanguageProfile | [captions](../../crates/captions/README.md) |

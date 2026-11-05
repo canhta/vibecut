@@ -27,3 +27,5 @@ mod snapshot;
 mod sounds;
 mod subtitles;
 mod translation;
+
+mod transitions;
