@@ -337,7 +337,12 @@ mod tests {
         } else {
             now - Duration::from_secs(offset.unsigned_abs())
         };
-        File::open(path).unwrap().set_modified(time).unwrap();
+        File::options()
+            .write(true)
+            .open(path)
+            .unwrap()
+            .set_modified(time)
+            .unwrap();
     }
 
     #[test]
