@@ -1,4 +1,5 @@
 //! Headless CLI adapter: arguments, dispatch through engine, typed exit codes.
+mod batch;
 use engine::cache::{ArtifactCache, ArtifactKind, CacheKey, KeyInputs};
 use engine::clip_suggest;
 use engine::control::{
@@ -35,6 +36,7 @@ Usage:
   vibecut-cli exec <project> <command_id> <json>
   vibecut-cli control <project> [--allow-overwrite] [--no-save]
   vibecut-cli export <project> --out <mp4> [--aspect 9:16] [--allow-degraded] [--overwrite]
+  vibecut-cli batch <job-file> [--allow-degraded] [--allow-overwrite]
   vibecut-cli subtitle <in> [--from vi|en|zh|auto] --to vi|en|zh [--bilingual]
                    [--srt <out>] [--burn <out.mp4>] [--aspect 9:16]
                    [--provider <id>] [--model <id>] [--translate-provider <id>]
@@ -142,23 +144,27 @@ impl CliError {
     /// Safe diagnostics: never project text or provider payloads.
     pub fn report(&self, json_output: bool) {
         let line = if json_output {
-            let (code, exit) = self.code();
-            let mut error = json!({
-                "code": code,
-                "message": self.to_string(),
-                "exit_code": exit,
-            });
-            if let Some(list) = self.unavailable() {
-                let unavailable: Vec<Value> = list.iter().map(unavailable_json).collect();
-                if let Value::Object(fields) = &mut error {
-                    let _ = fields.insert("unavailable".into(), Value::Array(unavailable));
-                }
-            }
-            json!({"status": "error", "error": error}).to_string()
+            json!({"status": "error", "error": self.value()}).to_string()
         } else {
             format!("error: {self}")
         };
         let _ = writeln!(io::stderr(), "{line}");
+    }
+    /// One typed error object for both stderr envelopes and batch job results.
+    pub(crate) fn value(&self) -> Value {
+        let (code, exit) = self.code();
+        let mut error = json!({
+            "code": code,
+            "message": self.to_string(),
+            "exit_code": exit,
+        });
+        if let Some(list) = self.unavailable() {
+            let unavailable: Vec<Value> = list.iter().map(unavailable_json).collect();
+            if let Value::Object(fields) = &mut error {
+                let _ = fields.insert("unavailable".into(), Value::Array(unavailable));
+            }
+        }
+        error
     }
     fn unavailable(&self) -> Option<&[render::Unavailable]> {
         match self {
@@ -248,6 +254,7 @@ pub fn run(args: Vec<OsString>) -> Result<Output, CliError> {
         "exec" => exec(rest),
         "control" => control(rest),
         "export" => export(rest),
+        "batch" => batch::run(rest),
         "subtitle" => subtitle(rest),
         "clips" => clips(rest),
         "providers" => providers(rest),
@@ -1112,34 +1119,7 @@ fn export_project_with(
     }
     let range = TimeRange::new(Tick::ZERO, duration)?;
     let settings = export_settings(&project, aspect, allow_degraded, overwrite);
-    let project_bytes = project::encode(&project, false)?;
-    let source = media::ContentHash::from_bytes(&project_bytes).0;
-    let clip_range =
-        media::ContentHash::from_bytes(format!("{}:{}", range.start().0, range.end().0).as_bytes())
-            .0;
-    let settings_key = format!(
-        "{}x{}@{}/{}:{}:{}:{}",
-        settings.render.width,
-        settings.render.height,
-        settings.fps.num(),
-        settings.fps.den(),
-        settings.bit_rate,
-        settings.quality,
-        settings.include_audio,
-    );
-    // Export has no persistent artifact kind; this key only identifies the job.
-    let key = CacheKey::new(KeyInputs {
-        kind: ArtifactKind::Preview,
-        source,
-        provider: "vibecut-cli",
-        model: "render",
-        version: "1",
-        settings: settings_key.as_bytes(),
-        transcript: [0; 32],
-        cues: [0; 32],
-        clip_range,
-        translation: [0; 32],
-    })?;
+    let key = export_job_key(&project, range, &settings)?;
 
     let budget = engine::ByteBudget::new(CLI_MEMORY_LIMIT)?;
     let mut runner = JobRunner::new(
@@ -1174,6 +1154,41 @@ fn export_project_with(
         value,
         human: format!("exported {}", output.display()),
     })
+}
+
+fn export_job_key(
+    project: &Project,
+    range: TimeRange,
+    settings: &render::ExportSettings,
+) -> Result<CacheKey, CliError> {
+    let project_bytes = project::encode(project, false)?;
+    let source = media::ContentHash::from_bytes(&project_bytes).0;
+    let clip_range =
+        media::ContentHash::from_bytes(format!("{}:{}", range.start().0, range.end().0).as_bytes())
+            .0;
+    let settings_key = format!(
+        "{}x{}@{}/{}:{}:{}:{}",
+        settings.render.width,
+        settings.render.height,
+        settings.fps.num(),
+        settings.fps.den(),
+        settings.bit_rate,
+        settings.quality,
+        settings.include_audio,
+    );
+    // Export has no persistent artifact kind; this key only identifies the job.
+    Ok(CacheKey::new(KeyInputs {
+        kind: ArtifactKind::Preview,
+        source,
+        provider: "vibecut-cli",
+        model: "render",
+        version: "1",
+        settings: settings_key.as_bytes(),
+        transcript: [0; 32],
+        cues: [0; 32],
+        clip_range,
+        translation: [0; 32],
+    })?)
 }
 
 fn export_settings(

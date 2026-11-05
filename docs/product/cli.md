@@ -14,6 +14,7 @@ Build with `cargo build -p vibecut-cli` through the [build wrapper](../agents/or
 | `vibecut-cli exec <project> <command_id> <json>` | Run one engine command and save the result |
 | `vibecut-cli control <project>` | Run a revision-bound control session over newline-delimited JSON |
 | `vibecut-cli export <project> --out <mp4>` | Export the saved active scene to MP4 |
+| `vibecut-cli batch <job-file>` | Render the validated export jobs in a JSON job file |
 | `vibecut-cli subtitle <in> --to <lang>` | Transcribe, translate and export SRT/burned subtitles |
 | `vibecut-cli clips <in>` | Suggest ranked shorts from a long video and optionally export them |
 | `vibecut-cli providers` | List transcription/translation/clip providers and capabilities offline |
@@ -69,6 +70,53 @@ stdout is always newline-delimited JSON; `--json` is implied and no human format
 
 The session ticks the engine job runner between requests. `preview` and `export` return job IDs; poll `job_status`, including retained inline preview JPEGs, and use `job_cancel` for graceful cancellation. EOF cancels and joins outstanding jobs through the runner's publication fence. There is no signal-to-job-cancel handler: process interruption follows crash semantics, so the OS releases the lease, running work stops with the process and unsaved edits are lost; `job_cancel` is the graceful path.
 
+## Batch job files
+
+`vibecut-cli batch <job-file> [--allow-degraded] [--allow-overwrite]` renders an
+ordered set of saved projects through the same `export` engine/render job path.
+The command never edits or saves a project: each distinct project is loaded once
+as an immutable snapshot before any job is submitted. It performs no network,
+provider, cache-download or subtitle work, so the command is offline.
+
+The file is a JSON object with exactly `version` (`1`) and `jobs` (1–1000 entries).
+Distinct project files held as immutable snapshots are capped at 64 MiB aggregate.
+Each entry has exactly `project` and `output`, plus optional `aspect` (`project`,
+`9:16` or `16:9`; default `project`), `allow_degraded` and `overwrite` (default
+`false`). Relative paths resolve from the job file's directory. Paths must be
+UTF-8, non-empty, at most 4096 bytes and name a file; `output` parents must already
+exist. All outputs must be distinct and must not alias a project, project source or
+the job file. Existing outputs refuse unless that entry sets `overwrite` and the
+command has `--allow-overwrite`. An entry setting `allow_degraded` requires
+`--allow-degraded`; neither grant can be inferred from the file alone.
+
+```json
+{
+  "version": 1,
+  "jobs": [
+    {"project": "a.vibecut", "output": "out/a.mp4"},
+    {"project": "b.vibecut", "output": "out/b-vertical.mp4", "aspect": "9:16"}
+  ]
+}
+```
+
+The file is bounded to 1 MiB before parsing; malformed/truncated JSON, duplicate
+keys, unknown fields, an unsupported version, wrong field types, empty or oversized
+`jobs`, invalid paths and unsafe/ambiguous destinations are typed refusals before
+any job or output. A non-regular job file is refused; a missing or unreadable file
+is an I/O failure.
+
+Jobs run in file order with one engine export worker. Results are an object with
+`status` (`completed` or `failed`) and a `jobs` array in file order; each entry has
+its zero-based `index`, `project`, `output`, `status` (`completed`, `failed` or
+`skipped`) and, on failure, a typed `error` object. The first failed or cancelled
+job stops the batch: later entries are `skipped`, already completed files remain
+complete, and the process exits with that first failure's code. Render's staging and
+publication fence means a failed/cancelled job never promotes a partial file and
+preserves an existing destination. Process interruption follows the existing crash
+semantics: the OS ends the process, staging files are not final outputs, and no
+partial MP4 is promoted. There is no signal-to-job-cancel handler; use the engine
+`job_cancel` path for graceful cancellation.
+
 ## Project files and concurrency
 
 A project is the `.vibecut` file owned by the project crate. Its schema, atomic publication, recovery snapshots and writer lease are documented in the [project contract](../../crates/project/README.md#persistence-and-limits); the CLI does not define a second format page.
@@ -96,6 +144,11 @@ Degraded output is never a silent default. `--allow-degraded` is the explicit co
 | 7 | I/O or background job failure |
 
 With `--json`, an error is `{"status":"error","error":{"code":"busy","message":"…", "exit_code":3,"unavailable":[…]}}`; `unavailable` appears only for source admission failures. Messages never contain project text, media text, provider payloads or API keys. Subtitle errors add the stable codes `setup` (missing local model/runner/credential), `ai` (provider execution) and `rejected` (refused upload consent or unsupported language choice). A `control` session returns the same codes per response line and exits with the last frame's code; its error envelope and mapping are described in [Control session](#control-session).
+
+`batch` writes its multi-job result to stdout (JSON with `--json`); admission
+refusals of the job file itself use the same stderr error envelope as other
+commands. Its process status is the first failed job's code from this table, or 0
+when every job completed.
 
 ## Clip suggestions
 

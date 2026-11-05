@@ -15,7 +15,7 @@ The core runs headless: editing, tests and the CLI need no window or UI toolkit;
 | ai | crates/ai | Provider interfaces, capabilities, consent and cost, AI adapters | time, media, captions |
 | engine | crates/engine | Session, commands, history, recovery scheduling, jobs, cache, adapter selection, clip batch export and per-shot analysis | time, media, project, captions, text, render, ai |
 | clip-eval | crates/clip-eval | Fixed labelled clip-pipeline evaluation harness, metrics and local reports | time, media, captions, ai, engine |
-| vibecut-cli | apps/vibecut-cli | Headless adapter: CLI arguments, typed exit codes, dispatch, control-session lifetime, project lease composition and export admission | engine, media, project, render, time |
+| vibecut-cli | apps/vibecut-cli | Headless adapter: CLI arguments, typed exit codes, dispatch, control-session lifetime, project lease composition, export admission and bounded batch job files | engine, media, project, render, time |
 | vibecut | apps/vibecut | Desktop app: UI, playback, model-manager presentation, wgpu compositor, preferences, app controls and inspection | time, engine, media, project, captions, text, render, ai |
 
 Only `media` links FFmpeg. Render's CPU compositor is the reference shared by preview and export; the app owns the optional wgpu adapter behind render's interface. Update this table in the same change that adds a responsibility or edge.
