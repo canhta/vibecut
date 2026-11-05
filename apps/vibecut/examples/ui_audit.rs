@@ -29,7 +29,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             d.canvas.width = 64;
             d.canvas.height = 64;
             if !empty {
-                d.timeline.main.items.push(project::Item {
+                d.scene_mut().timeline.main.items.push(project::Item {
                     id: project::ItemId(1),
                     source_asset: None,
                     source_range: time::SourceRange::new(

@@ -63,7 +63,7 @@ fn project(empty: bool, source: bool) -> Project {
         );
     }
     if !empty {
-        d.timeline.main.items.push(project::Item {
+        d.scene_mut().timeline.main.items.push(project::Item {
             id: project::ItemId(1),
             source_asset: source.then_some(AssetId(1)),
             source_range: range,
