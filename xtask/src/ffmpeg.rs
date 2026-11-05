@@ -142,9 +142,18 @@ pub fn environment_at(command: &mut Command, prefix: &Path) -> Result<(), String
     } else {
         "PATH"
     };
-    let mut paths = vec![prefix.join(if cfg!(windows) { "bin" } else { "lib" })];
+    let runtime = if cfg!(windows) {
+        windows_runtime(&prefix)?
+    } else {
+        prefix.join("lib")
+    };
+    let mut paths = vec![runtime];
+    let managed_bin = prefix.join("bin").canonicalize().ok();
     if let Some(old) = env::var_os(library_var) {
-        paths.extend(env::split_paths(&old));
+        paths.extend(env::split_paths(&old).filter(|path| {
+            // An inherited native bin must not reintroduce the managed CLI.
+            !cfg!(windows) || managed_bin.is_none() || path.canonicalize().ok() != managed_bin
+        }));
     }
     command.env(
         library_var,
@@ -200,6 +209,40 @@ pub fn environment_at(command: &mut Command, prefix: &Path) -> Result<(), String
         command.env("CARGO_ENCODED_RUSTFLAGS", flags);
     }
     Ok(())
+}
+
+/// Expose native DLLs without putting the LGPL CLI ahead of external test oracles.
+/// Hard links publish complete files atomically, including across concurrent xtasks,
+/// and retain the exact library bytes from this immutable native installation.
+fn windows_runtime(prefix: &Path) -> Result<PathBuf, String> {
+    let runtime = prefix.join("runtime-dlls");
+    fs::create_dir_all(&runtime).map_err(|e| e.to_string())?;
+    let mut count = 0;
+    for entry in fs::read_dir(prefix.join("bin")).map_err(|e| e.to_string())? {
+        let source = entry.map_err(|e| e.to_string())?.path();
+        if !source
+            .extension()
+            .and_then(|ext| ext.to_str())
+            .is_some_and(|ext| ext.eq_ignore_ascii_case("dll"))
+        {
+            continue;
+        }
+        let destination = runtime.join(source.file_name().ok_or("DLL filename missing")?);
+        match fs::hard_link(&source, &destination) {
+            Ok(()) => {}
+            Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {
+                if sha256(&source)? != sha256(&destination)? {
+                    return Err("FFmpeg runtime DLL differs from native installation".into());
+                }
+            }
+            Err(error) => return Err(format!("cannot stage FFmpeg runtime DLL: {error}")),
+        }
+        count += 1;
+    }
+    if count == 0 {
+        return Err("FFmpeg installation has no runtime DLLs; rerun cargo xtask ffmpeg".into());
+    }
+    Ok(runtime)
 }
 
 #[cfg(any(windows, test))]
@@ -642,6 +685,72 @@ fn record_patches(prefix: &Path, patches: &[PathBuf]) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(windows)]
+    #[test]
+    fn cargo_children_resolve_external_oracles_with_native_dlls() {
+        const CHILD: &str = "VIBECUT_ORACLE_ENV_CHILD";
+        const TEST: &str =
+            "ffmpeg::tests::cargo_children_resolve_external_oracles_with_native_dlls";
+        if let Some(stage) = env::var_os(CHILD) {
+            if stage == "oracle" {
+                let executable = env::current_exe().unwrap();
+                assert_eq!(
+                    executable.parent().unwrap().file_name().unwrap(),
+                    "external"
+                );
+                return;
+            }
+            let mut command = Command::new("ffmpeg.exe");
+            command.args(["--exact", TEST]).env(CHILD, "oracle");
+            environment(&mut command).unwrap();
+            let path = command
+                .get_envs()
+                .find(|(key, _)| *key == std::ffi::OsStr::new("PATH"))
+                .unwrap()
+                .1
+                .unwrap();
+            let runtime = env::split_paths(path).next().unwrap();
+            assert_eq!(
+                fs::read(runtime.join("avcodec.dll")).unwrap(),
+                b"native DLL"
+            );
+            assert!(!runtime.join("ffmpeg.exe").exists());
+            // Repeated preparation must safely reuse an already-published DLL.
+            environment(&mut command).unwrap();
+            assert!(command.status().unwrap().success());
+            return;
+        }
+        let directory =
+            env::temp_dir().join(format!("vibecut oracle space-{}", std::process::id()));
+        let base = directory
+            .join(".cache/vibecut/ffmpeg")
+            .join(host().unwrap());
+        let prefix = base.join(format!(
+            "fixture-{}",
+            patch_id(&patches().unwrap()).unwrap()
+        ));
+        let external = directory.join("external");
+        fs::create_dir_all(prefix.join("bin")).unwrap();
+        fs::create_dir_all(&external).unwrap();
+        fs::write(prefix.join("BUILD.txt"), "fixture").unwrap();
+        fs::write(base.join("current"), prefix.to_str().unwrap()).unwrap();
+        fs::write(prefix.join("bin/avcodec.dll"), b"native DLL").unwrap();
+        fs::write(prefix.join("bin/ffmpeg.exe"), b"not the external oracle").unwrap();
+        fs::copy(env::current_exe().unwrap(), external.join("ffmpeg.exe")).unwrap();
+        let mut paths = vec![prefix.join("bin"), external];
+        paths.extend(env::split_paths(&env::var_os("PATH").unwrap()));
+        let result = Command::new(env::current_exe().unwrap())
+            .args(["--exact", TEST, "--nocapture"])
+            .env(CHILD, "configure")
+            .env("USERPROFILE", &directory)
+            .env("SHERPA_ONNX_LIB_DIR", &directory)
+            .env("PATH", env::join_paths(paths).unwrap())
+            .status()
+            .unwrap();
+        fs::remove_dir_all(&directory).unwrap();
+        assert!(result.success());
+    }
 
     #[test]
     fn provisioning_paths_preserve_native_home_and_shell_arguments() {

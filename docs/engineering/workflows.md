@@ -33,6 +33,14 @@ library directory through `SHERPA_ONNX_LIB_DIR`, preserving Rust's default dynam
 MSVC CRT. Native AI archive selection, cache integrity and explicit overrides
 belong to [ai's native build contract](../../crates/ai/README.md#local-gipformer).
 
+On Windows, the FFmpeg environment owner projects only DLLs from the verified
+native prefix into `runtime-dlls` using atomic hard links, and prepends that
+directory to child `PATH`. It excludes the prefix's `bin` from inherited `PATH`
+so managed LGPL command-line programs cannot shadow the external test oracles.
+Existing native caches use the same projection without rebuilding libraries;
+existing runtime links must match the native DLL hashes. External ffmpeg and
+ffprobe remain separately installed tools required by oracle admission.
+
 ## Hosted CI
 
 `ci.yml` (`CI`) runs on main pushes and manual dispatch, with read-only permissions; ticket branches/PRs use [local checks](verification.md#checks). Require stable `CI gate` in branch protection. Ubuntu docs/lint run fmt and repository policy each time; Markdown/`docs/`-only main pushes stop there. Code/manual runs add one Apple Silicon `test (macos-arm64)` job, Clippy then workspace tests/doctests sharing native setup and target tree, without archive transfers or another macOS runner. `gate` fails closed for failed, cancelled or skipped selected jobs. Windows is advisory and supports manual dispatch. Superseded runs cancel per event/ref, including main bursts; main classifies the event diff, manual runs the full gate.
