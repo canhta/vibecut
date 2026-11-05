@@ -6,8 +6,8 @@
 |---|---|
 | Claude coordinator | Plans with the maintainer, writes tickets, dispatches, answers questions, cleans up; implementation, review and merge belong to workers |
 | opencode | Default implementer up to its tier for the ticket's work type |
-| Codex | Implements above opencode's tier where no Claude Sonnet route applies; reviews code branches it did not implement |
-| Claude Sonnet worker | Implements or reviews complex work: new contracts, file publication, T4 (concurrency, job engine, render and A/V sync); its own implementations self-merge after their checks when it is confident, and request a separate review when it is not (it states which and why in the report) |
+| Codex | Implements above opencode's tier (new contracts, file publication, T4); reviews code branches it did not implement |
+| Claude Sonnet worker | Reviews and fixes by default; implements complex work only while the weekly Claude budget is under 5%. Its own implementations self-merge after their checks when it is confident, and request a separate review when it is not (it states which and why in the report) |
 | Maintainer | Product decisions, credentials, hardware, assets |
 
 | Tier | Work |
@@ -16,6 +16,8 @@
 | T2 | Features/adapters on existing patterns; UI on settled contracts |
 | T3 | New contracts, pipelines, persistence formats |
 | T4 | unsafe/FFI, concurrency, job engine, render and A/V sync core |
+
+Cost order is opencode, then Codex, then Claude. The coordinator watches the weekly Claude use of each account (the sweep prints it): from 5% no new Claude implementers (hard work goes to Codex; Sonnet only reviews and fixes), at 10% no Claude workers at all and running ones stop at a safe point; the maintainer is pinged at each crossing.
 
 opencode holds one tier per work type, not an overall tier. Promote a work type one tier after two consecutive reviewed tickets of that type merge without design-level `changes`; demote it one tier after that verdict or a reverted merge. The coordinator updates `.scratch/agents.md` on every verdict with the per-work-type tier, evidence and routing. Work types with design-level or robustness findings route to Codex until their profile changes. A work type with two consecutive clean T3 merges may trial T4 one ticket at a time under a close Codex review whose acceptance includes race, mid-operation cancellation and hostile-input tests; unsafe/FFI stays Codex until a concurrency or job-engine trial merges clean.
 
@@ -40,7 +42,7 @@ A resolved spike retains reports, outputs, labels and eval corpus; remove venvs,
 3. Answer questions in one batched reply; send only substantive replies. Never message a settled worker just to inform it: attach the note to its next task. When a ticket's acceptance is blocked by a separate defect, file that defect and split the acceptance instead of growing the ticket. The coordinator owns technical decisions; dispatch research when evidence is missing, and bring the maintainer only decisions in its role.
 4. Return fixes and re-reviews to the worker holding the context; create a replacement only when it is gone.
 5. After merge/drop, run `cargo xtask cleanup` for the ticket's workers and worktrees. Retain implementer and reviewer until then.
-6. Dispatch what `cargo xtask frontier` lists, critical path first. Implementers are opencode when the ticket's work type has a tier covering the ticket in `.scratch/agents.md`, otherwise the work type's route there (Codex or Claude Sonnet); place each ticket on a host with spare capacity.
+6. Dispatch what `cargo xtask frontier` lists, critical path first. Implementers are opencode when the ticket's work type has a tier covering the ticket in `.scratch/agents.md`, otherwise the work type's route there (Codex; Claude Sonnet only inside its weekly budget); place each ticket on a host with spare capacity.
 7. Only the coordinator pauses/resumes by explicit message; a pause also kills apps and builds the worker started.
 
 Tooling, hosts and their quirks are maintainer-private: `.scratch/process/orchestration.md`.
