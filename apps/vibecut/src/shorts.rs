@@ -825,6 +825,18 @@ impl Shorts {
             .id;
         data.canvas.width = 1080;
         data.canvas.height = 1920;
+        // The prepared short already contains its first visual media. Retain
+        // that baseline while replaying its items into the portrait editor.
+        data.original_canvas_size = data.original_canvas_size.or_else(|| {
+            prepared.data().assets.iter().find_map(|asset| {
+                asset.probe().streams.iter().find_map(|stream| {
+                    stream.video.as_ref().map(|video| project::CanvasSize {
+                        width: video.width,
+                        height: video.height,
+                    })
+                })
+            })
+        });
         data.scene_mut().timeline = project::Timeline::default();
         let mut session = Session::new(project::Project::new(data)?, 100)?;
         session.transaction(|s| {

@@ -100,6 +100,11 @@ fn review_actions_and_play_order_reach_preview_and_single_step_editor_insertion(
     let (mut session, settings) = h.state().editor_session().unwrap();
     assert_eq!(session.project().data().canvas.width, 1080);
     assert_eq!(session.project().data().canvas.height, 1920);
+    let original = Some(project::CanvasSize {
+        width: 320,
+        height: 180,
+    });
+    assert_eq!(session.project().data().original_canvas_size, original);
     assert_eq!(session.history_len(), (1, 0));
     let main = &session.project().data().scene().timeline.main;
     assert_eq!(
@@ -125,7 +130,13 @@ fn review_actions_and_play_order_reach_preview_and_single_step_editor_insertion(
             .items
             .is_empty()
     );
+    assert_eq!(session.project().data().canvas.width, 1080);
+    assert_eq!(session.project().data().canvas.height, 1920);
+    assert_eq!(session.project().data().original_canvas_size, original);
     session.redo().unwrap();
+    assert_eq!(session.project().data().canvas.width, 1080);
+    assert_eq!(session.project().data().canvas.height, 1920);
+    assert_eq!(session.project().data().original_canvas_size, original);
     assert_eq!(
         session.project().data().scene().timeline.main.items.len(),
         2

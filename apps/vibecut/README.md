@@ -54,7 +54,8 @@ byte budget, and publishes results through a bounded 8-event channel, so a pause
 UI applies backpressure instead of accumulating metadata. Probing and hashing run
 on an engine import job with one cooperative cancellation token carried into
 media's FFmpeg probe interrupt and 64 KiB hash reads; each successful file becomes
-an asset immediately, so a later refusal or cancel keeps earlier assets. The media
+an asset immediately, so a later refusal or cancel keeps earlier assets. Published
+imports refresh playback against the updated snapshot, including ratcheted FPS. The media
 panel omits media-owned ephemeral assets from rows and selection while retaining
 them in the project for internal commands. The panel shows the probe type/duration/resolution/audio format, multi-select assets,
 and an "Add to timeline" action that inserts only the selected assets in one undo
@@ -341,7 +342,9 @@ Only accepted shorts submit batch jobs, with independent progress/cancel/retry;
 editing a review does not alter an already submitted immutable batch.
 
 Open in editor inserts every video segment and mapped source-caption item into a
-fresh portrait project through one engine transaction, then uses the existing
+fresh portrait project through one engine transaction, retaining the prepared
+media's original dimensions while replaying items so first-import initialization
+preserves the explicit portrait canvas, then uses the existing
 nonblocking recovery/autosave owner. Editor preview and export share the same
 transient render-state owner, resolving
 placements against each immutable snapshot so deleting items and undo/redo do

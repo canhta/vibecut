@@ -107,7 +107,11 @@ impl ImportProbe for Probe {
         } else {
             StreamKind::Video
         };
-        Ok(source_asset(id.0, kind, Some(Tick(4 * SECOND)), path))
+        let mut asset = AssetData::from(source_asset(id.0, kind, Some(Tick(4 * SECOND)), path));
+        if name.contains("highfps") {
+            asset.probe.streams[0].frame_rate = Some(FrameRate::FPS_60);
+        }
+        SourceAsset::try_from(asset)
     }
 }
 
@@ -822,94 +826,125 @@ fn insert_refusal_keeps_assets_and_the_timeline_unchanged() {
 }
 
 #[test]
-fn insert_refreshes_playback_with_the_new_project_snapshot() {
-    let mut session =
-        Session::new(Project::empty(ProjectId(16), "Refresh".into()).unwrap(), 20).unwrap();
-    let overlay = session
-        .apply(Command::AddTrack {
-            placement: engine::TrackPlacement::Auto,
-            name: "Overlay".into(),
-            kind: TrackKind::Video,
-        })
+fn import_and_insert_refresh_playback_with_the_new_project_snapshot() {
+    for importing in [false, true] {
+        let mut session =
+            Session::new(Project::empty(ProjectId(16), "Refresh".into()).unwrap(), 20).unwrap();
+        let overlay = session
+            .apply(Command::AddTrack {
+                placement: engine::TrackPlacement::Auto,
+                name: "Overlay".into(),
+                kind: TrackKind::Video,
+            })
+            .unwrap();
+        let engine::CreatedId::Track(track) = overlay.created[0] else {
+            panic!("track")
+        };
+        session
+            .apply(Command::InsertItem {
+                placement: engine::Placement::Track { track },
+                item: engine::NewItem {
+                    animations: Default::default(),
+                    source_asset: None,
+                    source_range: time::SourceRange::new(Tick::ZERO, Tick(10 * SECOND)).unwrap(),
+                    start: Tick::ZERO,
+                    content: ItemParams::Overlay(project::OverlayParams {
+                        color: project::Color([255, 0, 0, 255]),
+                    }),
+                },
+            })
+            .unwrap();
+        session
+            .apply(Command::AddAsset {
+                asset: source_asset(
+                    1,
+                    StreamKind::Video,
+                    Some(Tick(4 * SECOND)),
+                    "/tmp/vibecut-import/refresh.mp4",
+                ),
+            })
+            .unwrap();
+        let mut playback = Playback::new(
+            &session,
+            ByteBudget::new(512 << 20).unwrap(),
+            Arc::new(Files),
+        )
         .unwrap();
-    let engine::CreatedId::Track(track) = overlay.created[0] else {
-        panic!("track")
-    };
-    session
-        .apply(Command::InsertItem {
-            placement: engine::Placement::Track { track },
-            item: engine::NewItem {
-                animations: Default::default(),
-                source_asset: None,
-                source_range: time::SourceRange::new(Tick::ZERO, Tick(10 * SECOND)).unwrap(),
-                start: Tick::ZERO,
-                content: ItemParams::Overlay(project::OverlayParams {
-                    color: project::Color([255, 0, 0, 255]),
-                }),
-            },
-        })
-        .unwrap();
-    session
-        .apply(Command::AddAsset {
-            asset: source_asset(
-                1,
-                StreamKind::Video,
-                Some(Tick(4 * SECOND)),
-                "/tmp/vibecut-import/refresh.mp4",
-            ),
-        })
-        .unwrap();
-    let mut playback = Playback::new(
-        &session,
-        ByteBudget::new(128 << 20).unwrap(),
-        Arc::new(Files),
-    )
-    .unwrap();
-    playback.set_device_available(true);
-    let mut editor = Editor::new(session, playback, Preferences::default());
-    let deadline = Instant::now() + Duration::from_secs(5);
-    loop {
-        editor.playback.poll().unwrap();
-        if editor.playback.frame().is_some() {
-            break;
+        playback.set_device_available(true);
+        let mut editor = Editor::new(session, playback, Preferences::default());
+        let deadline = Instant::now() + Duration::from_secs(5);
+        loop {
+            editor.playback.poll().unwrap();
+            if editor.playback.frame().is_some() {
+                break;
+            }
+            assert!(
+                Instant::now() < deadline,
+                "overlay preview never produced a frame"
+            );
+            std::thread::sleep(Duration::from_millis(2));
         }
+        assert!(editor.playback.frame().is_some());
+        if importing {
+            let old_epoch = editor.playback.frame().unwrap().epoch;
+            editor.set_import_probe(Arc::new(Probe::default())).unwrap();
+            editor
+                .start_import(vec!["/tmp/vibecut-import/highfps.mp4".into()])
+                .unwrap();
+            assert_eq!(wait_import(&mut editor).import_imported, 1);
+            assert_eq!(
+                editor.session.project().data().canvas.fps,
+                FrameRate::FPS_60
+            );
+            let deadline = Instant::now() + Duration::from_secs(5);
+            loop {
+                editor.playback.poll().unwrap();
+                if let Some(frame) = editor.playback.frame() {
+                    assert!(
+                        frame.epoch > old_epoch,
+                        "import fences the old FPS generation"
+                    );
+                    break;
+                }
+                assert!(
+                    Instant::now() < deadline,
+                    "imported project preview never produced a frame"
+                );
+                std::thread::sleep(Duration::from_millis(2));
+            }
+            continue;
+        }
+        editor.select_media([AssetId(1)]);
+        editor.activate("media.insert").unwrap();
         assert!(
-            Instant::now() < deadline,
-            "overlay preview never produced a frame"
+            editor.playback.frame().is_none(),
+            "insert fences the old generation before the next frame"
         );
-        std::thread::sleep(Duration::from_millis(2));
+        assert_eq!(
+            editor
+                .session
+                .project()
+                .data()
+                .scene()
+                .timeline
+                .track_count(),
+            2,
+            "the inserted video gets its own compatible track"
+        );
+        assert_eq!(
+            editor
+                .session
+                .project()
+                .data()
+                .scene()
+                .timeline
+                .iter()
+                .flat_map(|track| track.items.iter())
+                .filter(|item| item.source_asset == Some(AssetId(1)))
+                .count(),
+            1
+        );
     }
-    assert!(editor.playback.frame().is_some());
-    editor.select_media([AssetId(1)]);
-    editor.activate("media.insert").unwrap();
-    assert!(
-        editor.playback.frame().is_none(),
-        "insert fences the old generation before the next frame"
-    );
-    assert_eq!(
-        editor
-            .session
-            .project()
-            .data()
-            .scene()
-            .timeline
-            .track_count(),
-        2,
-        "the inserted video gets its own compatible track"
-    );
-    assert_eq!(
-        editor
-            .session
-            .project()
-            .data()
-            .scene()
-            .timeline
-            .iter()
-            .flat_map(|track| track.items.iter())
-            .filter(|item| item.source_asset == Some(AssetId(1)))
-            .count(),
-        1
-    );
 }
 
 #[test]

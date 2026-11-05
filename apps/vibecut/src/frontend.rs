@@ -495,6 +495,7 @@ impl Editor {
         Ok(())
     }
     fn apply_import_events(&mut self) {
+        let before = self.session.project().clone();
         let polled = match self.imports.as_mut() {
             Some(queue) => queue.poll(),
             None => Ok(Vec::new()),
@@ -538,6 +539,9 @@ impl Editor {
             }
         }
         self.prune_media_selection();
+        if !Arc::ptr_eq(&before, self.session.project()) {
+            self.sync_preview();
+        }
     }
     fn finish_import(&mut self) {
         let failed_count = self.import_failures.len();
