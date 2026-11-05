@@ -4,7 +4,7 @@
 //! [`Workspace`] widget paths at 1x and 2x, plus an `index.html` that places each
 //! render beside its matching `.spikes/ui-reference/` image when one exists.
 //! This is an audit tool, not a test: it never runs in `cargo xtask ci`.
-#[path = "../tests/support/shorts.rs"]
+#[path = "../tests/it/support/shorts.rs"]
 mod shorts_fixture;
 use egui_kittest::{
     Harness,

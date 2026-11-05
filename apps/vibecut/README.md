@@ -352,7 +352,7 @@ not leave stale placement IDs or recenter editor exports. Review crops are
 transient (preview/export);
 persisted crop channels and subsequent full-editor crop edits belong to the crop
 controls feature. Source-language captions can be burned and exported as SRT.
-`tests/shorts_ui.rs` injects generation and preview sources, uses real automation
+`tests/it/shorts_ui.rs` injects generation and preview sources, uses real automation
 IDs and engine commands, and asserts state only. UI image evidence is an offscreen
 audit, separate from the test suite; no native window is opened by verification.
 

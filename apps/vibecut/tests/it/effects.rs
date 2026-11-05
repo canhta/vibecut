@@ -31,7 +31,7 @@ fn gpu_matches_cpu_working_pixels_at_both_scales() {
         pollster::block_on(adapter.request_device(&wgpu::DeviceDescriptor::default())).unwrap();
     let gpu = pollster::block_on(vibecut::effects::GpuEffects::new(device, queue)).unwrap();
     let pair: serde_json::Value = serde_json::from_str(include_str!(
-        "../../../crates/render/tests/fixtures/blend-linear.json"
+        "../../../../crates/render/tests/fixtures/blend-linear.json"
     ))
     .unwrap();
     let source: Vec<[f32; 4]> = serde_json::from_value(pair["source"].clone()).unwrap();

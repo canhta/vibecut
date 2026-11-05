@@ -7,5 +7,6 @@ mod lifecycle;
 mod media_import;
 mod review_regressions;
 mod scenes_ui;
+mod shorts_ui;
 mod timeline_ui;
 mod tracks_ui;
