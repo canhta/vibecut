@@ -596,10 +596,19 @@ fn undo_redo_and_reopen_revalidate_capabilities_before_timeline_use() {
 
 #[test]
 fn undo_releases_retained_thumbnail_and_texture_allowances() {
+    let settled_bytes = |editor: &mut Editor| {
+        let mut used = 0;
+        tick_until(editor, |editor| {
+            let snapshot = editor.playback.budget().snapshot().unwrap();
+            used = snapshot.used;
+            // Preview publishes its frame before dropping temporary compositor
+            // buffers. Measure retained storage only after those leases drain.
+            editor.playback.frame().is_some() && snapshot.owners[1] == 0
+        });
+        used
+    };
     let mut editor = new_editor();
-    tick_until(&mut editor, |editor| editor.playback.frame().is_some());
-    let budget = editor.playback.budget().clone();
-    let before = budget.snapshot().unwrap().used;
+    let before = settled_bytes(&mut editor);
     struct SharedProbe;
     impl ImportProbe for SharedProbe {
         fn import(
@@ -625,8 +634,7 @@ fn undo_releases_retained_thumbnail_and_texture_allowances() {
         ])
         .unwrap();
     finish(&mut editor);
-    tick_until(&mut editor, |editor| editor.playback.frame().is_some());
-    let charge = budget.snapshot().unwrap().used - before;
+    let charge = settled_bytes(&mut editor) - before;
     assert!(
         (32..1024).contains(&charge),
         "pixels/uploads plus bounded probe metadata must be accounted"
@@ -661,7 +669,7 @@ fn undo_releases_retained_thumbnail_and_texture_allowances() {
         "shared pixels must upload one texture"
     );
     assert_eq!(
-        budget.snapshot().unwrap().used - before,
+        settled_bytes(harness.state_mut()) - before,
         charge,
         "upload uses the existing allowance"
     );
@@ -669,7 +677,7 @@ fn undo_releases_retained_thumbnail_and_texture_allowances() {
     harness.state_mut().tick();
     harness.run_steps(2);
     assert_eq!(
-        budget.snapshot().unwrap().used - before,
+        settled_bytes(harness.state_mut()) - before,
         charge,
         "one alias still owns the allowance"
     );
@@ -678,7 +686,7 @@ fn undo_releases_retained_thumbnail_and_texture_allowances() {
     harness.run_steps(2);
     assert_eq!(texture_count.load(Ordering::SeqCst), 0);
     assert!(harness.state().inspect().unwrap().assets.is_empty());
-    assert_eq!(budget.snapshot().unwrap().used, before);
+    assert_eq!(settled_bytes(harness.state_mut()), before);
 }
 
 #[test]
