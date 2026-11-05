@@ -3,6 +3,7 @@
 mod desktop;
 mod effects;
 mod export_ui;
+mod layout_prefs;
 mod lifecycle;
 mod media_import;
 mod review_regressions;
