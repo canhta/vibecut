@@ -17,7 +17,8 @@ Build it with `cargo build -p vibecut-cli`; the binary is `target/<profile>/vibe
 | `vibecut-cli exec <project> <command_id> <json>` | Run one engine command and save the result |
 | `vibecut-cli export <project> --out <mp4>` | Export the saved timeline to MP4 |
 | `vibecut-cli subtitle <in> --to <lang>` | Transcribe, translate and export SRT/burned subtitles |
-| `vibecut-cli providers` | List transcription/translation providers and capabilities offline |
+| `vibecut-cli clips <in>` | Suggest ranked shorts from a long video and optionally export them |
+| `vibecut-cli providers` | List transcription/translation/clip providers and capabilities offline |
 | `vibecut-cli model list\|info\|download` | Inspect or install pinned local model files |
 | `vibecut-cli commands` | Print the generated command registry |
 
@@ -164,7 +165,33 @@ consent or unsupported language choice).
 
 ## Clip suggestions
 
-The `suggest_clips` progress stage is recognized. Provider execution and clip-result
-rendering are not yet CLI commands. The serialized engine result uses the
-[AI ordered-segment contract](../../crates/ai/README.md#transcript-clip-suggestions);
-future presentation must preserve its play order and source-order ranks.
+`vibecut-cli clips <in> [--from vi|en|zh|auto] [--count N] [--min 20s] [--max 60s]
+[--max-segments N] [--min-segment 2s] [--overlap R] [--keywords a,b]
+[--provider heuristic|openai|anthropic] [--model <id>] [--asr-provider <id>]
+[--asr-model <id>] [--export <dir> [--select 1,3] --subs vi|en|zh [--bilingual]
+[--aspect 9:16] [--translate-provider openai|anthropic] [--overwrite]
+[--allow-degraded]] [--yes-upload]` transcribes the input through the engine
+subtitle workflow, ranks ordered-segment shorts, snaps every source edge and
+prints the candidates as JSON. `--provider` selects the suggestion source
+explicitly; `heuristic` is the local default and needs no upload. Remote
+suggestion uploads only transcript segments, never audio, and require
+`--yes-upload` after the command prints the provider, endpoint, exact byte count,
+cost ceiling and the provider's data-retention/training policy link. A failed
+provider is a typed failure; the command never falls back to another provider or
+to the heuristic.
+
+`--select` takes 1-based candidate indices; without it every candidate is
+exported. `--export` requires `--subs` and prepares one engine batch export per
+selected short at 1080×1920, burning the requested language. When `--subs`
+differs from the detected source, or `--bilingual` is set, the same subtitle
+translation path runs before export. Outputs are `<title>.mp4`; selected
+sidecars are none by default. Existing files are preserved unless `--overwrite`
+is set, and `--allow-degraded` is the explicit consent for initially
+missing/changed visual sources.
+
+Candidate output preserves the AI ordered-segment contract: `pieces` are the
+provider's play-order pieces with roles, `segments` are the snapped source
+ranges, and `adjustments` carries the signed original/adjusted delta per edge.
+Rejected snap candidates and dropped suggestions are reported with typed
+reasons. `vibecut-cli providers --operation clips` lists the offline suggestion
+catalog, including each remote provider's policy link.

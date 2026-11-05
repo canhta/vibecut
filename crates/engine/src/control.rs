@@ -223,6 +223,7 @@ impl From<crate::subtitles::ProviderOption> for ProviderView {
             operation: match p.operation {
                 crate::subtitles::CatalogOperation::Transcribe => "transcribe",
                 crate::subtitles::CatalogOperation::Translate => "translate",
+                crate::subtitles::CatalogOperation::SuggestClips => "suggest_clips",
             }
             .into(),
             provider: p.id.into(),

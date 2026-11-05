@@ -13,6 +13,7 @@ use ai::{CostEstimate, ExecutionHooks, Location, Money, Request, SampleRange, Sc
 pub use captions::LanguageTag;
 use captions::{
     Cue, CueTrack, LanguageProfile, LanguageRegistry, NfcText, SegmentRules, SegmentedCue,
+    Transcript,
 };
 use media::{SourceAsset, SpeechExtractSettings, SpeechWindow};
 use project::{Animations, CaptionParams, ItemParams, Project, ProjectId, TrackId, TrackKind};
@@ -93,6 +94,8 @@ impl TranslationProvider {
 pub enum CatalogOperation {
     Transcribe,
     Translate,
+    /// Transcript-segment upload for clip suggestions; no audio crosses the wire.
+    SuggestClips,
 }
 
 /// Offline capability data used by CLI and UI pickers. No provider is constructed.
@@ -360,7 +363,7 @@ impl Credentials {
             anthropic: key(anthropic)?,
         })
     }
-    fn openai(&self) -> Result<&ApiKey, EditError> {
+    pub(crate) fn openai(&self) -> Result<&ApiKey, EditError> {
         self.openai
             .as_ref()
             .ok_or(EditError::CredentialMissing("OPENAI_API_KEY"))
@@ -370,7 +373,7 @@ impl Credentials {
             .as_ref()
             .ok_or(EditError::CredentialMissing("ELEVENLABS_API_KEY"))
     }
-    fn anthropic(&self) -> Result<&ApiKey, EditError> {
+    pub(crate) fn anthropic(&self) -> Result<&ApiKey, EditError> {
         self.anthropic
             .as_ref()
             .ok_or(EditError::CredentialMissing("ANTHROPIC_API_KEY"))
@@ -654,7 +657,10 @@ impl Providers {
     fn aligner_arc(&self) -> Option<Arc<dyn ai::Aligner>> {
         self.aligner.clone()
     }
-    fn language_profile(&self, language: &LanguageTag) -> Result<LanguageProfile, EditError> {
+    pub(crate) fn language_profile(
+        &self,
+        language: &LanguageTag,
+    ) -> Result<LanguageProfile, EditError> {
         Ok(LanguageRegistry::standard()?.profile(language).clone())
     }
     fn transcription_scope(
@@ -812,7 +818,7 @@ pub enum Cost {
     Unknown,
 }
 impl Cost {
-    fn add(&mut self, next: &CostEstimate) {
+    pub(crate) fn add(&mut self, next: &CostEstimate) {
         match (&mut *self, next) {
             (Self::Unknown, _) => {}
             (_, CostEstimate::Unknown) => *self = Self::Unknown,
@@ -897,7 +903,7 @@ impl Cancellation {
     pub(crate) fn media_flag(&self) -> Arc<AtomicBool> {
         self.flag.clone()
     }
-    fn checkpoint(&self) -> Result<(), EditError> {
+    pub(crate) fn checkpoint(&self) -> Result<(), EditError> {
         if self.cancelled() {
             Err(EditError::Cancelled)
         } else {
@@ -913,6 +919,8 @@ pub enum Stage {
     Align,
     Assemble,
     Segment,
+    SuggestClips,
+    Snap,
     Translate,
     ExportSrt,
     ExportBurn,
@@ -960,6 +968,145 @@ pub struct SubtitleOutcome {
     pub elapsed: Duration,
 }
 
+/// Resolved speech recognition plus the source-timed cues shared by the subtitle
+/// and clip workflows. No translation or file publication happens here.
+pub struct Transcription {
+    pub source_language: LanguageTag,
+    pub transcript: Transcript,
+    pub cues: Vec<Cue>,
+    pub cost: Cost,
+    pub checkpoints: usize,
+    pub elapsed: Duration,
+}
+
+/// Run the shared ASR-to-cue stage. The caller has already imported and validated
+/// media and resolved the source language; jobs, cache and consent stay caller-owned.
+#[allow(clippy::too_many_arguments)]
+pub fn transcribe(
+    asset: &SourceAsset,
+    duration: Tick,
+    source_language: &LanguageTag,
+    providers: &Providers,
+    runner: &mut JobRunner,
+    cache: &mut ArtifactCache,
+    consent: &dyn ConsentPrompt,
+    progress: &dyn Progress,
+    cancel: &Cancellation,
+) -> Result<Transcription, EditError> {
+    if !["vi", "en", "zh"]
+        .iter()
+        .any(|tag| *tag == source_language.as_str())
+    {
+        return Err(EditError::Unsupported(
+            "source language must be vi, en or zh",
+        ));
+    }
+    cancel.checkpoint()?;
+    let started = Instant::now();
+    let profile = providers.language_profile(source_language)?;
+    let speech_settings = SpeechExtractSettings {
+        // Text-only providers are timed by the local 30 s DTW aligner.
+        max_duration: Tick::from_seconds_f64(
+            if providers.needs_alignment {
+                MIN_CAPTION_SECONDS as f64
+            } else {
+                MAX_CAPTION_SECONDS as f64
+            },
+            Rounding::Floor,
+        )?,
+        overlap: Tick::ZERO,
+        max_bytes: WORK_BYTES,
+        bit_rate: 48_000,
+    };
+    let full_range = SourceRange::new(Tick::ZERO, duration)?;
+    let fingerprint = NfcText::from(hex(&asset.content_hash().0));
+    let mut recognitions = Vec::new();
+    let mut checkpoints = 0usize;
+    let mut cost = Cost::Free;
+    let mut failure = None;
+    cancel.checkpoint()?;
+    progress.stage(Stage::Extract);
+    let extraction = media::extract_speech_windows_with_cancel(
+        asset,
+        full_range,
+        &speech_settings,
+        cancel.media_flag(),
+        |window| {
+            if cancel.cancelled() {
+                return Err(media::MediaError::Cancelled);
+            }
+            if !window.speech_detected {
+                return Ok(());
+            }
+            progress.stage(Stage::Transcribe);
+            match transcribe_window(
+                providers,
+                runner,
+                cache,
+                consent,
+                progress,
+                cancel,
+                source_language,
+                &fingerprint,
+                window,
+                &mut cost,
+                &mut checkpoints,
+            ) {
+                Ok(recognition) => {
+                    recognitions.push(recognition);
+                    Ok(())
+                }
+                Err(error) => {
+                    failure = Some(error);
+                    Err(media::MediaError::Cancelled)
+                }
+            }
+        },
+    );
+    if let Some(error) = failure {
+        return Err(error);
+    }
+    match extraction {
+        Ok(()) => {}
+        Err(media::MediaError::Cancelled) => return Err(EditError::Cancelled),
+        Err(error) => return Err(error.into()),
+    }
+    cancel.checkpoint()?;
+    if recognitions.is_empty() {
+        return Err(EditError::Unsupported("no speech detected"));
+    }
+
+    cancel.checkpoint()?;
+    progress.stage(Stage::Assemble);
+    let recognition = ai::assemble(recognitions, &IdleHooks)?;
+    let transcript = recognition.to_transcript()?;
+    cancel.checkpoint()?;
+    progress.stage(Stage::Segment);
+    let rules = SegmentRules::from_profile(&profile, FrameRate::FPS_30)?;
+    let segmentation = captions::segment_transcript(
+        &transcript,
+        &profile,
+        &rules,
+        &captions::LayoutHooks::default(),
+    )?;
+    let cues: Vec<Cue> = segmentation
+        .cues
+        .into_iter()
+        .map(|SegmentedCue { cue, .. }| cue)
+        .collect();
+    if cues.is_empty() {
+        return Err(EditError::Unsupported("no subtitle cues generated"));
+    }
+    Ok(Transcription {
+        source_language: source_language.clone(),
+        transcript,
+        cues,
+        cost,
+        checkpoints,
+        elapsed: started.elapsed(),
+    })
+}
+
 /// Run the complete subtitle workflow against one input media file. The caller owns
 /// the runner, cache and consent prompt; no project file is written.
 pub fn run(
@@ -998,14 +1145,6 @@ pub fn run(
         Some(language) => language.clone(),
         None => providers.detect_language(&asset, duration, cancel)?,
     };
-    if !["vi", "en", "zh"]
-        .iter()
-        .any(|tag| *tag == source_language.as_str())
-    {
-        return Err(EditError::Unsupported(
-            "source language must be vi, en or zh",
-        ));
-    }
     let target_language = normalize_target(&request.target_language)?;
     if request.bilingual && source_language == target_language {
         return Err(EditError::Unsupported(
@@ -1021,102 +1160,22 @@ pub fn run(
             "bilingual output requires a translation target",
         ));
     }
-
-    let profile = providers.language_profile(&source_language)?;
-    let speech_settings = SpeechExtractSettings {
-        // Text-only providers are timed by the local 30 s DTW aligner.
-        max_duration: Tick::from_seconds_f64(
-            if providers.needs_alignment {
-                MIN_CAPTION_SECONDS as f64
-            } else {
-                MAX_CAPTION_SECONDS as f64
-            },
-            Rounding::Floor,
-        )?,
-        overlap: Tick::ZERO,
-        max_bytes: WORK_BYTES,
-        bit_rate: 48_000,
-    };
-    let full_range = SourceRange::new(Tick::ZERO, duration)?;
-    let fingerprint = NfcText::from(hex(&asset.content_hash().0));
-    let mut recognitions = Vec::new();
-    let mut checkpoints = 0usize;
-    let mut transcription_cost = Cost::Free;
-    let mut failure = None;
-    cancel.checkpoint()?;
-    progress.stage(Stage::Extract);
-    let extraction = media::extract_speech_windows_with_cancel(
+    let transcription = transcribe(
         &asset,
-        full_range,
-        &speech_settings,
-        cancel.media_flag(),
-        |window| {
-            if cancel.cancelled() {
-                return Err(media::MediaError::Cancelled);
-            }
-            if !window.speech_detected {
-                return Ok(());
-            }
-            progress.stage(Stage::Transcribe);
-            match transcribe_window(
-                providers,
-                runner,
-                cache,
-                consent,
-                progress,
-                cancel,
-                &source_language,
-                &fingerprint,
-                window,
-                &mut transcription_cost,
-                &mut checkpoints,
-            ) {
-                Ok(recognition) => {
-                    recognitions.push(recognition);
-                    Ok(())
-                }
-                Err(error) => {
-                    failure = Some(error);
-                    Err(media::MediaError::Cancelled)
-                }
-            }
-        },
-    );
-    if let Some(error) = failure {
-        return Err(error);
-    }
-    match extraction {
-        Ok(()) => {}
-        Err(media::MediaError::Cancelled) => return Err(EditError::Cancelled),
-        Err(error) => return Err(error.into()),
-    }
-    cancel.checkpoint()?;
-    if recognitions.is_empty() {
-        return Err(EditError::Unsupported("no speech detected"));
-    }
-
-    cancel.checkpoint()?;
-    progress.stage(Stage::Assemble);
-    let recognition = ai::assemble(recognitions, &IdleHooks)?;
-    let transcript = recognition.to_transcript()?;
-    cancel.checkpoint()?;
-    let segments = transcript.segments.len();
-    progress.stage(Stage::Segment);
-    let rules = SegmentRules::from_profile(&profile, FrameRate::FPS_30)?;
-    let segmentation = captions::segment_transcript(
-        &transcript,
-        &profile,
-        &rules,
-        &captions::LayoutHooks::default(),
+        duration,
+        &source_language,
+        providers,
+        runner,
+        cache,
+        consent,
+        progress,
+        cancel,
     )?;
-    let cues: Vec<Cue> = segmentation
-        .cues
-        .into_iter()
-        .map(|SegmentedCue { cue, .. }| cue)
-        .collect();
-    if cues.is_empty() {
-        return Err(EditError::Unsupported("no subtitle cues generated"));
-    }
+    let cues = transcription.cues;
+    let transcription_cost = transcription.cost;
+    let checkpoints = transcription.checkpoints;
+    let segments = transcription.transcript.segments.len();
+    let fingerprint = NfcText::from(hex(&asset.content_hash().0));
     cancel.checkpoint()?;
     let mut session = build_session(
         &asset,
@@ -1664,7 +1723,7 @@ impl Providers {
     }
 }
 
-fn wait_for_job(
+pub(crate) fn wait_for_job(
     runner: &mut JobRunner,
     id: JobId,
     token: &CancelToken,
@@ -1703,7 +1762,7 @@ fn wait_for_job(
     }
 }
 
-fn build_session(
+pub(crate) fn build_session(
     asset: &SourceAsset,
     cues: &[Cue],
     duration: Tick,
@@ -1797,7 +1856,7 @@ fn caption_track_id(session: &Session) -> Result<TrackId, EditError> {
         .map(|track| track.id)
         .ok_or(EditError::Invalid("missing caption track"))
 }
-fn caption_item_id(session: &Session) -> Result<project::ItemId, EditError> {
+pub(crate) fn caption_item_id(session: &Session) -> Result<project::ItemId, EditError> {
     session
         .project()
         .data()
@@ -1811,7 +1870,7 @@ fn caption_item_id(session: &Session) -> Result<project::ItemId, EditError> {
 }
 
 #[allow(clippy::too_many_arguments)]
-fn translate_cues(
+pub(crate) fn translate_cues(
     session: &mut Session,
     providers: &Providers,
     runner: &mut JobRunner,
@@ -1903,7 +1962,57 @@ fn translate_cues(
     Ok(())
 }
 
-fn estimate_money(estimate: &CostEstimate) -> Result<Money, EditError> {
+/// Translate one source-timed cue set into a target language without writing a
+/// project. Reuses the subtitle translation window/consent/job path.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn translate_track(
+    asset: &SourceAsset,
+    duration: Tick,
+    cues: &[Cue],
+    providers: &Providers,
+    runner: &mut JobRunner,
+    consent: &dyn ConsentPrompt,
+    progress: &dyn Progress,
+    cancel: &Cancellation,
+    source: &LanguageTag,
+    target: &LanguageTag,
+    fingerprint: &NfcText,
+    cost: &mut Cost,
+) -> Result<CueTrack, EditError> {
+    if providers.translator().is_none() {
+        return Err(EditError::Unsupported("translation provider is required"));
+    }
+    let mut session = build_session(asset, cues, duration, false, None)?;
+    let item = caption_item_id(&session)?;
+    progress.stage(Stage::Translate);
+    translate_cues(
+        &mut session,
+        providers,
+        runner,
+        consent,
+        progress,
+        cancel,
+        source,
+        target,
+        fingerprint,
+        item,
+        cost,
+    )?;
+    session
+        .project()
+        .data()
+        .timeline
+        .tracks
+        .iter()
+        .flat_map(|track| &track.items)
+        .find_map(|item| match &item.content {
+            ItemParams::Caption(params) => Some(params.cues.clone()),
+            _ => None,
+        })
+        .ok_or(EditError::Invalid("missing translated cues"))
+}
+
+pub(crate) fn estimate_money(estimate: &CostEstimate) -> Result<Money, EditError> {
     match estimate {
         CostEstimate::Free => Ok(Money::new("USD", 0)?),
         CostEstimate::UpperBound(money) => Ok(money.clone()),

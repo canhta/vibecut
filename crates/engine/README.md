@@ -705,6 +705,44 @@ canvas and placement choices remain available through `submit_export` with
 render's ExportSettings. UI/CLI adapters consume these engine APIs; they do not
 implement their own overlay or serializer.
 
+## Clip suggestion workflow
+
+`clip_suggest` is the composition used by CLI/03 and later UI/04: the shared
+`subtitles::transcribe` ASR-to-cue stage, an explicit clip provider, ordered-segment
+ranking and 02 boundary snapping. The caller owns the runner, cache, credentials,
+consent prompt, progress and cancellation token; the module writes no file during
+suggestion.
+
+`choose_suggestion` accepts only the offline `suggestion_options` catalog rows:
+local `heuristic`, OpenAI `gpt-6-luna`/`gpt-6.1-sol`, or Anthropic
+`claude-sonnet-5-5`. There is no fallback list: one provider attempt runs, and a
+provider failure is returned unchanged. Remote adapters receive only transcript
+segments (IDs, text, ranges and settings), never audio. Before the first upload,
+`UploadRequest` names the provider, endpoint, model, exact payload bytes, cost
+ceiling and the provider's data-retention/training policy link; refusal stops
+before any adapter receives data. `DenyUploads` is the test default.
+
+`ClipRequest` resolves the source language (or asks local whisper), runs ASR,
+builds the AI `ClipInput` from the resulting cues, and executes the same
+`providers::suggest_clips` path as other consumers. Candidates then pass through
+`snap_clip_boundaries` with the source frame rate, caller tolerance/RMS and
+duration/segment limits. A snap refusal drops that candidate with a typed
+`RejectedClip` reason instead of publishing an unsnapped range; AI drops keep
+their `ClipDropReason`. Candidate segments keep play order, roles, source-order
+ranks and signed edge deltas.
+
+`prepare_export` validates 1..=1000 distinct candidate indices, translates the
+source cue track for each requested non-source language through the subtitle
+translation path, and calls 05's `ClipBatch::prepare`. `export` submits that batch
+and waits per short; a failed short cancels its siblings, and already published
+complete files remain. The CLI only selects candidates and prints paths.
+
+`cargo test -p engine --test clip_suggest` covers the ASR-to-snapped workflow,
+source and translated caption preparation, portrait geometry, hostile/empty/
+duplicate selections and the explicit provider catalog/credential refusal. Provider
+attempt/consent tests remain in `tests/providers.rs`; media encoding remains in
+`tests/clip_export.rs`.
+
 ## Clip batch export
 
 `ClipBatch::prepare(source_project, ClipBatchRequest)` owns one export job per

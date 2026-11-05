@@ -32,7 +32,9 @@ parameters, subprocess lease contention, progress, export geometry, keyframed
 opacity decoded from an export, rectangle masks applied by `exec` and decoded
 from an encoded export, degraded consent and source loss before/during
 export, offline provider/model catalogs,
-subtitle argument refusals and credential refusal before any upload. Mid-job source loss
+subtitle argument refusals and credential refusal before any upload. It also
+covers clip argument refusals, the offline clip provider catalog and the
+suggestion-credential refusal before any media work. Mid-job source loss
 uses a synchronous render hook after admission and the first decoded frame,
 then checks the real job result and CLI exit code while preserving the prior output.
 Progress is latest-only and throttled through engine; stderr stages are observational
@@ -41,6 +43,14 @@ FFmpeg/ffprobe: missing tools print a skip, required-oracle mode refuses a skip,
 and found but failing tools fail. Run `cargo xtask ci --require-oracles` for the
 full workspace check and tool/fixture receipts. No speed or memory measurement
 is claimed; Windows runtime behavior remains unverified.
+
+`clips` is an adapter over the [engine clip suggestion workflow](../../crates/engine/README.md#clip-suggestion-workflow):
+it parses suggestion, ASR, translation and export flags, prints the provider's
+upload scope before any remote byte leaves the machine, and maps candidates or
+typed failures to stdout/stderr. It owns no segmentation, prompt, selection,
+snapping or export logic; `--provider` never falls back. Remote suggestion
+credentials are refused before media work, and `providers --operation clips`
+lists the same offline catalog without opening an adapter.
 
 Project lifecycle commands share engine's registry. `project new` creates through
 `project.create`; `project info` acquires the project writer lease before reading

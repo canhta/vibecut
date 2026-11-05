@@ -3,6 +3,7 @@ mod budget;
 pub mod cache;
 pub mod clip_boundaries;
 mod clip_export;
+pub mod clip_suggest;
 mod commands;
 pub mod control;
 mod control_preview;
@@ -17,6 +18,18 @@ pub use clip_export::{
     ClipBatch, ClipBatchRequest, ClipPaths, ClipShort, ClipSubtitlePath, MAX_BATCH_CLIPS,
     MAX_BATCH_CUE_BYTES, MAX_CLIP_SEGMENTS,
 };
+pub use clip_suggest::{
+    ClipCandidate, ClipExportOutcome, ClipExportPaths, ClipExportPrep, ClipExportRequest,
+    ClipRequest, ClipSuggestionOutcome, RejectedClip, SnapSettings, SuggestionOption,
+    SuggestionProvider, check_suggestion_credentials, choose_suggestion, suggestion_options,
+};
+// These AI-owned types appear in clip workflow signatures, so adapters use them
+// through this crate instead of taking a second dependency on `ai`.
+pub use ai::clips::{
+    ClipDropReason, ClipProposal, ClipRole, ClipSettings, ClipSource, ClipSourceSegment,
+    DroppedClip,
+};
+pub use captions::{Format, NfcText};
 mod edit;
 mod rendering;
 mod session;
