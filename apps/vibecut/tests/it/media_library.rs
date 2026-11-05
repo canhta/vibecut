@@ -450,6 +450,7 @@ fn blank_space_below_media_clears_selection_in_both_views() {
 #[test]
 fn delete_confirmation_refuses_in_use_media_then_removes_unused_media_with_undo() {
     let mut editor = editor();
+    editor.preferences.media_view = MediaView::List;
     let item = insert_video(&mut editor, AssetId(1));
     let mut harness = build(editor);
     harness.run_steps(3);
