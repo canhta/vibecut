@@ -1506,16 +1506,15 @@ mod tests {
     fn same_version_document_without_snapping_keeps_the_default_on() {
         let dir = tempfile::tempdir().expect("temporary preferences");
         let store = PreferenceStore::new(dir.path().join("preferences.json"));
-        std::fs::write(
-            store.path(),
-            br#"{"version":2,"locale":"en","dark":true,"panels":[0.25,0.25,0.5]}"#,
-        )
-        .expect("write preferences");
+        let original = format!(
+            r#"{{"version":{PREFERENCES_VERSION},"locale":"en","dark":true,"panels":[0.25,0.25,0.5]}}"#
+        ).into_bytes();
+        std::fs::write(store.path(), &original).expect("write preferences");
         let loaded = store.load().expect("load preferences");
         assert!(loaded.snapping);
         let bytes = std::fs::read(store.path()).expect("read preferences");
         assert_eq!(
-            bytes, br#"{"version":2,"locale":"en","dark":true,"panels":[0.25,0.25,0.5]}"#,
+            bytes, original,
             "loading an additive default must not rewrite the document"
         );
     }
