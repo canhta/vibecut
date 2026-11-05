@@ -271,6 +271,9 @@ catalog! {
     SelectedCountOther { key: "selected_count_other", en: "{n} items selected", vi: "{n} mục đã chọn" },
 
     // Scenes.
+    NewScene { key: "new_scene", en: "New scene", vi: "Cảnh mới" },
+    RenameScene { key: "rename_scene", en: "Rename", vi: "Đổi tên" },
+    SceneDefaultName { key: "scene_default_name", en: "Scene {n}", vi: "Cảnh {n}" },
     CloseScenes { key: "close_scenes", en: "Close", vi: "Đóng" },
     Scenes { key: "scenes", en: "Scenes", vi: "Cảnh" },
     SelectScenes { key: "select_scenes", en: "Select scenes", vi: "Chọn cảnh" },

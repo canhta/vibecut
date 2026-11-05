@@ -412,6 +412,8 @@ pub struct Editor {
     scene_select: bool,
     scene_selected: BTreeSet<project::SceneId>,
     scene_confirm: bool,
+    scene_rename: Option<(project::SceneId, String)>,
+    scene_rename_focus: bool,
     pub export: Option<crate::export::ExportDialog>,
     models: Option<crate::model_manager::ModelManager>,
     asset_states: BTreeMap<AssetId, AssetState>,
@@ -489,6 +491,8 @@ impl Editor {
             scene_select: false,
             scene_selected: BTreeSet::new(),
             scene_confirm: false,
+            scene_rename: None,
+            scene_rename_focus: false,
             export: None,
             models: None,
             asset_states: BTreeMap::new(),
@@ -1243,6 +1247,30 @@ impl Editor {
             "scene.close" => {
                 self.scenes_open = false;
                 self.scene_confirm = false;
+                self.scene_rename = None;
+            }
+            "scene.create" => {
+                let count = self.session.project().data().scenes.iter().count();
+                let number = catalog::number(self.preferences.locale, (count + 1) as u64);
+                let name = catalog::format(
+                    self.preferences.locale,
+                    Text::SceneDefaultName,
+                    &[("n", &number)],
+                );
+                let created = self
+                    .session
+                    .execute("scene.create", serde_json::json!({"name":name}))?;
+                if let Some(CreatedId::Scene(scene)) = created.created.first().copied() {
+                    self.cancel_interaction();
+                    self.session
+                        .execute("scene.switch", serde_json::json!({"scene":scene}))?;
+                    self.selection.clear();
+                    self.selection_scopes = SelectionScopes::default();
+                    self.scene_select = false;
+                    self.scene_selected.clear();
+                    self.scene_confirm = false;
+                    self.scene_rename = None;
+                }
             }
             "scene.select" => {
                 self.scene_select = !self.scene_select;
@@ -1260,6 +1288,26 @@ impl Editor {
                 self.scene_confirm = false;
                 self.selection.clear();
                 self.selection_scopes = SelectionScopes::default();
+            }
+            rename if rename.starts_with("scene.rename.") => {
+                let scene = project::SceneId(
+                    rename
+                        .trim_start_matches("scene.rename.")
+                        .parse()
+                        .map_err(|_| Error::Unsupported("scene identity"))?,
+                );
+                let name = self
+                    .session
+                    .project()
+                    .data()
+                    .scenes
+                    .get(scene)
+                    .ok_or(Error::Unsupported("scene not found"))?
+                    .name
+                    .as_str()
+                    .to_owned();
+                self.scene_rename = Some((scene, name));
+                self.scene_rename_focus = true;
             }
             row if row.starts_with("scene.row.") => {
                 let scene = project::SceneId(
@@ -2544,7 +2592,8 @@ impl Editor {
     }
     fn keyboard(&mut self, ctx: &egui::Context) {
         if self.scenes_open {
-            if consume(ctx, egui::Modifiers::NONE, egui::Key::Escape) {
+            if self.scene_rename.is_none() && consume(ctx, egui::Modifiers::NONE, egui::Key::Escape)
+            {
                 if self.scene_confirm {
                     self.scene_confirm = false;
                 } else {
@@ -4178,6 +4227,20 @@ impl Editor {
                     Text::SwitchScenesHint
                 }));
                 ui.horizontal(|ui| {
+                    let response = ui
+                        .add(
+                            egui::Button::new(icons::tinted(
+                                Icon::Plus,
+                                BUTTON_ICON,
+                                self.text_color(),
+                            ))
+                            .min_size(Vec2::splat(28.0)),
+                        )
+                        .on_hover_text(self.tr(Text::NewScene));
+                    self.remember_with_icon("scene.create", Some(Icon::Plus.name()), &response);
+                    if response.clicked() {
+                        self.action("scene.create");
+                    }
                     let response = ui.button(self.tr(if self.scene_select {
                         Text::CancelSelection
                     } else {
@@ -4193,10 +4256,47 @@ impl Editor {
                         self.action("scene.close");
                     }
                 });
+                let editing = self.scene_rename.as_ref().map(|(id, _)| *id);
                 egui::ScrollArea::vertical()
                     .max_height(420.0)
                     .show(ui, |ui| {
                         for (id, name, main) in scenes {
+                            if editing == Some(id) {
+                                let mut text = self
+                                    .scene_rename
+                                    .as_ref()
+                                    .map(|(_, text)| text.clone())
+                                    .unwrap_or_default();
+                                let response = ui.add(
+                                    egui::TextEdit::singleline(&mut text)
+                                        .id_salt("scene.rename.input")
+                                        .desired_width(296.0),
+                                );
+                                self.remember("scene.rename.input", &response);
+                                if self.scene_rename_focus {
+                                    response.request_focus();
+                                    self.scene_rename_focus = false;
+                                }
+                                let cancel = ui.input(|i| i.key_pressed(egui::Key::Escape));
+                                let commit = ui.input(|i| i.key_pressed(egui::Key::Enter));
+                                if commit && !cancel {
+                                    match self.session.execute(
+                                        "scene.rename",
+                                        serde_json::json!({"scene":id,"name":text}),
+                                    ) {
+                                        Ok(_) => self.scene_rename = None,
+                                        Err(error) => {
+                                            self.error = Some(error.to_string());
+                                            self.scene_rename = Some((id, text));
+                                        }
+                                    }
+                                } else if cancel {
+                                    self.scene_rename = None;
+                                } else {
+                                    self.scene_rename = Some((id, text));
+                                }
+                                continue;
+                            }
                             let selected = if self.scene_select {
                                 self.scene_selected.contains(&id)
                             } else {
@@ -4214,6 +4314,23 @@ impl Editor {
                                     .selected(selected)
                                     .min_size(Vec2::new(296.0, 40.0)),
                             );
+                            let rename_id = format!("scene.rename.{}", id.0);
+                            let mut request_rename = false;
+                            let mut menu_item = None;
+                            response.context_menu(|ui| {
+                                let item = ui.button(self.tr(Text::RenameScene));
+                                if item.clicked() {
+                                    request_rename = true;
+                                    ui.close();
+                                }
+                                menu_item = Some(item);
+                            });
+                            if let Some(item) = menu_item {
+                                self.remember(&rename_id, &item);
+                            }
+                            if request_rename {
+                                self.action(&rename_id);
+                            }
                             let row = format!("scene.row.{}", id.0);
                             self.remember(&row, &response);
                             if response.clicked() {
@@ -4235,7 +4352,7 @@ impl Editor {
                     }
                 }
             });
-        if sheet.backdrop_response.clicked() && !self.scene_confirm {
+        if sheet.backdrop_response.clicked() && !self.scene_confirm && self.scene_rename.is_none() {
             self.action("scene.close");
         }
         if self.scene_confirm {

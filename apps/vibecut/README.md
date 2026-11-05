@@ -306,12 +306,17 @@ scene-list control. The sheet lists all scenes and switches through
 opens a confirmation dialog explaining that the action can be undone. Closing or
 Escape dismisses the sheet. Per-scene zoom/scroll/playhead restore through the
 Session metadata view; item/keyframe/mask-point selection clears on switching.
-English/Vietnamese copy uses the existing catalog. Creation and rename commands
-are headless here; their frontend controls belong to the scene-name feature.
+The sheet's plus action names the scene `Scene N`, runs `scene.create` as one
+undoable edit and then switches to it; the sheet stays open. A row's context menu
+opens an inline rename editor for any scene, including main: Enter commits through
+`scene.rename` and Escape cancels. New scenes inherit the project canvas, frame
+rate and background and start with an empty timeline. English/Vietnamese copy uses
+the existing catalog.
 
-`tests/it/scenes_ui.rs` operates the real widgets and engine at 1x/2x density and
-checks switching, protected main and atomic multi-delete/undo without writing
-images.
+`tests/it/scenes_ui.rs` operates the real widgets and engine at 1x/2x density, checks
+switching, protected main, create/rename history, persistence and atomic
+multi-delete/undo without writing images.
+
 ## Export dialog
 
 The header Export action opens a modal with format and quality disclosures plus an

@@ -102,3 +102,170 @@ fn scene_sheet_switches_and_multideletes_with_main_protected() {
         assert_eq!(h.state().session.project().data().scenes.iter().count(), 3);
     }
 }
+
+fn editor_with_scene_session() -> Editor {
+    let session = Session::new(
+        Project::empty(ProjectId(72), "Scene project".into()).unwrap(),
+        30,
+    )
+    .unwrap();
+    let playback = Playback::new(
+        &session,
+        ByteBudget::new(64 << 20).unwrap(),
+        Arc::new(Files),
+    )
+    .unwrap();
+    Editor::new(session, playback, Preferences::default())
+}
+fn click(h: &mut Harness<'_, Editor>, id: &str) {
+    h.run_steps(3);
+    h.get(By::new().predicate(|n| n.author_id() == Some(id)))
+        .click();
+    h.run_steps(3);
+}
+fn scenes_len(h: &Harness<'_, Editor>) -> usize {
+    h.state().session.project().data().scenes.iter().count()
+}
+#[test]
+fn create_switches_to_an_empty_scene_and_history_keeps_the_project_exact() {
+    let mut h = Harness::builder()
+        .with_size(egui::vec2(1728.0, 1200.0))
+        .build_ui_state(|ui, e: &mut Editor| e.ui(ui), editor_with_scene_session());
+    h.run_steps(3);
+    let before = h.state().session.project().clone();
+    click(&mut h, "scene.open");
+    click(&mut h, "scene.create");
+    let created = h.state().session.project().data().current_scene_id;
+    assert_ne!(created, SceneId(0));
+    assert_eq!(scenes_len(&h), 2);
+    {
+        let data = h.state().session.project().data();
+        let scene = data.scenes.get(created).unwrap();
+        assert_eq!(scene.name.as_str(), "Scene 2");
+        assert_eq!(scene.timeline.track_count(), 1);
+        assert!(scene.timeline.main.items.is_empty());
+        assert!(scene.timeline.overlays.is_empty());
+        assert!(scene.timeline.audio.is_empty());
+        assert_eq!(data.canvas, before.data().canvas);
+    }
+    h.state_mut().activate("edit.undo").unwrap();
+    h.run_steps(3);
+    assert_eq!(h.state().session.project().data(), before.data());
+    h.state_mut().activate("edit.redo").unwrap();
+    h.run_steps(3);
+    assert_eq!(scenes_len(&h), 2);
+    click(&mut h, "scene.row.0");
+    let after_create = h.state().session.project().clone();
+    click(&mut h, "scene.select");
+    click(&mut h, &format!("scene.row.{}", created.0));
+    click(&mut h, "scene.delete");
+    click(&mut h, "scene.confirm_delete");
+    assert_eq!(scenes_len(&h), 1);
+    h.state_mut().activate("edit.undo").unwrap();
+    h.run_steps(3);
+    assert_eq!(h.state().session.project().data(), after_create.data());
+}
+#[test]
+fn rename_commits_cancels_renames_main_and_survives_persistence() {
+    let mut h = Harness::builder()
+        .with_size(egui::vec2(1728.0, 1200.0))
+        .build_ui_state(|ui, e: &mut Editor| e.ui(ui), editor_with_scene_session());
+    h.run_steps(3);
+    click(&mut h, "scene.open");
+    click(&mut h, "scene.create");
+    let created = h.state().session.project().data().current_scene_id;
+    h.get(
+        By::new().predicate(|n| n.author_id() == Some(format!("scene.row.{}", created.0).as_str())),
+    )
+    .click_secondary();
+    h.run_steps(3);
+    h.get(
+        By::new()
+            .predicate(|n| n.author_id() == Some(format!("scene.rename.{}", created.0).as_str())),
+    )
+    .click();
+    h.run_steps(3);
+    h.get(By::new().predicate(|n| n.author_id() == Some("scene.rename.input")))
+        .type_text(" Opening");
+    h.key_press(egui::Key::Enter);
+    h.run_steps(3);
+    assert_eq!(
+        h.state()
+            .session
+            .project()
+            .data()
+            .scenes
+            .get(created)
+            .unwrap()
+            .name
+            .as_str(),
+        "Scene 2 Opening"
+    );
+    h.state_mut()
+        .activate(&format!("scene.rename.{}", created.0))
+        .unwrap();
+    h.run_steps(3);
+    h.get(By::new().predicate(|n| n.author_id() == Some("scene.rename.input")))
+        .type_text(" cancelled");
+    h.key_press(egui::Key::Escape);
+    h.run_steps(3);
+    assert_eq!(
+        h.state()
+            .session
+            .project()
+            .data()
+            .scenes
+            .get(created)
+            .unwrap()
+            .name
+            .as_str(),
+        "Scene 2 Opening"
+    );
+    h.get(By::new().predicate(|n| n.author_id() == Some("scene.row.0")))
+        .click_secondary();
+    h.run_steps(3);
+    h.get(By::new().predicate(|n| n.author_id() == Some("scene.rename.0")))
+        .click();
+    h.run_steps(3);
+    h.get(By::new().predicate(|n| n.author_id() == Some("scene.rename.input")))
+        .type_text(" Main");
+    h.key_press(egui::Key::Enter);
+    h.run_steps(3);
+    assert_eq!(
+        h.state()
+            .session
+            .project()
+            .data()
+            .scenes
+            .main()
+            .name
+            .as_str(),
+        "Main scene Main"
+    );
+    h.state_mut().activate("edit.undo").unwrap();
+    h.run_steps(3);
+    assert_eq!(
+        h.state()
+            .session
+            .project()
+            .data()
+            .scenes
+            .main()
+            .name
+            .as_str(),
+        "Main scene"
+    );
+    h.state_mut().activate("edit.redo").unwrap();
+    h.run_steps(3);
+    let bytes = project::encode(h.state().session.project(), false).unwrap();
+    let decoded = project::decode(&bytes).unwrap().project;
+    assert_eq!(&decoded, h.state().session.project().as_ref());
+    assert_eq!(
+        decoded.data().scenes.get(created).unwrap().name.as_str(),
+        "Scene 2 Opening"
+    );
+    assert_eq!(
+        decoded.data().scenes.main().name.as_str(),
+        "Main scene Main"
+    );
+}
