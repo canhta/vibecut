@@ -171,10 +171,14 @@ pub struct ClipSuggestionOutcome {
     pub transcription_cost: Cost,
     pub suggestion_cost: Cost,
     pub elapsed: Duration,
-    asset: SourceAsset,
+    /// Retained source context for desktop review; no ASR or energy re-decoding.
+    pub asset: SourceAsset,
     duration: Tick,
-    source_cues: Vec<Cue>,
-    source_project: Project,
+    pub source_cues: Vec<Cue>,
+    pub source_project: Project,
+    pub transcript: captions::Transcript,
+    pub energy: Vec<media::SpeechEnergyWindow>,
+    pub boundaries: ClipBoundarySettings,
 }
 
 enum BuiltSuggester {
@@ -609,6 +613,9 @@ pub fn suggest(
         duration,
         source_cues: cues,
         source_project,
+        transcript,
+        energy,
+        boundaries,
     })
 }
 

@@ -795,6 +795,11 @@ duplicate selections and the explicit provider catalog/credential refusal. Provi
 attempt/consent tests remain in `tests/providers.rs`; media encoding remains in
 `tests/clip_export.rs`.
 
+The clip suggestion outcome also retains its source project, source cues,
+transcript, measured speech energy and resolved boundary settings for desktop
+review. Consumers reuse these inputs for safe trimming without re-running ASR or
+energy decoding; the suggestion and snapping algorithms are unchanged.
+
 ## Clip batch export
 
 `ClipBatch::prepare(source_project, ClipBatchRequest)` owns one export job per
@@ -961,7 +966,8 @@ render, provider consent/cost or cache/checkpoint primitives.
 `provider_options()` is offline capability data (operation, model ids, languages,
 local/remote and native timing) for pickers. `choose_transcription`/`choose_translation`
 accept only a listed model and never fall back. `Runtime` selects local threads,
-the explicit GPU request and the shipped Gipformer runner path. `Credentials::new`
+the explicit GPU request and the shipped Gipformer runner path. `local_asr_runner`
+shares configured/bundled helper discovery between the desktop and CLI roots. `Credentials::new`
 accepts composition-root secrets and validates them; errors name the environment
 entry, never the value.
 

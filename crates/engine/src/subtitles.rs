@@ -380,6 +380,28 @@ impl Credentials {
     }
 }
 
+/// Find the explicitly configured or bundled local ASR helper without launching
+/// it or downloading weights. Shared by desktop and CLI composition roots.
+pub fn local_asr_runner() -> Option<PathBuf> {
+    if let Some(value) = std::env::var_os("VIBECUT_LOCAL_ASR") {
+        let path = PathBuf::from(value);
+        if path.is_file() {
+            return Some(path);
+        }
+    }
+    if let Ok(executable) = std::env::current_exe()
+        && let Some(parent) = executable.parent()
+    {
+        let path = parent.join("vibecut-local-asr");
+        if path.is_file() {
+            return Some(path);
+        }
+    }
+    let path = Path::new("target")
+        .join("release")
+        .join("vibecut-local-asr");
+    path.is_file().then_some(path)
+}
 /// Local execution choices. The runner is the shipped Gipformer helper, never a model.
 #[derive(Clone, Debug)]
 pub struct Runtime {

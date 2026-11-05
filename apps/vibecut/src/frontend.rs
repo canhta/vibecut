@@ -2528,6 +2528,10 @@ impl Editor {
         self.sync_preview();
         Ok(())
     }
+    /// Shared transport and preview surface for dedicated review windows.
+    pub fn preview_ui(&mut self, ui: &mut egui::Ui) {
+        self.preview(ui);
+    }
     fn preview(&mut self, ui: &mut egui::Ui) {
         ui.label(
             egui::RichText::new(self.tr(Text::Preview))

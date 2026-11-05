@@ -79,7 +79,7 @@ impl eframe::App for Native {
                 tracing::warn!(category="observation_create_failed",error=%e,"Observation project unavailable");
             }
         }
-        if let Some(editor) = &mut self.workspace.editor {
+        if let Some(editor) = self.workspace.active_editor_mut() {
             let port = editor.playback.audio_port();
             if self
                 .audio_port

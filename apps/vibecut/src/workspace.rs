@@ -56,6 +56,7 @@ enum Work {
     Discover,
     Open(PathBuf),
     New,
+    Short(Box<Session>, render::RenderSettings),
     Recover(Box<Candidate>),
     Discard(Box<Candidate>),
     Persist {
@@ -87,6 +88,8 @@ struct Pending {
 /// worker. Loading/exiting remains visible; no second Session or serializer exists.
 pub struct Workspace {
     pub editor: Option<Box<Editor>>,
+    pub shorts: Option<crate::shorts::Shorts>,
+    shorts_window: bool,
     pub preferences: Preferences,
     root: PathBuf,
     budget: ByteBudget,
@@ -122,6 +125,8 @@ impl Workspace {
         )?;
         let mut app = Self {
             editor: None,
+            shorts: None,
+            shorts_window: false,
             preferences,
             root,
             budget,
@@ -142,6 +147,24 @@ impl Workspace {
         };
         app.submit(Work::Discover, Text::Discovering)?;
         Ok(app)
+    }
+    /// The dedicated native shorts viewport shares the existing device adapter.
+    pub fn active_editor_mut(&mut self) -> Option<&mut Editor> {
+        if self.shorts_window {
+            self.shorts.as_mut().and_then(|s| s.preview_mut())
+        } else {
+            self.editor.as_deref_mut()
+        }
+    }
+    pub fn open_shorts(&mut self) -> Result<()> {
+        if self.shorts.is_none() {
+            self.shorts = Some(crate::shorts::Shorts::new(
+                self.preferences.clone(),
+                self.budget.clone(),
+            )?);
+        }
+        self.shorts_window = true;
+        Ok(())
     }
     pub fn busy(&self) -> bool {
         self.pending.is_some() || self.picker.is_some()
@@ -416,6 +439,9 @@ impl Workspace {
     }
     pub fn tick(&mut self) {
         self.poll_picker();
+        if let Some(shorts) = &mut self.shorts {
+            shorts.tick();
+        }
         if let Some(editor) = &mut self.editor {
             editor.tick();
             if self.error.is_none()
@@ -574,6 +600,29 @@ impl Workspace {
                     {
                         self.error = Some(e);
                     }
+                    if self.button(ui, "home.shorts", Icon::Scissors, Text::Shorts)
+                        && let Err(e) = self.open_shorts()
+                    {
+                        self.error = Some(e);
+                    }
+                    if let Some(shorts) = &self.shorts {
+                        let status = if shorts.cancelling() {
+                            Some(Text::ShortsCancelling)
+                        } else if shorts.awaiting_consent() {
+                            Some(Text::ShortsConsent)
+                        } else if shorts.exporting() {
+                            Some(Text::ShortsExporting)
+                        } else if shorts.busy() {
+                            Some(Text::ShortsCreating)
+                        } else if shorts.source().is_some() {
+                            Some(Text::ShortsReview)
+                        } else {
+                            None
+                        };
+                        if let Some(status) = status {
+                            ui.label(self.tr(status));
+                        }
+                    }
                     if self.button(ui, "project.open", Icon::FolderOpen, Text::OpenProject)
                         && let Err(e) = self.pick(ui.ctx(), PickerAction::Open)
                     {
@@ -581,6 +630,53 @@ impl Workspace {
                     }
                 }
             });
+        }
+        if self.shorts_window
+            && let Some(shorts) = &mut self.shorts
+        {
+            shorts.can_open_editor = self.editor.is_none() && self.pending.is_none();
+            if !shorts.can_open_editor {
+                shorts.open_editor = false;
+            }
+            let mut close = false;
+            let ctx = ui.ctx().clone();
+            ctx.show_viewport_immediate(
+                egui::ViewportId::from_hash_of("shorts.window"),
+                egui::ViewportBuilder::default()
+                    .with_title(catalog::text(shorts.preferences.locale, Text::Shorts))
+                    .with_inner_size([1440.0, 900.0])
+                    .with_min_inner_size([1280.0, 800.0]),
+                |ui, _class| {
+                    shorts.ui(ui);
+                    close = ui.input(|i| i.viewport().close_requested());
+                },
+            );
+            self.preferences = shorts.preferences.clone();
+            if close {
+                if let Some(preview) = shorts.preview_mut() {
+                    let _ = preview.activate("transport.pause");
+                }
+                self.shorts_window = false;
+            }
+            if shorts.open_editor && self.editor.is_none() && self.pending.is_none() {
+                shorts.open_editor = false;
+                let prepared = shorts.editor_session();
+                if let Some(preview) = shorts.preview_mut() {
+                    let _ = preview.activate("transport.pause");
+                }
+                match prepared {
+                    Ok((session, settings)) => {
+                        self.shorts_window = false;
+                        if let Err(e) = self.submit(
+                            Work::Short(Box::new(session), settings),
+                            Text::LoadingProject,
+                        ) {
+                            self.error = Some(e);
+                        }
+                    }
+                    Err(e) => self.error = Some(e),
+                }
+            }
         }
         if self.editor.is_none() && !self.busy() && !self.candidates.is_empty() {
             egui::Modal::new(egui::Id::unique("recovery.prompt")).show(ui.ctx(), |ui| {
@@ -735,7 +831,7 @@ fn session(root: &std::path::Path, session: Session, budget: ByteBudget) -> Resu
         Schedule::default(),
     )?)
 }
-fn fresh(name: &str) -> Result<Session> {
+pub(crate) fn fresh(name: &str) -> Result<Session> {
     static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
     let epoch = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -778,6 +874,16 @@ fn run(
             fresh(catalog::text(preferences.locale, Text::NewProject))?,
             budget.clone(),
         )?,
+        Work::Short(short, settings) => {
+            let autosave = session(root, *short, budget.clone())?;
+            let mut playback = Playback::new(autosave.session(), budget, Arc::new(Files))?;
+            playback.set_render_settings(settings)?;
+            return Ok(Completed::Opened(Box::new(Editor::persisted(
+                autosave,
+                playback,
+                preferences,
+            ))));
+        }
         Work::Open(path) => match Autosave::open(
             root,
             &path,

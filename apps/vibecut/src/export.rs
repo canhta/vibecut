@@ -580,18 +580,7 @@ impl ExportDialog {
                     };
                     ui.label(tr(label));
                     if active {
-                        let stage = match snapshot.stage {
-                            JobStage::Queued | JobStage::Starting => Text::ExportQueued,
-                            JobStage::Admit => Text::ExportAdmit,
-                            JobStage::Render => Text::ExportRender,
-                            JobStage::Mix => Text::ExportMix,
-                            JobStage::Encode => Text::ExportEncode,
-                            JobStage::Finalize => Text::ExportFinalize,
-                            JobStage::Publish => Text::ExportPublish,
-                            _ => Text::ExportProgress,
-                        };
-                        ui.label(tr(stage));
-                        ui.add(egui::ProgressBar::new(snapshot.progress).show_percentage());
+                        job_progress(ui, snapshot, locale);
                     }
                 }
                 if self.error.is_some() {
@@ -696,4 +685,20 @@ fn export_failure(error: &engine::EditError) -> Text {
         E::Render(R::Text(_) | R::Raster(_)) => Text::ExportTextFailure,
         _ => Text::ExportFailure,
     }
+}
+
+/// The export and shorts surfaces render the same engine stages and fraction.
+pub(crate) fn job_progress(ui: &mut egui::Ui, snapshot: &JobSnapshot, locale: Locale) {
+    let stage = match snapshot.stage {
+        JobStage::Queued | JobStage::Starting => Text::ExportQueued,
+        JobStage::Admit => Text::ExportAdmit,
+        JobStage::Render => Text::ExportRender,
+        JobStage::Mix => Text::ExportMix,
+        JobStage::Encode => Text::ExportEncode,
+        JobStage::Finalize => Text::ExportFinalize,
+        JobStage::Publish => Text::ExportPublish,
+        _ => Text::ExportProgress,
+    };
+    ui.label(catalog::text(locale, stage));
+    ui.add(egui::ProgressBar::new(snapshot.progress).show_percentage());
 }

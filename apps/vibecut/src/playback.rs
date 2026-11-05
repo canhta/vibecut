@@ -123,6 +123,7 @@ impl AudioPort {
 }
 #[derive(Clone)]
 struct Request {
+    render_settings: Option<Arc<render::RenderSettings>>,
     effects: Option<Arc<dyn render::effects::EffectCompositor>>,
     epoch: u64,
     project: Arc<project::Project>,
@@ -191,9 +192,21 @@ impl Playback {
         let request = read_request(&self.request)?;
         self.seek(request.start, request.playing, request.project)
     }
+    /// Use the same transient placement/crop settings as the accepted export.
+    /// Render validates geometry; a change invalidates every queued preview frame.
+    pub fn set_render_settings(&mut self, settings: render::RenderSettings) -> Result<()> {
+        let request = read_request(&self.request)?;
+        render::Renderer::new(&request.project, settings.clone())?;
+        self.request
+            .lock()
+            .map_err(|_| Error::Poisoned)?
+            .render_settings = Some(Arc::new(settings));
+        self.seek(self.position()?, false, request.project)
+    }
     pub fn new(session: &Session, budget: ByteBudget, sources: Arc<dyn Sources>) -> Result<Self> {
         let port = Arc::new(AudioPort::new(&budget)?);
         let request = Arc::new(Mutex::new(Request {
+            render_settings: None,
             effects: None,
             epoch: 1,
             project: session.project().clone(),
@@ -383,6 +396,7 @@ impl Playback {
             .checked_add(1)
             .ok_or(Error::Invalid("preview generation exhausted"))?;
         *request = Request {
+            render_settings: request.render_settings.clone(),
             effects: request.effects.clone(),
             epoch,
             project,
@@ -558,7 +572,21 @@ fn video_loop(
         let mut sources = factory.create();
         let fps = r.project.data().canvas.fps;
         let mut next = fps.frame_at(r.at(port.audible.load(Ordering::Acquire))?)?;
-        let mut settings = render::RenderSettings::from_project(&r.project);
+        let mut settings = r
+            .render_settings
+            .as_deref()
+            .cloned()
+            .unwrap_or_else(|| render::RenderSettings::from_project(&r.project));
+        // Retain the override for redo, but removed items have no placement in
+        // this snapshot. Render continues to validate the effective settings.
+        settings.placements.retain(|id, _| {
+            r.project
+                .data()
+                .scene()
+                .timeline
+                .iter()
+                .any(|track| track.items.iter().any(|item| item.id == *id))
+        });
         let scale = (640.0 / f64::from(settings.width))
             .min(360.0 / f64::from(settings.height))
             .min(1.0);

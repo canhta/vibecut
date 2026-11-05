@@ -1,6 +1,7 @@
 //! Native editor frontend. Device creation and window ownership stay in main.
 pub mod capture;
 pub mod catalog;
+pub mod crop;
 pub mod effects;
 pub mod export;
 mod frontend;
@@ -9,6 +10,7 @@ pub mod import;
 pub mod lifecycle;
 pub mod playback;
 pub mod selection;
+pub mod shorts;
 mod theme;
 pub mod workspace;
 pub use eframe::egui;

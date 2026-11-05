@@ -378,3 +378,8 @@ maximum channel difference 20/255, RGBA MSE 8 and flat-patch channel difference
 6/255, allowing 4:2:0 chroma edge
 reconstruction. Working-space checks retain the tighter float tolerance.
 The ignored `blend_frame_benchmark` measures 640x360, ten warm frames per mode.
+
+
+`Rect::validate_crop` exposes the compositor's existing source-normalized rectangle
+admission for reusable desktop crop controls; preview/export keep the same bounds
+and geometry validation. It adds no alternate crop renderer.

@@ -1448,27 +1448,6 @@ fn subtitle_usage_error() -> CliError {
     CliError::Usage(subtitle_usage().into())
 }
 
-fn local_asr_runner() -> Option<PathBuf> {
-    if let Some(value) = std::env::var_os("VIBECUT_LOCAL_ASR") {
-        let path = PathBuf::from(value);
-        if path.is_file() {
-            return Some(path);
-        }
-    }
-    if let Ok(executable) = std::env::current_exe()
-        && let Some(parent) = executable.parent()
-    {
-        let path = parent.join("vibecut-local-asr");
-        if path.is_file() {
-            return Some(path);
-        }
-    }
-    let path = Path::new("target")
-        .join("release")
-        .join("vibecut-local-asr");
-    path.is_file().then_some(path)
-}
-
 fn cli_runtime() -> Result<subtitles::Runtime, CliError> {
     let mut runtime = subtitles::Runtime::default();
     if let Ok(value) = std::env::var("VIBECUT_ASR_THREADS") {
@@ -1485,7 +1464,7 @@ fn cli_runtime() -> Result<subtitles::Runtime, CliError> {
     if std::env::var("VIBECUT_ASR_GPU").is_ok_and(|value| value == "0") {
         runtime.use_gpu = false;
     }
-    runtime.gipformer_runner = local_asr_runner();
+    runtime.gipformer_runner = subtitles::local_asr_runner();
     Ok(runtime)
 }
 

@@ -307,3 +307,33 @@ the same linear-light blend formulas in WGSL; unsupported device operations
 fall back to the render reference with the unchanged backdrop.
 `cargo xtask ui-audit inspector-blend inspector-blend-vi` renders these inspector
 scenes through the shared audit registry in both themes and at 1x/2x.
+
+## Long video to shorts
+
+The Home `home.shorts` card opens a separate native viewport. `Shorts` owns its
+bounded presentation/review history; `LocalVideoWorkflow` composes engine's
+`clip_suggest::suggest` against the picked/dropped local video. Provider and model
+pickers use offline capability data. Local heuristics are an explicit choice;
+remote ASR and suggestions stop at an exact per-upload disclosure (provider,
+model, language, audio duration, payload bytes, cost ceiling and policy links).
+Refusal or cancellation sends no approval and never selects another provider.
+Missing models and credentials are actionable errors; no implicit downloads occur.
+
+Candidates show title, duration, editorial score, reason and heuristic/AI source.
+Review retains roles and both play/source ranks, safe engine boundary snapping,
+accept/reject and a source-normalized 9:16 crop. The reusable `crop` control moves
+within source bounds, with keyboard arrows and Escape rollback. Review actions
+have a separate 100-step undo/redo history; a whole crop gesture is one step.
+`ClipBatch` produces the exact concatenated snapshot and crop placements used by
+both preview and export, so playback skips source gaps and follows play order.
+Only accepted shorts submit batch jobs, with independent progress/cancel/retry;
+editing a review does not alter an already submitted immutable batch.
+
+Open in editor inserts every video segment and mapped source-caption item into a
+fresh portrait project through one engine transaction, then uses the existing
+nonblocking recovery/autosave owner. Review crops are transient (preview/export);
+persisted crop channels and subsequent full-editor crop edits belong to the crop
+controls feature. Source-language captions can be burned and exported as SRT.
+`tests/shorts_ui.rs` injects generation and preview sources, uses real automation
+IDs and engine commands, and asserts state only. UI image evidence is an offscreen
+audit, separate from the test suite; no native window is opened by verification.

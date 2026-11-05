@@ -24,6 +24,11 @@ impl Default for Rect {
     }
 }
 impl Rect {
+    /// Validate a nonempty source-normalized crop contained in `[0, 1]².
+    /// Non-finite values and out-of-source rectangles return Invalid.
+    pub fn validate_crop(self) -> Result<()> {
+        self.validate(true)
+    }
     fn validate(self, crop: bool) -> Result<()> {
         if [self.x, self.y, self.width, self.height]
             .iter()
