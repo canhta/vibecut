@@ -101,7 +101,6 @@ fn run_checks(root: &Path, require_oracles: bool) -> Result<(), String> {
                 "--no-default-features",
                 "--features",
                 feature,
-                "--no-run",
             ],
             require_oracles,
         )?;

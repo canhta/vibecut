@@ -524,7 +524,7 @@ An explicitly supplied `SHERPA_ONNX_LIB_DIR` is retained and must contain
 architecture-matched static `/MD` libraries. Provisioning verifies the published
 GitHub release-asset SHA-256 and size before extraction and keeps an atomic cache
 receipt; incomplete caches fail with recovery guidance. The library version comes
-from `Cargo.lock`. Native Windows CI separately links Whisper-only and
+from `Cargo.lock`. Native Windows CI separately links and runs Whisper-only and
 Gipformer-only ai tests, then links/runs the combined default workspace tests.
 The [workflow](../../docs/engineering/workflows.md#ffmpeg-provisioning) owns build
 environment setup. Windows hardware/runtime acceptance remains p0-core/14.

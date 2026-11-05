@@ -74,6 +74,10 @@ after admission and after execution qualify, including untracked files. An
 identical clean tree reuses its receipt across rebases. Receipts are local
 verification evidence; they do not replace environment-specific release checks.
 
+Windows `ci` links and runs ai's standalone `whisper` and `gipformer` library
+tests before the default-feature workspace suite, exercising native linking and
+runtime loading without relying on another backend's native dependencies.
+
 ## Tickets and limits
 
 The ticket commands and name policy find the main checkout through Git's absolute
