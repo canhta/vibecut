@@ -7,12 +7,12 @@ pub use session::{
     GrantClass, ItemParamPatch, ItemPlacement, KeyframeRef, Lifecycle, Move, NewItem, Outcome,
     Placement, TrackPlacement, TrimEdge, lifecycle, registry,
 };
-pub use session::{JobTarget, Session};
+pub use session::{FontError, JobTarget, Session, SoundError};
 mod runtime;
 pub use runtime::cache;
 pub use runtime::jobs;
 pub(crate) use runtime::publication;
-pub(crate) use runtime::transfer;
+pub use runtime::transfer;
 pub use runtime::{BudgetSnapshot, ByteBudget, ByteLease, ByteOwner};
 pub use runtime::{
     submit_export, submit_export_publication, submit_export_with_sources, subtitle_file,
@@ -138,9 +138,9 @@ pub enum EditError {
     #[error("AI execution failed")]
     Ai(#[from] ai::Error),
     #[error("sound library failed: {0}")]
-    Sounds(#[from] sounds::Error),
+    Sounds(#[from] SoundError),
     #[error("font catalog operation failed")]
-    Font(#[from] fonts::FontError),
+    Font(#[from] FontError),
     #[error("local model {0} is not installed; run `vibecut-cli model download {0}`")]
     ModelMissing(&'static str),
     #[error("local Gipformer runner is not installed")]

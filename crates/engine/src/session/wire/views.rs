@@ -55,7 +55,7 @@ pub enum FontLoadState {
     Unknown,
 }
 
-/// Result of [`FontStore::load`].
+/// Result of loading one font family: its state and the family layout will use.
 #[derive(Clone, Debug, PartialEq, Serialize, schemars::JsonSchema)]
 pub struct FontLoad {
     pub family: String,

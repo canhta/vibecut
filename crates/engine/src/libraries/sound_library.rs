@@ -39,59 +39,7 @@ const MAX_TEXT: usize = 4096;
 const LIBRARY_FORMAT: &str = "vibecut.sound-library";
 const LIBRARY_VERSION: u32 = 1;
 
-#[derive(Debug, thiserror::Error)]
-pub enum Error {
-    #[error("Freesound credential is absent")]
-    NoCredentials,
-    #[error("Freesound authentication failed")]
-    Auth,
-    #[error("Freesound quota is exhausted")]
-    Quota,
-    #[error("Freesound rate limit reached; retry after {retry_after_seconds:?} seconds")]
-    RateLimit { retry_after_seconds: Option<u32> },
-    #[error("Freesound network request failed")]
-    Network,
-    #[error("Freesound server failed")]
-    Server,
-    #[error("Freesound response is invalid")]
-    InvalidResponse,
-    #[error("sound response exceeds the configured limit")]
-    Limit,
-    #[error("sound audio device is unavailable")]
-    NoAudioDevice,
-    #[error("sound audio is not cached")]
-    NotCached,
-    #[error("sound library file is corrupt or unsupported")]
-    LibraryCorrupt,
-    #[error("sound operation cancelled")]
-    Cancelled,
-    #[error("sound IO failed")]
-    Io(#[from] std::io::Error),
-    #[error("sound media failed")]
-    Media(#[from] media::MediaError),
-    #[error("sound library persistence failed")]
-    Project(#[from] project::Error),
-    #[error("invalid sound input: {0}")]
-    Invalid(&'static str),
-}
-impl From<ai::Error> for Error {
-    fn from(error: ai::Error) -> Self {
-        match error {
-            ai::Error::Auth => Self::Auth,
-            ai::Error::Quota => Self::Quota,
-            ai::Error::RateLimit {
-                retry_after_seconds,
-            } => Self::RateLimit {
-                retry_after_seconds,
-            },
-            ai::Error::Network | ai::Error::Timeout => Self::Network,
-            ai::Error::Server => Self::Server,
-            ai::Error::Payload => Self::Limit,
-            ai::Error::Cancelled => Self::Cancelled,
-            _ => Self::InvalidResponse,
-        }
-    }
-}
+pub use crate::SoundError as Error;
 pub type Sound<T> = std::result::Result<T, Error>;
 
 /// User-supplied credential held only for this process. Debug is always redacted.

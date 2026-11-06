@@ -23,9 +23,10 @@ pub(crate) mod publication {
     pub(crate) use super::staged_publication::Publication;
 }
 mod verified_transfer;
-pub(crate) mod transfer {
+pub mod transfer {
     //! Fetches verified downloads for fonts and models.
-    pub(crate) use super::verified_transfer::{header, response};
+    pub(crate) use super::verified_transfer::header;
+    pub use super::verified_transfer::response;
 }
 mod loudness_admission;
 pub(crate) use loudness_admission::VERSION as LOUDNESS_VERSION;

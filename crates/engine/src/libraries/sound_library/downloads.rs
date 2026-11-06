@@ -77,7 +77,7 @@ impl SoundDownloads {
             move |ctx| {
                 let _guard = &guard;
                 ctx.check_cancelled()?;
-                match worker.download(&source, &|| ctx.cancelled(), &|done, total| {
+                match worker.fetch(&source, &|| ctx.cancelled(), Some(ctx), &|done, total| {
                     let fraction = total
                         .filter(|total| *total > 0)
                         .map_or(0.0, |total| (done as f64 / total as f64) as f32);
@@ -96,6 +96,15 @@ impl SoundDownloads {
         &self,
         source: &str,
         cancelled: &dyn Fn() -> bool,
+        progress: &dyn Fn(u64, Option<u64>),
+    ) -> Sound<CachedSound> {
+        self.fetch(source, cancelled, None, progress)
+    }
+    fn fetch(
+        &self,
+        source: &str,
+        cancelled: &dyn Fn() -> bool,
+        fence: Option<&crate::jobs::JobContext>,
         progress: &dyn Fn(u64, Option<u64>),
     ) -> Sound<CachedSound> {
         if !url(source) {
@@ -177,7 +186,7 @@ impl SoundDownloads {
                 }
                 file.sync_all()?;
                 drop(file);
-                self.library.publish_temp(source, &temp, cancelled)
+                self.library.publish_temp(source, &temp, cancelled, fence)
             })();
             if result.is_err() {
                 let _ = fs::remove_file(&temp);

@@ -2,6 +2,7 @@
 use super::Context;
 use crate::args::CliError;
 use crate::output::Output;
+use engine::control::FontAccess;
 use engine::control::{Caller, ControlResult, ErrorCode, Policy, Request, Response, ResponseValue};
 use engine::fonts::FontStore;
 use engine::jobs::{JobRunner, RunnerConfig, SystemClock};
@@ -53,7 +54,24 @@ pub(crate) fn control(
         project::metadata_path(&project_path)?,
     ])?;
     // Without a user cache location the font commands refuse; the session still serves edits.
-    let fonts = FontStore::native().ok();
+    let store = FontStore::native().ok();
+    let list = |query: Option<&str>| match &store {
+        Some(store) => store.list(query),
+        None => Err(engine::FontError::Unavailable.into()),
+    };
+    let load = |family: &str| match &store {
+        Some(store) => store.load(family),
+        None => Err(engine::FontError::Unavailable.into()),
+    };
+    let download = |runner: &mut JobRunner, family: &str, accepted: bool| match &store {
+        Some(store) => store
+            .submit_download(runner, family, accepted)
+            .map(|(job, _)| job),
+        None => Err(engine::FontError::Unavailable.into()),
+    };
+    let fonts = store
+        .as_ref()
+        .map(|_| FontAccess::new(&list, &load, &download));
     let mut runner = JobRunner::new(
         RunnerConfig {
             concurrency: [1, 1, 2],

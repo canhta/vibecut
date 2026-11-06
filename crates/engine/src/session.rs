@@ -1,7 +1,9 @@
 //! Owns editable session state through atomic commands.
+mod failures;
 mod revision;
 mod state;
 pub(crate) mod wire;
+pub use failures::{FontError, SoundError};
 pub use state::{JobTarget, Session};
 pub(crate) use wire::budget;
 mod command_facts;

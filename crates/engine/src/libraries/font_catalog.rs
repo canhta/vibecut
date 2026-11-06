@@ -30,26 +30,9 @@ const ADMITTED_BY: &str = "p1-parity-28";
 /// Pin of the curated upstream tree; every URL and hash below belongs to this commit.
 const GOOGLE_FONTS_COMMIT: &str = "eb20e9cf19d97cf579fa3867d729d4222d6c59e1";
 
-pub use crate::session::wire::{FontEntry, FontLoad, FontLoadState, FontOrigin, FontState};
+pub use crate::control::{FontEntry, FontLoad, FontLoadState, FontOrigin, FontState};
 
-/// Font catalog failures that are not a load state.
-#[derive(Debug, thiserror::Error)]
-pub enum FontError {
-    #[error("the font store is not available in this session")]
-    Unavailable,
-    #[error("family is not a downloadable catalog font")]
-    NotDownloadable,
-    #[error("a download for this family is already running")]
-    DownloadActive,
-    #[error("downloaded bytes do not match the catalog size or SHA-256")]
-    Integrity,
-    #[error("font server did not answer with a complete file")]
-    Response,
-    #[error("font file cannot be registered")]
-    Face(#[from] text::FontError),
-    #[error("font catalog entry is invalid")]
-    Catalog,
-}
+pub use crate::FontError;
 
 /// A face found by a scan of installed fonts.
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]

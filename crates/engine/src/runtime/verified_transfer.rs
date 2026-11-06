@@ -15,7 +15,13 @@ pub(crate) fn header<'a>(response: &'a HttpStreamResponse, name: &str) -> Result
     }
     Ok(value)
 }
-pub(crate) fn response(
+/// Fetches one response over at most five redirects, refusing duplicate or oversized headers.
+///
+/// # Errors
+///
+/// `Cancelled` when the job is cancelled before any request; `NetworkTransient` for retryable
+/// transport failures; `ModelResponse` for a malformed or excessive redirect chain.
+pub fn response(
     http: &dyn DownloadTransport,
     url: &str,
     headers: &[(String, String)],

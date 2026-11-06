@@ -33,13 +33,31 @@ impl Policy for Deny {
 }
 thread_local! {
     /// The font store lent to requests on this test thread: each seed session gets a fresh one.
-    static FONTS: std::cell::Cell<Option<&'static engine::fonts::FontStore>> =
+    static FONTS: std::cell::Cell<Option<&'static engine::control::FontAccess<'static>>> =
         const { std::cell::Cell::new(None) };
 }
 fn with_fonts(session: Session) -> Session {
     let store: &'static engine::fonts::FontStore =
         Box::leak(Box::new(crate::libraries::example_store()));
-    FONTS.set(Some(store));
+    let list: &'static dyn Fn(Option<&str>) -> engine::Result<Vec<engine::fonts::FontEntry>> =
+        Box::leak(Box::new(|q: Option<&str>| store.list(q)));
+    let load: &'static dyn Fn(&str) -> engine::Result<engine::fonts::FontLoad> =
+        Box::leak(Box::new(|f: &str| store.load(f)));
+    let download: &'static dyn Fn(
+        &mut JobRunner,
+        &str,
+        bool,
+    ) -> engine::Result<engine::jobs::JobId> = Box::leak(Box::new(
+        |runner: &mut JobRunner, family: &str, accepted: bool| {
+            store
+                .submit_download(runner, family, accepted)
+                .map(|(job, _)| job)
+        },
+    ));
+    let access: &'static engine::control::FontAccess<'static> = Box::leak(Box::new(
+        engine::control::FontAccess::new(list, load, download),
+    ));
+    FONTS.set(Some(access));
     session
 }
 fn caller(policy: &dyn Policy) -> Caller<'_> {
@@ -2137,4 +2155,60 @@ fn font_commands_return_typed_results_and_refuse_without_a_store_or_acceptance()
         "font commands are not project edits"
     );
     assert!(!s.can_undo());
+}
+
+#[test]
+fn lent_font_operations_run_only_after_admission_and_never_on_replay() {
+    use std::cell::Cell;
+    let calls = Cell::new(0u32);
+    let fail = Cell::new(false);
+    let list = |_: Option<&str>| {
+        calls.set(calls.get() + 1);
+        Ok(Vec::new())
+    };
+    let load = |_: &str| -> engine::Result<engine::fonts::FontLoad> {
+        calls.set(calls.get() + 1);
+        Err(engine::FontError::Catalog.into())
+    };
+    let download = |_: &mut JobRunner, _: &str, _: bool| {
+        calls.set(calls.get() + 1);
+        if fail.get() {
+            Err(engine::FontError::NotDownloadable.into())
+        } else {
+            Ok(engine::jobs::JobId(1))
+        }
+    };
+    let access = engine::control::FontAccess::new(&list, &load, &download);
+    let lent = |policy| Caller {
+        fonts: Some(&access),
+        ..caller(policy)
+    };
+    let mut s = session();
+    let mut r = runner();
+    let params = json!({"family":"Lobster","accept_license":true});
+
+    // Denied by policy: no operation runs.
+    let req = request(&s, "fonts.download", params.clone(), "denied");
+    error(
+        s.control_request(req, lent(&Deny), &mut r).unwrap(),
+        ErrorCode::Permission,
+    );
+    assert_eq!(calls.get(), 0);
+
+    // An operation failure is a typed refusal, and the first accepted call runs it once.
+    fail.set(true);
+    let req = request(&s, "fonts.download", params.clone(), "failing");
+    error(
+        s.control_request(req, lent(&Allow), &mut r).unwrap(),
+        ErrorCode::Refused,
+    );
+    assert_eq!(calls.get(), 1);
+    fail.set(false);
+    let req = request(&s, "fonts.download", params.clone(), "once");
+    ok(s.control_request(req, lent(&Allow), &mut r).unwrap());
+    assert_eq!(calls.get(), 2);
+    // Replaying the same idempotency key returns the receipt without a second invocation.
+    let req = request(&s, "fonts.download", params, "once");
+    ok(s.control_request(req, lent(&Allow), &mut r).unwrap());
+    assert_eq!(calls.get(), 2);
 }

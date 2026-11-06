@@ -139,6 +139,7 @@ impl SoundLibrary {
         source: &str,
         temp: &Path,
         cancelled: &dyn Fn() -> bool,
+        fence: Option<&crate::jobs::JobContext>,
     ) -> Sound<CachedSound> {
         if cancelled() {
             return Err(Error::Cancelled);
@@ -153,10 +154,22 @@ impl SoundLibrary {
         {
             return Err(Error::InvalidResponse);
         }
-        if cancelled() {
-            return Err(Error::Cancelled);
+        let target = self.cache_path(source);
+        if let Some(ctx) = fence {
+            // Cancellation is decided at the job fence; once sealed the rename finishes.
+            let mut renamed = None;
+            ctx.commit_publication(|| {
+                renamed = Some(fs::rename(temp, &target));
+                Ok(())
+            })
+            .map_err(|_| Error::Cancelled)?;
+            renamed.ok_or(Error::Cancelled)??;
+        } else {
+            if cancelled() {
+                return Err(Error::Cancelled);
+            }
+            fs::rename(temp, &target)?;
         }
-        fs::rename(temp, self.cache_path(source))?;
         cached_from_path(self.cache_path(source), Some(source))
     }
 }

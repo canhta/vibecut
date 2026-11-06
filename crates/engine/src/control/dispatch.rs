@@ -25,10 +25,8 @@ impl From<ProviderOption> for ProviderView {
         }
     }
 }
-fn font_store<'a>(caller: &Caller<'a>) -> Result<&'a crate::fonts::FontStore> {
-    caller
-        .fonts
-        .ok_or(crate::fonts::FontError::Unavailable.into())
+fn font_access<'a>(caller: &Caller<'a>) -> Result<&'a super::FontAccess<'a>> {
+    caller.fonts.ok_or(crate::FontError::Unavailable.into())
 }
 impl Session {
     pub(super) fn run_control(
@@ -61,17 +59,18 @@ impl Session {
                     .collect(),
             }),
             Command::FontsList { query } => Ok(ControlResult::Fonts {
-                entries: font_store(caller)?.list(query.as_ref().map(captions::NfcText::as_str))?,
+                entries: (font_access(caller)?.list)(
+                    query.as_ref().map(captions::NfcText::as_str),
+                )?,
             }),
             Command::FontsLoad { family } => Ok(ControlResult::Font {
-                font: font_store(caller)?.load(family.as_str())?,
+                font: (font_access(caller)?.load)(family.as_str())?,
             }),
             Command::FontsDownload {
                 family,
                 accept_license,
             } => {
-                let (job, _) =
-                    font_store(caller)?.submit_download(runner, family.as_str(), accept_license)?;
+                let job = (font_access(caller)?.download)(runner, family.as_str(), accept_license)?;
                 Ok(ControlResult::JobAccepted {
                     job,
                     revision: self.revision(),

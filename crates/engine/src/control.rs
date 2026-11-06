@@ -1,14 +1,16 @@
 //! Admits transport-neutral commands and runs control-only commands, the top engine layer.
+use crate::jobs::{JobId, JobRunner};
 use crate::{Command, Result};
 
 pub use crate::session::wire::{
-    API_VERSION, ControlResult, Cursor, ErrorCode, Event, JobView, LIMITS, Limits,
-    MAX_BATCH_COMMANDS, MAX_BATCH_DEPTH, MAX_COLLECTION, MAX_DEPTH, MAX_EVENTS, MAX_FRAME_BYTES,
-    MAX_KEY_BYTES, MAX_NODES, MAX_PATH_BYTES, MAX_PREVIEW_CLIPS, MAX_PREVIEW_EDGE,
-    MAX_PREVIEW_FRAMES, MAX_RECEIPT_BYTES, MAX_RECEIPTS, MAX_RESPONSE_BYTES, MAX_SAFE_INTEGER,
-    MAX_TEXT_BYTES, PREVIEW_QUALITY, Payload, PreviewFrame, PreviewResult, ProviderView,
-    RECEIPT_RESERVATION, Request, Response, ResponseValue, Revision, Snapshot, bounded_json,
-    contract_schema, parse_frame, reference_markdown, registry_hash,
+    API_VERSION, ControlResult, Cursor, ErrorCode, Event, FontEntry, FontLoad, FontLoadState,
+    FontOrigin, FontState, JobView, LIMITS, Limits, MAX_BATCH_COMMANDS, MAX_BATCH_DEPTH,
+    MAX_COLLECTION, MAX_DEPTH, MAX_EVENTS, MAX_FRAME_BYTES, MAX_KEY_BYTES, MAX_NODES,
+    MAX_PATH_BYTES, MAX_PREVIEW_CLIPS, MAX_PREVIEW_EDGE, MAX_PREVIEW_FRAMES, MAX_RECEIPT_BYTES,
+    MAX_RECEIPTS, MAX_RESPONSE_BYTES, MAX_SAFE_INTEGER, MAX_TEXT_BYTES, PREVIEW_QUALITY, Payload,
+    PreviewFrame, PreviewResult, ProviderView, RECEIPT_RESERVATION, Request, Response,
+    ResponseValue, Revision, Snapshot, bounded_json, contract_schema, parse_frame,
+    reference_markdown, registry_hash,
 };
 
 mod admission;
@@ -28,14 +30,38 @@ pub trait Policy {
 
     fn authorize(&self, command: &Command, project: &project::Project) -> Result<()>;
 }
+/// The three font operations the process lends to control commands. It is composition state
+/// borrowed for one request, never project state: the kernel discovers no fonts, owns no store
+/// and touches no network. Admission, grants, receipts and revision checks run before any
+/// operation is invoked, and dispatch builds the response itself.
+#[derive(Clone, Copy)]
+pub struct FontAccess<'a> {
+    list: &'a dyn Fn(Option<&str>) -> Result<Vec<FontEntry>>,
+    load: &'a dyn Fn(&str) -> Result<FontLoad>,
+    download: &'a dyn Fn(&mut JobRunner, &str, bool) -> Result<JobId>,
+}
+impl<'a> FontAccess<'a> {
+    /// `list` serves `fonts.list`, `load` serves `fonts.load`, and `download` submits onto the
+    /// supplied runner and returns only the accepted job; cancellation addresses the runner by id.
+    pub fn new(
+        list: &'a dyn Fn(Option<&str>) -> Result<Vec<FontEntry>>,
+        load: &'a dyn Fn(&str) -> Result<FontLoad>,
+        download: &'a dyn Fn(&mut JobRunner, &str, bool) -> Result<JobId>,
+    ) -> Self {
+        Self {
+            list,
+            load,
+            download,
+        }
+    }
+}
 pub struct Caller<'a> {
     pub principal: &'a str,
     pub external: bool,
     pub policy: &'a dyn Policy,
-    /// The process font store that serves `fonts.list`, `fonts.load` and `fonts.download`.
-    /// It is composition state, not project state; without one those commands are refused
-    /// with [`crate::fonts::FontError::Unavailable`].
-    pub fonts: Option<&'a crate::fonts::FontStore>,
+    /// The process font operations behind `fonts.list`, `fonts.load` and `fonts.download`.
+    /// Without them those commands are refused with [`crate::FontError::Unavailable`].
+    pub fonts: Option<&'a FontAccess<'a>>,
 }
 
 #[cfg(test)]
