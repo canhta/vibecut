@@ -21,10 +21,8 @@ pub(super) fn banner(ui: &mut egui::Ui, width: f32, state: &mut State, locale: L
     let response = ui
         .push_id(id, |ui| {
             ui.add_enabled_ui(enabled, |ui| {
-                let (rect, response) = ui.allocate_exact_size(
-                    egui::vec2(width, BANNER_HEIGHT),
-                    egui::Sense::click(),
-                );
+                let (rect, response) =
+                    ui.allocate_exact_size(egui::vec2(width, BANNER_HEIGHT), egui::Sense::click());
                 let fill = if response.hovered() && enabled {
                     kit::accent(dark).lerp_to_gamma(egui::Color32::WHITE, 0.12)
                 } else {
@@ -38,7 +36,11 @@ pub(super) fn banner(ui: &mut egui::Ui, width: f32, state: &mut State, locale: L
                         .color(ink);
                     let width_of = ui
                         .painter()
-                        .layout_no_wrap(text.text().to_owned(), semibold(kit::type_size::CHROME), ink)
+                        .layout_no_wrap(
+                            text.text().to_owned(),
+                            semibold(kit::type_size::CHROME),
+                            ink,
+                        )
                         .size()
                         .x;
                     let left = rect.center().x - (24.0 + 12.0 + width_of) / 2.0;
@@ -62,7 +64,7 @@ pub(super) fn banner(ui: &mut egui::Ui, width: f32, state: &mut State, locale: L
                         egui::Vec2::splat(tile),
                     );
                     ui.painter().rect_filled(tile_rect, 6.0, ink);
-                    kit::tinted(Icon::Plus, kit::icon::DENSE, kit::accent(dark)).paint_at(
+                    kit::tinted(Icon::Plus, kit::icon::DENSE, kit::text(dark)).paint_at(
                         ui,
                         egui::Rect::from_center_size(
                             tile_rect.center(),
@@ -108,14 +110,20 @@ pub(super) fn shorts_card(ui: &mut egui::Ui, state: &mut State, locale: Locale) 
     };
     let painter = ui.painter();
     painter.rect_filled(rect, CARD_RADIUS, fill);
-    let tile = egui::Rect::from_min_size(rect.min + egui::vec2(12.0, 12.0), egui::Vec2::splat(44.0));
+    let tile =
+        egui::Rect::from_min_size(rect.min + egui::vec2(12.0, 12.0), egui::Vec2::splat(44.0));
     painter.rect_filled(tile, 8.0, kit::field(dark));
-    kit::tinted(Icon::Scissors, 24.0, kit::text(dark))
-        .paint_at(ui, egui::Rect::from_center_size(tile.center(), egui::Vec2::splat(24.0)));
+    kit::tinted(Icon::Scissors, 24.0, kit::text(dark)).paint_at(
+        ui,
+        egui::Rect::from_center_size(tile.center(), egui::Vec2::splat(24.0)),
+    );
     let inner = rect.width() - 24.0;
-    let name = line(ui, title, semibold(kit::type_size::CHROME), kit::text(dark), inner);
-    ui.painter()
-        .galley(egui::pos2(rect.min.x + 12.0, rect.min.y + 70.0), name, kit::text(dark));
+    let name = line(ui, title, semibold(13.0), kit::text(dark), inner);
+    ui.painter().galley(
+        egui::pos2(rect.min.x + 12.0, rect.min.y + 70.0),
+        name,
+        kit::text(dark),
+    );
     let hint = line(
         ui,
         catalog::text(locale, Text::HomeShortsHint),
@@ -123,8 +131,11 @@ pub(super) fn shorts_card(ui: &mut egui::Ui, state: &mut State, locale: Locale) 
         kit::secondary(dark),
         inner,
     );
-    ui.painter()
-        .galley(egui::pos2(rect.min.x + 12.0, rect.min.y + 94.0), hint, kit::secondary(dark));
+    ui.painter().galley(
+        egui::pos2(rect.min.x + 12.0, rect.min.y + 94.0),
+        hint,
+        kit::secondary(dark),
+    );
     if response.clicked() {
         state.action = Some(Action::Shorts);
     }

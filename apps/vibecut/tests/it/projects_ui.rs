@@ -198,11 +198,7 @@ fn search_sort_and_view_persist_through_the_preference_store() {
             .displayed_ids(&harness.state().preferences)
             .is_empty()
     );
-    assert!(
-        harness
-            .query_by_label("No matches")
-            .is_some()
-    );
+    assert!(harness.query_by_label("No matches").is_some());
     harness.get(by("projects.search")).click();
     harness.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::A);
     harness.key_press(egui::Key::Backspace);
@@ -668,11 +664,7 @@ fn delete_failure_keeps_the_project_and_reports_it() {
 fn new_project_is_created_in_the_managed_catalog_and_opened() {
     let fixture = Fixture::new(&[]);
     let mut harness = fixture.build(Preferences::default());
-    assert!(
-        harness
-            .query_by_label("No projects yet")
-            .is_some()
-    );
+    assert!(harness.query_by_label("No projects yet").is_some());
     harness.get(by("project.create")).click();
     harness.run_steps(2);
     assert!(harness.query_by_label("Loading project…").is_some());

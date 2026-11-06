@@ -96,41 +96,40 @@ pub(super) fn show(state: &mut State, ctx: &egui::Context, preferences: &Prefere
         let short_id = entry.short_id.clone();
         let title = catalog::text(locale, Text::ProjectsInfoTitle);
         let mut close = false;
-        let response =
-            egui::Modal::new(egui::Id::unique("projects.info.dialog")).show(ctx, |ui| {
-                ui.set_width(420.0);
-                ui.heading(title);
-                ui.label(egui::RichText::new(name).strong().size(16.0));
-                ui.label(catalog::format(
-                    locale,
-                    Text::ProjectsDuration,
-                    &[("duration", &duration)],
-                ));
-                ui.label(catalog::format(
-                    locale,
-                    Text::CreatedDate,
-                    &[("date", &created)],
-                ));
-                ui.label(catalog::format(
-                    locale,
-                    Text::ModifiedDate,
-                    &[("date", &modified)],
-                ));
-                ui.label(format!(
-                    "{} {}",
-                    catalog::text(locale, Text::ProjectsInfoId),
-                    short_id
-                ));
-                if action_button(
-                    ui,
-                    "projects.info.close",
-                    Icon::X,
-                    catalog::text(locale, Text::ProjectsInfoClose),
-                    true,
-                ) {
-                    close = true;
-                }
-            });
+        let response = egui::Modal::new(egui::Id::unique("projects.info.dialog")).show(ctx, |ui| {
+            ui.set_width(420.0);
+            ui.heading(title);
+            ui.label(egui::RichText::new(name).strong().size(16.0));
+            ui.label(catalog::format(
+                locale,
+                Text::ProjectsDuration,
+                &[("duration", &duration)],
+            ));
+            ui.label(catalog::format(
+                locale,
+                Text::CreatedDate,
+                &[("date", &created)],
+            ));
+            ui.label(catalog::format(
+                locale,
+                Text::ModifiedDate,
+                &[("date", &modified)],
+            ));
+            ui.label(format!(
+                "{} {}",
+                catalog::text(locale, Text::ProjectsInfoId),
+                short_id
+            ));
+            if action_button(
+                ui,
+                "projects.info.close",
+                Icon::X,
+                catalog::text(locale, Text::ProjectsInfoClose),
+                true,
+            ) {
+                close = true;
+            }
+        });
         set_author_id(&response.response, "projects.info.dialog");
         if close {
             state.info = None;
@@ -142,7 +141,8 @@ pub(super) fn show(state: &mut State, ctx: &egui::Context, preferences: &Prefere
             .ids
             .iter()
             .filter_map(|id| {
-                state.entries
+                state
+                    .entries
                     .iter()
                     .find(|entry| entry.id == *id)
                     .map(|entry| entry.name.as_str().to_owned())

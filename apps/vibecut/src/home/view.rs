@@ -66,6 +66,7 @@ pub(super) fn show(
         .show(&mut body_ui, |ui| {
             let width = (body.width() - PAGE_RIGHT).max(240.0);
             ui.set_max_width(width);
+            ui.spacing_mut().item_spacing.y = 0.0;
             create::banner(ui, width, state, locale);
             ui.add_space(BLOCK_GAP);
             create::shorts_card(ui, state, locale);

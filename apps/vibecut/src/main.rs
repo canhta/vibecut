@@ -414,7 +414,10 @@ fn run() -> Result<()> {
             .windows
             .get("home")
             .cloned()
-            .unwrap_or_default()
+            .unwrap_or(vibecut::catalog::WindowGeometry {
+                size: vibecut::home::WINDOW,
+                ..Default::default()
+            })
             .builder()
             .with_icon(Arc::new(icon))
             .with_window_level(if smoke.is_some() {

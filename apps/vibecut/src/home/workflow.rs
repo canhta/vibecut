@@ -184,8 +184,9 @@ mod tests {
     #[test]
     fn unique_names_follow_the_created_order_and_stop_at_a_free_suffix() {
         let root = tempfile::tempdir().expect("temporary directory");
-        let mut library = ProjectLibrary::open(root.path(), ByteBudget::new(64 << 20).expect("budget"))
-            .expect("library");
+        let mut library =
+            ProjectLibrary::open(root.path(), ByteBudget::new(64 << 20).expect("budget"))
+                .expect("library");
         for (id, name) in [(1u64, "New project"), (2, "New project 2"), (3, "Other")] {
             library
                 .execute(

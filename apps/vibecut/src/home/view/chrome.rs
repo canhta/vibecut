@@ -42,9 +42,9 @@ fn nav_row(
     let galley = line(
         ui,
         label,
-        semibold(kit::type_size::CHROME),
+        semibold(12.0),
         kit::text(dark),
-        rect.width() - 34.0 - 8.0,
+        rect.width() - 34.0 - 4.0,
     );
     let at = egui::pos2(rect.min.x + 34.0, rect.center().y - galley.size().y / 2.0);
     ui.painter().galley(at, galley, kit::text(dark));
@@ -55,9 +55,8 @@ fn nav_row(
 pub(super) fn rail(ui: &mut egui::Ui, rail: egui::Rect, state: &mut State, locale: Locale) {
     let dark = ui.visuals().dark_mode;
     let tr = |key: Text| catalog::text(locale, key);
-    let row = |y: f32| {
-        egui::Rect::from_min_size(egui::pos2(rail.min.x + RAIL_INSET, y), RAIL_ROW.into())
-    };
+    let row =
+        |y: f32| egui::Rect::from_min_size(egui::pos2(rail.min.x + RAIL_INSET, y), RAIL_ROW.into());
     let home = row(rail.min.y + TOP_BAND);
     nav_row(ui, "home.nav.home", home, Icon::House, tr(Text::Home), true);
     let rule_y = home.max.y + RAIL_RULE_GAP;

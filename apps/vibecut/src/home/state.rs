@@ -9,10 +9,7 @@ use crate::{
     catalog::{Preferences, ProjectsPreferences, ProjectsSortKey, Text},
     egui,
 };
-use engine::{
-    ByteBudget,
-    library::ProjectEntry,
-};
+use engine::{ByteBudget, library::ProjectEntry};
 use project::ProjectId;
 use std::{
     collections::{BTreeMap, BTreeSet},
@@ -410,7 +407,12 @@ impl State {
         }
     }
 
-    pub(super) fn select(&mut self, id: ProjectId, order: &[ProjectId], modifiers: egui::Modifiers) {
+    pub(super) fn select(
+        &mut self,
+        id: ProjectId,
+        order: &[ProjectId],
+        modifiers: egui::Modifiers,
+    ) {
         if modifiers.shift {
             let anchor = self.anchor.unwrap_or(id);
             let start = order.iter().position(|candidate| *candidate == anchor);
@@ -449,7 +451,11 @@ impl State {
         }
     }
 
-    pub(super) fn update_projects(&mut self, preferences: &mut Preferences, projects: ProjectsPreferences) {
+    pub(super) fn update_projects(
+        &mut self,
+        preferences: &mut Preferences,
+        projects: ProjectsPreferences,
+    ) {
         if preferences.projects == projects {
             return;
         }
@@ -504,8 +510,7 @@ mod tests {
                     .expect("create");
             }
         }
-        let mut page =
-            State::new(root.path().to_owned(), ByteBudget::new(64 << 20).unwrap());
+        let mut page = State::new(root.path().to_owned(), ByteBudget::new(64 << 20).unwrap());
         let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
         while page.busy() {
             page.tick();
@@ -580,8 +585,7 @@ mod tests {
             rgba: vec![255, 0, 0, 255],
         };
         drop(catalog);
-        let mut page =
-            State::new(root.path().to_owned(), ByteBudget::new(64 << 20).unwrap());
+        let mut page = State::new(root.path().to_owned(), ByteBudget::new(64 << 20).unwrap());
         page.set_entries(entries);
         let context = egui::Context::default();
         for changed in [false, true] {

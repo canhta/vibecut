@@ -2,7 +2,7 @@
 
 use super::{
     CARD_RADIUS, GRID_BLEED, GRID_GAP, GRID_INSET, ROW_GAP, THUMB, THUMB_RADIUS,
-    widgets::{line, menu_action, quiet_buttons, semibold, set_author_id, display_time},
+    widgets::{display_time, line, menu_action, quiet_buttons, semibold, set_author_id},
 };
 use crate::{
     catalog::{self, Locale, Preferences, ProjectsSortKey, ProjectsView, Text},
@@ -27,14 +27,11 @@ enum CardAction {
     Thumbnail(ProjectId),
 }
 
+const SEARCH_WIDTH: f32 = 148.0;
 const LIST_ROW: f32 = 56.0;
 const LIST_THUMB: f32 = 40.0;
 
-pub(super) fn section(
-    ui: &mut egui::Ui,
-    state: &mut State,
-    preferences: &mut Preferences,
-) {
+pub(super) fn section(ui: &mut egui::Ui, state: &mut State, preferences: &mut Preferences) {
     let locale = preferences.locale;
     let dark = preferences.dark;
     let tr = |key: Text| catalog::text(locale, key);
@@ -84,7 +81,11 @@ fn notices(ui: &mut egui::Ui, state: &mut State, locale: Locale, dark: bool) {
         ui.horizontal(|ui| {
             ui.label(egui::RichText::new(tr(*text)).color(kit::error_text(dark)));
             if let Some(detail) = detail.as_ref().filter(|detail| !detail.is_empty()) {
-                ui.label(egui::RichText::new(detail).small().color(kit::secondary(dark)));
+                ui.label(
+                    egui::RichText::new(detail)
+                        .small()
+                        .color(kit::secondary(dark)),
+                );
             }
         });
         ui.add_space(6.0);
@@ -94,7 +95,11 @@ fn notices(ui: &mut egui::Ui, state: &mut State, locale: Locale, dark: bool) {
         ui.horizontal(|ui| {
             ui.label(egui::RichText::new(tr(Text::ProjectsListError)).color(kit::error_text(dark)));
             if !error.is_empty() {
-                ui.label(egui::RichText::new(&error).small().color(kit::secondary(dark)));
+                ui.label(
+                    egui::RichText::new(&error)
+                        .small()
+                        .color(kit::secondary(dark)),
+                );
             }
             ui.add_enabled_ui(!state.busy(), |ui| {
                 retry = kit::icon_button(
@@ -115,7 +120,12 @@ fn notices(ui: &mut egui::Ui, state: &mut State, locale: Locale, dark: bool) {
 }
 
 /// Heading at the left, 24 px controls at the right.
-fn header(ui: &mut egui::Ui, state: &mut State, preferences: &mut Preferences, order: &[ProjectId]) {
+fn header(
+    ui: &mut egui::Ui,
+    state: &mut State,
+    preferences: &mut Preferences,
+    order: &[ProjectId],
+) {
     let locale = preferences.locale;
     let dark = preferences.dark;
     let width = ui.available_width();
@@ -140,7 +150,12 @@ fn header(ui: &mut egui::Ui, state: &mut State, preferences: &mut Preferences, o
 }
 
 /// Right to left: selection actions, view switch, sort, search.
-fn toolbar(ui: &mut egui::Ui, state: &mut State, preferences: &mut Preferences, order: &[ProjectId]) {
+fn toolbar(
+    ui: &mut egui::Ui,
+    state: &mut State,
+    preferences: &mut Preferences,
+    order: &[ProjectId],
+) {
     let locale = preferences.locale;
     let dark = preferences.dark;
     let selected: Vec<ProjectId> = state
@@ -154,7 +169,15 @@ fn toolbar(ui: &mut egui::Ui, state: &mut State, preferences: &mut Preferences, 
     let tr = |key: Text| catalog::text(locale, key);
 
     ui.add_enabled_ui(actionable, |ui| {
-        if kit::icon_button(ui, "projects.toolbar.delete", Icon::Trash, tr(Text::Delete), false).clicked() {
+        if kit::icon_button(
+            ui,
+            "projects.toolbar.delete",
+            Icon::Trash,
+            tr(Text::Delete),
+            false,
+        )
+        .clicked()
+        {
             state.delete = Some(DeleteDialog {
                 ids: selected.clone(),
                 error: None,
@@ -187,19 +210,40 @@ fn toolbar(ui: &mut egui::Ui, state: &mut State, preferences: &mut Preferences, 
     } else if has_selection {
         let count = catalog::number(locale, selected.len() as u64);
         ui.label(
-            egui::RichText::new(catalog::format(locale, Text::ProjectsSelected, &[("n", &count)]))
-                .color(kit::secondary(dark)),
+            egui::RichText::new(catalog::format(
+                locale,
+                Text::ProjectsSelected,
+                &[("n", &count)],
+            ))
+            .color(kit::secondary(dark)),
         );
     }
 
-    egui::Frame::new()
-        .fill(kit::field(dark))
-        .corner_radius(kit::radius::CONTROL)
-        .show(ui, |ui| {
+    let (pill, _) = ui.allocate_exact_size(
+        egui::vec2(kit::size::CONTROL * 2.0, kit::size::CONTROL),
+        egui::Sense::hover(),
+    );
+    ui.painter()
+        .rect_filled(pill, kit::radius::CONTROL, kit::field(dark));
+    ui.scope_builder(
+        egui::UiBuilder::new()
+            .max_rect(pill)
+            .layout(egui::Layout::left_to_right(egui::Align::Center)),
+        |ui| {
             ui.spacing_mut().item_spacing.x = 0.0;
             for (id, glyph, label, view) in [
-                ("projects.view.list", Icon::ListBullets, Text::ProjectsList, ProjectsView::List),
-                ("projects.view.grid", Icon::SquaresFour, Text::ProjectsGrid, ProjectsView::Grid),
+                (
+                    "projects.view.grid",
+                    Icon::SquaresFour,
+                    Text::ProjectsGrid,
+                    ProjectsView::Grid,
+                ),
+                (
+                    "projects.view.list",
+                    Icon::ListBullets,
+                    Text::ProjectsList,
+                    ProjectsView::List,
+                ),
             ] {
                 let on = preferences.projects.view == view;
                 if kit::icon_button(ui, id, glyph, tr(label), on).clicked() {
@@ -208,31 +252,40 @@ fn toolbar(ui: &mut egui::Ui, state: &mut State, preferences: &mut Preferences, 
                     state.update_projects(preferences, next);
                 }
             }
-        });
+        },
+    );
 
     sort_menu(ui, state, preferences);
 
     // The old text-first search field stays a visible field so typing needs no
     // extra click; it takes the 24 px control height and the field surface.
-    egui::Frame::new()
-        .fill(kit::field(dark))
-        .corner_radius(kit::radius::CONTROL)
-        .inner_margin(egui::Margin::symmetric(6, 0))
-        .show(ui, |ui| {
-            ui.set_height(kit::size::CONTROL);
-            ui.horizontal_centered(|ui| {
-                ui.spacing_mut().item_spacing.x = 4.0;
-                ui.add(kit::tinted(Icon::MagnifyingGlass, kit::icon::DENSE, kit::secondary(dark)));
-                let search = ui.add(
-                    egui::TextEdit::singleline(&mut state.search)
-                        .frame(egui::Frame::NONE)
-                        .font(egui::FontId::proportional(kit::type_size::BODY))
-                        .hint_text(tr(Text::ProjectsSearch))
-                        .desired_width(110.0),
-                );
-                set_author_id(&search, "projects.search");
-            });
-        });
+    let (field, _) = ui.allocate_exact_size(
+        egui::vec2(SEARCH_WIDTH, kit::size::CONTROL),
+        egui::Sense::hover(),
+    );
+    ui.painter()
+        .rect_filled(field, kit::radius::CONTROL, kit::field(dark));
+    ui.scope_builder(
+        egui::UiBuilder::new()
+            .max_rect(field.shrink2(egui::vec2(6.0, 0.0)))
+            .layout(egui::Layout::left_to_right(egui::Align::Center)),
+        |ui| {
+            ui.spacing_mut().item_spacing.x = 4.0;
+            ui.add(kit::tinted(
+                Icon::MagnifyingGlass,
+                kit::icon::DENSE,
+                kit::secondary(dark),
+            ));
+            let search = ui.add(
+                egui::TextEdit::singleline(&mut state.search)
+                    .frame(egui::Frame::NONE)
+                    .font(egui::FontId::proportional(kit::type_size::BODY))
+                    .hint_text(tr(Text::ProjectsSearch))
+                    .desired_width(SEARCH_WIDTH - 12.0 - 20.0),
+            );
+            set_author_id(&search, "projects.search");
+        },
+    );
 }
 
 fn sort_menu(ui: &mut egui::Ui, state: &mut State, preferences: &mut Preferences) {
@@ -256,7 +309,11 @@ fn sort_menu(ui: &mut egui::Ui, state: &mut State, preferences: &mut Preferences
         .scope(|ui| {
             quiet_buttons(ui);
             ui.menu_image_button(
-                kit::tinted(Icon::Funnel, kit::icon::DENSE, kit::text(ui.visuals().dark_mode)),
+                kit::tinted(
+                    Icon::Funnel,
+                    kit::icon::DENSE,
+                    kit::text(ui.visuals().dark_mode),
+                ),
                 |ui| {
                     for candidate in [
                         ProjectsSortKey::Created,
@@ -327,13 +384,24 @@ fn grid(
                 continue;
             };
             let left = band.min.x + GRID_INSET + column as f32 * pitch;
-            let thumb = egui::Rect::from_min_size(egui::pos2(left, band.min.y), egui::Vec2::splat(THUMB));
+            let thumb =
+                egui::Rect::from_min_size(egui::pos2(left, band.min.y), egui::Vec2::splat(THUMB));
             let texts = egui::Rect::from_min_size(
                 egui::pos2(left, thumb.max.y + 2.0),
                 egui::vec2(THUMB, 32.0),
             );
             let selected = state.selection.contains(&entry.id);
-            card(ui, &entry, selected, thumb, texts, false, locale, &mut state.textures, actions);
+            card(
+                ui,
+                &entry,
+                selected,
+                thumb,
+                texts,
+                false,
+                locale,
+                &mut state.textures,
+                actions,
+            );
         }
         ui.add_space(ROW_GAP);
     }
@@ -367,7 +435,17 @@ fn list(
             egui::pos2(thumb.max.x + 12.0, row.center().y - 16.0),
             egui::pos2(row.max.x - 48.0, row.center().y + 16.0),
         );
-        card(ui, &entry, selected, thumb, texts, true, locale, &mut state.textures, actions);
+        card(
+            ui,
+            &entry,
+            selected,
+            thumb,
+            texts,
+            true,
+            locale,
+            &mut state.textures,
+            actions,
+        );
     }
 }
 
@@ -405,16 +483,24 @@ fn card(
     }
 
     let name = egui::Rect::from_min_size(texts.min, egui::vec2(texts.width(), 16.0));
-    let response = ui.put(
-        name,
-        egui::Label::new(
-            egui::RichText::new(entry.name.as_str())
-                .font(semibold(kit::type_size::BODY))
-                .color(kit::text(dark)),
+    let response = ui
+        .scope_builder(
+            egui::UiBuilder::new()
+                .max_rect(name)
+                .layout(egui::Layout::left_to_right(egui::Align::Center)),
+            |ui| {
+                ui.add(
+                    egui::Label::new(
+                        egui::RichText::new(entry.name.as_str())
+                            .font(semibold(kit::type_size::BODY))
+                            .color(kit::text(dark)),
+                    )
+                    .truncate()
+                    .sense(egui::Sense::click()),
+                )
+            },
         )
-        .truncate()
-        .sense(egui::Sense::click()),
-    );
+        .inner;
     set_author_id(&response, &prefix);
     open_or_select(ui, &response, entry.id, locale, actions);
 
@@ -434,7 +520,8 @@ fn card(
         kit::secondary(dark),
         meta_rect.width(),
     );
-    ui.painter().galley(meta_rect.min, galley, kit::secondary(dark));
+    ui.painter()
+        .galley(meta_rect.min, galley, kit::secondary(dark));
 
     let menu = egui::Rect::from_min_size(
         if menu_always {
@@ -457,7 +544,11 @@ fn card(
         if !show_menu {
             ui.set_opacity(0.0);
         }
-        let tint = if menu_always { kit::text(dark) } else { kit::on_scrim() };
+        let tint = if menu_always {
+            kit::text(dark)
+        } else {
+            kit::on_scrim()
+        };
         let response = ui
             .menu_image_button(kit::tinted(Icon::DotsThree, kit::icon::DENSE, tint), |ui| {
                 card_menu_items(ui, &entry.id, actions, locale);
@@ -497,14 +588,23 @@ fn thumbnail(
 ) {
     let dark = ui.visuals().dark_mode;
     let prefix = format!("projects.card.{:016x}", entry.id.0);
-    let response = ui.interact(rect, ui.scope_id().with((&prefix, "thumbnail")), egui::Sense::click());
+    let response = ui.interact(
+        rect,
+        ui.scope_id().with((&prefix, "thumbnail")),
+        egui::Sense::click(),
+    );
     set_author_id(&response, &format!("{prefix}.thumbnail"));
     open_or_select(ui, &response, entry.id, locale, actions);
     // Missing and unrenderable frames sit on the field surface, as the black
     // frame of an unrendered clip does.
-    ui.painter().rect_filled(rect, THUMB_RADIUS, kit::field(dark));
+    ui.painter()
+        .rect_filled(rect, THUMB_RADIUS, kit::field(dark));
     match &entry.thumbnail {
-        Thumbnail::Ready { width, height, rgba } => {
+        Thumbnail::Ready {
+            width,
+            height,
+            rgba,
+        } => {
             let texture = textures.entry(entry.id).or_insert_with(|| {
                 ui.ctx().load_texture(
                     format!("projects.thumbnail.{}", entry.id.0),
@@ -517,7 +617,9 @@ fn thumbnail(
             });
             // Cover the square: scale to fill, crop the longer side evenly.
             let image = egui::vec2(*width as f32, *height as f32);
-            let scale = (rect.width() / image.x).max(rect.height() / image.y).max(f32::EPSILON);
+            let scale = (rect.width() / image.x)
+                .max(rect.height() / image.y)
+                .max(f32::EPSILON);
             let shown = rect.size() / (image * scale);
             let uv = egui::Rect::from_center_size(egui::pos2(0.5, 0.5), shown);
             egui::Image::new((texture.id(), rect.size()))
@@ -538,13 +640,38 @@ fn thumbnail(
     }
 }
 
-fn card_menu_items(ui: &mut egui::Ui, id: &ProjectId, actions: &mut Vec<CardAction>, locale: Locale) {
+fn card_menu_items(
+    ui: &mut egui::Ui,
+    id: &ProjectId,
+    actions: &mut Vec<CardAction>,
+    locale: Locale,
+) {
     let prefix = format!("projects.card.{:016x}", id.0);
     let rows = [
-        ("open", Icon::FolderOpen, Text::ProjectsOpen, CardAction::Open(*id)),
-        ("rename", Icon::PencilSimple, Text::ProjectsRename, CardAction::Rename(*id)),
-        ("info", Icon::File, Text::ProjectsInfoTitle, CardAction::Info(*id)),
-        ("duplicate", Icon::Copy, Text::ProjectsDuplicate, CardAction::Duplicate(*id)),
+        (
+            "open",
+            Icon::FolderOpen,
+            Text::ProjectsOpen,
+            CardAction::Open(*id),
+        ),
+        (
+            "rename",
+            Icon::PencilSimple,
+            Text::ProjectsRename,
+            CardAction::Rename(*id),
+        ),
+        (
+            "info",
+            Icon::File,
+            Text::ProjectsInfoTitle,
+            CardAction::Info(*id),
+        ),
+        (
+            "duplicate",
+            Icon::Copy,
+            Text::ProjectsDuplicate,
+            CardAction::Duplicate(*id),
+        ),
         ("delete", Icon::Trash, Text::Delete, CardAction::Delete(*id)),
         (
             "thumbnail.refresh",
@@ -554,7 +681,12 @@ fn card_menu_items(ui: &mut egui::Ui, id: &ProjectId, actions: &mut Vec<CardActi
         ),
     ];
     for (suffix, icon, text, action) in rows {
-        if menu_action(ui, &format!("{prefix}.{suffix}"), icon, catalog::text(locale, text)) {
+        if menu_action(
+            ui,
+            &format!("{prefix}.{suffix}"),
+            icon,
+            catalog::text(locale, text),
+        ) {
             actions.push(action);
             ui.close();
         }
