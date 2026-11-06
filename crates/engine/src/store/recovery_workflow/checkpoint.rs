@@ -157,7 +157,9 @@ impl Autosave {
                             .ok_or(EditError::WorkerPanicked)?;
                         let receipt = work.receipt.take().ok_or(EditError::WorkerPanicked)?;
                         let metadata = work.metadata.take().ok_or(EditError::WorkerPanicked)?;
-                        if receipt.path() != work.writer.path() {
+                        if receipt.path() != work.writer.path()
+                            || receipt.project_id() != f.snapshot.data().id
+                        {
                             return Err(EditError::StaleResult.into());
                         }
                         // An in-place save advances the held baseline even if the
@@ -175,6 +177,10 @@ impl Autosave {
                         if current {
                             self.session.restore_metadata(metadata)?;
                             self.session.saved()?;
+                            if !save.in_place {
+                                self.session.adopt_saved_project(f.snapshot.clone());
+                                self.observed = f.snapshot.clone();
+                            }
                             self.saved_path = Some(receipt.path().to_owned());
                             self.saved_receipt = Some(receipt);
                             self.saved = Some(f.snapshot);
@@ -252,7 +258,7 @@ impl Autosave {
         let snapshot = self.session.project().clone();
         let mut metadata = self.session.metadata().clone();
         metadata.touch();
-        let project = snapshot.clone();
+        let mut project = snapshot.clone();
         let directory = self.directory.clone();
         let old_path = self.saved_path.clone();
 
@@ -278,6 +284,9 @@ impl Autosave {
                 fs::canonicalize(&path).is_ok_and(|path| path == writer.path())
                     || path == writer.path()
             });
+            if !in_place {
+                project = Arc::new(snapshot.fork()?);
+            }
             let writer = if in_place {
                 self.writer.take().ok_or(EditError::RecoveryBusy)?
             } else {
@@ -296,7 +305,9 @@ impl Autosave {
         } else {
             None
         };
+        let published_snapshot = project.clone();
         let slot = save.as_ref().map(|save| save.slot.clone());
+        let recovery_snapshot = snapshot.clone();
         let submitted = self.runner.submit(
             JobSpec {
                 kind: JobKind::Persist,
@@ -316,7 +327,7 @@ impl Autosave {
                 if clear_journal {
                     clear(&directory)?;
                 } else {
-                    publish(&directory, &project, old_path.clone(), revision)?;
+                    publish(&directory, &recovery_snapshot, old_path.clone(), revision)?;
                 }
                 if let Some(slot) = &slot {
                     let mut metadata = metadata.clone();
@@ -349,7 +360,7 @@ impl Autosave {
             id,
             target: self.session.job_target(),
             revision,
-            snapshot,
+            snapshot: published_snapshot,
             save,
             clear: clear_journal,
         });

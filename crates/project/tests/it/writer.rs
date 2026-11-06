@@ -116,7 +116,16 @@ fn save_as_acquires_destination_and_only_switches_path_after_success() {
     let receipt = source_writer.save_as(&target, &project("new")).unwrap();
     assert_eq!(source_writer.path(), fs::canonicalize(&target).unwrap());
     assert_eq!(receipt.path(), source_writer.path());
-    assert_eq!(source_writer.load().unwrap().project, project("new"));
+    let copied = source_writer.load().unwrap().project;
+    assert_ne!(copied.data().id, project("new").data().id);
+    assert_eq!(copied.data().id, receipt.project_id());
+    let mut expected = project("new").into_data();
+    expected.id = receipt.project_id();
+    assert_eq!(copied, Project::new(expected).unwrap());
+    let alias_receipt = source_writer
+        .save_as(&root.path().join("./target.vibecut"), &copied)
+        .unwrap();
+    assert_eq!(alias_receipt.project_id(), copied.data().id);
     assert_eq!(fs::read(source).unwrap(), initial);
     assert!(matches!(WriterLease::acquire(&target), Err(Error::Busy)));
 }

@@ -147,7 +147,7 @@ fn two_recovered_projects_can_be_saved_and_left_in_sequence_without_changing_ori
         assert!(h.state().error().is_none());
         assert!(h.state().focused_editor().is_none());
         let saved = project::load(&destination).unwrap().project;
-        assert_eq!(saved.data().id, id);
+        assert_ne!(saved.data().id, id);
         assert_eq!(saved.data().name, name);
         for (original, bytes) in &originals {
             assert_eq!(&std::fs::read(original).unwrap(), bytes);

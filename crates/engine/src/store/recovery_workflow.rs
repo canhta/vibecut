@@ -318,7 +318,11 @@ impl Autosave {
 
 impl Autosave {
     pub fn saving(&self) -> bool {
-        self.pending_save.is_some() || self.flight.as_ref().is_some_and(|f| f.save.is_some())
+        self.pending_save.is_some()
+            || self
+                .flight
+                .as_ref()
+                .is_some_and(|f| f.save.is_some() || f.clear)
     }
 }
 

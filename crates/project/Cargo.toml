@@ -9,6 +9,7 @@ publish = false
 workspace = true
 
 [dependencies]
+getrandom = "0.4.3"
 schemars = "1.2.3"
 time = { path = "../time" }
 media = { path = "../media" }

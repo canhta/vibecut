@@ -52,6 +52,8 @@ pub use writer::{SaveReceipt, WriterLease};
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
+    #[error("project identity generation failed")]
+    Identity(#[source] getrandom::Error),
     #[error("project writer is busy or acquisition was cancelled")]
     Busy,
     #[error("project data or writer lease changed on disk")]

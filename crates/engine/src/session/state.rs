@@ -171,6 +171,11 @@ impl Session {
     pub fn project(&self) -> &Arc<Project> {
         &self.state.project
     }
+    /// Adopt an acknowledged Save As without adding or discarding history.
+    pub(crate) fn adopt_saved_project(&mut self, project: Arc<Project>) {
+        self.state.project = project;
+        self.state.change = Some(self.state.project.clone());
+    }
     /// Transient item selection, retained with history but never serialized into Project.
     pub fn selection(&self) -> &BTreeSet<ItemId> {
         &self.state.selection
@@ -719,12 +724,17 @@ impl Session {
             self.state.undo.pop_back()
         }
         .ok_or(EditError::NoHistory)?;
+        let id = self.project().data().id;
         let current = self.project().data().current_scene_id;
-        if snapshot.project.data().current_scene_id != current
-            && snapshot.project.data().scenes.get(current).is_some()
+        if snapshot.project.data().id != id
+            || (snapshot.project.data().current_scene_id != current
+                && snapshot.project.data().scenes.get(current).is_some())
         {
             let mut data = snapshot.project.data().clone();
-            data.current_scene_id = current;
+            data.id = id;
+            if data.scenes.get(current).is_some() {
+                data.current_scene_id = current;
+            }
             snapshot.project = Arc::new(Project::new(data)?);
         }
         if wire {

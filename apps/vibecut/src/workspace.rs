@@ -92,6 +92,7 @@ impl Workspace {
     /// Register an already-composed editor, retaining its writer lease and
     /// resource policy. Repeated project identities focus their existing window.
     pub fn register_editor(&mut self, editor: Box<Editor>) -> project::ProjectId {
+        self.rekey_windows();
         let id = editor.session.project().data().id;
         let path = match &editor.session {
             crate::lifecycle::EditorSession::Persistent(s) => s.saved_path().map(ToOwned::to_owned),
@@ -122,8 +123,8 @@ impl Workspace {
     pub fn home_open(&self) -> bool {
         self.home_open
     }
-    pub fn viewport(id: project::ProjectId) -> egui::ViewportId {
-        egui::ViewportId::from_hash_of(("editor.window", id))
+    pub fn viewport(&self, id: project::ProjectId) -> Option<egui::ViewportId> {
+        Some(self.windows.get(&id)?.viewport)
     }
     pub fn focus(&mut self, id: project::ProjectId) -> Result<()> {
         if !self.windows.contains_key(&id) {
@@ -172,6 +173,7 @@ impl Workspace {
         })
     }
     pub fn open(&mut self, path: PathBuf) -> Result<()> {
+        self.rekey_windows();
         let canonical = std::fs::canonicalize(&path).unwrap_or_else(|_| path.clone());
         if let Some(id) = self.windows.iter().find_map(|(id, window)| {
             let saving = window
@@ -258,6 +260,7 @@ impl Workspace {
                 self.models = Some(models);
             }
         }
+        self.rekey_windows();
         let count = self.windows.len();
         self.windows
             .retain(|_, w| !(w.editor.is_none() && !w.busy() && w.error.is_none()));
@@ -278,6 +281,41 @@ impl Workspace {
             && let Err(error) = models.tick()
         {
             self.home.error.get_or_insert(error);
+        }
+    }
+    fn rekey_windows(&mut self) {
+        // Save As changes a document's identity after its publication is acknowledged.
+        // Move the existing window and all its local state to that registry key.
+        let changed: Vec<_> = self
+            .windows
+            .iter()
+            .filter_map(|(id, window)| {
+                let next = window.editor.as_ref()?.session.project().data().id;
+                (*id != next).then_some((*id, next))
+            })
+            .collect();
+        for (old, next) in changed {
+            if let Some(window) = self.windows.remove(&old) {
+                if let Some(geometry) = self
+                    .preferences
+                    .windows
+                    .get(&format!("editor.{}", old.0))
+                    .cloned()
+                {
+                    remember_geometry(
+                        &mut self.preferences,
+                        format!("editor.{}", next.0),
+                        geometry,
+                    );
+                }
+                self.windows.insert(next, window);
+                if self.focused == Some(old) {
+                    self.focused = Some(next);
+                }
+                if self.focus_requested == Some(old) {
+                    self.focus_requested = Some(next);
+                }
+            }
         }
     }
     fn project_action(&mut self, action: HomeAction) {
@@ -374,6 +412,9 @@ impl Workspace {
         }
         let ids: Vec<_> = self.windows.keys().copied().collect();
         for id in ids {
+            let Some(viewport) = self.viewport(id) else {
+                continue;
+            };
             let title = self
                 .windows
                 .get(&id)
@@ -387,27 +428,21 @@ impl Workspace {
                 .get(&format!("editor.{}", id.0))
                 .cloned()
                 .unwrap_or_default();
-            ctx.show_viewport_immediate(
-                Self::viewport(id),
-                geometry.builder().with_title(title),
-                |ui, _| {
-                    if ui.input(|i| i.focused) {
-                        self.focused = Some(id);
-                    }
-                    self.window_ui(id, ui);
-                    if let Some(geometry) = crate::catalog::WindowGeometry::read(ui) {
-                        remember_geometry(
-                            &mut self.preferences,
-                            format!("editor.{}", id.0),
-                            geometry,
-                        );
-                    }
-                },
-            );
+            ctx.show_viewport_immediate(viewport, geometry.builder().with_title(title), |ui, _| {
+                if ui.input(|i| i.focused) {
+                    self.focused = Some(id);
+                }
+                self.window_ui(id, ui);
+                if let Some(geometry) = crate::catalog::WindowGeometry::read(ui) {
+                    remember_geometry(&mut self.preferences, format!("editor.{}", id.0), geometry);
+                }
+            });
         }
-        if let Some(id) = self.focus_requested.take() {
-            ctx.send_viewport_cmd_to(Self::viewport(id), egui::ViewportCommand::Minimized(false));
-            ctx.send_viewport_cmd_to(Self::viewport(id), egui::ViewportCommand::Focus);
+        if let Some(id) = self.focus_requested.take()
+            && let Some(viewport) = self.viewport(id)
+        {
+            ctx.send_viewport_cmd_to(viewport, egui::ViewportCommand::Minimized(false));
+            ctx.send_viewport_cmd_to(viewport, egui::ViewportCommand::Focus);
         }
         if self.shorts_window
             && let Some(shorts) = &mut self.shorts
@@ -573,6 +608,7 @@ struct Pending {
 /// The editor is absent while its owner is performing an IO boundary on an engine
 /// worker. Loading/exiting remains visible; no second Session or serializer exists.
 pub struct EditorWindow {
+    viewport: egui::ViewportId,
     pub editor: Option<Box<Editor>>,
     title: String,
     retained_models: Option<crate::model_manager::ModelManager>,
@@ -609,7 +645,12 @@ impl EditorWindow {
         persistence: ByteBudget,
         runner: std::rc::Rc<std::cell::RefCell<JobRunner>>,
     ) -> Self {
+        static NEXT_WINDOW: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
         Self {
+            viewport: egui::ViewportId::from_hash_of((
+                "editor.window",
+                NEXT_WINDOW.fetch_add(1, std::sync::atomic::Ordering::Relaxed),
+            )),
             editor: None,
             title: catalog::text(preferences.locale, Text::AppName).to_owned(),
             retained_models: None,

@@ -663,6 +663,7 @@ fn stale_save_as_retains_source_lease_and_never_adopts_its_receipt() {
         Some(source.canonicalize().unwrap().as_path())
     );
     assert!(a.saved_receipt().is_none());
+    assert_eq!(a.session().project().data().id, ProjectId(1));
     assert!(a.is_dirty());
     assert_eq!(fs::read(&source).unwrap(), original);
     a.save().unwrap();
@@ -679,6 +680,7 @@ fn acknowledged_save_as_transfers_lease_and_receipt_together() {
     let source = dir.path().join("source.vibecut");
     let destination = dir.path().join("destination.vibecut");
     seed(&source);
+    let original = fs::read(&source).unwrap();
     let mut a = open(
         &dir.path().join("journals"),
         1,
@@ -686,10 +688,44 @@ fn acknowledged_save_as_transfers_lease_and_receipt_together() {
         Arc::new(TestClock::default()),
     );
     edit(&mut a);
+    let old_id = a.session().project().data().id;
+    edit(&mut a);
+    a.session_mut().undo().unwrap();
     a.save_as(destination.clone()).unwrap();
     busy(&source);
     busy(&destination);
     saved(&mut a);
+    let new_id = a.session().project().data().id;
+    assert_ne!(new_id, old_id);
+    assert_eq!(fs::read(&source).unwrap(), original);
+    assert_eq!(
+        project::load(&destination).unwrap().project.data().id,
+        new_id
+    );
+    assert_eq!(a.saved_receipt().unwrap().project_id(), new_id);
+    a.save_as(dir.path().join("./destination.vibecut")).unwrap();
+    saved(&mut a);
+    assert_eq!(a.session().project().data().id, new_id);
+    a.session_mut().redo().unwrap();
+    assert_eq!(a.session().project().data().id, new_id);
+    assert_eq!(
+        a.session().project().data().scene().timeline.overlays.len(),
+        2
+    );
+    a.session_mut().undo().unwrap();
+    assert!(
+        fs::read_dir(dir.path().join("journals"))
+            .unwrap()
+            .all(|entry| !entry.unwrap().path().join("journal.json").exists())
+    );
+    a.session_mut().undo().unwrap();
+    assert_eq!(a.session().project().data().id, new_id);
+    assert_eq!(
+        a.session().project().data().scene().timeline.overlays.len(),
+        0
+    );
+    a.session_mut().redo().unwrap();
+    assert_eq!(a.session().project().data().id, new_id);
     busy(&destination);
     assert!(project::WriterLease::acquire(&source).is_ok());
     assert_eq!(
@@ -700,6 +736,7 @@ fn acknowledged_save_as_transfers_lease_and_receipt_together() {
     edit(&mut a);
     a.save().unwrap();
     saved(&mut a);
+    assert_eq!(a.session().project().data().id, new_id);
     assert_eq!(
         project::load(&destination)
             .unwrap()
@@ -711,39 +748,85 @@ fn acknowledged_save_as_transfers_lease_and_receipt_together() {
             .len(),
         2
     );
+    edit(&mut a);
+    a.flush().unwrap();
     drop(a);
+    let recovered = discover(&dir.path().join("journals")).unwrap();
+    assert_eq!(recovered.candidates.len(), 1);
+    assert_eq!(recovered.candidates[0].journal.project_id, new_id);
+    assert_eq!(
+        recovered.candidates[0].journal.saved_path.as_deref(),
+        Some(destination.canonicalize().unwrap().as_path())
+    );
     assert!(project::WriterLease::acquire(&destination).is_ok());
 }
 #[test]
-fn busy_save_as_preserves_source_lease_and_both_files() {
-    let dir = tempfile::tempdir().unwrap();
-    let source = dir.path().join("source.vibecut");
-    let destination = dir.path().join("destination.vibecut");
-    seed(&source);
-    seed(&destination);
-    let source_bytes = fs::read(&source).unwrap();
-    let destination_bytes = fs::read(&destination).unwrap();
-    let _held = project::WriterLease::acquire(&destination).unwrap();
-    let mut a = open(
-        &dir.path().join("journals"),
-        1,
-        Some(source.clone()),
-        Arc::new(TestClock::default()),
-    );
-    edit(&mut a);
-    let error = a.save_as(destination.clone()).unwrap_err();
-    assert!(matches!(project_cause(&error), Some(project::Error::Busy)));
-    busy(&source);
-    assert_eq!(fs::read(&source).unwrap(), source_bytes);
-    assert_eq!(fs::read(&destination).unwrap(), destination_bytes);
-    assert_eq!(
-        a.saved_path(),
-        Some(source.canonicalize().unwrap().as_path())
-    );
-    assert!(a.is_dirty());
-    assert!(a.saved_receipt().is_none());
+fn save_as_refusals_preserve_source_identity_lease_and_both_files() {
+    for publication_failure in [false, true] {
+        let dir = tempfile::tempdir().unwrap();
+        let source = dir.path().join("source.vibecut");
+        let destination = dir.path().join("destination.vibecut");
+        seed(&source);
+        seed(&destination);
+        let source_bytes = fs::read(&source).unwrap();
+        let mut destination_bytes = fs::read(&destination).unwrap();
+        let held =
+            (!publication_failure).then(|| project::WriterLease::acquire(&destination).unwrap());
+        let budget = ByteBudget::new(64 * 1024 * 1024).unwrap();
+        let pressure = budget
+            .reserve(engine::ByteOwner::Compositor, 40 * 1024 * 1024)
+            .unwrap();
+        let root = dir.path().join("journals");
+        let mut a = Autosave::open(
+            &root,
+            &source,
+            10,
+            budget,
+            Arc::new(TestClock::default()),
+            Schedule::default(),
+        )
+        .unwrap();
+        edit(&mut a);
+        if publication_failure {
+            a.save_as(destination.clone()).unwrap();
+            // The worker is queued behind the budget reservation. Change the
+            // acquired destination before its final publication precondition.
+            destination_bytes = project::encode(session(2).project(), true).unwrap();
+            project::atomic_write(&destination, &destination_bytes).unwrap();
+            drop(pressure);
+            until(|| match a.tick() {
+                Err(error) => {
+                    assert!(matches!(
+                        project_cause(&error),
+                        Some(project::Error::Conflict)
+                    ));
+                    true
+                }
+                Ok(()) => false,
+            });
+        } else {
+            let error = a.save_as(destination.clone()).unwrap_err();
+            assert!(matches!(project_cause(&error), Some(project::Error::Busy)));
+        }
+        busy(&source);
+        assert_eq!(fs::read(&source).unwrap(), source_bytes);
+        assert_eq!(fs::read(&destination).unwrap(), destination_bytes);
+        assert_eq!(
+            a.saved_path(),
+            Some(source.canonicalize().unwrap().as_path())
+        );
+        assert!(a.is_dirty());
+        assert!(a.saved_receipt().is_none());
+        assert_eq!(a.session().project().data().id, ProjectId(1));
+        drop(a);
+        if publication_failure {
+            let recovered = discover(&root).unwrap();
+            assert_eq!(recovered.candidates.len(), 1);
+            assert_eq!(recovered.candidates[0].journal.project_id, ProjectId(1));
+        }
+        drop(held);
+    }
 }
-
 #[test]
 fn queued_save_cancellation_on_drop_releases_leases_without_publishing() {
     let dir = tempfile::tempdir().unwrap();
@@ -914,6 +997,7 @@ fn save_as_admission_refusals_allow_another_destination_without_releasing_source
         a.tick().unwrap();
         assert!(!a.saving());
         assert!(a.is_dirty());
+        assert_eq!(a.session().project().data().id, ProjectId(1));
         busy(&source);
         assert_eq!(fs::read(&source).unwrap(), before);
         let destination = dir.path().join("valid.vibecut");

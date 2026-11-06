@@ -846,6 +846,19 @@ impl Project {
     pub fn data(&self) -> &ProjectData {
         &self.0
     }
+    /// Copy this document under a fresh identity, retaining all editable content.
+    /// Entropy failure leaves this snapshot untouched.
+    pub fn fork(&self) -> Result<Self> {
+        let mut data = self.0.clone();
+        loop {
+            let mut bytes = [0; 8];
+            getrandom::fill(&mut bytes).map_err(Error::Identity)?;
+            data.id = ProjectId(u64::from_le_bytes(bytes));
+            if data.id != self.0.id {
+                return Self::new(data);
+            }
+        }
+    }
     pub fn into_data(self) -> ProjectData {
         self.0
     }

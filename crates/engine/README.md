@@ -892,7 +892,14 @@ recoverable. This conservative invalidation also covers aliased save destination
 a fresh acknowledged save restores the clean baseline. The existing saved path is
 retained with its source lease, while a stale save-as releases the destination
 lease and never adopts its path or receipt. Acknowledged Save As transfers path,
-receipt and destination lease together. Subsequent recovery continues. Successful
+receipt, fresh ProjectId and destination lease together. The worker journals the
+original snapshot before attempting publication. After acknowledgement, `saving()`
+stays true through the worker's journal retirement, so a completed Save As leaves
+no recovery entry under the original identity. Later dirty snapshots use the new
+identity/path. A failed publication retains the original identity, path and lease.
+The same Session keeps its undo/redo history; restoring a historical snapshot
+retains the current ProjectId, so undo cannot return to the original project.
+Subsequent recovery continues. Successful
 save-as establishes the destination for later save(). Paths stored in journals and
 save receipts are canonical native paths. Save As requires an absolute native
 path; saves inside recovery storage are refused. Native path resolution and lease

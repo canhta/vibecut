@@ -4423,6 +4423,7 @@ version = "0.1.0"
 dependencies = [
  "captions",
  "file-id",
+ "getrandom 0.4.3",
  "media",
  "proptest",
  "schemars",

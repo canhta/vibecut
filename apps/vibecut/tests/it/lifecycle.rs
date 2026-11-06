@@ -458,18 +458,17 @@ fn project_windows_keep_independent_edits_undo_and_playback_and_reopen_focuses_o
     for number in 1..=2 {
         app.create().unwrap();
         idle(&mut app);
-        let id = app.focused_project().unwrap();
         let path = root.path().join(format!("project-{number}.vibecut"));
         app.persist(Some(path.clone()), false, false, false)
             .unwrap();
         idle(&mut app);
         assert!(app.error().is_none(), "{:?}", app.error());
-        ids.push(id);
+        ids.push(app.focused_project().unwrap());
         paths.push(path);
     }
     assert!(app.home_open());
     assert_eq!(app.windows.len(), 2);
-    let first = ids[0];
+    let mut first = ids[0];
     let second = ids[1];
     for (id, name) in [(first, "first edit"), (second, "second edit")] {
         app.editor_mut(id)
@@ -533,6 +532,62 @@ fn project_windows_keep_independent_edits_undo_and_playback_and_reopen_focuses_o
         project::WriterLease::acquire(&paths[0]),
         Err(project::Error::Busy)
     ));
+    let original_id = first;
+    let original_bytes = std::fs::read(&paths[0]).unwrap();
+    let original_viewport = app.viewport(first).unwrap();
+    let copy = root.path().join("copy.vibecut");
+    app.focus(first).unwrap();
+    app.persist(Some(copy.clone()), false, false, false)
+        .unwrap();
+    // A window UI pass may finish its save before the registry's next pump.
+    // Reopening must reconcile that identity before selecting an existing window.
+    let deadline = Instant::now() + Duration::from_secs(20);
+    while app.busy() {
+        app.focused_window_mut().unwrap().tick();
+        assert!(Instant::now() < deadline, "worker timeout");
+        std::thread::sleep(Duration::from_millis(2));
+    }
+    app.open(copy.clone()).unwrap();
+    assert!(app.error().is_none(), "{:?}", app.error());
+    first = app.focused_project().unwrap();
+    assert_ne!(first, original_id);
+    assert_eq!(app.viewport(first), Some(original_viewport));
+    assert_eq!(app.windows.len(), 2);
+    assert!(!app.windows.contains_key(&original_id));
+    assert!(std::sync::Arc::ptr_eq(
+        &first_port,
+        &app.editor_mut(first).unwrap().playback.audio_port()
+    ));
+    assert_eq!(std::fs::read(&paths[0]).unwrap(), original_bytes);
+    assert_eq!(project::load(&copy).unwrap().project.data().id, first);
+    app.editor_mut(first)
+        .unwrap()
+        .activate("edit.undo")
+        .unwrap();
+    assert_eq!(
+        app.editor_mut(first).unwrap().session.project().data().id,
+        first
+    );
+    app.editor_mut(first)
+        .unwrap()
+        .activate("edit.redo")
+        .unwrap();
+    app.open(copy.clone()).unwrap();
+    assert_eq!(app.focused_project(), Some(first));
+    app.open(paths[0].clone()).unwrap();
+    idle(&mut app);
+    assert!(app.error().is_none(), "{:?}", app.error());
+    assert_eq!(app.focused_project(), Some(original_id));
+    assert_eq!(app.windows.len(), 3);
+    assert_ne!(app.viewport(original_id), app.viewport(first));
+    app.windows
+        .get_mut(&original_id)
+        .unwrap()
+        .persist(None, true, true, true)
+        .unwrap();
+    idle(&mut app);
+    assert_eq!(app.windows.len(), 2);
+    paths[0] = copy;
     // Explicit window harness targets preserve the same automation ids in either window.
     let mut harness = crate::gpu::builder()
         .with_size(egui::vec2(1440.0, 900.0))
@@ -634,8 +689,10 @@ fn export_memory_pressure_cannot_consume_another_windows_autosave_allowance() {
     idle(&mut app);
     assert!(app.error().is_none(), "{:?}", app.error());
     assert!(path.is_file());
+    let saved_id = project::load(&path).unwrap().project.data().id;
+    assert_ne!(saved_id, second);
     assert!(
-        !app.editor_mut(second)
+        !app.editor_mut(saved_id)
             .unwrap()
             .session
             .autosave()

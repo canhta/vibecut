@@ -102,8 +102,12 @@ are integrated by their owning feature tickets.
 Home, Editor and Shorts are independent native viewports. `Workspace::windows`
 registers project windows by ProjectId; each owns its editor, history, playback,
 lease, picker, pending persistence operation and close flow. Canonical path
-reopens focus the existing window. Home continues to host catalog and startup
-recovery prompts; each accepted recovery becomes a project window. Closing Home
+reopens focus the existing window.
+Save As rekeys that same window to the acknowledged destination's fresh ProjectId,
+retaining its native viewport, playback and history. Opening the source afterwards
+creates a separate window; reopening the destination focuses the issuing window.
+Home continues to host catalog and startup recovery prompts; each accepted recovery
+becomes a project window. Closing Home
 hides it until Window > Home focuses it, while the event loop exits after
 the last window closes. The old editor back-to-Projects action is removed.
 `window_ui(project_id, ui)` drives that same project surface in kittest;

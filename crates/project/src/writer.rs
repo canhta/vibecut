@@ -13,8 +13,12 @@ use std::{
 pub struct SaveReceipt {
     path: PathBuf,
     hash: ContentHash,
+    project_id: crate::ProjectId,
 }
 impl SaveReceipt {
+    pub fn project_id(&self) -> crate::ProjectId {
+        self.project_id
+    }
     pub fn path(&self) -> &Path {
         &self.path
     }
@@ -271,18 +275,21 @@ impl WriterLease {
         Ok(SaveReceipt {
             path: self.path.clone(),
             hash,
+            project_id: project.data().id,
         })
     }
 
     /// Acquire the destination before any save-as write. Failure retains this
-    /// lease/path and source bytes. Success retains the destination lease instead.
+    /// lease/path and source bytes. A distinct destination gets a fresh project
+    /// identity, returned in the receipt; aliases retain the current identity.
+    /// Success retains the destination lease instead.
     pub fn save_as(&mut self, destination: &Path, project: &Project) -> Result<SaveReceipt> {
         self.check_identity()?;
         if resolve(destination)? == self.path {
             return self.save(project);
         }
         let mut destination = Self::acquire(destination)?;
-        let receipt = self.save_to(&mut destination, project)?;
+        let receipt = self.save_to(&mut destination, &project.fork()?)?;
         *self = destination;
         Ok(receipt)
     }

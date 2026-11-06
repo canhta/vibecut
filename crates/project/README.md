@@ -287,8 +287,16 @@ its own saved revision and still-current path to that receipt before acknowledgi
 clean state; revision tracking/journal scheduling remain engine-owned. Schema and
 JSON envelope are unchanged; leases, hashes and receipts are not persisted in it.
 
-`save_as` acquires the destination while retaining the source lease, publishes,
-then replaces the held lease only on success. `save_to(&self, &mut destination,
+`Project::fork` copies editable content under a fresh random ProjectId, refusing
+entropy failure without changing the source. Identity generation uses the existing
+MIT/Apache-2.0 `getrandom` 0.4.3 system-entropy dependency. The persisted format
+and schema stay unchanged.
+
+`save_as` acquires the destination while retaining the source lease, publishes
+a fork, then replaces the held lease only on success. Its receipt exposes the
+published `project_id`; the supplied snapshot and source file stay untouched.
+Saving to the held canonical path (including aliases) retains the identity.
+`save_to(&self, &mut destination,
 project)` publishes to an already acquired destination while retaining the source;
 engine uses it to defer lease adoption until revision/receipt acknowledgement. Both
 paths refuse an invalidated source lease. Busy/failure preserves source path
