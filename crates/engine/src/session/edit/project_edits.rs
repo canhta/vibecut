@@ -67,6 +67,14 @@ pub(super) fn execute_set_canvas(
     preset: Option<project::AspectPreset>,
 ) -> Result<ProjectData> {
     let size = project::CanvasSize { width, height };
+    // Custom entry commits the nearest even size so the canvas can always
+    // export; fixed presets already carry even dimensions.
+    let size = if preset.is_none() {
+        size.rounded_even()
+            .ok_or(EditError::Invalid("canvas dimensions"))?
+    } else {
+        size
+    };
     if !size.is_valid() {
         return Err(EditError::Invalid("canvas dimensions"));
     }
@@ -78,8 +86,8 @@ pub(super) fn execute_set_canvas(
             return Err(EditError::Invalid("canvas preset size"));
         }
     }
-    data.canvas.width = width;
-    data.canvas.height = height;
+    data.canvas.width = size.width;
+    data.canvas.height = size.height;
     data.canvas.preset = preset;
     if preset.is_none() {
         data.canvas.last_custom_size = size;

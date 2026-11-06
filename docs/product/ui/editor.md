@@ -76,8 +76,9 @@ window for a custom value. Picking a preset or swatch commits one undo step;
 width, height and frame rate commit on Enter or blur. The frame-rate select lists
 24, 25, 30, 60 and 120; a fractional project rate (23.976, 29.97) shows its exact
 label as an extra current row and stays stored as its exact rational until an
-integer is picked. Odd sizes are accepted on the canvas; export refuses them
-with its typed settings error. This layout is **new**
+integer is picked. An odd custom width or height commits the nearest even value
+on that axis (ties up), and the field shows the committed value, so every canvas
+exports. This layout is **new**
 (the settings panel is unmeasured) and reuses the captured property geometry.
 
 ## Shortcuts

@@ -2838,6 +2838,20 @@ fn canvas_settings_commit_one_step_and_keep_exact_rationals() {
         "project.set_canvas",
         json!({"width":1081,"height":721}),
     );
+    assert_eq!(
+        (
+            s.project().data().canvas.width,
+            s.project().data().canvas.height
+        ),
+        (1082, 722)
+    );
+    assert_eq!(
+        s.project().data().canvas.last_custom_size,
+        project::CanvasSize {
+            width: 1082,
+            height: 722
+        }
+    );
     commit(&mut s, "project.set_fps", json!({"num":48,"den":2}));
     assert_eq!(s.project().data().canvas.fps, time::FrameRate::FPS_24);
     commit(&mut s, "project.set_fps", json!({"num":24000,"den":1001}));
@@ -2883,6 +2897,46 @@ fn canvas_settings_commit_one_step_and_keep_exact_rationals() {
     assert_eq!(s.project(), &initial);
 }
 #[test]
+fn canvas_custom_sizes_commit_the_nearest_even_size() {
+    // (requested, committed): odd axes take the nearest even value (ties up),
+    // one never becomes zero, and the largest odd square stays inside the bound.
+    for (requested, committed) in [
+        ((1081, 721), (1082, 722)),
+        ((1, 1), (2, 2)),
+        ((1081, 1), (1082, 2)),
+        ((8191, 8191), (8192, 8192)),
+    ] {
+        let mut s =
+            Session::new(Project::empty(ProjectId(1), "Canvas".into()).unwrap(), 10).unwrap();
+        let initial = s.project().clone();
+        s.execute(
+            "project.set_canvas",
+            json!({"width":requested.0,"height":requested.1}),
+        )
+        .unwrap();
+        assert_eq!(
+            (
+                s.project().data().canvas.width,
+                s.project().data().canvas.height
+            ),
+            committed,
+            "{requested:?}"
+        );
+        assert_eq!(s.project().data().canvas.preset, None);
+        assert_eq!(
+            s.project().data().canvas.last_custom_size,
+            project::CanvasSize {
+                width: committed.0,
+                height: committed.1
+            },
+            "{requested:?}"
+        );
+        assert_eq!(s.history_len().0, 1, "{requested:?}");
+        s.undo().unwrap();
+        assert_eq!(s.project(), &initial, "{requested:?}");
+    }
+}
+#[test]
 fn canvas_settings_reject_invalid_sizes_rates_and_preset_mismatches() {
     let mut data = Project::empty(ProjectId(1), "Canvas".into())
         .unwrap()
@@ -2898,6 +2952,10 @@ fn canvas_settings_reject_invalid_sizes_rates_and_preset_mismatches() {
         json!({"width":1920,"height":0}),
         json!({"width":-1,"height":1080}),
         json!({"width":67_108_865,"height":1}),
+        json!({"width":67_108_863,"height":1}),
+        json!({"width":8193,"height":8193}),
+        json!({"width":u32::MAX,"height":1}),
+        json!({"width":1,"height":u32::MAX}),
         json!({"width":u32::MAX,"height":u32::MAX}),
         json!({"width":1080,"height":1920,"preset":"16:9"}),
         json!({"width":1080,"height":1920,"preset":"original"}),

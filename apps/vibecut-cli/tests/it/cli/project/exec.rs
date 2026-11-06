@@ -623,7 +623,7 @@ fn exec_import_and_insert_share_persisted_media_policy() {
 }
 
 #[test]
-fn cli_sets_portrait_canvas_through_the_registry_and_exports_it() {
+fn cli_sets_canvas_sizes_through_the_registry_and_exports_them() {
     let dir = tempfile::tempdir().unwrap();
     let project = dir.path().join("portrait.vibecut");
     let output_path = dir.path().join("portrait.mp4");
@@ -678,6 +678,59 @@ fn cli_sets_portrait_canvas_through_the_registry_and_exports_it() {
             .unwrap();
         assert!(probe.status.success());
         assert_eq!(String::from_utf8_lossy(&probe.stdout).trim(), "1080,1920");
+    }
+
+    // An odd custom size commits its nearest even value, so the same project
+    // still exports instead of failing on an odd render size.
+    exec(
+        &project,
+        "project.set_canvas",
+        json!({"width":1081,"height":721}),
+    );
+    let rounded = project::load(&project).unwrap().project;
+    assert_eq!(
+        (rounded.data().canvas.width, rounded.data().canvas.height),
+        (1082, 722)
+    );
+    assert_eq!(rounded.data().canvas.preset, None);
+    assert_eq!(
+        rounded.data().canvas.last_custom_size,
+        project::CanvasSize {
+            width: 1082,
+            height: 722
+        }
+    );
+    let odd_path = dir.path().join("odd.mp4");
+    let output = cli(&[
+        os("export"),
+        project.as_os_str(),
+        os("--out"),
+        odd_path.as_os_str(),
+        os("--json"),
+    ]);
+    assert_eq!(
+        code(&output),
+        0,
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    if tools() {
+        let probe = tool_command("ffprobe")
+            .args([
+                os("-v"),
+                os("error"),
+                os("-select_streams"),
+                os("v:0"),
+                os("-show_entries"),
+                os("stream=width,height"),
+                os("-of"),
+                os("csv=p=0"),
+            ])
+            .arg(&odd_path)
+            .output()
+            .unwrap();
+        assert!(probe.status.success());
+        assert_eq!(String::from_utf8_lossy(&probe.stdout).trim(), "1082,722");
     }
 }
 

@@ -201,8 +201,10 @@ audio items are incompatible. `background_color` (text) and `graphic_stroke`
 All colours reuse project's straight-alpha RGBA8 value. `project.set_background`
 sets that same value on the canvas in one history step. `project.set_canvas`
 writes a validated width/height and an optional fixed preset (the `original`
-preset resolves the retained first-visual size) and records custom sizes as the
-last custom size; `project.set_fps` stores an exact positive rational. Each is one
+preset resolves the retained first-visual size); a custom width/height commits
+its nearest even size on each odd axis (ties up) so the canvas can always
+export, and custom sizes are recorded as the last custom size;
+`project.set_fps` stores an exact positive rational. Each is one
 history step. Masks retain `masks.update`.
 
 `set_selection(BTreeSet<ItemId>)` validates existing IDs, breaks merge continuity

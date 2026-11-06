@@ -69,6 +69,14 @@ fn has_widget(harness: &Harness<Editor>, id: &str) -> bool {
         .any(|widget| widget.id == id)
 }
 
+fn field_value(harness: &Harness<Editor>, id: &str) -> String {
+    harness
+        .get(By::new().predicate(|node| node.author_id() == Some(id)))
+        .value()
+        .unwrap()
+        .to_owned()
+}
+
 fn canvas(harness: &Harness<Editor>) -> project::Canvas {
     harness.state().session.project().data().canvas.clone()
 }
@@ -126,6 +134,32 @@ fn canvas_settings_pick_preset_custom_fps_swatch_reset_and_persist() {
         (1000, 700)
     );
 
+    // Odd custom sizes commit the nearest even value (ties up), one at a time,
+    // and each field shows the committed value.
+    let history = harness.state().session.history_len().0;
+    enter(&mut harness, "inspector.canvas.width", "1081");
+    assert_eq!(
+        (canvas(&harness).width, canvas(&harness).height),
+        (1082, 700)
+    );
+    assert_eq!(field_value(&harness, "inspector.canvas.width"), "1082");
+    assert_eq!(harness.state().session.history_len().0, history + 1);
+    let history = harness.state().session.history_len().0;
+    enter(&mut harness, "inspector.canvas.height", "721");
+    assert_eq!(
+        (canvas(&harness).width, canvas(&harness).height),
+        (1082, 722)
+    );
+    assert_eq!(field_value(&harness, "inspector.canvas.height"), "722");
+    assert_eq!(harness.state().session.history_len().0, history + 1);
+    assert_eq!(
+        canvas(&harness).last_custom_size,
+        CanvasSize {
+            width: 1082,
+            height: 722
+        }
+    );
+
     // The integer select writes the exact rational, one step per pick.
     let history = harness.state().session.history_len().0;
     click(&mut harness, "inspector.canvas.fps");
@@ -181,7 +215,7 @@ fn canvas_settings_pick_preset_custom_fps_swatch_reset_and_persist() {
     harness.run_steps(3);
     assert_eq!(
         (canvas(&harness).width, canvas(&harness).height),
-        (1000, 700)
+        (1082, 722)
     );
     harness.state_mut().session.redo().unwrap();
     harness.run_steps(3);
@@ -197,8 +231,8 @@ fn canvas_settings_pick_preset_custom_fps_swatch_reset_and_persist() {
     assert_eq!(
         loaded.data().canvas.last_custom_size,
         CanvasSize {
-            width: 1000,
-            height: 700
+            width: 1082,
+            height: 722
         }
     );
 }

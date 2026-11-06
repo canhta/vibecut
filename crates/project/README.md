@@ -91,8 +91,11 @@ initialization and FPS ratcheting in import/insert commands.
 `2:1`, `9:16`, `1:1`, `3:4`); `None` means a custom size. Fixed presets use a
 1920 long edge: 16:9 = 1920x1080, 4:3 = 1440x1080, 2:1 = 1920x960, 9:16 =
 1080x1920, 1:1 = 1080x1080 and 3:4 = 1080x1440. `original` resolves the retained
-`original_canvas_size`. `Canvas.last_custom_size` remembers the last committed
-custom width/height. Both fields are schema 20. Preset labels are UI text; the
+`original_canvas_size`. `CanvasSize::rounded_even` gives the nearest even size
+on each odd axis (ties up) so encoders can open the frame: one pixel becomes
+two, and an odd maximum that would overflow or exceed the area bound refuses.
+`Canvas.last_custom_size` remembers the last committed custom width/height.
+Both fields are schema 20. Preset labels are UI text; the
 stored width/height remain authoritative.
 
 ## Scenes

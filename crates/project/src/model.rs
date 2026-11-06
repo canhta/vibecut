@@ -55,6 +55,27 @@ impl CanvasSize {
     pub const fn is_valid(self) -> bool {
         self.width > 0 && self.height > 0 && (self.width as u64) * (self.height as u64) <= 1 << 26
     }
+    /// The nearest even width and height, ties up: an odd axis grows by one so
+    /// encoders can open the frame. `None` when an odd maximum axis overflows.
+    pub const fn rounded_even(self) -> Option<Self> {
+        let width = if self.width.is_multiple_of(2) {
+            self.width
+        } else {
+            match self.width.checked_add(1) {
+                Some(width) => width,
+                None => return None,
+            }
+        };
+        let height = if self.height.is_multiple_of(2) {
+            self.height
+        } else {
+            match self.height.checked_add(1) {
+                Some(height) => height,
+                None => return None,
+            }
+        };
+        Some(Self { width, height })
+    }
 }
 /// One fixed aspect preset offered by the canvas settings. `Original` resolves
 /// to the retained first visual media size.
