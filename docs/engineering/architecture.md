@@ -29,7 +29,7 @@ The [glossary](../../GLOSSARY.md) owns domain definitions; crate READMEs own con
 |---|---|
 | SourceAsset, codecs, probe, packet/frame timing | [media](../../crates/media/src/read/README.md) |
 | Project, scenes, validation, persistence, writer lease | [project](../../crates/project/README.md#writer-lease-and-save-acknowledgement) |
-| Video transitions | [project model/invariants](../../crates/project/README.md#video-transitions), [engine edits](../../crates/engine/README.md#video-transitions), [render evaluation](../../crates/render/README.md#video-transitions) |
+| Video transitions | [project model/invariants](../../crates/project/README.md#video-transitions), [engine edits](../../crates/engine/README.md#video-transitions), [render evaluation](../../crates/render/src/scene/README.md#video-transitions) |
 | Param and keyframes | [project animation](../../crates/project/README.md#animated-parameters) |
 | SourceRange | [time](../../crates/time/README.md) |
 | Transcript, Cue, CueStyle, EditMapping, LanguageProfile | [captions](../../crates/captions/README.md) |
@@ -39,8 +39,8 @@ The [glossary](../../GLOSSARY.md) owns domain definitions; crate READMEs own con
 | Job runner, scheduling, retries, checkpoints, aggregate bytes | [engine jobs](../../crates/engine/README.md#background-jobs-and-byte-policy) |
 | Font catalog, system/bundled/Google fonts, download cache, `fonts.*` commands | [engine fonts](../../crates/engine/README.md#font-catalog); resolution and raster in [text](../../crates/text/README.md#fonts) |
 | Row tasks and native conversion worker allowance | [engine kernel execution](../../crates/engine/README.md#render-kernel-execution) |
-| Export execution | [render](../../crates/render/README.md#export-and-publication) |
-| Loudness measurement, gains and export admission | [render planner](../../crates/render/README.md#audio-clock-and-headroom) / [engine job](../../crates/engine/README.md#loudness-normalization) |
+| Export execution | [render](../../crates/render/src/export/README.md#export-and-publication) |
+| Loudness measurement, gains and export admission | [render planner](../../crates/render/src/audio/README.md#audio-clock-and-headroom) / [engine job](../../crates/engine/README.md#loudness-normalization) |
 | Clip naming, cue mapping, per-short cancel/retry | [shorts batch export](../../crates/shorts/src/batch_export/README.md) |
 | Local model catalog, consent, integrity, transport / transfers, cache bundles / manager presentation | [ai catalog](../../crates/ai/src/models/README.md) / [engine transfers](../../crates/engine/README.md#local-model-transfers) / [app manager](../../apps/vibecut/README.md#local-model-manager) |
 | Clip boundary snapping / speech groups / energy | [shorts](../../crates/shorts/src/boundaries/README.md) / [captions](../../crates/captions/README.md#source-cut-units) / [media](../../crates/media/src/audio_extract/README.md#speech-energy-windows) |

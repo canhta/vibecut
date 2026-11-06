@@ -1,0 +1,286 @@
+# Working pixels and scene
+
+`scene/` transform, blend, mask, effects, color and caption. Applies the per-item visual stages in working space (`blend`, `color`, `effects`, `mask`).
+
+`Renderer::new(project, RenderSettings)` validates output geometry and per-item
+normalized crop/destination rectangles. `render_frame(t, sources, hooks)` returns
+one `Image`; `preview_frame` is the explicitly separate placeholder path. Track
+order is bottom-to-top; hidden visual tracks and half-open inactive items produce
+no pixels. Position uses the project-owned retime mapping. Cover uses a
+center crop, Contain letterboxes, and Stretch maps the selected crop. Background
+blur renders behind every timeline layer. Selected caption languages admit up to
+two languages; default selects the source language or the first available text.
+
+An item's `opacity` animation overrides its static `Placement.opacity`. Evaluation
+calls project's `Animations::value_at` with item-local ticks, the same evaluator the
+engine uses; render adds no interpolation path. Values are clamped to the
+compositor's 0..=1 range. Missing opacity data keeps the static placement.
+
+The five transform channels now evaluate through project's `TransformField` at
+item-local time. Position is in project-canvas pixels; scale/clockwise rotation
+pivot around the item's untransformed destination centre. A nonidentity transform
+reserves an additional canvas layer, inverse-samples with transparent borders
+after masks/effects, then applies opacity/blending against the original backdrop.
+Cancellation is checked per row. Identity transforms retain the existing fast path.
+Preview and export consume the same result. Content is clipped to the canvas
+before transformation; expanding the off-canvas raster extent is not implemented.
+
+`color` owns hex and HSV entry conversion over project's existing straight sRGB
+RGBA8 value: six/eight hex digits, hue 0..360 degrees, saturation/value/alpha
+0..1. Finite HSV entries clamp; non-finite input refuses. Alpha stays straight
+and independent of RGB. Existing linear composite colour channels use the same
+transfer conversion owner as the compositor. Text background boxes consume
+project's typed `TextParams.background` (padding, offset, radius, colour, each overridden
+by its keyed `background.*` channel at the item-local time; text colour by `color`). The
+raster grows by the box margin on every side, so padding and offset never move the text and
+preview and export draw the same cached raster; generated solid overlays consume `params.strokeColor` as a
+two-project-pixel inside stroke. Fully transparent defaults retain the old picture.
+
+Every working pixel is **RGBA, premultiplied alpha, linear-light f32**, finite
+0..1 with RGB <= alpha. Compositing uses the item's blend function followed by
+Porter–Duff source-over. Bilinear sampling
+has transparent borders; repeated box half-filters precede large downscales,
+including odd-sized edges. The separable sampler reserves a bounded horizontal
+coordinate table per draw and resolves vertical neighbors once per output row;
+its arithmetic and transparent-border behavior match the scalar reference.
+BT.709, sRGB and linear transfers convert at ingress;
+text's premultiplied RGBA8 is unpremultiplied before transfer conversion, then
+premultiplied once in linear light. Strided decoder RGBA rows convert directly
+into working pixels without an intermediate packed image; padding is ignored,
+row bounds are validated before allocation, and conversion checks cancellation
+per row. Opaque video packing and alpha-aware packing use separate loops with
+the same transfer tables and rounding. No gamma-space blending. `rgba8` produces
+straight-alpha boundary pixels. `video_rgba8` composites residual transparency
+over black in linear light before producing opaque BT.709 pixels for MP4.
+
+File-backed new pixels admit 8-bit BT.709 primaries (unknown SDR tags use media's
+BT.709 default), the supported transfers above, square pixels and identity display
+matrices. Other primaries, HDR, high depth, non-square pixels and rotation return
+`Unsupported`; no implicit gamut change, tone mapping or display transform.
+Unchanged passthrough retains those source parameters instead. Output geometry
+must be positive and at most 2^26 pixels; encoded H.264 dimensions must be even.
+
+Text uses the item's bundled font family, centered inside its project-owned
+destination. Positions are canvas percentages of the box centre, with clipping at
+canvas edges rather than clamping the box; the default 50/84.5 reproduces the
+original lower-third box. An optional project-owned background box paints before
+the glyphs. Pixel size and box padding scale with output/project width. Immutable
+raster reuse is local to a Renderer, keyed by NFC text, font/fallback identity,
+size, color, background and pixel geometry. Default caps are 8 MiB/four entries; settings cap
+at 256 MiB/64 entries. Zero bytes disables reuse. LRU entries retain byte leases;
+pressure clears idle entries before one retry. `text_cache_stats` reports hits,
+misses, bytes and entries; `clear_text_cache` releases them. Observed repeat-frame
+benefit and cached/uncached pixel equality are recorded in the local report.
+
+## Subtitle styling and burn-in
+
+`RenderSettings::caption_style` controls bundled font family/style, RGBA fill,
+outer outline, rounded background box, top/middle/bottom position, safe area and
+maximum total lines. Size, outline and box dimensions are pixels at 1080 output
+lines and scale with output height in every aspect ratio. The safe area is a
+0–40 percent inset on each canvas edge; the default is 5 percent. An explicit
+item placement overrides that default destination. Caption geometry uses a
+bounded line-height band inside the safe rectangle rather than a full-frame
+raster. Settings are transient and do not change the project persistence schema.
+
+Selected language payloads join in display order with a mandatory line break.
+Unicode UAX #14 wrapping and bundled CJK fallback handle both Han scripts without
+inserted spaces; the text owner normalizes NFC and keeps graphemes intact. Empty
+payloads do not paint a box. Captions wrap at the requested size first. When they
+exceed the line count or destination, a bounded ten-step search reduces the font
+size to fit all text, down to one output pixel (or the requested size if smaller).
+Already-fitting captions retain their exact pixels; outline and background padding
+stay fixed. Missing requested languages, mandatory breaks exceeding the line count,
+or text that still cannot fit at the minimum size return typed refusals; output
+never silently drops the second language. Cue activity uses half-open source ranges,
+so gaps have no caption pixels. Both `preview_frame` and `render_frame` call the
+same overlay path. Outline, box, font, size, position, line limit, text and pixel
+geometry participate in the existing bounded raster cache; there is no second
+caption cache or colour conversion.
+
+`tests/it/captions.rs` pins visually inspected Vietnamese/English and Hans/Hant
+portrait goldens, NFC/NFD equality, safe-area clipping, gap boundaries, cached
+versus uncached equality and zero preview/export pixel difference. Its encoded
+MP4 test measures decoded pixel error and writes `caption-burn-decoded.png` under
+`target/fixtures/render/`. The ignored `caption_frame_benchmark` measures the same
+public renderer with and without raster reuse at 1080×1920; measurements and host
+limits live in the local evidence report.
+
+## Effects and desktop adapter
+
+`effects::EffectCompositor` receives a working item image, evaluated ordered pass
+list, optional item/mask coverage and the already-composited track-below image.
+`CpuEffects` is the reference and CLI/export default; `RenderSettings.effects`
+optionally injects the desktop adapter. Unsupported GPU capability falls back to
+CPU; cancellation, budget and invalid-data failures propagate. The renderer paints
+an effected item into a transparent output-sized layer, filters it, then composites
+it over the unchanged below image. Effects disable video stream copy.
+
+Colour grade (`EffectParams::ColorGrade`, one `grade` pass of four weights) runs in
+the premultiplied linear working space on the straight colour, in this order:
+brightness = linear gain 2^(v/50) (+-1 stop); contrast = power 1+v/100 about linear
+mid grey 0.18; saturation = Rec. 709 luma blend 1+v/50; hue = rotation of
+v/50*180 degrees about the grey axis; then clamp to 0..1 and re-premultiply.
+All-zero emits no pass (identity). `grade_pixel` is the reference the app's
+`grade` shader mirrors, so preview, GPU and export agree within float tolerance.
+Masks apply after the grade, so a masked item grades only inside its mask.
+
+Blur intensity uses the static project value unless its scalar `Param` override
+exists. Evaluation uses project item-local time; animated overshoot clamps to
+0–100. Sigma is intensity/5 times min(output width/1920, output height/1080).
+The normalized separable Gaussian clamps edge taps and processes all RGBA channels
+in premultiplied linear f32, without colour/alpha conversion. Sigma <=0.01 output
+pixels is an identity. Above sigma 8, n=ceil((sigma/8)^2) iterations use sigma/sqrt(n)
+per axis, capped at 256 iterations and 49 taps per pass. Independent finite kernels
+approximate the untruncated Gaussian; they do not claim source bit identity.
+
+The desktop WGSL adapter consumes the same pass weights/entry names and admits
+maximum absolute CPU/GPU working-channel error 2e-5. Deterministic mixed-alpha
+fixtures at 1x/2x and a repeated-pass fixture exercise the interface in desktop
+tests; render tests pin sigma at 1080p/4K, channel energy, transparent coverage,
+animated overrides, budget refusal and cancellation. A missing native GPU is a
+labelled skip in offline CI and a failure in required-oracle mode. Measurements
+and benchmark commands live in the local report.
+
+## Mask coverage primitives
+
+`mask::FlatMask` rasterizes an evaluated closed contour with nonzero winding;
+`prepare_builtin` supplies rectangle, cinematic band, ellipse, heart, diamond
+and star contours, with cubic chord tolerance 0.05 output pixels. `SplitMask`
+evaluates an unbounded half-plane so frame edges never introduce artificial
+feather or stroke. Feather is a symmetric signed-distance ramp: a one-pixel
+linear ramp at zero feather, smoothstep over the feather width at >=1 pixel.
+Expansion precedes invert, then opacity scales coverage. Stroke uses distances
+on the retained/removed sides for inside/centre/outside alignment, with independent
+one-output-pixel antialiasing; mask feather affects body coverage only.
+
+`RasterMask::from_image` consumes already-ingressed glyph alpha and reuses text's
+Euclidean distance transform. No glyph renderer or transfer conversion lives in
+the mask engine. One prepared distance raster serves coverage and stroke passes.
+All coverage images use the compositor's premultiplied linear space; `scale_by`
+scales every item channel together. Effects consume working pixels before masking. Geometry mismatches refuse before mutation. Contour/scratch,
+raster-distance and image allocations hold compositor reservations; cancellation
+is checked per row, including text's distance-transform rows/columns.
+
+`Renderer` consumes project mask vectors for every visual layer. Its order is:
+item effects, combined coverage in vector order, enabled strokes in vector order,
+then item opacity, blend and source-over. None modes are skipped. Strokes remain visible
+outside the combined coverage. Only the current mask's raster/distance data is
+retained; accumulated coverage and accumulated premultiplied strokes are bounded
+working images. Active masks disable video stream copy for Auto and forced-copy
+export admission.
+
+Mask geometry uses the placed item's output rectangle. Project-pixel appearance
+widths scale by the smaller output/item axis ratio; text uses the existing bundled
+font/cache/ingress and height scaling, then a working-space affine sample and one
+shared distance transform for coverage and stroke. Cubic flattening and contour
+geometry have a 65,536-point admission bound; unsupported/extreme output geometry
+refuses before uncontrolled allocation. No mask-local glyph renderer or cache.
+
+`tests/it/masks.rs` exercises the public mask kernels and all built-ins through the
+production Renderer at two resolutions. The compositor golden includes masks,
+blur, transparent source edges, half item opacity and an encoded/decode oracle;
+engine and CLI own edit/history/persistence and real rectangle export checks.
+
+The ignored production-frame benchmark in [tests/it/masks.rs](../../tests/it/masks.rs)
+measures enabled-mask cost against an unmasked baseline. The local task report
+records hardware, shared host load, process RSS and quality metrics; these
+measurements do not establish codec throughput or UI latency.
+
+## Blend formulas in working space
+
+`blend::composite` is the CPU reference for preview and export, including CLI.
+It accepts equal-size working images and finite opacity in 0..=1. Effects and
+mask/stroke coverage precede blend; opacity scales every source channel exactly
+once after those operations. Zero opacity leaves the backdrop bit-identical and
+the renderer skips that item, including its background-blur contribution.
+
+Let `b`, `s` denote straight **linear-light** channel values recovered temporarily
+from premultiplied backdrop/source RGB, with backdrop alpha `ab` and effective
+source alpha `as = source_alpha * opacity`. Working images remain premultiplied;
+there is no sRGB conversion or per-mode transfer choice. With `B(b,s)` below:
+
+`out_rgb = source_rgb * opacity * (1-ab) + backdrop_rgb * (1-as) + as*ab*B`
+
+`out_alpha = as + ab*(1-as)`.
+
+Zero source alpha bypasses division. Zero backdrop alpha uses ordinary over.
+Clamp roundoff to `0..out_alpha`. The following table defines each component;
+nonseparable functions operate on all three linear components together.
+
+| Mode | B(b,s) |
+|---|---|
+| normal | s |
+| darken | min(b,s) |
+| multiply | b*s |
+| color-burn | b=1: 1; s=0: 0; otherwise 1-min(1,(1-b)/s) |
+| lighten | max(b,s) |
+| screen | b+s-b*s |
+| plus-lighter | min(1,b+s) |
+| color-dodge | b=0: 0; s=1: 1; otherwise min(1,b/(1-s)) |
+| overlay | b<=0.5: 2*b*s; otherwise 1-2*(1-b)*(1-s) |
+| soft-light | s<=0.5: b-(1-2*s)*b*(1-b); otherwise b+(2*s-1)*(D(b)-b) |
+| hard-light | s<=0.5: 2*b*s; otherwise 1-2*(1-b)*(1-s) |
+| difference | abs(b-s) |
+| exclusion | b+s-2*b*s |
+| hue | SetLum(SetSat(s,Sat(b)),Lum(b)) |
+| saturation | SetLum(SetSat(b,Sat(s)),Lum(b)) |
+| color | SetLum(s,Lum(b)) |
+| luminosity | SetLum(b,Lum(s)) |
+
+`D(b)=((16*b-12)*b+4)*b` for b<=0.25, otherwise sqrt(b).
+`Lum(c)=0.3*r+0.59*g+0.11*b` is the nonseparable blend convention,
+not BT.709 colorimetric luminance. `Sat(c)=max(c)-min(c)`.
+`SetSat(c,t)=(c-min(c))*t/(max(c)-min(c))`, or zero for range <=1e-6.
+`SetLum(c,t)` adds `t-Lum(c)` to every component, then clips around its
+luminosity: for original minimum n<0 use `l+(c-l)*l/max(l-n,1e-6)`;
+for original maximum x>1 use `l+(c-l)*(1-l)/max(x-l,1e-6)`.
+Plus-lighter here is the registry's saturated additive **blend function** with
+source-over alpha, rather than the separate Porter-Duff additive operator.
+These are the [W3C blend formulas](https://www.w3.org/TR/compositing-1/#blending),
+evaluated in this editor's established linear space.
+
+`tests/fixtures/blend-linear.json` pins a 4x4 working image pair and independent
+f64 expected pixels for all 17 modes at opacity 0/0.5/1. CPU tolerance is 3e-6
+absolute per working channel. The desktop WGSL path uses the same fixtures and
+additional mixed-alpha grids at 1x/2x, with maximum absolute error 2e-5.
+`tests/it/blend.rs` checks mask/opacity order and preview identity. Its WebM/VP9
+encoded edge and patch oracle compares final decoded RGBA to opaque BT.709 output:
+maximum channel difference 20/255, RGBA MSE 8 and flat-patch channel difference
+6/255, allowing 4:2:0 chroma edge
+reconstruction. Working-space checks retain the tighter float tolerance.
+The ignored `blend_frame_benchmark` measures 640x360, ten warm frames per mode.
+
+`Rect::validate_crop` exposes the compositor's existing source-normalized rectangle
+admission for reusable desktop crop controls; preview/export keep the same bounds
+and geometry validation. It adds no alternate crop renderer.
+
+## Video transitions
+
+The active transition replaces its two clips in track order over its half-open
+span. Project resolves one piece on each complete transition side at that output
+tick, including the first/last piece's handles beyond its side extent. Progress
+always uses the unchanged timeline span, even after repeated splits. Both
+contributors use the retained source mapping and pass
+through the existing item compositor (effects, masks, transform, opacity and blend)
+over the same backdrop. Premultiplied linear-light frames then interpolate, either
+directly or through the definition's opaque dip colour. Hidden tracks contribute
+no transition pixels; video mute remains an audio control. The exact end resumes
+the incoming clip with no extra frame or gap. Preview, CLI snapshots and export
+share this path; audio crossfades are excluded. Export's stream-copy plan, HDR detection and source admission select clips with
+`Timeline::rendered_items`, so a range inside one clip that overlaps a transition span
+re-encodes through the compositor and checks the other clip's source.
+
+Backdrop and outgoing images retain normal compositor byte leases. Cancellation
+checks during copying, item processing and each interpolation row release every
+partial image on failure. Deterministic transition goldens cover every admitted
+[project definition](../../../project/README.md#video-transitions), source-handle ticks,
+masked/effected opacity, hidden/muted tracks and cancellation/retry.
+
+Horizontal interpolation retains only two destination-width rows per active
+pixel task and reuses them when adjacent output rows share source neighbors.
+Vertical interpolation and source-over keep their original floating-point order;
+fully opaque samples replace the destination after the same clamp. Transfer
+packing uses exact float-bit transition buckets derived from the original
+16-bit transfer table. Monotonic endpoint and threshold checks cover all finite
+working values for the three admitted transfers, preserving its quantization.

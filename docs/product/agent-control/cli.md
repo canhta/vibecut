@@ -151,7 +151,7 @@ The CLI keeps MP4 output as its default contract, independent of the destination
 
 `export` uses render's finished-file path: output is staged and published only after encoding, muxing and a final source revalidation. A required source that is missing or whose content hash changed refuses the export with exit code 4 and `unavailable` entries naming the asset ID, item ID, source tick range and reason (`missing`, `changed`, `metadata`, `video` or `audio`). No partial final file is promoted and an existing destination is preserved.
 
-Degraded output is never a silent default. `--allow-degraded` is the explicit consent that admits initially missing or changed visual sources as black/silence; a source that fails during execution still refuses. Details of the admission and publication fence are in the [render contract](../../../crates/render/README.md#export-and-publication).
+Degraded output is never a silent default. `--allow-degraded` is the explicit consent that admits initially missing or changed visual sources as black/silence; a source that fails during execution still refuses. Details of the admission and publication fence are in the [render contract](../../../crates/render/src/export/README.md#export-and-publication).
 
 ## Exit codes
 
