@@ -803,3 +803,38 @@ fn repeated_faces_gain_cross_shot_identity_and_survive_cache_reopen() {
         Err(EditError::CacheCorrupt)
     ));
 }
+
+#[test]
+fn same_histogram_spatial_cut_retains_rgb_only_shot_boundaries() {
+    let asset = super::scene_detection::fixture("same-histogram", 64, 20, false);
+    let source = range(0, 2);
+    let (mut runner, mut cache, _dir) = setup();
+    let scene_request =
+        engine::scene_detection::DetectionRequest::new(asset.clone(), source, Default::default())
+            .unwrap();
+    let scene_job = scene_request.submit(&mut runner, &mut cache).unwrap();
+    assert_eq!(wait(&mut runner, scene_job.id), JobState::Completed);
+    assert!(
+        scene_job
+            .finish(&mut runner, &mut cache)
+            .unwrap()
+            .unwrap()
+            .candidates
+            .is_empty()
+    );
+    let request =
+        AnalysisRequest::new(asset, source, vec![], [1; 32], AnalysisSettings::default()).unwrap();
+    let job = request
+        .submit(
+            &mut runner,
+            &mut cache,
+            Detector::normal(Arc::new(AtomicUsize::new(0))),
+        )
+        .unwrap();
+    assert_eq!(wait(&mut runner, job.id), JobState::Completed);
+    let result = job.finish(&mut runner, &mut cache).unwrap().unwrap();
+    assert_eq!(
+        result.shots.iter().map(|s| s.range).collect::<Vec<_>>(),
+        vec![range(0, 1), range(1, 2)]
+    );
+}

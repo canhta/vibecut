@@ -25,7 +25,7 @@ fn frame(n: i64) -> Tick {
 fn range(n: i64) -> SourceRange {
     SourceRange::new(Tick::ZERO, frame(n)).unwrap()
 }
-fn fixture(name: &str, size: u32, count: usize, cuts: bool) -> SourceAsset {
+pub(super) fn fixture(name: &str, size: u32, count: usize, cuts: bool) -> SourceAsset {
     let dir =
         PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../target/fixtures/scene-detection");
     std::fs::create_dir_all(&dir).unwrap();
@@ -61,7 +61,9 @@ fn fixture(name: &str, size: u32, count: usize, cuts: bool) -> SourceAsset {
         .unwrap();
     let mut input = child.stdin.take().unwrap();
     for n in 0..count {
-        let color = if name.starts_with("marker-overflow") {
+        let color = if name == "slice-cut" {
+            if n < 3000 { [0, 0, 0] } else { [255, 255, 255] }
+        } else if name.starts_with("marker-overflow") {
             if n.is_multiple_of(2) {
                 [0, 0, 0]
             } else {
@@ -82,6 +84,19 @@ fn fixture(name: &str, size: u32, count: usize, cuts: bool) -> SourceAsset {
         let mut pixels = vec![0; (size * size * 3) as usize];
         for pixel in pixels.as_chunks_mut::<3>().0 {
             pixel.copy_from_slice(&color);
+        }
+        if name == "same-histogram" {
+            for y in 0..size as usize {
+                for x in 0..size as usize {
+                    let value = if (x < size as usize / 2) == (n < 10) {
+                        0
+                    } else {
+                        255
+                    };
+                    pixels[(y * size as usize + x) * 3..(y * size as usize + x) * 3 + 3]
+                        .fill(value);
+                }
+            }
         }
         input.write_all(&pixels).unwrap();
     }
@@ -269,16 +284,37 @@ fn cancellation_preserves_timeline_and_cache_hits_do_not_decode() {
         second.finish(&mut runner, &mut cache).unwrap().unwrap(),
         result
     );
-    let changed = DetectionRequest::new(
-        asset,
-        range(50),
+    let settings = DetectionSettings::default();
+    let changes = [
         DetectionSettings {
             hard_threshold: 0.5,
-            ..Default::default()
+            ..settings
         },
+        DetectionSettings {
+            fade_threshold: 0.3,
+            ..settings
+        },
+        DetectionSettings {
+            fade_step: 0.01,
+            ..settings
+        },
+        DetectionSettings {
+            min_scene: frame(1),
+            ..settings
+        },
+    ];
+    let mut keys = std::collections::BTreeSet::from([request.cache_key()]);
+    for settings in changes {
+        let changed = DetectionRequest::new(asset.clone(), range(50), settings).unwrap();
+        assert!(keys.insert(changed.cache_key()));
+    }
+    let cropped = DetectionRequest::new(
+        asset,
+        SourceRange::new(frame(1), frame(49)).unwrap(),
+        settings,
     )
     .unwrap();
-    assert_ne!(request.cache_key(), changed.cache_key());
+    assert!(keys.insert(cropped.cache_key()));
 }
 #[test]
 fn degenerate_media_and_duration_dimension_scaling_stay_bounded() {
@@ -288,9 +324,7 @@ fn degenerate_media_and_duration_dimension_scaling_stay_bounded() {
             detect(&DetectionRequest::new(asset, range(count as i64), Default::default()).unwrap());
         assert!(result.candidates.is_empty());
         assert_eq!(result.decoded_frames, count as u64);
-        eprintln!(
-            "scene scaling {size}x{size} frames={count}: completed under 256 MiB aggregate reservation budget"
-        );
+        eprintln!("scene scaling {size}x{size} frames={count}: exact frame count, no candidates");
     }
     let asset = fixture("hostile", 16, 1, false);
     assert!(SourceRange::new(Tick::ZERO, Tick::ZERO).is_err());
@@ -426,4 +460,119 @@ fn review_larger_than_one_batch_still_undoes_once() {
     assert_eq!(serde_json::to_vec(s.project().data()).unwrap(), original);
     s.redo().unwrap();
     assert_eq!(s.project().data().scene().timeline.main.items.len(), 1026);
+}
+
+#[test]
+fn continuous_mandelbrot_zoom_is_not_a_fade() {
+    let dir =
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../target/fixtures/scene-detection");
+    std::fs::create_dir_all(&dir).unwrap();
+    let path = dir.join("mandelbrot-zoom.mkv");
+    let output = Command::new("ffmpeg")
+        .env_remove("DYLD_LIBRARY_PATH")
+        .env_remove("LD_LIBRARY_PATH")
+        .args([
+            "-hide_banner",
+            "-loglevel",
+            "error",
+            "-y",
+            "-f",
+            "lavfi",
+            "-i",
+            "mandelbrot=size=128x96:rate=10",
+            "-t",
+            "12",
+            "-c:v",
+            "ffv1",
+        ])
+        .arg(&path)
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let asset = SourceAsset::import(AssetId(1), path).unwrap();
+    let result = detect(&DetectionRequest::new(asset, range(120), Default::default()).unwrap());
+    assert!(
+        !result.candidates.iter().any(|c| c.kind == ChangeKind::Fade),
+        "{:?}",
+        result.candidates
+    );
+}
+
+#[test]
+fn cut_at_decode_slice_boundary_is_neither_lost_nor_duplicated() {
+    let asset = fixture("slice-cut", 16, 3100, true);
+    let result = detect(&DetectionRequest::new(asset, range(3100), Default::default()).unwrap());
+    assert_eq!(result.decoded_frames, 3100);
+    assert_eq!(
+        result
+            .candidates
+            .iter()
+            .map(|c| (c.at, c.kind))
+            .collect::<Vec<_>>(),
+        vec![(frame(3000), ChangeKind::HardCut)]
+    );
+}
+
+/// Fresh subprocesses measure the real decode/job path, without fixture generation
+/// or other test threads in the RSS sample. This is a Mac host acceptance test.
+#[cfg(target_os = "macos")]
+#[test]
+fn duration_scaling_bounds_peak_memory() {
+    const PROBE: &str = "VIBECUT_SCENE_MEMORY_PROBE";
+    if let Some(path) = std::env::var_os(PROBE) {
+        let asset = SourceAsset::import(AssetId(1), PathBuf::from(path)).unwrap();
+        let source = SourceRange::new(Tick::ZERO, asset.probe().duration.unwrap()).unwrap();
+        let result = detect(&DetectionRequest::new(asset, source, Default::default()).unwrap());
+        assert_eq!(
+            result.decoded_frames,
+            (source.duration().0 / frame(1).0) as u64
+        );
+        assert!(result.candidates.is_empty());
+        return;
+    }
+    let mut peaks = Vec::new();
+    for count in [300, 12000] {
+        let asset = fixture(&format!("memory-{count}"), 64, count, false);
+        let output = Command::new("/usr/bin/time")
+            .arg("-l")
+            .arg(std::env::current_exe().unwrap())
+            .args([
+                "--exact",
+                "scene_detection::duration_scaling_bounds_peak_memory",
+                "--nocapture",
+            ])
+            .env(PROBE, asset.path())
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        assert!(
+            String::from_utf8_lossy(&output.stdout).contains("1 passed"),
+            "RSS probe did not run"
+        );
+        let stderr = String::from_utf8(output.stderr).unwrap();
+        let peak = stderr
+            .lines()
+            .find(|line| line.contains("maximum resident set size"))
+            .unwrap()
+            .split_whitespace()
+            .next()
+            .unwrap()
+            .parse::<u64>()
+            .unwrap();
+        peaks.push(peak);
+        eprintln!("scene memory: frames={count} peak_rss_bytes={peak}");
+        assert!(peak < 192 << 20, "unbounded resident memory: {peak}");
+    }
+    assert!(
+        peaks[1] <= peaks[0] + (16 << 20),
+        "duration-dependent retained memory: {peaks:?}"
+    );
 }

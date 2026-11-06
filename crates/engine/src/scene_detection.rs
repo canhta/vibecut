@@ -12,10 +12,20 @@ use project::{ItemId, ItemParams};
 use serde::{Deserialize, Serialize};
 use time::{SourceRange, TICKS_PER_SECOND, Tick};
 
-pub(crate) const RECIPE: &str = "scene-v1:rgb-grid32x18:hist16-mad:fade-midpoint";
+pub(crate) const RECIPE: &str =
+    "scene-v2:rgb-grid32x18:hist16-mad:fade-max2s-latched:hard-priority";
 const MAX_PIXELS: u64 = 1 << 24;
 const MAX_MARKERS: usize = 4095;
 const MAX_BYTES: usize = 1 << 20;
+const MAX_FADE: Tick = Tick(2 * TICKS_PER_SECOND);
+
+/// One discovery implementation, with the existing shot-analysis RGB-only
+/// hard-cut policy kept distinct from review candidates' histogram/fade policy.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Discovery {
+    Reviewed,
+    ShotCuts,
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -213,7 +223,22 @@ impl DetectionRequest {
         Ok(result)
     }
     pub(crate) fn analyze(&self, ctx: &JobContext) -> Result<DetectionResult, EditError> {
-        let mut detector = Detector::new(self.range, self.settings);
+        self.analyze_with_mode(ctx, Discovery::Reviewed)
+    }
+    pub(crate) fn hard_cuts(&self, ctx: &JobContext) -> Result<Vec<Tick>, EditError> {
+        Ok(self
+            .analyze_with_mode(ctx, Discovery::ShotCuts)?
+            .candidates
+            .into_iter()
+            .map(|c| c.at)
+            .collect())
+    }
+    fn analyze_with_mode(
+        &self,
+        ctx: &JobContext,
+        mode: Discovery,
+    ) -> Result<DetectionResult, EditError> {
+        let mut detector = Detector::new(self.range, self.settings, mode);
         let mut from = self.range.start();
         while from < self.range.end() {
             ctx.check_cancelled()?;
@@ -393,6 +418,16 @@ impl Signature {
             .sum::<u32>() as f32
             / (255. * self.rgb.len() as f32)
     }
+    // Preserve the original shot detector's per-channel normalization and f32
+    // accumulation order, including its threshold-edge rounding decisions.
+    fn shot_delta(&self, other: &Self) -> f32 {
+        self.rgb
+            .iter()
+            .zip(&other.rgb)
+            .map(|(a, b)| (f32::from(*a) / 255. - f32::from(*b) / 255.).abs())
+            .sum::<f32>()
+            / self.rgb.len() as f32
+    }
     fn histogram_delta(&self, other: &Self) -> f32 {
         self.histogram
             .iter()
@@ -408,20 +443,23 @@ struct Fade {
     end: Tick,
     step: Tick,
     change: f32,
+    valid: bool,
 }
 struct Detector {
     range: SourceRange,
     settings: DetectionSettings,
+    mode: Discovery,
     previous: Option<(Tick, Signature)>,
     fade: Option<Fade>,
     markers: Vec<SceneCandidate>,
     count: u64,
 }
 impl Detector {
-    fn new(range: SourceRange, settings: DetectionSettings) -> Self {
+    fn new(range: SourceRange, settings: DetectionSettings, mode: Discovery) -> Self {
         Self {
             range,
             settings,
+            mode,
             previous: None,
             fade: None,
             markers: Vec::new(),
@@ -429,6 +467,20 @@ impl Detector {
         }
     }
     fn emit(&mut self, at: Tick, confidence: f32, kind: ChangeKind) -> media::Result<()> {
+        // A reviewed fade must not suppress a later real hard cut. Endpoint
+        // admission is checked first so an inadmissible cut cannot erase a fade.
+        if kind == ChangeKind::HardCut
+            && at > self.range.start()
+            && at < self.range.end()
+            && at - self.range.start() >= self.settings.min_scene
+            && self.range.end() - at >= self.settings.min_scene
+            && self
+                .markers
+                .last()
+                .is_some_and(|c| c.kind == ChangeKind::Fade && at - c.at < self.settings.min_scene)
+        {
+            self.markers.pop();
+        }
         let previous = self.markers.last().map_or(self.range.start(), |c| c.at);
         if at <= previous
             || at >= self.range.end()
@@ -449,6 +501,7 @@ impl Detector {
     }
     fn finish_fade(&mut self) -> media::Result<()> {
         if let Some(fade) = self.fade.take()
+            && fade.valid
             && fade.change >= self.settings.fade_threshold
         {
             // A fade requires a regular observed frame grid. Irregular/VFR runs
@@ -469,26 +522,36 @@ impl Detector {
         }
         let signature = Signature::new(frame)?;
         if let Some((previous_at, previous)) = &self.previous {
-            let delta = signature.delta(previous);
+            let delta = if self.mode == Discovery::ShotCuts {
+                signature.shot_delta(previous)
+            } else {
+                signature.delta(previous)
+            };
             let step = at - *previous_at;
             if delta >= self.settings.hard_threshold
-                && signature.histogram_delta(previous) >= self.settings.hard_threshold
+                && (self.mode == Discovery::ShotCuts
+                    || signature.histogram_delta(previous) >= self.settings.hard_threshold)
             {
                 self.finish_fade()?;
                 self.emit(at, delta, ChangeKind::HardCut)?;
-            } else if delta >= self.settings.fade_step && delta < self.settings.hard_threshold {
+            } else if self.mode == Discovery::Reviewed
+                && delta >= self.settings.fade_step
+                && delta < self.settings.hard_threshold
+            {
                 let fade = self.fade.get_or_insert_with(|| Fade {
                     anchor: previous.clone(),
                     start: *previous_at,
                     end: at,
                     step,
                     change: 0.,
+                    valid: true,
                 });
-                if step == fade.step {
+                // Reject the entire continuous run. Starting a fresh anchor
+                // every two seconds would merely turn motion into many fades.
+                fade.valid &= step == fade.step && at - fade.start <= MAX_FADE;
+                if fade.valid {
                     fade.end = at;
                     fade.change = signature.delta(&fade.anchor);
-                } else {
-                    self.fade = None;
                 }
             } else {
                 self.finish_fade()?;
@@ -497,5 +560,145 @@ impl Detector {
         self.previous = Some((at, signature));
         self.count += 1;
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    #![allow(clippy::unwrap_used, reason = "synthetic PTS/colour fixtures")]
+    use super::*;
+    fn ms(n: i64) -> Tick {
+        Tick(n * (TICKS_PER_SECOND / 1000))
+    }
+    fn candidates(samples: &[(i64, u8)], end: i64, spacing: i64) -> Vec<SceneCandidate> {
+        let settings = DetectionSettings {
+            min_scene: ms(spacing),
+            ..Default::default()
+        };
+        let mut detector = Detector::new(
+            SourceRange::new(Tick::ZERO, ms(end)).unwrap(),
+            settings,
+            Discovery::Reviewed,
+        );
+        for &(at, value) in samples {
+            detector
+                .frame(
+                    &VisionFrame::from_rgba8(ms(at), 1, 1, vec![value, value, value, 255]).unwrap(),
+                )
+                .unwrap();
+        }
+        detector.finish_fade().unwrap();
+        detector.markers
+    }
+    #[test]
+    fn endpoint_spacing_and_zero_spacing_keep_exact_frame_boundaries() {
+        let samples = [(0, 0), (100, 255), (800, 255), (900, 0)];
+        assert!(candidates(&samples, 1000, 500).is_empty());
+        assert_eq!(
+            candidates(&samples, 1000, 0)
+                .iter()
+                .map(|c| c.at)
+                .collect::<Vec<_>>(),
+            vec![ms(100), ms(900)]
+        );
+    }
+    #[test]
+    fn irregular_fade_run_is_discarded_without_restarting_its_anchor() {
+        let samples = [
+            (0, 0),
+            (100, 30),
+            (200, 60),
+            (350, 90),
+            (450, 120),
+            (550, 150),
+            (650, 180),
+            (750, 180),
+        ];
+        assert!(candidates(&samples, 1000, 0).is_empty());
+    }
+    #[test]
+    fn adjacent_hard_cut_has_priority_over_a_close_fade() {
+        let samples = [
+            (0, 0),
+            (400, 0),
+            (500, 0),
+            (600, 42),
+            (700, 85),
+            (800, 127),
+            (900, 170),
+            (1000, 212),
+            (1100, 255),
+            (1200, 0),
+            (1800, 0),
+            (1900, 0),
+        ];
+        let result = candidates(&samples, 2000, 500);
+        assert_eq!(
+            result.iter().map(|c| (c.at, c.kind)).collect::<Vec<_>>(),
+            vec![(ms(1200), ChangeKind::HardCut)]
+        );
+    }
+    #[test]
+    fn hard_cut_interrupting_an_unfinished_fade_keeps_its_frame() {
+        let samples = [
+            (0, 0),
+            (500, 0),
+            (600, 20),
+            (700, 40),
+            (800, 255),
+            (1500, 255),
+        ];
+        let result = candidates(&samples, 2000, 500);
+        assert_eq!(
+            result.iter().map(|c| (c.at, c.kind)).collect::<Vec<_>>(),
+            vec![(ms(800), ChangeKind::HardCut)]
+        );
+    }
+    #[test]
+    fn fade_duration_bound_includes_two_seconds_and_rejects_a_longer_run() {
+        for steps in [20, 21] {
+            let mut samples: Vec<_> = (0..=steps)
+                .map(|n| (n * 100, (n * 255 / steps) as u8))
+                .collect();
+            samples.push(((steps + 1) * 100, 255));
+            let result = candidates(&samples, 3500, 0);
+            if steps == 20 {
+                assert_eq!(
+                    result.iter().map(|c| (c.at, c.kind)).collect::<Vec<_>>(),
+                    vec![(ms(1000), ChangeKind::Fade)]
+                );
+            } else {
+                assert!(result.is_empty());
+            }
+        }
+    }
+    #[test]
+    fn rgb_only_cut_policy_keeps_original_threshold_rounding() {
+        let settings = DetectionSettings {
+            hard_threshold: 72. / 255.,
+            min_scene: Tick::ZERO,
+            ..Default::default()
+        };
+        for mode in [Discovery::Reviewed, Discovery::ShotCuts] {
+            let mut detector = Detector::new(
+                SourceRange::new(Tick::ZERO, ms(2000)).unwrap(),
+                settings,
+                mode,
+            );
+            for (at, value) in [(0, 0), (1000, 72)] {
+                detector
+                    .frame(
+                        &VisionFrame::from_rgba8(ms(at), 1, 1, vec![value, value, value, 255])
+                            .unwrap(),
+                    )
+                    .unwrap();
+            }
+            // Old per-channel float accumulation yields 0.28235018, below
+            // threshold 0.28235295. Reviewed integer-grid scoring reaches it.
+            assert_eq!(
+                detector.markers.len(),
+                usize::from(mode == Discovery::Reviewed)
+            );
+        }
     }
 }

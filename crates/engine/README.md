@@ -1386,9 +1386,15 @@ and 32 MiB for retained output under the existing aggregate policy. Model weight
 and adapter plans remain caller-owned; reservations are not an RSS guarantee.
 Oversize admission is typed, rather than leaving an impossible job queued.
 
-Cut discovery uses the shared [scene detector](#scene-detection) with this
-request's hard-cut threshold and minimum shot length. The detector recipe enters
-the shot cache version (v4); there is no second cut-discovery implementation.
+Cut discovery uses the shared [scene detector](#scene-detection) in its explicit
+RGB-only hard-cut mode, preserving the previous adjacent mean-absolute RGB
+threshold, per-channel floating normalization/accumulation order and minimum
+shot length. This mode disables histogram gating and fade
+tracking, so equal-histogram spatial cuts remain shot boundaries and fades cannot
+suppress a real cut. Reviewed scene candidates use the histogram/fade policy below.
+The detector recipe enters the shot cache version (v5); discovery still has one
+implementation. A spatial half-frame swap with identical histograms is covered by
+`same_histogram_spatial_cut_retains_rgb_only_shot_boundaries`.
 
 Within each cut, frames are sampled on the source-audio-anchored 25 Hz grid by
 presentation interval. YuNet runs every third sample (8.33 Hz); gated IoU >=0.3
@@ -1443,7 +1449,7 @@ reinterpreting the continuity hint. No face identity implies speech activity.
 
 The transient gallery admits 1024 anchors with at most three descriptors each;
 excess is a typed Limit. Embeddings are never serialized; only confident anchor
-references enter artifacts. Version 4 and the recipe invalidate old cached output.
+references enter artifacts. Version 5 and the recipe invalidate old cached output.
 Reopened identities must refer to a prior existing anchor, never a future/current
 shot or another predicted match, and cannot be shared by simultaneous tracks.
 The 0.30 threshold uses a small agent-labelled interview calibration; it is a
@@ -1655,10 +1661,15 @@ L1 distance >= `hard_threshold` (default 0.28, admitted 0.01..=1). Gradual trans
 collect a regular-PTS run of adjacent RGB changes >= `fade_step` (default 0.005,
 admitted 0.001..=0.1 and below hard threshold) and below hard threshold. Once a
 run ends, its end-to-anchor RGB change must reach `fade_threshold` (default 0.20,
-admitted 0.01..=1). Its marker is the observed midpoint frame, earlier on ties;
-irregular-PTS fade runs are discarded. Defaults leave at least 0.5 seconds from
-endpoints and previous markers (`min_scene`, admitted 0..=10 seconds).
-These deterministic heuristics can miss same-histogram cuts and subtle/irregular
+admitted 0.01..=1). Runs are limited to two seconds: an overlong or irregular-PTS
+run remains rejected until a quiet frame or hard cut ends it, preventing continuous
+motion from restarting a fade anchor every two seconds. Its marker is the observed
+midpoint frame, earlier on ties. Hard cuts take priority over a preceding fade
+within the minimum spacing; the close fade is removed instead of suppressing the
+hard cut. Defaults leave at least 0.5 seconds from endpoints and previous markers
+(`min_scene`, admitted 0..=10 seconds); the first observed frame is an anchor,
+never a change candidate. Recipe v2 invalidates the previous scene artifacts.
+These deterministic heuristics can miss same-histogram cuts and long, subtle or irregular
 fades, and can mistake motion or lighting for a transition; candidates require
 review. They are not a general cut/dissolve accuracy claim.
 
@@ -1681,3 +1692,13 @@ conversion. `cargo test -p engine --test it scene_detection::` covers labelled
 hard cuts and fade midpoint, independent-run determinism, reviewed subsets,
 undo/redo, queued and gated mid-decode cancellation, missing-source cache reuse,
 empty/single-frame/constant sources, hostile geometry and dimension/duration scaling.
+
+The Mac-only `duration_scaling_bounds_peak_memory` integration test measures fresh
+test subprocesses through `/usr/bin/time -l`, excluding fixture generation. It
+checks 300 versus 12,000 decoded 64×64 frames: each peak must stay below 192 MiB
+and growth within 16 MiB. This tests resident memory, separately from runner
+reservations. A temporary full-frame-retention mutation is rejected by this test;
+the fix report contains its reproduction and RSS values. The checked-in test is
+reproducible from the branch; Windows/Linux memory measurement remains unverified.
+The edge tables cover an exact 300-second cut, adjacent/interrupted fades,
+first/last-frame spacing, irregular PTS and every cache-key setting.

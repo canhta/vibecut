@@ -15,7 +15,7 @@ use serde::{Deserialize, Serialize};
 use std::{io::Write, sync::Mutex};
 use time::{SourceRange, TICKS_PER_SECOND, Tick};
 
-const VERSION: &str = "shot-analysis-v4:sface-cosine.30-margin.08-consensus3:negative-all-visible-scored:grid32x18-rgb-mad:25fps-hold:8hz-iou.3:3s:mean1s:.5-.4";
+const VERSION: &str = "shot-analysis-v5:rgb-hard-only-f32-order:sface-cosine.30-margin.08-consensus3:negative-all-visible-scored:grid32x18-rgb-mad:25fps-hold:8hz-iou.3:3s:mean1s:.5-.4";
 const MAX_SHOTS: usize = 4096;
 const MAX_SECONDS: usize = 86_400;
 const MAX_BYTES: usize = 32 << 20;
@@ -383,16 +383,8 @@ impl AnalysisRequest {
                 ..Default::default()
             },
         )?;
-        let result = request.analyze(ctx)?;
         let mut cuts = vec![self.range.start()];
-        // Shot boundaries stay hard cuts only; fade candidates are for review, not shots.
-        cuts.extend(
-            result
-                .candidates
-                .into_iter()
-                .filter(|c| c.kind == crate::scene_detection::ChangeKind::HardCut)
-                .map(|c| c.at),
-        );
+        cuts.extend(request.hard_cuts(ctx)?);
         cuts.push(self.range.end());
         Ok(cuts)
     }
