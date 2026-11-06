@@ -1386,11 +1386,9 @@ and 32 MiB for retained output under the existing aggregate policy. Model weight
 and adapter plans remain caller-owned; reservations are not an RSS guarantee.
 Oversize admission is typed, rather than leaving an impossible job queued.
 
-Cut discovery compares adjacent presentation frames on a 32x18 RGB grid, with
-normalized mean absolute difference (default threshold 0.28), minimum shot length
-0.5 s and exact decoded PTS. Discovery streams in 300 s requests, carrying its
-previous signature across request boundaries. This simple hard-cut heuristic is
-not a dissolve detector. Settings and its versioned recipe enter the content key.
+Cut discovery uses the shared [scene detector](#scene-detection) with this
+request's hard-cut threshold and minimum shot length. The detector recipe enters
+the shot cache version (v4); there is no second cut-discovery implementation.
 
 Within each cut, frames are sampled on the source-audio-anchored 25 Hz grid by
 presentation interval. YuNet runs every third sample (8.33 Hz); gated IoU >=0.3
@@ -1445,7 +1443,7 @@ reinterpreting the continuity hint. No face identity implies speech activity.
 
 The transient gallery admits 1024 anchors with at most three descriptors each;
 excess is a typed Limit. Embeddings are never serialized; only confident anchor
-references enter artifacts. Version 3 and the recipe invalidate old cached output.
+references enter artifacts. Version 4 and the recipe invalidate old cached output.
 Reopened identities must refer to a prior existing anchor, never a future/current
 shot or another predicted match, and cannot be shared by simultaneous tracks.
 The 0.30 threshold uses a small agent-labelled interview calibration; it is a
@@ -1637,3 +1635,49 @@ Identical content and targets hit the cache without decoding. `submit_export*` c
 gains are missing or measured for different audio, so preview (which applies stored
 gains as is) and export cannot disagree. Undo restores the gains with the content.
 `vibecut-cli normalize` composes these steps. Limits: 4,096 clips, 1 MiB result.
+
+## Scene detection
+
+`scene_detection::DetectionRequest::new(asset, source_range, DetectionSettings)`
+produces source-time `SceneCandidate`s with exact decoded PTS, `HardCut`/`Fade`
+and a normalized measured-change confidence (not a calibrated probability).
+`submit` runs one local CPU `DetectScenes` job through the ordinary job runner;
+`DetectionJob::finish` validates and caches complete output as `SceneDetection`.
+Keys bind source content, source range, all thresholds and the versioned recipe.
+A warm hit opens no source. Analysis never touches a Session; cancellation before
+runner promotion leaves no cache entry or timeline edit. Cache pressure preserves
+the runner output for retry. Shot analysis, used by clip layout consumers, invokes
+this same detector. No model, download or new split command is introduced.
+
+The 32x18 RGB sample grid uses 16 histogram bins per channel. A hard cut requires
+both normalized adjacent mean absolute RGB difference and normalized histogram
+L1 distance >= `hard_threshold` (default 0.28, admitted 0.01..=1). Gradual transitions
+collect a regular-PTS run of adjacent RGB changes >= `fade_step` (default 0.005,
+admitted 0.001..=0.1 and below hard threshold) and below hard threshold. Once a
+run ends, its end-to-anchor RGB change must reach `fade_threshold` (default 0.20,
+admitted 0.01..=1). Its marker is the observed midpoint frame, earlier on ties;
+irregular-PTS fade runs are discarded. Defaults leave at least 0.5 seconds from
+endpoints and previous markers (`min_scene`, admitted 0..=10 seconds).
+These deterministic heuristics can miss same-histogram cuts and subtle/irregular
+fades, and can mistake motion or lighting for a transition; candidates require
+review. They are not a general cut/dissolve accuracy claim.
+
+`apply_reviewed(session, item, result, selected_indexes)` validates explicit unique
+indexes, matching source identity and strict source-time item bounds. Project's
+existing retime mapping converts source to output ticks. Descending ordinary
+`SplitAt` commands retain the target ID in existing batches, grouped into one
+transaction and one undo step. Each batch respects the existing command limit. Empty
+selection does nothing; any refusal publishes nothing. No unselected candidate
+creates a split. The UI review surface belongs to the separate UI ticket.
+
+Limits: one day, 16 Mi-pixel frames, 4095 candidates, 1 MiB serialized result. Decode streams through media's admitted
+`decode_shot_frames` in <=300-second, <=100,000-frame slices including preroll.
+Only two fixed 1824-byte signatures and a bounded marker vector persist; no frame
+history accumulates with duration. Jobs reserve 192 MiB for overlapping decode /
+conversion frames, 16 MiB workspace and 1 MiB retained output; these aggregate
+reservations are not a native decoder RSS guarantee. Media retains its native
+allocation/decoder ceilings, including refusal of geometry changes before packed
+conversion. `cargo test -p engine --test it scene_detection::` covers labelled
+hard cuts and fade midpoint, independent-run determinism, reviewed subsets,
+undo/redo, queued and gated mid-decode cancellation, missing-source cache reuse,
+empty/single-frame/constant sources, hostile geometry and dimension/duration scaling.

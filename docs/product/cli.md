@@ -8,6 +8,7 @@ Build with `cargo build -p vibecut-cli` through the [build wrapper](../agents/or
 
 | Command | Does |
 |---|---|
+| `vibecut-cli scenes <file>` | Detect reviewed-marker candidates without editing a project |
 | `vibecut-cli probe <file>` | Probe a media file and report format, duration and streams |
 | `vibecut-cli project new <path>` | Create an empty project, refusing to replace an existing file |
 | `vibecut-cli project info <path>` | Summary plus optional view metadata under the project writer lease |
@@ -196,3 +197,15 @@ provider URL, so changing it invalidates the old bytes.
 
 Candidate output preserves the AI ordered-segment contract: `pieces` are the provider's play-order pieces with roles, `segments` are the snapped source ranges, and `adjustments` carries the signed original/adjusted delta per edge. The `word_fade` kind identifies frame rounding at a sub-frame word gap; [engine snapping](../../crates/engine/README.md#clip-boundary-adjustment) owns its overlap and export-audio policy. Rejected snap candidates and dropped suggestions are reported with typed reasons. `vibecut-cli providers --operation clips` lists the offline suggestion catalog, including each remote provider's policy link.
 
+
+## Scene detection
+
+`vibecut-cli scenes <file> [--threshold 0.28] [--fade-threshold 0.20]
+[--min-scene-ticks <ticks>] [--json]` imports a local known-duration video and
+runs the engine's [scene detection job](../../crates/engine/README.md#scene-detection).
+Human output prints source ticks, change kind and confidence; JSON includes the
+content key, source identity, requested range, ordered `candidates` and
+`decoded_frames`. Confidence is measured change, not a calibrated probability.
+Explicit settings enter the content cache key. The command never edits a project.
+There is no signal-driven graceful cancellation; process interruption follows the
+CLI's crash semantics. Engine callers use the returned job cancellation token.

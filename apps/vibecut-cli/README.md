@@ -169,3 +169,8 @@ Video transition edits use `exec` or `control` with the four registered
 `preview.snapshot` renders transition frames through the shared compositor;
 `control_commands_render_a_transition_midpoint_frame` exercises add and PNG
 publication in a real CLI subprocess. No transition-specific adapter path exists.
+
+`scenes` composes the engine's shared scene detector and ordinary jobs/cache,
+returning candidates without a project edit. Syntax and output are owned by the
+[CLI contract](../../docs/product/cli.md#scene-detection); thresholds, limits and
+reviewed marker application belong to [engine](../../crates/engine/README.md#scene-detection).

@@ -23,6 +23,7 @@ mod recovery;
 mod render_kernels;
 mod retime;
 mod review_repros;
+mod scene_detection;
 mod scenes;
 mod shot_analysis;
 mod snapshot;

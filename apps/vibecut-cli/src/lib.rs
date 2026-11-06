@@ -32,6 +32,7 @@ const HELP: &str = "\
 vibecut-cli - headless VibeCut control
 
 Usage:
+  vibecut-cli scenes <file> [--threshold 0.28] [--fade-threshold 0.20] [--min-scene-ticks <ticks>]
   vibecut-cli probe <file>
   vibecut-cli project new <path>
   vibecut-cli project info <path>
@@ -289,6 +290,7 @@ pub fn run(args: Vec<OsString>) -> Result<Output, CliError> {
         "project" => project(rest),
         "exec" => exec(rest),
         "normalize" => normalize(rest),
+        "scenes" => scenes(rest),
         "control" => control(rest),
         "mcp" => mcp::run(rest),
         "export" => export(rest),
@@ -635,6 +637,72 @@ fn exec(args: Vec<OsString>) -> Result<Output, CliError> {
 
 /// Set loudness targets, run the two-pass measurement job over the production
 /// mix graph, and store the gains: the next `export` applies them.
+fn scenes(args: Vec<OsString>) -> Result<Output, CliError> {
+    use engine::scene_detection::{DetectionRequest, DetectionSettings};
+    let mut args = args.into_iter();
+    let path = args
+        .next()
+        .map(PathBuf::from)
+        .ok_or_else(|| CliError::Usage("scenes requires a file".into()))?;
+    let mut settings = DetectionSettings::default();
+    while let Some(flag) = args.next() {
+        let value = args
+            .next()
+            .ok_or_else(|| CliError::Usage("scene flag requires a number".into()))?;
+        let value = utf8(&value, "scene setting")?;
+        match utf8(&flag, "scene flag")? {
+            "--threshold" => {
+                settings.hard_threshold = value
+                    .parse()
+                    .map_err(|_| CliError::Usage("invalid threshold".into()))?
+            }
+            "--fade-threshold" => {
+                settings.fade_threshold = value
+                    .parse()
+                    .map_err(|_| CliError::Usage("invalid fade threshold".into()))?
+            }
+            "--min-scene-ticks" => {
+                settings.min_scene = Tick(
+                    value
+                        .parse()
+                        .map_err(|_| CliError::Usage("invalid scene ticks".into()))?,
+                )
+            }
+            _ => return Err(CliError::Usage("unknown scene flag".into())),
+        }
+    }
+    let asset = media::SourceAsset::import(media::AssetId(1), std::fs::canonicalize(path)?)?;
+    let duration = asset.probe().duration.ok_or(CliError::Unsupported(
+        "scene input requires a known duration",
+    ))?;
+    let request = DetectionRequest::new(
+        asset,
+        time::SourceRange::new(Tick::ZERO, duration)?,
+        settings,
+    )?;
+    let budget = ByteBudget::new(CLI_MEMORY_LIMIT)?;
+    let (mut cache, _) =
+        ArtifactCache::open(&subtitles::default_cache_root()?, budget.clone(), 128)?;
+    let mut runner = cli_runner(budget)?;
+    let job = request.submit(&mut runner, &mut cache)?;
+    wait_for_job(&mut runner, job.id)?;
+    let result = job
+        .finish(&mut runner, &mut cache)?
+        .ok_or(CliError::Rejected("scene job produced no result"))?;
+    runner.shutdown();
+    let human = result
+        .candidates
+        .iter()
+        .map(|c| format!("{} {:?} {:.3}\n", c.at.0, c.kind, c.confidence))
+        .collect();
+    Ok(Output {
+        value: serde_json::to_value(result)?,
+        human,
+        silent: false,
+        exit: 0,
+    })
+}
+
 fn normalize(args: Vec<OsString>) -> Result<Output, CliError> {
     const USAGE: &str = "usage: vibecut-cli normalize <project> [--clip] [--master]          [--target-lufs -14] [--true-peak-db -1]";
     let mut args = args.into_iter();

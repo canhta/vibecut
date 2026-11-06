@@ -15,7 +15,7 @@ use serde::{Deserialize, Serialize};
 use std::{io::Write, sync::Mutex};
 use time::{SourceRange, TICKS_PER_SECOND, Tick};
 
-const VERSION: &str = "shot-analysis-v3:sface-cosine.30-margin.08-consensus3:negative-all-visible-scored:grid32x18-rgb-mad:25fps-hold:8hz-iou.3:3s:mean1s:.5-.4";
+const VERSION: &str = "shot-analysis-v4:sface-cosine.30-margin.08-consensus3:negative-all-visible-scored:grid32x18-rgb-mad:25fps-hold:8hz-iou.3:3s:mean1s:.5-.4";
 const MAX_SHOTS: usize = 4096;
 const MAX_SECONDS: usize = 86_400;
 const MAX_BYTES: usize = 32 << 20;
@@ -175,6 +175,7 @@ impl AnalysisRequest {
         }
         canonical.extend_from_slice(speech_hash.finalize().as_bytes());
         canonical.extend_from_slice(&models);
+        canonical.extend_from_slice(crate::scene_detection::RECIPE.as_bytes());
         let key = CacheKey::new(KeyInputs {
             kind: ArtifactKind::ShotAnalysis,
             source: asset.content_hash().0,
@@ -373,67 +374,18 @@ impl AnalysisRequest {
         self.decode(&encode(&result)?)
     }
     fn cuts(&self, ctx: &JobContext) -> Result<Vec<Tick>, EditError> {
+        let request = crate::scene_detection::DetectionRequest::new(
+            self.asset.clone(),
+            self.range,
+            crate::scene_detection::DetectionSettings {
+                hard_threshold: self.settings.cut_threshold,
+                min_scene: self.settings.min_shot,
+                ..Default::default()
+            },
+        )?;
+        let result = request.analyze(ctx)?;
         let mut cuts = vec![self.range.start()];
-        let mut previous: Option<Vec<f32>> = None;
-        let mut last_pts = None;
-        let mut from = self.range.start();
-        while from < self.range.end() {
-            ctx.check_cancelled()?;
-            let end = Tick((from.0.saturating_add(300 * TICKS_PER_SECOND)).min(self.range.end().0));
-            media::decode_shot_frames(
-                &self.asset,
-                SourceRange::new(from, end)?,
-                &VisionPrepLimits {
-                    max_frame_pixels: MAX_PIXELS,
-                    ..Default::default()
-                },
-                ctx.media_cancel_flag(),
-                |frame| {
-                    if ctx.cancelled() {
-                        return Err(media::MediaError::Cancelled);
-                    }
-                    let pts = frame.source_pts().max(self.range.start());
-                    if last_pts.is_some_and(|last| pts <= last) {
-                        return Ok(());
-                    }
-                    let signature = signature(&frame)?;
-                    if let Some(prev) = previous.as_ref() {
-                        let delta = prev
-                            .iter()
-                            .zip(&signature)
-                            .map(|(a, b)| (a - b).abs())
-                            .sum::<f32>()
-                            / signature.len() as f32;
-                        let last = cuts
-                            .last()
-                            .copied()
-                            .ok_or(media::MediaError::Invalid("analysis cut"))?;
-                        if delta >= self.settings.cut_threshold
-                            && pts.0 - last.0 >= self.settings.min_shot.0
-                            && self.range.end().0 - pts.0 >= self.settings.min_shot.0
-                        {
-                            if cuts.len() == MAX_SHOTS {
-                                return Err(media::MediaError::TooLarge("analysis shots"));
-                            }
-                            cuts.push(pts);
-                        }
-                    }
-                    previous = Some(signature);
-                    last_pts = Some(pts);
-                    ctx.progress(
-                        JobStage::Process,
-                        ((pts.0 - self.range.start().0) as f64 / self.range.duration().0 as f64)
-                            as f32,
-                    )
-                    .map_err(|_| media::MediaError::Cancelled)?;
-                    Ok(())
-                },
-            )?;
-            from = end;
-        }
-        if previous.is_none() {
-            return Err(EditError::Unsupported("analysis has no video frames"));
-        }
+        cuts.extend(result.candidates.into_iter().map(|c| c.at));
         cuts.push(self.range.end());
         Ok(cuts)
     }
@@ -607,27 +559,4 @@ fn encode(result: &AnalysisResult) -> Result<Vec<u8>, EditError> {
     serde_json::to_writer(&mut writer, result).map_err(|_| EditError::Limit)?;
     writer.0.shrink_to_fit();
     Ok(writer.0)
-}
-fn signature(frame: &VisionFrame) -> media::Result<Vec<f32>> {
-    let mut values = Vec::with_capacity(32 * 18 * 3);
-    for y in 0..18 {
-        for x in 0..32 {
-            let sx = ((2 * x + 1) * u64::from(frame.width()) / 64).min(u64::from(frame.width()) - 1)
-                as usize;
-            let sy = ((2 * y + 1) * u64::from(frame.height()) / 36)
-                .min(u64::from(frame.height()) - 1) as usize;
-            let offset = (sy * frame.width() as usize + sx) * 4;
-            for c in 0..3 {
-                values.push(
-                    f32::from(
-                        *frame
-                            .rgba()
-                            .get(offset + c)
-                            .ok_or(media::MediaError::Invalid("analysis pixel"))?,
-                    ) / 255.,
-                );
-            }
-        }
-    }
-    Ok(values)
 }

@@ -15,6 +15,7 @@ pub mod loudness;
 pub mod models;
 pub mod providers;
 pub mod recovery;
+pub mod scene_detection;
 pub mod shot_analysis;
 pub mod snapshot;
 pub mod sounds;
