@@ -138,6 +138,14 @@ impl State {
         &self.entries
     }
 
+    /// Project identities once the catalog listing is authoritative. `None`
+    /// while a refresh is pending or the last listing failed, so callers never
+    /// treat an unknown catalog as an empty one.
+    pub fn settled_ids(&self) -> Option<impl Iterator<Item = ProjectId> + '_> {
+        (!self.busy() && self.list_error.is_none())
+            .then(|| self.entries.iter().map(|entry| entry.id))
+    }
+
     pub fn selection(&self) -> &BTreeSet<ProjectId> {
         &self.selection
     }
@@ -517,6 +525,12 @@ mod tests {
             assert!(std::time::Instant::now() < deadline);
             std::thread::yield_now();
         }
+        assert_eq!(
+            page.settled_ids()
+                .expect("a completed listing is authoritative")
+                .collect::<Vec<_>>(),
+            vec![ProjectId(1), ProjectId(2)]
+        );
         // Corruption of another row makes the post-delete listing fail. The
         // last successful rows remain, and Retry must stop the live worker.
         let path = root.path().join("0000000000000002/project.vibecut");
@@ -530,6 +544,10 @@ mod tests {
         }
         assert_eq!(page.entries.len(), 2);
         assert!(page.list_error.is_some());
+        assert!(
+            page.settled_ids().is_none(),
+            "a failed listing must not be treated as an empty catalog"
+        );
         let mut harness = Harness::builder()
             .with_context_setup(|ctx| {
                 crate::Editor::fonts(ctx);

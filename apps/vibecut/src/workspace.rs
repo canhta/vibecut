@@ -18,7 +18,7 @@ use engine::{
     recovery::{self, Autosave, Candidate, Discovery, Schedule},
 };
 use std::{
-    collections::BTreeMap,
+    collections::{BTreeMap, BTreeSet},
     path::PathBuf,
     sync::{Arc, Mutex, mpsc},
     time::Duration,
@@ -273,6 +273,7 @@ impl Workspace {
         {
             self.focused = self.windows.keys().next_back().copied();
         }
+        self.prune_lane_preferences();
         if let Some(shorts) = &mut self.shorts {
             shorts.tick();
         }
@@ -317,6 +318,17 @@ impl Workspace {
                 }
             }
         }
+    }
+    /// Lane preferences outlive project windows, but only for projects that
+    /// still exist. The catalog is authoritative once its listing has settled;
+    /// open windows keep their own entries even before Home lists them.
+    fn prune_lane_preferences(&mut self) {
+        let Some(ids) = self.projects.settled_ids() else {
+            return;
+        };
+        let known: BTreeSet<project::ProjectId> = ids.chain(self.windows.keys().copied()).collect();
+        self.preferences
+            .retain_timeline_lanes(|project| known.contains(&project));
     }
     fn project_action(&mut self, action: HomeAction) {
         let result = match action {

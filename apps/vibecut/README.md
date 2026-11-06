@@ -214,7 +214,9 @@ families before activation; unregistered ids refuse before state changes.
 and gates both generic action widgets and direct/key dispatch.
 
 Each item has a 16 px chevron that opens its keyframe lanes; the open set is
-presentation state persisted as `timeline_lanes` in the preference document.
+presentation state persisted as `timeline_lanes` in the preference document,
+keyed by the owning project so item ids that restart elsewhere cannot alias it.
+Projects removed from the library are pruned when preferences next save.
 A lane is 20 px high, one per nonempty animation channel (audio always offers
 its volume lane), and shows the channel's diamonds. Click selects, Cmd/Ctrl/Shift
 toggles, a lane marquee selects, drag retimes with the same snapping candidates
@@ -641,7 +643,7 @@ During a slider drag a temporary engine Session supplies only the preview snapsh
 the editable Session, persistence and undo history remain unchanged. Release
 publishes one command/undo step. Escape or closing discards the active draft;
 selection/snapshot changes fence stale drafts. Recent colours are unique,
-newest-first and capped at sixteen in preferences version 4; older preference
+newest-first and capped at sixteen since preferences version 4; older preference
 versions refuse and retain their bytes under the existing store policy.
 
 The app-only native screen sampler invokes AppKit `NSColorSampler` through macOS's

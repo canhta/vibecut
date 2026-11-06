@@ -9,7 +9,6 @@ pub(in crate::editor::timeline) const DB_MIN: f32 = -60.0;
 /// Loudest stored clip gain.
 pub(in crate::editor::timeline) const DB_MAX: f32 = 20.0;
 /// Waveform amplitude display floor, below which nothing is drawn.
-#[cfg(test)]
 pub(in crate::editor::timeline) const DISPLAY_FLOOR_DB: f32 = -40.0;
 /// One drag step in dB.
 pub(in crate::editor::timeline) const DRAG_STEP: f32 = 0.1;
@@ -52,7 +51,6 @@ fn quantize(db: f32, step: f32) -> f32 {
     clamp(value)
 }
 /// Visible waveform height for an output amplitude; below the floor it is flat.
-#[cfg(test)]
 pub(in crate::editor::timeline) fn bar_fraction(amplitude: f32) -> f32 {
     if !amplitude.is_finite() || amplitude <= 0.0 {
         return 0.0;
@@ -61,7 +59,8 @@ pub(in crate::editor::timeline) fn bar_fraction(amplitude: f32) -> f32 {
     if db <= DISPLAY_FLOOR_DB {
         return 0.0;
     }
-    ((f64::from(db - DISPLAY_FLOOR_DB) / f64::from(-DISPLAY_FLOOR_DB)).powf(1.5)) as f32
+    (((f64::from(db - DISPLAY_FLOOR_DB) / f64::from(-DISPLAY_FLOOR_DB)).powf(1.5)) as f32)
+        .clamp(0.0, 1.0)
 }
 fn clamp(db: f32) -> f32 {
     if db.is_finite() {
@@ -118,6 +117,7 @@ mod tests {
         assert_eq!(bar_fraction(f32::NAN), 0.0);
         assert_eq!(bar_fraction(0.01), 0.0);
         assert!(bar_fraction(0.02) > 0.0);
-        assert!(bar_fraction(1.0) <= 1.0);
+        assert_eq!(bar_fraction(10.0), 1.0);
+        assert!((bar_fraction(1.0) - 1.0).abs() < 1e-5);
     }
 }

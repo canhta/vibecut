@@ -143,18 +143,25 @@ impl Editor {
             self.error = Some(error.to_string());
         }
     }
-    /// Persist one item's expanded lane choice through the typed preference command.
+    /// Persist one item's expanded lane choice for the owning project only.
     fn set_lane_open(&mut self, item: ItemId, open: bool) {
         self.timeline.set_lane(item, open);
-        let value = self
+        let project = self.session.project().data().id;
+        let mut lanes = self.preferences.timeline_lanes.clone();
+        let items: std::collections::BTreeSet<u64> = self
             .timeline
             .expanded_lanes()
             .into_iter()
             .map(|id| id.0)
-            .collect::<Vec<_>>();
+            .collect();
+        if items.is_empty() {
+            lanes.remove(&project);
+        } else {
+            lanes.insert(project, items);
+        }
         if let Err(error) = self.dispatch(
             crate::editor::PREFERENCE_COMMAND,
-            serde_json::json!({"key":"timeline_lanes","value":value}),
+            serde_json::json!({"key":"timeline_lanes","value":lanes}),
         ) {
             self.error = Some(error.to_string());
         }

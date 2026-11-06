@@ -474,8 +474,10 @@ fn paint_waveform(
     let count = ((visible.right() - left) / 3.0).ceil() as usize;
     for index in 0..count {
         let t = (first + index as f32) / bars;
-        let scale = ((t * 47.0 + item.id.0 as f32).sin() * 0.5 + 0.5) * 0.8 + 0.1;
-        let half = (area.height() * 0.5 * reach * scale).max(1.0);
+        // Synthetic stand-in amplitude until the engine publishes waveform
+        // peaks; the display floor and log curve match the source mapping.
+        let amplitude = ((t * 47.0 + item.id.0 as f32).sin() * 0.5 + 0.5) * 0.8 + 0.1;
+        let half = (area.height() * 0.5 * reach * audio::bar_fraction(amplitude)).max(1.0);
         let x = left + index as f32 * 3.0 + 1.5;
         painter.line_segment(
             [egui::pos2(x, center - half), egui::pos2(x, center + half)],

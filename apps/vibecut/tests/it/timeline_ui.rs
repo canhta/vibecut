@@ -213,6 +213,19 @@ pub(crate) fn harness(editor: Editor) -> Harness<'static, Editor> {
         .build_ui_state(|ui, editor: &mut Editor| editor.ui(ui), editor)
 }
 
+/// An editor over `project` with the given presentation preferences.
+fn editor_for(project: Project, preferences: Preferences) -> Editor {
+    let session = Session::new(project, 50).unwrap();
+    let mut playback = Playback::new(
+        &session,
+        ByteBudget::new(64 << 20).unwrap(),
+        Arc::new(Files),
+    )
+    .unwrap();
+    playback.set_device_available(true);
+    Editor::new(session, playback, preferences)
+}
+
 #[test]
 fn blend_dropdown_and_opacity_field_dispatch_real_edits() {
     let fixture = fixture();
@@ -2637,10 +2650,60 @@ fn expanded_lane_shows_diamonds_and_drag_retimes_one_undo_step() {
     let dir = tempfile::tempdir().unwrap();
     let store = vibecut::catalog::PreferenceStore::new(dir.path().join("preferences.json"));
     store.save(&harness.state().preferences).unwrap();
-    assert!(
-        store.load().unwrap().timeline_lanes.contains(&id.0),
+    let loaded = store.load().unwrap();
+    assert_eq!(
+        loaded.timeline_lanes.get(&ProjectId(12)).cloned(),
+        Some(std::collections::BTreeSet::from([id.0])),
         "expanded lanes round-trip through the preference store"
     );
+    // A reopen restores the owning project's lane; another project is not
+    // affected even though its item ids restart at the same values.
+    let data = harness.state().session.project().data().clone();
+    let reopened = editor_for(Project::new(data.clone()).unwrap(), loaded.clone());
+    assert_eq!(reopened.inspect().unwrap().expanded_lanes, vec![id]);
+    let mut other = data;
+    other.id = ProjectId(13);
+    other.name = "Other".into();
+    let mut other_harness =
+        crate::timeline_ui::harness(editor_for(Project::new(other).unwrap(), loaded));
+    other_harness.run_steps(3);
+    assert!(
+        other_harness
+            .state()
+            .inspect()
+            .unwrap()
+            .expanded_lanes
+            .is_empty(),
+        "another project starts with no open lanes"
+    );
+    let other_lanes = widget(&other_harness, &format!("timeline.item.{}.lanes", id.0));
+    click_at(&mut other_harness, other_lanes.center());
+    store.save(&other_harness.state().preferences).unwrap();
+    let stored = store.load().unwrap();
+    assert_eq!(
+        stored.timeline_lanes.get(&ProjectId(12)).cloned(),
+        Some(std::collections::BTreeSet::from([id.0])),
+        "toggling a lane in another project keeps this project's lanes"
+    );
+    assert_eq!(
+        stored.timeline_lanes.get(&ProjectId(13)).cloned(),
+        Some(std::collections::BTreeSet::from([id.0])),
+        "the other project stores its own open lanes"
+    );
+    let other_lanes = widget(&other_harness, &format!("timeline.item.{}.lanes", id.0));
+    click_at(&mut other_harness, other_lanes.center());
+    store.save(&other_harness.state().preferences).unwrap();
+    let collapsed = store.load().unwrap();
+    assert_eq!(
+        collapsed.timeline_lanes.get(&ProjectId(12)).cloned(),
+        Some(std::collections::BTreeSet::from([id.0])),
+        "collapsing every lane in another project keeps this project's lanes"
+    );
+    assert!(
+        !collapsed.timeline_lanes.contains_key(&ProjectId(13)),
+        "a project with no open lanes keeps no empty entry"
+    );
+    drop(other_harness);
     let key = format!("timeline.keyframe.{}.opacity.none.{}", id.0, 2 * SECOND);
     let diamond = widget(&harness, &key);
     let history = harness.state().session.history_len().0;

@@ -896,8 +896,10 @@ fn civil_from_days(days: i64) -> (i64, u32, u32) {
 }
 
 /// Bumped when the local preference document changes incompatibly.
-pub const PREFERENCES_VERSION: u32 = 4;
+pub const PREFERENCES_VERSION: u32 = 5;
 const MAX_PREFERENCES_BYTES: u64 = 16384;
+/// Total open-lane entries across every project; keeps the document bounded.
+const MAX_TIMELINE_LANES: usize = 4096;
 
 /// Additive preference keys start at their product default when an older
 /// same-version document omits them.
@@ -1121,9 +1123,10 @@ pub struct Preferences {
     pub keybindings: KeybindingPreferences,
     #[serde(default)]
     pub recent_colors: Vec<project::Color>,
-    /// Items whose keyframe lanes stay open, by stable item id.
+    /// Items whose keyframe lanes stay open, keyed by the project they belong
+    /// to: item ids restart in every project.
     #[serde(default)]
-    pub timeline_lanes: BTreeSet<u64>,
+    pub timeline_lanes: BTreeMap<project::ProjectId, BTreeSet<u64>>,
 }
 pub(crate) const fn default_preview_fit() -> bool {
     true
@@ -1154,7 +1157,7 @@ impl Default for Preferences {
             snapshot_directory: None,
             keybindings: KeybindingPreferences::default(),
             recent_colors: Vec::new(),
-            timeline_lanes: BTreeSet::new(),
+            timeline_lanes: BTreeMap::new(),
         }
     }
 }
@@ -1194,7 +1197,7 @@ impl Preferences {
         if self.recent_colors.len() > 16 {
             return Err(Error::Invalid("recent colours"));
         }
-        if self.timeline_lanes.len() > 4096 {
+        if self.timeline_lane_count() > MAX_TIMELINE_LANES {
             return Err(Error::Invalid("timeline lanes"));
         }
         if serde_json::to_vec(self)?.len() as u64 > MAX_PREFERENCES_BYTES {
@@ -1228,6 +1231,19 @@ impl Preferences {
     }
     pub fn section_open(&self, key: &str, default: bool) -> bool {
         self.sections.get(key).copied().unwrap_or(default)
+    }
+    /// Forget lane memory for projects the catalog no longer contains. The
+    /// caller supplies the authoritative set; an unsaturated catalog must not
+    /// call this.
+    pub fn retain_timeline_lanes(&mut self, keep: impl Fn(project::ProjectId) -> bool) {
+        self.timeline_lanes.retain(|project, _| keep(*project));
+    }
+    fn timeline_lane_count(&self) -> usize {
+        self.timeline_lanes
+            .values()
+            .map(BTreeSet::len)
+            .try_fold(0usize, usize::checked_add)
+            .unwrap_or(usize::MAX)
     }
     /// Typed `ui.prefs.set` payload access used by the app history.
     pub fn get(&self, key: &str) -> Result<serde_json::Value> {
@@ -1364,7 +1380,7 @@ impl PreferenceStore {
             value.recent_colors.clear();
             issue = Some(PreferenceIssue::Layout);
         }
-        if value.timeline_lanes.len() > 4096 {
+        if value.timeline_lane_count() > MAX_TIMELINE_LANES {
             value.timeline_lanes.clear();
             issue = Some(PreferenceIssue::Layout);
         }
@@ -1612,6 +1628,10 @@ mod tests {
                 serde_json::json!([[10, 20, 30, 0], [255, 0, 100, 128]]),
             ),
             (
+                "timeline_lanes",
+                serde_json::json!({"12": [3, 4], "13": [7]}),
+            ),
+            (
                 "export",
                 serde_json::json!({
                     "format": "webm",
@@ -1633,6 +1653,15 @@ mod tests {
                 "{key} must round-trip"
             );
         }
+        // Lane memory is keyed by project and pruned to the projects a settled
+        // catalog still knows; one project's set never overwrites another's.
+        let mut pruned = loaded.clone();
+        pruned.retain_timeline_lanes(|project| project == project::ProjectId(12));
+        assert_eq!(
+            pruned.timeline_lanes.get(&project::ProjectId(12)).cloned(),
+            Some(BTreeSet::from([3, 4]))
+        );
+        assert!(!pruned.timeline_lanes.contains_key(&project::ProjectId(13)));
         assert!(Preferences::default().get("unknown").is_err());
     }
 
@@ -1702,6 +1731,7 @@ mod tests {
     fn media_preferences_refuse_unknown_values_atomically() {
         let mut preferences = Preferences::default();
         let before = preferences.clone();
+        let oversized_lanes = (0..=4096).collect::<Vec<_>>();
         for (key, value) in [
             ("media_view", serde_json::json!("columns")),
             (
@@ -1712,6 +1742,7 @@ mod tests {
                 "media_sort",
                 serde_json::json!({"key": "name", "order": "bogus"}),
             ),
+            ("timeline_lanes", serde_json::json!({"12": oversized_lanes})),
         ] {
             assert!(preferences.set(key, value).is_err(), "{key}");
             assert_eq!(preferences, before, "{key} must fail atomically");

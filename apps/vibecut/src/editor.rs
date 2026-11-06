@@ -119,9 +119,12 @@ impl Editor {
         let keymap = Keymap::resolve(&preferences.keybindings);
         let keybinding_issues = keymap.issues().to_vec();
         let keymap_source = preferences.keybindings.clone();
+        let project = session.project().data().id;
         let timeline_lanes: Vec<ItemId> = preferences
             .timeline_lanes
-            .iter()
+            .get(&project)
+            .into_iter()
+            .flatten()
             .copied()
             .map(ItemId)
             .collect();
