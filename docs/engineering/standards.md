@@ -8,7 +8,7 @@ Treat media, project files, CLI parameters and AI responses as hostile: `get()`,
 
 ## Structural admission
 
-Admit a module or crate only for a real responsibility with a consumer. Name it after its concept (no `utils`, `common` or `manager`). Before writing logic, find its existing owner and reuse it; when a second consumer appears, move the logic to the concept's owner. Test helpers stay dev-only in their owner. New crates inherit `[lints] workspace = true` and join the [crate map](architecture.md#crate-map).
+Admit a module or crate only for a real responsibility with a consumer; where it lives, how folders group and which way imports point are in [structure](structure.md). Name it after its concept (no `utils`, `common` or `manager`). Before writing logic, find its existing owner and reuse it; when a second consumer appears, move the logic to the concept's owner. Test helpers stay dev-only in their owner. New crates inherit `[lints] workspace = true` and join the [crate map](architecture.md#crate-map).
 
 ## Minimal solutions
 

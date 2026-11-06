@@ -9,6 +9,7 @@ Read the owner before changing its area; keep each fact in one owner and link el
 | judge scope, priority or acceptance | [requirements](docs/product/requirements.md) |
 | design, build or review UI | [UI design](docs/product/ui.md); load the `frontend-design` and `design-taste-frontend` skills first. Measured reference values in ui.md win over any skill advice (we match the reference, not a new identity); use the skills for type scale, spacing rhythm, states and anti-generic checks |
 | add a crate, dependency edge or contract | [architecture](docs/engineering/architecture.md) |
+| add or move a module, split a file, decide where code goes | [structure](docs/engineering/structure.md) |
 | write Rust | [standards](docs/engineering/standards.md), then the README of each crate you touch |
 | start, research, copy, upgrade or commit | [workflows](docs/engineering/workflows.md) |
 | test, benchmark or report | [verification](docs/engineering/verification.md) |
