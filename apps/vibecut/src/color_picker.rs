@@ -427,7 +427,7 @@ impl Picker {
                     });
                 }
                 let response = ui.add(egui::Button::image_and_text(
-                    crate::icons::tinted(crate::icons::Icon::Eye, 16.0, ui.visuals().text_color()),
+                    crate::kit::tinted(crate::kit::Icon::Eye, 16.0, ui.visuals().text_color()),
                     catalog::text(locale, Text::Eyedropper),
                 ));
                 if response.clicked() && self.native.start().is_err() {

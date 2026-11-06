@@ -10,7 +10,12 @@ render owns every pixel, audio conversion, sample grid and channel mix rule.
 
 `editor.rs` retains the public `Editor` facade; `editor/state.rs` holds its
 shared presentation context, `editor/widgets.rs` its automation-recording
-controls and `editor/timing.rs` the tick-grid time formatting. `editor/frame.rs` owns window composition and editor input routing.
+controls and `editor/timing.rs` the tick-grid time formatting. `editor/frame.rs`
+owns window composition and editor input routing. Its `State` owns the editor's
+rename draft and splitter gesture; `show` returns window actions for the frame to
+route. The read-only `editor::Context` carries the session, selection, locale and
+theme into area interfaces. Each panel receives its complete slot, including its
+own header strip; the frame supplies only the outer insets and draggable gutters.
 The assets, player, properties, timeline, captions, export and models area files
 are folder interfaces with private `view` and `workflow` implementations; existing
 state projections live with their area. Responsibilities follow
@@ -20,9 +25,9 @@ The physical extraction preserves existing facade calls and their ordering.
 Area-owned State/show/action migrations belong to the consumer UI tickets;
 known legacy cross-area calls are recorded in the ticket report.
 
-`kit.rs` exposes the app palette, measured geometry, regular icons and the five
-shared controls without an engine dependency. The private legacy theme/icon
-aliases preserve existing app callers. The [token contract](../../docs/product/tokens.md)
+`kit.rs` exposes the app palette, measured geometry, regular icons and the
+shared controls without an engine dependency. All callers import that interface
+directly. The [token contract](../../docs/product/tokens.md)
 indexes the one executable value owner. The measured editor density (12/14 px type,
 22 px controls, 4 px corners) is installed by `kit::install_editor_density` from the
 editor frame only; every other window keeps the toolkit defaults. No standalone kit
@@ -41,7 +46,7 @@ the display boundary and is never localized.
 `Locale::from_system` reads the OS preference (`sys-locale` 0.3.2, MIT OR
 Apache-2.0); a missing preference file starts from that locale, while
 `Preferences::default` stays English for deterministic tests. The header language
-control switches the catalog at runtime and the existing bounded preference store
+menu control switches the catalog at runtime and the existing bounded preference store
 persists the choice. P1/75 owns the full preferences dialog.
 
 Catalog format decision: Project Fluent (`fluent-bundle` 0.16.0, Apache-2.0 OR

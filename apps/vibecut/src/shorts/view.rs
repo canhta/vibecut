@@ -6,7 +6,7 @@ use crate::{
     Editor, Error,
     catalog::{self, Locale, Text},
     crop, egui,
-    icons::{self, Icon},
+    kit::{self as icons, Icon},
 };
 use engine::{ClipRole, ClipSource};
 use engine::{

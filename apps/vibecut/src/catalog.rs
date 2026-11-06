@@ -315,6 +315,9 @@ catalog! {
     ProjectsListError { key: "projects_list_error", en: "Project list unavailable.", vi: "Không thể tải danh sách dự án." },
 
     // Header and appearance.
+    AutoSaved { key: "auto_saved", en: "Auto saved", vi: "Đã tự động lưu" },
+    NotSaved { key: "not_saved", en: "Not saved", vi: "Chưa lưu" },
+    SaveFailed { key: "save_failed", en: "Save failed", vi: "Không thể lưu" },
     Theme { key: "theme", en: "Switch theme", vi: "Đổi giao diện" },
     Language { key: "language", en: "Tiếng Việt", vi: "English" },
     Reset { key: "reset_layout", en: "Reset layout", vi: "Đặt lại bố cục" },
@@ -866,7 +869,8 @@ pub const PREVIEW_MIN: f32 = 0.30;
 pub const PREVIEW_MAX: f32 = 0.85;
 pub const TIMELINE_MIN: f32 = 0.15;
 pub const TIMELINE_MAX: f32 = 0.70;
-pub const DEFAULT_PANELS: [f32; 3] = [0.25, 0.25, 0.50];
+// Widths exclude both gutters; row fractions include the area-owned strips.
+pub const DEFAULT_PANELS: [f32; 3] = [582.0 / 1696.0, 486.0 / 1696.0, 447.0 / 979.0];
 
 /// Projects page presentation state, persisted with the workspace shell.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, Default)]
@@ -1498,7 +1502,10 @@ mod tests {
         let inspector_narrow = drag_panel(start, 1, 10.0);
         assert_eq!(inspector_narrow[1], PANEL_MIN);
         let inspector_wide = drag_panel(start, 1, -10.0);
-        assert_eq!(inspector_wide[1], PANEL_MAX);
+        assert_eq!(
+            inspector_wide[1],
+            PANEL_MAX.min(1.0 - PREVIEW_MIN - start[0])
+        );
         assert!(valid_preview(inspector_wide));
         let timeline_high = drag_panel(start, 2, -10.0);
         assert_eq!(timeline_high[2], TIMELINE_MAX);

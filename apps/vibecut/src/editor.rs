@@ -3,6 +3,7 @@ mod assets;
 mod captions;
 mod export;
 mod frame;
+pub(crate) use frame::Context;
 mod models;
 mod player;
 mod properties;
@@ -35,14 +36,15 @@ use crate::{
     },
     catalog::{self, Locale, Preferences, Text, drag_panel},
     egui::{self, Align2, Color32, FontId, Id, Rect, Vec2},
-    icons::{self, Icon},
     import::{
         ImportEvent, ImportFailure, ImportProbe, ImportQueue, ThumbnailOutcome, ThumbnailSource,
     },
+    kit as theme,
+    kit::{self as icons, Icon},
     media_panel::{self, MediaKind, MediaSort, MediaSortKey, MediaSortOrder, MediaView},
     panels::{AssetsTab, ElementKind, PropertiesTab},
     playback::Playback,
-    preview, theme,
+    preview,
 };
 use engine::{
     Command, CreatedId, ItemParamPatch, NewItem, Session,
@@ -160,7 +162,7 @@ impl Editor {
             last_view: view,
             widgets: BTreeMap::new(),
             panels: BTreeMap::new(),
-            layout_drag: None,
+            frame: frame::State::default(),
             preview_view: preview::View::new(preferences_fit, preferences_zoom),
             preview_viewport: Vec2::new(640.0, 360.0),
             preview_fullscreen: false,
@@ -178,8 +180,6 @@ impl Editor {
             persistence_error: None,
             configured: false,
             details: false,
-            rename: None,
-            rename_focus: false,
             track_rename: None,
             track_rename_focus: false,
             track_drag: None,

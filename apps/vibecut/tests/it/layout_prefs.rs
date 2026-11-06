@@ -35,6 +35,15 @@ fn build(editor: Editor) -> Harness<'static, Editor> {
 }
 
 fn click(harness: &mut Harness<Editor>, id: &str) {
+    if matches!(
+        id,
+        "appearance.theme" | "appearance.locale" | "layout.reset"
+    ) {
+        harness
+            .get(By::new().predicate(|node| node.author_id() == Some("window.menu")))
+            .click();
+        harness.run_steps(2);
+    }
     harness
         .get(By::new().predicate(|node| node.author_id() == Some(id)))
         .click();
@@ -132,6 +141,80 @@ fn layout_reset_is_undoable_and_never_enters_project_history() {
     click(&mut harness, "edit.redo");
     assert_eq!(harness.state().preferences.panels, DEFAULT_PANELS);
     assert_eq!(harness.state().session.project(), &project);
+}
+
+#[test]
+fn frame_keeps_chrome_compact_and_window_actions_in_the_menu() {
+    for (width, height, scale, locale, dark) in [
+        (1727.0, 1029.0, 1.0, vibecut::catalog::Locale::En, true),
+        (1727.0, 1029.0, 2.0, vibecut::catalog::Locale::Vi, false),
+        (1280.0, 800.0, 1.0, vibecut::catalog::Locale::Vi, true),
+        (1280.0, 800.0, 2.0, vibecut::catalog::Locale::En, false),
+    ] {
+        let mut harness = Harness::builder()
+            .with_size(egui::vec2(width, height))
+            .with_pixels_per_point(scale)
+            .build_ui_state(
+                |ui, editor: &mut Editor| editor.ui(ui),
+                editor(Preferences {
+                    locale,
+                    dark,
+                    ..Default::default()
+                }),
+            );
+        harness.run_steps(3);
+        let header = harness.state().panels["header"];
+        let export = widget(&harness, "file.export").rect;
+        assert_eq!(header.height(), 36.0);
+        assert_eq!(export.size(), egui::vec2(67.0, 22.0));
+        assert_eq!(export.top() - header.top(), 7.0);
+        assert_eq!(header.right() - export.right(), 11.0);
+        assert!(
+            (widget(&harness, "project.rename").rect.center().x - header.center().x).abs() < 0.5
+        );
+        let panels = &harness.state().panels;
+        assert_eq!(panels["media"].left() - header.left(), 9.0);
+        assert_eq!(panels["media"].top(), header.bottom());
+        assert_eq!(panels["preview"].left() - panels["media"].right(), 7.0);
+        assert_eq!(panels["inspector"].left() - panels["preview"].right(), 7.0);
+        assert_eq!(panels["timeline"].top() - panels["media"].bottom(), 6.0);
+        let initial = harness.state().session.project().clone();
+        for id in [
+            "window.home",
+            "project.save",
+            "project.save_as",
+            "models.open",
+            "layout.reset",
+            "appearance.locale",
+            "appearance.theme",
+            "shortcuts.open",
+        ] {
+            assert!(
+                !harness
+                    .state()
+                    .inspect()
+                    .unwrap()
+                    .widgets
+                    .iter()
+                    .any(|widget| widget.id == id),
+                "{id} must be behind the menu"
+            );
+        }
+        click(&mut harness, "window.menu");
+        for id in [
+            "window.home",
+            "project.save",
+            "project.save_as",
+            "models.open",
+            "layout.reset",
+            "appearance.locale",
+            "appearance.theme",
+            "shortcuts.open",
+        ] {
+            assert!(widget(&harness, id).enabled, "{id} stays reachable");
+        }
+        assert_eq!(harness.state().session.project(), &initial);
+    }
 }
 
 #[test]
@@ -264,7 +347,11 @@ fn invalid_section_edits_are_atomic_and_do_not_enter_history() {
 
 #[test]
 fn splitter_commit_refuses_an_edit_that_would_exceed_the_store_budget() {
-    let mut preferences = Preferences::default();
+    let mut preferences = Preferences {
+        // This regression needs a drag that grows the serialized ratio.
+        panels: [0.25, 0.25, 0.50],
+        ..Default::default()
+    };
     for index in 0..64 {
         preferences.windows.insert(
             format!("{index:064}"),

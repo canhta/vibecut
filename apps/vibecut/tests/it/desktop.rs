@@ -69,6 +69,12 @@ fn empty_editor() -> Editor {
     playback.set_device_available(true);
     Editor::new(session, playback, Preferences::default())
 }
+fn open_window_menu(harness: &mut Harness<Editor>) {
+    harness
+        .get(By::new().predicate(|node| node.author_id() == Some("window.menu")))
+        .click();
+    harness.run_steps(2);
+}
 #[test]
 fn every_widget_has_unique_locale_stable_id_and_input_reaches_engine() {
     let mut harness = Harness::builder()
@@ -79,6 +85,7 @@ fn every_widget_has_unique_locale_stable_id_and_input_reaches_engine() {
         harness.query_all(By::new().label("Media")).count() > 0,
         "English catalog label is visible before switching"
     );
+    open_window_menu(&mut harness);
     let before = harness.state().inspect().unwrap();
     let ids: BTreeSet<_> = before.widgets.iter().map(|w| w.id.clone()).collect();
     assert_eq!(ids.len(), before.widgets.len());
@@ -107,6 +114,7 @@ fn every_widget_has_unique_locale_stable_id_and_input_reaches_engine() {
         .click();
     harness.run_steps(3);
     assert_eq!(harness.state().session.project(), &initial);
+    open_window_menu(&mut harness);
     harness
         .get(By::new().predicate(|n| n.author_id() == Some("appearance.locale")))
         .click();
@@ -117,6 +125,7 @@ fn every_widget_has_unique_locale_stable_id_and_input_reaches_engine() {
         "Vietnamese catalog label is visible after switching without a restart"
     );
     assert_eq!(harness.state().session.project(), &initial);
+    open_window_menu(&mut harness);
     assert_eq!(
         harness
             .state()
@@ -221,6 +230,7 @@ fn locale_change_uses_app_history_and_leaves_project_history_untouched() {
     harness.run_steps(3);
     let initial = harness.state().session.project().clone();
     assert!(!harness.state().session.can_undo());
+    open_window_menu(&mut harness);
     harness
         .get(By::new().predicate(|n| n.author_id() == Some("appearance.locale")))
         .click();

@@ -5,9 +5,8 @@ use crate::{
     egui,
 };
 use crate::{
-    catalog,
-    icons::{self, Icon},
-    theme,
+    catalog, kit as theme,
+    kit::{self as icons, Icon},
 };
 use captions::LanguageRegistry;
 use captions::LanguageTag;

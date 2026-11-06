@@ -5,7 +5,7 @@
 use crate::{
     Error, Result,
     catalog::{self, Locale, Text},
-    egui, theme,
+    egui, kit as theme,
 };
 use ai::models::{DownloadConsent, Model};
 use engine::{

@@ -502,6 +502,10 @@ fn editor_header_opens_the_manager_without_a_transfer() {
         .build_ui_state(|ui, editor: &mut Editor| editor.ui(ui), editor);
     harness.run_steps(2);
     harness
+        .get(By::new().predicate(|node| node.author_id() == Some("window.menu")))
+        .click();
+    harness.run_steps(2);
+    harness
         .get(By::new().predicate(|node| node.author_id() == Some("models.open")))
         .click();
     harness.run_steps(2);

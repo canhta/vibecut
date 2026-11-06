@@ -4,7 +4,7 @@
 //! from small data tables. Keeping the order, labels, icons and persisted ids
 //! here means tests and the preference store agree without a second list.
 
-use crate::{catalog::Text, icons::Icon};
+use crate::{catalog::Text, kit::Icon};
 use serde::{Deserialize, Serialize};
 
 /// The nine assets-panel tabs in the reference's vertical icon bar order.

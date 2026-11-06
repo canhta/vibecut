@@ -880,6 +880,10 @@ fn every_editor_button_reports_its_embedded_icon() {
         );
         std::thread::sleep(std::time::Duration::from_millis(2));
     }
+    harness
+        .get(By::new().predicate(|node| node.author_id() == Some("window.menu")))
+        .click();
+    harness.run_steps(2);
     let widgets = harness.state().inspect().unwrap().widgets;
     let icon = |id: &str| {
         widgets
@@ -948,8 +952,8 @@ fn every_editor_button_reports_its_embedded_icon() {
     );
     let timeline = harness.state().panels["timeline"];
     assert!(
-        (split.rect.min.y - timeline.top() - 16.0).abs() < 0.5,
-        "timeline toolbar uses its measured 32 px row within the existing panel inset"
+        (split.rect.min.y - timeline.top() - 4.0).abs() < 0.5,
+        "timeline toolbar uses its measured 32 px row within the full panel slot"
     );
     let undo = format!(
         "Undo ({})",

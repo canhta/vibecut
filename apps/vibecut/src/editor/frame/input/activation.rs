@@ -229,8 +229,9 @@ impl Editor {
                     self.lifecycle_action = Some(crate::lifecycle::EditorAction::FocusHome)
                 }
                 UiAction::RenameProject => {
-                    self.rename = Some(self.session.project().data().name.as_str().to_owned());
-                    self.rename_focus = true;
+                    self.frame.rename =
+                        Some(self.session.project().data().name.as_str().to_owned());
+                    self.frame.rename_focus = true;
                 }
                 UiAction::Import => {
                     if self.importing() {

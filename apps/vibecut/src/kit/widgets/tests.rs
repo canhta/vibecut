@@ -71,17 +71,28 @@ fn slider_stepper_arrows_clamp_to_the_range() {
 }
 
 #[test]
-fn icon_button_reports_selection_and_click() {
-    let mut harness = harness(
-        |ui, clicks: &mut u32| {
-            if icon_button(ui, "tool", Icon::Plus, "Add", true).clicked() {
-                *clicks += 1;
-            }
-        },
-        0,
-    );
-    harness.run();
-    harness.get_by_label("Add").click();
-    harness.run();
-    assert_eq!(*harness.state(), 1);
+fn buttons_dispatch_clicks_only_when_enabled() {
+    for primary in [false, true] {
+        for enabled in [false, true] {
+            let mut harness = harness(
+                move |ui, clicks: &mut u32| {
+                    ui.add_enabled_ui(enabled, |ui| {
+                        let response = if primary {
+                            action_button(ui, "tool", Icon::Plus, "Add", size::EXPORT_WIDTH)
+                        } else {
+                            icon_button(ui, "tool", Icon::Plus, "Add", true)
+                        };
+                        if response.clicked() {
+                            *clicks += 1;
+                        }
+                    });
+                },
+                0,
+            );
+            harness.run();
+            harness.get_by_label("Add").click();
+            harness.run();
+            assert_eq!(*harness.state(), u32::from(enabled));
+        }
+    }
 }

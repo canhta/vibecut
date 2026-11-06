@@ -101,7 +101,7 @@ impl Editor {
             recording: self.recording_active,
             text_input: self.subtitles.as_ref().is_some_and(|s| s.editing(ctx))
                 || ctx.text_edit_focused()
-                || self.rename.is_some()
+                || self.frame.rename.is_some()
                 || self.track_rename.is_some()
                 || self.scene_rename.is_some()
                 || self.property_focus.is_some(),

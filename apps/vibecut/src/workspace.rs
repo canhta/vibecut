@@ -3,7 +3,7 @@ use crate::{
     Editor, Error, Result,
     catalog::{self, Preferences, Text},
     egui,
-    icons::{self, Icon},
+    kit::{self as icons, Icon},
     lifecycle::EditorAction,
     playback::{Files, Playback},
     projects::{ProjectsAction, ProjectsPage},

@@ -1,7 +1,6 @@
 //! Composes the editor window.
 use crate::editor::{
-    Arc, BUTTON_ICON, Editor, Icon, Id, Rect, Text, Vec2, drag_panel, egui, error_detail, icons,
-    theme,
+    Arc, Editor, Id, Rect, Text, Vec2, drag_panel, egui, error_detail, icons, theme,
 };
 
 impl Editor {
@@ -126,22 +125,15 @@ impl Editor {
             theme::radius::PANEL,
             theme::window(self.preferences.dark),
         );
-        let top = Rect::from_min_size(rect.min, Vec2::new(rect.width(), rect.height().min(52.0)));
-        let body = Rect::from_min_max(egui::pos2(rect.left(), top.bottom()), rect.max);
-        let timeline_height = body.height() * self.preferences.panels[2];
-        let upper = Rect::from_min_max(
-            body.min,
-            egui::pos2(body.right(), body.bottom() - timeline_height),
-        );
-        let timeline = Rect::from_min_max(egui::pos2(body.left(), upper.bottom()), body.max);
-        let left_w = upper.width() * self.preferences.panels[0];
-        let right_w = upper.width() * self.preferences.panels[1];
-        let left = Rect::from_min_size(upper.min, Vec2::new(left_w, upper.height()));
-        let right = Rect::from_min_max(egui::pos2(upper.right() - right_w, upper.top()), upper.max);
-        let preview = Rect::from_min_max(
-            egui::pos2(left.right(), upper.top()),
-            egui::pos2(right.left(), upper.bottom()),
-        );
+        let super::layout::Layout {
+            top,
+            body,
+            upper,
+            left,
+            player: preview,
+            right,
+            timeline,
+        } = super::layout::Layout::new(rect, self.preferences.panels);
         for (id, area) in [
             ("header", top),
             ("media", left),
@@ -155,13 +147,13 @@ impl Editor {
             } else {
                 theme::panel(self.preferences.dark)
             };
-            ui.painter().rect_filled(area, theme::radius::PANEL, fill);
-            let mut child = ui.new_child(egui::UiBuilder::new().id_salt(id).max_rect(
-                area.shrink2(Vec2::new(
-                    12.0_f32.min(area.width() / 2.0),
-                    12.0_f32.min(area.height() / 2.0),
-                )),
-            ));
+            let radius = if id == "header" {
+                theme::radius::PANEL
+            } else {
+                theme::radius::FRAME_PANEL
+            };
+            ui.painter().rect_filled(area, radius, fill);
+            let mut child = ui.new_child(egui::UiBuilder::new().id_salt(id).max_rect(area));
             child.set_clip_rect(area);
             if area.width() <= 0.0 || area.height() <= 0.0 {
                 continue;
@@ -174,29 +166,28 @@ impl Editor {
                 _ => super::super::timeline::show(self, &mut child),
             }
         }
-        let separator = theme::separator(self.preferences.dark);
         for (id, area, axis) in [
             (
                 "layout.media",
                 Rect::from_center_size(
-                    egui::pos2(left.right(), upper.center().y),
-                    Vec2::new(8.0, upper.height()),
+                    egui::pos2((left.right() + preview.left()) / 2.0, upper.center().y),
+                    Vec2::new(theme::space::PANEL_GUTTER, upper.height()),
                 ),
                 0,
             ),
             (
                 "layout.inspector",
                 Rect::from_center_size(
-                    egui::pos2(right.left(), upper.center().y),
-                    Vec2::new(8.0, upper.height()),
+                    egui::pos2((preview.right() + right.left()) / 2.0, upper.center().y),
+                    Vec2::new(theme::space::PANEL_GUTTER, upper.height()),
                 ),
                 1,
             ),
             (
                 "layout.timeline",
                 Rect::from_center_size(
-                    egui::pos2(timeline.center().x, timeline.top()),
-                    Vec2::new(timeline.width(), 8.0),
+                    egui::pos2(timeline.center().x, (upper.bottom() + timeline.top()) / 2.0),
+                    Vec2::new(timeline.width(), theme::space::SM),
                 ),
                 2,
             ),
@@ -204,30 +195,21 @@ impl Editor {
             let response = ui.interact(area, Id::unique(id), egui::Sense::drag());
             self.remember(id, &response);
             if response.drag_started() {
-                self.layout_drag = Some(self.preferences.panels);
+                self.frame.layout_drag = Some(self.preferences.panels);
             }
             if response.dragged() {
                 let delta = response.drag_delta();
                 let fraction = match axis {
-                    0 | 1 => delta.x / upper.width(),
-                    _ => delta.y / body.height(),
+                    0 | 1 => delta.x / (left.width() + preview.width() + right.width()).max(1.0),
+                    _ => delta.y / (body.height() - theme::space::SM).max(1.0),
                 };
                 self.preferences.panels = drag_panel(self.preferences.panels, axis, fraction);
             }
             if response.drag_stopped()
-                && let Some(before) = self.layout_drag.take()
+                && let Some(before) = self.frame.layout_drag.take()
             {
                 self.record_layout_change(before);
             }
-        }
-        for (a, b) in [
-            (top.left_bottom(), top.right_bottom()),
-            (left.right_top(), left.right_bottom()),
-            (right.left_top(), right.left_bottom()),
-            (timeline.left_top(), timeline.right_top()),
-        ] {
-            ui.painter()
-                .line_segment([a, b], egui::Stroke::new(1.0, separator));
         }
         super::super::timeline::show_scenes(self, ui.ctx());
         self.media_delete_dialog(ui.ctx());
@@ -270,102 +252,44 @@ impl Editor {
             ));
     }
     pub(in crate::editor) fn header(&mut self, ui: &mut egui::Ui) {
-        ui.horizontal_centered(|ui| {
-            ui.label(
-                egui::RichText::new(self.tr(Text::AppName))
-                    .strong()
-                    .size(18.0),
-            );
-            ui.separator();
-            let window_menu = ui.menu_button(self.tr(Text::Windows), |ui| {
-                if self.button(ui, "window.home", Icon::SquaresFour, Text::Home, true) {
-                    self.action("window.home");
-                    ui.close();
-                }
-            });
-            self.remember("window.menu", &window_menu.response);
-            if self.rename.is_some() {
-                let mut name = self.rename.take().unwrap_or_default();
-                let response = ui.add(
-                    egui::TextEdit::singleline(&mut name)
-                        .id_salt("project.rename.input")
-                        .desired_width(230.0),
-                );
-                self.remember("project.rename.input", &response);
-                if self.rename_focus {
-                    response.request_focus();
-                    self.rename_focus = false;
-                }
-                let cancel = ui.input(|i| i.key_pressed(egui::Key::Escape));
-                let commit = ui.input(|i| i.key_pressed(egui::Key::Enter));
-                if commit && !cancel {
-                    if let Err(e) = self
-                        .session
-                        .execute("project.rename", serde_json::json!({"name": name}))
-                    {
-                        self.error = Some(e.to_string());
-                        self.rename = Some(name);
+        let save_status = if self.persistence_error.is_some() {
+            Text::SaveFailed
+        } else {
+            match &self.session {
+                crate::lifecycle::EditorSession::Memory(_) => Text::NotSaved,
+                crate::lifecycle::EditorSession::Persistent(autosave) => {
+                    if autosave.saving() || autosave.journaled_revision() < autosave.revision() {
+                        Text::SavingProject
+                    } else {
+                        Text::AutoSaved
                     }
-                } else if !cancel {
-                    self.rename = Some(name);
-                }
-            } else {
-                let image = icons::tinted(Icon::PencilSimple, BUTTON_ICON, self.text_color());
-                let response = ui.add_sized(
-                    [220.0, 26.0],
-                    egui::Button::image_and_text(
-                        image,
-                        egui::RichText::new(self.session.project().data().name.as_str()),
-                    )
-                    .truncate(),
-                );
-                self.remember_with_icon(
-                    "project.rename",
-                    Some(Icon::PencilSimple.name()),
-                    &response,
-                );
-                if response.clicked() {
-                    self.action("project.rename");
                 }
             }
-            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                if self.button(ui, "file.export", Icon::Export, Text::Export, true) {
-                    self.action("file.export");
+        };
+        let cx = crate::editor::Context {
+            session: &self.session,
+            selection: &self.selection,
+            locale: self.preferences.locale,
+            dark: self.preferences.dark,
+            save_status,
+        };
+        let actions = super::show(&mut self.frame, &cx, ui);
+        for (id, icon, response) in std::mem::take(&mut self.frame.widgets) {
+            self.remember_with_icon(id, icon, &response);
+        }
+        for action in actions {
+            match action {
+                super::Action::Activate(id) => self.action(id),
+                super::Action::Rename(name) => {
+                    if let Err(error) = self
+                        .session
+                        .execute("project.rename", serde_json::json!({"name":name}))
+                    {
+                        self.error = Some(error.to_string());
+                        self.frame.rename = Some(name);
+                    }
                 }
-                if self.button(
-                    ui,
-                    "project.save_as",
-                    Icon::FloppyDiskBack,
-                    Text::SaveAs,
-                    true,
-                ) {
-                    self.action("project.save_as");
-                }
-                if self.button(ui, "project.save", Icon::FloppyDisk, Text::Save, true) {
-                    self.action("project.save");
-                }
-                if self.button(ui, "appearance.theme", Icon::CircleHalf, Text::Theme, true) {
-                    self.action("appearance.theme");
-                }
-                if self.button(
-                    ui,
-                    "appearance.locale",
-                    Icon::Translate,
-                    Text::Language,
-                    true,
-                ) {
-                    self.action("appearance.locale");
-                }
-                if self.button(ui, "layout.reset", Icon::CornersOut, Text::Reset, true) {
-                    self.action("layout.reset");
-                }
-                if self.button(ui, "models.open", Icon::File, Text::Models, true) {
-                    self.action("models.open");
-                }
-                if self.button(ui, "shortcuts.open", Icon::GearSix, Text::Shortcuts, true) {
-                    self.action("shortcuts.open");
-                }
-            });
-        });
+            }
+        }
     }
 }

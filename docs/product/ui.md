@@ -25,12 +25,12 @@ Evidence: `.spikes/ui-reference/screens-2026-11-04/`, `01-project-list/`, `02-ed
 
 ### Measured desktop reference
 
-[measured] The 2026-11-05 desktop capture set (36 full-window shots, 2× Retina) replaces all earlier editor geometry. Values are logical px (native ÷ 2); the capture canvas is 1840×1142 and the app window is 1728×1030 at (56,38). Citations name a shot by its capture time (HHMMSS); every sample point and region is recorded in `.spikes/ui-reference/live/tokens.md`. Desktop measurements take precedence over earlier proposed values; web-only observations do not replace desktop sizes or colours.
+[measured] The 2026-11-05 desktop capture set (36 full-window shots, 2× Retina) replaces all earlier editor geometry. Values are logical px (native ÷ 2); the capture canvas is 1840×1142 and the app window is 1727×1029 at (56,38), using exclusive bounds (1783,1067). Citations name a shot by its capture time (HHMMSS); every sample point and region is recorded in `.spikes/ui-reference/live/tokens.md`. Desktop measurements take precedence over earlier proposed values; web-only observations do not replace desktop sizes or colours.
 
 **Editor frame** (shots 221513 empty, 221643 populated):
 
-- Window 1728×1030. Top bar 36 px; a single 42 px strip below it carries the feature tabs (left), the player title (centre) and the properties tabs (right); content row 490 px; 6 px gutter; timeline 447 px; 8 px bottom inset. Content:timeline = 52:48 (221643: column x=300, y 38–1067; row y=200 and y=700).
-- Columns left 582 / player 628 / properties 486 px = 34 / 37 / 28 % of the 1710 px inner width. Panels are separated by a 7 px `#1C1C1C` gutter, not a 1 px divider; the 8–9 px outer inset is the same colour. Panel surfaces `#262626`, the 42 px strip `#303030` (221643: x 647–653 and 1282–1288; x 65–1774 at y 120).
+- Window 1727×1029. Top bar 36 px; a single 42 px strip below it carries the feature tabs (left), the player title (centre) and the properties tabs (right); content row 490 px; 6 px gutter; timeline 447 px; 8 px bottom inset. Content:timeline = 52:48 excluding the strip; full upper row:timeline = 532:447 (221643: column x=300, y 38–1067; row y=200 and y=700).
+- Columns left 582 / player 628 / properties 486 px = 34 / 37 / 28 % of the 1696 px content width (1710 px inner width minus two 7 px gutters). Panels are separated by a 7 px `#1C1C1C` gutter, not a 1 px divider; the 8–9 px outer inset is the same colour. Panel surfaces `#262626`, the 42 px strip `#303030` (221643: x 647–653 and 1282–1288; x 65–1774 at y 120).
 - Top bar: autosave `#949494` at the left, project name `#FAFAFA` centred, both 14 px; right group ends 11 px from the window edge: two 18 px layout icons, a 50×22 `Pro` pill and a 62×22 `Share` button (both `#4F4F4F`), a 67×22 `Export` button (`#57BECB`, white label). Buttons are 22 px high and start 7 px below the bar top (221643: x 1511–1772, y 45–67; text y 50–61).
 - Feature tabs: 16 px icon over a 12 px/600 label, 5 px apart, 7 px inset top and bottom, content-width with about 12 px horizontal padding (min 48 px), pitch 49–61 px. Active icon and label `#57BECB`; inactive `#E0E0E0`; no underline (221643: icon x 81–97, label x 75–102, icon y 82–95, label y 100–108; icon centres 89, 137.5, 186.5, 236, 285.5, 340, 394.5, 445, 501.5, 562, 616).
 - Sub-navigation: 120 px column with a 1 px `#070709` divider; 104×24 px buttons at 8 px inset on a 32 px pitch, `#3B3B3B` fill, 14 px label, 12 px chevron; selected label `#57BECB`; plain rows share the 32 px pitch (221643: x 65–185, buttons x 73–177, y 131–155 and 163–187).
@@ -46,11 +46,11 @@ Evidence: `.spikes/ui-reference/screens-2026-11-04/`, `01-project-list/`, `02-ed
 
 ### Layout grid
 
-- Baseline window 1728×1030 logical px [measured 2026-11-05 captures]; minimum 1280×800 remains [proposed], not verified by resizing.
+- Baseline window 1727×1029 logical px [remeasured 221643]; minimum 1280×800 remains [proposed], not verified by resizing.
 - Top bar 36 px; one 42 px strip for feature tabs, player title and properties tabs; timeline toolbar 32 px [measured]. The old 52 / 44 / 40 px bars are superseded.
-- Columns 34 / 37 / 28 percent: tools, preview, properties; content and timeline rows 52 / 48 percent [measured].
+- Columns 582 / 628 / 486 of 1696 px excluding gutters: tools, preview, properties; full upper row and timeline are 532 / 447 of 979 px excluding the top bar, row gutter and bottom inset [remeasured 221643]. The upper row includes its area-owned 42 px strips. Persisted splitter fractions use these full panel sizes.
 - Panel gutters are 7 px `#1C1C1C`, row gutters 6 px, outer inset 8 px [measured]; there is no 1 px separator between panels. In-panel dividers are 1 px `#070709` (left sub-nav) or `#373737` (properties sections).
-- Radii: 0 px on editor panels, 4 px on fields, tabs and buttons, 12 px on dialogs [proposed]; the captured windows' own corner is about 16 px (OS chrome, 221811 and 221643 corner rows), which is not an app token. The 4 px is [measured] on the sub-navigation buttons, sub-tab bar and Export button corners.
+- Radii: 8 px on editor frame panels [remeasured 221643: top edge begins x=73 at y=74, straight left edge x=65 at y=82]; square clips and in-panel regions; 4 px on fields, tabs and buttons [measured]; 12 px on dialogs [proposed]. The captured windows' own corner is about 16 px (OS chrome, 221811 and 221643 corner rows), which is not an app token. The 4 px is measured on the sub-navigation buttons, sub-tab bar and Export button corners.
 - Panel dividers are draggable; assets and properties stop at 15–40%, preview at 30–85%, timeline at 15–70%, so a drag never collapses a region. Reset restores the default columns above [proposed limits].
 - Export is a 67×22 px button at the top-right of the top bar [measured]; the old 120×26 value is superseded.
 - Home columns fill available width using the [measured rail and thumbnails](#measured-desktop-reference); Library asset-card geometry remains unmeasured.

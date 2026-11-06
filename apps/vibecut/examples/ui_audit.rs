@@ -302,6 +302,30 @@ const SCENES: &[Scene] = &[
         build: editor_media,
     },
     Scene {
+        name: "editor-menu",
+        reference_dark: None,
+        reference_light: None,
+        build: |theme, scale| editor_frame_state(theme, scale, "menu"),
+    },
+    Scene {
+        name: "editor-rename",
+        reference_dark: None,
+        reference_light: None,
+        build: |theme, scale| editor_frame_state(theme, scale, "rename"),
+    },
+    Scene {
+        name: "editor-minimum",
+        reference_dark: None,
+        reference_light: None,
+        build: |theme, scale| editor_frame_state(theme, scale, "minimum"),
+    },
+    Scene {
+        name: "editor-frame-vi",
+        reference_dark: None,
+        reference_light: None,
+        build: |theme, scale| editor_frame_state(theme, scale, "vi"),
+    },
+    Scene {
         name: "timeline-selection",
         reference_dark: Some("capcut/illustrations/capcut-desktop-editor-keyframes.png"),
         reference_light: Some("capcut/illustrations/capcut-desktop-editor-keyframes.png"),
@@ -547,7 +571,38 @@ fn empty_editor(theme: Theme, locale: Locale) -> Result<Editor, Failure> {
 }
 
 fn editor_empty(theme: Theme, scale: f32) -> Result<AppHarness, Failure> {
-    Ok(app_editor(empty_editor(theme, Locale::En)?, scale))
+    Ok(harness_sized(
+        App::Editor(Box::new(empty_editor(theme, Locale::En)?)),
+        scale,
+        [1727.0, 1029.0],
+    ))
+}
+
+fn editor_frame_state(theme: Theme, scale: f32, state: &str) -> Result<AppHarness, Failure> {
+    let mut editor = empty_editor(
+        theme,
+        if state == "vi" {
+            Locale::Vi
+        } else {
+            Locale::En
+        },
+    )?;
+    if state == "rename" {
+        editor.activate("project.rename")?;
+    }
+    let size = if state == "minimum" {
+        [1280.0, 800.0]
+    } else {
+        [1727.0, 1029.0]
+    };
+    let mut app = harness_sized(App::Editor(Box::new(editor)), scale, size);
+    app.run_steps(3);
+    if state == "menu" {
+        app.get(By::new().predicate(|node| node.author_id() == Some("window.menu")))
+            .click();
+        app.run_steps(2);
+    }
+    Ok(app)
 }
 
 fn captions_scene(
@@ -910,7 +965,7 @@ fn timeline_zoom(theme: Theme, scale: f32, zoom: f64) -> Result<AppHarness, Fail
 
 fn editor_media(theme: Theme, scale: f32) -> Result<AppHarness, Failure> {
     let (editor, _) = media_editor(theme, Locale::En)?;
-    let mut app = app_editor(editor, scale);
+    let mut app = harness_sized(App::Editor(Box::new(editor)), scale, [1727.0, 1029.0]);
     wait_for_presented(&mut app)?;
     app.run_steps(2);
     Ok(app)

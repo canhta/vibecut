@@ -99,6 +99,54 @@ pub(crate) fn icon_button(
     response
 }
 
+/// A single-line primary action in an exact-width, 22 px window-bar box.
+pub(crate) fn action_button(
+    ui: &mut Ui,
+    id: &str,
+    glyph: Icon,
+    label: &str,
+    width: f32,
+) -> Response {
+    let response = ui
+        .push_id(id, |ui| {
+            let (rect, response) =
+                ui.allocate_exact_size(Vec2::new(width, size::FIELD), Sense::click());
+            let dark = ui.visuals().dark_mode;
+            let color = theme::on_accent(dark);
+            paint(ui).rect_filled(rect, radius::CONTROL, theme::accent(dark));
+            let text = paint(ui).layout_no_wrap(
+                label.to_owned(),
+                egui::FontId::proportional(type_size::BODY),
+                color,
+            );
+            let total = icon::DENSE + space::XS + text.size().x;
+            let start = egui::pos2(rect.center().x - total / 2.0, rect.center().y);
+            paint_icon(
+                ui,
+                glyph,
+                color,
+                Rect::from_min_size(
+                    start - Vec2::new(0.0, icon::DENSE / 2.0),
+                    Vec2::splat(icon::DENSE),
+                ),
+            );
+            paint(ui).galley(
+                start + Vec2::new(icon::DENSE + space::XS, -text.size().y / 2.0),
+                text,
+                color,
+            );
+            response.widget_info(|| {
+                egui::WidgetInfo::labeled(egui::Role::Button, ui.is_enabled(), label)
+            });
+            response
+        })
+        .inner
+        .on_hover_text(label);
+    author(&response, id);
+    focus_ring(ui, &response);
+    response
+}
+
 /// Feature tab: icon above label, with the measured strip height and inset.
 fn icon_tab(ui: &mut Ui, id: &str, glyph: Icon, label: &str, selected: bool) -> Response {
     let color = ink(ui, selected);

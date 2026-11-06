@@ -10,10 +10,8 @@ mod editor;
 pub mod effect_previews;
 pub mod effects;
 pub mod export;
-mod kit;
-use editor as frontend;
-use kit as icons;
 pub mod import;
+mod kit;
 pub mod lifecycle;
 pub mod media_panel;
 pub mod model_manager;
@@ -25,18 +23,17 @@ pub mod selection;
 pub mod shorts;
 pub mod snapping;
 pub mod subtitles;
-use kit as theme;
 pub mod workspace;
-pub use eframe::egui;
-pub use frontend::{
+pub use editor::{
     AssetInspection, AssetState, Editor, Inspection, PREFERENCE_COMMAND, ShortcutRow, ShortcutTab,
     ShortcutsInspection, WidgetState,
 };
+pub use eframe::egui;
 
 /// Window background token. Host adapters and offscreen audits paint it behind a
 /// shell that only draws its own content (Home does not fill the window).
 pub fn window_color(dark: bool) -> egui::Color32 {
-    theme::window(dark)
+    kit::window(dark)
 }
 
 #[derive(Debug, thiserror::Error)]

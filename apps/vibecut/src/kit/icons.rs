@@ -400,7 +400,7 @@ pub(crate) fn source(name: &str) -> ImageSource<'static> {
 }
 
 /// An image sized to `size` points (the Phosphor box, not the drawn glyph).
-/// The caller tints it, usually with [`crate::theme::accent`] when selected.
+/// The caller tints it, usually with [`crate::kit::accent`] when selected.
 pub(crate) fn icon(name: Icon, size: f32) -> egui::Image<'static> {
     egui::Image::new(source(name.name())).fit_to_exact_size(Vec2::splat(size))
 }

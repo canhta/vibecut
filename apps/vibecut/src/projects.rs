@@ -10,9 +10,8 @@ use crate::{
     catalog::{
         self, Locale, Preferences, ProjectsPreferences, ProjectsSortKey, ProjectsView, Text,
     },
-    egui,
-    icons::{self, Icon},
-    theme,
+    egui, kit as theme,
+    kit::{self as icons, Icon},
 };
 use engine::{
     ByteBudget, Command,

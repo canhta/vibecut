@@ -219,6 +219,7 @@ pub(crate) mod space {
 /// Only panel and control corners are measured; dialog corners remain proposed.
 pub(crate) mod radius {
     pub const PANEL: u8 = 0;
+    pub const FRAME_PANEL: u8 = 8;
     pub const CONTROL: u8 = 4;
 }
 /// Inter-equivalent sizes inferred from measured capital heights.
