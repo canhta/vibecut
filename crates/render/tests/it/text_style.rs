@@ -79,7 +79,7 @@ fn coloured(frame: &[u8], keep: impl Fn(&[u8]) -> bool) -> Vec<(usize, usize)> {
         .0
         .iter()
         .enumerate()
-        .filter(|(_, p)| keep(p))
+        .filter(|(_, p)| keep(*p))
         .map(|(i, _)| (i % W as usize, i / W as usize))
         .collect()
 }
