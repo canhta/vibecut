@@ -205,6 +205,8 @@ struct Pending {
 /// UI-thread inbox. Polling serializes mutations with ordinary desktop commands.
 /// Dropped/cancelled/expired requests are discarded before engine admission.
 pub struct Inbox {
+    budget: ByteBudget,
+    projects: std::collections::BTreeMap<project::ProjectId, JobRunner>,
     receive: mpsc::Receiver<Pending>,
     runner: JobRunner,
     grants: Grants,
@@ -221,12 +223,18 @@ impl Inbox {
                 backoff: Duration::from_millis(100),
                 progress_interval: Duration::from_millis(50),
             },
-            budget,
+            budget.clone(),
             Arc::new(SystemClock::default()),
         )?;
         Ok((
-            Handler { send, full: false },
+            Handler {
+                send,
+                full: false,
+                project_routing: false,
+            },
             Self {
+                budget,
+                projects: Default::default(),
                 receive,
                 runner,
                 grants,
@@ -254,8 +262,105 @@ impl Inbox {
         Ok(())
     }
 
+    /// Desktop routing envelope. `project_id` is a decimal-string ProjectId;
+    /// omission selects the focused editor. It is removed before engine admission.
+    /// Headless `poll` retains its single-session contract.
+    pub fn poll_projects(
+        &mut self,
+        dispatch: impl FnOnce(Option<project::ProjectId>, &mut Self, Value) -> engine::Result<Value>,
+    ) -> engine::Result<()> {
+        self.runner.tick()?;
+        for runner in self.projects.values_mut() {
+            runner.tick()?;
+        }
+        let Ok(pending) = self.receive.try_recv() else {
+            return Ok(());
+        };
+        if pending.reply.is_closed() || Instant::now() >= pending.expires {
+            return Ok(());
+        }
+        let mut value = pending.value;
+        let target = value
+            .as_object_mut()
+            .and_then(|fields| fields.remove("project_id"))
+            .map(serde_json::from_value::<project::ProjectId>)
+            .transpose()
+            .map_err(|_| EditError::InvalidParams);
+        let result = target.and_then(|id| dispatch(id, self, value));
+        let _ = pending.reply.send(result);
+        Ok(())
+    }
+
+    /// Observe jobs for every open project, including an unfocused editor.
+    pub fn observe(&self, session: &mut Session) {
+        if let Some(runner) = self.projects.get(&session.project().data().id) {
+            session.observe_jobs(runner);
+        }
+    }
+    /// Cancel/join only jobs whose project window has closed.
+    pub fn retain_projects(&mut self, live: impl Fn(project::ProjectId) -> bool) {
+        self.projects.retain(|id, runner| {
+            if live(*id) {
+                true
+            } else {
+                runner.shutdown();
+                false
+            }
+        });
+    }
+
+    /// Use the desktop project's existing accounting policy for control jobs,
+    /// sharing its quota with preview/export rather than creating another one.
+    pub fn register_project(
+        &mut self,
+        id: project::ProjectId,
+        budget: ByteBudget,
+    ) -> engine::Result<()> {
+        if let std::collections::btree_map::Entry::Vacant(entry) = self.projects.entry(id) {
+            entry.insert(JobRunner::new(
+                RunnerConfig {
+                    concurrency: [1, 1, 2],
+                    queue: 32,
+                    retained: 32,
+                    network_attempts: 1,
+                    backoff: Duration::from_millis(100),
+                    progress_interval: Duration::from_millis(50),
+                },
+                budget,
+                Arc::new(SystemClock::default()),
+            )?);
+        }
+        Ok(())
+    }
+
+    /// Execute a routed request against its selected session under the same
+    /// grants, revision, receipt and job policy as single-session control.
+    pub fn execute_project(
+        &mut self,
+        session: &mut Session,
+        value: Value,
+        publish: impl FnOnce(&project::Project, &project::Metadata) -> engine::Result<()>,
+    ) -> engine::Result<Value> {
+        let id = session.project().data().id;
+        if !self.projects.contains_key(&id) {
+            self.register_project(id, self.budget.child(512 << 20)?)?;
+        }
+        let runner = self.projects.get_mut(&id).ok_or(EditError::SessionGone)?;
+        session.observe_jobs(runner);
+        Self::execute_with(runner, &self.grants, session, value, publish)
+    }
+
     fn execute(
         &mut self,
+        session: &mut Session,
+        value: Value,
+        publish: impl FnOnce(&project::Project, &project::Metadata) -> engine::Result<()>,
+    ) -> engine::Result<Value> {
+        Self::execute_with(&mut self.runner, &self.grants, session, value, publish)
+    }
+    fn execute_with(
+        runner: &mut JobRunner,
+        grants: &Grants,
         session: &mut Session,
         value: Value,
         publish: impl FnOnce(&project::Project, &project::Metadata) -> engine::Result<()>,
@@ -264,12 +369,12 @@ impl Inbox {
         let caller = Caller {
             principal: "local-mcp",
             external: true,
-            policy: &self.grants,
+            policy: grants,
         };
         let response = if request.command == "project.save" {
             session.control_lifecycle_save(request, caller, publish)?
         } else {
-            session.control_request(request, caller, &mut self.runner)?
+            session.control_request(request, caller, runner)?
         };
         let mut value = serde_json::to_value(&response).map_err(|_| EditError::InvalidParams)?;
         // Send JPEG as MCP image content, not an array of byte-valued JSON numbers.
@@ -308,11 +413,15 @@ impl Inbox {
 impl Drop for Inbox {
     fn drop(&mut self) {
         self.runner.shutdown();
+        for runner in self.projects.values_mut() {
+            runner.shutdown();
+        }
     }
 }
 
 #[derive(Clone)]
 struct Handler {
+    project_routing: bool,
     send: mpsc::Sender<Pending>,
     full: bool,
 }
@@ -326,6 +435,13 @@ impl Handler {
             required.retain(|field| {
                 field != "api_version" && field != "registry_hash" && field != "session_id"
             });
+        }
+        if self.project_routing
+            && let Some(properties) = envelope
+                .get_mut("properties")
+                .and_then(Value::as_object_mut)
+        {
+            properties.insert("project_id".into(), json!({"type":"string", "pattern":"^[0-9]+$", "description":"Desktop project window; omitted selects the focused editor"}));
         }
         let mut tools: Vec<_> = vec![
             tool(
@@ -531,7 +647,8 @@ pub struct Server {
 }
 impl Server {
     pub fn bind(endpoint: &Path, grants: Grants, budget: ByteBudget) -> Result<Self, CliError> {
-        let (handler, inbox) = Inbox::new(grants, budget)?;
+        let (mut handler, inbox) = Inbox::new(grants, budget)?;
+        handler.project_routing = true;
         let runtime = tokio::runtime::Builder::new_multi_thread()
             .worker_threads(2)
             .enable_all()

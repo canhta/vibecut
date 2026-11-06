@@ -68,6 +68,28 @@ close without saving editable content. Preview,
 timeline basics, transport and the export dialog are present; text/audio controls
 are integrated by their owning feature tickets.
 
+Home, Editor and Shorts are independent native viewports. `Workspace::windows`
+registers project windows by ProjectId; each owns its editor, history, playback,
+lease, picker, pending persistence operation and close flow. Canonical path
+reopens focus the existing window. Home continues to host catalog and startup
+recovery prompts; each accepted recovery becomes a project window. Closing Home
+hides it until Window > Home focuses it, while the event loop exits after
+the last window closes. The old editor back-to-Projects action is removed.
+`window_ui(project_id, ui)` drives that same project surface in kittest;
+automation ids remain unchanged inside each viewport. Focused single-editor
+callers retain their existing Workspace view through its registry projection.
+
+The app shares catalog, preferences, model presentation, lifecycle runner and
+aggregate media accounting. Each project's media budget is a 512 MiB child of
+the 768 MiB aggregate; autosave has separate 64 MiB project children of a 256 MiB
+persistence allowance, so export cannot consume journal/save admission. Model
+transfers remain app-owned across project saves/closes. The native adapter keeps
+an audio stream for each project and shares the GPU adapter. Preferences version
+4 persists bounded logical size, position and maximization by Home, Shorts and
+ProjectId (64 retained geometry entries, within the store's 16 KiB bound).
+Native multi-window smoke is maintainer-gated; macOS/Linux window paths are
+unverified on the Windows development host.
+
 Media import uses one native multi-file picker or a file drop. One batch is capped
 at 128 paths (32 KiB each), must admit a 448 MiB probe/work lease from the shared
 byte budget, and publishes results through a bounded 8-event channel, so a paused
@@ -201,7 +223,7 @@ Tab navigation is presentation state: it persists through the same validated
 store but stays out of app undo history so it cannot shadow a project edit. A
 damaged layout restores its defaults with a visible warning, while an unreadable
 document restores the system defaults. Unversioned and unsupported versions are
-refused without rewriting their bytes on load or save. Edits and writes share the 4 KiB
+refused without rewriting their bytes on load or save. Edits and writes share the 16 KiB
 read budget, so a saved document always remains readable.
 
 The selection inspector shows audio gain/mute and text content, font, size, colour,
@@ -537,7 +559,7 @@ During a slider drag a temporary engine Session supplies only the preview snapsh
 the editable Session, persistence and undo history remain unchanged. Release
 publishes one command/undo step. Escape or closing discards the active draft;
 selection/snapshot changes fence stale drafts. Recent colours are unique,
-newest-first and capped at sixteen in preferences version 3; older preference
+newest-first and capped at sixteen in preferences version 4; older preference
 versions refuse and retain their bytes under the existing store policy.
 
 The app-only native screen sampler invokes AppKit `NSColorSampler` through macOS's

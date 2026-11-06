@@ -18,10 +18,467 @@ use engine::{
     recovery::{self, Autosave, Candidate, Discovery, Schedule},
 };
 use std::{
+    collections::BTreeMap,
+    ops::{Deref, DerefMut},
     path::PathBuf,
     sync::{Arc, Mutex, mpsc},
     time::Duration,
 };
+
+/// Application lifetime. Home owns catalog/discovery; each registered project
+/// retains its own editor, writer lease, pending save and close prompt.
+pub struct Workspace {
+    pub windows: BTreeMap<project::ProjectId, EditorWindow>,
+    pub projects: ProjectsPage,
+    pub shorts: Option<crate::shorts::Shorts>,
+    pub preferences: Preferences,
+    home: EditorWindow,
+    focused: Option<project::ProjectId>,
+    focus_requested: Option<project::ProjectId>,
+    home_open: bool,
+    shorts_window: bool,
+    models: Option<crate::model_manager::ModelManager>,
+}
+
+// Compatibility for single-editor callers (including background/headless mode).
+// Ownership always stays in the registry; this is only a focused-window view.
+impl Deref for Workspace {
+    type Target = EditorWindow;
+    fn deref(&self) -> &EditorWindow {
+        self.focused
+            .and_then(|id| self.windows.get(&id))
+            .unwrap_or(&self.home)
+    }
+}
+impl DerefMut for Workspace {
+    fn deref_mut(&mut self) -> &mut EditorWindow {
+        self.focused
+            .and_then(|id| self.windows.get_mut(&id))
+            .unwrap_or(&mut self.home)
+    }
+}
+impl Workspace {
+    pub fn new(root: PathBuf, preferences: Preferences, path: Option<PathBuf>) -> Result<Self> {
+        let projects = root.with_file_name("projects");
+        Self::with_projects(root, projects, preferences, path)
+    }
+    pub fn with_projects(
+        root: PathBuf,
+        projects_root: PathBuf,
+        preferences: Preferences,
+        path: Option<PathBuf>,
+    ) -> Result<Self> {
+        let budget = ByteBudget::new(768 << 20)?;
+        let persistence = ByteBudget::new(256 << 20)?;
+        let runner = std::rc::Rc::new(std::cell::RefCell::new(JobRunner::new(
+            RunnerConfig {
+                concurrency: [2, 1, 1],
+                queue: 128,
+                retained: 128,
+                network_attempts: 1,
+                backoff: Duration::from_secs(1),
+                progress_interval: Duration::from_millis(10),
+            },
+            persistence.clone(),
+            Arc::new(SystemClock::default()),
+        )?));
+        let mut home = EditorWindow::new(
+            root,
+            preferences.clone(),
+            budget.clone(),
+            persistence,
+            runner,
+        );
+        home.startup_path = path;
+        home.submit(Work::Discover, Text::Discovering)?;
+        Ok(Self {
+            windows: BTreeMap::new(),
+            projects: ProjectsPage::new(projects_root, budget),
+            shorts: None,
+            preferences,
+            home,
+            focused: None,
+            focus_requested: None,
+            home_open: true,
+            shorts_window: false,
+            models: None,
+        })
+    }
+    pub fn control_budget(&self) -> ByteBudget {
+        self.home.budget.clone()
+    }
+    pub fn focused_project(&self) -> Option<project::ProjectId> {
+        self.focused
+    }
+    pub fn home_open(&self) -> bool {
+        self.home_open
+    }
+    pub fn viewport(id: project::ProjectId) -> egui::ViewportId {
+        egui::ViewportId::from_hash_of(("editor.window", id))
+    }
+    pub fn focus(&mut self, id: project::ProjectId) -> Result<()> {
+        if !self.windows.contains_key(&id) {
+            return Err(Error::Invalid("unknown project window"));
+        }
+        self.focused = Some(id);
+        self.focus_requested = Some(id);
+        Ok(())
+    }
+    pub fn editor_mut(&mut self, id: project::ProjectId) -> Option<&mut Editor> {
+        self.windows.get_mut(&id)?.editor.as_deref_mut()
+    }
+    pub fn active_editor_mut(&mut self) -> Option<&mut Editor> {
+        if self.shorts_window {
+            self.shorts.as_mut().and_then(|s| s.preview_mut())
+        } else {
+            self.focused.and_then(|id| self.editor_mut(id))
+        }
+    }
+    pub fn busy(&self) -> bool {
+        self.home.busy() || self.projects.busy() || self.windows.values().any(EditorWindow::busy)
+    }
+    pub fn error(&self) -> Option<&Error> {
+        self.home.error().or_else(|| {
+            self.focused
+                .and_then(|id| self.windows.get(&id))
+                .and_then(EditorWindow::error)
+        })
+    }
+    pub fn open(&mut self, path: PathBuf) -> Result<()> {
+        let canonical = std::fs::canonicalize(&path).unwrap_or_else(|_| path.clone());
+        if let Some(id) = self.windows.iter().find_map(|(id, window)| {
+            let saving = window
+                .retry_save
+                .as_ref()
+                .and_then(|s| s.0.as_ref())
+                .map(|p| std::fs::canonicalize(p).unwrap_or_else(|_| p.clone()));
+            (window.path.as_ref() == Some(&canonical) || saving.as_ref() == Some(&canonical))
+                .then_some(*id)
+        }) {
+            return self.focus(id);
+        }
+        self.home.preferences = self.preferences.clone();
+        self.home.open(path)
+    }
+    pub fn create(&mut self) -> Result<()> {
+        self.home.preferences = self.preferences.clone();
+        self.home.create()
+    }
+    pub fn open_shorts(&mut self) -> Result<()> {
+        if self.shorts.is_none() {
+            self.shorts = Some(crate::shorts::Shorts::new(
+                self.preferences.clone(),
+                self.home.budget.clone(),
+            )?);
+        }
+        self.shorts_window = true;
+        Ok(())
+    }
+    pub fn warn_preferences_reset(&mut self) {
+        self.home.warn_preferences_reset();
+    }
+    /// Closing Home hides only Home. The root event loop outlives child windows.
+    pub fn request_close(&mut self) {
+        self.home_open = false;
+    }
+    pub fn ready_to_close(&self) -> bool {
+        !self.home_open && self.windows.is_empty() && !self.shorts_window && !self.home.busy()
+    }
+    pub fn set_device_available(&mut self, available: bool) {
+        self.home.device_available = available;
+        for window in self.windows.values_mut() {
+            window.set_device_available(available);
+        }
+    }
+    pub fn tick(&mut self) {
+        self.projects.tick();
+        if let Some(action) = self.projects.take_action() {
+            self.project_action(action);
+        }
+        // Catalog admission precedes startup open; discovery must not race it.
+        self.home.tick();
+        if let Some(path) = self.home.requested_open.take()
+            && let Err(error) = self.open(path)
+        {
+            self.home.error = Some(error);
+        }
+        if !self.projects.busy()
+            && !self.home.busy()
+            && self.home.candidates.is_empty()
+            && self.home.error.is_none()
+            && let Some(path) = self.home.startup_path.take()
+            && let Err(error) = self.open(path)
+        {
+            self.home.error = Some(error);
+        }
+        if let Some(editor) = self.home.editor.take() {
+            let id = editor.session.project().data().id;
+            let path = match &editor.session {
+                crate::lifecycle::EditorSession::Persistent(s) => {
+                    s.saved_path().map(ToOwned::to_owned)
+                }
+                crate::lifecycle::EditorSession::Memory(_) => None,
+            };
+            self.windows.entry(id).or_insert_with(|| {
+                let mut window = EditorWindow::new(
+                    self.home.root.clone(),
+                    self.preferences.clone(),
+                    editor.playback.budget().clone(),
+                    self.home.persistence.clone(),
+                    self.home.runner.clone(),
+                );
+                window.project_window = true;
+                window.title = editor.session.project().data().name.as_str().to_owned();
+                window.editor = Some(editor);
+                window.path = path;
+                window.device_available = self.home.device_available;
+                window
+            });
+            self.focused = Some(id);
+            self.focus_requested = Some(id);
+        }
+        for window in self.windows.values_mut() {
+            // Background workflow completions can request the model service
+            // before the next UI pass. They must reuse the app owner too.
+            if let Some(editor) = &mut window.editor
+                && let Some(models) = self.models.take()
+            {
+                editor.set_model_manager(models);
+            }
+            window.tick();
+            if let Some(models) = window.retained_models.take() {
+                self.models = Some(models);
+            } else if let Some(editor) = &mut window.editor
+                && let Some(models) = editor.take_model_manager()
+            {
+                self.models = Some(models);
+            }
+        }
+        let count = self.windows.len();
+        self.windows
+            .retain(|_, w| !(w.editor.is_none() && !w.busy() && w.error.is_none()));
+        if count != self.windows.len() {
+            self.projects.refresh();
+        }
+        if self
+            .focused
+            .is_some_and(|id| !self.windows.contains_key(&id))
+        {
+            self.focused = self.windows.keys().next_back().copied();
+        }
+        if let Some(shorts) = &mut self.shorts {
+            shorts.tick();
+        }
+        self.home.runner.borrow_mut().drain_events();
+        if let Some(models) = &mut self.models
+            && let Err(error) = models.tick()
+        {
+            self.home.error.get_or_insert(error);
+        }
+    }
+    fn project_action(&mut self, action: ProjectsAction) {
+        let result = match action {
+            ProjectsAction::Open(path) => self.open(path),
+            ProjectsAction::OpenFile => {
+                self.home.open_file_requested = true;
+                Ok(())
+            }
+            ProjectsAction::Shorts => self.open_shorts(),
+        };
+        if let Err(error) = result {
+            self.home.error = Some(error);
+        }
+    }
+    /// Draw a specific project through the same path as its native viewport.
+    /// Kittest callers select the project explicitly, preserving automation ids.
+    pub fn window_ui(&mut self, id: project::ProjectId, ui: &mut egui::Ui) {
+        if let Some(window) = self.windows.get_mut(&id) {
+            window.preferences = self.preferences.clone();
+            if let Some(editor) = &mut window.editor {
+                editor.preferences = self.preferences.clone();
+                editor.set_models_visible(self.focused == Some(id));
+                if let Some(models) = self.models.take() {
+                    editor.set_model_manager(models);
+                }
+            }
+            window.ui(ui);
+            if let Some(models) = window.retained_models.take() {
+                self.models = Some(models);
+            } else if let Some(editor) = &mut window.editor
+                && let Some(models) = editor.take_model_manager()
+            {
+                self.models = Some(models);
+            }
+            self.preferences = window.preferences.clone();
+            if std::mem::take(&mut window.focus_home) {
+                self.home_open = true;
+                ui.ctx().send_viewport_cmd_to(
+                    egui::ViewportId::ROOT,
+                    egui::ViewportCommand::Visible(true),
+                );
+                ui.ctx().send_viewport_cmd_to(
+                    egui::ViewportId::ROOT,
+                    egui::ViewportCommand::Minimized(false),
+                );
+                ui.ctx()
+                    .send_viewport_cmd_to(egui::ViewportId::ROOT, egui::ViewportCommand::Focus);
+            }
+        }
+    }
+    pub fn ui(&mut self, ui: &mut egui::Ui) {
+        self.tick();
+        if !self.home.configured {
+            Editor::fonts(ui.ctx());
+            icons::install(ui.ctx());
+            self.home.configured = true;
+        }
+        Editor::theme(ui.ctx(), self.preferences.dark);
+        let ctx = ui.ctx().clone();
+        if ui.input(|i| i.viewport().close_requested()) {
+            ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
+            self.request_close();
+        }
+        if self.home_open {
+            self.home.preferences = self.preferences.clone();
+            self.home.ui(ui);
+            if !self.home.busy() && self.home.candidates.is_empty() && self.home.error.is_none() {
+                self.projects.ui(ui, &mut self.preferences);
+                if let Some(action) = self.projects.take_action() {
+                    self.project_action(action);
+                }
+                if let Some(shorts) = &self.shorts {
+                    let status = if shorts.cancelling() {
+                        Some(Text::ShortsCancelling)
+                    } else if shorts.awaiting_consent() {
+                        Some(Text::ShortsConsent)
+                    } else if shorts.exporting() {
+                        Some(Text::ShortsExporting)
+                    } else if shorts.busy() {
+                        Some(Text::ShortsCreating)
+                    } else if shorts.source().is_some() {
+                        Some(Text::ShortsReview)
+                    } else {
+                        None
+                    };
+                    if let Some(status) = status {
+                        ui.label(catalog::text(self.preferences.locale, status));
+                    }
+                }
+            }
+            self.home.preferences = self.preferences.clone();
+        } else {
+            ctx.send_viewport_cmd(egui::ViewportCommand::Visible(false));
+            ctx.send_viewport_cmd(egui::ViewportCommand::RequestPaintWhileHidden);
+        }
+        let ids: Vec<_> = self.windows.keys().copied().collect();
+        for id in ids {
+            let title = self
+                .windows
+                .get(&id)
+                .map(|window| window.title().to_owned())
+                .unwrap_or_else(|| {
+                    catalog::text(self.preferences.locale, Text::AppName).to_owned()
+                });
+            let geometry = self
+                .preferences
+                .windows
+                .get(&format!("editor.{}", id.0))
+                .cloned()
+                .unwrap_or_default();
+            ctx.show_viewport_immediate(
+                Self::viewport(id),
+                geometry.builder().with_title(title),
+                |ui, _| {
+                    if ui.input(|i| i.focused) {
+                        self.focused = Some(id);
+                    }
+                    self.window_ui(id, ui);
+                    if let Some(geometry) = crate::catalog::WindowGeometry::read(ui) {
+                        remember_geometry(
+                            &mut self.preferences,
+                            format!("editor.{}", id.0),
+                            geometry,
+                        );
+                    }
+                },
+            );
+        }
+        if let Some(id) = self.focus_requested.take() {
+            ctx.send_viewport_cmd_to(Self::viewport(id), egui::ViewportCommand::Minimized(false));
+            ctx.send_viewport_cmd_to(Self::viewport(id), egui::ViewportCommand::Focus);
+        }
+        if self.shorts_window
+            && let Some(shorts) = &mut self.shorts
+        {
+            shorts.can_open_editor = !self.home.busy();
+            let mut close = false;
+            ctx.show_viewport_immediate(
+                egui::ViewportId::from_hash_of("shorts.window"),
+                self.preferences
+                    .windows
+                    .get("shorts")
+                    .cloned()
+                    .unwrap_or_default()
+                    .builder()
+                    .with_title(catalog::text(shorts.preferences.locale, Text::Shorts)),
+                |ui, _| {
+                    shorts.ui(ui);
+                    close = ui.input(|i| i.viewport().close_requested());
+                    if let Some(geometry) = crate::catalog::WindowGeometry::read(ui) {
+                        remember_geometry(&mut self.preferences, "shorts".into(), geometry);
+                    }
+                },
+            );
+            if close {
+                if let Some(p) = shorts.preview_mut() {
+                    let _ = p.activate("transport.pause");
+                }
+                self.shorts_window = false;
+            }
+            if shorts.open_editor && !self.home.busy() {
+                shorts.open_editor = false;
+                let result = shorts.editor_session().and_then(|(s, settings)| {
+                    self.home
+                        .submit(Work::Short(Box::new(s), settings), Text::LoadingProject)
+                });
+                if let Err(e) = result {
+                    self.home.error = Some(e);
+                }
+            }
+        }
+        if let Some(geometry) = crate::catalog::WindowGeometry::read(ui) {
+            remember_geometry(&mut self.preferences, "home".into(), geometry);
+        }
+        if self.ready_to_close() {
+            ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+        }
+        ctx.request_repaint_after(Duration::from_millis(16));
+    }
+}
+
+fn remember_geometry(
+    preferences: &mut Preferences,
+    key: String,
+    mut geometry: crate::catalog::WindowGeometry,
+) {
+    if geometry.maximized
+        && let Some(previous) = preferences.windows.get(&key)
+    {
+        geometry.size = previous.size;
+        geometry.position = previous.position;
+    }
+    if !preferences.windows.contains_key(&key)
+        && preferences.windows.len() >= 64
+        && let Some(oldest) = preferences
+            .windows
+            .keys()
+            .find(|k| *k != "home" && *k != "shorts")
+            .cloned()
+    {
+        preferences.windows.remove(&oldest);
+    }
+    preferences.windows.insert(key, geometry);
+}
 
 #[derive(Clone, Copy)]
 enum PickerAction {
@@ -88,15 +545,19 @@ struct Pending {
 }
 /// The editor is absent while its owner is performing an IO boundary on an engine
 /// worker. Loading/exiting remains visible; no second Session or serializer exists.
-pub struct Workspace {
+pub struct EditorWindow {
     pub editor: Option<Box<Editor>>,
-    pub shorts: Option<crate::shorts::Shorts>,
-    pub projects: ProjectsPage,
-    shorts_window: bool,
+    title: String,
+    retained_models: Option<crate::model_manager::ModelManager>,
+    focus_home: bool,
+    project_window: bool,
+    path: Option<PathBuf>,
+    requested_open: Option<PathBuf>,
     pub preferences: Preferences,
     root: PathBuf,
     budget: ByteBudget,
-    runner: JobRunner,
+    persistence: ByteBudget,
+    runner: std::rc::Rc<std::cell::RefCell<JobRunner>>,
     pending: Option<Pending>,
     picker: Option<Picker>,
     candidates: Vec<Candidate>,
@@ -113,39 +574,26 @@ pub struct Workspace {
     preference_warning: bool,
     open_file_requested: bool,
 }
-impl Workspace {
-    pub fn new(root: PathBuf, preferences: Preferences, path: Option<PathBuf>) -> Result<Self> {
-        let projects = root.with_file_name("projects");
-        Self::with_projects(root, projects, preferences, path)
-    }
-    /// Explicit managed-catalog root, used by the native adapter and tests.
-    pub fn with_projects(
+impl EditorWindow {
+    fn new(
         root: PathBuf,
-        projects_root: PathBuf,
         preferences: Preferences,
-        path: Option<PathBuf>,
-    ) -> Result<Self> {
-        let budget = ByteBudget::new(768 << 20)?;
-        let runner = JobRunner::new(
-            RunnerConfig {
-                concurrency: [1, 1, 1],
-                queue: 1,
-                retained: 1,
-                network_attempts: 1,
-                backoff: Duration::from_secs(1),
-                progress_interval: Duration::from_millis(10),
-            },
-            budget.clone(),
-            Arc::new(SystemClock::default()),
-        )?;
-        let mut app = Self {
+        budget: ByteBudget,
+        persistence: ByteBudget,
+        runner: std::rc::Rc<std::cell::RefCell<JobRunner>>,
+    ) -> Self {
+        Self {
             editor: None,
-            shorts: None,
-            projects: ProjectsPage::new(projects_root, budget.clone()),
-            shorts_window: false,
+            title: catalog::text(preferences.locale, Text::AppName).to_owned(),
+            retained_models: None,
+            focus_home: false,
+            project_window: false,
+            path: None,
+            requested_open: None,
             preferences,
             root,
             budget,
+            persistence,
             runner,
             pending: None,
             picker: None,
@@ -153,7 +601,7 @@ impl Workspace {
             diagnostics: Vec::new(),
             error: None,
             retry_path: None,
-            startup_path: path,
+            startup_path: None,
             close_prompt: false,
             ready_to_close: false,
             configured: false,
@@ -162,34 +610,17 @@ impl Workspace {
             retry_discovery: false,
             preference_warning: false,
             open_file_requested: false,
-        };
-        app.submit(Work::Discover, Text::Discovering)?;
-        Ok(app)
-    }
-    /// The dedicated native shorts viewport shares the existing device adapter.
-    pub fn active_editor_mut(&mut self) -> Option<&mut Editor> {
-        if self.shorts_window {
-            self.shorts.as_mut().and_then(|s| s.preview_mut())
-        } else {
-            self.editor.as_deref_mut()
         }
-    }
-    pub fn open_shorts(&mut self) -> Result<()> {
-        if self.shorts.is_none() {
-            self.shorts = Some(crate::shorts::Shorts::new(
-                self.preferences.clone(),
-                self.budget.clone(),
-            )?);
-        }
-        self.shorts_window = true;
-        Ok(())
     }
     /// A damaged layout preference document was replaced at startup.
     pub fn warn_preferences_reset(&mut self) {
         self.preference_warning = true;
     }
+    pub fn title(&self) -> &str {
+        &self.title
+    }
     pub fn busy(&self) -> bool {
-        self.pending.is_some() || self.picker.is_some() || self.projects.busy()
+        self.pending.is_some() || self.picker.is_some()
     }
     pub fn error(&self) -> Option<&Error> {
         self.error.as_ref()
@@ -239,6 +670,7 @@ impl Workspace {
             return Err(Error::Invalid("project operation in progress"));
         }
         let editor = self.editor.as_mut().ok_or(Error::Invalid("no project"))?;
+        self.title = editor.session.project().data().name.as_str().to_owned();
         self.preferences = editor.preferences.clone();
         editor.activate("transport.pause")?;
         let at = editor.playback.position()?;
@@ -248,6 +680,7 @@ impl Workspace {
             serde_json::json!({"zoom":view.zoom,"scroll":view.scroll,"playhead":at}),
         )?;
         self.retry_save = Some((path.clone(), leave, close, journal_only));
+        self.retained_models = editor.take_model_manager();
         let editor = self.editor.take().ok_or(Error::Invalid("no project"))?;
         self.submit(
             Work::Persist {
@@ -401,7 +834,10 @@ impl Workspace {
             std::task::Poll::Ready(Some(mut files)) => {
                 let result = match picker.action {
                     PickerAction::Open => match files.pop() {
-                        Some(file) => self.open(file.path().to_owned()),
+                        Some(file) => {
+                            self.requested_open = Some(file.path().to_owned());
+                            Ok(())
+                        }
                         None => Ok(()),
                     },
                     PickerAction::Save { leave, close } => match files.pop() {
@@ -448,10 +884,18 @@ impl Workspace {
             Work::Persist { editor, .. } => Some(editor.clone()),
             _ => None,
         };
-        let input = Arc::new(Mutex::new(Some(work)));
         let (send, receive) = mpsc::channel();
         let root = self.root.clone();
-        let budget = self.budget.clone();
+        let budget = if matches!(
+            &work,
+            Work::Open(_) | Work::New | Work::Recover(_) | Work::Short(..)
+        ) {
+            self.budget.child(512 << 20)?
+        } else {
+            self.budget.clone()
+        };
+        let persistence = self.persistence.child(64 << 20)?;
+        let input = Arc::new(Mutex::new(Some(work)));
         let preferences = self.preferences.clone();
         let key = CacheKey::new(KeyInputs {
             kind: ArtifactKind::Preview,
@@ -466,7 +910,7 @@ impl Workspace {
             translation: [0; 32],
         })?;
         let worker_input = input.clone();
-        let submitted = self.runner.submit(
+        let submitted = self.runner.borrow_mut().submit(
             JobSpec {
                 kind: JobKind::Persist,
                 class: ResourceClass::Cpu,
@@ -483,7 +927,13 @@ impl Workspace {
                     .map_err(|_| EditError::JobPoisoned)?
                     .take()
                     .ok_or(EditError::RecoveryBusy)?;
-                let result = run(work, &root, budget.clone(), preferences.clone());
+                let result = run(
+                    work,
+                    &root,
+                    budget.clone(),
+                    persistence.clone(),
+                    preferences.clone(),
+                );
                 send.send(result).map_err(|_| EditError::Cancelled)?;
                 Ok(Vec::new())
             },
@@ -508,27 +958,10 @@ impl Workspace {
         Ok(())
     }
     pub fn tick(&mut self) {
-        self.projects.tick();
-        match self.projects.take_action() {
-            Some(ProjectsAction::Open(path)) => {
-                if let Err(error) = self.open(path) {
-                    self.error = Some(error);
-                }
-            }
-            Some(ProjectsAction::OpenFile) => self.open_file_requested = true,
-            Some(ProjectsAction::Shorts) => {
-                if let Err(error) = self.open_shorts() {
-                    self.error = Some(error);
-                }
-            }
-            None => {}
-        }
         self.poll_picker();
-        if let Some(shorts) = &mut self.shorts {
-            shorts.tick();
-        }
         if let Some(editor) = &mut self.editor {
             editor.tick();
+            self.title = editor.session.project().data().name.as_str().to_owned();
             if self.error.is_none()
                 && let Some(error) = &editor.persistence_error
             {
@@ -536,28 +969,17 @@ impl Workspace {
             }
         }
         self.poll_pending();
-        // Discovery and the managed catalog finish independently. Keep the
-        // startup path until both owners are idle, and retry on later ticks.
-        if self.editor.is_none()
-            && !self.busy()
-            && self.candidates.is_empty()
-            && self.error.is_none()
-            && let Some(path) = self.startup_path.take()
-            && let Err(e) = self.open(path)
-        {
-            self.error = Some(e);
-        }
     }
     fn poll_pending(&mut self) {
-        if let Err(e) = self.runner.tick() {
+        if let Err(e) = self.runner.borrow_mut().tick() {
             self.error = Some(e.into());
             return;
         }
-        self.runner.drain_events();
+        // Completion snapshots remain until their owning window consumes them.
         let Some(pending) = &self.pending else {
             return;
         };
-        let Some(snapshot) = self.runner.snapshot(pending.id) else {
+        let Some(snapshot) = self.runner.borrow().snapshot(pending.id) else {
             return;
         };
         if !matches!(
@@ -569,7 +991,7 @@ impl Workspace {
         let Some(pending) = self.pending.take() else {
             return;
         };
-        let _ = self.runner.take_output(pending.id);
+        let _ = self.runner.borrow_mut().take_output(pending.id);
         if let Some(editor) = &pending.editor {
             match editor.lock() {
                 Ok(mut editor) => self.editor = editor.take(),
@@ -608,15 +1030,22 @@ impl Workspace {
                 close,
             }) => match result {
                 Ok(()) => {
+                    if let Some(editor) = &self.editor
+                        && let crate::lifecycle::EditorSession::Persistent(autosave) =
+                            &editor.session
+                    {
+                        self.path = autosave.saved_path().map(ToOwned::to_owned);
+                    }
                     self.retry_save = None;
                     if leave || close {
                         self.editor = None;
-                        self.projects.refresh();
                     }
                     if close {
                         self.ready_to_close = true;
                     }
-                    self.close_prompt = false;
+                    if leave || close {
+                        self.close_prompt = false;
+                    }
                 }
                 Err(e) => self.error = Some(e),
             },
@@ -648,14 +1077,19 @@ impl Workspace {
             self.configured = true;
         }
         Editor::theme(ui.ctx(), self.preferences.dark);
-        self.tick();
+        if self.project_window {
+            self.tick();
+        }
         if self.open_file_requested && !self.busy() {
             self.open_file_requested = false;
             if let Err(error) = self.pick(ui.ctx(), PickerAction::Open) {
                 self.error = Some(error);
             }
         }
-        if ui.input(|i| i.viewport().close_requested()) && !self.ready_to_close {
+        if self.project_window
+            && ui.input(|i| i.viewport().close_requested())
+            && !self.ready_to_close
+        {
             ui.ctx()
                 .send_viewport_cmd(egui::ViewportCommand::CancelClose);
             self.request_close();
@@ -668,13 +1102,17 @@ impl Workspace {
                 || self.preference_warning
                 || !self.diagnostics.is_empty();
             editor.ui(ui);
+            self.title = editor.session.project().data().name.as_str().to_owned();
             self.preferences = editor.preferences.clone();
             if let Some(action) = editor.lifecycle_action.take() {
                 let result = match action {
                     EditorAction::ExportSave => self.pick(ui.ctx(), PickerAction::ExportSave),
                     EditorAction::SnapshotSave => self.pick(ui.ctx(), PickerAction::SnapshotSave),
                     EditorAction::ImportMedia => self.pick(ui.ctx(), PickerAction::ImportMedia),
-                    EditorAction::Leave => self.save_from_ui(ui.ctx(), true, false, false),
+                    EditorAction::FocusHome => {
+                        self.focus_home = true;
+                        Ok(())
+                    }
                     EditorAction::SaveAs => self.save_from_ui(ui.ctx(), false, false, true),
                     EditorAction::Save => self.save_from_ui(ui.ctx(), false, false, false),
                 };
@@ -702,92 +1140,6 @@ impl Workspace {
                 ui.add_space(28.0);
                 ui.label(self.tr(Text::ChooseProject));
             });
-        } else if self.candidates.is_empty() && self.error.is_none() {
-            self.projects.ui(ui, &mut self.preferences);
-            if let Some(action) = self.projects.take_action() {
-                match action {
-                    ProjectsAction::Open(path) => {
-                        if let Err(error) = self.open(path) {
-                            self.error = Some(error);
-                        }
-                    }
-                    ProjectsAction::OpenFile => {
-                        if let Err(error) = self.pick(ui.ctx(), PickerAction::Open) {
-                            self.error = Some(error);
-                        }
-                    }
-                    ProjectsAction::Shorts => {
-                        if let Err(error) = self.open_shorts() {
-                            self.error = Some(error);
-                        }
-                    }
-                }
-            }
-            if let Some(shorts) = &self.shorts {
-                let status = if shorts.cancelling() {
-                    Some(Text::ShortsCancelling)
-                } else if shorts.awaiting_consent() {
-                    Some(Text::ShortsConsent)
-                } else if shorts.exporting() {
-                    Some(Text::ShortsExporting)
-                } else if shorts.busy() {
-                    Some(Text::ShortsCreating)
-                } else if shorts.source().is_some() {
-                    Some(Text::ShortsReview)
-                } else {
-                    None
-                };
-                if let Some(status) = status {
-                    ui.label(self.tr(status));
-                }
-            }
-        }
-        if self.shorts_window
-            && let Some(shorts) = &mut self.shorts
-        {
-            shorts.can_open_editor = self.editor.is_none() && self.pending.is_none();
-            if !shorts.can_open_editor {
-                shorts.open_editor = false;
-            }
-            let mut close = false;
-            let ctx = ui.ctx().clone();
-            ctx.show_viewport_immediate(
-                egui::ViewportId::from_hash_of("shorts.window"),
-                egui::ViewportBuilder::default()
-                    .with_title(catalog::text(shorts.preferences.locale, Text::Shorts))
-                    .with_inner_size([1440.0, 900.0])
-                    .with_min_inner_size([1280.0, 800.0]),
-                |ui, _class| {
-                    shorts.ui(ui);
-                    close = ui.input(|i| i.viewport().close_requested());
-                },
-            );
-            self.preferences = shorts.preferences.clone();
-            if close {
-                if let Some(preview) = shorts.preview_mut() {
-                    let _ = preview.activate("transport.pause");
-                }
-                self.shorts_window = false;
-            }
-            if shorts.open_editor && self.editor.is_none() && self.pending.is_none() {
-                shorts.open_editor = false;
-                let prepared = shorts.editor_session();
-                if let Some(preview) = shorts.preview_mut() {
-                    let _ = preview.activate("transport.pause");
-                }
-                match prepared {
-                    Ok((session, settings)) => {
-                        self.shorts_window = false;
-                        if let Err(e) = self.submit(
-                            Work::Short(Box::new(session), settings),
-                            Text::LoadingProject,
-                        ) {
-                            self.error = Some(e);
-                        }
-                    }
-                    Err(e) => self.error = Some(e),
-                }
-            }
         }
         if self.editor.is_none() && !self.busy() && !self.candidates.is_empty() {
             egui::Modal::new(egui::Id::unique("recovery.prompt")).show(ui.ctx(), |ui| {
@@ -973,6 +1325,7 @@ fn run(
     work: Work,
     root: &std::path::Path,
     budget: ByteBudget,
+    persistence: ByteBudget,
     preferences: Preferences,
 ) -> Result<Completed> {
     let autosave = match work {
@@ -985,7 +1338,7 @@ fn run(
             return Ok(Completed::Discarded);
         }
         Work::Recover(candidate) => {
-            let mut autosave = session(root, candidate.recover(100)?, budget.clone())?;
+            let mut autosave = session(root, candidate.recover(100)?, persistence.clone())?;
             // Publish the recovered copy before retiring its source journal.
             autosave.flush()?;
             candidate.discard()?;
@@ -994,10 +1347,10 @@ fn run(
         Work::New => session(
             root,
             fresh(catalog::text(preferences.locale, Text::NewProject))?,
-            budget.clone(),
+            persistence.clone(),
         )?,
         Work::Short(short, settings) => {
-            let autosave = session(root, *short, budget.clone())?;
+            let autosave = session(root, *short, persistence.clone())?;
             let mut playback = Playback::new(autosave.session(), budget, Arc::new(Files))?;
             playback.set_render_settings(settings)?;
             return Ok(Completed::Opened(Box::new(Editor::persisted(
@@ -1010,7 +1363,7 @@ fn run(
             root,
             &path,
             100,
-            budget.clone(),
+            persistence.clone(),
             Arc::new(SystemClock::default()),
             Schedule::default(),
         ) {
@@ -1022,7 +1375,7 @@ fn run(
                 session(
                     root,
                     fresh(catalog::text(preferences.locale, Text::UntitledProject))?,
-                    budget.clone(),
+                    persistence.clone(),
                 )?
             }
             Err(e) => return Err(e.into()),
@@ -1115,8 +1468,10 @@ mod tests {
             let discovery = workspace.pending.as_ref().unwrap().id;
             let deadline = Instant::now() + Duration::from_secs(10);
             loop {
-                workspace.runner.tick().unwrap();
-                if workspace.runner.snapshot(discovery).unwrap().state == JobState::Completed {
+                workspace.runner.borrow_mut().tick().unwrap();
+                if workspace.runner.borrow().snapshot(discovery).unwrap().state
+                    == JobState::Completed
+                {
                     break;
                 }
                 assert!(Instant::now() < deadline);
@@ -1237,15 +1592,15 @@ mod tests {
             playback,
             Preferences::default(),
         )));
+        let thumbnails = workspace
+            .root
+            .parent()
+            .unwrap_or(&workspace.root)
+            .join("thumbnails");
         if let Some(editor) = &mut workspace.editor {
-            editor.set_thumbnail_root(
-                workspace
-                    .root
-                    .parent()
-                    .unwrap_or(&workspace.root)
-                    .join("thumbnails"),
-            );
+            editor.set_thumbnail_root(thumbnails);
         }
+        workspace.tick();
         workspace.picker = Some(Picker {
             future: Box::pin(std::future::pending()),
             action: PickerAction::Save {

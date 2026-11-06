@@ -38,7 +38,7 @@ both in sync.
 | `file.export` — Export | File | — | — | export dialog |
 | `project.save` — Save | File | — | — | workspace lifecycle |
 | `project.save_as` — Save as | File | — | — | workspace lifecycle |
-| `project.back` — Back to projects | File | — | — | workspace lifecycle |
+| `window.home` — Focus Home | File | — | — | workspace lifecycle |
 | `project.rename` — Rename project | File | — | — | project rename input |
 | `media.insert` — Add to timeline | File | — | `timeline.insert` | — |
 | `import.cancel` — Cancel import | File | — | — | workspace import queue |

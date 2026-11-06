@@ -555,7 +555,17 @@ fn home_card_opens_a_dedicated_viewport_and_native_drop_selects_one_video() {
     }
     let mut h = Harness::builder()
         .with_size(egui::vec2(1440.0, 1000.0))
-        .build_ui_state(|ui, a: &mut vibecut::workspace::Workspace| a.ui(ui), app);
+        .build_ui_state(
+            |ui, a: &mut vibecut::workspace::Workspace| {
+                a.tick();
+                if let Some(id) = a.focused_project() {
+                    a.window_ui(id, ui);
+                } else {
+                    a.ui(ui);
+                }
+            },
+            app,
+        );
     h.run_steps(3);
     h.get(by("home.shorts")).click();
     h.run_steps(2);

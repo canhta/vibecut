@@ -818,3 +818,157 @@ fn publication_keeps_ui_responsive_and_cancel_preserves_previous_file() {
     assert_eq!(std::fs::read(&destination).unwrap(), b"previous");
     assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 1);
 }
+
+#[test]
+fn closing_one_window_preserves_another_windows_dirty_edit_and_running_export() {
+    use vibecut::workspace::Workspace;
+    fn idle(app: &mut Workspace) {
+        let deadline = Instant::now() + Duration::from_secs(20);
+        while app.busy() {
+            app.tick();
+            assert!(Instant::now() < deadline);
+            std::thread::sleep(Duration::from_millis(1));
+        }
+    }
+    let root = tempfile::tempdir().unwrap();
+    let first_path = root.path().join("first.vibecut");
+    let second_path = root.path().join("second.vibecut");
+    project::WriterLease::acquire(&first_path)
+        .unwrap()
+        .save(&Project::empty(ProjectId(1), "first".into()).unwrap())
+        .unwrap();
+    project::WriterLease::acquire(&second_path)
+        .unwrap()
+        .save(&project(false, true))
+        .unwrap();
+    let second_bytes = std::fs::read(&second_path).unwrap();
+    let mut app =
+        Workspace::new(root.path().join("recovery"), Preferences::default(), None).unwrap();
+    idle(&mut app);
+    app.open(first_path.clone()).unwrap();
+    idle(&mut app);
+    app.open(second_path.clone()).unwrap();
+    idle(&mut app);
+    let first = ProjectId(1);
+    let second = ProjectId(18);
+    let (send, recv) = mpsc::channel();
+    let gate = Arc::new(Gate {
+        entered: Mutex::new(send),
+        release: (Mutex::new(false), Condvar::new()),
+    });
+    let release = Release(gate.clone());
+    let editor = app.editor_mut(second).unwrap();
+    editor
+        .session
+        .execute(
+            "project.rename",
+            serde_json::json!({"name":"unsaved second"}),
+        )
+        .unwrap();
+    editor.activate("file.export").unwrap();
+    editor
+        .export
+        .as_mut()
+        .unwrap()
+        .set_sources(Arc::new(GateFactory(gate.clone())))
+        .unwrap();
+    editor.activate("export.run").unwrap();
+    let revision = editor.session.revision();
+    let deadline = Instant::now() + Duration::from_secs(20);
+    loop {
+        app.tick();
+        if recv.try_recv().is_ok() {
+            break;
+        }
+        assert!(Instant::now() < deadline);
+        std::thread::yield_now();
+    }
+    let job = app
+        .editor_mut(second)
+        .unwrap()
+        .export
+        .as_ref()
+        .unwrap()
+        .inspect()
+        .job
+        .unwrap()
+        .id;
+    app.request_close();
+    assert!(!app.home_open());
+    assert!(!app.ready_to_close());
+    app.focus(first).unwrap();
+    app.windows.get_mut(&first).unwrap().request_close();
+    let mut h = Harness::builder()
+        .with_size(egui::vec2(1440.0, 900.0))
+        .build_ui_state(
+            move |ui, a: &mut Workspace| {
+                a.tick();
+                if a.windows.contains_key(&first) {
+                    a.window_ui(first, ui);
+                }
+            },
+            app,
+        );
+    let _release = release;
+    h.run_steps(3);
+    h.get(By::new().predicate(|n| n.author_id() == Some("project.close.cancel")))
+        .click();
+    h.run_steps(3);
+    assert!(
+        h.state_mut().editor_mut(first).is_some(),
+        "cancel retains only the requested window"
+    );
+    h.state_mut()
+        .windows
+        .get_mut(&first)
+        .unwrap()
+        .request_close();
+    h.run_steps(3);
+    h.get(By::new().predicate(|n| n.author_id() == Some("project.close.recover")))
+        .click();
+    h.run_steps(2);
+    idle(h.state_mut());
+    assert!(!h.state().windows.contains_key(&first));
+    assert!(project::WriterLease::acquire(&first_path).is_ok());
+    let editor = h.state_mut().editor_mut(second).unwrap();
+    assert_eq!(editor.session.revision(), revision);
+    assert_eq!(
+        editor.session.project().data().name.as_str(),
+        "unsaved second"
+    );
+    assert!(editor.session.autosave().unwrap().is_dirty());
+    assert!(editor.export.as_ref().unwrap().active());
+    assert_eq!(
+        editor.export.as_ref().unwrap().inspect().job.unwrap().id,
+        job
+    );
+    assert!(matches!(
+        project::WriterLease::acquire(&second_path),
+        Err(project::Error::Busy)
+    ));
+    assert_eq!(std::fs::read(&second_path).unwrap(), second_bytes);
+    *gate.release.0.lock().unwrap() = true;
+    gate.release.1.notify_all();
+    while h
+        .state_mut()
+        .editor_mut(second)
+        .unwrap()
+        .export
+        .as_ref()
+        .unwrap()
+        .active()
+    {
+        h.state_mut().tick();
+        assert!(Instant::now() < deadline);
+        std::thread::yield_now();
+    }
+    h.state_mut()
+        .windows
+        .get_mut(&second)
+        .unwrap()
+        .persist(None, true, true, true)
+        .unwrap();
+    idle(h.state_mut());
+    assert!(h.state().ready_to_close());
+    assert!(project::WriterLease::acquire(&second_path).is_ok());
+}

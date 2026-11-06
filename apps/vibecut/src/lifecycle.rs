@@ -35,7 +35,7 @@ impl EditorSession {
 pub enum EditorAction {
     Save,
     SaveAs,
-    Leave,
+    FocusHome,
     ImportMedia,
     ExportSave,
     SnapshotSave,

@@ -50,6 +50,13 @@ and `session_id` may be omitted for a fresh call and are filled from the running
 contract. Send `inspect` with `request_id`, `command: "inspect"` and `params: {}`
 first to obtain the Session identity and current revision.
 
+Visible desktop requests may include `project_id` as the project's decimal
+string to select an open Editor window; omission selects the focused editor.
+Each selected project retains its Session identity, revisions, receipts and jobs.
+Unknown or closed projects return `session_gone`; a temporarily saving editor
+returns a typed busy refusal. Closing one window cancels only its control jobs.
+The headless CLI retains its single-project envelope and tool schemas.
+
 Mutations require `base_rev` and `idempotency_key`. Keep the original Session,
 revision and key on a retry. The engine keeps receipts for the running Session;
 reconnecting attach processes share that ledger. It never automatically retries

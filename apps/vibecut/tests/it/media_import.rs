@@ -357,7 +357,17 @@ fn picker_result_imports_through_workspace_and_real_editor_widgets() {
         .unwrap();
     let mut harness = Harness::builder()
         .with_size(egui::vec2(1440.0, 900.0))
-        .build_ui_state(|ui, app: &mut Workspace| app.ui(ui), app);
+        .build_ui_state(
+            |ui, app: &mut Workspace| {
+                app.tick();
+                if let Some(id) = app.focused_project() {
+                    app.window_ui(id, ui);
+                } else {
+                    app.ui(ui);
+                }
+            },
+            app,
+        );
     harness.run_steps(2);
     // Inject the OS picker's returned paths at the production result seam.
     harness

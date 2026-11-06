@@ -56,7 +56,17 @@ fn only_one_recovery_prompt_should_own_the_editor_at_a_time() {
     idle(&mut app);
     let mut h = Harness::builder()
         .with_size(vibecut::egui::vec2(1440.0, 900.0))
-        .build_ui_state(|ui, a: &mut Workspace| a.ui(ui), app);
+        .build_ui_state(
+            |ui, a: &mut Workspace| {
+                a.tick();
+                if let Some(id) = a.focused_project() {
+                    a.window_ui(id, ui);
+                } else {
+                    a.ui(ui);
+                }
+            },
+            app,
+        );
     h.run_steps(3);
     h.get(By::new().predicate(|n| n.author_id() == Some("recovery.recover")))
         .click();
@@ -111,7 +121,17 @@ fn two_recovered_projects_can_be_saved_and_left_in_sequence_without_changing_ori
     idle(&mut app);
     let mut h = Harness::builder()
         .with_size(vibecut::egui::vec2(1440.0, 900.0))
-        .build_ui_state(|ui, a: &mut Workspace| a.ui(ui), app);
+        .build_ui_state(
+            |ui, a: &mut Workspace| {
+                a.tick();
+                if let Some(id) = a.focused_project() {
+                    a.window_ui(id, ui);
+                } else {
+                    a.ui(ui);
+                }
+            },
+            app,
+        );
     h.run_steps(3);
     let mut recovered = std::collections::BTreeSet::new();
     for copy in 1..=2 {

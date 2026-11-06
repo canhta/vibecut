@@ -676,6 +676,7 @@ pub struct Editor {
     shortcut_recording: Option<&'static str>,
     shortcut_error: Option<String>,
     models: Option<crate::model_manager::ModelManager>,
+    models_visible: bool,
     asset_states: BTreeMap<AssetId, AssetState>,
     thumbnails: BTreeMap<AssetId, engine::thumbnails::RetainedThumbnail>,
     pending_imports: BTreeMap<AssetId, PathBuf>,
@@ -792,6 +793,7 @@ impl Editor {
             shortcut_recording: None,
             shortcut_error: None,
             models: None,
+            models_visible: true,
             asset_states: BTreeMap::new(),
             thumbnails: BTreeMap::new(),
             pending_imports: BTreeMap::new(),
@@ -1969,8 +1971,8 @@ impl Editor {
                 UiAction::SaveAs => {
                     self.lifecycle_action = Some(crate::lifecycle::EditorAction::SaveAs)
                 }
-                UiAction::Back => {
-                    self.lifecycle_action = Some(crate::lifecycle::EditorAction::Leave)
+                UiAction::FocusHome => {
+                    self.lifecycle_action = Some(crate::lifecycle::EditorAction::FocusHome)
                 }
                 UiAction::RenameProject => {
                     self.rename = Some(self.session.project().data().name.as_str().to_owned());
@@ -4050,10 +4052,11 @@ impl Editor {
                 || self.scenes_open
                 || self.shortcuts_open
                 || self.export.as_ref().is_some_and(|dialog| dialog.open)
-                || self
-                    .models
-                    .as_ref()
-                    .is_some_and(|models| models.inspect().open),
+                || self.models_visible
+                    && self
+                        .models
+                        .as_ref()
+                        .is_some_and(|models| models.inspect().open),
             // There is no Editor while a project is loading; the workspace shows
             // its own progress surface and dispatches no actions.
             project_loading: false,
@@ -4211,6 +4214,12 @@ impl Editor {
     pub fn set_model_manager(&mut self, models: crate::model_manager::ModelManager) {
         self.models = Some(models);
     }
+    pub(crate) fn take_model_manager(&mut self) -> Option<crate::model_manager::ModelManager> {
+        self.models.take()
+    }
+    pub(crate) fn set_models_visible(&mut self, visible: bool) {
+        self.models_visible = visible;
+    }
     pub fn models(&self) -> Option<&crate::model_manager::ModelManager> {
         self.models.as_ref()
     }
@@ -4271,6 +4280,9 @@ impl Editor {
         }
     }
     fn model_dialog(&mut self, ctx: &egui::Context) {
+        if !self.models_visible {
+            return;
+        }
         let Some(models) = &mut self.models else {
             return;
         };
@@ -4774,9 +4786,13 @@ impl Editor {
                     .size(18.0),
             );
             ui.separator();
-            if self.button(ui, "project.back", Icon::ArrowLeft, Text::Projects, true) {
-                self.action("project.back");
-            }
+            let window_menu = ui.menu_button(self.tr(Text::Windows), |ui| {
+                if self.button(ui, "window.home", Icon::SquaresFour, Text::Home, true) {
+                    self.action("window.home");
+                    ui.close();
+                }
+            });
+            self.remember("window.menu", &window_menu.response);
             if self.rename.is_some() {
                 let mut name = self.rename.take().unwrap_or_default();
                 let response = ui.add(

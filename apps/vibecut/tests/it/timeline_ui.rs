@@ -896,7 +896,6 @@ fn every_editor_button_reports_its_embedded_icon() {
             .as_deref()
     };
     let expected = [
-        ("project.back", "arrow-left"),
         ("project.rename", "pencil-simple"),
         ("file.export", "export"),
         ("project.save_as", "floppy-disk-back"),

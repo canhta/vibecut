@@ -171,6 +171,9 @@ catalog! {
     ShortsRanks { key: "shorts_ranks", en: "{play_label} {play} · {source_label} {source} · {role}", vi: "{play_label} {play} · {source_label} {source} · {role}" },
     ShortsMoney { key: "shorts_money", en: "{currency} {amount}", vi: "{currency} {amount}" },
 
+    Windows { key: "windows", en: "Window", vi: "Cửa sổ" },
+    Home { key: "home", en: "Home", vi: "Trang chủ" },
+
     // Long-video Shorts workflow.
     ShortsBack { key: "shorts_back", en: "Back to setup", vi: "Về thiết lập" },
     ShortsCancelling { key: "shorts_cancelling", en: "Cancelling…", vi: "Đang hủy…" },
@@ -844,8 +847,8 @@ fn civil_from_days(days: i64) -> (i64, u32, u32) {
 }
 
 /// Bumped when the local preference document changes incompatibly.
-pub const PREFERENCES_VERSION: u32 = 3;
-const MAX_PREFERENCES_BYTES: u64 = 4096;
+pub const PREFERENCES_VERSION: u32 = 4;
+const MAX_PREFERENCES_BYTES: u64 = 16384;
 
 /// Additive preference keys start at their product default when an older
 /// same-version document omits them.
@@ -962,12 +965,64 @@ pub fn validate_panels(panels: [f32; 3]) -> Result<[f32; 3]> {
     Ok(panels)
 }
 
+/// Native logical-pixel geometry, outside project content and undo.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct WindowGeometry {
+    pub size: [f32; 2],
+    pub position: Option<[f32; 2]>,
+    pub maximized: bool,
+}
+impl Default for WindowGeometry {
+    fn default() -> Self {
+        Self {
+            size: [1440.0, 900.0],
+            position: None,
+            maximized: false,
+        }
+    }
+}
+impl WindowGeometry {
+    fn valid(&self) -> bool {
+        self.size
+            .iter()
+            .all(|v| v.is_finite() && (320.0..=16384.0).contains(v))
+            && self
+                .position
+                .is_none_or(|p| p.iter().all(|v| v.is_finite() && v.abs() <= 65536.0))
+    }
+    pub fn builder(&self) -> crate::egui::ViewportBuilder {
+        let mut builder = crate::egui::ViewportBuilder::default()
+            .with_inner_size(self.size)
+            .with_min_inner_size([1280.0, 800.0])
+            .with_maximized(self.maximized);
+        if let Some(position) = self.position {
+            builder = builder.with_position(position);
+        }
+        builder
+    }
+    pub fn read(ui: &crate::egui::Ui) -> Option<Self> {
+        ui.input(|i| {
+            let viewport = i.viewport();
+            let inner = viewport.inner_rect?;
+            let geometry = Self {
+                size: [inner.width(), inner.height()],
+                position: viewport.outer_rect.map(|r| [r.min.x, r.min.y]),
+                maximized: viewport.maximized.unwrap_or(false),
+            };
+            geometry.valid().then_some(geometry)
+        })
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Preferences {
     /// Missing versions are refused as version zero.
     #[serde(default)]
     pub version: u32,
+    #[serde(default)]
+    pub windows: BTreeMap<String, WindowGeometry>,
     #[serde(default)]
     pub export: crate::export::ExportOptions,
     #[serde(default)]
@@ -1026,6 +1081,7 @@ impl Default for Preferences {
     fn default() -> Self {
         Self {
             version: PREFERENCES_VERSION,
+            windows: BTreeMap::new(),
             export: crate::export::ExportOptions::default(),
             export_directory: None,
             subtitles: crate::subtitles::Options::default(),
@@ -1058,6 +1114,9 @@ impl Preferences {
     pub fn validate(&self) -> Result<()> {
         if self.version != PREFERENCES_VERSION {
             return Err(Error::Unsupported("preferences version"));
+        }
+        if self.windows.len() > 64 || self.windows.iter().any(|(k, v)| k.len() > 64 || !v.valid()) {
+            return Err(Error::Invalid("window geometry"));
         }
         validate_panels(self.panels)?;
         self.subtitles.validate()?;
@@ -1215,6 +1274,15 @@ impl PreferenceStore {
             return (Preferences::system(), Some(PreferenceIssue::Version));
         }
         let mut issue = None;
+        if value.windows.len() > 64
+            || value
+                .windows
+                .iter()
+                .any(|(key, geometry)| key.len() > 64 || !geometry.valid())
+        {
+            value.windows.clear();
+            issue = Some(PreferenceIssue::Layout);
+        }
         if validate_panels(value.panels).is_err() {
             value.panels = DEFAULT_PANELS;
             issue = Some(PreferenceIssue::Layout);
@@ -1507,7 +1575,7 @@ mod tests {
         let store = PreferenceStore::new(dir.path().join("preferences.json"));
         std::fs::write(
             store.path(),
-            br#"{"version":3,"locale":"vi","dark":false,"panels":[0.9,0.9,0.9]}"#,
+            format!(r#"{{"version":{PREFERENCES_VERSION},"locale":"vi","dark":false,"panels":[0.9,0.9,0.9]}}"#),
         )
         .expect("write preferences");
         let (preferences, issue) = store.load_with_warning();
@@ -1655,6 +1723,11 @@ mod tests {
         store.save(&preferences).unwrap();
         for index in 0..128 {
             preferences.sections.insert(format!("{index:064}"), false);
+        }
+        for index in 0..64 {
+            preferences
+                .windows
+                .insert(format!("{index:064}"), WindowGeometry::default());
         }
         assert!(store.save(&preferences).is_err());
         assert_eq!(store.load().unwrap(), Preferences::default());

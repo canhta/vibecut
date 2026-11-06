@@ -6,21 +6,51 @@ use std::{
     time::{Duration, Instant},
 };
 
-/// Dispatch on the UI owner and refresh playback after a committed external edit.
-pub fn poll(editor: &mut crate::Editor, inbox: &mut vibecut_cli::mcp::Inbox) -> Result<()> {
-    let before = editor.session.revision();
-    inbox.poll(&mut editor.session, |_, _| {
-        Err(engine::EditError::Permission)
+/// Route desktop control by project id; focus is only the omitted-target default.
+pub fn poll_workspace(
+    workspace: &mut Workspace,
+    inbox: &mut vibecut_cli::mcp::Inbox,
+) -> Result<()> {
+    inbox.retain_projects(|id| workspace.windows.contains_key(&id));
+    for (id, window) in &workspace.windows {
+        if let Some(editor) = &window.editor {
+            inbox.register_project(*id, editor.playback.budget().clone())?;
+        }
+    }
+    inbox.poll_projects(|target, inbox, value| {
+        let id = target
+            .or(workspace.focused_project())
+            .ok_or(engine::EditError::SessionGone)?;
+        let window = workspace
+            .windows
+            .get_mut(&id)
+            .ok_or(engine::EditError::SessionGone)?;
+        let editor = window
+            .editor
+            .as_deref_mut()
+            .ok_or(engine::EditError::RecoveryBusy)?;
+        let before = editor.session.revision();
+        let result = inbox.execute_project(&mut editor.session, value, |_, _| {
+            Err(engine::EditError::Permission)
+        });
+        if editor.session.revision() != before {
+            let project = editor.session.project().clone();
+            let position = editor
+                .playback
+                .position()
+                .map_err(|_| engine::EditError::Invalid("playback position"))?
+                .clamp(time::Tick::ZERO, project.duration());
+            editor
+                .playback
+                .seek(position, editor.playback.playing(), project)
+                .map_err(|_| engine::EditError::Invalid("playback refresh"))?;
+        }
+        result
     })?;
-    if before != editor.session.revision() {
-        let project = editor.session.project().clone();
-        let position = editor
-            .playback
-            .position()?
-            .clamp(time::Tick::ZERO, project.duration());
-        editor
-            .playback
-            .seek(position, editor.playback.playing(), project)?;
+    for window in workspace.windows.values_mut() {
+        if let Some(editor) = &mut window.editor {
+            inbox.observe(&mut editor.session);
+        }
     }
     Ok(())
 }
@@ -74,7 +104,7 @@ pub fn background(arguments: Vec<OsString>) -> Result<()> {
                 );
             }
             if let Some(server) = &mut server {
-                poll(editor, &mut server.inbox)?;
+                poll_workspace(&mut workspace, &mut server.inbox)?;
             }
         }
         std::thread::sleep(Duration::from_millis(2));

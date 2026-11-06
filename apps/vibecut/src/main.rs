@@ -1,6 +1,7 @@
 #![cfg_attr(target_os = "windows", windows_subsystem = "windows")]
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use std::{
+    collections::BTreeMap,
     path::PathBuf,
     sync::Arc,
     time::{Duration, Instant},
@@ -59,6 +60,7 @@ struct Native {
     saved_preferences: Preferences,
     _stream: Option<cpal::Stream>,
     audio_port: Option<Arc<AudioPort>>,
+    project_audio: BTreeMap<project::ProjectId, (Arc<AudioPort>, Option<cpal::Stream>)>,
     smoke: Option<Smoke>,
     capture: Option<Capture>,
     observe_create: bool,
@@ -76,25 +78,34 @@ impl eframe::App for Native {
     fn logic(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         ctx.request_repaint_after(Duration::from_millis(8));
         self.workspace.tick();
-        if let Some(editor) = self.workspace.active_editor_mut() {
-            if let Some((endpoint, grants)) = self.control_options.take() {
-                match vibecut_cli::mcp::Server::bind(
-                    &endpoint,
-                    grants,
-                    editor.playback.budget().clone(),
-                ) {
-                    Ok(server) => self.control = Some(server),
-                    Err(_) => tracing::warn!(
-                        category = "control_listener_failed",
-                        "Control listener unavailable"
-                    ),
-                }
-            }
-            if let Some(control) = &mut self.control
-                && vibecut::control::poll(editor, &mut control.inbox).is_err()
+        // Immediate child viewports are declared by the root UI pass. Keep
+        // running that pass after Home is hidden, including the final close.
+        if !self.workspace.home_open() {
+            ctx.send_viewport_cmd_to(
+                egui::ViewportId::ROOT,
+                egui::ViewportCommand::RequestPaintWhileHidden,
+            );
+        }
+        if self.workspace.ready_to_close() {
+            ctx.send_viewport_cmd_to(egui::ViewportId::ROOT, egui::ViewportCommand::Close);
+        }
+        if self.workspace.focused_project().is_some()
+            && let Some((endpoint, grants)) = self.control_options.take()
+        {
+            match vibecut_cli::mcp::Server::bind(&endpoint, grants, self.workspace.control_budget())
             {
-                tracing::warn!(category = "control_failed", "Control tick failed");
+                Ok(server) => self.control = Some(server),
+                Err(_) => tracing::warn!(
+                    category = "control_listener_failed",
+                    "Control listener unavailable"
+                ),
             }
+        }
+
+        if let Some(control) = &mut self.control
+            && vibecut::control::poll_workspace(&mut self.workspace, &mut control.inbox).is_err()
+        {
+            tracing::warn!(category = "control_failed", "Control tick failed");
         }
         if self.observe_create && !self.workspace.busy() && self.workspace.error().is_none() {
             self.observe_create = false;
@@ -102,37 +113,57 @@ impl eframe::App for Native {
                 tracing::warn!(category="observation_create_failed",error=%e,"Observation project unavailable");
             }
         }
-        if let Some(editor) = self.workspace.active_editor_mut() {
+        self.project_audio
+            .retain(|id, _| self.workspace.windows.contains_key(id));
+        for (id, window) in &mut self.workspace.windows {
+            let Some(editor) = &mut window.editor else {
+                continue;
+            };
+            if self.project_audio.contains_key(id) {
+                continue;
+            }
+            if let Some(effects) = &self.effects
+                && let Err(error) = editor.set_effects(effects.clone())
+            {
+                tracing::warn!(category = "effects_unavailable", error = %error, "GPU effects unavailable");
+            }
+            let port = editor.playback.audio_port();
+            let rate = editor.session.project().data().settings.audio_sample_rate;
+            let stream = match audio(port.clone(), rate) {
+                Ok(stream) => {
+                    editor.playback.set_device_available(true);
+                    Some(stream)
+                }
+                Err(error) => {
+                    tracing::warn!(category="audio_unavailable",error=%error,"Audio output unavailable");
+                    None
+                }
+            };
+            self.project_audio.insert(*id, (port, stream));
+            if self.smoke.is_some() && editor.session.project().duration() > time::Tick::ZERO {
+                let _ = editor.activate("transport.play");
+            }
+        }
+        // Shorts retains its own preview device, independently of project audio.
+        if let Some(shorts) = &mut self.workspace.shorts
+            && let Some(editor) = shorts.preview_mut()
+        {
             let port = editor.playback.audio_port();
             if self
                 .audio_port
                 .as_ref()
                 .is_none_or(|old| !Arc::ptr_eq(old, &port))
-                && let Some(effects) = &self.effects
-                && let Err(error) = editor.set_effects(effects.clone())
             {
-                tracing::warn!(category = "effects_unavailable", error = %error, "GPU effects unavailable");
-            }
-            if self
-                .audio_port
-                .as_ref()
-                .is_none_or(|old| !Arc::ptr_eq(old, &port))
-            {
-                self._stream = None;
-                let rate = editor.session.project().data().settings.audio_sample_rate;
-                match audio(port.clone(), rate) {
-                    Ok(stream) => {
-                        editor.playback.set_device_available(true);
-                        self._stream = Some(stream);
-                    }
-                    Err(e) => {
-                        tracing::warn!(category="audio_unavailable",error=%e,"Audio output unavailable");
-                    }
+                if let Some(effects) = &self.effects {
+                    let _ = editor.set_effects(effects.clone());
                 }
+                self._stream = audio(
+                    port.clone(),
+                    editor.session.project().data().settings.audio_sample_rate,
+                )
+                .ok();
+                editor.playback.set_device_available(self._stream.is_some());
                 self.audio_port = Some(port);
-                if self.smoke.is_some() && editor.session.project().duration() > time::Tick::ZERO {
-                    let _ = editor.activate("transport.play");
-                }
             }
         }
         let Some(editor) = &self.workspace.editor else {
@@ -185,6 +216,7 @@ impl eframe::App for Native {
                 }
             }
             if elapsed >= smoke.seconds {
+                self.workspace.request_close();
                 if let Ok(bytes) = serde_json::to_vec_pretty(&smoke.samples)
                     && let Err(e) = std::fs::write(smoke.output.join("playback.json"), bytes)
                 {
@@ -377,9 +409,13 @@ fn run() -> Result<()> {
     };
     let options = eframe::NativeOptions {
         renderer: eframe::Renderer::Wgpu,
-        viewport: egui::ViewportBuilder::default()
-            .with_inner_size([1440.0, 900.0])
-            .with_min_inner_size([1280.0, 800.0])
+        viewport: workspace
+            .preferences
+            .windows
+            .get("home")
+            .cloned()
+            .unwrap_or_default()
+            .builder()
             .with_icon(Arc::new(icon))
             .with_window_level(if smoke.is_some() {
                 egui::WindowLevel::AlwaysOnTop
@@ -407,6 +443,7 @@ fn run() -> Result<()> {
                 saved_preferences,
                 _stream: None,
                 audio_port: None,
+                project_audio: BTreeMap::new(),
                 smoke,
                 capture: None,
                 observe_create,

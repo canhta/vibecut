@@ -331,3 +331,84 @@ fn every_registry_command_has_an_explicit_grant_and_effect() {
         }
     }
 }
+
+#[tokio::test]
+async fn desktop_project_routing_selects_explicit_or_focused_session_and_refuses_invalid_targets() {
+    let (handler, mut inbox) =
+        Inbox::new(Grants::default(), ByteBudget::new(768 << 20).unwrap()).unwrap();
+    let mut first = Session::new(
+        project::Project::empty(project::ProjectId(1), "first".into()).unwrap(),
+        100,
+    )
+    .unwrap();
+    let mut second = Session::new(
+        project::Project::empty(project::ProjectId(2), "second".into()).unwrap(),
+        100,
+    )
+    .unwrap();
+    for (index, target, expected) in [
+        (0, Some(json!("2")), Some(2)),
+        (1, None, Some(1)),
+        (2, Some(json!(2)), None),
+        (3, Some(json!("999")), None),
+        (4, Some(Value::Null), None),
+    ] {
+        let revision = if target.as_ref().and_then(Value::as_str) == Some("2") {
+            second.revision()
+        } else {
+            first.revision()
+        };
+        let mut value = json!({"command":"project.rename","request_id":format!("route-{index}"),
+            "params":{"name":format!("edit-{index}")},"base_rev":revision,"idempotency_key":format!("route-{index}")});
+        if let Some(target) = target {
+            value["project_id"] = target;
+        }
+        let (reply, receive) = oneshot::channel();
+        handler
+            .send
+            .send(Pending {
+                value,
+                expires: Instant::now() + DEADLINE,
+                reply,
+            })
+            .await
+            .unwrap();
+        inbox
+            .poll_projects(|target, inbox, value| {
+                let session = match target.unwrap_or(project::ProjectId(1)) {
+                    project::ProjectId(1) => &mut first,
+                    project::ProjectId(2) => &mut second,
+                    _ => return Err(EditError::SessionGone),
+                };
+                inbox.execute_project(session, value, |_, _| Err(EditError::Permission))
+            })
+            .unwrap();
+        let result = receive.await.unwrap();
+        if let Some(id) = expected {
+            let response = result.unwrap();
+            assert_eq!(
+                response.pointer("/value/status"),
+                Some(&json!("result")),
+                "{response}"
+            );
+            assert_eq!(
+                if id == 1 {
+                    first.project()
+                } else {
+                    second.project()
+                }
+                .data()
+                .name
+                .as_str(),
+                format!("edit-{index}")
+            );
+        } else {
+            assert!(result.is_err());
+        }
+    }
+    assert_eq!(first.project().data().name.as_str(), "edit-1");
+    assert_eq!(second.project().data().name.as_str(), "edit-0");
+    inbox.retain_projects(|id| id == project::ProjectId(2));
+    assert!(!inbox.projects.contains_key(&project::ProjectId(1)));
+    assert!(inbox.projects.contains_key(&project::ProjectId(2)));
+}

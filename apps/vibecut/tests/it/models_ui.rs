@@ -568,3 +568,86 @@ fn contains_file(path: &Path, names: &std::collections::BTreeSet<String>) -> boo
         }
     })
 }
+
+#[test]
+fn project_windows_share_one_model_service_across_editor_close() {
+    use vibecut::workspace::Workspace;
+    fn idle(app: &mut Workspace) {
+        let deadline = Instant::now() + Duration::from_secs(20);
+        while app.busy() {
+            app.tick();
+            assert!(Instant::now() < deadline);
+            std::thread::sleep(Duration::from_millis(1));
+        }
+    }
+    let root = tempfile::tempdir().unwrap();
+    let cache = root.path().join("model-cache");
+    let http = Arc::new(Http::default());
+    let models = manager(
+        &cache,
+        vec![model("fixture-shared", "MIT", &[1; 64])],
+        http.clone(),
+        Arc::new(Io {
+            available: u64::MAX,
+        }),
+    );
+    let mut app =
+        Workspace::new(root.path().join("recovery"), Preferences::default(), None).unwrap();
+    idle(&mut app);
+    app.create().unwrap();
+    idle(&mut app);
+    let first = app.focused_project().unwrap();
+    app.create().unwrap();
+    idle(&mut app);
+    let second = app.focused_project().unwrap();
+    app.editor_mut(first).unwrap().set_model_manager(models);
+    app.editor_mut(first)
+        .unwrap()
+        .open_model("fixture-shared")
+        .unwrap();
+    app.focus(first).unwrap();
+    let mut h = Harness::builder()
+        .with_size(egui::vec2(1440.0, 900.0))
+        .build_ui_state(
+            |ui, a: &mut Workspace| {
+                a.tick();
+                if let Some(id) = a.focused_project() {
+                    a.window_ui(id, ui);
+                }
+            },
+            app,
+        );
+    h.run_steps(6);
+    assert!(
+        h.query_all(By::new().predicate(|n| n.author_id() == Some("models.row.fixture-shared")))
+            .count()
+            == 1
+    );
+    h.state_mut()
+        .windows
+        .get_mut(&first)
+        .unwrap()
+        .persist(None, true, true, true)
+        .unwrap();
+    idle(h.state_mut());
+    h.state_mut().focus(second).unwrap();
+    h.run_steps(6);
+    assert!(!h.state().windows.contains_key(&first));
+    assert!(
+        h.query_all(By::new().predicate(|n| n.author_id() == Some("models.row.fixture-shared")))
+            .count()
+            == 1,
+        "the injected app model service survives the window that first presented it"
+    );
+    assert_eq!(
+        http.count(),
+        0,
+        "moving between windows never grants transfer consent"
+    );
+    assert!(
+        ArtifactCache::open(&cache, ByteBudget::new(64 << 20).unwrap(), 32).is_err(),
+        "the app still owns the cache lease"
+    );
+    drop(h);
+    assert!(ArtifactCache::open(&cache, ByteBudget::new(64 << 20).unwrap(), 32).is_ok());
+}

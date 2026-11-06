@@ -99,7 +99,17 @@ fn missing_path_creates_once_but_other_load_errors_show_retry_and_back() {
     idle(&mut app);
     let mut h = Harness::builder()
         .with_size(egui::vec2(1440.0, 900.0))
-        .build_ui_state(|ui, a: &mut Workspace| a.ui(ui), app);
+        .build_ui_state(
+            |ui, a: &mut Workspace| {
+                a.tick();
+                if let Some(id) = a.focused_project() {
+                    a.window_ui(id, ui);
+                } else {
+                    a.ui(ui);
+                }
+            },
+            app,
+        );
     h.run_steps(3);
     assert!(h.query_by_label("Retry").is_some());
     h.get(By::new().predicate(|n| n.author_id() == Some("project.error.back")))
@@ -116,7 +126,17 @@ fn inline_rename_commit_cancel_and_window_close_guard_use_real_widgets() {
     idle(&mut app);
     let mut h = Harness::builder()
         .with_size(egui::vec2(1440.0, 900.0))
-        .build_ui_state(|ui, a: &mut Workspace| a.ui(ui), app);
+        .build_ui_state(
+            |ui, a: &mut Workspace| {
+                a.tick();
+                if let Some(id) = a.focused_project() {
+                    a.window_ui(id, ui);
+                } else {
+                    a.ui(ui);
+                }
+            },
+            app,
+        );
     h.run_steps(3);
     h.get(By::new().predicate(|n| n.author_id() == Some("project.rename")))
         .click();
@@ -196,7 +216,26 @@ fn inline_rename_commit_cancel_and_window_close_guard_use_real_widgets() {
         h.state().editor.as_ref().unwrap().preferences.snapping,
         snapping
     );
+    let id = h.state().focused_project().unwrap();
+    h.state_mut()
+        .persist(
+            Some(root.path().join("during-save.vibecut")),
+            false,
+            false,
+            false,
+        )
+        .unwrap();
+    h.state_mut().windows.get_mut(&id).unwrap().request_close();
+    idle(h.state_mut());
+    h.run_steps(3);
+    assert!(
+        h.query_all(By::new().predicate(|n| n.author_id() == Some("project.close.cancel")))
+            .count()
+            == 1,
+        "a close request during save must survive the save acknowledgement"
+    );
 }
+
 #[test]
 fn recovery_prompt_recovers_copy_and_requires_save_as() {
     let root = tempfile::tempdir().unwrap();
@@ -209,7 +248,17 @@ fn recovery_prompt_recovers_copy_and_requires_save_as() {
     let second = app(root.path());
     let mut h = Harness::builder()
         .with_size(egui::vec2(1440.0, 900.0))
-        .build_ui_state(|ui, a: &mut Workspace| a.ui(ui), second);
+        .build_ui_state(
+            |ui, a: &mut Workspace| {
+                a.tick();
+                if let Some(id) = a.focused_project() {
+                    a.window_ui(id, ui);
+                } else {
+                    a.ui(ui);
+                }
+            },
+            second,
+        );
     h.run_steps(3);
     h.get(By::new().predicate(|n| n.author_id() == Some("recovery.recover")))
         .click();
@@ -278,7 +327,17 @@ fn loading_and_exiting_indicators_cover_real_background_boundaries() {
     let app = app(root.path());
     let mut h = Harness::builder()
         .with_size(egui::vec2(1440.0, 900.0))
-        .build_ui_state(|ui, a: &mut Workspace| a.ui(ui), app);
+        .build_ui_state(
+            |ui, a: &mut Workspace| {
+                a.tick();
+                if let Some(id) = a.focused_project() {
+                    a.window_ui(id, ui);
+                } else {
+                    a.ui(ui);
+                }
+            },
+            app,
+        );
     h.run_steps(3);
     h.get(By::new().predicate(|n| n.author_id() == Some("project.create")))
         .click();
@@ -315,7 +374,17 @@ fn corrupt_recovery_candidate_is_skipped_with_a_visible_diagnostic() {
     let second = app(root.path());
     let mut h = Harness::builder()
         .with_size(egui::vec2(1440.0, 900.0))
-        .build_ui_state(|ui, a: &mut Workspace| a.ui(ui), second);
+        .build_ui_state(
+            |ui, a: &mut Workspace| {
+                a.tick();
+                if let Some(id) = a.focused_project() {
+                    a.window_ui(id, ui);
+                } else {
+                    a.ui(ui);
+                }
+            },
+            second,
+        );
     h.run_steps(3);
     assert!(
         h.query_by_label("A damaged recovery copy was skipped.")
@@ -353,9 +422,209 @@ fn journal_only_exit_refreshes_first_frame_thumbnail_without_saving_edits() {
     app.persist(None, false, true, true).unwrap();
     idle(&mut app);
     assert!(app.error().is_none(), "{:?}", app.error());
-    assert!(app.ready_to_close());
+    assert!(!app.ready_to_close(), "Home remains open");
     assert!(app.editor.is_none());
+    app.request_close();
+    assert!(app.ready_to_close());
     assert_eq!(std::fs::read(&path).unwrap(), before);
     assert!(matches!(project::read_metadata(&path).thumbnail,
         project::Thumbnail::Ready { ref rgba, .. } if rgba[0]>245 && rgba[1]<10 && rgba[2]<10));
+}
+
+#[test]
+fn project_windows_keep_independent_edits_undo_and_playback_and_reopen_focuses_one_writer() {
+    let root = tempfile::tempdir().unwrap();
+    let mut app = app(root.path());
+    let mut ids = Vec::new();
+    let mut paths = Vec::new();
+    for number in 1..=2 {
+        app.create().unwrap();
+        idle(&mut app);
+        let id = app.focused_project().unwrap();
+        let path = root.path().join(format!("project-{number}.vibecut"));
+        app.persist(Some(path.clone()), false, false, false)
+            .unwrap();
+        idle(&mut app);
+        assert!(app.error().is_none(), "{:?}", app.error());
+        ids.push(id);
+        paths.push(path);
+    }
+    assert!(app.home_open());
+    assert_eq!(app.windows.len(), 2);
+    let first = ids[0];
+    let second = ids[1];
+    for (id, name) in [(first, "first edit"), (second, "second edit")] {
+        app.editor_mut(id)
+            .unwrap()
+            .session
+            .execute("project.rename", serde_json::json!({"name":name}))
+            .unwrap();
+    }
+    app.editor_mut(first)
+        .unwrap()
+        .activate("edit.undo")
+        .unwrap();
+    assert_eq!(
+        app.editor_mut(first)
+            .unwrap()
+            .session
+            .project()
+            .data()
+            .name
+            .as_str(),
+        "New project"
+    );
+    assert_eq!(
+        app.editor_mut(second)
+            .unwrap()
+            .session
+            .project()
+            .data()
+            .name
+            .as_str(),
+        "second edit"
+    );
+    app.editor_mut(first)
+        .unwrap()
+        .activate("edit.redo")
+        .unwrap();
+    assert_eq!(
+        app.editor_mut(first)
+            .unwrap()
+            .session
+            .project()
+            .data()
+            .name
+            .as_str(),
+        "first edit"
+    );
+    let first_port = app.editor_mut(first).unwrap().playback.audio_port();
+    let second_port = app.editor_mut(second).unwrap().playback.audio_port();
+    assert!(!std::sync::Arc::ptr_eq(&first_port, &second_port));
+    app.tick();
+    assert_eq!(app.windows.get(&first).unwrap().title(), "first edit");
+    assert_eq!(app.windows.get(&second).unwrap().title(), "second edit");
+    let revision = app.editor_mut(first).unwrap().session.revision();
+    // Canonical path aliases select the original editor without loading a second writer.
+    app.open(root.path().join(".").join(paths[0].file_name().unwrap()))
+        .unwrap();
+    assert_eq!(app.focused_project(), Some(first));
+    assert_eq!(app.windows.len(), 2);
+    assert_eq!(app.editor_mut(first).unwrap().session.revision(), revision);
+    assert!(matches!(
+        project::WriterLease::acquire(&paths[0]),
+        Err(project::Error::Busy)
+    ));
+    // Explicit window harness targets preserve the same automation ids in either window.
+    let mut harness = Harness::builder()
+        .with_size(egui::vec2(1440.0, 900.0))
+        .build_ui_state(
+            move |ui, a: &mut Workspace| {
+                a.tick();
+                let id = a.focused_project().unwrap();
+                a.window_ui(id, ui);
+            },
+            app,
+        );
+    for id in [first, second] {
+        harness.state_mut().focus(id).unwrap();
+        harness.run_steps(3);
+        assert!(
+            harness
+                .query_by_label(if id == first {
+                    "first edit"
+                } else {
+                    "second edit"
+                })
+                .is_some()
+        );
+        assert!(
+            harness
+                .query_all(By::new().predicate(|n| n.author_id() == Some("project.rename")))
+                .count()
+                == 1
+        );
+        assert!(
+            harness
+                .query_all(By::new().predicate(|n| n.author_id() == Some("project.back")))
+                .count()
+                == 0
+        );
+    }
+    harness.state_mut().request_close();
+    assert!(!harness.state().home_open());
+    assert!(!harness.state().ready_to_close());
+    harness
+        .get(By::new().predicate(|n| n.author_id() == Some("window.menu")))
+        .click();
+    harness.run_steps(3);
+    harness
+        .get(By::new().predicate(|n| n.author_id() == Some("window.home")))
+        .click();
+    harness.run_steps(3);
+    assert!(harness.state().home_open());
+    assert_eq!(harness.state().windows.len(), 2);
+    harness.state_mut().request_close();
+    for id in [first, second] {
+        let window = harness.state_mut().windows.get_mut(&id).unwrap();
+        window.persist(None, true, true, true).unwrap();
+        assert_eq!(
+            window.title(),
+            if id == first {
+                "first edit"
+            } else {
+                "second edit"
+            }
+        );
+        idle(harness.state_mut());
+    }
+    assert!(harness.state().ready_to_close());
+    assert!(harness.state().windows.is_empty());
+    assert!(project::WriterLease::acquire(&paths[0]).is_ok());
+    assert!(project::WriterLease::acquire(&paths[1]).is_ok());
+}
+
+#[test]
+fn export_memory_pressure_cannot_consume_another_windows_autosave_allowance() {
+    let root = tempfile::tempdir().unwrap();
+    let mut app = app(root.path());
+    app.create().unwrap();
+    idle(&mut app);
+    let first = app.focused_project().unwrap();
+    app.create().unwrap();
+    idle(&mut app);
+    let second = app.focused_project().unwrap();
+    let budget = app.editor_mut(first).unwrap().playback.budget().clone();
+    let export = budget
+        .reserve(engine::ByteOwner::Export, 256 << 20)
+        .unwrap();
+    let app_budget = app.control_budget();
+    let snapshot = app_budget.snapshot().unwrap();
+    let caches = app_budget
+        .reserve(
+            engine::ByteOwner::PersistentCache,
+            snapshot.limit - snapshot.used,
+        )
+        .unwrap();
+    assert_eq!(app.control_budget().snapshot().unwrap().used, 768 << 20);
+    let path = root.path().join("autosave.vibecut");
+    app.windows
+        .get_mut(&second)
+        .unwrap()
+        .persist(Some(path.clone()), false, false, false)
+        .unwrap();
+    idle(&mut app);
+    assert!(app.error().is_none(), "{:?}", app.error());
+    assert!(path.is_file());
+    assert!(
+        !app.editor_mut(second)
+            .unwrap()
+            .session
+            .autosave()
+            .unwrap()
+            .is_dirty()
+    );
+    assert!(budget.snapshot().unwrap().used >= 256 << 20);
+    drop(caches);
+    drop(export);
 }

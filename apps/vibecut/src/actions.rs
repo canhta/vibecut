@@ -421,7 +421,7 @@ pub enum UiAction {
     Export,
     Save,
     SaveAs,
-    Back,
+    FocusHome,
     RenameProject,
     CancelImport,
     Play,
@@ -857,11 +857,11 @@ pub const ACTIONS: &[ActionSpec] = &[
         &[],
     ),
     ActionSpec::ui(
-        "project.back",
-        "Back to projects",
+        "window.home",
+        "Focus Home",
         ActionCategory::File,
         "workspace lifecycle",
-        UiAction::Back,
+        UiAction::FocusHome,
         &[],
     ),
     ActionSpec::ui(

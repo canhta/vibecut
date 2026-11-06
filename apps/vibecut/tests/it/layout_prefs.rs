@@ -265,11 +265,21 @@ fn invalid_section_edits_are_atomic_and_do_not_enter_history() {
 #[test]
 fn splitter_commit_refuses_an_edit_that_would_exceed_the_store_budget() {
     let mut preferences = Preferences::default();
+    for index in 0..64 {
+        preferences.windows.insert(
+            format!("{index:064}"),
+            vibecut::catalog::WindowGeometry {
+                size: [12345.678, 12345.678],
+                position: Some([-12345.678, -23_456.79]),
+                maximized: false,
+            },
+        );
+    }
     for index in 0..128 {
         let mut next = preferences.clone();
         next.sections.insert(format!("section.{index:032}"), false);
         next.sections.insert("x".to_owned(), false);
-        if serde_json::to_vec(&next).unwrap().len() > 4096 {
+        if serde_json::to_vec(&next).unwrap().len() > 16384 {
             break;
         }
         next.sections.remove("x");
@@ -279,11 +289,11 @@ fn splitter_commit_refuses_an_edit_that_would_exceed_the_store_budget() {
     for length in 1..=64 {
         preferences = base.clone();
         preferences.sections.insert("x".repeat(length), false);
-        if serde_json::to_vec(&preferences).unwrap().len() == 4096 {
+        if serde_json::to_vec(&preferences).unwrap().len() == 16384 {
             break;
         }
     }
-    assert_eq!(serde_json::to_vec(&preferences).unwrap().len(), 4096);
+    assert_eq!(serde_json::to_vec(&preferences).unwrap().len(), 16384);
     preferences.validate().unwrap();
     let mut harness = build(editor(preferences.clone()));
     harness.run_steps(3);
@@ -320,5 +330,37 @@ fn layout_preferences_render_light_and_dark_screenshots() {
             .save(target.join(format!("p1-05-{name}.png")))
             .unwrap();
         assert!(image.width() > 0 && image.height() > 0);
+    }
+}
+
+#[test]
+fn window_geometry_is_independent_bounded_and_persisted_outside_project_history() {
+    use vibecut::catalog::WindowGeometry;
+    let root = tempfile::tempdir().unwrap();
+    let store = PreferenceStore::new(root.path().join("preferences.json"));
+    let mut preferences = Preferences::default();
+    let first = WindowGeometry {
+        size: [1440.0, 900.0],
+        position: Some([20.0, 30.0]),
+        maximized: false,
+    };
+    let second = WindowGeometry {
+        size: [1728.0, 1030.0],
+        position: Some([-400.0, 10.0]),
+        maximized: true,
+    };
+    preferences.windows.insert("editor.1".into(), first.clone());
+    preferences
+        .windows
+        .insert("editor.2".into(), second.clone());
+    store.save(&preferences).unwrap();
+    let loaded = store.load().unwrap();
+    assert_eq!(loaded.windows.get("editor.1"), Some(&first));
+    assert_eq!(loaded.windows.get("editor.2"), Some(&second));
+    for bad in [f32::NAN, f32::INFINITY, 0.0, 16385.0] {
+        preferences.windows.get_mut("editor.1").unwrap().size[0] = bad;
+        assert!(preferences.validate().is_err());
+        assert!(store.save(&preferences).is_err());
+        assert_eq!(store.load().unwrap(), loaded);
     }
 }
