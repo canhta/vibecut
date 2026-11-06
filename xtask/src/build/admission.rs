@@ -22,6 +22,7 @@ pub(super) struct Admission {
 }
 /// Number of slots currently leased by running commands across every number,
 /// including numbers above a shrunk capacity. Such builds keep running.
+/// Caller holds admission: claims briefly lock free slots before publication.
 pub(super) fn active_slots(locks: &Path, budget: usize) -> io::Result<(usize, usize)> {
     let mut active = 0;
     let mut jobs = 0usize;

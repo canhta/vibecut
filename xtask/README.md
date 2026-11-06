@@ -264,7 +264,8 @@ remote timestamp is newer; equal or newer local reports are kept.
 independent processes (waiter/holder crashes, a surviving wrapped command after
 launcher death, a surviving descendant after normal launcher exit, FIFO and the
 last-slot race), mixed-capacity job reservations, concurrent claims and releases
-at the shared job bound, exclusive caller jobs and fail-closed reservation metadata,
+at the shared job bound (including a paused free-slot scan with stale job metadata),
+exclusive caller jobs and fail-closed reservation metadata,
 child exit/kill lease release, capacity derivation and override
 validation, shrinking capacity without killing running builds, reuse of slots above
 a shrunk count, memory admission with per-slot peak reserves and job pressure,

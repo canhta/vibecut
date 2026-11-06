@@ -80,6 +80,13 @@ fn wait(path: &Path) {
     }
 }
 
+// Claims temporarily lock free slots before publishing their reservations.
+// Observe under the same admission lock so probes cannot look like holders.
+fn snapshot(locks: &Path, budget: usize) -> std::io::Result<(usize, usize)> {
+    let _admission = Queue::admission(locks)?;
+    active_slots(locks, budget)
+}
+
 fn worker(root: &Path, label: &str) -> Process {
     let child = Command::new(std::env::current_exe().unwrap())
         .args(["--exact", "build::tests::build_process", "--nocapture"])
@@ -230,7 +237,7 @@ fn native_environment_probe() {
         (TEST_CPUS / 3).max(2)
     };
     assert_eq!(
-        active_slots(&root.join("locks"), 2 * TEST_CPUS).unwrap(),
+        snapshot(&root.join("locks"), 2 * TEST_CPUS).unwrap(),
         (1, expected)
     );
     fs::write(
@@ -991,7 +998,7 @@ fn mixed_capacities_reserve_only_remaining_host_jobs() {
         .unwrap();
         assert_eq!(slot.jobs, expected);
         held.push(slot);
-        assert!(active_slots(&locks, 40).unwrap().1 <= 40);
+        assert!(snapshot(&locks, 40).unwrap().1 <= 40);
     }
     let mut next = Queue::enter(&locks).unwrap();
     let admission = Admission {
@@ -1010,7 +1017,7 @@ fn mixed_capacities_reserve_only_remaining_host_jobs() {
         .unwrap()
         .unwrap();
     assert_eq!(replacement.jobs, 2);
-    assert_eq!(active_slots(&locks, 40).unwrap().1, 32);
+    assert_eq!(snapshot(&locks, 40).unwrap().1, 32);
 
     let directory = Directory::new();
     let root = &directory.0;
@@ -1033,7 +1040,7 @@ fn mixed_capacities_reserve_only_remaining_host_jobs() {
             .unwrap(),
         );
     }
-    assert_eq!(active_slots(&locks, 6).unwrap().1, 5);
+    assert_eq!(snapshot(&locks, 6).unwrap().1, 5);
     let mut next = Queue::enter(&locks).unwrap();
     assert!(
         claim(
@@ -1131,56 +1138,105 @@ fn caller_job_settings_select_exclusive_admission() {
 
 #[test]
 fn concurrent_admission_and_release_preserve_fifo_and_job_budget() {
-    let directory = Directory::new();
-    let root = &directory.0;
-    let locks = root.join("locks");
-    let mut held = Vec::new();
-    for ceiling in [1, 2, 3] {
-        let mut queue = Queue::enter(&locks).unwrap();
-        held.push(
-            claim(
-                &mut queue,
-                root,
-                test_admission(ceiling, false),
-                || None,
-                || None,
-            )
-            .unwrap()
-            .unwrap(),
-        );
+    for paused_scan in [false, true] {
+        let directory = Directory::new();
+        let root = &directory.0;
+        let locks = root.join("locks");
+        let mut held = Vec::new();
+        for ceiling in [1, 2, 3] {
+            let mut queue = Queue::enter(&locks).unwrap();
+            held.push(
+                claim(
+                    &mut queue,
+                    root,
+                    test_admission(ceiling, false),
+                    || None,
+                    || None,
+                )
+                .unwrap()
+                .unwrap(),
+            );
+        }
+        assert_eq!(snapshot(&locks, 16).unwrap().1, 14);
+        if paused_scan {
+            // Retained metadata from earlier builds is valid for free slots. A
+            // claimant probes both free numbers before choosing one; pause in its
+            // load probe, while admission and both free-slot locks are held.
+            fs::write(locks.join("slot-4.jobs"), "2").unwrap();
+            fs::write(locks.join("slot-5.jobs"), "16").unwrap();
+            open(&locks.join("last-start"))
+                .unwrap()
+                .set_modified(SystemTime::now() - Duration::from_secs(30))
+                .unwrap();
+            let mut queue = Queue::enter(&locks).unwrap();
+            std::thread::scope(|scope| {
+                let (scanned, observing) = std::sync::mpsc::sync_channel(0);
+                let (resume, paused) = std::sync::mpsc::sync_channel(0);
+                let locks = &locks;
+                let claimant = scope.spawn(move || {
+                    claim(
+                        &mut queue,
+                        root,
+                        test_admission(5, true),
+                        || Some(ample_memory()),
+                        || {
+                            scanned.send(()).unwrap();
+                            paused.recv().unwrap();
+                            Some(0.0)
+                        },
+                    )
+                    .unwrap()
+                    .unwrap()
+                });
+                observing.recv().unwrap();
+                // This is the original unsynchronised observer's exact false
+                // overcount: 14 real jobs plus two free-slot probes (2 + 16).
+                assert_eq!(active_slots(locks, 16).unwrap().1, 32);
+                assert!(
+                    try_lock(open(&locks.join("admission")).unwrap())
+                        .unwrap()
+                        .is_none()
+                );
+                resume.send(()).unwrap();
+                let extra = claimant.join().unwrap();
+                assert_eq!(extra.jobs, 2);
+                assert_eq!(snapshot(locks, 16).unwrap().1, 16);
+                drop(extra);
+            });
+            assert_eq!(snapshot(&locks, 16).unwrap().1, 14);
+        }
+        // Independent processes contend for the final two jobs, with ample
+        // free slot numbers. Their enqueue order is controlled, claims race.
+        let mut first = worker(root, "budget-first");
+        let mut second = worker(root, "budget-second");
+        let mut third = worker(root, "budget-third");
+        fs::write(root.join("budget.go"), b"").unwrap();
+        wait(&root.join("budget-first.acquired"));
+        assert!(!root.join("budget-second.acquired").exists());
+        assert!(!root.join("budget-third.acquired").exists());
+        assert_eq!(snapshot(&locks, 16).unwrap().1, 16);
+        // Release races with both pending claimers. Only the FIFO head may
+        // reuse the reservation; killing it must then free jobs for the next.
+        fs::write(root.join("budget-first.release"), b"").unwrap();
+        assert!(first.0.wait().unwrap().success());
+        wait(&root.join("budget-second.acquired"));
+        assert!(!root.join("budget-third.acquired").exists());
+        assert_eq!(snapshot(&locks, 16).unwrap().1, 16);
+        second.0.kill().unwrap();
+        second.0.wait().unwrap();
+        wait(&root.join("budget-third.acquired"));
+        assert_eq!(snapshot(&locks, 16).unwrap().1, 16);
+        for label in ["budget-first", "budget-second", "budget-third"] {
+            assert_eq!(
+                fs::read_to_string(root.join(format!("{label}.jobs"))).unwrap(),
+                "2"
+            );
+        }
+        fs::write(root.join("budget-third.release"), b"").unwrap();
+        assert!(third.0.wait().unwrap().success());
+        drop(held);
+        assert_eq!(snapshot(&locks, 16).unwrap(), (0, 0));
     }
-    assert_eq!(active_slots(&locks, 16).unwrap().1, 14);
-    // Independent processes contend for the final two jobs, with ample
-    // free slot numbers. Their enqueue order is controlled, claims race.
-    let mut first = worker(root, "budget-first");
-    let mut second = worker(root, "budget-second");
-    let mut third = worker(root, "budget-third");
-    fs::write(root.join("budget.go"), b"").unwrap();
-    wait(&root.join("budget-first.acquired"));
-    assert!(!root.join("budget-second.acquired").exists());
-    assert!(!root.join("budget-third.acquired").exists());
-    assert_eq!(active_slots(&locks, 16).unwrap().1, 16);
-    // Release races with both pending claimers. Only the FIFO head may
-    // reuse the reservation; killing it must then free jobs for the next.
-    fs::write(root.join("budget-first.release"), b"").unwrap();
-    assert!(first.0.wait().unwrap().success());
-    wait(&root.join("budget-second.acquired"));
-    assert!(!root.join("budget-third.acquired").exists());
-    assert_eq!(active_slots(&locks, 16).unwrap().1, 16);
-    second.0.kill().unwrap();
-    second.0.wait().unwrap();
-    wait(&root.join("budget-third.acquired"));
-    assert_eq!(active_slots(&locks, 16).unwrap().1, 16);
-    for label in ["budget-first", "budget-second", "budget-third"] {
-        assert_eq!(
-            fs::read_to_string(root.join(format!("{label}.jobs"))).unwrap(),
-            "2"
-        );
-    }
-    fs::write(root.join("budget-third.release"), b"").unwrap();
-    assert!(third.0.wait().unwrap().success());
-    drop(held);
-    assert_eq!(active_slots(&locks, 16).unwrap(), (0, 0));
 }
 
 #[test]
@@ -1272,7 +1328,7 @@ fn shrinking_capacity_never_kills_running_builds() {
     assert_ne!(held_a.number, held_b.number);
     // A stray name is not a slot lease.
     fs::write(locks.join("slot-x"), b"").unwrap();
-    assert_eq!(active_slots(&locks, 16).unwrap().0, 2);
+    assert_eq!(snapshot(&locks, 16).unwrap().0, 2);
 
     let mut shrunk = Queue::enter(&locks).unwrap();
     assert!(
@@ -1302,7 +1358,7 @@ fn shrinking_capacity_never_kills_running_builds() {
 
     let freed_number = held_b.number;
     drop(held_b);
-    assert_eq!(active_slots(&locks, 16).unwrap().0, 1);
+    assert_eq!(snapshot(&locks, 16).unwrap().0, 1);
     let regrown = claim(
         &mut shrunk,
         root,
