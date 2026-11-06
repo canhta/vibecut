@@ -485,7 +485,7 @@ Safe wire error codes omit paths, user text, provider bodies and Rust Debug;
 `bounded_json` is the adapter's bounded response serializer.
 API version 1 is independent of the project file schema. The BLAKE3 catalog digest
 covers schemas, static effects/examples and limits, excluding enabled/session state.
-[Generated commands](../../docs/product/commands.md) and `catalog.digest` regenerate
+[Generated commands](../../docs/product/agent-control/commands.md) and `catalog.digest` regenerate
 with `cargo xtask catalog`; the conformance test checks
 both against current registry output in CI.
 
@@ -996,7 +996,7 @@ a session that cannot be saved; a shared per-item style table would lift that.
 captions owner and returns the registered command plus cue/style/skipped counts
 and line-numbered warnings for headless adapters. It returns `Limit` for an
 oversized file and `Unsupported` when no cue survives. `captions.import` works
-inside a batch. `docs/product/commands.md`, `catalog.digest` and
+inside a batch. `docs/product/agent-control/commands.md`, `catalog.digest` and
 `cargo xtask catalog` remain the generated source of
 truth.
 

@@ -31,7 +31,7 @@ their consumer UI tickets; retained cross-area calls are recorded in each report
 
 `kit.rs` exposes the app palette, measured geometry, regular icons and the
 shared controls without an engine dependency. All callers import that interface
-directly. The [token contract](../../docs/product/tokens.md)
+directly. The [token contract](../../docs/product/ui/tokens.md)
 indexes the one executable value owner. The measured editor density (12/14 px type,
 22 px controls, 4 px corners) is installed by `kit::install_editor_density` from the
 editor frame only; every other window keeps the toolkit defaults. No standalone kit
@@ -75,7 +75,7 @@ Provision FFmpeg with `cargo xtask ffmpeg`. Build with that installation's
 The desktop binary is `vibecut`; the headless CLI is `vibecut-cli`.
 The optional control listener and background attach launch compose the CLI-owned
 adapter over this app's live Workspace; syntax and boundaries are owned by
-[MCP control](../../docs/product/mcp.md).
+[MCP control](../../docs/product/agent-control/mcp.md).
 `cargo run -p vibecut -- /native/path/to/project.json` acquires the project writer
 lease before loading. Startup keeps a supplied project path pending until
 recovery discovery and the managed catalog are both idle, regardless of which
@@ -215,7 +215,7 @@ widget families), effective bindings and conflicts on
 `KeybindingPreferences` / `Keymap`, and `Editor::set_keybinding` /
 `reset_keybinding` / `reset_keybindings`. Target payloads are executable route
 enums; consumers need not match them to list or edit shortcuts.
-[The keyboard guide](../../docs/product/keyboard.md) holds its
+[The keyboard guide](../../docs/product/agent-control/keyboard.md) holds its
 generated default table. Global dispatch runs in the capture phase, waits while
 an overlay or dialog is open, a project is loading, recording is active or a text
 field has focus, and consumes one exact chord once. Paste is intercepted only
@@ -493,7 +493,7 @@ the transition inspector belong to their respective area owners.
 
 ## Track controls
 
-Timeline header and row geometry follows the [UI design](../../docs/product/ui-editor.md#density),
+Timeline header and row geometry follows the [UI design](../../docs/product/ui/editor.md#density),
 using embedded regular SVG kind icons, output toggles and accessibility-only
 names. Logical row sizes stay constant across DPI scaling; vectors are cached at
 the display density. Empty rows have dashed placeholders. Header context

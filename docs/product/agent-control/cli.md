@@ -1,8 +1,8 @@
 # CLI
 
-`vibecut-cli` opens projects, runs editor commands, probes media and exports MP4; adapter boundaries follow [architecture](../engineering/architecture.md#contracts).
+`vibecut-cli` opens projects, runs editor commands, probes media and exports MP4; adapter boundaries follow [architecture](../../engineering/architecture.md#contracts).
 
-Build with `cargo build -p vibecut-cli` through the [build wrapper](../agents/orchestration.md#placement-and-builds); output is `target/<profile>/vibecut-cli`.
+Build with `cargo build -p vibecut-cli` through the [build wrapper](../../agents/orchestration.md#placement-and-builds); output is `target/<profile>/vibecut-cli`.
 
 ## Commands
 
@@ -55,7 +55,7 @@ ASR checkpoints are content-addressed complete windows in the default model cach
 
 ## Commands and schemas
 
-`vibecut-cli commands --json` is the authoritative generated catalog: one object with `api_version`, `registry_hash`, the static control `limits` and `entries`, where every entry carries its command ID, label, effect, JSON Schema 2020-12 input/output shapes and fixture example. `vibecut-cli schema --json` returns the same `api_version`/`registry_hash` with the generated request, response and event envelope schemas. Registry ownership follows [architecture](../engineering/architecture.md#contracts); there is no CLI-side command table. `exec` takes that command ID and its `params` object:
+`vibecut-cli commands --json` is the authoritative generated catalog: one object with `api_version`, `registry_hash`, the static control `limits` and `entries`, where every entry carries its command ID, label, effect, JSON Schema 2020-12 input/output shapes and fixture example. `vibecut-cli schema --json` returns the same `api_version`/`registry_hash` with the generated request, response and event envelope schemas. Registry ownership follows [architecture](../../engineering/architecture.md#contracts); there is no CLI-side command table. `exec` takes that command ID and its `params` object:
 
 ```sh
 vibecut-cli project new demo.vibecut
@@ -75,11 +75,11 @@ Keyframed item parameters are ordinary registry commands: `keyframes.set_param`,
 
 `audio.set_fade {item, edge, duration, curve}` (`edge` `in`|`out`, `curve` `equal_power`|`linear`|`exponential`, duration in ticks) fades an audio or video clip edge; the same envelope is applied to the exported audio and to preview.
 
-Fields are required; unknown command, parameter and model fields are refused. Model wire types are the Serde shapes owned by their crates; the [engine contract](../../crates/engine/README.md#public-entry-points) describes the registry and JSON limits.
+Fields are required; unknown command, parameter and model fields are refused. Model wire types are the Serde shapes owned by their crates; the [engine contract](../../../crates/engine/README.md#public-entry-points) describes the registry and JSON limits.
 
 ## Control session
 
-`vibecut-cli control <project> [--allow-overwrite] [--no-save]` is the first CLI consumer of the [engine control contract](../../crates/engine/README.md#control-admission-revisions-and-receipts). One process is one engine Session: the writer lease is acquired before the first frame and held until the final save, so a desktop app holding it returns `busy`/3 before any request is read. Sessions have an OS-random epoch; separate `control` invocations are separate sessions and do not share revisions or receipts.
+`vibecut-cli control <project> [--allow-overwrite] [--no-save]` is the first CLI consumer of the [engine control contract](../../../crates/engine/README.md#control-admission-revisions-and-receipts). One process is one engine Session: the writer lease is acquired before the first frame and held until the final save, so a desktop app holding it returns `busy`/3 before any request is read. Sessions have an OS-random epoch; separate `control` invocations are separate sessions and do not share revisions or receipts.
 
 Requests are newline-delimited JSON objects on stdin: `request_id`, `command`, `params`, and optionally `idempotency_key`, `base_rev`, `api_version`, `registry_hash` and `session_id`. Omitted contract identity is filled from the running catalog; supplied values are still admitted by the engine, so a wrong version or digest returns `schema_mismatch` and a wrong session returns `session_gone`. Read commands need no revision or key. Effectful commands need the current `base_rev` and a 1–128 byte `idempotency_key`; stale revisions return `stale_revision` before any child of a batch, and replaying an accepted key returns its original result while a different request under the same key returns `idempotency_conflict`. Receipts are not evicted: the next new effect after 4096 retained keys returns `receipt_capacity`. Unknown commands, unknown/extra fields, duplicate JSON keys, frames over 8 MiB and integers outside ±(2^53−1) are refused before effects; an oversized frame is drained and returned as an in-band `limit` error, so the session continues with earlier accepted edits intact. A session retains 100 undo steps, so `undo` and `redo` are ordinary frames; lifecycle `project.create` stays with `project new` and is refused inside a session.
 
@@ -141,9 +141,9 @@ partial MP4 is promoted. There is no signal-to-job-cancel handler; use the engin
 
 ## Project files and concurrency
 
-A project is the `.vibecut` file owned by the project crate. Its schema, atomic publication, recovery snapshots and writer lease are documented in the [project contract](../../crates/project/README.md#persistence-and-limits); the CLI does not define a second format page.
+A project is the `.vibecut` file owned by the project crate. Its schema, atomic publication, recovery snapshots and writer lease are documented in the [project contract](../../../crates/project/README.md#persistence-and-limits); the CLI does not define a second format page.
 
-Lease admission for reads and writes follows the [CLI owner contract](../../apps/vibecut-cli/README.md).
+Lease admission for reads and writes follows the [CLI owner contract](../../../apps/vibecut-cli/README.md).
 
 ## Export admission
 
@@ -151,7 +151,7 @@ The CLI keeps MP4 output as its default contract, independent of the destination
 
 `export` uses render's finished-file path: output is staged and published only after encoding, muxing and a final source revalidation. A required source that is missing or whose content hash changed refuses the export with exit code 4 and `unavailable` entries naming the asset ID, item ID, source tick range and reason (`missing`, `changed`, `metadata`, `video` or `audio`). No partial final file is promoted and an existing destination is preserved.
 
-Degraded output is never a silent default. `--allow-degraded` is the explicit consent that admits initially missing or changed visual sources as black/silence; a source that fails during execution still refuses. Details of the admission and publication fence are in the [render contract](../../crates/render/README.md#export-and-publication).
+Degraded output is never a silent default. `--allow-degraded` is the explicit consent that admits initially missing or changed visual sources as black/silence; a source that fails during execution still refuses. Details of the admission and publication fence are in the [render contract](../../../crates/render/README.md#export-and-publication).
 
 ## Exit codes
 
@@ -195,14 +195,14 @@ provider URL, so changing it invalidates the old bytes.
 
 `--select` takes 1-based candidate indices; without it every candidate is exported. `--export` requires `--subs` and prepares one engine batch export per selected short at 1080×1920, burning the requested language. When `--subs` differs from the detected source, or `--bilingual` is set, the same subtitle translation path runs before export. Outputs are `<title>.mp4`; selected sidecars are none by default. Existing files are preserved unless `--overwrite` is set, and `--allow-degraded` is the explicit consent for initially missing/changed visual sources.
 
-Candidate output preserves the AI ordered-segment contract: `pieces` are the provider's play-order pieces with roles, `segments` are the snapped source ranges, and `adjustments` carries the signed original/adjusted delta per edge. The `word_fade` kind identifies frame rounding at a sub-frame word gap; [engine snapping](../../crates/engine/README.md#clip-boundary-adjustment) owns its overlap and export-audio policy. Rejected snap candidates and dropped suggestions are reported with typed reasons. `vibecut-cli providers --operation clips` lists the offline suggestion catalog, including each remote provider's policy link.
+Candidate output preserves the AI ordered-segment contract: `pieces` are the provider's play-order pieces with roles, `segments` are the snapped source ranges, and `adjustments` carries the signed original/adjusted delta per edge. The `word_fade` kind identifies frame rounding at a sub-frame word gap; [engine snapping](../../../crates/engine/README.md#clip-boundary-adjustment) owns its overlap and export-audio policy. Rejected snap candidates and dropped suggestions are reported with typed reasons. `vibecut-cli providers --operation clips` lists the offline suggestion catalog, including each remote provider's policy link.
 
 
 ## Scene detection
 
 `vibecut-cli scenes <file> [--threshold 0.28] [--fade-threshold 0.20]
 [--min-scene-ticks <ticks>] [--json]` imports a local known-duration video and
-runs the engine's [scene detection job](../../crates/engine/README.md#scene-detection).
+runs the engine's [scene detection job](../../../crates/engine/README.md#scene-detection).
 Human output prints source ticks, change kind and confidence; JSON includes the
 content key, source identity, requested range, ordered `candidates` and
 `decoded_frames`. Confidence is measured change, not a calibrated probability.

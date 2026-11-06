@@ -23,7 +23,7 @@ so direct and aggregate checks share Cargo fingerprints.
 | `pull-reports [--environment NAME] [--ssh HOST] [--dry-run] <worktree>...` | Merge a worktree's `.scratch` reports into the main checkout without overwriting newer local files |
 | `checks`, `docs`, `layers`, `assets` | Repository policy; `docs` includes the docs index, README module maps and tracker-free Markdown against only-shrinking `xtask/docs-baseline.txt`; `checks` also checks formatting and the integration-test entry point |
 | `modules` | Module structure gate: no `mod.rs`, responsibility docs, banned names (tests included), folder width and intra-crate layer direction from `xtask/modules.toml` (crate and `[[crate.folder]]` tables), with only-shrinking `xtask/modules-baseline.txt` |
-| `catalog` | Regenerate `crates/engine/catalog.digest` and `docs/product/commands.md` from the registry (the engine `control_catalog` example) |
+| `catalog` | Regenerate `crates/engine/catalog.digest` and `docs/product/agent-control/commands.md` from the registry (the engine `control_catalog` example) |
 | `clippy`, `test`, `lint`, `ci [--require-oracles]` | Individual or aggregate [verification](../docs/engineering/verification.md) |
 | `ffmpeg [--target PLATFORM]`, `ffmpeg --cache-key` | Resolve/provision native media dependencies and cache identity |
 | `media-bench`, `clip-eval SET [OPTIONS]` | Media and labelled clip-pipeline measurements |

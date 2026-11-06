@@ -1,6 +1,6 @@
 # UI: Home window
 
-Measured geometry for the Home window. Shared rules, measurement conventions, type, icons and motion: [UI design](ui.md).
+Measured geometry for the Home window. Shared rules, measurement conventions, type, icons and motion: [UI design](index.md).
 
 ## Measured frame
 

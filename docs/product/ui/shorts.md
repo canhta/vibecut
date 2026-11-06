@@ -1,6 +1,6 @@
 # UI: Long video to shorts window
 
-Measured geometry for the Long video to shorts window. Shared rules, measurement conventions, type, icons and motion: [UI design](ui.md).
+Measured geometry for the Long video to shorts window. Shared rules, measurement conventions, type, icons and motion: [UI design](index.md).
 
 ## Measured frame
 

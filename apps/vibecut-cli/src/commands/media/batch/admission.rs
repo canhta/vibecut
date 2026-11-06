@@ -18,7 +18,9 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 fn invalid_job_file() -> CliError {
-    CliError::Usage("invalid batch job file; see docs/product/cli.md#batch-job-files".into())
+    CliError::Usage(
+        "invalid batch job file; see docs/product/agent-control/cli.md#batch-job-files".into(),
+    )
 }
 
 pub(super) fn load(

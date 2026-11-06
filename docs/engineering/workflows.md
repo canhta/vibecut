@@ -4,7 +4,7 @@
 
 1. Read the ticket, milestone map, [domain docs](../agents/domain.md) and each touched crate's README. Identify the owner of every piece to change.
 2. Research API, crate, codec and provider facts: Context7 first, then official docs, then upstream source. Cite sources in the report; ask the coordinator when a missing fact blocks correctness.
-3. Learn selectively from read-only references in the main checkout's `.spikes/repos/`: the core reference for structure/core, the ticket's editor references for UI/UX and features. UI decisions follow [UI design](../product/ui.md); imports follow the policy below.
+3. Learn selectively from read-only references in the main checkout's `.spikes/repos/`: the core reference for structure/core, the ticket's editor references for UI/UX and features. UI decisions follow [UI design](../product/ui/index.md); imports follow the policy below.
 4. Implement one ticket through existing owners, re-reading shared files before editing to retain concurrent changes. Update owning docs in the same change.
 5. Run [verification](verification.md); finish when every Verify item has a command and result.
 

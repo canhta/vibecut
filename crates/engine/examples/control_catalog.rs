@@ -14,7 +14,7 @@ fn main() -> Result<(), engine::EditError> {
         engine::control::bounded_json(engine::registry(), engine::control::MAX_RESPONSE_BYTES)?,
     )?;
     std::fs::write(
-        root.join("../../docs/product/commands.md"),
+        root.join("../../docs/product/agent-control/commands.md"),
         engine::control::reference_markdown()?,
     )?;
     Ok(())

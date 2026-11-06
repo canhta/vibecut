@@ -33,7 +33,7 @@ pub enum CliError {
     Unsupported(&'static str),
 }
 impl CliError {
-    /// Stable machine code and process exit status. Documented in docs/product/cli.md.
+    /// Stable machine code and process exit status. Documented in docs/product/agent-control/cli.md.
     pub fn code(&self) -> (&'static str, u8) {
         match self {
             Self::Usage(_) | Self::Json(_) => ("usage", 2),

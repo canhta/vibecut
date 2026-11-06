@@ -1,6 +1,6 @@
 # UI: Editor window
 
-Measured geometry and panel designs for the Editor window. Shared rules, measurement conventions, type, icons, motion and gaps: [UI design](ui.md). Values are logical px from the 2026-11-05 desktop capture set; shot ids are capture times (HHMMSS).
+Measured geometry and panel designs for the Editor window. Shared rules, measurement conventions, type, icons, motion and gaps: [UI design](index.md). Values are logical px from the 2026-11-05 desktop capture set; shot ids are capture times (HHMMSS).
 
 ## Measured frame
 
@@ -33,7 +33,7 @@ Shots 221513 (empty) and 221643 (populated).
 ## Density
 
 - Measured pitches: 32 px sub-navigation rows, 38–39 px property rows, 40 px shortcut rows, 54–55 px property section rows, 48 px audio rows on a 60 px pitch, 76 px video track. Field height 22 px (value, position and stepper fields); 24 px for sub-navigation buttons, sub-tab bar and asset tool row; top-bar buttons 22 px; shortcut footer buttons 22 px. The old 48 px row and 26 px field values are superseded. Export/settings modal footer buttons remain 34 px [proposed, dialog uncaptured].
-- Bars follow [layout](#layout-grid) and [settings](#export-and-settings); icon buttons follow [iconography](ui.md#iconography).
+- Bars follow [layout](#layout-grid) and [settings](#export-and-settings); icon buttons follow [iconography](index.md#iconography).
 - Timeline (221643, re-measured): toolbar 32 px with a 1 px rule below; ruler 22 px (ticks start 3 px under its top: 5.5 px minor, 10.5 px labelled; `MM:SS` captions with 8 px digits, about 11 px type; ten ticks per 3 s label at 71.5 px/s); lanes start 28 px below the ruler top and end 12 px above the panel bottom, where a 6 px scrollbar with a 24×6 thumb sits 4 px down; a 5 px shadow edges the lanes at the header boundary; a single track is centred in the lanes (152 px above, 148 px below); 76 px video track (74 px clip: 17 px top band, 39 px filmstrip, 16 px waveform), 123 px header column with five 24 px cells (kind glyph, lock, eye, mute, more), playhead handle 10×15 over a 1 px line [measured]. Audio, text, sticker, effect, filter and adjustment track heights are unmeasured (proposed: audio 40 px, others 32 px).
 - Clip trim handles are 8 px wide with a 12 px capture area [proposed]; the captured clip is selected (1 px white border) and no trim handle is visible.
 
@@ -47,7 +47,7 @@ The model manager reuses the export modal's 12 px radius, 24 px inner margin and
 - Footer: `Duration: Ns | Size: about N MB` at 14 px, then a 90x34 px `Export` button and a 90x34 px `Cancel` button.
 - Video section: Resolution (480P, 720P, 1080P, 2K, 4K, 8K), Bit rate, Codec, Format (MP4), Frame rate, Colour space; Audio is a collapsed section.
 - Settings is a 480 px modal: 34 px tab bar with Draft, Edit, Performance, General; [standard rows/fields](#density), 16 px checkboxes.
-- The assets panel leads with the measured 42 px horizontal feature strip: Media, Audio, Text, Stickers, Effects, Transitions, Captions, Filters, Adjustment, Templates and the AI avatar, each a 16 px icon over a 12 px semibold label, active in the accent. The old 36 px vertical icon rail is superseded. Beneath it, a 120 px sub-navigation column and a 24 px tool row (Import/Record/search) sit above the asset grid or list. A selected element's properties view uses the measured 12 px type tabs at the 42 px strip row (active accent, no underline) and the 460×24 sub-tab bar; the empty and multi-select views keep the shared-field presentation, and `Project`/`Details` remain the inspector header switch. Geometry follows [layout](#layout-grid), styling follows [iconography](ui.md#iconography).
+- The assets panel leads with the measured 42 px horizontal feature strip: Media, Audio, Text, Stickers, Effects, Transitions, Captions, Filters, Adjustment, Templates and the AI avatar, each a 16 px icon over a 12 px semibold label, active in the accent. The old 36 px vertical icon rail is superseded. Beneath it, a 120 px sub-navigation column and a 24 px tool row (Import/Record/search) sit above the asset grid or list. A selected element's properties view uses the measured 12 px type tabs at the 42 px strip row (active accent, no underline) and the 460×24 sub-tab bar; the empty and multi-select views keep the shared-field presentation, and `Project`/`Details` remain the inspector header switch. Geometry follows [layout](#layout-grid), styling follows [iconography](index.md#iconography).
 - Scrub number fields use the measured 22 px row: a 16×22 stepper and a typed entry in a 22 px field with an optional unit suffix; the active value previews during the drag and commits once on release.
 
 ## Preview

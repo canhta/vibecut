@@ -1,7 +1,7 @@
 # UI tokens
 
-[`theme.rs`](../../apps/vibecut/src/kit/theme.rs) owns executable colour and geometry
-values. [`ui.md`](ui.md#measured-desktop-reference) owns capture provenance and
+[`theme.rs`](../../../apps/vibecut/src/kit/theme.rs) owns executable colour and geometry
+values. [`index.md`](index.md#measured-desktop-reference) owns capture provenance and
 region measurements. Do not add a second numeric token table here or inline
 copies in widgets.
 
@@ -23,7 +23,7 @@ dialog margins, uncaptured track types and legacy panel layout calculations
 remain caller-owned until their area tickets measure and replace them; they are
 not admitted as measured foundation tokens.
 
-[`kit.rs`](../../apps/vibecut/src/kit.rs) owns the kit shared by
+[`kit.rs`](../../../apps/vibecut/src/kit.rs) owns the kit shared by
 later areas: icon buttons, tab strips, section headers, property rows and
 slider/stepper drafts. Callers retain existing labels/tooltips, automation IDs,
 preferences and preview/commit/rollback decisions. There is no standalone demo.

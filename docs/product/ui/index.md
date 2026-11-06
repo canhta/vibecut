@@ -18,7 +18,7 @@
 | Screen | Reference A (desktop) | Reference B (web) | Ours |
 |---|---|---|---|
 | Home | Rail: Home, Templates; "Create with AI" (generative studios); Library, Spaces. Content: `Create project` tile, agent prompt card ("Create and edit in one flow") beside AI tool cards, AI suite cards (incl. `Long video to shorts`), then `Projects` with search, view, trash | Projects page: breadcrumb, view toggle, search, `New project`, grid; no rail | Rail: Home, Library. Content: `Create project` tile, `Long video to shorts` card, agent prompt card once the agent is in scope, then `Projects` (search, sort, grid/list, multi-select). Generative studio, image/video generation and ad-maker cards are out of scope |
-| Editor | Tool tabs, preview, properties, timeline; agent button bottom-right opens the agent chat docked bottom-right beside the timeline | Same four panels; header holds logo menu (back to projects), name, Export | [Editor window](ui-editor.md); header Window menu (focus Home) and project name; agent chat docked bottom-right |
+| Editor | Tool tabs, preview, properties, timeline; agent button bottom-right opens the agent chat docked bottom-right beside the timeline | Same four panels; header holds logo menu (back to projects), name, Export | [Editor window](editor.md); header Window menu (focus Home) and project name; agent chat docked bottom-right |
 | Long video to shorts | Own window from its Home card: upload (10 GB / 180 min, minutes quota shown), skeleton results while it works, then quick edit: list of shorts, 9:16 player, Caption style and Layout tools | none | Own window from its Home card: pick a local video (no upload, no quota), a skeleton grid while it works, then quick edit: list, 9:16 player with a bare transport row, Caption style and Layout tools, `Edit more` and `Export` |
 
 Evidence: `.spikes/ui-reference/screens-2026-11-04/`, `01-project-list/`, `02-editor-shell/`, and the 2026-11-05 desktop capture set (index in its `notes.md`).
@@ -31,9 +31,9 @@ Each window owns its measured geometry; read only the one you work on:
 
 | Window | Owner |
 |---|---|
-| Editor (frame, layout grid, density, panels, export, shortcuts, captions) | [ui-editor.md](ui-editor.md) |
-| Home | [ui-home.md](ui-home.md) |
-| Long video to shorts | [ui-shorts.md](ui-shorts.md) |
+| Editor (frame, layout grid, density, panels, export, shortcuts, captions) | [editor.md](editor.md) |
+| Home | [home.md](home.md) |
+| Long video to shorts | [shorts.md](shorts.md) |
 
 ### Theme and tokens
 
@@ -82,4 +82,4 @@ A UI ticket that hits a gap captures a real desktop screenshot first.
 
 ## Evidence
 
-Reference screenshots and behaviour notes live in `.spikes/ui-reference/` (local). UI behaviour tests and design-review captures follow [verification](../engineering/verification.md#test-selection).
+Reference screenshots and behaviour notes live in `.spikes/ui-reference/` (local). UI behaviour tests and design-review captures follow [verification](../../engineering/verification.md#test-selection).

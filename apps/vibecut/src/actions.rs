@@ -2350,7 +2350,7 @@ mod tests {
 
     #[test]
     fn keyboard_guide_matches_the_registry() {
-        let guide = include_str!("../../../docs/product/keyboard.md");
+        let guide = include_str!("../../../docs/product/agent-control/keyboard.md");
         let begin = "<!-- BEGIN GENERATED KEYMAP -->\n";
         let end = "<!-- END GENERATED KEYMAP -->";
         let generated = keyboard_guide_table();

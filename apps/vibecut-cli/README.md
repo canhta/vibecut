@@ -25,12 +25,12 @@ its own budget with unchanged admission settings. Engine still owns actual
 export admission and execution; `session` only composes the existing entry points.
 
 `mcp` owns the stdio protocol adapter and OS-permissioned attach transport, composed
-by the desktop app through this library. [MCP control](../../docs/product/mcp.md)
+by the desktop app through this library. [MCP control](../../docs/product/agent-control/mcp.md)
 owns the tool surface, grants, bounds, lifecycle, cancellation/retry rules and
 Claude Code/Codex/OpenCode configuration. Engine remains the schema, revision,
 receipt, job and rendering owner; no shared control crate is introduced.
 
-The [CLI contract](../../docs/product/cli.md) owns syntax, supported commands,
+The [CLI contract](../../docs/product/agent-control/cli.md) owns syntax, supported commands,
 flags, output shapes and exit codes. `run(Vec<OsString>)` returns `Output` or
 `CliError`; the binary removes the global JSON flag, writes the selected result
 and maps `CliError::exit_code`. Paths retain native representation until an output
@@ -170,7 +170,7 @@ typed failures to stdout/stderr. It owns no segmentation, prompt, selection,
 snapping or export logic; `--provider` never falls back. Remote suggestion
 credentials are refused before media work, and `providers --operation clips`
 lists the same offline catalog without opening an adapter. Boundary adjustment
-kinds, including sub-frame `word_fade`, follow the [CLI contract](../../docs/product/cli.md).
+kinds, including sub-frame `word_fade`, follow the [CLI contract](../../docs/product/agent-control/cli.md).
 
 Project lifecycle commands share engine's registry. `project new` creates through
 `project.create`; `project info` acquires the project writer lease before reading
@@ -197,5 +197,5 @@ publication in a real CLI subprocess. No transition-specific adapter path exists
 
 `scenes` composes the engine's shared scene detector and ordinary jobs/cache,
 returning candidates without a project edit. Syntax and output are owned by the
-[CLI contract](../../docs/product/cli.md#scene-detection); thresholds, limits and
+[CLI contract](../../docs/product/agent-control/cli.md#scene-detection); thresholds, limits and
 reviewed marker application belong to [engine](../../crates/engine/README.md#scene-detection).

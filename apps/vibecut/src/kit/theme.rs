@@ -1,6 +1,6 @@
 //! Owns the app design tokens.
 //!
-//! Canonical app palette and measured layout tokens. `docs/product/tokens.md`
+//! Canonical app palette and measured layout tokens. `docs/product/ui/tokens.md`
 //! indexes the geometry provenance; reference colours are not adopted here.
 
 #![allow(dead_code)] // tokens are a shared contract; later UI tickets consume some.
