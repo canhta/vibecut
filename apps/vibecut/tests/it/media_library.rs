@@ -754,6 +754,21 @@ fn import_batch_shows_progress_and_disables_view_sort_import_and_insert() {
     assert!(harness.state().inspect().unwrap().import_cancelled);
 }
 
+/// The grid card paints its thumbnail, name and kind rows at fixed offsets; a
+/// card shorter than those rows clips the kind line.
+#[test]
+fn grid_card_is_tall_enough_for_its_thumbnail_name_and_kind_rows() {
+    let mut harness = build(editor());
+    harness.run_steps(3);
+    let card = widget_rect(&harness, "media.asset.1");
+    // 4 inset + 58 thumbnail, kind row at +27 below it with a 14 px line.
+    assert!(
+        card.height() >= 4.0 + 58.0 + 27.0 + 14.0,
+        "card {:?} clips its kind row",
+        card
+    );
+}
+
 /// Offscreen screenshot evidence; wgpu rendering stays out of CI.
 #[test]
 #[ignore = "renders through wgpu; run with --ignored to refresh target/p1-09-media.png"]

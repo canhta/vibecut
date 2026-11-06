@@ -67,8 +67,9 @@ const LABEL_WIDTH: f32 = theme::size::TRACK_LABEL;
 const SCROLLBAR: f32 = theme::size::SCROLLBAR;
 const TRACK_GAP: f32 = theme::space::SM;
 const MEDIA_CARD_WIDTH: f32 = theme::size::MEDIA_THUMB_WIDTH;
-const MEDIA_CARD_HEIGHT: f32 =
-    theme::size::MEDIA_THUMB_HEIGHT + theme::space::SM + theme::size::MEDIA_LABEL_HEIGHT;
+// The legacy card stacks thumbnail, name and kind rows at fixed offsets; the
+// assets ticket replaces it with the measured thumbnail-plus-label card.
+const MEDIA_CARD_HEIGHT: f32 = 120.0;
 const MEDIA_CARD_GAP: f32 = theme::space::MD;
 const MEDIA_ROW_HEIGHT: f32 = theme::size::AUDIO_ROW;
 const MEDIA_REVEAL: Duration = Duration::from_millis(1500);
