@@ -8,7 +8,7 @@ use crate::{
     egui::{self, Align2, Rect, pos2, vec2},
     kit::{self, Icon},
 };
-use engine::subtitles::{CatalogOperation, Cost};
+use engine::providers::{CatalogOperation, Cost};
 
 /// Measured at the 1718×989 window (reference 221946), from the content origin.
 pub(super) const GRID: f32 = 1359.0;

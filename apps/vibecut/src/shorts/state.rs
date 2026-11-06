@@ -13,7 +13,7 @@ use engine::{
         CancelToken, JobId, JobKind, JobRunner, JobSpec, JobState, ResourceClass, RunnerConfig,
         SystemClock,
     },
-    subtitles::Cancellation,
+    transcript::Cancellation,
 };
 pub use shorts::ClipCandidate as Candidate;
 use shorts::{

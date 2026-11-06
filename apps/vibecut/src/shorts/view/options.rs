@@ -76,7 +76,7 @@ pub(super) fn show(state: &mut State, ui: &mut egui::Ui) {
 use crate::catalog;
 
 fn providers(state: &mut State, ui: &mut egui::Ui) {
-    use engine::subtitles::{CatalogOperation, provider_options_for};
+    use engine::providers::{CatalogOperation, provider_options_for};
     let locale = state.preferences.locale;
     let language = captions::LanguageTag::parse(&state.request.language).ok();
     ui.label(state.tr(Text::ShortsTranscriber));

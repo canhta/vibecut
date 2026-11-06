@@ -1,5 +1,6 @@
 //! Bounded progress and exact per-upload consent shared by desktop AI workflows.
-use engine::subtitles::{Cancellation, ConsentPrompt, Progress, Stage, UploadRequest};
+use engine::providers::{ConsentPrompt, UploadRequest};
+use engine::transcript::{Cancellation, Progress, Stage};
 use std::{
     sync::{Mutex, mpsc},
     time::Duration,

@@ -14,10 +14,12 @@ use ai::{
 use engine::{
     ByteBudget,
     jobs::{JobRunner, RunnerConfig, SystemClock},
-    subtitles::{
-        self, AllowAll, Cancellation, Credentials, DenyUploads, LanguageTag, Progress, Providers,
-        Runtime, SilentProgress, SubtitleRequest, TranscriptionProvider, TranslationProvider,
+    providers::{
+        AllowAll, Credentials, DenyUploads, Providers, Runtime, TranscriptionProvider,
+        TranslationProvider,
     },
+    subtitles::{self, LanguageTag, SubtitleRequest},
+    transcript::{Cancellation, Progress, SilentProgress},
 };
 use std::{
     collections::BTreeSet,
@@ -329,7 +331,7 @@ fn six_directions_and_every_bilingual_pair() {
                 &mut cache,
                 &AllowAll,
                 &SilentProgress,
-                &subtitles::Cancellation::new(),
+                &engine::transcript::Cancellation::new(),
             )
             .unwrap();
             assert_eq!(outcome.source_language.as_str(), source);
@@ -376,7 +378,7 @@ fn output_languages_are_distinct() {
         &mut cache,
         &AllowAll,
         &SilentProgress,
-        &subtitles::Cancellation::new(),
+        &engine::transcript::Cancellation::new(),
     )
     .unwrap();
     assert!(outcome.translation.is_some());
@@ -404,7 +406,7 @@ fn srt_and_burn_are_produced_from_one_run() {
         &mut cache,
         &AllowAll,
         &SilentProgress,
-        &subtitles::Cancellation::new(),
+        &engine::transcript::Cancellation::new(),
     )
     .unwrap();
     assert!(outcome.srt.is_some());
@@ -439,7 +441,7 @@ fn second_run_reuses_completed_asr_chunks() {
         &mut cache,
         &AllowAll,
         &SilentProgress,
-        &subtitles::Cancellation::new(),
+        &engine::transcript::Cancellation::new(),
     )
     .unwrap();
     assert_eq!(first.checkpoints, 0);
@@ -452,7 +454,7 @@ fn second_run_reuses_completed_asr_chunks() {
         &mut cache,
         &AllowAll,
         &SilentProgress,
-        &subtitles::Cancellation::new(),
+        &engine::transcript::Cancellation::new(),
     )
     .unwrap();
     assert_eq!(second.checkpoints, 1);
@@ -611,7 +613,7 @@ fn remote_upload_is_refused_without_consent() {
         &mut cache,
         &DenyUploads,
         &SilentProgress,
-        &subtitles::Cancellation::new(),
+        &engine::transcript::Cancellation::new(),
     )
     .unwrap_err();
     assert!(matches!(error, engine::EditError::ConsentRequired));
@@ -621,24 +623,28 @@ fn remote_upload_is_refused_without_consent() {
 #[test]
 fn provider_catalog_filters_operation_and_language() {
     let vi = lang("vi");
-    let transcribe =
-        subtitles::provider_options_for(subtitles::CatalogOperation::Transcribe, Some(&vi));
+    let transcribe = engine::providers::provider_options_for(
+        engine::providers::CatalogOperation::Transcribe,
+        Some(&vi),
+    );
     assert!(transcribe.iter().any(|option| option.id == "whisper.cpp"));
     assert!(transcribe.iter().any(|option| option.id == "gipformer"));
     assert!(transcribe.iter().any(|option| option.id == "openai"));
-    let english =
-        subtitles::provider_options_for(subtitles::CatalogOperation::Transcribe, Some(&lang("en")));
+    let english = engine::providers::provider_options_for(
+        engine::providers::CatalogOperation::Transcribe,
+        Some(&lang("en")),
+    );
     assert!(!english.iter().any(|option| option.id == "gipformer"));
-    let translate = subtitles::provider_options_for(
-        subtitles::CatalogOperation::Translate,
+    let translate = engine::providers::provider_options_for(
+        engine::providers::CatalogOperation::Translate,
         Some(&lang("zh-Hant")),
     );
     assert_eq!(translate.len(), 2);
     assert!(matches!(
-        subtitles::choose_transcription("gipformer", None),
+        engine::providers::choose_transcription("gipformer", None),
         Ok(TranscriptionProvider::Gipformer { .. })
     ));
-    assert!(subtitles::choose_transcription("openai", Some("not-a-model")).is_err());
+    assert!(engine::providers::choose_transcription("openai", Some("not-a-model")).is_err());
 }
 
 #[test]
@@ -972,8 +978,8 @@ struct CancelAtExport {
     cancel: Cancellation,
 }
 impl Progress for CancelAtExport {
-    fn stage(&self, stage: subtitles::Stage) {
-        if stage == subtitles::Stage::ExportSrt {
+    fn stage(&self, stage: engine::transcript::Stage) {
+        if stage == engine::transcript::Stage::ExportSrt {
             self.cancel.cancel();
         }
     }
@@ -1105,8 +1111,8 @@ struct CancelAtExtract {
     cancel: Cancellation,
 }
 impl Progress for CancelAtExtract {
-    fn stage(&self, stage: subtitles::Stage) {
-        if stage == subtitles::Stage::Extract {
+    fn stage(&self, stage: engine::transcript::Stage) {
+        if stage == engine::transcript::Stage::Extract {
             self.cancel.cancel();
         }
     }
@@ -1146,5 +1152,5 @@ fn operation_cancellation_stops_extraction_before_any_asr() {
 #[test]
 fn progress_is_presentation_only_and_optional() {
     // SilentProgress is the documented no-op implementation for non-interactive use.
-    SilentProgress.stage(subtitles::Stage::Extract);
+    SilentProgress.stage(engine::transcript::Stage::Extract);
 }

@@ -154,10 +154,11 @@ pub(crate) fn run(context: &Context, args: Vec<OsString>) -> Result<Output, CliE
             if !["vi", "en", "zh"].contains(&value) {
                 return Err(CliError::Usage("--from must be vi, en, zh or auto".into()));
             }
-            Some(subtitles::parse_language(value)?)
+            Some(engine::providers::parse_language(value)?)
         }
     };
-    let target_language = subtitles::normalize_target_tag(&subtitles::parse_language(&to)?)?;
+    let target_language =
+        engine::providers::normalize_target_tag(&engine::providers::parse_language(&to)?)?;
     if !["vi", "en", "zh-Hans", "zh-Hant"].contains(&target_language.as_str()) {
         return Err(CliError::Usage(
             "--to must be vi, en, zh, zh-Hans or zh-Hant".into(),
@@ -172,25 +173,25 @@ pub(crate) fn run(context: &Context, args: Vec<OsString>) -> Result<Output, CliE
             "--bilingual requires --from and --to to differ".into(),
         ));
     }
-    let transcription = subtitles::choose_transcription(&provider, model.as_deref())?;
-    let credentials = subtitles::Credentials::new(
+    let transcription = engine::providers::choose_transcription(&provider, model.as_deref())?;
+    let credentials = engine::providers::Credentials::new(
         std::env::var("OPENAI_API_KEY").ok(),
         std::env::var("ELEVENLABS_API_KEY").ok(),
         std::env::var("ANTHROPIC_API_KEY").ok(),
     )?;
     let runtime = cli_runtime()?;
     let budget = context.budget()?;
-    let root = subtitles::default_cache_root()?;
+    let root = engine::providers::default_cache_root()?;
     let (mut cache, _diagnostics) = ArtifactCache::open(&root, budget.clone(), 128)?;
-    let cancellation = subtitles::Cancellation::new();
+    let cancellation = engine::transcript::Cancellation::new();
     let mut source_language = source_language;
     let translation = match &source_language {
         Some(source) if translation_required(source, &target_language, bilingual) => Some(
-            subtitles::choose_translation(&translate_provider, translate_model.as_deref())?,
+            engine::providers::choose_translation(&translate_provider, translate_model.as_deref())?,
         ),
         _ => None,
     };
-    let mut providers = subtitles::Providers::open(
+    let mut providers = engine::providers::Providers::open(
         transcription,
         translation,
         &mut cache,
@@ -206,7 +207,10 @@ pub(crate) fn run(context: &Context, args: Vec<OsString>) -> Result<Output, CliE
         }
         if translation_required(&detected, &target_language, bilingual) {
             providers = providers.with_translation(
-                subtitles::choose_translation(&translate_provider, translate_model.as_deref())?,
+                engine::providers::choose_translation(
+                    &translate_provider,
+                    translate_model.as_deref(),
+                )?,
                 &credentials,
             )?;
         }

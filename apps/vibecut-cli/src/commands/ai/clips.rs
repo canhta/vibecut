@@ -7,10 +7,9 @@ use crate::output::{Output, json_path, tick_json};
 use crate::session::Context;
 use crate::session::{cli_runner, cli_runtime};
 use engine::cache::ArtifactCache;
-use engine::subtitles::{Cost, LanguageTag};
-use engine::{
-    ClipDropReason, ClipRole, ClipSettings, ClipSource, ClipSourceSegment, NfcText, subtitles,
-};
+use engine::providers::Cost;
+use engine::subtitles::LanguageTag;
+use engine::{ClipDropReason, ClipRole, ClipSettings, ClipSource, ClipSourceSegment, NfcText};
 use serde_json::{Value, json};
 use shorts::{
     ClipCandidate, ClipExportRequest, ClipRequest, ClipSuggestionOutcome, SnapSettings,
@@ -229,7 +228,7 @@ pub(crate) fn run(context: &Context, args: Vec<OsString>) -> Result<Output, CliE
             if !["vi", "en", "zh"].contains(&value) {
                 return Err(CliError::Usage("--from must be vi, en, zh or auto".into()));
             }
-            Some(subtitles::parse_language(value)?)
+            Some(engine::providers::parse_language(value)?)
         }
     };
     let target_language = match &subs {
@@ -238,8 +237,8 @@ pub(crate) fn run(context: &Context, args: Vec<OsString>) -> Result<Output, CliE
             if !["vi", "en", "zh"].contains(&value.as_str()) {
                 return Err(CliError::Usage("--subs must be vi, en or zh".into()));
             }
-            Some(subtitles::normalize_target_tag(
-                &subtitles::parse_language(value)?,
+            Some(engine::providers::normalize_target_tag(
+                &engine::providers::parse_language(value)?,
             )?)
         }
     };
@@ -260,8 +259,9 @@ pub(crate) fn run(context: &Context, args: Vec<OsString>) -> Result<Output, CliE
         return Err(CliError::Usage("--aspect must be 9:16".into()));
     }
     let suggestion = clip_suggest::choose_suggestion(&provider, model.as_deref())?;
-    let transcription = subtitles::choose_transcription(&asr_provider, asr_model.as_deref())?;
-    let credentials = subtitles::Credentials::new(
+    let transcription =
+        engine::providers::choose_transcription(&asr_provider, asr_model.as_deref())?;
+    let credentials = engine::providers::Credentials::new(
         std::env::var("OPENAI_API_KEY").ok(),
         std::env::var("ELEVENLABS_API_KEY").ok(),
         std::env::var("ANTHROPIC_API_KEY").ok(),
@@ -269,11 +269,16 @@ pub(crate) fn run(context: &Context, args: Vec<OsString>) -> Result<Output, CliE
     clip_suggest::check_suggestion_credentials(&suggestion, &credentials)?;
     let runtime = cli_runtime()?;
     let budget = context.budget()?;
-    let root = subtitles::default_cache_root()?;
+    let root = engine::providers::default_cache_root()?;
     let (mut cache, _diagnostics) = ArtifactCache::open(&root, budget.clone(), 128)?;
-    let cancellation = subtitles::Cancellation::new();
-    let mut providers =
-        subtitles::Providers::open(transcription, None, &mut cache, &credentials, &runtime)?;
+    let cancellation = engine::transcript::Cancellation::new();
+    let mut providers = engine::providers::Providers::open(
+        transcription,
+        None,
+        &mut cache,
+        &credentials,
+        &runtime,
+    )?;
     let source_language = match source_language {
         Some(language) => language,
         None => providers.detect_language_for(&input, &cancellation)?,
@@ -286,7 +291,10 @@ pub(crate) fn run(context: &Context, args: Vec<OsString>) -> Result<Output, CliE
         }
         if &source_language != target || bilingual {
             providers = providers.with_translation(
-                subtitles::choose_translation(&translate_provider, translate_model.as_deref())?,
+                engine::providers::choose_translation(
+                    &translate_provider,
+                    translate_model.as_deref(),
+                )?,
                 &credentials,
             )?;
         }

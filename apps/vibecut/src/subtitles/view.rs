@@ -10,8 +10,8 @@ use crate::{
 };
 use captions::LanguageRegistry;
 use captions::LanguageTag;
-use engine::subtitles::Stage;
-use engine::subtitles::{CatalogOperation, Cost, provider_options_for};
+use engine::providers::{CatalogOperation, Cost, provider_options_for};
+use engine::transcript::Stage;
 use engine::{Command, Session};
 use project::{ItemId, ItemParams};
 use std::{collections::BTreeSet, path::PathBuf, sync::Arc, time::Duration};
@@ -165,7 +165,7 @@ impl Controls {
         self.remember(id, &r);
     }
 }
-fn provider_name(locale: Locale, provider: &engine::subtitles::ProviderOption) -> String {
+fn provider_name(locale: Locale, provider: &engine::providers::ProviderOption) -> String {
     let name = provider.label.split(" (").next().unwrap_or(provider.id);
     if provider.local {
         catalog::format(locale, Text::SubProviderLocal, &[("provider", name)])

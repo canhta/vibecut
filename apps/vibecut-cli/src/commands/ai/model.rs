@@ -5,7 +5,7 @@ use crate::output::Output;
 use crate::output::wait_for_job;
 use crate::session::Context;
 use engine::jobs::{JobRunner, RunnerConfig, SystemClock};
-use engine::{models, subtitles};
+use engine::models;
 use serde_json::{Value, json};
 use std::ffi::OsString;
 use std::fmt::Write as _;
@@ -26,7 +26,7 @@ pub(crate) fn run(context: &Context, args: Vec<OsString>) -> Result<Output, CliE
             if !rest.is_empty() {
                 return Err(CliError::Usage("usage: vibecut-cli model list".into()));
             }
-            let models = subtitles::model_infos()?;
+            let models = engine::providers::model_infos()?;
             let value: Vec<Value> = models.iter().map(model_json).collect();
             let human = models
                 .iter()
@@ -46,7 +46,7 @@ pub(crate) fn run(context: &Context, args: Vec<OsString>) -> Result<Output, CliE
         }
         "info" => {
             let id = one_utf8(rest, "usage: vibecut-cli model info <id>")?;
-            let model = subtitles::model_info(&id)?;
+            let model = engine::providers::model_info(&id)?;
             Ok(Output::new(
                 model_json(&model),
                 model_human(&model),
@@ -77,7 +77,7 @@ fn model_download(context: &Context, args: Vec<OsString>) -> Result<Output, CliE
             }
         }
     }
-    let info = subtitles::model_info(&id)?;
+    let info = engine::providers::model_info(&id)?;
     let _ = writeln!(io::stderr(), "{}", model_human(&info));
     if !accepted {
         let _ = writeln!(
@@ -115,7 +115,7 @@ fn model_download(context: &Context, args: Vec<OsString>) -> Result<Output, CliE
         0,
     ))
 }
-fn model_json(model: &subtitles::ModelInfo) -> Value {
+fn model_json(model: &engine::providers::ModelInfo) -> Value {
     json!({
         "id": model.id,
         "license": model.license,
@@ -131,7 +131,7 @@ fn model_json(model: &subtitles::ModelInfo) -> Value {
         })).collect::<Vec<_>>(),
     })
 }
-fn model_human(model: &subtitles::ModelInfo) -> String {
+fn model_human(model: &engine::providers::ModelInfo) -> String {
     let mut human = format!(
         "id: {}\nlicence: {} ({})\nsource: {}\nlanguages: {}\nbytes: {}\nfiles:\n",
         model.id,

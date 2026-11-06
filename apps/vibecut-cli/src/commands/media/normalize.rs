@@ -4,9 +4,9 @@ use crate::args::utf8;
 use crate::output::Output;
 use crate::output::wait_for_job;
 use crate::session::Context;
+use engine::Session;
 use engine::cache::ArtifactCache;
 use engine::jobs::{JobRunner, RunnerConfig, SystemClock};
-use engine::{Session, subtitles};
 use project::WriterLease;
 use serde_json::json;
 use std::ffi::OsString;
@@ -59,8 +59,11 @@ pub(crate) fn run(context: &Context, args: Vec<OsString>) -> Result<Output, CliE
         )?;
     }
     let budget = context.budget()?;
-    let (mut cache, _diagnostics) =
-        ArtifactCache::open(&subtitles::default_cache_root()?, budget.clone(), 128)?;
+    let (mut cache, _diagnostics) = ArtifactCache::open(
+        &engine::providers::default_cache_root()?,
+        budget.clone(),
+        128,
+    )?;
     let mut runner = JobRunner::new(
         RunnerConfig {
             concurrency: [1; 3],

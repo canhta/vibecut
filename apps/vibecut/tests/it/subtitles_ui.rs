@@ -5,10 +5,7 @@ use egui_kittest::{
     Harness,
     kittest::{By, Queryable},
 };
-use engine::{
-    ByteBudget, Command, Session,
-    subtitles::{self, Cancellation, Cost},
-};
+use engine::{ByteBudget, Command, Session, providers::Cost, transcript::Cancellation};
 use project::ItemParams;
 use std::{
     collections::BTreeSet,
@@ -322,7 +319,7 @@ impl Workflow for TranslateWorkflow {
                 auth_ref: "fixture".into(),
             },
         )?;
-        let adapter = subtitles::SubtitleTranslator::from_parts(
+        let adapter = engine::transcript::SubtitleTranslator::from_parts(
             Arc::new(Translator {
                 config,
                 calls: self.calls.clone(),
@@ -342,14 +339,14 @@ impl Workflow for TranslateWorkflow {
             budget,
             Arc::new(engine::jobs::SystemClock::default()),
         )?;
-        subtitles::translate_selected(
+        engine::transcript::translate_selected(
             &mut session,
             &adapter,
             &mut runner,
             events,
             events,
             cancel,
-            &subtitles::TranslationSelection {
+            &engine::transcript::TranslationSelection {
                 item,
                 ids,
                 target: lang(&options.target),
@@ -603,12 +600,12 @@ impl Workflow for GenerateWorkflow {
         if self.missing {
             return Err(engine::EditError::ModelMissing("whisper-large-v3-turbo"));
         }
-        engine::subtitles::Progress::stage(events, subtitles::Stage::Transcribe);
+        engine::transcript::Progress::stage(events, engine::transcript::Stage::Transcribe);
         if ["openai", "elevenlabs"].contains(&options.transcription.as_str()) {
-            engine::subtitles::ConsentPrompt::approve(
+            engine::providers::ConsentPrompt::approve(
                 events,
-                &subtitles::UploadRequest {
-                    operation: subtitles::CatalogOperation::Transcribe,
+                &engine::providers::UploadRequest {
+                    operation: engine::providers::CatalogOperation::Transcribe,
                     provider: options.transcription.clone(),
                     model: options.transcription_model,
                     languages: options.source.clone(),
@@ -706,9 +703,10 @@ fn source_clip(e: &mut Editor) -> project::ItemId {
 }
 #[test]
 fn generate_explicit_choices_insert_once_and_missing_models_offer_setup_without_download() {
-    for option in
-        subtitles::provider_options_for(subtitles::CatalogOperation::Transcribe, Some(&lang("vi")))
-    {
+    for option in engine::providers::provider_options_for(
+        engine::providers::CatalogOperation::Transcribe,
+        Some(&lang("vi")),
+    ) {
         let mut e = editor("vi");
         let source = source_clip(&mut e);
         e.selection.insert(source);

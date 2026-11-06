@@ -6,7 +6,6 @@ use crate::output::wait_for_job;
 use crate::session::Context;
 use crate::session::cli_runner;
 use engine::cache::ArtifactCache;
-use engine::subtitles;
 use std::ffi::OsString;
 use std::path::PathBuf;
 use time::Tick;
@@ -56,8 +55,11 @@ pub(crate) fn run(context: &Context, args: Vec<OsString>) -> Result<Output, CliE
         settings,
     )?;
     let budget = context.budget()?;
-    let (mut cache, _) =
-        ArtifactCache::open(&subtitles::default_cache_root()?, budget.clone(), 128)?;
+    let (mut cache, _) = ArtifactCache::open(
+        &engine::providers::default_cache_root()?,
+        budget.clone(),
+        128,
+    )?;
     let mut runner = cli_runner(budget)?;
     let job = request.submit(&mut runner, &mut cache)?;
     wait_for_job(&mut runner, job.id)?;

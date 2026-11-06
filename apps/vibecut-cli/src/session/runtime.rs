@@ -1,12 +1,12 @@
 //! Configures the CLI engine runtime.
 use crate::args::CliError;
+use engine::ByteBudget;
 use engine::jobs::{JobRunner, RunnerConfig, SystemClock};
-use engine::{ByteBudget, subtitles};
 use std::sync::Arc;
 use std::time::Duration;
 
-pub(crate) fn cli_runtime() -> Result<subtitles::Runtime, CliError> {
-    let mut runtime = subtitles::Runtime::default();
+pub(crate) fn cli_runtime() -> Result<engine::providers::Runtime, CliError> {
+    let mut runtime = engine::providers::Runtime::default();
     if let Ok(value) = std::env::var("VIBECUT_ASR_THREADS") {
         let threads = value.parse::<u8>().map_err(|_| {
             CliError::Usage("VIBECUT_ASR_THREADS must be an integer from 1 to 32".into())
@@ -21,7 +21,7 @@ pub(crate) fn cli_runtime() -> Result<subtitles::Runtime, CliError> {
     if std::env::var("VIBECUT_ASR_GPU").is_ok_and(|value| value == "0") {
         runtime.use_gpu = false;
     }
-    runtime.gipformer_runner = subtitles::local_asr_runner();
+    runtime.gipformer_runner = engine::providers::local_asr_runner();
     Ok(runtime)
 }
 

@@ -9,7 +9,8 @@ use egui_kittest::{
 };
 use engine::{
     ByteBudget,
-    subtitles::{Cancellation, CatalogOperation, ConsentPrompt, Cost, UploadRequest},
+    providers::{CatalogOperation, ConsentPrompt, Cost, UploadRequest},
+    transcript::Cancellation,
 };
 use fixture::{Once, Pixels, range, ready, source, tick, wait};
 use std::sync::{Arc, Mutex, mpsc};

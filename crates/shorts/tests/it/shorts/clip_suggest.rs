@@ -13,10 +13,11 @@ use ai::{
     ProviderConfig, RecognitionSegment, Request, SampleRange, Scope, Support, TimingUnit,
     Transcriber, Translation, TranslationWindow, Translator,
 };
-use engine::subtitles::{
-    AllowAll, Cancellation, Credentials, DenyUploads, LanguageTag, Providers, SilentProgress,
-    TranscriptionProvider, TranslationProvider,
+use engine::providers::{
+    AllowAll, Credentials, DenyUploads, Providers, TranscriptionProvider, TranslationProvider,
 };
+use engine::subtitles::LanguageTag;
+use engine::transcript::{Cancellation, SilentProgress};
 use engine::{
     ByteBudget, ClipSettings,
     jobs::{JobRunner, RunnerConfig, SystemClock},
@@ -383,7 +384,7 @@ fn export_preparation_covers_source_and_translated_captions() {
     assert_eq!(translated.batch.len(), 1);
     assert!(matches!(
         translated.translation_cost,
-        engine::subtitles::Cost::Free
+        engine::providers::Cost::Free
     ));
 
     for select in [vec![outcome.clips.len()], vec![0, 0], vec![]] {
@@ -481,8 +482,8 @@ impl ExportProgress {
         self.state.lock().unwrap().1
     }
 }
-impl engine::subtitles::Progress for ExportProgress {
-    fn stage(&self, _: engine::subtitles::Stage) {}
+impl engine::transcript::Progress for ExportProgress {
+    fn stage(&self, _: engine::transcript::Stage) {}
     fn job(&self, event: &engine::jobs::JobSnapshot) {
         let mut state = self.state.lock().unwrap();
         match event.state {

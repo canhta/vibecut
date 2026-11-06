@@ -3,7 +3,7 @@ use crate::args::CliError;
 use crate::args::utf8;
 use crate::output::{Output, json_path};
 use crate::session::Context;
-use engine::{EditError, NfcText, Session, subtitles};
+use engine::{EditError, NfcText, Session};
 use project::WriterLease;
 use serde_json::{Value, json};
 use std::ffi::OsString;
@@ -112,7 +112,7 @@ fn captions_import(args: Vec<OsString>) -> Result<Output, CliError> {
             "captions import accepts .ass or .ssa files".into(),
         ));
     }
-    let language = subtitles::parse_language(&language)?;
+    let language = engine::providers::parse_language(&language)?;
 
     let mut lease = WriterLease::acquire(&project_path)?;
     let loaded = lease.load()?;

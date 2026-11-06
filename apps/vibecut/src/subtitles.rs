@@ -9,7 +9,8 @@ use engine::{
     ByteBudget, Command, Session,
     cache::{ArtifactKind, CacheKey, KeyInputs},
     jobs::{CancelToken, JobId, JobKind, JobRunner, JobSpec, JobState, RunnerConfig, SystemClock},
-    subtitles::{Cancellation, Stage, UploadRequest},
+    providers::UploadRequest,
+    transcript::{Cancellation, Stage},
 };
 use project::{ItemId, ItemParams};
 use std::{
@@ -53,17 +54,17 @@ impl Options {
         {
             return Err(Error::Invalid("subtitle language"));
         }
-        engine::subtitles::choose_transcription(
+        engine::providers::choose_transcription(
             &self.transcription,
             Some(&self.transcription_model),
         )?;
-        engine::subtitles::choose_translation(&self.translation, Some(&self.translation_model))?;
+        engine::providers::choose_translation(&self.translation, Some(&self.translation_model))?;
         Ok(())
     }
     pub(crate) fn transcription_supported(&self) -> bool {
         self.validate().is_ok()
-            && engine::subtitles::provider_options_for(
-                engine::subtitles::CatalogOperation::Transcribe,
+            && engine::providers::provider_options_for(
+                engine::providers::CatalogOperation::Transcribe,
                 LanguageTag::parse(&self.source).ok().as_ref(),
             )
             .iter()
@@ -447,7 +448,7 @@ impl Subtitles {
         )
     }
     pub fn translate(&mut self, session: &Session, options: &Options) -> Result<()> {
-        engine::subtitles::choose_translation(
+        engine::providers::choose_translation(
             &options.translation,
             Some(&options.translation_model),
         )?;

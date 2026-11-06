@@ -5,7 +5,7 @@ use engine::{
     ByteBudget, Command, EditError, NewItem, Session,
     cache::ArtifactCache,
     jobs::{JobRunner, RunnerConfig, SystemClock},
-    subtitles::{self, Cancellation, Progress, Stage},
+    transcript::{Cancellation, Progress, Stage},
 };
 use std::{io::Read, sync::Arc, time::Duration};
 use time::{SourceRange, Tick};
@@ -87,24 +87,29 @@ impl Workflow for LocalWorkflow {
             } => {
                 events.stage(Stage::Extract);
                 let credentials = credentials()?;
-                let root = subtitles::default_cache_root()?;
+                let root = engine::providers::default_cache_root()?;
                 let (mut cache, _) = ArtifactCache::open(&root, budget.clone(), 128)?;
-                let provider = subtitles::choose_transcription(
+                let provider = engine::providers::choose_transcription(
                     &options.transcription,
                     Some(&options.transcription_model),
                 )?;
-                let runtime = subtitles::Runtime {
-                    gipformer_runner: subtitles::local_asr_runner(),
+                let runtime = engine::providers::Runtime {
+                    gipformer_runner: engine::providers::local_asr_runner(),
                     ..Default::default()
                 };
-                let providers =
-                    subtitles::Providers::open(provider, None, &mut cache, &credentials, &runtime)?;
+                let providers = engine::providers::Providers::open(
+                    provider,
+                    None,
+                    &mut cache,
+                    &credentials,
+                    &runtime,
+                )?;
                 let mut runner = runner(budget)?;
                 let duration = asset
                     .probe()
                     .duration
                     .ok_or(EditError::Invalid("source duration unavailable"))?;
-                let output = subtitles::transcribe(
+                let output = engine::transcript::transcribe(
                     &asset,
                     duration,
                     &captions::LanguageTag::parse(&options.source)?,
@@ -133,8 +138,8 @@ impl Workflow for LocalWorkflow {
                 glossary,
                 force,
             } => {
-                let adapter = subtitles::SubtitleTranslator::open(
-                    &subtitles::choose_translation(
+                let adapter = engine::transcript::SubtitleTranslator::open(
+                    &engine::providers::choose_translation(
                         &options.translation,
                         Some(&options.translation_model),
                     )?,
@@ -142,21 +147,21 @@ impl Workflow for LocalWorkflow {
                 )?;
                 let mut staging = Session::new((*project).clone(), 1)?;
                 let mut runner = runner(budget)?;
-                subtitles::translate_selected(
+                engine::transcript::translate_selected(
                     &mut staging,
                     &adapter,
                     &mut runner,
                     events,
                     events,
                     cancel,
-                    &subtitles::TranslationSelection {
+                    &engine::transcript::TranslationSelection {
                         item,
                         ids,
                         target: captions::LanguageTag::parse(&options.target)?,
                         glossary,
                         force,
                     },
-                    &mut subtitles::Cost::Free,
+                    &mut engine::providers::Cost::Free,
                 )?;
                 let content = staging
                     .project()
@@ -177,8 +182,8 @@ impl Workflow for LocalWorkflow {
         }
     }
 }
-fn credentials() -> engine::Result<subtitles::Credentials> {
-    subtitles::Credentials::new(
+fn credentials() -> engine::Result<engine::providers::Credentials> {
+    engine::providers::Credentials::new(
         std::env::var("OPENAI_API_KEY").ok(),
         std::env::var("ELEVENLABS_API_KEY").ok(),
         std::env::var("ANTHROPIC_API_KEY").ok(),

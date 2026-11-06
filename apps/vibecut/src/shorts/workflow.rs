@@ -5,7 +5,7 @@ use engine::{
     ByteBudget,
     cache::ArtifactCache,
     jobs::{JobRunner, RunnerConfig, SystemClock},
-    subtitles::{self, Cancellation},
+    transcript::Cancellation,
 };
 use shorts::clip_suggest::{self, ClipRequest, SnapSettings};
 use std::{sync::Arc, time::Duration};
@@ -20,8 +20,8 @@ impl Generator for LocalVideoWorkflow {
         events: &TaskEvents,
         cancel: &Cancellation,
     ) -> Result<ReviewSource> {
-        let language = subtitles::parse_language(&request.language)?;
-        let transcription = subtitles::choose_transcription(
+        let language = engine::providers::parse_language(&request.language)?;
+        let transcription = engine::providers::choose_transcription(
             &request.transcription_provider,
             Some(&request.transcription_model),
         )?;
@@ -29,20 +29,25 @@ impl Generator for LocalVideoWorkflow {
             &request.suggestion_provider,
             Some(&request.suggestion_model),
         )?;
-        let credentials = subtitles::Credentials::new(
+        let credentials = engine::providers::Credentials::new(
             std::env::var("OPENAI_API_KEY").ok(),
             std::env::var("ELEVENLABS_API_KEY").ok(),
             std::env::var("ANTHROPIC_API_KEY").ok(),
         )?;
         clip_suggest::check_suggestion_credentials(&provider, &credentials)?;
-        let root = subtitles::default_cache_root()?;
+        let root = engine::providers::default_cache_root()?;
         let (mut cache, _) = ArtifactCache::open(&root, budget.clone(), 128)?;
-        let runtime = subtitles::Runtime {
-            gipformer_runner: subtitles::local_asr_runner(),
+        let runtime = engine::providers::Runtime {
+            gipformer_runner: engine::providers::local_asr_runner(),
             ..Default::default()
         };
-        let providers =
-            subtitles::Providers::open(transcription, None, &mut cache, &credentials, &runtime)?;
+        let providers = engine::providers::Providers::open(
+            transcription,
+            None,
+            &mut cache,
+            &credentials,
+            &runtime,
+        )?;
         let mut runner = JobRunner::new(
             RunnerConfig {
                 concurrency: [2, 1, 1],

@@ -2,7 +2,7 @@
 use crate::args::CliError;
 use engine::EditError;
 use engine::jobs::{JobId, JobRunner, JobSnapshot, JobStage, JobState};
-use engine::subtitles::{Progress, Stage};
+use engine::transcript::{Progress, Stage};
 use std::io;
 use std::io::Write as _;
 use std::sync::Arc;

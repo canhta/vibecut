@@ -5,7 +5,7 @@
     dead_code
 )]
 use captions::{Fingerprint, LanguageTag, Segment, Transcript};
-use engine::{ByteBudget, Command, Session, subtitles::Cancellation};
+use engine::{ByteBudget, Command, Session, transcript::Cancellation};
 use engine::{ClipProposal, ClipRole, ClipSource, ClipSourceSegment};
 use media::{
     AssetData, AssetId, ColorInfo, ContentHash, SourceAsset, SourceProbe, SourceStream, StreamKind,

@@ -2,19 +2,8 @@
 use std::{path::PathBuf, time::Duration};
 
 pub use captions::LanguageTag;
-// The providers and transcript owners are reachable here too, so the desktop and CLI keep
-// their `engine::subtitles` paths until their imports move to the owners.
-pub use crate::providers::{
-    AllowAll, CatalogOperation, ConsentPrompt, Cost, Credentials, DenyUploads, ModelFileInfo,
-    ModelInfo, ProviderOption, Providers, Runtime, TranscriptionProvider, TranslationProvider,
-    UploadRequest, choose_transcription, choose_translation, default_cache_root, local_asr_runner,
-    model_info, model_infos, normalize_target_tag, parse_language, provider_options,
-    provider_options_for,
-};
-pub use crate::transcript::{
-    Cancellation, Progress, SilentProgress, Stage, SubtitleTranslator, TRANSLATE_ATTEMPTS,
-    Transcription, TranslationSelection, transcribe, translate_selected,
-};
+
+use crate::providers::{Cost, TranscriptionProvider, TranslationProvider};
 
 #[derive(Clone, Debug)]
 pub struct SubtitleRequest {

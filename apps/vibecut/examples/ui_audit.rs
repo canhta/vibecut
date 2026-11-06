@@ -2543,7 +2543,7 @@ impl vibecut::shorts::Generator for Hold {
         _request: vibecut::shorts::GenerationRequest,
         _budget: ByteBudget,
         _events: &vibecut::shorts::TaskEvents,
-        cancel: &engine::subtitles::Cancellation,
+        cancel: &engine::transcript::Cancellation,
     ) -> engine::Result<vibecut::shorts::ReviewSource> {
         while !cancel.cancelled() {
             std::thread::sleep(Duration::from_millis(20));

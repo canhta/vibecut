@@ -1,6 +1,6 @@
 //! Presents explicit upload consent scope.
 use engine::EditError;
-use engine::subtitles::{CatalogOperation, ConsentPrompt, Cost, UploadRequest};
+use engine::providers::{CatalogOperation, ConsentPrompt, Cost, UploadRequest};
 use serde_json::{Value, json};
 use std::io;
 use std::io::Write as _;

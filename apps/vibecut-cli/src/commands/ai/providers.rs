@@ -3,8 +3,7 @@ use crate::args::CliError;
 use crate::args::utf8;
 use crate::output::Output;
 use crate::session::Context;
-use engine::subtitles;
-use engine::subtitles::{CatalogOperation, ProviderOption};
+use engine::providers::{CatalogOperation, ProviderOption};
 use serde_json::{Value, json};
 use shorts::clip_suggest;
 use std::ffi::OsString;
@@ -36,7 +35,7 @@ pub(crate) fn run(_context: &Context, args: Vec<OsString>) -> Result<Output, Cli
                     .next()
                     .ok_or_else(|| CliError::Usage("--language requires a tag".into()))?;
                 let value = utf8(&raw, "language")?;
-                language = Some(subtitles::parse_language(value)?);
+                language = Some(engine::providers::parse_language(value)?);
             }
             other => {
                 return Err(CliError::Usage(format!("unknown providers flag: {other}")));
@@ -73,7 +72,7 @@ pub(crate) fn run(_context: &Context, args: Vec<OsString>) -> Result<Output, Cli
             .join("\n");
         return Ok(Output::new(json!({"providers": value}), human, false, 0));
     }
-    let options = subtitles::provider_options_for(operation, language.as_ref());
+    let options = engine::providers::provider_options_for(operation, language.as_ref());
     let value: Vec<Value> = options.iter().map(provider_option_json).collect();
     let human = options
         .iter()
