@@ -1,34 +1,11 @@
-//! Integration tests share one binary and one copy of their helpers.
-
-mod ass_import;
-mod clip_boundaries;
-mod clip_export;
-mod clip_suggest;
-mod commands;
+//! Integration tests cross the engine folder interfaces.
+mod analysis;
+mod artifacts;
 mod control;
-mod effects;
-mod export_jobs;
-mod fades;
-mod font_catalog;
-mod jobs;
-mod keyframes;
-mod library;
-mod lifecycle;
-mod loudness;
-mod masks;
-mod media;
-mod model_transfers;
+mod libraries;
 mod providers;
-mod recovery;
-mod render_kernels;
-mod retime;
-mod review_repros;
-mod scene_detection;
-mod scenes;
-mod shot_analysis;
-mod snapshot;
-mod sounds;
+mod runtime;
+mod session;
+mod shorts;
+mod store;
 mod subtitles;
-mod translation;
-
-mod transitions;

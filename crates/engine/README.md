@@ -6,6 +6,21 @@ orchestration for accepted ordered-segment shorts. Processing
 algorithms and decoded/raster caches remain with their domain owners. No widgets,
 device state, app preferences or platform API is required.
 
+## Module ownership
+
+| Folder | Responsibility | Interface |
+|---|---|---|
+| `session/` | Owns editable project state. | Session, Command, registry |
+| `runtime/` | Executes bounded background work. | JobRunner, ByteBudget, ArtifactCache, export submission |
+| `store/` | Persists managed project sessions. | ProjectLibrary, Autosave, cover capture |
+| `subtitles/` | Produces source-timed subtitle output. | Providers, transcribe, run, translate_selected, prepare_ass_import |
+| `shorts/` | Produces accepted shorts. | ClipBatch, suggest, prepare_export |
+| `analysis/` | Measures source media. | scene detection, shot analysis, loudness |
+| `artifacts/` | Produces derived project images. | thumbnails, snapshots, effect thumbnails |
+| `libraries/` | Provides external project assets. | FontStore, SoundLibrary |
+| `providers/` | Resolves explicit AI provider choices. | provider attempts, ModelTransfers |
+| `control/` | Admits transport-neutral control calls. | Request, Response, Policy, Cursor |
+
 ## Public entry points
 
 `Session::new(project, history_limit)` admits 1..=1000 retained undo steps.

@@ -1,61 +1,60 @@
-//! Headless project commands and bounded, atomic snapshot history.
-pub mod ass_import;
-mod budget;
-pub mod cache;
-pub mod clip_boundaries;
-mod clip_export;
-pub mod clip_suggest;
-mod commands;
+//! Headless project commands with bounded execution resources.
 pub mod control;
-mod control_preview;
-pub mod fonts;
-pub mod jobs;
-pub mod library;
-pub mod loudness;
-pub mod models;
-pub mod providers;
-pub mod recovery;
-pub mod scene_detection;
-pub mod shot_analysis;
-pub mod snapshot;
-pub mod sounds;
+mod session;
+pub(crate) use session::transitions;
+pub use session::{
+    Command, CommandKind, CommandSpec, CreatedId, Effect, Example, Fixture, ItemParamPatch,
+    ItemPlacement, Move, NewItem, Outcome, Placement, TrackPlacement, registry,
+};
+pub use session::{JobTarget, Session};
+mod runtime;
+pub use runtime::cache;
+pub use runtime::jobs;
+pub(crate) use runtime::publication;
+pub use runtime::{BudgetSnapshot, ByteBudget, ByteLease, ByteOwner};
+pub use runtime::{
+    submit_export, submit_export_publication, submit_export_with_sources, subtitle_file,
+};
+mod store;
+pub use store::library;
+pub use store::recovery;
 pub mod subtitles;
-mod thumbnail;
-pub mod thumbnails;
-pub mod translation;
-pub use budget::{BudgetSnapshot, ByteBudget, ByteLease, ByteOwner};
-pub use clip_export::{
+pub use subtitles::translation;
+mod shorts;
+pub use shorts::clip_boundaries;
+pub use shorts::clip_suggest;
+pub use shorts::{
     ClipBatch, ClipBatchRequest, ClipPaths, ClipShort, ClipSubtitlePath, MAX_BATCH_CLIPS,
     MAX_BATCH_CUE_BYTES, MAX_CLIP_SEGMENTS,
 };
-pub use clip_suggest::{
-    ClipCandidate, ClipExportOutcome, ClipExportPaths, ClipExportPrep, ClipExportRequest,
-    ClipRequest, ClipSuggestionOutcome, RejectedClip, SnapSettings, SuggestionOption,
-    SuggestionProvider, check_suggestion_credentials, choose_suggestion, suggestion_options,
+mod analysis;
+pub use analysis::loudness;
+pub use analysis::scene_detection;
+pub use analysis::{
+    AnalysisJob, AnalysisRequest, AnalysisResult, AnalysisSettings, FaceTrack, Scene,
+    SecondAnalysis, ShotAnalysis, SpeakerRef, SpeakerState,
 };
-// These AI-owned types appear in clip workflow signatures, so adapters use them
-// through this crate instead of taking a second dependency on `ai`.
+mod artifacts;
+pub(crate) use artifacts::control_preview;
+pub use artifacts::effect_thumbnails;
+pub use artifacts::snapshot;
+pub use artifacts::thumbnails;
+mod libraries;
+pub use libraries::fonts;
+pub use libraries::sounds;
+pub mod providers;
 pub use ai::clips::{
     ClipDropReason, ClipProposal, ClipRole, ClipSettings, ClipSource, ClipSourceSegment,
     DroppedClip,
 };
-pub use ass_import::{AssImportReport, AssImportRequest, prepare_ass_import};
 pub use captions::{AssWarning, AssWarningKind, Format, NfcText};
-mod edit;
-pub mod effect_thumbnails;
-mod publication;
-mod rendering;
-mod session;
-mod transitions;
-pub use commands::{
-    Command, CommandKind, CommandSpec, CreatedId, Effect, Example, Fixture, ItemParamPatch,
-    ItemPlacement, Move, NewItem, Outcome, Placement, TrackPlacement, registry,
+pub use providers::models;
+pub use shorts::clip_suggest::{
+    ClipCandidate, ClipExportOutcome, ClipExportPaths, ClipExportPrep, ClipExportRequest,
+    ClipRequest, ClipSuggestionOutcome, RejectedClip, SnapSettings, SuggestionOption,
+    SuggestionProvider, check_suggestion_credentials, choose_suggestion, suggestion_options,
 };
-pub use rendering::{
-    submit_export, submit_export_publication, submit_export_with_sources, subtitle_file,
-};
-pub use session::{JobTarget, Session};
-
+pub use subtitles::{AssImportReport, AssImportRequest, prepare_ass_import};
 /// One media asset's timeline usage, retained in the typed removal refusal.
 /// Item IDs are stable identifiers, never user-authored text.
 #[derive(Clone, Debug, PartialEq, Eq)]

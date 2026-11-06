@@ -19,14 +19,6 @@ doc	crates/captions/src/language.rs	first line is not a //! responsibility line
 doc	crates/captions/src/mapping.rs	first line is not a //! responsibility line
 doc	crates/captions/src/segment.rs	first line is not a //! responsibility line
 doc	crates/captions/src/span.rs	first line is not a //! responsibility line
-doc	crates/engine/src/commands.rs	first line is not a //! responsibility line
-doc	crates/engine/src/edit.rs	first line is not a //! responsibility line
-doc	crates/engine/src/rendering.rs	first line is not a //! responsibility line
-doc	crates/engine/src/session.rs	first line is not a //! responsibility line
-doc	crates/engine/src/shot_analysis/reidentification.rs	first line is not a //! responsibility line
-doc	crates/engine/src/shot_analysis/tracking.rs	first line is not a //! responsibility line
-doc	crates/engine/src/thumbnail.rs	first line is not a //! responsibility line
-doc	crates/engine/src/transitions.rs	first line is not a //! responsibility line
 doc	crates/media/src/decode.rs	first line is not a //! responsibility line
 doc	crates/media/src/encode.rs	first line is not a //! responsibility line
 doc	crates/media/src/model.rs	first line is not a //! responsibility line
@@ -53,7 +45,6 @@ doc	xtask/src/distribution/smoke.rs	first line is not a //! responsibility line
 doc	xtask/src/distribution/universal.rs	first line is not a //! responsibility line
 folder	apps/vibecut/src	29 direct children (limit 12)
 folder	crates/ai/src	19 direct children (limit 12)
-folder	crates/engine/src	31 direct children (limit 12)
 folder	crates/media/src	13 direct children (limit 12)
 folder	crates/project/src	18 direct children (limit 12)
 folder	crates/render/src	16 direct children (limit 12)
@@ -80,18 +71,15 @@ layer	apps/vibecut/src/workspace.rs	crate::model_manager is in higher layer feat
 layer	apps/vibecut/src/workspace.rs	crate::playback is in higher layer features/player (module workspace is shell/shell)
 layer	apps/vibecut/src/workspace.rs	crate::projects is in higher layer features/home (module workspace is shell/shell)
 layer	apps/vibecut/src/workspace.rs	crate::shorts is in higher layer features/shorts (module workspace is shell/shell)
-layer	crates/engine/src/clip_suggest.rs	crate::providers crosses feature groups in layer features (module clip_suggest is shorts, target is providers)
-layer	crates/engine/src/clip_suggest.rs	crate::subtitles crosses feature groups in layer features (module clip_suggest is shorts, target is subtitles)
-layer	crates/engine/src/control.rs	crate::cache is in higher layer substrate/substrate (module control is kernel/kernel)
-layer	crates/engine/src/control.rs	crate::control_preview is in higher layer features/artifacts (module control is kernel/kernel)
-layer	crates/engine/src/control.rs	crate::fonts is in higher layer features/libraries (module control is kernel/kernel)
-layer	crates/engine/src/control.rs	crate::jobs is in higher layer substrate/substrate (module control is kernel/kernel)
-layer	crates/engine/src/control.rs	crate::rendering is in higher layer substrate/substrate (module control is kernel/kernel)
-layer	crates/engine/src/control.rs	crate::snapshot is in higher layer features/artifacts (module control is kernel/kernel)
-layer	crates/engine/src/control.rs	crate::subtitles is in higher layer features/subtitles (module control is kernel/kernel)
-layer	crates/engine/src/fonts.rs	crate::models crosses feature groups in layer features (module fonts is libraries, target is providers)
-layer	crates/engine/src/library.rs	crate::thumbnail is in higher layer features/artifacts (module library is substrate/substrate)
-layer	crates/engine/src/recovery.rs	crate::thumbnail is in higher layer features/artifacts (module recovery is substrate/substrate)
-layer	crates/engine/src/rendering.rs	crate::loudness is in higher layer features/analysis (module rendering is substrate/substrate)
-layer	crates/engine/src/session.rs	crate::fonts is in higher layer features/libraries (module session is kernel/kernel)
-layer	crates/engine/src/subtitles.rs	crate::models crosses feature groups in layer features (module subtitles is subtitles, target is providers)
+layer	crates/engine/src/analysis/scene_detection_workflow.rs	crate::control is in higher layer composition/control (module analysis is features/analysis)
+layer	crates/engine/src/artifacts/preview_execution.rs	crate::control is in higher layer composition/control (module artifacts is features/artifacts)
+layer	crates/engine/src/libraries/font_catalog.rs	crate::providers crosses feature groups in layer features (module libraries is libraries, target is providers)
+layer	crates/engine/src/runtime/rendering.rs	crate::analysis is in higher layer features/analysis (module runtime is substrate/substrate)
+layer	crates/engine/src/runtime/rendering.rs	crate::control is in higher layer composition/control (module runtime is substrate/substrate)
+layer	crates/engine/src/session/commands.rs	crate::control is in higher layer composition/control (module session is kernel/kernel)
+layer	crates/engine/src/session/execution.rs	crate::control is in higher layer composition/control (module session is kernel/kernel)
+layer	crates/engine/src/session/state.rs	crate::control is in higher layer composition/control (module session is kernel/kernel)
+layer	crates/engine/src/session/state.rs	crate::libraries is in higher layer features/libraries (module session is kernel/kernel)
+layer	crates/engine/src/shorts/suggestion.rs	crate::providers crosses feature groups in layer features (module shorts is shorts, target is providers)
+layer	crates/engine/src/shorts/suggestion.rs	crate::subtitles crosses feature groups in layer features (module shorts is shorts, target is subtitles)
+layer	crates/engine/src/subtitles/workflow.rs	crate::providers crosses feature groups in layer features (module subtitles is subtitles, target is providers)

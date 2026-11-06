@@ -533,7 +533,7 @@ pub(crate) fn decode_command(id: &str, params: Value) -> Result<Command> {
         .map_err(|_| EditError::InvalidParams)?;
     // Includes nested publications/session controls, before any first child effect.
     if matches!(command, Command::Batch { .. }) {
-        crate::edit::check_budget(&command)?;
+        crate::session::check_budget(&command)?;
     }
     Ok(command)
 }
