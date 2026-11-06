@@ -57,5 +57,4 @@ mod export_geometry {
 }
 
 #[cfg(test)]
-#[path = "session/source_loss.rs"]
 mod source_loss;
