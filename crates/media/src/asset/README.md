@@ -17,7 +17,7 @@ stable while probing/hashing; this is not a filesystem snapshot operation.
 removing them from the project or restricting rendering. Relinking preserves it.
 `is_image` recognizes PNG, JPEG, WebP, BMP and TIFF pipe demuxers plus GIF/APNG by
 probed format (never the filename). Other containers retain video semantics,
-including one-frame movies. The [engine import policy](../../../engine/README.md#import-policy)
+including one-frame movies. The [engine import policy](../../../engine/src/session/edit/README.md#import-policy)
 owns how this classification affects project FPS.
 
 `availability` checks file presence without hashing; missing media is a relink

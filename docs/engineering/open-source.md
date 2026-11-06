@@ -18,7 +18,7 @@ Release checks verify signing, notarization and library replacement; a developme
 
 ## Assets
 
-Media, model weights and large binaries stay out of Git. Each admitted small asset has a `<file>.attribution` sidecar with nonempty `asset`, `title`, `author`, `source`, `license`, `license-file`, `added` (admitting ticket) and `notes`; `cargo xtask assets` checks them. Fonts may be OFL-1.1 with the OFL text and, for a subset, its regeneration procedure and hashes. The curated downloadable font catalog is [engine-owned](../../crates/engine/README.md#font-catalog): fonts reach a user's cache only on explicit action, pinned by size and SHA-256, and each cached file keeps the same `.attribution` record (source URL, licence id, licence file) beside it. Project brand and icon sources are MIT; see [app icons](../../assets/app-icon/README.md).
+Media, model weights and large binaries stay out of Git. Each admitted small asset has a `<file>.attribution` sidecar with nonempty `asset`, `title`, `author`, `source`, `license`, `license-file`, `added` (admitting ticket) and `notes`; `cargo xtask assets` checks them. Fonts may be OFL-1.1 with the OFL text and, for a subset, its regeneration procedure and hashes. The curated downloadable font catalog is [engine-owned](../../crates/engine/src/libraries/font_catalog/README.md#font-catalog): fonts reach a user's cache only on explicit action, pinned by size and SHA-256, and each cached file keeps the same `.attribution` record (source URL, licence id, licence file) beside it. Project brand and icon sources are MIT; see [app icons](../../assets/app-icon/README.md).
 
 ## Model weights
 

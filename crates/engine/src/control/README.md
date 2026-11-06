@@ -1,0 +1,93 @@
+# Control
+
+Interface: `Caller`, `Policy`, `Session::control_request`, `snapshot_and_subscribe`.
+
+## Control admission, revisions and receipts
+
+`control::{Request, Caller, Policy, Response}` is the transport-neutral boundary; the
+envelopes, limits and digest it exchanges are the kernel's [wire contract](../session/wire/README.md#wire-contract),
+which `control` re-exports. `Session::control_json` parses a frame under those limits;
+`control_request` also bounds already-allocated requests. Unknown commands, wrong
+types/fields and nested batch publications refuse before effects. Effectful calls require
+the exact digest and version; catalog reads need no digest.
+
+Effectful control requests require `base_rev` (the [revision](../session/wire/README.md#wire-contract) rules).
+A stale revision refuses before any child of a batch. An invalid candidate
+(see [wire integer validation](../session/wire/README.md#wire-contract)) returns InvalidParams without
+consuming IDs, advancing revision or emitting a project change; its refusal receipt
+can be replayed.
+The recovery journal descriptor is version 2 for the same ProjectId encoding;
+older descriptors are refused before model decoding, without deleting their files.
+Session/project lifecycle creation and disk saves retain their existing
+`Session::create`/`Autosave` ownership; direct Session edit/control execution returns
+a typed refusal for those commands. Their registry examples declare those routes.
+A composition root that owns the project file may instead call
+`Session::control_lifecycle_save`: it applies the same version, hash, session,
+policy, request-ID, key, revision, capacity and receipt rules as other effects, then
+runs a closure that performs only project/metadata publication, acknowledges the
+save and stores the terminal receipt. Its success and typed execution errors are
+both receipted; a failed publication keeps the composition root's dirty state, the
+same request replays the stored error, and a retry that must execute again uses a
+fresh key.
+
+The composition root supplies `Caller` and a mandatory trusted `Policy`, outside
+client JSON. Engine invokes it on the command and every batch child before effects
+and before receipt replay. It must enforce source/destination/overwrite and provider
+consent through their owners; it is not an authenticated transport implementation.
+External callers cannot begin/commit/cancel gestures, including through generic
+run or batches. External mutations refuse while the UI holds a gesture. Agents use
+atomic batches and undo. Reads do not expose uncommitted gesture snapshots.
+
+Effectful requests require a 1..=128-byte idempotency key. Receipts are scoped by
+trusted principal, Session and key; the fingerprint covers command, params,
+base revision and contract identity, excluding transport/request correlation.
+Replay returns the original revision/result even after later edits; conflicting
+semantics refuse. Mutable Session ownership serializes concurrent callers. The
+ledger retains at most 4096 receipts and 32 MiB without eviction until Session end;
+new effects reserve 128 KiB of available ledger capacity before execution. Mutation
+results have at most 1024 created IDs; returned publication paths are capped at
+4096 encoded bytes. Request IDs and principals are 1..=128 bytes. Refusals before
+reservation do not occupy a key; accepted execution errors do. A new Session refuses
+the old epoch rather than rerunning an uncertain mutation.
+
+Inspection/catalog responses are capped at 8 MiB; oversize reads refuse instead of
+truncating or mixing revisions. No transport, filesystem grant store, CLI persistent
+Session or MCP runtime is introduced here; their composition belongs to the consumers.
+
+`inspect`, `catalog`, `provider_catalog`, `fonts.list`, `fonts.load`, `fonts.download`, `preview`,
+`preview.snapshot`, general `export`, `job_status` and `job_cancel` share the existing declaration
+([font commands](../libraries/font_catalog/README.md#font-catalog) need an attached font store). Export starts the production
+render job against its admitted immutable snapshot and returns job ID/revision and
+paths. Preview starts a CPU job through the same runner; job_status returns its
+retained inline JPEG result without consuming it. Up to four exact output frames
+are rendered at a maximum 640-pixel edge, JPEG quality 80, with frame/active clip IDs
+burned in through the production text compositor. At most 16 active clips are
+admitted per preview frame; larger label sets refuse. Labels that cannot fit at 14 output pixels within half
+the image also refuse rather than clipping. Preview results retain their
+captured revision; missing sources fail rather than invent picture evidence.
+Images never enter receipts or event queues. Cancel requests obey the runner's
+publication fence. Absent/evicted jobs return JobNotRetained; replaying their start
+receipt never submits another job. Applications keep ticking app-owned jobs after
+a listener disconnects; process shutdown retains JobRunner's cancel/join behavior.
+
+## Control events and resynchronization
+
+Command replies/receipts remain authoritative;
+large read/image results stay on the response path. Project changes require a full
+snapshot rather than pretending created IDs form a complete diff. Gesture previews
+and cancellation emit revision changes, never committed project changes.
+
+`snapshot_and_subscribe(&runner)` captures committed project, revision, current jobs
+and a cursor while Session ownership is held. The owning loop calls `observe_jobs`
+after runner ticks/accepted responses; it uses retained snapshots without draining
+other consumers. Acceptance is visible before job lifecycle events. At most 128
+small live events are retained for every listener together; cursors hold no queue.
+A slow or foreign cursor gets ResyncRequired and must install a fresh snapshot.
+No durable replay or exhaustive transition log is promised; progress can coalesce.
+Terminal snapshots follow the existing runner/publication fence, and repeated polls
+do not duplicate unchanged terminal events. Dropping a cursor never cancels work.
+
+The control tests enumerate registry-owned examples and fixture requirements,
+validate closed schemas, exercise real export/preview jobs, stale requests,
+receipt replay/conflict/exhaustion, hostile parser/integer inputs, policy refusal,
+gesture ownership and snapshot pressure. These checks do not establish transport or installed-client behavior.

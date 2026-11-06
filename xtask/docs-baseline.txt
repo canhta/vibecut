@@ -4,37 +4,6 @@ index	docs/adr/0003-whisper-callback-boundary.md	not listed in docs/README.md
 index	docs/adr/0004-module-structure.md	not listed in docs/README.md
 index	docs/adr/0005-three-windows.md	not listed in docs/README.md
 index	docs/adr/0006-closed-command-catalog.md	not listed in docs/README.md
-map	apps/vibecut/README.md	README has no module map table
-map	crates/engine/README.md	folder module `analysis/shot_analysis` has no README
-map	crates/engine/README.md	folder module `analysis` has no README
-map	crates/engine/README.md	folder module `artifacts` has no README
-map	crates/engine/README.md	folder module `control` has no README
-map	crates/engine/README.md	folder module `libraries/font_catalog` has no README
-map	crates/engine/README.md	folder module `libraries/sound_library` has no README
-map	crates/engine/README.md	folder module `libraries` has no README
-map	crates/engine/README.md	folder module `providers` has no README
-map	crates/engine/README.md	folder module `runtime/cache_storage` has no README
-map	crates/engine/README.md	folder module `runtime/staged_publication` has no README
-map	crates/engine/README.md	folder module `runtime` has no README
-map	crates/engine/README.md	folder module `session/edit` has no README
-map	crates/engine/README.md	folder module `session/wire` has no README
-map	crates/engine/README.md	folder module `session` has no README
-map	crates/engine/README.md	folder module `store/recovery_workflow` has no README
-map	crates/engine/README.md	folder module `store` has no README
-map	crates/engine/README.md	folder module `subtitles` has no README
-map	crates/engine/README.md	folder module `transcript` has no README
-map	crates/engine/README.md	module map has no row for folder `analysis/shot_analysis`
-map	crates/engine/README.md	module map has no row for folder `libraries/font_catalog`
-map	crates/engine/README.md	module map has no row for folder `libraries/sound_library`
-map	crates/engine/README.md	module map has no row for folder `runtime/cache_storage`
-map	crates/engine/README.md	module map has no row for folder `runtime/staged_publication`
-map	crates/engine/README.md	module map has no row for folder `session/edit`
-map	crates/engine/README.md	module map has no row for folder `session/wire`
-map	crates/engine/README.md	module map has no row for folder `store/recovery_workflow`
-map	crates/project/README.md	README has no module map table
-text	apps/vibecut/README.md	tracker id `p1-parity/33`
-text	apps/vibecut/README.md	tracker id `p1-parity/75`
-text	apps/vibecut/README.md	tracker id `p1-parity/97`
 text	assets/icons/phosphor/README.md	tracker id `p0-core/39`
 text	assets/icons/phosphor/README.md	tracker id `p1-parity/06`
 text	assets/icons/phosphor/README.md	tracker id `p1-parity/09`
@@ -45,3 +14,8 @@ text	docs/product/agent-control/keyboard.md	tracker id `p1-parity/16`
 text	docs/product/agent-control/keyboard.md	tracker id `p1-parity/20`
 text	packaging/README.md	tracker id `p0-core/44`
 text	packaging/README.md	tracker id `p2-platform/02`
+map	crates/project/README.md	README has no module map table
+map	apps/vibecut/README.md	README has no module map table
+text	apps/vibecut/README.md	tracker id `p1-parity/33`
+text	apps/vibecut/README.md	tracker id `p1-parity/75`
+text	apps/vibecut/README.md	tracker id `p1-parity/97`

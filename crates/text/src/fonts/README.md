@@ -9,7 +9,7 @@ reserved so bundled fallback order never changes, and at most 256 faces, 32 MiB 
 explicit `fallbacks` chain, never the generic bundled order. `generation()` counts registered
 faces; a caller that caches layouts or rasters includes it in its key (render's text cache
 does). Enumeration, downloads and licences of non-bundled fonts belong to
-[engine](../../../engine/README.md#font-catalog).
+[engine](../../../engine/src/libraries/font_catalog/README.md#font-catalog).
 
 | Family | Faces | Source |
 |---|---|---|

@@ -625,6 +625,7 @@ fn module_file_beside_its_folder_counts_once() {
     tree.write("crates/foo/src/wide/group/leaf.rs", "//! Leaf.\n");
     tree.write("crates/foo/src/wide/tests/case.rs", "//! Case.\n");
     tree.write("crates/foo/src/wide/part0_tests.rs", "//! Cases.\n");
+    tree.write("crates/foo/src/wide/README.md", "# Wide\n");
     check(&tree.0).unwrap();
     tree.write("crates/foo/src/wide/extra.rs", "//! Extra.\n");
     assert!(check(&tree.0).unwrap_err().contains("13 direct children"));

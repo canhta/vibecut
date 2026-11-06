@@ -37,7 +37,7 @@ Timeline group edits use `exec <project> timeline.move_items
 Times are integer output ticks. Optional move `placement` uses the same tagged
 track/above/below placement as insertion; omitted placement retains each track.
 Each invocation saves one atomic edit. Interactive preview stays in an app-owned
-Session through the [engine preview contract](../../../crates/engine/README.md#timeline-placement).
+Session through the [engine preview contract](../../../crates/engine/src/session/edit/README.md#timeline-placement).
 
 ## Fonts
 
@@ -83,11 +83,11 @@ Keyframed item parameters are ordinary registry commands: `keyframes.set_param`,
 
 `audio.set_fade {item, edge, duration, curve}` (`edge` `in`|`out`, `curve` `equal_power`|`linear`|`exponential`, duration in ticks) fades an audio or video clip edge; the same envelope is applied to the exported audio and to preview.
 
-Fields are required; unknown command, parameter and model fields are refused. Model wire types are the Serde shapes owned by their crates; the [engine contract](../../../crates/engine/README.md#public-entry-points) describes the registry and JSON limits.
+Fields are required; unknown command, parameter and model fields are refused. Model wire types are the Serde shapes owned by their crates; the [engine contract](../../../crates/engine/src/session/README.md#public-entry-points) describes the registry and JSON limits.
 
 ## Control session
 
-`vibecut-cli control <project> [--allow-overwrite] [--no-save]` is the first CLI consumer of the [engine control contract](../../../crates/engine/README.md#control-admission-revisions-and-receipts). One process is one engine Session: the writer lease is acquired before the first frame and held until the final save, so a desktop app holding it returns `busy`/3 before any request is read. Sessions have an OS-random epoch; separate `control` invocations are separate sessions and do not share revisions or receipts.
+`vibecut-cli control <project> [--allow-overwrite] [--no-save]` is the first CLI consumer of the [engine control contract](../../../crates/engine/src/control/README.md#control-admission-revisions-and-receipts). One process is one engine Session: the writer lease is acquired before the first frame and held until the final save, so a desktop app holding it returns `busy`/3 before any request is read. Sessions have an OS-random epoch; separate `control` invocations are separate sessions and do not share revisions or receipts.
 
 Requests are newline-delimited JSON objects on stdin: `request_id`, `command`, `params`, and optionally `idempotency_key`, `base_rev`, `api_version`, `registry_hash` and `session_id`. Omitted contract identity is filled from the running catalog; supplied values are still admitted by the engine, so a wrong version or digest returns `schema_mismatch` and a wrong session returns `session_gone`. Read commands need no revision or key. Effectful commands need the current `base_rev` and a 1–128 byte `idempotency_key`; stale revisions return `stale_revision` before any child of a batch, and replaying an accepted key returns its original result while a different request under the same key returns `idempotency_conflict`. Receipts are not evicted: the next new effect after 4096 retained keys returns `receipt_capacity`. Unknown commands, unknown/extra fields, duplicate JSON keys, frames over 8 MiB and integers outside ±(2^53−1) are refused before effects; an oversized frame is drained and returned as an in-band `limit` error, so the session continues with earlier accepted edits intact. A session retains 100 undo steps, so `undo` and `redo` are ordinary frames; lifecycle `project.create` stays with `project new` and is refused inside a session.
 
@@ -149,7 +149,7 @@ partial MP4 is promoted. There is no signal-to-job-cancel handler; use the engin
 
 ## Project files and concurrency
 
-A project is the `.vibecut` file owned by the project crate. Its schema, atomic publication, recovery snapshots and writer lease are documented in the [project contract](../../../crates/project/README.md#persistence-and-limits); the CLI does not define a second format page.
+A project is the `.vibecut` file owned by the project crate. Its schema, atomic publication, recovery snapshots and writer lease are documented in the [project contract](../../../crates/project/src/persistence/README.md#persistence-and-limits); the CLI does not define a second format page.
 
 Lease admission for reads and writes follows the [CLI owner contract](../../../apps/vibecut-cli/README.md).
 
@@ -220,7 +220,7 @@ Candidate output preserves the AI ordered-segment contract: `pieces` are the pro
 
 `vibecut-cli scenes <file> [--threshold 0.28] [--fade-threshold 0.20]
 [--min-scene-ticks <ticks>] [--json]` imports a local known-duration video and
-runs the engine's [scene detection job](../../../crates/engine/README.md#scene-detection).
+runs the engine's [scene detection job](../../../crates/engine/src/analysis/README.md#scene-detection).
 Human output prints source ticks, change kind and confidence; JSON includes the
 content key, source identity, requested range, ordered `candidates` and
 `decoded_frames`. Confidence is measured change, not a calibrated probability.

@@ -35,7 +35,7 @@ HTTPS URLs without embedded
 credentials or fragments. The engine owns redirect limits and Range/ETag policy.
 Catalog validation admits bounded portable raw filenames, rejects device names,
 case-folded duplicates and unsafe paths, and caps file/aggregate sizes before IO.
-The [engine transfer contract](../../../engine/README.md#local-model-transfers) owns
+The [engine transfer contract](../../../engine/src/providers/README.md#local-model-transfers) owns
 verified native bundle leases; callers retain a lease while native paths are used.
 
 Whisper accepts finite mono 16 kHz PCM windows of at most five minutes, with absolute
