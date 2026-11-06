@@ -991,7 +991,7 @@ fn every_editor_button_reports_its_embedded_icon() {
         ("timeline.magnet", "Main track magnet"),
         ("transport.back", "Back 1 second (J)"),
         ("transport.play", "Play (Space)"),
-        ("preview.retry", "Retry preview"),
+        ("preview.retry", "Retry"),
     ] {
         assert_eq!(tooltip(id), Some(text), "{id} tooltip");
     }

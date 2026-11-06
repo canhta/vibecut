@@ -93,7 +93,6 @@ pub(super) fn show(state: &mut State, ctx: &egui::Context, preferences: &Prefere
         let duration = display_time(entry.duration);
         let created = catalog::date(locale, entry.created_unix_ms);
         let modified = catalog::date(locale, entry.modified_unix_ms);
-        let short_id = entry.short_id.clone();
         let title = catalog::text(locale, Text::ProjectsInfoTitle);
         let mut close = false;
         let response = egui::Modal::new(egui::Id::unique("projects.info.dialog")).show(ctx, |ui| {
@@ -114,11 +113,6 @@ pub(super) fn show(state: &mut State, ctx: &egui::Context, preferences: &Prefere
                 locale,
                 Text::ModifiedDate,
                 &[("date", &modified)],
-            ));
-            ui.label(format!(
-                "{} {}",
-                catalog::text(locale, Text::ProjectsInfoId),
-                short_id
             ));
             if action_button(
                 ui,

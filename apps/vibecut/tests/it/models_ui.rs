@@ -306,9 +306,7 @@ fn opening_lists_licence_scope_and_never_transfers_before_download_click() {
     assert!(harness.query_by_label("Suggested default").is_none());
     assert!(
         harness
-            .query_by_label(
-                "This licence is not eligible as a suggested default. Review the exact licence and source before opting in."
-            )
+            .query_by_label("Check the licence before downloading.")
             .is_some(),
         "the restriction is shown before consent"
     );
@@ -425,7 +423,7 @@ fn checksum_failure_is_discarded_and_reported() {
     assert_eq!(inspection.problem, Some(ModelProblem::Integrity));
     assert!(
         harness
-            .query_by_label("The downloaded file failed its checksum and was discarded. Retry.")
+            .query_by_label("Download was damaged. Try again.")
             .is_some()
     );
     assert!(inspection.installed.is_empty());
@@ -451,7 +449,7 @@ fn disk_full_is_reported_before_any_bytes_are_written() {
     assert_eq!(inspection.problem, Some(ModelProblem::StorageFull));
     assert!(
         harness
-            .query_by_label("Not enough disk space for these weights. Free space and retry.")
+            .query_by_label("Not enough space. Free some and retry.")
             .is_some()
     );
     assert_eq!(http.count(), 0, "disk preflight precedes transfer");

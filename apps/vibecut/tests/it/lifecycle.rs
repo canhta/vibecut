@@ -386,10 +386,7 @@ fn corrupt_recovery_candidate_is_skipped_with_a_visible_diagnostic() {
             second,
         );
     h.run_steps(3);
-    assert!(
-        h.query_by_label("A damaged recovery copy was skipped.")
-            .is_some()
-    );
+    assert!(h.query_by_label("A damaged backup was skipped.").is_some());
     assert!(h.query_by_label("Recover a copy").is_none());
     assert!(h.query_by_label("New project").is_some());
 }

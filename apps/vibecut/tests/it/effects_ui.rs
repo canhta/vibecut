@@ -395,10 +395,7 @@ fn effect_tile_drop_adds_to_a_clip_and_refuses_audio_with_a_reason() {
         .unwrap()
         .import_toast
         .unwrap_or_default();
-    assert!(
-        toast.contains("Audio clips cannot use visual effects"),
-        "{toast}"
-    );
+    assert!(toast.contains("Effects don't apply to audio"), "{toast}");
 }
 
 #[test]
@@ -433,7 +430,7 @@ fn effect_drag_escape_and_missed_drop_leave_the_project_untouched() {
         .unwrap()
         .import_toast
         .unwrap_or_default();
-    assert!(toast.contains("Drop the effect on a video"), "{toast}");
+    assert!(toast.contains("Drop on a video or image clip"), "{toast}");
 }
 
 #[test]
@@ -454,7 +451,7 @@ fn effect_plus_adds_to_the_selected_clip_and_needs_a_target() {
         .unwrap()
         .import_toast
         .unwrap_or_default();
-    assert!(toast.contains("Select a video"), "{toast}");
+    assert!(toast.contains("Select a clip first"), "{toast}");
 
     harness.state_mut().selection = [video, image].into_iter().collect();
     harness.run_steps(3);
@@ -657,7 +654,7 @@ fn effect_add_refuses_locked_tracks_and_the_sixty_fifth_effect() {
         .unwrap()
         .import_toast
         .unwrap_or_default();
-    assert!(toast.contains("Unlock the track"), "{toast}");
+    assert!(toast.contains("Track is locked"), "{toast}");
 
     let limit = fixture();
     let video = limit.video;
@@ -680,7 +677,7 @@ fn effect_add_refuses_locked_tracks_and_the_sixty_fifth_effect() {
         .unwrap()
         .import_toast
         .unwrap_or_default();
-    assert!(toast.contains("maximum number of effects"), "{toast}");
+    assert!(toast.contains("Effect limit reached"), "{toast}");
 }
 
 struct BlockingPreview;

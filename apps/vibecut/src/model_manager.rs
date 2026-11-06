@@ -486,7 +486,6 @@ impl ModelManager {
                 ui.set_width(880.0_f32.min(ctx.content_rect().width() - 80.0));
                 ui.label(egui::RichText::new(tr(Text::Models)).strong().size(18.0));
                 ui.weak(tr(Text::ModelsHint));
-                ui.weak(tr(Text::ModelDefaultPolicy));
                 ui.add_space(12.0);
                 let body_height = (ctx.content_rect().height() - 300.0).clamp(260.0, 520.0);
                 let list_height = (body_height * 0.35).clamp(90.0, 150.0);

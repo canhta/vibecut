@@ -38,14 +38,6 @@ pub(in crate::editor) fn show_scenes(
                     Text::Scenes
                 },
             ));
-            ui.label(tr(
-                cx,
-                if selecting {
-                    Text::SelectScenesHint
-                } else {
-                    Text::SwitchScenesHint
-                },
-            ));
             ui.horizontal(|ui| {
                 let response = ui
                     .add(

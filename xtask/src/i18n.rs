@@ -49,6 +49,10 @@ pub fn check(root: &Path) -> Result<(), String> {
         }
     }
 
+    for entry in &entries {
+        errors.extend(creator_voice_errors(entry));
+    }
+
     let sources = rust_sources(&root.join("apps/vibecut/src"))?;
     let mut used = BTreeSet::new();
     for (path, text) in &sources {
@@ -82,6 +86,143 @@ pub fn check(root: &Path) -> Result<(), String> {
     } else {
         Err(errors.join("\n"))
     }
+}
+
+/// English words an end user never reads: internal names, ids and
+/// engineer vocabulary (ui.md "Creator words, few of them").
+const DENIED_WORDS: &[&str] = &[
+    "provider",
+    "endpoint",
+    "payload",
+    "codec",
+    "session",
+    "snapshot",
+    "asr",
+    "checksum",
+    "sha",
+    "cache",
+    "weights",
+    "bytes",
+    "metadata",
+    "helper",
+    "heuristic",
+    "runtime",
+    "token",
+    "cue",
+    "cues",
+    "asset",
+    "assets",
+    "model",
+    "models",
+    "arrive",
+    "arrives",
+    "ticket",
+    "milestone",
+];
+/// Vietnamese phrases for the same engineer vocabulary.
+const DENIED_VI: &[&str] = &[
+    "nhà cung cấp",
+    "mô hình",
+    "mã hóa",
+    "mã băm",
+    "siêu dữ liệu",
+    "byte",
+    "trọng số",
+    "bộ nhớ đệm",
+    "đầu ra",
+    "phiên làm việc",
+];
+
+/// Rows of the model manager's advanced disclosure may name models, weights,
+/// providers, files and hashes: the creator opened them on purpose.
+fn advanced_disclosure(variant: &str) -> bool {
+    variant.starts_with("Model")
+}
+
+/// `p1-parity/75`-style ticket ids anywhere in the text.
+fn has_ticket_id(text: &str) -> bool {
+    let bytes = text.as_bytes();
+    (0..bytes.len()).any(|start| {
+        let Some(tail) = bytes.get(start..) else {
+            return false;
+        };
+        let boundary = start == 0
+            || bytes
+                .get(start - 1)
+                .is_none_or(|before| !before.is_ascii_alphanumeric());
+        let Some((b'p', rest)) = tail.split_first().map(|(f, r)| (*f, r)) else {
+            return false;
+        };
+        let digits = rest.iter().take_while(|b| b.is_ascii_digit()).count();
+        let Some((b'-', after)) = rest
+            .get(digits..)
+            .and_then(|r| r.split_first())
+            .map(|(f, r)| (*f, r))
+        else {
+            return false;
+        };
+        let slug = after
+            .iter()
+            .take_while(|b| b.is_ascii_alphanumeric() || **b == b'-')
+            .count();
+        boundary
+            && digits > 0
+            && slug > 0
+            && after
+                .get(slug..)
+                .and_then(|r| r.split_first())
+                .is_some_and(|(slash, r)| {
+                    *slash == b'/' && r.first().is_some_and(u8::is_ascii_digit)
+                })
+    })
+}
+
+/// The text with `{placeholder}` names removed, lowercased.
+fn visible_text(text: &str) -> String {
+    let mut out = String::new();
+    let mut inside = false;
+    for character in text.chars() {
+        match character {
+            '{' => inside = true,
+            '}' => inside = false,
+            _ if !inside => out.extend(character.to_lowercase()),
+            _ => {}
+        }
+    }
+    out
+}
+
+fn creator_voice_errors(entry: &Entry) -> Vec<String> {
+    let mut errors = Vec::new();
+    for (locale, text) in [("English", &entry.en), ("Vietnamese", &entry.vi)] {
+        if has_ticket_id(text) {
+            errors.push(format!(
+                "`{}` {locale} row shows a ticket id; users never see internal ids",
+                entry.key
+            ));
+        }
+        if advanced_disclosure(&entry.variant) {
+            continue;
+        }
+        let visible = visible_text(text);
+        for word in visible.split(|c: char| !c.is_alphanumeric()) {
+            if DENIED_WORDS.contains(&word) {
+                errors.push(format!(
+                    "`{}` {locale} row uses engineer word `{word}`; write it for a creator (ui.md \"Creator words, few of them\")",
+                    entry.key
+                ));
+            }
+        }
+        for phrase in DENIED_VI {
+            if locale == "Vietnamese" && visible.contains(phrase) {
+                errors.push(format!(
+                    "`{}` Vietnamese row uses engineer phrase `{phrase}`",
+                    entry.key
+                ));
+            }
+        }
+    }
+    errors
 }
 
 fn rust_sources(dir: &Path) -> Result<Vec<(PathBuf, String)>, String> {
@@ -422,6 +563,39 @@ mod tests {
         assert_eq!(parsed[1].variant, "Second");
         assert_eq!(parsed[1].vi, "Hai");
         assert!(parse("catalog! { Broken { key: \"broken\", en: \"No\" } }").is_err());
+    }
+
+    #[test]
+    fn creator_voice_rejects_ticket_ids_and_engineer_words() {
+        assert!(has_ticket_id("arrive with import (p1-parity/75)."));
+        assert!(has_ticket_id("p0-core/9"));
+        assert!(!has_ticket_id("Page 1 / 5"));
+        assert!(!has_ticket_id("Up to 50/60 clips"));
+        let row = |variant: &str, en: &str, vi: &str| Entry {
+            variant: variant.into(),
+            key: "k".into(),
+            en: en.into(),
+            vi: vi.into(),
+        };
+        assert!(creator_voice_errors(&row("A", "Save", "Lưu")).is_empty());
+        assert!(creator_voice_errors(&row("A", "{provider} (on device)", "{provider}")).is_empty());
+        assert_eq!(
+            creator_voice_errors(&row("A", "Pick a provider", "Chọn")).len(),
+            1
+        );
+        assert_eq!(
+            creator_voice_errors(&row("A", "Coming", "Chọn nhà cung cấp")).len(),
+            1
+        );
+        assert_eq!(
+            creator_voice_errors(&row("A", "Arrives later", "Sau")).len(),
+            1
+        );
+        assert!(creator_voice_errors(&row("ModelFiles", "Files and SHA-256", "Tệp")).is_empty());
+        assert_eq!(
+            creator_voice_errors(&row("ModelX", "Soon (p1-parity/75)", "Sau")).len(),
+            1
+        );
     }
 
     #[test]

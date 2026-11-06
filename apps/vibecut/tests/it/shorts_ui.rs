@@ -554,7 +554,7 @@ fn exact_upload_requires_explicit_approval_and_cancellation_interrupts_the_promp
         }
         assert!(!approved.load(std::sync::atomic::Ordering::Acquire));
         assert!(h.query_by_label("Size: 123").is_some());
-        assert!(h.query_by_label("injected / explicit-model · vi").is_some());
+        assert!(h.query_by_label("injected · vi").is_some());
         match decision {
             Some(true) => h.get(by("shorts.consent.approve")).click(),
             Some(false) => h.get(by("shorts.consent.deny")).click(),

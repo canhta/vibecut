@@ -194,22 +194,17 @@ impl Editor {
                                     }
                                 }
                             }
-                            let pending = self.tr(Text::ShortcutsIoPending);
-                            let import = ui
-                                .add_enabled(
-                                    false,
-                                    egui::Button::new(self.tr(Text::ShortcutsImport))
-                                        .min_size(Vec2::new(104.0, SHORTCUT_CONTROL_HEIGHT)),
-                                )
-                                .on_hover_text(pending);
+                            let import = ui.add_enabled(
+                                false,
+                                egui::Button::new(self.tr(Text::ShortcutsImport))
+                                    .min_size(Vec2::new(104.0, SHORTCUT_CONTROL_HEIGHT)),
+                            );
                             self.remember("shortcuts.import", &import);
-                            let export = ui
-                                .add_enabled(
-                                    false,
-                                    egui::Button::new(self.tr(Text::ShortcutsExport))
-                                        .min_size(Vec2::new(104.0, SHORTCUT_CONTROL_HEIGHT)),
-                                )
-                                .on_hover_text(pending);
+                            let export = ui.add_enabled(
+                                false,
+                                egui::Button::new(self.tr(Text::ShortcutsExport))
+                                    .min_size(Vec2::new(104.0, SHORTCUT_CONTROL_HEIGHT)),
+                            );
                             self.remember("shortcuts.export", &export);
                             ui.with_layout(
                                 egui::Layout::right_to_left(egui::Align::Center),
@@ -222,28 +217,19 @@ impl Editor {
                                     if cancel.clicked() {
                                         close_requested = true;
                                     }
-                                    let save = ui
-                                        .add_enabled(
-                                            false,
-                                            egui::Button::new(
-                                                egui::RichText::new(self.tr(Text::ShortcutsSave))
-                                                    .color(theme::on_accent(dark)),
-                                            )
-                                            .fill(theme::accent(dark).gamma_multiply(0.28))
-                                            .min_size(Vec2::new(84.0, SHORTCUT_CONTROL_HEIGHT)),
+                                    let save = ui.add_enabled(
+                                        false,
+                                        egui::Button::new(
+                                            egui::RichText::new(self.tr(Text::ShortcutsSave))
+                                                .color(theme::on_accent(dark)),
                                         )
-                                        .on_hover_text(self.tr(Text::ShortcutsSaveHint));
+                                        .fill(theme::accent(dark).gamma_multiply(0.28))
+                                        .min_size(Vec2::new(84.0, SHORTCUT_CONTROL_HEIGHT)),
+                                    );
                                     self.remember("shortcuts.save", &save);
                                 },
                             );
                         });
-                        ui.add_space(theme::space::XS);
-                        let hint = ui.label(
-                            egui::RichText::new(self.tr(Text::ShortcutsIoPending))
-                                .size(theme::type_size::BODY)
-                                .color(self.secondary()),
-                        );
-                        self.remember("shortcuts.io_pending", &hint);
                     });
             });
         self.remember("shortcuts.dialog", &output.response);
@@ -298,7 +284,7 @@ impl Editor {
                 ui.selectable_value(&mut selected, 0, label);
             })
             .response
-            .on_hover_text(self.tr(Text::ShortcutsIoPending));
+            .on_hover_text(label);
         self.remember("shortcuts.preset", &response);
     }
     /// One action row: label, platform glyphs and a per-action reset once the

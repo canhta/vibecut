@@ -87,9 +87,8 @@ impl Editor {
                     &[("chord", &chord), ("action", action)],
                 )
             }
-            Error::Keybinding(actions::KeybindingError::InvalidChord { text, error }) => {
-                let reason = format!("{text}: {error}");
-                catalog::format(locale, Text::ShortcutsErrorInvalid, &[("reason", &reason)])
+            Error::Keybinding(actions::KeybindingError::InvalidChord { text, .. }) => {
+                catalog::format(locale, Text::ShortcutsErrorInvalid, &[("text", text)])
             }
             other => other.to_string(),
         }

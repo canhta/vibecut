@@ -550,7 +550,6 @@ impl ExportDialog {
                 );
                 ui.add_space(12.0);
                 ui.label(project.data().name.as_str());
-                ui.weak(tr(Text::ExportSettingsHint));
                 ui.add_space(16.0);
                 let body_height = (ctx.content_rect().height() - 360.0).clamp(280.0, 460.0);
                 ui.horizontal_top(|ui| {

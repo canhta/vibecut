@@ -344,9 +344,7 @@ fn shift_selection_enables_bulk_actions_and_delete_confirmation_lists_names() {
     );
     assert!(
         harness
-            .query_by_label(
-                "This permanently deletes the selected projects. This cannot be undone."
-            )
+            .query_by_label("Delete the selected projects for good? This can't be undone.")
             .is_some()
     );
     harness.get(by("projects.delete.cancel")).click();
@@ -400,7 +398,7 @@ fn rename_blank_collision_cancel_and_success_never_bypass_the_command() {
     harness.run_steps(2);
     assert!(
         harness
-            .query_by_label("Enter a unique, non-empty project name.")
+            .query_by_label("Enter a name that isn't used yet.")
             .is_some()
     );
     assert_eq!(harness.state().projects.entries()[0].name.as_str(), "Alpha");
@@ -412,7 +410,7 @@ fn rename_blank_collision_cancel_and_success_never_bypass_the_command() {
     idle(&mut harness);
     assert!(
         harness
-            .query_by_label("Enter a unique, non-empty project name.")
+            .query_by_label("Enter a name that isn't used yet.")
             .is_some(),
         "a colliding name stays in the dialog with its error"
     );
@@ -459,7 +457,7 @@ fn open_rename(harness: &mut Harness<'static, Workspace>, index: u64) {
 }
 
 #[test]
-fn info_dialog_shows_main_duration_created_modified_and_eight_character_id() {
+fn info_dialog_shows_main_duration_created_modified_and_hides_the_id() {
     let fixture = Fixture::new(&[("Alpha", missing())]);
     customize(&fixture.path(0), missing(), TICKS_PER_SECOND * 5);
     let mut harness = fixture.build(Preferences::default());
@@ -478,7 +476,7 @@ fn info_dialog_shows_main_duration_created_modified_and_eight_character_id() {
     assert!(harness.query_by_label("Duration 00:05").is_some());
     assert!(harness.query_by_label("Created May 28, 2026").is_some());
     assert!(harness.query_by_label("Modified May 29, 2026").is_some());
-    assert!(harness.query_by_label("Project ID 00000001").is_some());
+    assert!(harness.query_by_label("Project ID 00000001").is_none());
     assert_eq!(
         harness.state().projects.entries()[0].short_id.len(),
         8,
@@ -510,11 +508,7 @@ fn missing_and_unavailable_thumbnails_render_placeholders_and_ready_does_not() {
         .get(by("projects.card.0000000000000001.thumbnail.refresh"))
         .click();
     idle(&mut harness);
-    assert!(
-        harness
-            .query_by_label("Could not refresh the thumbnail.")
-            .is_some()
-    );
+    assert!(harness.query_by_label("Couldn't refresh.").is_some());
     assert!(matches!(
         harness.state().projects.entries()[0].thumbnail,
         Thumbnail::Missing
@@ -551,9 +545,7 @@ fn missing_and_unavailable_thumbnails_render_placeholders_and_ready_does_not() {
         "the page refreshes project-owned thumbnails through project.thumbnail"
     );
     assert!(
-        harness
-            .query_by_label("Could not refresh the thumbnail.")
-            .is_none(),
+        harness.query_by_label("Couldn't refresh.").is_none(),
         "a successful refresh clears the previous refusal"
     );
 }
@@ -603,9 +595,7 @@ fn duplicate_reports_progress_and_failure_without_mutating_the_source() {
         idle(&mut harness);
         assert!(
             harness
-                .query_by_label(
-                    "Some projects could not be duplicated. Successful copies are kept."
-                )
+                .query_by_label("Couldn't copy some projects.")
                 .is_some()
         );
         let entries = harness.state().projects.entries();
@@ -647,7 +637,7 @@ fn delete_failure_keeps_the_project_and_reports_it() {
         idle(&mut harness);
         assert!(
             harness
-                .query_by_label("Some projects could not be deleted. They remain in the library.")
+                .query_by_label("Couldn't delete some projects.")
                 .is_some()
         );
         assert_eq!(harness.state().projects.entries().len(), 1);

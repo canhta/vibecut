@@ -550,7 +550,7 @@ fn shortcuts_dialog_refuses_conflicts_and_invalid_chords_without_rebinding() {
     harness.run_steps(3);
     let shortcuts = harness.state().inspect().unwrap().shortcuts.unwrap();
     let error = shortcuts.error.as_deref().unwrap();
-    assert!(error.contains("Invalid shortcut"), "{error}");
+    assert!(error.contains("Can't use"), "{error}");
     assert!(error.contains("NotAKey"), "{error}");
     assert!(
         !harness
@@ -709,14 +709,8 @@ fn shortcuts_import_export_entry_points_are_disabled_until_settings_export() {
             .iter()
             .find(|widget| widget.id == id)
             .unwrap_or_else(|| panic!("missing disabled entry point {id}"));
-        assert!(!widget.enabled, "{id} waits for p1-parity/75");
+        assert!(!widget.enabled, "{id} stays disabled until settings export");
     }
-    assert!(
-        inspection
-            .widgets
-            .iter()
-            .any(|widget| widget.id == "shortcuts.io_pending")
-    );
 }
 
 #[test]

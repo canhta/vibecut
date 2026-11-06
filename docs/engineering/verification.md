@@ -8,7 +8,7 @@ Commit only green; choose the smallest covering check. Rust compilations follow 
 |---|---|
 | Markdown, tickets, assets only | `cargo xtask docs` (layers, assets/sidecars, i18n catalog audit, name gate, docs index, README module maps, tracker-free Markdown) |
 | One Rust crate, iteration | `cargo test -p <crate>` and `cargo clippy -p <crate> --all-targets` |
-| App UI strings | `cargo xtask i18n` (en/vi completeness, unused keys, direct egui literals) |
+| App UI strings | `cargo xtask i18n` (en/vi completeness, unused keys, direct egui literals, ticket ids and engineer words in shown text) |
 | Code handoff, frozen SHA | `cargo xtask ci --require-oracles` once (fmt, Clippy, all tests/doctests, layers, assets, names, required oracles) |
 | Media/render/hot path | Above plus the ticket benchmark; report speed and output quality (VMAF/SSIM, loudness/peaks, pixel diff or tick drift) against its baseline |
 | Fix round after `changes` | Touched crates' tests and Clippy plus the reviewer's reproductions; no full CI |

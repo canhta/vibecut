@@ -211,8 +211,7 @@ impl Subtitles {
                 ui.set_max_width(ui.available_width());
                 ui.spacing_mut().item_spacing.x = 4.0;
                 ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Wrap);
-                ui.heading(controls.tr(Text::Caption))
-                    .on_hover_text(controls.tr(Text::SubExportScope));
+                ui.heading(controls.tr(Text::Caption));
                 let columns = if ui.available_width() >= 180.0 { 2 } else { 1 };
                 egui::Grid::new("subtitles.files")
                     .num_columns(columns)
@@ -331,7 +330,6 @@ impl Subtitles {
                             let r =
                                 ui.checkbox(&mut self.force, controls.tr(Text::SubReplaceEdited));
                             controls.remember("subtitles.force", &r);
-                            ui.label(controls.tr(Text::SubTranslateSelected));
                             if controls.button(
                                 ui,
                                 "subtitles.translate",
@@ -576,7 +574,6 @@ impl Subtitles {
         let r = egui::CollapsingHeader::new(c.tr(Text::SubGlossary))
             .id_salt("subtitles.glossary")
             .show(ui, |ui| {
-                ui.label(c.tr(Text::SubGlossaryHelp));
                 let mut remove = None;
                 for (i, term) in self.glossary.iter_mut().enumerate() {
                     let mut source = term.term.as_str().to_owned();
@@ -715,8 +712,7 @@ impl Subtitles {
                         }),
                     )
                 })
-                .inner
-                .on_hover_text(c.tr(Text::SubSelectionHelp));
+                .inner;
             c.remember(format!("subtitles.cue.{}", cue.id.as_str()), &r);
             if r.clicked() {
                 selected = Some((index, ui.input(|i| i.modifiers)));
@@ -826,7 +822,6 @@ impl Subtitles {
                 c.locale,
                 Text::SubDisclosure,
                 &[
-                    ("bytes", &catalog::number(c.locale, upload.upload_bytes)),
                     (
                         "seconds",
                         &catalog::decimal(c.locale, upload.audio_seconds, 2),
@@ -834,13 +829,6 @@ impl Subtitles {
                     ("cost", &cost_text(c.locale, &upload.cost)),
                 ],
             ));
-            if upload.operation == CatalogOperation::Translate {
-                ui.label(catalog::format(
-                    c.locale,
-                    Text::SubAttempts,
-                    &[("count", &engine::subtitles::TRANSLATE_ATTEMPTS.to_string())],
-                ));
-            }
             for (i, (_, url)) in upload.terms.iter().enumerate() {
                 if url.starts_with("https://") {
                     let r = ui.hyperlink_to(c.tr(Text::SubProviderPolicy), url);
