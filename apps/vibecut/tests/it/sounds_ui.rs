@@ -504,6 +504,14 @@ fn search_filter_save_preview_and_add_use_the_sounds_contract() {
     );
 
     click(&mut harness, "sounds.tab.discover");
+    // Switching tabs starts a search on a thread; the "searching" line moves
+    // the rows, so click only once the list has settled.
+    wait(&mut harness, "discover results settled", |editor| {
+        editor.inspect().unwrap().sounds.is_some_and(|sounds| {
+            sounds.mode == SoundsMode::Discover && !sounds.searching && sounds.results.len() == 3
+        })
+    });
+    harness.run_steps(1);
     click(&mut harness, "sounds.preview.1");
     wait(&mut harness, "preview started", |editor| {
         editor
@@ -512,7 +520,12 @@ fn search_filter_save_preview_and_add_use_the_sounds_contract() {
             .sounds
             .is_some_and(|sounds| sounds.previewing == Some(1))
     });
-    assert_eq!(sink.plays.load(Ordering::SeqCst), 1);
+    // `previewing` is set on click; the sink is reached once the preview
+    // thread has read the cached audio.
+    let playing = sink.clone();
+    wait(&mut harness, "sink playing", move |_| {
+        playing.plays.load(Ordering::SeqCst) == 1
+    });
     click(&mut harness, "sounds.preview.1");
     wait(&mut harness, "preview stopped", |editor| {
         editor
