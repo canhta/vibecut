@@ -193,6 +193,55 @@ fn snapshot_png_matches_canvas_render_at_the_playhead() {
 #[test]
 fn snapshot_default_name_sanitizes_reserved_characters_and_falls_back() {
     let one_second = Tick(TICKS_PER_SECOND);
+    for (name, expected) in [
+        ("CON", "_CON"),
+        ("con.txt", "_con.txt"),
+        ("NUL", "_NUL"),
+        ("Com1", "_Com1"),
+        ("LPT1.backup", "_LPT1.backup"),
+        (" final.  ", "final"),
+        ("...", "snapshot"),
+        ("Tie\u{0302}\u{0301}ng Vie\u{0323}\u{0302}t", "Tiếng Việt"),
+    ] {
+        assert_eq!(
+            engine::snapshot::default_name(&project(name, 64, 48, one_second), Tick::ZERO).unwrap(),
+            format!("{expected}-00-00-00-00.png"),
+            "project name: {name:?}",
+        );
+    }
+    for (name, expected) in [
+        ("con", "_con"),
+        ("NUL.txt", "_NUL.txt"),
+        ("com1.backup", "_com1.backup"),
+        ("Lpt1", "_Lpt1"),
+        (" report.  ", "report"),
+        ("a:b?", "a_b_"),
+        ("...", "Untitled Project"),
+        ("  ", "Untitled Project"),
+        ("Tie\u{0302}\u{0301}ng Vie\u{0323}\u{0302}t", "Tiếng Việt"),
+    ] {
+        assert_eq!(engine::sanitize_file_name(name), expected);
+    }
+    for name in ["CON", "PRN", "AUX", "NUL", "COM1", "COM9", "LPT1", "LPT9"] {
+        for variant in [name.to_owned(), name.to_lowercase(), format!("{name}.txt")] {
+            assert!(engine::sanitize_file_name(&variant).starts_with('_'));
+        }
+    }
+    let long_name = "ế".repeat(100);
+    let name = engine::snapshot::default_name(&project(&long_name, 64, 48, one_second), Tick::ZERO)
+        .unwrap();
+    assert!(name.len() <= 255);
+    assert_eq!(engine::sanitize_file_name(&long_name).len(), 255);
+    let export = engine::default_file_name(&long_name, "mp4");
+    assert!(export.len() <= 255);
+    assert!(export.ends_with(".mp4"));
+    assert_eq!(engine::default_file_name("CON", "mp4"), "_CON.mp4");
+    let oversized_grapheme = format!("x{}", "\u{0300}".repeat(300));
+    assert_eq!(
+        engine::sanitize_file_name(&oversized_grapheme),
+        "Untitled Project"
+    );
+
     assert_eq!(
         engine::snapshot::default_name(&project("My: Project?", 64, 48, one_second), Tick::ZERO)
             .unwrap(),

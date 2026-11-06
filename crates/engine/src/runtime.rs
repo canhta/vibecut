@@ -26,3 +26,6 @@ mod rendering;
 pub use rendering::{
     submit_export, submit_export_publication, submit_export_with_sources, subtitle_file,
 };
+
+pub(crate) use staged_publication::snapshot_project_name;
+pub use staged_publication::{default_file_name, sanitize_file_name};

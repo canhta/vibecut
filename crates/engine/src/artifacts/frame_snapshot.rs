@@ -117,10 +117,12 @@ pub fn image(project: &Project, time: Tick) -> Result<SnapshotImage> {
 pub fn default_name(project: &Project, time: Tick) -> Result<String> {
     let at = render_time(project, time)?;
     let timecode = timecode(project, at)?.replace(':', "-");
-    Ok(format!(
-        "{}-{timecode}.png",
-        safe_project_name(project.data().name.as_str())
-    ))
+    let suffix = format!("-{timecode}.png");
+    let base = crate::runtime::snapshot_project_name(
+        project.data().name.as_str(),
+        255_usize.saturating_sub(suffix.len()),
+    );
+    Ok(format!("{base}{suffix}"))
 }
 
 /// The frame actually captured: empty projects refuse, negative times refuse,
@@ -182,28 +184,6 @@ fn timecode(project: &Project, at: Tick) -> Result<String> {
         time::FrameRate::FPS_29_97 | time::FrameRate::FPS_59_94
     );
     Ok(time::format_timecode(at, rate, drop_frame)?)
-}
-
-fn safe_project_name(name: &str) -> String {
-    let mut sanitized = String::with_capacity(name.len());
-    for character in name.chars() {
-        if character.is_control()
-            || matches!(
-                character,
-                '<' | '>' | ':' | '"' | '/' | '\\' | '|' | '?' | '*'
-            )
-        {
-            sanitized.push('-');
-        } else {
-            sanitized.push(character);
-        }
-    }
-    let trimmed = sanitized.trim().trim_end_matches(['.', ' ']).trim();
-    if trimmed.is_empty() {
-        "snapshot".into()
-    } else {
-        trimmed.into()
-    }
 }
 
 fn encode_png(rgba: &[u8], width: u32, height: u32) -> Result<Vec<u8>> {
@@ -417,12 +397,18 @@ mod tests {
 
     #[test]
     fn safe_project_name_replaces_reserved_characters_and_falls_back() {
-        assert_eq!(safe_project_name("My: Project?"), "My- Project-");
         assert_eq!(
-            safe_project_name("D\u{1ef1} \u{00e1}n"),
+            crate::runtime::snapshot_project_name("My: Project?", 255),
+            "My- Project-"
+        );
+        assert_eq!(
+            crate::runtime::snapshot_project_name("D\u{1ef1} \u{00e1}n", 255),
             "D\u{1ef1} \u{00e1}n"
         );
-        assert_eq!(safe_project_name("  "), "snapshot");
-        assert_eq!(safe_project_name("..."), "snapshot");
+        assert_eq!(crate::runtime::snapshot_project_name("  ", 255), "snapshot");
+        assert_eq!(
+            crate::runtime::snapshot_project_name("...", 255),
+            "snapshot"
+        );
     }
 }

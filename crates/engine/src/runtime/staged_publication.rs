@@ -102,3 +102,7 @@ fn comparison_path(path: PathBuf) -> PathBuf {
         path
     }
 }
+
+mod file_names;
+pub(crate) use file_names::snapshot_project_name;
+pub use file_names::{default_file_name, sanitize_file_name};

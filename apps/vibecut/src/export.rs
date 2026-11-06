@@ -505,45 +505,7 @@ fn diagnostics(error: &engine::EditError, unavailable: &[render::Unavailable]) -
     }
     text
 }
-const RESERVED_FILE_NAMES: [&str; 22] = [
-    "CON", "PRN", "AUX", "NUL", "COM1", "COM2", "COM3", "COM4", "COM5", "COM6", "COM7", "COM8",
-    "COM9", "LPT1", "LPT2", "LPT3", "LPT4", "LPT5", "LPT6", "LPT7", "LPT8", "LPT9",
-];
-/// Keep Unicode and spaces, replace filesystem-special characters, trim names
-/// Windows refuses and escape its reserved device names.
-pub fn sanitize_file_name(name: &str) -> String {
-    let mut sanitized = String::with_capacity(name.len());
-    for character in name.chars() {
-        if character.is_control()
-            || matches!(
-                character,
-                '<' | '>' | ':' | '"' | '/' | '\\' | '|' | '?' | '*'
-            )
-        {
-            sanitized.push('_');
-        } else {
-            sanitized.push(character);
-        }
-    }
-    let trimmed = sanitized.trim().trim_end_matches(['.', ' ']).trim_end();
-    let trimmed = if trimmed.is_empty() {
-        "Untitled Project"
-    } else {
-        trimmed
-    };
-    let stem = trimmed.split('.').next().unwrap_or(trimmed).trim_end();
-    if RESERVED_FILE_NAMES
-        .iter()
-        .any(|reserved| reserved.eq_ignore_ascii_case(stem))
-    {
-        format!("_{trimmed}")
-    } else {
-        trimmed.to_owned()
-    }
-}
-pub fn default_file_name(project_name: &str, extension: &str) -> String {
-    format!("{}.{extension}", sanitize_file_name(project_name))
-}
+pub use engine::{default_file_name, sanitize_file_name};
 
 pub(crate) enum Action {
     Retry,
