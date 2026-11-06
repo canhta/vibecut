@@ -159,8 +159,9 @@ name = "models"
 group = "providers"
 
 # Desktop app: docs/engineering/structure.md#desktop-app-appsvibecutsrc.
-# Foundation sits below shell; the editor areas are independent features and
-# the windows above them route area actions.
+# Foundation (kit, i18n, input) sits below shell. Home, Shorts and each editor
+# area are independent features of one layer that import only foundation and
+# shell; the editor frame is the one module above them that calls each area.
 
 [[crate]]
 name = "vibecut"
@@ -175,8 +176,10 @@ name = "shell"
 groups = ["shell"]
 
 [[crate.layer]]
-name = "areas"
+name = "features"
 groups = [
+    "home",
+    "shorts",
     "assets",
     "player",
     "properties",
@@ -187,8 +190,8 @@ groups = [
 ]
 
 [[crate.layer]]
-name = "windows"
-groups = ["home", "editor", "shorts"]
+name = "frame"
+groups = ["editor"]
 
 [[crate.module]]
 name = "icons"
