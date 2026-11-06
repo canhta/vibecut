@@ -1,7 +1,7 @@
 //! Produces accepted shorts from source segments.
 mod boundaries;
 pub mod clip_boundaries {
-    //! Independent source-edge snapping for ordered, potentially reordered shorts.
+    //! Snaps accepted source segments to safe edges.
     pub use super::boundaries::{
         BoundaryAdjustment, BoundaryFailure, BoundaryKind, ClipBoundarySettings, SegmentAdjustment,
         SnappedShort, snap_clip_boundaries,
@@ -14,7 +14,7 @@ pub use batch_export::{
 };
 mod suggestion;
 pub mod clip_suggest {
-    //! Clip suggestion workflow: transcript segments in, ranked shorts with snapped
+    //! Produces source-snapped clip suggestions.
     pub use super::suggestion::{
         ClipCandidate, ClipExportOutcome, ClipExportPaths, ClipExportPrep, ClipExportRequest,
         ClipRequest, ClipSuggestionOutcome, OPENAI_POLICY_URL, RejectedClip, SnapSettings,

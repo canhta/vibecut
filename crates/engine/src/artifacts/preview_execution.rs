@@ -1,4 +1,4 @@
-//! Bounded, labelled previews use the production compositor and engine scheduler.
+//! Produces bounded labelled control previews.
 use crate::control::{ControlResult, MAX_RESPONSE_BYTES, PreviewFrame, Revision, bounded_json};
 use crate::jobs::{JobBytes, JobKind, JobRunner, JobSpec, ResourceClass};
 use crate::{EditError, Result, Session};

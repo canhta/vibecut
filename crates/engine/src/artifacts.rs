@@ -1,12 +1,12 @@
 //! Produces derived project images.
 mod frame_thumbnails;
 pub mod thumbnails {
-    //! Content-keyed thumbnail artifacts.
+    //! Produces cached source thumbnails.
     pub use super::frame_thumbnails::{RetainedThumbnail, ThumbnailCache, thumbnail_key};
 }
 mod frame_snapshot;
 pub mod snapshot {
-    //! Current-frame PNG snapshots over the production compositor.
+    //! Publishes project frame snapshots.
     pub(crate) use super::frame_snapshot::save_with_overwrite;
     pub use super::frame_snapshot::{
         MAX_SNAPSHOT_MEMORY, MAX_SNAPSHOT_PNG_BYTES, SnapshotImage, SnapshotResult, default_name,
@@ -15,12 +15,12 @@ pub mod snapshot {
 }
 mod effect_images;
 pub mod effect_thumbnails {
-    //! Device-injected offscreen effect thumbnails, scheduled by the engine.
+    //! Produces illustrative effect thumbnails.
     pub use super::effect_images::{EffectThumbnails, MAX_THUMBNAIL_EDGE, MAX_THUMBNAILS};
 }
 mod preview_execution;
 pub(crate) mod control_preview {
-    //! Bounded, labelled previews use the production compositor and engine scheduler.
+    //! Produces bounded labelled control previews.
     pub use super::preview_execution::PreviewResult;
     pub(crate) use super::preview_execution::preview;
 }

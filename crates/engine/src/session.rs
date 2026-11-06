@@ -7,11 +7,7 @@ pub use commands::{
     Command, CommandKind, CommandSpec, CreatedId, Effect, Example, Fixture, ItemParamPatch,
     ItemPlacement, Move, NewItem, Outcome, Placement, TrackPlacement, registry,
 };
-mod execution;
-pub(crate) mod edit {
-    //! Applies validated editing commands to project candidates.
-    pub(crate) use super::execution::{TrimSources, apply, check_budget};
-}
+mod edit;
 mod transition_rules;
 pub(crate) mod transitions {
     //! Maintains video transitions across candidate edits.

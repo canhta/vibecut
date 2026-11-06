@@ -1,7 +1,7 @@
 //! Provides external assets for project use.
 mod font_catalog;
 pub mod fonts {
-    //! Font catalog: bundled, system and curated Google families, lazy loading into `text`, and an
+    //! Resolves font assets for project rendering.
     pub use super::font_catalog::{
         FontEntry, FontError, FontLoad, FontLoadState, FontOrigin, FontState, FontStore,
         GoogleFamily, GoogleFile, MAX_SCANNED_FACES, ScannedFace, curated_google_families,
@@ -10,7 +10,7 @@ pub mod fonts {
 }
 mod sound_library;
 pub mod sounds {
-    //! Bring-your-own-credential sound search over the public Freesound APIv2, plus a
+    //! Provides licensed sound assets for projects.
     pub use super::sound_library::{
         ADD_COMMAND, CachedSound, Error, PreviewClip, PreviewSink, SAVE_COMMAND, SEARCH_COMMAND,
         SavedSound, SearchPage, SearchRequest, SearchSource, Sound, SoundClient, SoundDownloads,

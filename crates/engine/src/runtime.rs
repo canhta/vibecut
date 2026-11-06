@@ -3,7 +3,7 @@ mod budget;
 pub use budget::{BudgetSnapshot, ByteBudget, ByteLease, ByteOwner};
 mod cache_storage;
 pub mod cache {
-    //! Content-addressed artifacts and independently committed ASR chunk checkpoints.
+    //! Retains content-addressed execution artifacts.
     pub use super::cache_storage::{
         ArtifactCache, ArtifactKind, ArtifactLease, CacheKey, KeyInputs, ModelLease,
     };
@@ -11,7 +11,7 @@ pub mod cache {
 }
 mod runner;
 pub mod jobs {
-    //! Caller-driven bounded scheduling of blocking domain execution.
+    //! Schedules bounded blocking execution.
     pub use super::runner::{
         CancelToken, Clock, JobBytes, JobContext, JobId, JobKind, JobOutput, JobRunner,
         JobSnapshot, JobSpec, JobStage, JobState, ResourceClass, RunnerConfig, SystemClock,
@@ -19,7 +19,7 @@ pub mod jobs {
 }
 mod staged_publication;
 pub(crate) mod publication {
-    //! Admission and staged publication shared by snapshots and completed exports.
+    //! Publishes admitted output artifacts.
     pub(crate) use super::staged_publication::Publication;
 }
 mod rendering;

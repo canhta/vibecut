@@ -1,4 +1,4 @@
-//! Content-addressed artifacts and independently committed ASR chunk checkpoints.
+//! Retains content-addressed execution artifacts.
 mod native;
 use crate::{ByteBudget, ByteLease, ByteOwner, EditError};
 pub use native::ModelLease;

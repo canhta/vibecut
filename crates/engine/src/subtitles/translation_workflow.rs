@@ -1,4 +1,4 @@
-//! Translation selection, aggregate attempt budgets and explicit result application.
+//! Applies selected translations through bounded attempts.
 use crate::{
     EditError, Session,
     cache::{ArtifactKind, CacheKey, KeyInputs},

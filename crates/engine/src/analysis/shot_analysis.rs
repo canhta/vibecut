@@ -1,4 +1,4 @@
-//! Cancellable local shot analysis and conservative cross-shot face identity; no project mutations.
+//! Produces conservative source-time shot analysis.
 mod reidentification;
 mod tracking;
 use crate::{

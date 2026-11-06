@@ -1,12 +1,12 @@
 //! Persists managed projects across session lifetimes.
 mod projects;
 pub mod library {
-    //! Managed project catalog. External-file projects continue to use Autosave directly.
+    //! Owns managed project storage.
     pub use super::projects::{ProjectEntry, ProjectLibrary};
 }
 mod recovery_workflow;
 pub mod recovery {
-    //! Revision-bound session journals. Only the worker serializes project snapshots.
+    //! Owns recoverable persistent sessions.
     pub use super::recovery_workflow::{
         Autosave, Candidate, Discovery, Journal, Schedule, discover,
     };

@@ -6,7 +6,7 @@ pub use selection::{
 };
 mod model_transfers;
 pub mod models {
-    //! Explicitly consented model transfers, through the shared runner/cache/transport.
+    //! Transfers explicitly requested model bundles.
     pub(crate) use super::model_transfers::response;
     pub use super::model_transfers::{ModelIo, ModelTransfers, SystemModelIo};
 }

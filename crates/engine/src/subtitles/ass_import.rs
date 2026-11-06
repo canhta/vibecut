@@ -1,6 +1,4 @@
-//! Adapter-owned ASS file reading. Parsing and style mapping stay in the
-//! captions crate; this module only turns bytes into the registered
-//! `captions.import` command and a report for headless callers.
+//! Prepares ASS caption imports for headless callers.
 
 use crate::{Command, EditError, NfcText};
 use captions::{AssWarning, LanguageTag, parse_ass};

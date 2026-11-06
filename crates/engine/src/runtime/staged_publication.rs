@@ -1,4 +1,4 @@
-//! Admission and staged publication shared by snapshots and completed exports.
+//! Publishes admitted output artifacts.
 use crate::{EditError, Result};
 use project::atomic::{AtomicFs, Overwrite, StreamingStage, StreamingWriter};
 use std::path::{Path, PathBuf};

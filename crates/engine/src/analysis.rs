@@ -1,7 +1,7 @@
 //! Measures source media without mutating projects.
 mod scene_detection_workflow;
 pub mod scene_detection {
-    //! Deterministic source-time scene candidates; analysis never mutates a project.
+    //! Detects source-time scene-change candidates.
     pub(crate) use super::scene_detection_workflow::RECIPE;
     pub use super::scene_detection_workflow::{
         ChangeKind, DetectionJob, DetectionRequest, DetectionResult, DetectionSettings,
@@ -15,7 +15,7 @@ pub use shot_analysis::{
 };
 mod loudness_workflow;
 pub mod loudness {
-    //! Two-pass EBU R128 normalization: content-bound gains, a cached measurement
+    //! Measures source audio loudness.
     pub use super::loudness_workflow::{
         LoudnessJob, LoudnessResult, Measured, admit, content_key, submit_loudness,
     };
