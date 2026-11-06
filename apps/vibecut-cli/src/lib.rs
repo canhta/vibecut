@@ -635,8 +635,7 @@ fn exec(args: Vec<OsString>) -> Result<Output, CliError> {
     })
 }
 
-/// Set loudness targets, run the two-pass measurement job over the production
-/// mix graph, and store the gains: the next `export` applies them.
+/// Detect scene-change candidates for a local video; never edits a project.
 fn scenes(args: Vec<OsString>) -> Result<Output, CliError> {
     use engine::scene_detection::{DetectionRequest, DetectionSettings};
     let mut args = args.into_iter();
@@ -703,6 +702,8 @@ fn scenes(args: Vec<OsString>) -> Result<Output, CliError> {
     })
 }
 
+/// Set loudness targets, run the two-pass measurement job over the production
+/// mix graph, and store the gains: the next `export` applies them.
 fn normalize(args: Vec<OsString>) -> Result<Output, CliError> {
     const USAGE: &str = "usage: vibecut-cli normalize <project> [--clip] [--master]          [--target-lufs -14] [--true-peak-db -1]";
     let mut args = args.into_iter();
