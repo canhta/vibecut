@@ -5,6 +5,14 @@ edits through the engine registry, composes project writer leases and engine exp
 jobs, and maps typed results to stdout/stderr and stable exit codes. It owns no
 timeline, codec, export-admission or provider logic and has no UI dependencies.
 
+Internal adapter responsibilities are separate owners: `arguments` parses native
+arguments and holds the usage text; `output` formats results and paths;
+`exit_codes` maps typed failures to diagnostics and stable process statuses;
+`control_session` owns trusted CLI policy, framed requests and session/save
+composition shared with MCP. `progress` observes jobs and writes stderr progress,
+`consent` prints upload scope and applies the explicit grant, `job_runtime`
+selects CLI runtime settings and budgets, and `paths` resolves destination aliases.
+
 `mcp` owns the stdio protocol adapter and OS-permissioned attach transport, composed
 by the desktop app through this library. [MCP control](../../docs/product/mcp.md)
 owns the tool surface, grants, bounds, lifecycle, cancellation/retry rules and

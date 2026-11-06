@@ -1,268 +1,96 @@
 //! Headless CLI adapter: arguments, dispatch through engine, typed exit codes.
+mod arguments;
 mod batch;
+mod consent;
+mod control_session;
+mod exit_codes;
+mod job_runtime;
 pub mod mcp;
-use engine::cache::{ArtifactCache, ArtifactKind, CacheKey, KeyInputs};
+mod output;
+mod paths;
+mod progress;
+use crate::arguments::HELP;
+use crate::arguments::number_arg;
+use crate::arguments::one_path;
+use crate::arguments::one_utf8;
+use crate::arguments::parse_i64;
+use crate::arguments::parse_selection;
+use crate::arguments::parse_u32;
+use crate::arguments::parse_u64;
+use crate::arguments::seconds_arg;
+use crate::arguments::seconds_ticks;
+use crate::arguments::utf8;
+use crate::consent::CliConsent;
+use crate::consent::cost_json;
+use crate::consent::cost_label;
+use crate::control_session::build_control_request;
+use crate::control_session::control;
+use crate::control_session::save_control_state;
+use crate::job_runtime::CLI_MEMORY_LIMIT;
+use crate::job_runtime::cli_runner;
+use crate::job_runtime::cli_runtime;
+use crate::output::hex;
+use crate::output::json_path;
+use crate::paths::resolve_target;
+use crate::paths::same_target;
+use crate::progress::CliProgress;
+use crate::progress::progress_percent;
+use crate::progress::stage_name;
+use crate::progress::wait_for_job;
+use engine::ByteBudget;
+use engine::ClipCandidate;
+use engine::ClipDropReason;
+use engine::ClipExportRequest;
+use engine::ClipRequest;
+use engine::ClipRole;
+use engine::ClipSettings;
+use engine::ClipSource;
+use engine::ClipSourceSegment;
+use engine::ClipSuggestionOutcome;
+use engine::CreatedId;
+use engine::EditError;
+use engine::NfcText;
+use engine::Session;
+use engine::SnapSettings;
+use engine::cache::ArtifactCache;
+use engine::cache::ArtifactKind;
+use engine::cache::CacheKey;
+use engine::cache::KeyInputs;
 use engine::clip_suggest;
-use engine::control::{
-    self, Caller, ControlResult, ErrorCode, Policy, Request, Response, ResponseValue,
-};
-use engine::fonts::{FontLoadState, FontStore};
-use engine::jobs::{JobId, JobRunner, JobSnapshot, JobStage, JobState, RunnerConfig, SystemClock};
-use engine::subtitles::{
-    self, CatalogOperation, ConsentPrompt, Cost, LanguageTag, Progress, ProviderOption, Stage,
-    SubtitleOutcome, SubtitleRequest, UploadRequest,
-};
-use engine::{
-    ByteBudget, ClipCandidate, ClipDropReason, ClipExportRequest, ClipRequest, ClipRole,
-    ClipSettings, ClipSource, ClipSourceSegment, ClipSuggestionOutcome, Command, CreatedId,
-    EditError, NfcText, Session, SnapSettings,
-};
+use engine::control;
+use engine::fonts::FontLoadState;
+use engine::fonts::FontStore;
+use engine::jobs::JobId;
+use engine::jobs::JobRunner;
+use engine::jobs::JobStage;
+use engine::jobs::RunnerConfig;
+use engine::jobs::SystemClock;
+use engine::subtitles;
+use engine::subtitles::CatalogOperation;
+use engine::subtitles::Cost;
+use engine::subtitles::LanguageTag;
+use engine::subtitles::ProviderOption;
+use engine::subtitles::SubtitleOutcome;
+use engine::subtitles::SubtitleRequest;
+pub use exit_codes::CliError;
+pub use output::Output;
+use project::Project;
+use project::ProjectId;
+use project::WriterLease;
 use project::atomic::Overwrite;
-use project::{Project, ProjectId, WriterLease};
-use serde_json::{Value, json};
+use serde_json::Value;
+use serde_json::json;
 use std::ffi::OsString;
 use std::fmt::Write as _;
-use std::io::{self, BufRead, Write as _};
-use std::path::{Path, PathBuf};
+use std::io;
+use std::io::Write as _;
+use std::path::Path;
+use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
-use time::{FrameRate, Tick, TimeRange};
-
-const HELP: &str = "\
-vibecut-cli - headless VibeCut control
-
-Usage:
-  vibecut-cli scenes <file> [--threshold 0.28] [--fade-threshold 0.20] [--min-scene-ticks <ticks>]
-  vibecut-cli probe <file>
-  vibecut-cli project new <path>
-  vibecut-cli project info <path>
-  vibecut-cli exec <project> <command_id> <json>
-  vibecut-cli normalize <project> [--clip] [--master] [--target-lufs -14] [--true-peak-db -1]
-  vibecut-cli control <project> [--allow-overwrite] [--no-save]
-  vibecut-cli mcp <project> [--output-dir <directory>] [--all-tools] [--no-save]
-  vibecut-cli mcp --attach --socket <endpoint>
-  vibecut-cli export <project> --out <mp4> [--aspect 9:16] [--allow-degraded] [--overwrite]
-  vibecut-cli batch <job-file> [--allow-degraded] [--allow-overwrite]
-  vibecut-cli captions import <project> <file.ass> [--language <tag>] [--start <ticks>]
-                       [--track <id>] [--name <name>]
-  vibecut-cli subtitle <in> [--from vi|en|zh|auto] --to vi|en|zh [--bilingual]
-                   [--srt <out>] [--burn <out.mp4>] [--aspect 9:16]
-                   [--provider <id>] [--model <id>] [--translate-provider <id>]
-                   [--translate-model <id>] [--yes-upload] [--overwrite]
-  vibecut-cli clips <in> [--from vi|en|zh|auto] [--count N]
-                    [--min 20s] [--max 60s] [--max-segments N] [--min-segment 2s]
-                    [--provider heuristic|openai|anthropic] [--model <id>]
-                    [--asr-provider <id>] [--asr-model <id>] [--keywords a,b]
-                    [--export <dir> [--select 1,3] --subs vi|en|zh [--bilingual]
-                     [--aspect 9:16] [--translate-provider <id>] [--overwrite]
-                     [--allow-degraded]]
-                    [--yes-upload]
-  vibecut-cli providers [--operation transcribe|translate|clips] [--language <tag>]
-  vibecut-cli sounds search --library <dir> [--page N] [--page-size N] [--all-licences] [query]
-  vibecut-cli sounds save <library> <sound-json>
-  vibecut-cli sounds unsave <library> <id>
-  vibecut-cli sounds add <project> <library> <id> [--start <ticks>]
-  vibecut-cli model list
-  vibecut-cli model info <id>
-  vibecut-cli model download <id> --yes-download
-  vibecut-cli fonts list [--query <text>]
-  vibecut-cli fonts resolve <family>
-  vibecut-cli fonts download <family> --accept-license
-  vibecut-cli commands
-  vibecut-cli schema
-  vibecut-cli --help
-  vibecut-cli --version
-
-Global:
-  --json  print a JSON result on stdout; progress and errors go to stderr
-
-Commands mutate projects only through the engine registry. Run
-`vibecut-cli commands --json` for the generated command and parameter schema.";
-
-/// One command result. Both forms are always built so `--json` never re-runs work.
-/// A streamed command writes its own protocol and returns a silent result with
-/// the process status of its final frame.
-pub struct Output {
-    value: Value,
-    human: String,
-    silent: bool,
-    exit: u8,
-}
-impl Output {
-    pub fn write(&self, json_output: bool) -> Result<(), CliError> {
-        if self.silent {
-            return Ok(());
-        }
-        let text = if json_output {
-            serde_json::to_string_pretty(&self.value)?
-        } else {
-            self.human.clone()
-        };
-        let mut stdout = io::stdout().lock();
-        writeln!(stdout, "{text}")?;
-        Ok(())
-    }
-    pub fn exit_code(&self) -> u8 {
-        self.exit
-    }
-}
-
-#[derive(Debug, thiserror::Error)]
-pub enum CliError {
-    #[error("{0}")]
-    Usage(String),
-    #[error(transparent)]
-    Project(#[from] project::Error),
-    #[error(transparent)]
-    Engine(#[from] EditError),
-    #[error(transparent)]
-    Render(#[from] render::Error),
-    #[error(transparent)]
-    Media(#[from] media::MediaError),
-    #[error(transparent)]
-    Time(#[from] time::TimeError),
-    #[error(transparent)]
-    Sounds(#[from] engine::sounds::Error),
-    #[error("{0}")]
-    Job(Arc<EditError>),
-    #[error("{0}")]
-    Json(#[from] serde_json::Error),
-    #[error(transparent)]
-    Io(#[from] std::io::Error),
-    #[error("{0}")]
-    Rejected(&'static str),
-    #[error("{0}")]
-    Unsupported(&'static str),
-}
-impl CliError {
-    /// Stable machine code and process exit status. Documented in docs/product/cli.md.
-    pub fn code(&self) -> (&'static str, u8) {
-        match self {
-            Self::Usage(_) | Self::Json(_) => ("usage", 2),
-            Self::Project(project::Error::Busy) => ("busy", 3),
-            Self::Project(project::Error::Conflict) => ("conflict", 3),
-            Self::Project(project::Error::Io(_)) => ("io", 7),
-            Self::Project(project::Error::Media(_)) => ("media", 6),
-            Self::Project(_) => ("rejected", 5),
-            Self::Engine(error) => edit_code(error),
-            Self::Render(render::Error::Unavailable(_)) => ("unavailable", 4),
-            Self::Render(_) => ("render", 6),
-            Self::Media(_) => ("media", 6),
-            Self::Time(_) => ("time", 5),
-            Self::Sounds(error) => sound_code(error),
-            Self::Job(error) => edit_code(error),
-            Self::Io(_) => ("io", 7),
-            Self::Rejected(_) => ("rejected", 5),
-            Self::Unsupported(_) => ("unsupported", 5),
-        }
-    }
-    pub fn exit_code(&self) -> u8 {
-        self.code().1
-    }
-    /// Safe diagnostics: never project text or provider payloads.
-    pub fn report(&self, json_output: bool) {
-        let line = if json_output {
-            json!({"status": "error", "error": self.value()}).to_string()
-        } else {
-            format!("error: {self}")
-        };
-        let _ = writeln!(io::stderr(), "{line}");
-    }
-    /// One typed error object for both stderr envelopes and batch job results.
-    pub(crate) fn value(&self) -> Value {
-        let (code, exit) = self.code();
-        let mut error = json!({
-            "code": code,
-            "message": self.to_string(),
-            "exit_code": exit,
-        });
-        if let Some(list) = self.unavailable() {
-            let unavailable: Vec<Value> = list.iter().map(unavailable_json).collect();
-            if let Value::Object(fields) = &mut error {
-                let _ = fields.insert("unavailable".into(), Value::Array(unavailable));
-            }
-        }
-        error
-    }
-    fn unavailable(&self) -> Option<&[render::Unavailable]> {
-        match self {
-            Self::Render(render::Error::Unavailable(list)) => Some(list),
-            Self::Job(error) => match error.as_ref() {
-                EditError::Render(render::Error::Unavailable(list)) => Some(list),
-                _ => None,
-            },
-            _ => None,
-        }
-    }
-}
-
-fn edit_code(error: &EditError) -> (&'static str, u8) {
-    match error {
-        EditError::Render(render::Error::Unavailable(_)) => ("unavailable", 4),
-        EditError::Render(_) => ("render", 6),
-        EditError::Media(_) => ("media", 6),
-        EditError::ModelMissing(_) | EditError::RunnerMissing | EditError::CredentialMissing(_) => {
-            ("setup", 4)
-        }
-        EditError::Ai(_) => ("ai", 4),
-        EditError::JobFailure(error) => edit_code(error),
-        EditError::ConsentRequired | EditError::AutoLanguageUnsupported => ("rejected", 5),
-        EditError::Project(project::Error::Busy) => ("busy", 3),
-        EditError::Project(project::Error::Conflict) => ("conflict", 3),
-        EditError::Project(project::Error::Io(_)) => ("io", 7),
-        EditError::Project(project::Error::Media(_)) => ("media", 6),
-        EditError::UnknownCommand | EditError::InvalidParams | EditError::Limit => ("usage", 2),
-        EditError::Io(_) => ("io", 7),
-        EditError::Cancelled
-        | EditError::WorkerPanicked
-        | EditError::JobPoisoned
-        | EditError::QueueFull
-        | EditError::BudgetFull
-        | EditError::ArtifactTooLarge
-        | EditError::NetworkTransient
-        | EditError::StaleResult
-        | EditError::CacheCorrupt => ("job", 7),
-        _ => ("rejected", 5),
-    }
-}
-
-fn sound_code(error: &engine::sounds::Error) -> (&'static str, u8) {
-    match error {
-        engine::sounds::Error::NoCredentials => ("setup", 4),
-        engine::sounds::Error::Auth => ("auth", 4),
-        engine::sounds::Error::Quota => ("quota", 4),
-        engine::sounds::Error::RateLimit { .. } => ("rate_limit", 4),
-        engine::sounds::Error::Network | engine::sounds::Error::Server => ("network", 7),
-        engine::sounds::Error::NoAudioDevice => ("audio_device", 4),
-        engine::sounds::Error::Cancelled => ("cancelled", 7),
-        engine::sounds::Error::Limit => ("limit", 2),
-        engine::sounds::Error::NotCached
-        | engine::sounds::Error::InvalidResponse
-        | engine::sounds::Error::LibraryCorrupt
-        | engine::sounds::Error::Invalid(_) => ("sounds", 5),
-        engine::sounds::Error::Io(_) | engine::sounds::Error::Project(_) => ("io", 7),
-        engine::sounds::Error::Media(_) => ("media", 6),
-    }
-}
-
-fn unavailable_json(value: &render::Unavailable) -> Value {
-    json!({
-        "asset": value.asset.0,
-        "item": value.item.0,
-        "source_start": value.range.start().0,
-        "source_end": value.range.end().0,
-        "reason": reason_name(value.reason),
-    })
-}
-fn reason_name(reason: render::UnavailableReason) -> &'static str {
-    match reason {
-        render::UnavailableReason::Missing => "missing",
-        render::UnavailableReason::Changed => "changed",
-        render::UnavailableReason::Metadata => "metadata",
-        render::UnavailableReason::Video => "video",
-        render::UnavailableReason::Audio => "audio",
-    }
-}
+use time::FrameRate;
+use time::Tick;
+use time::TimeRange;
 
 pub fn run(args: Vec<OsString>) -> Result<Output, CliError> {
     let mut args = args.into_iter();
@@ -308,7 +136,7 @@ pub fn run(args: Vec<OsString>) -> Result<Output, CliError> {
     }
 }
 
-fn probe(args: Vec<OsString>) -> Result<Output, CliError> {
+pub(crate) fn probe(args: Vec<OsString>) -> Result<Output, CliError> {
     let path = one_path(args, "usage: vibecut-cli probe <file>")?;
     let reader = media::PacketReader::open(&path)?;
     let probe = reader.probe().clone();
@@ -478,7 +306,7 @@ fn optional_tick_json(tick: Option<Tick>) -> Value {
     tick.map_or(Value::Null, tick_json)
 }
 
-fn project(args: Vec<OsString>) -> Result<Output, CliError> {
+pub(crate) fn project(args: Vec<OsString>) -> Result<Output, CliError> {
     let mut args = args.into_iter();
     let action = args
         .next()
@@ -586,7 +414,7 @@ fn fps_json(rate: FrameRate) -> Value {
     json!({"num": rate.num(), "den": rate.den(), "fps": rate.as_f64()})
 }
 
-fn exec(args: Vec<OsString>) -> Result<Output, CliError> {
+pub(crate) fn exec(args: Vec<OsString>) -> Result<Output, CliError> {
     let mut args = args.into_iter();
     let project_path = args.next().map(PathBuf::from).ok_or_else(exec_usage)?;
     let command_id = args.next().ok_or_else(exec_usage)?;
@@ -636,7 +464,7 @@ fn exec(args: Vec<OsString>) -> Result<Output, CliError> {
 }
 
 /// Detect scene-change candidates for a local video; never edits a project.
-fn scenes(args: Vec<OsString>) -> Result<Output, CliError> {
+pub(crate) fn scenes(args: Vec<OsString>) -> Result<Output, CliError> {
     use engine::scene_detection::{DetectionRequest, DetectionSettings};
     let mut args = args.into_iter();
     let path = args
@@ -704,7 +532,7 @@ fn scenes(args: Vec<OsString>) -> Result<Output, CliError> {
 
 /// Set loudness targets, run the two-pass measurement job over the production
 /// mix graph, and store the gains: the next `export` applies them.
-fn normalize(args: Vec<OsString>) -> Result<Output, CliError> {
+pub(crate) fn normalize(args: Vec<OsString>) -> Result<Output, CliError> {
     const USAGE: &str = "usage: vibecut-cli normalize <project> [--clip] [--master]          [--target-lufs -14] [--true-peak-db -1]";
     let mut args = args.into_iter();
     let project_path = args
@@ -833,424 +661,6 @@ fn exec_usage() -> CliError {
     CliError::Usage("usage: vibecut-cli exec <project> <command_id> <json>".into())
 }
 
-/// Trusted admission owned by this composition root; never deserialized from
-/// client JSON. The CLI grants overwrite only when the flag was passed.
-struct ControlPolicy {
-    allow_overwrite: bool,
-}
-impl Policy for ControlPolicy {
-    fn snapshot_overwrite(&self) -> bool {
-        self.allow_overwrite
-    }
-
-    fn authorize(&self, command: &Command, _: &Project) -> engine::Result<()> {
-        let overwrite = match command {
-            Command::Export { overwrite, .. }
-            | Command::ExportSubtitles { overwrite, .. }
-            | Command::BurnSubtitles { overwrite, .. } => Some(*overwrite),
-            _ => None,
-        };
-        if overwrite == Some(true) && !self.allow_overwrite {
-            return Err(EditError::Permission);
-        }
-        Ok(())
-    }
-}
-
-fn control_usage() -> CliError {
-    CliError::Usage("usage: vibecut-cli control <project> [--allow-overwrite] [--no-save]".into())
-}
-
-fn control(args: Vec<OsString>) -> Result<Output, CliError> {
-    let mut args = args.into_iter();
-    let Some(project) = args.next() else {
-        return Err(control_usage());
-    };
-    if project
-        .to_str()
-        .is_some_and(|value| value == "--help" || value == "-h")
-    {
-        let usage = "usage: vibecut-cli control <project> [--allow-overwrite] [--no-save]\n\
-                     Reads newline-delimited control requests on stdin and writes one JSON\n\
-                     response per line. The session saves changed project/metadata on EOF\n\
-                     unless --no-save is set; --allow-overwrite grants FilePublish overwrite.";
-        return Ok(Output {
-            value: json!({"usage": usage}),
-            human: usage.to_owned(),
-            silent: false,
-            exit: 0,
-        });
-    }
-    let project_path = PathBuf::from(project);
-    let mut allow_overwrite = false;
-    let mut save = true;
-    for arg in args {
-        match utf8(&arg, "control flag")? {
-            "--allow-overwrite" => allow_overwrite = true,
-            "--no-save" => save = false,
-            other => return Err(CliError::Usage(format!("unknown control flag: {other}"))),
-        }
-    }
-
-    // One process is one engine Session. The lease is held from load to the
-    // final save, so no other writer can interleave during the stream.
-    let mut lease = WriterLease::acquire(&project_path)?;
-    let loaded = lease.load()?;
-    let mut session = Session::new(loaded.project, 100)?;
-    session.restore_metadata(lease.metadata())?;
-    session.protect_paths(vec![
-        project_path.clone(),
-        project::metadata_path(&project_path)?,
-    ])?;
-    // Without a user cache location the font commands refuse; the session still serves edits.
-    if let Ok(store) = FontStore::native() {
-        session.set_fonts(Arc::new(store));
-    }
-    let mut runner = JobRunner::new(
-        RunnerConfig {
-            concurrency: [1, 1, 2],
-            queue: 32,
-            retained: 32,
-            network_attempts: 1,
-            backoff: Duration::from_millis(100),
-            progress_interval: Duration::from_millis(50),
-        },
-        ByteBudget::new(CLI_MEMORY_LIMIT)?,
-        Arc::new(SystemClock::default()),
-    )?;
-    let policy = ControlPolicy { allow_overwrite };
-    let stdin = io::stdin();
-    let mut input = stdin.lock();
-    let stdout = io::stdout();
-    let mut out = stdout.lock();
-    let mut project_dirty = false;
-    let mut metadata_dirty = false;
-    let mut last_exit = 0u8;
-
-    loop {
-        runner.tick()?;
-        session.observe_jobs(&runner);
-        let frame = match read_control_frame(&mut input, control::MAX_FRAME_BYTES) {
-            Ok(frame) => frame,
-            Err(CliError::Engine(EditError::Limit)) => {
-                write_control_error(
-                    &mut out,
-                    None,
-                    ErrorCode::Limit,
-                    "control request exceeds the frame limit",
-                )?;
-                last_exit = control_exit(ErrorCode::Limit);
-                continue;
-            }
-            Err(error) => return Err(error),
-        };
-        let Some(bytes) = frame else {
-            break;
-        };
-        if bytes.is_empty() {
-            continue;
-        }
-        let value = match control::parse_frame(&bytes) {
-            Ok(value) => value,
-            Err(error) => {
-                let code = ErrorCode::from_error(&error);
-                write_control_error(&mut out, None, code, frame_error_message(&error))?;
-                last_exit = control_exit(code);
-                continue;
-            }
-        };
-        let request = match build_control_request(&session, value) {
-            Ok(request) => request,
-            Err(error) => {
-                let code = ErrorCode::from_error(&error);
-                write_control_error(
-                    &mut out,
-                    None,
-                    code,
-                    "control request has an invalid envelope",
-                )?;
-                last_exit = control_exit(code);
-                continue;
-            }
-        };
-        let request_id = request.request_id.clone();
-        let command_id = request.command.clone();
-        let response = if command_id == "project.save" {
-            let caller = Caller {
-                principal: "vibecut-cli",
-                external: true,
-                policy: &policy,
-            };
-            // The engine owns save admission and its receipt; this closure only
-            // publishes the bytes through the project owner.
-            match session.control_lifecycle_save(request, caller, |project, metadata| {
-                let _receipt = lease.save(project)?;
-                lease.save_metadata(metadata)?;
-                Ok(())
-            }) {
-                Ok(response) => response,
-                Err(error) => {
-                    let code = ErrorCode::from_error(&error);
-                    write_control_error(
-                        &mut out,
-                        Some(&request_id),
-                        code,
-                        "control request refused before admission",
-                    )?;
-                    last_exit = control_exit(code);
-                    continue;
-                }
-            }
-        } else {
-            let before = session.project().clone();
-            let caller = Caller {
-                principal: "vibecut-cli",
-                external: true,
-                policy: &policy,
-            };
-            match session.control_request(request, caller, &mut runner) {
-                Ok(response) => {
-                    if matches!(
-                        &response.value,
-                        ResponseValue::Result(ControlResult::Edit { outcome }) if outcome.changed
-                    ) {
-                        metadata_dirty = true;
-                        if command_id != "project.set_view_state" {
-                            project_dirty = true;
-                        }
-                    }
-                    if before != *session.project() {
-                        project_dirty = true;
-                    }
-                    response
-                }
-                Err(error) => {
-                    let code = ErrorCode::from_error(&error);
-                    write_control_error(
-                        &mut out,
-                        Some(&request_id),
-                        code,
-                        "control request refused before admission",
-                    )?;
-                    last_exit = control_exit(code);
-                    continue;
-                }
-            }
-        };
-        // A save clears dirty state only when it published the current revision.
-        // Replay of an older receipt after later edits must leave the session dirty.
-        if command_id == "project.save"
-            && matches!(&response.value, ResponseValue::Result(_))
-            && response.rev_after == session.revision()
-        {
-            project_dirty = false;
-            metadata_dirty = false;
-        }
-        last_exit = control_response_exit(&response.value);
-        write_control_response(&mut out, &response)?;
-    }
-
-    runner.shutdown();
-    if save && (project_dirty || metadata_dirty) {
-        save_control_state(&mut session, &mut lease, project_dirty, metadata_dirty)?;
-    }
-    Ok(Output {
-        value: Value::Null,
-        human: String::new(),
-        silent: true,
-        exit: last_exit,
-    })
-}
-
-fn build_control_request(session: &Session, mut value: Value) -> Result<Request, EditError> {
-    let Value::Object(fields) = &mut value else {
-        return Err(EditError::InvalidParams);
-    };
-    fields
-        .entry("api_version")
-        .or_insert_with(|| json!(control::API_VERSION));
-    fields
-        .entry("registry_hash")
-        .or_insert_with(|| json!(control::registry_hash()));
-    fields
-        .entry("session_id")
-        .or_insert_with(|| json!(session.session_id()));
-    let request: Request = serde_json::from_value(value).map_err(|_| EditError::InvalidParams)?;
-    Ok(request)
-}
-
-fn save_control_state(
-    session: &mut Session,
-    lease: &mut WriterLease,
-    project_dirty: bool,
-    metadata_dirty: bool,
-) -> Result<(), CliError> {
-    if project_dirty {
-        let _receipt = lease.save(session.project())?;
-    }
-    if metadata_dirty {
-        let mut metadata = session.metadata().clone();
-        metadata.touch();
-        lease.save_metadata(&metadata)?;
-        session.restore_metadata(metadata)?;
-    }
-    if project_dirty || metadata_dirty {
-        session.saved()?;
-    }
-    Ok(())
-}
-
-fn control_response_exit(value: &ResponseValue) -> u8 {
-    match value {
-        ResponseValue::Result(_) => 0,
-        ResponseValue::Error(code) => control_exit(*code),
-    }
-}
-
-fn control_exit(code: ErrorCode) -> u8 {
-    match code {
-        ErrorCode::UnknownCommand
-        | ErrorCode::InvalidParams
-        | ErrorCode::Limit
-        | ErrorCode::SchemaMismatch => 2,
-        ErrorCode::StaleRevision => 3,
-        ErrorCode::Permission
-        | ErrorCode::IdempotencyConflict
-        | ErrorCode::ReceiptCapacity
-        | ErrorCode::TransactionActive
-        | ErrorCode::EmptyProject
-        | ErrorCode::Refused => 5,
-        ErrorCode::SessionGone
-        | ErrorCode::ResyncRequired
-        | ErrorCode::JobNotRetained
-        | ErrorCode::Cancelled
-        | ErrorCode::QueueFull
-        | ErrorCode::Failed => 7,
-    }
-}
-
-fn error_code_name(code: ErrorCode) -> &'static str {
-    match code {
-        ErrorCode::UnknownCommand => "unknown_command",
-        ErrorCode::InvalidParams => "invalid_params",
-        ErrorCode::Limit => "limit",
-        ErrorCode::SchemaMismatch => "schema_mismatch",
-        ErrorCode::SessionGone => "session_gone",
-        ErrorCode::StaleRevision => "stale_revision",
-        ErrorCode::Permission => "permission",
-        ErrorCode::IdempotencyConflict => "idempotency_conflict",
-        ErrorCode::ReceiptCapacity => "receipt_capacity",
-        ErrorCode::ResyncRequired => "resync_required",
-        ErrorCode::JobNotRetained => "job_not_retained",
-        ErrorCode::Cancelled => "cancelled",
-        ErrorCode::QueueFull => "queue_full",
-        ErrorCode::TransactionActive => "transaction_active",
-        ErrorCode::EmptyProject => "empty_project",
-        ErrorCode::Refused => "refused",
-        ErrorCode::Failed => "failed",
-    }
-}
-
-fn frame_error_message(error: &EditError) -> &'static str {
-    match error {
-        EditError::Limit => "control request exceeds the frame limit",
-        _ => "control request is not valid control JSON",
-    }
-}
-
-fn write_control_response(out: &mut impl io::Write, response: &Response) -> Result<(), CliError> {
-    let mut value = serde_json::to_value(response)?;
-    if let Value::Object(fields) = &mut value {
-        fields.insert(
-            "exit_code".into(),
-            json!(control_response_exit(&response.value)),
-        );
-    }
-    writeln!(out, "{value}")?;
-    out.flush()?;
-    Ok(())
-}
-
-fn write_control_error(
-    out: &mut impl io::Write,
-    request_id: Option<&str>,
-    code: ErrorCode,
-    message: &str,
-) -> Result<(), CliError> {
-    let exit = control_exit(code);
-    let mut value = json!({
-        "status": "error",
-        "exit_code": exit,
-        "error": {"code": error_code_name(code), "message": message, "exit_code": exit},
-    });
-    if let (Some(request_id), Value::Object(fields)) = (request_id, &mut value) {
-        fields.insert("request_id".into(), json!(request_id));
-    }
-    writeln!(out, "{value}")?;
-    out.flush()?;
-    Ok(())
-}
-
-/// Read one bounded newline-framed request, draining an oversized line so the
-/// next frame still starts at a line boundary.
-fn read_control_frame(input: &mut impl BufRead, max: usize) -> Result<Option<Vec<u8>>, CliError> {
-    let mut line = Vec::new();
-    loop {
-        let (take, done) = {
-            let buffer = input.fill_buf()?;
-            if buffer.is_empty() {
-                if line.is_empty() {
-                    return Ok(None);
-                }
-                break;
-            }
-            match buffer.iter().position(|byte| *byte == b'\n') {
-                Some(index) => (index + 1, true),
-                None => (buffer.len(), false),
-            }
-        };
-        if line.len().saturating_add(take) > max.saturating_add(2) {
-            input.consume(take);
-            if !done {
-                drain_control_line(input)?;
-            }
-            return Err(EditError::Limit.into());
-        }
-        let buffer = input.fill_buf()?;
-        line.extend(buffer.iter().take(take).copied());
-        input.consume(take);
-        if done {
-            break;
-        }
-    }
-    while line
-        .last()
-        .is_some_and(|byte| *byte == b'\n' || *byte == b'\r')
-    {
-        line.pop();
-    }
-    Ok(Some(line))
-}
-
-fn drain_control_line(input: &mut impl BufRead) -> Result<(), CliError> {
-    loop {
-        let (take, done) = {
-            let buffer = input.fill_buf()?;
-            if buffer.is_empty() {
-                return Ok(());
-            }
-            match buffer.iter().position(|byte| *byte == b'\n') {
-                Some(index) => (index + 1, true),
-                None => (buffer.len(), false),
-            }
-        };
-        input.consume(take);
-        if done {
-            return Ok(());
-        }
-    }
-}
-
 fn outcome_human(outcome: &engine::Outcome) -> String {
     let mut human = if outcome.changed {
         "changed\n".to_owned()
@@ -1273,7 +683,7 @@ fn created_human(created: &CreatedId) -> String {
     }
 }
 
-fn export(args: Vec<OsString>) -> Result<Output, CliError> {
+pub(crate) fn export(args: Vec<OsString>) -> Result<Output, CliError> {
     let mut args = args.into_iter();
     let project_path = args.next().map(PathBuf::from).ok_or_else(export_usage)?;
     let mut output = None;
@@ -1322,9 +732,6 @@ enum Aspect {
     Portrait,
     Landscape,
 }
-
-/// No CLI preferences owner yet; 2 GiB admits one 1080p export's working buffers.
-const CLI_MEMORY_LIMIT: u64 = 2 << 30;
 
 fn export_project(
     project_path: PathBuf,
@@ -1469,80 +876,7 @@ fn export_settings(
     settings
 }
 
-fn wait_for_job(runner: &mut JobRunner, id: JobId) -> Result<(), CliError> {
-    let mut last = (JobStage::Queued, u32::MAX);
-    loop {
-        runner.tick()?;
-        for event in runner.drain_events() {
-            if event.id != id {
-                continue;
-            }
-            let percent = progress_percent(event.progress);
-            if last != (event.stage, percent) {
-                last = (event.stage, percent);
-                let _ = writeln!(
-                    io::stderr(),
-                    "progress {} {}%",
-                    stage_name(event.stage),
-                    percent
-                );
-            }
-        }
-        let snapshot = runner
-            .snapshot(id)
-            .ok_or(CliError::Rejected("export job disappeared"))?;
-        match snapshot.state {
-            JobState::Completed => return Ok(()),
-            JobState::Failed => {
-                return Err(match snapshot.error {
-                    Some(error) => CliError::Job(error),
-                    None => CliError::Rejected("export failed without diagnostics"),
-                });
-            }
-            JobState::Cancelled => {
-                return Err(CliError::Job(Arc::new(EditError::Cancelled)));
-            }
-            _ => std::thread::sleep(Duration::from_millis(5)),
-        }
-    }
-}
-
-fn progress_percent(progress: f32) -> u32 {
-    if progress.is_finite() {
-        (progress.clamp(0.0, 1.0) * 100.0).round() as u32
-    } else {
-        0
-    }
-}
-
-fn stage_name(stage: JobStage) -> &'static str {
-    match stage {
-        JobStage::Queued => "queued",
-        JobStage::Starting => "starting",
-        JobStage::Preparing => "preparing",
-        JobStage::Analyzing => "analyzing",
-        JobStage::Transcribe => "transcribe",
-        JobStage::Align => "align",
-        JobStage::Translate => "translate",
-        JobStage::SuggestClips => "suggest_clips",
-        JobStage::Assemble => "assemble",
-        JobStage::Process => "process",
-        JobStage::Probe => "probe",
-        JobStage::Thumbnail => "thumbnail",
-        JobStage::Admit => "admit",
-        JobStage::Render => "render",
-        JobStage::Mix => "mix",
-        JobStage::Encode => "encode",
-        JobStage::Finalize => "finalize",
-        JobStage::Download => "download",
-        JobStage::Verify => "verify",
-        JobStage::Publish => "publish",
-        JobStage::Backoff => "backoff",
-        JobStage::Complete => "complete",
-    }
-}
-
-fn captions(args: Vec<OsString>) -> Result<Output, CliError> {
+pub(crate) fn captions(args: Vec<OsString>) -> Result<Output, CliError> {
     let mut args = args.into_iter();
     let action = args.next().ok_or_else(|| {
         CliError::Usage("usage: vibecut-cli captions import <project> <file.ass>".into())
@@ -1723,7 +1057,7 @@ fn captions_import_usage() -> &'static str {
                          [--start <ticks>] [--track <id>] [--name <name>]"
 }
 
-fn subtitle(args: Vec<OsString>) -> Result<Output, CliError> {
+pub(crate) fn subtitle(args: Vec<OsString>) -> Result<Output, CliError> {
     let mut args = args.into_iter();
     let mut input: Option<PathBuf> = None;
     let mut from = "auto".to_owned();
@@ -1968,133 +1302,6 @@ fn subtitle_usage_error() -> CliError {
     CliError::Usage(subtitle_usage().into())
 }
 
-fn cli_runtime() -> Result<subtitles::Runtime, CliError> {
-    let mut runtime = subtitles::Runtime::default();
-    if let Ok(value) = std::env::var("VIBECUT_ASR_THREADS") {
-        let threads = value.parse::<u8>().map_err(|_| {
-            CliError::Usage("VIBECUT_ASR_THREADS must be an integer from 1 to 32".into())
-        })?;
-        if !(1..=32).contains(&threads) {
-            return Err(CliError::Usage(
-                "VIBECUT_ASR_THREADS must be an integer from 1 to 32".into(),
-            ));
-        }
-        runtime.threads = threads;
-    }
-    if std::env::var("VIBECUT_ASR_GPU").is_ok_and(|value| value == "0") {
-        runtime.use_gpu = false;
-    }
-    runtime.gipformer_runner = subtitles::local_asr_runner();
-    Ok(runtime)
-}
-
-fn cli_runner(budget: ByteBudget) -> Result<JobRunner, CliError> {
-    Ok(JobRunner::new(
-        RunnerConfig {
-            concurrency: [1, 1, 2],
-            queue: 8,
-            retained: 8,
-            network_attempts: 3,
-            backoff: Duration::from_millis(250),
-            progress_interval: Duration::from_millis(50),
-        },
-        budget,
-        Arc::new(SystemClock::default()),
-    )?)
-}
-
-struct CliProgress {
-    last: std::sync::Mutex<(JobStage, u32)>,
-}
-impl Progress for CliProgress {
-    fn stage(&self, stage: Stage) {
-        let _ = writeln!(io::stderr(), "stage {}", subtitle_stage_name(stage));
-    }
-    fn job(&self, snapshot: &JobSnapshot) {
-        let percent = progress_percent(snapshot.progress);
-        if let Ok(mut last) = self.last.lock()
-            && *last != (snapshot.stage, percent)
-        {
-            *last = (snapshot.stage, percent);
-            let _ = writeln!(
-                io::stderr(),
-                "progress {} {}%",
-                stage_name(snapshot.stage),
-                percent
-            );
-        }
-    }
-}
-fn subtitle_stage_name(stage: Stage) -> &'static str {
-    match stage {
-        Stage::Extract => "extract",
-        Stage::Transcribe => "transcribe",
-        Stage::Align => "align",
-        Stage::Assemble => "assemble",
-        Stage::Segment => "segment",
-        Stage::SuggestClips => "suggest_clips",
-        Stage::Snap => "snap",
-        Stage::Translate => "translate",
-        Stage::ExportSrt => "export_srt",
-        Stage::ExportBurn => "export_burn",
-    }
-}
-
-struct CliConsent {
-    yes_upload: bool,
-}
-impl ConsentPrompt for CliConsent {
-    fn approve(&self, request: &UploadRequest) -> Result<(), EditError> {
-        let operation = match request.operation {
-            CatalogOperation::Transcribe => "transcribe",
-            CatalogOperation::Translate => "translate",
-            CatalogOperation::SuggestClips => "suggest_clips",
-        };
-        let _ = writeln!(
-            io::stderr(),
-            "upload consent: {operation} {} {} ({})",
-            request.provider,
-            request.model,
-            request.languages
-        );
-        if request.audio_seconds > 0.0 {
-            let _ = writeln!(io::stderr(), "audio: {:.3} s", request.audio_seconds);
-        }
-        let _ = writeln!(io::stderr(), "payload: {} bytes", request.upload_bytes);
-        let _ = writeln!(io::stderr(), "cost: {}", cost_label(&request.cost));
-        for (label, value) in &request.terms {
-            let _ = writeln!(io::stderr(), "{label}: {value}");
-        }
-        if self.yes_upload {
-            Ok(())
-        } else {
-            let _ = writeln!(
-                io::stderr(),
-                "consent: refused; pass --yes-upload to authorize this exact scope"
-            );
-            Err(EditError::ConsentRequired)
-        }
-    }
-}
-
-fn cost_label(cost: &Cost) -> String {
-    match cost {
-        Cost::Free => "free".into(),
-        Cost::Unknown => "unknown".into(),
-        Cost::UpperBound { currency, micros } => {
-            format!("{currency} {:.6}", *micros as f64 / 1_000_000.0)
-        }
-    }
-}
-fn cost_json(cost: &Cost) -> Value {
-    match cost {
-        Cost::Free => json!({"kind": "free"}),
-        Cost::Unknown => json!({"kind": "unknown"}),
-        Cost::UpperBound { currency, micros } => {
-            json!({"kind": "upper_bound", "currency": currency, "micros": micros})
-        }
-    }
-}
 fn outcome_json(outcome: &SubtitleOutcome, input: &Path) -> Result<Value, CliError> {
     let path = |value: &Option<PathBuf>| -> Result<Value, CliError> {
         match value {
@@ -2160,7 +1367,7 @@ fn outcome_human_subtitle(outcome: &SubtitleOutcome) -> String {
     human.trim_end().to_owned()
 }
 
-fn clips(args: Vec<OsString>) -> Result<Output, CliError> {
+pub(crate) fn clips(args: Vec<OsString>) -> Result<Output, CliError> {
     let mut args = args.into_iter();
     let mut input: Option<PathBuf> = None;
     let mut from = "auto".to_owned();
@@ -2535,55 +1742,6 @@ fn clips_usage() -> &'static str {
 fn clips_usage_error() -> CliError {
     CliError::Usage(clips_usage().into())
 }
-fn number_arg(args: &mut std::vec::IntoIter<OsString>, flag: &str) -> Result<usize, CliError> {
-    let raw = args
-        .next()
-        .ok_or_else(|| CliError::Usage(format!("{flag} requires a number")))?;
-    let value = utf8(&raw, flag)?;
-    value
-        .parse()
-        .map_err(|_| CliError::Usage(format!("{flag} requires a nonnegative integer")))
-}
-fn seconds_arg(args: &mut std::vec::IntoIter<OsString>, flag: &str) -> Result<f64, CliError> {
-    let raw = args
-        .next()
-        .ok_or_else(|| CliError::Usage(format!("{flag} requires a duration such as 20s")))?;
-    let value = utf8(&raw, flag)?;
-    let number = value.strip_suffix('s').unwrap_or(value);
-    let parsed: f64 = number
-        .parse()
-        .map_err(|_| CliError::Usage(format!("{flag} must be seconds such as 20s")))?;
-    if !parsed.is_finite() || parsed <= 0.0 {
-        return Err(CliError::Usage(format!("{flag} must be positive")));
-    }
-    Ok(parsed)
-}
-fn seconds_ticks(value: f64) -> Result<Tick, CliError> {
-    Ok(Tick::from_seconds_f64(value, time::Rounding::Nearest)?)
-}
-fn parse_selection(value: &str) -> Result<Vec<usize>, CliError> {
-    let mut result: Vec<usize> = Vec::new();
-    for part in value.split(',') {
-        let number: usize = part.trim().parse().map_err(|_| {
-            CliError::Usage("--select takes comma-separated 1-based indices".into())
-        })?;
-        if number == 0 {
-            return Err(CliError::Usage("--select indices start at 1".into()));
-        }
-        let index = number - 1;
-        if result.contains(&index) {
-            return Err(CliError::Usage("--select indices must be distinct".into()));
-        }
-        result.push(index);
-    }
-    if result.is_empty() || result.len() > 1000 {
-        return Err(CliError::Usage(
-            "--select takes 1..=1000 comma-separated indices".into(),
-        ));
-    }
-    Ok(result)
-}
-
 fn clips_json(
     outcome: &ClipSuggestionOutcome,
     input: &Path,
@@ -2842,7 +2000,7 @@ fn clips_human(
 /// `sounds` owns no provider logic: it composes engine's direct Freesound client,
 /// durable local library and cached-add service. Without a token search falls back
 /// to saved local sounds; add never touches the network.
-fn sounds(args: Vec<OsString>) -> Result<Output, CliError> {
+pub(crate) fn sounds(args: Vec<OsString>) -> Result<Output, CliError> {
     let mut args = args.into_iter();
     let action = args.next().ok_or_else(|| {
         CliError::Usage("usage: vibecut-cli sounds search|save|unsave|add ...".into())
@@ -3077,26 +2235,7 @@ fn sounds_add(args: Vec<OsString>) -> Result<Output, CliError> {
         exit: 0,
     })
 }
-fn parse_u32(value: Option<OsString>, what: &str) -> Result<u32, CliError> {
-    let value = value.ok_or_else(|| CliError::Usage(format!("{what} requires a value")))?;
-    utf8(&value, what)?
-        .parse()
-        .map_err(|_| CliError::Usage(format!("{what} must be a non-negative integer")))
-}
-fn parse_u64(value: Option<OsString>, what: &str) -> Result<u64, CliError> {
-    let value = value.ok_or_else(|| CliError::Usage(format!("{what} requires a value")))?;
-    utf8(&value, what)?
-        .parse()
-        .map_err(|_| CliError::Usage(format!("{what} must be a non-negative integer")))
-}
-fn parse_i64(value: Option<OsString>, what: &str) -> Result<i64, CliError> {
-    let value = value.ok_or_else(|| CliError::Usage(format!("{what} requires a value")))?;
-    utf8(&value, what)?
-        .parse()
-        .map_err(|_| CliError::Usage(format!("{what} must be an integer")))
-}
-
-fn providers(args: Vec<OsString>) -> Result<Output, CliError> {
+pub(crate) fn providers(args: Vec<OsString>) -> Result<Output, CliError> {
     let mut args = args.into_iter();
     let mut operation = CatalogOperation::Transcribe;
     let mut language = None;
@@ -3205,7 +2344,7 @@ fn provider_option_json(option: &ProviderOption) -> Value {
     })
 }
 
-fn model(args: Vec<OsString>) -> Result<Output, CliError> {
+pub(crate) fn model(args: Vec<OsString>) -> Result<Output, CliError> {
     let mut args = args.into_iter();
     let action = args
         .next()
@@ -3343,7 +2482,7 @@ fn model_human(model: &subtitles::ModelInfo) -> String {
     }
     human.trim_end().to_owned()
 }
-fn fonts(args: Vec<OsString>) -> Result<Output, CliError> {
+pub(crate) fn fonts(args: Vec<OsString>) -> Result<Output, CliError> {
     const USAGE: &str = "usage: vibecut-cli fonts list [--query <text>] | resolve <family> | download <family> --accept-license";
     let mut args = args.into_iter();
     let action = args.next().ok_or_else(|| CliError::Usage(USAGE.into()))?;
@@ -3488,18 +2627,7 @@ fn json_name<T: serde::Serialize>(value: &T) -> String {
         .and_then(|v| v.as_str().map(str::to_owned))
         .unwrap_or_default()
 }
-fn one_utf8(args: Vec<OsString>, usage: &str) -> Result<String, CliError> {
-    let mut args = args.into_iter();
-    let value = args
-        .next()
-        .ok_or_else(|| CliError::Usage(usage.to_owned()))?;
-    if args.next().is_some() {
-        return Err(CliError::Usage(usage.to_owned()));
-    }
-    Ok(utf8(&value, "argument")?.to_owned())
-}
-
-fn commands(args: Vec<OsString>) -> Result<Output, CliError> {
+pub(crate) fn commands(args: Vec<OsString>) -> Result<Output, CliError> {
     if !args.is_empty() {
         return Err(CliError::Usage("usage: vibecut-cli commands".into()));
     }
@@ -3542,7 +2670,7 @@ fn commands(args: Vec<OsString>) -> Result<Output, CliError> {
     })
 }
 
-fn schema(args: Vec<OsString>) -> Result<Output, CliError> {
+pub(crate) fn schema(args: Vec<OsString>) -> Result<Output, CliError> {
     if !args.is_empty() {
         return Err(CliError::Usage("usage: vibecut-cli schema".into()));
     }
@@ -3562,68 +2690,6 @@ fn schema(args: Vec<OsString>) -> Result<Output, CliError> {
         silent: false,
         exit: 0,
     })
-}
-
-fn one_path(args: Vec<OsString>, usage: &str) -> Result<PathBuf, CliError> {
-    let mut args = args.into_iter();
-    let path = args
-        .next()
-        .map(PathBuf::from)
-        .ok_or_else(|| CliError::Usage(usage.to_owned()))?;
-    if args.next().is_some() {
-        return Err(CliError::Usage(usage.to_owned()));
-    }
-    Ok(path)
-}
-
-fn utf8<'a>(value: &'a OsString, what: &str) -> Result<&'a str, CliError> {
-    value
-        .to_str()
-        .ok_or_else(|| CliError::Usage(format!("{what} must be valid UTF-8")))
-}
-
-fn json_path(path: &Path) -> Result<String, CliError> {
-    path.to_str()
-        .map(str::to_owned)
-        .ok_or(CliError::Unsupported(
-            "non-UTF-8 path cannot be represented in JSON",
-        ))
-}
-
-fn same_target(left: &Path, right: &Path) -> Result<bool, CliError> {
-    Ok(resolve_target(left)? == resolve_target(right)?)
-}
-
-fn resolve_target(path: &Path) -> Result<PathBuf, CliError> {
-    match std::fs::canonicalize(path) {
-        Ok(path) => Ok(path),
-        Err(error) if error.kind() == io::ErrorKind::NotFound => {
-            let name = path
-                .file_name()
-                .ok_or(CliError::Usage("path has no file name".into()))?;
-            let parent = path
-                .parent()
-                .filter(|parent| !parent.as_os_str().is_empty())
-                .unwrap_or(Path::new("."));
-            Ok(std::fs::canonicalize(parent)?.join(name))
-        }
-        Err(error) => Err(error.into()),
-    }
-}
-
-fn hex(bytes: &[u8]) -> String {
-    const DIGITS: &[u8; 16] = b"0123456789abcdef";
-    let mut output = String::with_capacity(bytes.len() * 2);
-    for byte in bytes {
-        let high = DIGITS.get(usize::from(byte >> 4)).copied().unwrap_or(b'0');
-        let low = DIGITS
-            .get(usize::from(byte & 0x0f))
-            .copied()
-            .unwrap_or(b'0');
-        output.push(char::from(high));
-        output.push(char::from(low));
-    }
-    output
 }
 
 #[cfg(test)]
