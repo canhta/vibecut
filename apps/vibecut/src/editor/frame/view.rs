@@ -75,6 +75,7 @@ impl Editor {
             self.import_notice = Some(error_detail(&error));
         }
         Self::theme(ui.ctx(), self.preferences.dark);
+        crate::kit::install_editor_density(ui.ctx());
         ui.style_mut().interaction.selectable_labels = false;
         self.widgets.clear();
         self.panels.clear();

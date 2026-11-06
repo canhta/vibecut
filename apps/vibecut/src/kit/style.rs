@@ -50,27 +50,39 @@ pub(crate) fn install_theme(ctx: &egui::Context, dark: bool) {
     visuals.widgets.open.bg_stroke = stroke(border);
     visuals.widgets.open.fg_stroke = stroke(text);
     ctx.set_visuals(visuals);
+    // The style is shared by every window on the context: each window resets the
+    // editor density below to the toolkit defaults before it draws.
     ctx.all_styles_mut(|style| {
-        style.text_styles.insert(
+        let defaults = egui::Style::default();
+        style.text_styles = defaults.text_styles;
+        style.spacing.interact_size = defaults.spacing.interact_size;
+        style.spacing.item_spacing = defaults.spacing.item_spacing;
+        style.visuals.widgets.inactive.corner_radius =
+            defaults.visuals.widgets.inactive.corner_radius;
+        style.visuals.widgets.hovered.corner_radius =
+            defaults.visuals.widgets.hovered.corner_radius;
+        style.visuals.widgets.active.corner_radius = defaults.visuals.widgets.active.corner_radius;
+    });
+}
+
+/// Measured editor type, control height, spacing and corners; editor-only.
+pub(crate) fn install_editor_density(ctx: &egui::Context) {
+    ctx.all_styles_mut(|style| {
+        for text_style in [
             egui::TextStyle::Body,
-            FontId::proportional(theme::type_size::BODY),
-        );
-        style.text_styles.insert(
             egui::TextStyle::Button,
-            FontId::proportional(theme::type_size::BODY),
-        );
-        style.text_styles.insert(
             egui::TextStyle::Small,
-            FontId::proportional(theme::type_size::BODY),
-        );
+        ] {
+            style
+                .text_styles
+                .insert(text_style, FontId::proportional(theme::type_size::BODY));
+        }
         style.spacing.interact_size.y = theme::size::FIELD;
         style.spacing.item_spacing = Vec2::new(theme::space::MD, theme::space::XS);
-        style.visuals.widgets.inactive.corner_radius =
-            egui::CornerRadius::same(theme::radius::CONTROL);
-        style.visuals.widgets.hovered.corner_radius =
-            egui::CornerRadius::same(theme::radius::CONTROL);
-        style.visuals.widgets.active.corner_radius =
-            egui::CornerRadius::same(theme::radius::CONTROL);
+        let corner = egui::CornerRadius::same(theme::radius::CONTROL);
+        style.visuals.widgets.inactive.corner_radius = corner;
+        style.visuals.widgets.hovered.corner_radius = corner;
+        style.visuals.widgets.active.corner_radius = corner;
     });
 }
 pub(crate) fn install_fonts(ctx: &egui::Context) {
@@ -105,4 +117,33 @@ pub(crate) fn install_fonts(ctx: &egui::Context) {
         .families
         .insert(egui::FontFamily::Monospace, vec!["Inter".into()]);
     ctx.set_fonts(fonts);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn body(ctx: &egui::Context) -> f32 {
+        ctx.global_style().text_styles[&egui::TextStyle::Body].size
+    }
+
+    #[test]
+    fn editor_density_stays_out_of_other_windows() {
+        let ctx = egui::Context::default();
+        let default = body(&ctx);
+        install_theme(&ctx, true);
+        assert_eq!(body(&ctx), default, "Home and Shorts keep toolkit defaults");
+        install_editor_density(&ctx);
+        assert_eq!(body(&ctx), theme::type_size::BODY);
+        assert_eq!(
+            ctx.global_style().spacing.interact_size.y,
+            theme::size::FIELD
+        );
+        install_theme(&ctx, true);
+        assert_eq!(body(&ctx), default, "the next window resets the density");
+        assert_eq!(
+            ctx.global_style().spacing.interact_size.y,
+            egui::Style::default().spacing.interact_size.y
+        );
+    }
 }

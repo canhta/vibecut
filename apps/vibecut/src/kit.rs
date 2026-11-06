@@ -5,7 +5,7 @@ mod theme;
 mod widgets;
 
 pub(crate) use icons::{Icon, icon, install, tinted};
-pub(crate) use style::{install_fonts, install_theme};
+pub(crate) use style::{install_editor_density, install_fonts, install_theme};
 pub(crate) use theme::{
     accent, border, bright, disabled, disabled_icon, error_text, field, hover, icon, image_tint,
     label_font, modal, on_accent, on_scrim, panel, preview_backdrop, radius, scrim, secondary,
