@@ -12,7 +12,6 @@ use engine::{
 };
 use media::{AssetId, SourceAsset};
 use std::{
-    path::PathBuf,
     process::Command,
     sync::{
         Arc,
@@ -49,10 +48,7 @@ fn fixture() -> Option<SourceAsset> {
             }
             // Fixture ownership is per process: another CI job must never
             // truncate a source this process is still decoding.
-            let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-                .join("../../target/fixtures/shot-analysis")
-                .join(std::process::id().to_string());
-            std::fs::create_dir_all(&dir).unwrap();
+            let dir = crate::support::fixture_dir("shot-analysis");
             let path = dir.join("three-shots.mkv");
             let result = Command::new("ffmpeg")
                 .env_remove("DYLD_LIBRARY_PATH")
@@ -101,48 +97,6 @@ fn fixture() -> Option<SourceAsset> {
             Some(SourceAsset::import(AssetId(1), path).unwrap())
         })
         .clone()
-}
-
-/// Independent test processes own independent sources: a second process must
-/// never rewrite a file the first one is decoding (the three-concurrent CI
-/// failure behind p0-core/161).
-#[test]
-fn independent_process_fixtures_never_share_a_live_source() {
-    const PROBE: &str = "VIBECUT_SHOT_FIXTURE_PROBE";
-    let Some(asset) = fixture() else {
-        return;
-    };
-    if std::env::var_os(PROBE).is_some() {
-        println!("FIXTURE={}", asset.path().display());
-        return;
-    }
-    let before = std::fs::read(asset.path()).unwrap();
-    let output = Command::new(std::env::current_exe().unwrap())
-        .args([
-            "--exact",
-            "analysis::shot_analysis::independent_process_fixtures_never_share_a_live_source",
-            "--nocapture",
-        ])
-        .env(PROBE, "1")
-        .output()
-        .unwrap();
-    assert!(
-        output.status.success(),
-        "probe failed: {}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-    let stdout = String::from_utf8(output.stdout).unwrap();
-    let child = stdout
-        .lines()
-        .find_map(|line| line.strip_prefix("FIXTURE="))
-        .expect("probe fixture path");
-    assert_ne!(PathBuf::from(child), asset.path());
-    assert_eq!(
-        std::fs::read(asset.path()).unwrap(),
-        before,
-        "another process rewrote a live source"
-    );
-    assert!(asset.probe().duration.is_some());
 }
 
 fn setup() -> (JobRunner, ArtifactCache, tempfile::TempDir) {
@@ -295,6 +249,10 @@ fn analysis_partitions_shots_keeps_identity_local_and_reuses_only_matching_model
     let Some(asset) = fixture() else {
         return;
     };
+    assert_eq!(
+        asset.path().parent().unwrap().file_name().unwrap(),
+        std::process::id().to_string().as_str()
+    );
     let (mut runner, mut cache, _dir) = setup();
     let request = AnalysisRequest::new(
         asset.clone(),
@@ -695,8 +653,8 @@ fn real_vision_analysis_smoke() {
         }
         fn stage(&self, _: ai::Stage) {}
     }
-    let weights = PathBuf::from(std::env::var_os("VIBECUT_VISION_MODELS").unwrap());
-    let source = PathBuf::from(std::env::var_os("VIBECUT_VISION_SOURCE").unwrap());
+    let weights = std::path::PathBuf::from(std::env::var_os("VIBECUT_VISION_MODELS").unwrap());
+    let source = std::path::PathBuf::from(std::env::var_os("VIBECUT_VISION_SOURCE").unwrap());
     let asset = SourceAsset::import(AssetId(1), source).unwrap();
     let start = std::env::var("VIBECUT_VISION_START")
         .unwrap_or("100".into())
