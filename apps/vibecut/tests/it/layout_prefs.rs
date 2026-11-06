@@ -29,7 +29,7 @@ fn editor(preferences: Preferences) -> Editor {
 }
 
 fn build(editor: Editor) -> Harness<'static, Editor> {
-    Harness::builder()
+    crate::gpu::builder()
         .with_size(egui::vec2(1440.0, 900.0))
         .build_ui_state(|ui, editor: &mut Editor| editor.ui(ui), editor)
 }
@@ -151,7 +151,7 @@ fn frame_keeps_chrome_compact_and_window_actions_in_the_menu() {
         (1280.0, 800.0, 1.0, vibecut::catalog::Locale::Vi, true),
         (1280.0, 800.0, 2.0, vibecut::catalog::Locale::En, false),
     ] {
-        let mut harness = Harness::builder()
+        let mut harness = crate::gpu::builder()
             .with_size(egui::vec2(width, height))
             .with_pixels_per_point(scale)
             .build_ui_state(
@@ -304,7 +304,7 @@ fn hostile_window_sizes_keep_finite_nonnegative_panel_geometry() {
         egui::vec2(200.0, 100.0),
         egui::vec2(1280.0, 800.0),
     ] {
-        let mut harness = Harness::builder().with_size(size).build_ui_state(
+        let mut harness = crate::gpu::builder().with_size(size).build_ui_state(
             |ui, editor: &mut Editor| editor.ui(ui),
             editor(Preferences::default()),
         );

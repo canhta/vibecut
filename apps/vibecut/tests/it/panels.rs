@@ -243,7 +243,7 @@ fn fixture() -> Fixture {
 }
 
 fn build(editor: Editor) -> Harness<'static, Editor> {
-    Harness::builder()
+    crate::gpu::builder()
         .with_size(egui::vec2(1440.0, 900.0))
         .build_ui_state(|ui, editor: &mut Editor| editor.ui(ui), editor)
 }

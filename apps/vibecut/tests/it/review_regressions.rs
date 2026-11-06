@@ -36,10 +36,7 @@ fn prepublication_save_as_refusal_must_allow_a_different_destination() {
 }
 #[test]
 fn only_one_recovery_prompt_should_own_the_editor_at_a_time() {
-    use egui_kittest::{
-        Harness,
-        kittest::{By, Queryable},
-    };
+    use egui_kittest::kittest::{By, Queryable};
     let root = tempfile::tempdir().unwrap();
     for _ in 0..2 {
         let mut app =
@@ -54,7 +51,7 @@ fn only_one_recovery_prompt_should_own_the_editor_at_a_time() {
     let mut app =
         Workspace::new(root.path().join("recovery"), Preferences::default(), None).unwrap();
     idle(&mut app);
-    let mut h = Harness::builder()
+    let mut h = crate::gpu::builder()
         .with_size(vibecut::egui::vec2(1440.0, 900.0))
         .build_ui_state(
             |ui, a: &mut Workspace| {
@@ -82,10 +79,7 @@ fn only_one_recovery_prompt_should_own_the_editor_at_a_time() {
 
 #[test]
 fn two_recovered_projects_can_be_saved_and_left_in_sequence_without_changing_originals() {
-    use egui_kittest::{
-        Harness,
-        kittest::{By, Queryable},
-    };
+    use egui_kittest::kittest::{By, Queryable};
     let root = tempfile::tempdir().unwrap();
     let mut originals = Vec::new();
     for id in 1..=2 {
@@ -118,7 +112,7 @@ fn two_recovered_projects_can_be_saved_and_left_in_sequence_without_changing_ori
     let mut app =
         Workspace::new(root.path().join("recovery"), Preferences::default(), None).unwrap();
     idle(&mut app);
-    let mut h = Harness::builder()
+    let mut h = crate::gpu::builder()
         .with_size(vibecut::egui::vec2(1440.0, 900.0))
         .build_ui_state(
             |ui, a: &mut Workspace| {

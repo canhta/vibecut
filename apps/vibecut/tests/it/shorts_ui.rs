@@ -34,7 +34,7 @@ thread_local! {
 }
 fn harness(app: Shorts) -> Harness<'static, Shorts> {
     OPENED.set(false);
-    Harness::builder()
+    crate::gpu::builder()
         .with_size(egui::vec2(1440.0, 1000.0))
         .build_ui_state(
             |ui, a: &mut Shorts| {
@@ -222,7 +222,7 @@ fn review_actions_and_play_order_reach_preview_and_single_step_editor_insertion(
         .unwrap();
     let output = tempfile::tempdir().unwrap();
     let path = output.path().join("off-center.mp4");
-    let mut exported = Harness::builder()
+    let mut exported = crate::gpu::builder()
         .with_size(egui::vec2(1440.0, 1000.0))
         .build_ui_state(|ui, a: &mut vibecut::Editor| a.ui(ui), editor);
     exported.run_steps(3);
@@ -586,7 +586,7 @@ fn home_card_opens_a_dedicated_viewport_and_native_drop_selects_one_video() {
         assert!(std::time::Instant::now() < deadline);
         std::thread::yield_now();
     }
-    let mut h = Harness::builder()
+    let mut h = crate::gpu::builder()
         .with_size(egui::vec2(1440.0, 1000.0))
         .build_ui_state(
             |ui, a: &mut vibecut::workspace::Workspace| {

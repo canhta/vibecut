@@ -1,8 +1,5 @@
 #![allow(clippy::unwrap_used, clippy::panic)]
-use egui_kittest::{
-    Harness,
-    kittest::{By, Queryable},
-};
+use egui_kittest::kittest::{By, Queryable};
 use std::time::{Duration, Instant};
 use vibecut::{catalog::Preferences, egui, workspace::Workspace};
 fn idle(app: &mut Workspace) {
@@ -97,7 +94,7 @@ fn missing_path_creates_once_but_other_load_errors_show_retry_and_back() {
     std::fs::write(&bad, b"{").unwrap();
     app.open(bad).unwrap();
     idle(&mut app);
-    let mut h = Harness::builder()
+    let mut h = crate::gpu::builder()
         .with_size(egui::vec2(1440.0, 900.0))
         .build_ui_state(
             |ui, a: &mut Workspace| {
@@ -124,7 +121,7 @@ fn inline_rename_commit_cancel_and_window_close_guard_use_real_widgets() {
     let mut app = app(root.path());
     app.create().unwrap();
     idle(&mut app);
-    let mut h = Harness::builder()
+    let mut h = crate::gpu::builder()
         .with_size(egui::vec2(1440.0, 900.0))
         .build_ui_state(
             |ui, a: &mut Workspace| {
@@ -244,7 +241,7 @@ fn recovery_prompt_recovers_copy_and_requires_save_as() {
     idle(&mut first);
     drop(first);
     let second = app(root.path());
-    let mut h = Harness::builder()
+    let mut h = crate::gpu::builder()
         .with_size(egui::vec2(1440.0, 900.0))
         .build_ui_state(
             |ui, a: &mut Workspace| {
@@ -325,7 +322,7 @@ fn create_failure_is_recoverable_and_busy_save_as_retains_the_editor() {
 fn loading_and_exiting_indicators_cover_real_background_boundaries() {
     let root = tempfile::tempdir().unwrap();
     let app = app(root.path());
-    let mut h = Harness::builder()
+    let mut h = crate::gpu::builder()
         .with_size(egui::vec2(1440.0, 900.0))
         .build_ui_state(
             |ui, a: &mut Workspace| {
@@ -372,7 +369,7 @@ fn corrupt_recovery_candidate_is_skipped_with_a_visible_diagnostic() {
         .unwrap();
     std::fs::write(journal, b"{").unwrap();
     let second = app(root.path());
-    let mut h = Harness::builder()
+    let mut h = crate::gpu::builder()
         .with_size(egui::vec2(1440.0, 900.0))
         .build_ui_state(
             |ui, a: &mut Workspace| {
@@ -537,7 +534,7 @@ fn project_windows_keep_independent_edits_undo_and_playback_and_reopen_focuses_o
         Err(project::Error::Busy)
     ));
     // Explicit window harness targets preserve the same automation ids in either window.
-    let mut harness = Harness::builder()
+    let mut harness = crate::gpu::builder()
         .with_size(egui::vec2(1440.0, 900.0))
         .build_ui_state(
             move |ui, a: &mut Workspace| {

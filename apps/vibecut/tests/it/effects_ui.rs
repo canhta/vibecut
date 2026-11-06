@@ -229,7 +229,7 @@ fn fixture() -> Fixture {
 }
 
 fn build(editor: Editor) -> Harness<'static, Editor> {
-    Harness::builder()
+    crate::gpu::builder()
         .with_size(egui::vec2(1440.0, 900.0))
         .build_ui_state(|ui, editor: &mut Editor| editor.ui(ui), editor)
 }
@@ -786,7 +786,7 @@ fn effects_panel_renders_tiles_stack_and_preview() {
         let mut editor = fixture.editor;
         add_effect(&mut editor.session, video, "blur", true);
         add_effect(&mut editor.session, video, "blur2", false);
-        let mut harness = Harness::builder()
+        let mut harness = crate::gpu::builder()
             .with_size(egui::vec2(1440.0, 900.0))
             .with_pixels_per_point(scale)
             .build_ui_state(|ui, editor: &mut Editor| editor.ui(ui), editor);

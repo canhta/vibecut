@@ -208,7 +208,7 @@ pub(crate) fn fixture() -> Fixture {
 }
 
 pub(crate) fn harness(editor: Editor) -> Harness<'static, Editor> {
-    Harness::builder()
+    crate::gpu::builder()
         .with_size(egui::vec2(1440.0, 900.0))
         .build_ui_state(|ui, editor: &mut Editor| editor.ui(ui), editor)
 }
@@ -1487,7 +1487,7 @@ fn mixed_text_background_is_reported_as_indeterminate() {
         })
         .unwrap();
     fixture.editor.selection = [first, second].into_iter().collect();
-    let mut harness = Harness::builder()
+    let mut harness = crate::gpu::builder()
         .with_size(egui::vec2(1440.0, 1600.0))
         .build_ui_state(|ui, editor: &mut Editor| editor.ui(ui), fixture.editor);
     harness.run_steps(3);
@@ -1502,7 +1502,7 @@ fn mixed_text_background_is_reported_as_indeterminate() {
 #[test]
 fn mixed_text_inspector_applies_one_field_and_restores_selected_items() {
     let (fixture, first, second) = two_text_fixture();
-    let mut harness = Harness::builder()
+    let mut harness = crate::gpu::builder()
         .with_size(egui::vec2(1440.0, 1600.0))
         .build_ui_state(|ui, editor: &mut Editor| editor.ui(ui), fixture.editor);
     harness.run_steps(3);
@@ -1597,7 +1597,7 @@ fn text_insert_button_fits_the_media_panel_in_both_locales() {
         for width in [1280.0, 1440.0] {
             let mut fixture = fixture();
             fixture.editor.preferences.locale = locale;
-            let mut harness = Harness::builder()
+            let mut harness = crate::gpu::builder()
                 .with_size(egui::vec2(width, 900.0))
                 .build_ui_state(|ui, editor: &mut Editor| editor.ui(ui), fixture.editor);
             harness.run_steps(3);
@@ -1628,7 +1628,7 @@ fn text_insert_button_fits_the_media_panel_in_both_locales() {
 #[test]
 fn text_position_controls_are_reachable_in_a_normal_height_window() {
     let fixture = fixture();
-    let mut harness = Harness::builder()
+    let mut harness = crate::gpu::builder()
         .with_size(egui::vec2(1280.0, 720.0))
         .build_ui_state(|ui, editor: &mut Editor| editor.ui(ui), fixture.editor);
     harness.run_steps(3);
@@ -1663,7 +1663,7 @@ fn text_insert_and_style_controls_use_one_undo_step_per_edit() {
         .playback
         .seek(Tick(7 * SECOND), false, before.clone())
         .unwrap();
-    let mut harness = Harness::builder()
+    let mut harness = crate::gpu::builder()
         .with_size(egui::vec2(1440.0, 1600.0))
         .build_ui_state(|ui, editor: &mut Editor| editor.ui(ui), fixture.editor);
     harness.run_steps(3);
@@ -2024,7 +2024,7 @@ fn drop_at_track_edges_creates_one_track_and_one_undo_step() {
         } else {
             fixture.video_b
         };
-        let mut h = Harness::builder()
+        let mut h = crate::gpu::builder()
             .with_size(egui::vec2(1728.0, 1200.0))
             .build_ui_state(|ui, e: &mut Editor| e.ui(ui), fixture.editor);
         h.run_steps(3);

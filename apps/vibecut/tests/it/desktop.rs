@@ -77,7 +77,7 @@ fn open_window_menu(harness: &mut Harness<Editor>) {
 }
 #[test]
 fn every_widget_has_unique_locale_stable_id_and_input_reaches_engine() {
-    let mut harness = Harness::builder()
+    let mut harness = crate::gpu::builder()
         .with_size(egui::vec2(1440.0, 900.0))
         .build_ui_state(|ui, editor: &mut Editor| editor.ui(ui), editor());
     harness.run_steps(3);
@@ -176,7 +176,7 @@ fn transport_widget_identity_survives_preview_frame_arrival_and_empty_transition
     // with its loading label or with the frame. Controls below it must keep
     // their egui widget id (the AccessKit node id): egui drops a click when the
     // press and release frames resolve to different widget ids.
-    let mut harness = Harness::builder()
+    let mut harness = crate::gpu::builder()
         .with_size(egui::vec2(1440.0, 900.0))
         .build_ui_state(|ui, editor: &mut Editor| editor.ui(ui), editor());
     harness.run_steps(3);
@@ -228,7 +228,7 @@ fn transport_widget_identity_survives_preview_frame_arrival_and_empty_transition
 
 #[test]
 fn locale_change_uses_app_history_and_leaves_project_history_untouched() {
-    let mut harness = Harness::builder()
+    let mut harness = crate::gpu::builder()
         .with_size(egui::vec2(1440.0, 900.0))
         .build_ui_state(|ui, editor: &mut Editor| editor.ui(ui), empty_editor());
     harness.run_steps(3);
@@ -437,7 +437,7 @@ fn vietnamese_light_controls_fit_the_minimum_window() {
     let mut state = editor();
     state.preferences.locale = Locale::Vi;
     state.preferences.dark = false;
-    let mut harness = Harness::builder()
+    let mut harness = crate::gpu::builder()
         .with_size(egui::vec2(1280.0, 800.0))
         .build_ui_state(|ui, editor: &mut Editor| editor.ui(ui), state);
     harness.run_steps(3);
@@ -471,7 +471,7 @@ fn empty_player_keeps_its_accessible_instruction_after_a_black_frame_is_ready() 
         std::thread::sleep(Duration::from_millis(2));
     }
     let editor = Editor::new(session, playback, Preferences::default());
-    let mut harness = Harness::builder()
+    let mut harness = crate::gpu::builder()
         .with_size(egui::vec2(1280.0, 800.0))
         .build_ui_state(|ui, editor: &mut Editor| editor.ui(ui), editor);
     harness.run_steps(3);
@@ -481,7 +481,7 @@ fn empty_player_keeps_its_accessible_instruction_after_a_black_frame_is_ready() 
 
 #[test]
 fn transport_k_pauses_with_keyboard_focus_on_a_control() {
-    let mut harness = Harness::builder()
+    let mut harness = crate::gpu::builder()
         .with_size(egui::vec2(1440.0, 900.0))
         .build_ui_state(|ui, editor: &mut Editor| editor.ui(ui), editor());
     harness.run_steps(3);
@@ -607,7 +607,7 @@ fn retry_widget_recovers_after_a_transient_panic_and_clears_its_error_state() {
     )
     .unwrap();
     let editor = Editor::new(session, playback, Preferences::default());
-    let mut harness = Harness::builder()
+    let mut harness = crate::gpu::builder()
         .with_size(egui::vec2(1440.0, 900.0))
         .build_ui_state(|ui, editor: &mut Editor| editor.ui(ui), editor);
     let deadline = Instant::now() + Duration::from_secs(5);

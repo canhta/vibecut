@@ -103,10 +103,7 @@ fn mcp_real_app_background_attach_never_creates_a_window_or_takes_focus() {
 // Additional rows of the control behaviour: real socket -> inbox -> editor,
 // while a kittest caption field still owns its uncommitted draft.
 fn socket_edits_activate_editor() {
-    use egui_kittest::{
-        Harness,
-        kittest::{By, Queryable},
-    };
+    use egui_kittest::kittest::{By, Queryable};
     use vibecut::{catalog::Preferences, egui, workspace::Workspace};
 
     for (command, draft) in [("delete", false), ("project.rename", true)] {
@@ -126,7 +123,7 @@ fn socket_edits_activate_editor() {
             .unwrap()
             .id;
         let id = workspace.register_editor(Box::new(editor));
-        let mut h = Harness::builder()
+        let mut h = crate::gpu::builder()
             .with_size(egui::vec2(1440.0, 1000.0))
             .build_ui_state(
                 |ui, workspace: &mut Workspace| workspace.focused_editor_mut().unwrap().ui(ui),

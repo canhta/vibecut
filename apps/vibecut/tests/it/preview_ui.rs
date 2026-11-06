@@ -77,7 +77,7 @@ fn editor(project: Project, preferences: Preferences) -> Editor {
 }
 
 fn build(editor: Editor) -> Harness<'static, Editor> {
-    let mut h = Harness::builder()
+    let mut h = crate::gpu::builder()
         .with_size(egui::vec2(1440.0, 900.0))
         .build_ui_state(|ui, editor: &mut Editor| editor.ui(ui), editor);
     h.run_steps(3);
@@ -602,7 +602,7 @@ fn pending_preview_invalidates_presented_readiness_until_the_replacement_is_poll
         std::thread::sleep(std::time::Duration::from_millis(2));
     }
     // The dedicated preview surface deliberately does not poll: its host owns the clock.
-    let mut h = Harness::builder()
+    let mut h = crate::gpu::builder()
         .with_size(egui::vec2(628.0, 532.0))
         .build_ui_state(|ui, model: &mut Editor| model.preview_ui(ui), model);
     h.run_steps(3);

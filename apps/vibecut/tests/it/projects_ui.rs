@@ -70,7 +70,7 @@ impl Fixture {
         let app =
             Workspace::with_projects(self.recovery(), self.projects.clone(), preferences, None)
                 .unwrap();
-        let mut harness = Harness::builder()
+        let mut harness = crate::gpu::builder()
             .with_size(egui::vec2(1440.0, 900.0))
             .build_ui_state(|ui, app: &mut Workspace| app.ui(ui), app);
         idle(&mut harness);

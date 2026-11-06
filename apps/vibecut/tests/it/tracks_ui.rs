@@ -37,7 +37,7 @@ fn editor() -> Editor {
 #[test]
 fn track_headers_remain_operable_at_display_density() {
     for scale in [1.0, 2.0] {
-        let mut h = Harness::builder()
+        let mut h = crate::gpu::builder()
             .with_size(egui::vec2(1728.0, 1200.0))
             .with_pixels_per_point(scale)
             .build_ui_state(|ui, e: &mut Editor| e.ui(ui), editor());
@@ -242,7 +242,7 @@ fn drag(h: &mut Harness<'_, Editor>, from: egui::Pos2, to: egui::Pos2) {
 #[test]
 fn rename_commits_on_enter_and_esc_keeps_the_old_name() {
     let (editor, track, _) = track_editor();
-    let mut h = Harness::builder()
+    let mut h = crate::gpu::builder()
         .with_size(egui::vec2(1728.0, 1200.0))
         .build_ui_state(|ui, e: &mut Editor| e.ui(ui), editor);
     h.run_steps(4);
@@ -317,7 +317,7 @@ fn rename_commits_on_enter_and_esc_keeps_the_old_name() {
 #[test]
 fn drag_reorder_stays_inside_the_overlay_section() {
     let (editor, _, _) = track_editor();
-    let mut h = Harness::builder()
+    let mut h = crate::gpu::builder()
         .with_size(egui::vec2(1728.0, 1200.0))
         .build_ui_state(|ui, e: &mut Editor| e.ui(ui), editor);
     h.run_steps(4);
@@ -392,7 +392,7 @@ fn video_and_main_rename_fields_do_not_cover_output_controls() {
         .find(|track| track.kind == TrackKind::Video)
         .unwrap()
         .id;
-    let mut h = Harness::builder()
+    let mut h = crate::gpu::builder()
         .with_size(egui::vec2(1728.0, 1200.0))
         .build_ui_state(|ui, e: &mut Editor| e.ui(ui), editor);
     h.run_steps(4);
@@ -468,7 +468,7 @@ fn rename_cancellation_restores_shortcuts_after_track_exit() {
                     .unwrap();
             }
         }
-        let mut h = Harness::builder()
+        let mut h = crate::gpu::builder()
             .with_size(egui::vec2(1728.0, 1200.0))
             .build_ui_state(|ui, e: &mut Editor| e.ui(ui), editor);
         h.run_steps(4);
@@ -571,7 +571,7 @@ fn lock_refuses_structural_edits_and_add_track_uses_the_active_kind() {
             editor.session.project().clone(),
         )
         .unwrap();
-    let mut h = Harness::builder()
+    let mut h = crate::gpu::builder()
         .with_size(egui::vec2(1728.0, 1200.0))
         .build_ui_state(|ui, e: &mut Editor| e.ui(ui), editor);
     h.run_steps(4);

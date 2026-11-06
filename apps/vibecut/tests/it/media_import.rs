@@ -300,7 +300,7 @@ fn drop_file(path: impl Into<PathBuf>) -> Arc<dyn egui::DroppedFile + Send + Syn
 fn drag_drop_imports_good_files_and_reports_typed_partial_failure() {
     let mut editor = editor();
     editor.set_import_probe(Arc::new(Probe::default())).unwrap();
-    let mut harness = Harness::builder()
+    let mut harness = crate::gpu::builder()
         .with_size(egui::vec2(1440.0, 900.0))
         .build_ui_state(|ui, editor: &mut Editor| editor.ui(ui), editor);
     harness.run_steps(2);
@@ -354,7 +354,7 @@ fn picker_result_imports_through_workspace_and_real_editor_widgets() {
         .unwrap()
         .set_import_probe(Arc::new(Probe::default()))
         .unwrap();
-    let mut harness = Harness::builder()
+    let mut harness = crate::gpu::builder()
         .with_size(egui::vec2(1440.0, 900.0))
         .build_ui_state(
             |ui, app: &mut Workspace| {
@@ -694,7 +694,7 @@ fn import_overlay_disables_import_and_insert_and_cancel_stops_batch() {
                 .collect(),
         )
         .unwrap();
-    let mut harness = Harness::builder()
+    let mut harness = crate::gpu::builder()
         .with_size(egui::vec2(1440.0, 900.0))
         .build_ui_state(|ui, editor: &mut Editor| editor.ui(ui), editor);
     let deadline = Instant::now() + Duration::from_secs(5);
@@ -770,7 +770,7 @@ fn multi_select_insert_targets_only_selected_assets_in_one_undo_step() {
     playback.set_device_available(true);
     let mut editor = Editor::new(session, playback, Preferences::default());
     validate_assets(&mut editor);
-    let mut harness = Harness::builder()
+    let mut harness = crate::gpu::builder()
         .with_size(egui::vec2(1728.0, 1200.0))
         .build_ui_state(|ui, editor: &mut Editor| editor.ui(ui), editor);
     harness.run_steps(3);
@@ -1029,7 +1029,7 @@ fn ephemeral_assets_are_hidden_and_cannot_enter_library_selection() {
     let mut editor = Editor::new(session, playback, Preferences::default());
     validate_assets(&mut editor);
     editor.select_media([AssetId(2)]);
-    let mut harness = Harness::builder()
+    let mut harness = crate::gpu::builder()
         .with_size(egui::vec2(1440.0, 900.0))
         .build_ui_state(|ui, editor: &mut Editor| editor.ui(ui), editor);
     harness.run_steps(3);

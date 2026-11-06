@@ -5,7 +5,6 @@
     clippy::panic,
     clippy::expect_used
 )]
-use egui_kittest::Harness;
 use engine::{ByteBudget, Session};
 use media::{
     AssetData, AssetId, ColorInfo, ContentHash, Decodability, ImportedSource, MediaError,
@@ -426,7 +425,7 @@ fn media_panel_renders_probing_ready_and_unsupported_badges() {
         .start_import(vec![std::env::temp_dir().join("vibecut-test/shot.mp4")])
         .unwrap();
     tick_until(&mut editor, |_| thumbs.started());
-    let mut harness = Harness::builder()
+    let mut harness = crate::gpu::builder()
         .with_size(egui::vec2(1728.0, 1200.0))
         .build_ui_state(|ui, editor: &mut Editor| editor.ui(ui), editor);
     harness.run_steps(3);
@@ -513,7 +512,7 @@ fn blocked_probe_has_a_pending_row_and_publishes_only_validated_metadata() {
         editor.tick();
         assert!(editor.session.project().data().assets.is_empty());
         assert_eq!(state(&editor, 0), "probing");
-        let mut harness = Harness::builder()
+        let mut harness = crate::gpu::builder()
             .with_size(egui::vec2(1728.0, 1200.0))
             .build_ui_state(|ui, editor: &mut Editor| editor.ui(ui), editor);
         harness.run_steps(2);
@@ -662,7 +661,7 @@ fn undo_releases_retained_thumbnail_and_texture_allowances() {
     );
     let texture_count = Arc::new(AtomicUsize::new(0));
     let uploaded = texture_count.clone();
-    let mut harness = Harness::builder()
+    let mut harness = crate::gpu::builder()
         .with_size(egui::vec2(1728.0, 1200.0))
         .build_ui_state(
             move |ui, editor: &mut Editor| {

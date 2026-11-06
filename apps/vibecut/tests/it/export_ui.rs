@@ -108,7 +108,7 @@ fn editor(empty: bool, source: bool) -> Editor {
     Editor::new(session, playback, Preferences::default())
 }
 fn harness(editor: Editor) -> Harness<'static, Editor> {
-    Harness::builder()
+    crate::gpu::builder()
         .with_size(egui::vec2(1280.0, 800.0))
         .build_ui_state(|ui, e: &mut Editor| e.ui(ui), editor)
 }
@@ -898,7 +898,7 @@ fn closing_one_window_preserves_another_windows_dirty_edit_and_running_export() 
     assert!(!app.ready_to_close());
     app.focus(first).unwrap();
     app.windows.get_mut(&first).unwrap().request_close();
-    let mut h = Harness::builder()
+    let mut h = crate::gpu::builder()
         .with_size(egui::vec2(1440.0, 900.0))
         .build_ui_state(
             move |ui, a: &mut Workspace| {

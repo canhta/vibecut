@@ -718,7 +718,7 @@ fn shortcuts_dialog_tabs_switch_and_capture_every_tab_at_two_x() {
     let fixture = fixture();
     let mut editor = fixture.editor;
     editor.open_shortcuts();
-    let mut harness = egui_kittest::Harness::builder()
+    let mut harness = crate::gpu::builder()
         .with_size(egui::vec2(1440.0, 900.0))
         .with_pixels_per_point(2.0)
         .build_ui_state(|ui, editor: &mut Editor| editor.ui(ui), editor);

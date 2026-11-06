@@ -214,7 +214,7 @@ fn manager(dir: &Path, models: Vec<Model>, http: Arc<Http>, io: Arc<Io>) -> Mode
     ModelManager::with_transfers(budget, models, ModelTransfers::new(cache, http, io)).unwrap()
 }
 fn harness(editor: Editor) -> Harness<'static, Editor> {
-    Harness::builder()
+    crate::gpu::builder()
         .with_size(egui::vec2(1280.0, 800.0))
         .build_ui_state(|ui, editor: &mut Editor| editor.ui(ui), editor)
 }
@@ -495,7 +495,7 @@ fn editor_header_opens_the_manager_without_a_transfer() {
     );
     let mut editor = editor();
     editor.set_model_manager(manager);
-    let mut harness = Harness::builder()
+    let mut harness = crate::gpu::builder()
         .with_size(egui::vec2(1280.0, 800.0))
         .build_ui_state(|ui, editor: &mut Editor| editor.ui(ui), editor);
     harness.run_steps(2);
@@ -527,7 +527,7 @@ fn model_manager_screenshot_is_available_at_both_scales() {
         let mut editor = editor();
         editor.set_model_manager(manager);
         editor.open_models().unwrap();
-        let mut harness = Harness::builder()
+        let mut harness = crate::gpu::builder()
             .with_size(egui::vec2(1280.0, 800.0))
             .with_pixels_per_point(scale)
             .build_ui_state(|ui, editor: &mut Editor| editor.ui(ui), editor);
@@ -608,7 +608,7 @@ fn project_windows_share_one_model_service_across_editor_close() {
         .open_model("fixture-shared")
         .unwrap();
     app.focus(first).unwrap();
-    let mut h = Harness::builder()
+    let mut h = crate::gpu::builder()
         .with_size(egui::vec2(1440.0, 900.0))
         .build_ui_state(
             |ui, a: &mut Workspace| {

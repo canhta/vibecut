@@ -34,7 +34,7 @@ fn scene_sheet_switches_and_multideletes_with_main_protected() {
         )
         .unwrap();
         let editor = Editor::new(session, playback, Preferences::default());
-        let mut h = Harness::builder()
+        let mut h = crate::gpu::builder()
             .with_size(egui::vec2(1728.0, 1200.0))
             .with_pixels_per_point(scale)
             .build_ui_state(|ui, e: &mut Editor| e.ui(ui), editor);
@@ -129,7 +129,7 @@ fn scenes_len(h: &Harness<'_, Editor>) -> usize {
 #[test]
 fn deleting_a_scene_with_a_rename_draft_preserves_escape_dismissal() {
     for (cancel_confirmation, press_enter) in [(false, false), (true, false), (true, true)] {
-        let mut h = Harness::builder()
+        let mut h = crate::gpu::builder()
             .with_size(egui::vec2(1728.0, 1200.0))
             .build_ui_state(|ui, e: &mut Editor| e.ui(ui), editor_with_scene_session());
         click(&mut h, "scene.open");
@@ -198,7 +198,7 @@ fn deleting_a_scene_with_a_rename_draft_preserves_escape_dismissal() {
 }
 #[test]
 fn undoing_a_scene_creation_dismisses_its_rename_draft() {
-    let mut h = Harness::builder()
+    let mut h = crate::gpu::builder()
         .with_size(egui::vec2(1728.0, 1200.0))
         .build_ui_state(|ui, e: &mut Editor| e.ui(ui), editor_with_scene_session());
     let before = h.state().session.project().clone();
@@ -228,7 +228,7 @@ fn undoing_a_scene_creation_dismisses_its_rename_draft() {
 }
 #[test]
 fn deleting_another_scene_preserves_the_rename_draft() {
-    let mut h = Harness::builder()
+    let mut h = crate::gpu::builder()
         .with_size(egui::vec2(1728.0, 1200.0))
         .build_ui_state(|ui, e: &mut Editor| e.ui(ui), editor_with_scene_session());
     click(&mut h, "scene.open");
@@ -273,7 +273,7 @@ fn deleting_another_scene_preserves_the_rename_draft() {
 }
 #[test]
 fn create_switches_to_an_empty_scene_and_history_keeps_the_project_exact() {
-    let mut h = Harness::builder()
+    let mut h = crate::gpu::builder()
         .with_size(egui::vec2(1728.0, 1200.0))
         .build_ui_state(|ui, e: &mut Editor| e.ui(ui), editor_with_scene_session());
     h.run_steps(3);
@@ -312,7 +312,7 @@ fn create_switches_to_an_empty_scene_and_history_keeps_the_project_exact() {
 }
 #[test]
 fn rename_commits_cancels_renames_main_and_survives_persistence() {
-    let mut h = Harness::builder()
+    let mut h = crate::gpu::builder()
         .with_size(egui::vec2(1728.0, 1200.0))
         .build_ui_state(|ui, e: &mut Editor| e.ui(ui), editor_with_scene_session());
     h.run_steps(3);

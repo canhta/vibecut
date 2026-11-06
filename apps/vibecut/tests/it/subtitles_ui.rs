@@ -30,7 +30,7 @@ use vibecut::{
 mod fixture;
 use fixture::{editor, lang};
 fn harness(editor: Editor, scale: f32) -> Harness<'static, Editor> {
-    Harness::builder()
+    crate::gpu::builder()
         .with_size(egui::vec2(1440.0, 1000.0))
         .with_pixels_per_point(scale)
         .build_ui_state(|ui, e: &mut Editor| e.ui(ui), editor)
