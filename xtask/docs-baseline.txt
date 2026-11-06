@@ -1,0 +1,60 @@
+index	docs/adr/0001-project-foundations.md	not listed in docs/README.md
+index	docs/adr/0002-desktop-media-and-time.md	not listed in docs/README.md
+index	docs/adr/0003-whisper-callback-boundary.md	not listed in docs/README.md
+index	docs/agents/domain.md	not listed in docs/README.md
+index	docs/engineering/commands.md	not listed in docs/README.md
+index	docs/engineering/structure.md	not listed in docs/README.md
+index	docs/product/mcp.md	not listed in docs/README.md
+index	docs/product/tokens.md	not listed in docs/README.md
+map	apps/vibecut-cli/README.md	module map has no row for folder `commands/ai`
+map	apps/vibecut-cli/README.md	module map has no row for folder `commands/catalog`
+map	apps/vibecut-cli/README.md	module map has no row for folder `commands/libraries`
+map	apps/vibecut-cli/README.md	module map has no row for folder `commands/media/batch`
+map	apps/vibecut-cli/README.md	module map has no row for folder `commands/media`
+map	apps/vibecut-cli/README.md	module map has no row for folder `commands/project`
+map	apps/vibecut/README.md	README has no module map table
+map	crates/ai/README.md	README has no module map table
+map	crates/captions/README.md	README has no module map table
+map	crates/clip-eval/README.md	README has no module map table
+map	crates/engine/README.md	module map has no row for folder `analysis/shot_analysis`
+map	crates/engine/README.md	module map has no row for folder `libraries/font_catalog`
+map	crates/engine/README.md	module map has no row for folder `libraries/sound_library`
+map	crates/engine/README.md	module map has no row for folder `runtime/cache_storage`
+map	crates/engine/README.md	module map has no row for folder `runtime/staged_publication`
+map	crates/engine/README.md	module map has no row for folder `session/edit`
+map	crates/engine/README.md	module map has no row for folder `shorts/batch_export`
+map	crates/engine/README.md	module map has no row for folder `shorts/suggestion`
+map	crates/engine/README.md	module map has no row for folder `store/recovery_workflow`
+map	crates/media/README.md	README has no module map table
+map	crates/project/README.md	README has no module map table
+map	crates/render/README.md	README has no module map table
+map	crates/text/README.md	README has no module map table
+map	crates/time/README.md	README has no module map table
+text	apps/vibecut/README.md	tracker id `p1-parity/33`
+text	apps/vibecut/README.md	tracker id `p1-parity/75`
+text	apps/vibecut/README.md	tracker id `p1-parity/97`
+text	assets/icons/phosphor/README.md	tracker id `p0-core/39`
+text	assets/icons/phosphor/README.md	tracker id `p1-parity/06`
+text	assets/icons/phosphor/README.md	tracker id `p1-parity/09`
+text	assets/icons/phosphor/README.md	tracker id `p1-parity/117`
+text	assets/icons/phosphor/README.md	tracker id `p1-parity/54`
+text	crates/ai/README.md	tracker id `p0-core/14`
+text	crates/ai/README.md	tracker id `p1-clips/01`
+text	crates/ai/README.md	tracker id `p1-clips/13`
+text	crates/ai/README.md	tracker id `p1-clips/14`
+text	crates/ai/README.md	tracker id `p1-clips/15`
+text	crates/ai/README.md	tracker id `p2-dubbing/06`
+text	crates/media/README.md	tracker id `p0-core/78`
+text	crates/media/README.md	tracker id `p1-clips/12`
+text	crates/media/README.md	tracker id `ticket 18`
+text	crates/media/tests/fixtures/vision/README.md	tracker id `p1-clips/12`
+text	crates/render/README.md	tracker id `p0-core/78`
+text	docs/engineering/verification.md	tracker id `ticket 02`
+text	docs/engineering/workflows.md	tracker id `p0-core/44`
+text	docs/product/keyboard.md	tracker id `p1-parity/16`
+text	docs/product/keyboard.md	tracker id `p1-parity/20`
+text	docs/product/ui.md	tracker id `ticket 117`
+text	docs/product/ui.md	tracker id `ticket 120`
+text	docs/product/ui.md	tracker id `ticket 126`
+text	packaging/README.md	tracker id `p0-core/44`
+text	packaging/README.md	tracker id `p2-platform/02`

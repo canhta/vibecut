@@ -3,6 +3,7 @@ mod build;
 mod checkout;
 mod cleanup;
 mod distribution;
+mod docs;
 mod ffmpeg;
 mod i18n;
 mod measure;
@@ -55,6 +56,7 @@ fn checks(root: &Path) -> Result<(), String> {
     i18n::check(root)?;
     names(root)?;
     modules::check(root)?;
+    docs::check(root)?;
     checked(root, env!("CARGO"), &["fmt", "--all", "--", "--check"])?;
     Ok(())
 }
@@ -507,7 +509,8 @@ fn run() -> Result<ExitCode, String> {
             layers(root)?;
             assets(root)?;
             i18n::check(root)?;
-            names(root)
+            names(root)?;
+            docs::check(root)
         }
         ["i18n"] => i18n::check(root),
         ["new-crate", name] => new_crate(root, name),
