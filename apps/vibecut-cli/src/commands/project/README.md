@@ -3,7 +3,7 @@
 `control` is the first external consumer of the
 [engine control contract](../../../../../crates/engine/src/control/README.md#control-admission-revisions-and-receipts).
 One process is one engine Session: it opens the project under the
-[writer lease](../../../../../crates/project/src/writer/README.md#writer-lease-and-save-acknowledgement)
+[writer lease](../../../../../crates/project/src/persistence/README.md#writer-lease-and-save-acknowledgement)
 before reading, holds it through the final save, and releases it on exit. Requests
 are newline-delimited JSON objects on stdin (`request_id`, `command`, `params`, and
 optionally `idempotency_key`, `base_rev`, `api_version`, `registry_hash`,
@@ -40,7 +40,7 @@ stops with the process and unsaved edits are lost. Use `job_cancel` for graceful
 job cancellation.
 
 `exec` uses [engine commands](../../../../../crates/engine/src/session/README.md#public-entry-points)
-and holds the [project lease](../../../../../crates/project/src/writer/README.md#writer-lease-and-save-acknowledgement)
+and holds the [project lease](../../../../../crates/project/src/persistence/README.md#writer-lease-and-save-acknowledgement)
 from load through save. Scene commands use that same registry. Export uses the saved
 active scene (including its derived duration) and
 [render admission](../../../../../crates/render/src/export/README.md#export-and-publication) through

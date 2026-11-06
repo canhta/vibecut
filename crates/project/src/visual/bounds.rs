@@ -1,3 +1,4 @@
+//! JSON byte, nesting and string budgets applied before typed deserialization.
 use crate::{Error, Result};
 /// Bounds apply before any typed JSON allocation, including ignored fields.
 pub const MAX_BYTES: usize = 16 << 20;

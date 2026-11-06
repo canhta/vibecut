@@ -230,7 +230,7 @@ returned. Commands perform no IO or retries; processing lifecycle is described b
 
 ## Keyframe commands
 
-Project owns the [parameter model and evaluator](../../../../project/src/animation/README.md#animated-parameters).
+Project owns the [parameter model and evaluator](../../../../project/src/animation/README.md#animated-parameters-and-retime).
 Engine adds the registered `keyframes.set_param`, `keyframes.add`,
 `keyframes.remove`, `keyframes.retime`, `keyframes.set_handle`,
 `keyframes.scale_time`, `keyframes.toggle_at`, `keyframes.delete_selection` and
@@ -359,5 +359,5 @@ no longer form a contiguous chain reaching the cut, then revalidate the remainin
 side extents. Splits retain the original retime processing window for both video
 mapping and audio replay. Failed edits publish
 neither item nor transition changes. Audio remains on its existing mixer path;
-these transitions are video-only. [Project](../../../../project/src/transition/README.md#video-transitions)
+these transitions are video-only. [Project](../../../../project/src/visual/README.md#video-transitions)
 owns the admitted kinds and invariant mathematics.

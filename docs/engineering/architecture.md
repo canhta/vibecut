@@ -28,9 +28,9 @@ The [glossary](../../GLOSSARY.md) owns domain definitions; crate READMEs own con
 | Area | Contract owner |
 |---|---|
 | SourceAsset, codecs, probe, packet/frame timing | [media](../../crates/media/src/read/README.md) |
-| Project, scenes, validation, persistence, writer lease | [project](../../crates/project/src/writer/README.md#writer-lease-and-save-acknowledgement) |
-| Video transitions | [project model/invariants](../../crates/project/src/transition/README.md#video-transitions), [engine edits](../../crates/engine/src/session/edit/README.md#video-transitions), [render evaluation](../../crates/render/src/scene/README.md#video-transitions) |
-| Param and keyframes | [project animation](../../crates/project/src/animation/README.md#animated-parameters) |
+| Project, scenes, validation, persistence, writer lease | [project](../../crates/project/src/persistence/README.md#writer-lease-and-save-acknowledgement) |
+| Video transitions | [project model/invariants](../../crates/project/src/visual/README.md#video-transitions), [engine edits](../../crates/engine/src/session/edit/README.md#video-transitions), [render evaluation](../../crates/render/src/scene/README.md#video-transitions) |
+| Param and keyframes | [project animation](../../crates/project/src/animation/README.md#animated-parameters-and-retime) |
 | SourceRange | [time](../../crates/time/README.md) |
 | Transcript, Cue, CueStyle, EditMapping, LanguageProfile | [captions](../../crates/captions/README.md) |
 | Managed catalog, copied-media publication and catalog history | [engine library](../../crates/engine/src/store/README.md#managed-project-library); project retains metadata/persistence |
@@ -56,7 +56,7 @@ Engine wraps media/render/AI execution, supplying progress and cancellation hook
 
 Every project mutation goes through the engine registry; UI/CLI/MCP/plugins translate their transport into it. CLI owns parsing/typed exit codes, MCP tools/transports, app widgets/preferences/transient state. A shared control library needs working CLI and MCP consumers; until then its first adapter owns the code.
 
-Per-project view state stays outside editable content and undo: engine Session exposes its command, project owns the bounded [metadata sidecar](../../crates/project/src/metadata/README.md#optional-project-metadata) under WriterLease. Engine owns [recovery scheduling, session liveness and save acknowledgement](../../crates/engine/src/store/recovery_workflow/README.md#session-recovery-and-save-acknowledgement); project owns snapshot format/writes/rotation, app presents recovery choices.
+Per-project view state stays outside editable content and undo: engine Session exposes its command, project owns the bounded [metadata sidecar](../../crates/project/src/persistence/README.md#optional-project-metadata) under WriterLease. Engine owns [recovery scheduling, session liveness and save acknowledgement](../../crates/engine/src/store/recovery_workflow/README.md#session-recovery-and-save-acknowledgement); project owns snapshot format/writes/rotation, app presents recovery choices.
 
 ## Languages
 

@@ -6,25 +6,26 @@ engine; media owns `SourceAsset`; captions owns cue content and language tags.
 Project also owns item-relative parameter/keyframe data, validation, evaluation and
 time propagation. No codecs, widgets, device state, scheduling or effect execution.
 
-| Module | Responsibility | Contract |
-|---|---|---|
-| `model.rs` | Owns the project, timeline, scenes and item model. | [Model](src/model/README.md) |
-| `bounds.rs` | Holds canvas, audio and volume bounds. | [Canvas bounds](src/bounds/README.md) |
-| `typography.rs` | Defines text item typography. | [Text typography](src/typography/README.md) |
-| `retime.rs` | Owns playback-rate mappings and split/trim edges. | [Retime](src/retime/README.md) |
-| `transform.rs` | Owns transform units, defaults and clamps. | [Transform](src/transform/README.md) |
-| `animation.rs` | Owns parameter overrides and keyframe evaluation. | [Animated parameters](src/animation/README.md) |
-| `bezier.rs` | Defines scalar channels and Bezier segments. | [Bezier channels](src/bezier/README.md) |
-| `fade.rs` | Owns clip fade windows and gains. | [Clip fades](src/fade/README.md) |
-| `persistence.rs` | Encodes, decodes and bounds project JSON. | [Persistence and limits](src/persistence/README.md) |
-| `atomic.rs` | Publishes files atomically and streams output. | [Streaming output](src/atomic/README.md) |
-| `writer.rs` | Holds the writer lease and save receipts. | [Writer lease and save acknowledgement](src/writer/README.md) |
-| `autosave.rs` | Writes rotating recovery snapshots. | [Autosave snapshots](src/autosave/README.md) |
-| `metadata.rs` | Owns the optional project metadata sidecar. | [Optional project metadata](src/metadata/README.md) |
-| `effects.rs` | Defines the item effect stack and parameters. | [Item effects](src/effects/README.md) |
-| `mask.rs` | Defines item masks and their animation paths. | [Masks](src/mask/README.md) |
-| `blend.rs` | Defines blend modes and opacity ownership. | [Blend selection and opacity](src/blend/README.md) |
-| `transition.rs` | Defines video transition entities and bounds. | [Video transitions](src/transition/README.md) |
+| Module | Responsibility | Interface | Contract |
+|---|---|---|---|
+| `model/` | Owns the project, scenes, tracks, items and project settings. | `Project`, `ProjectData`, `Scene`, `Track`, `Item`, `Settings` | [Project model](src/model/README.md) |
+| `animation/` | Owns item-relative parameters, keyframes, curves, fades and retime. | `Animations`, `Param`, `Keyframe`, `Channel`, `Fade`, `Retime` | [Animated parameters and retime](src/animation/README.md) |
+| `visual/` | Defines persisted visual item properties and their bounds. | `TransformField`, `BlendMode`, `Mask`, `EffectInstance`, `Transition`, typography | [Visual properties](src/visual/README.md) |
+| `persistence/` | Encodes, bounds, publishes and recovers project files. | `encode`, `decode`, `load`, `WriterLease`, `atomic_write`, `autosave` | [Persistence and publication](src/persistence/README.md) |
+
+The crate root re-exports the same public names in the same order as before the
+folder split; module paths inside the crate are private.
+
+## Contracts
+
+- [model](src/model/README.md) owns project, scene, track, item and settings data and
+  whole-project validation.
+- [animation](src/animation/README.md) owns animation paths, channels, keyframe
+  evaluation, Bezier segments, clip fades and retime.
+- [visual](src/visual/README.md) owns transform, blend, mask, effects, transition,
+  bounds and typography contracts.
+- [persistence](src/persistence/README.md) owns the JSON envelope, writer lease,
+  atomic files, autosave snapshots, metadata and streaming output.
 
 ## Verification
 

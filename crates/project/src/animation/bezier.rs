@@ -1,3 +1,5 @@
+//! Cubic Bezier evaluation for scalar keyframe segments.
+
 pub(crate) fn progress_for_x(x1: f64, x2: f64, x: f64) -> f64 {
     let bx =
         |s: f64| 3.0 * (1.0 - s) * (1.0 - s) * s * x1 + 3.0 * (1.0 - s) * s * s * x2 + s * s * s;
