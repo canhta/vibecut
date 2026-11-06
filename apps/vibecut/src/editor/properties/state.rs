@@ -32,6 +32,16 @@ pub(in crate::editor) enum Action {
         speed: f64,
         maintain_pitch: bool,
     },
+    SetCanvas {
+        width: u32,
+        height: u32,
+        preset: Option<project::AspectPreset>,
+    },
+    SetFps {
+        num: i64,
+        den: i64,
+    },
+    SetBackground(project::Color),
     ResetTransform(ItemId),
     SetSection {
         key: &'static str,

@@ -1,4 +1,6 @@
 //! Reusable colour draft and native screen-sampler adapter. No project writes.
+pub mod palette;
+
 use crate::{
     Error, Result,
     catalog::{self, Locale, Text},
@@ -66,7 +68,7 @@ impl ColorTarget {
     ) -> Result<(&'static str, serde_json::Value)> {
         if *self == Self::Canvas {
             return Ok((
-                "project.set_canvas_background",
+                "project.set_background",
                 serde_json::json!({"color": color}),
             ));
         }
@@ -387,52 +389,70 @@ impl Picker {
                 }
                 event.widgets.push((format!("color.{id}"), response));
             }
-            for (label, colors, prefix) in [
-                (
-                    Text::Swatches,
-                    vec![
-                        Color([255, 255, 255, 255]),
-                        Color([0, 0, 0, 255]),
-                        Color([255, 0, 0, 255]),
-                        Color([0, 255, 0, 255]),
-                        Color([0, 0, 255, 255]),
-                        Color([255, 255, 0, 255]),
-                        Color([0, 255, 255, 255]),
-                        Color([255, 0, 255, 255]),
-                    ],
-                    "swatch",
-                ),
-                (Text::RecentColors, recent.to_vec(), "recent"),
-            ] {
-                ui.label(catalog::text(locale, label));
-                ui.horizontal_wrapped(|ui| {
-                    for (index, color) in colors.iter().enumerate() {
-                        let [r, g, b, a] = color.0;
-                        let response = ui
-                            .add(
-                                egui::Button::new(String::new())
-                                    .fill(Color32::from_rgba_unmultiplied(r, g, b, a))
-                                    .min_size(Vec2::splat(24.0)),
-                            )
-                            .on_hover_text(render::color::hex(*color));
-                        response.widget_info(|| {
-                            egui::WidgetInfo::labeled(
-                                egui::Role::Button,
-                                true,
-                                render::color::hex(*color),
-                            )
-                        });
-                        if response.clicked() {
-                            self.set(*color);
-                            event.preview = true;
-                            event.commit = true;
+            ui.label(catalog::text(locale, Text::Swatches));
+            egui::ScrollArea::vertical()
+                .id_salt("color.palette")
+                .max_height(180.0)
+                .show(ui, |ui| {
+                    ui.horizontal_wrapped(|ui| {
+                        for (index, _) in palette::SOLID.iter().enumerate() {
+                            let Some(color) = palette::solid(index) else {
+                                continue;
+                            };
+                            let [r, g, b, a] = color.0;
+                            let response = ui
+                                .add(
+                                    egui::Button::new(String::new())
+                                        .fill(Color32::from_rgba_unmultiplied(r, g, b, a))
+                                        .min_size(Vec2::splat(24.0)),
+                                )
+                                .on_hover_text(render::color::hex(color));
+                            response.widget_info(|| {
+                                egui::WidgetInfo::labeled(
+                                    egui::Role::Button,
+                                    true,
+                                    render::color::hex(color),
+                                )
+                            });
+                            if response.clicked() {
+                                self.set(color);
+                                event.preview = true;
+                                event.commit = true;
+                            }
+                            event
+                                .widgets
+                                .push((format!("color.swatch.{index}"), response));
                         }
-                        event
-                            .widgets
-                            .push((format!("color.{prefix}.{index}"), response));
-                    }
+                    });
                 });
-            }
+            ui.label(catalog::text(locale, Text::RecentColors));
+            ui.horizontal_wrapped(|ui| {
+                for (index, color) in recent.iter().enumerate() {
+                    let [r, g, b, a] = color.0;
+                    let response = ui
+                        .add(
+                            egui::Button::new(String::new())
+                                .fill(Color32::from_rgba_unmultiplied(r, g, b, a))
+                                .min_size(Vec2::splat(24.0)),
+                        )
+                        .on_hover_text(render::color::hex(*color));
+                    response.widget_info(|| {
+                        egui::WidgetInfo::labeled(
+                            egui::Role::Button,
+                            true,
+                            render::color::hex(*color),
+                        )
+                    });
+                    if response.clicked() {
+                        self.set(*color);
+                        event.preview = true;
+                        event.commit = true;
+                    }
+                    event
+                        .widgets
+                        .push((format!("color.recent.{index}"), response));
+                }
+            });
             let response = ui.add(egui::Button::image_and_text(
                 crate::kit::tinted(crate::kit::Icon::Eye, 16.0, ui.visuals().text_color()),
                 catalog::text(locale, Text::Eyedropper),

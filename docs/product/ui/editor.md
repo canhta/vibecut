@@ -64,6 +64,18 @@ The Transform tab uses five existing scrub rows with an inline reset arrow: posi
 
 The shared colour window uses hex plus labelled HSV/alpha entries and sliders, swatches and recent colours. Sliders preview immediately and publish once on release; Escape/close cancels the draft. It is reused for text, text background, graphic fill/stroke, mask stroke and canvas background. The implementation reference's separate change/change-end events inform the interaction; the exact window layout, sixteen-colour newest-first recent list and fixed two-pixel graphic stroke are **proposed**, with coordinator approval to fill the uncaptured layout gap. `inspector-transform` and `inspector-color` are the audit scenes. The native sampler's unavailable/pending/failed copy is localized in the same window; unavailable platforms retain all manual colour entry controls.
 
+## Canvas settings
+
+With no element selected the inspector's Settings tab shows two sections using
+the measured property rows and 22 px fields. Project holds the ratio select
+(Original, 16:9, 4:3, 2:1, 9:16, 1:1, 3:4), custom width and height fields, the
+frame-rate select and a Reset to original action; Original and Reset stay
+disabled until the first visual clip arrives. Background holds the current
+colour row, the 242 solid swatches in a scrollable grid and the shared colour
+window for a custom value. Picking a preset or swatch commits one undo step;
+width, height and frame rate commit on Enter or blur. This layout is **new**
+(the settings panel is unmeasured) and reuses the captured property geometry.
+
 ## Shortcuts
 
 The desktop shortcut list is a separate 719 px-wide window that resizes with its tab (645 / 337 / 537 / 217 px tall for Timeline / Player / Basic / Other) [measured 221811, 221816, 221818, 221820]. It has a 36 px title bar, a 56 px control row, a `#141414` list panel with a 1 px column divider, and a 53 px footer. Controls: a 280×24 four-tab group (70 px cells, active `#3B3B3B`, inactive `#1C1C1C`), a 146×24 preset dropdown, 40 px list rows with the label left and key glyphs right-aligned, and 72×22 `Reset` (left) plus `Save`/`Cancel` (right) buttons. `Save` is the accent-filled primary and is disabled in the captured state. No search field or conflict/rebinding state is captured; those remain [gap].

@@ -1,5 +1,6 @@
 //! Integration tests share one binary and one copy of their helpers.
 
+mod canvas_settings_ui;
 mod desktop;
 mod effects;
 mod effects_ui;

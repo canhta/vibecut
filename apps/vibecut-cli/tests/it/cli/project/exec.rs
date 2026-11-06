@@ -562,6 +562,65 @@ fn exec_import_and_insert_share_persisted_media_policy() {
 }
 
 #[test]
+fn cli_sets_portrait_canvas_through_the_registry_and_exports_it() {
+    let dir = tempfile::tempdir().unwrap();
+    let project = dir.path().join("portrait.vibecut");
+    let output_path = dir.path().join("portrait.mp4");
+    overlay_project_color(
+        &project,
+        64,
+        64,
+        Tick(time::TICKS_PER_SECOND / 30),
+        [255, 255, 255, 255],
+    );
+    exec(
+        &project,
+        "project.set_canvas",
+        json!({"width":1080,"height":1920,"preset":"9:16"}),
+    );
+    let loaded = project::load(&project).unwrap().project;
+    assert_eq!(
+        (loaded.data().canvas.width, loaded.data().canvas.height),
+        (1080, 1920)
+    );
+    assert_eq!(
+        loaded.data().canvas.preset,
+        Some(project::AspectPreset::Portrait)
+    );
+    let output = cli(&[
+        os("export"),
+        project.as_os_str(),
+        os("--out"),
+        output_path.as_os_str(),
+        os("--json"),
+    ]);
+    assert_eq!(
+        code(&output),
+        0,
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    if tools() {
+        let probe = tool_command("ffprobe")
+            .args([
+                os("-v"),
+                os("error"),
+                os("-select_streams"),
+                os("v:0"),
+                os("-show_entries"),
+                os("stream=width,height"),
+                os("-of"),
+                os("csv=p=0"),
+            ])
+            .arg(&output_path)
+            .output()
+            .unwrap();
+        assert!(probe.status.success());
+        assert_eq!(String::from_utf8_lossy(&probe.stdout).trim(), "1080,1920");
+    }
+}
+
+#[test]
 fn audio_set_fade_shapes_the_exported_tone_envelope() {
     if !tools() {
         return;

@@ -294,8 +294,18 @@ pub(crate) fn apply(
         Command::SetItemField { item: id, patch } => {
             data = parameters::execute_set_item_field(data, id, patch, copied_text_bytes)?;
         }
-        Command::SetCanvasBackground { color } => {
-            data = project_edits::execute_set_canvas_background(data, color)?;
+        Command::SetCanvas {
+            width,
+            height,
+            preset,
+        } => {
+            data = project_edits::execute_set_canvas(data, width, height, preset)?;
+        }
+        Command::SetFps { num, den } => {
+            data = project_edits::execute_set_fps(data, num, den)?;
+        }
+        Command::SetBackground { color } => {
+            data = project_edits::execute_set_background(data, color)?;
         }
         Command::SetSpeed {
             items,

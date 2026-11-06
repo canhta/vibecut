@@ -1,5 +1,6 @@
 //! Applies the properties workflows: the frame routes `Action`s here.
 mod appearance;
+mod canvas;
 mod commands;
 mod effects;
 mod number_edit;
@@ -25,6 +26,13 @@ pub(in crate::editor) fn apply(editor: &mut Editor, actions: Vec<Action>) {
                 speed,
                 maintain_pitch,
             } => editor.set_speed(item, speed, maintain_pitch),
+            Action::SetCanvas {
+                width,
+                height,
+                preset,
+            } => editor.set_canvas(width, height, preset),
+            Action::SetFps { num, den } => editor.set_canvas_fps(num, den),
+            Action::SetBackground(color) => editor.set_canvas_background(color),
             Action::ResetTransform(item) => {
                 let mut result = Ok(());
                 for field in project::TransformField::ALL {

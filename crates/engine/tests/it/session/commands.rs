@@ -124,10 +124,7 @@ fn transform_command_bounds_atomicity_undo_and_persistence() {
         );
     }
     session
-        .execute(
-            "project.set_canvas_background",
-            json!({"color":[12,34,56,78]}),
-        )
+        .execute("project.set_background", json!({"color":[12,34,56,78]}))
         .unwrap();
     assert_eq!(
         session.project().data().canvas.background,
@@ -2290,6 +2287,10 @@ fn first_media_canvas_is_atomic_persisted_and_batch_ordered() {
             })
         );
         assert_eq!(
+            after.data().canvas.preset,
+            Some(project::AspectPreset::Original)
+        );
+        assert_eq!(
             after.data().canvas.fps,
             if format == "mp4" {
                 F::FPS_60
@@ -2375,6 +2376,129 @@ fn first_media_canvas_is_atomic_persisted_and_batch_ordered() {
     assert_eq!(s.project().data().original_canvas_size, None);
 }
 
+#[test]
+fn canvas_settings_commit_one_step_and_keep_exact_rationals() {
+    let original = project::CanvasSize {
+        width: 1080,
+        height: 1920,
+    };
+    let mut data = Project::empty(ProjectId(1), "Canvas".into())
+        .unwrap()
+        .into_data();
+    data.original_canvas_size = Some(original);
+    let mut s = Session::new(Project::new(data).unwrap(), 10).unwrap();
+    let initial = s.project().clone();
+    let mut steps = 0;
+    let mut commit = |s: &mut Session, command: &str, params: serde_json::Value| {
+        s.execute(command, params).unwrap();
+        steps += 1;
+        assert_eq!(s.history_len().0, steps);
+    };
+
+    commit(
+        &mut s,
+        "project.set_canvas",
+        json!({"width":1080,"height":1920,"preset":"9:16"}),
+    );
+    assert_eq!(
+        (
+            s.project().data().canvas.width,
+            s.project().data().canvas.height
+        ),
+        (1080, 1920)
+    );
+    assert_eq!(
+        s.project().data().canvas.preset,
+        Some(project::AspectPreset::Portrait)
+    );
+
+    commit(
+        &mut s,
+        "project.set_canvas",
+        json!({"width":1000,"height":700}),
+    );
+    assert_eq!(s.project().data().canvas.preset, None);
+    assert_eq!(
+        s.project().data().canvas.last_custom_size,
+        project::CanvasSize {
+            width: 1000,
+            height: 700
+        }
+    );
+
+    commit(&mut s, "project.set_fps", json!({"num":24000,"den":1001}));
+    assert_eq!(s.project().data().canvas.fps, time::FrameRate::FPS_23_976);
+    assert_eq!(s.project().data().canvas.fps.label(), "23.976");
+    commit(&mut s, "project.set_fps", json!({"num":30000,"den":1001}));
+    assert_eq!(s.project().data().canvas.fps, time::FrameRate::FPS_29_97);
+    assert_eq!(s.project().data().canvas.fps.label(), "29.97");
+
+    commit(
+        &mut s,
+        "project.set_background",
+        json!({"color":[12,34,56,78]}),
+    );
+    assert_eq!(
+        s.project().data().canvas.background,
+        Color([12, 34, 56, 78])
+    );
+
+    commit(
+        &mut s,
+        "project.set_canvas",
+        json!({"width":1080,"height":1920,"preset":"original"}),
+    );
+    assert_eq!(
+        s.project().data().canvas.preset,
+        Some(project::AspectPreset::Original)
+    );
+    assert_eq!(
+        (
+            s.project().data().canvas.width,
+            s.project().data().canvas.height
+        ),
+        (original.width, original.height)
+    );
+
+    let saved = project::encode(s.project(), false).unwrap();
+    let loaded = project::decode(&saved).unwrap().project;
+    assert_eq!(&loaded, s.project().as_ref());
+    for _ in 0..steps {
+        s.undo().unwrap();
+    }
+    assert_eq!(s.project(), &initial);
+}
+#[test]
+fn canvas_settings_reject_invalid_sizes_rates_and_preset_mismatches() {
+    let mut data = Project::empty(ProjectId(1), "Canvas".into())
+        .unwrap()
+        .into_data();
+    data.original_canvas_size = Some(project::CanvasSize {
+        width: 1920,
+        height: 1080,
+    });
+    let mut s = Session::new(Project::new(data).unwrap(), 10).unwrap();
+    let before = s.project().clone();
+    for params in [
+        json!({"width":0,"height":1080}),
+        json!({"width":1920,"height":0}),
+        json!({"width":u32::MAX,"height":u32::MAX}),
+        json!({"width":1080,"height":1920,"preset":"16:9"}),
+        json!({"width":1080,"height":1920,"preset":"original"}),
+    ] {
+        assert!(s.execute("project.set_canvas", params).is_err());
+        assert_eq!(s.project(), &before);
+    }
+    for params in [
+        json!({"num":0,"den":1}),
+        json!({"num":30,"den":0}),
+        json!({"num":-30,"den":1}),
+        json!({"num":17,"den":1}),
+    ] {
+        assert!(s.execute("project.set_fps", params).is_err());
+        assert_eq!(s.project(), &before);
+    }
+}
 #[test]
 fn track_rename_reorder_lock_and_add_persist_and_undo_exactly() {
     let mut s = Session::new(Project::empty(ProjectId(31), "Tracks".into()).unwrap(), 20).unwrap();

@@ -92,9 +92,10 @@ Invalid probe rational parts are unavailable at native probing and refused by
 JSON ingestion, before policy execution.
 
 When all project scene timelines are empty and `original_canvas_size` is null,
-the first inserted visual source sets canvas width/height and that original size.
-Subsequent inserts, including after deleting all items or switching scenes, retain
-it. Existing audio/text/overlay items prevent this automatic initialization.
+the first inserted visual source sets canvas width/height, the `original` preset,
+the last-custom size and that original size. Subsequent inserts, including after
+deleting all items or switching scenes, retain it. Existing
+audio/text/overlay items prevent this automatic initialization.
 Batches execute in supplied order, so simultaneous first inserts have a single
 deterministic winner. All policy changes share the import/insert history step;
 failed commands, cancelled gestures and failed batches publish none of them.
@@ -151,8 +152,12 @@ on project's existing channel and refuse non-finite/out-of-bounds input atomical
 audio items are incompatible. `background_color` (text) and `graphic_stroke`
 (solid overlay) set hex-text overrides on the existing `background.color` and
 `params.strokeColor` channels; `graphic_fill` edits the overlay's static colour.
-All colours reuse project's straight-alpha RGBA8 value. `project.set_canvas_background`
-sets that same value on the canvas in one history step. Masks retain `masks.update`.
+All colours reuse project's straight-alpha RGBA8 value. `project.set_background`
+sets that same value on the canvas in one history step. `project.set_canvas`
+writes a validated width/height and an optional fixed preset (the `original`
+preset resolves the retained first-visual size) and records custom sizes as the
+last custom size; `project.set_fps` stores an exact positive rational. Each is one
+history step. Masks retain `masks.update`.
 
 `set_selection(BTreeSet<ItemId>)` validates existing IDs, breaks merge continuity
 and changes no Project content, revision or history length. A change during an

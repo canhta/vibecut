@@ -68,7 +68,7 @@ impl<'a, 'c> Panel<'a, 'c> {
         // Without a single element selected the strip switches the project views.
         const IDS: [&str; 2] = ["inspector.project", "inspector.details"];
         let ids = IDS.map(str::to_owned);
-        let labels = [self.tr(Text::Project), self.tr(Text::Details)];
+        let labels = [self.tr(Text::Settings), self.tr(Text::Details)];
         let selected = usize::from(self.state.details);
         let tabs = kit::text_tabs(ui, &ids, &labels, selected);
         for (id, response) in IDS.into_iter().zip(&tabs) {
@@ -81,22 +81,7 @@ impl<'a, 'c> Panel<'a, 'c> {
         if self.state.details {
             self.project_details(&mut body);
         } else if self.cx.selection.is_empty() {
-            self.panel_section(
-                &mut body,
-                "inspector.section.canvas",
-                "inspector.canvas",
-                Text::Canvas,
-                true,
-                false,
-                |panel, ui| {
-                    panel.color_row(
-                        ui,
-                        "inspector.canvas_background",
-                        Text::CanvasBackground,
-                        ColorTarget::Canvas,
-                    );
-                },
-            );
+            self.settings(&mut body);
         } else {
             egui::ScrollArea::vertical()
                 .id_salt("inspector.shared")
@@ -665,6 +650,8 @@ fn body_ui(ui: &mut egui::Ui, area: Rect) -> egui::Ui {
     body.spacing_mut().item_spacing = Vec2::ZERO;
     body
 }
+
+mod canvas;
 
 mod speed;
 

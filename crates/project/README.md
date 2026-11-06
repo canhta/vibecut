@@ -8,8 +8,9 @@ time propagation. No codecs, widgets, device state, scheduling or effect executi
 
 ## Entry points and invariants
 
-`Project::empty` creates a 1920×1080, 30 fps, black-canvas project with 48 kHz
-output audio. `Project::new(ProjectData)` validates a complete candidate;
+`Project::empty` creates a 1920×1080, 30 fps, black-canvas project with the
+16:9 preset, a 1920×1080 last-custom size and 48 kHz output audio.
+`Project::new(ProjectData)` validates a complete candidate;
 `data()` borrows an immutable snapshot and `into_data()` yields an editable
 candidate for an engine command. Revalidate before committing. Serde
 construction also validates; use `decode`/`load` for untrusted JSON ingestion so
@@ -85,6 +86,14 @@ second user canvas setting. It starts null and retains the first inserted media'
 width/height for reset-to-original. Its dimensions obey the canvas area bound.
 [Engine import policy](../engine/README.md#import-policy) owns automatic
 initialization and FPS ratcheting in import/insert commands.
+
+`Canvas.preset` records the chosen ratio preset (`original`, `16:9`, `4:3`,
+`2:1`, `9:16`, `1:1`, `3:4`); `None` means a custom size. Fixed presets use a
+1920 long edge: 16:9 = 1920x1080, 4:3 = 1440x1080, 2:1 = 1920x960, 9:16 =
+1080x1920, 1:1 = 1080x1080 and 3:4 = 1080x1440. `original` resolves the retained
+`original_canvas_size`. `Canvas.last_custom_size` remembers the last committed
+custom width/height. Both fields are schema 20. Preset labels are UI text; the
+stored width/height remain authoritative.
 
 ## Scenes
 
@@ -213,9 +222,9 @@ or renderer output claim is made.
 ## Persistence and limits
 
 `encode`/`decode` use one JSON envelope: `format`, `schema_version`, `generator`,
-`project`. Current schema 19 splits the text background `padding` into `padding_x`/`padding_y` and adds its `offset_x`/`offset_y` plus text `align` and `decoration`; schema 18 added item `retime` (speed, pitch policy and the retained processing window of split pieces) and ordered transition split pieces; schema 17 added `settings.loudness` (clip/master targets and the last measured gains) to schema 16 timeline `transitions`, which followed schema 15 audio/video clip `fades`, schema 14 optional imported cue style, schema 13 text weight, italic, letter spacing and line height (also on text masks), and schema 12 audio `source` (upload or library provenance), volume/mute and master controls.
+`project`. Current schema 20 adds `canvas.preset` and `canvas.last_custom_size`; schema 19 splits the text background `padding` into `padding_x`/`padding_y` and adds its `offset_x`/`offset_y` plus text `align` and `decoration`; schema 18 added item `retime` (speed, pitch policy and the retained processing window of split pieces) and ordered transition split pieces; schema 17 added `settings.loudness` (clip/master targets and the last measured gains) to schema 16 timeline `transitions`, which followed schema 15 audio/video clip `fades`, schema 14 optional imported cue style, schema 13 text weight, italic, letter spacing and line height (also on text masks), and schema 12 audio `source` (upload or library provenance), volume/mute and master controls.
 ProjectId is stored as a canonical decimal string, preserving
-all u64 identity bits for control clients; other IDs remain numeric. Schemas 1-17
+all u64 identity bits for control clients; other IDs remain numeric. Schemas 1-19
 are refused rather than migrated or silently defaulted. Older schemas return `TooOld`, newer schemas `TooNew`; there are no
 migration or compatibility paths. Unknown current-schema project/envelope fields
 are refused. `WriterLease::save` serializes completely before touching the destination;
@@ -430,7 +439,7 @@ whitespace-only text masks are inactive while retaining their editable data. The
 admits 1,024 entries for resource safety; presentation limits do not define the
 model. Audio items refuse masks. Modes are None/Add/Subtract/Intersect/Lighten/
 Darken/Difference; render owns their coverage math. Commands/history belong to
-engine. Schema 17 requires `settings.loudness`, timeline transitions, scene arrays, per-item mask vectors, `blendMode`, text style and typography, audio control fields (audio source is optional, default upload) optional imported cue style and optional clip `fades` (`offset` defaults to 0); schema 16 and earlier refuse with `TooOld`.
+engine. Schema 19 requires `canvas.preset`/`canvas.last_custom_size`, `settings.loudness`, timeline transitions, scene arrays, per-item mask vectors, `blendMode`, text style and typography, audio control fields (audio source is optional, default upload), optional imported cue style and optional clip `fades` (`offset` defaults to 0); schema 18 and earlier refuse with `TooOld`.
 
 Shapes include split, cinematic band, rectangle, ellipse, heart, diamond, star,
 text and a cubic `MaskPath`. Text masks currently persist content and font size

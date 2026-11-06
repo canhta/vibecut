@@ -538,6 +538,16 @@ catalog! {
     CreatedDate { key: "created_date", en: "Created {date}", vi: "Đã tạo {date}" },
     ModifiedDate { key: "modified_date", en: "Modified {date}", vi: "Đã sửa {date}" },
 
+    // Canvas settings.
+    Ratio { key: "ratio", en: "Ratio", vi: "Tỷ lệ" },
+    Original { key: "original", en: "Original", vi: "Kích thước gốc" },
+    Custom { key: "custom", en: "Custom", vi: "Tùy chỉnh" },
+    CanvasWidth { key: "canvas_width", en: "Width", vi: "Chiều rộng" },
+    CanvasHeight { key: "canvas_height", en: "Height", vi: "Chiều cao" },
+    FrameRateLabel { key: "frame_rate_label", en: "Frame rate", vi: "Tốc độ khung hình" },
+    FpsValue { key: "fps_value", en: "{rate} fps", vi: "{rate} fps" },
+    ResetOriginal { key: "reset_original", en: "Reset to original", vi: "Đặt lại về kích thước gốc" },
+
     // Tracks and items.
     Video { key: "video", en: "Video", vi: "Video" },
     Audio { key: "audio", en: "Audio", vi: "Âm thanh" },

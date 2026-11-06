@@ -618,10 +618,9 @@ fn picker_hex_hsv_recents_unavailable_and_screenshot() {
         std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target/p1-45-colour.png");
     std::fs::create_dir_all(path.parent().unwrap()).unwrap();
     harness.render().unwrap().save(&path).unwrap();
-    click(&mut harness, "color.swatch.3");
-    assert!(
-        matches!(item(&harness,fixture.text).content,ItemParams::Text(p) if p.color==Color([0,255,0,255]))
-    );
+    let swatch = vibecut::color_picker::palette::solid(5).unwrap();
+    click(&mut harness, "color.swatch.5");
+    assert!(matches!(item(&harness,fixture.text).content,ItemParams::Text(p) if p.color==swatch));
     click(&mut harness, "color.recent.1");
     assert!(
         matches!(item(&harness,fixture.text).content,ItemParams::Text(p) if p.color==Color([0,0,255,128]))

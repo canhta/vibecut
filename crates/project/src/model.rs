@@ -44,11 +44,109 @@ impl<'de> Deserialize<'de> for ProjectId {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(transparent)]
 pub struct Color(pub [u8; 4]);
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct CanvasSize {
     pub width: u32,
     pub height: u32,
+}
+impl CanvasSize {
+    /// Whether both axes are positive and the frame stays inside the canvas area bound.
+    pub const fn is_valid(self) -> bool {
+        self.width > 0 && self.height > 0 && (self.width as u64) * (self.height as u64) <= 1 << 26
+    }
+}
+/// One fixed aspect preset offered by the canvas settings. `Original` resolves
+/// to the retained first visual media size.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum AspectPreset {
+    Original,
+    #[serde(rename = "16:9")]
+    Landscape,
+    #[serde(rename = "4:3")]
+    Standard,
+    #[serde(rename = "2:1")]
+    Wide,
+    #[serde(rename = "9:16")]
+    Portrait,
+    #[serde(rename = "1:1")]
+    Square,
+    #[serde(rename = "3:4")]
+    Tall,
+}
+impl AspectPreset {
+    /// Presets in the reference order.
+    pub const ALL: [Self; 7] = [
+        Self::Original,
+        Self::Landscape,
+        Self::Standard,
+        Self::Wide,
+        Self::Portrait,
+        Self::Square,
+        Self::Tall,
+    ];
+    /// Long edge 1920; `None` for `Original` until a first visual clip exists.
+    pub const fn size(self) -> Option<CanvasSize> {
+        Some(match self {
+            Self::Original => return None,
+            Self::Landscape => CanvasSize {
+                width: 1920,
+                height: 1080,
+            },
+            Self::Standard => CanvasSize {
+                width: 1440,
+                height: 1080,
+            },
+            Self::Wide => CanvasSize {
+                width: 1920,
+                height: 960,
+            },
+            Self::Portrait => CanvasSize {
+                width: 1080,
+                height: 1920,
+            },
+            Self::Square => CanvasSize {
+                width: 1080,
+                height: 1080,
+            },
+            Self::Tall => CanvasSize {
+                width: 1080,
+                height: 1440,
+            },
+        })
+    }
+    /// The preset's pixel size, resolving `Original` from the retained source size.
+    pub const fn resolved(self, original: Option<CanvasSize>) -> Option<CanvasSize> {
+        match self {
+            Self::Original => original,
+            _ => self.size(),
+        }
+    }
+    /// Stable automation and wire fragment.
+    pub const fn id(self) -> &'static str {
+        match self {
+            Self::Original => "original",
+            Self::Landscape => "16x9",
+            Self::Standard => "4x3",
+            Self::Wide => "2x1",
+            Self::Portrait => "9x16",
+            Self::Square => "1x1",
+            Self::Tall => "3x4",
+        }
+    }
+    /// The reference's ratio text; `Original` is localized by the caller.
+    pub const fn label(self) -> &'static str {
+        match self {
+            Self::Original => "Original",
+            Self::Landscape => "16:9",
+            Self::Standard => "4:3",
+            Self::Wide => "2:1",
+            Self::Portrait => "9:16",
+            Self::Square => "1:1",
+            Self::Tall => "3:4",
+        }
+    }
 }
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
@@ -57,6 +155,18 @@ pub struct Canvas {
     pub height: u32,
     pub fps: FrameRate,
     pub background: Color,
+    /// Selected fixed preset; `None` after custom width/height entry.
+    #[serde(default)]
+    pub preset: Option<AspectPreset>,
+    /// Last committed custom size, restored when the creator returns to custom.
+    #[serde(default = "default_custom_size")]
+    pub last_custom_size: CanvasSize,
+}
+const fn default_custom_size() -> CanvasSize {
+    CanvasSize {
+        width: 1920,
+        height: 1080,
+    }
 }
 impl Default for Canvas {
     fn default() -> Self {
@@ -65,6 +175,8 @@ impl Default for Canvas {
             height: 1080,
             fps: FrameRate::FPS_30,
             background: Color([0, 0, 0, 255]),
+            preset: Some(AspectPreset::Landscape),
+            last_custom_size: default_custom_size(),
         }
     }
 }
@@ -781,15 +893,24 @@ fn text(value: &NfcText) -> Result<()> {
 fn validate(data: &ProjectData) -> Result<()> {
     text(&data.name)?;
     let c = &data.canvas;
-    if c.width == 0 || c.height == 0 || u64::from(c.width) * u64::from(c.height) > 1 << 26 {
+    let canvas_size = CanvasSize {
+        width: c.width,
+        height: c.height,
+    };
+    if !canvas_size.is_valid() {
         return Err(Error::Invalid("canvas dimensions"));
     }
-    if data.original_canvas_size.as_ref().is_some_and(|size| {
-        size.width == 0
-            || size.height == 0
-            || u64::from(size.width) * u64::from(size.height) > 1 << 26
-    }) {
+    if !c.last_custom_size.is_valid() {
+        return Err(Error::Invalid("last custom canvas dimensions"));
+    }
+    if data
+        .original_canvas_size
+        .is_some_and(|size| !size.is_valid())
+    {
         return Err(Error::Invalid("original canvas dimensions"));
+    }
+    if c.preset == Some(AspectPreset::Original) && data.original_canvas_size.is_none() {
+        return Err(Error::Invalid("canvas original preset"));
     }
     // Exact frame ticks are required by edit and render consumers.
     let frame = c.fps.frame_duration()?;

@@ -101,6 +101,8 @@ pub(super) fn execute_insert_item(
             };
             data.canvas.width = size.width;
             data.canvas.height = size.height;
+            data.canvas.preset = Some(project::AspectPreset::Original);
+            data.canvas.last_custom_size = size;
             data.original_canvas_size = Some(size);
         }
     }

@@ -893,6 +893,7 @@ impl State {
             .id;
         data.canvas.width = 1080;
         data.canvas.height = 1920;
+        data.canvas.preset = Some(project::AspectPreset::Portrait);
         // The prepared short already contains its first visual media. Retain
         // that baseline while replaying its items into the portrait editor.
         data.original_canvas_size = data.original_canvas_size.or_else(|| {

@@ -60,7 +60,37 @@ pub(super) fn execute_rename_project(
     data.name = name;
     Ok(data)
 }
-pub(super) fn execute_set_canvas_background(
+pub(super) fn execute_set_canvas(
+    mut data: ProjectData,
+    width: u32,
+    height: u32,
+    preset: Option<project::AspectPreset>,
+) -> Result<ProjectData> {
+    let size = project::CanvasSize { width, height };
+    if !size.is_valid() {
+        return Err(EditError::Invalid("canvas dimensions"));
+    }
+    if let Some(preset) = preset {
+        let expected = preset
+            .resolved(data.original_canvas_size)
+            .ok_or(EditError::Invalid("original canvas size"))?;
+        if expected != size {
+            return Err(EditError::Invalid("canvas preset size"));
+        }
+    }
+    data.canvas.width = width;
+    data.canvas.height = height;
+    data.canvas.preset = preset;
+    if preset.is_none() {
+        data.canvas.last_custom_size = size;
+    }
+    Ok(data)
+}
+pub(super) fn execute_set_fps(mut data: ProjectData, num: i64, den: i64) -> Result<ProjectData> {
+    data.canvas.fps = time::FrameRate::new(num, den)?;
+    Ok(data)
+}
+pub(super) fn execute_set_background(
     mut data: ProjectData,
     color: project::Color,
 ) -> Result<ProjectData> {

@@ -303,6 +303,15 @@ fn model_trust_boundaries() {
         d.original_canvas_size = Some(project::CanvasSize { width, height });
         cases.push(d);
     }
+    for (width, height) in [(0, 360), (640, 0), (u32::MAX, u32::MAX)] {
+        let mut d = base.clone();
+        d.canvas.last_custom_size = project::CanvasSize { width, height };
+        cases.push(d);
+    }
+    let mut d = base.clone();
+    d.canvas.preset = Some(project::AspectPreset::Original);
+    d.original_canvas_size = None;
+    cases.push(d);
     let mut d = base.clone();
     d.canvas.fps = FrameRate::new(17, 1).unwrap();
     cases.push(d);
@@ -520,6 +529,76 @@ fn model_trust_boundaries() {
     for d in cases {
         assert!(Project::new(d).is_err());
     }
+}
+#[test]
+fn aspect_presets_use_the_reference_pixel_sizes_and_resolve_original() {
+    assert_eq!(
+        AspectPreset::Landscape.size(),
+        Some(CanvasSize {
+            width: 1920,
+            height: 1080
+        })
+    );
+    assert_eq!(
+        AspectPreset::Standard.size(),
+        Some(CanvasSize {
+            width: 1440,
+            height: 1080
+        })
+    );
+    assert_eq!(
+        AspectPreset::Wide.size(),
+        Some(CanvasSize {
+            width: 1920,
+            height: 960
+        })
+    );
+    assert_eq!(
+        AspectPreset::Portrait.size(),
+        Some(CanvasSize {
+            width: 1080,
+            height: 1920
+        })
+    );
+    assert_eq!(
+        AspectPreset::Square.size(),
+        Some(CanvasSize {
+            width: 1080,
+            height: 1080
+        })
+    );
+    assert_eq!(
+        AspectPreset::Tall.size(),
+        Some(CanvasSize {
+            width: 1080,
+            height: 1440
+        })
+    );
+    let original = CanvasSize {
+        width: 640,
+        height: 360,
+    };
+    assert_eq!(AspectPreset::Original.size(), None);
+    assert_eq!(
+        AspectPreset::Original.resolved(Some(original)),
+        Some(original)
+    );
+    assert_eq!(AspectPreset::Original.resolved(None), None);
+}
+#[test]
+fn a_pre_change_file_is_refused_without_losing_user_data() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("pre-change.vibecut");
+    let bytes = r#"{"format":"vibecut.project","schema_version":19,"generator":"test","project":{"name":"User project"}}"#;
+    fs::write(&path, bytes).unwrap();
+    assert!(matches!(
+        load(&path),
+        Err(Error::TooOld {
+            found: 19,
+            supported: SCHEMA_VERSION
+        })
+    ));
+    assert_eq!(fs::read(&path).unwrap(), bytes.as_bytes());
 }
 #[test]
 fn schema_errors_precede_interpreting_an_unknown_project_body() {
