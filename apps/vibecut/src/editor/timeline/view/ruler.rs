@@ -14,8 +14,6 @@ impl Editor {
         bookmarks: &[BookmarkView],
     ) {
         let painter = ui.painter().with_clip_rect(layout.ruler);
-        painter.rect_filled(layout.ruler, theme::radius::PANEL, self.control_fill());
-        painter.rect_filled(layout.corner, theme::radius::PANEL, self.control_fill());
         let rate = self.session.project().data().canvas.fps;
         let config = ruler_config(self.zoom, rate);
         let start = f64::from(self.scroll);
@@ -34,20 +32,22 @@ impl Editor {
             };
             let x = layout.ruler.left() + ((x - start) * f64::from(self.zoom)) as f32;
             if x >= layout.ruler.left() - 1.0 && x <= layout.ruler.right() + 1.0 {
-                let height = if labelled { 8.0 } else { 4.0 };
+                // Ticks start 3 px under the ruler's top: 5.5 px minor, 10.5 px labelled.
+                let height = if labelled { 10.5 } else { 5.5 };
+                let x = x.round() + 0.5;
                 painter.line_segment(
                     [
-                        egui::pos2(x, layout.ruler.bottom() - height),
-                        egui::pos2(x, layout.ruler.bottom()),
+                        egui::pos2(x, layout.ruler.top() + 3.0),
+                        egui::pos2(x, layout.ruler.top() + 3.0 + height),
                     ],
-                    egui::Stroke::new(1.0, self.border()),
+                    egui::Stroke::new(1.0, self.tick_color()),
                 );
                 if labelled {
                     painter.text(
-                        egui::pos2(x + 4.0, layout.ruler.top() + 2.0),
-                        Align2::LEFT_TOP,
-                        ruler_label(seconds, rate),
-                        FontId::proportional(theme::type_size::BODY),
+                        egui::pos2(x + 4.0, layout.ruler.top() + 7.5),
+                        Align2::LEFT_CENTER,
+                        ruler_text(seconds, rate, config.label_seconds),
+                        FontId::proportional(theme::type_size::CAPTION),
                         self.secondary(),
                     );
                 }
@@ -115,22 +115,39 @@ impl Editor {
             egui::pos2(layout.ruler.left(), layout.ruler.top()),
             egui::pos2(layout.ruler.right(), layout.body.bottom()),
         ));
+        let x = x.round() + 0.5;
+        let width = theme::size::PLAYHEAD_HANDLE_WIDTH;
+        let height = theme::size::PLAYHEAD_HANDLE_HEIGHT;
+        let top = layout.ruler.top();
         painter.line_segment(
             [
-                egui::pos2(x, layout.ruler.bottom()),
+                egui::pos2(x, top + height - 1.0),
                 egui::pos2(x, layout.body.bottom()),
             ],
-            egui::Stroke::new(2.0, self.accent()),
+            egui::Stroke::new(1.0, self.accent()),
         );
+        // Shield: rounded top corners, sides taper to a rounded point at the bottom.
+        let half = width / 2.0;
+        let shoulder = top + height - 6.0;
+        let corner = 2.0;
+        let points = vec![
+            egui::pos2(x - half + corner, top + 0.5),
+            egui::pos2(x + half - corner, top + 0.5),
+            egui::pos2(x + half, top + 0.5 + corner),
+            egui::pos2(x + half, shoulder),
+            egui::pos2(x + 1.5, top + height - 0.5),
+            egui::pos2(x - 1.5, top + height - 0.5),
+            egui::pos2(x - half, shoulder),
+            egui::pos2(x - half, top + 0.5 + corner),
+        ];
         painter.add(egui::Shape::convex_polygon(
-            vec![
-                egui::pos2(x - 5.0, layout.ruler.bottom() - 8.0),
-                egui::pos2(x + 5.0, layout.ruler.bottom() - 8.0),
-                egui::pos2(x, layout.ruler.bottom()),
-            ],
-            self.accent(),
-            egui::Stroke::NONE,
+            points,
+            self.panel_fill(),
+            egui::Stroke::new(1.0, self.accent()),
         ));
+    }
+    fn tick_color(&self) -> egui::Color32 {
+        theme::disabled(self.preferences.dark)
     }
 }
 
@@ -164,7 +181,15 @@ pub(in crate::editor) fn ruler_config(zoom: f32, rate: FrameRate) -> RulerConfig
         f64::from(RULER_TICK_SPACING),
         &TICK_FRAME_INTERVALS,
     );
-    let tick = tick_dividing_label(label_seconds, raw_tick, pixels_per_second, fps);
+    // Whole-second labels split into ten ticks when they fit (221643: 3 s label,
+    // ten 0.3 s ticks 21.4 px apart); finer labels keep the frame-based ticks.
+    let tick = if label_seconds >= 1.0
+        && pixels_per_second * label_seconds / 10.0 >= f64::from(RULER_TICK_SPACING)
+    {
+        label_seconds / 10.0
+    } else {
+        tick_dividing_label(label_seconds, raw_tick, pixels_per_second, fps)
+    };
     let multiple = (label_seconds / tick).round().max(1.0) as i64;
     RulerConfig {
         label_seconds,
@@ -243,6 +268,22 @@ pub(in crate::editor) fn ruler_label(seconds: f64, rate: FrameRate) -> String {
         Some(tick) => time::format_timecode(tick, rate, drop_frame(rate))
             .unwrap_or_else(|_| display_time(tick)),
         None => display_time(Tick::ZERO),
+    }
+}
+
+/// Ruler caption: `MM:SS` (or `H:MM:SS`) while labels fall on whole seconds,
+/// the full frame timecode once they are finer than a second.
+pub(in crate::editor) fn ruler_text(seconds: f64, rate: FrameRate, label_seconds: f64) -> String {
+    if label_seconds >= 1.0 - 1e-6 {
+        let whole = seconds.max(0.0).round() as u64;
+        let (hours, minutes, secs) = (whole / 3600, whole / 60 % 60, whole % 60);
+        if hours > 0 {
+            format!("{hours}:{minutes:02}:{secs:02}")
+        } else {
+            format!("{minutes:02}:{secs:02}")
+        }
+    } else {
+        ruler_label(seconds, rate)
     }
 }
 

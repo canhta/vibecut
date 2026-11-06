@@ -1,9 +1,43 @@
 //! Renders timeline actions.
+//!
+//! Geometry is the measured 32 px strip: 24×24 icon buttons, 4 px edge inset,
+//! 12 px between buttons, 1×16 dividers with 8 px either side (221643 y 574-606).
 
 use crate::editor::timeline::{
-    BUTTON_ICON, Editor, Icon, Rect, TOOLBAR_SPACING, Text, TimelineLayout, Vec2, egui, icons,
-    slider_to_zoom, theme, zoom_to_slider,
+    Editor, Icon, Rect, Text, TimelineLayout, Vec2, egui, slider_to_zoom, theme, zoom_to_slider,
 };
+
+const EDGE: f32 = 4.0;
+const CELL: f32 = theme::size::CONTROL;
+const GAP: f32 = 12.0;
+const DIVIDER_GAP: f32 = 8.0;
+const DIVIDER_HEIGHT: f32 = 16.0;
+
+/// Left-to-right cursor over the toolbar row.
+struct Cursor {
+    x: f32,
+    top: f32,
+}
+impl Cursor {
+    fn cell(&mut self, width: f32) -> Rect {
+        let rect = Rect::from_min_size(egui::pos2(self.x, self.top), Vec2::new(width, CELL));
+        self.x += width + GAP;
+        rect
+    }
+    fn divider(&mut self, ui: &egui::Ui, color: egui::Color32, gap: f32) {
+        // The previous cell already added `GAP`; bring the divider `gap` from it.
+        let x = self.x - GAP + gap;
+        let center = self.top + CELL / 2.0;
+        ui.painter().line_segment(
+            [
+                egui::pos2(x + 0.5, center - DIVIDER_HEIGHT / 2.0),
+                egui::pos2(x + 0.5, center + DIVIDER_HEIGHT / 2.0),
+            ],
+            egui::Stroke::new(1.0, color),
+        );
+        self.x = x + 1.0 + gap;
+    }
+}
 
 impl Editor {
     pub(in crate::editor::timeline) fn timeline_toolbar(
@@ -11,178 +45,173 @@ impl Editor {
         ui: &mut egui::Ui,
         layout: &TimelineLayout,
     ) {
-        let mut child = ui.new_child(
-            egui::UiBuilder::new()
-                .id_salt("timeline.toolbar")
-                .max_rect(layout.toolbar.shrink2(Vec2::splat(theme::space::XS))),
+        let bar = layout.toolbar;
+        let top = bar.top() + (bar.height() - CELL) / 2.0;
+        ui.painter().line_segment(
+            [
+                egui::pos2(bar.left(), bar.bottom() + 0.5),
+                egui::pos2(bar.right(), bar.bottom() + 0.5),
+            ],
+            egui::Stroke::new(1.0, theme::separator(self.preferences.dark)),
         );
-        child.set_clip_rect(layout.toolbar);
-        child.horizontal_centered(|ui| {
-            ui.label(
-                egui::RichText::new(self.tr(Text::Timeline))
-                    .size(16.0)
-                    .strong(),
-            );
-            ui.spacing_mut().item_spacing.x = TOOLBAR_SPACING;
-            if self.icon_only(
-                ui,
-                "edit.undo",
-                Icon::ArrowCounterClockwise,
-                self.tr(Text::Undo),
-                self.shortcut("edit.undo").as_deref(),
-                None,
-                true,
-            ) {
-                self.action("edit.undo");
-            }
-            if self.icon_only(
-                ui,
-                "edit.redo",
-                Icon::ArrowClockwise,
-                self.tr(Text::Redo),
-                self.shortcut("edit.redo").as_deref(),
-                None,
-                true,
-            ) {
-                self.action("edit.redo");
-            }
-            if self.icon_only(
-                ui,
-                "timeline.split",
-                Icon::Scissors,
-                self.tr(Text::Split),
-                self.shortcut("timeline.split").as_deref(),
-                None,
-                true,
-            ) {
-                self.action("timeline.split");
-            }
-            if self.icon_only(
-                ui,
-                "timeline.delete",
-                Icon::Trash,
-                self.tr(Text::Delete),
-                self.shortcut("timeline.delete").as_deref(),
-                None,
-                true,
-            ) {
-                self.action("timeline.delete");
-            }
-            if self.icon_only(
-                ui,
-                "timeline.add_track",
-                Icon::Plus,
-                self.tr(Text::AddTrack),
-                None,
-                None,
-                true,
-            ) {
-                self.action("timeline.add_track");
-            }
-            if self.icon_only(
-                ui,
-                "timeline.snap",
-                Icon::Magnet,
-                self.tr(Text::Snap),
-                self.shortcut("timeline.snap").as_deref(),
-                Some(self.preferences.snapping),
-                true,
-            ) {
-                self.action("timeline.snap");
-            }
-            let magnet = self.session.project().data().scene().timeline.magnet;
-            if self.icon_only(
-                ui,
-                "timeline.magnet",
-                Icon::Magnet,
-                self.tr(Text::Magnet),
-                None,
-                Some(magnet),
-                true,
-            ) {
-                self.track_command("track.set_magnet", serde_json::json!({"enabled":!magnet}));
-            }
-            if self.icon_only(
-                ui,
-                "timeline.ripple",
-                Icon::Waveform,
-                self.tr(Text::Ripple),
-                None,
-                Some(self.ripple),
-                true,
-            ) {
-                self.action("timeline.ripple");
-            }
-            if self.icon_only(
-                ui,
-                "timeline.zoom_out",
-                Icon::MagnifyingGlassMinus,
-                self.tr(Text::ZoomOut),
-                None,
-                None,
-                true,
-            ) {
-                self.action("timeline.zoom_out");
-            }
-            let min = self.min_zoom(self.timeline_viewport);
-            let mut slider = zoom_to_slider(self.zoom, min);
-            ui.spacing_mut().slider_width = 96.0;
-            let response = ui.add(
-                egui::Slider::new(&mut slider, 0.0..=1.0)
-                    .show_value(false)
-                    .trailing_fill(true),
-            );
-            self.remember("timeline.zoom_slider", &response);
-            if response.changed() {
-                self.apply_zoom(slider_to_zoom(slider, min));
-            }
-            response.on_hover_text(self.tr(Text::ZoomLevel));
-            if self.icon_only(
-                ui,
-                "timeline.zoom_in",
-                Icon::MagnifyingGlassPlus,
-                self.tr(Text::ZoomIn),
-                None,
-                None,
-                true,
-            ) {
-                self.action("timeline.zoom_in");
-            }
-        });
-        let bounds = Rect::from_center_size(layout.toolbar.center(), Vec2::new(178.0, 28.0));
-        ui.scope_builder(egui::UiBuilder::new().max_rect(bounds), |ui| {
-            ui.horizontal(|ui| {
-                ui.spacing_mut().item_spacing.x = 0.0;
-                let name = self
-                    .session
-                    .project()
-                    .data()
-                    .scene()
-                    .name
-                    .as_str()
-                    .to_owned();
-                let response = ui
-                    .add_sized(
-                        [140.0, theme::size::CONTROL],
-                        egui::Button::new(name).truncate(),
-                    )
-                    .on_hover_text(self.tr(Text::Scenes));
-                self.remember("scene.open", &response);
-                if response.clicked() {
-                    self.action("scene.open");
-                }
-                let response = ui
-                    .add(egui::Button::image(icons::tinted(
-                        Icon::FilmStrip,
-                        BUTTON_ICON,
-                        self.text_color(),
-                    )))
-                    .on_hover_text(self.tr(Text::Scenes));
-                self.remember("scene.open_list", &response);
-                if response.clicked() {
-                    self.action("scene.open");
-                }
-            });
-        });
+        let divider = self.border();
+        let mut left = Cursor {
+            x: bar.left() + EDGE,
+            top,
+        };
+        let rect = left.cell(CELL);
+        self.toolbar_button(
+            ui,
+            rect,
+            "timeline.add_track",
+            Icon::Plus,
+            Text::AddTrack,
+            None,
+        );
+        left.divider(ui, divider, DIVIDER_GAP);
+        for (id, icon, label) in [
+            ("edit.undo", Icon::ArrowCounterClockwise, Text::Undo),
+            ("edit.redo", Icon::ArrowClockwise, Text::Redo),
+            ("timeline.split", Icon::Scissors, Text::Split),
+            ("timeline.delete", Icon::Trash, Text::Delete),
+        ] {
+            let rect = left.cell(CELL);
+            self.toolbar_button(ui, rect, id, icon, label, None);
+        }
+
+        // Right group, placed from the right edge inwards.
+        let mut right = bar.right() - EDGE;
+        let zoom_in = Rect::from_min_size(egui::pos2(right - CELL, top), Vec2::splat(CELL));
+        right = zoom_in.left() - GAP;
+        let slider = Rect::from_min_size(
+            egui::pos2(right - theme::size::ZOOM_SLIDER, top),
+            Vec2::new(theme::size::ZOOM_SLIDER, CELL),
+        );
+        right = slider.left() - GAP;
+        let zoom_out = Rect::from_min_size(egui::pos2(right - CELL, top), Vec2::splat(CELL));
+        right = zoom_out.left() - GAP - DIVIDER_GAP;
+        let center = top + CELL / 2.0;
+        ui.painter().line_segment(
+            [
+                egui::pos2(right - 0.5, center - DIVIDER_HEIGHT / 2.0),
+                egui::pos2(right - 0.5, center + DIVIDER_HEIGHT / 2.0),
+            ],
+            egui::Stroke::new(1.0, divider),
+        );
+        right -= 1.0 + DIVIDER_GAP;
+        let mut toggles = [Rect::NOTHING; 3];
+        for toggle in toggles.iter_mut().rev() {
+            *toggle = Rect::from_min_size(egui::pos2(right - CELL, top), Vec2::splat(CELL));
+            right = toggle.left() - GAP;
+        }
+        let scene = Rect::from_min_size(egui::pos2(right - CELL - 1.0, top), Vec2::splat(CELL));
+
+        let name = self
+            .session
+            .project()
+            .data()
+            .scene()
+            .name
+            .as_str()
+            .to_owned();
+        self.toolbar_scene(ui, scene, &name);
+        let magnet = self.session.project().data().scene().timeline.magnet;
+        let snapping = self.preferences.snapping;
+        let ripple = self.ripple;
+        self.toolbar_button(
+            ui,
+            toggles[0],
+            "timeline.snap",
+            Icon::Magnet,
+            Text::Snap,
+            Some(snapping),
+        );
+        if self.toolbar_button(
+            ui,
+            toggles[1],
+            "timeline.magnet",
+            Icon::LinkSimple,
+            Text::Magnet,
+            Some(magnet),
+        ) {
+            self.track_command("track.set_magnet", serde_json::json!({"enabled":!magnet}));
+        }
+        self.toolbar_button(
+            ui,
+            toggles[2],
+            "timeline.ripple",
+            Icon::Waveform,
+            Text::Ripple,
+            Some(ripple),
+        );
+        self.toolbar_button(
+            ui,
+            zoom_out,
+            "timeline.zoom_out",
+            Icon::MagnifyingGlassMinus,
+            Text::ZoomOut,
+            None,
+        );
+        self.toolbar_button(
+            ui,
+            zoom_in,
+            "timeline.zoom_in",
+            Icon::MagnifyingGlassPlus,
+            Text::ZoomIn,
+            None,
+        );
+        let min = self.min_zoom(self.timeline_viewport);
+        let mut value = zoom_to_slider(self.zoom, min);
+        let response = crate::kit::rail_slider(ui, "timeline.zoom_slider", slider, &mut value);
+        if response.changed() {
+            self.apply_zoom(slider_to_zoom(value, min));
+        }
+        self.remember("timeline.zoom_slider", &response);
+        response.on_hover_text(self.tr(Text::ZoomLevel));
+    }
+
+    /// One icon-only button in `rect`; returns the click for controls that
+    /// run their own command (the rest dispatch their registered action).
+    fn toolbar_button(
+        &mut self,
+        ui: &mut egui::Ui,
+        rect: Rect,
+        id: &str,
+        icon: Icon,
+        label: Text,
+        selected: Option<bool>,
+    ) -> bool {
+        let shortcut = self.shortcut(id);
+        let clicked = ui
+            .scope_builder(egui::UiBuilder::new().max_rect(rect), |ui| {
+                self.icon_only(
+                    ui,
+                    id,
+                    icon,
+                    self.tr(label),
+                    shortcut.as_deref(),
+                    selected,
+                    true,
+                )
+            })
+            .inner;
+        if clicked && crate::actions::action(id).is_some() {
+            self.action(id);
+            return false;
+        }
+        clicked
+    }
+
+    fn toolbar_scene(&mut self, ui: &mut egui::Ui, rect: Rect, name: &str) {
+        let tooltip = format!("{}: {name}", self.tr(Text::Scenes));
+        let response = ui
+            .scope_builder(egui::UiBuilder::new().max_rect(rect), |ui| {
+                crate::kit::icon_button(ui, "scene.open", Icon::FilmStrip, &tooltip, false)
+            })
+            .inner;
+        self.remember_with_icon("scene.open", Some(Icon::FilmStrip.name()), &response);
+        if response.clicked() {
+            self.action("scene.open");
+        }
     }
 }

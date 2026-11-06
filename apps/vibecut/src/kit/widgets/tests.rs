@@ -102,3 +102,19 @@ fn buttons_dispatch_clicks_only_when_enabled() {
         }
     }
 }
+
+#[test]
+fn rail_slider_maps_a_press_to_its_fraction() {
+    let mut harness = harness(
+        |ui, value: &mut f32| {
+            let rect = Rect::from_min_size(egui::pos2(10.0, 10.0), Vec2::new(96.0, 24.0));
+            rail_slider(ui, "zoom", rect, value);
+        },
+        0.0,
+    );
+    harness.run();
+    harness.get_by_label("zoom").click();
+    harness.run();
+    let value = *harness.state();
+    assert!((value - 0.5).abs() < 0.05, "centre press, got {value}");
+}

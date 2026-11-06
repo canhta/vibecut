@@ -591,6 +591,18 @@ const SCENES: &[Scene] = &[
         build: close_prompt_vi,
     },
     Scene {
+        name: "timeline-main",
+        reference_dark: None,
+        reference_light: None,
+        build: timeline_main,
+    },
+    Scene {
+        name: "timeline-multi",
+        reference_dark: None,
+        reference_light: None,
+        build: timeline_multi,
+    },
+    Scene {
         name: "tracks",
         reference_dark: Some("capcut/illustrations/capcut-desktop-ui-changes.png"),
         reference_light: Some("capcut/illustrations/capcut-desktop-ui-changes.png"),
@@ -1787,6 +1799,67 @@ fn close_prompt_vi(theme: Theme, scale: f32) -> Result<AppHarness, Failure> {
 }
 
 const TRACKS_WINDOW: [f32; 2] = [1728.0, 1200.0];
+/// The measured reference editor window, so crops compare at equal logical size.
+const EDITOR_WINDOW: [f32; 2] = [1728.0, 1030.0];
+
+/// One long clip on the main track, like the single-track reference capture.
+fn timeline_main(theme: Theme, scale: f32) -> Result<AppHarness, Failure> {
+    let mut session = empty_session("Timeline")?;
+    for (id, kind) in [(1, StreamKind::Video), (2, StreamKind::Audio)] {
+        session.apply(Command::AddAsset {
+            asset: source_asset(
+                id,
+                kind,
+                std::env::temp_dir().join(format!("source-{id}.mp4")),
+            )?,
+        })?;
+    }
+    let main = session.project().data().scene().timeline.main.id;
+    for index in 0..4 {
+        insert(
+            &mut session,
+            main,
+            Tick(index * 10 * SECOND),
+            range(0, 10)?,
+            Some(AssetId(1)),
+            ItemParams::Video(VideoParams {
+                fades: Default::default(),
+                source_audio_enabled: true,
+                volume: 0.0,
+                muted: false,
+            }),
+        )?;
+    }
+    let mut playback = Playback::new(
+        &session,
+        ByteBudget::new(256 << 20)?,
+        Arc::new(SyntheticSources),
+    )?;
+    playback.set_device_available(true);
+    // 11.24 s puts the playhead 54 px left of the 12 s label, as in the capture.
+    let playhead = Tick((11.24 * SECOND as f64) as i64);
+    session.execute(
+        "project.set_view_state",
+        serde_json::json!({"zoom":1.7875,"scroll":575.0,"playhead":playhead.0}),
+    )?;
+    let mut editor = Editor::new(session, playback, preferences(theme, Locale::En));
+    let project = editor.session.project().clone();
+    editor.playback.seek(playhead, false, project)?;
+    wait_for_frame(&mut editor)?;
+    let mut app = harness_sized(App::Editor(Box::new(editor)), scale, EDITOR_WINDOW);
+    wait_for_presented(&mut app)?;
+    app.run_steps(3);
+    Ok(app)
+}
+
+/// Populated multi-track timeline (video, audio, text) at the reference size.
+fn timeline_multi(theme: Theme, scale: f32) -> Result<AppHarness, Failure> {
+    let (editor, _) = media_editor(theme, Locale::En)?;
+    let mut app = harness_sized(App::Editor(Box::new(editor)), scale, EDITOR_WINDOW);
+    wait_for_presented(&mut app)?;
+    app.run_steps(3);
+    Ok(app)
+}
 
 fn tracks(theme: Theme, scale: f32) -> Result<AppHarness, Failure> {
     let mut session = empty_session("Tracks")?;

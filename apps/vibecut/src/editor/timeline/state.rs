@@ -2,7 +2,7 @@
 
 use crate::editor::timeline::{
     AssetId, BookmarkId, ItemId, LABEL_WIDTH, RULER_HEIGHT, Rect, SCROLLBAR, TOOLBAR_HEIGHT, Tick,
-    TrackId, TrackKind, Vec2, egui,
+    TrackId, TrackKind, Vec2, egui, theme,
 };
 
 #[derive(Clone, Debug)]
@@ -14,7 +14,6 @@ pub(super) struct TrackRow {
     pub(super) muted: bool,
     pub(super) hidden: bool,
     pub(super) locked: bool,
-    pub(super) empty: bool,
     pub(super) kind: TrackKind,
     pub(super) name: String,
     pub(super) top: f32,
@@ -49,7 +48,6 @@ pub(super) struct TimelineLayout {
     pub(super) ruler: Rect,
     pub(super) body: Rect,
     pub(super) labels: Rect,
-    pub(super) corner: Rect,
     pub(super) horizontal: Rect,
     pub(super) vertical: Rect,
 }
@@ -59,33 +57,30 @@ impl TimelineLayout {
             rect.min,
             Vec2::new(rect.width(), TOOLBAR_HEIGHT.min(rect.height())),
         );
-        let top = toolbar.bottom();
+        // A 1 px rule closes the toolbar before the ruler starts.
+        let top = (toolbar.bottom() + 1.0).min(rect.bottom());
         let label_right = (rect.left() + LABEL_WIDTH).min(rect.right());
         let ruler_bottom = (top + RULER_HEIGHT).min(rect.bottom());
+        let body_top = (ruler_bottom + theme::size::RULER_GAP).min(rect.bottom());
         let right = (rect.right() - SCROLLBAR).max(label_right);
-        let bottom = (rect.bottom() - SCROLLBAR).max(ruler_bottom);
+        let bottom = (rect.bottom() - theme::size::TIMELINE_FOOT).max(body_top);
         let ruler = Rect::from_min_max(
             egui::pos2(label_right, top),
             egui::pos2(right, ruler_bottom),
         );
-        let body = Rect::from_min_max(
-            egui::pos2(ruler.left(), ruler.bottom()),
-            egui::pos2(right, bottom),
-        );
+        let body = Rect::from_min_max(egui::pos2(label_right, body_top), egui::pos2(right, bottom));
         let labels = Rect::from_min_max(
-            egui::pos2(rect.left(), ruler.bottom()),
-            egui::pos2(ruler.left(), bottom),
+            egui::pos2(rect.left(), body_top),
+            egui::pos2(label_right, bottom),
         );
-        let corner = Rect::from_min_max(
-            egui::pos2(rect.left(), top),
-            egui::pos2(ruler.left(), ruler.bottom()),
-        );
+        // The 6 px bar sits 4 px under the lanes inside the foot strip.
+        let bar_top = (bottom + 4.0).min(rect.bottom());
         let horizontal = Rect::from_min_max(
-            egui::pos2(ruler.left(), bottom),
-            egui::pos2(right, rect.bottom()),
+            egui::pos2(label_right, bar_top),
+            egui::pos2(right, (bar_top + SCROLLBAR).min(rect.bottom())),
         );
         let vertical = Rect::from_min_max(
-            egui::pos2(right, ruler.bottom()),
+            egui::pos2(right, body_top),
             egui::pos2(rect.right(), bottom),
         );
         Self {
@@ -93,7 +88,6 @@ impl TimelineLayout {
             ruler,
             body,
             labels,
-            corner,
             horizontal,
             vertical,
         }
@@ -107,7 +101,7 @@ impl Editor {
         &mut self,
         layout: &TimelineLayout,
     ) -> TimelineViews {
-        let (rows, raw_items, duration, bookmarks, content_height) = {
+        let (mut rows, raw_items, duration, bookmarks, content_height) = {
             let data = self.session.project().data();
             let mut rows = Vec::new();
             let mut raw_items = Vec::new();
@@ -137,7 +131,6 @@ impl Editor {
                     muted: track.muted,
                     hidden: track.hidden,
                     locked: track.locked,
-                    empty: track.items.is_empty(),
                     kind: track.kind,
                     name: track.name.as_str().to_owned(),
                     top: offset,
@@ -184,6 +177,12 @@ impl Editor {
         self.vertical_scroll = self
             .vertical_scroll
             .clamp(0.0, (content_height - layout.body.height()).max(0.0));
+        // A stack shorter than the lanes sits centred, as in the captured
+        // single-track editor (221643: 152 px above, 148 px below the clip).
+        let centring = ((layout.body.height() - content_height) / 2.0).max(0.0);
+        for row in &mut rows {
+            row.top += centring;
+        }
         let mut items = Vec::new();
         for (row_index, id, kind, start, end, locked, label, overlay, source_asset) in raw_items {
             let (top, height) = rows

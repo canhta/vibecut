@@ -36,6 +36,7 @@ SHA-256 of each embedded file:
 | `funnel.svg` | `26b847aa9f8566707443669502dcf08bf0a2d1d3cfb2dc1136842f4033104abb` |
 | `gear-six.svg` | `2bb05ec80cc37505a3f21c74989dbb297ab8442a668f5ffbd6a8f7c1d5794c7b` |
 | `house.svg` | `180e9259e99e23da197b59b19394d006d6a5d33e384cc2b9c8381cb0214a5716` |
+| `link-simple.svg` | `7a97dad4b2f16c3a386ea69ba78d29bf3a71c311f2e34100d79143559ba13151` |
 | `list-bullets.svg` | `5c685a673fbd053a3c548039725d1a9f902938fbcddaef3c5f958f0a64c19341` |
 | `magnet.svg` | `b62b4c2348845e7b498b274540b9eda464ab1f4f39176e5c5d51f7485f038f5d` |
 | `lock-open.svg` | `8b9f2b734cf20b70327b569ae4e254d5899771b6ea886bb6e9a2facde5582c04` |

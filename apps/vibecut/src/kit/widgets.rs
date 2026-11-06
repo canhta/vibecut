@@ -62,6 +62,44 @@ fn ink(ui: &Ui, selected: bool) -> egui::Color32 {
     }
 }
 
+/// A bare rail slider over `0..=1` inside `rect`: a 2 px rail, filled up to a
+/// 6×12 thumb, no label or field. The caller supplies a stable automation ID.
+pub(crate) fn rail_slider(ui: &mut Ui, id: &str, rect: Rect, value: &mut f32) -> Response {
+    let mut response = ui.interact(rect, ui.make_persistent_id(id), Sense::click_and_drag());
+    let half = size::ZOOM_THUMB_WIDTH / 2.0;
+    let track = (rect.left() + half)..=(rect.right() - half);
+    if (response.clicked() || response.dragged())
+        && let Some(pointer) = response.interact_pointer_pos()
+    {
+        let next = ((pointer.x - track.start()) / (track.end() - track.start())).clamp(0.0, 1.0);
+        if (next - *value).abs() > f32::EPSILON {
+            *value = next;
+            response.mark_changed();
+        }
+    }
+    let dark = ui.visuals().dark_mode;
+    let rail = Rect::from_center_size(rect.center(), Vec2::new(rect.width(), size::SLIDER_RAIL));
+    let x = egui::lerp(track, (*value).clamp(0.0, 1.0));
+    paint(ui).rect_filled(rail, radius::PANEL, theme::track_rest(dark));
+    paint(ui).rect_filled(
+        Rect::from_min_max(rail.min, egui::pos2(x, rail.bottom())),
+        radius::PANEL,
+        theme::bright(dark),
+    );
+    paint(ui).rect_filled(
+        Rect::from_center_size(
+            egui::pos2(x, rail.center().y),
+            Vec2::new(size::ZOOM_THUMB_WIDTH, size::SLIDER_THUMB_HEIGHT),
+        ),
+        radius::CONTROL,
+        theme::bright(dark),
+    );
+    response.widget_info(|| egui::WidgetInfo::slider(ui.is_enabled(), f64::from(*value), id));
+    author(&response, id);
+    focus_ring(ui, &response);
+    response
+}
+
 /// A dense icon action with keyboard focus, tooltip and a stable automation ID.
 pub(crate) fn icon_button(
     ui: &mut Ui,

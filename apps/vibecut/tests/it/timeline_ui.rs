@@ -943,7 +943,7 @@ fn every_editor_button_reports_its_embedded_icon() {
         ("timeline.split", "scissors"),
         ("timeline.delete", "trash"),
         ("timeline.snap", "magnet"),
-        ("timeline.magnet", "magnet"),
+        ("timeline.magnet", "link-simple"),
         ("timeline.ripple", "waveform"),
         ("timeline.zoom_out", "magnifying-glass-minus"),
         ("timeline.zoom_in", "magnifying-glass-plus"),
@@ -2293,4 +2293,61 @@ fn edge_scroll_clamp_reversal_and_escape_preserve_drag_origin() {
         );
         std::thread::sleep(std::time::Duration::from_millis(2));
     }
+}
+
+#[test]
+fn timeline_geometry_follows_the_measured_rows() {
+    let fixture = fixture();
+    let video_a = fixture.video_a;
+    let mut harness = harness(fixture.editor);
+    harness.run_steps(3);
+    let ruler = widget(&harness, "timeline.ruler");
+    assert_eq!(ruler.height(), 22.0, "ruler strip");
+    let clip = widget(&harness, &format!("timeline.item.{}", video_a.0));
+    assert_eq!(clip.height(), 74.0, "video clip inside its 76 px lane");
+    let header = widget(&harness, "track.1.header");
+    assert_eq!((header.width(), header.height()), (123.0, 76.0));
+    // Header cells share one 24 px pitch: lock, hide, mute, more.
+    let centres: Vec<f32> = ["lock", "hidden", "muted", "more"]
+        .into_iter()
+        .map(|suffix| widget(&harness, &format!("track.1.{suffix}")).center().x)
+        .collect();
+    for pair in centres.windows(2) {
+        assert!((pair[1] - pair[0] - 24.0).abs() < 0.5, "pitch {centres:?}");
+    }
+    // Toolbar buttons keep a 36 px pitch (24 px box, 12 px gap).
+    let undo = widget(&harness, "edit.undo");
+    let redo = widget(&harness, "edit.redo");
+    assert!((redo.center().x - undo.center().x - 36.0).abs() < 0.5);
+}
+
+#[test]
+fn header_lock_control_toggles_the_track_lock() {
+    let fixture = fixture();
+    let mut harness = harness(fixture.editor);
+    harness.run_steps(3);
+    let locked = |editor: &Editor| {
+        editor
+            .session
+            .project()
+            .data()
+            .scene()
+            .timeline
+            .overlays
+            .iter()
+            .find(|track| track.id.0 == 1)
+            .unwrap()
+            .locked
+    };
+    assert!(!locked(harness.state()));
+    harness
+        .get(By::new().predicate(|n| n.author_id() == Some("track.1.lock")))
+        .click();
+    harness.run_steps(3);
+    assert!(locked(harness.state()), "lock control locks the track");
+    harness
+        .get(By::new().predicate(|n| n.author_id() == Some("track.1.lock")))
+        .click();
+    harness.run_steps(3);
+    assert!(!locked(harness.state()), "second press unlocks it");
 }

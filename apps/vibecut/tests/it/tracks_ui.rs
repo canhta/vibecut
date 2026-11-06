@@ -49,7 +49,7 @@ fn track_headers_remain_operable_at_display_density() {
             .find(|w| w.id == "track.0.header")
             .unwrap();
         assert_eq!(main.rect.width(), 123.0);
-        assert_eq!(main.rect.height(), 65.0);
+        assert_eq!(main.rect.height(), 76.0);
         for track in h.state().session.project().data().scene().timeline.iter() {
             let w = inspect
                 .widgets
@@ -57,9 +57,9 @@ fn track_headers_remain_operable_at_display_density() {
                 .find(|w| w.id == format!("track.{}.header", track.id.0))
                 .unwrap();
             let expected = match track.kind {
-                TrackKind::Video => 65.0,
-                TrackKind::Audio => 50.0,
-                _ => 25.0,
+                TrackKind::Video => 76.0,
+                TrackKind::Audio => 40.0,
+                _ => 32.0,
             };
             assert_eq!(w.rect.height(), expected);
             assert!(
@@ -108,7 +108,7 @@ fn track_headers_remain_operable_at_display_density() {
                 .main
                 .hidden
         );
-        h.get(By::new().predicate(|n| n.author_id() == Some("track.0.magnet")))
+        h.get(By::new().predicate(|n| n.author_id() == Some("timeline.magnet")))
             .click();
         h.run_steps(3);
         assert!(!h.state().session.project().data().scene().timeline.magnet);
@@ -126,10 +126,9 @@ fn track_headers_remain_operable_at_display_density() {
         );
         let id = h.state().session.project().data().scene().timeline.overlays[0].id;
         h.get(
-            By::new()
-                .predicate(|n| n.author_id() == Some(format!("track.{}.header", id.0).as_str())),
+            By::new().predicate(|n| n.author_id() == Some(format!("track.{}.more", id.0).as_str())),
         )
-        .click_secondary();
+        .click();
         h.run_steps(3);
         h.get(
             By::new()
@@ -248,8 +247,8 @@ fn rename_commits_on_enter_and_esc_keeps_the_old_name() {
         .build_ui_state(|ui, e: &mut Editor| e.ui(ui), editor);
     h.run_steps(4);
     let id = track.0;
-    h.get(By::new().predicate(|n| n.author_id() == Some(format!("track.{id}.header").as_str())))
-        .click_secondary();
+    h.get(By::new().predicate(|n| n.author_id() == Some(format!("track.{id}.more").as_str())))
+        .click();
     h.run_steps(2);
     h.get(
         By::new()
@@ -285,8 +284,8 @@ fn rename_commits_on_enter_and_esc_keeps_the_old_name() {
         "Đổi tên rãnh"
     );
 
-    h.get(By::new().predicate(|n| n.author_id() == Some(format!("track.{id}.header").as_str())))
-        .click_secondary();
+    h.get(By::new().predicate(|n| n.author_id() == Some(format!("track.{id}.more").as_str())))
+        .click();
     h.run_steps(2);
     h.get(
         By::new()
@@ -424,11 +423,18 @@ fn video_and_main_rename_fields_do_not_cover_output_controls() {
                 .unwrap()
                 .rect
         };
+        // The field takes the whole header: output controls are hidden while it
+        // is open, and any that stay must not sit under it.
         for suffix in ["muted", "hidden"] {
-            assert!(
-                !rect("rename").intersects(rect(suffix)),
-                "rename overlaps {suffix}"
-            );
+            if let Some(control) = widgets
+                .iter()
+                .find(|widget| widget.id == format!("track.{}.{suffix}", track.0))
+            {
+                assert!(
+                    !rect("rename").intersects(control.rect),
+                    "rename overlaps {suffix}"
+                );
+            }
         }
         h.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::A);
         h.event(egui::Event::Text("Readable name".into()));
@@ -468,9 +474,9 @@ fn rename_cancellation_restores_shortcuts_after_track_exit() {
         h.run_steps(4);
         h.get(
             By::new()
-                .predicate(|n| n.author_id() == Some(format!("track.{}.header", track.0).as_str())),
+                .predicate(|n| n.author_id() == Some(format!("track.{}.more", track.0).as_str())),
         )
-        .click_secondary();
+        .click();
         h.run_steps(2);
         h.get(By::new().predicate(|n| {
             n.author_id() == Some(format!("track.{}.rename_action", track.0).as_str())
@@ -570,8 +576,8 @@ fn lock_refuses_structural_edits_and_add_track_uses_the_active_kind() {
         .build_ui_state(|ui, e: &mut Editor| e.ui(ui), editor);
     h.run_steps(4);
     let id = text_track.0;
-    h.get(By::new().predicate(|n| n.author_id() == Some(format!("track.{id}.header").as_str())))
-        .click_secondary();
+    h.get(By::new().predicate(|n| n.author_id() == Some(format!("track.{id}.more").as_str())))
+        .click();
     h.run_steps(2);
     h.get(By::new().predicate(|n| n.author_id() == Some(format!("track.{id}.lock").as_str())))
         .click();

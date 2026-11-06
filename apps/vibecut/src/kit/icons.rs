@@ -35,6 +35,7 @@ pub(crate) enum Icon {
     FolderOpen,
     GearSix,
     House,
+    LinkSimple,
     ListBullets,
     Lock,
     LockOpen,
@@ -89,6 +90,7 @@ impl Icon {
         Self::FolderOpen,
         Self::GearSix,
         Self::House,
+        Self::LinkSimple,
         Self::ListBullets,
         Self::Lock,
         Self::LockOpen,
@@ -142,6 +144,7 @@ impl Icon {
             Self::FolderOpen => "folder-open",
             Self::GearSix => "gear-six",
             Self::House => "house",
+            Self::LinkSimple => "link-simple",
             Self::ListBullets => "list-bullets",
             Self::Lock => "lock",
             Self::LockOpen => "lock-open",
@@ -264,6 +267,10 @@ const ICONS: &[(&str, &[u8])] = &[
     (
         "house",
         include_bytes!("../../../../assets/icons/phosphor/regular/house.svg"),
+    ),
+    (
+        "link-simple",
+        include_bytes!("../../../../assets/icons/phosphor/regular/link-simple.svg"),
     ),
     (
         "list-bullets",

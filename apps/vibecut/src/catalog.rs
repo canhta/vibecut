@@ -387,7 +387,6 @@ catalog! {
     PlayerFull { key: "player_full", en: "Full", vi: "Đầy đủ" },
     PlayerRatio { key: "player_ratio", en: "Ratio", vi: "Tỷ lệ" },
     Preview { key: "preview", en: "Player", vi: "Trình phát" },
-    Timeline { key: "timeline", en: "Timeline", vi: "Dòng thời gian" },
     Project { key: "project", en: "Project", vi: "Dự án" },
     Details { key: "details", en: "Details", vi: "Chi tiết" },
     EmptyMedia { key: "empty_media", en: "Your media will appear here", vi: "Tư liệu của bạn sẽ xuất hiện ở đây" },
@@ -509,7 +508,6 @@ catalog! {
     VideoTrackName { key: "video_track_name", en: "Video {n}", vi: "Video {n}" },
     AudioTrackName { key: "audio_track_name", en: "Audio {n}", vi: "Âm thanh {n}" },
     Caption { key: "caption", en: "Captions", vi: "Phụ đề" },
-    Overlay { key: "overlay", en: "Overlay", vi: "Lớp phủ" },
     MuteTrack { key: "mute_track", en: "Mute track", vi: "Tắt tiếng rãnh" },
     HideTrack { key: "hide_track", en: "Hide track", vi: "Ẩn rãnh" },
     DeleteTrack { key: "delete_track", en: "Delete track", vi: "Xóa rãnh" },
@@ -519,6 +517,7 @@ catalog! {
     AddTrack { key: "add_track", en: "Add track", vi: "Thêm rãnh" },
     TrackLocked { key: "track_locked", en: "Track is locked", vi: "Rãnh đang khóa" },
     Magnet { key: "magnet", en: "Main track magnet", vi: "Nam châm rãnh chính" },
+    TrackMore { key: "track_more", en: "More", vi: "Thêm" },
     TrackToggle { key: "track_toggle", en: "{action}: {track}", vi: "{action}: {track}" },
 
     // Timeline actions.

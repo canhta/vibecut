@@ -61,10 +61,9 @@ use std::{
 use time::{FrameRate, Rounding, SourceRange, TICKS_PER_SECOND, Tick};
 
 const TOOLBAR_HEIGHT: f32 = theme::size::TOOLBAR;
-const TOOLBAR_SPACING: f32 = theme::space::XS;
 const BUTTON_ICON: f32 = theme::icon::DENSE;
 const ICON_BUTTON: f32 = theme::size::CONTROL;
-const RULER_HEIGHT: f32 = theme::size::FIELD;
+const RULER_HEIGHT: f32 = theme::size::RULER;
 const LABEL_WIDTH: f32 = theme::size::TRACK_LABEL;
 const SCROLLBAR: f32 = theme::size::SCROLLBAR;
 const TRACK_GAP: f32 = theme::space::SM;
@@ -89,7 +88,7 @@ const PADDING_MIN_AT_ZOOM_PERCENT: f32 = 0.2;
 const EDGE_AUTO_SCROLL_ZONE: f32 = 100.0;
 const EDGE_AUTO_SCROLL_MAX_STEP: f32 = 15.0;
 const HORIZONTAL_WHEEL_STEP: f32 = 40.0;
-const RULER_LABEL_SPACING: f32 = 120.0;
+const RULER_LABEL_SPACING: f32 = 160.0;
 const RULER_TICK_SPACING: f32 = 18.0;
 const LABEL_CHARS: usize = 120;
 

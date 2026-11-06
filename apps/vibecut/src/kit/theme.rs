@@ -231,6 +231,8 @@ pub(crate) mod type_size {
     pub const PLAYER_TITLE: f32 = 11.0;
     pub const BODY: f32 = 12.0;
     pub const CHROME: f32 = 14.0;
+    /// Ruler captions: digit height 8 px in 221643.
+    pub const CAPTION: f32 = 11.0;
 }
 /// Measured boxes and row pitches from the desktop capture set.
 pub(crate) mod size {
@@ -253,8 +255,23 @@ pub(crate) mod size {
     pub const SHORTCUT_ROW: f32 = 40.0;
     pub const VIDEO_TRACK: f32 = 76.0;
     pub const CLIP: f32 = 74.0;
+    /// Top, filmstrip and waveform bands inside the 74 px clip (221643 y 787-858).
+    pub const CLIP_BAND: f32 = 17.0;
+    pub const CLIP_FILMSTRIP: f32 = 39.0;
+    pub const CLIP_WAVEFORM: f32 = 16.0;
     pub const TRACK_LABEL: f32 = 123.0;
     pub const SCROLLBAR: f32 = 6.0;
+    /// Ruler strip under the toolbar (221643 y 607-629); lanes start at y 635, 28 px below its top.
+    pub const RULER: f32 = 22.0;
+    /// Empty band between the ruler and the track lanes (221643 y 629-635).
+    pub const RULER_GAP: f32 = 6.0;
+    /// Strip under the lanes that holds the 6 px horizontal scrollbar (221643 y 1009-1021).
+    pub const TIMELINE_FOOT: f32 = 12.0;
+    /// Playhead handle in the ruler (221643 x 356-365, y 607-621).
+    pub const PLAYHEAD_HANDLE_WIDTH: f32 = 10.0;
+    pub const PLAYHEAD_HANDLE_HEIGHT: f32 = 15.0;
+    /// Pitch of the track header controls (221643 glyph centres 22/47/71/95/119).
+    pub const HEADER_CELL: f32 = 24.0;
     pub const SUBNAV: f32 = 120.0;
     pub const SUBNAV_BUTTON: f32 = 104.0;
     pub const TAB_MIN: f32 = 48.0;
@@ -269,6 +286,8 @@ pub(crate) mod size {
     pub const SLIDER_THUMB_WIDTH: f32 = 8.0;
     pub const SLIDER_THUMB_HEIGHT: f32 = 12.0;
     pub const ZOOM_SLIDER: f32 = 96.0;
+    /// Zoom slider thumb is 6 px wide (221643 x 1632-1637, y 584-595); the 8 px thumb is the properties slider.
+    pub const ZOOM_THUMB_WIDTH: f32 = 6.0;
     pub const MEDIA_THUMB_WIDTH: f32 = 120.0;
     pub const MEDIA_THUMB_HEIGHT: f32 = 73.0;
     pub const MEDIA_LABEL_HEIGHT: f32 = 16.0;

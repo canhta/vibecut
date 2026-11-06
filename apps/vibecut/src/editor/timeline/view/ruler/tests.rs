@@ -48,3 +48,23 @@ fn ruler_ticks_keep_labels_separated_at_every_zoom_and_rate() {
     assert!(ruler_label(60.0, FrameRate::FPS_59_94).contains(';'));
     assert!(!ruler_label(60.0, FrameRate::FPS_23_976).contains(';'));
 }
+
+#[test]
+fn captions_use_minutes_and_seconds_until_labels_get_finer_than_a_second() {
+    assert_eq!(ruler_text(9.0, FrameRate::FPS_30, 3.0), "00:09");
+    assert_eq!(ruler_text(75.0, FrameRate::FPS_30, 5.0), "01:15");
+    assert_eq!(ruler_text(3_725.0, FrameRate::FPS_30, 30.0), "1:02:05");
+    assert_eq!(
+        ruler_text(1.0, FrameRate::FPS_30, 1.0 / 15.0),
+        ruler_label(1.0, FrameRate::FPS_30)
+    );
+}
+
+#[test]
+fn whole_second_labels_split_into_ten_ticks_when_they_fit() {
+    // 71.5 px/s: a 3 s label 214.5 px wide with ten 21.4 px ticks.
+    let config = ruler_config(71.5, FrameRate::FPS_30);
+    assert!((config.label_seconds - 3.0).abs() < 1e-9, "{config:?}");
+    assert_eq!(config.label_multiple, 10);
+    assert!((config.tick_seconds - 0.3).abs() < 1e-9);
+}
