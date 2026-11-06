@@ -1,11 +1,10 @@
-//! Integration tests share one binary and one copy of their helpers.
+//! Integration tests share one binary and one copy of their support module.
 
-mod common;
-mod decode;
+mod decoding;
 mod fixture_generation;
-mod oracle;
-mod robustness;
-mod speech;
-mod vision_prep;
-
-mod metadata;
+mod hostile_input;
+mod import_metadata;
+mod pipeline;
+mod speech_extraction;
+mod support;
+mod vision_preparation;

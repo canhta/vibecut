@@ -1,54 +1,40 @@
 //! Headless streaming media I/O through one dynamically linked FFmpeg backend.
 //! FFmpeg owns codec parameters, demux presentation timing, priming and reordering.
 
-mod asset;
-mod audio_extract;
-mod decode;
-mod encode;
+mod audio;
 #[allow(unsafe_code)]
 mod ffi;
-mod model;
-mod mux;
 mod read;
-mod resample;
-mod summary;
-mod thumbnail;
-mod vision_prep;
+mod source;
+mod vision;
+mod write;
 
-pub use asset::{
-    AssetAvailability, AssetData, AssetId, ContentHash, SourceAsset, SourceProbe, SourceStream,
-};
-pub use audio_extract::{
-    AudioChunk, SPEECH_SAMPLE_RATE, SpeechEnergyWindow, SpeechExtractSettings, SpeechWindow,
-    analyze_speech_energy, extract_speech_audio, extract_speech_audio_with,
-    extract_speech_audio_with_cancel, extract_speech_windows_with_cancel,
-};
-pub use decode::{
-    AudioDecoder, AudioFrame, DecodePreference, RgbaConverter, VideoDecoder, VideoFrame,
-};
-pub use encode::{
-    AudioEncoder, AudioEncoderSettings, EncodePreference, H264Profile, VideoEncoder,
-    VideoEncoderSettings, export_container_available, h264_encoder_available,
+pub use audio::{
+    AudioChunk, AudioResampler, AudioSampleFormat, SPEECH_SAMPLE_RATE, SpeechEnergyWindow,
+    SpeechExtractSettings, SpeechWindow, analyze_speech_energy, extract_speech_audio,
+    extract_speech_audio_with, extract_speech_audio_with_cancel,
+    extract_speech_windows_with_cancel,
 };
 pub use ffmpeg_next::format::Pixel as PixelFormat;
-pub use model::{
-    AudioInfo, CodecParameters, ColorInfo, Packet, Probe, StreamInfo, StreamKind, TimeBase,
-    VideoInfo,
+pub use read::{
+    AudioDecoder, AudioFrame, DecodePreference, PacketReader, RgbaConverter, THUMBNAIL_MAX_EDGE,
+    Thumbnail, VideoDecoder, VideoFrame, VideoReader, probe, thumbnail, thumbnail_at,
+    thumbnail_at_with_read_bytes,
 };
-pub use mux::{Container, MuxSink, Muxer};
-pub use read::{PacketReader, VideoReader, probe};
-pub use resample::{AudioResampler, AudioSampleFormat};
-pub use summary::{
-    Decodability, DisplayFrameRate, ImportedSource, MediaKind, MediaMetadata, ProbeCapabilities,
-    StreamCapability, UnsupportedReason,
+pub use source::{
+    AssetAvailability, AssetData, AssetId, AudioInfo, CodecParameters, ColorInfo, ContentHash,
+    Decodability, DisplayFrameRate, ImportedSource, MediaKind, MediaMetadata, Packet, Probe,
+    ProbeCapabilities, SourceAsset, SourceProbe, SourceStream, StreamCapability, StreamInfo,
+    StreamKind, TimeBase, UnsupportedReason, VideoInfo,
 };
-pub use thumbnail::{
-    THUMBNAIL_MAX_EDGE, Thumbnail, thumbnail, thumbnail_at, thumbnail_at_with_read_bytes,
-};
-pub use vision_prep::{
+pub use vision::{
     FACE_CROP_SIZE, FaceBox, FaceCrop, FaceTensor, MFCC_COEFFICIENTS, MfccFrame, MfccProgress,
     VISION_SAMPLE_RATE, VisionFrame, VisionPrepLimits, decode_frame_at, decode_shot_frames,
     mfcc_range, mfcc_range_with_progress,
+};
+pub use write::{
+    AudioEncoder, AudioEncoderSettings, Container, EncodePreference, H264Profile, MuxSink, Muxer,
+    VideoEncoder, VideoEncoderSettings, export_container_available, h264_encoder_available,
 };
 
 /// Typed failures from the media boundary. Provider paths and media text are not

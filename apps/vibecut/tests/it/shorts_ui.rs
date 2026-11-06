@@ -1,7 +1,7 @@
 #![allow(clippy::unwrap_used, clippy::panic, clippy::indexing_slicing)]
 #[path = "support/shorts.rs"]
 mod fixture;
-#[path = "../../../../crates/media/tests/it/common/mod.rs"]
+#[path = "../../../../crates/media/tests/it/support.rs"]
 mod media_oracle;
 use egui_kittest::{
     Harness,

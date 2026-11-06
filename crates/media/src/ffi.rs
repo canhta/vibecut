@@ -90,7 +90,7 @@ pub(super) fn thumbnail_limits(ctx: &mut ff::codec::context::Context) {
     unsafe {
         (*ctx.as_mut_ptr()).thread_count = 1;
         (*ctx.as_mut_ptr()).thread_type = FF_THREAD_SLICE;
-        (*ctx.as_mut_ptr()).max_pixels = crate::thumbnail::MAX_SOURCE_PIXELS as i64;
+        (*ctx.as_mut_ptr()).max_pixels = crate::read::MAX_SOURCE_PIXELS as i64;
     }
 }
 

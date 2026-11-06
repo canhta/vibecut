@@ -14,11 +14,6 @@ doc	crates/ai/src/policy.rs	first line is not a //! responsibility line
 doc	crates/ai/src/vision/decisions.rs	first line is not a //! responsibility line
 doc	crates/ai/src/vision/reidentification.rs	first line is not a //! responsibility line
 doc	crates/ai/src/vision/tract.rs	first line is not a //! responsibility line
-doc	crates/media/src/decode.rs	first line is not a //! responsibility line
-doc	crates/media/src/encode.rs	first line is not a //! responsibility line
-doc	crates/media/src/model.rs	first line is not a //! responsibility line
-doc	crates/media/src/mux.rs	first line is not a //! responsibility line
-doc	crates/media/src/read.rs	first line is not a //! responsibility line
 doc	crates/project/src/bezier.rs	first line is not a //! responsibility line
 doc	crates/project/src/bounds.rs	first line is not a //! responsibility line
 doc	crates/project/src/model.rs	first line is not a //! responsibility line
@@ -26,9 +21,7 @@ doc	crates/project/src/persistence.rs	first line is not a //! responsibility lin
 doc	crates/project/src/transition.rs	first line is not a //! responsibility line
 folder	apps/vibecut/src	29 direct children (limit 12)
 folder	crates/ai/src	19 direct children (limit 12)
-folder	crates/media/src	13 direct children (limit 12)
 folder	crates/project/src	18 direct children (limit 12)
-interface	crates/media/tests/it/common/mod.rs	module interface is `mod.rs`; use `foo.rs` beside `foo/`
 layer	apps/vibecut/src/actions.rs	crate::media_panel is in higher layer features/assets (module actions is foundation/foundation)
 layer	apps/vibecut/src/catalog.rs	crate::export is in higher layer features/export (module catalog is foundation/foundation)
 layer	apps/vibecut/src/catalog.rs	crate::media_panel is in higher layer features/assets (module catalog is foundation/foundation)
@@ -51,4 +44,3 @@ layer	apps/vibecut/src/workspace.rs	crate::import is in higher layer features/as
 layer	apps/vibecut/src/workspace.rs	crate::model_manager is in higher layer features/models (module workspace is shell/shell)
 layer	apps/vibecut/src/workspace.rs	crate::playback is in higher layer features/player (module workspace is shell/shell)
 layer	apps/vibecut/src/workspace.rs	crate::shorts is in higher layer features/shorts (module workspace is shell/shell)
-name	crates/media/tests/it/common	module name `common` is banned

@@ -17,7 +17,7 @@ mod speech;
 mod translation;
 mod vision;
 
-#[path = "../../../media/tests/it/common/mod.rs"]
+#[path = "../../../media/tests/it/support.rs"]
 mod media_oracle;
 
 #[test]
