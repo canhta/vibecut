@@ -2,12 +2,12 @@
 use super::{
     Arc, ArtifactCache, ArtifactKind, BoundaryFailure, CacheKey, Cancellation,
     ClipBoundarySettings, ClipCandidate, ClipInput, ClipRequest, ClipSegment, ClipSettings,
-    ClipSuggester, ClipSuggestion, ClipSuggestionOutcome, ConsentPrompt, Cost, CostEstimate, Cue,
-    EditError, FrameRate, Instant, JobBytes, JobKind, JobRunner, JobSpec, KeyInputs, LanguageTag,
-    MAX_WIRE, MODE, Money, NfcText, Operation, Progress, PromptApproval, Providers, RejectedClip,
-    ResourceClass, SampleRange, Scope, SnapSettings, SourceAsset, SourceRange, Stage, Tick,
-    Transcription, build_suggester, engine_providers, hex, snap_clip_boundaries, subtitles,
-    upload_request,
+    ClipSuggester, ClipSuggestion, ClipSuggestionOutcome, ConsentPrompt, Cost, CostEstimate,
+    Credentials, Cue, EditError, FrameRate, Instant, JobBytes, JobKind, JobRunner, JobSpec,
+    KeyInputs, LanguageTag, MAX_WIRE, MODE, Money, NfcText, Operation, Progress, PromptApproval,
+    Providers, RejectedClip, ResourceClass, SampleRange, Scope, SnapSettings, SourceAsset,
+    SourceRange, Stage, Tick, Transcription, build_session, build_suggester, engine_providers, hex,
+    snap_clip_boundaries, transcribe, upload_request, wait_for_job,
 };
 fn clip_input(
     cues: &[Cue],
@@ -121,7 +121,7 @@ pub(super) fn fingerprint(asset: &SourceAsset) -> String {
 #[allow(clippy::too_many_arguments)]
 pub fn suggest(
     request: &ClipRequest,
-    credentials: &subtitles::Credentials,
+    credentials: &Credentials,
     providers: &Providers,
     runner: &mut JobRunner,
     cache: &mut ArtifactCache,
@@ -141,7 +141,7 @@ pub fn suggest(
         Some(language) => language.clone(),
         None => providers.detect_language_for(&request.input, cancel)?,
     };
-    let transcription = subtitles::transcribe(
+    let transcription = transcribe(
         &asset,
         duration,
         &source_language,
@@ -246,7 +246,7 @@ pub fn suggest(
             serde_json::to_vec(&result).map_err(|_| EditError::Invalid("clip result serialization"))
         },
     )?;
-    let output = subtitles::wait_for_job(runner, id, &token, progress, cancel)?;
+    let output = wait_for_job(runner, id, &token, progress, cancel)?;
     let suggested: ai::clips::ClipSuggestions = serde_json::from_slice(output.bytes())
         .map_err(|_| EditError::Invalid("clip result serialization"))?;
     // Account for every attempted invocation, including transient failures.
@@ -285,7 +285,7 @@ pub fn suggest(
             }),
         }
     }
-    let source_project = subtitles::build_session(&asset, &cues, duration, true, None)?
+    let source_project = build_session(&asset, &cues, duration, true, None)?
         .project()
         .as_ref()
         .clone();

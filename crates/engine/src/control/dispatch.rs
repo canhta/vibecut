@@ -1,10 +1,10 @@
 //! Executes admitted control commands.
 use super::Caller;
 use crate::jobs::{JobKind, JobRunner, JobState};
+use crate::providers::{CatalogOperation, ProviderOption};
 use crate::session::wire::{
     ControlResult, JobView, MAX_RESPONSE_BYTES, ProviderView, bounded_json, validate_wire,
 };
-use crate::subtitles::{CatalogOperation, ProviderOption};
 use crate::{Command, EditError, Result, Session, registry};
 
 impl From<ProviderOption> for ProviderView {
@@ -55,7 +55,7 @@ impl Session {
                 })
             }
             Command::ProviderCatalog {} => Ok(ControlResult::Providers {
-                entries: crate::subtitles::provider_options()
+                entries: crate::providers::provider_options()
                     .into_iter()
                     .map(ProviderView::from)
                     .collect(),

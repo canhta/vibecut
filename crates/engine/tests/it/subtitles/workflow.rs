@@ -547,12 +547,9 @@ fn asr_checkpoint_written_under_the_pre_move_key_is_reused() {
     request.srt = Some(directory.path().join("first.srt"));
 
     // The first run stores its window; the entry must sit under the pre-move key.
-    let (mut first_cache, _) = engine::cache::ArtifactCache::open(
-        &directory.path().join("first"),
-        budget.clone(),
-        16,
-    )
-    .unwrap();
+    let (mut first_cache, _) =
+        engine::cache::ArtifactCache::open(&directory.path().join("first"), budget.clone(), 16)
+            .unwrap();
     subtitles::run(
         &request,
         &providers,

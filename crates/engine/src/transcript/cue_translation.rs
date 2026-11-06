@@ -1,11 +1,35 @@
-//! Applies selected cue translations.
-use super::{
-    Arc, Cancellation, Command, ConsentPrompt, Cost, Credentials, Cue, CueTrack, EditError,
-    ItemParams, JobRunner, LanguageTag, Money, NfcText, Progress, Providers, Session, SourceAsset,
-    Stage, SubtitleTranslator, TRANSLATE_ATTEMPTS, Tick, TranslationProvider, TranslationSelection,
-    TranslatorKind, build_session, build_translator, caption_item_id, estimate_money,
-    translation_scope, wait_for_job,
+//! Translates a cue set through the chosen translation provider.
+use super::checkpoints::wait_for_job;
+use super::cues::{build_session, caption_item_id};
+use super::operation::{Cancellation, Progress, Stage};
+use super::translation::{TranslationRun, TranslationTarget, window};
+use crate::jobs::JobRunner;
+use crate::providers::{
+    ConsentPrompt, Cost, Credentials, Providers, TranslationProvider, TranslatorKind,
+    build_translator, estimate_money, translation_scope,
 };
+use crate::{Command, EditError, Session};
+use ai::Money;
+use captions::LanguageTag;
+use captions::{Cue, CueTrack, NfcText};
+use media::SourceAsset;
+use project::ItemParams;
+use std::sync::Arc;
+use time::Tick;
+pub const TRANSLATE_ATTEMPTS: u8 = 3;
+/// A translation-only adapter. Opening it never loads ASR weights or downloads files.
+pub struct SubtitleTranslator {
+    kind: TranslatorKind,
+    mode: NfcText,
+}
+/// Exact cue selection and glossary bound into every remote request.
+pub struct TranslationSelection {
+    pub item: project::ItemId,
+    pub ids: Vec<NfcText>,
+    pub target: LanguageTag,
+    pub glossary: Vec<ai::GlossaryTerm>,
+    pub force: bool,
+}
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn translate_cues(
     session: &mut Session,
@@ -113,7 +137,7 @@ pub fn translate_selected(
     let translator = adapter.kind.as_translator();
     for chunk in selection.ids.chunks(ai::MAX_SEGMENTS.min(64)) {
         cancel.checkpoint()?;
-        let window = crate::translation::window(
+        let window = window(
             session,
             item,
             chunk,
@@ -142,8 +166,8 @@ pub fn translate_selected(
             scope.clone(),
             estimate_money(&estimate)?,
         )?);
-        let run = crate::translation::TranslationRun::new(
-            crate::translation::TranslationTarget { session, item },
+        let run = TranslationRun::new(
+            TranslationTarget { session, item },
             match &adapter.kind {
                 TranslatorKind::OpenAi(v) => v.clone(),
                 TranslatorKind::Anthropic(v) => v.clone(),

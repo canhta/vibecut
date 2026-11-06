@@ -1,12 +1,19 @@
 //! Reuses independently committed ASR windows.
-use super::{
-    Arc, ArtifactCache, ArtifactKind, CacheKey, CancelToken, Cancellation, ConsentPrompt, Cost,
-    Duration, EditError, JobBytes, JobId, JobKind, JobOutput, JobRunner, JobSpec, JobState,
-    KeyInputs, LanguageTag, NfcText, Progress, Providers, Request, ResourceClass, SampleRange,
-    SpeechWindow, Stage, WORK_BYTES, estimate_money, hex, sample_range,
+use super::operation::{Cancellation, Progress, Stage};
+use super::speech::{WORK_BYTES, sample_range};
+use crate::EditError;
+use crate::cache::{ArtifactCache, ArtifactKind, CacheKey, KeyInputs};
+use crate::jobs::{
+    CancelToken, JobBytes, JobId, JobKind, JobOutput, JobRunner, JobSpec, JobState, ResourceClass,
 };
+use crate::providers::{ConsentPrompt, Cost, Providers, estimate_money};
+use ai::{Request, SampleRange};
+use captions::LanguageTag;
+use captions::NfcText;
+use media::SpeechWindow;
+use std::{sync::Arc, time::Duration};
 #[allow(clippy::too_many_arguments)]
-pub(super) fn transcribe_window(
+pub(crate) fn transcribe_window(
     providers: &Providers,
     runner: &mut JobRunner,
     cache: &mut ArtifactCache,
@@ -254,4 +261,21 @@ pub(crate) fn wait_for_job(
             }
         }
     }
+}
+
+pub(crate) fn hex(bytes: &[u8]) -> String {
+    const DIGITS: &[u8; 16] = b"0123456789abcdef";
+    let mut output = String::with_capacity(bytes.len() * 2);
+    for byte in bytes {
+        output.push(char::from(
+            DIGITS.get(usize::from(byte >> 4)).copied().unwrap_or(b'0'),
+        ));
+        output.push(char::from(
+            DIGITS
+                .get(usize::from(byte & 0x0f))
+                .copied()
+                .unwrap_or(b'0'),
+        ));
+    }
+    output
 }

@@ -9,3 +9,4 @@ mod session;
 mod shorts;
 mod store;
 mod subtitles;
+mod transcript;

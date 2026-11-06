@@ -9,12 +9,13 @@ Widgets, device state, app preferences and authenticated transports live in cons
 | `session/` | Owns editable project state and the wire contract. | `Session`, `Command`, `CommandKind`, `registry`, `JobTarget`, `wire` |
 | `runtime/` | Executes bounded background work. | `jobs`, `cache`, `ByteBudget`, `submit_export`, `submit_export_publication`, `admit_loudness` |
 | `store/` | Persists managed project sessions. | `library`, `recovery`; private project-cover capture |
-| `subtitles/` | Produces source-timed subtitle output. | `Providers`, `transcribe`, `run`, `translate_selected`, `prepare_ass_import`, `translation` |
+| `subtitles/` | Produces source-timed subtitle output. | `run`, `prepare_ass_import`; also reachable at their old `subtitles::` paths: `Providers`, `transcribe`, `translate_selected` |
+| `transcript/` | Acquires source-timed cues from the user's chosen providers, shared by `subtitles/` and `shorts/`. | `transcribe`, `translate_selected`, `Cancellation`, `Progress`, `translation` |
 | `shorts/` | Produces accepted shorts. | `clip_suggest`, `clip_boundaries`, `ClipBatch` |
 | `analysis/` | Measures source media. | `scene_detection`, `loudness`, `AnalysisRequest`, `AnalysisJob` |
 | `artifacts/` | Produces derived project images. | `thumbnails`, `snapshot`, `effect_thumbnails` |
 | `libraries/` | Provides external project assets. | `fonts`, `sounds` |
-| `providers/` | Resolves explicit AI provider choices. | `transcribe`, `translate`, `suggest_clips`, `models` |
+| `providers/` | Resolves explicit AI provider choices, their consent and the local models. | `Providers`, `Credentials`, `ConsentPrompt`, `provider_options`, `model_info`, `transcribe`, `translate`, `suggest_clips`, `models` |
 | `control/` | Admits transport-neutral commands; the top layer, the only one that calls every feature. | `Caller`, `Policy`, `Session::control_request`, `snapshot_and_subscribe` |
 
 The crate root retains its existing public namespaces and item exports; the implementation
@@ -954,16 +955,19 @@ Remote upload scopes are prompted through `ConsentPrompt` before every request;
 grant. `UploadRequest` carries provider/model, languages, audio seconds, payload
 bytes, cost ceiling and the adapter's official policy links. The
 workflow never uploads without a prompt approval and never downloads weights.
-`ModelDownloader` wraps one explicitly consented catalog download and
-`default_cache_root` is the single shared model/checkpoint location.
+The CLI downloads a catalog model through `models::ModelTransfers::open_native`, the same transfer
+interface the desktop uses, granting `DownloadConsent` after its `--yes-download` action;
+`default_cache_root` is the single shared model/checkpoint location. Provider choice, credentials,
+consent and model availability live in `providers/`; speech windows, ASR checkpoints and cue
+translation live in `transcript/`, which `subtitles/` and `shorts/` both call.
 
 Tests in `tests/it/subtitles/workflow.rs` cover all six vi/en/zh translation directions and
 every bilingual pair, SRT plus burned MP4 output, ASR checkpoint reuse on a second
-run, remote consent refusal with zero calls, credential refusal, catalog filtering
+run (and reuse of a checkpoint stored under the pre-move key), remote consent refusal with zero calls, credential refusal, catalog filtering
 and a real generated fixture. They establish composition and failure contracts,
 not model accuracy, live provider quality or Windows behavior.
 
-The desktop also consumes `subtitles::SubtitleTranslator` without opening an ASR
+The desktop also consumes `SubtitleTranslator` (owned by `transcript/`) without opening an ASR
 adapter or model lease. `translate_selected` composes the same translation window,
 request disclosure, `TranslationRun` attempt budget and `Retranslate` application
 for an explicit `TranslationSelection` (cue IDs, target, glossary, force). The
@@ -1077,7 +1081,7 @@ implement their own overlay or serializer.
 ### Clip suggestion workflow
 
 `clip_suggest` is the composition used by the CLI and desktop: the shared
-`subtitles::transcribe` ASR-to-cue stage, an explicit clip provider, ordered-segment
+`transcript::transcribe` ASR-to-cue stage, an explicit clip provider, ordered-segment
 ranking and 02 boundary snapping. The caller owns the runner, cache, credentials,
 consent prompt, progress and cancellation token; the module writes no file during
 suggestion.

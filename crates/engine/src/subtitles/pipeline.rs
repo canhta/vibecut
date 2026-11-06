@@ -1,10 +1,20 @@
 //! Orchestrates subtitle workflow stages.
-use super::{
-    ArtifactCache, Cancellation, ConsentPrompt, Cost, EditError, Instant, JobRunner, NfcText,
-    Progress, Providers, SourceAsset, Stage, SubtitleOutcome, SubtitleRequest, Tick, build_session,
-    burn_subtitles, caption_item_id, caption_track_id, ensure_distinct, export_subtitles, hex,
-    media_duration, normalize_target, resolve_path, transcribe, translate_cues,
+use super::persistence::{
+    burn_subtitles, caption_track_id, ensure_distinct, export_subtitles, resolve_path,
 };
+use super::{SubtitleOutcome, SubtitleRequest};
+use crate::EditError;
+use crate::cache::ArtifactCache;
+use crate::jobs::JobRunner;
+use crate::providers::{ConsentPrompt, Cost, Providers, normalize_target};
+use crate::transcript::{
+    Cancellation, Progress, Stage, build_session, caption_item_id, hex, media_duration, transcribe,
+    translate_cues,
+};
+use captions::NfcText;
+use media::SourceAsset;
+use std::time::Instant;
+use time::Tick;
 /// Run the complete subtitle workflow against one input media file. The caller owns
 /// the runner, cache and consent prompt; no project file is written.
 pub fn run(

@@ -6,10 +6,13 @@ use crate::clip_boundaries::{
 };
 use crate::jobs::{JobBytes, JobKind, JobRunner, JobSpec, JobState, ResourceClass};
 use crate::providers as engine_providers;
+use crate::providers::{
+    CatalogOperation, ConsentPrompt, Cost, Credentials, Providers, UploadRequest,
+};
 use crate::shorts::{ClipBatch, ClipBatchRequest, ClipPaths, ClipShort, MAX_BATCH_CLIPS};
-use crate::subtitles::{
-    self, Cancellation, CatalogOperation, ConsentPrompt, Cost, Progress, Providers, Stage,
-    Transcription, UploadRequest,
+use crate::transcript::{
+    Cancellation, Progress, Stage, Transcription, build_session, hex, transcribe, translate_track,
+    wait_for_job,
 };
 use ai::clips::{
     ANTHROPIC_SETTINGS, AnthropicClipSuggester, ClipDisclosure, ClipInput, ClipProposal,
@@ -169,5 +172,3 @@ use ranking::fingerprint;
 pub use ranking::suggest;
 
 pub use export::{export, prepare_export};
-
-use export::hex;

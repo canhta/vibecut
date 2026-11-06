@@ -1,35 +1,19 @@
-//! Acquires source-timed speech recognition.
-use super::{
-    Arc, ArtifactCache, AtomicBool, Cancellation, ConsentPrompt, Cost, Cue, EditError, FrameRate,
-    IdleHooks, Instant, JobRunner, LanguageTag, MAX_CAPTION_SECONDS, MIN_CAPTION_SECONDS, NfcText,
-    Path, Progress, Providers, Rounding, SampleRange, SegmentRules, SegmentedCue, SilentProgress,
-    SourceAsset, SourceRange, SpeechExtractSettings, SpeechWindow, Stage, Tick, Transcription,
-    WORK_BYTES, hex, transcribe_window,
-};
-impl Cancellation {
-    pub fn new() -> Self {
-        Self::default()
-    }
-    pub fn cancel(&self) {
-        self.flag.store(true, std::sync::atomic::Ordering::Release);
-    }
-    pub fn cancelled(&self) -> bool {
-        self.flag.load(std::sync::atomic::Ordering::Acquire)
-    }
-    pub(crate) fn media_flag(&self) -> Arc<AtomicBool> {
-        self.flag.clone()
-    }
-    pub(crate) fn checkpoint(&self) -> Result<(), EditError> {
-        if self.cancelled() {
-            Err(EditError::Cancelled)
-        } else {
-            Ok(())
-        }
-    }
-}
-impl Progress for SilentProgress {
-    fn stage(&self, _: Stage) {}
-}
+//! Transcribes the speech windows of one source into source-timed cues.
+use super::checkpoints::{hex, transcribe_window};
+use super::operation::{Cancellation, Progress, Stage, Transcription};
+use crate::EditError;
+use crate::cache::ArtifactCache;
+use crate::jobs::JobRunner;
+use crate::providers::{ConsentPrompt, Cost, IdleHooks, Providers};
+use ai::SampleRange;
+use captions::LanguageTag;
+use captions::{Cue, NfcText, SegmentRules, SegmentedCue};
+use media::{SourceAsset, SpeechExtractSettings, SpeechWindow};
+use std::{path::Path, time::Instant};
+use time::{FrameRate, Rounding, SourceRange, Tick};
+pub(crate) const MIN_CAPTION_SECONDS: i64 = 30;
+pub(crate) const MAX_CAPTION_SECONDS: i64 = 300;
+pub(crate) const WORK_BYTES: u64 = 64 * 1024 * 1024;
 
 /// Run the shared ASR-to-cue stage. The caller has already imported and validated
 /// media and resolved the source language; jobs, cache and consent stay caller-owned.
@@ -174,7 +158,7 @@ impl Providers {
         self.detect_language(&asset, duration, cancel)
     }
 
-    pub(super) fn detect_language(
+    pub(crate) fn detect_language(
         &self,
         asset: &SourceAsset,
         duration: Tick,
@@ -250,7 +234,7 @@ fn detection_window(window: &SpeechWindow) -> Result<(&[f32], SampleRange), Edit
     Ok((window.samples.as_slice(), SampleRange::new(start, end)?))
 }
 
-pub(super) fn media_duration(asset: &SourceAsset) -> Result<Tick, EditError> {
+pub(crate) fn media_duration(asset: &SourceAsset) -> Result<Tick, EditError> {
     asset
         .probe()
         .duration
@@ -258,7 +242,7 @@ pub(super) fn media_duration(asset: &SourceAsset) -> Result<Tick, EditError> {
         .ok_or(EditError::Unsupported("media duration is unknown"))
 }
 
-pub(super) fn sample_range(window: &SpeechWindow) -> Result<(u64, u64), EditError> {
+pub(crate) fn sample_range(window: &SpeechWindow) -> Result<(u64, u64), EditError> {
     let start = window
         .source_range
         .start()

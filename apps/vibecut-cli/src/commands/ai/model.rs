@@ -5,7 +5,7 @@ use crate::output::Output;
 use crate::output::wait_for_job;
 use crate::session::Context;
 use engine::jobs::{JobRunner, RunnerConfig, SystemClock};
-use engine::subtitles;
+use engine::{models, subtitles};
 use serde_json::{Value, json};
 use std::ffi::OsString;
 use std::fmt::Write as _;
@@ -89,7 +89,7 @@ fn model_download(context: &Context, args: Vec<OsString>) -> Result<Output, CliE
         ));
     }
     let budget = context.budget()?;
-    let downloader = subtitles::ModelDownloader::open(budget.clone())?;
+    let (transfers, _) = models::ModelTransfers::open_native(budget.clone(), 128)?;
     let mut runner = JobRunner::new(
         RunnerConfig {
             concurrency: [1, 1, 1],
@@ -102,7 +102,10 @@ fn model_download(context: &Context, args: Vec<OsString>) -> Result<Output, CliE
         budget,
         Arc::new(SystemClock::default()),
     )?;
-    let id = downloader.submit(&mut runner, &id)?;
+    // The CLI's `--yes-download` is the affirmative action that grants the consent token.
+    let model = models::catalog_model(&id)?;
+    let consent = models::DownloadConsent::grant(&model).map_err(engine::EditError::Ai)?;
+    let (id, _cancel) = transfers.submit(&mut runner, model, Some(consent))?;
     wait_for_job(&mut runner, id)?;
     runner.shutdown();
     Ok(Output::new(

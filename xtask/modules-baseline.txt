@@ -51,7 +51,4 @@ layer	apps/vibecut/src/workspace.rs	crate::import is in higher layer features/as
 layer	apps/vibecut/src/workspace.rs	crate::model_manager is in higher layer features/models (module workspace is shell/shell)
 layer	apps/vibecut/src/workspace.rs	crate::playback is in higher layer features/player (module workspace is shell/shell)
 layer	apps/vibecut/src/workspace.rs	crate::shorts is in higher layer features/shorts (module workspace is shell/shell)
-layer	crates/engine/src/shorts/suggestion.rs	crate::providers crosses feature groups in layer features (module shorts is shorts, target is providers)
-layer	crates/engine/src/shorts/suggestion.rs	crate::subtitles crosses feature groups in layer features (module shorts is shorts, target is subtitles)
-layer	crates/engine/src/subtitles.rs	crate::providers crosses feature groups in layer features (module subtitles is subtitles, target is providers)
 name	crates/media/tests/it/common	module name `common` is banned

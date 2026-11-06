@@ -105,6 +105,14 @@ impl ModelTransfers {
             diagnostics,
         ))
     }
+    /// The same, over the system HTTPS transport; for composition roots that do not own `ai`.
+    pub fn open_native(budget: ByteBudget, max_entries: usize) -> Result<(Self, usize)> {
+        Self::open_default(
+            budget,
+            max_entries,
+            Arc::new(ai::transport::UreqTransport::new()),
+        )
+    }
     /// Blocking verified cache lookup, including offline use without download consent.
     pub fn installed(
         &self,

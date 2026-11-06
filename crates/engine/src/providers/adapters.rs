@@ -1,262 +1,52 @@
-//! Resolves subtitle provider settings.
-use super::{
-    AllowAll, ApiKey, Arc, ArtifactCache, ByteBudget, CatalogOperation, ConsentPrompt, Cost,
-    CostEstimate, Credentials, DenyUploads, EditError, ExecutionHooks, IdleHooks, JobId, JobRunner,
-    LanguageProfile, LanguageRegistry, LanguageTag, Location, MAX_JSON_BYTES, ModelDownloader,
-    ModelFileInfo, ModelInfo, ModelLease, ModelTransfers, Money, NfcText, Path, PathBuf,
-    ProviderOption, Providers, Runtime, SampleRange, Scope, TranscriberKind, TranscriptionProvider,
-    TranslationProvider, TranslatorKind, UploadRequest, UreqTransport,
-};
-impl TranscriptionProvider {
-    pub fn id(&self) -> &'static str {
-        match self {
-            Self::Whisper { .. } => "whisper.cpp",
-            Self::Gipformer { .. } => "gipformer",
-            Self::OpenAi { .. } => "openai",
-            Self::ElevenLabs { .. } => "elevenlabs",
-        }
-    }
-    pub fn model(&self) -> &str {
-        match self {
-            Self::Whisper { model }
-            | Self::Gipformer { model }
-            | Self::OpenAi { model }
-            | Self::ElevenLabs { model } => model,
-        }
-    }
-    pub fn is_remote(&self) -> bool {
-        matches!(self, Self::OpenAi { .. } | Self::ElevenLabs { .. })
-    }
-    pub fn has_native_timing(&self) -> bool {
-        matches!(self, Self::Whisper { .. } | Self::ElevenLabs { .. })
-    }
-}
-impl Default for TranscriptionProvider {
-    fn default() -> Self {
-        Self::Whisper {
-            model: "whisper-large-v3-turbo".into(),
-        }
-    }
-}
-impl TranslationProvider {
-    pub fn id(&self) -> &'static str {
-        match self {
-            Self::OpenAi { .. } => "openai",
-            Self::Anthropic { .. } => "anthropic",
-        }
-    }
-    pub fn model(&self) -> &str {
-        match self {
-            Self::OpenAi { model } | Self::Anthropic { model } => model,
-        }
-    }
-}
+//! Opens the chosen provider adapters with their model leases.
+use super::catalog::{CatalogOperation, TranscriptionProvider, TranslationProvider, catalog_model};
+use super::consent::{Cost, UploadRequest};
+use crate::EditError;
+use crate::cache::{ArtifactCache, ModelLease};
+use ai::transport::{ApiKey, UreqTransport};
+use ai::{ExecutionHooks, Location, SampleRange, Scope};
+use captions::LanguageTag;
+use captions::{LanguageProfile, LanguageRegistry, NfcText};
+use std::{path::PathBuf, sync::Arc};
+const MAX_JSON_BYTES: usize = 64 * 1024;
 
-pub fn provider_options() -> Vec<ProviderOption> {
-    let tags = |values: &[&str]| values.iter().map(|v| (*v).to_owned()).collect();
-    vec![
-        ProviderOption {
-            id: "whisper.cpp",
-            label: "whisper.cpp (local)",
-            operation: CatalogOperation::Transcribe,
-            local: true,
-            models: vec!["whisper-large-v3-turbo".into()],
-            languages: tags(&["vi", "en", "zh"]),
-            target_languages: Vec::new(),
-            native_timing: true,
-        },
-        ProviderOption {
-            id: "gipformer",
-            label: "Gipformer (local, Vietnamese)",
-            operation: CatalogOperation::Transcribe,
-            local: true,
-            models: vec![ai::gipformer::MODEL_ID.into()],
-            languages: tags(&["vi"]),
-            target_languages: Vec::new(),
-            native_timing: false,
-        },
-        ProviderOption {
-            id: "openai",
-            label: "OpenAI",
-            operation: CatalogOperation::Transcribe,
-            local: false,
-            models: vec![ai::openai::MODEL.into()],
-            languages: tags(&ai::openai::LANGUAGES),
-            target_languages: Vec::new(),
-            native_timing: false,
-        },
-        ProviderOption {
-            id: "elevenlabs",
-            label: "ElevenLabs Scribe",
-            operation: CatalogOperation::Transcribe,
-            local: false,
-            models: vec![ai::elevenlabs::MODEL.into()],
-            languages: tags(&ai::elevenlabs::LANGUAGES),
-            target_languages: Vec::new(),
-            native_timing: true,
-        },
-        ProviderOption {
-            id: "openai",
-            label: "OpenAI (translation)",
-            operation: CatalogOperation::Translate,
-            local: false,
-            models: vec![ai::openai::TRANSLATION_MODEL.into()],
-            languages: tags(&ai::openai::TRANSLATION_LANGUAGES),
-            target_languages: tags(&ai::openai::TRANSLATION_TARGET_LANGUAGES),
-            native_timing: false,
-        },
-        ProviderOption {
-            id: "anthropic",
-            label: "Anthropic (translation)",
-            operation: CatalogOperation::Translate,
-            local: false,
-            models: vec![ai::anthropic::MODEL.into()],
-            languages: tags(&ai::anthropic::TRANSLATION_LANGUAGES),
-            target_languages: tags(&ai::anthropic::TRANSLATION_TARGET_LANGUAGES),
-            native_timing: false,
-        },
-    ]
+#[derive(Clone)]
+pub struct Credentials {
+    openai: Option<ApiKey>,
+    elevenlabs: Option<ApiKey>,
+    anthropic: Option<ApiKey>,
 }
-
-pub fn provider_options_for(
-    operation: CatalogOperation,
-    language: Option<&LanguageTag>,
-) -> Vec<ProviderOption> {
-    provider_options()
-        .into_iter()
-        .filter(|option| option.operation == operation)
-        .filter(|option| {
-            language.is_none_or(|tag| option.languages.iter().any(|value| value == tag.as_str()))
-        })
-        .collect()
+/// Local execution choices. The runner is the shipped Gipformer helper, never a model.
+#[derive(Clone, Debug)]
+pub struct Runtime {
+    pub use_gpu: bool,
+    pub threads: u8,
+    pub gipformer_runner: Option<PathBuf>,
 }
-
-pub fn parse_language(value: &str) -> Result<LanguageTag, EditError> {
-    Ok(LanguageTag::parse(value)?)
+pub(crate) struct IdleHooks;
+pub(crate) enum TranscriberKind {
+    Whisper(Arc<ai::whisper::Whisper>),
+    Gipformer(Arc<ai::gipformer::Gipformer>),
+    OpenAi(Arc<ai::openai::OpenAiTranscriber>),
+    ElevenLabs(Arc<ai::elevenlabs::ElevenLabsTranscriber>),
+    Other(Arc<dyn ai::Transcriber>),
 }
-pub fn normalize_target_tag(target: &LanguageTag) -> Result<LanguageTag, EditError> {
-    normalize_target(target)
+pub(crate) enum TranslatorKind {
+    OpenAi(Arc<ai::openai::OpenAiTranslator>),
+    Anthropic(Arc<ai::anthropic::AnthropicTranslator>),
+    Other(Arc<dyn ai::Translator>),
 }
-
-pub fn choose_transcription(
-    provider: &str,
-    model: Option<&str>,
-) -> Result<TranscriptionProvider, EditError> {
-    let option = provider_options()
-        .into_iter()
-        .find(|option| {
-            option.operation == CatalogOperation::Transcribe
-                && (option.id == provider || (provider == "whisper" && option.id == "whisper.cpp"))
-        })
-        .ok_or(EditError::Unsupported("unknown transcription provider"))?;
-    let model = model.unwrap_or_else(|| option.models.first().map_or("", String::as_str));
-    if !option.models.iter().any(|value| value == model) {
-        return Err(EditError::Unsupported("unsupported model for provider"));
-    }
-    match option.id {
-        "whisper.cpp" => Ok(TranscriptionProvider::Whisper {
-            model: model.into(),
-        }),
-        "gipformer" => Ok(TranscriptionProvider::Gipformer {
-            model: model.into(),
-        }),
-        "openai" => Ok(TranscriptionProvider::OpenAi {
-            model: model.into(),
-        }),
-        "elevenlabs" => Ok(TranscriptionProvider::ElevenLabs {
-            model: model.into(),
-        }),
-        _ => Err(EditError::Unsupported("unknown transcription provider")),
-    }
-}
-
-pub fn choose_translation(
-    provider: &str,
-    model: Option<&str>,
-) -> Result<TranslationProvider, EditError> {
-    let option = provider_options()
-        .into_iter()
-        .find(|option| option.operation == CatalogOperation::Translate && option.id == provider)
-        .ok_or(EditError::Unsupported("unknown translation provider"))?;
-    let model = model.unwrap_or_else(|| option.models.first().map_or("", String::as_str));
-    if !option.models.iter().any(|value| value == model) {
-        return Err(EditError::Unsupported("unsupported model for provider"));
-    }
-    match option.id {
-        "openai" => Ok(TranslationProvider::OpenAi {
-            model: model.into(),
-        }),
-        "anthropic" => Ok(TranslationProvider::Anthropic {
-            model: model.into(),
-        }),
-        _ => Err(EditError::Unsupported("unknown translation provider")),
-    }
-}
-impl ModelInfo {
-    pub(super) fn from_model(model: &ai::models::Model) -> Result<Self, EditError> {
-        let total_bytes = model
-            .files
-            .iter()
-            .try_fold(0u64, |sum, file| sum.checked_add(file.size))
-            .ok_or(EditError::Limit)?;
-        Ok(Self {
-            id: model.id.clone(),
-            license: model.license.clone(),
-            license_url: model.license_url.clone(),
-            source: model.source.clone(),
-            languages: model
-                .languages
-                .iter()
-                .map(|value| value.as_str().to_owned())
-                .collect(),
-            files: model
-                .files
-                .iter()
-                .map(|file| ModelFileInfo {
-                    name: file.name.clone(),
-                    source: file.url.clone(),
-                    sha256: file.sha256.clone(),
-                    size: file.size,
-                })
-                .collect(),
-            total_bytes,
-        })
-    }
-}
-pub fn model_infos() -> Result<Vec<ModelInfo>, EditError> {
-    ai::models::catalog()?
-        .iter()
-        .map(ModelInfo::from_model)
-        .collect()
-}
-pub fn model_info(id: &str) -> Result<ModelInfo, EditError> {
-    let model = ai_model(id)?;
-    ModelInfo::from_model(&model)
-}
-
-fn ai_model(id: &str) -> Result<ai::models::Model, EditError> {
-    ai::models::catalog()?
-        .into_iter()
-        .find(|model| model.id == id)
-        .ok_or(EditError::Unsupported("unknown model"))
-}
-impl ModelDownloader {
-    pub fn open(budget: ByteBudget) -> Result<Self, EditError> {
-        let (transfers, _) =
-            ModelTransfers::open_default(budget, 128, Arc::new(UreqTransport::new()))?;
-        Ok(Self { transfers })
-    }
-    pub fn submit(&self, runner: &mut JobRunner, id: &str) -> Result<JobId, EditError> {
-        let model = ai_model(id)?;
-        let consent = ai::models::DownloadConsent::grant(&model)?;
-        let (job, _cancel) = self.transfers.submit(runner, model, Some(consent))?;
-        Ok(job)
-    }
-}
-
-/// Default location shared by model bundles and ASR checkpoints.
-pub fn default_cache_root() -> Result<PathBuf, EditError> {
-    Ok(ai::models::cache_dir()?)
+/// Resolved adapter instances and the leases that keep native model files immutable.
+pub struct Providers {
+    pub(crate) transcriber: TranscriberKind,
+    pub(crate) aligner: Option<Arc<dyn ai::Aligner>>,
+    pub(crate) translator: Option<TranslatorKind>,
+    pub(crate) transcription: TranscriptionProvider,
+    pub(crate) translation: Option<TranslationProvider>,
+    pub(crate) transcription_mode: NfcText,
+    pub(crate) translation_mode: Option<NfcText>,
+    pub(crate) needs_alignment: bool,
+    _leases: Vec<ModelLease>,
 }
 impl Credentials {
     /// Secrets are resolved by the composition root; they never enter logs or errors.
@@ -277,7 +67,7 @@ impl Credentials {
             .as_ref()
             .ok_or(EditError::CredentialMissing("OPENAI_API_KEY"))
     }
-    pub(super) fn elevenlabs(&self) -> Result<&ApiKey, EditError> {
+    pub(crate) fn elevenlabs(&self) -> Result<&ApiKey, EditError> {
         self.elevenlabs
             .as_ref()
             .ok_or(EditError::CredentialMissing("ELEVENLABS_API_KEY"))
@@ -287,29 +77,6 @@ impl Credentials {
             .as_ref()
             .ok_or(EditError::CredentialMissing("ANTHROPIC_API_KEY"))
     }
-}
-
-/// Find the explicitly configured or bundled local ASR helper without launching
-/// it or downloading weights. Shared by desktop and CLI composition roots.
-pub fn local_asr_runner() -> Option<PathBuf> {
-    if let Some(value) = std::env::var_os("VIBECUT_LOCAL_ASR") {
-        let path = PathBuf::from(value);
-        if path.is_file() {
-            return Some(path);
-        }
-    }
-    if let Ok(executable) = std::env::current_exe()
-        && let Some(parent) = executable.parent()
-    {
-        let path = parent.join("vibecut-local-asr");
-        if path.is_file() {
-            return Some(path);
-        }
-    }
-    let path = Path::new("target")
-        .join("release")
-        .join("vibecut-local-asr");
-    path.is_file().then_some(path)
 }
 impl Default for Runtime {
     fn default() -> Self {
@@ -327,7 +94,7 @@ impl ExecutionHooks for IdleHooks {
     fn stage(&self, _: ai::Stage) {}
 }
 impl TranscriberKind {
-    pub(super) fn as_transcriber(&self) -> &dyn ai::Transcriber {
+    pub(crate) fn as_transcriber(&self) -> &dyn ai::Transcriber {
         match self {
             Self::Whisper(value) => value.as_ref(),
             Self::Gipformer(value) => value.as_ref(),
@@ -336,7 +103,7 @@ impl TranscriberKind {
             Self::Other(value) => value.as_ref(),
         }
     }
-    pub(super) fn whisper(&self) -> Option<&ai::whisper::Whisper> {
+    pub(crate) fn whisper(&self) -> Option<&ai::whisper::Whisper> {
         match self {
             Self::Whisper(value) => Some(value.as_ref()),
             _ => None,
@@ -344,7 +111,7 @@ impl TranscriberKind {
     }
 }
 impl TranslatorKind {
-    pub(super) fn as_translator(&self) -> &dyn ai::Translator {
+    pub(crate) fn as_translator(&self) -> &dyn ai::Translator {
         match self {
             Self::OpenAi(value) => value.as_ref(),
             Self::Anthropic(value) => value.as_ref(),
@@ -363,7 +130,7 @@ impl Providers {
         let mut leases = Vec::new();
         let (transcriber, needs_alignment, mode) = match &transcription {
             TranscriptionProvider::Whisper { model } => {
-                let metadata = ai_model(model)?;
+                let metadata = catalog_model(model)?;
                 let lease = cache
                     .model(&metadata, &IdleHooks)?
                     .ok_or(EditError::ModelMissing("whisper-large-v3-turbo"))?;
@@ -394,7 +161,7 @@ impl Providers {
                 )
             }
             TranscriptionProvider::Gipformer { model } => {
-                let metadata = ai_model(model)?;
+                let metadata = catalog_model(model)?;
                 let lease = cache
                     .model(&metadata, &IdleHooks)?
                     .ok_or(EditError::ModelMissing("gipformer-68m-rnnt-int8"))?;
@@ -529,7 +296,7 @@ impl Providers {
     pub fn translator(&self) -> Option<&dyn ai::Translator> {
         self.translator.as_ref().map(TranslatorKind::as_translator)
     }
-    pub(super) fn transcriber_arc(&self) -> Arc<dyn ai::Transcriber> {
+    pub(crate) fn transcriber_arc(&self) -> Arc<dyn ai::Transcriber> {
         match &self.transcriber {
             TranscriberKind::Whisper(value) => value.clone(),
             TranscriberKind::Gipformer(value) => value.clone(),
@@ -538,7 +305,7 @@ impl Providers {
             TranscriberKind::Other(value) => value.clone(),
         }
     }
-    pub(super) fn aligner_arc(&self) -> Option<Arc<dyn ai::Aligner>> {
+    pub(crate) fn aligner_arc(&self) -> Option<Arc<dyn ai::Aligner>> {
         self.aligner.clone()
     }
     pub(crate) fn language_profile(
@@ -547,7 +314,7 @@ impl Providers {
     ) -> Result<LanguageProfile, EditError> {
         Ok(LanguageRegistry::standard()?.profile(language).clone())
     }
-    pub(super) fn transcription_scope(
+    pub(crate) fn transcription_scope(
         &self,
         language: &LanguageTag,
         samples: SampleRange,
@@ -568,7 +335,7 @@ impl Providers {
             max_bytes: remote_bytes.max(sample_count.saturating_mul(2).saturating_add(44)),
         })
     }
-    pub(super) fn alignment_scope(
+    pub(crate) fn alignment_scope(
         &self,
         language: &LanguageTag,
         samples: SampleRange,
@@ -592,8 +359,7 @@ impl Providers {
         })
     }
 }
-
-pub(super) fn translation_scope(
+pub(crate) fn translation_scope(
     translator: &dyn ai::Translator,
     mode: &NfcText,
     source: &LanguageTag,
@@ -616,8 +382,7 @@ pub(super) fn translation_scope(
             .max(MAX_JSON_BYTES as u64),
     })
 }
-
-pub(super) fn build_translator(
+pub(crate) fn build_translator(
     translation: &TranslationProvider,
     credentials: &Credentials,
 ) -> Result<(TranslatorKind, NfcText), EditError> {
@@ -666,7 +431,6 @@ pub(super) fn build_translator(
         }
     }
 }
-
 fn load_aligner(
     cache: &mut ArtifactCache,
     leases: &mut Vec<ModelLease>,
@@ -689,63 +453,8 @@ fn load_aligner(
         ))
     }
 }
-impl Cost {
-    pub(crate) fn add(&mut self, next: &CostEstimate) {
-        match (&mut *self, next) {
-            (Self::Unknown, _) => {}
-            (_, CostEstimate::Unknown) => *self = Self::Unknown,
-            (Self::Free, CostEstimate::Free) => {}
-            (Self::Free, CostEstimate::UpperBound(money)) => {
-                *self = Self::UpperBound {
-                    currency: money.currency().into(),
-                    micros: money.micros(),
-                };
-            }
-            (Self::UpperBound { currency, micros }, CostEstimate::Free) => {
-                let _ = (currency, micros);
-            }
-            (Self::UpperBound { currency, micros }, CostEstimate::UpperBound(money))
-                if currency == money.currency() =>
-            {
-                *micros = micros.saturating_add(money.micros());
-            }
-            (Self::UpperBound { .. }, CostEstimate::UpperBound(_)) => *self = Self::Unknown,
-        }
-    }
-}
-impl From<&CostEstimate> for Cost {
-    fn from(value: &CostEstimate) -> Self {
-        match value {
-            CostEstimate::Free => Self::Free,
-            CostEstimate::UpperBound(money) => Self::UpperBound {
-                currency: money.currency().into(),
-                micros: money.micros(),
-            },
-            CostEstimate::Unknown => Self::Unknown,
-        }
-    }
-}
-impl ConsentPrompt for DenyUploads {
-    fn approve(&self, _: &UploadRequest) -> Result<(), EditError> {
-        Err(EditError::ConsentRequired)
-    }
-}
-impl ConsentPrompt for AllowAll {
-    fn approve(&self, _: &UploadRequest) -> Result<(), EditError> {
-        Ok(())
-    }
-}
-
-pub(super) fn normalize_target(target: &LanguageTag) -> Result<LanguageTag, EditError> {
-    if target.as_str() == "zh" {
-        Ok(LanguageTag::parse("zh-Hans")?)
-    } else {
-        Ok(target.clone())
-    }
-}
-
 impl Providers {
-    pub(super) fn upload_request(&self, scope: Scope) -> Result<UploadRequest, EditError> {
+    pub(crate) fn upload_request(&self, scope: Scope) -> Result<UploadRequest, EditError> {
         match &self.transcriber {
             TranscriberKind::OpenAi(value) => {
                 let disclosure = value.disclosure(&scope)?;
@@ -797,9 +506,8 @@ impl Providers {
         }
     }
 }
-
 impl TranslatorKind {
-    pub(super) fn upload_request(&self, scope: Scope) -> Result<UploadRequest, EditError> {
+    pub(crate) fn upload_request(&self, scope: Scope) -> Result<UploadRequest, EditError> {
         match self {
             Self::OpenAi(value) => {
                 let disclosure = value.disclosure(&scope)?;
@@ -867,29 +575,4 @@ impl TranslatorKind {
             }
         }
     }
-}
-
-pub(crate) fn estimate_money(estimate: &CostEstimate) -> Result<Money, EditError> {
-    match estimate {
-        CostEstimate::Free => Ok(Money::new("USD", 0)?),
-        CostEstimate::UpperBound(money) => Ok(money.clone()),
-        CostEstimate::Unknown => Err(EditError::Ai(ai::Error::Cost)),
-    }
-}
-
-pub(super) fn hex(bytes: &[u8]) -> String {
-    const DIGITS: &[u8; 16] = b"0123456789abcdef";
-    let mut output = String::with_capacity(bytes.len() * 2);
-    for byte in bytes {
-        output.push(char::from(
-            DIGITS.get(usize::from(byte >> 4)).copied().unwrap_or(b'0'),
-        ));
-        output.push(char::from(
-            DIGITS
-                .get(usize::from(byte & 0x0f))
-                .copied()
-                .unwrap_or(b'0'),
-        ));
-    }
-    output
 }

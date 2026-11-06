@@ -42,8 +42,8 @@ Layers, lowest first. Imports go downward only.
 | Substrate | `runtime/` | Job runner, byte budget, content-addressed cache, staged publication, verified transfer |
 | Substrate | `store/` | Managed project library, session recovery and the project cover image used by both |
 | Substrate | `providers/` | Provider choice with explicit consent, local model availability and transfers |
-| Substrate | transcript acquisition | Speech windows and ASR checkpoints; the one transcript path used by `subtitles/` and `shorts/` |
-| Features | `subtitles/` | Subtitle workflow: speech windows, ASR checkpoints, translation, ASS import |
+| Substrate | `transcript/` | Speech windows, ASR checkpoints and cue translation runs; the one cue path used by `subtitles/` and `shorts/` |
+| Features | `subtitles/` | Subtitle workflow: orchestration, SRT export, burn-in, ASS import |
 | Features | `shorts/` | Long video to shorts: clip suggestion, boundary snapping, batch export |
 | Features | `analysis/` | Source analysis that never mutates a project: scene detection, shot analysis, loudness |
 | Features | `artifacts/` | Derived images: source and frame thumbnails, frame snapshots, effect images, bounded control previews |

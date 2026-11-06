@@ -3,7 +3,7 @@ use super::{
     Cancellation, ClipBatch, ClipBatchRequest, ClipExportOutcome, ClipExportPaths, ClipExportPrep,
     ClipExportRequest, ClipShort, ClipSuggestionOutcome, ConsentPrompt, Cost, CueTrack, Duration,
     EditError, JobRunner, JobState, MAX_BATCH_CLIPS, NfcText, Progress, Providers, ResourceClass,
-    fingerprint, subtitles,
+    fingerprint, translate_track,
 };
 /// Translate (when needed) and prepare every selected short for export.
 #[allow(clippy::too_many_arguments)]
@@ -33,7 +33,7 @@ pub fn prepare_export(
         if language == &outcome.source_language {
             continue;
         }
-        let translated = subtitles::translate_track(
+        let translated = translate_track(
             &outcome.asset,
             outcome.duration,
             &outcome.source_cues,
@@ -196,13 +196,4 @@ pub fn export(
         exports,
         translation_cost: prep.translation_cost,
     })
-}
-
-pub(super) fn hex(bytes: &[u8]) -> String {
-    let mut text = String::with_capacity(bytes.len() * 2);
-    for byte in bytes {
-        use std::fmt::Write as _;
-        let _ = write!(text, "{byte:02x}");
-    }
-    text
 }

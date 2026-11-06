@@ -1,10 +1,10 @@
 //! Resolves the selected clip suggestion provider.
 use super::{
     ANTHROPIC_SETTINGS, AnthropicClipSuggester, Arc, BuiltSuggester, CatalogOperation,
-    ClipDisclosure, ClipInput, ClipSuggester, Consent, Cost, CostEstimate, EditError,
+    ClipDisclosure, ClipInput, ClipSuggester, Consent, Cost, CostEstimate, Credentials, EditError,
     HeuristicClipSuggester, LanguageTag, Location, Money, OPENAI_LUNA_MODEL, OPENAI_POLICY_URL,
     OPENAI_SETTINGS, OpenAiClipSuggester, PromptApproval, ProviderConfig, Scope, SuggestionOption,
-    SuggestionProvider, UploadRequest, engine_providers, subtitles,
+    SuggestionProvider, UploadRequest, engine_providers,
 };
 impl SuggestionProvider {
     pub fn id(&self) -> &'static str {
@@ -100,7 +100,7 @@ impl BuiltSuggester {
 
 pub(super) fn build_suggester(
     provider: &SuggestionProvider,
-    credentials: &subtitles::Credentials,
+    credentials: &Credentials,
 ) -> Result<BuiltSuggester, EditError> {
     match provider {
         SuggestionProvider::Heuristic => {
@@ -199,7 +199,7 @@ impl engine_providers::Approval for PromptApproval<'_> {
 /// Refuse a remote suggestion choice without its credential before ASR work starts.
 pub fn check_suggestion_credentials(
     provider: &SuggestionProvider,
-    credentials: &subtitles::Credentials,
+    credentials: &Credentials,
 ) -> Result<(), EditError> {
     match provider {
         SuggestionProvider::Heuristic => Ok(()),

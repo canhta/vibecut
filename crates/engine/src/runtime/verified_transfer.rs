@@ -1,4 +1,4 @@
-//! Follows bounded redirects for verified downloads and reads single-valued response headers.
+//! Fetches verified downloads through bounded redirects.
 use crate::jobs::JobContext;
 use crate::{EditError, Result};
 use ai::transport::{DownloadTransport, HttpStreamResponse};

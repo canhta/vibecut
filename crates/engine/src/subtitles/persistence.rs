@@ -1,95 +1,13 @@
 //! Publishes subtitle workflow output.
-use super::{
-    Animations, ArtifactKind, CacheKey, Cancellation, CaptionParams, Command, Cue, CueTrack,
-    EditError, ItemParams, JobRunner, KeyInputs, LanguageTag, NewItem, Outcome, Path, PathBuf,
-    Progress, Project, ProjectId, Session, SourceAsset, SourceRange, Tick, TimeRange, TrackId,
-    TrackKind, wait_for_job,
-};
-pub(crate) fn build_session(
-    asset: &SourceAsset,
-    cues: &[Cue],
-    duration: Tick,
-    with_video: bool,
-    portrait: Option<bool>,
-) -> Result<Session, EditError> {
-    let mut data = Project::empty(ProjectId(1), "Subtitles".into())?.into_data();
-    if with_video
-        && let Some(video) = asset
-            .probe()
-            .streams
-            .iter()
-            .find(|stream| stream.kind == media::StreamKind::Video)
-    {
-        if let Some(info) = &video.video {
-            data.canvas.width = info.width;
-            data.canvas.height = info.height;
-        }
-        if let Some(rate) = video.frame_rate {
-            data.canvas.fps = rate;
-        }
-    }
-    if with_video && portrait == Some(false) {
-        data.canvas.width = 1920;
-        data.canvas.height = 1080;
-    }
-    let mut session = Session::new(Project::new(data)?, 16)?;
-    session.apply(Command::AddAsset {
-        asset: asset.clone(),
-    })?;
-    if with_video {
-        let video = session.project().data().scene().timeline.main.id;
-        let range = SourceRange::new(Tick::ZERO, duration)?;
-        session.apply(Command::InsertItem {
-            placement: crate::Placement::Track { track: video },
-            item: NewItem {
-                retime: Default::default(),
-                animations: Animations::default(),
-                source_asset: Some(asset.id()),
-                source_range: range,
-                start: Tick::ZERO,
-                content: ItemParams::Video(project::VideoParams {
-                    fades: Default::default(),
-                    source_audio_enabled: true,
-                    volume: 0.0,
-                    muted: false,
-                }),
-            },
-        })?;
-    }
-    let captions = track_id(session.apply(Command::AddTrack {
-        placement: crate::TrackPlacement::Auto,
-        name: "Captions".into(),
-        kind: TrackKind::Text,
-    })?)?;
-    let range = SourceRange::new(Tick::ZERO, duration)?;
-    session.apply(Command::InsertItem {
-        placement: crate::Placement::Track { track: captions },
-        item: NewItem {
-            retime: Default::default(),
-            animations: Animations::default(),
-            source_asset: Some(asset.id()),
-            source_range: range,
-            start: Tick::ZERO,
-            content: ItemParams::Caption(CaptionParams {
-                cues: CueTrack {
-                    cues: cues.to_vec(),
-                },
-            }),
-        },
-    })?;
-    Ok(session)
-}
-
-fn track_id(outcome: Outcome) -> Result<TrackId, EditError> {
-    outcome
-        .created
-        .into_iter()
-        .find_map(|created| match created {
-            crate::CreatedId::Track(id) => Some(id),
-            _ => None,
-        })
-        .ok_or(EditError::Invalid("track was not created"))
-}
+use crate::cache::{ArtifactKind, CacheKey, KeyInputs};
+use crate::jobs::JobRunner;
+use crate::transcript::{Cancellation, Progress, wait_for_job};
+use crate::{Command, EditError, Session};
+use captions::LanguageTag;
+use media::SourceAsset;
+use project::{ItemParams, TrackId};
+use std::path::{Path, PathBuf};
+use time::{Tick, TimeRange};
 pub(super) fn caption_track_id(session: &Session) -> Result<TrackId, EditError> {
     session
         .project()
@@ -105,19 +23,6 @@ pub(super) fn caption_track_id(session: &Session) -> Result<TrackId, EditError> 
         })
         .map(|track| track.id)
         .ok_or(EditError::Invalid("missing caption track"))
-}
-pub(crate) fn caption_item_id(session: &Session) -> Result<project::ItemId, EditError> {
-    session
-        .project()
-        .data()
-        .scene()
-        .timeline
-        .iter()
-        .filter(|track| track.kind == TrackKind::Text)
-        .flat_map(|track| &track.items)
-        .find(|item| matches!(item.content, ItemParams::Caption(_)))
-        .map(|item| item.id)
-        .ok_or(EditError::Invalid("missing caption item"))
 }
 
 #[allow(clippy::too_many_arguments)]
