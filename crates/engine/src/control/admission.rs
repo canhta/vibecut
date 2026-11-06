@@ -138,7 +138,7 @@ impl Session {
         let before = self.revision();
         // All mutation response shapes have a fixed small bound (at most 1024
         // created IDs). Reads/images never occupy the no-eviction receipt ledger.
-        let value = match self.run_control(command, runner, fingerprint, caller.policy) {
+        let value = match self.run_control(command, runner, fingerprint, caller) {
             Ok(value) => ResponseValue::Result(value),
             Err(error) => ResponseValue::Error(ErrorCode::from_error(&error)),
         };

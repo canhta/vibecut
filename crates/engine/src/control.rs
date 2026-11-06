@@ -32,6 +32,10 @@ pub struct Caller<'a> {
     pub principal: &'a str,
     pub external: bool,
     pub policy: &'a dyn Policy,
+    /// The process font store that serves `fonts.list`, `fonts.load` and `fonts.download`.
+    /// It is composition state, not project state; without one those commands are refused
+    /// with [`crate::fonts::FontError::Unavailable`].
+    pub fonts: Option<&'a crate::fonts::FontStore>,
 }
 
 #[cfg(test)]
@@ -88,6 +92,7 @@ mod tests {
                     principal: "test",
                     external: true,
                     policy: &Allow,
+                    fonts: None,
                 },
                 &mut runner,
             )

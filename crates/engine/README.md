@@ -7,7 +7,7 @@ Widgets, device state, app preferences and authenticated transports live in cons
 | Folder | Responsibility | Interface items |
 |---|---|---|
 | `session/` | Owns editable project state and the wire contract. | `Session`, `Command`, `CommandKind`, `registry`, `JobTarget`, `wire` |
-| `runtime/` | Executes bounded background work. | `jobs`, `cache`, `ByteBudget`, `submit_export`, `submit_export_publication` |
+| `runtime/` | Executes bounded background work. | `jobs`, `cache`, `ByteBudget`, `submit_export`, `submit_export_publication`, `admit_loudness` |
 | `store/` | Persists managed project sessions. | `library`, `recovery`; private project-cover capture |
 | `subtitles/` | Produces source-timed subtitle output. | `Providers`, `transcribe`, `run`, `translate_selected`, `prepare_ass_import`, `translation` |
 | `shorts/` | Produces accepted shorts. | `clip_suggest`, `clip_boundaries`, `ClipBatch` |
@@ -1363,7 +1363,7 @@ The gains' `key` is `loudness::content_key`: a hash of the active scene's audibl
 (timing, source content, volume/mute and their automation), track mutes, sample rate
 and both targets. The master fader is excluded because measurement ignores it.
 Identical content and targets hit the cache without decoding. `submit_export*` calls
-`loudness::admit`, which refuses `LoudnessStale` when a target is set and the stored
+`admit_loudness` (owned by `runtime/`, also exported as `loudness::admit` with `loudness::content_key`), which refuses `LoudnessStale` when a target is set and the stored
 gains are missing or measured for different audio, so preview (which applies stored
 gains as is) and export cannot disagree. Undo restores the gains with the content.
 `vibecut-cli normalize` composes these steps. Limits: 4,096 clips, 1 MiB result.
@@ -1544,10 +1544,10 @@ explicit download replaces the directory. A new pin therefore invalidates older 
 bytes the same way a tampered file does.
 
 `fonts.list`, `fonts.load` and `fonts.download` are registry entries (effects `read`,
-`read` and `job_control`) executed against the store attached with `Session::set_fonts`; a
-session without one refuses them. They are outside project history and persistence.
+`read` and `job_control`) executed against the store the composition root lends on each request as `Caller::fonts`; a
+caller without one gets `FontError::Unavailable`. They are outside project history and persistence.
 `fonts.download` returns `job_accepted` with no published paths; poll `job_status` and call
-`fonts.load` afterwards. Composition roots attach `FontStore::native()`, which uses the
+`fonts.load` afterwards. The CLI control session lends `FontStore::native()`, which uses the
 shared HTTPS transport, the `fontdb` system scan and the per-user cache.
 
 Tests (`cargo test -p engine --test it font`): directory enumeration with nested, broken and
@@ -1686,7 +1686,7 @@ last durable checkpoint and truncates its later tail. Range resumption requires 
 strong matching ETag and exact Content-Range/length; a full 200 response replaces
 the prefix. Weak/missing validators restart from zero. Changed 206 entities reset
 before retry; malformed, encoded, excess, truncated and hash-invalid responses
-cannot publish. HTTPS redirects are bounded to five, forbid credentials/fragments
+cannot publish. HTTPS redirects (followed by `runtime/`'s verified transfer, which font downloads share) are bounded to five, forbid credentials/fragments
 and keep signed target URLs ephemeral. Hash/size checks reuse ai's streaming owner.
 The shared client has finite timeouts; cancellation during a blocking request/read
 can wait for the response or timeout. No live remote throughput or Windows runtime

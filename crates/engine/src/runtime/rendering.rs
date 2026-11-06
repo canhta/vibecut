@@ -147,7 +147,7 @@ pub fn submit_export_with_sources(
     path: PathBuf,
     sources: impl Fn() -> Box<dyn render::SourceProvider> + Send + Sync + 'static,
 ) -> Result<(JobId, CancelToken), EditError> {
-    crate::loudness::admit(&project)?;
+    super::loudness_admission::admit(&project)?;
     runner.submit(
         JobSpec {
             kind: JobKind::Export,

@@ -256,6 +256,7 @@ impl SnapshotDialog {
                 principal: "vibecut-desktop",
                 external: false,
                 policy: &Allow,
+                fonts: None,
             },
             runner,
         )?;

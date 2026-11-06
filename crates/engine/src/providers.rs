@@ -7,6 +7,5 @@ pub use selection::{
 mod model_transfers;
 pub mod models {
     //! Transfers explicitly requested model bundles.
-    pub(crate) use super::model_transfers::response;
     pub use super::model_transfers::{ModelIo, ModelTransfers, SystemModelIo};
 }

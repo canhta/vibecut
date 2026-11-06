@@ -22,6 +22,14 @@ pub(crate) mod publication {
     //! Publishes admitted output artifacts.
     pub(crate) use super::staged_publication::Publication;
 }
+mod verified_transfer;
+pub(crate) mod transfer {
+    //! Fetches verified downloads for fonts and models.
+    pub(crate) use super::verified_transfer::{header, response};
+}
+mod loudness_admission;
+pub(crate) use loudness_admission::VERSION as LOUDNESS_VERSION;
+pub use loudness_admission::{admit as admit_loudness, content_key as loudness_content_key};
 mod rendering;
 pub use rendering::{
     submit_export, submit_export_publication, submit_export_with_sources, subtitle_file,

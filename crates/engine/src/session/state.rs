@@ -45,7 +45,6 @@ pub struct Session {
     limit: usize,
     gesture: Option<State>,
     grouping: bool,
-    fonts: Option<Arc<crate::fonts::FontStore>>,
 }
 impl Session {
     /// Retain 1..=1000 undo snapshots plus current/pending/active transaction snapshots.
@@ -96,7 +95,6 @@ impl Session {
             limit: history_limit,
             gesture: None,
             grouping: false,
-            fonts: None,
         })
     }
     /// Create the default canvas/timeline through the registered lifecycle command.
@@ -126,17 +124,6 @@ impl Session {
     }
     pub fn protected_paths(&self) -> &[std::path::PathBuf] {
         &self.protected
-    }
-    /// Attach the process font store that serves `fonts.list`, `fonts.load` and
-    /// `fonts.download`. It is composition state, not project state: it is outside history and
-    /// persistence, and a session without one refuses those commands.
-    pub fn set_fonts(&mut self, fonts: Arc<crate::fonts::FontStore>) {
-        self.fonts = Some(fonts);
-    }
-    pub(crate) fn font_store(&self) -> Result<&Arc<crate::fonts::FontStore>> {
-        self.fonts
-            .as_ref()
-            .ok_or(crate::fonts::FontError::Unavailable.into())
     }
     /// Load optional sidecar presentation state, outside project history.
     pub fn restore_metadata(&mut self, metadata: project::Metadata) -> Result<()> {

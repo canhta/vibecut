@@ -1,5 +1,5 @@
 //! Executes admitted control commands.
-use super::Policy;
+use super::Caller;
 use crate::jobs::{JobKind, JobRunner, JobState};
 use crate::session::wire::{
     ControlResult, JobView, MAX_RESPONSE_BYTES, ProviderView, bounded_json, validate_wire,
@@ -25,13 +25,18 @@ impl From<ProviderOption> for ProviderView {
         }
     }
 }
+fn font_store<'a>(caller: &Caller<'a>) -> Result<&'a crate::fonts::FontStore> {
+    caller
+        .fonts
+        .ok_or(crate::fonts::FontError::Unavailable.into())
+}
 impl Session {
     pub(super) fn run_control(
         &mut self,
         command: Command,
         runner: &mut JobRunner,
         fingerprint: blake3::Hash,
-        policy: &dyn Policy,
+        caller: &Caller<'_>,
     ) -> Result<ControlResult> {
         match command {
             Command::Inspect {} => {
@@ -56,20 +61,17 @@ impl Session {
                     .collect(),
             }),
             Command::FontsList { query } => Ok(ControlResult::Fonts {
-                entries: self
-                    .font_store()?
-                    .list(query.as_ref().map(captions::NfcText::as_str))?,
+                entries: font_store(caller)?.list(query.as_ref().map(captions::NfcText::as_str))?,
             }),
             Command::FontsLoad { family } => Ok(ControlResult::Font {
-                font: self.font_store()?.load(family.as_str())?,
+                font: font_store(caller)?.load(family.as_str())?,
             }),
             Command::FontsDownload {
                 family,
                 accept_license,
             } => {
                 let (job, _) =
-                    self.font_store()?
-                        .submit_download(runner, family.as_str(), accept_license)?;
+                    font_store(caller)?.submit_download(runner, family.as_str(), accept_license)?;
                 Ok(ControlResult::JobAccepted {
                     job,
                     revision: self.revision(),
@@ -110,7 +112,7 @@ impl Session {
                     &path,
                     &protected,
                     runner.memory_budget(),
-                    if policy.snapshot_overwrite() {
+                    if caller.policy.snapshot_overwrite() {
                         project::atomic::Overwrite::Replace
                     } else {
                         project::atomic::Overwrite::Refuse

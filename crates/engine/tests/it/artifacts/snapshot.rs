@@ -123,6 +123,7 @@ fn run(
                 principal: "test",
                 external: false,
                 policy: &Allow,
+                fonts: None,
             },
             runner,
         )

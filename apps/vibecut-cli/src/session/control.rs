@@ -53,9 +53,7 @@ pub(crate) fn control(
         project::metadata_path(&project_path)?,
     ])?;
     // Without a user cache location the font commands refuse; the session still serves edits.
-    if let Ok(store) = FontStore::native() {
-        session.set_fonts(Arc::new(store));
-    }
+    let fonts = FontStore::native().ok();
     let mut runner = JobRunner::new(
         RunnerConfig {
             concurrency: [1, 1, 2],
@@ -130,6 +128,7 @@ pub(crate) fn control(
             principal: "vibecut-cli",
             external: true,
             policy: &policy,
+            fonts: fonts.as_ref(),
         };
         // The engine owns save admission and its receipt; the closure only
         // publishes the bytes through the project owner.

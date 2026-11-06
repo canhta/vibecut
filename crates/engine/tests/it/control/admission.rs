@@ -31,11 +31,23 @@ impl Policy for Deny {
         Err(EditError::Permission)
     }
 }
+thread_local! {
+    /// The font store lent to requests on this test thread: each seed session gets a fresh one.
+    static FONTS: std::cell::Cell<Option<&'static engine::fonts::FontStore>> =
+        const { std::cell::Cell::new(None) };
+}
+fn with_fonts(session: Session) -> Session {
+    let store: &'static engine::fonts::FontStore =
+        Box::leak(Box::new(crate::libraries::example_store()));
+    FONTS.set(Some(store));
+    session
+}
 fn caller(policy: &dyn Policy) -> Caller<'_> {
     Caller {
         principal: "test",
         external: true,
         policy,
+        fonts: FONTS.get(),
     }
 }
 fn runner() -> JobRunner {
@@ -274,9 +286,7 @@ fn seed() -> Session {
         note: "Mark".into(),
         color: Color([255, 255, 0, 255]),
     });
-    let mut session = Session::new(Project::new(data).unwrap(), 10).unwrap();
-    session.set_fonts(crate::libraries::example_store());
-    session
+    with_fonts(Session::new(Project::new(data).unwrap(), 10).unwrap())
 }
 /// The seed plus one audible clip (track 5, item 5) for audio registry examples.
 fn with_audio(seed: &Session) -> Session {
@@ -341,9 +351,7 @@ fn with_audio(seed: &Session) -> Session {
             }),
         }],
     });
-    let mut session = Session::new(Project::new(data).unwrap(), 10).unwrap();
-    session.set_fonts(crate::libraries::example_store());
-    session
+    with_fonts(Session::new(Project::new(data).unwrap(), 10).unwrap())
 }
 fn replace_paths(v: &mut Value, root: &std::path::Path) {
     match v {
@@ -507,6 +515,7 @@ fn registry_examples_validate_and_dispatch_without_an_id_table() {
                     principal: "ui",
                     external: false,
                     policy: &Allow,
+                    fonts: FONTS.get(),
                 },
                 &mut r,
             )
@@ -636,6 +645,7 @@ fn loss_replay_conflict_principal_and_current_authorization() {
                 principal: "other",
                 external: true,
                 policy: &Allow,
+                fonts: None,
             },
             &mut r,
         )
@@ -2074,7 +2084,15 @@ fn font_commands_return_typed_results_and_refuse_without_a_store_or_acceptance()
             json!({"family":"Lobster","accept_license":true}),
         ),
     ] {
-        error(run(&mut bare, &mut r, id, params, "h"), ErrorCode::Refused);
+        let req = request(&bare, id, params, "h");
+        let no_store = Caller {
+            fonts: None,
+            ..caller(&Allow)
+        };
+        error(
+            bare.control_request(req, no_store, &mut r).unwrap(),
+            ErrorCode::Refused,
+        );
     }
     assert_eq!(
         s.revision(),

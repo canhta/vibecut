@@ -16,7 +16,6 @@ pub use shot_analysis::{
 mod loudness_workflow;
 pub mod loudness {
     //! Measures source audio loudness.
-    pub use super::loudness_workflow::{
-        LoudnessJob, LoudnessResult, Measured, admit, content_key, submit_loudness,
-    };
+    pub use super::loudness_workflow::{LoudnessJob, LoudnessResult, Measured, submit_loudness};
+    pub use crate::runtime::{admit_loudness as admit, loudness_content_key as content_key};
 }
