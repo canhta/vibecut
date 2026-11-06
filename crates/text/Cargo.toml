@@ -8,14 +8,14 @@ publish = false
 
 [dependencies]
 harfrust = { version = "0.15.0", default-features = false, features = ["std"] }
-skrifa = { version = "0.49.0", default-features = false, features = ["std"] }
-thiserror = "2.0.21"
-unicode-linebreak = "0.1.5"
-unicode-normalization = "0.1.26"
-unicode-segmentation = "1.13.3"
+skrifa = { workspace = true, default-features = false, features = ["std"] }
+thiserror.workspace = true
+unicode-linebreak.workspace = true
+unicode-normalization.workspace = true
+unicode-segmentation.workspace = true
 
 [dev-dependencies]
-unicode-normalization = "0.1.26"
+unicode-normalization.workspace = true
 
 [lints]
 workspace = true

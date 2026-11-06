@@ -8,6 +8,38 @@ edition = "2024"
 license = "GPL-3.0-only"
 repository = "https://github.com/canhta/vibecut"
 
+[workspace.dependencies]
+# Internal path crates shared by two or more members.
+ai = { path = "crates/ai" }
+captions = { path = "crates/captions" }
+engine = { path = "crates/engine" }
+media = { path = "crates/media" }
+project = { path = "crates/project" }
+render = { path = "crates/render" }
+shorts = { path = "crates/shorts" }
+text = { path = "crates/text" }
+time = { path = "crates/time" }
+
+# External crates declared by two or more members. Members keep their own
+# features and default-features; only the version is owned here.
+base64 = "0.23.1"
+blake3 = "1.8.7"
+getrandom = "0.4.3"
+image = "0.25.10"
+proptest = "1.12.0"
+rustix = "1.1.6"
+schemars = "1.2.3"
+serde = "1.0.229"
+serde_json = "1.0.154"
+sha2 = "0.11.1"
+skrifa = "0.49.0"
+tempfile = "3.27.0"
+thiserror = "2.0.21"
+tracing = "0.1.44"
+unicode-linebreak = "0.1.5"
+unicode-normalization = "0.1.26"
+unicode-segmentation = "1.13.3"
+
 [workspace.lints.rust]
 unsafe_code = "forbid"
 unused_must_use = "deny"

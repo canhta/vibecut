@@ -9,18 +9,18 @@ publish = false
 workspace = true
 
 [dependencies]
-engine = { path = "../engine" }
-ai = { path = "../ai", default-features = false }
-project = { path = "../project" }
-time = { path = "../time" }
-media = { path = "../media" }
-render = { path = "../render" }
-captions = { path = "../captions" }
-serde = { version = "1.0.229", features = ["derive"] }
-serde_json = "1.0.154"
-unicode-segmentation = "1.13.3"
-blake3 = "1.8.7"
+engine.workspace = true
+ai = { workspace = true, default-features = false }
+project.workspace = true
+time.workspace = true
+media.workspace = true
+render.workspace = true
+captions.workspace = true
+serde = { workspace = true, features = ["derive"] }
+serde_json.workspace = true
+unicode-segmentation.workspace = true
+blake3.workspace = true
 
 [dev-dependencies]
-proptest = "1.12.0"
-tempfile = "3.27.0"
+proptest.workspace = true
+tempfile.workspace = true

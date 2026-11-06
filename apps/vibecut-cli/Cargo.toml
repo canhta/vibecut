@@ -13,29 +13,29 @@ path = "src/main.rs"
 workspace = true
 
 [dependencies]
-shorts = { path = "../../crates/shorts" }
-tracing = { version = "0.1.44", default-features = false, features = ["std"] }
+shorts.workspace = true
+tracing = { workspace = true, default-features = false, features = ["std"] }
 rmcp = { version = "3.8.0", default-features = false, features = ["server", "transport-io"] }
 tokio = { version = "1.54.1", features = ["rt-multi-thread", "sync", "time", "macros", "io-util", "io-std", "net"] }
 interprocess = { version = "2.4.7", features = ["tokio"] }
-base64 = "0.23.1"
-engine = { path = "../../crates/engine" }
-media = { path = "../../crates/media" }
-project = { path = "../../crates/project" }
-render = { path = "../../crates/render" }
-time = { path = "../../crates/time" }
+base64.workspace = true
+engine.workspace = true
+media.workspace = true
+project.workspace = true
+render.workspace = true
+time.workspace = true
 same-file = "1.0.6"
-serde = { version = "1.0.229", features = ["derive"] }
-serde_json = "1.0.154"
-thiserror = "2.0.21"
+serde = { workspace = true, features = ["derive"] }
+serde_json.workspace = true
+thiserror.workspace = true
 
 [target.'cfg(unix)'.dependencies]
-rustix = { version = "1.1.6", features = ["process"] }
+rustix = { workspace = true, features = ["process"] }
 
 [target.'cfg(windows)'.dependencies]
 widestring = "1.2.1"
 win-authorization-sys = "0.1.0"
 
 [dev-dependencies]
-tempfile = "3.27.0"
+tempfile.workspace = true
 tokio = { version = "1.54.1", features = ["test-util"] }

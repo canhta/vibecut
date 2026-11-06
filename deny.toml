@@ -1,26 +1,121 @@
+[graph]
+# Check the shipped platforms and every feature combination once, so the skip
+# list below is host-independent and a Linux/macOS runner agrees with Windows.
+targets = [
+    "x86_64-pc-windows-msvc",
+    "aarch64-pc-windows-msvc",
+    "x86_64-apple-darwin",
+    "aarch64-apple-darwin",
+    "x86_64-unknown-linux-gnu",
+    "aarch64-unknown-linux-gnu",
+]
+all-features = true
+
 [bans]
 # Scoped library limits approved 2026-11-04; direct dependencies stay latest stable.
-# No downgrades or third-party patches. Remove each skip when its listed parent
-# adopts the version already used by the rest of the workspace.
+# No downgrades or third-party patches. Direct dependencies resolve to one version
+# through the workspace table; every skip below is the older side of a duplicate
+# that an upstream crate pins. Remove a skip when that parent adopts the version
+# already used by the rest of the workspace.
+multiple-versions = "deny"
 skip = [
-    # candle-core 0.11.1 / tokenizers 0.23.2 / half / float8 use rand 0.9;
-    # proptest 1.12 is dev-only and uses rand 0.10. Remove when Candle unifies on 0.10.
+    # spm_precompiled 0.1.4 (from tokenizers) pins base64 0.13; ureq 2.12 and
+    # usvg 0.45 pin 0.22. The workspace uses 0.23 for ai and vibecut-cli.
+    { name = "base64", version = "=0.13.1" },
+    { name = "base64", version = "=0.22.1" },
+    # whisper-rs-sys 0.15 builds with bindgen 0.72; ffmpeg-sys-next 9 uses 0.73.
+    { name = "bindgen", version = "=0.72.1" },
+    # tokenizers -> fancy-regex 0.17 pins bit-set 0.8/bit-vec 0.8; naga/wgpu pin
+    # bit-set 0.10/bit-vec 0.9; proptest and tract use 0.11/0.10.
+    { name = "bit-set", version = "=0.8.0" },
+    { name = "bit-set", version = "=0.10.0" },
+    { name = "bit-vec", version = "=0.8.0" },
+    { name = "bit-vec", version = "=0.9.1" },
+    # png 0.17 (tiny-skia) and older macOS/BSD support crates still use bitflags 1.
+    { name = "bitflags", version = "=1.3.2" },
+    # winit 0.30 and accesskit_macos still build against objc2 0.5 generation.
+    { name = "block2", version = "=0.5.1" },
+    # sherpa-onnx-sys 2.0 compresses its native archive with bzip2 0.4; zip 9 uses 0.6.
+    { name = "bzip2", version = "=0.4.4" },
+    # winit 0.30's Wayland stack pins calloop 0.13; smithay-clipboard uses 0.14.
+    { name = "calloop", version = "=0.13.0" },
+    { name = "calloop-wayland-source", version = "=0.3.0" },
+    # blake3 1.8 pins constant_time_eq 0.4; zip 9 uses 0.6.
+    { name = "constant_time_eq", version = "=0.4.2" },
+    # wayland-backend 0.3 pins downcast-rs 1; tract 0.23 uses 2.
+    { name = "downcast-rs", version = "=1.2.1" },
+    # tokenizers 0.23 pins fancy-regex 0.17; jsonschema 0.60 uses 0.19.
+    { name = "fancy-regex", version = "=0.17.0" },
+    # petgraph 0.8 (hashbrown 0.15) pins foldhash 0.1; hashbrown 0.17 uses 0.2.
+    { name = "foldhash", version = "=0.1.5" },
+    # ring 0.17 needs getrandom 0.2; ahash/rand 0.9 need 0.3; the workspace and
+    # tempfile/zip/tract already use 0.4.
+    { name = "getrandom", version = "=0.2.17" },
+    { name = "getrandom", version = "=0.3.4" },
+    # epaint 0.37 pins harfrust 0.12; text and skrifa 0.49 use 0.15.
+    { name = "harfrust", version = "=0.12.0" },
+    # petgraph 0.8 uses hashbrown 0.15, safetensors 0.8 uses 0.16; the engine/UI
+    # stack uses 0.17.
+    { name = "hashbrown", version = "=0.15.5" },
+    { name = "hashbrown", version = "=0.16.1" },
+    # bindgen 0.72, prost/tokenizers and egui/tract split itertools 0.13/0.14/0.15.
+    { name = "itertools", version = "=0.13.0" },
+    { name = "itertools", version = "=0.14.0" },
+    # resvg 0.45 pins kurbo 0.11; vello/peniko 0.6 uses 0.13.
+    { name = "kurbo", version = "=0.11.3" },
+    # rustix 0.38 (winit/calloop 0.13) pins linux-raw-sys 0.4; rustix 1 uses 0.12.
+    { name = "linux-raw-sys", version = "=0.4.15" },
+    # png 0.17 pins miniz_oxide 0.8; flate2 and png 0.18 use 0.9.
+    { name = "miniz_oxide", version = "=0.8.9" },
+    # spm_precompiled and cexpr (bindgen 0.72) pin nom 7; tract 0.23 uses 8.
+    { name = "nom", version = "=7.1.3" },
+    # winit 0.30 and accesskit still use objc2 0.5 generation; the app/UI stack
+    # (rfd, wgpu, egui, cpal) uses objc2 0.6.
+    { name = "objc2", version = "=0.5.3" },
+    { name = "objc2-app-kit", version = "=0.2.2" },
+    { name = "objc2-foundation", version = "=0.2.2" },
+    # mime_guess2 2.3 pins phf 0.11; accesskit 0.25 uses 0.14.
+    { name = "phf", version = "=0.11.3" },
+    { name = "phf_shared", version = "=0.11.3" },
+    # tiny-skia 0.11 pins png 0.17; image 0.25 uses 0.18.
+    { name = "png", version = "=0.17.16" },
+    # rfd 0.17 pins pollster 0.4; eframe/egui_kittest use 1.0.
+    { name = "pollster", version = "=0.4.0" },
+    # candle/tokenizers still use rand 0.9; proptest and tract use 0.10. The
+    # same split reaches rand_core and rand_distr.
     { name = "rand", version = "=0.9.5" },
     { name = "rand_core", version = "=0.9.5" },
-    # rand 0.9 -> rand_core 0.9 -> getrandom 0.3 -> r-efi 5.
-    { name = "getrandom", version = "=0.3.4" },
-    { name = "r-efi", version = "=5.3.0" },
-    # tokenizers -> spm_precompiled 0.1.4; remove when it adopts base64 0.22.
-    { name = "base64", version = "=0.13.1" },
-    # tokenizers -> fancy-regex 0.17; remove when its bit-set/bit-vec match proptest.
-    { name = "bit-set", version = "=0.8.0" },
-    { name = "bit-vec", version = "=0.8.0" },
-    # candle-core/nn -> safetensors 0.8 -> hashbrown 0.16; remove on 0.17 adoption.
-    { name = "hashbrown", version = "=0.16.1" },
-    # existing whisper-rs -> bindgen 0.72 uses 0.13, Candle/tokenizers add 0.14;
-    # remove when the existing bindgen line adopts itertools 0.14.
-    { name = "itertools", version = "=0.13.0" },
-    # candle-core -> gemm-common 0.19 -> sysctl 0.6 (macOS); remove on thiserror 2 adoption.
+    { name = "rand_distr", version = "=0.5.1" },
+    # skrifa 0.44 (epaint) pins read-fonts 0.41; skrifa 0.49 uses 0.46.
+    { name = "read-fonts", version = "=0.41.0" },
+    # naga/wgpu pin rustc-hash 1; bindgen and type-map use 2.
+    { name = "rustc-hash", version = "=1.1.0" },
+    # winit 0.30's Wayland stack pins rustix 0.38; the workspace uses 1.1.
+    { name = "rustix", version = "=0.38.44" },
+    # bindgen 0.72 pins shlex 1; cc and bindgen 0.73 use 2.
+    { name = "shlex", version = "=1.3.0" },
+    # epaint 0.37 and glifo 0.3 pin skrifa 0.44; text/app use 0.49.
+    { name = "skrifa", version = "=0.44.0" },
+    # winit 0.30 pins smithay-client-toolkit 0.19; smithay-clipboard uses 0.20.
+    { name = "smithay-client-toolkit", version = "=0.19.2" },
+    # syn 2 is still required by bindgen 0.72, thiserror 1 and many proc-macro
+    # crates; the workspace and newer macros use syn 3.
+    { name = "syn", version = "=2.0.119" },
+    # calloop 0.13 and smithay-client-toolkit 0.19 pin thiserror 1.
     { name = "thiserror", version = "=1.0.69" },
     { name = "thiserror-impl", version = "=1.0.69" },
+    # The workspace crate `time` is a local package, not a registry version drift;
+    # zip 9 pulls the crates.io `time` 0.3 for its file timestamps.
+    { name = "time", version = "=0.1.0" },
+    # glutin/winit/ring and file-id pin windows-sys 0.52/0.59/0.60; the workspace
+    # and current platform crates use 0.61.
+    { name = "windows-sys", version = "=0.52.0" },
+    { name = "windows-sys", version = "=0.59.0" },
+    { name = "windows-sys", version = "=0.60.2" },
+    { name = "windows-targets", version = "=0.52.6" },
+    # windows-sys 0.52/0.59 share the 0.52.6 architecture crates for our shipped
+    # triples; windows-sys 0.60/0.61 use 0.53.1.
+    { name = "windows_aarch64_msvc", version = "=0.52.6" },
+    { name = "windows_x86_64_gnu", version = "=0.52.6" },
+    { name = "windows_x86_64_msvc", version = "=0.52.6" },
 ]

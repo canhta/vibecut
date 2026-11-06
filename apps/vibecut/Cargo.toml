@@ -17,7 +17,7 @@ test = true
 workspace = true
 
 [dependencies]
-shorts = { path = "../../crates/shorts" }
+shorts.workspace = true
 vibecut-cli = { path = "../vibecut-cli" }
 pollster = "1.0.1"
 
@@ -25,21 +25,21 @@ rfd = { version = "0.17.2", default-features = false }
 eframe = { version = "0.37.0", default-features = false, features = ["wgpu", "accesskit", "x11", "wayland", "clipboard"] }
 egui_extras = { version = "0.37.0", features = ["svg"] }
 cpal = "0.18.2"
-media = { path = "../../crates/media" }
-engine = { path = "../../crates/engine" }
-ai = { path = "../../crates/ai", default-features = false }
-project = { path = "../../crates/project" }
-render = { path = "../../crates/render" }
-text = { path = "../../crates/text" }
-time = { path = "../../crates/time" }
-captions = { path = "../../crates/captions" }
-serde = { version = "1.0.229", features = ["derive"] }
-serde_json = "1.0.154"
+media.workspace = true
+engine.workspace = true
+ai = { workspace = true, default-features = false }
+project.workspace = true
+render.workspace = true
+text.workspace = true
+time.workspace = true
+captions.workspace = true
+serde = { workspace = true, features = ["derive"] }
+serde_json.workspace = true
 sys-locale = "0.3.2"
-thiserror = "2.0.21"
-tracing = { version = "0.1.44", default-features = false, features = ["std"] }
+thiserror.workspace = true
+tracing = { workspace = true, default-features = false, features = ["std"] }
 tracing-subscriber = { version = "0.3.23", default-features = false, features = ["fmt"] }
-image = { version = "0.25.10", default-features = false, features = ["png"] }
+image = { workspace = true, default-features = false, features = ["png"] }
 
 [target.'cfg(windows)'.build-dependencies]
 embed-resource = "3.0.12"
@@ -54,7 +54,7 @@ objc2-app-kit = { version = "0.3.2", default-features = false, features = ["std"
 
 [dev-dependencies]
 egui_kittest = { version = "0.37.0", features = ["wgpu", "eframe"] }
-proptest = "1.12.0"
-sha2 = "0.11.1"
-skrifa = "0.49.0"
-tempfile = "3.27.0"
+proptest.workspace = true
+sha2.workspace = true
+skrifa.workspace = true
+tempfile.workspace = true
