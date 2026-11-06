@@ -776,7 +776,7 @@ fn control_sets_every_text_style_key_and_the_snapshot_shows_it() {
     let mut control = ControlSession::start(&path, &[]);
     let inspect = control.send(control_request("r0", "inspect", json!({}), None, None));
     let mut rev = inspect["rev_after"].as_str().unwrap().to_owned();
-    let mut snapshot = |control: &mut ControlSession, rev: &str, name: &str| {
+    let snapshot = |control: &mut ControlSession, rev: &str, name: &str| {
         let out = dir.path().join(name);
         let response = control.send(control_request(
             name,

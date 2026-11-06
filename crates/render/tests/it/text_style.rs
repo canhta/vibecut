@@ -64,7 +64,9 @@ fn base() -> TextParams {
 
 fn bright(frame: &[u8]) -> Vec<(usize, usize)> {
     frame
-        .chunks_exact(4)
+        .as_chunks::<4>()
+        .0
+        .iter()
         .enumerate()
         .filter(|(_, p)| p[0] > 128 && p[1] > 128 && p[2] > 128)
         .map(|(i, _)| (i % W as usize, i / W as usize))
@@ -73,7 +75,9 @@ fn bright(frame: &[u8]) -> Vec<(usize, usize)> {
 
 fn coloured(frame: &[u8], keep: impl Fn(&[u8]) -> bool) -> Vec<(usize, usize)> {
     frame
-        .chunks_exact(4)
+        .as_chunks::<4>()
+        .0
+        .iter()
         .enumerate()
         .filter(|(_, p)| keep(p))
         .map(|(i, _)| (i % W as usize, i / W as usize))
@@ -253,8 +257,10 @@ fn text_style_params_render_per_spec_and_preview_equals_export() {
         text.decoration = decoration;
         let frame = export(&project_with(text, Default::default(), 1), Tick::ZERO);
         let rows: Vec<usize> = frame
-            .chunks_exact(4)
-            .zip(plain.chunks_exact(4))
+            .as_chunks::<4>()
+            .0
+            .iter()
+            .zip(plain.as_chunks::<4>().0)
             .enumerate()
             .filter(|(_, (a, b))| a != b)
             .map(|(i, _)| i / W as usize)

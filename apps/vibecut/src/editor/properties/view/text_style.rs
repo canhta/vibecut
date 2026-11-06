@@ -145,8 +145,8 @@ impl Panel<'_, '_> {
                 ("line_through", Text::DecorationStrike),
             ],
             at,
-        ) {
-            let word = ["none", "underline", "line_through"][choice];
+        ) && let Some(word) = ["none", "underline", "line_through"].get(choice)
+        {
             self.set_item_field(item, "text_decoration", word);
         }
         let aligns = [TextAlign::Left, TextAlign::Center, TextAlign::Right];
@@ -161,8 +161,8 @@ impl Panel<'_, '_> {
                 ("right", Text::AlignRight),
             ],
             at,
-        ) {
-            let word = ["left", "center", "right"][choice];
+        ) && let Some(word) = ["left", "center", "right"].get(choice)
+        {
             self.set_item_field(item, "text_align", word);
         }
         self.scrub_field(ui, item, LETTER_SPACING);
