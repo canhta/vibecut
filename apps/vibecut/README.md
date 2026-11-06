@@ -8,8 +8,9 @@ render owns every pixel, audio conversion, sample grid and channel mix rule.
 
 ## Editor presentation
 
-`editor.rs` retains the public `Editor` facade and its shared presentation
-context. `editor/frame.rs` owns window composition and editor input routing.
+`editor.rs` retains the public `Editor` facade; `editor/state.rs` holds its
+shared presentation context, `editor/widgets.rs` its automation-recording
+controls and `editor/timing.rs` the tick-grid time formatting. `editor/frame.rs` owns window composition and editor input routing.
 The assets, player, properties, timeline, captions, export and models area files
 are folder interfaces with private `view` and `workflow` implementations; existing
 state projections live with their area. Responsibilities follow
@@ -22,7 +23,10 @@ known legacy cross-area calls are recorded in the ticket report.
 `kit.rs` exposes the app palette, measured geometry, regular icons and the five
 shared controls without an engine dependency. The private legacy theme/icon
 aliases preserve existing app callers. The [token contract](../../docs/product/tokens.md)
-indexes the one executable value owner. No standalone kit demo is installed.
+indexes the one executable value owner. The measured editor density (12/14 px type,
+22 px controls, 4 px corners) is installed by `kit::install_editor_density` from the
+editor frame only; every other window keeps the toolkit defaults. No standalone kit
+demo is installed.
 
 ## Localization
 

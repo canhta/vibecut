@@ -27,3 +27,8 @@ not admitted as measured foundation tokens.
 later areas: icon buttons, tab strips, section headers, property rows and
 slider/stepper drafts. Callers retain existing labels/tooltips, automation IDs,
 preferences and preview/commit/rollback decisions. There is no standalone demo.
+
+The measured text styles, 22 px control height, spacing and 4 px corners are an
+editor-only density (`kit::install_editor_density`, called by the editor frame);
+Home, Shorts and the workspace shell keep the toolkit defaults until their own
+window tickets measure them.
