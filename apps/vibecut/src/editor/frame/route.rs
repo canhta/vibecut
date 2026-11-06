@@ -291,14 +291,29 @@ impl Editor {
         let params = serde_json::json!({
             "commands": [{"command": command, "params": gesture.params()}]
         });
+        let previous = self
+            .session
+            .preview_project()
+            .unwrap_or(self.session.project())
+            .clone();
         match self
             .session
             .execute_with_ripple("timeline.preview", params, self.preferences.ripple)
         {
             Ok(_) => {
-                // `project()` stays committed; only the timeline paints the
-                // candidate, so the player needs no restart until publication.
+                // `project()` stays committed; the player follows the staged
+                // candidate (including a reversal back to the entry state) so a
+                // trim shows its frame live.
                 self.timeline.mark_preview(command, gesture.is_noop());
+                if previous.as_ref()
+                    != self
+                        .session
+                        .preview_project()
+                        .unwrap_or(self.session.project())
+                        .as_ref()
+                {
+                    self.sync_preview();
+                }
             }
             Err(error) => {
                 // The engine refused the whole candidate: drop the gesture and
