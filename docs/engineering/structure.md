@@ -20,38 +20,51 @@ Where code lives, how it is grouped, and how modules depend on each other. [Arch
 6. **Where does new code go** (ask in this order): an existing owner of the concept, extended through its interface; a new module inside the folder of the layer and feature that owns it; a new folder only when a second responsibility appears; a new crate only when the boundary must be compiler-enforced and a second consumer or an independent seam exists ([architecture](architecture.md#crate-map)); see Modules and crates below. A ticket names the owning module, says whether it adds a module, and does not widen an interface without saying why.
 7. **Review asks four questions:** is the code in its owner; did an interface grow, and could it stay small; does each touched module still pass the one-sentence test; did an import cross a layer or a feature. Any "no" is `changes`.
 
+## Naming
+
+One convention, taken from [GLOSSARY](../../GLOSSARY.md):
+
+- Modules and folders are singular concept nouns from the glossary (`thumbnail`, `recovery`). Two spellings side by side (`thumbnail` and `thumbnails`) are a defect.
+- A shared prefix becomes a folder: `clip_export` becomes `shorts/export`.
+- Provider modules are `<family>/<operation>`: `providers/anthropic/translate`.
+- Types use glossary terms; a new concept enters the glossary before it enters a public type.
+- Test files are named by behaviour area and test functions are behaviour sentences: `trim_refuses_past_source_end`.
+- Test helpers live in `tests/it/support.rs` plus `tests/it/support/`, never `common/` or `mod.rs`.
+- App test files carry no `_ui` suffix: the binary is the app.
+
 ## Engine (`crates/engine/src`)
 
 Layers, lowest first. Imports go downward only.
 
-| Layer | Folder | Responsibility |
+| Layer | Holds | Responsibility |
 |---|---|---|
-| Kernel | `session/` | Session, command registry, history, transactions; the only mutation path |
-| Kernel | `control/` | Transport-neutral control admission, receipts, snapshot resync |
-| Substrate | `runtime/` | Job runner, byte budget, content-addressed cache, staged publication |
-| Substrate | `store/` | Managed project library and session recovery |
+| Kernel | `session/` | Session, command registry, history and transactions; the control wire contract (revision, requests, response, limits); the only mutation path |
+| Substrate | `runtime/` | Job runner, byte budget, content-addressed cache, staged publication, verified transfer |
+| Substrate | `store/` | Managed project library, session recovery and the project cover image used by both |
+| Substrate | `providers/` | Provider choice with explicit consent, local model availability and transfers |
+| Substrate | transcript acquisition | Speech windows and ASR checkpoints; the one transcript path used by `subtitles/` and `shorts/` |
 | Features | `subtitles/` | Subtitle workflow: speech windows, ASR checkpoints, translation, ASS import |
 | Features | `shorts/` | Long video to shorts: clip suggestion, boundary snapping, batch export |
 | Features | `analysis/` | Source analysis that never mutates a project: scene detection, shot analysis, loudness |
-| Features | `artifacts/` | Derived images: thumbnails, snapshots, effect thumbnails, bounded control previews |
+| Features | `artifacts/` | Derived images: source and frame thumbnails, frame snapshots, effect images, bounded control previews |
 | Features | `libraries/` | External asset libraries: sounds, fonts |
-| Features | `providers/` | Provider selection with consent, local model transfers |
+| Control | `control/` | Control admission, receipts, resynchronization and dispatch; the only layer that may call every feature |
 
-Features register their commands and control schemas with the kernel through the command registry seam (one `execute(id, params)` entry for every command) (many command sets already vary across it); the kernel never names a feature. Known inversions to remove, found by import scan: `session` imports `fonts`; `control` imports `subtitles`, `fonts`, `snapshot`, `control_preview`; `recovery` and `library` import `thumbnail`. `edit.rs` (editing command families) becomes `session/edit.rs` plus `session/edit/` with one module per command family (clips, tracks, text, effects, transitions, retime, audio).
+Features register their commands and control schemas with the kernel through the command registry seam (one `execute(id, params)` entry for every command; many command sets already vary across it); the kernel never names a feature. `session/edit.rs` exposes the editing command families under `session/edit/`, one module per family (clips, tracks, text, effects, transitions, retime, audio). `xtask/modules.toml` carries this table; `xtask/modules-baseline.txt` lists the violations still to remove.
 
 ## Desktop app (`apps/vibecut/src`)
 
-| Folder | Responsibility |
-|---|---|
-| `shell/` | Windows, workspace lifecycle, recovery presentation, preferences, control attach, capture |
-| `kit/` | Design tokens, icon set, shared widgets (tab strip, section header, property row, slider and stepper, icon button, popover). Knows nothing about the engine |
-| `i18n/` | The one catalog, rows grouped by screen, locale and preference ownership |
-| `input/` | Chords, keybindings, action registry, key dispatch |
-| `home/` | Home window: project library, create, search, trash |
-| `editor/` | Editor window: `frame/` (top bar, layout, strips) and one folder per area |
-| `shorts/` | Long-video-to-shorts window |
+Layers, lowest first. Imports go downward only, and a window never names another window.
 
-Editor areas, each a module `editor/<area>.rs` with folder `editor/<area>/`: `assets/` (media, audio, text, effects, transitions, import), `player/` (preview, playback, crop, snapshot), `properties/` (inspector, colour picker), `timeline/` (tracks, toolbar, snapping, selection), `captions/` (subtitles panel), `export/`, `models/` (model manager, AI consent). Inside an area: `<area>.rs` is the interface (its `State`, `show(...)` returning the actions it wants); the folder holds `state.rs`, `view/` (widgets) and `workflow.rs` (jobs and engine calls). Areas never import each other: the frame calls each area, passes the shared context (selection, engine handle) and routes the returned actions. Home, Editor and Shorts are independent windows and import only `kit/`, `i18n/`, `input/` and `shell/` interfaces.
+| Layer | Holds | Responsibility |
+|---|---|---|
+| Foundation | `kit/`, `i18n/`, `input/` | Design tokens, icons and shared widgets; the one text catalog; chords, bindings and action dispatch. Knows nothing about the engine |
+| Services | playback, preview frames, job progress, pickers, preference store | One interface each, shared by more than one window; no window state |
+| Windows and areas | `home/`, `shorts/`, `editor/panels/{assets,player,properties,timeline}`, editor dialogs | One module per window or area behind one interface; each window owns its size, top bar and chrome; each area owns one panel's or dialog's state |
+| Frame | `editor/frame/` | The editor's top bar, window layout and the routing that calls each area and returns its actions |
+| Composition root | app wiring, window registry, control attach | Names every window and lends services; the only layer above the windows |
+
+An editor area is one module whose interface is its `State` and its `show(...)` returning the actions it wants; split inside only when the one-sentence test fails, never into a fixed `state.rs` / `view/` / `workflow.rs` triad. Captions is a feature tab inside `assets/` ([UI design](../product/ui.md)), not a fifth panel; the dialogs are `export`, `models` and `settings`; the shortcut list is its own window. Areas never import each other: the frame calls each area, passes the shared context (selection, engine handle) and routes the returned actions. Home, Editor and Long video to shorts import only foundation and service interfaces; they never name each other or the composition root.
 
 ## CLI (`apps/vibecut-cli/src`)
 
@@ -59,13 +72,11 @@ Editor areas, each a module `editor/<area>.rs` with folder `editor/<area>/`: `as
 
 ## Modules and crates
 
-The structure reference we studied gets its structure from crates, not folders: about 50 small crates in numbered layers L0 to L6, edges only downward, enforced by `cargo xtask layers`, with `speech`, `tts`, `captions`, `interchange`, `export` and the pure edit algebra each their own crate. Inside its engine and UI crates it is flat (100+ files, `misc.rs`); we take the crate layering and the command registry, not that folder style. rust-analyzer and the large-workspace guidance agree: the compiler enforces a boundary only at a crate edge, internal crates are not API boundaries, and a flat `crates/<name>/` layout scales.
-
-Rule: start as a folder with the import direction enforced by `cargo xtask modules`; promote a folder to a crate (named for the concept, placed in its layer in the crate map) when it has a second consumer, an independent seam (a provider family, a codec, a platform), heavy dependencies the rest should not rebuild for, or its direction keeps being violated. Candidates, in order: the feature layers above the engine kernel (`subtitles`, `shorts`, `analysis`, `libraries`) as crates layered above `engine`, and the pure edit algebra out of `session/edit`. The folder split is step one, so the later cut is mechanical. A kit crate (`kit/`) follows when a second UI consumer (the audit example already is one) justifies it.
+Rule: start as a folder with the import direction enforced by `cargo xtask modules`; promote a folder to a crate (named for the concept, placed in its layer in the crate map) when it has a second consumer, an independent seam (a provider family, a codec, a platform), heavy dependencies the rest should not rebuild for, or its direction keeps being violated. Candidates, in order: the feature layers above the engine kernel (`subtitles`, `shorts`, `analysis`, `libraries`) as crates layered above `engine`, and the pure edit algebra out of `session/edit`. The folder split is step one, so the later cut is mechanical. A kit crate (`kit/`) follows when a second UI consumer (the audit example already is one) justifies it. [ADR 0004](../adr/0004-module-structure.md) records why folders come first and which parts of the studied reference we took.
 
 ## Other crates
 
-Same rules, applied when a ticket touches them: each crate's README lists its modules by responsibility, and a folder appears when two modules share a concept. `media`, `render`, `ai`, `text`, `captions`, `project` and `time` keep their crate map entries; regroup inside only when the one-sentence test or the folder rule fails.
+Same rules, applied when a ticket touches them: each crate's README lists its modules by responsibility, and a folder appears when two modules share a concept. `media`, `render`, `ai`, `text`, `clip-eval`, `captions`, `project` and `time` keep their crate map entries; regroup inside only when the one-sentence test or the folder rule fails.
 
 ## Enforcement
 
