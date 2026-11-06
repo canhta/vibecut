@@ -6979,6 +6979,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "win-custody"
+version = "0.1.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "399f5ddc7e473b74abf5633e31c84917491aa6cf0418ab310dd936645024dbfc"
+dependencies = [
+ "windows-sys 0.61.2",
+]
+
+[[package]]
 name = "win-error-codes"
 version = "0.0.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -7474,6 +7483,7 @@ dependencies = [
  "sha2",
  "syn 3.0.9",
  "toml",
+ "win-custody",
  "winsafe",
 ]
 

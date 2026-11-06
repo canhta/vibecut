@@ -40,12 +40,36 @@ impl Slot {
 
     #[cfg(windows)]
     pub(super) fn execute(&mut self, command: &mut Command) -> io::Result<ExitStatus> {
-        // Keep the lease until wait observes exit, including forced child exit.
-        // Windows launcher death is a documented limitation: std cannot safely
-        // inherit this lease and winsafe has no Job Object interface yet.
-        let _lease = &self.lock;
+        // The launcher already sits in a kill-on-close job (`contain`), so the
+        // command and every descendant joined it atomically at creation. Keep
+        // the lease until the launcher process ends: its teardown closes the
+        // job handle (killing survivors) and the slot lock together, instead
+        // of releasing the slot while a detached descendant still runs.
+        self.lock.unlock_on_drop = false;
+        // A leaked duplicate keeps the lock's file object open past `drop(slot)`.
+        std::mem::forget(self.lock.file.try_clone()?);
         command.status()
     }
+}
+
+/// Put this launcher in a kill-on-close Job Object before it creates the slot
+/// lease or any child. Descendants inherit the job at creation (no spawn/assign
+/// race); however the launcher ends, including `taskkill /F`, the kernel closes
+/// the job handle and kills them. Called once, early: the job handle is the
+/// lowest handle this process owns, so teardown reaches it before the locks.
+#[cfg(windows)]
+pub(super) fn contain() -> io::Result<()> {
+    use win_custody::{Job, JobLimits};
+    Job::create(&JobLimits::new().kill_on_close(true))?.assign_current_process()
+}
+
+#[cfg(not(windows))]
+#[expect(
+    clippy::unnecessary_wraps,
+    reason = "same signature as the Windows job"
+)]
+pub(super) fn contain() -> io::Result<()> {
+    Ok(())
 }
 
 pub(super) fn owner(locks: &Path, number: usize) -> PathBuf {

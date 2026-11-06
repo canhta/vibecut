@@ -195,6 +195,8 @@ fn controlled_command() {
             .env("VIBECUT_BUILD_TEST_LABEL", "leaf")
             .spawn()
             .unwrap();
+        // Return only once the descendant is live, so its fate is the point.
+        wait(&root.join("wrapped.ready"));
         return;
     }
     let _live = try_lock(open(&root.join("command-live")).unwrap())
@@ -1206,6 +1208,58 @@ fn child_exit_or_kill_releases_slot_lease() {
                 .unwrap()
                 .is_some()
         );
+    }
+}
+
+// Windows has no inherited lease: the launcher sits in a kill-on-close job, so
+// launcher death (`taskkill /F` without /T) and a command that exits leaving a
+// detached descendant both end the whole tree, and only then free the slot.
+#[cfg(windows)]
+#[test]
+fn launcher_death_and_detached_descendants_do_not_outlive_the_slot() {
+    for label in ["wrapped", "detached"] {
+        let directory = Directory::new();
+        let root = &directory.0;
+        crate::checked(root, "git", &["init", "-q"]).unwrap();
+        let mut wrapper = Process(
+            Command::new(std::env::current_exe().unwrap())
+                .args(["--exact", "build::tests::build_process", "--nocapture"])
+                .env("VIBECUT_BUILD_TEST_ROOT", root)
+                .env("VIBECUT_BUILD_TEST_LABEL", label)
+                .env_remove("CARGO_BUILD_JOBS")
+                .stdin(Stdio::piped())
+                .stdout(Stdio::null())
+                .stderr(Stdio::inherit())
+                .spawn()
+                .unwrap(),
+        );
+        // The test owns the pipe write end, so the command or descendant can
+        // only end by being killed, never by reading EOF.
+        let _input = wrapper.0.stdin.take().unwrap();
+        wait(&root.join("wrapped.ready"));
+        if label == "wrapped" {
+            let launcher = wrapper.0.id().to_string();
+            let status = Command::new("taskkill")
+                .args(["/F", "/PID", &launcher])
+                .status()
+                .unwrap();
+            assert!(status.success());
+        }
+        wrapper.0.wait().unwrap();
+        let deadline = Instant::now() + Duration::from_secs(15);
+        for lock in ["command-live", "locks/slot-1"] {
+            loop {
+                let free = try_lock(open(&root.join(lock)).unwrap()).unwrap().is_some();
+                if free {
+                    break;
+                }
+                assert!(
+                    Instant::now() < deadline,
+                    "{label}: {lock} still held after the launcher ended"
+                );
+                std::thread::sleep(Duration::from_millis(5));
+            }
+        }
     }
 }
 

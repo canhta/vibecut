@@ -15,7 +15,7 @@ use cache::{cache, disk_free};
 use environment::{configured_slots, load, memory_available, total_memory};
 use queue::Queue;
 use receipt::receipt;
-use slot::prepare;
+use slot::{contain, prepare};
 
 use std::ffi::OsString;
 use std::fs;
@@ -58,6 +58,7 @@ fn run_in(
     free_space: impl FnMut(&Path) -> Result<u64, String>,
     native: impl FnOnce(&mut Command) -> Result<(), String>,
 ) -> Result<ExitCode, String> {
+    contain().map_err(|e| format!("build job object: {e}"))?;
     admission.caller_jobs = caller_jobs(args, std::env::var_os("CARGO_BUILD_JOBS").as_deref());
     fs::create_dir_all(&base).map_err(|e| e.to_string())?;
     let before = receipt(root, &base, args)?;

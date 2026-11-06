@@ -76,11 +76,13 @@ descendant cannot make its target directory reusable early. Spawn failures close
 the slot normally; standard streams remain inherited. A command that deliberately
 closes inherited descriptors must finish its protected work before closing the
 lease; ordinary Cargo/compiler subprocesses inherit it. On Windows the launcher
-holds the slot lock until its child exits, including forced child termination.
-Killing the Windows launcher can release the slot while its child is still alive;
-detached descendants can also outlive the lease. Keep the launcher running until
-the build finishes. Windows Job Object protection needs a safe API not currently
-provided by the admitted dependency.
+puts itself in a kill-on-close Job Object (`win-custody`, safe API) before taking
+any lock, so the command and every descendant join it at creation. Killing the
+launcher, even with `taskkill /F` and no `/T`, makes the kernel kill the whole
+tree; a descendant left behind by a normally exiting command dies when the
+launcher exits. The launcher keeps the slot lock until its process ends, so
+the slot frees together with the job kill (victims finish exiting
+asynchronously, a few milliseconds). Standard streams remain inherited.
 
 A worktree switch prunes workspace artifacts and old test binaries, then touches
 tracked regular files to prevent Cargo reusing stale workspace outputs; registry
