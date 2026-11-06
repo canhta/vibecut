@@ -11,14 +11,14 @@ use crate::{
 use engine::subtitles::{CatalogOperation, Cost};
 
 /// Measured at the 1718×989 window (reference 221946), from the content origin.
-const GRID: f32 = 1359.0;
-const GAP: f32 = 25.0;
-const COLUMNS: usize = 4;
-const TITLE_Y: f32 = 34.0;
+pub(super) const GRID: f32 = 1359.0;
+pub(super) const GAP: f32 = 25.0;
+pub(super) const COLUMNS: usize = 4;
+pub(super) const TITLE_Y: f32 = 34.0;
 const BAR_TOP: f32 = 68.0;
 const BAR: [f32; 2] = [868.0, 16.0];
-const CARDS_TOP: f32 = 101.0;
-const ROW_PITCH: f32 = 687.0;
+pub(super) const CARDS_TOP: f32 = 101.0;
+pub(super) const ROW_PITCH: f32 = 687.0;
 const TEXT_LINES: [(f32, f32, f32); 3] =
     [(16.0, 17.0, 1.0), (39.0, 16.0, 0.60), (65.0, 14.0, 0.50)];
 

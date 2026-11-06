@@ -6,6 +6,7 @@
 mod options;
 mod pick;
 mod progress;
+mod results;
 mod review;
 mod toast;
 mod tools;
@@ -67,12 +68,35 @@ pub(super) fn show(state: &mut State, cx: &Context, ui: &mut egui::Ui) -> Vec<Ac
     let mut actions = Vec::new();
     if state.generating.is_some() {
         progress::show(state, ui, rect);
-    } else if state.source.is_some() {
+    } else if state.source.is_some() && state.editing {
         review::show(state, cx, ui, rect, &mut actions);
+    } else if state.source.is_some() {
+        results::show(state, ui, rect);
     } else {
         pick::show(state, ui, rect);
     }
     toast::show(state, ui);
     ui.ctx().request_repaint_after(Duration::from_millis(16));
     actions
+}
+
+/// The uploaded poster of suggestion `index`, creating its texture on first use.
+pub(super) fn poster(
+    thumbs: &mut super::state::Thumbs,
+    ctx: &egui::Context,
+    index: usize,
+) -> Option<egui::TextureId> {
+    if let Some(image) = thumbs.images.get_mut(index).and_then(Option::take) {
+        let texture = ctx.load_texture(
+            format!("shorts.poster.{index}"),
+            image,
+            egui::TextureOptions::LINEAR,
+        );
+        *thumbs.textures.get_mut(index)? = Some(texture);
+    }
+    thumbs
+        .textures
+        .get(index)?
+        .as_ref()
+        .map(egui::TextureHandle::id)
 }

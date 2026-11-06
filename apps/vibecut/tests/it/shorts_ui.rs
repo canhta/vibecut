@@ -24,6 +24,11 @@ use vibecut::{
 fn by(id: &str) -> By<'_> {
     By::new().predicate(move |n| n.author_id() == Some(id))
 }
+/// The results grid opens first; a card click enters the quick edit.
+fn open_first(h: &mut Harness<'static, Shorts>) {
+    h.get(by("shorts.candidate.0")).click();
+    h.run_steps(2);
+}
 thread_local! {
     static OPENED: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
 }
@@ -47,6 +52,7 @@ fn harness(app: Shorts) -> Harness<'static, Shorts> {
 fn review_actions_and_play_order_reach_preview_and_single_step_editor_insertion() {
     let mut h = harness(ready());
     h.run_steps(3);
+    open_first(&mut h);
     let preview = h.state().preview().unwrap().session.project();
     let items = &preview.data().scene().timeline.main.items;
     assert_eq!(items.len(), 2);
@@ -318,6 +324,7 @@ fn safe_trim_and_invalid_bounds_preserve_history_and_source_ranks() {
     assert_eq!(app.reviews()[0], before);
     let mut h = harness(app);
     h.run_steps(3);
+    open_first(&mut h);
     h.get(by("shorts.tool.trim")).click();
     h.run_steps(2);
     h.get(by("shorts.segment.0.in")).click();
@@ -346,6 +353,7 @@ fn safe_trim_and_invalid_bounds_preserve_history_and_source_ranks() {
         wait(&mut app);
         let mut h = harness(app);
         h.run_steps(3);
+        open_first(&mut h);
         h.get(by("shorts.tool.trim")).click();
         h.run_steps(2);
         // Apply catalog-formatted grouped values without editing them first.
@@ -384,6 +392,7 @@ fn safe_trim_and_invalid_bounds_preserve_history_and_source_ranks() {
 fn crop_gesture_reversal_and_bounds_are_one_review_undo_step() {
     let mut h = harness(ready());
     h.run_steps(3);
+    open_first(&mut h);
     h.get(by("shorts.tool.layout")).click();
     h.run_steps(2);
     let initial = h.state().reviews()[0].clone();
@@ -437,6 +446,7 @@ fn crop_gesture_reversal_and_bounds_are_one_review_undo_step() {
 fn accepted_export_is_reachable_and_failed_jobs_can_be_retried_or_cancelled() {
     let mut h = harness(ready());
     h.run_steps(3);
+    open_first(&mut h);
     h.get(by("shorts.accept")).click();
     h.run_steps(2);
     let output = tempfile::tempdir().unwrap();
@@ -597,6 +607,8 @@ fn home_card_opens_a_dedicated_viewport_and_native_drop_selects_one_video() {
     assert!(h.query_all(by("shorts.pick")).count() == 1);
     h.state_mut().shorts = Some(ready());
     h.run_steps(3);
+    h.get(by("shorts.candidate.0")).click();
+    h.run_steps(2);
     h.get(by("shorts.edit")).click();
     h.run_steps(2);
     let deadline = std::time::Instant::now() + std::time::Duration::from_secs(15);

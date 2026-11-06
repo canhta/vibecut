@@ -352,7 +352,7 @@ impl Workspace {
                     if shorts.cancelling() {
                         Some(Text::ShortsCancelling)
                     } else if shorts.awaiting_consent() {
-                        Some(Text::ShortsConsent)
+                        Some(Text::ShortsApproval)
                     } else if shorts.exporting() {
                         Some(Text::ShortsExporting)
                     } else if shorts.busy() {

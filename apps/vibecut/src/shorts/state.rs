@@ -149,10 +149,74 @@ pub struct State {
     pub(super) list_open: bool,
     pub(super) options_open: bool,
     pub(super) frame: Option<super::view::FrameTexture>,
+    /// False shows the grid of results; true the quick edit of the selected short.
+    pub(super) editing: bool,
+    pub(super) thumbs: Thumbs,
     pub(super) configured: bool,
+}
+
+/// Poster frames of the suggestions, decoded off the UI thread, then uploaded once.
+#[derive(Default)]
+pub(super) struct Thumbs {
+    receive: Option<mpsc::Receiver<(usize, media::Thumbnail)>>,
+    cancel: Arc<std::sync::atomic::AtomicBool>,
+    worker: Option<std::thread::JoinHandle<()>>,
+    pub(super) images: Vec<Option<egui::ColorImage>>,
+    pub(super) textures: Vec<Option<egui::TextureHandle>>,
+}
+impl Thumbs {
+    pub(super) fn stop(&mut self) {
+        self.cancel
+            .store(true, std::sync::atomic::Ordering::Release);
+        self.receive = None;
+        if let Some(worker) = self.worker.take() {
+            let _ = worker.join();
+        }
+        self.cancel = Arc::default();
+        self.images.clear();
+        self.textures.clear();
+    }
+    fn start(&mut self, asset: media::SourceAsset, starts: Vec<Tick>) {
+        self.stop();
+        let (send, receive) = mpsc::channel();
+        let cancel = self.cancel.clone();
+        self.images = starts.iter().map(|_| None).collect();
+        self.textures = starts.iter().map(|_| None).collect();
+        self.receive = Some(receive);
+        self.worker = std::thread::Builder::new()
+            .name("shorts-posters".into())
+            .spawn(move || {
+                for (index, at) in starts.into_iter().enumerate() {
+                    if cancel.load(std::sync::atomic::Ordering::Acquire) {
+                        break;
+                    }
+                    if let Ok(frame) = media::thumbnail(&asset, at, 360, cancel.clone())
+                        && send.send((index, frame)).is_err()
+                    {
+                        break;
+                    }
+                }
+            })
+            .ok();
+    }
+    fn drain(&mut self) {
+        let Some(receive) = &self.receive else { return };
+        while let Ok((index, frame)) = receive.try_recv() {
+            let size = [frame.width as usize, frame.height as usize];
+            if frame.pixels.len() == size[0].saturating_mul(size[1]).saturating_mul(4)
+                && let Some(slot) = self.images.get_mut(index)
+            {
+                *slot = Some(egui::ColorImage::from_rgba_unmultiplied(
+                    size,
+                    &frame.pixels,
+                ));
+            }
+        }
+    }
 }
 impl Drop for State {
     fn drop(&mut self) {
+        self.thumbs.stop();
         if let Some(job) = &self.generating {
             job.cancel.cancel();
             job.runner_cancel.cancel();
@@ -230,6 +294,8 @@ impl State {
             list_open: true,
             options_open: false,
             frame: None,
+            editing: false,
+            thumbs: Thumbs::default(),
             configured: false,
         })
     }
@@ -336,6 +402,8 @@ impl State {
         self.crop_focused = false;
         self.source = None;
         self.reviews.clear();
+        self.editing = false;
+        self.thumbs.stop();
         self.preview = None;
         self.batch = None;
         self.undo.clear();
@@ -446,6 +514,7 @@ impl State {
         upload.reply.send(approve).map_err(|_| Error::Cancelled)
     }
     pub fn tick(&mut self) {
+        self.thumbs.drain();
         if self.draft_locale != Some(self.preferences.locale) {
             self.reset_drafts();
         }
@@ -535,6 +604,22 @@ impl State {
             );
             ClipBatch::prepare(&source.project, req)?;
         }
+        let starts = source
+            .candidates
+            .iter()
+            .map(|c| c.segments.first().map_or(Tick::ZERO, |s| s.range.start()))
+            .collect();
+        let poster_asset = source
+            .project
+            .data()
+            .assets
+            .iter()
+            .find(|a| a.id() == source.asset)
+            .cloned();
+        if let Some(asset) = poster_asset {
+            self.thumbs.start(asset, starts);
+        }
+        self.editing = false;
         self.source = Some(source);
         self.reviews = reviews;
         self.selected = 0;

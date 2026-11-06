@@ -154,13 +154,18 @@ pub(super) fn show(state: &mut State, ui: &mut egui::Ui, panel: Rect) {
 
 fn captions(state: &mut State, ui: &mut egui::Ui) {
     let dark = state.preferences.dark;
-    let row = ui.allocate_space(vec2(ui.available_width(), 40.0)).1;
+    let row = ui.allocate_space(vec2(ui.available_width(), 48.0)).1;
     let label = state.tr(Text::ShortsCaptions);
-    ui.painter().text(
-        row.left_center(),
-        Align2::LEFT_CENTER,
-        label,
-        egui::FontId::proportional(14.0),
+    let mut job = egui::text::LayoutJob::single_section(
+        label.to_owned(),
+        egui::TextFormat::simple(egui::FontId::proportional(14.0), kit::text(dark)),
+    );
+    job.wrap.max_width = row.width() - 56.0;
+    job.wrap.max_rows = 2;
+    let galley = ui.painter().layout_job(job);
+    ui.painter().galley(
+        pos2(row.left(), row.center().y - galley.size().y / 2.0),
+        galley,
         kit::text(dark),
     );
     let switch = Rect::from_center_size(row.right_center() - vec2(18.0, 0.0), vec2(36.0, 16.0));

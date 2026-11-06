@@ -198,7 +198,7 @@ catalog! {
     ShortsMax { key: "shorts_max", en: "Longest (s)", vi: "Dài nhất (giây)" },
     ShortsMaxSegments { key: "shorts_max_segments", en: "Parts per short", vi: "Số đoạn mỗi video" },
     ShortsSourceLanguage { key: "shorts_source_language", en: "Video language", vi: "Ngôn ngữ video" },
-    ShortsCreating { key: "shorts_creating", en: "Creating…", vi: "Đang tạo…" },
+    ShortsCreating { key: "shorts_creating", en: "Creating shorts…", vi: "Đang tạo video ngắn…" },
     ShortsNoResults { key: "shorts_no_results", en: "No safe shorts found. Try a longer video or different durations.", vi: "Không tìm được đoạn phù hợp. Hãy thử video dài hơn hoặc đổi thời lượng." },
     ShortsReview { key: "shorts_review", en: "Review shorts", vi: "Duyệt video ngắn" },
     ShortsAccept { key: "shorts_accept", en: "Accept", vi: "Chấp nhận" },
@@ -236,6 +236,7 @@ catalog! {
     ShortsList { key: "shorts_list", en: "Shorts", vi: "Video ngắn" },
     ShortsTrim { key: "shorts_trim", en: "Trim", vi: "Cắt" },
     ShortsLayout { key: "shorts_layout", en: "Layout", vi: "Bố cục" },
+    ShortsApproval { key: "shorts_approval", en: "Waiting for your approval", vi: "Đang chờ bạn cho phép" },
     ShortsSeek { key: "shorts_seek", en: "Seek", vi: "Tua" },
 
     // Shell and lifecycle.

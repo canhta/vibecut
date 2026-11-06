@@ -155,7 +155,16 @@ fn list_ui(state: &mut State, ui: &mut egui::Ui, list: Rect) {
                         if response.clicked() {
                             picked = Some(index);
                         }
-                        card_ui(ui, card, title, review, index == state.selected, dark);
+                        let poster = super::poster(&mut state.thumbs, ui.ctx(), index);
+                        card_ui(
+                            ui,
+                            card,
+                            title,
+                            14.0,
+                            review,
+                            index == state.selected,
+                            poster,
+                        );
                     }
                 });
         },
@@ -167,18 +176,33 @@ fn list_ui(state: &mut State, ui: &mut egui::Ui, list: Rect) {
     }
 }
 
-fn card_ui(
+/// One short as a card: its poster (the crop's own frame), decision badge and length.
+pub(super) fn card_ui(
     ui: &egui::Ui,
     card: Rect,
     title: &str,
+    font: f32,
     review: &crate::shorts::Review,
     selected: bool,
-    dark: bool,
+    poster: Option<egui::TextureId>,
 ) {
+    let dark = ui.visuals().dark_mode;
     let painter = ui.painter();
     painter.rect_filled(card, corner(9.0), kit::field(dark));
-    kit::tinted(Icon::FilmStrip, 24.0, kit::secondary(dark))
-        .paint_at(ui, Rect::from_center_size(card.center(), Vec2::splat(24.0)));
+    if let Some(id) = poster {
+        let crop = review.crop;
+        let uv = Rect::from_min_max(
+            pos2(crop.x as f32, crop.y as f32),
+            pos2((crop.x + crop.width) as f32, (crop.y + crop.height) as f32),
+        );
+        painter.add(
+            egui::epaint::RectShape::filled(card, corner(9.0), kit::image_tint())
+                .with_texture(id, uv),
+        );
+    } else {
+        kit::tinted(Icon::FilmStrip, 24.0, kit::secondary(dark))
+            .paint_at(ui, Rect::from_center_size(card.center(), Vec2::splat(24.0)));
+    }
     if selected {
         painter.rect_stroke(
             card.expand(4.0),
@@ -220,7 +244,7 @@ fn card_ui(
     );
     let mut job = egui::text::LayoutJob::single_section(
         title.to_owned(),
-        egui::TextFormat::simple(egui::FontId::proportional(14.0), kit::text(dark)),
+        egui::TextFormat::simple(egui::FontId::proportional(font), kit::text(dark)),
     );
     job.wrap.max_width = card.width();
     job.wrap.max_rows = 3;
@@ -233,6 +257,42 @@ fn card_ui(
     );
 }
 
+/// Width of a 14 px semibold label with the button's 32 px of padding.
+fn fit(ui: &egui::Ui, label: &str, extra: f32) -> f32 {
+    ui.painter()
+        .layout_no_wrap(label.to_owned(), bold(14.0), kit::text(true))
+        .size()
+        .x
+        + 32.0
+        + extra
+}
+
+pub(super) fn export_width(ui: &egui::Ui, state: &State) -> f32 {
+    fit(ui, state.tr(Text::Export), 22.0).max(EXPORT_WIDTH)
+}
+
+/// Export the accepted shorts to a chosen folder.
+pub(super) fn export_button(ui: &mut egui::Ui, state: &mut State, rect: Rect) {
+    let accepted = state
+        .reviews
+        .iter()
+        .any(|r| r.decision == Decision::Accepted);
+    if widgets::button(
+        ui,
+        "shorts.export",
+        rect,
+        Some(Icon::Export),
+        Some(state.tr(Text::Export)),
+        state.tr(Text::ShortsExport),
+        Look::Primary,
+        accepted && !state.busy(),
+    )
+    .clicked()
+    {
+        state.pick(ui.ctx(), super::super::state::Pick::Export);
+    }
+}
+
 fn header(
     state: &mut State,
     cx: &Context,
@@ -243,39 +303,25 @@ fn header(
     let dark = state.preferences.dark;
     let top = panel.top() + HEADER_TOP;
     let busy = state.busy();
-    let accepted = state
-        .reviews
-        .iter()
-        .any(|r| r.decision == Decision::Accepted);
+    let edit_label = state.tr(Text::ShortsEdit);
+    let export_width = export_width(ui, state);
+    let edit_width = fit(ui, edit_label, 0.0).max(EDIT_WIDTH);
     let export = Rect::from_min_size(
-        pos2(panel.right() - HEADER_PAD - EXPORT_WIDTH, top),
-        vec2(EXPORT_WIDTH, BUTTON_HEIGHT),
+        pos2(panel.right() - HEADER_PAD - export_width, top),
+        vec2(export_width, BUTTON_HEIGHT),
     );
     let edit = Rect::from_min_size(
-        pos2(export.left() - 8.0 - EDIT_WIDTH, top),
-        vec2(EDIT_WIDTH, BUTTON_HEIGHT),
+        pos2(export.left() - 8.0 - edit_width, top),
+        vec2(edit_width, BUTTON_HEIGHT),
     );
-    if widgets::button(
-        ui,
-        "shorts.export",
-        export,
-        Some(Icon::Export),
-        Some(state.tr(Text::Export)),
-        state.tr(Text::ShortsExport),
-        Look::Primary,
-        accepted && !busy,
-    )
-    .clicked()
-    {
-        state.pick(ui.ctx(), super::super::state::Pick::Export);
-    }
+    export_button(ui, state, export);
     if widgets::button(
         ui,
         "shorts.edit",
         edit,
         None,
-        Some(state.tr(Text::ShortsEdit)),
-        state.tr(Text::ShortsEdit),
+        Some(edit_label),
+        edit_label,
         Look::Field,
         !state.reviews.is_empty() && !busy && cx.editor_available,
     )
@@ -370,17 +416,16 @@ fn header(
     // Back to the pick screen sits first in the group; the title takes the left.
     if icon_tap(
         ui,
-        "shorts.setup",
+        "shorts.grid",
         back,
         Icon::ArrowLeft,
         state.tr(Text::ShortsBack),
-        !busy,
+        true,
         false,
     )
     .clicked()
-        && let Err(e) = state.pick_video(state.request.path.clone())
     {
-        state.fail(e, Text::ShortsError);
+        state.editing = false;
     }
     if let Some(candidate) = state
         .source
@@ -444,6 +489,7 @@ fn preview(state: &mut State, ui: &mut egui::Ui, panel: Rect) {
         return;
     };
     let mut seek = None;
+    let mut failure = None;
     let Ok(position) = editor.playback.position() else {
         return;
     };
@@ -508,8 +554,10 @@ fn preview(state: &mut State, ui: &mut egui::Ui, panel: Rect) {
     );
     kit::tinted(glyph, 16.0, kit::on_scrim())
         .paint_at(ui, Rect::from_center_size(play.center(), Vec2::splat(16.0)));
-    if tap.clicked() {
-        let _ = editor.activate(id);
+    if tap.clicked()
+        && let Err(e) = editor.activate(id)
+    {
+        failure = Some(e);
     }
     let now = painter.text(
         pos2(video.left() + 45.0, bar.top() + 21.0),
@@ -555,7 +603,12 @@ fn preview(state: &mut State, ui: &mut egui::Ui, panel: Rect) {
     }
     if let Some(at) = seek {
         let project = editor.session.project().clone();
-        let _ = editor.playback.seek(at, playing, project);
+        if let Err(e) = editor.playback.seek(at, playing, project) {
+            failure = Some(e);
+        }
+    }
+    if let Some(e) = failure {
+        state.fail(e, Text::ShortsError);
     }
 }
 

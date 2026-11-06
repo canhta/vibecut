@@ -241,6 +241,12 @@ const SCENES: &[Scene] = &[
         build: |theme, scale| shorts_scene(theme, scale, Locale::En, "generating"),
     },
     Scene {
+        name: "shorts-results",
+        reference_dark: None,
+        reference_light: None,
+        build: |theme, scale| shorts_scene(theme, scale, Locale::En, "results"),
+    },
+    Scene {
         name: "shorts-layout",
         reference_dark: None,
         reference_light: None,
@@ -2123,7 +2129,7 @@ fn shorts_scene(
             .click();
         app.run_steps(4);
     }
-    if matches!(scene, "review" | "layout" | "trim") {
+    if matches!(scene, "review" | "layout" | "trim" | "results") {
         app.get(By::new().predicate(|n| n.author_id() == Some("shorts.generate")))
             .click();
         app.run_steps(1);
@@ -2132,6 +2138,9 @@ fn shorts_scene(
         };
         shorts_fixture::wait(shorts);
         app.run_steps(3);
+        app.get(By::new().predicate(|n| n.author_id() == Some("shorts.candidate.0")))
+            .click();
+        app.run_steps(2);
         app.get(By::new().predicate(|n| n.author_id() == Some("shorts.accept")))
             .click();
         app.run_steps(2);
@@ -2166,6 +2175,11 @@ fn shorts_scene(
             std::thread::yield_now();
         }
         app.run_steps(3);
+        if scene == "results" {
+            app.get(By::new().predicate(|n| n.author_id() == Some("shorts.grid")))
+                .click();
+            app.run_steps(3);
+        }
         let tool = match scene {
             "layout" => Some("shorts.tool.layout"),
             "trim" => Some("shorts.tool.trim"),
