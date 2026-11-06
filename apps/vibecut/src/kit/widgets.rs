@@ -534,8 +534,7 @@ pub(crate) fn stepper(ui: &mut Ui, id: &str, label: &str) -> (Response, Response
     let dark = ui.visuals().dark_mode;
     let (rect, _) = ui.allocate_exact_size(Vec2::new(size::STEPPER, size::FIELD), Sense::hover());
     paint(ui).rect_filled(rect, radius::FIELD, theme::hover(dark));
-    let mut out = Vec::new();
-    for up in [true, false] {
+    let cell_response = |ui: &mut Ui, up: bool| -> Response {
         let cell = Rect::from_min_size(
             egui::pos2(
                 rect.left(),
@@ -566,10 +565,10 @@ pub(crate) fn stepper(ui: &mut Ui, id: &str, label: &str) -> (Response, Response
         response
             .widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, ui.is_enabled(), label));
         author(&response, &step_id);
-        out.push(response);
-    }
-    let decrease = out.pop().expect("stepper decrease");
-    let increase = out.pop().expect("stepper increase");
+        response
+    };
+    let increase = cell_response(ui, true);
+    let decrease = cell_response(ui, false);
     (increase, decrease)
 }
 

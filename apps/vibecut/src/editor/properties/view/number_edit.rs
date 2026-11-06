@@ -59,6 +59,14 @@ fn arrow_step(spec: ScrubSpec) -> f64 {
     }
 }
 
+/// Where a numeric field sits: its dim prefix, width and the extra gap before its stepper.
+#[derive(Clone, Copy)]
+struct Layout {
+    prefix: Option<&'static str>,
+    width: f32,
+    gap: f32,
+}
+
 impl Editor {
     /// Writes one field; with uniform scale on, Scale X also writes Scale Y.
     fn write_field(&mut self, item: ItemId, spec: ScrubSpec, value: &str) -> crate::Result<()> {
@@ -127,7 +135,17 @@ impl Editor {
                 .layout(egui::Layout::left_to_right(egui::Align::Center)),
         );
         child.spacing_mut().item_spacing.x = theme::space::XXS;
-        self.numeric_edit(&mut child, item, spec, current, None, SLIDER_FIELD, 0.0);
+        self.numeric_edit(
+            &mut child,
+            item,
+            spec,
+            current,
+            Layout {
+                prefix: None,
+                width: SLIDER_FIELD,
+                gap: 0.0,
+            },
+        );
         let rail_width = (line.width() - group - SLIDER_GAP).max(40.0);
         let mut rail_ui = ui.new_child(
             egui::UiBuilder::new()
@@ -205,7 +223,17 @@ impl Editor {
             if index > 0 {
                 child.add_space(3.0);
             }
-            self.numeric_edit(&mut child, item, *spec, value, *prefix, FIELD_WIDTH, 4.0);
+            self.numeric_edit(
+                &mut child,
+                item,
+                *spec,
+                value,
+                Layout {
+                    prefix: *prefix,
+                    width: FIELD_WIDTH,
+                    gap: 4.0,
+                },
+            );
         }
     }
 
@@ -293,10 +321,9 @@ impl Editor {
         item: ItemId,
         spec: ScrubSpec,
         current: f64,
-        prefix: Option<&str>,
-        width: f32,
-        gap: f32,
+        layout: Layout,
     ) {
+        let Layout { prefix, width, gap } = layout;
         let id = format!("inspector.{}", spec.field);
         let mut next = self
             .property_drafts
