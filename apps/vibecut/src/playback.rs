@@ -402,6 +402,12 @@ impl Playback {
     pub fn playing(&self) -> bool {
         self.port.playing.load(Ordering::Acquire)
     }
+    /// Snapshot generation, bumped by every seek. Audio ring samples and
+    /// preview frames carry it, so callers can tell restored-snapshot output
+    /// from work produced for a superseded project.
+    pub fn generation(&self) -> u64 {
+        self.port.epoch.load(Ordering::Acquire)
+    }
     pub fn seek(&mut self, at: Tick, playing: bool, project: Arc<project::Project>) -> Result<()> {
         if at < Tick::ZERO || at > project.duration() {
             return Err(Error::Invalid("seek outside timeline"));

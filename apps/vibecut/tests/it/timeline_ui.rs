@@ -2236,11 +2236,34 @@ fn edge_scroll_clamp_reversal_and_escape_preserve_drag_origin() {
     h.hover_at(press + egui::vec2(0.4, 0.0));
     h.run_steps(2);
     assert_eq!(item(h.state(), id).start, Tick(6 * SECOND));
+    let generation = h.state().playback.generation();
     h.key_press(egui::Key::Escape);
-    // Inspect the cancellation frame before a later tick can present a fresh
-    // frame from the restored snapshot.
     h.run_steps(1);
     assert_eq!(h.state().session.project(), &before);
     assert!(!h.state().session.gesture_active());
-    assert!(h.state().playback.frame().is_none());
+    let restored = h.state().playback.generation();
+    assert!(
+        restored > generation,
+        "Escape must restart the preview generation"
+    );
+    // The restored frame is produced asynchronously. Wait for the state the
+    // test needs instead of asserting an exact frame count: a frame from the
+    // restored generation is valid whenever it lands, a frame from the
+    // cancelled drag is not.
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+    loop {
+        h.run_steps(1);
+        if let Some(frame) = h.state().playback.frame() {
+            assert_eq!(
+                frame.epoch, restored,
+                "a cancelled-drag preview frame must not stay visible"
+            );
+            break;
+        }
+        assert!(
+            std::time::Instant::now() < deadline,
+            "the restored preview never produced a frame"
+        );
+        std::thread::sleep(std::time::Duration::from_millis(2));
+    }
 }
