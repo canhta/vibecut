@@ -9,10 +9,11 @@ Commit only green; choose the smallest covering check. Rust compilations follow 
 | Markdown, tickets, assets only | `cargo xtask docs` (layers, assets/sidecars, i18n catalog audit, name gate, docs index, README module maps, tracker-free Markdown) |
 | One Rust crate, iteration | `cargo test -p <crate>` and `cargo clippy -p <crate> --all-targets` |
 | App UI strings | `cargo xtask i18n` (en/vi completeness, unused keys, direct egui literals, ticket ids and engineer words in shown text) |
-| Code handoff, frozen SHA | `cargo xtask ci --require-oracles` once (fmt, Clippy, all tests/doctests, layers, assets, names, required oracles) |
+| Code handoff, frozen SHA | `cargo test -p <crate>` and `cargo clippy -p <crate> --all-targets` for every touched crate and every crate that depends on a changed public interface, plus `cargo xtask checks`; touched media/render/export code runs its oracle tests in required mode |
 | Media/render/hot path | Above plus the ticket benchmark; report speed and output quality (VMAF/SSIM, loudness/peaks, pixel diff or tick drift) against its baseline |
 | Fix round after `changes` | Touched crates' tests and Clippy plus the reviewer's reproductions; no full CI |
-| Merge of a tree without a full-CI receipt (fix round, reviewer fix, Rust conflict resolution) | The merger runs one full local CI on the final tree before push |
+| Batch integration on `main` | The coordinator runs `cargo xtask ci --require-oracles` once per batch of merges (at least daily while work lands) on `main`, then fixes or reverts what fails before the next batch; a red batch blocks new merges until fixed |
+| Rust conflict resolution during a merge | The merger reruns the touched crates' tests and Clippy on the resolved tree |
 | T1 merge | Smallest covering check on the exact rebased SHA before push |
 | Clean rebase | Reuse the receipt; no full CI rerun |
 | Platform scope of a receipt | A full-CI receipt from any supported OS counts; a change touching platform-specific code (`cfg` for an OS, native/FFI, file-system paths and locking, build or provisioning scripts) also needs a receipt from each affected OS that has a local build host; an affected OS without one is listed unverified in the report and left to hosted CI on `main` |
