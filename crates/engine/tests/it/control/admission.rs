@@ -1077,6 +1077,136 @@ fn deterministic_catalog_and_schema_document_receipts() {
         .collect();
     job_control.sort_unstable();
     assert_eq!(job_control, ["fonts.download", "job_cancel", "preview"]);
+    // Each fact rides on its declaration line: a renamed id keeps its rule, and a
+    // command without a grant class (or a publisher without a path) fails here.
+    use engine::{Availability, GrantClass, Lifecycle};
+    let ids = |pick: &dyn Fn(&engine::CommandSpec) -> bool| {
+        let mut ids: Vec<_> = registry()
+            .iter()
+            .filter(|s| pick(s))
+            .map(|s| s.id)
+            .collect();
+        ids.sort_unstable();
+        ids
+    };
+    for (rule, expected) in [
+        (
+            Availability::CaptionItem,
+            &["burn_subtitles", "export_subtitles"][..],
+        ),
+        (Availability::NoTransaction, &["begin_gesture"]),
+        (
+            Availability::GestureActive,
+            &["cancel_gesture", "commit_gesture"],
+        ),
+        (Availability::PlayableTimeline, &["preview.snapshot"]),
+        (Availability::CanUndo, &["undo"]),
+        (Availability::CanRedo, &["redo"]),
+        (Availability::Assets, &["media.remove"]),
+        (Availability::RetimableItem, &["timeline.set_speed"]),
+        (Availability::RemovableTrack, &["track.remove"]),
+        (
+            Availability::VisualItem,
+            &[
+                "effects.add",
+                "effects.remove",
+                "effects.reorder",
+                "effects.toggle",
+                "effects.update_param",
+                "masks.add",
+                "masks.remove",
+                "masks.reorder",
+                "masks.update",
+            ],
+        ),
+        (
+            Availability::UnlockedItem,
+            &[
+                "audio.set_fade",
+                "delete",
+                "keyframes.add",
+                "keyframes.remove",
+                "keyframes.retime",
+                "keyframes.scale_time",
+                "keyframes.set_handle",
+                "keyframes.set_param",
+                "move_item",
+                "move_items",
+                "retranslate",
+                "ripple_delete",
+                "set_item_param",
+                "split_at",
+                "timeline.set_item_param",
+                "trim_end",
+                "trim_start",
+            ],
+        ),
+    ] {
+        assert_eq!(ids(&|s| s.availability == rule), expected, "{rule:?}");
+    }
+    assert_eq!(
+        ids(&|s| s.grant == Some(GrantClass::Human)),
+        [
+            "begin_gesture",
+            "cancel_gesture",
+            "captions.import",
+            "commit_gesture",
+            "fonts.download",
+            "import.add_asset",
+            "project.create",
+            "project.delete",
+            "project.duplicate",
+            "project.thumbnail",
+            "sounds.add_to_timeline",
+        ]
+    );
+    assert_eq!(
+        ids(&|s| s.grant == Some(GrantClass::Output)),
+        [
+            "burn_subtitles",
+            "export",
+            "export_subtitles",
+            "preview.snapshot"
+        ]
+    );
+    assert_eq!(ids(&|s| s.grant.is_none()), Vec::<&str>::new());
+    assert_eq!(
+        ids(&|s| s.curated),
+        [
+            "batch",
+            "export",
+            "inspect",
+            "job_cancel",
+            "job_status",
+            "preview",
+            "redo",
+            "undo"
+        ]
+    );
+    assert_eq!(
+        ids(&|s| s.lifecycle.is_some()),
+        [
+            "project.create",
+            "project.delete",
+            "project.duplicate",
+            "project.save",
+            "project.thumbnail",
+        ]
+    );
+    assert_eq!(engine::lifecycle("project.save"), Some(Lifecycle::Save));
+    for spec in registry()
+        .iter()
+        .filter(|s| s.effect == engine::Effect::FilePublish)
+    {
+        let command: Command =
+            serde_json::from_value(json!({"command":spec.id,"params":spec.example.params.clone()}))
+                .unwrap();
+        assert!(
+            command.published_path().is_some(),
+            "{} has no output path",
+            spec.id
+        );
+    }
 }
 
 #[test]
@@ -1263,14 +1393,14 @@ fn checked_in_registry_digest_and_command_reference_match_the_registry() {
             .unwrap()
             .replace("\r\n", "\n"),
         format!("{}\n", control::registry_hash()),
-        "regenerate with cargo run -p engine --example control_catalog"
+        "regenerate with cargo xtask catalog"
     );
     assert_eq!(
         std::fs::read_to_string(root.join("../../docs/product/commands.md"))
             .unwrap()
             .replace("\r\n", "\n"),
         control::reference_markdown().unwrap(),
-        "regenerate with cargo run -p engine --example control_catalog"
+        "regenerate with cargo xtask catalog"
     );
 }
 

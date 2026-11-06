@@ -316,6 +316,16 @@ fn every_registry_command_has_an_explicit_grant_and_effect() {
     for (id, effect, with_output, without_output) in cases {
         let spec = registry.iter().find(|spec| spec.id == id).unwrap();
         assert_eq!(spec.effect, effect, "{id}");
+        // The declared class must agree with the reviewed decision in this table.
+        assert_eq!(
+            spec.grant,
+            Some(match (with_output, without_output) {
+                (true, true) => engine::GrantClass::Agent,
+                (true, false) => engine::GrantClass::Output,
+                (false, _) => engine::GrantClass::Human,
+            }),
+            "{id}"
+        );
         let mut params: Value = serde_json::from_str(
             &serde_json::to_string(&spec.example.params)
                 .unwrap()

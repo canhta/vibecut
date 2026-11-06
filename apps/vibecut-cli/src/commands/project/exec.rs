@@ -26,7 +26,7 @@ pub(crate) fn run(_context: &Context, args: Vec<OsString>) -> Result<Output, Cli
     let loaded = lease.load()?;
     let mut session = Session::new(loaded.project, 1)?;
     session.restore_metadata(lease.metadata())?;
-    if command_id == "project.save" {
+    if engine::lifecycle(command_id) == Some(engine::Lifecycle::Save) {
         if params != json!({}) {
             return Err(EditError::InvalidParams.into());
         }

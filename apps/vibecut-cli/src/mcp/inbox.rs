@@ -188,11 +188,7 @@ impl Inbox {
             external: true,
             policy: grants,
         };
-        let response = if request.command == "project.save" {
-            session.control_lifecycle_save(request, caller, publish)?
-        } else {
-            session.control_request(request, caller, runner)?
-        };
+        let response = session.control_routed(request, caller, runner, publish)?;
         let mut value = serde_json::to_value(&response).map_err(|_| EditError::InvalidParams)?;
         // Send JPEG as MCP image content, not an array of byte-valued JSON numbers.
         if let ResponseValue::Result(ControlResult::Job { snapshot }) = &response.value

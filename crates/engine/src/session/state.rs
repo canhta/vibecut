@@ -494,16 +494,12 @@ impl Session {
         if key.is_some_and(|k| k.is_empty() || k.len() > 256) {
             return Err(EditError::InvalidParams);
         }
+        if command.lifecycle().is_some() {
+            return Err(EditError::Invalid(
+                "lifecycle command requires its library or persistence owner",
+            ));
+        }
         match command {
-            Command::DuplicateProject { .. }
-            | Command::DeleteProject {}
-            | Command::ThumbnailProject {}
-            | Command::CreateProject { .. }
-            | Command::SaveProject {} => {
-                return Err(EditError::Invalid(
-                    "lifecycle command requires its library or persistence owner",
-                ));
-            }
             Command::SwitchScene { scene } => {
                 if self.transaction_active() {
                     return Err(EditError::TransactionActive);

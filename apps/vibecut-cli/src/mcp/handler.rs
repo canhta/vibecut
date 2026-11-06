@@ -14,17 +14,6 @@ use serde_json::{Value, json};
 use std::time::Instant;
 use tokio::sync::{mpsc, oneshot};
 
-const CURATED: &[&str] = &[
-    "inspect",
-    "preview",
-    "undo",
-    "redo",
-    "export",
-    "job_status",
-    "job_cancel",
-    "batch",
-];
-
 #[derive(Clone)]
 pub(super) struct Handler {
     pub(super) project_routing: bool,
@@ -72,7 +61,7 @@ impl Handler {
         let remaining = 16 - tools.len();
         for spec in engine::registry()
             .iter()
-            .filter(|spec| self.full || CURATED.contains(&spec.id))
+            .filter(|spec| self.full || spec.curated)
             .skip(start.saturating_sub(2))
             .take(remaining)
         {
@@ -138,7 +127,7 @@ impl ServerHandler for Handler {
             .unwrap_or(0);
         let count = 2 + engine::registry()
             .iter()
-            .filter(|spec| self.full || CURATED.contains(&spec.id))
+            .filter(|spec| self.full || spec.curated)
             .count();
         if start > count {
             return Err(ErrorData::invalid_params("invalid tool cursor", None));
@@ -188,8 +177,7 @@ impl ServerHandler for Handler {
         let mut value = Value::Object(args);
         if request.name != "command_run" {
             let spec = engine::registry().iter().find(|spec| {
-                (self.full || CURATED.contains(&spec.id))
-                    && spec.id.replace('.', "_") == request.name
+                (self.full || spec.curated) && spec.id.replace('.', "_") == request.name
             });
             let Some(spec) = spec else {
                 return Err(ErrorData::invalid_params("unknown tool", None));

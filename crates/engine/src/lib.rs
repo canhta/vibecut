@@ -3,8 +3,9 @@ pub mod control;
 mod session;
 pub(crate) use session::transitions;
 pub use session::{
-    Command, CommandKind, CommandSpec, CreatedId, Effect, Example, Fixture, ItemParamPatch,
-    ItemPlacement, Move, NewItem, Outcome, Placement, TrackPlacement, registry,
+    Availability, Command, CommandKind, CommandSpec, CreatedId, Effect, Example, Fixture,
+    GrantClass, ItemParamPatch, ItemPlacement, Lifecycle, Move, NewItem, Outcome, Placement,
+    TrackPlacement, lifecycle, registry,
 };
 pub use session::{JobTarget, Session};
 mod runtime;

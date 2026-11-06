@@ -1,6 +1,6 @@
 //! Holds the trusted command-line grants that bound every MCP client request.
 use crate::args::CliError;
-use engine::{Command, EditError, control::Policy};
+use engine::{Command, EditError, GrantClass, control::Policy};
 use std::path::{Path, PathBuf};
 
 /// Trusted command-line grants. A client request can never broaden them.
@@ -60,99 +60,17 @@ impl Grants {
     }
 }
 impl Policy for Grants {
+    /// The class comes from the command's declaration; this adapter only maps each
+    /// class to its trusted grant. Source paths stay human-established capabilities:
+    /// a caller-provided SourceAsset would otherwise be a file-read primitive.
     fn authorize(&self, command: &Command, project: &project::Project) -> engine::Result<()> {
-        match command {
-            // Source paths are capabilities established by the human opening the project.
-            // Caller-provided SourceAsset would otherwise become a file-read primitive.
-            Command::AddAsset { .. }
-            | Command::CreateProject { .. }
-            | Command::DuplicateProject { .. }
-            | Command::DeleteProject {}
-            | Command::ThumbnailProject {}
-            | Command::BeginGesture {}
-            | Command::CommitGesture {}
-            | Command::CancelGesture {} => Err(EditError::Permission),
-            Command::Export {
-                path, overwrite, ..
+        match command.grant() {
+            Some(GrantClass::Agent) => Ok(()),
+            Some(GrantClass::Output) => {
+                let (path, overwrite) = command.published_path().ok_or(EditError::Permission)?;
+                self.output_path(path, overwrite, project)
             }
-            | Command::ExportSubtitles {
-                path, overwrite, ..
-            }
-            | Command::BurnSubtitles {
-                path, overwrite, ..
-            } => self.output_path(path, *overwrite, project),
-            Command::Snapshot { path, .. } => self.output_path(path, false, project),
-            // Each command is reviewed, even within an existing effect class.
-            Command::CreateScene { .. }
-            | Command::DeleteScenes { .. }
-            | Command::SwitchScene { .. }
-            | Command::RenameScene { .. }
-            | Command::RenameProject { .. }
-            | Command::SaveProject { .. }
-            | Command::SetMaster { .. }
-            | Command::SetViewState { .. }
-            | Command::RemoveAssets { .. }
-            | Command::AddTrack { .. }
-            | Command::RemoveTrack { .. }
-            | Command::SetTrackMuted { .. }
-            | Command::SetTrackHidden { .. }
-            | Command::SetTrackMagnet { .. }
-            | Command::SetTrackFlags { .. }
-            | Command::RenameTrack { .. }
-            | Command::ReorderTrack { .. }
-            | Command::SetTrackLocked { .. }
-            | Command::InsertItem { .. }
-            | Command::MoveItem { .. }
-            | Command::MoveItems { .. }
-            | Command::SplitAt { .. }
-            | Command::TrimStart { .. }
-            | Command::TrimEnd { .. }
-            | Command::Delete { .. }
-            | Command::RippleDelete { .. }
-            | Command::SetItemParam { .. }
-            | Command::SetItemField { .. }
-            | Command::SetSpeed { .. }
-            | Command::SetCanvasBackground { .. }
-            | Command::SetItemParamMany { .. }
-            | Command::SetFade { .. }
-            | Command::SetLoudness { .. }
-            | Command::ClearLoudness { .. }
-            | Command::ApplyLoudness { .. }
-            | Command::AddTransition { .. }
-            | Command::MoveTransition { .. }
-            | Command::SetTransitionDuration { .. }
-            | Command::RemoveTransition { .. }
-            | Command::AddMask { .. }
-            | Command::RemoveMask { .. }
-            | Command::UpdateMask { .. }
-            | Command::ReorderMasks { .. }
-            | Command::AddEffect { .. }
-            | Command::RemoveEffect { .. }
-            | Command::UpdateEffectParam { .. }
-            | Command::ReorderEffects { .. }
-            | Command::ToggleEffect { .. }
-            | Command::SetAnimatedParam { .. }
-            | Command::AddKeyframe { .. }
-            | Command::RemoveKeyframe { .. }
-            | Command::RetimeKeyframe { .. }
-            | Command::SetKeyframeHandle { .. }
-            | Command::ScaleKeyframeTime { .. }
-            | Command::Retranslate { .. }
-            | Command::AddBookmark { .. }
-            | Command::MoveBookmark { .. }
-            | Command::Batch { .. }
-            | Command::Undo { .. }
-            | Command::Redo { .. }
-            | Command::Inspect { .. }
-            | Command::Preview { .. }
-            | Command::JobStatus { .. }
-            | Command::JobCancel { .. }
-            | Command::Catalog { .. }
-            | Command::ProviderCatalog { .. }
-            | Command::FontsList { .. }
-            | Command::FontsLoad { .. } => Ok(()),
-            // New commands, effects and source paths have no implicit capability.
-            _ => Err(EditError::Permission),
+            Some(GrantClass::Human) | None => Err(EditError::Permission),
         }
     }
 }

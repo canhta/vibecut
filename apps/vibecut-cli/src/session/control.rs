@@ -25,13 +25,11 @@ impl Policy for ControlPolicy {
     }
 
     fn authorize(&self, command: &Command, _: &Project) -> engine::Result<()> {
-        let overwrite = match command {
-            Command::Export { overwrite, .. }
-            | Command::ExportSubtitles { overwrite, .. }
-            | Command::BurnSubtitles { overwrite, .. } => Some(*overwrite),
-            _ => None,
-        };
-        if overwrite == Some(true) && !self.allow_overwrite {
+        if !self.allow_overwrite
+            && command
+                .published_path()
+                .is_some_and(|(_, overwrite)| overwrite)
+        {
             return Err(EditError::Permission);
         }
         Ok(())
@@ -127,40 +125,20 @@ pub(crate) fn control(
         };
         let request_id = request.request_id.clone();
         let command_id = request.command.clone();
-        let response = if command_id == "project.save" {
-            let caller = Caller {
-                principal: "vibecut-cli",
-                external: true,
-                policy: &policy,
-            };
-            // The engine owns save admission and its receipt; this closure only
-            // publishes the bytes through the project owner.
-            match session.control_lifecycle_save(request, caller, |project, metadata| {
+        let before = session.project().clone();
+        let caller = Caller {
+            principal: "vibecut-cli",
+            external: true,
+            policy: &policy,
+        };
+        // The engine owns save admission and its receipt; the closure only
+        // publishes the bytes through the project owner.
+        let response =
+            match session.control_routed(request, caller, &mut runner, |project, metadata| {
                 let _receipt = lease.save(project)?;
                 lease.save_metadata(metadata)?;
                 Ok(())
             }) {
-                Ok(response) => response,
-                Err(error) => {
-                    let code = ErrorCode::from_error(&error);
-                    write_control_error(
-                        &mut out,
-                        Some(&request_id),
-                        code,
-                        "control request refused before admission",
-                    )?;
-                    last_exit = control_exit(code);
-                    continue;
-                }
-            }
-        } else {
-            let before = session.project().clone();
-            let caller = Caller {
-                principal: "vibecut-cli",
-                external: true,
-                policy: &policy,
-            };
-            match session.control_request(request, caller, &mut runner) {
                 Ok(response) => {
                     if matches!(
                         &response.value,
@@ -187,11 +165,10 @@ pub(crate) fn control(
                     last_exit = control_exit(code);
                     continue;
                 }
-            }
-        };
+            };
         // A save clears dirty state only when it published the current revision.
         // Replay of an older receipt after later edits must leave the session dirty.
-        if command_id == "project.save"
+        if engine::lifecycle(&command_id) == Some(engine::Lifecycle::Save)
             && matches!(&response.value, ResponseValue::Result(_))
             && response.rev_after == session.revision()
         {

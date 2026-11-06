@@ -490,6 +490,11 @@ fn run() -> Result<ExitCode, String> {
             println!("{}", ffmpeg::sherpa_provision(root, arch, ffmpeg::fetch_limited)?.display());
             Ok(())
         }
+        ["catalog"] => cargo_check(
+            root,
+            &["run", "-p", "engine", "--example", "control_catalog"],
+            false,
+        ),
         ["checks"] => checks(root),
         ["clippy"] => clippy(root),
         ["lint"] => lint(root),
@@ -512,7 +517,7 @@ fn run() -> Result<ExitCode, String> {
         ["ci"] => ci(root, false),
         ["ci", "--require-oracles"] => ci(root, true),
         _ => Err(
-            "usage: cargo xtask <dist COMMAND [OPTIONS]|build -- COMMAND [ARGS...]|frontier [ASSIGNEE]|board [PORT]|ffmpeg [--target PLATFORM|--cache-key]|ui-audit [SCENE...]|ui-compare OURS REFERENCE [--region X,Y,W,H] [--out DIR] [--max-error F] [--max-tile-error F]|sherpa [--arch x86_64|aarch64]|media-bench|clip-eval SET [OPTIONS]|cleanup [--environment NAME] [--dry-run] TARGET...|pull-reports [--environment NAME] [--ssh HOST] [--dry-run] WORKTREE...|ci [--require-oracles]|checks|clippy|lint|test|docs|i18n|layers|assets|modules|new-crate NAME>"
+            "usage: cargo xtask <dist COMMAND [OPTIONS]|build -- COMMAND [ARGS...]|frontier [ASSIGNEE]|board [PORT]|ffmpeg [--target PLATFORM|--cache-key]|ui-audit [SCENE...]|ui-compare OURS REFERENCE [--region X,Y,W,H] [--out DIR] [--max-error F] [--max-tile-error F]|sherpa [--arch x86_64|aarch64]|media-bench|clip-eval SET [OPTIONS]|cleanup [--environment NAME] [--dry-run] TARGET...|pull-reports [--environment NAME] [--ssh HOST] [--dry-run] WORKTREE...|ci [--require-oracles]|catalog|checks|clippy|lint|test|docs|i18n|layers|assets|modules|new-crate NAME>"
                 .into(),
         ),
     }.map(|()| ExitCode::SUCCESS)

@@ -4,10 +4,12 @@ mod state;
 pub(crate) mod wire;
 pub use state::{JobTarget, Session};
 pub(crate) use wire::budget;
+mod command_facts;
 mod commands;
+pub use command_facts::{Availability, GrantClass, Lifecycle};
 pub use commands::{
     Command, CommandKind, CommandSpec, CreatedId, Effect, Example, Fixture, ItemParamPatch,
-    ItemPlacement, Move, NewItem, Outcome, Placement, TrackPlacement, registry,
+    ItemPlacement, Move, NewItem, Outcome, Placement, TrackPlacement, lifecycle, registry,
 };
 mod edit;
 mod transition_rules;

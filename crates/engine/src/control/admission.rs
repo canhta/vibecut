@@ -5,7 +5,7 @@ use crate::session::wire::{
     API_VERSION, ControlResult, ErrorCode, MAX_FRAME_BYTES, MAX_KEY_BYTES, MAX_PATH_BYTES, Payload,
     Request, Response, ResponseValue, bounded_json, decode_command, parse_frame, registry_hash,
 };
-use crate::{Command, EditError, Effect, Outcome, Result, Session};
+use crate::{Command, EditError, Effect, Lifecycle, Outcome, Result, Session};
 
 impl Session {
     /// Parse a bounded UTF-8 frame, rejecting duplicate keys before dispatch.
@@ -156,6 +156,27 @@ impl Session {
         }
         self.push_control_event(&request.request_id, &response);
         Ok(response)
+    }
+}
+
+impl Session {
+    /// The one transport entry: a lifecycle save is admitted by
+    /// `control_lifecycle_save` and publishes through `publish`; every other request
+    /// goes through `control_request`. `publish` is unused for non-save requests.
+    pub fn control_routed(
+        &mut self,
+        request: Request,
+        caller: Caller<'_>,
+        runner: &mut JobRunner,
+        publish: impl FnOnce(&project::Project, &project::Metadata) -> Result<()>,
+    ) -> Result<Response> {
+        match crate::lifecycle(&request.command) {
+            Some(Lifecycle::Save) => self.control_lifecycle_save(request, caller, publish),
+            Some(
+                Lifecycle::Create | Lifecycle::Duplicate | Lifecycle::Delete | Lifecycle::Thumbnail,
+            )
+            | None => self.control_request(request, caller, runner),
+        }
     }
 }
 

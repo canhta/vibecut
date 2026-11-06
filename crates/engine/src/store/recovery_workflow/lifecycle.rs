@@ -1,5 +1,6 @@
 //! Executes persistent session lifecycle operations.
 use super::{Autosave, Duration, EditError, PathBuf, Result, Session};
+use crate::Lifecycle;
 impl Autosave {
     /// Reserve the destination, then queue journal/project publication off-thread.
     /// Native path resolution/lease acquisition can block this caller. The journal
@@ -43,43 +44,53 @@ impl Autosave {
 }
 
 impl Autosave {
-    /// Dispatch the registry save command; completion is acknowledged by tick().
+    /// Dispatch a registry command; the declared lifecycle route picks the persistence
+    /// owner, and completion of a save is acknowledged by tick().
     pub fn execute(&mut self, id: &str, params: serde_json::Value) -> Result<crate::Outcome> {
-        if id == "project.thumbnail" {
-            if params != serde_json::json!({}) {
-                return Err(EditError::InvalidParams);
+        match crate::lifecycle(id) {
+            Some(Lifecycle::Thumbnail) => {
+                self.empty_params(&params)?;
+                self.refresh_thumbnail()?;
+                Ok(unchanged())
             }
-            if self.session.transaction_active() {
-                return Err(EditError::TransactionActive);
+            Some(Lifecycle::Save) => {
+                self.empty_params(&params)?;
+                self.save()?;
+                Ok(unchanged())
             }
-            self.flush()?;
-            let mut metadata = self.session.metadata().clone();
-            metadata.thumbnail = crate::store::project_cover::capture(
-                self.session.project(),
-                &crate::store::project_cover::Hooks(&self.budget),
-            );
-            if let Some(writer) = &self.writer {
-                writer.save_metadata(&metadata)?;
+            Some(Lifecycle::Create | Lifecycle::Duplicate | Lifecycle::Delete) | None => {
+                self.session.execute(id, params)
             }
-            self.session.restore_metadata(metadata)?;
-            Ok(crate::Outcome {
-                changed: false,
-                created: Vec::new(),
-                placements: Vec::new(),
-            })
-        } else if id == "project.save" {
-            if params != serde_json::json!({}) {
-                return Err(EditError::InvalidParams);
-            }
-            self.save()?;
-            Ok(crate::Outcome {
-                changed: false,
-                created: Vec::new(),
-                placements: Vec::new(),
-            })
-        } else {
-            self.session.execute(id, params)
         }
+    }
+    fn empty_params(&self, params: &serde_json::Value) -> Result<()> {
+        if *params == serde_json::json!({}) {
+            Ok(())
+        } else {
+            Err(EditError::InvalidParams)
+        }
+    }
+    fn refresh_thumbnail(&mut self) -> Result<()> {
+        if self.session.transaction_active() {
+            return Err(EditError::TransactionActive);
+        }
+        self.flush()?;
+        let mut metadata = self.session.metadata().clone();
+        metadata.thumbnail = crate::store::project_cover::capture(
+            self.session.project(),
+            &crate::store::project_cover::Hooks(&self.budget),
+        );
+        if let Some(writer) = &self.writer {
+            writer.save_metadata(&metadata)?;
+        }
+        self.session.restore_metadata(metadata)
+    }
+}
+fn unchanged() -> crate::Outcome {
+    crate::Outcome {
+        changed: false,
+        created: Vec::new(),
+        placements: Vec::new(),
     }
 }
 

@@ -1,6 +1,7 @@
 //! Applies validated editing commands to project candidates.
 use crate::{
-    AssetUsage, Command, CreatedId, EditError, Move, NewItem, Placement, Result, TrackPlacement,
+    AssetUsage, Command, CreatedId, EditError, Effect, Move, NewItem, Placement, Result,
+    TrackPlacement,
 };
 use project::{
     Bookmark, BookmarkId, Item, ItemId, ItemParams, ProjectData, Track, TrackId, TrackKind,
@@ -41,39 +42,20 @@ pub(crate) fn check_budget(command: &Command) -> Result<()> {
             Command::RemoveAssets { assets } if assets.len() > super::wire::MAX_COLLECTION => {
                 return Err(EditError::Limit);
             }
-            Command::Inspect {}
-            | Command::Preview { .. }
-            | Command::Snapshot { .. }
-            | Command::Export { .. }
-            | Command::JobStatus { .. }
-            | Command::JobCancel { .. }
-            | Command::Catalog {}
-            | Command::ProviderCatalog {}
-            | Command::FontsList { .. }
-            | Command::FontsLoad { .. }
-            | Command::FontsDownload { .. }
-            | Command::ExportSubtitles { .. }
-            | Command::BurnSubtitles { .. } => {
-                return Err(EditError::Invalid("export commands require job submission"));
-            }
-            Command::DuplicateProject { .. }
-            | Command::DeleteProject {}
-            | Command::ThumbnailProject {}
-            | Command::CreateProject { .. }
-            | Command::SaveProject {}
-            | Command::SetViewState { .. }
-            | Command::SwitchScene { .. }
-            | Command::Undo {}
-            | Command::Redo {}
-            | Command::BeginGesture {}
-            | Command::CommitGesture {}
-            | Command::CancelGesture {} => {
-                return Err(EditError::Invalid("session control inside batch"));
-            }
-            _ => {}
+            other => outside_edit(other)?,
         }
     }
     Ok(())
+}
+/// Only plain edits run inside a batch or a candidate; the declaration's effect says which.
+fn outside_edit(command: &Command) -> Result<()> {
+    match command.effect() {
+        Effect::Edit => Ok(()),
+        Effect::SessionControl => Err(EditError::Invalid("session control inside batch")),
+        Effect::Read | Effect::FilePublish | Effect::JobControl => {
+            Err(EditError::Invalid("export commands require job submission"))
+        }
+    }
 }
 use media_edits::ratchet_fps;
 
@@ -450,7 +432,7 @@ pub(crate) fn apply(
                 data = apply(data, command, created, next, sources, copied_text_bytes)?.into_data();
             }
         }
-        Command::Inspect {}
+        command @ (Command::Inspect {}
         | Command::Preview { .. }
         | Command::Snapshot { .. }
         | Command::Export { .. }
@@ -462,10 +444,8 @@ pub(crate) fn apply(
         | Command::FontsLoad { .. }
         | Command::FontsDownload { .. }
         | Command::ExportSubtitles { .. }
-        | Command::BurnSubtitles { .. } => {
-            return Err(EditError::Invalid("export commands require job submission"));
-        }
-        Command::DuplicateProject { .. }
+        | Command::BurnSubtitles { .. }
+        | Command::DuplicateProject { .. }
         | Command::DeleteProject {}
         | Command::ThumbnailProject {}
         | Command::CreateProject { .. }
@@ -476,8 +456,11 @@ pub(crate) fn apply(
         | Command::Redo {}
         | Command::BeginGesture {}
         | Command::CommitGesture {}
-        | Command::CancelGesture {} => {
-            return Err(EditError::Invalid("session control inside batch"));
+        | Command::CancelGesture {}) => {
+            // The variants stay listed so a new command must choose a side at compile
+            // time; the refusal itself derives from the declared effect.
+            outside_edit(&command)?;
+            return Err(EditError::Invalid("command is not an edit"));
         }
     }
     check_timeline(&mut data)?;
