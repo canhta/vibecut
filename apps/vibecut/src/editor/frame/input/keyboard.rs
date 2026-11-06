@@ -20,7 +20,7 @@ impl Editor {
             }
             return;
         }
-        if self.color_picker.is_some() {
+        if self.properties.picker.is_some() {
             return;
         }
         if self.media_delete_confirm.is_some() {
@@ -104,7 +104,7 @@ impl Editor {
                 || self.frame.rename.is_some()
                 || self.track_rename.is_some()
                 || self.scene_rename.is_some()
-                || self.property_focus.is_some(),
+                || self.properties.editing(),
             clipboard_entry: self.clipboard_has_entry(),
         }
     }

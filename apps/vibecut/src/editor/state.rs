@@ -3,8 +3,8 @@
 use super::{
     Arc, AssetId, BTreeMap, BTreeSet, BookmarkId, Clock, ContentHash, Duration, EyedropperState,
     Icon, ImportFailure, ImportQueue, ItemId, KeybindingIssue, Keymap, MediaSort, MediaView,
-    PathBuf, Picker, Playback, Preferences, Rect, SelectionScope, SelectionScopes, SourceRange,
-    Text, Tick, TrackId, UnsupportedReason, Vec2, actions, egui, preview, theme,
+    PathBuf, Playback, Preferences, Rect, SelectionScope, SelectionScopes, SourceRange, Text, Tick,
+    TrackId, UnsupportedReason, Vec2, actions, egui, preview, theme,
 };
 
 #[derive(Clone, Debug)]
@@ -421,21 +421,11 @@ pub struct Editor {
     pub selection: BTreeSet<ItemId>,
     pub selection_scopes: SelectionScopes,
     pub(super) marquee: Option<(egui::Pos2, BTreeSet<ItemId>, bool)>,
-    pub(super) property_drafts: BTreeMap<String, String>,
-    pub(super) property_selection: BTreeSet<ItemId>,
-    /// Last inspector field that held keyboard focus. Egui surrenders focus on
-    /// Escape before app UI runs, so the next frame must still defer shortcuts.
-    pub(super) property_focus: Option<String>,
-    /// One Scale control moves both axes; a view setting, not project data.
-    pub(super) uniform_scale: bool,
-    pub(super) scrub: Option<ScrubDrag>,
+    pub(super) properties: super::properties::State,
     pub(super) effect_previews: Option<crate::effect_previews::EffectPreviews>,
     pub(super) effect_textures: BTreeMap<String, egui::TextureHandle>,
     pub(super) effect_drag: Option<String>,
-    pub(super) effect_reorder: Option<EffectReorder>,
     pub(super) effect_drop_targets: Vec<(ItemId, Rect)>,
-    pub(super) color_picker: Option<Picker>,
-    pub(super) color_base: Option<Arc<project::Project>>,
     pub ripple: bool,
     pub(super) zoom: f32,
     pub(super) scroll: f32,
@@ -464,7 +454,6 @@ pub struct Editor {
     pub(super) error: Option<String>,
     pub(crate) persistence_error: Option<std::sync::Arc<engine::EditError>>,
     pub(super) configured: bool,
-    pub(super) details: bool,
     pub(super) track_rename: Option<(TrackId, String)>,
     pub(super) track_rename_focus: bool,
     pub(super) track_drag: Option<TrackId>,

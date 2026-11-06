@@ -1,6 +1,7 @@
 //! Renders appearance controls.
+use super::Panel;
 use crate::editor::properties::{
-    Color32, ColorTarget, Editor, Id, ItemId, ItemParams, Rect, Text, Vec2, catalog, egui, theme,
+    Color32, ColorTarget, Id, ItemId, ItemParams, Rect, Text, Vec2, catalog, egui, read, theme,
 };
 
 use crate::kit;
@@ -12,13 +13,9 @@ fn value_ui_width(ui: &egui::Ui) -> f32 {
 const VALUE_COLUMN: f32 = 120.0;
 const FIELD_COLUMN: f32 = 150.0;
 
-impl Editor {
+impl Panel<'_, '_> {
     /// The right-hand region of a 39 px row, starting at the value column.
-    pub(in crate::editor) fn row_value_ui(
-        &self,
-        ui: &mut egui::Ui,
-        height: f32,
-    ) -> (Rect, egui::Ui) {
+    pub(super) fn row_value_ui(&self, ui: &mut egui::Ui, height: f32) -> (Rect, egui::Ui) {
         let (row, _) = ui.allocate_exact_size(
             Vec2::new(ui.available_width(), height),
             egui::Sense::hover(),
@@ -32,8 +29,8 @@ impl Editor {
         (row, child)
     }
 
-    pub(in crate::editor) fn row_label(&self, ui: &egui::Ui, row: Rect, text: &str) {
-        let color = theme::text(self.preferences.dark);
+    pub(super) fn row_label(&self, ui: &egui::Ui, row: Rect, text: &str) {
+        let color = theme::text(self.cx.dark);
         let galley = ui.painter().layout_no_wrap(
             text.to_owned(),
             egui::FontId::proportional(theme::type_size::BODY),
@@ -46,17 +43,8 @@ impl Editor {
         );
     }
 
-    pub(in crate::editor) fn blend_control(&mut self, ui: &mut egui::Ui, item: ItemId) {
-        let Some(current) = self
-            .session
-            .project()
-            .data()
-            .scene()
-            .timeline
-            .iter()
-            .flat_map(|track| &track.items)
-            .find(|candidate| candidate.id == item)
-            .map(|item| item.blend_mode)
+    pub(super) fn blend_control(&mut self, ui: &mut egui::Ui, item: ItemId) {
+        let Some(current) = read::item(self.cx.session.project(), item).map(|item| item.blend_mode)
         else {
             return;
         };
@@ -77,11 +65,7 @@ impl Editor {
                             );
                             self.remember(format!("inspector.blendMode.{}", mode.id()), &response);
                             if response.clicked() {
-                                if let Err(error) =
-                                    self.set_item_field(item, "blendMode", mode.id())
-                                {
-                                    self.error = Some(error.to_string());
-                                }
+                                self.set_item_field(item, "blendMode", mode.id());
                                 ui.close();
                             }
                         }
@@ -97,20 +81,20 @@ impl Editor {
 
     /// A colour row: the label left, a swatch with its hex right. Clicking opens
     /// the picker as a popover hanging off the panel's left edge.
-    pub(in crate::editor) fn color_row(
+    pub(super) fn color_row(
         &mut self,
         ui: &mut egui::Ui,
         id: &str,
         label: Text,
         target: ColorTarget,
     ) {
-        let Ok(color) = target.color(self.session.project()) else {
+        let Ok(color) = target.color(self.cx.session.project()) else {
             return;
         };
         let [r, g, b, a] = color.0;
         let (row, mut value_ui) = self.row_value_ui(ui, theme::size::PROPERTY_ROW);
         self.row_label(ui, row, self.tr(label));
-        let dark = self.preferences.dark;
+        let dark = self.cx.dark;
         let (rect, response) = value_ui.allocate_exact_size(
             Vec2::new(
                 value_ui.available_width().min(FIELD_COLUMN),
@@ -151,34 +135,20 @@ impl Editor {
         let response = response.on_hover_text(self.tr(label));
         self.remember_with_icon(id, None, &response);
         if response.clicked() {
-            let panel_left = self
-                .panels
-                .get("inspector")
-                .map_or(rect.left(), |panel| panel.left());
-            match self.open_color_picker(target) {
-                Ok(()) => {
-                    if let Some(picker) = self.color_picker.as_mut() {
-                        picker.anchor = Some(egui::pos2(
-                            panel_left - theme::space::PANEL_GUTTER,
-                            row.top(),
-                        ));
-                    }
-                }
-                Err(error) => self.error = Some(error.to_string()),
+            let panel_left = self.state.area.map_or(rect.left(), |panel| panel.left());
+            let anchor = egui::pos2(panel_left - theme::space::PANEL_GUTTER, row.top());
+            match self
+                .state
+                .open_picker(self.cx.session.project(), target, Some(anchor))
+            {
+                Ok(actions) => self.actions.extend(actions),
+                Err(error) => self.fail(error),
             }
         }
     }
-    pub(in crate::editor) fn text_color_field(&mut self, ui: &mut egui::Ui, item: ItemId) {
-        let Some(value) = self
-            .session
-            .project()
-            .data()
-            .scene()
-            .timeline
-            .iter()
-            .flat_map(|track| &track.items)
-            .find(|candidate| candidate.id == item)
-            .and_then(|item| match &item.content {
+    pub(super) fn text_color_field(&mut self, ui: &mut egui::Ui, item: ItemId) {
+        let Some(value) =
+            read::item(self.cx.session.project(), item).and_then(|item| match &item.content {
                 ItemParams::Text(params) => {
                     let [r, g, b, a] = params.color.0;
                     Some(format!("#{r:02X}{g:02X}{b:02X}{a:02X}"))
@@ -191,7 +161,8 @@ impl Editor {
         let (row, mut value_ui) = self.row_value_ui(ui, theme::size::PROPERTY_ROW);
         self.row_label(ui, row, self.tr(Text::TextColor));
         let draft = self
-            .property_drafts
+            .state
+            .drafts
             .get("text_color")
             .cloned()
             .unwrap_or(value);
@@ -207,26 +178,25 @@ impl Editor {
         );
         self.remember("inspector.text_color", &response);
         if response.has_focus() {
-            self.property_focus = Some("text_color".to_owned());
+            self.state.focus = Some("text_color".to_owned());
         }
         if response.changed() {
-            self.property_drafts
+            self.state
+                .drafts
                 .insert("text_color".to_owned(), next.clone());
         }
-        let editing = response.has_focus() || self.property_focus.as_deref() == Some("text_color");
+        let editing = response.has_focus() || self.state.focus.as_deref() == Some("text_color");
         if editing && ui.input(|i| i.key_pressed(egui::Key::Escape)) {
-            self.property_drafts.remove("text_color");
-            self.property_focus = None;
+            self.state.drafts.remove("text_color");
+            self.state.focus = None;
             response.surrender_focus();
             return;
         }
         let enter = response.has_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
         if enter || response.lost_focus() {
-            self.property_focus = None;
-            if let Some(draft) = self.property_drafts.remove("text_color")
-                && let Err(error) = self.set_item_field(item, "text_color", &draft)
-            {
-                self.error = Some(error.to_string());
+            self.state.focus = None;
+            if let Some(draft) = self.state.drafts.remove("text_color") {
+                self.set_item_field(item, "text_color", &draft);
             }
         }
     }

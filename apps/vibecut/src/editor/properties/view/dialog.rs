@@ -1,51 +1,46 @@
 //! Renders the colour window.
-use crate::editor::properties::{Editor, Result, Session, Tick, egui};
+use super::Panel;
+use crate::editor::properties::{Action, egui};
 
-pub(in crate::editor) fn show_dialog(editor: &mut Editor, ctx: &egui::Context) {
-    let Some(mut picker) = editor.color_picker.take() else {
-        return;
-    };
-    let event = picker.ui(
-        ctx,
-        editor.preferences.locale,
-        &editor.preferences.recent_colors,
-    );
-    for (id, response) in event.widgets {
-        editor.remember(id, &response);
-    }
-    if event.cancel {
-        editor.color_base = None;
-        editor.sync_preview();
-        return;
-    }
-    let result = (|| -> Result<()> {
-        let (command, params) = picker
-            .target
-            .command(editor.session.project(), picker.color)?;
-        if event.commit && picker.color != picker.original {
-            let mut recent = editor.preferences.recent_colors.clone();
-            recent.retain(|c| *c != picker.color);
-            recent.insert(0, picker.color);
-            recent.truncate(16);
-            let mut preferences = editor.preferences.clone();
-            preferences.set("recent_colors", serde_json::to_value(recent)?)?;
-            editor.session.end_merge();
-            editor.session.execute(command, params)?;
-            picker.original = picker.color;
-            editor.color_base = Some(editor.session.project().clone());
-            editor.preferences = preferences;
-            editor.sync_preview();
-        } else if event.preview {
-            let mut draft = Session::new(editor.session.project().as_ref().clone(), 1)?;
-            draft.execute(command, params)?;
-            let at = editor.playback.position().unwrap_or(Tick::ZERO);
-            editor.playback.seek(at, false, draft.project().clone())?;
+impl Panel<'_, '_> {
+    /// Draw the open picker and turn its events into previews and commits.
+    pub(super) fn picker_dialog(&mut self, ctx: &egui::Context) {
+        let Some(mut picker) = self.state.picker.take() else {
+            return;
+        };
+        let event = picker.ui(ctx, self.cx.locale, &self.cx.preferences.recent_colors);
+        for (id, response) in event.widgets {
+            self.remember(id, &response);
         }
-        Ok(())
-    })();
-    if let Err(error) = result {
-        editor.error = Some(error.to_string());
-        editor.sync_preview();
+        if event.cancel {
+            self.state.color_base = None;
+            self.actions.push(Action::SyncPreview);
+            return;
+        }
+        match picker
+            .target
+            .command(self.cx.session.project(), picker.color)
+        {
+            Ok((command, params)) => {
+                if event.commit && picker.color != picker.original {
+                    let mut recent = self.cx.preferences.recent_colors.clone();
+                    recent.retain(|c| *c != picker.color);
+                    recent.insert(0, picker.color);
+                    recent.truncate(16);
+                    self.actions.push(Action::ColorCommit {
+                        command,
+                        params,
+                        recent,
+                    });
+                } else if event.preview {
+                    self.actions.push(Action::ColorPreview { command, params });
+                }
+            }
+            Err(error) => {
+                self.fail(error);
+                self.actions.push(Action::SyncPreview);
+            }
+        }
+        self.state.picker = Some(picker);
     }
-    editor.color_picker = Some(picker);
 }

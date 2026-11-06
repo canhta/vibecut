@@ -1,20 +1,20 @@
 //! Renders effect parameters.
+use super::Panel;
 use crate::editor::properties::{
-    BUTTON_ICON, Editor, EffectReorder, Error, Icon, Id, ItemId, Rect, ScrubTarget, Text, Vec2,
-    effect_definition, effect_scrub_spec, egui, icons, theme,
+    Action, BUTTON_ICON, EffectReorder, Error, Icon, Id, ItemId, Rect, ScrubTarget, Text, Vec2,
+    effect_definition, effect_scrub_spec, egui, icons, read, theme,
 };
 
-impl Editor {
-    pub(in crate::editor) fn effects_stack(&mut self, ui: &mut egui::Ui, item: ItemId) {
-        let effects = self
-            .session
-            .project()
-            .data()
-            .scene()
-            .timeline
-            .iter()
-            .flat_map(|track| &track.items)
-            .find(|candidate| candidate.id == item)
+impl Panel<'_, '_> {
+    fn effect_name(&self, definition: &project::EffectDefinition) -> &'static str {
+        match definition.kind {
+            "blur" => self.tr(Text::EffectBlur),
+            _ => definition.name,
+        }
+    }
+
+    pub(super) fn effects_stack(&mut self, ui: &mut egui::Ui, item: ItemId) {
+        let effects = read::item(self.cx.session.project(), item)
             .map_or_else(Vec::new, |candidate| candidate.effects.clone());
         if effects.is_empty() {
             let response = ui.label(
@@ -56,7 +56,7 @@ impl Editor {
                             &handle,
                         );
                         if handle.drag_started() {
-                            self.effect_reorder = Some(EffectReorder {
+                            self.state.reorder = Some(EffectReorder {
                                 item,
                                 effect: effect.id.clone(),
                             });
@@ -94,12 +94,15 @@ impl Editor {
                             &format!("effects.toggle.{}", effect.id),
                             icon,
                             self.tr(label),
-                            None,
                             Some(effect.enabled),
                             true,
                         );
                         if enabled {
-                            self.toggle_effect(item, &effect.id, !effect.enabled);
+                            self.actions.push(Action::ToggleEffect {
+                                item,
+                                effect: effect.id.clone(),
+                                enabled: !effect.enabled,
+                            });
                         }
                         let remove = self.tr(Text::EffectRemove);
                         if self.icon_only(
@@ -108,17 +111,23 @@ impl Editor {
                             Icon::Trash,
                             remove,
                             None,
-                            None,
                             true,
                         ) {
-                            self.remove_effect(item, &effect.id);
+                            self.actions.push(Action::RemoveEffect {
+                                item,
+                                effect: effect.id.clone(),
+                            });
                         }
                     });
                     if let Some(definition) = effect_definition(&effect.params) {
                         for parameter in definition.params {
-                            if self
-                                .effect_param_value(item, &effect.id, parameter.key)
-                                .is_some()
+                            if read::effect_param_value(
+                                self.cx.session.project(),
+                                item,
+                                &effect.id,
+                                parameter.key,
+                            )
+                            .is_some()
                             {
                                 self.effect_scrub_field(ui, item, &effect.id, parameter);
                             }
@@ -144,30 +153,37 @@ impl Editor {
             let target = pointer.and_then(|position| {
                 rows.iter()
                     .find(|(id, rect)| {
-                        self.effect_reorder
+                        self.state
+                            .reorder
                             .as_ref()
                             .is_none_or(|drag| drag.effect != *id)
                             && rect.contains(position)
                     })
                     .map(|(id, _)| id.clone())
             });
-            if let Some(drag) = self.effect_reorder.take()
+            if let Some(drag) = self.state.reorder.take()
                 && let Some(target) = target
             {
-                self.reorder_effect(drag.item, &drag.effect, &target);
+                self.actions.push(Action::ReorderEffect {
+                    item: drag.item,
+                    effect: drag.effect,
+                    target,
+                });
             }
-        } else if self.effect_reorder.is_some() && ui.input(|input| input.pointer.any_released()) {
-            self.effect_reorder = None;
+        } else if self.state.reorder.is_some() && ui.input(|input| input.pointer.any_released()) {
+            self.state.reorder = None;
         }
     }
-    pub(in crate::editor) fn effect_scrub_field(
+    pub(super) fn effect_scrub_field(
         &mut self,
         ui: &mut egui::Ui,
         item: ItemId,
         effect: &str,
         parameter: &project::EffectParamDefinition,
     ) {
-        let Some(current) = self.effect_param_value(item, effect, parameter.key) else {
+        let Some(current) =
+            read::effect_param_value(self.cx.session.project(), item, effect, parameter.key)
+        else {
             return;
         };
         let spec = effect_scrub_spec(parameter);
@@ -202,7 +218,7 @@ impl Editor {
                 self.start_effect_scrub(item, effect, parameter.key, current);
             }
             if handle.dragged()
-                && let Some(mut scrub) = self.scrub.take()
+                && let Some(mut scrub) = self.state.scrub.take()
             {
                 let target = ScrubTarget::Effect {
                     effect: effect.to_owned(),
@@ -213,20 +229,19 @@ impl Editor {
                         / f64::from(spec.pixels_per_step);
                     let value = spec.quantize(scrub.start + steps * spec.step);
                     if value != scrub.last {
-                        match self.set_effect_param(item, effect, parameter.key, value) {
-                            Ok(()) => scrub.last = value,
-                            Err(error) => self.error = Some(error.to_string()),
-                        }
+                        self.set_effect_param(item, effect, parameter.key, value);
+                        scrub.last = value;
                     }
                 }
-                self.scrub = Some(scrub);
+                self.state.scrub = Some(scrub);
             }
             if handle.drag_stopped() {
                 self.finish_scrub(true);
             }
             let width = ui.available_width().max(60.0);
             let mut next = self
-                .property_drafts
+                .state
+                .drafts
                 .get(&draft_key)
                 .cloned()
                 .unwrap_or_else(|| spec.format(current));
@@ -244,35 +259,33 @@ impl Editor {
                 .labelled_by(caption.id);
             self.remember(draft_key.clone(), &response);
             if response.has_focus() {
-                self.property_focus = Some(draft_key.clone());
+                self.state.focus = Some(draft_key.clone());
             }
             if response.changed() {
-                self.property_drafts.insert(draft_key.clone(), next);
+                self.state.drafts.insert(draft_key.clone(), next);
             }
             let editing =
-                response.has_focus() || self.property_focus.as_deref() == Some(draft_key.as_str());
+                response.has_focus() || self.state.focus.as_deref() == Some(draft_key.as_str());
             if editing && ui.input(|i| i.key_pressed(egui::Key::Escape)) {
-                self.property_drafts.remove(&draft_key);
-                self.property_focus = None;
+                self.state.drafts.remove(&draft_key);
+                self.state.focus = None;
                 response.surrender_focus();
                 return;
             }
             let enter = response.has_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
             if enter || response.lost_focus() {
-                self.property_focus = None;
-                if let Some(draft) = self.property_drafts.remove(&draft_key) {
+                self.state.focus = None;
+                if let Some(draft) = self.state.drafts.remove(&draft_key) {
                     let Ok(parsed) = draft.trim().parse::<f64>() else {
-                        self.error = Some(Error::Invalid("scrub value").to_string());
+                        self.fail(Error::Invalid("scrub value"));
                         return;
                     };
                     if !parsed.is_finite() {
-                        self.error = Some(Error::Invalid("scrub value").to_string());
+                        self.fail(Error::Invalid("scrub value"));
                         return;
                     }
                     let value = spec.quantize(parsed);
-                    if let Err(error) = self.set_effect_param(item, effect, parameter.key, value) {
-                        self.error = Some(error.to_string());
-                    }
+                    self.set_effect_param(item, effect, parameter.key, value);
                 }
             }
         });

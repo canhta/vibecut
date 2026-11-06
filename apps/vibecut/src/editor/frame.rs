@@ -18,6 +18,9 @@ pub(crate) struct Context<'a> {
     pub(crate) selection: &'a std::collections::BTreeSet<project::ItemId>,
     pub(crate) locale: Locale,
     pub(crate) dark: bool,
+    pub(crate) preferences: &'a crate::catalog::Preferences,
+    /// What the selection currently scopes: items, mask points or keyframes.
+    pub(crate) scope: crate::selection::SelectionScope,
     pub(super) save_status: Text,
 }
 

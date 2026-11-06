@@ -1,16 +1,18 @@
 //! Renders speed controls.
-use crate::editor::properties::{Editor, Icon, ItemId, SPEED_SCRUB, Text, egui, theme};
+use super::Panel;
+use crate::editor::properties::{Icon, ItemId, SPEED_SCRUB, Text, egui, read, theme};
 
-impl Editor {
+impl Panel<'_, '_> {
     /// Constant speed with reset and the pitch policy; both go through `timeline.set_speed`.
-    pub(in crate::editor) fn speed_controls(&mut self, ui: &mut egui::Ui, item: ItemId) {
-        let Some((current, maintain_pitch, has_audio)) = self.retime_of(item) else {
+    pub(super) fn speed_controls(&mut self, ui: &mut egui::Ui, item: ItemId) {
+        let project = self.cx.session.project();
+        let Some((current, maintain_pitch, has_audio)) = read::retime_of(project, item) else {
             return;
         };
         self.scrub_field(ui, item, SPEED_SCRUB);
         let (row, mut value_ui) = self.row_value_ui(ui, theme::size::PROPERTY_ROW);
         self.row_label(ui, row, self.tr(Text::SpeedDuration));
-        if let Some((source, output)) = self.retime_seconds(item) {
+        if let Some((source, output)) = read::retime_seconds(project, item) {
             let response = value_ui.label(
                 egui::RichText::new(format!("{source:.2}s → {output:.2}s"))
                     .size(theme::type_size::BODY)
@@ -25,11 +27,10 @@ impl Editor {
                 Icon::ArrowCounterClockwise,
                 self.tr(Text::SpeedReset),
                 None,
-                None,
                 current != 1.0,
             );
-            if reset && let Err(error) = self.set_speed(item, 1.0, maintain_pitch) {
-                self.error = Some(error.to_string());
+            if reset {
+                self.set_speed(item, 1.0, maintain_pitch);
             }
         });
         if has_audio {
@@ -43,10 +44,8 @@ impl Editor {
                 .ctx
                 .accesskit_node_builder(response.id, |node| node.set_label(name));
             self.remember("inspector.speed.pitch", &response);
-            if response.changed()
-                && let Err(error) = self.set_speed(item, current, !follows)
-            {
-                self.error = Some(error.to_string());
+            if response.changed() {
+                self.set_speed(item, current, !follows);
             }
         }
     }

@@ -281,7 +281,7 @@ impl Editor {
                         )?;
                         self.selection = self.session.selection().clone();
                         self.selection_scopes = SelectionScopes::default();
-                        self.property_drafts.clear();
+                        self.properties.clear_drafts();
                     } else {
                         self.sync_keymap();
                     }
@@ -335,8 +335,8 @@ impl Editor {
                     self.playback.clear()?;
                     self.error = None;
                 }
-                UiAction::ProjectInspector => self.details = false,
-                UiAction::DetailsInspector => self.details = true,
+                UiAction::ProjectInspector => self.properties.details = false,
+                UiAction::DetailsInspector => self.properties.details = true,
                 UiAction::PreviewSnapshot => self.open_snapshot_dialog()?,
                 UiAction::PreviewFullscreen => self.preview_fullscreen = !self.preview_fullscreen,
                 UiAction::PreviewFit => self.set_preview_fit()?,

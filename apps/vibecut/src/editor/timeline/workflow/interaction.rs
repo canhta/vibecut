@@ -130,15 +130,15 @@ impl Editor {
             self.snap_indicator = None;
             return;
         }
-        if let Some(scrub) = self.scrub.take() {
+        if let Some(scrub) = self.properties.scrub.take() {
             let changed = scrub.last != scrub.start;
             if self.session.gesture_active()
                 && let Err(error) = self.session.cancel_gesture()
             {
                 self.error = Some(error.to_string());
             }
-            self.property_drafts.remove(&scrub.target.draft_key());
-            self.property_focus = None;
+            self.properties.drafts.remove(&scrub.target.draft_key());
+            self.properties.focus = None;
             if changed {
                 self.sync_preview();
             }
@@ -152,7 +152,7 @@ impl Editor {
         if self.effect_drag.take().is_some() {
             return;
         }
-        if self.effect_reorder.take().is_some() {
+        if self.properties.reorder.take().is_some() {
             return;
         }
         if let Some(drag) = self.drag.take() {

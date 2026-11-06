@@ -1,38 +1,14 @@
 //! Composes the editor window.
-use crate::editor::{
-    Arc, Editor, Id, Rect, Text, Vec2, drag_panel, egui, error_detail, icons, theme,
-};
+use crate::editor::{Editor, Id, Rect, Text, Vec2, drag_panel, egui, error_detail, icons, theme};
 
 impl Editor {
     pub fn ui(&mut self, ui: &mut egui::Ui) {
-        if self.color_picker.as_ref().is_some_and(|picker| {
-            picker
-                .target
-                .item()
-                .is_some_and(|item| self.selected_item_id() != Some(item))
-        }) || self
-            .color_base
-            .as_ref()
-            .is_some_and(|base| !Arc::ptr_eq(base, self.session.project()))
-        {
-            self.close_color_picker();
-        }
-        // The gesture belongs to the item and field visible at pointer-down.
-        // Agents can change selection or panel state between pointer events.
-        if self
-            .effect_reorder
-            .as_ref()
-            .is_some_and(|drag| self.selected_item_id() != Some(drag.item) || self.details)
-        {
-            self.effect_reorder = None;
-        }
-        if self
-            .scrub
-            .as_ref()
-            .is_some_and(|scrub| self.selected_item_id() != Some(scrub.item) || self.details)
-        {
-            self.finish_scrub(false);
-        }
+        // Agents can change selection or the project between pointer events.
+        let actions = self.properties.reconcile(
+            self.session.project(),
+            super::super::properties::single(&self.selection),
+        );
+        super::super::properties::apply(self, actions);
         // History and external commands can remove the track being renamed.
         if self.track_rename.as_ref().is_some_and(|(id, _)| {
             !self
@@ -162,7 +138,7 @@ impl Editor {
                 "header" => self.header(&mut child),
                 "media" => super::super::assets::show(self, &mut child),
                 "preview" => super::super::player::show(self, &mut child),
-                "inspector" => super::super::properties::show(self, &mut child),
+                "inspector" => self.inspector(&mut child),
                 _ => super::super::timeline::show(self, &mut child),
             }
         }
@@ -229,27 +205,51 @@ impl Editor {
             }
         }
         super::super::models::show(self, ui.ctx());
-        super::super::properties::show_dialog(self, ui.ctx());
         self.shortcuts_dialog(ui.ctx());
         if self
+            .properties
             .scrub
             .as_ref()
             .is_some_and(|scrub| !self.widgets.contains_key(&scrub.target.widget_id()))
         {
             self.finish_scrub(false);
         }
-        if self.effect_reorder.as_ref().is_some_and(|drag| {
+        if self.properties.reorder.as_ref().is_some_and(|drag| {
             !self
                 .widgets
                 .contains_key(&format!("effects.row.{}.handle", drag.effect))
         }) {
-            self.effect_reorder = None;
+            self.properties.reorder = None;
         }
         self.finish_effect_drag(ui.ctx());
         ui.ctx()
             .request_repaint_after(std::time::Duration::from_millis(
                 if self.playback.playing() { 8 } else { 33 },
             ));
+    }
+    /// Draw the properties area and route what it asks for.
+    fn inspector(&mut self, ui: &mut egui::Ui) {
+        let cx = crate::editor::Context {
+            session: &self.session,
+            selection: &self.selection,
+            locale: self.preferences.locale,
+            dark: self.preferences.dark,
+            save_status: Text::NotSaved, // Only the window header shows it.
+            preferences: &self.preferences,
+            scope: self.selection_scopes.active(&self.selection),
+        };
+        let actions = super::super::properties::show(&mut self.properties, &cx, ui);
+        for widget in self.properties.take_widgets() {
+            self.remember_with_icon(widget.id.clone(), widget.icon, &widget.response);
+            if let (Some(tooltip), Some(state)) = (widget.tooltip, self.widgets.get_mut(&widget.id))
+            {
+                state.tooltip = Some(tooltip);
+            }
+        }
+        if !actions.is_empty() {
+            ui.ctx().request_repaint();
+        }
+        super::super::properties::apply(self, actions);
     }
     pub(in crate::editor) fn header(&mut self, ui: &mut egui::Ui) {
         let save_status = if self.persistence_error.is_some() {
@@ -272,6 +272,8 @@ impl Editor {
             locale: self.preferences.locale,
             dark: self.preferences.dark,
             save_status,
+            preferences: &self.preferences,
+            scope: self.selection_scopes.active(&self.selection),
         };
         let actions = super::show(&mut self.frame, &cx, ui);
         for (id, icon, response) in std::mem::take(&mut self.frame.widgets) {

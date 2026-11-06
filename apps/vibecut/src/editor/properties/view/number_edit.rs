@@ -1,6 +1,7 @@
 //! Renders numeric property rows: label left, controls right.
+use super::Panel;
 use crate::editor::properties::{
-    Editor, Error, ItemId, Rect, ScrubSpec, ScrubTarget, Text, Vec2, egui, theme,
+    Error, ItemId, Rect, ScrubSpec, ScrubTarget, Text, Vec2, egui, read, theme,
 };
 use crate::kit;
 
@@ -67,34 +68,27 @@ struct Layout {
     gap: f32,
 }
 
-impl Editor {
+impl Panel<'_, '_> {
     /// Writes one field; with uniform scale on, Scale X also writes Scale Y.
-    fn write_field(&mut self, item: ItemId, spec: ScrubSpec, value: &str) -> crate::Result<()> {
-        self.set_item_field(item, spec.field, value)?;
-        if self.uniform_scale && spec.field == "transform.scaleX" {
-            self.set_item_field(item, "transform.scaleY", value)?;
+    fn write_field(&mut self, item: ItemId, spec: ScrubSpec, value: &str) {
+        self.set_item_field(item, spec.field, value);
+        if self.state.uniform_scale && spec.field == "transform.scaleX" {
+            self.set_item_field(item, "transform.scaleY", value);
         }
-        Ok(())
+    }
+
+    fn item_value(&self, item: ItemId, field: &str) -> Option<f64> {
+        read::item_value(self.cx.session.project(), item, field)
     }
 
     /// A label on the left of a 39 px row with the controls at the value column.
     /// The label drags the value, like the scrub handle of the previous layout.
-    pub(in crate::editor) fn scrub_field(
-        &mut self,
-        ui: &mut egui::Ui,
-        item: ItemId,
-        spec: ScrubSpec,
-    ) {
+    pub(super) fn scrub_field(&mut self, ui: &mut egui::Ui, item: ItemId, spec: ScrubSpec) {
         self.number_row(ui, item, spec.label, &[(spec, None)]);
     }
 
     /// One slider row: the label above, the rail and the value group below.
-    pub(in crate::editor) fn slider_row(
-        &mut self,
-        ui: &mut egui::Ui,
-        item: ItemId,
-        spec: ScrubSpec,
-    ) {
+    pub(super) fn slider_row(&mut self, ui: &mut egui::Ui, item: ItemId, spec: ScrubSpec) {
         let Some(current) = self.item_value(item, spec.field) else {
             return;
         };
@@ -106,7 +100,7 @@ impl Editor {
         let galley = ui.painter().layout_no_wrap(
             label.to_owned(),
             egui::FontId::proportional(theme::type_size::BODY),
-            theme::text(self.preferences.dark),
+            theme::text(self.cx.dark),
         );
         let label_rect = Rect::from_min_size(
             egui::pos2(row.left(), row.top() - 2.0),
@@ -118,7 +112,7 @@ impl Editor {
                 label_rect.center().y - galley.size().y / 2.0,
             ),
             galley,
-            theme::text(self.preferences.dark),
+            theme::text(self.cx.dark),
         );
         self.scrub_handle(ui, item, spec, current, label_rect);
         let line = Rect::from_min_size(
@@ -168,7 +162,7 @@ impl Editor {
     }
 
     /// Rows with one or two fields sharing a label: Position (X, Y), Rotate, Text size.
-    pub(in crate::editor) fn number_row(
+    pub(super) fn number_row(
         &mut self,
         ui: &mut egui::Ui,
         item: ItemId,
@@ -182,7 +176,7 @@ impl Editor {
             Vec2::new(ui.available_width(), theme::size::PROPERTY_ROW),
             egui::Sense::hover(),
         );
-        let color = theme::text(self.preferences.dark);
+        let color = theme::text(self.cx.dark);
         let galley = ui.painter().layout_no_wrap(
             self.tr(label).to_owned(),
             egui::FontId::proportional(theme::type_size::BODY),
@@ -237,6 +231,28 @@ impl Editor {
         }
     }
 
+    pub(super) fn start_scrub(&mut self, item: ItemId, spec: ScrubSpec, value: f64) {
+        self.start_scrub_target(item, ScrubTarget::Item(spec.field), value);
+    }
+
+    pub(super) fn start_effect_scrub(&mut self, item: ItemId, effect: &str, key: &str, value: f64) {
+        let target = ScrubTarget::Effect {
+            effect: effect.to_owned(),
+            key: key.to_owned(),
+        };
+        self.start_scrub_target(item, target, value);
+    }
+
+    pub(super) fn start_scrub_target(&mut self, item: ItemId, target: ScrubTarget, value: f64) {
+        let actions = self.state.begin_scrub(item, target, value);
+        self.actions.extend(actions);
+    }
+
+    pub(super) fn finish_scrub(&mut self, commit: bool) {
+        let actions = self.state.end_scrub(commit);
+        self.actions.extend(actions);
+    }
+
     /// The scrub drag target over a label: drags the value one engine undo step.
     fn scrub_handle(
         &mut self,
@@ -263,20 +279,18 @@ impl Editor {
             self.start_scrub(item, spec, current);
         }
         if handle.dragged()
-            && let Some(mut scrub) = self.scrub.take()
+            && let Some(mut scrub) = self.state.scrub.take()
         {
             if scrub.target == ScrubTarget::Item(spec.field) {
                 let steps = f64::from(handle.total_drag_delta().map_or(0.0, |delta| delta.x))
                     / f64::from(spec.pixels_per_step);
                 let value = spec.quantize(scrub.start + steps * spec.step);
                 if value != scrub.last {
-                    match self.write_field(item, spec, &spec.format(value)) {
-                        Ok(()) => scrub.last = value,
-                        Err(error) => self.error = Some(error.to_string()),
-                    }
+                    self.write_field(item, spec, &spec.format(value));
+                    scrub.last = value;
                 }
             }
-            self.scrub = Some(scrub);
+            self.state.scrub = Some(scrub);
         }
         if handle.drag_stopped() {
             self.finish_scrub(true);
@@ -292,22 +306,20 @@ impl Editor {
         response: &egui::Response,
         value: f64,
     ) {
-        if response.drag_started() || (response.clicked() && self.scrub.is_none()) {
+        if response.drag_started() || (response.clicked() && self.state.scrub.is_none()) {
             self.start_scrub(item, spec, current);
         }
         if (response.dragged() || response.clicked())
-            && let Some(mut scrub) = self.scrub.take()
+            && let Some(mut scrub) = self.state.scrub.take()
         {
             if scrub.target == ScrubTarget::Item(spec.field) {
                 let value = spec.quantize(value);
                 if value != scrub.last {
-                    match self.write_field(item, spec, &spec.format(value)) {
-                        Ok(()) => scrub.last = value,
-                        Err(error) => self.error = Some(error.to_string()),
-                    }
+                    self.write_field(item, spec, &spec.format(value));
+                    scrub.last = value;
                 }
             }
-            self.scrub = Some(scrub);
+            self.state.scrub = Some(scrub);
         }
         if response.drag_stopped() || response.clicked() {
             self.finish_scrub(true);
@@ -326,17 +338,18 @@ impl Editor {
         let Layout { prefix, width, gap } = layout;
         let id = format!("inspector.{}", spec.field);
         let mut next = self
-            .property_drafts
+            .state
+            .drafts
             .get(spec.field)
             .cloned()
             .unwrap_or_else(|| shown(spec, current));
         let response = kit::value_field(ui, &id, &mut next, width, prefix, self.tr(spec.label));
         self.remember(id.clone(), &response);
         if response.has_focus() {
-            self.property_focus = Some(spec.field.to_owned());
+            self.state.focus = Some(spec.field.to_owned());
         }
         if response.changed() {
-            self.property_drafts.insert(spec.field.to_owned(), next);
+            self.state.drafts.insert(spec.field.to_owned(), next);
         }
         let label = self.tr(spec.label);
         ui.add_space(gap);
@@ -346,31 +359,27 @@ impl Editor {
         for (clicked, sign) in [(up.clicked(), 1.0), (down.clicked(), -1.0)] {
             if clicked {
                 let value = spec.quantize(current + sign * arrow_step(spec));
-                if let Err(error) = self.write_field(item, spec, &spec.format(value)) {
-                    self.error = Some(error.to_string());
-                }
-                self.property_drafts.remove(spec.field);
+                self.write_field(item, spec, &spec.format(value));
+                self.state.drafts.remove(spec.field);
             }
         }
-        let editing = response.has_focus() || self.property_focus.as_deref() == Some(spec.field);
+        let editing = response.has_focus() || self.state.focus.as_deref() == Some(spec.field);
         if editing && ui.input(|i| i.key_pressed(egui::Key::Escape)) {
-            self.property_drafts.remove(spec.field);
-            self.property_focus = None;
+            self.state.drafts.remove(spec.field);
+            self.state.focus = None;
             response.surrender_focus();
             return;
         }
         let enter = response.has_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
         if enter || response.lost_focus() {
-            self.property_focus = None;
-            if let Some(draft) = self.property_drafts.remove(spec.field) {
+            self.state.focus = None;
+            if let Some(draft) = self.state.drafts.remove(spec.field) {
                 let Some(parsed) = parse(spec, &draft) else {
-                    self.error = Some(Error::Invalid("scrub value").to_string());
+                    self.fail(Error::Invalid("scrub value"));
                     return;
                 };
                 let value = spec.quantize(parsed);
-                if let Err(error) = self.write_field(item, spec, &spec.format(value)) {
-                    self.error = Some(error.to_string());
-                }
+                self.write_field(item, spec, &spec.format(value));
             }
         }
     }

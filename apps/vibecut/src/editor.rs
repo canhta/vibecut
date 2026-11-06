@@ -142,18 +142,11 @@ impl Editor {
             selection,
             selection_scopes: SelectionScopes::default(),
             marquee: None,
-            property_drafts: BTreeMap::new(),
-            property_selection: BTreeSet::new(),
-            property_focus: None,
-            uniform_scale: true,
-            scrub: None,
+            properties: properties::State::default(),
             effect_previews: crate::effect_previews::EffectPreviews::cpu().ok(),
             effect_textures: BTreeMap::new(),
             effect_drag: None,
-            effect_reorder: None,
             effect_drop_targets: Vec::new(),
-            color_picker: None,
-            color_base: None,
             ripple: false,
             zoom,
             scroll,
@@ -180,7 +173,6 @@ impl Editor {
             error: None,
             persistence_error: None,
             configured: false,
-            details: false,
             track_rename: None,
             track_rename_focus: false,
             track_drag: None,
@@ -339,8 +331,8 @@ impl Editor {
                 .as_ref()
                 .map(crate::model_manager::ModelManager::inspect),
             keybinding_issues: self.keybinding_issues.clone(),
-            color_preview: self.color_picker.as_ref().map(|p| p.color),
-            eyedropper: self.color_picker.as_ref().map(|p| p.native.state),
+            color_preview: self.properties.picker.as_ref().map(|p| p.color),
+            eyedropper: self.properties.picker.as_ref().map(|p| p.native.state),
             shortcuts: self.shortcuts_open.then(|| {
                 let platform = actions::Platform::current();
                 let rows = actions::actions()

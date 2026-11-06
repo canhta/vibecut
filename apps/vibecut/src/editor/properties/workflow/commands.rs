@@ -1,6 +1,8 @@
 //! Adapts property edits to engine patches.
 
-use crate::editor::properties::{Editor, Error, ItemId, ItemParamPatch, Result};
+use crate::editor::properties::{
+    Editor, ElementKind, Error, ItemId, ItemParamPatch, Result, element_kind, single,
+};
 
 impl Editor {
     /// The inspector and automation use the same registered atomic field edit.
@@ -21,7 +23,9 @@ impl Editor {
                 .trim()
                 .parse::<f64>()
                 .map_err(|_| Error::Invalid("speed"))?;
-            let (_, maintain_pitch, _) = self.retime_of(item).ok_or(Error::Invalid("speed"))?;
+            let (_, maintain_pitch, _) =
+                crate::editor::properties::read::retime_of(self.session.project(), item)
+                    .ok_or(Error::Invalid("speed"))?;
             return self.set_speed(item, speed, maintain_pitch);
         }
         let patch = item_patch(field, value)?;
@@ -127,4 +131,13 @@ fn parse_percent(value: &str) -> Result<f32> {
         return Err(Error::Invalid("percentage"));
     }
     Ok(value)
+}
+
+impl Editor {
+    pub(in crate::editor) fn selected_item_id(&self) -> Option<ItemId> {
+        single(&self.selection)
+    }
+    pub(in crate::editor) fn element_kind(&self, id: ItemId) -> Option<(ElementKind, bool)> {
+        element_kind(self.session.project(), id)
+    }
 }

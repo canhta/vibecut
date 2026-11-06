@@ -199,27 +199,4 @@ impl Editor {
         self.sync_preview();
         Ok(())
     }
-    pub(in crate::editor) fn effect_param_value(
-        &self,
-        item: ItemId,
-        effect: &str,
-        key: &str,
-    ) -> Option<f64> {
-        let effect = self
-            .session
-            .project()
-            .data()
-            .scene()
-            .timeline
-            .iter()
-            .flat_map(|track| &track.items)
-            .find(|candidate| candidate.id == item)?
-            .effects
-            .iter()
-            .find(|candidate| candidate.id == effect)?;
-        match (&effect.params, key) {
-            (project::EffectParams::Blur { intensity }, "intensity") => Some(*intensity),
-            _ => None,
-        }
-    }
 }

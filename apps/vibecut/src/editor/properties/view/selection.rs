@@ -1,23 +1,22 @@
 //! Renders shared selection properties.
 use crate::kit;
 
-use crate::editor::properties::{
-    Editor, Id, SelectionScope, Text, catalog, egui, shared_fields, theme,
-};
+use super::Panel;
+use crate::editor::properties::{Id, SelectionScope, Text, catalog, egui, shared_fields, theme};
 
-impl Editor {
-    pub(in crate::editor) fn shared_inspector(&mut self, ui: &mut egui::Ui) {
-        if self.property_selection != self.selection {
-            self.property_drafts.clear();
-            self.property_selection = self.selection.clone();
+impl Panel<'_, '_> {
+    pub(super) fn shared_inspector(&mut self, ui: &mut egui::Ui) {
+        if self.state.selection != *self.cx.selection {
+            self.state.drafts.clear();
+            self.state.selection = self.cx.selection.clone();
         }
         ui.label(catalog::format_count(
-            self.preferences.locale,
-            self.selection.len() as u64,
+            self.cx.locale,
+            self.cx.selection.len() as u64,
             Text::SelectedCountOne,
             Text::SelectedCountOther,
         ));
-        match self.selection_scopes.active(&self.selection) {
+        match self.cx.scope {
             SelectionScope::MaskPoints => {
                 ui.label(self.tr(Text::MaskPoints));
             }
@@ -26,13 +25,13 @@ impl Editor {
             }
             _ => {}
         }
-        let fields = shared_fields(self.session.project(), &self.selection);
+        let fields = shared_fields(self.cx.session.project(), &self.cx.selection);
         if fields.is_empty() {
             ui.label(self.tr(Text::NoSharedFields));
         }
         self.shared_field_controls(ui, fields);
     }
-    pub(in crate::editor) fn shared_field_controls(
+    pub(super) fn shared_field_controls(
         &mut self,
         ui: &mut egui::Ui,
         fields: impl IntoIterator<Item = crate::selection::SharedField>,
@@ -68,11 +67,7 @@ impl Editor {
                                         &response,
                                     );
                                     if response.clicked() {
-                                        if let Err(error) =
-                                            self.set_shared_field("blendMode", mode.id())
-                                        {
-                                            self.error = Some(error.to_string());
-                                        }
+                                        self.set_shared_field("blendMode", mode.id());
                                         ui.close();
                                     }
                                 }
@@ -120,10 +115,8 @@ impl Editor {
                     egui::WidgetInfo::labeled(egui::Role::ComboBox, true, self.tr(Text::TextFont))
                 });
                 self.remember("inspector.text_font", &response);
-                if let Some(font) = chosen
-                    && let Err(error) = self.set_shared_field("text_font", &font)
-                {
-                    self.error = Some(error.to_string());
+                if let Some(font) = chosen {
+                    self.set_shared_field("text_font", &font);
                 }
                 self.compatible_count(ui, field.compatible);
                 continue;
@@ -148,16 +141,15 @@ impl Editor {
                         .filter(|value| *value != "none")
                         .unwrap_or("#000000A0");
                     let value = if checked { color } else { "none" };
-                    if let Err(error) = self.set_shared_field("text_background", value) {
-                        self.error = Some(error.to_string());
-                    }
+                    self.set_shared_field("text_background", value);
                 }
                 if enabled {
                     let id = "inspector.text_background_color";
                     let (row, mut value_ui) = self.row_value_ui(ui, theme::size::PROPERTY_ROW);
                     self.row_label(ui, row, self.tr(Text::BackgroundColor));
                     let mut value = self
-                        .property_drafts
+                        .state
+                        .drafts
                         .get("text_background_color")
                         .cloned()
                         .or_else(|| field.value.clone())
@@ -173,18 +165,16 @@ impl Editor {
                     );
                     self.remember(id, &response);
                     if response.changed() {
-                        self.property_drafts
+                        self.state
+                            .drafts
                             .insert("text_background_color".to_owned(), value.clone());
                     }
                     if (response.lost_focus()
                         || (response.has_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter))))
-                        && self.property_drafts.contains_key("text_background_color")
+                        && self.state.drafts.contains_key("text_background_color")
                     {
-                        let result = self.set_shared_field("text_background_color", &value);
-                        self.property_drafts.remove("text_background_color");
-                        if let Err(e) = result {
-                            self.error = Some(e.to_string());
-                        }
+                        self.set_shared_field("text_background_color", &value);
+                        self.state.drafts.remove("text_background_color");
                     }
                 }
                 self.compatible_count(ui, field.compatible);
@@ -201,7 +191,8 @@ impl Editor {
                 _ => (Text::TextColor, "inspector.text_color"),
             };
             let mut value = self
-                .property_drafts
+                .state
+                .drafts
                 .get(field.id)
                 .cloned()
                 .unwrap_or_else(|| field.value.clone().unwrap_or_default());
@@ -226,25 +217,20 @@ impl Editor {
             };
             self.remember(id, &response);
             if response.changed() {
-                self.property_drafts
-                    .insert(field.id.to_owned(), value.clone());
+                self.state.drafts.insert(field.id.to_owned(), value.clone());
             }
             self.compatible_count(ui, field.compatible);
             let commit_key = response.has_focus()
                 && ui.input(|i| {
                     i.key_pressed(egui::Key::Enter) && (!multiline || i.modifiers.command)
                 });
-            if (response.lost_focus() || commit_key) && self.property_drafts.contains_key(field.id)
-            {
-                let result = self.set_shared_field(field.id, &value);
-                self.property_drafts.remove(field.id);
-                if let Err(e) = result {
-                    self.error = Some(e.to_string());
-                }
+            if (response.lost_focus() || commit_key) && self.state.drafts.contains_key(field.id) {
+                self.set_shared_field(field.id, &value);
+                self.state.drafts.remove(field.id);
             }
         }
     }
-    pub(in crate::editor) fn audio_mute_control(
+    pub(super) fn audio_mute_control(
         &mut self,
         ui: &mut egui::Ui,
         field: &crate::selection::SharedField,
@@ -256,24 +242,22 @@ impl Editor {
                 .indeterminate(field.value.is_none()),
         );
         self.remember("inspector.audio_muted", &response);
-        if response.changed()
-            && let Err(error) = self.set_shared_field("audio_muted", &muted.to_string())
-        {
-            self.error = Some(error.to_string());
+        if response.changed() {
+            self.set_shared_field("audio_muted", &muted.to_string());
         }
-        if self.selection.len() > 1 {
+        if self.cx.selection.len() > 1 {
             self.compatible_count(ui, field.compatible);
         }
     }
-    pub(in crate::editor) fn compatible_count(&self, ui: &mut egui::Ui, compatible: usize) {
-        if self.selection.len() < 2 {
+    pub(super) fn compatible_count(&self, ui: &mut egui::Ui, compatible: usize) {
+        if self.cx.selection.len() < 2 {
             return;
         }
-        let compatible = catalog::number(self.preferences.locale, compatible as u64);
-        let total = catalog::number(self.preferences.locale, self.selection.len() as u64);
+        let compatible = catalog::number(self.cx.locale, compatible as u64);
+        let total = catalog::number(self.cx.locale, self.cx.selection.len() as u64);
         ui.label(
             egui::RichText::new(catalog::format(
-                self.preferences.locale,
+                self.cx.locale,
                 Text::CompatibleCount,
                 &[("compatible", &compatible), ("total", &total)],
             ))

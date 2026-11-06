@@ -157,7 +157,7 @@ impl Editor {
             Ok(item) => {
                 self.selection = [item].into_iter().collect();
                 self.selection_scopes = SelectionScopes::default();
-                self.property_drafts.clear();
+                self.properties.clear_drafts();
             }
             Err(error) => {
                 let detail = error_detail(&error);

@@ -31,11 +31,9 @@ impl Editor {
         self.selection_changed();
     }
     pub(in crate::editor) fn selection_changed(&mut self) {
-        if self.scrub.is_some() {
-            self.finish_scrub(false);
-        }
+        self.finish_scrub(false);
         self.selection_scopes = SelectionScopes::default();
-        self.property_drafts.clear();
+        self.properties.clear_drafts();
         if let Err(e) = self.session.set_selection(self.selection.clone()) {
             self.error = Some(e.to_string());
         }

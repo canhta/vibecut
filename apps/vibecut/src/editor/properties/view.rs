@@ -1,13 +1,15 @@
 //! Renders the properties area: a 42 px tab strip, then collapsible sections of rows.
 
-use super::{ColorTarget, Editor, Rect, Text, Vec2, catalog, egui, theme};
+use super::{
+    Action, ColorTarget, Context, Rect, State, Text, Vec2, Widget, catalog, egui, element_kind,
+    single, theme,
+};
 use crate::kit;
 
 mod dialog;
-pub(in crate::editor) use dialog::show_dialog;
 
 use super::{
-    AUDIO_GAIN_SCRUB, ElementKind, Error, ItemId, OPACITY_SCRUB, PropertiesTab, SelectionScope,
+    AUDIO_GAIN_SCRUB, ElementKind, ItemId, OPACITY_SCRUB, PropertiesTab, SelectionScope,
     TEXT_SIZE_SCRUB, shared_fields,
 };
 
@@ -21,13 +23,29 @@ fn is_basic(tab: PropertiesTab) -> bool {
 /// Content inset from the panel edge, measured.
 const INSET: f32 = 12.0;
 
-pub(in crate::editor) fn show(editor: &mut Editor, ui: &mut egui::Ui) {
+/// One frame of the panel: the area's state, the shared context and the
+/// requests collected for the frame to route.
+struct Panel<'a, 'c> {
+    state: &'a mut State,
+    cx: &'a Context<'c>,
+    actions: Vec<Action>,
+}
+
+/// Draw the whole panel (its 42 px header included) into `ui`'s rect and return
+/// what the frame must route. Edits never touch the session from here.
+pub(in crate::editor) fn show(
+    state: &mut State,
+    cx: &Context<'_>,
+    ui: &mut egui::Ui,
+) -> Vec<Action> {
     // The area draws its own strip, so it fills the slot the frame measured.
-    let area = editor
-        .panels
-        .get("inspector")
-        .copied()
-        .unwrap_or_else(|| ui.max_rect());
+    let area = ui.max_rect();
+    state.set_area(area);
+    let mut panel = Panel {
+        state,
+        cx,
+        actions: Vec::new(),
+    };
     let mut ui = ui.new_child(
         egui::UiBuilder::new()
             .id_salt("inspector.area")
@@ -35,147 +53,234 @@ pub(in crate::editor) fn show(editor: &mut Editor, ui: &mut egui::Ui) {
     );
     ui.set_clip_rect(area);
     ui.spacing_mut().item_spacing = Vec2::ZERO;
-    if !editor.details && editor.selection.len() == 1 {
-        editor.properties(&mut ui, area);
-        return;
-    }
-    editor.property_focus = None;
-    // Without a single element selected the strip switches the project views.
-    let ids = [
-        "inspector.project".to_owned(),
-        "inspector.details".to_owned(),
-    ];
-    let labels = [editor.tr(Text::Project), editor.tr(Text::Details)];
-    let selected = usize::from(editor.details);
-    let tabs = kit::text_tabs(&mut ui, &ids, &labels, selected);
-    for (id, response) in ids.iter().zip(&tabs) {
-        editor.remember(id.clone(), response);
-        if response.clicked() {
-            editor.action(id);
+    panel.area(&mut ui, area);
+    panel.picker_dialog(ui.ctx());
+    panel.actions
+}
+
+impl<'a, 'c> Panel<'a, 'c> {
+    fn area(&mut self, ui: &mut egui::Ui, area: Rect) {
+        if !self.state.details && self.cx.selection.len() == 1 {
+            self.properties(ui, area);
+            return;
+        }
+        self.state.focus = None;
+        // Without a single element selected the strip switches the project views.
+        const IDS: [&str; 2] = ["inspector.project", "inspector.details"];
+        let ids = IDS.map(str::to_owned);
+        let labels = [self.tr(Text::Project), self.tr(Text::Details)];
+        let selected = usize::from(self.state.details);
+        let tabs = kit::text_tabs(ui, &ids, &labels, selected);
+        for (id, response) in IDS.into_iter().zip(&tabs) {
+            self.remember(id, response);
+            if response.clicked() {
+                self.actions.push(Action::Activate(id));
+            }
+        }
+        let mut body = body_ui(ui, area);
+        if self.state.details {
+            self.project_details(&mut body);
+        } else if self.cx.selection.is_empty() {
+            self.panel_section(
+                &mut body,
+                "inspector.section.canvas",
+                "inspector.canvas",
+                Text::Canvas,
+                true,
+                false,
+                |panel, ui| {
+                    panel.color_row(
+                        ui,
+                        "inspector.canvas_background",
+                        Text::CanvasBackground,
+                        ColorTarget::Canvas,
+                    );
+                },
+            );
+        } else {
+            egui::ScrollArea::vertical()
+                .id_salt("inspector.shared")
+                .show(&mut body, |ui| {
+                    self.panel_section(
+                        ui,
+                        "inspector.section.selection",
+                        "inspector.selection",
+                        Text::Selection,
+                        true,
+                        false,
+                        |panel, ui| panel.shared_inspector(ui),
+                    );
+                });
         }
     }
-    let mut body = body_ui(&mut ui, area);
-    if editor.details {
-        project_details(editor, &mut body);
-    } else if editor.selection.is_empty() {
-        editor.panel_section(
-            &mut body,
+
+    fn tr(&self, key: Text) -> &'static str {
+        catalog::text(self.cx.locale, key)
+    }
+    fn secondary(&self) -> egui::Color32 {
+        theme::secondary(self.cx.dark)
+    }
+    fn text_color(&self) -> egui::Color32 {
+        theme::text(self.cx.dark)
+    }
+    fn control_fill(&self) -> egui::Color32 {
+        theme::field(self.cx.dark)
+    }
+    fn fail(&mut self, error: impl ToString) {
+        self.actions.push(Action::Error(error.to_string()));
+    }
+    fn remember(&mut self, id: impl Into<String>, response: &egui::Response) {
+        self.remember_with_icon(id, None, response);
+    }
+    fn remember_with_icon(
+        &mut self,
+        id: impl Into<String>,
+        icon: Option<&'static str>,
+        response: &egui::Response,
+    ) {
+        let id = id.into();
+        response
+            .ctx
+            .accesskit_node_builder(response.id, |node| node.set_author_id(&id));
+        self.state.widgets.push(Widget {
+            id,
+            icon,
+            tooltip: None,
+            response: response.clone(),
+        });
+    }
+    #[allow(clippy::too_many_arguments)]
+    fn icon_only(
+        &mut self,
+        ui: &mut egui::Ui,
+        id: &str,
+        icon: kit::Icon,
+        label: &str,
+        selected: Option<bool>,
+        enabled: bool,
+    ) -> bool {
+        let response = ui
+            .add_enabled_ui(enabled, |ui| {
+                kit::icon_button(ui, id, icon, label, selected.unwrap_or(false))
+            })
+            .inner;
+        response.widget_info(|| {
+            if let Some(selected) = selected {
+                egui::WidgetInfo::selected(egui::Role::CheckBox, enabled, selected, label)
+            } else {
+                egui::WidgetInfo::labeled(egui::Role::Button, enabled, label)
+            }
+        });
+        self.remember_with_icon(id, Some(icon.name()), &response);
+        if let Some(widget) = self.state.widgets.last_mut() {
+            widget.tooltip = Some(label.to_owned());
+        }
+        enabled && response.clicked()
+    }
+
+    fn set_item_field(&mut self, item: ItemId, field: &str, value: &str) {
+        self.actions.push(Action::SetField {
+            item,
+            field: field.to_owned(),
+            value: value.to_owned(),
+        });
+    }
+    fn set_shared_field(&mut self, field: &str, value: &str) {
+        self.actions.push(Action::SetShared {
+            field: field.to_owned(),
+            value: value.to_owned(),
+        });
+    }
+    fn set_speed(&mut self, item: ItemId, speed: f64, maintain_pitch: bool) {
+        self.actions.push(Action::SetSpeed {
+            item,
+            speed,
+            maintain_pitch,
+        });
+    }
+    fn set_effect_param(&mut self, item: ItemId, effect: &str, key: &str, value: f64) {
+        self.actions.push(Action::SetEffectParam {
+            item,
+            effect: effect.to_owned(),
+            key: key.to_owned(),
+            value,
+        });
+    }
+
+    fn project_details(&mut self, ui: &mut egui::Ui) {
+        self.panel_section(
+            ui,
             "inspector.section.canvas",
             "inspector.canvas",
             Text::Canvas,
             true,
             false,
-            |editor, ui| {
-                editor.color_row(
-                    ui,
-                    "inspector.canvas_background",
-                    Text::CanvasBackground,
-                    ColorTarget::Canvas,
+            |panel, ui| {
+                let locale = panel.cx.locale;
+                let data = panel.cx.session.project().data();
+                let width = catalog::number(locale, u64::from(data.canvas.width));
+                let height = catalog::number(locale, u64::from(data.canvas.height));
+                let numerator = catalog::signed(locale, data.canvas.fps.num());
+                let denominator = catalog::signed(locale, data.canvas.fps.den());
+                let rate = catalog::number(locale, u64::from(data.settings.audio_sample_rate));
+                let lines = [
+                    catalog::format(
+                        locale,
+                        Text::CanvasSize,
+                        &[("width", &width), ("height", &height)],
+                    ),
+                    catalog::format(
+                        locale,
+                        Text::FrameRate,
+                        &[("num", &numerator), ("den", &denominator)],
+                    ),
+                    catalog::format(locale, Text::SampleRate, &[("rate", &rate)]),
+                ];
+                for line in lines {
+                    panel.detail_row(ui, &line);
+                }
+            },
+        );
+        self.panel_section(
+            ui,
+            "inspector.section.metadata",
+            "inspector.metadata",
+            Text::Metadata,
+            false,
+            false,
+            |panel, ui| {
+                let locale = panel.cx.locale;
+                let metadata = panel.cx.session.metadata();
+                let created = catalog::date(locale, metadata.created_unix_ms);
+                let modified = catalog::date(locale, metadata.modified_unix_ms);
+                for line in [
+                    catalog::format(locale, Text::CreatedDate, &[("date", &created)]),
+                    catalog::format(locale, Text::ModifiedDate, &[("date", &modified)]),
+                ] {
+                    panel.detail_row(ui, &line);
+                }
+            },
+        );
+    }
+
+    fn detail_row(&self, ui: &mut egui::Ui, text: &str) {
+        ui.allocate_ui_with_layout(
+            Vec2::new(ui.available_width(), theme::size::PROPERTY_ROW),
+            egui::Layout::left_to_right(egui::Align::Center),
+            |ui| {
+                ui.label(
+                    egui::RichText::new(text)
+                        .size(theme::type_size::BODY)
+                        .color(self.secondary()),
                 );
             },
         );
-    } else {
-        egui::ScrollArea::vertical()
-            .id_salt("inspector.shared")
-            .show(&mut body, |ui| {
-                editor.panel_section(
-                    ui,
-                    "inspector.section.selection",
-                    "inspector.selection",
-                    Text::Selection,
-                    true,
-                    false,
-                    |editor, ui| editor.shared_inspector(ui),
-                );
-            });
     }
-}
 
-fn body_ui(ui: &mut egui::Ui, area: Rect) -> egui::Ui {
-    let rect = Rect::from_min_max(
-        egui::pos2(area.left() + INSET, area.top() + theme::size::TAB_STRIP),
-        egui::pos2(area.right() - INSET, area.bottom()),
-    );
-    let mut body = ui.new_child(egui::UiBuilder::new().max_rect(rect));
-    body.set_clip_rect(rect.intersect(ui.clip_rect()));
-    body.spacing_mut().item_spacing = Vec2::ZERO;
-    body
-}
-
-fn project_details(editor: &mut Editor, ui: &mut egui::Ui) {
-    editor.panel_section(
-        ui,
-        "inspector.section.canvas",
-        "inspector.canvas",
-        Text::Canvas,
-        true,
-        false,
-        |editor, ui| {
-            let locale = editor.preferences.locale;
-            let data = editor.session.project().data();
-            let width = catalog::number(locale, u64::from(data.canvas.width));
-            let height = catalog::number(locale, u64::from(data.canvas.height));
-            let numerator = catalog::signed(locale, data.canvas.fps.num());
-            let denominator = catalog::signed(locale, data.canvas.fps.den());
-            let rate = catalog::number(locale, u64::from(data.settings.audio_sample_rate));
-            let lines = [
-                catalog::format(
-                    locale,
-                    Text::CanvasSize,
-                    &[("width", &width), ("height", &height)],
-                ),
-                catalog::format(
-                    locale,
-                    Text::FrameRate,
-                    &[("num", &numerator), ("den", &denominator)],
-                ),
-                catalog::format(locale, Text::SampleRate, &[("rate", &rate)]),
-            ];
-            for line in lines {
-                detail_row(editor, ui, &line);
-            }
-        },
-    );
-    editor.panel_section(
-        ui,
-        "inspector.section.metadata",
-        "inspector.metadata",
-        Text::Metadata,
-        false,
-        false,
-        |editor, ui| {
-            let locale = editor.preferences.locale;
-            let created = catalog::date(locale, editor.session.metadata().created_unix_ms);
-            let modified = catalog::date(locale, editor.session.metadata().modified_unix_ms);
-            for line in [
-                catalog::format(locale, Text::CreatedDate, &[("date", &created)]),
-                catalog::format(locale, Text::ModifiedDate, &[("date", &modified)]),
-            ] {
-                detail_row(editor, ui, &line);
-            }
-        },
-    );
-}
-
-fn detail_row(editor: &Editor, ui: &mut egui::Ui, text: &str) {
-    ui.allocate_ui_with_layout(
-        Vec2::new(ui.available_width(), theme::size::PROPERTY_ROW),
-        egui::Layout::left_to_right(egui::Align::Center),
-        |ui| {
-            ui.label(
-                egui::RichText::new(text)
-                    .size(theme::type_size::BODY)
-                    .color(editor.secondary()),
-            );
-        },
-    );
-}
-
-impl Editor {
     /// A collapsible section: header with caret and optional reset, rows below.
     /// Returns whether reset was clicked; the open state lives in preferences.
     #[allow(clippy::too_many_arguments)]
-    pub(in crate::editor) fn panel_section(
+    fn panel_section(
         &mut self,
         ui: &mut egui::Ui,
         id: &'static str,
@@ -185,7 +290,7 @@ impl Editor {
         reset: bool,
         body: impl FnOnce(&mut Self, &mut egui::Ui),
     ) -> bool {
-        let stored = self.preferences.section_open(key, default_open);
+        let stored = self.cx.preferences.section_open(key, default_open);
         let mut open = stored;
         let label = self.tr(label);
         let reset_label = self.tr(Text::ResetValue);
@@ -196,10 +301,8 @@ impl Editor {
             self.remember(format!("{id}.reset"), response);
             response.clicked()
         });
-        if open != stored
-            && let Err(error) = self.set_section_open(key, open)
-        {
-            self.error = Some(error.to_string());
+        if open != stored {
+            self.actions.push(Action::SetSection { key, open });
         }
         if open {
             body(self, ui);
@@ -208,17 +311,17 @@ impl Editor {
     }
 
     /// One selected element: its type's tab set, remembered per element type.
-    pub(in crate::editor) fn properties(&mut self, ui: &mut egui::Ui, area: Rect) {
-        let Some(item) = self.selected_item_id() else {
+    fn properties(&mut self, ui: &mut egui::Ui, area: Rect) {
+        let Some(item) = single(self.cx.selection) else {
             return;
         };
-        let Some((kind, has_audio)) = self.element_kind(item) else {
+        let Some((kind, has_audio)) = element_kind(self.cx.session.project(), item) else {
             return;
         };
-        if self.property_selection != self.selection {
-            self.property_drafts.clear();
-            self.property_focus = None;
-            self.property_selection = self.selection.clone();
+        if self.state.selection != *self.cx.selection {
+            self.state.drafts.clear();
+            self.state.focus = None;
+            self.state.selection = self.cx.selection.clone();
         }
         let tabs: Vec<PropertiesTab> = kind
             .tabs()
@@ -229,6 +332,7 @@ impl Editor {
             })
             .collect();
         let stored = self
+            .cx
             .preferences
             .properties_tabs
             .get(kind.id())
@@ -303,20 +407,17 @@ impl Editor {
             body.add_space(12.0);
         }
         if let Some(tab) = clicked.or(sub_clicked) {
-            self.property_focus = None;
-            let mut next = self.preferences.properties_tabs.clone();
-            next.insert(kind.id().to_owned(), tab.id().to_owned());
-            let value = serde_json::to_value(next).map_err(|_| Error::Invalid("tabs"));
-            match value.and_then(|value| self.preferences.set("properties_tabs", value)) {
-                Ok(()) => {}
-                Err(error) => self.error = Some(error.to_string()),
-            }
+            self.state.focus = None;
+            self.actions.push(Action::SetTab {
+                kind: kind.id(),
+                tab: tab.id(),
+            });
         }
         if matches!(
-            self.selection_scopes.active(&self.selection),
+            self.cx.scope,
             SelectionScope::MaskPoints | SelectionScope::Keyframes
         ) {
-            let scope = match self.selection_scopes.active(&self.selection) {
+            let scope = match self.cx.scope {
                 SelectionScope::MaskPoints => Text::MaskPoints,
                 _ => Text::Keyframes,
             };
@@ -332,7 +433,7 @@ impl Editor {
             .show(&mut body, |ui| self.properties_tab(ui, item, kind, active));
     }
 
-    pub(in crate::editor) fn properties_tab(
+    fn properties_tab(
         &mut self,
         ui: &mut egui::Ui,
         item: ItemId,
@@ -340,7 +441,14 @@ impl Editor {
         tab: PropertiesTab,
     ) {
         match tab {
-            PropertiesTab::Text if self.item_value(item, TEXT_SIZE_SCRUB.field).is_some() => {
+            PropertiesTab::Text
+                if super::read::item_value(
+                    self.cx.session.project(),
+                    item,
+                    TEXT_SIZE_SCRUB.field,
+                )
+                .is_some() =>
+            {
                 self.panel_section(
                     ui,
                     "inspector.section.text",
@@ -348,25 +456,25 @@ impl Editor {
                     Text::TextItem,
                     true,
                     false,
-                    |editor, ui| {
-                        for field in shared_fields(editor.session.project(), &editor.selection) {
+                    |panel, ui| {
+                        for field in shared_fields(panel.cx.session.project(), panel.cx.selection) {
                             match field.id {
-                                "text_size" => editor.scrub_field(ui, item, TEXT_SIZE_SCRUB),
-                                "text_color" => editor.text_color_field(ui, item),
+                                "text_size" => panel.scrub_field(ui, item, TEXT_SIZE_SCRUB),
+                                "text_color" => panel.text_color_field(ui, item),
                                 "text_content" | "text_font" | "text_background"
                                 | "text_position_x" | "text_position_y" => {
-                                    editor.shared_field_controls(ui, std::iter::once(field));
+                                    panel.shared_field_controls(ui, std::iter::once(field));
                                 }
                                 _ => {}
                             }
                         }
-                        editor.color_row(
+                        panel.color_row(
                             ui,
                             "inspector.text_color.picker",
                             Text::ColorPicker,
                             ColorTarget::Text(item),
                         );
-                        editor.color_row(
+                        panel.color_row(
                             ui,
                             "inspector.background_color",
                             Text::BackgroundColor,
@@ -383,54 +491,45 @@ impl Editor {
                     Text::Transform,
                     true,
                     true,
-                    |editor, ui| {
+                    |panel, ui| {
                         use project::TransformField as F;
-                        let mut scale = transform_scrub(F::ScaleX);
-                        if editor.uniform_scale {
+                        let mut scale = super::transform_scrub(F::ScaleX);
+                        if panel.state.uniform_scale {
                             scale.label = Text::Scale;
                         }
-                        editor.slider_row(ui, item, scale);
-                        let (row, mut value_ui) =
-                            editor.row_value_ui(ui, theme::size::PROPERTY_ROW);
-                        editor.row_label(ui, row, editor.tr(Text::UniformScale));
-                        let mut uniform = editor.uniform_scale;
+                        panel.slider_row(ui, item, scale);
+                        let (row, mut value_ui) = panel.row_value_ui(ui, theme::size::PROPERTY_ROW);
+                        panel.row_label(ui, row, panel.tr(Text::UniformScale));
+                        let mut uniform = panel.state.uniform_scale;
                         let width = value_ui.available_width();
                         value_ui.add_space((width - theme::size::TOGGLE_WIDTH).max(0.0));
                         let response = kit::toggle(
                             &mut value_ui,
                             "inspector.uniform_scale",
                             &mut uniform,
-                            editor.tr(Text::UniformScale),
+                            panel.tr(Text::UniformScale),
                         );
-                        editor.remember("inspector.uniform_scale", &response);
-                        editor.uniform_scale = uniform;
+                        panel.remember("inspector.uniform_scale", &response);
+                        panel.state.uniform_scale = uniform;
                         if !uniform {
-                            editor.slider_row(ui, item, transform_scrub(F::ScaleY));
+                            panel.slider_row(ui, item, super::transform_scrub(F::ScaleY));
                         }
-                        editor.number_row(
+                        panel.number_row(
                             ui,
                             item,
                             Text::Position,
                             &[
-                                (transform_scrub(F::PositionX), Some("X")),
-                                (transform_scrub(F::PositionY), Some("Y")),
+                                (super::transform_scrub(F::PositionX), Some("X")),
+                                (super::transform_scrub(F::PositionY), Some("Y")),
                             ],
                         );
-                        editor.scrub_field(ui, item, transform_scrub(F::Rotate));
+                        panel.scrub_field(ui, item, super::transform_scrub(F::Rotate));
                     },
                 );
                 if reset {
-                    self.property_drafts.clear();
-                    self.property_focus = None;
-                    for field in project::TransformField::ALL {
-                        if let Err(error) = self.set_item_field(
-                            item,
-                            field.path(),
-                            &field.default_value().to_string(),
-                        ) {
-                            self.error = Some(error.to_string());
-                        }
-                    }
+                    self.state.drafts.clear();
+                    self.state.focus = None;
+                    self.actions.push(Action::ResetTransform(item));
                 }
             }
             PropertiesTab::Graphic => {
@@ -441,14 +540,14 @@ impl Editor {
                     Text::Graphic,
                     true,
                     false,
-                    |editor, ui| {
-                        editor.color_row(
+                    |panel, ui| {
+                        panel.color_row(
                             ui,
                             "inspector.graphic_fill",
                             Text::GraphicFill,
                             ColorTarget::GraphicFill(item),
                         );
-                        editor.color_row(
+                        panel.color_row(
                             ui,
                             "inspector.graphic_stroke",
                             Text::GraphicStroke,
@@ -458,15 +557,7 @@ impl Editor {
                 );
             }
             PropertiesTab::Masks => {
-                let masks = self
-                    .session
-                    .project()
-                    .data()
-                    .scene()
-                    .timeline
-                    .iter()
-                    .flat_map(|t| &t.items)
-                    .find(|i| i.id == item)
+                let masks = super::read::item(self.cx.session.project(), item)
                     .map(|i| i.masks.iter().map(|m| m.id.clone()).collect::<Vec<_>>())
                     .unwrap_or_default();
                 if !masks.is_empty() {
@@ -477,9 +568,9 @@ impl Editor {
                         Text::Masks,
                         true,
                         false,
-                        |editor, ui| {
+                        |panel, ui| {
                             for mask in masks {
-                                editor.color_row(
+                                panel.color_row(
                                     ui,
                                     &format!("inspector.mask.{mask}.stroke"),
                                     Text::GraphicStroke,
@@ -498,14 +589,14 @@ impl Editor {
                     Text::Audio,
                     true,
                     false,
-                    |editor, ui| {
-                        editor.scrub_field(ui, item, AUDIO_GAIN_SCRUB);
+                    |panel, ui| {
+                        panel.scrub_field(ui, item, AUDIO_GAIN_SCRUB);
                         if let Some(field) =
-                            shared_fields(editor.session.project(), &editor.selection)
+                            shared_fields(panel.cx.session.project(), panel.cx.selection)
                                 .into_iter()
                                 .find(|field| field.id == "audio_muted")
                         {
-                            editor.audio_mute_control(ui, &field);
+                            panel.audio_mute_control(ui, &field);
                         }
                     },
                 );
@@ -518,7 +609,7 @@ impl Editor {
                     Text::Speed,
                     true,
                     false,
-                    |editor, ui| editor.speed_controls(ui, item),
+                    |panel, ui| panel.speed_controls(ui, item),
                 );
             }
             PropertiesTab::Blending => {
@@ -529,9 +620,9 @@ impl Editor {
                     Text::Blending,
                     true,
                     false,
-                    |editor, ui| {
-                        editor.blend_control(ui, item);
-                        editor.slider_row(ui, item, OPACITY_SCRUB);
+                    |panel, ui| {
+                        panel.blend_control(ui, item);
+                        panel.slider_row(ui, item, OPACITY_SCRUB);
                     },
                 );
             }
@@ -551,6 +642,17 @@ impl Editor {
     }
 }
 
+fn body_ui(ui: &mut egui::Ui, area: Rect) -> egui::Ui {
+    let rect = Rect::from_min_max(
+        egui::pos2(area.left() + INSET, area.top() + theme::size::TAB_STRIP),
+        egui::pos2(area.right() - INSET, area.bottom()),
+    );
+    let mut body = ui.new_child(egui::UiBuilder::new().max_rect(rect));
+    body.set_clip_rect(rect.intersect(ui.clip_rect()));
+    body.spacing_mut().item_spacing = Vec2::ZERO;
+    body
+}
+
 mod speed;
 
 mod effects;
@@ -560,5 +662,3 @@ mod appearance;
 mod number_edit;
 
 mod selection;
-
-use super::transform_scrub;
