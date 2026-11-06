@@ -1,10 +1,51 @@
 //! Renders appearance controls.
 use crate::editor::properties::{
-    BUTTON_ICON, Color32, ColorTarget, Editor, Icon, Id, ItemId, ItemParams, Text, catalog, egui,
-    icons, theme,
+    Color32, ColorTarget, Editor, Id, ItemId, ItemParams, Rect, Text, Vec2, catalog, egui, theme,
 };
 
+use crate::kit;
+
+fn value_ui_width(ui: &egui::Ui) -> f32 {
+    ui.available_width().min(FIELD_COLUMN)
+}
+
+const VALUE_COLUMN: f32 = 120.0;
+const FIELD_COLUMN: f32 = 150.0;
+
 impl Editor {
+    /// The right-hand region of a 39 px row, starting at the value column.
+    pub(in crate::editor) fn row_value_ui(
+        &self,
+        ui: &mut egui::Ui,
+        height: f32,
+    ) -> (Rect, egui::Ui) {
+        let (row, _) = ui.allocate_exact_size(
+            Vec2::new(ui.available_width(), height),
+            egui::Sense::hover(),
+        );
+        let value = Rect::from_min_max(egui::pos2(row.left() + VALUE_COLUMN, row.top()), row.max);
+        let child = ui.new_child(
+            egui::UiBuilder::new()
+                .max_rect(value)
+                .layout(egui::Layout::left_to_right(egui::Align::Center)),
+        );
+        (row, child)
+    }
+
+    pub(in crate::editor) fn row_label(&self, ui: &egui::Ui, row: Rect, text: &str) {
+        let color = theme::text(self.preferences.dark);
+        let galley = ui.painter().layout_no_wrap(
+            text.to_owned(),
+            egui::FontId::proportional(theme::type_size::BODY),
+            color,
+        );
+        ui.painter().galley(
+            egui::pos2(row.left(), row.center().y - galley.size().y / 2.0),
+            galley,
+            color,
+        );
+    }
+
     pub(in crate::editor) fn blend_control(&mut self, ui: &mut egui::Ui, item: ItemId) {
         let Some(current) = self
             .session
@@ -19,15 +60,15 @@ impl Editor {
         else {
             return;
         };
-        ui.add_space(theme::space::LG);
-        let caption = ui.label(self.tr(Text::BlendMode));
+        let (row, mut value_ui) = self.row_value_ui(ui, theme::size::PROPERTY_ROW);
+        self.row_label(ui, row, self.tr(Text::BlendMode));
         let label = self.tr(catalog::blend_label(current));
-        let response = ui
+        let response = value_ui
             .scope(|ui| {
-                ui.spacing_mut().interact_size.y = 26.0;
+                ui.spacing_mut().interact_size.y = theme::size::FIELD;
                 egui::ComboBox::from_id_salt(Id::unique("inspector.blendMode"))
                     .selected_text(label)
-                    .width(ui.available_width())
+                    .width(ui.available_width().min(FIELD_COLUMN))
                     .show_ui(ui, |ui| {
                         for mode in project::BlendMode::ALL {
                             let response = ui.selectable_label(
@@ -46,12 +87,17 @@ impl Editor {
                         }
                     })
                     .response
-                    .labelled_by(caption.id)
             })
             .inner;
+        response.widget_info(|| {
+            egui::WidgetInfo::labeled(egui::Role::ComboBox, true, self.tr(Text::BlendMode))
+        });
         self.remember("inspector.blendMode", &response);
     }
-    pub(in crate::editor) fn color_button(
+
+    /// A colour row: the label left, a swatch with its hex right. Clicking opens
+    /// the picker as a popover hanging off the panel's left edge.
+    pub(in crate::editor) fn color_row(
         &mut self,
         ui: &mut egui::Ui,
         id: &str,
@@ -62,19 +108,64 @@ impl Editor {
             return;
         };
         let [r, g, b, a] = color.0;
-        let response = ui.add(egui::Button::image_and_text(
-            icons::tinted(
-                Icon::CircleHalf,
-                BUTTON_ICON,
-                Color32::from_rgba_unmultiplied(r, g, b, a),
+        let (row, mut value_ui) = self.row_value_ui(ui, theme::size::PROPERTY_ROW);
+        self.row_label(ui, row, self.tr(label));
+        let dark = self.preferences.dark;
+        let (rect, response) = value_ui.allocate_exact_size(
+            Vec2::new(
+                value_ui.available_width().min(FIELD_COLUMN),
+                theme::size::FIELD,
             ),
-            self.tr(label),
-        ));
-        self.remember_with_icon(id, Some(Icon::CircleHalf.name()), &response);
-        if response.clicked()
-            && let Err(error) = self.open_color_picker(target)
-        {
-            self.error = Some(error.to_string());
+            egui::Sense::click(),
+        );
+        let fill = if response.hovered() {
+            theme::hover(dark)
+        } else {
+            theme::field(dark)
+        };
+        value_ui
+            .painter()
+            .rect_filled(rect, theme::radius::FIELD, fill);
+        let swatch = Rect::from_center_size(
+            egui::pos2(rect.left() + theme::space::MD + 8.0, rect.center().y),
+            Vec2::splat(16.0),
+        );
+        value_ui
+            .painter()
+            .rect_filled(swatch, 2.0, Color32::from_rgba_unmultiplied(r, g, b, a));
+        value_ui.painter().rect_stroke(
+            swatch,
+            2.0,
+            egui::Stroke::new(theme::space::HAIRLINE, theme::border(dark)),
+            egui::StrokeKind::Inside,
+        );
+        value_ui.painter().text(
+            egui::pos2(swatch.right() + theme::space::MD, rect.center().y),
+            egui::Align2::LEFT_CENTER,
+            format!("#{r:02X}{g:02X}{b:02X}"),
+            theme::label_font(),
+            theme::text(dark),
+        );
+        response
+            .widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, self.tr(label)));
+        let response = response.on_hover_text(self.tr(label));
+        self.remember_with_icon(id, None, &response);
+        if response.clicked() {
+            let panel_left = self
+                .panels
+                .get("inspector")
+                .map_or(rect.left(), |panel| panel.left());
+            match self.open_color_picker(target) {
+                Ok(()) => {
+                    if let Some(picker) = self.color_picker.as_mut() {
+                        picker.anchor = Some(egui::pos2(
+                            panel_left - theme::space::PANEL_GUTTER,
+                            row.top(),
+                        ));
+                    }
+                }
+                Err(error) => self.error = Some(error.to_string()),
+            }
         }
     }
     pub(in crate::editor) fn text_color_field(&mut self, ui: &mut egui::Ui, item: ItemId) {
@@ -97,26 +188,23 @@ impl Editor {
         else {
             return;
         };
-        ui.add_space(theme::space::LG);
-        let caption = ui.label(self.tr(Text::TextColor));
+        let (row, mut value_ui) = self.row_value_ui(ui, theme::size::PROPERTY_ROW);
+        self.row_label(ui, row, self.tr(Text::TextColor));
         let draft = self
             .property_drafts
             .get("text_color")
             .cloned()
             .unwrap_or(value);
         let mut next = draft;
-        let response = ui
-            .add_sized(
-                [ui.available_width(), 26.0],
-                egui::TextEdit::singleline(&mut next)
-                    .char_limit(64)
-                    .background_color(self.control_fill())
-                    .id(Id::unique("inspector.text_color"))
-                    .hint_text(
-                        egui::RichText::new(self.tr(Text::EmptyValue)).color(self.secondary()),
-                    ),
-            )
-            .labelled_by(caption.id);
+        let field_width = value_ui_width(&value_ui);
+        let response = kit::value_field(
+            &mut value_ui,
+            "inspector.text_color",
+            &mut next,
+            field_width,
+            None,
+            self.tr(Text::TextColor),
+        );
         self.remember("inspector.text_color", &response);
         if response.has_focus() {
             self.property_focus = Some("text_color".to_owned());

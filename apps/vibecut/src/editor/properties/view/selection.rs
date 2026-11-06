@@ -1,4 +1,5 @@
 //! Renders shared selection properties.
+use crate::kit;
 
 use crate::editor::properties::{
     Editor, Id, SelectionScope, Text, catalog, egui, shared_fields, theme,
@@ -42,20 +43,20 @@ impl Editor {
                 continue;
             }
             if field.id == "blendMode" {
-                ui.add_space(theme::space::LG);
-                let caption = ui.label(self.tr(Text::BlendMode));
+                let (row, mut value_ui) = self.row_value_ui(ui, theme::size::PROPERTY_ROW);
+                self.row_label(ui, row, self.tr(Text::BlendMode));
                 let current = field.value.as_ref().and_then(|v| {
                     serde_json::from_value::<project::BlendMode>(serde_json::json!(v)).ok()
                 });
                 let label = current
                     .map(|m| self.tr(catalog::blend_label(m)))
                     .unwrap_or_else(|| self.tr(Text::EmptyValue));
-                let response = ui
+                let response = value_ui
                     .scope(|ui| {
-                        ui.spacing_mut().interact_size.y = 26.0;
+                        ui.spacing_mut().interact_size.y = theme::size::FIELD;
                         egui::ComboBox::from_id_salt(Id::unique("inspector.blendMode"))
                             .selected_text(label)
-                            .width(ui.available_width())
+                            .width(ui.available_width().min(150.0))
                             .show_ui(ui, |ui| {
                                 for mode in project::BlendMode::ALL {
                                     let response = ui.selectable_label(
@@ -77,23 +78,25 @@ impl Editor {
                                 }
                             })
                             .response
-                            .labelled_by(caption.id)
                     })
                     .inner;
+                response.widget_info(|| {
+                    egui::WidgetInfo::labeled(egui::Role::ComboBox, true, self.tr(Text::BlendMode))
+                });
                 self.remember("inspector.blendMode", &response);
                 continue;
             }
-            ui.add_space(theme::space::MD);
             if field.id == "text_font" {
                 let current = field
                     .value
                     .clone()
                     .unwrap_or_else(|| self.tr(Text::EmptyValue).to_owned());
                 let mut chosen = None;
-                let caption = ui.label(self.tr(Text::TextFont));
-                let response = ui
+                let (row, mut value_ui) = self.row_value_ui(ui, theme::size::PROPERTY_ROW);
+                self.row_label(ui, row, self.tr(Text::TextFont));
+                let response = value_ui
                     .scope(|ui| {
-                        ui.spacing_mut().interact_size.y = 26.0;
+                        ui.spacing_mut().interact_size.y = theme::size::FIELD;
                         egui::ComboBox::from_id_salt(Id::unique("inspector.text_font"))
                             .selected_text(current)
                             .width(ui.available_width())
@@ -111,9 +114,11 @@ impl Editor {
                                 }
                             })
                             .response
-                            .labelled_by(caption.id)
                     })
                     .inner;
+                response.widget_info(|| {
+                    egui::WidgetInfo::labeled(egui::Role::ComboBox, true, self.tr(Text::TextFont))
+                });
                 self.remember("inspector.text_font", &response);
                 if let Some(font) = chosen
                     && let Err(error) = self.set_shared_field("text_font", &font)
@@ -126,10 +131,15 @@ impl Editor {
             if field.id == "text_background" {
                 let enabled = field.value.as_deref().is_some_and(|value| value != "none");
                 let mut checked = enabled;
-                let response = ui.add(
-                    egui::Checkbox::new(&mut checked, self.tr(Text::TextBackground))
-                        .indeterminate(field.value.is_none()),
+                let (row, mut value_ui) = self.row_value_ui(ui, theme::size::PROPERTY_ROW);
+                self.row_label(ui, row, self.tr(Text::TextBackground));
+                let response = value_ui.add(
+                    egui::Checkbox::without_text(&mut checked).indeterminate(field.value.is_none()),
                 );
+                let name = self.tr(Text::TextBackground);
+                response
+                    .ctx
+                    .accesskit_node_builder(response.id, |node| node.set_label(name));
                 self.remember("inspector.text_background", &response);
                 if response.changed() {
                     let color = field
@@ -144,23 +154,22 @@ impl Editor {
                 }
                 if enabled {
                     let id = "inspector.text_background_color";
-                    ui.label(self.tr(Text::BackgroundColor));
+                    let (row, mut value_ui) = self.row_value_ui(ui, theme::size::PROPERTY_ROW);
+                    self.row_label(ui, row, self.tr(Text::BackgroundColor));
                     let mut value = self
                         .property_drafts
                         .get("text_background_color")
                         .cloned()
                         .or_else(|| field.value.clone())
                         .unwrap_or_default();
-                    let response = ui.add_sized(
-                        [ui.available_width(), 26.0],
-                        egui::TextEdit::singleline(&mut value)
-                            .char_limit(64)
-                            .background_color(self.control_fill())
-                            .id(Id::unique(id))
-                            .hint_text(
-                                egui::RichText::new(self.tr(Text::EmptyValue))
-                                    .color(self.secondary()),
-                            ),
+                    let width = value_ui.available_width().min(150.0);
+                    let response = kit::value_field(
+                        &mut value_ui,
+                        id,
+                        &mut value,
+                        width,
+                        None,
+                        self.tr(Text::BackgroundColor),
                     );
                     self.remember(id, &response);
                     if response.changed() {
@@ -191,7 +200,6 @@ impl Editor {
                 "text_position_y" => (Text::TextPositionY, "inspector.text_position_y"),
                 _ => (Text::TextColor, "inspector.text_color"),
             };
-            let caption = ui.label(self.tr(label));
             let mut value = self
                 .property_drafts
                 .get(field.id)
@@ -199,29 +207,23 @@ impl Editor {
                 .unwrap_or_else(|| field.value.clone().unwrap_or_default());
             let multiline = field.id == "text_content";
             let response = if multiline {
+                let caption =
+                    ui.label(egui::RichText::new(self.tr(label)).size(theme::type_size::BODY));
+                ui.add_space(theme::space::XS);
                 ui.add_sized(
-                    [ui.available_width(), 48.0],
+                    [ui.available_width(), 56.0],
                     egui::TextEdit::multiline(&mut value)
                         .char_limit(4096)
                         .background_color(self.control_fill())
-                        .id(Id::unique(id))
-                        .hint_text(
-                            egui::RichText::new(self.tr(Text::EmptyValue)).color(self.secondary()),
-                        ),
+                        .id(Id::unique(id)),
                 )
+                .labelled_by(caption.id)
             } else {
-                ui.add_sized(
-                    [ui.available_width(), 26.0],
-                    egui::TextEdit::singleline(&mut value)
-                        .char_limit(64)
-                        .background_color(self.control_fill())
-                        .id(Id::unique(id))
-                        .hint_text(
-                            egui::RichText::new(self.tr(Text::EmptyValue)).color(self.secondary()),
-                        ),
-                )
-            }
-            .labelled_by(caption.id);
+                let (row, mut value_ui) = self.row_value_ui(ui, theme::size::PROPERTY_ROW);
+                self.row_label(ui, row, self.tr(label));
+                let width = value_ui.available_width().min(150.0);
+                kit::value_field(&mut value_ui, id, &mut value, width, None, self.tr(label))
+            };
             self.remember(id, &response);
             if response.changed() {
                 self.property_drafts
@@ -264,6 +266,9 @@ impl Editor {
         }
     }
     pub(in crate::editor) fn compatible_count(&self, ui: &mut egui::Ui, compatible: usize) {
+        if self.selection.len() < 2 {
+            return;
+        }
         let compatible = catalog::number(self.preferences.locale, compatible as u64);
         let total = catalog::number(self.preferences.locale, self.selection.len() as u64);
         ui.label(

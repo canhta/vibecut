@@ -374,6 +374,30 @@ const SCENES: &[Scene] = &[
         build: inspector_blend,
     },
     Scene {
+        name: "inspector-video",
+        reference_dark: None,
+        reference_light: None,
+        build: inspector_video,
+    },
+    Scene {
+        name: "inspector-video-blend",
+        reference_dark: None,
+        reference_light: None,
+        build: inspector_video_blend,
+    },
+    Scene {
+        name: "inspector-project",
+        reference_dark: None,
+        reference_light: None,
+        build: inspector_project,
+    },
+    Scene {
+        name: "inspector-text",
+        reference_dark: None,
+        reference_light: None,
+        build: inspector_text,
+    },
+    Scene {
         name: "inspector-transform",
         reference_dark: None,
         reference_light: None,
@@ -1221,6 +1245,68 @@ fn inspector_blend(theme: Theme, scale: f32) -> Result<AppHarness, Failure> {
 fn inspector_blend_vi(theme: Theme, scale: f32) -> Result<AppHarness, Failure> {
     inspector_blend_locale(theme, scale, Locale::Vi)
 }
+/// Properties scenes render at the reference window size so crops align.
+const CAPTURE_WINDOW: [f32; 2] = [1728.0, 1030.0];
+
+/// The capture's column split (34 / 28 %), so the panel is 486 px wide.
+fn capture_columns(editor: &mut Editor) -> Result<(), Failure> {
+    editor
+        .preferences
+        .set("panels", serde_json::json!([0.337, 0.28125, 0.45]))?;
+    Ok(())
+}
+
+fn inspector_video_tab(theme: Theme, scale: f32, tab: &str) -> Result<AppHarness, Failure> {
+    let (mut editor, item) = media_editor(theme, Locale::En)?;
+    capture_columns(&mut editor)?;
+    editor.selection = [item].into_iter().collect();
+    editor
+        .preferences
+        .set("properties_tabs", serde_json::json!({"video": tab}))?;
+    let mut app = harness_sized(App::Editor(Box::new(editor)), scale, CAPTURE_WINDOW);
+    wait_for_presented(&mut app)?;
+    app.run_steps(3);
+    Ok(app)
+}
+
+fn inspector_video(theme: Theme, scale: f32) -> Result<AppHarness, Failure> {
+    inspector_video_tab(theme, scale, "transform")
+}
+
+fn inspector_video_blend(theme: Theme, scale: f32) -> Result<AppHarness, Failure> {
+    inspector_video_tab(theme, scale, "blending")
+}
+
+fn inspector_project(theme: Theme, scale: f32) -> Result<AppHarness, Failure> {
+    let (mut editor, _) = media_editor(theme, Locale::En)?;
+    capture_columns(&mut editor)?;
+    let mut app = harness_sized(App::Editor(Box::new(editor)), scale, CAPTURE_WINDOW);
+    wait_for_presented(&mut app)?;
+    app.run_steps(3);
+    Ok(app)
+}
+
+fn inspector_text(theme: Theme, scale: f32) -> Result<AppHarness, Failure> {
+    let (mut editor, _) = media_editor(theme, Locale::En)?;
+    let item = editor
+        .session
+        .project()
+        .data()
+        .scene()
+        .timeline
+        .iter()
+        .flat_map(|track| &track.items)
+        .find(|item| matches!(item.content, ItemParams::Text(_)))
+        .ok_or("text item")?
+        .id;
+    capture_columns(&mut editor)?;
+    editor.selection = [item].into_iter().collect();
+    let mut app = harness_sized(App::Editor(Box::new(editor)), scale, CAPTURE_WINDOW);
+    wait_for_presented(&mut app)?;
+    app.run_steps(3);
+    Ok(app)
+}
+
 fn inspector_transform(theme: Theme, scale: f32) -> Result<AppHarness, Failure> {
     let mut app = inspector_blend(theme, scale)?;
     if let App::Editor(editor) = &mut app.state_mut().app {

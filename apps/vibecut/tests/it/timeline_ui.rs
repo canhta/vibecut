@@ -227,6 +227,10 @@ fn blend_dropdown_and_opacity_field_dispatch_real_edits() {
         .click();
     harness.run_steps(2);
     harness
+        .get(By::new().predicate(|n| n.author_id() == Some("inspector.group.basic")))
+        .click();
+    harness.run_steps(2);
+    harness
         .get(By::new().predicate(|n| n.author_id() == Some("inspector.tab.blending")))
         .click();
     harness.run_steps(2);
@@ -247,7 +251,7 @@ fn blend_dropdown_and_opacity_field_dispatch_real_edits() {
         .click();
     harness.run_steps(1);
     harness.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::A);
-    harness.event(egui::Event::Text("0.5".into()));
+    harness.event(egui::Event::Text("50".into()));
     harness.key_press(egui::Key::Enter);
     harness.run_steps(3);
     let path = project::AnimationPath::new("opacity").unwrap();

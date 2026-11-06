@@ -23,12 +23,6 @@ impl Editor {
                     .color(self.secondary()),
             );
             self.remember("effects.stack.empty", &response);
-            ui.add_space(theme::space::MD);
-            ui.label(
-                egui::RichText::new(self.tr(Text::EffectDropHint))
-                    .small()
-                    .color(self.secondary()),
-            );
             return;
         }
         let mut rows: Vec<(String, Rect)> = Vec::new();

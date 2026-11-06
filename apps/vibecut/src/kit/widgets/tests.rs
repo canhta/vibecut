@@ -27,7 +27,7 @@ fn section_header_keeps_reset_and_toggle_separate() {
     let mut harness = harness(
         |ui, state: &mut (bool, bool)| {
             let header = section_header(ui, "section", "Transform", &mut state.0, "Reset", "Key");
-            state.1 |= header.reset.clicked();
+            state.1 |= header.reset.is_some_and(|reset| reset.clicked());
         },
         (true, false),
     );

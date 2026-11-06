@@ -62,17 +62,6 @@ impl Editor {
         self.remember_with_icon(id, Some(icon.name()), &response);
         response.clicked()
     }
-    /// Text-only is reserved for the properties tabs by the iconography contract.
-    pub(in crate::editor) fn text_button(
-        &mut self,
-        ui: &mut egui::Ui,
-        id: &'static str,
-        key: Text,
-    ) -> bool {
-        let response = ui.push_id(id, |ui| ui.button(self.tr(key))).inner;
-        self.remember(id, &response);
-        response.clicked()
-    }
     pub(in crate::editor) fn preset_button(
         &mut self,
         ui: &mut egui::Ui,
@@ -97,50 +86,6 @@ impl Editor {
         let response = ui.add_enabled(enabled, egui::Button::new(self.tr(key)));
         self.remember(id, &response);
         response.clicked()
-    }
-    /// A property section whose open state lives in the preference store, with
-    /// the same stable automation id across locale and layout changes.
-    pub(in crate::editor) fn section<R>(
-        &mut self,
-        ui: &mut egui::Ui,
-        id: &'static str,
-        key: &'static str,
-        label: Text,
-        default_open: bool,
-        body: impl FnOnce(&mut Self, &mut egui::Ui) -> R,
-    ) -> Option<R> {
-        let state_id = ui.make_persistent_id(("preferences.section", key));
-        let stored = self.preferences.section_open(key, default_open);
-        let mut state = egui::collapsing_header::CollapsingState::load_with_default_open(
-            ui.ctx(),
-            state_id,
-            default_open,
-        );
-        if state.is_open() != stored {
-            state.set_open(stored);
-            state.store(ui.ctx());
-        }
-        let label = self.tr(label);
-        let mut clicked = false;
-        let mut header = state.show_header(ui, |ui| {
-            let response = ui.add(egui::Label::new(label).sense(egui::Sense::click()));
-            clicked = response.clicked();
-        });
-        if clicked {
-            header.toggle();
-        }
-        let open = header.is_open();
-        let (toggle, _, body_response) = header.body(|ui| body(self, ui));
-        if open != stored
-            && let Err(error) = self.set_section_open(key, open)
-        {
-            self.error = Some(error.to_string());
-        }
-        toggle
-            .ctx
-            .accesskit_node_builder(toggle.id, |node| node.set_author_id(id));
-        self.remember(id, &toggle);
-        body_response.map(|response| response.inner)
     }
     #[allow(clippy::too_many_arguments)]
     pub(in crate::editor) fn icon_only(

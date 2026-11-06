@@ -145,6 +145,7 @@ impl Editor {
             property_drafts: BTreeMap::new(),
             property_selection: BTreeSet::new(),
             property_focus: None,
+            uniform_scale: true,
             scrub: None,
             effect_previews: crate::effect_previews::EffectPreviews::cpu().ok(),
             effect_textures: BTreeMap::new(),

@@ -221,6 +221,8 @@ pub(crate) mod radius {
     pub const PANEL: u8 = 0;
     pub const FRAME_PANEL: u8 = 8;
     pub const CONTROL: u8 = 4;
+    /// Value fields and steppers (221643 corners: about 2 px; the 4 px mapping was unproven).
+    pub const FIELD: u8 = 2;
 }
 /// Inter-equivalent sizes inferred from measured capital heights.
 pub(crate) mod type_size {
@@ -262,6 +264,8 @@ pub(crate) mod size {
     pub const EFFECT_CARD: f32 = 88.0;
     pub const EFFECT_PITCH: f32 = 116.0;
     pub const SHORTCUT_BUTTON: f32 = 72.0;
+    pub const TOGGLE_WIDTH: f32 = 36.0;
+    pub const TOGGLE_HEIGHT: f32 = 16.0;
     pub const EXPORT_WIDTH: f32 = 67.0;
 }
 /// Measured glyph boxes; larger empty-state glyphs are not editor measurements.

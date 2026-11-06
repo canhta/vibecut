@@ -8,20 +8,17 @@ impl Editor {
             return;
         };
         self.scrub_field(ui, item, SPEED_SCRUB);
-        ui.add_space(theme::space::MD);
+        let (row, mut value_ui) = self.row_value_ui(ui, theme::size::PROPERTY_ROW);
+        self.row_label(ui, row, self.tr(Text::SpeedDuration));
         if let Some((source, output)) = self.retime_seconds(item) {
-            // The reference shows the source duration and the retimed duration.
-            ui.horizontal(|ui| {
-                ui.label(self.tr(Text::SpeedDuration));
-                let response = ui.label(
-                    egui::RichText::new(format!("{source:.2}s → {output:.2}s"))
-                        .color(self.secondary()),
-                );
-                self.remember("inspector.speed.duration", &response);
-            });
-            ui.add_space(theme::space::MD);
+            let response = value_ui.label(
+                egui::RichText::new(format!("{source:.2}s → {output:.2}s"))
+                    .size(theme::type_size::BODY)
+                    .color(self.secondary()),
+            );
+            self.remember("inspector.speed.duration", &response);
         }
-        ui.horizontal(|ui| {
+        value_ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
             let reset = self.icon_only(
                 ui,
                 "inspector.speed.reset",
@@ -36,13 +33,15 @@ impl Editor {
             }
         });
         if has_audio {
-            ui.add_space(theme::space::MD);
+            let (row, mut value_ui) = self.row_value_ui(ui, theme::size::PROPERTY_ROW);
+            self.row_label(ui, row, self.tr(Text::ChangePitch));
             // "Change pitch" on lets pitch follow speed, so it is the inverse of maintain_pitch.
             let mut follows = !maintain_pitch;
-            let response = ui.add(egui::Checkbox::new(
-                &mut follows,
-                self.tr(Text::ChangePitch),
-            ));
+            let response = value_ui.add(egui::Checkbox::without_text(&mut follows));
+            let name = self.tr(Text::ChangePitch);
+            response
+                .ctx
+                .accesskit_node_builder(response.id, |node| node.set_label(name));
             self.remember("inspector.speed.pitch", &response);
             if response.changed()
                 && let Err(error) = self.set_speed(item, current, !follows)

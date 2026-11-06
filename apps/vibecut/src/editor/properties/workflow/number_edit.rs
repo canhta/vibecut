@@ -128,11 +128,14 @@ pub(in crate::editor::properties) fn transform_scrub(field: project::TransformFi
         label,
         min,
         max,
-        step: if scale { 0.01 } else { 1.0 },
-        pixels_per_step: 2.0,
-        decimals: if scale { 2 } else { 0 },
+        step: if scale || field == F::Rotate {
+            0.01
+        } else {
+            1.0
+        },
+        pixels_per_step: if field == F::Rotate { 0.02 } else { 2.0 },
+        decimals: if scale || field == F::Rotate { 2 } else { 0 },
         suffix: match field {
-            F::PositionX | F::PositionY => "px",
             F::Rotate => "°",
             _ => "",
         },

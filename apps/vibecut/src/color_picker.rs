@@ -214,6 +214,8 @@ pub(crate) struct Picker {
     hex: String,
     entries: [String; 4],
     pub native: NativeEyedropper,
+    /// Top-right corner the popover hangs from, beside the control that opened it.
+    pub anchor: Option<egui::Pos2>,
     invalid: bool,
 }
 pub(crate) struct PickerEvent {
@@ -232,6 +234,7 @@ impl Picker {
             hex: String::new(),
             entries: Default::default(),
             native: NativeEyedropper::default(),
+            anchor: None,
             invalid: false,
         };
         value.set(color);
@@ -245,7 +248,9 @@ impl Picker {
         self.invalid = false;
     }
     fn refresh_entries(&mut self) {
-        self.entries = self.hsva.map(|v| format!("{v:.4}"));
+        // Hue in degrees, the other channels as whole percents.
+        let [h, s, v, a] = self.hsva;
+        self.entries = [h, s * 100.0, v * 100.0, a * 100.0].map(|v| format!("{v:.0}"));
     }
     fn set_hsva(&mut self, values: [f64; 4]) -> Result<()> {
         let color = render::color::from_hsva(values)?;
@@ -284,15 +289,19 @@ impl Picker {
             Err(_) => self.native.state = EyedropperState::Failed,
             _ => {}
         }
-        egui::Window::new(catalog::text(locale, Text::ColorPicker))
+        let window = egui::Window::new(catalog::text(locale, Text::ColorPicker))
             .id(Id::unique("color.picker"))
             .resizable(false)
             .collapsible(false)
-            .default_width(280.0)
-            .default_pos(egui::pos2(
+            .default_width(280.0);
+        let window = match self.anchor {
+            Some(anchor) => window.pivot(egui::Align2::RIGHT_TOP).fixed_pos(anchor),
+            None => window.default_pos(egui::pos2(
                 (ctx.content_rect().right() - 610.0).max(16.0),
                 112.0,
-            ))
+            )),
+        };
+        window
             .show(ctx, |ui| {
                 let [r, g, b, a] = self.color.0;
                 let swatch = Color32::from_rgba_unmultiplied(r, g, b, a);
@@ -364,6 +373,7 @@ impl Picker {
                         || response.has_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter))
                     {
                         if let Ok(value) = entry.trim().parse::<f64>() {
+                            let value = if index == 0 { value } else { value / 100.0 };
                             let mut values = self.hsva;
                             if let Some(component) = values.get_mut(index) {
                                 *component = value;

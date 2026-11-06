@@ -280,6 +280,13 @@ fn click(harness: &mut Harness<Editor>, id: &str) {
             harness.run_steps(8);
         }
     }
+    if matches!(
+        id,
+        "inspector.tab.transform" | "inspector.tab.blending" | "inspector.tab.masks"
+    ) && !has_widget(harness, id)
+    {
+        click(harness, "inspector.group.basic");
+    }
     harness
         .get(By::new().predicate(|node| node.author_id() == Some(id)))
         .click();
@@ -388,7 +395,7 @@ fn transform_fields_clamp_reset_scrub_cancel_and_persist() {
     let bytes = project::encode(harness.state().session.project(), false).unwrap();
     let loaded = project::decode(&bytes).unwrap();
     assert_eq!(loaded.project, *harness.state().session.project().as_ref());
-    click(&mut harness, "inspector.transform.rotate.reset");
+    click(&mut harness, "inspector.section.transform.reset");
     assert_eq!(
         project::TransformField::Rotate
             .value_at(&item(&harness, fixture.video).animations, Tick::ZERO)
@@ -399,7 +406,7 @@ fn transform_fields_clamp_reset_scrub_cancel_and_persist() {
     harness.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::A);
     harness.event(egui::Event::Text("42".to_owned()));
     harness.run_steps(2);
-    click(&mut harness, "inspector.transform.rotate.reset");
+    click(&mut harness, "inspector.section.transform.reset");
     assert_eq!(
         project::TransformField::Rotate
             .value_at(&item(&harness, fixture.video).animations, Tick::ZERO)
@@ -424,6 +431,64 @@ fn transform_fields_clamp_reset_scrub_cancel_and_persist() {
     harness.run_steps(2);
     assert_eq!(harness.state().session.project(), &prior);
     assert_ne!(harness.state().session.project(), &before);
+}
+
+#[test]
+fn scale_is_uniform_until_toggled_and_steppers_move_one_unit() {
+    let fixture = fixture();
+    let mut harness = build(fixture.editor);
+    harness.run_steps(3);
+    select(&mut harness, fixture.video);
+    let value = |harness: &Harness<Editor>, field: project::TransformField| {
+        field
+            .value_at(&item(harness, fixture.video).animations, Tick::ZERO)
+            .unwrap()
+    };
+    use project::TransformField as F;
+    // (field id, entered text, expected scaleX, expected scaleY, uniform toggle first)
+    for (id, text, x, y, toggle) in [
+        ("inspector.transform.scaleX", "200", 2.0, 2.0, false),
+        ("inspector.transform.scaleX", "50", 0.5, 0.5, false),
+        ("inspector.transform.scaleY", "150", 0.5, 1.5, true),
+    ] {
+        if toggle {
+            click(&mut harness, "inspector.uniform_scale");
+        }
+        enter(&mut harness, id, text);
+        assert_eq!(value(&harness, F::ScaleX), x, "{id} {text}");
+        assert_eq!(value(&harness, F::ScaleY), y, "{id} {text}");
+    }
+    click(&mut harness, "inspector.transform.positionX.increase");
+    assert_eq!(value(&harness, F::PositionX), 1.0);
+    click(&mut harness, "inspector.transform.positionX.decrease");
+    click(&mut harness, "inspector.transform.positionX.decrease");
+    assert_eq!(value(&harness, F::PositionX), -1.0);
+    click(&mut harness, "inspector.section.transform.reset");
+    assert_eq!(value(&harness, F::ScaleY), 1.0);
+    assert_eq!(value(&harness, F::PositionX), 0.0);
+}
+
+#[test]
+fn color_picker_is_a_popover_left_of_the_properties_panel() {
+    let fixture = fixture();
+    let mut harness = build(fixture.editor);
+    harness.run_steps(3);
+    select(&mut harness, fixture.graphic);
+    click(&mut harness, "inspector.graphic_fill");
+    let panel = harness.state().panels["inspector"];
+    let picker = harness
+        .state()
+        .inspect()
+        .unwrap()
+        .widgets
+        .into_iter()
+        .find(|widget| widget.id == "color.hex")
+        .expect("picker open")
+        .rect;
+    assert!(
+        picker.right() <= panel.left(),
+        "{picker:?} covers {panel:?}"
+    );
 }
 
 #[test]
@@ -755,10 +820,18 @@ fn reachable_element_kinds_show_their_reference_tab_sets() {
         ),
     ] {
         select(&mut harness, item);
-        assert_eq!(visible_tabs(&harness), names(expected), "{item:?}");
         if let Some(field) = active_field {
             assert!(has_widget(&harness, field), "{item:?} default tab content");
         }
+        // Transform, blending and masks share one group tab with sub-tabs.
+        if has_widget(&harness, "inspector.group.basic") {
+            click(&mut harness, "inspector.group.basic");
+        }
+        let mut seen = visible_tabs(&harness);
+        seen.sort();
+        let mut want = names(expected);
+        want.sort();
+        assert_eq!(seen, want, "{item:?}");
     }
     // A video with no audio stream hides its Audio tab.
     select(&mut harness, fixture.silent_video);
@@ -768,7 +841,11 @@ fn reachable_element_kinds_show_their_reference_tab_sets() {
         .copied()
         .filter(|tab| *tab != PropertiesTab::Audio)
         .collect();
-    assert_eq!(visible_tabs(&harness), names(&expected));
+    let mut seen = visible_tabs(&harness);
+    seen.sort();
+    let mut want = names(&expected);
+    want.sort();
+    assert_eq!(seen, want);
 }
 
 #[test]

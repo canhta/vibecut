@@ -356,7 +356,7 @@ pub(super) const TEXT_SIZE_SCRUB: ScrubSpec = ScrubSpec {
     step: 1.0,
     pixels_per_step: 2.0,
     decimals: 0,
-    suffix: "px",
+    suffix: "",
 };
 pub(super) const SPEED_SCRUB: ScrubSpec = ScrubSpec {
     field: "speed",
@@ -426,6 +426,8 @@ pub struct Editor {
     /// Last inspector field that held keyboard focus. Egui surrenders focus on
     /// Escape before app UI runs, so the next frame must still defer shortcuts.
     pub(super) property_focus: Option<String>,
+    /// One Scale control moves both axes; a view setting, not project data.
+    pub(super) uniform_scale: bool,
     pub(super) scrub: Option<ScrubDrag>,
     pub(super) effect_previews: Option<crate::effect_previews::EffectPreviews>,
     pub(super) effect_textures: BTreeMap<String, egui::TextureHandle>,
