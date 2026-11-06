@@ -1242,6 +1242,29 @@ impl Preferences {
     pub fn retain_timeline_lanes(&mut self, keep: impl Fn(project::ProjectId) -> bool) {
         self.timeline_lanes.retain(|project, _| keep(*project));
     }
+    /// Save As mints a fresh id while the issuing window edits the copy; carry
+    /// that project's open-lane set to the copy and leave the original's entry
+    /// untouched. A fresh id normally has no entry, so nothing is merged. The
+    /// document bound wins: only entries that fit are carried.
+    pub fn copy_timeline_lanes(&mut self, from: project::ProjectId, to: project::ProjectId) {
+        if from == to {
+            return;
+        }
+        let Some(source) = self.timeline_lanes.get(&from).cloned() else {
+            return;
+        };
+        let mut total = self.timeline_lane_count();
+        if let Some(previous) = self.timeline_lanes.get(&to) {
+            total = total.saturating_sub(previous.len());
+        }
+        let room = MAX_TIMELINE_LANES.saturating_sub(total);
+        let carried: BTreeSet<u64> = source.into_iter().take(room).collect();
+        if carried.is_empty() {
+            self.timeline_lanes.remove(&to);
+        } else {
+            self.timeline_lanes.insert(to, carried);
+        }
+    }
     fn timeline_lane_count(&self) -> usize {
         self.timeline_lanes
             .values()
@@ -1669,6 +1692,69 @@ mod tests {
             Some(BTreeSet::from([3, 4]))
         );
         assert!(!pruned.timeline_lanes.contains_key(&project::ProjectId(13)));
+        // Save As carries the issuing project's set to the fresh id; the source
+        // keeps its own entry, a project with no open lanes carries nothing,
+        // and the same-id case is a no-op.
+        let mut carried = loaded.clone();
+        carried.copy_timeline_lanes(project::ProjectId(12), project::ProjectId(14));
+        assert_eq!(
+            carried.timeline_lanes.get(&project::ProjectId(12)).cloned(),
+            Some(BTreeSet::from([3, 4])),
+            "the issuing project keeps its own lanes"
+        );
+        assert_eq!(
+            carried.timeline_lanes.get(&project::ProjectId(14)).cloned(),
+            Some(BTreeSet::from([3, 4])),
+            "the copy opens with the issuing project's lanes"
+        );
+        let mut missing = loaded.clone();
+        missing.copy_timeline_lanes(project::ProjectId(99), project::ProjectId(14));
+        assert!(!missing.timeline_lanes.contains_key(&project::ProjectId(14)));
+        let mut same = loaded.clone();
+        same.copy_timeline_lanes(project::ProjectId(12), project::ProjectId(12));
+        assert_eq!(same.timeline_lanes, loaded.timeline_lanes);
+        // Hostile sizes cannot push the document past its lane bound: the copy
+        // carries only what fits and the source still keeps its set.
+        let mut over = Preferences::default();
+        over.timeline_lanes.insert(
+            project::ProjectId(12),
+            (0..MAX_TIMELINE_LANES as u64 - 1).collect(),
+        );
+        over.timeline_lanes
+            .insert(project::ProjectId(13), BTreeSet::from([4096]));
+        over.copy_timeline_lanes(project::ProjectId(12), project::ProjectId(14));
+        assert_eq!(
+            over.timeline_lanes.get(&project::ProjectId(12)).cloned(),
+            Some((0..MAX_TIMELINE_LANES as u64 - 1).collect()),
+            "an already-full document still keeps the issuing project's set"
+        );
+        assert!(
+            !over.timeline_lanes.contains_key(&project::ProjectId(14)),
+            "no room under the bound means nothing is carried"
+        );
+        assert!(over.timeline_lane_count() <= MAX_TIMELINE_LANES);
+        let mut partial = Preferences::default();
+        partial
+            .timeline_lanes
+            .insert(project::ProjectId(12), (0..3000).collect());
+        partial
+            .timeline_lanes
+            .insert(project::ProjectId(13), (0..100).collect());
+        partial.copy_timeline_lanes(project::ProjectId(12), project::ProjectId(14));
+        assert_eq!(
+            partial.timeline_lanes.get(&project::ProjectId(14)).cloned(),
+            Some((0..996).collect()),
+            "an oversized copy is capped at the remaining document budget"
+        );
+        assert_eq!(
+            partial
+                .timeline_lanes
+                .get(&project::ProjectId(12))
+                .map(BTreeSet::len),
+            Some(3000),
+            "capping the copy never trims the issuing project's set"
+        );
+        assert_eq!(partial.timeline_lane_count(), MAX_TIMELINE_LANES);
         assert!(Preferences::default().get("unknown").is_err());
     }
 

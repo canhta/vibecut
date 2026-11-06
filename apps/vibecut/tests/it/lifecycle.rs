@@ -536,6 +536,39 @@ fn project_windows_keep_independent_edits_undo_and_playback_and_reopen_focuses_o
     let original_bytes = std::fs::read(&paths[0]).unwrap();
     let original_viewport = app.viewport(first).unwrap();
     let copy = root.path().join("copy.vibecut");
+    let lanes = std::collections::BTreeSet::from([7, 9]);
+    let mut lane_map = app
+        .editor_mut(first)
+        .unwrap()
+        .preferences
+        .timeline_lanes
+        .clone();
+    lane_map.insert(original_id, lanes.clone());
+    app.editor_mut(first)
+        .unwrap()
+        .set_preference("timeline_lanes", serde_json::to_value(&lane_map).unwrap())
+        .unwrap();
+    app.preferences.timeline_lanes = lane_map;
+    // A refused Save As changes nothing: the issuing project keeps its lanes
+    // and no entry appears for a destination that was never adopted.
+    let refused = root.path().join("refused.vibecut");
+    let held = project::WriterLease::acquire(&refused).unwrap();
+    app.focus(first).unwrap();
+    app.persist(Some(refused.clone()), false, false, false)
+        .unwrap();
+    idle(&mut app);
+    assert!(app.error().is_some(), "a busy destination must be refused");
+    assert_eq!(
+        app.preferences.timeline_lanes.get(&original_id),
+        Some(&lanes),
+        "a failed Save As leaves the issuing project's lanes unchanged"
+    );
+    assert_eq!(
+        app.preferences.timeline_lanes.len(),
+        1,
+        "a failed Save As mints no lane entry"
+    );
+    drop(held);
     app.focus(first).unwrap();
     app.persist(Some(copy.clone()), false, false, false)
         .unwrap();
@@ -548,9 +581,20 @@ fn project_windows_keep_independent_edits_undo_and_playback_and_reopen_focuses_o
         std::thread::sleep(Duration::from_millis(2));
     }
     app.open(copy.clone()).unwrap();
+    app.tick();
     assert!(app.error().is_none(), "{:?}", app.error());
     first = app.focused_project().unwrap();
     assert_ne!(first, original_id);
+    assert_eq!(
+        app.preferences.timeline_lanes.get(&first),
+        Some(&lanes),
+        "Save As carries the issuing project's open lanes to the copy"
+    );
+    assert_eq!(
+        app.preferences.timeline_lanes.get(&original_id),
+        Some(&lanes),
+        "the original keeps its own open lanes after Save As"
+    );
     assert_eq!(app.viewport(first), Some(original_viewport));
     assert_eq!(app.windows.len(), 2);
     assert!(!app.windows.contains_key(&original_id));

@@ -2708,6 +2708,26 @@ fn expanded_lane_shows_diamonds_and_drag_retimes_one_undo_step() {
         !collapsed.timeline_lanes.contains_key(&ProjectId(13)),
         "a project with no open lanes keeps no empty entry"
     );
+    // Save As carries the issuing project's lane set to the fresh ProjectId;
+    // the original keeps its own set and an already-empty source carries nothing.
+    let mut carried = collapsed.clone();
+    carried.copy_timeline_lanes(ProjectId(12), ProjectId(14));
+    assert_eq!(
+        carried.timeline_lanes.get(&ProjectId(12)).cloned(),
+        Some(std::collections::BTreeSet::from([id.0])),
+        "Save As leaves the issuing project's lanes in place"
+    );
+    assert_eq!(
+        carried.timeline_lanes.get(&ProjectId(14)).cloned(),
+        Some(std::collections::BTreeSet::from([id.0])),
+        "the copy opens with the issuing project's lanes"
+    );
+    let mut absent = collapsed;
+    absent.copy_timeline_lanes(ProjectId(99), ProjectId(14));
+    assert!(
+        !absent.timeline_lanes.contains_key(&ProjectId(14)),
+        "a project with no open lanes carries no entry"
+    );
     drop(other_harness);
     let key = format!("timeline.keyframe.{}.opacity.none.{}", id.0, 2 * SECOND);
     let diamond = widget(&harness, &key);

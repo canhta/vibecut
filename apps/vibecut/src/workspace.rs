@@ -258,6 +258,9 @@ impl Workspace {
                 editor.set_model_manager(models);
             }
             window.tick();
+            if let Some((from, to)) = window.saved_as.take() {
+                self.preferences.copy_timeline_lanes(from, to);
+            }
             if let Some(models) = window.retained_models.take() {
                 self.models = Some(models);
             } else if let Some(editor) = &mut window.editor
@@ -398,6 +401,9 @@ impl Workspace {
                 self.models = Some(models);
             }
             self.preferences = window.preferences.clone();
+            if let Some((from, to)) = window.saved_as.take() {
+                self.preferences.copy_timeline_lanes(from, to);
+            }
             if std::mem::take(&mut window.focus_home) {
                 self.home_open = true;
                 ui.ctx().send_viewport_cmd_to(
@@ -682,6 +688,11 @@ pub struct EditorWindow {
     retry_discovery: bool,
     preference_warning: bool,
     open_file_requested: bool,
+    /// Identity the pending operation was issued under, when it is a Save As.
+    save_as_from: Option<project::ProjectId>,
+    /// Identity pair a successful Save As produced, waiting for the workspace
+    /// owner to carry lane memory from the issuing project to the copy.
+    saved_as: Option<(project::ProjectId, project::ProjectId)>,
 }
 impl EditorWindow {
     fn new(
@@ -724,6 +735,8 @@ impl EditorWindow {
             retry_discovery: false,
             preference_warning: false,
             open_file_requested: false,
+            save_as_from: None,
+            saved_as: None,
         }
     }
     /// A damaged layout preference document was replaced at startup.
@@ -793,10 +806,12 @@ impl EditorWindow {
             "project.set_view_state",
             serde_json::json!({"zoom":view.zoom,"scroll":view.scroll,"playhead":at}),
         )?;
+        let id = editor.session.project().data().id;
         self.retry_save = Some((path.clone(), leave, close, journal_only));
+        self.save_as_from = path.as_ref().map(|_| id);
         self.retained_models = editor.take_model_manager();
         let editor = self.editor.take().ok_or(Error::Invalid("no project"))?;
-        self.submit(
+        let submitted = self.submit(
             Work::Persist {
                 editor: Arc::new(Mutex::new(Some(editor))),
                 path,
@@ -809,7 +824,11 @@ impl EditorWindow {
             } else {
                 Text::SavingProject
             },
-        )
+        );
+        if submitted.is_err() {
+            self.save_as_from = None;
+        }
+        submitted
     }
     fn pick(&mut self, ctx: &egui::Context, action: PickerAction) -> Result<()> {
         if self.busy() {
@@ -1105,6 +1124,7 @@ impl EditorWindow {
         let Some(pending) = self.pending.take() else {
             return;
         };
+        let save_as_from = self.save_as_from.take();
         let _ = self.runner.borrow_mut().take_output(pending.id);
         if let Some(editor) = &pending.editor {
             match editor.lock() {
@@ -1144,6 +1164,14 @@ impl EditorWindow {
                 close,
             }) => match result {
                 Ok(()) => {
+                    if let Some(from) = save_as_from
+                        && let Some(editor) = &self.editor
+                    {
+                        let to = editor.session.project().data().id;
+                        if from != to {
+                            self.saved_as = Some((from, to));
+                        }
+                    }
                     if let Some(editor) = &self.editor
                         && let crate::lifecycle::EditorSession::Persistent(autosave) =
                             &editor.session
