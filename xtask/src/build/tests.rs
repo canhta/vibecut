@@ -824,18 +824,21 @@ fn linux_memory_probe_uses_shared_admission_path() {
 }
 
 // Must 1: capacity is the smaller of the CPU bound and the memory budget,
-// with a hard ceiling. Unreadable total memory yields no derived capacity,
-// which holds extra admission (the first build still runs).
+// with a hard ceiling. The budget divides by the 3 GiB peak every extra slot
+// reserves, plus the first slot that is never memory-gated. Unreadable total
+// memory yields no derived capacity, which holds extra admission (the first
+// build still runs).
 #[test]
 fn slot_ceiling_follows_cpu_memory_and_the_hard_bound() {
-    assert_eq!(derived_slots(16, Some(64 * GIB)), Some(16));
-    // 32 GiB host: (32*0.70)/1.5 = 14 memory slots, below 20 CPUs.
-    assert_eq!(derived_slots(20, Some(32 * GIB)), Some(14));
-    // 4 GiB host: the 30% reservation leaves less than one 1.5 GiB build.
+    // 64 GiB host: (64*0.70)/3 = 14 reserves plus the first slot = 15, below 16 CPUs.
+    assert_eq!(derived_slots(16, Some(64 * GIB)), Some(15));
+    // 32 GiB host: (32*0.70)/3 = 7 reserves plus the first slot = 8, below 20 CPUs.
+    assert_eq!(derived_slots(20, Some(32 * GIB)), Some(8));
+    // 4 GiB host: the 30% reservation leaves less than one 3 GiB peak reserve.
     assert_eq!(derived_slots(64, Some(4 * GIB)), Some(1));
     assert_eq!(derived_slots(200, Some(1024 * GIB)), Some(MAX_SLOTS));
     assert_eq!(derived_slots(8, None), None);
-    assert_eq!(derived_slots(8, Some(WORST_BUILD_BYTES)), Some(1));
+    assert_eq!(derived_slots(8, Some(SLOT_PEAK_RESERVE_BYTES)), Some(1));
     assert_eq!(derived_slots(8, Some(0)), Some(1));
     assert_eq!(derived_slots(0, Some(64 * GIB)), Some(1));
     let directory = Directory::new();
@@ -851,7 +854,7 @@ fn slot_ceiling_follows_cpu_memory_and_the_hard_bound() {
 #[test]
 fn build_slot_override_is_validated_with_a_typed_error() {
     let total = Some(64 * GIB);
-    assert_eq!(configured_slots(true, None, 16, total), Ok(16));
+    assert_eq!(configured_slots(true, None, 16, total), Ok(15));
     assert_eq!(
         configured_slots(true, Some(OsStr::new("3")), 16, total),
         Ok(3)

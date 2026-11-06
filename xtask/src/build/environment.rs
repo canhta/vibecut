@@ -10,8 +10,6 @@ pub(super) const MAX_SLOTS: usize = 64;
 pub(super) const MIN_FREE_PERCENT: u32 = 30;
 pub(super) const START_RAMP: Duration = Duration::from_secs(20);
 pub(super) const GIB: u64 = 1 << 30;
-/// Worst measured workspace-build memory from verification history (0.3-1.5 GiB).
-pub(super) const WORST_BUILD_BYTES: u64 = GIB + GIB / 2;
 /// Peak memory one running slot can reach after its compile: the worst measured
 /// build (1.5 GiB) plus one 1 GiB link and one 0.5 GiB test binary. Admission
 /// holds this reserve for every live lease because link and test fan-out happen
@@ -82,15 +80,18 @@ pub(super) fn memory_available(memory: Memory) -> bool {
     memory_fits(memory, 0)
 }
 
-/// Upper bound from host facts alone. CPU bounds the number of slots; the shared
-/// job reservations independently bound aggregate jobs. Memory keeps the 30% admission
-/// reservation and divides the rest by the worst measured build footprint.
-/// An unreadable total memory returns `None`, which holds extra admission.
+/// Upper bound from host facts alone. CPU bounds the number of slots. Memory
+/// keeps the 30% admission reservation and divides the rest by the peak one
+/// running slot reserves; the first build is never memory-gated, so one slot
+/// is always available on top of that division. An unreadable total memory
+/// returns `None`, which holds extra admission.
 pub(super) fn derived_slots(cpus: usize, total_memory: Option<u64>) -> Option<usize> {
     let total = total_memory?;
     let cpu_bound = cpus.max(1);
     let budget = total.saturating_mul(u64::from(100 - MIN_FREE_PERCENT)) / 100;
-    let memory_bound = usize::try_from(budget / WORST_BUILD_BYTES).unwrap_or(usize::MAX);
+    let memory_bound = usize::try_from(budget / SLOT_PEAK_RESERVE_BYTES)
+        .unwrap_or(usize::MAX)
+        .saturating_add(1);
     Some(cpu_bound.min(memory_bound).clamp(1, MAX_SLOTS))
 }
 

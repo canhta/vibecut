@@ -42,13 +42,17 @@ releases or kills a running build; slots above a smaller count stay reusable and
 `cleanup` ages them out.
 
 The ceiling is derived from host facts when the wrapper starts and enforced at each
-admission: `min(logical CPUs, floor(total_memory * 0.70 / 1.5 GiB), 64)`. The
-numerator keeps the existing 30% free-memory reservation; 1.5 GiB is the worst
-measured workspace-build footprint (builds measure 0.3-1.5 GiB). The CPU term is the
-runaway bound for slot count. Aggregate default Cargo jobs have a separate shared
-budget of twice the logical CPUs. Under the admission lock, each command reserves
-`min(max(2, logical CPUs / ceiling), remaining jobs)`; fewer than two remaining jobs
-holds admission. Reservations cover all live slot leases, including those above
+admission: `min(logical CPUs, floor(total_memory * 0.70 / 3 GiB) + 1, 64)`. The
+numerator keeps the existing 30% free-memory reservation; 3 GiB is the peak reserve
+every running slot holds after compile (worst measured build 1.5 GiB plus one 1 GiB
+link and one 0.5 GiB test binary), and the extra slot is the first build, which is
+never memory-gated. On the measured 32 GiB host this yields 8 slots, matching what
+the admission gates can actually admit; slots above a shrunk count stay reusable and
+`cleanup` ages them out. The CPU term is the runaway bound for slot count. Aggregate
+default Cargo jobs have a separate shared budget of twice the logical CPUs. Under the
+admission lock, each command reserves `min(max(2, logical CPUs / ceiling), remaining
+jobs)`; fewer than two remaining jobs holds admission. Reservations cover all live
+slot leases, including those above
 a reduced ceiling, so overlapping wrappers with different ceilings cannot exceed
 the budget. A reservation stays fixed until its lease releases; existing children
 are never resized or killed. `VIBECUT_BUILD_SLOTS=1..=logical CPUs` (capped at 64) overrides the
@@ -93,15 +97,19 @@ asynchronously, a few milliseconds). Standard streams remain inherited.
 
 A worktree switch prunes workspace artifacts and old test binaries, then touches
 tracked regular files to prevent Cargo reusing stale workspace outputs; registry
-dependencies and the isolated launcher stay warm. The holder clears its own slot if all slot caches exceed
-50 GiB (measured on switches) or disk free space falls below 30 GiB. If clearing
-cannot restore 30 GiB free, the build is refused. Only the held slot is deleted;
+dependencies and the isolated launcher stay warm. It clears the slot only when
+that slot alone exceeds the measured 40 GiB budget (warm slots measure 5-26 GiB)
+or disk free space falls below 30 GiB; the total size of every warm slot never
+turns a switch into a cold rebuild. If clearing cannot restore 30 GiB free, the
+build is refused. Only the held slot is deleted;
 other running builds retain their artifacts. Disk queries use `df -Pk` on Unix and
 `GetDiskFreeSpaceEx` on Windows; query failure refuses the build. Cache accounting
 uses allocated blocks on Unix and logical file sizes on Windows. Child builds
-receive their reserved Cargo jobs and clear `RUSTC_WRAPPER`. Explicit caller
-`CARGO_BUILD_JOBS` or command arguments `--jobs`, `--jobs=N`, `-j N`, `-jN` are
-preserved as exceptions to the assigned-jobs bound, even above the host budget.
+receive their reserved Cargo jobs and clear `RUSTC_WRAPPER`. No external compiler
+cache is enabled: sccache 0.19 was measured on this workspace and rejected because
+its wrapper exceeds the Windows command-line limit for `ffmpeg-sys-next`, failing
+the build instead of caching it. Explicit caller
+`CARGO_BUILD_JOBS` or command arguments `--jobs`, `--jobs=N`, `-j N`, `-jN` arepreserved as exceptions to the assigned-jobs bound, even above the host budget.
 Such commands reserve the entire budget and wait until all other leases release;
 no default-jobs command overlaps them. Job flags are conservatively recognized
 anywhere in the wrapped command arguments, including nested xtask commands.
@@ -251,8 +259,9 @@ lease so a newer unmerged push is retained. The main checkout's
 `git pull --ff-only` runs before branch cleanup so
 those checks see a freshly merged `origin/main`. Build cache slots held by a live
 build are skipped.
-An idle slot over the size budget first drops dependency artifacts older than
-two days, retaining fresh artifacts when that restores the budget; dry runs
+An idle slot first drops incremental sessions and dependency artifacts older than
+two days; the measured 40 GiB per-slot budget sits above the 5-26 GiB of a warm
+slot, so pruning protects reuse instead of forcing a cold rebuild; dry runs
 account for the same reclaimed bytes before reporting whole-slot removal.
 
 `pull-reports` copies a local worktree's reports directly. A paired Orca server
@@ -269,7 +278,8 @@ exclusive caller jobs and fail-closed reservation metadata,
 child exit/kill lease release, capacity derivation and override
 validation, shrinking capacity without killing running builds, reuse of slots above
 a shrunk count, memory admission with per-slot peak reserves and job pressure,
-probe failure, the Linux `/proc/meminfo` and
+probe failure,
+the slot-switch budget, the Linux `/proc/meminfo` and
 `/proc/loadavg` parsers (normal, missing keys, truncated, zero total, hostile values
 and exact thresholds), Windows processor-load arithmetic, receipt cleanliness and
 worktree/disk cleanup. Launcher and descendant survival

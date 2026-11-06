@@ -1,6 +1,6 @@
 //! Warm target slots: lease lifetime, owner records and worktree switch preparation.
 use super::{
-    cache::{remove_dir, used_bytes},
+    cache::{CACHE_SLOT_LIMIT, remove_dir, used_bytes},
     environment::GIB,
     queue::Lock,
 };
@@ -77,6 +77,14 @@ pub(super) fn owner(locks: &Path, number: usize) -> PathBuf {
         .map(PathBuf::from)
         .unwrap_or_default()
 }
+/// Clear the held slot when disk headroom is gone, or when a switched slot's own
+/// artifacts exceed the per-slot budget. The total size of the shared cache never
+/// clears a slot; `cleanup` owns aging out the whole cache, so a warm switch keeps
+/// its dependency artifacts.
+pub(super) fn switch_overflow(used: u64, free: u64) -> bool {
+    used > CACHE_SLOT_LIMIT || free < 30 * GIB
+}
+
 pub(super) fn prepare(
     base: &Path,
     root: &Path,
@@ -86,13 +94,20 @@ pub(super) fn prepare(
     let locks = base.join("locks");
     let target = base.join(format!("target/slot-{number}"));
     let switched = owner(&locks, number) != root;
+    let free = free_space(base)?;
     let used = if switched {
-        used_bytes(&base.join("target")).map_err(|e| e.to_string())?
+        // A switch keeps the slot's dependency artifacts; only this slot's own
+        // size, not the total of every warm slot, decides whether clearing is
+        // cheaper. Cache-wide pruning belongs to `cleanup`.
+        used_bytes(&target).map_err(|e| e.to_string())?
     } else {
         0
     };
-    if used > 50 * GIB || free_space(base)? < 30 * GIB {
-        eprintln!("[build] cache above 50 GiB or disk below 30 GiB free; clearing slot-{number}");
+    if switch_overflow(used, free) {
+        eprintln!(
+            "[build] slot-{number} is above {:.0} GiB or disk is below 30 GiB free; clearing it",
+            CACHE_SLOT_LIMIT as f64 / GIB as f64
+        );
         remove_dir(&target).map_err(|e| e.to_string())?;
         // Never start a build when reclaiming this slot cannot restore headroom.
         if free_space(base)? < 30 * GIB {

@@ -202,3 +202,24 @@ fn cache_prune_clears_an_idle_slot_over_budget_and_dry_run_changes_nothing() {
     assert!(!base.join("target/slot-1").exists());
     fs::remove_dir_all(base).unwrap();
 }
+
+// Must 4: a worktree switch keeps a warm slot unless that slot alone is over
+// the measured per-slot budget or free disk cannot fund a build. The total
+// size of every warm slot must never turn a switch into a cold rebuild.
+#[test]
+fn worktree_switch_clears_only_a_slot_over_its_own_budget_or_low_free_space() {
+    for (used, free, expected) in [
+        (0, 31 * GIB, false),
+        (CACHE_SLOT_LIMIT, 31 * GIB, false),
+        (CACHE_SLOT_LIMIT + 1, 31 * GIB, true),
+        (CACHE_SLOT_LIMIT + 1, 100 * GIB, true),
+        (0, 30 * GIB - 1, true),
+        (0, 30 * GIB, false),
+    ] {
+        assert_eq!(
+            switch_overflow(used, free),
+            expected,
+            "used={used} free={free}"
+        );
+    }
+}
