@@ -19,6 +19,8 @@ Local-first desktop video editor for macOS, Windows and Linux.
 
 Out of scope: montage generation, automatic B-roll, voice cloning. AI suggestions always go through user review.
 
+Delivery order (the table ranks value, this ranks build order): foundation (structure, build, test kit) first, then the reference product's core editor features, then AI editing in the editor and agent control, then Home, then long video to shorts. Ticket priorities encode it ([issue tracker](../agents/issue-tracker.md)).
+
 ## Providers
 
 The user picks the provider for every AI feature:

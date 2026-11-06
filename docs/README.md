@@ -3,7 +3,7 @@
 | Owner | Facts |
 |---|---|
 | [Requirements](product/requirements.md) | Principles, scope, providers, languages |
-| [UI design](product/ui.md) | UI principles, design language, reference evidence |
+| [UI design](product/ui.md) | UI principles, design language, reference evidence; per-window geometry in [editor](product/ui-editor.md), [Home](product/ui-home.md), [shorts](product/ui-shorts.md) |
 | [UI tokens](product/tokens.md) | Token contracts, Rust owners, measured sources |
 | [Keyboard](product/keyboard.md) | Generated action table, binding persistence and platform modifiers |
 | [CLI](product/cli.md) | Headless commands, JSON output, exit codes, project lease and export consent |
@@ -25,7 +25,7 @@
 | Fact | Owner | Never in |
 |---|---|---|
 | Scope, priority, providers, languages | [Requirements](product/requirements.md) | tickets as the source of truth |
-| UI geometry, copy rules, states, gaps | [UI design](product/ui.md); values in `kit/theme.rs` via [tokens](product/tokens.md) | widget literals; ticket ids |
+| UI geometry, copy rules, states, gaps | [UI design](product/ui.md) and its window files; values in `kit/theme.rs` via [tokens](product/tokens.md) | widget literals; ticket ids |
 | Agent-facing surfaces | [CLI](product/cli.md), [MCP](product/mcp.md), [Keyboard](product/keyboard.md), [Commands](product/commands.md) | crate READMEs |
 | Crates and edges, the layer of each crate | [Architecture](engineering/architecture.md) | structure.md beyond its own rules |
 | Inside a crate: folders, layers, naming | [Structure](engineering/structure.md), `xtask/modules.toml` | standards.md beyond its link |

@@ -466,7 +466,7 @@ gesture reversal/cancel/clamping, refusal boundaries and preview job states.
 
 ## Track controls
 
-Timeline header and row geometry follows the [UI design](../../docs/product/ui.md#density),
+Timeline header and row geometry follows the [UI design](../../docs/product/ui-editor.md#density),
 using embedded regular SVG kind icons, output toggles and accessibility-only
 names. Logical row sizes stay constant across DPI scaling; vectors are cached at
 the display density. Empty rows have dashed placeholders. Header context

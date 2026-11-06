@@ -15,11 +15,11 @@ Ticket headers use these exact fields; omit `Blocked by` when empty:
 ```text
 Status: open | claimed | blocked | resolved | wontfix
 Type: task | research | bug
-Priority: P0 | P1 | P2
-Assignee: opencode | codex | human | -
+Priority: P0 | P1 | P2 | P3 | P4
+Assignee: opencode | claude-sonnet | codex | human | -
 Blocked by: NN, <milestone>/NN
 ```
 
-Bare numbers mean the same milestone. A ticket is unblocked when every blocker is `resolved`; `wontfix` records its reason. Put the outcome under `## Answer`.
+Priority follows the [delivery order](../product/requirements.md#scope): P0 foundation, P1 core editor, P2 AI editing and agent control, P3 Home, P4 long video to shorts; a defect takes the priority of the feature it breaks. Bare numbers mean the same milestone. A ticket is unblocked when every blocker is `resolved`; `wontfix` records its reason. Put the outcome under `## Answer`.
 
 Frontier order: highest priority, then most open tickets transitively blocked, then lowest number; `frontier --blocking` ranks unresolved tickets by unresolved transitive dependents. Claiming, resolving and routing follow [orchestration](orchestration.md).

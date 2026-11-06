@@ -44,8 +44,5 @@ text	crates/media/README.md	tracker id `ticket 18`
 text	crates/media/tests/fixtures/vision/README.md	tracker id `p1-clips/12`
 text	docs/product/keyboard.md	tracker id `p1-parity/16`
 text	docs/product/keyboard.md	tracker id `p1-parity/20`
-text	docs/product/ui.md	tracker id `ticket 117`
-text	docs/product/ui.md	tracker id `ticket 120`
-text	docs/product/ui.md	tracker id `ticket 126`
 text	packaging/README.md	tracker id `p0-core/44`
 text	packaging/README.md	tracker id `p2-platform/02`
