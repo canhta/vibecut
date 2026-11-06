@@ -156,25 +156,44 @@ fn cli_pixel_modifiers_execute_and_export_instead_of_copying() {
     if !tools() {
         return;
     }
-    for masked in [false, true] {
+    for case in ["blur", "mask", "grade"] {
+        let masked = case == "mask";
         let dir = tempfile::tempdir().unwrap();
         let video = dir.path().join("input.mp4");
         let project = dir.path().join("blur.vibecut");
         let output_path = dir.path().join("blur.mp4");
         generate_av(&video);
         media_project(&project, &video, None);
-        if masked {
-            exec(
-                &project,
-                "masks.add",
-                json!({"item":0,"mask":project::Mask::new("rectangle",project::MaskShape::Rectangle)}),
-            );
-        } else {
-            exec(
-                &project,
-                "effects.add",
-                json!({"item":0,"effect":{"id":"blur","enabled":true,"params":{"kind":"blur","intensity":100.0}}}),
-            );
+        match case {
+            "mask" => {
+                exec(
+                    &project,
+                    "masks.add",
+                    json!({"item":0,"mask":project::Mask::new("rectangle",project::MaskShape::Rectangle)}),
+                );
+            }
+            "grade" => {
+                // Added neutral, then graded through update_param, as the Adjust tab does.
+                exec(
+                    &project,
+                    "effects.add",
+                    json!({"item":0,"effect":{"id":"color_grade","enabled":true,"params":{"kind":"color_grade","brightness":0.0,"contrast":0.0,"saturation":0.0,"hue":0.0}}}),
+                );
+                for (key, value) in [("brightness", 50.0), ("saturation", -50.0)] {
+                    exec(
+                        &project,
+                        "effects.update_param",
+                        json!({"item":0,"effect":"color_grade","key":key,"value":value}),
+                    );
+                }
+            }
+            _ => {
+                exec(
+                    &project,
+                    "effects.add",
+                    json!({"item":0,"effect":{"id":"blur","enabled":true,"params":{"kind":"blur","intensity":100.0}}}),
+                );
+            }
         }
         let output = cli(&[
             os("export"),

@@ -134,8 +134,29 @@ fn transparent_edge_half_opacity_scaled_text_and_color_survive_encoded_decode() 
     if !tools() {
         return;
     }
-    for masked in [false, true] {
+    for case in ["plain", "masked", "graded"] {
+        let masked = case == "masked";
         let mut data = scene().into_data();
+        if case == "graded" {
+            // Preview and export must agree on a graded clip within the same MSE bound.
+            let item = data
+                .scene_mut()
+                .timeline
+                .iter_mut()
+                .flat_map(|t| &mut t.items)
+                .find(|i| i.id == project::ItemId(0))
+                .unwrap();
+            item.effects.push(project::EffectInstance {
+                id: "color_grade".into(),
+                enabled: true,
+                params: project::EffectParams::ColorGrade {
+                    brightness: 30.,
+                    contrast: 20.,
+                    saturation: -20.,
+                    hue: 10.,
+                },
+            });
+        }
         if masked {
             let item = data
                 .scene_mut()
@@ -201,27 +222,17 @@ fn transparent_edge_half_opacity_scaled_text_and_color_survive_encoded_decode() 
         let checksum = bytes.bytes.iter().fold(0xcbf29ce484222325u64, |hash, b| {
             (hash ^ u64::from(*b)).wrapping_mul(0x100000001b3)
         });
-        if masked {
-            assert_eq!(
-                checksum, 0xba9c55b24c28e586,
-                "visually inspected masked compositor golden"
-            );
-        } else {
-            assert_eq!(
-                checksum, 0x9748c49eea14a2bf,
-                "visually inspected compositor golden"
-            );
-        }
-        let png = root().join(if masked {
-            "masked-compositor-golden.png"
-        } else {
-            "compositor-golden.png"
-        });
-        let raw = root().join(if masked {
-            "masked-compositor-golden.rgba"
-        } else {
-            "compositor-golden.rgba"
-        });
+        let expected_checksum = match case {
+            "masked" => 0xba9c55b24c28e586,
+            "graded" => 0x16fda543ff7d7fd8,
+            _ => 0x9748c49eea14a2bf,
+        };
+        assert_eq!(
+            checksum, expected_checksum,
+            "visually inspected {case} compositor golden"
+        );
+        let png = root().join(format!("{case}-compositor-golden.png"));
+        let raw = root().join(format!("{case}-compositor-golden.rgba"));
         std::fs::write(&raw, &bytes.bytes).unwrap();
         ffmpeg(&[
             "-f".as_ref(),
@@ -236,11 +247,7 @@ fn transparent_edge_half_opacity_scaled_text_and_color_survive_encoded_decode() 
             "1".as_ref(),
             png.as_os_str(),
         ]);
-        let path = root().join(if masked {
-            "masked-compositor-golden.mp4"
-        } else {
-            "compositor-golden.mp4"
-        });
+        let path = root().join(format!("{case}-compositor-golden.mp4"));
         let receipt = export_with_sources(
             &p,
             TimeRange::new(Tick::ZERO, tick(1, 10)).unwrap(),
@@ -265,7 +272,7 @@ fn transparent_edge_half_opacity_scaled_text_and_color_survive_encoded_decode() 
         let background = reference.pixels()[0];
         let transparent = reference.pixels()[12 * 128 + 20];
         assert_eq!(background, transparent);
-        if !masked {
+        if case == "plain" {
             let red = reference.pixels()[65 * 128 + 25];
             let alpha = 128.0 / 255.0 * 0.5;
             assert!((red[0] - (alpha + background[0] * (1.0 - alpha))).abs() < 1e-5);
