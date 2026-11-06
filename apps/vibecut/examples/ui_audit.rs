@@ -86,8 +86,7 @@ impl App {
             Self::Editor(editor) => editor.presented_frame(),
             Self::Shorts(shorts) => shorts.preview().and_then(|editor| editor.presented_frame()),
             Self::Home { workspace, .. } => workspace
-                .editor
-                .as_ref()
+                .focused_editor()
                 .and_then(|editor| editor.presented_frame()),
         }
     }
@@ -1258,8 +1257,12 @@ fn close_prompt_locale(theme: Theme, scale: f32, locale: Locale) -> Result<AppHa
         preferences(theme, locale),
         None,
     )?;
-    workspace.editor = Some(Box::new(editor));
-    workspace.request_close();
+    let id = workspace.register_editor(Box::new(editor));
+    workspace
+        .windows
+        .get_mut(&id)
+        .ok_or("close-prompt project window")?
+        .request_close();
     let mut app = harness(
         App::Home {
             workspace: Box::new(workspace),

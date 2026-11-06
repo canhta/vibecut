@@ -76,8 +76,8 @@ recovery prompts; each accepted recovery becomes a project window. Closing Home
 hides it until Window > Home focuses it, while the event loop exits after
 the last window closes. The old editor back-to-Projects action is removed.
 `window_ui(project_id, ui)` drives that same project surface in kittest;
-automation ids remain unchanged inside each viewport. Focused single-editor
-callers retain their existing Workspace view through its registry projection.
+automation ids remain unchanged inside each viewport. `focused_editor` / `focused_editor_mut` and `editor_mut(ProjectId)` select
+the registered session explicitly; Home never contains an active-editor slot.
 
 The app shares catalog, preferences, model presentation, lifecycle runner and
 aggregate media accounting. Each project's media budget is a 512 MiB child of

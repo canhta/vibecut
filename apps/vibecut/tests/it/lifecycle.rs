@@ -26,8 +26,7 @@ fn create_save_exit_reopen_view_state_and_schema_refusal_preserve_disk() {
     app.create().unwrap();
     idle(&mut app);
     assert_eq!(
-        app.editor
-            .as_ref()
+        app.focused_editor()
             .unwrap()
             .session
             .project()
@@ -36,8 +35,7 @@ fn create_save_exit_reopen_view_state_and_schema_refusal_preserve_disk() {
             .as_str(),
         "New project"
     );
-    app.editor
-        .as_mut()
+    app.focused_editor_mut()
         .unwrap()
         .session
         .execute(
@@ -49,11 +47,11 @@ fn create_save_exit_reopen_view_state_and_schema_refusal_preserve_disk() {
     assert!(app.busy());
     idle(&mut app);
     assert!(app.error().is_none(), "{:?}", app.error());
-    assert!(app.editor.is_none());
+    assert!(app.focused_editor().is_none());
     app.open(path.clone()).unwrap();
     idle(&mut app);
     assert_eq!(
-        app.editor.as_ref().unwrap().session.metadata().view.zoom,
+        app.focused_editor().unwrap().session.metadata().view.zoom,
         2.0
     );
     app.persist(None, true, false, false).unwrap();
@@ -66,7 +64,7 @@ fn create_save_exit_reopen_view_state_and_schema_refusal_preserve_disk() {
     app.open(path.clone()).unwrap();
     idle(&mut app);
     assert!(app.error().is_some());
-    assert!(app.editor.is_none());
+    assert!(app.focused_editor().is_none());
     assert_eq!(std::fs::read(path).unwrap(), bytes);
 }
 #[test]
@@ -75,10 +73,9 @@ fn missing_path_creates_once_but_other_load_errors_show_retry_and_back() {
     let mut app = app(root.path());
     app.open(root.path().join("missing.vibecut")).unwrap();
     idle(&mut app);
-    let id = app.editor.as_ref().unwrap().session.project().data().id;
+    let id = app.focused_editor().unwrap().session.project().data().id;
     assert_eq!(
-        app.editor
-            .as_ref()
+        app.focused_editor()
             .unwrap()
             .session
             .project()
@@ -90,7 +87,10 @@ fn missing_path_creates_once_but_other_load_errors_show_retry_and_back() {
     for _ in 0..10 {
         app.tick();
     }
-    assert_eq!(app.editor.as_ref().unwrap().session.project().data().id, id);
+    assert_eq!(
+        app.focused_editor().unwrap().session.project().data().id,
+        id
+    );
     app.persist(None, true, false, true).unwrap();
     idle(&mut app);
     let bad = root.path().join("bad.vibecut");
@@ -147,8 +147,7 @@ fn inline_rename_commit_cancel_and_window_close_guard_use_real_widgets() {
     h.run_steps(3);
     let renamed = h
         .state()
-        .editor
-        .as_ref()
+        .focused_editor()
         .unwrap()
         .session
         .project()
@@ -166,8 +165,7 @@ fn inline_rename_commit_cancel_and_window_close_guard_use_real_widgets() {
     h.run_steps(3);
     assert_eq!(
         h.state()
-            .editor
-            .as_ref()
+            .focused_editor()
             .unwrap()
             .session
             .project()
@@ -199,11 +197,11 @@ fn inline_rename_commit_cancel_and_window_close_guard_use_real_widgets() {
         .events
         .clear();
     h.run_steps(3);
-    let snapping = h.state().editor.as_ref().unwrap().preferences.snapping;
+    let snapping = h.state().focused_editor().unwrap().preferences.snapping;
     h.key_press(egui::Key::N);
     h.run_steps(3);
     assert_eq!(
-        h.state().editor.as_ref().unwrap().preferences.snapping,
+        h.state().focused_editor().unwrap().preferences.snapping,
         snapping
     );
     h.get(By::new().predicate(|n| n.author_id() == Some("project.close.cancel")))
@@ -213,7 +211,7 @@ fn inline_rename_commit_cancel_and_window_close_guard_use_real_widgets() {
     h.key_press(egui::Key::N);
     h.run_steps(3);
     assert_ne!(
-        h.state().editor.as_ref().unwrap().preferences.snapping,
+        h.state().focused_editor().unwrap().preferences.snapping,
         snapping
     );
     let id = h.state().focused_project().unwrap();
@@ -267,8 +265,7 @@ fn recovery_prompt_recovers_copy_and_requires_save_as() {
     h.run_steps(3);
     assert!(
         h.state_mut()
-            .editor
-            .as_mut()
+            .focused_editor_mut()
             .unwrap()
             .session
             .autosave()
@@ -298,7 +295,7 @@ fn create_failure_is_recoverable_and_busy_save_as_retains_the_editor() {
     std::fs::write(&recovery, b"not a directory").unwrap();
     app.create().unwrap();
     idle(&mut app);
-    assert!(app.editor.is_none());
+    assert!(app.focused_editor().is_none());
     assert!(app.error().is_some());
     std::fs::remove_file(recovery).unwrap();
     app.create().unwrap();
@@ -306,12 +303,15 @@ fn create_failure_is_recoverable_and_busy_save_as_retains_the_editor() {
     assert!(app.error().is_none());
     let path = root.path().join("busy.vibecut");
     let held = project::WriterLease::acquire(&path).unwrap();
-    let id = app.editor.as_ref().unwrap().session.project().data().id;
+    let id = app.focused_editor().unwrap().session.project().data().id;
     app.persist(Some(path.clone()), false, false, false)
         .unwrap();
     idle(&mut app);
     assert!(app.error().is_some());
-    assert_eq!(app.editor.as_ref().unwrap().session.project().data().id, id);
+    assert_eq!(
+        app.focused_editor().unwrap().session.project().data().id,
+        id
+    );
     assert!(!path.exists());
     drop(held);
     app.persist(Some(path.clone()), false, false, false)
@@ -353,7 +353,7 @@ fn loading_and_exiting_indicators_cover_real_background_boundaries() {
     assert!(h.query_by_label("Exiting project…").is_some());
     idle(h.state_mut());
     h.run_steps(3);
-    assert!(h.state().editor.is_none());
+    assert!(h.state().focused_editor().is_none());
 }
 
 #[test]
@@ -406,7 +406,7 @@ fn journal_only_exit_refreshes_first_frame_thumbnail_without_saving_edits() {
     idle(&mut app);
     assert!(app.error().is_none());
     let before = std::fs::read(&path).unwrap();
-    let session = &mut app.editor.as_mut().unwrap().session;
+    let session = &mut app.focused_editor_mut().unwrap().session;
     let frame = session.project().data().canvas.fps.tick_of(1).unwrap();
     session.execute("timeline.insert", serde_json::json!({
         "placement":{"mode":"auto"},
@@ -423,7 +423,7 @@ fn journal_only_exit_refreshes_first_frame_thumbnail_without_saving_edits() {
     idle(&mut app);
     assert!(app.error().is_none(), "{:?}", app.error());
     assert!(!app.ready_to_close(), "Home remains open");
-    assert!(app.editor.is_none());
+    assert!(app.focused_editor().is_none());
     app.request_close();
     assert!(app.ready_to_close());
     assert_eq!(std::fs::read(&path).unwrap(), before);

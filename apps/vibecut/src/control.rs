@@ -92,7 +92,7 @@ pub fn background(arguments: Vec<OsString>) -> Result<()> {
         if workspace.error().is_some() {
             return Err(Error::Invalid("background workspace failed"));
         }
-        if let Some(editor) = workspace.active_editor_mut() {
+        if let Some(editor) = workspace.focused_editor_mut() {
             if server.is_none() {
                 server = Some(
                     vibecut_cli::mcp::Server::bind(

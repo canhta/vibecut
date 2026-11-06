@@ -19,7 +19,6 @@ use engine::{
 };
 use std::{
     collections::BTreeMap,
-    ops::{Deref, DerefMut},
     path::PathBuf,
     sync::{Arc, Mutex, mpsc},
     time::Duration,
@@ -40,23 +39,6 @@ pub struct Workspace {
     models: Option<crate::model_manager::ModelManager>,
 }
 
-// Compatibility for single-editor callers (including background/headless mode).
-// Ownership always stays in the registry; this is only a focused-window view.
-impl Deref for Workspace {
-    type Target = EditorWindow;
-    fn deref(&self) -> &EditorWindow {
-        self.focused
-            .and_then(|id| self.windows.get(&id))
-            .unwrap_or(&self.home)
-    }
-}
-impl DerefMut for Workspace {
-    fn deref_mut(&mut self) -> &mut EditorWindow {
-        self.focused
-            .and_then(|id| self.windows.get_mut(&id))
-            .unwrap_or(&mut self.home)
-    }
-}
 impl Workspace {
     pub fn new(root: PathBuf, preferences: Preferences, path: Option<PathBuf>) -> Result<Self> {
         let projects = root.with_file_name("projects");
@@ -107,6 +89,33 @@ impl Workspace {
     pub fn control_budget(&self) -> ByteBudget {
         self.home.budget.clone()
     }
+    /// Register an already-composed editor, retaining its writer lease and
+    /// resource policy. Repeated project identities focus their existing window.
+    pub fn register_editor(&mut self, editor: Box<Editor>) -> project::ProjectId {
+        let id = editor.session.project().data().id;
+        let path = match &editor.session {
+            crate::lifecycle::EditorSession::Persistent(s) => s.saved_path().map(ToOwned::to_owned),
+            crate::lifecycle::EditorSession::Memory(_) => None,
+        };
+        self.windows.entry(id).or_insert_with(|| {
+            let mut window = EditorWindow::new(
+                self.home.root.clone(),
+                self.preferences.clone(),
+                editor.playback.budget().clone(),
+                self.home.persistence.clone(),
+                self.home.runner.clone(),
+            );
+            window.project_window = true;
+            window.title = editor.session.project().data().name.as_str().to_owned();
+            window.editor = Some(editor);
+            window.path = path;
+            window.device_available = self.home.device_available;
+            window
+        });
+        self.focused = Some(id);
+        self.focus_requested = Some(id);
+        id
+    }
     pub fn focused_project(&self) -> Option<project::ProjectId> {
         self.focused
     }
@@ -127,12 +136,30 @@ impl Workspace {
     pub fn editor_mut(&mut self, id: project::ProjectId) -> Option<&mut Editor> {
         self.windows.get_mut(&id)?.editor.as_deref_mut()
     }
-    pub fn active_editor_mut(&mut self) -> Option<&mut Editor> {
-        if self.shorts_window {
-            self.shorts.as_mut().and_then(|s| s.preview_mut())
-        } else {
-            self.focused.and_then(|id| self.editor_mut(id))
-        }
+    /// The focused project's window, including its pending lifecycle operation.
+    pub fn focused_window_mut(&mut self) -> Option<&mut EditorWindow> {
+        self.focused.and_then(|id| self.windows.get_mut(&id))
+    }
+    pub fn focused_editor(&self) -> Option<&Editor> {
+        self.focused
+            .and_then(|id| self.windows.get(&id))?
+            .editor
+            .as_deref()
+    }
+    pub fn focused_editor_mut(&mut self) -> Option<&mut Editor> {
+        self.focused_window_mut()?.editor.as_deref_mut()
+    }
+    /// Save the focused project without coupling its operation to Home or peers.
+    pub fn persist(
+        &mut self,
+        path: Option<PathBuf>,
+        leave: bool,
+        close: bool,
+        journal_only: bool,
+    ) -> Result<()> {
+        self.focused_window_mut()
+            .ok_or(Error::Invalid("no project"))?
+            .persist(path, leave, close, journal_only)
     }
     pub fn busy(&self) -> bool {
         self.home.busy() || self.projects.busy() || self.windows.values().any(EditorWindow::busy)
@@ -212,30 +239,7 @@ impl Workspace {
             self.home.error = Some(error);
         }
         if let Some(editor) = self.home.editor.take() {
-            let id = editor.session.project().data().id;
-            let path = match &editor.session {
-                crate::lifecycle::EditorSession::Persistent(s) => {
-                    s.saved_path().map(ToOwned::to_owned)
-                }
-                crate::lifecycle::EditorSession::Memory(_) => None,
-            };
-            self.windows.entry(id).or_insert_with(|| {
-                let mut window = EditorWindow::new(
-                    self.home.root.clone(),
-                    self.preferences.clone(),
-                    editor.playback.budget().clone(),
-                    self.home.persistence.clone(),
-                    self.home.runner.clone(),
-                );
-                window.project_window = true;
-                window.title = editor.session.project().data().name.as_str().to_owned();
-                window.editor = Some(editor);
-                window.path = path;
-                window.device_available = self.home.device_available;
-                window
-            });
-            self.focused = Some(id);
-            self.focus_requested = Some(id);
+            self.register_editor(editor);
         }
         for window in self.windows.values_mut() {
             // Background workflow completions can request the model service
@@ -467,6 +471,10 @@ fn remember_geometry(
         geometry.size = previous.size;
         geometry.position = previous.position;
     }
+    if preferences.windows.get(&key) == Some(&geometry) {
+        return;
+    }
+    let previous = preferences.windows.clone();
     if !preferences.windows.contains_key(&key)
         && preferences.windows.len() >= 64
         && let Some(oldest) = preferences
@@ -477,7 +485,23 @@ fn remember_geometry(
     {
         preferences.windows.remove(&oldest);
     }
-    preferences.windows.insert(key, geometry);
+    preferences.windows.insert(key.clone(), geometry);
+    // Geometry is presentation history: trim it before allowing a resize to
+    // make the bounded preference document unreadable or block later edits.
+    while preferences.validate().is_err() {
+        let evict = preferences
+            .windows
+            .keys()
+            .find(|k| **k != key && *k != "home" && *k != "shorts")
+            .or_else(|| preferences.windows.keys().find(|k| **k != key))
+            .cloned();
+        if let Some(evict) = evict {
+            preferences.windows.remove(&evict);
+        } else {
+            preferences.windows = previous;
+            break;
+        }
+    }
 }
 
 #[derive(Clone, Copy)]
@@ -1450,6 +1474,47 @@ mod tests {
     use super::*;
     use std::time::Instant;
     #[test]
+    fn geometry_history_yields_to_the_preference_byte_bound_and_preserves_normal_size() {
+        let mut preferences = Preferences::default();
+        for index in 0..128 {
+            preferences.sections.insert(format!("{index:064}"), false);
+        }
+        for index in 0..64 {
+            let key = format!("{index:064}");
+            preferences.windows.insert(key.clone(), Default::default());
+            if preferences.validate().is_err() {
+                preferences.windows.remove(&key);
+                break;
+            }
+        }
+        let sections = preferences.sections.clone();
+        let before = preferences.windows.len();
+        let key = "x".repeat(64);
+        let geometry = crate::catalog::WindowGeometry {
+            size: [12345.678, 12345.678],
+            position: Some([-12345.678, -23_456.79]),
+            maximized: false,
+        };
+        remember_geometry(&mut preferences, key.clone(), geometry.clone());
+        assert!(preferences.validate().is_ok());
+        assert_eq!(preferences.sections, sections);
+        assert_eq!(preferences.windows.get(&key), Some(&geometry));
+        assert!(
+            preferences.windows.len() <= before,
+            "history eviction must create room for the new geometry"
+        );
+        let maximized = crate::catalog::WindowGeometry {
+            size: [16000.0, 16000.0],
+            position: Some([0.0, 0.0]),
+            maximized: true,
+        };
+        remember_geometry(&mut preferences, key.clone(), maximized);
+        let restored = preferences.windows.get(&key).unwrap();
+        assert_eq!(restored.size, geometry.size);
+        assert_eq!(restored.position, geometry.position);
+        assert!(restored.maximized);
+    }
+    #[test]
     fn startup_opens_once_after_both_discovery_and_catalog_are_ready() {
         for catalog_first in [false, true] {
             let root = tempfile::tempdir().unwrap();
@@ -1465,11 +1530,17 @@ mod tests {
             )
             .unwrap();
             let release_catalog = workspace.projects.defer_initial_catalog();
-            let discovery = workspace.pending.as_ref().unwrap().id;
+            let discovery = workspace.home.pending.as_ref().unwrap().id;
             let deadline = Instant::now() + Duration::from_secs(10);
             loop {
-                workspace.runner.borrow_mut().tick().unwrap();
-                if workspace.runner.borrow().snapshot(discovery).unwrap().state
+                workspace.home.runner.borrow_mut().tick().unwrap();
+                if workspace
+                    .home
+                    .runner
+                    .borrow()
+                    .snapshot(discovery)
+                    .unwrap()
+                    .state
                     == JobState::Completed
                 {
                     break;
@@ -1483,12 +1554,12 @@ mod tests {
             } else {
                 workspace.tick();
                 assert!(workspace.error().is_none(), "{:?}", workspace.error());
-                assert_eq!(workspace.startup_path.as_ref(), Some(&path));
-                assert!(workspace.pending.is_none());
-                assert!(workspace.editor.is_none());
+                assert_eq!(workspace.home.startup_path.as_ref(), Some(&path));
+                assert!(workspace.home.pending.is_none());
+                assert!(workspace.focused_editor().is_none());
                 release_catalog();
             }
-            while workspace.editor.is_none() || workspace.busy() {
+            while workspace.focused_editor().is_none() || workspace.busy() {
                 workspace.tick();
                 assert!(workspace.error().is_none(), "{:?}", workspace.error());
                 assert!(Instant::now() < deadline);
@@ -1496,8 +1567,7 @@ mod tests {
             }
             assert_eq!(
                 workspace
-                    .editor
-                    .as_ref()
+                    .focused_editor()
                     .unwrap()
                     .session
                     .project()
@@ -1505,10 +1575,10 @@ mod tests {
                     .id,
                 project::ProjectId(42)
             );
-            assert!(workspace.startup_path.is_none());
+            assert!(workspace.home.startup_path.is_none());
             workspace.tick();
             assert!(workspace.error().is_none(), "{:?}", workspace.error());
-            assert!(workspace.pending.is_none());
+            assert!(workspace.home.pending.is_none());
             assert_eq!(std::fs::read(&path).unwrap(), bytes);
         }
     }
@@ -1574,34 +1644,35 @@ mod tests {
         let clock = Arc::new(ManualClock::default());
         let session = fresh("picker test").unwrap();
         let autosave = Autosave::new(
-            &workspace.root,
+            &workspace.home.root,
             session,
-            workspace.budget.clone(),
+            workspace.home.budget.clone(),
             clock.clone(),
             Schedule::default(),
         )
         .unwrap();
         let playback = Playback::new(
             autosave.session(),
-            workspace.budget.clone(),
+            workspace.home.budget.clone(),
             Arc::new(Files),
         )
         .unwrap();
-        workspace.editor = Some(Box::new(Editor::persisted(
+        workspace.home.editor = Some(Box::new(Editor::persisted(
             autosave,
             playback,
             Preferences::default(),
         )));
         let thumbnails = workspace
+            .home
             .root
             .parent()
-            .unwrap_or(&workspace.root)
+            .unwrap_or(&workspace.home.root)
             .join("thumbnails");
-        if let Some(editor) = &mut workspace.editor {
+        if let Some(editor) = &mut workspace.home.editor {
             editor.set_thumbnail_root(thumbnails);
         }
         workspace.tick();
-        workspace.picker = Some(Picker {
+        workspace.focused_window_mut().unwrap().picker = Some(Picker {
             future: Box::pin(std::future::pending()),
             action: PickerAction::Save {
                 leave: false,
@@ -1613,8 +1684,7 @@ mod tests {
         loop {
             workspace.tick();
             if workspace
-                .editor
-                .as_mut()
+                .focused_editor_mut()
                 .unwrap()
                 .session
                 .autosave()
@@ -1628,13 +1698,18 @@ mod tests {
             std::thread::sleep(Duration::from_millis(1));
         }
         assert!(workspace.busy());
-        workspace.picker.as_mut().unwrap().future = Box::pin(std::future::ready(None));
+        workspace
+            .focused_window_mut()
+            .unwrap()
+            .picker
+            .as_mut()
+            .unwrap()
+            .future = Box::pin(std::future::ready(None));
         workspace.tick();
         assert!(!workspace.busy());
         assert_eq!(
             workspace
-                .editor
-                .as_ref()
+                .focused_editor()
                 .unwrap()
                 .session
                 .project()

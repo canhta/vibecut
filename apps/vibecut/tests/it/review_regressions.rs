@@ -73,7 +73,7 @@ fn only_one_recovery_prompt_should_own_the_editor_at_a_time() {
     h.run_steps(3);
     idle(h.state_mut());
     h.run_steps(3);
-    assert!(h.state().editor.is_some());
+    assert!(h.state().focused_editor().is_some());
     assert!(
         h.query_by_label("Recover a copy").is_none(),
         "another startup candidate still blocks the recovered editor"
@@ -103,8 +103,7 @@ fn two_recovered_projects_can_be_saved_and_left_in_sequence_without_changing_ori
         idle(&mut app);
         app.open(path.clone()).unwrap();
         idle(&mut app);
-        app.editor
-            .as_mut()
+        app.focused_editor_mut()
             .unwrap()
             .session
             .execute(
@@ -141,7 +140,7 @@ fn two_recovered_projects_can_be_saved_and_left_in_sequence_without_changing_ori
         idle(h.state_mut());
         h.run_steps(3);
         assert!(h.query_by_label("Recover a copy").is_none());
-        let editor = h.state().editor.as_ref().unwrap();
+        let editor = h.state().focused_editor().unwrap();
         let id = editor.session.project().data().id;
         recovered.insert(id);
         let name = editor.session.project().data().name.clone();
@@ -152,7 +151,7 @@ fn two_recovered_projects_can_be_saved_and_left_in_sequence_without_changing_ori
         idle(h.state_mut());
         h.run_steps(3);
         assert!(h.state().error().is_none());
-        assert!(h.state().editor.is_none());
+        assert!(h.state().focused_editor().is_none());
         let saved = project::load(&destination).unwrap().project;
         assert_eq!(saved.data().id, id);
         assert_eq!(saved.data().name, name);

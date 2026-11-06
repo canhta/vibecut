@@ -350,8 +350,7 @@ fn picker_result_imports_through_workspace_and_real_editor_widgets() {
         assert!(Instant::now() < deadline);
         std::thread::sleep(Duration::from_millis(2));
     }
-    app.editor
-        .as_mut()
+    app.focused_editor_mut()
         .unwrap()
         .set_import_probe(Arc::new(Probe::default()))
         .unwrap();
@@ -372,17 +371,19 @@ fn picker_result_imports_through_workspace_and_real_editor_widgets() {
     // Inject the OS picker's returned paths at the production result seam.
     harness
         .state_mut()
+        .focused_window_mut()
+        .unwrap()
         .import_picked_files(vec![path("picker-video.mp4"), path("picker-bad.mp4")])
         .unwrap();
     loop {
         harness.run_steps(1);
-        if !harness.state().editor.as_ref().unwrap().importing() {
+        if !harness.state().focused_editor().unwrap().importing() {
             break;
         }
         assert!(Instant::now() < deadline);
         std::thread::sleep(Duration::from_millis(2));
     }
-    let inspection = harness.state().editor.as_ref().unwrap().inspect().unwrap();
+    let inspection = harness.state().focused_editor().unwrap().inspect().unwrap();
     assert_eq!(inspection.import_imported, 1);
     assert_eq!(inspection.import_failures.len(), 1);
     assert_eq!(inspection.import_unfinished, 0);
@@ -397,8 +398,7 @@ fn picker_result_imports_through_workspace_and_real_editor_widgets() {
     harness.run_steps(2);
     let data = harness
         .state()
-        .editor
-        .as_ref()
+        .focused_editor()
         .unwrap()
         .session
         .project()

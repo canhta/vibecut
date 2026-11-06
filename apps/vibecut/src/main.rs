@@ -166,7 +166,7 @@ impl eframe::App for Native {
                 self.audio_port = Some(port);
             }
         }
-        let Some(editor) = &self.workspace.editor else {
+        let Some(editor) = self.workspace.focused_editor() else {
             return;
         };
         if let Some(smoke) = &mut self.smoke {
@@ -291,7 +291,7 @@ fn headless_smoke(root: PathBuf) -> Result<()> {
         }
         std::thread::sleep(Duration::from_millis(2));
     }
-    if workspace.editor.is_none() {
+    if workspace.focused_editor().is_none() {
         return Err(Error::Invalid("headless editor missing"));
     }
     let context = egui::Context::default();

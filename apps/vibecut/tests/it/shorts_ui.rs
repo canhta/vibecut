@@ -570,7 +570,7 @@ fn home_card_opens_a_dedicated_viewport_and_native_drop_selects_one_video() {
     h.get(by("home.shorts")).click();
     h.run_steps(2);
     assert!(h.state().shorts.is_some());
-    assert!(h.state().editor.is_none());
+    assert!(h.state().focused_editor().is_none());
     assert!(h.query_all(by("shorts.pick")).count() == 1);
     h.state_mut().shorts = Some(ready());
     h.run_steps(3);
@@ -584,8 +584,7 @@ fn home_card_opens_a_dedicated_viewport_and_native_drop_selects_one_video() {
     }
     assert_eq!(
         h.state()
-            .editor
-            .as_ref()
+            .focused_editor()
             .unwrap()
             .session
             .project()
@@ -599,8 +598,7 @@ fn home_card_opens_a_dedicated_viewport_and_native_drop_selects_one_video() {
     );
     assert!(
         h.state_mut()
-            .editor
-            .as_mut()
+            .focused_editor_mut()
             .unwrap()
             .session
             .autosave()

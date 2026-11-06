@@ -681,8 +681,7 @@ fn new_project_is_created_in_the_managed_catalog_and_opened() {
     assert_eq!(
         harness
             .state()
-            .editor
-            .as_ref()
+            .focused_editor()
             .unwrap()
             .session
             .project()
@@ -718,8 +717,7 @@ fn card_menu_opens_the_managed_project_through_the_lifecycle_adapter() {
     assert_eq!(
         harness
             .state()
-            .editor
-            .as_ref()
+            .focused_editor()
             .unwrap()
             .session
             .project()
