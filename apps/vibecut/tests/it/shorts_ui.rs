@@ -16,15 +16,32 @@ use std::sync::{Arc, Mutex, mpsc};
 use vibecut::{
     catalog::Locale,
     egui,
-    shorts::{Decision, GenerationRequest, Generator, ReviewSource, Shorts, TaskEvents},
+    shorts::{
+        Action, Context, Decision, GenerationRequest, Generator, ReviewSource, State as Shorts,
+        TaskEvents,
+    },
 };
 fn by(id: &str) -> By<'_> {
     By::new().predicate(move |n| n.author_id() == Some(id))
 }
+thread_local! {
+    static OPENED: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
 fn harness(app: Shorts) -> Harness<'static, Shorts> {
+    OPENED.set(false);
     Harness::builder()
         .with_size(egui::vec2(1440.0, 1000.0))
-        .build_ui_state(|ui, a: &mut Shorts| a.ui(ui), app)
+        .build_ui_state(
+            |ui, a: &mut Shorts| {
+                let cx = Context {
+                    editor_available: true,
+                };
+                if vibecut::shorts::show(a, &cx, ui).contains(&Action::OpenEditor) {
+                    OPENED.set(true);
+                }
+            },
+            app,
+        )
 }
 #[test]
 fn review_actions_and_play_order_reach_preview_and_single_step_editor_insertion() {
@@ -96,7 +113,7 @@ fn review_actions_and_play_order_reach_preview_and_single_step_editor_insertion(
     let row = h.state().reviews()[0].clone();
     h.get(by("shorts.edit")).click();
     h.run_steps(2);
-    assert!(h.state().open_editor);
+    assert!(OPENED.get());
     let (mut session, settings) = h.state().editor_session().unwrap();
     assert_eq!(session.project().data().canvas.width, 1080);
     assert_eq!(session.project().data().canvas.height, 1920);
@@ -301,6 +318,8 @@ fn safe_trim_and_invalid_bounds_preserve_history_and_source_ranks() {
     assert_eq!(app.reviews()[0], before);
     let mut h = harness(app);
     h.run_steps(3);
+    h.get(by("shorts.tool.trim")).click();
+    h.run_steps(2);
     h.get(by("shorts.segment.0.in")).click();
     h.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::A);
     h.get(by("shorts.segment.0.in")).type_text("NaN");
@@ -327,6 +346,8 @@ fn safe_trim_and_invalid_bounds_preserve_history_and_source_ranks() {
         wait(&mut app);
         let mut h = harness(app);
         h.run_steps(3);
+        h.get(by("shorts.tool.trim")).click();
+        h.run_steps(2);
         // Apply catalog-formatted grouped values without editing them first.
         h.get(by("shorts.segment.0.trim")).click();
         h.run_steps(2);
@@ -363,6 +384,8 @@ fn safe_trim_and_invalid_bounds_preserve_history_and_source_ranks() {
 fn crop_gesture_reversal_and_bounds_are_one_review_undo_step() {
     let mut h = harness(ready());
     h.run_steps(3);
+    h.get(by("shorts.tool.layout")).click();
+    h.run_steps(2);
     let initial = h.state().reviews()[0].clone();
     let from = h.get(by("shorts.crop")).rect().center();
     h.drag_at(from);
@@ -520,7 +543,7 @@ fn exact_upload_requires_explicit_approval_and_cancellation_interrupts_the_promp
             assert!(std::time::Instant::now() < deadline);
         }
         assert!(!approved.load(std::sync::atomic::Ordering::Acquire));
-        assert!(h.query_by_label("Payload bytes: 123").is_some());
+        assert!(h.query_by_label("Size: 123").is_some());
         assert!(h.query_by_label("injected / explicit-model · vi").is_some());
         match decision {
             Some(true) => h.get(by("shorts.consent.approve")).click(),

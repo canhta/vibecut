@@ -57,14 +57,19 @@ enum App {
         _directory: tempfile::TempDir,
     },
     Editor(Box<Editor>),
-    Shorts(Box<vibecut::shorts::Shorts>),
+    Shorts(Box<vibecut::shorts::State>),
 }
 impl App {
     fn ui(&mut self, ui: &mut egui::Ui) {
         match self {
             Self::Home { workspace, .. } => workspace.ui(ui),
             Self::Editor(editor) => editor.ui(ui),
-            Self::Shorts(shorts) => shorts.ui(ui),
+            Self::Shorts(shorts) => {
+                let cx = vibecut::shorts::Context {
+                    editor_available: true,
+                };
+                vibecut::shorts::show(shorts, &cx, ui);
+            }
         }
     }
     fn busy(&self) -> bool {
@@ -228,6 +233,24 @@ const SCENES: &[Scene] = &[
         reference_dark: Some("screens-2026-11-04/shorts-2-setup.png"),
         reference_light: Some("screens-2026-11-04/shorts-2-setup.png"),
         build: |theme, scale| shorts_scene(theme, scale, Locale::En, "setup"),
+    },
+    Scene {
+        name: "shorts-generating",
+        reference_dark: None,
+        reference_light: None,
+        build: |theme, scale| shorts_scene(theme, scale, Locale::En, "generating"),
+    },
+    Scene {
+        name: "shorts-layout",
+        reference_dark: None,
+        reference_light: None,
+        build: |theme, scale| shorts_scene(theme, scale, Locale::En, "layout"),
+    },
+    Scene {
+        name: "shorts-trim",
+        reference_dark: None,
+        reference_light: None,
+        build: |theme, scale| shorts_scene(theme, scale, Locale::En, "trim"),
     },
     Scene {
         name: "shorts-review",
@@ -2029,6 +2052,23 @@ fn index_html(rows: &[Row]) -> String {
     html
 }
 
+/// A generation that never finishes, so the audit can draw the working state.
+struct Hold;
+impl vibecut::shorts::Generator for Hold {
+    fn run(
+        &self,
+        _request: vibecut::shorts::GenerationRequest,
+        _budget: ByteBudget,
+        _events: &vibecut::shorts::TaskEvents,
+        cancel: &engine::subtitles::Cancellation,
+    ) -> engine::Result<vibecut::shorts::ReviewSource> {
+        while !cancel.cancelled() {
+            std::thread::sleep(Duration::from_millis(20));
+        }
+        Err(engine::EditError::Cancelled)
+    }
+}
+
 /// Shared fixture, real widget path; no provider calls or visible native window.
 fn shorts_scene(
     theme: Theme,
@@ -2038,7 +2078,7 @@ fn shorts_scene(
 ) -> Result<AppHarness, Failure> {
     use vibecut::{
         playback::Sources,
-        shorts::{Decision, Shorts},
+        shorts::{Decision, State as Shorts},
     };
     static ASSET: std::sync::OnceLock<SourceAsset> = std::sync::OnceLock::new();
     let mut source = shorts_fixture::source();
@@ -2059,25 +2099,31 @@ fn shorts_scene(
         Arc::new(shorts_fixture::Pixels)
     };
     let prefs = preferences(theme, locale);
-    let mut shorts = Shorts::with_generator(
-        prefs,
-        ByteBudget::new(768 << 20)?,
-        Arc::new(shorts_fixture::Once(Mutex::new(Some(source)))),
-        preview,
-    )?;
+    let generator: Arc<dyn vibecut::shorts::Generator> = if scene == "generating" {
+        Arc::new(Hold)
+    } else {
+        Arc::new(shorts_fixture::Once(Mutex::new(Some(source))))
+    };
+    let mut shorts =
+        Shorts::with_generator(prefs, ByteBudget::new(768 << 20)?, generator, preview)?;
     shorts.captions = false;
     if scene != "pick" {
         shorts.pick_video(std::env::temp_dir().join("Interview.mp4"))?;
     }
     let mut app = Harness::builder()
-        .with_size(egui::vec2(1280.0, 800.0))
+        .with_size(egui::vec2(1718.0, 989.0))
         .with_pixels_per_point(scale)
         .build_eframe(|_| AuditApp {
             app: App::Shorts(Box::new(shorts)),
             _model_cache: None,
         });
     app.run_steps(3);
-    if scene == "review" {
+    if scene == "generating" {
+        app.get(By::new().predicate(|n| n.author_id() == Some("shorts.generate")))
+            .click();
+        app.run_steps(4);
+    }
+    if matches!(scene, "review" | "layout" | "trim") {
         app.get(By::new().predicate(|n| n.author_id() == Some("shorts.generate")))
             .click();
         app.run_steps(1);
@@ -2120,6 +2166,16 @@ fn shorts_scene(
             std::thread::yield_now();
         }
         app.run_steps(3);
+        let tool = match scene {
+            "layout" => Some("shorts.tool.layout"),
+            "trim" => Some("shorts.tool.trim"),
+            _ => None,
+        };
+        if let Some(tool) = tool {
+            app.get(By::new().predicate(move |n| n.author_id() == Some(tool)))
+                .click();
+            app.run_steps(3);
+        }
     }
     Ok(app)
 }

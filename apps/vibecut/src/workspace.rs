@@ -29,7 +29,7 @@ use std::{
 pub struct Workspace {
     pub windows: BTreeMap<project::ProjectId, EditorWindow>,
     pub projects: HomeState,
-    pub shorts: Option<crate::shorts::Shorts>,
+    pub shorts: Option<crate::shorts::State>,
     pub preferences: Preferences,
     home: EditorWindow,
     focused: Option<project::ProjectId>,
@@ -193,7 +193,7 @@ impl Workspace {
     }
     pub fn open_shorts(&mut self) -> Result<()> {
         if self.shorts.is_none() {
-            self.shorts = Some(crate::shorts::Shorts::new(
+            self.shorts = Some(crate::shorts::State::new(
                 self.preferences.clone(),
                 self.home.budget.clone(),
             )?);
@@ -412,19 +412,25 @@ impl Workspace {
         if self.shorts_window
             && let Some(shorts) = &mut self.shorts
         {
-            shorts.can_open_editor = !self.home.busy();
+            let cx = crate::shorts::Context {
+                editor_available: !self.home.busy(),
+            };
             let mut close = false;
+            let mut actions = Vec::new();
             ctx.show_viewport_immediate(
                 egui::ViewportId::from_hash_of("shorts.window"),
                 self.preferences
                     .windows
                     .get("shorts")
                     .cloned()
-                    .unwrap_or_default()
+                    .unwrap_or(crate::catalog::WindowGeometry {
+                        size: crate::shorts::WINDOW,
+                        ..Default::default()
+                    })
                     .builder()
                     .with_title(catalog::text(shorts.preferences.locale, Text::Shorts)),
                 |ui, _| {
-                    shorts.ui(ui);
+                    actions = crate::shorts::show(shorts, &cx, ui);
                     close = ui.input(|i| i.viewport().close_requested());
                     if let Some(geometry) = crate::catalog::WindowGeometry::read(ui) {
                         remember_geometry(&mut self.preferences, "shorts".into(), geometry);
@@ -437,8 +443,7 @@ impl Workspace {
                 }
                 self.shorts_window = false;
             }
-            if shorts.open_editor && !self.home.busy() {
-                shorts.open_editor = false;
+            if actions.contains(&crate::shorts::Action::OpenEditor) && !self.home.busy() {
                 let result = shorts.editor_session().and_then(|(s, settings)| {
                     self.home
                         .submit(Work::Short(Box::new(s), settings), Text::LoadingProject)

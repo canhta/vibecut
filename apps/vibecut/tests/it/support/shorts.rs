@@ -19,7 +19,7 @@ use time::{FrameRate, SourceRange, TICKS_PER_SECOND, Tick};
 use vibecut::{
     catalog::Preferences,
     playback::Sources,
-    shorts::{Candidate, GenerationRequest, Generator, ReviewSource, Shorts, TaskEvents},
+    shorts::{Candidate, GenerationRequest, Generator, ReviewSource, State as Shorts, TaskEvents},
 };
 pub fn tick(n: i64) -> Tick {
     Tick(n * TICKS_PER_SECOND)
