@@ -18,7 +18,7 @@ so direct and aggregate checks share Cargo fingerprints.
 |---|---|
 | `build -- COMMAND [ARGS...]` | FIFO admission and command exit status on macOS and Windows; OS-native arguments, inherited standard streams |
 | `frontier [ASSIGNEE]`, `frontier --blocking` | Ready tickets ordered by priority, open transitive dependents and ID, printing the dependent count; `--blocking` ranks every unresolved ticket by unresolved transitive dependents with its status; missing/wontfix blocker diagnostics |
-| `board [PORT]` | Read-only live ticket page and `data.json` on IPv4 localhost, default port 8765 |
+| `board [PORT]` | Read-only project overview on IPv4 localhost, default port 8765; starts the configured Cloudflare tunnel when present |
 | `cleanup [--environment NAME] [--dry-run] TARGET...` | Release settled worker dispatches or remove worktree targets, prune two-day-old build sessions/slots; `--dry-run` prints the plan |
 | `pull-reports [--environment NAME] [--ssh HOST] [--dry-run] <worktree>...` | Merge a worktree's `.scratch` reports into the main checkout without overwriting newer local files |
 | `checks`, `docs`, `layers`, `assets` | Repository policy; `docs` includes the docs index, README module maps and tracker-free Markdown against only-shrinking `xtask/docs-baseline.txt`; `checks` also checks formatting and the integration-test entry point |
@@ -181,16 +181,45 @@ here.
 The ticket commands and name policy find the main checkout through Git's absolute
 common directory, so linked worktrees read the same `.scratch` data. The
 [issue tracker](../docs/agents/issue-tracker.md) owns the ticket format. The board
-retains progress, kanban, next-up and dependency-wave views; wave, critical-path
-and unblock counts include cross-milestone edges. Unblock counts are open
+provides a read-only project overview: overall delivery, milestone completion,
+priority scope and the dependencies holding up delivery. Milestones expand into
+ticket details; completion uses ticket counts and excludes wontfix tickets.
+Milestone, priority, assignee and status filters plus search narrow every panel,
+and the filtered view travels in the URL. Critical-path and unblock counts include
+cross-milestone edges. Unblock counts are open
 tickets transitively blocked by a ticket, shared by `frontier`; `frontier
 --blocking` instead counts unresolved transitive dependents for every
 unresolved ticket. Missing/wontfix blockers prevent readiness; cycles or
 dependency depth beyond 512 return an error. Each request reloads tickets. The
-server only accepts GET for `/` and `/data.json`; it never
-serves filesystem paths or writes ticket data. Request lines are capped at 8 KiB
+server only accepts GET for `/`, `/data.json` and `/ticket.json`; it never
+serves filesystem paths or writes ticket data. Ticket text loads on demand.
+Set `VIBECUT_BOARD_TOKEN` to require `?token=<value>` on every request when the
+board is exposed through a tunnel. Request lines are capped at 8 KiB
 and reads/writes time out after two seconds. Ticket files are trusted local data;
-this is not a public or multi-user server.
+this is a read-only project status server, without multi-user editing.
+
+The optional `tickets/tunnel.rs` child owns Cloudflare process startup and cleanup;
+`tickets.rs` owns the graph and HTTP endpoints, and `tickets/board.html` owns the
+project overview. To enable a stable public hostname on a machine, install
+`cloudflared`, create a named tunnel and its DNS route, then store the following
+in the ignored `.privates/board-tunnel.json` of the main checkout:
+
+```json
+{
+  "executable": "/absolute/path/to/cloudflared",
+  "tunnel": "tunnel-uuid",
+  "hostname": "board.example.com",
+  "credentials": "/absolute/path/to/tunnel-credentials.json"
+}
+```
+
+Keep the tunnel credentials in `.privates/` too. `cargo xtask board [PORT]`
+generates the tunnel ingress for that port and runs the connector alongside the
+board. Without the local configuration it serves localhost only. The public
+hostname exposes the same read-only overview and ticket details. Optional
+`VIBECUT_BOARD_TOKEN` requires `?token=<value>` on all endpoints; the page retains
+it for its own requests. Tunnel setup follows the
+[Cloudflare guide](https://developers.cloudflare.com/tunnel/features/locally-managed-tunnels/create-local-tunnel/).
 
 ## Maintenance
 

@@ -1,60 +1,381 @@
-<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>VibeCut board</title><style>
-:root{--bg:#f6f7f9;--panel:#fff;--ink:#1d2128;--mute:#6b7280;--line:#e3e6ea;--p0:#d93636;--p1:#d98a1c;--p2:#5b7bd5;--ok:#2f9e5b;--ready:#0e8f8f}
-@media (prefers-color-scheme:dark){:root{--bg:#121417;--panel:#1b1e23;--ink:#e6e8eb;--mute:#9aa1ab;--line:#2c3138}}
-*{box-sizing:border-box}body{margin:0;font:13px/1.4 -apple-system,system-ui,sans-serif;background:var(--bg);color:var(--ink)}
-header{position:sticky;top:0;background:var(--panel);border-bottom:1px solid var(--line);padding:10px 16px;display:flex;gap:10px;align-items:center;flex-wrap:wrap;z-index:2}
-h1{font-size:15px;margin:0 8px 0 0}select,input{font:inherit;padding:4px 6px;border:1px solid var(--line);border-radius:6px;background:var(--panel);color:var(--ink)}
-.tabs button{font:inherit;border:1px solid var(--line);background:var(--panel);color:var(--ink);padding:4px 10px;border-radius:6px;cursor:pointer}.tabs button.on{background:var(--ink);color:var(--panel)}
-.meta{margin-left:auto;color:var(--mute)}main{padding:16px}
-.cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:12px}
-.ms{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:12px}.ms h3{margin:0 0 6px;font-size:14px}
-.bar{display:flex;height:10px;border-radius:5px;overflow:hidden;background:var(--line);margin:6px 0}.bar span{display:block}
-.legend{color:var(--mute);font-size:12px}.kpi{display:flex;gap:16px;margin-bottom:14px;flex-wrap:wrap}.kpi div{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:10px 14px}.kpi b{display:block;font-size:20px}
-.board{display:grid;grid-template-columns:repeat(5,minmax(200px,1fr));gap:10px;overflow-x:auto}
-.col{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:8px;min-height:120px}.col h2{font-size:12px;text-transform:uppercase;letter-spacing:.04em;color:var(--mute);margin:2px 4px 8px}
-.t{border:1px solid var(--line);border-left:4px solid var(--p2);border-radius:8px;padding:6px 8px;margin-bottom:6px;cursor:pointer;background:var(--bg)}
-.g{display:grid;gap:3px 0;align-items:center;background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:10px;overflow-x:auto}.g .lab{font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;padding-right:8px;cursor:pointer}.g .b{height:16px;border-radius:4px;cursor:pointer;margin:0 2px}.g .crit{outline:2px solid var(--p0)}.g .hd{font-size:11px;color:var(--mute);text-align:center}.g .ms{grid-column:1/-1;font-weight:600;margin-top:8px;border:0;padding:0;background:none}
-.t.P0{border-left-color:var(--p0)}.t.P1{border-left-color:var(--p1)}.t .id{font-weight:600}.t .sub{color:var(--mute);font-size:12px}
-.tag{display:inline-block;font-size:11px;padding:0 6px;border-radius:10px;border:1px solid var(--line);margin-right:4px}.tag.ready{border-color:var(--ready);color:var(--ready)}
-table{border-collapse:collapse;width:100%;background:var(--panel);border:1px solid var(--line);border-radius:10px;overflow:hidden}td,th{padding:6px 8px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}th{color:var(--mute);font-weight:500}
-dialog{max-width:900px;width:92vw;border:1px solid var(--line);border-radius:12px;background:var(--panel);color:var(--ink)}dialog pre{white-space:pre-wrap;font:12px/1.5 ui-monospace,monospace;max-height:70vh;overflow:auto}
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="color-scheme" content="light dark">
+<title>VibeCut - Project overview</title>
+<style>
+:root{--sans:ui-sans-serif,-apple-system,"Segoe UI",Roboto,Arial,sans-serif;--mono:ui-monospace,Consolas,monospace;--bg:#f5f7f8;--panel:#fff;--panel2:#e9eef0;--ink:#17252c;--muted:#596b75;--line:#dbe3e7;--accent:#087885;--resolved:#29815b;--claimed:#9c620c;--blocked:#b83e45;--open:#dce5e9;--shadow:0 8px 24px #17252c14;--p0:var(--blocked);--p1:var(--claimed);--p2:var(--accent)}
+@media(prefers-color-scheme:dark){:root{--bg:#10171c;--panel:#172127;--panel2:#243139;--ink:#e3ebef;--muted:#a0b0b9;--line:#2d3d46;--accent:#6bc6ce;--resolved:#65bb90;--claimed:#e0ac56;--blocked:#ee8790;--open:#344852;--shadow:0 8px 24px #0004}}
+*{box-sizing:border-box;scrollbar-color:var(--muted) var(--panel2);scrollbar-width:thin}
+body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.5 var(--sans);-webkit-text-size-adjust:100%}
+button,input,select{font:inherit;color:inherit}button,summary{cursor:pointer}button:disabled{opacity:.4;cursor:default}
+:focus-visible{outline:2px solid var(--accent);outline-offset:3px}::selection{background:var(--accent);color:var(--panel)}
+[hidden]{display:none!important}h1,h2,h3,p{margin:0}h2{font-size:16px;font-weight:650}a,.linkish{color:var(--accent)}
+.bar{position:sticky;top:0;z-index:20;background:var(--panel);border-bottom:1px solid var(--line)}
+.bar-in{max-width:1240px;margin:auto;padding:14px 24px;display:flex;align-items:center;gap:10px}
+.brand{font-weight:700;letter-spacing:-.02em}.brandmark{width:23px;height:23px;border-radius:6px;display:grid;place-items:center;background:var(--accent);color:var(--panel)}
+.brandmark svg{width:12px;height:12px;fill:currentColor}.live{margin-left:auto;display:flex;align-items:center;gap:6px;color:var(--muted);font-size:12px}.live i{width:6px;height:6px;border-radius:50%;background:var(--resolved)}.live.off i{background:var(--blocked)}
+.updated{color:var(--muted);font-size:12px}.muted{color:var(--muted)}
+main{max-width:1240px;margin:auto;padding:30px 24px 48px}
+.page-heading{display:flex;align-items:baseline;justify-content:space-between;gap:16px;margin-bottom:24px}.page-heading h1{font-size:25px;font-weight:650;letter-spacing:-.025em}.page-heading p{font-size:12px;color:var(--muted)}
+.overview{border-bottom:1px solid var(--line);padding-bottom:24px;margin-bottom:28px}
+.delivery-head{display:flex;align-items:baseline;gap:12px;flex-wrap:wrap}.delivery-head strong{font-size:30px;letter-spacing:-.025em;font-weight:650;line-height:1.2}.delivery-head span{color:var(--muted);font-size:13px}
+.delivery-bar{height:14px;display:flex;gap:2px;background:var(--open);border-radius:4px;overflow:hidden;margin:14px 0 10px}.delivery-bar i{display:block;height:100%}
+.legend{display:flex;align-items:center;gap:16px;flex-wrap:wrap;color:var(--muted);font-size:12px}.legend span{display:flex;gap:6px;align-items:center}.legend i{width:8px;height:8px;border-radius:2px}
+.project-metrics{display:grid;grid-template-columns:repeat(4,1fr);margin-top:22px;gap:16px}.metric{border-right:1px solid var(--line)}.metric:last-child{border:0}.metric b{display:block;font-size:22px;font-weight:600;line-height:1.2;font-variant-numeric:tabular-nums}.metric span{font-size:12px;color:var(--muted)}.metric.warning b{color:var(--blocked)}
+.dashboard{display:grid;grid-template-columns:minmax(0,1.8fr) minmax(280px,1fr);gap:32px;align-items:start}.section-head{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:12px;gap:12px}.section-head span{font-size:12px;color:var(--muted)}
+.milestone{border-top:1px solid var(--line)}.milestone:last-child{border-bottom:1px solid var(--line)}
+.milestone>summary{list-style:none;padding:14px 0;display:grid;grid-template-columns:minmax(0,1fr) auto;gap:5px 16px}.milestone>summary::-webkit-details-marker{display:none}.milestone-name{font-weight:600;font-size:14px;display:flex;align-items:center;gap:8px}.milestone-name svg{width:12px;height:12px;stroke:var(--muted);fill:none;stroke-width:1.6;flex-shrink:0;transition:transform .15s}.milestone[open] .milestone-name svg{transform:rotate(90deg)}
+.percent{font-size:15px;font-weight:650;font-variant-numeric:tabular-nums}.milestone .delivery-bar{grid-column:1/-1;height:7px;margin:3px 0 2px}.milestone-meta{grid-column:1/-1;display:flex;gap:12px;flex-wrap:wrap;font-size:12px;color:var(--muted)}.risk{color:var(--blocked)}.complete{color:var(--resolved)}
+.sidebar{display:grid;gap:28px}.priority-chart{display:flex;align-items:end;gap:16px;height:180px;padding:16px 0 0;border-bottom:1px solid var(--line)}.priority-column{flex:1;min-width:0;display:flex;flex-direction:column;align-items:center;height:100%;justify-content:flex-end;gap:6px}.priority-column>span{font-size:12px;color:var(--muted);font-variant-numeric:tabular-nums}.priority-stack{display:flex;flex-direction:column-reverse;width:100%;max-width:40px;min-height:1px;border-radius:3px 3px 0 0;overflow:hidden}.priority-stack i{display:block;width:100%}.priority-labels{display:flex;gap:16px;margin-top:7px}.priority-labels span{flex:1;text-align:center;font-size:12px;color:var(--muted)}
+.caption{font-size:11px;color:var(--muted);margin-top:10px}.risk-list{display:grid}.risk-item{width:100%;display:grid;grid-template-columns:minmax(0,1fr) auto;gap:5px 12px;text-align:left;background:none;border:0;border-top:1px solid var(--line);padding:12px 0}.risk-item:hover .risk-title{color:var(--accent)}.risk-title{font-size:13px;line-height:1.45;overflow-wrap:anywhere}.risk-impact{font-size:12px;font-weight:650;color:var(--blocked);white-space:nowrap}.risk-meta{grid-column:1/-1;font-size:11px;color:var(--muted)}
+.ticket-list{padding-bottom:12px}.ticket-row{display:grid;grid-template-columns:100px minmax(0,1fr) 80px;gap:10px;width:100%;text-align:left;padding:9px 10px;border:0;border-radius:5px;background:none;font-size:12px;align-items:start}.ticket-row:hover{background:var(--panel2)}.ticket-row .ticket-name{overflow-wrap:anywhere}.ticket-row .state{justify-self:end}.ticket-id{color:var(--muted);font-size:11px;overflow-wrap:anywhere}.ticket-state{font-size:11px;color:var(--muted);text-align:right}.ticket-state.claimed{color:var(--claimed)}.ticket-state.blocked{color:var(--blocked)}.ticket-state.resolved{color:var(--resolved)}
+.footnote{margin-top:24px;font-size:11px;color:var(--muted)}.notice{margin:12px 0;font-size:12px;color:var(--blocked)}.empty{padding:16px 0;color:var(--muted);font-size:13px}.tid{font:12px/1.4 var(--mono)}.prio,.type,.crit{font-size:11px;color:var(--muted)}.state{font-size:12px;color:var(--muted)}.linkish{border:0;background:none;padding:2px;font:12px var(--mono)}
+.state.claimed{color:var(--claimed)}.state.blocked{color:var(--blocked)}.state.resolved{color:var(--resolved)}.state.wontfix{color:var(--muted)}
+/* filtering */
+.filter-btn{display:inline-flex;align-items:center;gap:6px;min-height:34px;padding:0 10px;border:1px solid var(--line);border-radius:7px;background:var(--panel);font-size:12px;white-space:nowrap}
+.filter-btn .count{min-width:16px;height:16px;padding:0 4px;border-radius:8px;background:var(--accent);color:var(--panel);font-size:10px;line-height:16px;text-align:center}
+.filterbar{display:none;align-items:center;gap:8px;flex-wrap:wrap;margin:0 0 14px}
+.filterbar select,.sheet select{height:34px;padding:0 26px 0 9px;border:1px solid var(--line);border-radius:8px;background:var(--panel);font-size:12.5px;max-width:190px}
+.filterbar .search,.sheet .search{position:relative;display:flex;align-items:center;flex:1;min-width:170px;max-width:330px}
+.filterbar .search svg,.sheet .search svg{position:absolute;left:9px;width:14px;height:14px;fill:none;stroke:var(--muted);stroke-width:1.8;pointer-events:none}
+.filterbar .search input,.sheet .search input{width:100%;height:34px;padding:0 10px 0 29px;border:1px solid var(--line);border-radius:8px;background:var(--panel);font-size:12.5px}
+.reset{border:0;background:none;color:var(--muted);font-size:12px;text-decoration:underline;text-underline-offset:2px;padding:4px 2px}
+.chips{display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin:0 0 14px}
+.chips[hidden]{display:none}
+.chip{display:inline-flex;align-items:center;gap:3px;height:28px;padding:0 5px 0 9px;border:1px solid var(--line);border-radius:8px;background:var(--panel);color:var(--ink);font-size:11.5px}
+.chip span{color:var(--muted);font-size:14px;line-height:1;padding:0 2px}
+.chip:hover{border-color:var(--accent);color:var(--accent)}
+.chips .clear{border:0;background:none;color:var(--muted);font-size:11.5px;text-decoration:underline;text-underline-offset:2px;padding:0 2px}
+#filtersDlg{position:fixed;inset:56px 16px auto auto;margin:0;width:min(280px,calc(100vw - 32px));max-height:calc(100dvh - 72px);overflow:auto;border:1px solid var(--line);border-radius:10px;padding:0;background:var(--panel);color:var(--ink);box-shadow:var(--shadow)}
+.sheet{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;padding:12px}
+.filter-heading{grid-column:1/-1;display:flex;align-items:center;justify-content:space-between}
+.filter-close{display:grid;place-items:center;width:28px;height:28px;background:none;border:0;border-radius:4px}
+.filter-close svg{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:1.5}
+.sheet>label:first-of-type,.sheet .rowbtns,.sheet .result{grid-column:1/-1}
+.sheet .search{min-width:0;max-width:none}
+.sheet .search input{font-size:16px;height:32px}
+.sheet h2{font-size:14px;margin:0}
+.sheet label{display:grid;gap:4px;font-size:11.5px;color:var(--muted)}
+.sheet select{max-width:none;width:100%;height:32px;font-size:12px;padding-left:6px}
+.sheet .rowbtns{display:flex;gap:8px;margin-top:2px}
+.sheet .rowbtns button{flex:1;min-height:32px;border:1px solid var(--line);border-radius:8px;background:var(--panel);font-size:12px}
+.sheet .rowbtns .primary{background:var(--accent);border-color:var(--accent);color:var(--panel);font-weight:600}
+.sheet .result{font-size:11.5px;color:var(--muted)}
+.notice summary{cursor:pointer;color:var(--blocked)}
+.notice-list{display:grid;gap:4px;margin:8px 0 0;padding:0;list-style:none}
+.notice-list li{display:flex;gap:8px;align-items:baseline;padding:6px 8px;border:1px solid var(--line);border-radius:6px;background:var(--panel);font-size:11.5px;color:var(--ink)}
+.notice-list .linkish{font-size:11px}
+/* dialogs */
+dialog{border:1px solid var(--line);border-radius:14px;background:var(--panel);color:var(--ink);padding:0;box-shadow:var(--shadow);max-width:min(920px,calc(100vw - 24px));width:920px;max-height:min(88vh,900px);overflow:auto}
+dialog::backdrop{background:rgba(6,10,12,.48);backdrop-filter:blur(2px)}
+.ticket{display:grid;gap:0}
+.thead{position:sticky;top:0;z-index:2;background:var(--panel);border-bottom:1px solid var(--line);padding:12px 14px 10px;display:grid;gap:6px}
+.thead .toprow{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.thead .toprow .close{margin-left:auto}
+.close{width:30px;height:30px;border:1px solid var(--line);border-radius:8px;background:var(--panel);display:grid;place-items:center;font-size:15px;line-height:1;color:var(--muted)}
+.close:hover{color:var(--ink)}
+.ttitle{font-size:17px;line-height:1.3;letter-spacing:-.015em;margin:0;font-weight:650}
+.tmeta{display:flex;gap:6px 10px;flex-wrap:wrap;align-items:center;font-size:11.5px;color:var(--muted)}
+.tactions{display:flex;gap:6px;flex-wrap:wrap;margin-top:2px}
+.tbtn{border:1px solid var(--line);border-radius:7px;background:var(--panel);padding:3px 8px;font-size:11.5px;color:var(--ink)}
+.tbtn:hover{border-color:var(--accent);color:var(--accent)}
+.deps{display:flex;gap:6px;flex-wrap:wrap;align-items:center;font-size:11.5px}
+.linkish{border:0;background:none;padding:0;font:11.5px/1.4 var(--mono);color:var(--accent);text-decoration:underline;text-underline-offset:2px}
+.tbody{padding:14px 16px 18px;overflow-wrap:anywhere}
+.tbody .loading{color:var(--muted);font-size:13px;margin:8px 0}
+.tbody .error{color:var(--blocked);font-size:13px}
+.tfoot{position:sticky;bottom:0;display:flex;align-items:center;gap:10px;padding:9px 14px;background:var(--panel);border-top:1px solid var(--line)}
+.tfoot .tpos{font-size:11px;color:var(--muted);margin:0 auto;white-space:nowrap}
+
+/* markdown */
+.md h1,.md h2,.md h3,.md h4{line-height:1.3;letter-spacing:-.01em;margin:1.2em 0 .45em}
+.md h1{font-size:19px}.md h2{font-size:16px}.md h3{font-size:14px}.md h4{font-size:13px}
+.md h1:first-child,.md h2:first-child,.md h3:first-child{margin-top:0}
+.md p{margin:.55em 0}
+.md ul,.md ol{margin:.45em 0;padding-left:1.35em}
+.md li{margin:.18em 0}
+.md code{font:12px/1.5 var(--mono);background:var(--panel2);border-radius:4px;padding:1px 4px}
+.md pre{background:var(--panel2);border:1px solid var(--line);border-radius:8px;padding:10px;overflow:auto}
+.md pre code{background:none;padding:0;font-size:11.5px}
+.md blockquote{margin:.7em 0;padding:2px 0 2px 11px;border-left:3px solid var(--line);color:var(--muted)}
+.md hr{border:0;border-top:1px solid var(--line);margin:1.1em 0}
+.md a{text-decoration:underline;text-underline-offset:2px}
+.md table{border-collapse:collapse;width:100%;margin:.7em 0;font-size:12.5px}
+.md th,.md td{border:1px solid var(--line);padding:5px 7px;text-align:left}
+.md th{background:var(--panel2)}
+
+
+@media(max-width:760px){
+.bar-in{padding:10px 16px}.updated{display:none}main{padding:20px 16px 32px}.page-heading{margin-bottom:18px}.page-heading h1{font-size:21px}.page-heading p{display:none}
+.filter-btn{min-height:38px;padding:0 12px;font-size:12.5px}
+.chips{margin-bottom:12px}.chip{height:30px;font-size:12px}
+.delivery-head strong{font-size:25px}.delivery-head span{font-size:12px}.overview{margin-bottom:24px;padding-bottom:20px}.delivery-bar{height:12px}.legend{gap:10px;font-size:11px}.project-metrics{gap:12px;margin-top:18px}.metric b{font-size:20px}.metric span{font-size:11px}.dashboard{grid-template-columns:1fr;gap:28px}.sidebar{grid-template-columns:1fr;gap:28px}.milestone>summary{padding:12px 0}.milestone-name{font-size:13px}.percent{font-size:14px}.milestone-meta{font-size:11px;gap:10px}.priority-chart{height:155px}.ticket-row{grid-template-columns:minmax(0,1fr) 75px;gap:2px 8px;padding:9px 4px;min-height:44px}.ticket-id{grid-column:1}.ticket-name{grid-column:1}.ticket-state{grid-column:2;grid-row:1/3}
+dialog{position:fixed;inset:auto 0 0;margin:0;width:100%;max-width:100%;max-height:92dvh;border-radius:14px 14px 0 0}.ttitle{font-size:16px}.tbody{font-size:14px;padding:12px 16px}.md table{display:block;overflow-x:auto}.md h1{white-space:normal}.sheet input,.sheet select{height:44px;font-size:16px}.close{min-height:40px;min-width:40px}.tbtn{min-height:40px}.reset{min-height:34px;padding:6px 2px}.tfoot{padding-bottom:calc(10px + env(safe-area-inset-bottom))}
+}
+@media(max-width:900px){.dashboard{grid-template-columns:1fr}.sidebar{grid-template-columns:1fr}}
+@media(max-width:420px){.project-metrics{grid-template-columns:repeat(2,1fr);gap:12px 16px}.metric:nth-child(2){border-right:0}}
+@media(min-width:761px){.filterbar{display:flex}.filter-btn{display:none}}
+@media(prefers-reduced-motion:reduce){.milestone-name svg{transition:none}}
 </style></head><body>
-<header><h1>VibeCut board</h1><span class="tabs"><button data-v="progress" class="on">Progress</button><button data-v="kanban">Kanban</button><button data-v="next">Next up</button><button data-v="gantt">Roadmap</button></span>
-<select id="fm"><option value="">All milestones</option></select><select id="fp"><option value="">All priorities</option><option>P0</option><option>P1</option><option>P2</option></select>
-<select id="fa"><option value="">All assignees</option><option>opencode</option><option>codex</option><option>human</option></select><input id="q" placeholder="Search…">
-<span class="meta" id="meta"></span></header><main id="main"></main><dialog id="dlg"><pre id="dtext"></pre><form method="dialog"><button>Close</button></form></dialog>
+<header class="bar"><div class="bar-in"><span class="brandmark" aria-hidden="true"><svg viewBox="0 0 12 12"><path d="M3 2v8l7-4z"/></svg></span><span class="brand">VibeCut</span><span class="live" id="live"><i></i><span>Live</span></span><span class="updated" id="updated">Loading...</span><button class="filter-btn" id="filterBtn" popovertarget="filtersDlg" aria-label="Filter tickets">Filters<span class="count" id="filterCount" hidden>0</span></button></div></header>
+<main><div class="page-heading"><h1>Project overview</h1><p>Delivery across all milestones</p></div>
+<div class="filterbar" id="filterbar" aria-label="Filters">
+  <label class="search"><svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="8.5" cy="8.5" r="5"/><path d="m12.5 12.5 4 4"/></svg><input id="searchDesktop" data-f="q" placeholder="Search tickets" autocomplete="off" aria-label="Search tickets"></label>
+  <select data-f="m" aria-label="Milestone"></select>
+  <select data-f="p" aria-label="Priority"></select>
+  <select data-f="a" aria-label="Assignee"></select>
+  <select data-f="s" aria-label="Status"></select>
+  <button class="reset" id="resetFilters" type="button">Reset</button>
+</div>
+<div class="chips" id="chips" hidden></div>
+<div id="overview"><p class="empty">Loading project progress...</p></div></main>
+<div id="filtersDlg" popover aria-labelledby="filtersTitle">
+  <div class="sheet">
+    <div class="filter-heading"><h2 id="filtersTitle">Filters</h2><button class="filter-close" type="button" popovertarget="filtersDlg" popovertargetaction="hide" aria-label="Close filters"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="m4 4 8 8M12 4l-8 8"/></svg></button></div>
+    <label>Search <span class="search"><svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="8.5" cy="8.5" r="5"/><path d="m12.5 12.5 4 4"/></svg><input id="searchSheet" data-f="q" placeholder="ID, title, assignee" autocomplete="off" aria-label="Search tickets"></span></label>
+    <label>Milestone <select data-f="m" aria-label="Milestone" autofocus></select></label>
+    <label>Priority <select data-f="p" aria-label="Priority"></select></label>
+    <label>Assignee <select data-f="a" aria-label="Assignee"></select></label>
+    <label>Status <select data-f="s" aria-label="Status"></select></label>
+    <p class="result" id="filterResult" aria-live="polite"></p>
+    <div class="rowbtns"><button type="button" id="sheetReset">Reset</button><button type="button" class="primary" id="sheetDone">Done</button></div>
+  </div>
+</div>
+<dialog id="ticket" aria-labelledby="ttitle">
+  <div class="ticket">
+    <header class="thead">
+      <div class="toprow"><span class="tid" id="tid"></span><span id="tstatus"></span><button class="close" id="closeTicket" aria-label="Close ticket">✕</button></div>
+      <h2 class="ttitle" id="ttitle"></h2>
+      <div class="tmeta" id="tmeta"></div>
+      <div class="deps" id="tdeps"></div>
+      <div class="tactions"><button class="tbtn" id="copyLink" type="button">Copy link</button><button class="tbtn" id="copyPath" type="button">Copy file path</button></div>
+    </header>
+    <div class="tbody md" id="tbody"></div>
+    <footer class="tfoot">
+      <button class="tbtn" id="prevTicket" aria-label="Previous ticket">Previous</button>
+      <span class="tpos" id="tpos"></span>
+      <button class="tbtn" id="nextTicket" aria-label="Next ticket">Next</button>
+    </footer>
+  </div>
+</dialog>
+
+
 <script>
-const COLS=['open','claimed','blocked','resolved','wontfix'],COLOR={resolved:'var(--ok)',claimed:'var(--p1)',open:'var(--line)',blocked:'var(--p0)',wontfix:'var(--mute)'},LABEL={open:'Open',claimed:'In progress',blocked:'Blocked',resolved:'Done',wontfix:"Won't fix"};
-const U=new URLSearchParams(location.search);let data=[],view=U.get('v')||'progress';const $=s=>document.querySelector(s);
-const esc=s=>s.replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
-function filt(){const m=$('#fm').value,p=$('#fp').value,a=$('#fa').value,q=$('#q').value.toLowerCase();
- return data.filter(t=>(!m||t.milestone==m)&&(!p||t.priority==p)&&(!a||t.assignee==a)&&(!q||(t.id+' '+t.title).toLowerCase().includes(q)))}
-function card(t){return `<div class="t ${t.priority}" data-id="${t.id}"><div class="id">${t.id} <span class="tag">${t.priority}</span>${t.ready?'<span class="tag ready">ready</span>':''}</div>
- <div>${esc(t.title.replace(/^\S+\s/,''))}</div><div class="sub">${t.assignee}${t.waitingOn.length&&t.status=='open'?' · waits '+t.waitingOn.join(', '):''}${t.unblocks?' · unblocks '+t.unblocks:''}</div></div>`}
-function bar(ts){const n=ts.length||1;return '<div class="bar">'+COLS.map(s=>{const c=ts.filter(t=>t.status==s).length;return c?`<span title="${LABEL[s]} ${c}" style="width:${c/n*100}%;background:${COLOR[s]}"></span>`:''}).join('')+'</div>'}
-function render(){const ts=filt(),done=ts.filter(t=>t.status=='resolved').length,live=ts.filter(t=>t.status!='wontfix').length;let h='';
- if(view=='progress'){h+=`<div class="kpi"><div><b>${Math.round(done/(live||1)*100)}%</b>done (${done}/${live})</div><div><b>${ts.filter(t=>t.status=='claimed').length}</b>in progress</div><div><b>${ts.filter(t=>t.ready).length}</b>ready</div><div><b>${ts.filter(t=>t.status=='open'&&!t.ready).length}</b>waiting</div></div>`;
-  for(const p of ['P0','P1','P2']){const pt=ts.filter(t=>t.priority==p);if(!pt.length)continue;const ms=[...new Set(pt.map(t=>t.milestone))];
-   h+=`<h2>${p} <span class="legend">${pt.filter(t=>t.status=='resolved').length}/${pt.filter(t=>t.status!='wontfix').length} resolved</span></h2><div class="cards">`+ms.map(m=>{const mt=pt.filter(t=>t.milestone==m),d=mt.filter(t=>t.status=='resolved').length,l=mt.filter(t=>t.status!='wontfix').length;
-    return `<div class="ms"><h3>${m}</h3>${bar(mt)}<div class="legend">${d}/${l} resolved · ${mt.filter(t=>t.status=='claimed').length} in progress · ${mt.filter(t=>t.ready).length} ready</div></div>`}).join('')+'</div>'}
-  h+='<p class="legend">Bar: green resolved · amber claimed · grey open · red blocked.</p>'}
- if(view=='kanban'){h='<div class="board">'+COLS.map(s=>{const c=ts.filter(t=>t.status==s).sort((a,b)=>a.priority.localeCompare(b.priority)||b.unblocks-a.unblocks);return `<div class="col"><h2>${LABEL[s]} (${c.length})</h2>${c.map(card).join('')}</div>`}).join('')+'</div>'}
- if(view=='next'){const r=ts.filter(t=>t.status=='claimed'||t.ready).sort((a,b)=>(a.status=='claimed'?0:1)-(b.status=='claimed'?0:1)||a.priority.localeCompare(b.priority)||b.unblocks-a.unblocks);
-  h='<table><tr><th>Ticket</th><th>Title</th><th>Pri</th><th>State</th><th>Assignee</th><th>Unblocks</th></tr>'+r.map(t=>`<tr class="t ${t.priority}" data-id="${t.id}"><td>${t.id}</td><td>${esc(t.title)}</td><td>${t.priority}</td><td>${t.status=='claimed'?'in progress':'ready'}</td><td>${t.assignee}</td><td>${t.unblocks}</td></tr>`).join('')+'</table>'}
- if(view=='gantt'){const W=Math.max(0,...ts.map(t=>t.wave))+1,ms=[...new Set(ts.map(t=>t.milestone))];
-  h=`<p class="legend">Columns are dependency waves (a ticket starts after everything it waits on), not calendar dates. Red outline: critical path. Colour: status.</p><div class="g" style="grid-template-columns:260px repeat(${W},minmax(28px,1fr))"><div></div>`+[...Array(W).keys()].map(i=>`<div class="hd">W${i}</div>`).join('');
-  for(const m of ms){h+=`<div class="ms">${m}</div>`;for(const t of ts.filter(x=>x.milestone==m).sort((a,b)=>a.wave-b.wave||a.priority.localeCompare(b.priority))){
-   h+=`<div class="lab" data-id="${t.id}" title="${esc(t.title)}">${t.priority} ${t.id.split('/')[1]} ${esc(t.title.replace(/^\S+\s/,''))}</div>`+[...Array(W).keys()].map(i=>i==t.wave?`<div class="b${t.critical?' crit':''}" data-id="${t.id}" title="${t.id} ${LABEL[t.status]||t.status}" style="background:${COLOR[t.status]}"></div>`:'<div></div>').join('')}}
-  h+='</div>'}
- $('#main').innerHTML=h;document.querySelectorAll('[data-id]').forEach(e=>e.onclick=()=>{$('#dtext').textContent=data.find(t=>t.id==e.dataset.id).text;$('#dlg').showModal()})}
-async function load(){try{data=await (await fetch('data.json',{cache:'no-store'})).json();const ms=[...new Set(data.map(t=>t.milestone))],sel=$('#fm'),cur=sel.value;
- sel.innerHTML='<option value="">All milestones</option>'+ms.map(m=>`<option>${m}</option>`).join('');sel.value=cur||U.get('m')||'';
- $('#meta').textContent=`${data.length} tickets · updated ${new Date().toLocaleTimeString()}`;if(!$('#dlg').open)render()}catch(e){$('#meta').textContent='board server offline'}}
-const F={m:'#fm',p:'#fp',a:'#fa',q:'#q'};
-function save(){const u=new URLSearchParams();if(view!='progress')u.set('v',view);for(const k in F){const v=$(F[k]).value;if(v)u.set(k,v)}history.replaceState(null,'',u.toString()?'?'+u:location.pathname)}
-function tab(v){view=v;document.querySelectorAll('.tabs button').forEach(x=>x.classList.toggle('on',x.dataset.v==v))}
-for(const k of ['p','a','q'])if(U.get(k))$(F[k]).value=U.get(k);tab(view);
-document.querySelectorAll('.tabs button').forEach(b=>b.onclick=()=>{tab(b.dataset.v);save();render()});
-Object.values(F).forEach(s=>$(s).oninput=()=>{save();render()});load();setInterval(load,10000);
+const COLS=[["open","Open"],["claimed","In progress"],["blocked","Blocked"],["resolved","Done"],["wontfix","Won't fix"]];
+const STATUS_LABEL=Object.fromEntries(COLS);
+const PRIOS=["P0","P1","P2","P3","P4"];
+const $=(s,r=document)=>r.querySelector(s);
+const $$=(s,r=document)=>[...r.querySelectorAll(s)];
+const esc=s=>String(s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const base=a=>a==="-"?"Unassigned":a.split(" (")[0];
+const params=new URLSearchParams(location.search),token=params.get("token")||"";
+const withToken=url=>token?url+(url.includes("?")?"&":"?")+"token="+encodeURIComponent(token):url;
+const state={m:params.get("m")||"",p:params.get("p")||"",a:params.get("a")||"",s:COLS.some(([s])=>s===params.get("s"))?params.get("s"):"",q:params.get("q")||""};
+let data=[],problems=[],signature=null,ticketId=null,lastLoad=0;
+const cache=new Map();
+const MILESTONES={"p0-core":"Editor foundation","p0-subtitles":"Subtitles & translation","p1-parity":"Core editor features","p1-ai-edit":"AI editing","p1-clips":"Vertical shorts","p2-ai":"AI extensions","p2-dubbing":"Dubbing & narration","p2-platform":"Platform & integrations","ui-capture":"UI reference"};
+function saveUrl(){const p=new URLSearchParams();for(const k of ["m","p","a","s"])if(state[k])p.set(k,state[k]);if(state.q.trim())p.set("q",state.q.trim());if(ticketId)p.set("t",ticketId);if(token)p.set("token",token);history.replaceState(null,"",location.pathname+(p.size?"?"+p:""));}
+function filtered(){
+  const q=state.q.trim().toLowerCase();
+  return data.filter(t=>{
+    if(state.m&&t.milestone!==state.m)return false;
+    if(state.p&&t.priority!==state.p)return false;
+    if(state.a&&base(t.assignee)!==state.a)return false;
+    if(state.s&&t.status!==state.s)return false;
+    if(q&&!(t.id+" "+t.title+" "+t.assignee+" "+t.status+" "+(STATUS_LABEL[t.status]||"")).toLowerCase().includes(q))return false;
+    return true;
+  });
+}
+function activeFilters(){return ["m","p","a","s"].filter(k=>state[k]).length+(state.q.trim()?1:0);}
+function syncControls(){
+  $$("[data-f]").forEach(el=>{if(el.value!==(state[el.dataset.f]||""))el.value=state[el.dataset.f]||"";});
+  const n=activeFilters();$("#filterCount").hidden=!n;$("#filterCount").textContent=n;
+
+}
+function renderChips(){
+  const chips=[];
+  const add=(key,text)=>chips.push(`<button class="chip" type="button" data-clear="${key}" title="Remove ${esc(text)} filter">${esc(text)}<span aria-hidden="true">×</span></button>`);
+  if(state.m)add("m",MILESTONES[state.m]||state.m);
+  if(state.p)add("p",state.p);
+  if(state.a)add("a",state.a);
+  if(state.s)add("s",STATUS_LABEL[state.s]||state.s);
+  if(state.q.trim())add("q",`"${state.q.trim()}"`);
+  const el=$("#chips");el.hidden=!chips.length;
+  el.innerHTML=chips.length?chips.join("")+'<button class="clear" type="button" data-clear="all">Clear all</button>':"";
+}
+function fillSelects(){
+  const count=values=>{const m=new Map();for(const t of data){const v=values(t);m.set(v,(m.get(v)||0)+1);}return [...m.entries()].sort((a,b)=>String(a[0]).localeCompare(String(b[0])));};
+  const put=(key,rows,label)=>{$$(`select[data-f="${key}"]`).forEach(sel=>{const cur=state[key];sel.innerHTML=`<option value="">${label}</option>`+rows.map(([v,n,l])=>`<option value="${esc(v)}">${esc(l??`${v} (${n})`)}</option>`).join("");sel.value=cur;});};
+  put("m",count(t=>t.milestone).map(([v,n])=>[v,n,`${MILESTONES[v]||v} (${n})`]),"All milestones");
+  put("p",PRIOS.filter(p=>data.some(t=>t.priority===p)).map(p=>[p,data.filter(t=>t.priority===p).length]),"All priorities");
+  put("a",count(t=>base(t.assignee)),"All assignees");
+  put("s",count(t=>t.status).map(([v,n])=>[v,n,`${STATUS_LABEL[v]||v} (${n})`]),"All statuses");
+}
+function ago(seconds){const d=Math.max(0,Date.now()/1000-seconds);return d<60?"just now":d<3600?Math.floor(d/60)+"m ago":d<86400?Math.floor(d/3600)+"h ago":Math.floor(d/86400)+"d ago";}
+/* markdown: escape first, then a small safe subset */
+function inline(s){
+  let out=esc(s);
+  out=out.replace(/`([^`]+)`/g,"<code>$1</code>");
+  out=out.replace(/\*\*([^*]+)\*\*/g,"<strong>$1</strong>");
+  out=out.replace(/(^|[^*])\*([^*\n]+)\*(?!\*)/g,"$1<em>$2</em>");
+  out=out.replace(/~~([^~]+)~~/g,"<del>$1</del>");
+  out=out.replace(/\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)/g,'<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>');
+  return out;
+}
+function blockStart(line){
+  return /^(#{1,6})\s+/.test(line)||/^```/.test(line)||/^\s*(---+|\*\*\*+)\s*$/.test(line)||/^>/.test(line)||/^\s*([-*+]|\d+\.)\s+/.test(line);
+}
+function splitRow(line){return line.trim().replace(/^\|/,"").replace(/\|$/,"").split("|").map(c=>c.trim());}
+function md(source){
+  const lines=String(source).replace(/\r\n?/g,"\n").split("\n");
+  let html="",i=0;
+  while(i<lines.length){
+    const line=lines[i];
+    if(!line.trim()){i++;continue;}
+    const fence=line.match(/^```(\w*)/);
+    if(fence){
+      i++;const code=[];
+      while(i<lines.length&&!/^```/.test(lines[i]))code.push(lines[i++]);
+      i++;html+="<pre><code>"+esc(code.join("\n"))+"</code></pre>";continue;
+    }
+    const h=line.match(/^(#{1,6})\s+(.*)$/);
+    if(h){const n=h[1].length;html+=`<h${n}>${inline(h[2])}</h${n}>`;i++;continue;}
+    if(/^\s*(---+|\*\*\*+)\s*$/.test(line)){html+="<hr>";i++;continue;}
+    if(line.startsWith(">")){
+      const buf=[];
+      while(i<lines.length&&lines[i].startsWith(">"))buf.push(lines[i++].replace(/^>\s?/,""));
+      html+="<blockquote>"+md(buf.join("\n"))+"</blockquote>";continue;
+    }
+    if(/^\s*[-*+]\s+/.test(line)){
+      const items=[];
+      while(i<lines.length&&/^\s*[-*+]\s+/.test(lines[i]))items.push(lines[i++].replace(/^\s*[-*+]\s+/,""));
+      html+="<ul>"+items.map(x=>"<li>"+inline(x)+"</li>").join("")+"</ul>";continue;
+    }
+    if(/^\s*\d+\.\s+/.test(line)){
+      const items=[];
+      while(i<lines.length&&/^\s*\d+\.\s+/.test(lines[i]))items.push(lines[i++].replace(/^\s*\d+\.\s+/,""));
+      html+="<ol>"+items.map(x=>"<li>"+inline(x)+"</li>").join("")+"</ol>";continue;
+    }
+    if(line.includes("|")&&i+1<lines.length&&/^\s*\|?[\s:|-]+\|[\s:|-]*$/.test(lines[i+1])){
+      const head=splitRow(line);i+=2;
+      let body="";
+      while(i<lines.length&&lines[i].includes("|")){body+="<tr>"+splitRow(lines[i++]).map(c=>"<td>"+inline(c)+"</td>").join("")+"</tr>";}
+      html+="<table><thead><tr>"+head.map(c=>"<th>"+inline(c)+"</th>").join("")+"</tr></thead><tbody>"+body+"</tbody></table>";continue;
+    }
+    const buf=[];
+    while(i<lines.length&&lines[i].trim()&&!blockStart(lines[i]))buf.push(lines[i++]);
+    if(!buf.length){i++;continue;}
+    html+="<p>"+buf.map(inline).join("<br>")+"</p>";
+  }
+  return html;
+}
+function cleanBody(text){
+  const lines=String(text).replace(/\r\n?/g,"\n").split("\n");
+  let i=0;
+  while(i<lines.length&&!lines[i].trim())i++;
+  while(i<lines.length&&/^(Status|Type|Priority|Assignee|Blocked by)\s*:/.test(lines[i]))i++;
+  while(i<lines.length&&!lines[i].trim())i++;
+  if(i<lines.length&&/^#\s+/.test(lines[i]))i++;
+  while(i<lines.length&&!lines[i].trim())i++;
+  return lines.slice(i).join("\n");
+}
+
+
+function totals(tickets){
+  const live=tickets.filter(t=>t.status!=="wontfix"),done=live.filter(t=>t.status==="resolved").length,active=live.filter(t=>t.status==="claimed").length;
+  return {live:live.length,done,active,remaining:live.length-done,blocked:live.filter(t=>t.status==="blocked").length,waiting:live.filter(t=>t.status==="open"&&!t.ready).length,pct:live.length?Math.round(done/live.length*100):0};
+}
+function deliveryBar(ts){
+  const c=totals(ts),n=c.live||1;
+  return `<div class="delivery-bar" role="img" aria-label="${c.done} complete, ${c.active} in progress, ${c.live-c.done-c.active} not complete"><i style="width:${c.done/n*100}%;background:var(--resolved)"></i><i style="width:${c.active/n*100}%;background:var(--claimed)"></i></div>`;
+}
+function ticketRow(t){return `<button class="ticket-row" data-ticket="${esc(t.id)}"><span class="ticket-id">${esc(t.id)}</span><span class="ticket-name">${esc(t.title.replace(/^\d+\s+/,""))}</span><span class="ticket-state ${esc(t.status)}">${esc(STATUS_LABEL[t.status]||t.status)}</span></button>`;}
+function render(){
+  const expanded=new Set($$("details.milestone[open]").map(el=>el.dataset.milestone));
+  const ts=filtered();
+  const c=totals(ts),ms=[...new Set(ts.map(t=>t.milestone))].sort();
+  const complete=ms.filter(m=>{const x=totals(ts.filter(t=>t.milestone===m));return x.live&&x.done===x.live}).length;
+  const excluded=ts.filter(t=>t.status==="wontfix").length;
+  const filtersOn=activeFilters()>0;
+  renderChips();
+  $("#filterResult").textContent=filtersOn?`Showing ${ts.length} of ${data.length} tickets`:"Showing all tickets";
+  if(!data.length){$("#overview").innerHTML='<p class="empty">No project tickets yet.</p>';return;}
+  if(!ts.length){$("#overview").innerHTML='<div class="overview"><p class="empty">No tickets match these filters.</p><p><button class="reset" type="button" data-clear="all">Clear filters</button></p></div>';return;}
+  let h=`<section class="overview" aria-label="Overall delivery"><div class="delivery-head"><strong>${c.pct}% complete</strong><span>${c.done} of ${c.live} tickets delivered${filtersOn?" in this view":""}</span></div>${deliveryBar(ts)}<div class="legend"><span><i style="background:var(--resolved)"></i>Complete</span><span><i style="background:var(--claimed)"></i>In progress</span><span><i style="background:var(--open)"></i>Remaining</span></div><div class="project-metrics"><div class="metric"><b>${complete}/${ms.length}</b><span>Milestones done</span></div><div class="metric"><b>${c.remaining}</b><span>Remaining</span></div><div class="metric"><b>${c.active}</b><span>In progress</span></div><div class="metric ${c.blocked?"warning":""}"><b>${c.blocked}</b><span>Blocked</span></div></div></section>`;
+  if(problems.length)h+=`<details class="notice"><summary>${problems.length} data issue${problems.length===1?"":"s"}; progress may be incomplete</summary><ul class="notice-list">${problems.map(p=>`<li><button class="linkish" data-ticket="${esc(p.id)}">${esc(p.id)}</button><span>${esc(p.message)}</span></li>`).join("")}</ul></details>`;
+  h+='<div class="dashboard"><section aria-label="Milestone progress"><div class="section-head"><h2>Milestones</h2><span>Complete / total</span></div>';
+  for(const m of ms){
+    const mt=ts.filter(t=>t.milestone===m),x=totals(mt);
+    const rank={claimed:0,blocked:1,open:2,resolved:3,wontfix:4};
+    const items=mt.slice().sort((a,b)=>(rank[a.status]??2)-(rank[b.status]??2)||a.priority.localeCompare(b.priority)||a.id.localeCompare(b.id));
+    h+=`<details class="milestone" data-milestone="${esc(m)}" ${expanded.has(m)?"open":""}><summary><span class="milestone-name"><svg viewBox="0 0 12 12" aria-hidden="true"><path d="m4 2 4 4-4 4"/></svg>${esc(MILESTONES[m]||m)}</span><span class="percent ${x.pct===100?"complete":""}">${x.pct}%</span>${deliveryBar(mt)}<span class="milestone-meta"><span>${x.done} / ${x.live} complete</span>${x.remaining?`<span>${x.remaining} remaining</span>`:'<span class="complete">Complete</span>'}${x.active?`<span>${x.active} active</span>`:""}${x.blocked?`<span class="risk">${x.blocked} blocked</span>`:""}</span></summary><div class="ticket-list">${items.map(ticketRow).join("")}</div></details>`;
+  }
+  h+='</section><aside class="sidebar"><section aria-label="Delivery by priority"><div class="section-head"><h2>Delivery by priority</h2></div><div class="priority-chart">';
+  const priorities=PRIOS.map(p=>({p,ts:ts.filter(t=>t.priority===p)})).filter(p=>p.ts.length);
+  const max=Math.max(1,...priorities.map(p=>totals(p.ts).live));
+  for(const {p,ts} of priorities){const x=totals(ts),n=x.live||1;h+=`<div class="priority-column" role="img" aria-label="${p}: ${x.done} of ${x.live} complete"><span>${x.done}/${x.live}</span><div class="priority-stack" style="height:${x.live/max*130}px"><i style="height:${x.done/n*100}%;background:var(--resolved)"></i><i style="height:${x.active/n*100}%;background:var(--claimed)"></i><i style="height:${(x.live-x.done-x.active)/n*100}%;background:var(--open)"></i></div></div>`;}
+  h+='</div><div class="priority-labels">'+priorities.map(({p})=>`<span>${p}</span>`).join("")+'</div><p class="caption">Completed / total tickets. Bar height shows scope.</p></section>';
+  const risks=ts.filter(t=>!["resolved","wontfix"].includes(t.status)&&t.unblocks>0).sort((a,b)=>b.unblocks-a.unblocks||a.priority.localeCompare(b.priority)).slice(0,4);
+  h+=`<section aria-label="Delivery dependencies"><div class="section-head"><h2>Holding up delivery</h2><span>${c.waiting} waiting</span></div><div class="risk-list">`;
+  h+=risks.length?risks.map(t=>`<button class="risk-item" data-ticket="${esc(t.id)}"><span class="risk-title">${esc(t.title.replace(/^\d+\s+/,""))}</span><span class="risk-impact">${t.unblocks} waiting</span><span class="risk-meta">${esc(t.id)} &middot; ${esc(MILESTONES[t.milestone]||t.milestone)} &middot; ${esc(STATUS_LABEL[t.status]||t.status)}</span></button>`).join(""):'<p class="empty">No open delivery dependencies.</p>';
+  h+=`</div></section></aside></div><p class="footnote">Completion by ticket count; not effort-weighted.${filtersOn?` Showing ${ts.length} of ${data.length} tickets.`:""} ${excluded} won't-fix tickets excluded.</p>`;
+  $("#overview").innerHTML=h;
+}
+function ticketUrl(id){const p=new URLSearchParams();for(const k of ["m","p","a","s","q"])if(state[k])p.set(k,state[k]);p.set("t",id);if(token)p.set("token",token);return location.origin+location.pathname+"?"+p.toString();}
+async function copy(text,button){const label=button.textContent;try{await navigator.clipboard.writeText(text);}catch{const area=document.createElement("textarea");area.value=text;area.setAttribute("readonly","");document.body.append(area);area.select();try{document.execCommand("copy");}catch{button.textContent="Copy failed";setTimeout(()=>button.textContent=label,1400);area.remove();return;}area.remove();}button.textContent="Copied";setTimeout(()=>button.textContent=label,1400);}
+function navList(){const list=filtered();return list.some(t=>t.id===ticketId)?list:data;}
+function openTicket(id){
+  const t=data.find(t=>t.id===id);if(!t)return;
+  ticketId=id;saveUrl();$("#tid").textContent=t.id;$("#tstatus").innerHTML=`<span class="state ${esc(t.status)}">${esc(STATUS_LABEL[t.status]||t.status)}</span>`;$("#ttitle").textContent=t.title;
+  $("#tmeta").textContent=[MILESTONES[t.milestone]||t.milestone,t.priority,base(t.assignee),"Updated "+ago(t.mtime)].join(" / ");
+  $("#tdeps").innerHTML=t.blockedBy.length?'Depends on '+t.blockedBy.map(id=>`<button class="linkish" data-ticket="${esc(id)}">${esc(id)}</button>`).join(' '):"";
+  $("#tbody").innerHTML='<p class="loading">Loading ticket...</p>';if(!$("#ticket").open)$("#ticket").showModal();
+  const cached=cache.get(id);
+  if(cached?.mtime===t.mtime)$("#tbody").innerHTML=md(cleanBody(cached.text));
+  else fetch(withToken('ticket.json?id='+encodeURIComponent(id)),{cache:'no-store'}).then(r=>{if(!r.ok)throw Error();return r.json()}).then(j=>{cache.set(id,j);if(ticketId===id)$("#tbody").innerHTML=md(cleanBody(j.text));}).catch(()=>{if(ticketId===id)$("#tbody").innerHTML='<p class="error">Could not load this ticket. Try again.</p>';});
+  const list=navList(),i=list.findIndex(t=>t.id===id);$("#tpos").textContent=i<0?"":`${i+1} of ${list.length}`;$("#prevTicket").disabled=i<=0;$("#nextTicket").disabled=i<0||i>=list.length-1;
+}
+function step(delta){const list=navList(),i=list.findIndex(t=>t.id===ticketId);if(list[i+delta])openTicket(list[i+delta].id);}
+async function load(){
+  if(document.hidden)return;
+  try{
+    const r=await fetch(withToken('data.json'),{cache:'no-store'});if(!r.ok)throw Error();const payload=await r.json();
+    const opened=data.find(t=>t.id===ticketId);data=payload.tickets;problems=payload.problems||[];lastLoad=Date.now();
+    if(state.m&&!data.some(t=>t.milestone===state.m))state.m="";
+    if(state.p&&!data.some(t=>t.priority===state.p))state.p="";
+    if(state.a&&!data.some(t=>base(t.assignee)===state.a))state.a="";
+    if(state.s&&!data.some(t=>t.status===state.s))state.s="";
+    $("#live").classList.remove('off');$("#live").lastElementChild.textContent='Live';$("#updated").textContent='Updated '+new Date(lastLoad).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});
+    if(payload.signature!==signature){signature=payload.signature;fillSelects();syncControls();render();if(ticketId){const now=data.find(t=>t.id===ticketId);if(now&&(!opened||now.mtime!==opened.mtime))openTicket(ticketId);}}
+    else syncControls();
+    if(!ticketId&&params.get('t')){const id=params.get('t');params.delete('t');openTicket(id);}
+  }catch{$("#live").classList.add('off');$("#live").lastElementChild.textContent=lastLoad?'Offline - showing saved view':'Offline';$("#updated").textContent='Retrying...';if(!lastLoad)$("#overview").innerHTML='<p class="empty">Cannot load project progress. Retrying...</p>';}
+}
+$("#closeTicket").addEventListener('click',()=>$("#ticket").close());
+$("#prevTicket").addEventListener('click',()=>step(-1));$("#nextTicket").addEventListener('click',()=>step(1));
+$("#copyLink").addEventListener('click',()=>{if(ticketId)copy(ticketUrl(ticketId),$("#copyLink"));});
+$("#copyPath").addEventListener('click',()=>{const t=data.find(t=>t.id===ticketId);if(t)copy(t.path,$("#copyPath"));});
+$("#ticket").addEventListener('close',()=>{ticketId=null;saveUrl();});
+$("#ticket").addEventListener('click',e=>{if(e.target===$("#ticket"))$("#ticket").close();});
+$$("[data-f]").forEach(el=>el.addEventListener(el.tagName==="SELECT"?"change":"input",()=>{state[el.dataset.f]=el.value;syncControls();saveUrl();render();}));
+$("#sheetDone").addEventListener('click',()=>$("#filtersDlg").hidePopover());
+const resetFilters=()=>{for(const k of ["m","p","a","s","q"])state[k]="";syncControls();saveUrl();render();};
+$("#resetFilters").addEventListener('click',resetFilters);
+$("#sheetReset").addEventListener('click',resetFilters);
+document.addEventListener('click',e=>{
+  const clear=e.target.closest('[data-clear]');
+  if(clear){const key=clear.dataset.clear;for(const k of key==="all"?["m","p","a","s","q"]:[key])state[k]="";syncControls();saveUrl();render();return;}
+  const t=e.target.closest('[data-ticket]');if(t){e.preventDefault();openTicket(t.dataset.ticket);}
+});
+document.addEventListener('keydown',e=>{
+  const typing=/^(INPUT|SELECT|TEXTAREA)$/.test(document.activeElement?.tagName||"");
+  if(e.key==="/"&&!typing){e.preventDefault();if(matchMedia("(min-width:761px)").matches)$("#searchDesktop").focus();else{$("#filtersDlg").showPopover();$("#searchSheet").focus();}return;}
+  if(!$("#ticket").open)return;
+  if(e.key==='ArrowRight'){e.preventDefault();step(1);}if(e.key==='ArrowLeft'){e.preventDefault();step(-1);}
+});
+document.addEventListener('visibilitychange',()=>{if(!document.hidden)load();});
+saveUrl();syncControls();load();setInterval(load,10000);
 </script></body></html>

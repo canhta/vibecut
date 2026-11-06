@@ -1,4 +1,5 @@
 //! Read-only local ticket graph and its existing board presentation.
+mod tunnel;
 use serde_json::{Value, json};
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
@@ -130,15 +131,59 @@ fn unresolved(ticket: &Ticket) -> bool {
     !finished(ticket)
 }
 
-fn blocker_errors(tickets: &[Ticket]) -> Vec<String> {
+#[derive(Debug, PartialEq, Eq)]
+enum BlockerProblem {
+    Missing { ticket: String, blocker: String },
+    Wontfix { ticket: String, blocker: String },
+}
+
+impl BlockerProblem {
+    fn ticket(&self) -> &str {
+        match self {
+            Self::Missing { ticket, .. } | Self::Wontfix { ticket, .. } => ticket,
+        }
+    }
+
+    fn message(&self) -> &str {
+        match self {
+            Self::Missing { .. } => "missing blocker",
+            Self::Wontfix { .. } => "wontfix blocker",
+        }
+    }
+
+    fn blocker(&self) -> &str {
+        match self {
+            Self::Missing { blocker, .. } | Self::Wontfix { blocker, .. } => blocker,
+        }
+    }
+}
+
+impl std::fmt::Display for BlockerProblem {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Missing { ticket, blocker } => write!(f, "ERROR missing {ticket} -> {blocker}"),
+            Self::Wontfix { ticket, blocker } => {
+                write!(f, "ERROR wontfix blocker {ticket} -> {blocker}")
+            }
+        }
+    }
+}
+
+fn blocker_errors(tickets: &[Ticket]) -> Vec<BlockerProblem> {
     let by_id: BTreeMap<_, _> = tickets.iter().map(|t| (t.id.as_str(), t)).collect();
     let mut errors = Vec::new();
     for ticket in tickets {
         for dep in &ticket.blocked {
             match by_id.get(dep.as_str()) {
-                None => errors.push(format!("ERROR missing {} -> {dep}", ticket.id)),
+                None => errors.push(BlockerProblem::Missing {
+                    ticket: ticket.id.clone(),
+                    blocker: dep.clone(),
+                }),
                 Some(blocker) if blocker.status == "wontfix" => {
-                    errors.push(format!("ERROR wontfix blocker {} -> {dep}", ticket.id))
+                    errors.push(BlockerProblem::Wontfix {
+                        ticket: ticket.id.clone(),
+                        blocker: dep.clone(),
+                    })
                 }
                 Some(_) => (),
             }
@@ -348,17 +393,88 @@ fn data(tickets: &[Ticket]) -> Result<Value, String> {
             .filter(|t| t.status != "wontfix")
             .max_by_key(|t| waves.get(&t.id));
     }
-    Ok(Value::Array(tickets.iter().map(|ticket| {
-        let waiting = waiting(ticket, &by_id);
-        json!({
-            "id": ticket.id, "milestone": ticket.milestone, "title": ticket.title,
-            "status": ticket.status, "type": ticket.kind, "priority": ticket.priority,
-            "assignee": ticket.assignee, "blockedBy": ticket.blocked, "mtime": ticket.mtime, "text": ticket.text,
-            "waitingOn": waiting, "ready": ticket.status == "open" && waiting.is_empty(),
-            "unblocks": count_dependents(&ticket.id, &dependents, &by_id, is_open),
-            "wave": waves.get(&ticket.id), "critical": critical.contains(&ticket.id),
+    let mut problems = Vec::new();
+    for ticket in tickets {
+        if ticket.status == "?" {
+            problems.push(json!({
+                "id": ticket.id, "severity": "warning", "message": "missing Status field"
+            }));
+        }
+    }
+    for problem in blocker_errors(tickets) {
+        problems.push(json!({
+            "id": problem.ticket(), "severity": "error",
+            "message": format!("{}: {}", problem.message(), problem.blocker()),
+        }));
+    }
+    let signature = tickets
+        .iter()
+        .map(|ticket| {
+            format!(
+                "{}:{}:{}:{}",
+                ticket.id, ticket.mtime, ticket.status, ticket.priority
+            )
         })
-    }).collect()))
+        .collect::<Vec<_>>()
+        .join("|");
+    Ok(json!({
+        "signature": signature,
+        "problems": problems,
+        "tickets": tickets.iter().map(|ticket| {
+            let waiting = waiting(ticket, &by_id);
+            json!({
+                "id": ticket.id, "milestone": ticket.milestone, "title": ticket.title,
+                "status": ticket.status, "type": ticket.kind, "priority": ticket.priority,
+                "assignee": ticket.assignee, "blockedBy": ticket.blocked, "mtime": ticket.mtime,
+                "path": format!(".scratch/{}/issues/{}", ticket.milestone, ticket.filename),
+                "waitingOn": waiting, "ready": ticket.status == "open" && waiting.is_empty(),
+                "unblocks": count_dependents(&ticket.id, &dependents, &by_id, is_open),
+                "wave": waves.get(&ticket.id), "critical": critical.contains(&ticket.id),
+            })
+        }).collect::<Vec<_>>(),
+    }))
+}
+
+fn ticket_data(tickets: &[Ticket], id: &str) -> Option<Value> {
+    tickets.iter().find(|ticket| ticket.id == id).map(|ticket| {
+        json!({
+            "id": ticket.id, "mtime": ticket.mtime, "text": ticket.text,
+        })
+    })
+}
+
+fn percent_decode(input: &str) -> String {
+    fn hex(byte: u8) -> Option<u8> {
+        match byte {
+            b'0'..=b'9' => Some(byte - b'0'),
+            b'a'..=b'f' => Some(byte - b'a' + 10),
+            b'A'..=b'F' => Some(byte - b'A' + 10),
+            _ => None,
+        }
+    }
+    let mut decoded = Vec::with_capacity(input.len());
+    let mut rest = input.as_bytes();
+    while let Some((&byte, tail)) = rest.split_first() {
+        if byte == b'%'
+            && let [high, low, after @ ..] = tail
+            && let (Some(high), Some(low)) = (hex(*high), hex(*low))
+        {
+            decoded.push(high * 16 + low);
+            rest = after;
+            continue;
+        }
+        decoded.push(if byte == b'+' { b' ' } else { byte });
+        rest = tail;
+    }
+    String::from_utf8_lossy(&decoded).into_owned()
+}
+
+fn query_param(request: &str, name: &str) -> Option<String> {
+    let query = request.split_once('?')?.1;
+    query.split('&').find_map(|pair| {
+        let (key, value) = pair.split_once('=').unwrap_or((pair, ""));
+        (key == name).then(|| percent_decode(value))
+    })
 }
 
 pub fn frontier(root: &Path, assignee: Option<&str>) -> Result<(), String> {
@@ -389,7 +505,18 @@ pub fn blocking(root: &Path) -> Result<(), String> {
     Ok(())
 }
 
-fn serve(root: &Path, stream: &mut TcpStream) -> Result<(), String> {
+fn authorized(request: &str, token: Option<&str>) -> bool {
+    token.is_none_or(|token| {
+        request
+            .split_whitespace()
+            .nth(1)
+            .and_then(|target| query_param(target, "token"))
+            .as_deref()
+            == Some(token)
+    })
+}
+
+fn serve(root: &Path, stream: &mut TcpStream, token: Option<&str>) -> Result<(), String> {
     stream
         .set_read_timeout(Some(Duration::from_secs(2)))
         .map_err(|e| e.to_string())?;
@@ -414,16 +541,33 @@ fn serve(root: &Path, stream: &mut TcpStream) -> Result<(), String> {
             "text/plain",
             "read-only server".to_owned(),
         )
+    } else if !authorized(&request, token) {
+        (
+            "401 Unauthorized",
+            "text/plain",
+            "board token required".to_owned(),
+        )
     } else {
-        match fields.get(1).and_then(|path| path.split('?').next()) {
-            Some("/") => (
+        let target = fields.get(1).copied().unwrap_or("");
+        match target.split('?').next().unwrap_or("") {
+            "/" => (
                 "200 OK",
                 "text/html; charset=utf-8",
                 include_str!("tickets/board.html").to_owned(),
             ),
-            Some("/data.json") => match load(root).and_then(|tickets| data(&tickets)) {
+            "/data.json" => match load(root).and_then(|tickets| data(&tickets)) {
                 Ok(data) => ("200 OK", "application/json", data.to_string()),
                 Err(error) => ("500 Internal Server Error", "text/plain", error),
+            },
+            "/ticket.json" => match query_param(target, "id") {
+                None => ("400 Bad Request", "text/plain", "missing id".to_owned()),
+                Some(id) => match load(root) {
+                    Ok(tickets) => match ticket_data(&tickets, &id) {
+                        Some(ticket) => ("200 OK", "application/json", ticket.to_string()),
+                        None => ("404 Not Found", "text/plain", "unknown ticket".to_owned()),
+                    },
+                    Err(error) => ("500 Internal Server Error", "text/plain", error),
+                },
             },
             _ => ("404 Not Found", "text/plain", "not found".to_owned()),
         }
@@ -433,13 +577,24 @@ fn serve(root: &Path, stream: &mut TcpStream) -> Result<(), String> {
 
 pub fn board(root: &Path, port: u16) -> Result<(), String> {
     let listener = TcpListener::bind(("127.0.0.1", port)).map_err(|e| e.to_string())?;
+    let _tunnel = tunnel::start(root, port)?;
+    let token = std::env::var("VIBECUT_BOARD_TOKEN")
+        .ok()
+        .filter(|token| !token.is_empty());
     println!(
         "VibeCut board (read-only) at http://{}/  Ctrl+C to stop",
         listener.local_addr().map_err(|e| e.to_string())?
     );
+    if token.is_some() {
+        println!("VIBECUT_BOARD_TOKEN is set; append ?token=<value> to every URL");
+    }
     for stream in listener.incoming() {
         let mut stream = stream.map_err(|e| e.to_string())?;
-        if let Err(error) = serve(root, &mut stream) {
+        if let Err(error) = serve(root, &mut stream, token.as_deref())
+            && !error.contains("aborted")
+            && !error.contains("reset")
+            && !error.contains("closed")
+        {
             eprintln!("board request: {error}");
         }
     }
@@ -485,6 +640,7 @@ mod tests {
             ),
         ];
         let out = data(&tickets).unwrap();
+        let out = out["tickets"].as_array().unwrap();
         assert_eq!(out[0]["wave"], 0);
         assert_eq!(out[1]["wave"], 1);
         assert_eq!(out[1]["ready"], true);
@@ -492,8 +648,8 @@ mod tests {
         assert_eq!(out[2]["wave"], 2);
         assert_eq!(out[2]["waitingOn"], json!(["m/02", "missing/99"]));
         assert_eq!(out[4]["ready"], false);
-        for i in 0..3 {
-            assert_eq!(out[i]["critical"], true);
+        for ticket in out.iter().take(3) {
+            assert_eq!(ticket["critical"], true);
         }
         let cyclic = vec![parse("m", "01-cycle.md", "Blocked by: 01".into(), 0.0)];
         assert!(data(&cyclic).unwrap_err().contains("cyclic"));
@@ -641,7 +797,10 @@ mod tests {
         assert!(frontier_rows(&tickets, None).unwrap().is_empty());
         assert_eq!(open_counts(&tickets)["m/02"], 1);
         assert_eq!(
-            blocker_errors(&tickets),
+            blocker_errors(&tickets)
+                .iter()
+                .map(ToString::to_string)
+                .collect::<Vec<_>>(),
             [
                 "ERROR missing m/01 -> m/99".to_owned(),
                 "ERROR wontfix blocker m/03 -> m/02".to_owned(),
@@ -702,7 +861,8 @@ mod tests {
     fn empty_graph_has_no_frontier_blocking_or_board_rows() {
         assert!(frontier_rows(&[], None).unwrap().is_empty());
         assert!(blocking_rows(&[]).unwrap().is_empty());
-        assert_eq!(data(&[]).unwrap(), json!([]));
+        assert_eq!(data(&[]).unwrap()["tickets"], json!([]));
+        assert_eq!(data(&[]).unwrap()["problems"], json!([]));
     }
 
     #[test]
@@ -721,13 +881,62 @@ mod tests {
             [("a/01", 2), ("d/04", 0)]
         );
         let board = data(&tickets).unwrap();
+        let board = board["tickets"].as_array().unwrap();
         assert_eq!(board[0]["unblocks"], 2);
         assert_eq!(board[1]["ready"], false);
         assert_eq!(
-            blocker_errors(&tickets),
+            blocker_errors(&tickets)
+                .iter()
+                .map(ToString::to_string)
+                .collect::<Vec<_>>(),
             ["ERROR missing b/02 -> missing/99"]
         );
         tickets.reverse();
         assert_eq!(frontier_rows(&tickets, None).unwrap(), rows);
+    }
+
+    #[test]
+    fn board_payload_separates_ticket_text_and_reports_data_problems() {
+        let tickets = vec![
+            parse("m", "01-hub.md", "Priority: P0\n# hub\n\nBody".into(), 7.0),
+            ticket("m", "02-missing.md", "open", "P1", "99"),
+            ticket("m", "03-blocked.md", "open", "P1", "02"),
+        ];
+        let board = data(&tickets).unwrap();
+        let tickets_json = board["tickets"].as_array().unwrap();
+        assert_eq!(tickets_json[0]["id"], "m/01");
+        assert!(tickets_json[0].get("text").is_none());
+        assert_eq!(tickets_json[0]["path"], ".scratch/m/issues/01-hub.md");
+        assert!(board["signature"].as_str().unwrap().contains("m/01:7:?:P0"));
+        let problems = board["problems"].as_array().unwrap();
+        assert_eq!(problems.len(), 2);
+        assert_eq!(problems[0]["id"], "m/01");
+        assert_eq!(problems[0]["message"], "missing Status field");
+        assert_eq!(problems[1]["id"], "m/02");
+        assert!(problems[1]["message"].as_str().unwrap().contains("m/99"));
+
+        let ticket = ticket_data(&tickets, "m/01").unwrap();
+        assert_eq!(ticket["text"], "Priority: P0\n# hub\n\nBody");
+        assert!(ticket_data(&tickets, "../01").is_none());
+        assert_eq!(
+            query_param("/ticket.json?id=m%2F01", "id").as_deref(),
+            Some("m/01")
+        );
+        assert_eq!(
+            query_param("/ticket.json?id=m+01", "id").as_deref(),
+            Some("m 01")
+        );
+        assert_eq!(percent_decode("100%"), "100%");
+        assert_eq!(percent_decode("%zz"), "%zz");
+        assert!(authorized("GET /data.json HTTP/1.1\r\n", None));
+        assert!(authorized(
+            "GET /data.json?token=s3cret HTTP/1.1\r\n",
+            Some("s3cret")
+        ));
+        assert!(!authorized("GET /data.json HTTP/1.1\r\n", Some("s3cret")));
+        assert!(!authorized(
+            "GET /data.json?token=wrong HTTP/1.1\r\n",
+            Some("s3cret")
+        ));
     }
 }
