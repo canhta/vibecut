@@ -6,8 +6,10 @@ use super::{
 use crate::CliError;
 use crate::output::json_path;
 use crate::session::resolve_target;
+use engine::EditError;
+#[cfg(target_os = "macos")]
+use engine::NfcText;
 use engine::control;
-use engine::{EditError, NfcText};
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs::{self, File};
 use std::io;
