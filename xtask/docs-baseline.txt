@@ -12,8 +12,6 @@ map	apps/vibecut-cli/README.md	module map has no row for folder `commands/media`
 map	apps/vibecut-cli/README.md	module map has no row for folder `commands/project`
 map	apps/vibecut/README.md	README has no module map table
 map	crates/ai/README.md	README has no module map table
-map	crates/captions/README.md	README has no module map table
-map	crates/clip-eval/README.md	README has no module map table
 map	crates/engine/README.md	module map has no row for folder `analysis/shot_analysis`
 map	crates/engine/README.md	module map has no row for folder `libraries/font_catalog`
 map	crates/engine/README.md	module map has no row for folder `libraries/sound_library`
@@ -26,9 +24,6 @@ map	crates/engine/README.md	module map has no row for folder `shorts/suggestion`
 map	crates/engine/README.md	module map has no row for folder `store/recovery_workflow`
 map	crates/media/README.md	README has no module map table
 map	crates/project/README.md	README has no module map table
-map	crates/render/README.md	README has no module map table
-map	crates/text/README.md	README has no module map table
-map	crates/time/README.md	README has no module map table
 text	apps/vibecut/README.md	tracker id `p1-parity/33`
 text	apps/vibecut/README.md	tracker id `p1-parity/75`
 text	apps/vibecut/README.md	tracker id `p1-parity/97`
@@ -47,7 +42,6 @@ text	crates/media/README.md	tracker id `p0-core/78`
 text	crates/media/README.md	tracker id `p1-clips/12`
 text	crates/media/README.md	tracker id `ticket 18`
 text	crates/media/tests/fixtures/vision/README.md	tracker id `p1-clips/12`
-text	crates/render/README.md	tracker id `p0-core/78`
 text	docs/product/keyboard.md	tracker id `p1-parity/16`
 text	docs/product/keyboard.md	tracker id `p1-parity/20`
 text	docs/product/ui.md	tracker id `ticket 117`

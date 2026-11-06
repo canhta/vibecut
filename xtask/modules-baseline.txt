@@ -29,7 +29,6 @@ folder	crates/ai/src	19 direct children (limit 12)
 folder	crates/media/src	13 direct children (limit 12)
 folder	crates/project/src	18 direct children (limit 12)
 interface	crates/media/tests/it/common/mod.rs	module interface is `mod.rs`; use `foo.rs` beside `foo/`
-interface	crates/text/tests/it/common/mod.rs	module interface is `mod.rs`; use `foo.rs` beside `foo/`
 layer	apps/vibecut/src/actions.rs	crate::media_panel is in higher layer features/assets (module actions is foundation/foundation)
 layer	apps/vibecut/src/catalog.rs	crate::export is in higher layer features/export (module catalog is foundation/foundation)
 layer	apps/vibecut/src/catalog.rs	crate::media_panel is in higher layer features/assets (module catalog is foundation/foundation)
@@ -59,5 +58,3 @@ layer	crates/engine/src/shorts/suggestion.rs	crate::providers crosses feature gr
 layer	crates/engine/src/shorts/suggestion.rs	crate::subtitles crosses feature groups in layer features (module shorts is shorts, target is subtitles)
 layer	crates/engine/src/subtitles.rs	crate::providers crosses feature groups in layer features (module subtitles is subtitles, target is providers)
 name	crates/media/tests/it/common	module name `common` is banned
-name	crates/render/tests/it/common	module name `common` is banned
-name	crates/text/tests/it/common	module name `common` is banned
