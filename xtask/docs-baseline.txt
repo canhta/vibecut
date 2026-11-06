@@ -52,7 +52,6 @@ map	crates/engine/README.md	module map has no row for folder `runtime/staged_pub
 map	crates/engine/README.md	module map has no row for folder `session/edit`
 map	crates/engine/README.md	module map has no row for folder `session/wire`
 map	crates/engine/README.md	module map has no row for folder `store/recovery_workflow`
-map	crates/media/README.md	README has no module map table
 map	crates/project/README.md	README has no module map table
 map	crates/render/README.md	folder module `audio` has no README
 map	crates/render/README.md	folder module `export` has no README
@@ -66,9 +65,6 @@ text	assets/icons/phosphor/README.md	tracker id `p1-parity/06`
 text	assets/icons/phosphor/README.md	tracker id `p1-parity/09`
 text	assets/icons/phosphor/README.md	tracker id `p1-parity/117`
 text	assets/icons/phosphor/README.md	tracker id `p1-parity/54`
-text	crates/media/README.md	tracker id `p0-core/78`
-text	crates/media/README.md	tracker id `p1-clips/12`
-text	crates/media/README.md	tracker id `ticket 18`
 text	crates/media/tests/fixtures/vision/README.md	tracker id `p1-clips/12`
 text	docs/product/agent-control/keyboard.md	tracker id `p1-parity/16`
 text	docs/product/agent-control/keyboard.md	tracker id `p1-parity/20`

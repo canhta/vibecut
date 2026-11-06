@@ -27,7 +27,7 @@ The [glossary](../../GLOSSARY.md) owns domain definitions; crate READMEs own con
 
 | Area | Contract owner |
 |---|---|
-| SourceAsset, codecs, probe, packet/frame timing | [media](../../crates/media/README.md#entry-points-and-timing) |
+| SourceAsset, codecs, probe, packet/frame timing | [media](../../crates/media/src/read/README.md) |
 | Project, scenes, validation, persistence, writer lease | [project](../../crates/project/README.md#writer-lease-and-save-acknowledgement) |
 | Video transitions | [project model/invariants](../../crates/project/README.md#video-transitions), [engine edits](../../crates/engine/README.md#video-transitions), [render evaluation](../../crates/render/README.md#video-transitions) |
 | Param and keyframes | [project animation](../../crates/project/README.md#animated-parameters) |
@@ -43,9 +43,9 @@ The [glossary](../../GLOSSARY.md) owns domain definitions; crate READMEs own con
 | Loudness measurement, gains and export admission | [render planner](../../crates/render/README.md#audio-clock-and-headroom) / [engine job](../../crates/engine/README.md#loudness-normalization) |
 | Clip naming, cue mapping, per-short cancel/retry | [shorts batch export](../../crates/shorts/src/batch_export/README.md) |
 | Local model catalog, consent, integrity, transport / transfers, cache bundles / manager presentation | [ai catalog](../../crates/ai/src/models/README.md) / [engine transfers](../../crates/engine/README.md#local-model-transfers) / [app manager](../../apps/vibecut/README.md#local-model-manager) |
-| Clip boundary snapping / speech groups / energy | [shorts](../../crates/shorts/src/boundaries/README.md) / [captions](../../crates/captions/README.md#source-cut-units) / [media](../../crates/media/README.md#speech-energy-windows) |
+| Clip boundary snapping / speech groups / energy | [shorts](../../crates/shorts/src/boundaries/README.md) / [captions](../../crates/captions/README.md#source-cut-units) / [media](../../crates/media/src/audio_extract/README.md#speech-energy-windows) |
 | Shot analysis and complete artifact caching | [engine analysis](../../crates/engine/README.md#per-shot-analysis) |
-| Vision preparation / inference, face embeddings and shape-plan cache | [media](../../crates/media/README.md#vision-preparation) / [ai detectors](../../crates/ai/src/vision/README.md) |
+| Vision preparation / inference, face embeddings and shape-plan cache | [media](../../crates/media/src/vision_prep/README.md#vision-preparation) / [ai detectors](../../crates/ai/src/vision/README.md) |
 | Provider capabilities, consent, cost / text timing / isolated Gipformer | [ai](../../crates/ai/src/policy/README.md) / [recognition](../../crates/ai/src/assembly/README.md) / [local runner](../../crates/ai/src/gipformer/README.md) |
 | Sound search, saved local sounds, preview cache and attribution | [engine sounds](../../crates/engine/README.md#sound-library) |
 | Translation windows and response validation / selection, retry, edit protection | [ai translation](../../crates/ai/src/translation/README.md) / [engine application](../../crates/engine/README.md#translation-selection-and-application) |
@@ -63,6 +63,6 @@ Languages are BCP 47 data (`vi`, `en`, `zh-Hans`, `zh-Hant`), each with one [cap
 
 ## Media and time
 
-Runtime codec admission, software fallback, GPU frame lifetime, keyframe seeking, stream copy, probe fields and presentation timestamps follow the [media contract](../../crates/media/README.md#entry-points-and-timing).
+Runtime codec admission, software fallback, GPU frame lifetime, keyframe seeking, stream copy, probe fields and presentation timestamps follow the [media contract](../../crates/media/src/read/README.md).
 
 Time units follow the [glossary](../../GLOSSARY.md); conversion rules follow [standards](standards.md#time-and-text).

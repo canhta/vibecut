@@ -1,0 +1,7 @@
+# Muxing
+
+- `Muxer`: MP4/MOV/WebM over a seekable `MuxSink` (plain File or the project's
+  bounded streaming writer), stream-copy parameters or encoded
+  parameters, timestamp rescaling and trailer/fsync error propagation. Use a
+  temporary output and promote it only after successful `finish`; render/engine
+  own cancellation, final-file replacement and restart policy.
