@@ -1,3 +1,4 @@
+//! Nightly and draft GitHub release publication with ordered asset uploads.
 #[allow(clippy::wildcard_imports)]
 use super::*;
 use std::collections::BTreeSet;

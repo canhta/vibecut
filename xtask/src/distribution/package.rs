@@ -1,3 +1,4 @@
+//! Assemble the per-platform package tree with its compliance files and platform binary audits.
 #[allow(clippy::wildcard_imports)]
 use super::*;
 use std::collections::BTreeSet;

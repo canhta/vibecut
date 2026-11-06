@@ -1,3 +1,4 @@
+//! Signing, notarization and credential lifecycle for macOS distribution artifacts.
 #[allow(clippy::wildcard_imports)]
 use super::*;
 use std::collections::BTreeSet;

@@ -1,3 +1,4 @@
+//! Universal macOS export and architecture combination for packaged binaries.
 #[allow(clippy::wildcard_imports)]
 use super::*;
 use std::collections::BTreeSet;

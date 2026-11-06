@@ -1,3 +1,4 @@
+//! Smoke and install-smoke acceptance runs against packaged and installed artifacts.
 #[allow(clippy::wildcard_imports)]
 use super::*;
 

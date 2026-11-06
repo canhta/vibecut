@@ -1,3 +1,4 @@
+//! macOS deployment, architecture, runpath and code-signing audits for packaged binaries.
 #[allow(clippy::wildcard_imports)]
 use super::*;
 use std::collections::BTreeSet;
