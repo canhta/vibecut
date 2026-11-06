@@ -2,11 +2,11 @@
 
 ## Principles
 
-- **Selective, never cloned.** For each screen and interaction, compare how the references solve it, take the best fit for creators editing short and long talking videos, and cite each layout, interaction, shortcut and empty/loading/error state with the reason for choosing it. Compare code in `.spikes/repos/` and screenshots in `.spikes/ui-reference/`. A design without a reference basis is marked new and needs coordinator approval before implementation.
+- **Layout cloned, palette and icons ours.** The editor matches the reference captures in layout: panel structure and proportions, control sizes, spacing, radii, type scale, row and tab composition, what sits where. Colour comes from our own tokens and icons from our own set ([iconography](#iconography)); a reference colour or glyph is never copied, and a colour or icon difference is not a mismatch. Where a reference solves an interaction poorly for creators editing talking videos, say so and cite the reason; a design without a reference basis is marked new and needs coordinator approval. Compare code in `.spikes/repos/` and screenshots in `.spikes/ui-reference/`.
 - **Familiar first.** Creators arrive from mainstream editors: standard panel placement, shortcuts and gestures beat novelty.
 - **Every state designed.** Each panel has its empty, loading, error and offline states; nothing appears blank or frozen.
 - **Agent-drivable.** Every interactive widget has a stable automation id that survives locale and layout changes. Agents and tests send input through those ids into the real command path, read engine project state plus app-owned widget state, and capture a window or panel screenshot that waits for a presented frame and returns a typed unavailable or timeout failure.
-- **Decide visually, from source values.** Choose an icon set, colour or layout from a side-by-side render at matched size against the reference, never from a library's reputation; take colour values from the reference's source tokens (CSS or design tokens), not from screenshot pixels.
+- **Decide visually, from source values.** Choose an icon set, colour or layout from a side-by-side render at matched size against the reference, never from a library's reputation; take geometry from measured reference shots and colour values from our own tokens, not from screenshot pixels.
 - **Two languages from day one.** All strings come from the English and Vietnamese catalogs; layouts survive the longer string.
 
 ## Design language
