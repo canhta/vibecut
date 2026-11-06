@@ -7,7 +7,7 @@ pub(super) fn remove_assets(data: &mut ProjectData, assets: Vec<media::AssetId>)
     if assets.is_empty() {
         return Err(EditError::Invalid("media removal list"));
     }
-    if assets.len() > crate::control::MAX_COLLECTION {
+    if assets.len() > crate::session::wire::MAX_COLLECTION {
         return Err(EditError::Limit);
     }
     let mut unique = BTreeSet::new();

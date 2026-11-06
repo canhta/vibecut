@@ -30,17 +30,17 @@ struct State {
 /// Opaque identity for exactly one Session revision, including save boundaries.
 #[derive(Clone)]
 pub struct JobTarget {
-    session: Arc<crate::control::Revision>,
-    revision: Arc<crate::control::Revision>,
+    session: Arc<super::wire::Revision>,
+    revision: Arc<super::wire::Revision>,
 }
 /// Owns project editing, bounded history, deferred changes and gesture lifecycle.
 pub struct Session {
     metadata: project::Metadata,
     protected: Vec<std::path::PathBuf>,
-    pub(crate) identity: Arc<crate::control::Revision>,
-    pub(crate) revision: Arc<crate::control::Revision>,
+    pub(crate) identity: Arc<super::wire::Revision>,
+    pub(crate) revision: Arc<super::wire::Revision>,
     pub(crate) generation: u64,
-    pub(crate) control: crate::control::State,
+    pub(crate) ledger: super::wire::Ledger,
     state: State,
     limit: usize,
     gesture: Option<State>,
@@ -73,16 +73,16 @@ impl Session {
             .map_or(Some(0), |id| id.checked_add(1));
         let mut entropy = [0u8; 32];
         getrandom::fill(&mut entropy).map_err(|_| EditError::ControlIdentity)?;
-        let identity = Arc::new(crate::control::Revision(
+        let identity = Arc::new(super::wire::Revision(
             blake3::hash(&entropy).to_hex().to_string(),
         ));
         Ok(Self {
             metadata: project::Metadata::default(),
             protected: Vec::new(),
-            revision: Arc::new(crate::control::Revision(format!("{}:0", identity.0))),
+            revision: Arc::new(super::wire::Revision(format!("{}:0", identity.0))),
             identity,
             generation: 0,
-            control: crate::control::State::default(),
+            ledger: super::wire::Ledger::default(),
             state: State {
                 project: Arc::new(project),
                 undo: VecDeque::new(),
@@ -117,7 +117,7 @@ impl Session {
         if paths.len() > 256
             || paths
                 .iter()
-                .any(|path| path.as_os_str().len() > crate::control::MAX_PATH_BYTES)
+                .any(|path| path.as_os_str().len() > super::wire::MAX_PATH_BYTES)
         {
             return Err(EditError::Limit);
         }
@@ -197,7 +197,7 @@ impl Session {
         if self.transaction_active() {
             return Err(EditError::TransactionActive);
         }
-        if selection.len() > crate::control::MAX_COLLECTION {
+        if selection.len() > super::wire::MAX_COLLECTION {
             return Err(EditError::Limit);
         }
         let existing: BTreeSet<_> = self
@@ -357,7 +357,7 @@ impl Session {
     /// parameters fail without leaking user text or changing transaction state.
     pub fn execute(&mut self, command_id: &str, params: Value) -> Result<Outcome> {
         self.boundary(|session| {
-            let command = crate::control::decode_command(command_id, params)?;
+            let command = super::wire::decode_command(command_id, params)?;
             session.commit(command, None, true)
         })
     }
@@ -513,13 +513,13 @@ impl Session {
                 }
                 let mut data = self.project().data().clone();
                 if wire {
-                    crate::control::validate_wire(&data)?;
+                    super::wire::validate_wire(&data)?;
                 }
                 let changed = data.current_scene_id != scene;
                 if changed {
                     data.current_scene_id = scene;
                     if wire {
-                        crate::control::validate_wire(&data)?;
+                        super::wire::validate_wire(&data)?;
                     }
                     self.change_scene_view(&data);
                     self.state.project = Arc::new(Project::new(data)?);
@@ -542,7 +542,7 @@ impl Session {
                     return Err(EditError::TransactionActive);
                 }
                 if wire {
-                    crate::control::validate_wire(self.project().data())?;
+                    super::wire::validate_wire(self.project().data())?;
                 }
                 let view = project::ViewState {
                     zoom,
@@ -563,19 +563,19 @@ impl Session {
             }
             Command::BeginGesture {} => {
                 if wire {
-                    crate::control::validate_wire(self.project().data())?;
+                    super::wire::validate_wire(self.project().data())?;
                 }
                 return self.start_gesture();
             }
             Command::CommitGesture {} => {
                 if wire {
-                    crate::control::validate_wire(self.project().data())?;
+                    super::wire::validate_wire(self.project().data())?;
                 }
                 return self.finish_gesture();
             }
             Command::CancelGesture {} => {
                 if wire && let Some(before) = &self.gesture {
-                    crate::control::validate_wire(before.project.data())?;
+                    super::wire::validate_wire(before.project.data())?;
                 }
                 return self.revert_gesture();
             }
@@ -606,8 +606,8 @@ impl Session {
         if wire {
             // The batch is still one local candidate: refuse before publishing,
             // allocating persistent IDs, changing history or advancing revision.
-            crate::control::validate_wire(next.data())?;
-            crate::control::validate_wire(&created)?;
+            super::wire::validate_wire(next.data())?;
+            super::wire::validate_wire(&created)?;
         }
         if next == *self.state.project {
             if self.state.merge_key.as_deref() != key {
@@ -728,7 +728,7 @@ impl Session {
                 self.state.undo.back()
             }
             .ok_or(EditError::NoHistory)?;
-            crate::control::validate_wire(candidate.project.data())?;
+            super::wire::validate_wire(candidate.project.data())?;
         }
         let mut snapshot = if redo {
             self.state.redo.pop()
@@ -745,7 +745,7 @@ impl Session {
             snapshot.project = Arc::new(Project::new(data)?);
         }
         if wire {
-            crate::control::validate_wire(snapshot.project.data())?;
+            super::wire::validate_wire(snapshot.project.data())?;
         }
         self.change_scene_view(snapshot.project.data());
         // Each entry remembers the selection that produced its edit, even if the
@@ -770,58 +770,6 @@ impl Session {
         })
     }
 }
-// The caller already owns Value; this caps additional processing, not its creation.
-pub(crate) fn budget(value: &Value) -> Result<()> {
-    let mut stack = vec![(value, 0)];
-    let mut nodes = 0usize;
-    let mut bytes = 0usize;
-    while let Some((value, depth)) = stack.pop() {
-        nodes += 1;
-        if nodes > crate::control::MAX_NODES || depth > crate::control::MAX_DEPTH {
-            return Err(EditError::Limit);
-        }
-        match value {
-            Value::Array(a) => {
-                if a.len() > crate::control::MAX_COLLECTION
-                    || nodes + stack.len() + a.len() > crate::control::MAX_NODES
-                {
-                    return Err(EditError::Limit);
-                }
-                stack.extend(a.iter().map(|v| (v, depth + 1)));
-            }
-            Value::Object(o) => {
-                if o.len() > crate::control::MAX_COLLECTION
-                    || nodes + stack.len() + o.len() > crate::control::MAX_NODES
-                {
-                    return Err(EditError::Limit);
-                }
-                for (k, v) in o {
-                    bytes = bytes.saturating_add(k.len());
-                    stack.push((v, depth + 1));
-                }
-            }
-            Value::Number(n)
-                if n.as_i64().is_some_and(|v| {
-                    !(-crate::control::MAX_SAFE_INTEGER..=crate::control::MAX_SAFE_INTEGER)
-                        .contains(&v)
-                }) || n
-                    .as_u64()
-                    .is_some_and(|v| v > crate::control::MAX_SAFE_INTEGER as u64)
-                    || n.as_f64()
-                        .is_some_and(|v| v.abs() > crate::control::MAX_SAFE_INTEGER as f64) =>
-            {
-                return Err(EditError::InvalidParams);
-            }
-            Value::String(s) => bytes = bytes.saturating_add(s.len()),
-            _ => {}
-        }
-        if bytes > crate::control::MAX_TEXT_BYTES {
-            return Err(EditError::Limit);
-        }
-    }
-    Ok(())
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;

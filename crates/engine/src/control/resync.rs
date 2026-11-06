@@ -1,72 +1,22 @@
 //! Resynchronizes control listeners with committed state.
-use super::{
-    API_VERSION, ControlResult, Cursor, EditError, Event, JobRunner, JobView, MAX_EVENTS, Payload,
-    Response, ResponseValue, Result, Revision, Session, Snapshot, State, VecDeque, registry_hash,
+use crate::jobs::{JobRunner, JobSnapshot};
+use crate::session::wire::{
+    ControlResult, Cursor, ErrorCode, Event, JobView, Payload, Response, ResponseValue, Snapshot,
 };
-impl State {
-    pub(crate) fn push(&mut self, session: &str, revision: Revision, payload: Payload) {
-        // A saturated stream can never manufacture another sequence: all cursors
-        // require resync. This is unreachable in a practical Session lifetime.
-        let Some(next) = self.sequence.checked_add(1) else {
-            self.events.clear();
-            return;
-        };
-        self.sequence = next;
-        self.events.push_back(std::sync::Arc::new(Event {
-            api_version: API_VERSION,
-            registry_hash: registry_hash().into(),
-            session_id: session.into(),
-            seq: next.to_string(),
-            revision,
-            payload,
-        }));
-        while self.events.len() > MAX_EVENTS {
-            self.events.pop_front();
+use crate::{EditError, Result, Session};
+
+impl From<JobSnapshot> for JobView {
+    fn from(s: JobSnapshot) -> Self {
+        Self {
+            id: s.id,
+            kind: s.kind,
+            stage: s.stage,
+            progress: s.progress,
+            state: s.state,
+            attempts: s.attempts,
+            error: s.error.as_deref().map(ErrorCode::from_error),
+            result: None,
         }
-    }
-}
-impl Session {
-    pub(crate) fn control_mark(&self) -> (u64, VecDeque<std::sync::Arc<Event>>) {
-        (self.control.sequence, self.control.events.clone())
-    }
-}
-
-impl Session {
-    pub(crate) fn restore_control_mark(&mut self, mark: (u64, VecDeque<std::sync::Arc<Event>>)) {
-        self.control.sequence = mark.0;
-        self.control.events = mark.1;
-    }
-}
-
-impl Session {
-    pub fn revision(&self) -> Revision {
-        (*self.revision).clone()
-    }
-}
-
-impl Session {
-    pub fn session_id(&self) -> &str {
-        &self.identity.0
-    }
-}
-
-impl Session {
-    pub(crate) fn invalidate_revision(&mut self, committed: bool) -> Result<()> {
-        self.generation = self.generation.checked_add(1).ok_or(EditError::Limit)?;
-        self.revision =
-            std::sync::Arc::new(Revision(format!("{}:{}", self.identity.0, self.generation)));
-        self.control.push(
-            &self.identity.0,
-            self.revision(),
-            if committed {
-                Payload::ProjectChanged {
-                    full_snapshot_required: true,
-                }
-            } else {
-                Payload::RevisionChanged
-            },
-        );
-        Ok(())
     }
 }
 
@@ -81,7 +31,7 @@ impl Session {
                         | ControlResult::JobAccepted { .. }
                         | ControlResult::CancelRequested { .. }
                 ) {
-                    self.control.push(
+                    self.ledger.push(
                         &self.identity.0,
                         self.revision(),
                         Payload::CommandResult {
@@ -91,7 +41,7 @@ impl Session {
                     );
                 }
             }
-            ResponseValue::Error(code) => self.control.push(
+            ResponseValue::Error(code) => self.ledger.push(
                 &self.identity.0,
                 self.revision(),
                 Payload::CommandError {
@@ -117,7 +67,7 @@ impl Session {
             jobs: runner.snapshots().into_iter().map(JobView::from).collect(),
             cursor: Cursor {
                 session: self.session_id().into(),
-                seq: self.control.sequence,
+                seq: self.ledger.sequence,
             },
         })
     }
@@ -128,20 +78,20 @@ impl Session {
     /// consumer's runner events or cancel work when a listener disappears.
     pub fn observe_jobs(&mut self, runner: &JobRunner) {
         let snapshots = runner.snapshots();
-        self.control
+        self.ledger
             .jobs
             .retain(|id, _| snapshots.iter().any(|s| s.id == *id));
         for snapshot in snapshots {
             let view = JobView::from(snapshot);
-            let changed = self.control.jobs.get(&view.id).is_none_or(|old| {
+            let changed = self.ledger.jobs.get(&view.id).is_none_or(|old| {
                 old.state != view.state
                     || old.stage != view.stage
                     || old.attempts != view.attempts
                     || old.progress != view.progress
             });
             if changed {
-                self.control.jobs.insert(view.id, view.clone());
-                self.control.push(
+                self.ledger.jobs.insert(view.id, view.clone());
+                self.ledger.push(
                     &self.identity.0,
                     self.revision(),
                     Payload::JobChanged { snapshot: view },
@@ -154,8 +104,8 @@ impl Session {
 impl Session {
     pub fn events(&self, cursor: &mut Cursor) -> Result<Vec<Event>> {
         if cursor.session != self.session_id()
-            || cursor.seq > self.control.sequence
-            || self.control.events.front().is_some_and(|e| {
+            || cursor.seq > self.ledger.sequence
+            || self.ledger.events.front().is_some_and(|e| {
                 e.seq
                     .parse::<u64>()
                     .is_ok_and(|seq| cursor.seq.saturating_add(1) < seq)
@@ -164,13 +114,13 @@ impl Session {
             return Err(EditError::ResyncRequired);
         }
         let events = self
-            .control
+            .ledger
             .events
             .iter()
             .filter(|e| e.seq.parse::<u64>().is_ok_and(|seq| seq > cursor.seq))
             .map(|e| (**e).clone())
             .collect();
-        cursor.seq = self.control.sequence;
+        cursor.seq = self.ledger.sequence;
         Ok(events)
     }
 }

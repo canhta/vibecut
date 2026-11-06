@@ -1,7 +1,9 @@
 //! Owns editable session state through atomic commands.
+mod revision;
 mod state;
-pub(crate) use state::budget;
+pub(crate) mod wire;
 pub use state::{JobTarget, Session};
+pub(crate) use wire::budget;
 mod commands;
 pub use commands::{
     Command, CommandKind, CommandSpec, CreatedId, Effect, Example, Fixture, ItemParamPatch,

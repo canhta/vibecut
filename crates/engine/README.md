@@ -6,7 +6,7 @@ Widgets, device state, app preferences and authenticated transports live in cons
 
 | Folder | Responsibility | Interface items |
 |---|---|---|
-| `session/` | Owns editable project state. | `Session`, `Command`, `CommandKind`, `registry`, `JobTarget` |
+| `session/` | Owns editable project state and the wire contract. | `Session`, `Command`, `CommandKind`, `registry`, `JobTarget`, `wire` |
 | `runtime/` | Executes bounded background work. | `jobs`, `cache`, `ByteBudget`, `submit_export`, `submit_export_publication` |
 | `store/` | Persists managed project sessions. | `library`, `recovery`; private project-cover capture |
 | `subtitles/` | Produces source-timed subtitle output. | `Providers`, `transcribe`, `run`, `translate_selected`, `prepare_ass_import`, `translation` |
@@ -15,7 +15,7 @@ Widgets, device state, app preferences and authenticated transports live in cons
 | `artifacts/` | Produces derived project images. | `thumbnails`, `snapshot`, `effect_thumbnails` |
 | `libraries/` | Provides external project assets. | `fonts`, `sounds` |
 | `providers/` | Resolves explicit AI provider choices. | `transcribe`, `translate`, `suggest_clips`, `models` |
-| `control/` | Admits transport-neutral commands. | `Request`, `Caller`, `Policy`, `Response`, `Cursor`, `contract_schema` |
+| `control/` | Admits transport-neutral commands; the top layer, the only one that calls every feature. | `Caller`, `Policy`, `Session::control_request`, `snapshot_and_subscribe` |
 
 The crate root retains its existing public namespaces and item exports; the implementation
 folders expose only their consumer-facing interfaces. The dependency table is owned by
@@ -449,6 +449,45 @@ command rollback checkpoints retain bounded collections of Arc references. Batch
 child validation consumes each candidate without another clone. Media bytes and
 decoded frames are never copied by this crate. Byte-budgeted history and larger
 real-world drag latency remain unverified; no bounded-RSS claim is made.
+
+### Wire contract
+
+`session/wire` is the transport-neutral contract every transport shares; `control`
+re-exports its consumer-facing items, so adapters import one `engine::control`
+namespace. It owns `Limits` and the `MAX_*` budgets, `Revision`, the
+`Request`/`Response`/`Event` envelopes and their error codes, the typed `ControlResult`,
+bounded JSON, schema closing, command decoding and the bounded receipt/event ledger.
+The feature result views a response carries (font entries, snapshot receipts, preview
+frames, job views and the job id/kind/stage/state vocabulary) are defined here because
+the registry embeds `ControlResult`'s schema in every command and the kernel stamps
+events with the catalog digest; `fonts`, `snapshot` and `jobs` re-export them at their
+existing paths. The ledger fields are `pub(crate)` so the control layer can admit, replay
+and resynchronize while the kernel only records revision changes.
+
+`parse_frame` accepts at most 8 MiB of UTF-8 with duplicate-key refusal, 32 nested
+levels, 200,000 nodes, 100,000 members per collection and 4 MiB aggregate text.
+Validators compile only generated local schemas with network/file resolution disabled.
+Safe wire error codes omit paths, user text, provider bodies and Rust Debug;
+`bounded_json` is the adapter's bounded response serializer.
+API version 1 is independent of the project file schema. The BLAKE3 catalog digest
+covers schemas, static effects/examples and limits, excluding enabled/session state.
+[Generated commands](../../docs/product/commands.md) and `catalog.digest` regenerate
+with `cargo run -p engine --example control_catalog`; the conformance test checks
+both against current registry output in CI.
+
+Every Session starts with an OS-random epoch. `revision()` is an opaque string;
+its generation and `JobTarget` share the same Arc invalidation boundary. UI edits,
+undo/redo, preview lifetimes, transaction rollback/net-zero end, view changes and
+successful save advance it; ordinary no-ops/refusals do not. One typed `Payload` set
+covers command result/error, committed project change, revision change and job
+snapshots; envelopes include API/catalog/session identity, revision and string
+sequence number.
+Before publishing an admitted JSON/control edit, Session validates the candidate project's actual serialized
+integers and created IDs, including values produced by allocation or tick/keyframe
+arithmetic. Undo/redo validate their destination snapshot before moving history.
+An invalid candidate returns InvalidParams without consuming IDs, advancing
+revision or emitting a project change. This also applies to JSON execution; typed
+in-process editing keeps the owner types' full integer domain.
 
 ## Runtime
 
@@ -1648,31 +1687,18 @@ content; actual model-manager UI and CLI composition remain downstream work.
 
 ### Control admission, revisions and receipts
 
-`control::{Request, Caller, Policy, Response}` is the transport-neutral boundary.
-`Session::control_json` parses at most 8 MiB of UTF-8 with duplicate-key refusal,
-32 nested levels, 200,000 nodes, 100,000 members per collection and 4 MiB aggregate
-text. `control_request` also bounds already-allocated requests. Unknown commands,
-wrong types/fields and nested batch publications refuse before effects. Validators
-compile only generated local schemas with network/file resolution disabled.
-API version 1 is independent of the project file schema. The BLAKE3 catalog digest
-covers schemas, static effects/examples and limits, excluding enabled/session state.
-Effectful calls require the exact digest and version; catalog reads need no digest.
-[Generated commands](../../docs/product/commands.md) and `catalog.digest` regenerate
-with `cargo run -p engine --example control_catalog`; the conformance test checks
-both against current registry output in CI.
+`control::{Request, Caller, Policy, Response}` is the transport-neutral boundary; the
+envelopes, limits and digest it exchanges are the kernel's [wire contract](#wire-contract),
+which `control` re-exports. `Session::control_json` parses a frame under those limits;
+`control_request` also bounds already-allocated requests. Unknown commands, wrong
+types/fields and nested batch publications refuse before effects. Effectful calls require
+the exact digest and version; catalog reads need no digest.
 
-Every Session starts with an OS-random epoch. `revision()` is an opaque string;
-its generation and `JobTarget` share the same Arc invalidation boundary. UI edits,
-undo/redo, preview lifetimes, transaction rollback/net-zero end, view changes and
-successful save advance it; ordinary no-ops/refusals do not. Effectful control
-requests require `base_rev`. A stale revision refuses before any child of a batch.
-Before publishing an admitted JSON/control edit, Session validates the candidate project's actual serialized
-integers and created IDs, including values produced by allocation or tick/keyframe
-arithmetic. Undo/redo validate their destination snapshot before moving history.
-An invalid candidate returns InvalidParams without consuming IDs, advancing
-revision or emitting a project change; its refusal receipt can be replayed. This
-also applies to JSON execution; typed in-process editing keeps the owner
-types' full integer domain.
+Effectful control requests require `base_rev` (the [revision](#wire-contract) rules).
+A stale revision refuses before any child of a batch. An invalid candidate
+(see [wire integer validation](#wire-contract)) returns InvalidParams without
+consuming IDs, advancing revision or emitting a project change; its refusal receipt
+can be replayed.
 The recovery journal descriptor is version 2 for the same ProjectId encoding;
 older descriptors are refused before model decoding, without deleting their files.
 Session/project lifecycle creation and disk saves retain their existing
@@ -1708,10 +1734,8 @@ reservation do not occupy a key; accepted execution errors do. A new Session ref
 the old epoch rather than rerunning an uncertain mutation.
 
 Inspection/catalog responses are capped at 8 MiB; oversize reads refuse instead of
-truncating or mixing revisions. Safe wire error codes omit paths, user text,
-provider bodies and Rust Debug. `bounded_json` is the adapter's bounded response
-serializer. No transport, filesystem grant store, CLI persistent Session or MCP
-runtime is introduced here; their composition belongs to the consumers.
+truncating or mixing revisions. No transport, filesystem grant store, CLI persistent
+Session or MCP runtime is introduced here; their composition belongs to the consumers.
 
 `inspect`, `catalog`, `provider_catalog`, `fonts.list`, `fonts.load`, `fonts.download`, `preview`,
 `preview.snapshot`, general `export`, `job_status` and `job_cancel` share the existing declaration
@@ -1731,9 +1755,7 @@ a listener disconnects; process shutdown retains JobRunner's cancel/join behavio
 
 ### Control events and resynchronization
 
-One typed `Payload` set covers command result/error, committed project change,
-revision change and job snapshots. Envelopes include API/catalog/session identity,
-revision and string sequence number. Command replies/receipts remain authoritative;
+Command replies/receipts remain authoritative;
 large read/image results stay on the response path. Project changes require a full
 snapshot rather than pretending created IDs form a complete diff. Gesture previews
 and cancellation emit revision changes, never committed project changes.

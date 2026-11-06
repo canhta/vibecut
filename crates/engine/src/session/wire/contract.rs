@@ -1,8 +1,8 @@
 //! Describes the control wire contract.
-use super::{
-    API_VERSION, EditError, Event, LIMITS, MAX_SAFE_INTEGER, OnceLock, Request, Response, Result,
-    Value, json, registry,
-};
+use super::{API_VERSION, Event, LIMITS, Request, Response, close_schema};
+use crate::{EditError, Result, registry};
+use serde_json::{Value, json};
+use std::sync::OnceLock;
 /// Deterministic build-time reference from the executable registry.
 pub fn reference_markdown() -> Result<String> {
     let mut out = format!(
@@ -53,40 +53,4 @@ pub fn registry_hash() -> &'static str {
         }
         hasher.finalize().to_hex().to_string()
     })
-}
-
-/// Close fixed objects but retain typed dictionaries and local generated refs.
-/// The wire integer policy is applied identically to every nested schema.
-pub(crate) fn close_schema(value: &mut Value) {
-    if let Some(object) = value.as_object_mut() {
-        if object.contains_key("properties") {
-            object.insert("additionalProperties".into(), Value::Bool(false));
-        }
-        let integer = object.get("type").is_some_and(|t| {
-            t == "integer"
-                || t.as_array()
-                    .is_some_and(|a| a.iter().any(|x| x == "integer"))
-        });
-        if integer {
-            let min = object
-                .get("minimum")
-                .and_then(Value::as_i64)
-                .unwrap_or(i64::MIN)
-                .max(-MAX_SAFE_INTEGER);
-            let max = object
-                .get("maximum")
-                .and_then(Value::as_u64)
-                .unwrap_or(u64::MAX)
-                .min(MAX_SAFE_INTEGER as u64);
-            object.insert("minimum".into(), json!(min));
-            object.insert("maximum".into(), json!(max));
-        }
-        for v in object.values_mut() {
-            close_schema(v);
-        }
-    } else if let Some(array) = value.as_array_mut() {
-        for v in array {
-            close_schema(v);
-        }
-    }
 }

@@ -1,69 +1,11 @@
 //! Admits bounded control requests.
-use super::{
-    API_VERSION, BTreeMap, Caller, Capped, Command, ControlResult, EditError, Effect, ErrorCode,
-    JobRunner, JsonSeed, MAX_COLLECTION, MAX_DEPTH, MAX_FRAME_BYTES, MAX_KEY_BYTES, MAX_NODES,
-    MAX_PATH_BYTES, MAX_RESPONSE_BYTES, MAX_SAFE_INTEGER, MAX_TEXT_BYTES, OnceLock, Outcome,
-    Payload, Request, Response, ResponseValue, Result, Serialize, Session, Value, Write,
-    control_fingerprint, json, registry, registry_hash,
+use super::{Caller, receipts::control_fingerprint};
+use crate::jobs::JobRunner;
+use crate::session::wire::{
+    API_VERSION, ControlResult, ErrorCode, MAX_FRAME_BYTES, MAX_KEY_BYTES, MAX_PATH_BYTES, Payload,
+    Request, Response, ResponseValue, bounded_json, decode_command, parse_frame, registry_hash,
 };
-/// Validate the actual wire representation of a candidate, including generated
-/// IDs and arithmetic-derived ticks, while the edit is still reversible.
-pub(crate) fn validate_wire<T: Serialize + ?Sized>(value: &T) -> Result<()> {
-    let bytes = bounded_json(value, MAX_RESPONSE_BYTES - 4096)?;
-    let value: Value = serde_json::from_slice(&bytes).map_err(|_| EditError::InvalidParams)?;
-    check_integers(&value)
-}
-
-fn check_integers(value: &Value) -> Result<()> {
-    let mut stack = vec![value];
-    while let Some(value) = stack.pop() {
-        match value {
-            Value::Number(n)
-                if n.as_i64()
-                    .is_some_and(|v| !(-MAX_SAFE_INTEGER..=MAX_SAFE_INTEGER).contains(&v))
-                    || n.as_u64().is_some_and(|v| v > MAX_SAFE_INTEGER as u64) =>
-            {
-                return Err(EditError::InvalidParams);
-            }
-            Value::Array(values) => stack.extend(values),
-            Value::Object(values) => stack.extend(values.values()),
-            _ => {}
-        }
-    }
-    Ok(())
-}
-
-pub(crate) fn decode_command(id: &str, params: Value) -> Result<Command> {
-    crate::session::budget(&params)?;
-    type Validators = BTreeMap<&'static str, jsonschema::Validator>;
-    static VALIDATORS: OnceLock<std::result::Result<Validators, ()>> = OnceLock::new();
-    let validators = VALIDATORS
-        .get_or_init(|| {
-            registry()
-                .iter()
-                .map(|s| {
-                    jsonschema::options()
-                        .offline()
-                        .build(&s.params_schema)
-                        .map(|v| (s.id, v))
-                        .map_err(|_| ())
-                })
-                .collect()
-        })
-        .as_ref()
-        .map_err(|_| EditError::SchemaMismatch)?;
-    let validator = validators.get(id).ok_or(EditError::UnknownCommand)?;
-    if !validator.is_valid(&params) {
-        return Err(EditError::InvalidParams);
-    }
-    let command: Command = serde_json::from_value(json!({"command":id,"params":params}))
-        .map_err(|_| EditError::InvalidParams)?;
-    // Includes nested publications/session controls, before any first child effect.
-    if matches!(command, Command::Batch { .. }) {
-        crate::session::check_budget(&command)?;
-    }
-    Ok(command)
-}
+use crate::{Command, EditError, Effect, Outcome, Result, Session};
 
 impl Session {
     /// Parse a bounded UTF-8 frame, rejecting duplicate keys before dispatch.
@@ -104,7 +46,7 @@ impl Session {
             Ok(response) => Ok(response),
             Err(error) => {
                 let code = ErrorCode::from_error(&error);
-                self.control.push(
+                self.ledger.push(
                     &self.identity.0,
                     self.revision(),
                     Payload::CommandError {
@@ -246,7 +188,7 @@ impl Session {
             Ok(response) => Ok(response),
             Err(error) => {
                 let code = ErrorCode::from_error(&error);
-                self.control.push(
+                self.ledger.push(
                     &self.identity.0,
                     self.revision(),
                     Payload::CommandError {
@@ -340,132 +282,5 @@ impl Session {
         self.store_receipt(key, fingerprint, &response)?;
         self.push_control_event(&request.request_id, &response);
         Ok(response)
-    }
-}
-impl Write for Capped {
-    fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
-        if self.bytes.len().saturating_add(bytes.len()) > self.max {
-            return Err(std::io::Error::other("control byte limit"));
-        }
-        self.bytes.extend_from_slice(bytes);
-        Ok(bytes.len())
-    }
-    fn flush(&mut self) -> std::io::Result<()> {
-        Ok(())
-    }
-}
-pub fn bounded_json<T: Serialize + ?Sized>(value: &T, max: usize) -> Result<Vec<u8>> {
-    let mut writer = Capped {
-        bytes: Vec::new(),
-        max: max.min(MAX_RESPONSE_BYTES),
-    };
-    serde_json::to_writer(&mut writer, value).map_err(|_| EditError::Limit)?;
-    Ok(writer.bytes)
-}
-
-pub fn parse_frame(bytes: &[u8]) -> Result<Value> {
-    if bytes.len() > MAX_FRAME_BYTES {
-        return Err(EditError::Limit);
-    }
-    let mut deserializer = serde_json::Deserializer::from_slice(bytes);
-    let value = serde::de::DeserializeSeed::deserialize(
-        JsonSeed {
-            depth: 0,
-            nodes: &mut 0,
-            text: &mut 0,
-        },
-        &mut deserializer,
-    )
-    .map_err(|_| EditError::InvalidParams)?;
-    deserializer.end().map_err(|_| EditError::InvalidParams)?;
-    Ok(value)
-}
-impl<'de> serde::de::DeserializeSeed<'de> for JsonSeed<'_> {
-    type Value = Value;
-    fn deserialize<D: serde::Deserializer<'de>>(
-        self,
-        d: D,
-    ) -> std::result::Result<Value, D::Error> {
-        if self.depth > MAX_DEPTH || *self.nodes >= MAX_NODES {
-            return Err(serde::de::Error::custom("control limit"));
-        }
-        *self.nodes += 1;
-        d.deserialize_any(self)
-    }
-}
-impl<'de> serde::de::Visitor<'de> for JsonSeed<'_> {
-    type Value = Value;
-    fn expecting(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        f.write_str("bounded JSON")
-    }
-    fn visit_unit<E: serde::de::Error>(self) -> std::result::Result<Value, E> {
-        Ok(Value::Null)
-    }
-    fn visit_bool<E: serde::de::Error>(self, v: bool) -> std::result::Result<Value, E> {
-        Ok(Value::Bool(v))
-    }
-    fn visit_i64<E: serde::de::Error>(self, v: i64) -> std::result::Result<Value, E> {
-        if !(-MAX_SAFE_INTEGER..=MAX_SAFE_INTEGER).contains(&v) {
-            return Err(E::custom("integer range"));
-        }
-        Ok(json!(v))
-    }
-    fn visit_u64<E: serde::de::Error>(self, v: u64) -> std::result::Result<Value, E> {
-        if v > MAX_SAFE_INTEGER as u64 {
-            return Err(E::custom("integer range"));
-        }
-        Ok(json!(v))
-    }
-    fn visit_f64<E: serde::de::Error>(self, v: f64) -> std::result::Result<Value, E> {
-        if !v.is_finite() || v.abs() > MAX_SAFE_INTEGER as f64 {
-            return Err(E::custom("number range"));
-        }
-        Ok(json!(v))
-    }
-    fn visit_str<E: serde::de::Error>(self, v: &str) -> std::result::Result<Value, E> {
-        *self.text = self.text.saturating_add(v.len());
-        if *self.text > MAX_TEXT_BYTES {
-            return Err(E::custom("text limit"));
-        }
-        Ok(Value::String(v.into()))
-    }
-    fn visit_map<A: serde::de::MapAccess<'de>>(
-        self,
-        mut a: A,
-    ) -> std::result::Result<Value, A::Error> {
-        let mut values = serde_json::Map::new();
-        while let Some(key) = a.next_key::<String>()? {
-            *self.text = self.text.saturating_add(key.len());
-            if values.len() >= MAX_COLLECTION
-                || *self.text > MAX_TEXT_BYTES
-                || values.contains_key(&key)
-            {
-                return Err(serde::de::Error::custom("object limit or duplicate key"));
-            }
-            let value = a.next_value_seed(JsonSeed {
-                depth: self.depth + 1,
-                nodes: self.nodes,
-                text: self.text,
-            })?;
-            values.insert(key, value);
-        }
-        Ok(Value::Object(values))
-    }
-    fn visit_seq<A: serde::de::SeqAccess<'de>>(
-        self,
-        mut a: A,
-    ) -> std::result::Result<Value, A::Error> {
-        let mut values = Vec::new();
-        while let Some(v) = a.next_element_seed(JsonSeed {
-            depth: self.depth + 1,
-            nodes: self.nodes,
-            text: self.text,
-        })? {
-            if values.len() >= MAX_COLLECTION {
-                return Err(serde::de::Error::custom("array limit"));
-            }
-            values.push(v);
-        }
-        Ok(Value::Array(values))
     }
 }

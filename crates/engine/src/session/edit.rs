@@ -18,27 +18,27 @@ pub(crate) fn check_budget(command: &Command) -> Result<()> {
     let mut count = 0;
     while let Some((command, depth)) = stack.pop() {
         count += 1;
-        if count > crate::control::MAX_BATCH_COMMANDS || depth > crate::control::MAX_BATCH_DEPTH {
+        if count > super::wire::MAX_BATCH_COMMANDS || depth > super::wire::MAX_BATCH_DEPTH {
             return Err(EditError::Limit);
         }
         match command {
             Command::Batch { commands } => {
-                if commands.len() > crate::control::MAX_BATCH_COMMANDS {
+                if commands.len() > super::wire::MAX_BATCH_COMMANDS {
                     return Err(EditError::Limit);
                 }
                 stack.extend(commands.iter().map(|c| (c, depth + 1)));
             }
-            Command::MoveItems { moves } if moves.len() > crate::control::MAX_COLLECTION => {
+            Command::MoveItems { moves } if moves.len() > super::wire::MAX_COLLECTION => {
                 return Err(EditError::Limit);
             }
             Command::Delete { items }
             | Command::SetItemParamMany { items, .. }
             | Command::SetSpeed { items, .. }
-                if items.len() > crate::control::MAX_COLLECTION =>
+                if items.len() > super::wire::MAX_COLLECTION =>
             {
                 return Err(EditError::Limit);
             }
-            Command::RemoveAssets { assets } if assets.len() > crate::control::MAX_COLLECTION => {
+            Command::RemoveAssets { assets } if assets.len() > super::wire::MAX_COLLECTION => {
                 return Err(EditError::Limit);
             }
             Command::Inspect {}

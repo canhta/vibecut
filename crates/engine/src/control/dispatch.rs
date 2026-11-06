@@ -1,8 +1,30 @@
 //! Executes admitted control commands.
-use super::{
-    Command, ControlResult, EditError, JobKind, JobRunner, JobState, JobView, MAX_RESPONSE_BYTES,
-    Policy, ProviderView, Result, Session, bounded_json, registry, validate_wire,
+use super::Policy;
+use crate::jobs::{JobKind, JobRunner, JobState};
+use crate::session::wire::{
+    ControlResult, JobView, MAX_RESPONSE_BYTES, ProviderView, bounded_json, validate_wire,
 };
+use crate::subtitles::{CatalogOperation, ProviderOption};
+use crate::{Command, EditError, Result, Session, registry};
+
+impl From<ProviderOption> for ProviderView {
+    fn from(p: ProviderOption) -> Self {
+        Self {
+            operation: match p.operation {
+                CatalogOperation::Transcribe => "transcribe",
+                CatalogOperation::Translate => "translate",
+                CatalogOperation::SuggestClips => "suggest_clips",
+            }
+            .into(),
+            provider: p.id.into(),
+            models: p.models,
+            remote: !p.local,
+            native_timing: p.native_timing,
+            languages: p.languages,
+            target_languages: p.target_languages,
+        }
+    }
+}
 impl Session {
     pub(super) fn run_control(
         &mut self,
@@ -112,7 +134,7 @@ impl Session {
                 };
                 let (job, _) = crate::submit_export(
                     runner,
-                    control_key(fingerprint)?,
+                    crate::control_preview::control_key(fingerprint)?,
                     self.project().clone(),
                     range,
                     settings,
@@ -131,8 +153,11 @@ impl Session {
                     }
                     _ => return Err(EditError::InvalidParams),
                 };
-                let (job, _) =
-                    self.submit_export_command(runner, control_key(fingerprint)?, command)?;
+                let (job, _) = self.submit_export_command(
+                    runner,
+                    crate::control_preview::control_key(fingerprint)?,
+                    command,
+                )?;
                 Ok(ControlResult::JobAccepted {
                     job,
                     revision: self.revision(),
@@ -144,19 +169,4 @@ impl Session {
                 .map(|outcome| ControlResult::Edit { outcome }),
         }
     }
-}
-
-pub(crate) fn control_key(fingerprint: blake3::Hash) -> Result<crate::cache::CacheKey> {
-    crate::cache::CacheKey::new(crate::cache::KeyInputs {
-        kind: crate::cache::ArtifactKind::Preview,
-        source: [0; 32],
-        provider: "control",
-        model: "command",
-        version: "1",
-        settings: fingerprint.as_bytes(),
-        transcript: [0; 32],
-        cues: [0; 32],
-        clip_range: [0; 32],
-        translation: [0; 32],
-    })
 }

@@ -393,7 +393,7 @@ impl crate::Session {
         command_id: &str,
         params: serde_json::Value,
     ) -> Result<(JobId, CancelToken), EditError> {
-        let command = crate::control::decode_command(command_id, params)?;
+        let command = crate::session::wire::decode_command(command_id, params)?;
         self.submit_export_command(runner, input, command)
     }
 }

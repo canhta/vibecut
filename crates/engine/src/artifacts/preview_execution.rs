@@ -1,14 +1,28 @@
 //! Produces bounded labelled control previews.
-use crate::control::{ControlResult, MAX_RESPONSE_BYTES, PreviewFrame, Revision, bounded_json};
 use crate::jobs::{JobBytes, JobKind, JobRunner, JobSpec, ResourceClass};
+use crate::session::wire::{
+    ControlResult, MAX_PREVIEW_CLIPS, MAX_PREVIEW_EDGE, MAX_PREVIEW_FRAMES, MAX_RESPONSE_BYTES,
+    MAX_SAFE_INTEGER, PREVIEW_QUALITY, PreviewFrame, PreviewResult, bounded_json,
+};
 use crate::{EditError, Result, Session};
 use std::io::Write;
 use time::{SourceRange, Tick};
 
-#[derive(Clone, Debug, serde::Serialize, serde::Deserialize, schemars::JsonSchema)]
-pub struct PreviewResult {
-    pub revision: Revision,
-    pub frames: Vec<PreviewFrame>,
+/// Cache key shared by every control command that submits a job, scoped by the
+/// request fingerprint.
+pub(crate) fn control_key(fingerprint: blake3::Hash) -> Result<crate::cache::CacheKey> {
+    crate::cache::CacheKey::new(crate::cache::KeyInputs {
+        kind: crate::cache::ArtifactKind::Preview,
+        source: [0; 32],
+        provider: "control",
+        model: "command",
+        version: "1",
+        settings: fingerprint.as_bytes(),
+        transcript: [0; 32],
+        cues: [0; 32],
+        clip_range: [0; 32],
+        translation: [0; 32],
+    })
 }
 pub(crate) fn preview(
     session: &Session,
@@ -18,22 +32,19 @@ pub(crate) fn preview(
     if session.transaction_active() {
         return Err(EditError::TransactionActive);
     }
-    if frames.is_empty() || frames.len() > crate::control::MAX_PREVIEW_FRAMES {
+    if frames.is_empty() || frames.len() > MAX_PREVIEW_FRAMES {
         return Err(EditError::Limit);
     }
     let project = session.project().clone();
     let fps = project.data().canvas.fps;
     for frame in &frames {
         let at = fps.tick_of(*frame)?;
-        if *frame < 0
-            || at.0 > crate::control::MAX_SAFE_INTEGER
-            || (at >= project.duration() && at != Tick::ZERO)
-        {
+        if *frame < 0 || at.0 > MAX_SAFE_INTEGER || (at >= project.duration() && at != Tick::ZERO) {
             return Err(EditError::InvalidParams);
         }
     }
     let revision = session.revision();
-    let key = crate::control::control_key(blake3::hash(&bounded_json(
+    let key = control_key(blake3::hash(&bounded_json(
         &(revision.clone(), &frames),
         1024,
     )?))?;
@@ -62,24 +73,19 @@ pub(crate) fn preview(
                     .into_iter()
                     .map(|i| i.id)
                     .collect();
-                if clips
-                    .iter()
-                    .any(|id| id.0 > crate::control::MAX_SAFE_INTEGER as u64)
-                {
+                if clips.iter().any(|id| id.0 > MAX_SAFE_INTEGER as u64) {
                     return Err(EditError::InvalidParams);
                 }
-                if clips.len() > crate::control::MAX_PREVIEW_CLIPS {
+                if clips.len() > MAX_PREVIEW_CLIPS {
                     return Err(EditError::Limit);
                 }
                 let canvas = &project.data().canvas;
                 let long = canvas.width.max(canvas.height);
                 let mut settings = render::RenderSettings::from_project(&project);
-                settings.width = (u64::from(canvas.width)
-                    * u64::from(crate::control::MAX_PREVIEW_EDGE)
+                settings.width = (u64::from(canvas.width) * u64::from(MAX_PREVIEW_EDGE)
                     / u64::from(long))
                 .max(1) as u32;
-                settings.height = (u64::from(canvas.height)
-                    * u64::from(crate::control::MAX_PREVIEW_EDGE)
+                settings.height = (u64::from(canvas.height) * u64::from(MAX_PREVIEW_EDGE)
                     / u64::from(long))
                 .max(1) as u32;
                 let mut data = project.data().clone();
@@ -210,12 +216,9 @@ pub(crate) fn preview(
                     .flat_map(|p| p.iter().take(3).copied())
                     .collect();
                 let mut jpeg = JpegWriter(Vec::new());
-                image::codecs::jpeg::JpegEncoder::new_with_quality(
-                    &mut jpeg,
-                    crate::control::PREVIEW_QUALITY,
-                )
-                .encode(&rgb, width, height, image::ExtendedColorType::Rgb8)
-                .map_err(|_| EditError::Invalid("preview encoding"))?;
+                image::codecs::jpeg::JpegEncoder::new_with_quality(&mut jpeg, PREVIEW_QUALITY)
+                    .encode(&rgb, width, height, image::ExtendedColorType::Rgb8)
+                    .map_err(|_| EditError::Invalid("preview encoding"))?;
                 output.push(PreviewFrame {
                     frame: *frame,
                     output_tick: at,

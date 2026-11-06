@@ -21,6 +21,5 @@ pub mod effect_thumbnails {
 mod preview_execution;
 pub(crate) mod control_preview {
     //! Produces bounded labelled control previews.
-    pub use super::preview_execution::PreviewResult;
-    pub(crate) use super::preview_execution::preview;
+    pub(crate) use super::preview_execution::{control_key, preview};
 }

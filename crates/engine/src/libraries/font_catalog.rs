@@ -6,7 +6,6 @@ use crate::jobs::{
 };
 use crate::{EditError, Result};
 use ai::transport::DownloadTransport;
-use serde::Serialize;
 use sha2::{Digest, Sha256};
 use std::{
     collections::{BTreeMap, BTreeSet},
@@ -31,67 +30,7 @@ const ADMITTED_BY: &str = "p1-parity-28";
 /// Pin of the curated upstream tree; every URL and hash below belongs to this commit.
 const GOOGLE_FONTS_COMMIT: &str = "eb20e9cf19d97cf579fa3867d729d4222d6c59e1";
 
-/// Where a family comes from.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, schemars::JsonSchema)]
-#[serde(rename_all = "snake_case")]
-pub enum FontOrigin {
-    /// Shipped inside the application with a licence record.
-    Bundled,
-    /// Installed in the operating system.
-    System,
-    /// Curated Google Fonts family, downloadable on explicit request.
-    Google,
-}
-
-/// Whether a family can render now.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, schemars::JsonSchema)]
-#[serde(rename_all = "snake_case")]
-pub enum FontState {
-    Available,
-    /// A catalog family whose files are not in the verified local cache.
-    NotDownloaded,
-}
-
-/// One family in a listing.
-#[derive(Clone, Debug, PartialEq, Serialize, schemars::JsonSchema)]
-pub struct FontEntry {
-    pub family: String,
-    pub origin: FontOrigin,
-    /// Style names such as `Regular` or `Bold Italic`, sorted by weight.
-    pub styles: Vec<String>,
-    pub state: FontState,
-    /// SPDX licence id of bundled and Google families.
-    pub license: Option<String>,
-    /// Upstream source URL of bundled and Google families.
-    pub source: Option<String>,
-    /// Bytes `fonts.download` would fetch, for families that are not downloaded.
-    pub download_bytes: Option<u64>,
-}
-
-/// Outcome of loading a family.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, schemars::JsonSchema)]
-#[serde(rename_all = "snake_case")]
-pub enum FontLoadState {
-    /// Faces are registered and layout resolves the family.
-    Loaded,
-    /// Known catalog family with no cached files; layout falls back to the default family.
-    NotDownloaded,
-    /// Cached files failed their pinned hash or size; they are not used until downloaded again.
-    CacheInvalid,
-    /// No bundled, system or catalog family has this name; layout falls back.
-    Unknown,
-}
-
-/// Result of [`FontStore::load`].
-#[derive(Clone, Debug, PartialEq, Serialize, schemars::JsonSchema)]
-pub struct FontLoad {
-    pub family: String,
-    pub state: FontLoadState,
-    pub origin: Option<FontOrigin>,
-    /// The family layout will use: the request when loaded, otherwise the default family.
-    pub effective_family: String,
-    pub styles: Vec<String>,
-}
+pub use crate::session::wire::{FontEntry, FontLoad, FontLoadState, FontOrigin, FontState};
 
 /// Font catalog failures that are not a load state.
 #[derive(Debug, thiserror::Error)]

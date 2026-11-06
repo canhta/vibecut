@@ -16,7 +16,7 @@ name = "features"
 groups = ["subtitles", "shorts", "analysis", "artifacts", "libraries", "providers"]
 
 [[crate.layer]]
-name = "composition"
+name = "control"
 groups = ["control"]
 
 [[crate.module]]

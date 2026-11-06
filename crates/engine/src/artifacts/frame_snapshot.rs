@@ -29,15 +29,7 @@ pub struct SnapshotImage {
     pub png: Vec<u8>,
 }
 
-/// Published snapshot receipt; the PNG itself stays in `SnapshotImage`.
-#[derive(Clone, Debug, serde::Serialize, schemars::JsonSchema)]
-pub struct SnapshotResult {
-    pub path: PathBuf,
-    pub time: Tick,
-    pub timecode: String,
-    pub width: u32,
-    pub height: u32,
-}
+pub use crate::session::wire::SnapshotResult;
 
 /// Render the current frame to a PNG and publish it atomically.
 ///

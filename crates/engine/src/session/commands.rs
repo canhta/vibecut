@@ -190,7 +190,7 @@ pub struct CommandSpec {
     pub id: &'static str,
     pub label: &'static str,
     pub effect: Effect,
-    pub limits: crate::control::Limits,
+    pub limits: super::wire::Limits,
     pub params_schema: serde_json::Value,
     pub output_schema: serde_json::Value,
     pub example: Example,
@@ -428,8 +428,8 @@ commands! {
     Preview, "preview", "Preview frames", JobControl { frames: Vec<i64> } => Timeline, serde_json::json!({"frames":[0]});
     Snapshot, "preview.snapshot", "Save preview snapshot", FilePublish { time: Tick, path: std::path::PathBuf } => Timeline, serde_json::json!({"time":0,"path":"$output/snapshot.png"});
     Export, "export", "Export video", FilePublish { range: time::TimeRange, path: std::path::PathBuf, overwrite: bool } => Timeline, serde_json::json!({"range":{"start":0,"end":8467200000_i64},"path":"$output/export.mp4","overwrite":false});
-    JobStatus, "job_status", "Inspect job", Read { job: crate::jobs::JobId } => Job, serde_json::json!({"job":0});
-    JobCancel, "job_cancel", "Cancel job", JobControl { job: crate::jobs::JobId } => Job, serde_json::json!({"job":0});
+    JobStatus, "job_status", "Inspect job", Read { job: super::wire::JobId } => Job, serde_json::json!({"job":0});
+    JobCancel, "job_cancel", "Cancel job", JobControl { job: super::wire::JobId } => Job, serde_json::json!({"job":0});
     Catalog, "catalog", "Command catalog", Read {} => Timeline, serde_json::json!({});
     ProviderCatalog, "provider_catalog", "Provider catalog", Read {} => Timeline, serde_json::json!({});
     FontsList, "fonts.list", "List fonts", Read { #[serde(default)] query: Option<NfcText> } => Timeline, serde_json::json!({"query":"lob"});
@@ -441,7 +441,7 @@ pub fn registry() -> &'static [CommandSpec] {
     static REGISTRY: std::sync::OnceLock<Vec<CommandSpec>> = std::sync::OnceLock::new();
     REGISTRY.get_or_init(|| {
         let mut schema = schemars::schema_for!(Command).to_value();
-        crate::control::close_schema(&mut schema);
+        super::wire::close_schema(&mut schema);
         // Recursive Command refs were relative to the enum root. Each standalone
         // params document must retain that root under the same local definition.
         fn rebase(value: &mut serde_json::Value) {
@@ -473,9 +473,9 @@ pub fn registry() -> &'static [CommandSpec] {
         let mut output = schemars::generate::SchemaSettings::draft2020_12()
             .for_serialize()
             .into_generator()
-            .into_root_schema_for::<crate::control::ControlResult>()
+            .into_root_schema_for::<super::wire::ControlResult>()
             .to_value();
-        crate::control::close_schema(&mut output);
+        super::wire::close_schema(&mut output);
         declarations()
             .into_iter()
             .map(|(id, label, effect, example)| {
@@ -506,7 +506,7 @@ pub fn registry() -> &'static [CommandSpec] {
                     id,
                     label,
                     effect,
-                    limits: crate::control::LIMITS,
+                    limits: super::wire::LIMITS,
                     params_schema: params,
                     output_schema: output.clone(),
                     example,

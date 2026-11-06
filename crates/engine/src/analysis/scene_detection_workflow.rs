@@ -364,7 +364,7 @@ pub fn apply_reviewed(
         .map(|at| Command::SplitAt { item, at })
         .collect();
     session.transaction(|session| {
-        for chunk in commands.chunks(crate::control::MAX_BATCH_COMMANDS - 1) {
+        for chunk in commands.chunks(crate::session::wire::MAX_BATCH_COMMANDS - 1) {
             session.apply(Command::Batch {
                 commands: chunk.to_vec(),
             })?;

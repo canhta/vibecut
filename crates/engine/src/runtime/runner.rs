@@ -12,20 +12,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-#[derive(
-    Clone,
-    Copy,
-    Debug,
-    PartialEq,
-    Eq,
-    PartialOrd,
-    Ord,
-    serde::Serialize,
-    serde::Deserialize,
-    schemars::JsonSchema,
-)]
-#[serde(rename_all = "snake_case")]
-pub struct JobId(pub u64);
+pub use crate::session::wire::{JobId, JobKind, JobStage, JobState};
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ResourceClass {
     Cpu,
@@ -40,72 +27,6 @@ impl ResourceClass {
             Self::Network => 2,
         }
     }
-}
-#[derive(
-    Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize, schemars::JsonSchema,
-)]
-#[serde(rename_all = "snake_case")]
-pub enum JobKind {
-    Transcribe,
-    Translate,
-    SuggestClips,
-    AnalyzeShots,
-    DetectScenes,
-    MeasureLoudness,
-    Preview,
-    EffectThumbnail,
-    Export,
-    Import,
-    #[serde(rename = "import.probe")]
-    Probe,
-    #[serde(rename = "import.thumbnail")]
-    Thumbnail,
-    Persist,
-    DownloadModel,
-    SoundDownload,
-    DownloadFont,
-}
-#[derive(
-    Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize, schemars::JsonSchema,
-)]
-#[serde(rename_all = "snake_case")]
-pub enum JobStage {
-    Queued,
-    Starting,
-    Preparing,
-    Analyzing,
-    Transcribe,
-    Align,
-    Translate,
-    SuggestClips,
-    Assemble,
-    Process,
-    Probe,
-    Thumbnail,
-    Admit,
-    Render,
-    Mix,
-    Encode,
-    Finalize,
-    Download,
-    Verify,
-    Publish,
-    Backoff,
-    Complete,
-}
-#[derive(
-    Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize, schemars::JsonSchema,
-)]
-#[serde(rename_all = "snake_case")]
-pub enum JobState {
-    Queued,
-    Running,
-    Cancelling,
-    Publishing,
-    Backoff,
-    Completed,
-    Cancelled,
-    Failed,
 }
 /// Caller supplies a monotonic clock; tests advance it without sleeping for backoff.
 pub trait Clock: Send + Sync {

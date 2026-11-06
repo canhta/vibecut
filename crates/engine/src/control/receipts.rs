@@ -1,8 +1,9 @@
 //! Retains idempotent control outcomes.
-use super::{
-    EditError, MAX_RECEIPT_BYTES, MAX_RECEIPTS, RECEIPT_RESERVATION, Receipt, Request, Response,
-    Result, Session, json,
+use crate::session::wire::{
+    MAX_RECEIPT_BYTES, MAX_RECEIPTS, RECEIPT_RESERVATION, Receipt, Request, Response,
 };
+use crate::{EditError, Result, Session};
+use serde_json::json;
 pub(super) fn control_fingerprint(request: &Request) -> Result<blake3::Hash> {
     Ok(blake3::hash(
         &serde_json::to_vec(&json!({"command":request.command,"params":request.params,
@@ -13,9 +14,9 @@ pub(super) fn control_fingerprint(request: &Request) -> Result<blake3::Hash> {
 
 impl Session {
     pub(super) fn check_receipt_capacity(&self) -> Result<()> {
-        if self.control.receipts.len() >= MAX_RECEIPTS
+        if self.ledger.receipts.len() >= MAX_RECEIPTS
             || self
-                .control
+                .ledger
                 .receipt_bytes
                 .saturating_add(RECEIPT_RESERVATION)
                 > MAX_RECEIPT_BYTES
@@ -34,7 +35,7 @@ impl Session {
         fingerprint: blake3::Hash,
         request_id: &str,
     ) -> Result<Option<Response>> {
-        let Some(receipt) = self.control.receipts.get(key) else {
+        let Some(receipt) = self.ledger.receipts.get(key) else {
             return Ok(None);
         };
         if receipt.fingerprint != fingerprint {
@@ -59,8 +60,8 @@ impl Session {
             + key.0.len()
             + key.1.len()
             + 32;
-        self.control.receipt_bytes += bytes;
-        self.control.receipts.insert(
+        self.ledger.receipt_bytes += bytes;
+        self.ledger.receipts.insert(
             key,
             Receipt {
                 fingerprint,
