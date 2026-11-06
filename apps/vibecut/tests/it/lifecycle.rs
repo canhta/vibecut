@@ -432,6 +432,30 @@ fn journal_only_exit_refreshes_first_frame_thumbnail_without_saving_edits() {
 }
 
 #[test]
+fn final_close_is_not_cancelled_when_the_root_viewport_echoes_it_back() {
+    let root = tempfile::tempdir().unwrap();
+    let mut app = app(root.path());
+    app.request_close();
+    assert!(app.ready_to_close());
+    let ctx = egui::Context::default();
+    // A `ViewportCommand::Close` reaches the root viewport as `close_requested`
+    // on the next pass; cancelling it would leave a hidden process running.
+    let mut input = egui::RawInput::default();
+    input.viewports.insert(
+        egui::ViewportId::ROOT,
+        egui::ViewportInfo {
+            events: vec![egui::ViewportEvent::Close],
+            ..Default::default()
+        },
+    );
+    let mut output = ctx.run_ui(input, |ui| app.ui(ui));
+    output.textures_delta.clear();
+    let commands = &output.viewport_output[&egui::ViewportId::ROOT].commands;
+    assert!(commands.contains(&egui::ViewportCommand::Close));
+    assert!(!commands.contains(&egui::ViewportCommand::CancelClose));
+}
+
+#[test]
 fn project_windows_keep_independent_edits_undo_and_playback_and_reopen_focuses_one_writer() {
     let root = tempfile::tempdir().unwrap();
     let mut app = app(root.path());

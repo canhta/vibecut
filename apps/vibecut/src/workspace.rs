@@ -338,7 +338,9 @@ impl Workspace {
         }
         Editor::theme(ui.ctx(), self.preferences.dark);
         let ctx = ui.ctx().clone();
-        if ui.input(|i| i.viewport().close_requested()) {
+        // Our own final `Close` returns here as `close_requested`; cancelling it
+        // would leave a hidden process running after the last window closed.
+        if ui.input(|i| i.viewport().close_requested()) && !self.ready_to_close() {
             ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
             self.request_close();
         }
