@@ -4,23 +4,6 @@ index	docs/adr/0003-whisper-callback-boundary.md	not listed in docs/README.md
 index	docs/adr/0004-module-structure.md	not listed in docs/README.md
 index	docs/adr/0005-three-windows.md	not listed in docs/README.md
 index	docs/adr/0006-closed-command-catalog.md	not listed in docs/README.md
-map	apps/vibecut-cli/README.md	folder module `args` has no README
-map	apps/vibecut-cli/README.md	folder module `commands/ai` has no README
-map	apps/vibecut-cli/README.md	folder module `commands/catalog` has no README
-map	apps/vibecut-cli/README.md	folder module `commands/libraries` has no README
-map	apps/vibecut-cli/README.md	folder module `commands/media/batch` has no README
-map	apps/vibecut-cli/README.md	folder module `commands/media` has no README
-map	apps/vibecut-cli/README.md	folder module `commands/project` has no README
-map	apps/vibecut-cli/README.md	folder module `commands` has no README
-map	apps/vibecut-cli/README.md	folder module `mcp` has no README
-map	apps/vibecut-cli/README.md	folder module `output` has no README
-map	apps/vibecut-cli/README.md	folder module `session` has no README
-map	apps/vibecut-cli/README.md	module map has no row for folder `commands/ai`
-map	apps/vibecut-cli/README.md	module map has no row for folder `commands/catalog`
-map	apps/vibecut-cli/README.md	module map has no row for folder `commands/libraries`
-map	apps/vibecut-cli/README.md	module map has no row for folder `commands/media/batch`
-map	apps/vibecut-cli/README.md	module map has no row for folder `commands/media`
-map	apps/vibecut-cli/README.md	module map has no row for folder `commands/project`
 map	apps/vibecut/README.md	README has no module map table
 map	crates/engine/README.md	folder module `analysis/shot_analysis` has no README
 map	crates/engine/README.md	folder module `analysis` has no README
