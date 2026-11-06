@@ -18,8 +18,8 @@ Rules for the coordinator and workers. Each rule lives here once; hosts, command
 |---|---|
 | Coordinator (Claude) | Plans with the maintainer, writes tickets, dispatches, answers `ask`, verifies fixes, cleans up. Never implements or reviews |
 | opencode | Implements up to its tier for the ticket's work type |
-| Codex | Overflow for work above opencode's tier when Sonnet workers are saturated; reviews Sonnet's branches |
-| Claude Sonnet | Default for work above opencode's tier (new contracts, file publication, T4, UI fidelity); also reviews opencode and Codex branches |
+| Codex | Implements work above opencode's tier alongside Sonnet, and any opencode-tier ticket opencode fails to move (provider errors, stalls); reviews Sonnet's branches |
+| Claude Sonnet | Implements work above opencode's tier alongside Codex (new contracts, file publication, T4, UI fidelity); also reviews opencode and Codex branches |
 | Maintainer | Product decisions, credentials, hardware, assets, outward-facing actions |
 
 | Tier | Work |
@@ -31,7 +31,7 @@ Rules for the coordinator and workers. Each rule lives here once; hosts, command
 
 ## Routing
 
-1. Cost order: opencode first where its work type's tier covers the ticket (`.scratch/agents.md`); above that Claude Sonnet is the default implementer, and Codex takes the overflow when Sonnet workers are saturated or the host's account is busy. The reviewer is never the implementer's agent (Sonnet's branches are reviewed by Codex, opencode's and Codex's by Sonnet). Live Codex implementers never outnumber opencode ones. Claude Opus takes a hard or complex ticket only after Sonnet and Codex could not handle it properly (design-level `changes` from both, or a stated gap neither could close); never for capture or T1.
+1. Cost order: opencode first where its work type's tier covers the ticket (`.scratch/agents.md`); above that, Sonnet and Codex share the work: give each ticket to whichever has the fewer live implementers, Codex first on a tie. A ticket opencode fails to move (provider errors, a stalled restart) goes to Codex in the same worktree. The reviewer is never the implementer's agent (Sonnet's branches are reviewed by Codex, opencode's and Codex's by Sonnet). Claude Opus takes a hard or complex ticket only after Sonnet and Codex could not handle it properly (design-level `changes` from both, or a stated gap neither could close); never for capture or T1.
 2. opencode holds a tier per work type. Promote one tier after two consecutive reviewed tickets of that type merge without design-level `changes`; demote one tier after that verdict or a reverted merge; update `.scratch/agents.md` on every verdict. Work types with design-level or robustness findings route to Codex until their profile changes. A type with two clean T3 merges may trial T4, one ticket at a time, with a close Codex review (race, cancel, hostile-input tests); unsafe/FFI stays Codex.
 3. Keep one or two low-risk opencode trials live on untested work types: never self-merged, close independent review, more than five contained reviewer fixes earns no credit.
 4. Route by work type, not size. A ticket mixing a contract/lifecycle/algorithm part with UI or wiring is split into a Codex contract slice and an opencode UI slice blocked by it. Split by size only above about 2,000 inserted lines (opencode) or 3,000 (Codex), into 2–3 slices of at least about 800 lines that each ship working behaviour.
