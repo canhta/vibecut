@@ -1,13 +1,16 @@
 //! Renders timeline clips.
 
 use crate::editor::timeline::{
-    Align2, Color32, DragMode, Editor, FontId, Id, ItemParams, ItemView, LABEL_CHARS, Locale, Rect,
-    Text, TimelineLayout, TrackKind, Vec2, catalog, display_label, egui, theme,
+    Action, Align2, Color32, Context, DragMode, FontId, Id, ItemParams, ItemView, LABEL_CHARS,
+    Locale, Rect, State, Text, TimelineLayout, TrackKind, Vec2, catalog, display_label, egui,
+    theme,
+    view::{Ink, tr},
 };
 
-impl Editor {
+impl State {
     pub(in crate::editor::timeline) fn paint_item(
         &mut self,
+        cx: &Context<'_>,
         ui: &egui::Ui,
         layout: &TimelineLayout,
         item: &ItemView,
@@ -23,7 +26,7 @@ impl Editor {
         if !visible.is_positive() {
             return;
         }
-        let selected = self.selection.contains(&item.id);
+        let selected = cx.selection.contains(&item.id);
         let response = ui.interact(
             visible,
             Id::unique(("timeline.item", item.id.0)),
@@ -34,7 +37,8 @@ impl Editor {
             },
         );
         self.remember(format!("timeline.item.{}", item.id.0), &response);
-        let dark = self.preferences.dark;
+        let ink = Ink::of(cx);
+        let dark = ink.dark();
         let (fill, border, text) = item_palette(item.kind, dark, selected, item.overlay);
         let painter = ui.painter().with_clip_rect(visible);
         painter.rect_filled(visible, theme::radius::PANEL, fill);
@@ -50,7 +54,7 @@ impl Editor {
                         theme::size::CLIP_FILMSTRIP.min(inner.height()),
                     ),
                 );
-                self.paint_filmstrip(ui, &painter, strip, item, dark);
+                self.paint_filmstrip(cx, ui, &painter, strip, item, dark);
                 let wave = Rect::from_min_max(
                     egui::pos2(inner.left(), strip.bottom()),
                     inner.right_bottom(),
@@ -100,29 +104,35 @@ impl Editor {
                 if selected || response.hovered() {
                     ui.painter().with_clip_rect(rect).line_segment(
                         [rect.center_top(), rect.center_bottom()],
-                        egui::Stroke::new(2.0, self.accent()),
+                        egui::Stroke::new(2.0, ink.accent()),
                     );
                 }
                 if response.clicked() {
-                    self.select_item(item.id, modifiers);
+                    self.push(Action::Select {
+                        item: item.id,
+                        modifiers,
+                    });
                 }
                 if response.drag_started() && self.drag.is_none() {
-                    self.begin_drag(item.id, mode, ui);
+                    self.begin_drag(cx, item.id, mode, ui);
                 }
             }
         }
         if response.clicked() {
-            self.select_item(item.id, modifiers);
+            self.push(Action::Select {
+                item: item.id,
+                modifiers,
+            });
         }
         if !item.locked && self.drag.is_none() && response.drag_started() {
-            self.begin_drag(item.id, DragMode::Move, ui);
+            self.begin_drag(cx, item.id, DragMode::Move, ui);
         }
         if let Some(asset) = item.source_asset {
             response.context_menu(|ui| {
-                let reveal = ui.button(self.tr(Text::RevealMedia));
+                let reveal = ui.button(tr(cx, Text::RevealMedia));
                 self.remember(format!("timeline.item.{}.reveal", item.id.0), &reveal);
                 if reveal.clicked() {
-                    self.action(&format!("media.reveal.{}", asset.0));
+                    self.push(Action::Activate(format!("media.reveal.{}", asset.0)));
                     ui.close();
                 }
             });
@@ -133,11 +143,12 @@ impl Editor {
 /// Gap between a lane's edge and its clip: a 76 px video lane holds the 74 px clip.
 const CLIP_INSET: f32 = 1.0;
 
-impl Editor {
+impl State {
     /// Frame tiles at the asset aspect: the decoded thumbnail when there is
     /// one, otherwise quiet placeholder frames so the strip still reads as footage.
     fn paint_filmstrip(
         &mut self,
+        cx: &Context<'_>,
         ui: &egui::Ui,
         painter: &egui::Painter,
         strip: Rect,
@@ -146,7 +157,7 @@ impl Editor {
     ) {
         let texture = item
             .source_asset
-            .and_then(|asset| self.thumbnail_texture(ui.ctx(), asset));
+            .and_then(|asset| cx.thumbnails.texture(ui.ctx(), asset));
         let aspect = texture.as_ref().map_or(16.0 / 9.0, |texture| {
             let [width, height] = texture.size();
             width.max(1) as f32 / height.max(1) as f32

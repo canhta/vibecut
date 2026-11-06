@@ -9,20 +9,6 @@ impl Editor {
             super::super::properties::single(&self.selection),
         );
         super::super::properties::apply(self, actions);
-        // History and external commands can remove the track being renamed.
-        if self.track_rename.as_ref().is_some_and(|(id, _)| {
-            !self
-                .session
-                .project()
-                .data()
-                .scene()
-                .timeline
-                .iter()
-                .any(|track| track.id == *id)
-        }) {
-            self.track_rename = None;
-            self.track_rename_focus = false;
-        }
         if !self.session.transaction_active()
             && let Err(e) = self.session.set_selection(self.selection.clone())
         {
@@ -55,14 +41,8 @@ impl Editor {
         self.widgets.clear();
         self.panels.clear();
         self.tick();
-        // Undo and commands can remove a scene without the sheet's delete action.
-        if self
-            .scene_rename
-            .as_ref()
-            .is_some_and(|(scene, _)| self.session.project().data().scenes.get(*scene).is_none())
-        {
-            self.scene_rename = None;
-        }
+        // History and external commands can remove what the timeline is editing.
+        self.timeline.forget_missing(&self.session);
         if !self.export.as_ref().is_some_and(|d| d.open)
             && !self.subtitles.as_ref().is_some_and(|s| s.modal_open())
         {
@@ -139,7 +119,7 @@ impl Editor {
                 "media" => super::super::assets::show(self, &mut child),
                 "preview" => self.show_player(&mut child),
                 "inspector" => self.inspector(&mut child),
-                _ => super::super::timeline::show(self, &mut child),
+                _ => self.timeline_panel(&mut child),
             }
         }
         for (id, area, axis) in [
@@ -187,7 +167,7 @@ impl Editor {
                 self.record_layout_change(before);
             }
         }
-        super::super::timeline::show_scenes(self, ui.ctx());
+        self.timeline_scenes(ui.ctx());
         self.media_delete_dialog(ui.ctx());
         self.import_overlay(ui.ctx());
         self.drop_overlay(ui.ctx(), hovering);
@@ -229,18 +209,11 @@ impl Editor {
     }
     /// Draw the properties area and route what it asks for.
     fn inspector(&mut self, ui: &mut egui::Ui) {
-        let cx = crate::editor::Context {
-            session: &self.session,
-            selection: &self.selection,
-            locale: self.preferences.locale,
-            dark: self.preferences.dark,
-            preferences: &self.preferences,
-            scope: self.selection_scopes.active(&self.selection),
-            save_status: Text::NotSaved, // Only the window header shows it.
-            playback: &self.playback,
-            keybindings: &self.preferences.keybindings,
-        };
-        let actions = super::super::properties::show(&mut self.properties, &cx, ui);
+        let mut properties = std::mem::take(&mut self.properties);
+        let cx = self.context();
+        let actions = super::super::properties::show(&mut properties, &cx, ui);
+        drop(cx);
+        self.properties = properties;
         for widget in self.properties.take_widgets() {
             self.remember_with_icon(widget.id.clone(), widget.icon, &widget.response);
             if let (Some(tooltip), Some(state)) = (widget.tooltip, self.widgets.get_mut(&widget.id))
@@ -258,18 +231,13 @@ impl Editor {
         use super::super::player::{self, Action};
         self.player.failed = self.error.is_some() || self.playback.error().is_some();
         self.player.snapshot_failed = self.snapshot.error.is_some();
-        let cx = crate::editor::Context {
-            session: &self.session,
-            selection: &self.selection,
-            locale: self.preferences.locale,
-            dark: self.preferences.dark,
-            preferences: &self.preferences,
-            scope: self.selection_scopes.active(&self.selection),
-            playback: &self.playback,
-            keybindings: &self.preferences.keybindings,
-            save_status: self.save_status(),
-        };
-        let actions = player::show(&mut self.player, &cx, ui);
+        let placeholder =
+            player::State::new(self.preferences.preview_fit, self.preferences.preview_zoom);
+        let mut state = std::mem::replace(&mut self.player, placeholder);
+        let cx = self.context();
+        let actions = player::show(&mut state, &cx, ui);
+        drop(cx);
+        self.player = state;
         for action in actions {
             match action {
                 Action::Remember {
@@ -303,7 +271,7 @@ impl Editor {
             }
         }
     }
-    fn save_status(&self) -> Text {
+    pub(super) fn save_status(&self) -> Text {
         if self.persistence_error.is_some() {
             Text::SaveFailed
         } else {
@@ -320,19 +288,11 @@ impl Editor {
         }
     }
     pub(in crate::editor) fn header(&mut self, ui: &mut egui::Ui) {
-        let save_status = self.save_status();
-        let cx = crate::editor::Context {
-            session: &self.session,
-            selection: &self.selection,
-            locale: self.preferences.locale,
-            dark: self.preferences.dark,
-            preferences: &self.preferences,
-            scope: self.selection_scopes.active(&self.selection),
-            save_status,
-            playback: &self.playback,
-            keybindings: &self.preferences.keybindings,
-        };
-        let actions = super::show(&mut self.frame, &cx, ui);
+        let mut frame = std::mem::take(&mut self.frame);
+        let cx = self.context();
+        let actions = super::show(&mut frame, &cx, ui);
+        drop(cx);
+        self.frame = frame;
         for (id, icon, response) in std::mem::take(&mut self.frame.widgets) {
             self.remember_with_icon(id, icon, &response);
         }

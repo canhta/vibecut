@@ -6,13 +6,6 @@ use crate::editor::{
 };
 
 impl Editor {
-    /// Tooltip text from the action's first effective persisted chord.
-    pub(in crate::editor) fn shortcut(&self, action: &str) -> Option<String> {
-        let spec = actions::action(action)?;
-        let chords = self.preferences.keybindings.effective_chords(spec);
-        let chord = actions::Chord::parse(chords.first()?).ok()?;
-        Some(chord.display(actions::Platform::current()))
-    }
     pub(in crate::editor) fn action(&mut self, id: &str) {
         if let Err(error) = self.activate(id) {
             self.error = Some(error.to_string());
@@ -109,7 +102,7 @@ impl Editor {
                         EngineAction::Delete | EngineAction::RippleDelete => {
                             !self.selection.is_empty()
                         }
-                        EngineAction::DeleteScenes => !self.scene_selected.is_empty(),
+                        EngineAction::DeleteScenes => !self.timeline.scenes.selected().is_empty(),
                         EngineAction::InsertMedia => {
                             !self.importing() && !self.media_selection.is_empty()
                         }
@@ -167,7 +160,11 @@ impl Editor {
                 }
             }
             EngineAction::InsertMedia => Vec::new(), // Placement depends on each preceding outcome.
-            EngineAction::AddTrack => vec![self.add_track_params()],
+            EngineAction::AddTrack => vec![crate::editor::timeline::add_track_params(
+                &self.session,
+                &self.selection,
+                self.preferences.locale,
+            )],
             EngineAction::CreateScene => {
                 let count = self.session.project().data().scenes.iter().count();
                 let number = catalog::number(self.preferences.locale, (count + 1) as u64);
@@ -178,7 +175,9 @@ impl Editor {
                 );
                 vec![serde_json::json!({"name":name})]
             }
-            EngineAction::DeleteScenes => vec![serde_json::json!({"scenes":self.scene_selected})],
+            EngineAction::DeleteScenes => {
+                vec![serde_json::json!({"scenes":self.timeline.scenes.selected()})]
+            }
         })
     }
 
@@ -215,7 +214,7 @@ impl Editor {
                     self.cancel_interaction();
                     self.session.apply(Command::SwitchScene { scene })?;
                     self.clear_scene_selection();
-                    self.scene_rename = None;
+                    self.timeline.scenes.end_rename();
                 }
             }
             EngineAction::DeleteScenes => self.clear_scene_selection(),

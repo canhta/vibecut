@@ -61,7 +61,7 @@ impl Editor {
     ) -> Result<()> {
         let result = self.import_queue()?.start(paths.clone(), first);
         if matches!(result, Err(Error::Engine(engine::EditError::BudgetFull))) {
-            self.thumbnail_textures.clear();
+            self.thumbnail_textures.get_mut().clear();
             self.thumbnails.clear();
             self.import_queue()?.evict_thumbnails();
             self.import_queue()?.start(paths, first)
@@ -199,11 +199,11 @@ impl Editor {
                     ThumbnailOutcome::Ready(thumbnail) => {
                         while self.thumbnails.len() >= 64 {
                             if let Some((id, _)) = self.thumbnails.pop_first() {
-                                self.thumbnail_textures.remove(&id);
+                                self.thumbnail_textures.get_mut().remove(&id);
                             }
                         }
                         self.thumbnails.insert(asset, thumbnail);
-                        self.thumbnail_textures.remove(&asset);
+                        self.thumbnail_textures.get_mut().remove(&asset);
                         self.asset_states.insert(asset, AssetState::Ready);
                     }
                     ThumbnailOutcome::Failed(error) => {

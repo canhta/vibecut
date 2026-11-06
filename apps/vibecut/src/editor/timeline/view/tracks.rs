@@ -1,18 +1,21 @@
 //! Renders timeline tracks.
 
 use crate::editor::timeline::{
-    Arc, Editor, FontId, ICON_BUTTON, Icon, Id, ItemView, Rect, Text, TimelineLayout, TrackKind,
-    TrackRow, Vec2, catalog, egui, icons, theme,
+    Action, BTreeSet, Context, FontId, ICON_BUTTON, Icon, Id, ItemId, ItemView, Locale, Rect,
+    State, Text, TimelineLayout, TrackKind, TrackRow, Vec2, catalog, egui, icons, theme,
+    view::{Ink, tr},
 };
 
-impl Editor {
+impl State {
     pub(in crate::editor::timeline) fn paint_tracks(
         &mut self,
+        cx: &Context<'_>,
         ui: &mut egui::Ui,
         layout: &TimelineLayout,
         rows: &[TrackRow],
         items: &[ItemView],
     ) {
+        let ink = Ink::of(cx);
         let mut header_ui = ui.new_child(
             egui::UiBuilder::new()
                 .id_salt("track.headers")
@@ -21,15 +24,15 @@ impl Editor {
         header_ui.set_clip_rect(layout.labels);
         let body_painter = ui.painter().with_clip_rect(layout.body);
         let label_painter = ui.painter().with_clip_rect(layout.labels);
-        label_painter.rect_filled(layout.labels, theme::radius::PANEL, self.panel_fill());
-        body_painter.rect_filled(layout.body, theme::radius::PANEL, self.panel_fill());
+        label_painter.rect_filled(layout.labels, theme::radius::PANEL, ink.panel());
+        body_painter.rect_filled(layout.body, theme::radius::PANEL, ink.panel());
         let shadow = Rect::from_min_max(
             egui::pos2(layout.body.left(), layout.body.top()),
             egui::pos2(layout.body.left() + SHADOW, layout.body.bottom()),
         );
         body_painter.add(egui::Shape::mesh(shadow_mesh(
             shadow,
-            theme::window(self.preferences.dark),
+            theme::window(ink.dark()),
         )));
         for row in rows {
             let top = layout.body.top() + row.top - self.vertical_scroll;
@@ -44,7 +47,7 @@ impl Editor {
             if !row_rect.intersects(layout.body) {
                 continue;
             }
-            label_painter.rect_filled(label_rect, theme::radius::PANEL, self.control_fill());
+            label_painter.rect_filled(label_rect, theme::radius::PANEL, ink.field());
             let header = header_ui.interact(
                 label_rect.intersect(layout.labels),
                 Id::unique(("track.header", row.id.0)),
@@ -52,7 +55,7 @@ impl Editor {
             );
             header.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, &row.name));
             let type_icon = track_icon(row.kind);
-            self.remember_with_icon(
+            self.remember_icon(
                 format!("track.{}.header", row.id.0),
                 Some(type_icon.name()),
                 &header,
@@ -61,14 +64,14 @@ impl Editor {
                 label_painter.rect_filled(
                     label_rect,
                     0.0,
-                    theme::warning(self.preferences.dark).gamma_multiply(0.08),
+                    theme::warning(ink.dark()).gamma_multiply(0.08),
                 );
             }
             if self.track_drag == Some(row.id) {
                 label_painter.rect_stroke(
                     label_rect,
                     0.0,
-                    egui::Stroke::new(1.0, self.accent()),
+                    egui::Stroke::new(1.0, ink.accent()),
                     egui::StrokeKind::Inside,
                 );
             }
@@ -106,10 +109,10 @@ impl Editor {
                 let cancel = header_ui.input(|input| input.key_pressed(egui::Key::Escape));
                 let commit = header_ui.input(|input| input.key_pressed(egui::Key::Enter));
                 if commit && !cancel {
-                    self.track_command(
-                        "track.rename",
-                        serde_json::json!({"track":row.id,"name":name}),
-                    );
+                    self.push(Action::Command {
+                        id: "track.rename",
+                        params: serde_json::json!({"track":row.id,"name":name}),
+                    });
                 } else if !cancel {
                     self.track_rename = Some((row.id, name));
                 }
@@ -123,9 +126,10 @@ impl Editor {
                     )
                 };
                 let kind_rect = Rect::from_center_size(cell(0), Vec2::splat(theme::icon::DENSE));
-                icons::tinted(type_icon, 16.0, theme::disabled(self.preferences.dark))
+                icons::tinted(type_icon, 16.0, theme::disabled(ink.dark()))
                     .paint_at(&header_ui, kind_rect);
                 if self.track_cell(
+                    cx,
                     &mut header_ui,
                     layout.labels,
                     row,
@@ -139,13 +143,14 @@ impl Editor {
                     row.locked,
                     Icon::Lock,
                 ) {
-                    self.track_command(
-                        "track.set_locked",
-                        serde_json::json!({"track":row.id,"locked":!row.locked}),
-                    );
+                    self.push(Action::Command {
+                        id: "track.set_locked",
+                        params: serde_json::json!({"track":row.id,"locked":!row.locked}),
+                    });
                 }
                 if row.kind.can_hide()
                     && self.track_cell(
+                        cx,
                         &mut header_ui,
                         layout.labels,
                         row,
@@ -160,13 +165,14 @@ impl Editor {
                         },
                     )
                 {
-                    self.track_command(
-                        "track.set_hidden",
-                        serde_json::json!({"track":row.id,"hidden":!row.hidden}),
-                    );
+                    self.push(Action::Command {
+                        id: "track.set_hidden",
+                        params: serde_json::json!({"track":row.id,"hidden":!row.hidden}),
+                    });
                 }
                 if row.kind.can_mute()
                     && self.track_cell(
+                        cx,
                         &mut header_ui,
                         layout.labels,
                         row,
@@ -181,10 +187,10 @@ impl Editor {
                         },
                     )
                 {
-                    self.track_command(
-                        "track.set_muted",
-                        serde_json::json!({"track":row.id,"muted":!row.muted}),
-                    );
+                    self.push(Action::Command {
+                        id: "track.set_muted",
+                        params: serde_json::json!({"track":row.id,"muted":!row.muted}),
+                    });
                 }
                 let more_rect = Rect::from_center_size(cell(4), Vec2::splat(theme::size::CONTROL))
                     .intersect(layout.labels);
@@ -194,27 +200,27 @@ impl Editor {
                     egui::Sense::click(),
                 );
                 let hint = catalog::format(
-                    self.preferences.locale,
+                    cx.locale,
                     Text::TrackToggle,
-                    &[("action", self.tr(Text::TrackMore)), ("track", &row.name)],
+                    &[("action", tr(cx, Text::TrackMore)), ("track", &row.name)],
                 );
                 more.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, &hint));
-                self.remember_with_icon(
+                self.remember_icon(
                     format!("track.{}.more", row.id.0),
                     Some(Icon::DotsThree.name()),
                     &more,
                 );
                 if more.hovered() || more.has_focus() {
-                    label_painter.rect_filled(more_rect, theme::radius::CONTROL, self.panel_fill());
+                    label_painter.rect_filled(more_rect, theme::radius::CONTROL, ink.panel());
                 }
-                icons::tinted(Icon::DotsThree, 16.0, self.text_color()).paint_at(
+                icons::tinted(Icon::DotsThree, 16.0, ink.text()).paint_at(
                     &header_ui,
                     Rect::from_center_size(more_rect.center(), Vec2::splat(theme::icon::DENSE)),
                 );
                 let more = more.on_hover_text(hint);
-                egui::Popup::menu(&more).show(|ui| self.track_menu(ui, row));
+                egui::Popup::menu(&more).show(|ui| self.track_menu(cx, ui, row));
             }
-            header.context_menu(|ui| self.track_menu(ui, row));
+            header.context_menu(|ui| self.track_menu(cx, ui, row));
             if header.drag_started() {
                 self.track_drag = Some(row.id);
             }
@@ -233,10 +239,10 @@ impl Editor {
                     })
                     && target.id != row.id
                 {
-                    self.track_command(
-                        "track.reorder",
-                        serde_json::json!({"track":row.id,"index":target.display_index}),
-                    );
+                    self.push(Action::Command {
+                        id: "track.reorder",
+                        params: serde_json::json!({"track":row.id,"index":target.display_index}),
+                    });
                 }
             }
         }
@@ -248,7 +254,7 @@ impl Editor {
         self.remember("timeline.marquee", &background);
         let modifiers = ui.ctx().input(|input| input.modifiers);
         for item in items {
-            self.paint_item(ui, layout, item, modifiers);
+            self.paint_item(cx, ui, layout, item, modifiers);
         }
         let item_rects: Vec<_> = items
             .iter()
@@ -267,11 +273,11 @@ impl Editor {
             })
             .filter(|(_, rect)| rect.is_positive())
             .collect();
-        self.effect_drop_targets = item_rects.clone();
-        if self.effect_drag.is_some() {
-            let accent = self.accent();
+        self.item_rects.clone_from(&item_rects);
+        if let Some(accepting) = &cx.effect_targets {
+            let accent = ink.accent();
             for (id, rect) in &item_rects {
-                if self.effect_refusal(*id).is_none() {
+                if accepting.contains(id) {
                     body_painter.rect_stroke(
                         *rect,
                         2.0,
@@ -288,7 +294,7 @@ impl Editor {
         {
             self.marquee = Some((
                 origin,
-                self.selection.clone(),
+                cx.selection.clone(),
                 modifiers.command || modifiers.ctrl || modifiers.shift,
             ));
         }
@@ -296,30 +302,29 @@ impl Editor {
             && let Some(pointer) = ui.input(|i| i.pointer.interact_pos())
         {
             let rect = Rect::from_two_pos(*origin, pointer).intersect(layout.body);
-            let mut selected =
+            let mut selected: BTreeSet<ItemId> =
                 crate::selection::intersections(rect.min, rect.max, item_rects.iter().copied());
             if *additive {
                 selected.extend(before);
             }
-            self.selection = selected;
+            self.outbox.push(Action::Marquee(selected));
             ui.painter().with_clip_rect(layout.body).rect_filled(
                 rect,
                 0.0,
-                self.accent().gamma_multiply(0.15),
+                ink.accent().gamma_multiply(0.15),
             );
             ui.painter().with_clip_rect(layout.body).rect_stroke(
                 rect,
                 0.0,
-                egui::Stroke::new(1.0, self.accent()),
+                egui::Stroke::new(1.0, ink.accent()),
                 egui::StrokeKind::Inside,
             );
         }
         if background.drag_stopped() && self.marquee.take().is_some() {
-            self.selection_changed();
+            self.push(Action::SettleSelection);
         }
         if background.clicked() {
-            self.selection.clear();
-            self.selection_changed();
+            self.push(Action::ClearSelection);
         }
         if let Some(at) = self.snap_indicator {
             let x = self.x_at(at, layout.body.left());
@@ -329,75 +334,19 @@ impl Editor {
                         egui::pos2(x, layout.body.top()),
                         egui::pos2(x, layout.body.bottom()),
                     ],
-                    egui::Stroke::new(1.0, self.accent()),
+                    egui::Stroke::new(1.0, ink.accent()),
                 );
             }
         }
     }
-    /// Add a secondary track compatible with the active section: audio beside an
-    /// audio track, otherwise the active overlay kind (Video when nothing is
-    /// selected). Above the active track, or the overlay section end otherwise.
-    pub(in crate::editor) fn add_track_params(&self) -> serde_json::Value {
-        let locale = self.preferences.locale;
-        let (kind, placement, count) = {
-            let data = self.session.project().data();
-            let scene = data.scene();
-            let active = self.selection.iter().find_map(|id| {
-                scene
-                    .timeline
-                    .iter()
-                    .find(|track| track.items.iter().any(|item| item.id == *id))
-            });
-            let kind = active.map_or(TrackKind::Video, |track| match track.kind {
-                TrackKind::Audio => TrackKind::Audio,
-                TrackKind::Text => TrackKind::Text,
-                _ => TrackKind::Video,
-            });
-            let placement = match active {
-                Some(track) if track.id != scene.timeline.main.id => {
-                    serde_json::json!({"mode":"above","track":track.id})
-                }
-                _ => serde_json::json!({"mode":"above","track":scene.timeline.main.id}),
-            };
-            let count = scene
-                .timeline
-                .iter()
-                .filter(|track| track.kind == kind)
-                .count()
-                + 1;
-            (kind, placement, count)
-        };
-        let number = catalog::number(locale, count as u64);
-        let name = match kind {
-            TrackKind::Audio => catalog::format(locale, Text::AudioTrackName, &[("n", &number)]),
-            TrackKind::Text => self.tr(Text::TextItem).to_owned(),
-            _ => catalog::format(locale, Text::VideoTrackName, &[("n", &number)]),
-        };
-        serde_json::json!({"name":name,"kind":kind,"placement":placement})
-    }
-    pub(in crate::editor) fn track_command(&mut self, command: &str, params: serde_json::Value) {
-        let before = self.session.project().clone();
-        match self
-            .session
-            .set_selection(self.selection.clone())
-            .and_then(|_| self.session.execute(command, params))
-        {
-            Ok(_) => {
-                self.prune_selection();
-                if !Arc::ptr_eq(&before, self.session.project()) {
-                    self.sync_preview();
-                }
-            }
-            Err(error) => self.error = Some(error.to_string()),
-        }
-    }
     /// The context menu shared by a header's right click and its more button.
-    fn track_menu(&mut self, ui: &mut egui::Ui, row: &TrackRow) {
+    fn track_menu(&mut self, cx: &Context<'_>, ui: &mut egui::Ui, row: &TrackRow) {
+        let ink = Ink::of(cx);
         let rename = ui.add(egui::Button::image_and_text(
-            icons::tinted(Icon::PencilSimple, 16.0, self.text_color()),
-            self.tr(Text::RenameTrack),
+            icons::tinted(Icon::PencilSimple, 16.0, ink.text()),
+            tr(cx, Text::RenameTrack),
         ));
-        self.remember_with_icon(
+        self.remember_icon(
             format!("track.{}.rename_action", row.id.0),
             Some(Icon::PencilSimple.name()),
             &rename,
@@ -411,18 +360,21 @@ impl Editor {
             let response = ui.add_enabled(
                 !row.locked,
                 egui::Button::image_and_text(
-                    icons::tinted(Icon::Trash, 16.0, self.text_color()),
-                    self.tr(Text::DeleteTrack),
+                    icons::tinted(Icon::Trash, 16.0, ink.text()),
+                    tr(cx, Text::DeleteTrack),
                 ),
             );
-            let response = response.on_disabled_hover_text(self.tr(Text::TrackLocked));
-            self.remember_with_icon(
+            let response = response.on_disabled_hover_text(tr(cx, Text::TrackLocked));
+            self.remember_icon(
                 format!("track.{}.delete", row.id.0),
                 Some(Icon::Trash.name()),
                 &response,
             );
             if response.clicked() {
-                self.track_command("track.remove", serde_json::json!({"track":row.id}));
+                self.push(Action::Command {
+                    id: "track.remove",
+                    params: serde_json::json!({"track":row.id}),
+                });
                 ui.close();
             }
         }
@@ -431,6 +383,7 @@ impl Editor {
     #[allow(clippy::too_many_arguments)]
     pub(in crate::editor::timeline) fn track_cell(
         &mut self,
+        cx: &Context<'_>,
         ui: &mut egui::Ui,
         clip: Rect,
         row: &TrackRow,
@@ -440,6 +393,7 @@ impl Editor {
         selected: bool,
         icon: Icon,
     ) -> bool {
+        let ink = Ink::of(cx);
         let rect = Rect::from_center_size(center, Vec2::splat(ICON_BUTTON)).intersect(clip);
         if !rect.is_positive() {
             return false;
@@ -450,42 +404,37 @@ impl Editor {
             egui::Sense::click(),
         );
         let tooltip = catalog::format(
-            self.preferences.locale,
+            cx.locale,
             Text::TrackToggle,
-            &[("action", self.tr(label)), ("track", &row.name)],
+            &[("action", tr(cx, label)), ("track", &row.name)],
         );
         response.widget_info(|| {
             egui::WidgetInfo::selected(egui::Role::CheckBox, true, selected, tooltip.clone())
         });
-        self.remember_with_icon(
+        self.remember_with(
             format!("track.{}.{suffix}", row.id.0),
             Some(icon.name()),
+            Some(tooltip.clone()),
             &response,
         );
-        if let Some(state) = self
-            .widgets
-            .get_mut(&format!("track.{}.{suffix}", row.id.0))
-        {
-            state.tooltip = Some(tooltip.clone());
-        }
         // Header controls read in the full text ink; a locked, hidden or muted
         // track dims its own control.
         let color = if suffix == "lock" {
             if selected {
-                theme::warning(self.preferences.dark)
+                theme::warning(ink.dark())
             } else {
-                self.text_color()
+                ink.text()
             }
         } else if selected {
-            self.secondary()
+            ink.secondary()
         } else {
-            self.text_color()
+            ink.text()
         };
         if response.hovered() || response.has_focus() {
             ui.painter().with_clip_rect(clip).rect_filled(
                 rect,
                 theme::radius::CONTROL,
-                self.panel_fill(),
+                ink.panel(),
             );
         }
         icons::tinted(icon, 16.0, color).paint_at(
@@ -495,6 +444,51 @@ impl Editor {
         response.clone().on_hover_text(tooltip);
         response.clicked()
     }
+}
+
+/// Params for adding a secondary track compatible with the active section:
+/// audio beside an audio track, otherwise the active overlay kind (Video when
+/// nothing is selected). Above the active track, or the overlay section end otherwise.
+pub(in crate::editor) fn add_track_params(
+    session: &engine::Session,
+    selection: &BTreeSet<ItemId>,
+    locale: Locale,
+) -> serde_json::Value {
+    let (kind, placement, count) = {
+        let data = session.project().data();
+        let scene = data.scene();
+        let active = selection.iter().find_map(|id| {
+            scene
+                .timeline
+                .iter()
+                .find(|track| track.items.iter().any(|item| item.id == *id))
+        });
+        let kind = active.map_or(TrackKind::Video, |track| match track.kind {
+            TrackKind::Audio => TrackKind::Audio,
+            TrackKind::Text => TrackKind::Text,
+            _ => TrackKind::Video,
+        });
+        let placement = match active {
+            Some(track) if track.id != scene.timeline.main.id => {
+                serde_json::json!({"mode":"above","track":track.id})
+            }
+            _ => serde_json::json!({"mode":"above","track":scene.timeline.main.id}),
+        };
+        let count = scene
+            .timeline
+            .iter()
+            .filter(|track| track.kind == kind)
+            .count()
+            + 1;
+        (kind, placement, count)
+    };
+    let number = catalog::number(locale, count as u64);
+    let name = match kind {
+        TrackKind::Audio => catalog::format(locale, Text::AudioTrackName, &[("n", &number)]),
+        TrackKind::Text => catalog::text(locale, Text::TextItem).to_owned(),
+        _ => catalog::format(locale, Text::VideoTrackName, &[("n", &number)]),
+    };
+    serde_json::json!({"name":name,"kind":kind,"placement":placement})
 }
 
 /// Inner shadow at the left edge of the lanes (221643 x 132-137: dark to panel over 5 px).

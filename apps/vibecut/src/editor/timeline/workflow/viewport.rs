@@ -1,51 +1,25 @@
 //! Maintains the timeline viewport.
 
 use crate::editor::timeline::{
-    EDGE_AUTO_SCROLL_MAX_STEP, EDGE_AUTO_SCROLL_ZONE, Editor, HORIZONTAL_WHEEL_STEP, Id, MAX_ZOOM,
-    MIN_ZOOM_FLOOR, PADDING_MAX_RATIO, PADDING_MIN_AT_ZOOM_PERCENT, PADDING_MIN_RATIO, Rect,
-    TRACK_GAP, Tick, TimelineLayout, TrackRow, Vec2, ZOOM_ANCHOR_THRESHOLD, egui, theme,
+    Context, EDGE_AUTO_SCROLL_MAX_STEP, EDGE_AUTO_SCROLL_ZONE, HORIZONTAL_WHEEL_STEP, Id, MAX_ZOOM,
+    MIN_ZOOM_FLOOR, PADDING_MAX_RATIO, PADDING_MIN_AT_ZOOM_PERCENT, PADDING_MIN_RATIO, Rect, State,
+    TRACK_GAP, Tick, TimelineLayout, TrackRow, Vec2, ZOOM_ANCHOR_THRESHOLD, egui, theme, view::Ink,
 };
 
-impl Editor {
-    pub(in crate::editor) fn min_zoom(&self, viewport_width: f32) -> f32 {
-        fit_zoom(viewport_width, self.session.project().duration().seconds())
-    }
-    pub(in crate::editor) fn apply_zoom(&mut self, target: f32) {
-        let min = self.min_zoom(self.timeline_viewport);
-        let target = target.clamp(min, MAX_ZOOM);
-        if (target - self.zoom).abs() <= f32::EPSILON {
-            self.zoom = target;
-            return;
-        }
-        let playhead = self.playback.position().unwrap_or(Tick::ZERO).seconds() as f32;
-        let (scroll, pre_anchor) = anchored_scroll(
-            self.zoom,
-            target,
-            min,
-            self.scroll,
-            playhead,
-            self.pre_anchor_scroll,
-        );
-        self.zoom = target;
-        self.scroll = scroll;
-        self.pre_anchor_scroll = pre_anchor;
-    }
-    pub(in crate::editor) fn zoom_by(&mut self, factor: f32) {
-        let target = (self.zoom * factor).clamp(MIN_ZOOM_FLOOR, MAX_ZOOM);
-        self.apply_zoom(target);
-    }
+impl State {
     pub(in crate::editor::timeline) fn scroll_bounds(
         &self,
         layout: &TimelineLayout,
         duration: Tick,
     ) -> (f32, f32) {
         let view = (layout.body.width() / self.zoom).max(0.001);
-        let min = self.min_zoom(layout.body.width());
+        let min = fit_zoom(layout.body.width(), duration.seconds());
         let max = max_scroll_seconds(duration.seconds(), layout.body.width(), self.zoom, min);
         (view, max)
     }
-    pub(in crate::editor::timeline) fn timeline_scroll_input(
+    pub(in crate::editor::timeline) fn scroll_input(
         &mut self,
+        cx: &Context<'_>,
         ui: &egui::Ui,
         layout: &TimelineLayout,
     ) {
@@ -65,9 +39,10 @@ impl Editor {
                 input.modifiers,
             )
         });
-        let (_, max_scroll) = self.scroll_bounds(layout, self.session.project().duration());
+        let duration = cx.session.project().duration();
+        let (_, max_scroll) = self.scroll_bounds(layout, duration);
         if (zoom - 1.0).abs() > 0.01 {
-            self.apply_zoom(self.zoom * zoom);
+            self.apply_zoom(self.zoom * zoom, duration, cx.playhead);
         } else if modifiers.shift || scroll.x.abs() > scroll.y.abs() {
             let raw = if modifiers.shift && scroll.x.abs() <= f32::EPSILON {
                 scroll.y
@@ -82,13 +57,15 @@ impl Editor {
             self.vertical_scroll = (self.vertical_scroll - scroll.y).max(0.0);
         }
     }
-    pub(in crate::editor::timeline) fn timeline_scrollbars(
+    pub(in crate::editor::timeline) fn scrollbars(
         &mut self,
+        cx: &Context<'_>,
         ui: &egui::Ui,
         layout: &TimelineLayout,
         duration: Tick,
         rows: &[TrackRow],
     ) {
+        let ink = Ink::of(cx);
         let (view, max) = self.scroll_bounds(layout, duration);
         let content = view + max;
         let track = layout.horizontal;
@@ -101,11 +78,11 @@ impl Editor {
             Vec2::new(thumb_width, track.height()),
         );
         ui.painter()
-            .rect_filled(layout.horizontal, theme::radius::PANEL, self.panel_fill());
+            .rect_filled(layout.horizontal, theme::radius::PANEL, ink.panel());
         ui.painter()
-            .rect_filled(track, theme::radius::CONTROL, self.control_fill());
+            .rect_filled(track, theme::radius::CONTROL, ink.field());
         ui.painter()
-            .rect_filled(thumb, theme::radius::CONTROL, self.border());
+            .rect_filled(thumb, theme::radius::CONTROL, ink.border());
         let response = ui.interact(
             layout.horizontal,
             Id::unique("timeline.scroll_h"),
@@ -136,16 +113,16 @@ impl Editor {
         };
         let thumb_y = track.top() + fraction * (track.height() - thumb_height);
         ui.painter()
-            .rect_filled(layout.vertical, theme::radius::PANEL, self.panel_fill());
+            .rect_filled(layout.vertical, theme::radius::PANEL, ink.panel());
         ui.painter()
-            .rect_filled(track, theme::radius::CONTROL, self.control_fill());
+            .rect_filled(track, theme::radius::CONTROL, ink.field());
         ui.painter().rect_filled(
             Rect::from_min_size(
                 egui::pos2(track.left(), thumb_y),
                 Vec2::new(track.width(), thumb_height),
             ),
             6.0,
-            self.border(),
+            ink.border(),
         );
         let response = ui.interact(
             layout.vertical,

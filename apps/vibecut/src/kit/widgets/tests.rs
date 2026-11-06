@@ -108,7 +108,7 @@ fn rail_slider_maps_a_press_to_its_fraction() {
     let mut harness = harness(
         |ui, value: &mut f32| {
             let rect = Rect::from_min_size(egui::pos2(10.0, 10.0), Vec2::new(96.0, 24.0));
-            rail_slider(ui, "zoom", rect, value);
+            zoom_rail(ui, "zoom", rect, value);
         },
         0.0,
     );

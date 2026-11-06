@@ -32,19 +32,15 @@ impl Editor {
         // An open sheet or dialog owns its own Escape handling and blocks every
         // global action. Text inputs are handled below so Escape still reaches
         // the focused field.
-        if self.scenes_open {
-            if (self.scene_confirm || self.scene_rename.is_none())
+        if self.timeline.scenes.is_open() {
+            if (self.timeline.scenes.is_confirming() || !self.timeline.scenes.is_renaming())
                 && consume(ctx, egui::Modifiers::NONE, egui::Key::Escape)
             {
-                if self.scene_confirm {
-                    self.scene_confirm = false;
-                } else {
-                    self.scenes_open = false;
-                }
+                self.timeline.scenes.escape();
             }
             return;
         }
-        if self.marquee.is_some() || self.media_marquee.is_some() {
+        if self.timeline.marquee_active() || self.media_marquee.is_some() {
             if consume(ctx, egui::Modifiers::NONE, egui::Key::Escape) {
                 self.cancel_interaction();
             }
@@ -64,9 +60,9 @@ impl Editor {
             }
             return;
         }
-        if self.track_rename.is_some() && consume(ctx, egui::Modifiers::NONE, egui::Key::Escape) {
-            self.track_rename = None;
-            self.track_rename_focus = false;
+        if self.timeline.renaming_track() && consume(ctx, egui::Modifiers::NONE, egui::Key::Escape)
+        {
+            self.timeline.cancel_track_rename();
             return;
         }
         let context = self.dispatch_context(ctx);
@@ -87,7 +83,7 @@ impl Editor {
     pub(in crate::editor) fn dispatch_context(&self, ctx: &egui::Context) -> DispatchContext {
         DispatchContext {
             overlay_open: self.subtitles.as_ref().is_some_and(|s| s.modal_open())
-                || self.scenes_open
+                || self.timeline.scenes.is_open()
                 || self.shortcuts_open
                 || self.export.as_ref().is_some_and(|dialog| dialog.open)
                 || self.models_visible
@@ -102,8 +98,8 @@ impl Editor {
             text_input: self.subtitles.as_ref().is_some_and(|s| s.editing(ctx))
                 || ctx.text_edit_focused()
                 || self.frame.rename.is_some()
-                || self.track_rename.is_some()
-                || self.scene_rename.is_some()
+                || self.timeline.renaming_track()
+                || self.timeline.scenes.is_renaming()
                 || self.properties.editing(),
             clipboard_entry: self.clipboard_has_entry(),
         }

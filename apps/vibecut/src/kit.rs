@@ -16,5 +16,5 @@ pub(crate) use theme::{
 pub(crate) use widgets::{
     NumberSpec, SectionResponse, SliderResponse, action_button, badge_button, icon_button,
     property_row, rail_slider, section_header, section_header_with, segmented, slider_stepper,
-    stepper, tab_strip, text_tabs, toggle, transport_button, value_field,
+    stepper, tab_strip, text_tabs, toggle, transport_button, value_field, zoom_rail,
 };

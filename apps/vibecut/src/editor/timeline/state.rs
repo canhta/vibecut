@@ -1,232 +1,337 @@
-//! Projects timeline presentation geometry.
+//! Holds the timeline's own presentation state and viewport arithmetic.
 
 use crate::editor::timeline::{
-    AssetId, BookmarkId, ItemId, LABEL_WIDTH, RULER_HEIGHT, Rect, SCROLLBAR, TOOLBAR_HEIGHT, Tick,
-    TrackId, TrackKind, Vec2, egui, theme,
+    Action, BTreeSet, BookmarkId, Context, DEFAULT_ZOOM, ItemId, MAX_ZOOM, MIN_ZOOM_FLOOR, Rect,
+    Rounding, SourceRange, Tick, TrackId, egui,
+    workflow::{anchored_scroll, fit_zoom},
 };
 
-#[derive(Clone, Debug)]
-pub(super) struct TrackRow {
-    pub(super) id: TrackId,
-    pub(super) main: bool,
-    pub(super) audio: bool,
-    pub(super) display_index: usize,
-    pub(super) muted: bool,
-    pub(super) hidden: bool,
-    pub(super) locked: bool,
-    pub(super) kind: TrackKind,
-    pub(super) name: String,
-    pub(super) top: f32,
-    pub(super) height: f32,
-}
-#[derive(Clone, Debug)]
-pub(super) struct ItemView {
-    pub(super) id: ItemId,
-    pub(super) kind: TrackKind,
-    pub(super) start: Tick,
-    pub(super) end: Tick,
-    pub(super) top: f32,
-    pub(super) height: f32,
-    pub(super) locked: bool,
-    pub(super) label: String,
-    pub(super) overlay: Option<[u8; 4]>,
-    pub(super) source_asset: Option<AssetId>,
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(in crate::editor::timeline) enum DragMode {
+    Move,
+    TrimStart,
+    TrimEnd,
 }
 #[derive(Clone, Copy, Debug)]
-pub(super) struct BookmarkView {
-    pub(super) id: BookmarkId,
-    pub(super) start: Tick,
+pub(in crate::editor::timeline) struct DragOrigin {
+    pub(in crate::editor::timeline) item: ItemId,
+    pub(in crate::editor::timeline) track: TrackId,
+    pub(in crate::editor::timeline) start: Tick,
+    pub(in crate::editor::timeline) end: Tick,
 }
-pub(super) struct TimelineViews {
-    pub(super) rows: Vec<TrackRow>,
-    pub(super) items: Vec<ItemView>,
-    pub(super) duration: Tick,
-    pub(super) bookmarks: Vec<BookmarkView>,
+#[derive(Clone, Debug)]
+pub(in crate::editor::timeline) struct DragState {
+    pub(in crate::editor::timeline) item: ItemId,
+    pub(in crate::editor::timeline) mode: DragMode,
+    pub(in crate::editor::timeline) press_x: f32,
+    pub(in crate::editor::timeline) origins: Vec<DragOrigin>,
+    pub(in crate::editor::timeline) source_range: SourceRange,
+    pub(in crate::editor::timeline) speed: time::Speed,
 }
-pub(super) struct TimelineLayout {
-    pub(super) toolbar: Rect,
-    pub(super) ruler: Rect,
-    pub(super) body: Rect,
-    pub(super) labels: Rect,
-    pub(super) horizontal: Rect,
-    pub(super) vertical: Rect,
+#[derive(Clone, Copy, Debug)]
+pub(in crate::editor::timeline) struct BookmarkDrag {
+    pub(in crate::editor::timeline) bookmark: BookmarkId,
+    pub(in crate::editor::timeline) press_x: f32,
+    pub(in crate::editor::timeline) start: Tick,
 }
-impl TimelineLayout {
-    pub(in crate::editor) fn new(rect: Rect) -> Self {
-        let toolbar = Rect::from_min_size(
-            rect.min,
-            Vec2::new(rect.width(), TOOLBAR_HEIGHT.min(rect.height())),
-        );
-        // A 1 px rule closes the toolbar before the ruler starts.
-        let top = (toolbar.bottom() + 1.0).min(rect.bottom());
-        let label_right = (rect.left() + LABEL_WIDTH).min(rect.right());
-        let ruler_bottom = (top + RULER_HEIGHT).min(rect.bottom());
-        let body_top = (ruler_bottom + theme::size::RULER_GAP).min(rect.bottom());
-        let right = (rect.right() - SCROLLBAR).max(label_right);
-        let bottom = (rect.bottom() - theme::size::TIMELINE_FOOT).max(body_top);
-        let ruler = Rect::from_min_max(
-            egui::pos2(label_right, top),
-            egui::pos2(right, ruler_bottom),
-        );
-        let body = Rect::from_min_max(egui::pos2(label_right, body_top), egui::pos2(right, bottom));
-        let labels = Rect::from_min_max(
-            egui::pos2(rect.left(), body_top),
-            egui::pos2(label_right, bottom),
-        );
-        // The 6 px bar sits 4 px under the lanes inside the foot strip.
-        let bar_top = (bottom + 4.0).min(rect.bottom());
-        let horizontal = Rect::from_min_max(
-            egui::pos2(label_right, bar_top),
-            egui::pos2(right, (bar_top + SCROLLBAR).min(rect.bottom())),
-        );
-        let vertical = Rect::from_min_max(
-            egui::pos2(right, body_top),
-            egui::pos2(rect.right(), bottom),
-        );
+
+/// A control the panel painted this frame, recorded for automation by the frame.
+pub(in crate::editor) struct Remembered {
+    pub(in crate::editor) id: String,
+    pub(in crate::editor) icon: Option<&'static str>,
+    pub(in crate::editor) tooltip: Option<String>,
+    pub(in crate::editor) response: egui::Response,
+}
+
+/// The scene sheet's transient state.
+#[derive(Default)]
+pub(in crate::editor) struct Scenes {
+    pub(in crate::editor::timeline) open: bool,
+    pub(in crate::editor::timeline) select: bool,
+    pub(in crate::editor::timeline) selected: BTreeSet<project::SceneId>,
+    pub(in crate::editor::timeline) confirm: bool,
+    pub(in crate::editor::timeline) rename: Option<(project::SceneId, String)>,
+    pub(in crate::editor::timeline) rename_focus: bool,
+}
+impl Scenes {
+    pub(in crate::editor) fn is_open(&self) -> bool {
+        self.open
+    }
+    pub(in crate::editor) fn is_selecting(&self) -> bool {
+        self.select
+    }
+    pub(in crate::editor) fn is_confirming(&self) -> bool {
+        self.confirm
+    }
+    pub(in crate::editor) fn is_renaming(&self) -> bool {
+        self.rename.is_some()
+    }
+    pub(in crate::editor) fn selected(&self) -> &BTreeSet<project::SceneId> {
+        &self.selected
+    }
+    pub(in crate::editor) fn open(&mut self) {
+        self.open = true;
+    }
+    pub(in crate::editor) fn close(&mut self) {
+        self.open = false;
+        self.confirm = false;
+        self.rename = None;
+    }
+    pub(in crate::editor) fn toggle_selecting(&mut self) {
+        self.select = !self.select;
+        self.selected.clear();
+    }
+    pub(in crate::editor) fn request_delete(&mut self) {
+        self.confirm = !self.selected.is_empty();
+    }
+    pub(in crate::editor) fn cancel_delete(&mut self) {
+        self.confirm = false;
+    }
+    pub(in crate::editor) fn begin_rename(&mut self, scene: project::SceneId, name: String) {
+        self.rename = Some((scene, name));
+        self.rename_focus = true;
+    }
+    pub(in crate::editor) fn end_rename(&mut self) {
+        self.rename = None;
+    }
+    pub(in crate::editor) fn toggle(&mut self, scene: project::SceneId, is_main: bool) {
+        if !is_main && !self.selected.remove(&scene) {
+            self.selected.insert(scene);
+        }
+    }
+    pub(in crate::editor) fn clear_selection(&mut self) {
+        self.selected.clear();
+        self.select = false;
+        self.confirm = false;
+    }
+    /// Keyboard Escape: the confirmation first, then the sheet itself.
+    pub(in crate::editor) fn escape(&mut self) {
+        if self.confirm {
+            self.confirm = false;
+        } else {
+            self.open = false;
+        }
+    }
+}
+
+/// Everything the timeline panel remembers between frames.
+pub(in crate::editor) struct State {
+    pub(in crate::editor::timeline) zoom: f32,
+    pub(in crate::editor::timeline) scroll: f32,
+    pub(in crate::editor::timeline) vertical_scroll: f32,
+    /// Content viewport width used for the dynamic fit minimum.
+    pub(in crate::editor::timeline) viewport: f32,
+    /// Pixel scroll captured when zoom crossed the playhead-anchor threshold.
+    pub(in crate::editor::timeline) pre_anchor_scroll: Option<f32>,
+    pub(in crate::editor::timeline) drag: Option<DragState>,
+    pub(in crate::editor::timeline) bookmark_drag: Option<BookmarkDrag>,
+    pub(in crate::editor::timeline) snap_indicator: Option<Tick>,
+    pub(in crate::editor::timeline) marquee: Option<(egui::Pos2, BTreeSet<ItemId>, bool)>,
+    pub(in crate::editor::timeline) track_rename: Option<(TrackId, String)>,
+    pub(in crate::editor::timeline) track_rename_focus: bool,
+    pub(in crate::editor::timeline) track_drag: Option<TrackId>,
+    pub(in crate::editor) scenes: Scenes,
+    /// Screen rectangles of the visible clips, published for drops from other areas.
+    pub(in crate::editor::timeline) item_rects: Vec<(ItemId, Rect)>,
+    pub(in crate::editor::timeline) outbox: Vec<Action>,
+    pub(in crate::editor::timeline) widgets: Vec<Remembered>,
+}
+impl Default for State {
+    fn default() -> Self {
+        Self::new(DEFAULT_ZOOM, 0.0)
+    }
+}
+impl State {
+    pub(in crate::editor) fn new(zoom: f32, scroll: f32) -> Self {
         Self {
-            toolbar,
-            ruler,
-            body,
-            labels,
-            horizontal,
-            vertical,
+            zoom,
+            scroll,
+            vertical_scroll: 0.0,
+            viewport: 1000.0,
+            pre_anchor_scroll: None,
+            drag: None,
+            bookmark_drag: None,
+            snap_indicator: None,
+            marquee: None,
+            track_rename: None,
+            track_rename_focus: false,
+            track_drag: None,
+            scenes: Scenes::default(),
+            item_rects: Vec::new(),
+            outbox: Vec::new(),
+            widgets: Vec::new(),
         }
     }
-}
-
-use super::{Editor, Rounding, TRACK_GAP, item_label, track_height};
-
-impl Editor {
-    pub(in crate::editor::timeline) fn timeline_views(
+    pub(in crate::editor) fn zoom(&self) -> f32 {
+        self.zoom
+    }
+    pub(in crate::editor) fn scroll(&self) -> f32 {
+        self.scroll
+    }
+    pub(in crate::editor) fn snap_indicator(&self) -> Option<Tick> {
+        self.snap_indicator
+    }
+    pub(in crate::editor) fn item_rects(&self) -> &[(ItemId, Rect)] {
+        &self.item_rects
+    }
+    pub(in crate::editor) fn marquee_active(&self) -> bool {
+        self.marquee.is_some()
+    }
+    pub(in crate::editor) fn renaming_track(&self) -> bool {
+        self.track_rename.is_some()
+    }
+    /// Take the controls painted since the last call.
+    pub(in crate::editor) fn take_widgets(&mut self) -> Vec<Remembered> {
+        std::mem::take(&mut self.widgets)
+    }
+    /// Adopt a persisted or agent-issued view (zoom in px/s, offset in seconds).
+    pub(in crate::editor) fn restore_view(&mut self, zoom: f32, scroll: f32) {
+        self.pre_anchor_scroll = None;
+        self.zoom = zoom;
+        self.scroll = scroll;
+    }
+    pub(in crate::editor) fn min_zoom(&self, duration: Tick) -> f32 {
+        fit_zoom(self.viewport, duration.seconds())
+    }
+    pub(in crate::editor) fn zoom_by(&mut self, factor: f32, duration: Tick, playhead: Tick) {
+        let target = (self.zoom * factor).clamp(MIN_ZOOM_FLOOR, MAX_ZOOM);
+        self.apply_zoom(target, duration, playhead);
+    }
+    pub(in crate::editor::timeline) fn apply_zoom(
         &mut self,
-        layout: &TimelineLayout,
-    ) -> TimelineViews {
-        let (mut rows, raw_items, duration, bookmarks, content_height) = {
-            let data = self.session.project().data();
-            let mut rows = Vec::new();
-            let mut raw_items = Vec::new();
-            let mut offset = 0.0;
-            let mut overlay_index = 0usize;
-            let mut audio_index = 0usize;
-            for (row_index, track) in data.scene().timeline.iter().rev().enumerate() {
-                let height = track_height(track.kind);
-                let main = track.id == data.scene().timeline.main.id;
-                let audio = track.kind == TrackKind::Audio;
-                let display_index = if main {
-                    0
-                } else if audio {
-                    let index = audio_index;
-                    audio_index += 1;
-                    index
-                } else {
-                    let index = overlay_index;
-                    overlay_index += 1;
-                    index
-                };
-                rows.push(TrackRow {
-                    id: track.id,
-                    main,
-                    audio,
-                    display_index,
-                    muted: track.muted,
-                    hidden: track.hidden,
-                    locked: track.locked,
-                    kind: track.kind,
-                    name: track.name.as_str().to_owned(),
-                    top: offset,
-                    height,
-                });
-                for item in &track.items {
-                    let Ok(end) = item.end() else {
-                        continue;
-                    };
-                    let (label, overlay) = item_label(
-                        &item.content,
-                        self.preferences.locale,
-                        self.preferences.dark,
-                    );
-                    raw_items.push((
-                        row_index,
-                        item.id,
-                        track.kind,
-                        item.start,
-                        end,
-                        track.locked,
-                        label,
-                        overlay,
-                        item.source_asset,
-                    ));
-                }
-                offset += height + TRACK_GAP;
-            }
-            (
-                rows,
-                raw_items,
-                self.session.project().duration(),
-                data.scene()
-                    .bookmarks
-                    .iter()
-                    .map(|bookmark| BookmarkView {
-                        id: bookmark.id,
-                        start: bookmark.start,
-                    })
-                    .collect(),
-                (offset - TRACK_GAP).max(0.0),
-            )
-        };
-        self.vertical_scroll = self
-            .vertical_scroll
-            .clamp(0.0, (content_height - layout.body.height()).max(0.0));
-        // A stack shorter than the lanes sits centred, as in the captured
-        // single-track editor (221643: 152 px above, 148 px below the clip).
-        let centring = ((layout.body.height() - content_height) / 2.0).max(0.0);
-        for row in &mut rows {
-            row.top += centring;
+        target: f32,
+        duration: Tick,
+        playhead: Tick,
+    ) {
+        let min = self.min_zoom(duration);
+        let target = target.clamp(min, MAX_ZOOM);
+        if (target - self.zoom).abs() <= f32::EPSILON {
+            self.zoom = target;
+            return;
         }
-        let mut items = Vec::new();
-        for (row_index, id, kind, start, end, locked, label, overlay, source_asset) in raw_items {
-            let (top, height) = rows
-                .get(row_index)
-                .map_or((layout.body.top(), 25.0), |row| {
-                    (
-                        layout.body.top() + row.top - self.vertical_scroll,
-                        row.height,
-                    )
-                });
-            items.push(ItemView {
-                id,
-                kind,
-                start,
-                end,
-                top,
-                height,
-                locked,
-                label,
-                overlay,
-                source_asset,
-            });
-        }
-        let min = self.min_zoom(layout.body.width());
-        let max_scroll =
-            max_scroll_seconds(duration.seconds(), layout.body.width(), self.zoom, min);
-        self.scroll = self.scroll.clamp(0.0, max_scroll);
-        TimelineViews {
-            rows,
-            items,
-            duration,
-            bookmarks,
-        }
+        let (scroll, pre_anchor) = anchored_scroll(
+            self.zoom,
+            target,
+            min,
+            self.scroll,
+            playhead.seconds() as f32,
+            self.pre_anchor_scroll,
+        );
+        self.zoom = target;
+        self.scroll = scroll;
+        self.pre_anchor_scroll = pre_anchor;
     }
-    pub(in crate::editor) fn tick_at(&self, x: f32, left: f32) -> Tick {
+    pub(in crate::editor::timeline) fn tick_at(&self, x: f32, left: f32) -> Tick {
         Tick::from_seconds_f64(
             f64::from(self.scroll + (x - left) / self.zoom),
             Rounding::Nearest,
         )
         .unwrap_or(Tick::ZERO)
     }
-    pub(in crate::editor) fn x_at(&self, at: Tick, left: f32) -> f32 {
+    pub(in crate::editor::timeline) fn x_at(&self, at: Tick, left: f32) -> f32 {
         left + (at.seconds() as f32 - self.scroll) * self.zoom
     }
+    /// Drop presentation state that points at things an undo or an agent removed.
+    pub(in crate::editor) fn forget_missing(&mut self, session: &engine::Session) {
+        let data = session.project().data();
+        if self
+            .track_rename
+            .as_ref()
+            .is_some_and(|(id, _)| !data.scene().timeline.iter().any(|track| track.id == *id))
+        {
+            self.track_rename = None;
+            self.track_rename_focus = false;
+        }
+        if self
+            .scenes
+            .rename
+            .as_ref()
+            .is_some_and(|(scene, _)| data.scenes.get(*scene).is_none())
+        {
+            self.scenes.rename = None;
+        }
+    }
+    /// A refused scene rename keeps the typed name open for another try.
+    pub(in crate::editor) fn keep_scene_rename(&mut self, scene: project::SceneId, name: String) {
+        self.scenes.rename = Some((scene, name));
+    }
+    /// Forget a gesture the frame could not open.
+    pub(in crate::editor) fn abandon_gesture(&mut self) {
+        self.drag = None;
+        self.bookmark_drag = None;
+        self.snap_indicator = None;
+    }
+    /// Escape on a bookmark drag; the frame cancels the session gesture.
+    pub(in crate::editor) fn cancel_bookmark_drag(&mut self) -> bool {
+        let had = self.bookmark_drag.take().is_some();
+        if had {
+            self.snap_indicator = None;
+        }
+        had
+    }
+    /// Escape on a clip drag; the frame cancels the session gesture.
+    pub(in crate::editor) fn cancel_drag(&mut self) -> bool {
+        let had = self.drag.take().is_some();
+        if had {
+            self.snap_indicator = None;
+        }
+        had
+    }
+    /// Escape on a track header drag or rename.
+    pub(in crate::editor) fn cancel_track_edit(&mut self) -> bool {
+        let drag = self.track_drag.take().is_some();
+        if self.track_rename.take().is_some() || drag {
+            self.track_rename_focus = false;
+            return true;
+        }
+        false
+    }
+    /// Escape on the rename field alone.
+    pub(in crate::editor) fn cancel_track_rename(&mut self) {
+        self.track_rename = None;
+        self.track_rename_focus = false;
+    }
+    /// Escape on the marquee: the selection it started from, to be restored.
+    pub(in crate::editor) fn cancel_marquee(&mut self) -> Option<BTreeSet<ItemId>> {
+        self.marquee.take().map(|(_, before, _)| before)
+    }
+    pub(in crate::editor::timeline) fn push(&mut self, action: Action) {
+        self.outbox.push(action);
+    }
+    pub(in crate::editor::timeline) fn fail(&mut self, error: &dyn std::fmt::Display) {
+        self.outbox.push(Action::Fail(error.to_string()));
+    }
+    /// Record a painted control for the frame's automation registry.
+    pub(in crate::editor::timeline) fn remember(
+        &mut self,
+        id: impl Into<String>,
+        response: &egui::Response,
+    ) {
+        self.remember_with(id, None, None, response);
+    }
+    pub(in crate::editor::timeline) fn remember_icon(
+        &mut self,
+        id: impl Into<String>,
+        icon: Option<&'static str>,
+        response: &egui::Response,
+    ) {
+        self.remember_with(id, icon, None, response);
+    }
+    pub(in crate::editor::timeline) fn remember_with(
+        &mut self,
+        id: impl Into<String>,
+        icon: Option<&'static str>,
+        tooltip: Option<String>,
+        response: &egui::Response,
+    ) {
+        self.widgets.push(Remembered {
+            id: id.into(),
+            icon,
+            tooltip,
+            response: response.clone(),
+        });
+    }
+    pub(in crate::editor::timeline) fn playhead_x(&self, cx: &Context<'_>, left: f32) -> f32 {
+        self.x_at(cx.playhead, left)
+    }
 }
-
-use super::max_scroll_seconds;

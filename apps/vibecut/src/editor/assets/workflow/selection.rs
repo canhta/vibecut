@@ -78,6 +78,7 @@ impl Editor {
         self.asset_states.retain(|id, _| existing.contains(id));
         self.thumbnails.retain(|id, _| existing.contains(id));
         self.thumbnail_textures
+            .get_mut()
             .retain(|id, _| existing.contains(id));
         if let Some(queue) = &mut self.imports {
             queue.retain_assets(&self.session.project().data().assets);

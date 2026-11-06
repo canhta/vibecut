@@ -4,7 +4,10 @@
 //! 12 px between buttons, 1×16 dividers with 8 px either side (221643 y 574-606).
 
 use crate::editor::timeline::{
-    Editor, Icon, Rect, Text, TimelineLayout, Vec2, egui, slider_to_zoom, theme, zoom_to_slider,
+    Action, Context, Icon, Rect, State, Text, TimelineLayout, Vec2, catalog, egui, slider_to_zoom,
+    theme,
+    view::{Ink, tr},
+    zoom_to_slider,
 };
 
 const EDGE: f32 = 4.0;
@@ -12,6 +15,20 @@ const CELL: f32 = theme::size::CONTROL;
 const GAP: f32 = 12.0;
 const DIVIDER_GAP: f32 = 8.0;
 const DIVIDER_HEIGHT: f32 = 16.0;
+
+/// The registered actions the toolbar can show as unavailable.
+pub(in crate::editor) const TOOLBAR_ACTIONS: [&str; 10] = [
+    "timeline.add_track",
+    "edit.undo",
+    "edit.redo",
+    "timeline.split",
+    "timeline.delete",
+    "timeline.snap",
+    "timeline.magnet",
+    "timeline.ripple",
+    "timeline.zoom_out",
+    "timeline.zoom_in",
+];
 
 /// Left-to-right cursor over the toolbar row.
 struct Cursor {
@@ -39,12 +56,14 @@ impl Cursor {
     }
 }
 
-impl Editor {
-    pub(in crate::editor::timeline) fn timeline_toolbar(
+impl State {
+    pub(in crate::editor::timeline) fn toolbar(
         &mut self,
+        cx: &Context<'_>,
         ui: &mut egui::Ui,
         layout: &TimelineLayout,
     ) {
+        let ink = Ink::of(cx);
         let bar = layout.toolbar;
         let top = bar.top() + (bar.height() - CELL) / 2.0;
         ui.painter().line_segment(
@@ -52,15 +71,16 @@ impl Editor {
                 egui::pos2(bar.left(), bar.bottom() + 0.5),
                 egui::pos2(bar.right(), bar.bottom() + 0.5),
             ],
-            egui::Stroke::new(1.0, theme::separator(self.preferences.dark)),
+            egui::Stroke::new(1.0, theme::separator(ink.dark())),
         );
-        let divider = self.border();
+        let divider = ink.border();
         let mut left = Cursor {
             x: bar.left() + EDGE,
             top,
         };
         let rect = left.cell(CELL);
         self.toolbar_button(
+            cx,
             ui,
             rect,
             "timeline.add_track",
@@ -76,7 +96,7 @@ impl Editor {
             ("timeline.delete", Icon::Trash, Text::Delete),
         ] {
             let rect = left.cell(CELL);
-            self.toolbar_button(ui, rect, id, icon, label, None);
+            self.toolbar_button(cx, ui, rect, id, icon, label, None);
         }
 
         // Right group, placed from the right edge inwards.
@@ -106,27 +126,20 @@ impl Editor {
         }
         let scene = Rect::from_min_size(egui::pos2(right - CELL - 1.0, top), Vec2::splat(CELL));
 
-        let name = self
-            .session
-            .project()
-            .data()
-            .scene()
-            .name
-            .as_str()
-            .to_owned();
-        self.toolbar_scene(ui, scene, &name);
-        let magnet = self.session.project().data().scene().timeline.magnet;
-        let snapping = self.preferences.snapping;
-        let ripple = self.ripple;
+        let name = cx.session.project().data().scene().name.as_str().to_owned();
+        self.toolbar_scene(cx, ui, scene, &name);
+        let magnet = cx.session.project().data().scene().timeline.magnet;
         self.toolbar_button(
+            cx,
             ui,
             toggles[0],
             "timeline.snap",
             Icon::Magnet,
             Text::Snap,
-            Some(snapping),
+            Some(cx.preferences.snapping),
         );
         if self.toolbar_button(
+            cx,
             ui,
             toggles[1],
             "timeline.magnet",
@@ -134,17 +147,22 @@ impl Editor {
             Text::Magnet,
             Some(magnet),
         ) {
-            self.track_command("track.set_magnet", serde_json::json!({"enabled":!magnet}));
+            self.push(Action::Command {
+                id: "track.set_magnet",
+                params: serde_json::json!({"enabled":!magnet}),
+            });
         }
         self.toolbar_button(
+            cx,
             ui,
             toggles[2],
             "timeline.ripple",
             Icon::Waveform,
             Text::Ripple,
-            Some(ripple),
+            Some(cx.ripple),
         );
         self.toolbar_button(
+            cx,
             ui,
             zoom_out,
             "timeline.zoom_out",
@@ -153,6 +171,7 @@ impl Editor {
             None,
         );
         self.toolbar_button(
+            cx,
             ui,
             zoom_in,
             "timeline.zoom_in",
@@ -160,58 +179,76 @@ impl Editor {
             Text::ZoomIn,
             None,
         );
-        let min = self.min_zoom(self.timeline_viewport);
+        let duration = cx.session.project().duration();
+        let min = self.min_zoom(duration);
         let mut value = zoom_to_slider(self.zoom, min);
-        let response = crate::kit::rail_slider(ui, "timeline.zoom_slider", slider, &mut value);
+        let response = crate::kit::zoom_rail(ui, "timeline.zoom_slider", slider, &mut value);
         if response.changed() {
-            self.apply_zoom(slider_to_zoom(value, min));
+            self.apply_zoom(slider_to_zoom(value, min), duration, cx.playhead);
         }
         self.remember("timeline.zoom_slider", &response);
-        response.on_hover_text(self.tr(Text::ZoomLevel));
+        response.on_hover_text(tr(cx, Text::ZoomLevel));
     }
 
     /// One icon-only button in `rect`; returns the click for controls that
     /// run their own command (the rest dispatch their registered action).
+    #[allow(clippy::too_many_arguments)]
     fn toolbar_button(
         &mut self,
+        cx: &Context<'_>,
         ui: &mut egui::Ui,
         rect: Rect,
-        id: &str,
+        id: &'static str,
         icon: Icon,
         label: Text,
         selected: Option<bool>,
     ) -> bool {
-        let shortcut = self.shortcut(id);
-        let clicked = ui
-            .scope_builder(egui::UiBuilder::new().max_rect(rect), |ui| {
-                self.icon_only(
-                    ui,
-                    id,
-                    icon,
-                    self.tr(label),
-                    shortcut.as_deref(),
-                    selected,
-                    true,
+        let enabled = !cx.disabled.contains(id);
+        let label = tr(cx, label);
+        let tooltip = cx.shortcut(id).map_or_else(
+            || label.to_owned(),
+            |key| {
+                catalog::format(
+                    cx.locale,
+                    Text::ActionShortcut,
+                    &[("action", label), ("shortcut", &key)],
                 )
+            },
+        );
+        let response = ui
+            .scope_builder(egui::UiBuilder::new().max_rect(rect), |ui| {
+                ui.add_enabled_ui(enabled, |ui| {
+                    crate::kit::icon_button(ui, id, icon, &tooltip, selected.unwrap_or(false))
+                })
+                .inner
             })
             .inner;
+        response.widget_info(|| {
+            if let Some(selected) = selected {
+                egui::WidgetInfo::selected(egui::Role::CheckBox, enabled, selected, &tooltip)
+            } else {
+                egui::WidgetInfo::labeled(egui::Role::Button, enabled, &tooltip)
+            }
+        });
+        self.remember_with(id, Some(icon.name()), Some(tooltip), &response);
+        let clicked = enabled && response.clicked();
         if clicked && crate::actions::action(id).is_some() {
-            self.action(id);
+            self.push(Action::Activate(id.to_owned()));
             return false;
         }
         clicked
     }
 
-    fn toolbar_scene(&mut self, ui: &mut egui::Ui, rect: Rect, name: &str) {
-        let tooltip = format!("{}: {name}", self.tr(Text::Scenes));
+    fn toolbar_scene(&mut self, cx: &Context<'_>, ui: &mut egui::Ui, rect: Rect, name: &str) {
+        let tooltip = format!("{}: {name}", tr(cx, Text::Scenes));
         let response = ui
             .scope_builder(egui::UiBuilder::new().max_rect(rect), |ui| {
                 crate::kit::icon_button(ui, "scene.open", Icon::FilmStrip, &tooltip, false)
             })
             .inner;
-        self.remember_with_icon("scene.open", Some(Icon::FilmStrip.name()), &response);
+        self.remember_with("scene.open", Some(Icon::FilmStrip.name()), None, &response);
         if response.clicked() {
-            self.action("scene.open");
+            self.push(Action::Activate("scene.open".to_owned()));
         }
     }
 }

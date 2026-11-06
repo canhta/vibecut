@@ -1,23 +1,22 @@
 //! Resolves timeline snap targets.
 
 use crate::editor::timeline::{
-    BTreeSet, BookmarkId, DragOrigin, Editor, ItemId, SnapCandidate, SnapSource, Tick, snap_point,
+    BTreeSet, BookmarkId, Context, DragOrigin, ItemId, SnapCandidate, SnapSource, State, Tick,
+    snap_point,
 };
 
-impl Editor {
+impl State {
     /// Build the one ranked candidate set. Selected items and the bookmark being
     /// dragged are excluded so a gesture cannot snap to itself.
-    pub(in crate::editor) fn snap_candidates(
+    pub(in crate::editor::timeline) fn snap_candidates(
         &self,
+        cx: &Context<'_>,
         exclude_items: &BTreeSet<ItemId>,
         exclude_bookmark: Option<BookmarkId>,
     ) -> Vec<SnapCandidate> {
-        let project = self.session.project();
+        let project = cx.session.project();
         let data = project.data();
-        let mut points = vec![SnapCandidate::new(
-            self.playback.position().unwrap_or(Tick::ZERO),
-            SnapSource::Playhead,
-        )];
+        let mut points = vec![SnapCandidate::new(cx.playhead, SnapSource::Playhead)];
         for bookmark in &data.scene().bookmarks {
             if Some(bookmark.id) == exclude_bookmark {
                 continue;
@@ -85,14 +84,15 @@ impl Editor {
         points.dedup();
         points
     }
-    pub(in crate::editor) fn snap_delta(
+    pub(in crate::editor::timeline) fn snap_delta(
         &self,
+        cx: &Context<'_>,
         raw: Tick,
         origins: &[DragOrigin],
         bypass: bool,
     ) -> (Tick, Option<Tick>) {
         let exclude: BTreeSet<ItemId> = origins.iter().map(|origin| origin.item).collect();
-        let candidates = self.snap_candidates(&exclude, None);
+        let candidates = self.snap_candidates(cx, &exclude, None);
         let edges: Vec<Tick> = origins
             .iter()
             .flat_map(|origin| [origin.start, origin.end])
@@ -101,36 +101,33 @@ impl Editor {
             raw,
             &edges,
             &candidates,
-            self.preferences.snapping,
+            cx.preferences.snapping,
             bypass,
             self.zoom,
         );
         (outcome.at, outcome.target.map(|target| target.at))
     }
-    pub(in crate::editor) fn snap_tick(
+    pub(in crate::editor::timeline) fn snap_tick(
         &self,
+        cx: &Context<'_>,
         raw: Tick,
         exclude: &BTreeSet<ItemId>,
         exclude_bookmark: Option<BookmarkId>,
         bypass: bool,
     ) -> (Tick, Option<Tick>) {
-        let candidates = self.snap_candidates(exclude, exclude_bookmark);
-        let outcome = snap_point(
-            raw,
-            &candidates,
-            self.preferences.snapping,
-            bypass,
-            self.zoom,
-        );
+        let candidates = self.snap_candidates(cx, exclude, exclude_bookmark);
+        let outcome = snap_point(raw, &candidates, cx.preferences.snapping, bypass, self.zoom);
         (outcome.at, outcome.target.map(|target| target.at))
     }
-    pub(in crate::editor) fn frame_snap(&self, at: Tick) -> Tick {
-        self.session
-            .project()
-            .data()
-            .canvas
-            .fps
-            .snap_nearest(at)
-            .unwrap_or(at)
-    }
+}
+
+/// Round a pointer time to the nearest frame of the canvas rate.
+pub(in crate::editor::timeline) fn frame_snap(cx: &Context<'_>, at: Tick) -> Tick {
+    cx.session
+        .project()
+        .data()
+        .canvas
+        .fps
+        .snap_nearest(at)
+        .unwrap_or(at)
 }

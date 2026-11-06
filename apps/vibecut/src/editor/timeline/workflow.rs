@@ -4,4 +4,7 @@ mod item_drag;
 mod snapping;
 mod viewport;
 
-pub(super) use viewport::{edge_auto_scroll, max_scroll_seconds, slider_to_zoom, zoom_to_slider};
+pub(super) use snapping::frame_snap;
+pub(super) use viewport::{
+    anchored_scroll, edge_auto_scroll, fit_zoom, max_scroll_seconds, slider_to_zoom, zoom_to_slider,
+};

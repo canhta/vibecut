@@ -1,11 +1,20 @@
 //! Renders scene selection.
-use crate::editor::{BUTTON_ICON, Editor, Icon, Id, Text, Vec2, egui, icons, theme};
+use crate::editor::timeline::{
+    Action, BUTTON_ICON, Context, Icon, Id, State, Text, Vec2, egui, icons, theme,
+    view::{Ink, tr},
+};
 
-pub(in crate::editor) fn show_scenes(editor: &mut Editor, ctx: &egui::Context) {
-    if !editor.scenes_open {
-        return;
+/// Paint the scene sheet and its delete confirmation when open.
+pub(in crate::editor) fn show_scenes(
+    state: &mut State,
+    cx: &Context<'_>,
+    ctx: &egui::Context,
+) -> Vec<Action> {
+    if !state.scenes.open {
+        return Vec::new();
     }
-    let scenes: Vec<_> = editor
+    let ink = Ink::of(cx);
+    let scenes: Vec<_> = cx
         .session
         .project()
         .data()
@@ -13,61 +22,68 @@ pub(in crate::editor) fn show_scenes(editor: &mut Editor, ctx: &egui::Context) {
         .iter()
         .map(|s| (s.id, s.name.as_str().to_owned(), s.is_main))
         .collect();
-    let active = editor.session.project().data().current_scene_id;
+    let active = cx.session.project().data().current_scene_id;
     let sheet_id = Id::unique("scenes.sheet");
     let sheet = egui::Modal::new(sheet_id)
         .area(egui::Modal::default_area(sheet_id).anchor(egui::Align2::RIGHT_TOP, Vec2::ZERO))
         .show(ctx, |ui| {
             ui.set_width(320.0);
             ui.set_min_height((ctx.content_rect().height() - 16.0).max(200.0));
-            ui.heading(editor.tr(if editor.scene_select {
-                Text::SelectScenes
-            } else {
-                Text::Scenes
-            }));
-            ui.label(editor.tr(if editor.scene_select {
-                Text::SelectScenesHint
-            } else {
-                Text::SwitchScenesHint
-            }));
+            let selecting = state.scenes.select;
+            ui.heading(tr(
+                cx,
+                if selecting {
+                    Text::SelectScenes
+                } else {
+                    Text::Scenes
+                },
+            ));
+            ui.label(tr(
+                cx,
+                if selecting {
+                    Text::SelectScenesHint
+                } else {
+                    Text::SwitchScenesHint
+                },
+            ));
             ui.horizontal(|ui| {
                 let response = ui
                     .add(
-                        egui::Button::new(icons::tinted(
-                            Icon::Plus,
-                            BUTTON_ICON,
-                            editor.text_color(),
-                        ))
-                        .min_size(Vec2::splat(28.0)),
+                        egui::Button::new(icons::tinted(Icon::Plus, BUTTON_ICON, ink.text()))
+                            .min_size(Vec2::splat(28.0)),
                     )
-                    .on_hover_text(editor.tr(Text::NewScene));
-                editor.remember_with_icon("scene.create", Some(Icon::Plus.name()), &response);
+                    .on_hover_text(tr(cx, Text::NewScene));
+                state.remember_icon("scene.create", Some(Icon::Plus.name()), &response);
                 if response.clicked() {
-                    editor.action("scene.create");
+                    state.push(Action::Activate("scene.create".to_owned()));
                 }
-                let response = ui.button(editor.tr(if editor.scene_select {
-                    Text::CancelSelection
-                } else {
-                    Text::Select
-                }));
-                editor.remember("scene.select", &response);
+                let response = ui.button(tr(
+                    cx,
+                    if selecting {
+                        Text::CancelSelection
+                    } else {
+                        Text::Select
+                    },
+                ));
+                state.remember("scene.select", &response);
                 if response.clicked() {
-                    editor.action("scene.select");
+                    state.push(Action::Activate("scene.select".to_owned()));
                 }
-                let response = ui.button(editor.tr(Text::CloseScenes));
-                editor.remember("scene.close", &response);
+                let response = ui.button(tr(cx, Text::CloseScenes));
+                state.remember("scene.close", &response);
                 if response.clicked() {
-                    editor.action("scene.close");
+                    state.push(Action::Activate("scene.close".to_owned()));
                 }
             });
-            let editing = editor.scene_rename.as_ref().map(|(id, _)| *id);
+            let editing = state.scenes.rename.as_ref().map(|(id, _)| *id);
             egui::ScrollArea::vertical()
                 .max_height(420.0)
                 .show(ui, |ui| {
                     for (id, name, main) in scenes {
                         if editing == Some(id) {
-                            let mut text = editor
-                                .scene_rename
+                            let mut text = state
+                                .scenes
+                                .rename
                                 .as_ref()
                                 .map(|(_, text)| text.clone())
                                 .unwrap_or_default();
@@ -77,49 +93,47 @@ pub(in crate::editor) fn show_scenes(editor: &mut Editor, ctx: &egui::Context) {
                                     .desired_width(296.0)
                                     .min_size(Vec2::new(296.0, 26.0)),
                             );
-                            editor.remember("scene.rename.input", &response);
-                            if editor.scene_rename_focus {
+                            state.remember("scene.rename.input", &response);
+                            if state.scenes.rename_focus {
                                 response.request_focus();
-                                editor.scene_rename_focus = false;
+                                state.scenes.rename_focus = false;
                             }
-                            let cancel = !editor.scene_confirm
-                                && ui.input(|i| i.key_pressed(egui::Key::Escape));
-                            let commit = !editor.scene_confirm
-                                && ui.input(|i| i.key_pressed(egui::Key::Enter));
+                            let confirming = state.scenes.confirm;
+                            let cancel =
+                                !confirming && ui.input(|i| i.key_pressed(egui::Key::Escape));
+                            let commit =
+                                !confirming && ui.input(|i| i.key_pressed(egui::Key::Enter));
                             if commit && !cancel {
-                                match editor.session.execute(
-                                    "scene.rename",
-                                    serde_json::json!({"scene":id,"name":text}),
-                                ) {
-                                    Ok(_) => editor.scene_rename = None,
-                                    Err(error) => {
-                                        editor.error = Some(error.to_string());
-                                        editor.scene_rename = Some((id, text));
-                                    }
-                                }
+                                // The frame clears the field on success and gives the
+                                // text back through `keep_scene_rename` on refusal.
+                                state.scenes.rename = None;
+                                state.push(Action::RenameScene {
+                                    scene: id,
+                                    name: text,
+                                });
                             } else if cancel {
-                                editor.scene_rename = None;
+                                state.scenes.rename = None;
                             } else {
-                                editor.scene_rename = Some((id, text));
+                                state.scenes.rename = Some((id, text));
                             }
                             continue;
                         }
-                        let selected = if editor.scene_select {
-                            editor.scene_selected.contains(&id)
+                        let selected = if selecting {
+                            state.scenes.selected.contains(&id)
                         } else {
                             active == id
                         };
                         let label = if main {
-                            format!("{name} ({})", editor.tr(Text::MainScene))
+                            format!("{name} ({})", tr(cx, Text::MainScene))
                         } else {
                             name
                         };
                         let response = ui.add_enabled(
-                            !editor.scene_select || !main,
+                            !selecting || !main,
                             egui::Button::new(egui::RichText::new(label).color(if selected {
-                                theme::on_accent(editor.preferences.dark)
+                                theme::on_accent(ink.dark())
                             } else {
-                                editor.text_color()
+                                ink.text()
                             }))
                             .truncate()
                             .selected(selected)
@@ -130,8 +144,8 @@ pub(in crate::editor) fn show_scenes(editor: &mut Editor, ctx: &egui::Context) {
                         let mut menu_item = None;
                         response.context_menu(|ui| {
                             let item = ui.add(egui::Button::image_and_text(
-                                icons::tinted(Icon::PencilSimple, BUTTON_ICON, editor.text_color()),
-                                editor.tr(Text::RenameScene),
+                                icons::tinted(Icon::PencilSimple, BUTTON_ICON, ink.text()),
+                                tr(cx, Text::RenameScene),
                             ));
                             if item.clicked() {
                                 request_rename = true;
@@ -140,66 +154,57 @@ pub(in crate::editor) fn show_scenes(editor: &mut Editor, ctx: &egui::Context) {
                             menu_item = Some(item);
                         });
                         if let Some(item) = menu_item {
-                            editor.remember_with_icon(
-                                &rename_id,
+                            state.remember_icon(
+                                rename_id.clone(),
                                 Some(Icon::PencilSimple.name()),
                                 &item,
                             );
                         }
                         if request_rename {
-                            editor.action(&rename_id);
+                            state.push(Action::Activate(rename_id));
                         }
                         let row = format!("scene.row.{}", id.0);
-                        editor.remember(&row, &response);
+                        state.remember(row.clone(), &response);
                         if response.clicked() {
-                            editor.action(&row);
+                            state.push(Action::Activate(row));
                         }
                     }
                 });
-            if editor.scene_select {
+            if selecting {
                 let response = ui.add_enabled(
-                    !editor.scene_selected.is_empty(),
+                    !state.scenes.selected.is_empty(),
                     egui::Button::image_and_text(
-                        icons::tinted(Icon::Trash, BUTTON_ICON, editor.text_color()),
-                        format!(
-                            "{} ({})",
-                            editor.tr(Text::Delete),
-                            editor.scene_selected.len()
-                        ),
+                        icons::tinted(Icon::Trash, BUTTON_ICON, ink.text()),
+                        format!("{} ({})", tr(cx, Text::Delete), state.scenes.selected.len()),
                     ),
                 );
-                editor.remember("scene.delete", &response);
+                state.remember("scene.delete", &response);
                 if response.clicked() {
-                    editor.action("scene.delete");
+                    state.push(Action::Activate("scene.delete".to_owned()));
                 }
             }
         });
-    if sheet.backdrop_response.clicked() && !editor.scene_confirm && editor.scene_rename.is_none() {
-        editor.action("scene.close");
+    if sheet.backdrop_response.clicked() && !state.scenes.confirm && state.scenes.rename.is_none() {
+        state.push(Action::Activate("scene.close".to_owned()));
     }
-    if editor.scene_confirm {
+    if state.scenes.confirm {
         egui::Modal::new(Id::unique("scene.delete_dialog")).show(ctx, |ui| {
             ui.set_max_width(360.0);
-            ui.heading(format!(
-                "{} {}",
-                editor.tr(Text::Delete),
-                editor.tr(Text::Scenes)
-            ));
-            ui.label(editor.tr(Text::DeleteScenesPrompt));
+            ui.heading(format!("{} {}", tr(cx, Text::Delete), tr(cx, Text::Scenes)));
+            ui.label(tr(cx, Text::DeleteScenesPrompt));
             ui.horizontal(|ui| {
-                let response =
-                    ui.add_sized([90.0, 34.0], egui::Button::new(editor.tr(Text::Cancel)));
-                editor.remember("scene.cancel_delete", &response);
+                let response = ui.add_sized([90.0, 34.0], egui::Button::new(tr(cx, Text::Cancel)));
+                state.remember("scene.cancel_delete", &response);
                 if response.clicked() {
-                    editor.action("scene.cancel_delete");
+                    state.push(Action::Activate("scene.cancel_delete".to_owned()));
                 }
-                let response =
-                    ui.add_sized([90.0, 34.0], egui::Button::new(editor.tr(Text::Delete)));
-                editor.remember("scene.confirm_delete", &response);
+                let response = ui.add_sized([90.0, 34.0], egui::Button::new(tr(cx, Text::Delete)));
+                state.remember("scene.confirm_delete", &response);
                 if response.clicked() {
-                    editor.action("scene.confirm_delete");
+                    state.push(Action::Activate("scene.confirm_delete".to_owned()));
                 }
             });
         });
     }
+    std::mem::take(&mut state.outbox)
 }

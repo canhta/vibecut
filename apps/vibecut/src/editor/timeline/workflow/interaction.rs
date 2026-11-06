@@ -1,12 +1,17 @@
-//! Applies bookmark gestures.
+//! Applies bookmark and playhead gestures.
 
 use crate::editor::timeline::{
-    BTreeSet, BookmarkDrag, BookmarkId, Command, Editor, Id, Rect, Rounding, Tick, TimelineLayout,
-    egui,
+    Action, BTreeSet, BookmarkDrag, BookmarkId, Command, Context, Id, Rect, Rounding, State, Tick,
+    TimelineLayout, egui, frame_snap,
 };
 
-impl Editor {
-    pub(in crate::editor) fn begin_bookmark_drag(&mut self, bookmark: BookmarkId, ui: &egui::Ui) {
+impl State {
+    pub(in crate::editor::timeline) fn begin_bookmark_drag(
+        &mut self,
+        cx: &Context<'_>,
+        bookmark: BookmarkId,
+        ui: &egui::Ui,
+    ) {
         if self.drag.is_some() {
             self.finish_drag();
         }
@@ -19,7 +24,7 @@ impl Editor {
         else {
             return;
         };
-        let Some(start) = self
+        let Some(start) = cx
             .session
             .project()
             .data()
@@ -31,28 +36,21 @@ impl Editor {
         else {
             return;
         };
-        self.session.end_merge();
-        if self.session.transaction_active()
-            && let Err(error) = self.session.cancel_gesture()
-        {
-            self.error = Some(error.to_string());
-            return;
-        }
-        if let Err(error) = self.session.begin_gesture() {
-            self.error = Some(error.to_string());
-            return;
-        }
         self.bookmark_drag = Some(BookmarkDrag {
             bookmark,
             press_x,
             start,
-            moved: false,
         });
+        self.push(Action::BeginGesture { select: None });
     }
     /// Preview a bookmark move through the engine gesture. Snapping reads the
     /// current viewport scale and excludes the dragged bookmark's own edges.
-    pub(in crate::editor) fn advance_bookmark_drag(&mut self, ui: &egui::Ui) {
-        let Some(mut drag) = self.bookmark_drag else {
+    pub(in crate::editor::timeline) fn advance_bookmark_drag(
+        &mut self,
+        cx: &Context<'_>,
+        ui: &egui::Ui,
+    ) {
+        let Some(drag) = self.bookmark_drag else {
             return;
         };
         let (pointer, bypass, down) = ui.ctx().input(|input| {
@@ -69,124 +67,32 @@ impl Editor {
             )
             .unwrap_or(drag.start);
             let exclude = BTreeSet::new();
-            let (snapped, indicator) = self.snap_tick(raw, &exclude, Some(drag.bookmark), bypass);
-            let at = snapped.clamp(Tick::ZERO, self.session.project().duration());
+            let (snapped, indicator) =
+                self.snap_tick(cx, raw, &exclude, Some(drag.bookmark), bypass);
+            let at = snapped.clamp(Tick::ZERO, cx.session.project().duration());
             self.snap_indicator = indicator.filter(|_| at == snapped);
-            match self.session.apply(Command::MoveBookmark {
+            self.push(Action::Preview(Box::new(Command::MoveBookmark {
                 bookmark: drag.bookmark,
                 start: at,
-            }) {
-                Ok(outcome) => {
-                    if outcome.changed {
-                        drag.moved = true;
-                        self.sync_preview();
-                    }
-                }
-                Err(error) => self.error = Some(error.to_string()),
-            }
+            })));
         }
-        self.bookmark_drag = Some(drag);
         if !down {
             self.finish_bookmark_drag();
         }
     }
-    pub(in crate::editor) fn finish_bookmark_drag(&mut self) {
-        let Some(drag) = self.bookmark_drag.take() else {
-            return;
-        };
-        let mut edited = false;
-        if self.session.gesture_active() {
-            let outcome = if drag.moved {
-                edited = true;
-                self.session.commit_gesture()
-            } else {
-                self.session.cancel_gesture()
-            };
-            if let Err(error) = outcome {
-                self.error = Some(error.to_string());
-            }
-        }
-        if edited {
-            self.sync_preview();
+    pub(in crate::editor::timeline) fn finish_bookmark_drag(&mut self) {
+        if self.bookmark_drag.take().is_some() {
+            self.push(Action::EndGesture);
         }
         self.snap_indicator = None;
     }
-    pub(in crate::editor) fn cancel_interaction(&mut self) {
-        if self.media_marquee.take().is_some() {
-            self.media_selection.clear();
-            self.media_anchor = None;
-            self.session.end_merge();
-            return;
-        }
-        if let Some(drag) = self.bookmark_drag.take() {
-            if self.session.gesture_active()
-                && let Err(error) = self.session.cancel_gesture()
-            {
-                self.error = Some(error.to_string());
-            }
-            if drag.moved {
-                self.sync_preview();
-            }
-            self.snap_indicator = None;
-            return;
-        }
-        if let Some(scrub) = self.properties.scrub.take() {
-            let changed = scrub.last != scrub.start;
-            if self.session.gesture_active()
-                && let Err(error) = self.session.cancel_gesture()
-            {
-                self.error = Some(error.to_string());
-            }
-            self.properties.drafts.remove(&scrub.target.draft_key());
-            self.properties.focus = None;
-            if changed {
-                self.sync_preview();
-            }
-            return;
-        }
-        let track_drag = self.track_drag.take().is_some();
-        if self.track_rename.take().is_some() || track_drag {
-            self.track_rename_focus = false;
-            return;
-        }
-        if self.effect_drag.take().is_some() {
-            return;
-        }
-        if self.properties.reorder.take().is_some() {
-            return;
-        }
-        if let Some(drag) = self.drag.take() {
-            if self.session.gesture_active()
-                && let Err(error) = self.session.cancel_gesture()
-            {
-                self.error = Some(error.to_string());
-            }
-            if drag.moved {
-                self.sync_preview();
-            }
-            self.snap_indicator = None;
-        } else if let Some((_, before, _)) = self.marquee.take() {
-            self.selection = before;
-            self.selection_changed();
-        } else {
-            self.selection_scopes.clear_specific(&mut self.selection);
-            if let Err(e) = self.session.set_selection(self.selection.clone()) {
-                self.error = Some(e.to_string());
-            }
-            if !self.media_selection.is_empty() {
-                self.media_selection.clear();
-                self.media_anchor = None;
-                self.session.end_merge();
-            }
-        }
-    }
-    pub(in crate::editor::timeline) fn timeline_playhead_interaction(
+    pub(in crate::editor::timeline) fn playhead_interaction(
         &mut self,
+        cx: &Context<'_>,
         ui: &egui::Ui,
         layout: &TimelineLayout,
     ) {
-        let at = self.playback.position().unwrap_or(Tick::ZERO);
-        let x = self.x_at(at, layout.body.left());
+        let x = self.x_at(cx.playhead, layout.body.left());
         if x < layout.body.left() - 6.0 || x > layout.body.right() + 6.0 {
             return;
         }
@@ -205,8 +111,8 @@ impl Editor {
         if (response.clicked() || response.dragged())
             && let Some(pointer) = response.interact_pointer_pos()
         {
-            let at = self.frame_snap(self.tick_at(pointer.x, layout.body.left()));
-            self.seek_to(at);
+            let at = frame_snap(cx, self.tick_at(pointer.x, layout.body.left()));
+            self.push(Action::Seek(at));
         }
     }
 }

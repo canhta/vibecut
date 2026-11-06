@@ -1,10 +1,10 @@
 //! Stores the shared editor presentation context.
 
 use super::{
-    Arc, AssetId, BTreeMap, BTreeSet, BookmarkId, Clock, ContentHash, Duration, EyedropperState,
-    Icon, ImportFailure, ImportQueue, ItemId, KeybindingIssue, Keymap, MediaSort, MediaView,
-    PathBuf, Playback, Preferences, Rect, SelectionScope, SelectionScopes, SourceRange, Text, Tick,
-    TrackId, UnsupportedReason, actions, egui, preview, theme,
+    Arc, AssetId, BTreeMap, BTreeSet, Clock, ContentHash, Duration, EyedropperState, Icon,
+    ImportFailure, ImportQueue, ItemId, KeybindingIssue, Keymap, MediaSort, MediaView, PathBuf,
+    Playback, Preferences, Rect, SelectionScope, SelectionScopes, Text, Tick, UnsupportedReason,
+    actions, egui, preview, theme,
 };
 
 #[derive(Clone, Debug)]
@@ -273,40 +273,10 @@ pub(super) struct MediaMarquee {
     pub(super) additive: bool,
     pub(super) moved: bool,
 }
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(super) enum DragMode {
-    Move,
-    TrimStart,
-    TrimEnd,
-}
-#[derive(Clone, Copy, Debug)]
-pub(super) struct DragOrigin {
-    pub(super) item: ItemId,
-    pub(super) track: TrackId,
-    pub(super) start: Tick,
-    pub(super) end: Tick,
-}
-#[derive(Clone, Debug)]
-pub(super) struct DragState {
-    pub(super) item: ItemId,
-    pub(super) mode: DragMode,
-    pub(super) press_x: f32,
-    pub(super) origins: Vec<DragOrigin>,
-    pub(super) source_range: SourceRange,
-    pub(super) speed: time::Speed,
-    pub(super) moved: bool,
-}
 #[derive(Clone, Debug)]
 pub(super) struct EffectReorder {
     pub(super) item: ItemId,
     pub(super) effect: String,
-}
-#[derive(Clone, Copy, Debug)]
-pub(super) struct BookmarkDrag {
-    pub(super) bookmark: BookmarkId,
-    pub(super) press_x: f32,
-    pub(super) start: Tick,
-    pub(super) moved: bool,
 }
 /// One scrub field's unit contract. Pixels per step are recorded in the app
 /// README; the inventory leaves the exact sensitivity unverified.
@@ -415,36 +385,22 @@ pub struct Editor {
     pub(crate) overlay_open: bool,
     pub selection: BTreeSet<ItemId>,
     pub selection_scopes: SelectionScopes,
-    pub(super) marquee: Option<(egui::Pos2, BTreeSet<ItemId>, bool)>,
     pub(super) properties: super::properties::State,
     pub(super) effect_previews: Option<crate::effect_previews::EffectPreviews>,
     pub(super) effect_textures: BTreeMap<String, egui::TextureHandle>,
     pub(super) effect_drag: Option<String>,
-    pub(super) effect_drop_targets: Vec<(ItemId, Rect)>,
     pub ripple: bool,
-    pub(super) zoom: f32,
-    pub(super) scroll: f32,
-    pub(super) vertical_scroll: f32,
-    /// Content viewport width used for the dynamic fit minimum.
-    pub(super) timeline_viewport: f32,
-    /// Pixel scroll captured when zoom crossed the playhead-anchor threshold.
-    pub(super) pre_anchor_scroll: Option<f32>,
     pub(super) last_view: project::ViewState,
     pub(super) widgets: BTreeMap<String, WidgetState>,
     pub panels: BTreeMap<&'static str, Rect>,
     pub(super) frame: super::frame::State,
     pub(super) player: super::player::State,
+    pub(super) timeline: super::timeline::State,
     pub(super) fullscreen_commanded: bool,
     pub snapshot: preview::SnapshotDialog,
-    pub(super) drag: Option<DragState>,
-    pub(super) bookmark_drag: Option<BookmarkDrag>,
-    pub(super) snap_indicator: Option<Tick>,
     pub(super) error: Option<String>,
     pub(crate) persistence_error: Option<std::sync::Arc<engine::EditError>>,
     pub(super) configured: bool,
-    pub(super) track_rename: Option<(TrackId, String)>,
-    pub(super) track_rename_focus: bool,
-    pub(super) track_drag: Option<TrackId>,
     pub(crate) lifecycle_action: Option<crate::lifecycle::EditorAction>,
     pub(super) imports: Option<ImportQueue>,
     pub(super) import_total: usize,
@@ -463,12 +419,6 @@ pub struct Editor {
     pub(super) media_marquee: Option<MediaMarquee>,
     pub(super) media_reveal: Option<MediaReveal>,
     pub(super) media_delete_confirm: Option<Vec<AssetId>>,
-    pub(super) scenes_open: bool,
-    pub(super) scene_select: bool,
-    pub(super) scene_selected: BTreeSet<project::SceneId>,
-    pub(super) scene_confirm: bool,
-    pub(super) scene_rename: Option<(project::SceneId, String)>,
-    pub(super) scene_rename_focus: bool,
     pub export: Option<crate::export::ExportDialog>,
     pub(super) shortcuts_open: bool,
     pub(super) shortcut_tab: ShortcutTab,
@@ -480,7 +430,7 @@ pub struct Editor {
     pub(super) thumbnails: BTreeMap<AssetId, engine::thumbnails::RetainedThumbnail>,
     pub(super) pending_imports: BTreeMap<AssetId, PathBuf>,
     pub(super) restoring_asset: Option<AssetId>,
-    pub(super) thumbnail_textures: BTreeMap<AssetId, egui::TextureHandle>,
+    pub(super) thumbnail_textures: std::cell::RefCell<BTreeMap<AssetId, egui::TextureHandle>>,
     pub(super) thumbnail_root: Option<PathBuf>,
     pub subtitles: Option<crate::subtitles::Subtitles>,
 }

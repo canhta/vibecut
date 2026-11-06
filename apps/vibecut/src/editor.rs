@@ -12,10 +12,10 @@ mod widgets;
 
 mod state;
 use state::{
-    AUDIO_GAIN_SCRUB, AssetRow, BookmarkDrag, DragMode, DragOrigin, DragState, EffectReorder,
-    MediaMarquee, MediaReveal, OPACITY_SCRUB, PreferenceCommand, PreferenceHistory,
-    SHORTCUT_CONTROL_HEIGHT, SHORTCUT_ROW_HEIGHT, SHORTCUT_TEXT_SIZE, SHORTCUT_TITLE_SIZE,
-    SPEED_SCRUB, ScrubDrag, ScrubSpec, ScrubTarget, TEXT_SIZE_SCRUB, Toast,
+    AUDIO_GAIN_SCRUB, AssetRow, EffectReorder, MediaMarquee, MediaReveal, OPACITY_SCRUB,
+    PreferenceCommand, PreferenceHistory, SHORTCUT_CONTROL_HEIGHT, SHORTCUT_ROW_HEIGHT,
+    SHORTCUT_TEXT_SIZE, SHORTCUT_TITLE_SIZE, SPEED_SCRUB, ScrubDrag, ScrubSpec, ScrubTarget,
+    TEXT_SIZE_SCRUB, Toast,
 };
 pub use state::{
     AssetInspection, AssetState, Editor, Inspection, ShortcutRow, ShortcutTab, ShortcutsInspection,
@@ -137,34 +137,22 @@ impl Editor {
             overlay_open: false,
             selection,
             selection_scopes: SelectionScopes::default(),
-            marquee: None,
             properties: properties::State::default(),
             effect_previews: crate::effect_previews::EffectPreviews::cpu().ok(),
             effect_textures: BTreeMap::new(),
             effect_drag: None,
-            effect_drop_targets: Vec::new(),
             ripple: false,
-            zoom,
-            scroll,
-            vertical_scroll: 0.0,
-            timeline_viewport: 1000.0,
-            pre_anchor_scroll: None,
             last_view: view,
             widgets: BTreeMap::new(),
             panels: BTreeMap::new(),
             frame: frame::State::default(),
             player: player::State::new(preferences_fit, preferences_zoom),
+            timeline: timeline::State::new(zoom, scroll),
             fullscreen_commanded: false,
             snapshot: preview::SnapshotDialog::default(),
-            drag: None,
-            bookmark_drag: None,
-            snap_indicator: None,
             error: None,
             persistence_error: None,
             configured: false,
-            track_rename: None,
-            track_rename_focus: false,
-            track_drag: None,
             lifecycle_action: None,
             imports: None,
             import_total: 0,
@@ -182,12 +170,6 @@ impl Editor {
             media_marquee: None,
             media_reveal: None,
             media_delete_confirm: None,
-            scenes_open: false,
-            scene_select: false,
-            scene_selected: BTreeSet::new(),
-            scene_confirm: false,
-            scene_rename: None,
-            scene_rename_focus: false,
             export: None,
             shortcuts_open: false,
             shortcut_tab: ShortcutTab::Timeline,
@@ -199,7 +181,7 @@ impl Editor {
             thumbnails: BTreeMap::new(),
             pending_imports: BTreeMap::new(),
             restoring_asset: None,
-            thumbnail_textures: BTreeMap::new(),
+            thumbnail_textures: std::cell::RefCell::default(),
             thumbnail_root: None,
             subtitles: None,
         }
@@ -227,11 +209,11 @@ impl Editor {
             position: self.playback.position()?,
             selection: self.selection.iter().copied().collect(),
             selection_scope: self.selection_scopes.active(&self.selection),
-            zoom: self.zoom,
-            scroll: self.scroll,
-            min_zoom: self.min_zoom(self.timeline_viewport),
+            zoom: self.timeline.zoom(),
+            scroll: self.timeline.scroll(),
+            min_zoom: self.timeline.min_zoom(self.session.project().duration()),
             snapping: self.preferences.snapping,
-            snap_indicator: self.snap_indicator,
+            snap_indicator: self.timeline.snap_indicator(),
             ripple: self.ripple,
             preview_zoom: self.player.view.zoom,
             preview_fit: self.player.view.fit,
@@ -366,37 +348,12 @@ impl Editor {
         self.clock = clock;
     }
     /// Upload one decoded thumbnail on first use; later frames reuse the handle.
-    fn thumbnail_texture(
-        &mut self,
-        ctx: &egui::Context,
-        id: AssetId,
-    ) -> Option<egui::TextureHandle> {
-        if let Some(texture) = self.thumbnail_textures.get(&id) {
-            return Some(texture.clone());
+    fn thumbnail_texture(&self, ctx: &egui::Context, id: AssetId) -> Option<egui::TextureHandle> {
+        frame::Thumbnails {
+            images: &self.thumbnails,
+            textures: &self.thumbnail_textures,
         }
-        let thumbnail = self.thumbnails.get(&id)?;
-        // One retained image pays for one CPU image and GPU upload, even when
-        // several library records refer to the same content/frame.
-        if let Some(texture) = self.thumbnail_textures.iter().find_map(|(other, texture)| {
-            self.thumbnails
-                .get(other)
-                .filter(|image| image.shares_pixels(thumbnail))
-                .map(|_| texture.clone())
-        }) {
-            self.thumbnail_textures.insert(id, texture.clone());
-            return Some(texture);
-        }
-        let image = egui::ColorImage::from_rgba_unmultiplied(
-            [thumbnail.width as usize, thumbnail.height as usize],
-            &thumbnail.pixels,
-        );
-        let texture = ctx.load_texture(
-            format!("media.thumbnail.{}", id.0),
-            image,
-            egui::TextureOptions::LINEAR,
-        );
-        self.thumbnail_textures.insert(id, texture.clone());
-        Some(texture)
+        .texture(ctx, id)
     }
 }
 fn error_detail(error: &dyn std::error::Error) -> String {

@@ -1,20 +1,25 @@
 //! Applies clip drag gestures.
 
 use crate::editor::timeline::{
-    BTreeSet, Command, CreatedId, DragMode, DragOrigin, DragState, Editor, ItemId, Result,
-    Rounding, TRACK_GAP, Tick, TimelineLayout, TrackId, TrackRow, edge_auto_scroll, egui,
+    Action, BTreeSet, Command, Context, DragMode, DragOrigin, DragState, DropTarget, ItemId,
+    Result, Rounding, State, TRACK_GAP, Tick, TimelineLayout, TrackId, TrackRow, edge_auto_scroll,
+    egui,
 };
 
-impl Editor {
-    pub(in crate::editor) fn begin_drag(&mut self, item: ItemId, mode: DragMode, ui: &egui::Ui) {
+impl State {
+    /// Grab a clip: the gesture opens in the frame, the geometry stays here.
+    pub(in crate::editor::timeline) fn begin_drag(
+        &mut self,
+        cx: &Context<'_>,
+        item: ItemId,
+        mode: DragMode,
+        ui: &egui::Ui,
+    ) {
         if self.bookmark_drag.is_some() {
             self.finish_bookmark_drag();
         }
         if self.drag.is_some() {
             self.finish_drag();
-        }
-        if !self.selection.contains(&item) {
-            self.select_single(item);
         }
         let Some(press_x) = ui
             .ctx()
@@ -22,28 +27,20 @@ impl Editor {
         else {
             return;
         };
-        self.session.end_merge();
-        if self.session.transaction_active()
-            && let Err(error) = self.session.cancel_gesture()
-        {
-            self.error = Some(error.to_string());
-            return;
-        }
-        if let Err(error) = self
-            .session
-            .set_selection(self.selection.clone())
-            .and_then(|_| self.session.begin_gesture())
-        {
-            self.error = Some(error.to_string());
-            return;
-        }
+        // Grabbing an unselected clip selects it alone first.
+        let select = (!cx.selection.contains(&item)).then_some(item);
+        let selection: BTreeSet<ItemId> = if select.is_some() {
+            BTreeSet::from([item])
+        } else {
+            cx.selection.clone()
+        };
         let mut origins = Vec::new();
         let mut source_range = None;
         let mut speed = time::Speed::UNITY;
-        for track in self.session.project().data().scene().timeline.iter() {
+        for track in cx.session.project().data().scene().timeline.iter() {
             for candidate in &track.items {
                 let wanted = if mode == DragMode::Move {
-                    self.selection.contains(&candidate.id)
+                    selection.contains(&candidate.id)
                 } else {
                     candidate.id == item
                 };
@@ -65,7 +62,6 @@ impl Editor {
             }
         }
         let Some(source_range) = source_range else {
-            let _ = self.session.cancel_gesture();
             return;
         };
         self.drag = Some(DragState {
@@ -75,13 +71,14 @@ impl Editor {
             origins,
             source_range,
             speed,
-            moved: false,
         });
+        self.push(Action::BeginGesture { select });
     }
     /// Drive the active gesture from global pointer state. Release and update do not
     /// depend on the item or handle still being visible or hit-testable this frame.
     pub(in crate::editor::timeline) fn advance_drag(
         &mut self,
+        cx: &Context<'_>,
         ui: &egui::Ui,
         layout: &TimelineLayout,
         rows: &[TrackRow],
@@ -98,7 +95,7 @@ impl Editor {
             )
         });
         if let Some(pointer) = pointer {
-            let (_, max_scroll) = self.scroll_bounds(layout, self.session.project().duration());
+            let (_, max_scroll) = self.scroll_bounds(layout, cx.session.project().duration());
             let step = if down {
                 edge_auto_scroll(hover, layout.body, self.scroll, max_scroll)
             } else {
@@ -116,21 +113,24 @@ impl Editor {
                     drag.press_x -= step;
                 }
             }
-            self.update_drag(pointer, layout.body.left(), bypass);
+            self.update_drag(cx, pointer, layout.body.left(), bypass);
         }
         if !down {
             if let Some(pointer) = pointer
-                && let Err(error) = self.drop_track(pointer, layout, rows, bypass)
+                && let Err(error) = self.drop_track(cx, pointer, layout, rows, bypass)
             {
-                self.error = Some(error.to_string());
-                self.cancel_interaction();
+                self.fail(&error);
+                self.push(Action::CancelInteraction);
                 return;
             }
             self.finish_drag();
         }
     }
+    /// A release over another track moves the clip there, allocating a track
+    /// when the pointer is between lanes.
     pub(in crate::editor::timeline) fn drop_track(
         &mut self,
+        cx: &Context<'_>,
         pointer: egui::Pos2,
         layout: &TimelineLayout,
         rows: &[TrackRow],
@@ -179,14 +179,14 @@ impl Editor {
             f64::from(pointer.x - drag.press_x) / f64::from(self.zoom),
             Rounding::Nearest,
         )?;
-        let (delta, _) = self.snap_delta(raw, &drag.origins, bypass);
+        let (delta, _) = self.snap_delta(cx, raw, &drag.origins, bypass);
         let start = origin
             .start
             .checked_add(delta)
             .ok_or(engine::EditError::Invalid("time overflow"))?
             .max(Tick::ZERO);
         let target = if let Some(placement) = placement {
-            let kind = self
+            let kind = cx
                 .session
                 .project()
                 .data()
@@ -196,71 +196,44 @@ impl Editor {
                 .find(|t| t.id == origin.track)
                 .ok_or(engine::EditError::NoTrack(origin.track))?
                 .kind;
-            let outcome = self.session.apply(Command::AddTrack {
-                name: format!("{kind:?}").into(),
-                kind,
-                placement,
-            })?;
-            match outcome.created.first() {
-                Some(CreatedId::Track(id)) => *id,
-                _ => return Err(engine::EditError::Invalid("track allocation").into()),
-            }
+            DropTarget::New { kind, placement }
         } else {
-            target
+            DropTarget::Track(target)
         };
-        self.session.apply(Command::MoveItem {
+        self.push(Action::MoveToTrack {
             item: drag.item,
-            track: target,
             start,
-        })?;
-        if let Some(drag) = &mut self.drag {
-            drag.moved = true;
-        }
+            target,
+        });
         Ok(())
     }
-    pub(in crate::editor) fn update_drag(
-        &mut self,
-        pointer: egui::Pos2,
-        body_left: f32,
-        bypass: bool,
-    ) {
-        let Some(mut drag) = self.drag.clone() else {
+    fn update_drag(&mut self, cx: &Context<'_>, pointer: egui::Pos2, body_left: f32, bypass: bool) {
+        let Some(drag) = self.drag.clone() else {
             return;
         };
         let result = match drag.mode {
-            DragMode::Move => self.apply_drag_move(&drag, pointer.x, bypass),
-            DragMode::TrimStart => {
-                self.apply_drag_trim(&drag, pointer.x, body_left, bypass, DragMode::TrimStart)
-            }
-            DragMode::TrimEnd => {
-                self.apply_drag_trim(&drag, pointer.x, body_left, bypass, DragMode::TrimEnd)
+            DragMode::Move => self.drag_move(cx, &drag, pointer.x, bypass),
+            DragMode::TrimStart | DragMode::TrimEnd => {
+                self.drag_trim(cx, &drag, pointer.x, body_left, bypass, drag.mode)
             }
         };
-        let changed = match result {
-            Ok(changed) => changed,
-            Err(error) => {
-                self.error = Some(error.to_string());
-                false
-            }
-        };
-        drag.moved |= changed;
-        self.drag = Some(drag);
-        if changed {
-            self.sync_preview();
+        if let Err(error) = result {
+            self.fail(&error);
         }
     }
-    pub(in crate::editor) fn apply_drag_move(
+    fn drag_move(
         &mut self,
+        cx: &Context<'_>,
         drag: &DragState,
         pointer_x: f32,
         bypass: bool,
-    ) -> Result<bool> {
+    ) -> Result<()> {
         let raw = Tick::from_seconds_f64(
             f64::from(pointer_x - drag.press_x) / f64::from(self.zoom),
             Rounding::Nearest,
         )?;
-        let (snapped, indicator) = self.snap_delta(raw, &drag.origins, bypass);
-        let (low, high) = self.move_bounds(&drag.origins);
+        let (snapped, indicator) = self.snap_delta(cx, raw, &drag.origins, bypass);
+        let (low, high) = move_bounds(cx, &drag.origins);
         let delta = snapped.clamp(low, high);
         self.snap_indicator = indicator.filter(|_| delta == snapped);
         // Always target the origin plus this delta. A return to the press point must
@@ -274,23 +247,25 @@ impl Editor {
                 start: origin.start + delta,
             })
             .collect();
-        Ok(self.session.apply(Command::MoveItems { moves })?.changed)
+        self.push(Action::Preview(Box::new(Command::MoveItems { moves })));
+        Ok(())
     }
-    pub(in crate::editor) fn apply_drag_trim(
+    fn drag_trim(
         &mut self,
+        cx: &Context<'_>,
         drag: &DragState,
         pointer_x: f32,
         body_left: f32,
         bypass: bool,
         mode: DragMode,
-    ) -> Result<bool> {
+    ) -> Result<()> {
         let raw = Tick::from_seconds_f64(
             f64::from(self.scroll + (pointer_x - body_left) / self.zoom),
             Rounding::Nearest,
         )?;
         let exclude: BTreeSet<ItemId> = drag.origins.iter().map(|origin| origin.item).collect();
-        let (snapped, indicator) = self.snap_tick(raw, &exclude, None, bypass);
-        let (low, high) = self.trim_bounds(drag, mode);
+        let (snapped, indicator) = self.snap_tick(cx, raw, &exclude, None, bypass);
+        let (low, high) = trim_bounds(cx, drag, mode);
         let at = snapped.clamp(low, high);
         self.snap_indicator = indicator.filter(|_| at == snapped);
         let command = match mode {
@@ -302,153 +277,142 @@ impl Editor {
                 item: drag.item,
                 at,
             },
-            DragMode::Move => return Ok(false),
+            DragMode::Move => return Ok(()),
         };
-        Ok(self.session.apply(command)?.changed)
+        self.push(Action::Preview(Box::new(command)));
+        Ok(())
     }
-    pub(in crate::editor) fn finish_drag(&mut self) {
-        let Some(drag) = self.drag.take() else {
-            return;
-        };
-        let mut edited = false;
-        if self.session.gesture_active() {
-            let outcome = if drag.moved {
-                edited = true;
-                self.session.commit_gesture()
-            } else {
-                self.session.cancel_gesture()
-            };
-            if let Err(error) = outcome {
-                self.error = Some(error.to_string());
-            }
-        }
-        if edited {
-            self.sync_preview();
+    /// The pointer was released: ask the frame to publish the gesture.
+    pub(in crate::editor::timeline) fn finish_drag(&mut self) {
+        if self.drag.take().is_some() {
+            self.push(Action::EndGesture);
         }
         self.snap_indicator = None;
-        self.prune_selection();
     }
-    pub(in crate::editor) fn move_bounds(&self, origins: &[DragOrigin]) -> (Tick, Tick) {
-        let tracks: BTreeSet<TrackId> = origins.iter().map(|origin| origin.track).collect();
-        let selected: BTreeSet<ItemId> = origins.iter().map(|origin| origin.item).collect();
-        let earliest = origins
+}
+
+fn move_bounds(cx: &Context<'_>, origins: &[DragOrigin]) -> (Tick, Tick) {
+    let tracks: BTreeSet<TrackId> = origins.iter().map(|origin| origin.track).collect();
+    let selected: BTreeSet<ItemId> = origins.iter().map(|origin| origin.item).collect();
+    let earliest = origins
+        .iter()
+        .map(|origin| origin.start)
+        .min()
+        .unwrap_or(Tick::ZERO);
+    // One shared delta keeps the selected group rigid at the timeline zero edge.
+    let mut low = Tick(earliest.0.saturating_neg());
+    let mut high = Tick(i64::MAX / 4);
+    for track in cx.session.project().data().scene().timeline.iter() {
+        if !tracks.contains(&track.id) {
+            continue;
+        }
+        let track_origins: Vec<&DragOrigin> = origins
             .iter()
-            .map(|origin| origin.start)
-            .min()
-            .unwrap_or(Tick::ZERO);
-        // One shared delta keeps the selected group rigid at the timeline zero edge.
-        let mut low = Tick(earliest.0.saturating_neg());
-        let mut high = Tick(i64::MAX / 4);
-        for track in self.session.project().data().scene().timeline.iter() {
-            if !tracks.contains(&track.id) {
+            .filter(|origin| origin.track == track.id)
+            .collect();
+        for item in &track.items {
+            if selected.contains(&item.id) {
                 continue;
             }
-            let track_origins: Vec<&DragOrigin> = origins
-                .iter()
-                .filter(|origin| origin.track == track.id)
-                .collect();
-            for item in &track.items {
-                if selected.contains(&item.id) {
-                    continue;
-                }
-                let Ok(end) = item.end() else {
-                    continue;
-                };
-                let previous_end = track_origins
-                    .iter()
-                    .filter(|origin| origin.end <= item.start)
-                    .map(|origin| origin.end)
-                    .max();
-                if let Some(previous_end) = previous_end {
-                    high = high.min(item.start - previous_end);
-                }
-                let next_start = track_origins
-                    .iter()
-                    .filter(|origin| origin.start >= end)
-                    .map(|origin| origin.start)
-                    .min();
-                if let Some(next_start) = next_start {
-                    low = low.max(end - next_start);
-                }
-            }
-        }
-        (low, high)
-    }
-    pub(in crate::editor) fn trim_bounds(&self, drag: &DragState, mode: DragMode) -> (Tick, Tick) {
-        let minimum = self.frame_ticks();
-        let origin = drag
-            .origins
-            .iter()
-            .find(|origin| origin.item == drag.item)
-            .copied();
-        let Some(origin) = origin else {
-            return (Tick::ZERO, Tick::ZERO);
-        };
-        let mut low = match mode {
-            DragMode::TrimStart => {
-                // Output time that the source before the trim point would play for.
-                let before = drag
-                    .speed
-                    .output_duration(drag.source_range.start())
-                    .unwrap_or(Tick::ZERO);
-                (origin.start - before).max(Tick::ZERO)
-            }
-            DragMode::TrimEnd => origin.start + minimum,
-            DragMode::Move => return (Tick::ZERO, Tick::ZERO),
-        };
-        let mut high = match mode {
-            DragMode::TrimStart => origin.end - minimum,
-            DragMode::TrimEnd => Tick(i64::MAX / 4),
-            DragMode::Move => return (Tick::ZERO, Tick::ZERO),
-        };
-        for track in self.session.project().data().scene().timeline.iter() {
-            if track.id != origin.track {
+            let Ok(end) = item.end() else {
                 continue;
+            };
+            let previous_end = track_origins
+                .iter()
+                .filter(|origin| origin.end <= item.start)
+                .map(|origin| origin.end)
+                .max();
+            if let Some(previous_end) = previous_end {
+                high = high.min(item.start - previous_end);
             }
-            for item in &track.items {
-                if item.id == origin.item {
-                    continue;
-                }
-                let Ok(end) = item.end() else {
-                    continue;
-                };
-                match mode {
-                    DragMode::TrimStart if end <= origin.start => low = low.max(end),
-                    DragMode::TrimEnd if item.start >= origin.end => high = high.min(item.start),
-                    _ => {}
-                }
+            let next_start = track_origins
+                .iter()
+                .filter(|origin| origin.start >= end)
+                .map(|origin| origin.start)
+                .min();
+            if let Some(next_start) = next_start {
+                low = low.max(end - next_start);
             }
         }
-        if mode == DragMode::TrimEnd
-            && let Some(asset) = self
-                .session
-                .project()
-                .data()
-                .assets
-                .iter()
-                .find(|asset| Some(asset.id()) == self.item_asset(drag.item))
-            && let Some(duration) = asset.probe().duration
-        {
-            let after = drag
+    }
+    (low, high)
+}
+
+fn trim_bounds(cx: &Context<'_>, drag: &DragState, mode: DragMode) -> (Tick, Tick) {
+    let minimum = cx.frame_ticks();
+    let origin = drag
+        .origins
+        .iter()
+        .find(|origin| origin.item == drag.item)
+        .copied();
+    let Some(origin) = origin else {
+        return (Tick::ZERO, Tick::ZERO);
+    };
+    let mut low = match mode {
+        DragMode::TrimStart => {
+            // Output time that the source before the trim point would play for.
+            let before = drag
                 .speed
-                .output_duration(duration - drag.source_range.start())
+                .output_duration(drag.source_range.start())
                 .unwrap_or(Tick::ZERO);
-            high = high.min(origin.start + after);
+            (origin.start - before).max(Tick::ZERO)
         }
-        if high < low {
-            high = low;
+        DragMode::TrimEnd => origin.start + minimum,
+        DragMode::Move => return (Tick::ZERO, Tick::ZERO),
+    };
+    let mut high = match mode {
+        DragMode::TrimStart => origin.end - minimum,
+        DragMode::TrimEnd => Tick(i64::MAX / 4),
+        DragMode::Move => return (Tick::ZERO, Tick::ZERO),
+    };
+    for track in cx.session.project().data().scene().timeline.iter() {
+        if track.id != origin.track {
+            continue;
         }
-        (low, high)
+        for item in &track.items {
+            if item.id == origin.item {
+                continue;
+            }
+            let Ok(end) = item.end() else {
+                continue;
+            };
+            match mode {
+                DragMode::TrimStart if end <= origin.start => low = low.max(end),
+                DragMode::TrimEnd if item.start >= origin.end => high = high.min(item.start),
+                _ => {}
+            }
+        }
     }
-    pub(in crate::editor) fn item_asset(&self, item: ItemId) -> Option<media::AssetId> {
-        self.session
+    if mode == DragMode::TrimEnd
+        && let Some(asset) = cx
+            .session
             .project()
             .data()
-            .scene()
-            .timeline
+            .assets
             .iter()
-            .flat_map(|track| track.items.iter())
-            .find(|candidate| candidate.id == item)
-            .and_then(|candidate| candidate.source_asset)
+            .find(|asset| Some(asset.id()) == item_asset(cx, drag.item))
+        && let Some(duration) = asset.probe().duration
+    {
+        let after = drag
+            .speed
+            .output_duration(duration - drag.source_range.start())
+            .unwrap_or(Tick::ZERO);
+        high = high.min(origin.start + after);
     }
+    if high < low {
+        high = low;
+    }
+    (low, high)
+}
+
+fn item_asset(cx: &Context<'_>, item: ItemId) -> Option<media::AssetId> {
+    cx.session
+        .project()
+        .data()
+        .scene()
+        .timeline
+        .iter()
+        .flat_map(|track| track.items.iter())
+        .find(|candidate| candidate.id == item)
+        .and_then(|candidate| candidate.source_asset)
 }

@@ -57,9 +57,7 @@ impl Editor {
             .retain(|target| self.selection.contains(&target.item));
     }
     pub(in crate::editor) fn clear_scene_selection(&mut self) {
-        self.scene_selected.clear();
-        self.scene_select = false;
-        self.scene_confirm = false;
+        self.timeline.scenes.clear_selection();
         self.selection.clear();
         self.selection_scopes = SelectionScopes::default();
     }

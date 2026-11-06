@@ -135,20 +135,11 @@ impl Editor {
                     }
                 }
 
-                UiAction::OpenScenes => self.scenes_open = true,
-                UiAction::CloseScenes => {
-                    self.scenes_open = false;
-                    self.scene_confirm = false;
-                    self.scene_rename = None;
-                }
-                UiAction::SelectScenes => {
-                    self.scene_select = !self.scene_select;
-                    self.scene_selected.clear();
-                }
-                UiAction::RequestDeleteScenes => {
-                    self.scene_confirm = !self.scene_selected.is_empty()
-                }
-                UiAction::CancelDeleteScenes => self.scene_confirm = false,
+                UiAction::OpenScenes => self.timeline.scenes.open(),
+                UiAction::CloseScenes => self.timeline.scenes.close(),
+                UiAction::SelectScenes => self.timeline.scenes.toggle_selecting(),
+                UiAction::RequestDeleteScenes => self.timeline.scenes.request_delete(),
+                UiAction::CancelDeleteScenes => self.timeline.scenes.cancel_delete(),
                 UiAction::RenameScene => {
                     let scene =
                         project::SceneId(argument.ok_or(Error::Unsupported("scene identity"))?);
@@ -162,8 +153,7 @@ impl Editor {
                         .name
                         .as_str()
                         .to_owned();
-                    self.scene_rename = Some((scene, name));
-                    self.scene_rename_focus = true;
+                    self.timeline.scenes.begin_rename(scene, name);
                 }
                 UiAction::SceneRow => {
                     let scene =
@@ -175,10 +165,9 @@ impl Editor {
                         .scenes
                         .get(scene)
                         .ok_or(Error::Unsupported("scene not found"))?;
-                    if self.scene_select {
-                        if !target.is_main && !self.scene_selected.remove(&scene) {
-                            self.scene_selected.insert(scene);
-                        }
+                    if self.timeline.scenes.is_selecting() {
+                        let is_main = target.is_main;
+                        self.timeline.scenes.toggle(scene, is_main);
                     } else {
                         self.cancel_interaction();
                         self.session
@@ -300,8 +289,8 @@ impl Editor {
                     )?;
                 }
                 UiAction::Ripple => self.ripple = !self.ripple,
-                UiAction::ZoomIn => self.zoom_by(ZOOM_STEP),
-                UiAction::ZoomOut => self.zoom_by(1.0 / ZOOM_STEP),
+                UiAction::ZoomIn => self.zoom_timeline(ZOOM_STEP),
+                UiAction::ZoomOut => self.zoom_timeline(1.0 / ZOOM_STEP),
                 UiAction::Theme => {
                     let after = !self.preferences.dark;
                     self.dispatch(

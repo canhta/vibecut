@@ -41,7 +41,8 @@ impl Editor {
                 .or_else(|| input.pointer.latest_pos())
         });
         let target = position.and_then(|position| {
-            self.effect_drop_targets
+            self.timeline
+                .item_rects()
                 .iter()
                 .find(|(_, rect)| rect.contains(position))
                 .map(|(item, _)| *item)

@@ -184,11 +184,11 @@ impl Editor {
         let stored = self.session.metadata().view;
         // Other adapters can issue the engine view command between frontend actions.
         if stored != self.last_view {
-            self.pre_anchor_scroll = None;
-            self.zoom = (f64::from(DEFAULT_ZOOM) * stored.zoom)
+            let zoom = (f64::from(DEFAULT_ZOOM) * stored.zoom)
                 .clamp(f64::from(MIN_ZOOM_FLOOR), f64::from(MAX_ZOOM))
                 as f32;
-            self.scroll = (stored.scroll / f64::from(self.zoom)) as f32;
+            self.timeline
+                .restore_view(zoom, (stored.scroll / f64::from(zoom)) as f32);
             self.playback.seek(
                 stored
                     .playhead
@@ -199,8 +199,9 @@ impl Editor {
             self.last_view = stored;
         }
         let view = project::ViewState {
-            zoom: f64::from(self.zoom) / f64::from(DEFAULT_ZOOM),
-            scroll: (f64::from(self.scroll) * f64::from(self.zoom)).clamp(0.0, 1e9),
+            zoom: f64::from(self.timeline.zoom()) / f64::from(DEFAULT_ZOOM),
+            scroll: (f64::from(self.timeline.scroll()) * f64::from(self.timeline.zoom()))
+                .clamp(0.0, 1e9),
             playhead: self.playback.position()?,
         };
         if self.session.metadata().view != view {
@@ -227,15 +228,7 @@ impl Editor {
         )
     }
     pub(in crate::editor) fn frame_ticks(&self) -> Tick {
-        self.session
-            .project()
-            .data()
-            .canvas
-            .fps
-            .frame_duration()
-            .ok()
-            .filter(|frame| *frame > Tick::ZERO)
-            .unwrap_or(Tick(1))
+        crate::editor::frame::frame_ticks(&self.session)
     }
     /// Shared transport and preview surface for dedicated review windows.
     pub fn preview_ui(&mut self, ui: &mut egui::Ui) {

@@ -64,7 +64,7 @@ fn ink(ui: &Ui, selected: bool) -> egui::Color32 {
 
 /// A bare rail slider over `0..=1` inside `rect`: a 2 px rail, filled up to a
 /// 6×12 thumb, no label or field. The caller supplies a stable automation ID.
-pub(crate) fn rail_slider(ui: &mut Ui, id: &str, rect: Rect, value: &mut f32) -> Response {
+pub(crate) fn zoom_rail(ui: &mut Ui, id: &str, rect: Rect, value: &mut f32) -> Response {
     let mut response = ui.interact(rect, ui.make_persistent_id(id), Sense::click_and_drag());
     let half = size::ZOOM_THUMB_WIDTH / 2.0;
     let track = (rect.left() + half)..=(rect.right() - half);

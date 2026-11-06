@@ -1,20 +1,22 @@
 //! Renders the timeline ruler.
 
 use crate::editor::timeline::{
-    Align2, BookmarkView, Editor, FontId, FrameRate, Id, MIN_ZOOM_FLOOR, RULER_LABEL_SPACING,
-    RULER_TICK_SPACING, Rect, Rounding, Tick, TimelineLayout, Vec2, display_time, drop_frame, egui,
-    theme,
+    Action, Align2, BookmarkView, Context, FontId, FrameRate, Id, MIN_ZOOM_FLOOR,
+    RULER_LABEL_SPACING, RULER_TICK_SPACING, Rect, Rounding, State, Tick, TimelineLayout, Vec2,
+    display_time, drop_frame, egui, frame_snap, theme, view::Ink,
 };
 
-impl Editor {
+impl State {
     pub(in crate::editor::timeline) fn paint_ruler(
         &mut self,
+        cx: &Context<'_>,
         ui: &egui::Ui,
         layout: &TimelineLayout,
         bookmarks: &[BookmarkView],
     ) {
+        let ink = Ink::of(cx);
         let painter = ui.painter().with_clip_rect(layout.ruler);
-        let rate = self.session.project().data().canvas.fps;
+        let rate = cx.session.project().data().canvas.fps;
         let config = ruler_config(self.zoom, rate);
         let start = f64::from(self.scroll);
         let end = start + f64::from(layout.ruler.width() / self.zoom);
@@ -40,7 +42,7 @@ impl Editor {
                         egui::pos2(x, layout.ruler.top() + 3.0),
                         egui::pos2(x, layout.ruler.top() + 3.0 + height),
                     ],
-                    egui::Stroke::new(1.0, self.tick_color()),
+                    egui::Stroke::new(1.0, theme::disabled(ink.dark())),
                 );
                 if labelled {
                     painter.text(
@@ -48,7 +50,7 @@ impl Editor {
                         Align2::LEFT_CENTER,
                         ruler_text(seconds, rate, config.label_seconds),
                         FontId::proportional(theme::type_size::CAPTION),
-                        self.secondary(),
+                        ink.secondary(),
                     );
                 }
             }
@@ -65,7 +67,7 @@ impl Editor {
                         Vec2::new(4.0, 5.0),
                     ),
                     1.0,
-                    self.accent(),
+                    ink.accent(),
                 );
                 bookmark_hits.push((
                     bookmark.id,
@@ -90,24 +92,25 @@ impl Editor {
             );
             self.remember(format!("timeline.bookmark.{}", id.0), &response);
             if response.drag_started() && self.drag.is_none() && self.bookmark_drag.is_none() {
-                self.begin_bookmark_drag(id, ui);
+                self.begin_bookmark_drag(cx, id, ui);
             }
         }
         if self.bookmark_drag.is_none()
             && (response.clicked() || response.dragged())
             && let Some(pointer) = response.interact_pointer_pos()
         {
-            let at = self.frame_snap(self.tick_at(pointer.x, layout.ruler.left()));
-            self.seek_to(at);
+            let at = frame_snap(cx, self.tick_at(pointer.x, layout.ruler.left()));
+            self.push(Action::Seek(at));
         }
     }
     pub(in crate::editor::timeline) fn paint_playhead(
         &self,
+        cx: &Context<'_>,
         ui: &egui::Ui,
         layout: &TimelineLayout,
     ) {
-        let at = self.playback.position().unwrap_or(Tick::ZERO);
-        let x = self.x_at(at, layout.body.left());
+        let ink = Ink::of(cx);
+        let x = self.playhead_x(cx, layout.body.left());
         if x < layout.body.left() - 2.0 || x > layout.body.right() + 2.0 {
             return;
         }
@@ -124,7 +127,7 @@ impl Editor {
                 egui::pos2(x, top + height - 1.0),
                 egui::pos2(x, layout.body.bottom()),
             ],
-            egui::Stroke::new(1.0, self.accent()),
+            egui::Stroke::new(1.0, ink.accent()),
         );
         // Shield: rounded top corners, sides taper to a rounded point at the bottom.
         let half = width / 2.0;
@@ -142,12 +145,9 @@ impl Editor {
         ];
         painter.add(egui::Shape::convex_polygon(
             points,
-            self.panel_fill(),
-            egui::Stroke::new(1.0, self.accent()),
+            ink.panel(),
+            egui::Stroke::new(1.0, ink.accent()),
         ));
-    }
-    fn tick_color(&self) -> egui::Color32 {
-        theme::disabled(self.preferences.dark)
     }
 }
 
