@@ -1266,7 +1266,7 @@ fn checked_in_registry_digest_and_command_reference_match_the_registry() {
         "regenerate with cargo run -p engine --example control_catalog"
     );
     assert_eq!(
-        std::fs::read_to_string(root.join("../../docs/engineering/commands.md"))
+        std::fs::read_to_string(root.join("../../docs/product/commands.md"))
             .unwrap()
             .replace("\r\n", "\n"),
         control::reference_markdown().unwrap(),

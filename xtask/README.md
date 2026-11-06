@@ -115,6 +115,64 @@ Windows `ci` links and runs ai's standalone `whisper` and `gipformer` library
 tests before the default-feature workspace suite, exercising native linking and
 runtime loading without relying on another backend's native dependencies.
 
+## FFmpeg
+
+`ffmpeg` resolves and builds latest stable FFmpeg from verified source, logs the
+version and admits only the target matching the running host. Every platform builds
+static zlib from its release archive and enables FFmpeg's PNG codec; the recipe pins
+the published SHA-256 per zlib version, so a newly resolved stable release is
+refused until that pin is reviewed and updated, and a corrupt or substituted archive
+is removed before any install prefix exists.
+
+Linux builds the same verified FFmpeg from source as macOS, with the GPL build and
+libx264, and admits only `linux-x86_64`/`linux-aarch64` on the running host. It needs
+Bash, Make, Perl, pkg-config, Clang/LLVM (`clang`, `clang++`, `llvm-ar`, `llvm-nm`),
+CMake, Ninja, NASM on x86_64, and the app's desktop dependencies: `libasound2-dev`,
+`libxkbcommon-dev`, `libwayland-dev`, `libudev-dev`, `libx11-dev`, `libxcursor-dev`,
+`libxrandr-dev`, `libxi-dev`, `libxinerama-dev`, `libgl1-mesa-dev` and
+`libegl1-mesa-dev`. Managed tools carry an `$ORIGIN/../lib` rpath, and Cargo children
+receive `FFMPEG_DIR`, `PKG_CONFIG_PATH` and `LD_LIBRARY_PATH`.
+
+Windows needs architecture-matched MSYS2 CLANG64 (x64) or CLANGARM64 (arm64), Bash,
+Make, Perl (libvpx configure), CMake, Ninja, pkg-config, NASM and Clang/LLVM; Rust
+uses MSVC. Native xtask caches under `USERPROFILE`, resolves Bash/Make/cygpath to
+absolute MSYS2 `usr/bin` paths on `PATH` and logs them; incomplete installations are
+refused rather than using Windows/WSL/Git Bash. Static Opus/libvpx builds request
+static pkg-config metadata, including private pthread links.
+
+Windows excludes FFmpeg's out-of-contract `gfxcapture` screen filter through
+configuration: case-insensitive builds resolve libc++'s `<version>` to the archive's
+`VERSION`. For workspace checks, xtask merges general, underscore-target and
+hyphen-target `BINDGEN_EXTRA_CLANG_ARGS` in that order, then appends AMX include
+guards and an explicit native MSVC Clang target in the preferred hyphen-target
+variable. The target applies to FFmpeg and Whisper: native bindgen otherwise trusts
+MSYS2 libclang's GNU default, whose unsigned enums disagree with whisper-rs's MSVC
+representation. Workspace Cargo children receive MSVC/SDK header paths in `INCLUDE`,
+discovered through `cc`'s Windows registry support or inherited from an
+already-configured developer shell. Forward only `INCLUDE` from that compiler
+environment to preserve the FFmpeg DLL search path; missing MSVC tools or SDK paths
+fail with setup guidance. Exclude dependent AMX headers together until upstream
+bindings handle vector layouts; this avoids invalid packed/aligned tile bindings
+without changing native FFmpeg or public layouts.
+
+Windows workspace Cargo children also receive the managed static `/MD` Sherpa
+library directory through `SHERPA_ONNX_LIB_DIR`, preserving Rust's default dynamic
+MSVC CRT. Native AI archive selection, cache integrity and explicit overrides belong
+to [ai's native build contract](../crates/ai/README.md#local-gipformer).
+
+On Windows, the FFmpeg environment owner projects only DLLs from the verified native
+prefix into `runtime-dlls` using atomic hard links, and prepends that directory to
+child `PATH`. It excludes the prefix's `bin` from inherited `PATH` so managed
+command-line programs cannot shadow the external test oracles. Existing native
+caches use the same projection without rebuilding libraries; existing runtime links
+must match the native DLL hashes.
+
+External `ffmpeg` and `ffprobe` remain separately installed tools for oracle
+admission ([verification](../docs/engineering/verification.md#checks)). Distribution
+obligations live in [open-source policy](../docs/engineering/open-source.md#ffmpeg-distribution);
+the [workflows summary](../docs/engineering/workflows.md#ffmpeg-provisioning) routes
+here.
+
 ## Tickets and limits
 
 The ticket commands and name policy find the main checkout through Git's absolute

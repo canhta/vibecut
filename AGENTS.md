@@ -8,6 +8,10 @@ Read the owner before changing its area; keep each fact in one owner and link el
 |---|---|
 | judge scope, priority or acceptance | [requirements](docs/product/requirements.md) |
 | design, build or review UI | [UI design](docs/product/ui.md); load the `frontend-design` and `impeccable` skills first. Measured reference values in ui.md win over any skill advice (we match the reference, not a new identity); use the skills for type scale, spacing rhythm, states and anti-generic checks. With `impeccable` use only `critique` and `audit` on screenshots; never run `init`, `document` or its installer in this repo (PRODUCT.md and DESIGN.md would duplicate requirements.md and ui.md) |
+| change a visual token | [UI tokens](docs/product/tokens.md) |
+| drive or change agent control | [MCP control](docs/product/mcp.md) and [CLI](docs/product/cli.md) |
+| change a shortcut | [Keyboard](docs/product/keyboard.md) |
+| change a command | [command reference](docs/product/commands.md) |
 | add a crate, dependency edge or contract | [architecture](docs/engineering/architecture.md) |
 | add or move a module, split a file, decide where code goes | [structure](docs/engineering/structure.md) |
 | write Rust | [standards](docs/engineering/standards.md), then the README of each crate you touch |

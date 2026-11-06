@@ -940,7 +940,7 @@ a session that cannot be saved; a shared per-item style table would lift that.
 captions owner and returns the registered command plus cue/style/skipped counts
 and line-numbered warnings for headless adapters. It returns `Limit` for an
 oversized file and `Unsupported` when no cue survives. `captions.import` works
-inside a batch. `docs/engineering/commands.md`, `catalog.digest` and
+inside a batch. `docs/product/commands.md`, `catalog.digest` and
 `cargo run -p engine --example control_catalog` remain the generated source of
 truth.
 
@@ -1657,7 +1657,7 @@ compile only generated local schemas with network/file resolution disabled.
 API version 1 is independent of the project file schema. The BLAKE3 catalog digest
 covers schemas, static effects/examples and limits, excluding enabled/session state.
 Effectful calls require the exact digest and version; catalog reads need no digest.
-[Generated commands](../../docs/engineering/commands.md) and `catalog.digest` regenerate
+[Generated commands](../../docs/product/commands.md) and `catalog.digest` regenerate
 with `cargo run -p engine --example control_catalog`; the conformance test checks
 both against current registry output in CI.
 
