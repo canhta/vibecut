@@ -75,6 +75,14 @@ impl Editor {
         let at = self.playback.position()?;
         let duration = self.session.project().duration();
         let playing = self.playback.playing();
+        if id == "timeline.delete"
+            && self.selection_scopes.active(&self.selection)
+                == crate::selection::SelectionScope::Keyframes
+        {
+            let keyframes = self.selection_scopes.keyframes.clone();
+            self.delete_keyframes(&keyframes);
+            return Ok(());
+        }
         match spec.target {
             ActionTarget::Engine(route) => self.execute_engine_action(route)?,
             ActionTarget::Pending { ticket, .. } => return Err(Error::NotAvailable(ticket)),

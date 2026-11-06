@@ -9,7 +9,8 @@ mod commands;
 pub use command_facts::{Availability, GrantClass, Lifecycle};
 pub use commands::{
     Command, CommandKind, CommandSpec, CreatedId, Effect, Example, Fixture, ItemParamPatch,
-    ItemPlacement, Move, NewItem, Outcome, Placement, TrackPlacement, lifecycle, registry,
+    ItemPlacement, KeyframeRef, Move, NewItem, Outcome, Placement, TrackPlacement, lifecycle,
+    registry,
 };
 mod edit;
 mod transition_rules;

@@ -101,6 +101,8 @@ impl Editor {
                     && match route {
                         EngineAction::Delete | EngineAction::RippleDelete => {
                             !self.selection.is_empty()
+                                || self.selection_scopes.active(&self.selection)
+                                    == crate::selection::SelectionScope::Keyframes
                         }
                         EngineAction::DeleteScenes => !self.timeline.scenes.selected().is_empty(),
                         EngineAction::InsertMedia => {

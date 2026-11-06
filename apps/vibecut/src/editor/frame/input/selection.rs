@@ -52,9 +52,11 @@ impl Editor {
         self.selection_scopes
             .mask_points
             .retain(|target| self.selection.contains(&target.item));
+        let selected = self.selection.clone();
+        let session = &self.session;
         self.selection_scopes
             .keyframes
-            .retain(|target| self.selection.contains(&target.item));
+            .retain(|target| selected.contains(&target.item) && keyframe_exists(session, target));
     }
     pub(in crate::editor) fn clear_scene_selection(&mut self) {
         self.timeline.scenes.clear_selection();
@@ -82,4 +84,41 @@ impl Editor {
         });
         items.into_iter().map(|(_, id)| id).collect()
     }
+}
+
+fn keyframe_exists(
+    session: &engine::Session,
+    target: &crate::selection::KeyframeSelection,
+) -> bool {
+    let Some(param) = session
+        .project()
+        .data()
+        .scene()
+        .timeline
+        .iter()
+        .flat_map(|track| track.items.iter())
+        .find(|item| item.id == target.item)
+        .and_then(|item| item.animations.get(&target.path))
+    else {
+        return false;
+    };
+    let channel = match (param, target.component) {
+        (project::Param::Value(channel), None) => Some(channel),
+        (project::Param::Color(channels), Some(component)) => {
+            let index = match component {
+                project::ColorComponent::R => 0,
+                project::ColorComponent::G => 1,
+                project::ColorComponent::B => 2,
+                project::ColorComponent::A => 3,
+            };
+            channels.get(index)
+        }
+        _ => None,
+    };
+    channel.is_some_and(|channel| {
+        channel
+            .keys()
+            .binary_search_by_key(&target.time, |key| key.time)
+            .is_ok()
+    })
 }

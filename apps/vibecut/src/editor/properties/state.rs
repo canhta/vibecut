@@ -43,6 +43,20 @@ pub(in crate::editor) enum Action {
     },
     SetBackground(project::Color),
     ResetTransform(ItemId),
+    /// Add a key at the playhead, or remove the one already there.
+    ToggleKeyframe {
+        item: ItemId,
+        field: &'static str,
+        time: time::Tick,
+        value: f64,
+    },
+    /// Upsert a key at the playhead while a channel is already animated.
+    SetKeyframeAt {
+        item: ItemId,
+        field: &'static str,
+        time: time::Tick,
+        value: f64,
+    },
     SetSection {
         key: &'static str,
         open: bool,

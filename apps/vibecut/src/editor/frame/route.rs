@@ -18,6 +18,7 @@ impl Editor {
             playback: &self.playback,
             keybindings: &self.preferences.keybindings,
             scope: self.selection_scopes.active(&self.selection),
+            keyframes: &self.selection_scopes.keyframes,
             thumbnails: frame::Thumbnails {
                 images: &self.thumbnails,
                 textures: &self.thumbnail_textures,
@@ -92,6 +93,17 @@ impl Editor {
                 Action::Select { item, modifiers } => self.select_item(item, modifiers),
                 Action::Marquee(items) => self.selection = items,
                 Action::SettleSelection => self.selection_changed(),
+                Action::SelectKeyframe {
+                    keyframe,
+                    modifiers,
+                } => self.select_keyframe(keyframe, modifiers),
+                Action::MarqueeKeyframes(keyframes) => {
+                    self.selection_scopes.keyframes = keyframes;
+                }
+                Action::SettleKeyframes => {}
+                Action::ClearKeyframes => self.selection_scopes.keyframes.clear(),
+                Action::SetLaneOpen { item, open } => self.set_lane_open(item, open),
+                Action::DeleteKeyframes(keyframes) => self.delete_keyframes(&keyframes),
                 Action::ClearSelection => {
                     self.selection.clear();
                     self.selection_changed();
@@ -109,7 +121,77 @@ impl Editor {
             }
         }
     }
-    /// Open the preview gesture a pointer drag edits inside.
+    /// A keyframe click scopes the selection without dropping the item context.
+    fn select_keyframe(
+        &mut self,
+        keyframe: crate::selection::KeyframeSelection,
+        modifiers: egui::Modifiers,
+    ) {
+        let toggle = modifiers.command || modifiers.ctrl || modifiers.shift;
+        if toggle {
+            if !self.selection_scopes.keyframes.remove(&keyframe) {
+                self.selection_scopes.keyframes.insert(keyframe.clone());
+            }
+        } else {
+            self.selection_scopes.keyframes.clear();
+            self.selection_scopes.keyframes.insert(keyframe.clone());
+        }
+        self.selection.clear();
+        self.selection.insert(keyframe.item);
+        self.properties.clear_drafts();
+        if let Err(error) = self.session.set_selection(self.selection.clone()) {
+            self.error = Some(error.to_string());
+        }
+    }
+    /// Persist one item's expanded lane choice through the typed preference command.
+    fn set_lane_open(&mut self, item: ItemId, open: bool) {
+        self.timeline.set_lane(item, open);
+        let value = self
+            .timeline
+            .expanded_lanes()
+            .into_iter()
+            .map(|id| id.0)
+            .collect::<Vec<_>>();
+        if let Err(error) = self.dispatch(
+            crate::editor::PREFERENCE_COMMAND,
+            serde_json::json!({"key":"timeline_lanes","value":value}),
+        ) {
+            self.error = Some(error.to_string());
+        }
+    }
+    /// Delete every selected keyframe as one undo step.
+    pub(in crate::editor) fn delete_keyframes(
+        &mut self,
+        keyframes: &std::collections::BTreeSet<crate::selection::KeyframeSelection>,
+    ) {
+        if keyframes.is_empty() {
+            return;
+        }
+        let keys: Vec<engine::KeyframeRef> = keyframes
+            .iter()
+            .map(|key| engine::KeyframeRef {
+                item: key.item,
+                path: key.path.clone(),
+                component: key.component,
+                time: key.time,
+            })
+            .collect();
+        let result = self.session.transaction(|session| {
+            session.execute(
+                "keyframes.delete_selection",
+                serde_json::json!({"keys": keys}),
+            )?;
+            Ok(())
+        });
+        match result {
+            Ok(()) => {
+                self.selection_scopes.keyframes.clear();
+                self.sync_preview();
+            }
+            Err(error) => self.error = Some(error.to_string()),
+        }
+    }
+
     fn begin_drag_gesture(&mut self, select: Option<ItemId>) {
         if let Some(item) = select {
             self.select_single(item);
@@ -220,6 +302,19 @@ impl Editor {
             if changed {
                 self.sync_preview();
             }
+            return;
+        }
+        if self.timeline.cancel_keyframe_drag() {
+            self.discard_gesture();
+            self.prune_selection();
+            return;
+        }
+        if self.timeline.cancel_volume_drag() {
+            self.discard_gesture();
+            return;
+        }
+        if let Some(before) = self.timeline.cancel_keyframe_marquee() {
+            self.selection_scopes.keyframes = before;
             return;
         }
         if self.timeline.cancel_track_edit() {

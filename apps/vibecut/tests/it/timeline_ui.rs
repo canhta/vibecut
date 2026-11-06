@@ -558,6 +558,53 @@ fn add_relative_keyframe(editor: &mut Editor, item: ItemId, time: Tick) {
         .unwrap();
 }
 
+fn add_key(editor: &mut Editor, item: ItemId, path: &str, time: Tick, value: f64) {
+    let path = project::AnimationPath::new(path).unwrap();
+    if editor
+        .session
+        .project()
+        .data()
+        .scene()
+        .timeline
+        .iter()
+        .flat_map(|track| track.items.iter())
+        .find(|candidate| candidate.id == item)
+        .is_none_or(|candidate| candidate.animations.get(&path).is_none())
+    {
+        editor
+            .session
+            .apply(Command::SetAnimatedParam {
+                item,
+                path: path.clone(),
+                param: project::Param::new(project::ParamValue::Scalar(value)).unwrap(),
+            })
+            .unwrap();
+    }
+    editor
+        .session
+        .apply(Command::AddKeyframe {
+            item,
+            path,
+            component: None,
+            key: project::Keyframe::new(time, project::ParamValue::Scalar(value)),
+        })
+        .unwrap();
+}
+
+fn audio_item(editor: &Editor) -> ItemId {
+    editor
+        .session
+        .project()
+        .data()
+        .scene()
+        .timeline
+        .iter()
+        .find(|track| track.kind == TrackKind::Audio)
+        .unwrap()
+        .items[0]
+        .id
+}
+
 #[test]
 fn snapping_preference_toggles_through_app_history_and_persists() {
     let fixture = fixture();
@@ -2461,4 +2508,297 @@ fn header_lock_control_toggles_the_track_lock() {
         .click();
     harness.run_steps(3);
     assert!(!locked(harness.state()), "second press unlocks it");
+}
+
+#[test]
+fn property_diamond_toggles_a_keyframe_at_the_playhead() {
+    let fixture = fixture();
+    let id = fixture.video_a;
+    let mut harness = harness(fixture.editor);
+    harness.run_steps(3);
+    harness
+        .get(
+            By::new()
+                .predicate(|n| n.author_id() == Some(format!("timeline.item.{}", id.0).as_str())),
+        )
+        .click();
+    harness.run_steps(2);
+    harness
+        .get(By::new().predicate(|n| n.author_id() == Some("inspector.group.basic")))
+        .click();
+    harness.run_steps(2);
+    harness
+        .get(By::new().predicate(|n| n.author_id() == Some("inspector.tab.blending")))
+        .click();
+    harness.run_steps(2);
+    harness
+        .state_mut()
+        .dispatch("playback.seek", serde_json::json!({"time": 2 * SECOND}))
+        .unwrap();
+    harness.run_steps(2);
+    let opacity = project::AnimationPath::new("opacity").unwrap();
+    let key_count = |harness: &Harness<'_, Editor>| {
+        item(harness.state(), id)
+            .animations
+            .get(&opacity)
+            .map_or(0, |param| match param {
+                project::Param::Value(channel) => channel.keys().len(),
+                project::Param::Color(_) => 0,
+            })
+    };
+    let diamond = widget(&harness, "inspector.keyframe.opacity");
+    click_at(&mut harness, diamond.center());
+    assert_eq!(key_count(&harness), 1);
+    // Editing the animated field writes a key at the playhead instead of wiping curves.
+    harness
+        .get(By::new().predicate(|n| n.author_id() == Some("inspector.opacity")))
+        .click();
+    harness.run_steps(1);
+    harness.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::A);
+    harness.event(egui::Event::Text("50".into()));
+    harness.key_press(egui::Key::Enter);
+    harness.run_steps(3);
+    assert_eq!(key_count(&harness), 1);
+    assert_eq!(
+        item(harness.state(), id)
+            .animations
+            .get(&opacity)
+            .unwrap()
+            .channel(None)
+            .unwrap()
+            .keys()[0]
+            .value,
+        project::ParamValue::Scalar(0.5)
+    );
+    assert_eq!(
+        harness
+            .state()
+            .session
+            .project()
+            .data()
+            .scene()
+            .timeline
+            .iter()
+            .flat_map(|track| track.items.iter())
+            .find(|candidate| candidate.id == id)
+            .unwrap()
+            .animations
+            .get(&opacity)
+            .unwrap()
+            .channel(None)
+            .unwrap()
+            .keys()[0]
+            .time,
+        Tick(2 * SECOND)
+    );
+    let diamond = widget(&harness, "inspector.keyframe.opacity");
+    click_at(&mut harness, diamond.center());
+    assert_eq!(key_count(&harness), 0, "a second press removes the key");
+}
+
+#[test]
+fn expanded_lane_shows_diamonds_and_drag_retimes_one_undo_step() {
+    let fixture = fixture();
+    let id = fixture.video_a;
+    let mut editor = fixture.editor;
+    add_key(&mut editor, id, "opacity", Tick(2 * SECOND), 0.4);
+    add_key(&mut editor, id, "opacity", Tick(4 * SECOND), 0.8);
+    let mut harness = harness(editor);
+    harness.run_steps(3);
+    let lanes = widget(&harness, &format!("timeline.item.{}.lanes", id.0));
+    click_at(&mut harness, lanes.center());
+    assert_eq!(harness.state().inspect().unwrap().expanded_lanes, vec![id]);
+    let dir = tempfile::tempdir().unwrap();
+    let store = vibecut::catalog::PreferenceStore::new(dir.path().join("preferences.json"));
+    store.save(&harness.state().preferences).unwrap();
+    assert!(
+        store.load().unwrap().timeline_lanes.contains(&id.0),
+        "expanded lanes round-trip through the preference store"
+    );
+    let key = format!("timeline.keyframe.{}.opacity.none.{}", id.0, 2 * SECOND);
+    let diamond = widget(&harness, &key);
+    let history = harness.state().session.history_len().0;
+    let zoom = harness.state().inspect().unwrap().zoom;
+    drag(
+        &mut harness,
+        diamond.center(),
+        egui::pos2(diamond.center().x + zoom, diamond.center().y),
+    );
+    let channel = item(harness.state(), id)
+        .animations
+        .get(&project::AnimationPath::new("opacity").unwrap())
+        .unwrap()
+        .channel(None)
+        .unwrap();
+    assert_eq!(channel.keys()[0].time, Tick(3 * SECOND));
+    assert_eq!(harness.state().session.history_len().0, history + 1);
+    harness.state_mut().session.undo().unwrap();
+    harness.run_steps(2);
+    let channel = item(harness.state(), id)
+        .animations
+        .get(&project::AnimationPath::new("opacity").unwrap())
+        .unwrap()
+        .channel(None)
+        .unwrap();
+    assert_eq!(channel.keys()[0].time, Tick(2 * SECOND));
+
+    // A keyframe drag snaps to the playhead like a clip edge does.
+    harness
+        .state_mut()
+        .dispatch("playback.seek", serde_json::json!({"time": 3 * SECOND}))
+        .unwrap();
+    harness.run_steps(2);
+    let key = widget(
+        &harness,
+        &format!("timeline.keyframe.{}.opacity.none.{}", id.0, 2 * SECOND),
+    );
+    drag(
+        &mut harness,
+        key.center(),
+        egui::pos2(key.center().x + zoom * 1.1, key.center().y),
+    );
+    let channel = item(harness.state(), id)
+        .animations
+        .get(&project::AnimationPath::new("opacity").unwrap())
+        .unwrap()
+        .channel(None)
+        .unwrap();
+    assert_eq!(channel.keys()[0].time, Tick(3 * SECOND), "playhead snap");
+}
+
+#[test]
+fn lane_marquee_selects_keys_and_delete_removes_them_atomically() {
+    let fixture = fixture();
+    let id = fixture.video_a;
+    let mut editor = fixture.editor;
+    add_key(&mut editor, id, "opacity", Tick(2 * SECOND), 0.4);
+    add_key(&mut editor, id, "opacity", Tick(4 * SECOND), 0.8);
+    let mut harness = harness(editor);
+    harness.run_steps(3);
+    let lanes = widget(&harness, &format!("timeline.item.{}.lanes", id.0));
+    click_at(&mut harness, lanes.center());
+    let first = widget(
+        &harness,
+        &format!("timeline.keyframe.{}.opacity.none.{}", id.0, 2 * SECOND),
+    );
+    let second = widget(
+        &harness,
+        &format!("timeline.keyframe.{}.opacity.none.{}", id.0, 4 * SECOND),
+    );
+    drag(
+        &mut harness,
+        egui::pos2(first.left() - 12.0, first.center().y),
+        egui::pos2(second.right() + 12.0, second.center().y),
+    );
+    assert_eq!(
+        harness.state().inspect().unwrap().selection_scope,
+        vibecut::selection::SelectionScope::Keyframes
+    );
+    let history = harness.state().session.history_len().0;
+    harness.key_press(egui::Key::Delete);
+    harness.run_steps(3);
+    let channel = item(harness.state(), id)
+        .animations
+        .get(&project::AnimationPath::new("opacity").unwrap())
+        .unwrap()
+        .channel(None)
+        .unwrap();
+    assert!(channel.keys().is_empty());
+    assert_eq!(harness.state().session.history_len().0, history + 1);
+    harness.state_mut().session.undo().unwrap();
+    harness.run_steps(2);
+    let channel = item(harness.state(), id)
+        .animations
+        .get(&project::AnimationPath::new("opacity").unwrap())
+        .unwrap()
+        .channel(None)
+        .unwrap();
+    assert_eq!(channel.keys().len(), 2);
+}
+
+#[test]
+fn volume_line_drag_commits_a_tenth_db_step_and_keys_survive_reload() {
+    let fixture = fixture();
+    let audio = audio_item(&fixture.editor);
+    let mut harness = harness(fixture.editor);
+    harness.run_steps(3);
+    let line = widget(&harness, &format!("timeline.volume.{}", audio.0));
+    let history = harness.state().session.history_len().0;
+    drag(
+        &mut harness,
+        line.center(),
+        egui::pos2(line.center().x, line.center().y - line.height() * 0.2),
+    );
+    let ItemParams::Audio(params) = &item(harness.state(), audio).content else {
+        panic!("audio")
+    };
+    assert!(
+        (params.volume * 10.0 - (params.volume * 10.0).round()).abs() < 1e-3,
+        "drag commits a 0.1 dB step, got {}",
+        params.volume
+    );
+    assert!(params.volume > 0.0);
+    assert_eq!(harness.state().session.history_len().0, history + 1);
+    let volume = params.volume;
+    add_key(
+        harness.state_mut(),
+        audio,
+        "volume",
+        Tick(3 * SECOND),
+        f64::from(volume),
+    );
+    let encoded = project::encode(harness.state().session.project(), false).unwrap();
+    let decoded = project::decode(&encoded).unwrap();
+    let channel = decoded
+        .project
+        .data()
+        .scene()
+        .timeline
+        .iter()
+        .flat_map(|track| track.items.iter())
+        .find(|candidate| candidate.id == audio)
+        .unwrap()
+        .animations
+        .get(&project::AnimationPath::new("volume").unwrap())
+        .unwrap()
+        .channel(None)
+        .unwrap();
+    assert_eq!(channel.keys().len(), 1);
+    assert_eq!(channel.keys()[0].time, Tick(3 * SECOND));
+}
+
+#[test]
+fn keyframe_lanes_and_volume_line_render_the_audit_screenshot() {
+    let fixture = fixture();
+    let id = fixture.video_a;
+    let audio = audio_item(&fixture.editor);
+    let mut editor = fixture.editor;
+    add_key(&mut editor, id, "opacity", Tick(2 * SECOND), 0.35);
+    add_key(&mut editor, id, "opacity", Tick(4 * SECOND), 0.9);
+    add_key(&mut editor, audio, "volume", Tick(2 * SECOND), 0.0);
+    add_key(&mut editor, audio, "volume", Tick(7 * SECOND), -12.0);
+    let mut harness = harness(editor);
+    harness.run_steps(3);
+    let lanes = widget(&harness, &format!("timeline.item.{}.lanes", id.0));
+    click_at(&mut harness, lanes.center());
+    let audio_lanes = widget(&harness, &format!("timeline.item.{}.lanes", audio.0));
+    click_at(&mut harness, audio_lanes.center());
+    harness.run_steps(2);
+    assert!(
+        harness
+            .state()
+            .inspect()
+            .unwrap()
+            .expanded_lanes
+            .contains(&audio),
+        "audio lanes open"
+    );
+    let _ = widget(&harness, &format!("timeline.lane.{}.volume", audio.0));
+    let image = harness.render().unwrap();
+    let target = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../target");
+    std::fs::create_dir_all(&target).unwrap();
+    let path = target.join("p1-39-keyframes.png");
+    image.save(&path).unwrap();
+    eprintln!("keyframe screenshot: {}", path.display());
+    assert!(path.is_file());
 }

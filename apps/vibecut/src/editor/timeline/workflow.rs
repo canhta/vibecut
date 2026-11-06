@@ -3,6 +3,7 @@ mod interaction;
 mod item_drag;
 mod snapping;
 mod viewport;
+mod volume;
 
 pub(super) use snapping::frame_snap;
 pub(super) use viewport::{

@@ -1,7 +1,7 @@
 //! Renders numeric property rows: label left, controls right.
 use super::Panel;
 use crate::editor::properties::{
-    Error, ItemId, Rect, ScrubSpec, ScrubTarget, Text, Vec2, egui, read, theme,
+    Action, Error, ItemId, Rect, ScrubSpec, ScrubTarget, Text, Vec2, egui, read, theme,
 };
 use crate::kit;
 
@@ -71,10 +71,54 @@ struct Layout {
 impl Panel<'_, '_> {
     /// Writes one field; with uniform scale on, Scale X also writes Scale Y.
     fn write_field(&mut self, item: ItemId, spec: ScrubSpec, value: &str) {
+        if let Some(time) = self.animated_time(item, spec.field) {
+            // `write_field` receives `spec.format` model units, not display percent.
+            let Ok(parsed) = value.trim().parse::<f64>() else {
+                self.fail(Error::Invalid("scrub value"));
+                return;
+            };
+            let value = spec.quantize(parsed);
+            self.actions.push(Action::SetKeyframeAt {
+                item,
+                field: spec.field,
+                time,
+                value,
+            });
+            if self.state.uniform_scale && spec.field == "transform.scaleX" {
+                self.actions.push(Action::SetKeyframeAt {
+                    item,
+                    field: "transform.scaleY",
+                    time,
+                    value,
+                });
+            }
+            return;
+        }
         self.set_item_field(item, spec.field, value);
         if self.state.uniform_scale && spec.field == "transform.scaleX" {
             self.set_item_field(item, "transform.scaleY", value);
         }
+    }
+
+    /// The playhead's item-relative time when this field already has keys and
+    /// the playhead sits inside the item; an edit must then upsert a key.
+    fn animated_time(&self, item: ItemId, field: &str) -> Option<time::Tick> {
+        if !matches!(
+            field,
+            "opacity"
+                | "audio_gain"
+                | "transform.positionX"
+                | "transform.positionY"
+                | "transform.scaleX"
+                | "transform.scaleY"
+                | "transform.rotate"
+        ) || !read::channel_has_keys(self.cx.session.project(), item, field)
+        {
+            return None;
+        }
+        let (start, end) = read::range_of(self.cx.session.project(), item)?;
+        let at = self.cx.playhead;
+        (start <= at && at <= end).then(|| at.saturating_sub(start))
     }
 
     fn item_value(&self, item: ItemId, field: &str) -> Option<f64> {
@@ -159,6 +203,7 @@ impl Panel<'_, '_> {
             kit::rail_slider(&mut rail_ui, &id, current, spec.min..=max, rail_width);
         self.remember(id, &response);
         self.drive_scrub(item, spec, current, &response, value);
+        self.keyframe_diamonds(ui, row, item, &[spec]);
     }
 
     /// Rows with one or two fields sharing a label: Position (X, Y), Rotate, Text size.
@@ -229,6 +274,8 @@ impl Panel<'_, '_> {
                 },
             );
         }
+        let specs: Vec<ScrubSpec> = fields.iter().map(|(spec, _)| *spec).collect();
+        self.keyframe_diamonds(ui, row, item, &specs);
     }
 
     pub(super) fn start_scrub(&mut self, item: ItemId, spec: ScrubSpec, value: f64) {

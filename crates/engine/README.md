@@ -294,11 +294,16 @@ returned. Commands perform no IO or retries; processing lifecycle is described b
 
 Project owns the [parameter model and evaluator](../project/README.md#animated-parameters).
 Engine adds the registered `keyframes.set_param`, `keyframes.add`,
-`keyframes.remove`, `keyframes.retime`, `keyframes.set_handle` and
-`keyframes.scale_time` commands. The registry owns their exact required fields and
-wire types. `set_param` installs/replaces a validated static/animated override;
-add/remove/move/handle edits select its path and an optional RGBA component.
-For scalar/discrete params the component is null; RGBA requires r/g/b/a.
+`keyframes.remove`, `keyframes.retime`, `keyframes.set_handle`,
+`keyframes.scale_time`, `keyframes.toggle_at`, `keyframes.delete_selection` and
+`keyframes.set_extrapolation` commands. The registry owns their exact required
+fields and wire types. `set_param` installs/replaces a validated static/animated
+override; add/remove/move/handle edits select its path and an optional RGBA
+component. For scalar/discrete params the component is null; RGBA requires r/g/b/a.
+`toggle_at` adds the key at an exact time with the caller's evaluated value or
+removes the key already there; `delete_selection` removes a nonempty list of
+addressed keys atomically; `set_extrapolation` changes the before/after hold or
+linear policy without changing keys or the base value.
 `retime` moves one key between exact local ticks and refuses an occupied time;
 `scale_time` stretches all item channels/handle times by a positive rational,
 without changing media playback or item duration. Missing paths/keys, invalid

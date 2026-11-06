@@ -16,6 +16,59 @@ impl Editor {
         self.sync_preview();
         Ok(())
     }
+    /// Toggle the diamond on one animatable field at the playhead.
+    pub fn toggle_keyframe(
+        &mut self,
+        item: ItemId,
+        field: &str,
+        time: time::Tick,
+        value: f64,
+    ) -> Result<()> {
+        self.session.set_selection(self.selection.clone())?;
+        let path = if field == "audio_gain" {
+            "volume"
+        } else {
+            field
+        };
+        self.session.execute(
+            "keyframes.toggle_at",
+            serde_json::json!({
+                "item": item,
+                "path": path,
+                "component": null,
+                "time": time,
+                "value": {"kind": "scalar", "value": value},
+            }),
+        )?;
+        self.sync_preview();
+        Ok(())
+    }
+
+    /// Upsert a key while the field already has a curve; the base stays untouched.
+    pub fn set_keyframe_at(
+        &mut self,
+        item: ItemId,
+        field: &str,
+        time: time::Tick,
+        value: f64,
+    ) -> Result<()> {
+        self.session.set_selection(self.selection.clone())?;
+        let path = if field == "audio_gain" {
+            "volume"
+        } else {
+            field
+        };
+        let path = project::AnimationPath::new(path)?;
+        self.session.apply(engine::Command::AddKeyframe {
+            item,
+            path,
+            component: None,
+            key: project::Keyframe::new(time, project::ParamValue::Scalar(value)),
+        })?;
+        self.sync_preview();
+        Ok(())
+    }
+
     /// One element's committed field edit, through the singular registered command.
     pub fn set_item_field(&mut self, item: ItemId, field: &str, value: &str) -> Result<()> {
         if field == "speed" {

@@ -21,9 +21,12 @@ SHA-256 of each embedded file:
 | `arrows-horizontal.svg` | `964d441543e0dc71ad40b234424fae92be4dea3e0eff7237dad53c50c88143b4` |
 | `arrows-in-line-horizontal.svg` | `73d0df2946ad58d810e81f1b92a731c21674659135c4d40bb5ac29569a54d924` |
 | `arrows-left-right.svg` | `84c43373542a3ac2e7de3d22ddef0c8eb61ef6ba7a270c6aca5aa493dd40f8b4` |
+| `caret-down.svg` | `9257147c4510788a10c3065f1d0f6c3c68da5bb265e03892b960f45d3d50d903` |
+| `caret-right.svg` | `da96a0362670cf8fc16b2e94ba4db4862852469570b586c428e897781ecc10a5` |
 | `circle-half.svg` | `4e5376acc240190bf951be566c4649b69936c928f679eba6793412295bb90736` |
 | `copy.svg` | `5a892fc6a72866e60c67db2088a87653cf44b57b1a5d183b36e950cdc5dd66b3` |
 | `corners-out.svg` | `fd79277404b3662b50b737127fb6bf6f63ae93c9b60d9f2aca9122a950ec08c8` |
+| `diamond.svg` | `c97299f11d98956233202f1b182b5d94de27b122193ad9d4201288472b02b1cd` |
 | `dots-three.svg` | `ca4e748007101155641ec3041cd129bb03a8030d0eed16e313b9dd75e6beac77` |
 | `export.svg` | `b3323cae86c93d7a4d344e921dc1500f97a73c66e5d9f0e6c46aab64e4a6f616` |
 | `eye-slash.svg` | `070b0296a7df89ebf4cec12436e323b5531d458aa9aed3608924085889e1fd17` |

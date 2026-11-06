@@ -154,6 +154,132 @@ fn registered_headless_edits_undo_redo_and_one_step_per_gesture() {
     assert_ne!(s.project(), &before);
 }
 #[test]
+fn toggle_at_adds_then_removes_one_key_and_keeps_the_base() {
+    let mut s = session();
+    let before = item(&s, ItemId(2)).animations.get(&path()).cloned();
+    let time = frame(40);
+    s.execute(
+        "keyframes.toggle_at",
+        json!({"item":2,"path":"opacity","component":null,"time":time,"value":{"kind":"scalar","value":0.25}}),
+    )
+    .unwrap();
+    let channel = item(&s, ItemId(2))
+        .animations
+        .get(&path())
+        .unwrap()
+        .channel(None)
+        .unwrap();
+    assert_eq!(channel.keys().len(), 3);
+    assert_eq!(
+        channel
+            .keys()
+            .iter()
+            .find(|key| key.time == time)
+            .map(|key| &key.value),
+        Some(&ParamValue::Scalar(0.25))
+    );
+    s.execute(
+        "keyframes.toggle_at",
+        json!({"item":2,"path":"opacity","component":null,"time":time,"value":{"kind":"scalar","value":0.9}}),
+    )
+    .unwrap();
+    let channel = item(&s, ItemId(2))
+        .animations
+        .get(&path())
+        .unwrap()
+        .channel(None)
+        .unwrap();
+    assert_eq!(channel.keys().len(), 2);
+    assert_eq!(item(&s, ItemId(2)).animations.get(&path()), before.as_ref());
+}
+
+#[test]
+fn delete_selection_removes_every_listed_key_atomically() {
+    let mut s = session();
+    let history = s.history_len().0;
+    let keys = vec![
+        engine::KeyframeRef {
+            item: ItemId(2),
+            path: path(),
+            component: None,
+            time: frame(0),
+        },
+        engine::KeyframeRef {
+            item: ItemId(2),
+            path: path(),
+            component: None,
+            time: frame(120),
+        },
+    ];
+    s.execute("keyframes.delete_selection", json!({"keys":keys}))
+        .unwrap();
+    assert!(
+        item(&s, ItemId(2))
+            .animations
+            .get(&path())
+            .unwrap()
+            .channel(None)
+            .unwrap()
+            .keys()
+            .is_empty()
+    );
+    assert_eq!(s.history_len().0, history + 1);
+    let stale = json!({"keys":[{"item":2,"path":"opacity","component":null,"time":frame(0)}]});
+    assert!(s.execute("keyframes.delete_selection", stale).is_err());
+    assert_eq!(s.history_len().0, history + 1, "a stale list adds no step");
+    s.undo().unwrap();
+    assert_eq!(
+        item(&s, ItemId(2))
+            .animations
+            .get(&path())
+            .unwrap()
+            .channel(None)
+            .unwrap()
+            .keys()
+            .len(),
+        2
+    );
+}
+
+#[test]
+fn extrapolation_choice_persists_with_the_item_and_refuses_discrete_values() {
+    let mut s = session();
+    s.execute(
+        "keyframes.set_extrapolation",
+        json!({"item":2,"path":"opacity","component":null,"before":"hold","after":"linear"}),
+    )
+    .unwrap();
+    let channel = item(&s, ItemId(2))
+        .animations
+        .get(&path())
+        .unwrap()
+        .channel(None)
+        .unwrap();
+    assert_eq!(
+        channel.extrapolation(),
+        (Extrapolation::Hold, Extrapolation::Linear)
+    );
+    let encoded = project::encode(s.project(), false).unwrap();
+    let decoded = project::decode(&encoded).unwrap();
+    assert_eq!(decoded.project, **s.project());
+    let bool_path = AnimationPath::new("muted").unwrap();
+    s.execute(
+        "keyframes.set_param",
+        json!({"item":2,"path":"muted","param":Param::new(ParamValue::Bool(true)).unwrap()}),
+    )
+    .unwrap();
+    assert!(
+        s.execute(
+            "keyframes.set_extrapolation",
+            json!({"item":2,"path":"muted","component":null,"before":"linear","after":"hold"}),
+        )
+        .is_err(),
+        "a discrete channel holds outside its keys"
+    );
+    assert!(item(&s, ItemId(2)).animations.get(&bool_path).is_some());
+}
+
+#[test]
 fn trim_split_and_move_preserve_curves_at_2997_without_tick_drift() {
     let mut s = session();
     let original = item(&s, ItemId(2)).clone();

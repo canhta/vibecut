@@ -368,6 +368,29 @@ pub(crate) fn apply(
         } => {
             data = keyframes::execute_add_keyframe(data, id, path, component, key)?;
         }
+        Command::ToggleKeyframe {
+            item: id,
+            path,
+            component,
+            time,
+            value,
+        } => {
+            data = keyframes::execute_toggle_keyframe(data, id, path, component, time, value)?;
+        }
+        Command::DeleteKeyframes { keys } => {
+            data = keyframes::execute_delete_keyframes(data, keys)?;
+        }
+        Command::SetKeyframeExtrapolation {
+            item: id,
+            path,
+            component,
+            before,
+            after,
+        } => {
+            data = keyframes::execute_set_keyframe_extrapolation(
+                data, id, path, component, before, after,
+            )?;
+        }
         Command::RemoveKeyframe {
             item: id,
             path,

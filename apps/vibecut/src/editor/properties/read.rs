@@ -56,6 +56,97 @@ pub(super) fn item_value(project: &project::Project, item: ItemId, field: &str) 
     }
 }
 
+/// The field's model value at an item-relative time, for keyframe toggles.
+pub(super) fn item_value_at(
+    project: &project::Project,
+    item: ItemId,
+    field: &str,
+    at: Tick,
+) -> Option<f64> {
+    let item = find(project, item)?;
+    if let Some(transform) = project::TransformField::ALL
+        .into_iter()
+        .find(|f| f.path() == field)
+    {
+        return transform.value_at(&item.animations, at).ok();
+    }
+    match (field, &item.content) {
+        ("opacity", content) if !matches!(content, ItemParams::Audio(_)) => {
+            let path = project::AnimationPath::new("opacity").ok()?;
+            Some(match item.animations.value_at(&path, at).ok().flatten() {
+                Some(project::ParamValue::Scalar(value)) => value.clamp(0.0, 1.0),
+                _ => 1.0,
+            })
+        }
+        ("audio_gain", ItemParams::Audio(params)) => {
+            let path = project::AnimationPath::new("volume").ok()?;
+            Some(match item.animations.value_at(&path, at).ok().flatten() {
+                Some(project::ParamValue::Scalar(value)) => value,
+                _ => f64::from(params.volume),
+            })
+        }
+        ("audio_gain", ItemParams::Video(params)) => {
+            let path = project::AnimationPath::new("volume").ok()?;
+            Some(match item.animations.value_at(&path, at).ok().flatten() {
+                Some(project::ParamValue::Scalar(value)) => value,
+                _ => f64::from(params.volume),
+            })
+        }
+        _ => item_value(project, item.id, field),
+    }
+}
+
+/// Whether the field owns any keys, so a field edit must update the curve.
+pub(super) fn channel_has_keys(project: &project::Project, item: ItemId, field: &str) -> bool {
+    let Some(item) = find(project, item) else {
+        return false;
+    };
+    let path = if field == "audio_gain" {
+        project::AnimationPath::new("volume").ok()
+    } else {
+        project::AnimationPath::new(field).ok()
+    };
+    path.and_then(|path| item.animations.get(&path))
+        .and_then(|param| match param {
+            project::Param::Value(channel) => Some(channel),
+            project::Param::Color(_) => None,
+        })
+        .is_some_and(|channel| !channel.keys().is_empty())
+}
+
+/// Whether the field already owns a key at an item-relative time.
+pub(super) fn has_key_at(project: &project::Project, item: ItemId, field: &str, at: Tick) -> bool {
+    let Some(item) = find(project, item) else {
+        return false;
+    };
+    let path = if field == "audio_gain" {
+        project::AnimationPath::new("volume").ok()
+    } else {
+        project::AnimationPath::new(field).ok()
+    };
+    let Some(path) = path else {
+        return false;
+    };
+    item.animations
+        .get(&path)
+        .and_then(|param| match param {
+            project::Param::Value(channel) => Some(channel),
+            project::Param::Color(_) => None,
+        })
+        .is_some_and(|channel| {
+            channel
+                .keys()
+                .binary_search_by_key(&at, |key| key.time)
+                .is_ok()
+        })
+}
+
+/// The item's start and end on the timeline.
+pub(super) fn range_of(project: &project::Project, id: ItemId) -> Option<(Tick, Tick)> {
+    let item = find(project, id)?;
+    Some((item.start, item.end().ok()?))
+}
+
 /// Source and retimed duration in seconds, for display only.
 pub(super) fn retime_seconds(project: &project::Project, item: ItemId) -> Option<(f64, f64)> {
     let found = find(project, item)?;

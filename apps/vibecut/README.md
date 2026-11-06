@@ -209,6 +209,25 @@ families before activation; unregistered ids refuse before state changes.
 `Editor::action_enabled` adds app selection requirements to engine availability
 and gates both generic action widgets and direct/key dispatch.
 
+Each item has a 16 px chevron that opens its keyframe lanes; the open set is
+presentation state persisted as `timeline_lanes` in the preference document.
+A lane is 20 px high, one per nonempty animation channel (audio always offers
+its volume lane), and shows the channel's diamonds. Click selects, Cmd/Ctrl/Shift
+toggles, a lane marquee selects, drag retimes with the same snapping candidates
+as clips and commits one engine gesture, and Delete removes every selected
+diamond through `keyframes.delete_selection` in one undo step. Right-clicking a
+lane offers before/after Hold or Linear through `keyframes.set_extrapolation`.
+Audio clips draw a draggable volume line; its position uses the ported linear-gain
+squared map over -60..20 dB, the drag commits on the 0.1 dB grid while field and
+stored edits keep 0.01 dB, the tooltip shows the current value, and volume
+keyframes appear on the same line and in the expanded lane. The offscreen audit
+capture is written under `target/`.
+
+Animatable inspector rows carry a diamond toggle at the right of the label column:
+Transform scale/position/rotation, Blending opacity and Audio volume add or remove
+a key at the playhead through `keyframes.toggle_at`; the control is disabled when
+the playhead is outside the item and filled when a key already exists.
+
 The read surface for the shortcuts dialog remains `actions()`, `action(id)`,
 `ActionSpec` metadata/defaults/availability (`bindable()` excludes parameterized
 widget families), effective bindings and conflicts on

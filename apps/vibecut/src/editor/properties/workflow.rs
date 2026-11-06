@@ -46,6 +46,18 @@ pub(in crate::editor) fn apply(editor: &mut Editor, actions: Vec<Action>) {
                 }
                 result
             }
+            Action::ToggleKeyframe {
+                item,
+                field,
+                time,
+                value,
+            } => editor.toggle_keyframe(item, field, time, value),
+            Action::SetKeyframeAt {
+                item,
+                field,
+                time,
+                value,
+            } => editor.set_keyframe_at(item, field, time, value),
             Action::SetSection { key, open } => editor.set_section_open(key, open),
             Action::SetTab { kind, tab } => {
                 let mut next = editor.preferences.properties_tabs.clone();

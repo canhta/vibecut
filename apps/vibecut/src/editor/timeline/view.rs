@@ -1,5 +1,6 @@
 //! Renders the timeline panel.
 mod clips;
+mod lanes;
 mod ruler;
 mod scenes;
 mod toolbar;
@@ -72,6 +73,10 @@ pub(in crate::editor) fn show(
     state.advance_bookmark_drag(cx, ui);
     state.paint_tracks(cx, ui, &layout, &views.rows, &views.items);
     state.advance_drag(cx, ui, &layout, &views.rows);
+    let modifiers = ui.ctx().input(|input| input.modifiers);
+    state.paint_lanes(cx, ui, &layout, &views.items, modifiers);
+    state.advance_keyframe_drag(cx, ui, &layout);
+    state.advance_volume_drag(cx, ui, &layout);
     let empty_items = views.items.is_empty();
     let duration = views.duration;
     let rows = views.rows;

@@ -1,8 +1,8 @@
 //! Holds the timeline's own presentation state and viewport arithmetic.
 
 use crate::editor::timeline::{
-    Action, BTreeSet, BookmarkId, Context, DEFAULT_ZOOM, ItemId, MAX_ZOOM, MIN_ZOOM_FLOOR, Rect,
-    Rounding, SourceRange, Tick, TrackId, egui,
+    Action, BTreeSet, BookmarkId, Context, DEFAULT_ZOOM, ItemId, KeyframeSelection, MAX_ZOOM,
+    MIN_ZOOM_FLOOR, Rect, Rounding, SourceRange, Tick, TrackId, egui,
     workflow::{anchored_scroll, fit_zoom},
 };
 
@@ -33,6 +33,37 @@ pub(in crate::editor::timeline) struct BookmarkDrag {
     pub(in crate::editor::timeline) bookmark: BookmarkId,
     pub(in crate::editor::timeline) press_x: f32,
     pub(in crate::editor::timeline) start: Tick,
+}
+
+/// One keyframe retime gesture over the pressed key.
+#[derive(Clone, Debug)]
+pub(in crate::editor::timeline) struct KeyframeDrag {
+    pub(in crate::editor::timeline) selection: KeyframeSelection,
+    /// Time currently held by the preview project.
+    pub(in crate::editor::timeline) current: Tick,
+    pub(in crate::editor::timeline) item_start: Tick,
+    pub(in crate::editor::timeline) item_end: Tick,
+}
+
+/// A marquee inside expanded keyframe lanes.
+#[derive(Clone, Debug)]
+pub(in crate::editor::timeline) struct KeyframeMarquee {
+    pub(in crate::editor::timeline) origin: egui::Pos2,
+    pub(in crate::editor::timeline) before: BTreeSet<KeyframeSelection>,
+    pub(in crate::editor::timeline) additive: bool,
+}
+
+/// A volume-line drag: one time point, one 0.1 dB value.
+#[derive(Clone, Copy, Debug)]
+pub(in crate::editor::timeline) struct VolumeDrag {
+    pub(in crate::editor::timeline) item: ItemId,
+    /// Item-relative key time the drag writes.
+    pub(in crate::editor::timeline) time: Tick,
+    /// The channel already had keys, so the drag writes a key instead of the base.
+    pub(in crate::editor::timeline) keyed: bool,
+    pub(in crate::editor::timeline) db: f32,
+    pub(in crate::editor::timeline) top: f32,
+    pub(in crate::editor::timeline) height: f32,
 }
 
 /// A control the panel painted this frame, recorded for automation by the frame.
@@ -130,9 +161,16 @@ pub(in crate::editor) struct State {
     pub(in crate::editor::timeline) track_rename: Option<(TrackId, String)>,
     pub(in crate::editor::timeline) track_rename_focus: bool,
     pub(in crate::editor::timeline) track_drag: Option<TrackId>,
+    /// Items whose keyframe lanes are expanded; persisted in preferences.
+    pub(in crate::editor::timeline) expanded: BTreeSet<ItemId>,
+    pub(in crate::editor::timeline) keyframe_drag: Option<KeyframeDrag>,
+    pub(in crate::editor::timeline) keyframe_marquee: Option<KeyframeMarquee>,
+    pub(in crate::editor::timeline) volume_drag: Option<VolumeDrag>,
     pub(in crate::editor) scenes: Scenes,
     /// Screen rectangles of the visible clips, published for drops from other areas.
     pub(in crate::editor::timeline) item_rects: Vec<(ItemId, Rect)>,
+    /// Screen rectangles of the visible keyframe diamonds, for lane marquees.
+    pub(in crate::editor::timeline) keyframe_rects: Vec<(KeyframeSelection, Rect)>,
     pub(in crate::editor::timeline) outbox: Vec<Action>,
     pub(in crate::editor::timeline) widgets: Vec<Remembered>,
 }
@@ -156,8 +194,13 @@ impl State {
             track_rename: None,
             track_rename_focus: false,
             track_drag: None,
+            expanded: BTreeSet::new(),
+            keyframe_drag: None,
+            keyframe_marquee: None,
+            volume_drag: None,
             scenes: Scenes::default(),
             item_rects: Vec::new(),
+            keyframe_rects: Vec::new(),
             outbox: Vec::new(),
             widgets: Vec::new(),
         }
@@ -189,6 +232,23 @@ impl State {
         self.pre_anchor_scroll = None;
         self.zoom = zoom;
         self.scroll = scroll;
+    }
+    /// Adopt the persisted set of items whose keyframe lanes stay open.
+    pub(in crate::editor) fn restore_lanes(&mut self, lanes: impl IntoIterator<Item = ItemId>) {
+        self.expanded = lanes.into_iter().collect();
+    }
+    pub(in crate::editor) fn lane_open(&self, item: ItemId) -> bool {
+        self.expanded.contains(&item)
+    }
+    pub(in crate::editor) fn set_lane(&mut self, item: ItemId, open: bool) {
+        if open {
+            self.expanded.insert(item);
+        } else {
+            self.expanded.remove(&item);
+        }
+    }
+    pub(in crate::editor) fn expanded_lanes(&self) -> Vec<ItemId> {
+        self.expanded.iter().copied().collect()
     }
     pub(in crate::editor) fn min_zoom(&self, duration: Tick) -> f32 {
         fit_zoom(self.viewport, duration.seconds())
@@ -250,6 +310,13 @@ impl State {
         {
             self.scenes.rename = None;
         }
+        let existing: BTreeSet<ItemId> = data
+            .scene()
+            .timeline
+            .iter()
+            .flat_map(|track| track.items.iter().map(|item| item.id))
+            .collect();
+        self.expanded.retain(|id| existing.contains(id));
     }
     /// A refused scene rename keeps the typed name open for another try.
     pub(in crate::editor) fn keep_scene_rename(&mut self, scene: project::SceneId, name: String) {
@@ -259,7 +326,27 @@ impl State {
     pub(in crate::editor) fn abandon_gesture(&mut self) {
         self.drag = None;
         self.bookmark_drag = None;
+        self.keyframe_drag = None;
+        self.volume_drag = None;
         self.snap_indicator = None;
+    }
+    /// Escape on a keyframe retime; the frame cancels the session gesture.
+    pub(in crate::editor) fn cancel_keyframe_drag(&mut self) -> bool {
+        let had = self.keyframe_drag.take().is_some();
+        if had {
+            self.snap_indicator = None;
+        }
+        had
+    }
+    /// Escape on a volume-line drag; the frame cancels the session gesture.
+    pub(in crate::editor) fn cancel_volume_drag(&mut self) -> bool {
+        self.volume_drag.take().is_some()
+    }
+    /// Escape on the keyframe marquee: the selection it started from.
+    pub(in crate::editor) fn cancel_keyframe_marquee(
+        &mut self,
+    ) -> Option<BTreeSet<KeyframeSelection>> {
+        self.keyframe_marquee.take().map(|marquee| marquee.before)
     }
     /// Escape on a bookmark drag; the frame cancels the session gesture.
     pub(in crate::editor) fn cancel_bookmark_drag(&mut self) -> bool {

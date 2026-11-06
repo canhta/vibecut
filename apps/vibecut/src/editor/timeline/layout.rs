@@ -1,9 +1,16 @@
 //! Projects timeline presentation geometry.
+//!
+//! A track row is its measured clip height plus one 20 px lane for every
+//! expanded keyframe channel. Item views carry the clip rectangle and the lane
+//! rectangles below it; nothing here reads or mutates the project.
 
 use crate::editor::timeline::{
-    AssetId, BookmarkId, ItemId, LABEL_WIDTH, RULER_HEIGHT, Rect, SCROLLBAR, TOOLBAR_HEIGHT, Tick,
-    TrackId, TrackKind, Vec2, egui, theme,
+    AssetId, BookmarkId, ItemId, LABEL_WIDTH, Locale, RULER_HEIGHT, Rect, SCROLLBAR,
+    TOOLBAR_HEIGHT, Text, Tick, TrackId, TrackKind, Vec2, catalog, egui, theme,
 };
+
+/// Height of one expanded keyframe lane.
+pub(super) const LANE_HEIGHT: f32 = 20.0;
 
 #[derive(Clone, Debug)]
 pub(super) struct TrackRow {
@@ -18,6 +25,15 @@ pub(super) struct TrackRow {
     pub(super) name: String,
     pub(super) top: f32,
     pub(super) height: f32,
+    /// Height of the clips themselves, before expanded lanes.
+    pub(super) base_height: f32,
+}
+#[derive(Clone, Debug)]
+pub(super) struct ItemLane {
+    pub(super) path: project::AnimationPath,
+    pub(super) component: Option<project::ColorComponent>,
+    pub(super) top: f32,
+    pub(super) label: String,
 }
 #[derive(Clone, Debug)]
 pub(super) struct ItemView {
@@ -31,6 +47,9 @@ pub(super) struct ItemView {
     pub(super) label: String,
     pub(super) overlay: Option<[u8; 4]>,
     pub(super) source_asset: Option<AssetId>,
+    /// Base clip volume in dB for audio items, used when the channel is unkeyed.
+    pub(super) volume: Option<f32>,
+    pub(super) lanes: Vec<ItemLane>,
 }
 #[derive(Clone, Copy, Debug)]
 pub(super) struct BookmarkView {
@@ -94,12 +113,93 @@ impl TimelineLayout {
     }
 }
 
+struct RawItem {
+    row_index: usize,
+    id: ItemId,
+    kind: TrackKind,
+    start: Tick,
+    end: Tick,
+    locked: bool,
+    label: String,
+    overlay: Option<[u8; 4]>,
+    source_asset: Option<AssetId>,
+    volume: Option<f32>,
+    channels: Vec<ChannelLane>,
+}
+struct ChannelLane {
+    path: project::AnimationPath,
+    component: Option<project::ColorComponent>,
+    label: String,
+}
+
+/// One lane per keyed channel; audio always offers its volume lane so a key can
+/// be added from the expanded item even before the first key exists.
+fn channels(item: &project::Item, kind: TrackKind, locale: Locale) -> Vec<ChannelLane> {
+    let mut lanes = Vec::new();
+    for (path, param) in item.animations.iter() {
+        for (index, channel) in param_channels(param).into_iter().enumerate() {
+            if channel.keys().is_empty() {
+                continue;
+            }
+            let component = component_of(param, index);
+            lanes.push(ChannelLane {
+                path: path.clone(),
+                component,
+                label: lane_label(path.as_str(), locale).to_owned(),
+            });
+        }
+    }
+    if kind == TrackKind::Audio
+        && !lanes
+            .iter()
+            .any(|lane| lane.path.as_str() == "volume" && lane.component.is_none())
+        && let Ok(path) = project::AnimationPath::new("volume")
+    {
+        lanes.push(ChannelLane {
+            path,
+            component: None,
+            label: catalog::text(locale, Text::AudioGain).to_owned(),
+        });
+    }
+    lanes
+}
+fn param_channels(param: &project::Param) -> Vec<&project::Channel> {
+    match param {
+        project::Param::Value(channel) => vec![channel],
+        project::Param::Color(channels) => channels.iter().collect(),
+    }
+}
+fn component_of(param: &project::Param, index: usize) -> Option<project::ColorComponent> {
+    matches!(param, project::Param::Color(_)).then(|| {
+        use project::ColorComponent as C;
+        match index {
+            0 => C::R,
+            1 => C::G,
+            2 => C::B,
+            _ => C::A,
+        }
+    })
+}
+/// Creator-facing lane labels; extension paths fall back to their last segment.
+fn lane_label(path: &str, locale: Locale) -> &str {
+    match path {
+        "transform.positionX" => catalog::text(locale, Text::PositionX),
+        "transform.positionY" => catalog::text(locale, Text::PositionY),
+        "transform.scaleX" => catalog::text(locale, Text::ScaleX),
+        "transform.scaleY" => catalog::text(locale, Text::ScaleY),
+        "transform.rotate" => catalog::text(locale, Text::Rotate),
+        "opacity" => catalog::text(locale, Text::Opacity),
+        "volume" => catalog::text(locale, Text::AudioGain),
+        _ => path.rsplit('.').next().unwrap_or(path),
+    }
+}
+
 use crate::editor::timeline::{
     Context, State, TRACK_GAP, item_label, max_scroll_seconds, track_height,
 };
 
 impl State {
-    /// Project the scene into rows and clip rectangles for the current scroll.
+    /// Project the scene into rows, clip rectangles and expanded lane rectangles.
     pub(in crate::editor::timeline) fn views(
         &mut self,
         cx: &Context<'_>,
@@ -107,12 +207,12 @@ impl State {
     ) -> TimelineViews {
         let data = cx.session.project().data();
         let mut rows = Vec::new();
-        let mut raw_items = Vec::new();
+        let mut raw_items: Vec<RawItem> = Vec::new();
         let mut offset = 0.0;
         let mut overlay_index = 0usize;
         let mut audio_index = 0usize;
         for (row_index, track) in data.scene().timeline.iter().rev().enumerate() {
-            let height = track_height(track.kind);
+            let base_height = track_height(track.kind);
             let main = track.id == data.scene().timeline.main.id;
             let audio = track.kind == TrackKind::Audio;
             let display_index = if main {
@@ -126,6 +226,37 @@ impl State {
                 overlay_index += 1;
                 index
             };
+            let mut lane_height = 0.0;
+            for item in &track.items {
+                let Ok(end) = item.end() else {
+                    continue;
+                };
+                let (label, overlay) = item_label(&item.content, cx.locale, cx.dark);
+                let volume = match &item.content {
+                    project::ItemParams::Audio(params) => Some(params.volume),
+                    project::ItemParams::Video(params) => Some(params.volume),
+                    _ => None,
+                };
+                let channels = if self.expanded.contains(&item.id) {
+                    channels(item, track.kind, cx.locale)
+                } else {
+                    Vec::new()
+                };
+                lane_height += LANE_HEIGHT * channels.len() as f32;
+                raw_items.push(RawItem {
+                    row_index,
+                    id: item.id,
+                    kind: track.kind,
+                    start: item.start,
+                    end,
+                    locked: track.locked,
+                    label,
+                    overlay,
+                    source_asset: item.source_asset,
+                    volume,
+                    channels,
+                });
+            }
             rows.push(TrackRow {
                 id: track.id,
                 main,
@@ -137,26 +268,10 @@ impl State {
                 kind: track.kind,
                 name: track.name.as_str().to_owned(),
                 top: offset,
-                height,
+                height: base_height + lane_height,
+                base_height,
             });
-            for item in &track.items {
-                let Ok(end) = item.end() else {
-                    continue;
-                };
-                let (label, overlay) = item_label(&item.content, cx.locale, cx.dark);
-                raw_items.push((
-                    row_index,
-                    item.id,
-                    track.kind,
-                    item.start,
-                    end,
-                    track.locked,
-                    label,
-                    overlay,
-                    item.source_asset,
-                ));
-            }
-            offset += height + TRACK_GAP;
+            offset += base_height + lane_height + TRACK_GAP;
         }
         let duration = cx.session.project().duration();
         let bookmarks = data
@@ -178,27 +293,40 @@ impl State {
         for row in &mut rows {
             row.top += centring;
         }
+        let mut lane_offsets = vec![0.0_f32; rows.len()];
         let mut items = Vec::new();
-        for (row_index, id, kind, start, end, locked, label, overlay, source_asset) in raw_items {
-            let (top, height) = rows
-                .get(row_index)
-                .map_or((layout.body.top(), 25.0), |row| {
-                    (
-                        layout.body.top() + row.top - self.vertical_scroll,
-                        row.height,
-                    )
+        for raw in raw_items {
+            let (row_top, base_height) = rows
+                .get(raw.row_index)
+                .map_or((layout.body.top(), 25.0), |row| (row.top, row.base_height));
+            let top = layout.body.top() + row_top - self.vertical_scroll;
+            let lane_start = top + base_height;
+            let mut lanes = Vec::new();
+            for channel in raw.channels {
+                let lane_top = lane_start + lane_offsets.get(raw.row_index).copied().unwrap_or(0.0);
+                lanes.push(ItemLane {
+                    path: channel.path,
+                    component: channel.component,
+                    top: lane_top,
+                    label: channel.label,
                 });
+                if let Some(offset) = lane_offsets.get_mut(raw.row_index) {
+                    *offset += LANE_HEIGHT;
+                }
+            }
             items.push(ItemView {
-                id,
-                kind,
-                start,
-                end,
+                id: raw.id,
+                kind: raw.kind,
+                start: raw.start,
+                end: raw.end,
                 top,
-                height,
-                locked,
-                label,
-                overlay,
-                source_asset,
+                height: base_height,
+                locked: raw.locked,
+                label: raw.label,
+                overlay: raw.overlay,
+                source_asset: raw.source_asset,
+                volume: raw.volume,
+                lanes,
             });
         }
         let min = self.min_zoom(duration);

@@ -11,7 +11,7 @@ use crate::{
 };
 use serde::{Deserialize, Serialize};
 use std::{
-    collections::BTreeMap,
+    collections::{BTreeMap, BTreeSet},
     io::Read,
     path::{Path, PathBuf},
 };
@@ -139,6 +139,15 @@ catalog! {
     SubTranslating { key: "sub_translating", en: "Translating…", vi: "Đang dịch…" },
     SubAssembling { key: "sub_assembling", en: "Almost done…", vi: "Sắp xong…" },
     BlendMode { key: "blend_mode", en: "Blend mode", vi: "Chế độ hòa trộn" },
+    AddKeyframe { key: "add_keyframe", en: "Add keyframe", vi: "Thêm khung hình chính" },
+    RemoveKeyframe { key: "remove_keyframe", en: "Remove keyframe", vi: "Xóa khung hình chính" },
+    ShowKeyframes { key: "show_keyframes", en: "Show keyframes", vi: "Hiện khung hình chính" },
+    HideKeyframes { key: "hide_keyframes", en: "Hide keyframes", vi: "Ẩn khung hình chính" },
+    DeleteKeyframes { key: "delete_keyframes", en: "Delete keyframes", vi: "Xóa khung hình chính" },
+    BeforeKeyframes { key: "before_keyframes", en: "Before", vi: "Trước" },
+    AfterKeyframes { key: "after_keyframes", en: "After", vi: "Sau" },
+    HoldKeyframes { key: "hold_keyframes", en: "Hold", vi: "Giữ nguyên" },
+    LinearKeyframes { key: "linear_keyframes", en: "Linear", vi: "Tuyến tính" },
     Opacity { key: "opacity", en: "Opacity", vi: "Độ mờ" },
     BlendNormal { key: "blend_normal", en: "Normal", vi: "Bình thường" },
     BlendDarken { key: "blend_darken", en: "Darken", vi: "Làm tối" },
@@ -964,6 +973,7 @@ pub const PREFERENCE_KEYS: &[&str] = &[
     "preview_zoom",
     "keybindings",
     "recent_colors",
+    "timeline_lanes",
 ];
 
 /// A splitter drag that keeps every region non-empty and inside its limits.
@@ -1111,6 +1121,9 @@ pub struct Preferences {
     pub keybindings: KeybindingPreferences,
     #[serde(default)]
     pub recent_colors: Vec<project::Color>,
+    /// Items whose keyframe lanes stay open, by stable item id.
+    #[serde(default)]
+    pub timeline_lanes: BTreeSet<u64>,
 }
 pub(crate) const fn default_preview_fit() -> bool {
     true
@@ -1141,6 +1154,7 @@ impl Default for Preferences {
             snapshot_directory: None,
             keybindings: KeybindingPreferences::default(),
             recent_colors: Vec::new(),
+            timeline_lanes: BTreeSet::new(),
         }
     }
 }
@@ -1179,6 +1193,9 @@ impl Preferences {
         self.keybindings.validate()?;
         if self.recent_colors.len() > 16 {
             return Err(Error::Invalid("recent colours"));
+        }
+        if self.timeline_lanes.len() > 4096 {
+            return Err(Error::Invalid("timeline lanes"));
         }
         if serde_json::to_vec(self)?.len() as u64 > MAX_PREFERENCES_BYTES {
             return Err(Error::Invalid("preference size"));
@@ -1232,6 +1249,7 @@ impl Preferences {
             "snapshot_directory" => Ok(serde_json::to_value(&self.snapshot_directory)?),
             "keybindings" => Ok(serde_json::to_value(&self.keybindings)?),
             "recent_colors" => Ok(serde_json::to_value(&self.recent_colors)?),
+            "timeline_lanes" => Ok(serde_json::to_value(&self.timeline_lanes)?),
             _ => Err(Error::Unsupported("preference key")),
         }
     }
@@ -1263,6 +1281,7 @@ impl Preferences {
             "snapshot_directory" => self.snapshot_directory = serde_json::from_value(value)?,
             "keybindings" => self.keybindings = serde_json::from_value(value)?,
             "recent_colors" => self.recent_colors = serde_json::from_value(value)?,
+            "timeline_lanes" => self.timeline_lanes = serde_json::from_value(value)?,
             _ => return Err(Error::Unsupported("preference key")),
         }
         Ok(())
@@ -1343,6 +1362,10 @@ impl PreferenceStore {
         }
         if value.recent_colors.len() > 16 {
             value.recent_colors.clear();
+            issue = Some(PreferenceIssue::Layout);
+        }
+        if value.timeline_lanes.len() > 4096 {
+            value.timeline_lanes.clear();
             issue = Some(PreferenceIssue::Layout);
         }
         (value, issue)

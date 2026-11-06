@@ -107,6 +107,7 @@ impl Rig {
         }
         crate::kit::install_theme(ui.ctx(), true);
         crate::kit::install_editor_density(ui.ctx());
+        let keyframes = crate::selection::SelectionScopes::default().keyframes;
         let cx = Context {
             session: &self.session,
             selection: &self.selection,
@@ -119,6 +120,7 @@ impl Rig {
             playback: &self.playback,
             keybindings: &self.preferences.keybindings,
             scope: crate::selection::SelectionScope::None,
+            keyframes: &keyframes,
             thumbnails: Thumbnails {
                 images: &self.images,
                 textures: &self.textures,

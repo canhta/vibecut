@@ -1,6 +1,8 @@
 //! Names the requests the timeline panel hands back to the frame.
 
-use crate::editor::timeline::{BTreeSet, ItemId, Tick, TrackId, TrackKind, egui};
+use crate::editor::timeline::{
+    BTreeSet, ItemId, KeyframeSelection, Tick, TrackId, TrackKind, egui,
+};
 
 /// Where a dragged clip lands when it is released over another track.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -43,6 +45,21 @@ pub(in crate::editor) enum Action {
     Marquee(BTreeSet<ItemId>),
     /// The marquee ended: announce the selection to the other areas.
     SettleSelection,
+    /// Click a keyframe diamond with the pointer's modifiers.
+    SelectKeyframe {
+        keyframe: KeyframeSelection,
+        modifiers: egui::Modifiers,
+    },
+    /// Live keyframe-lane marquee; settles on release.
+    MarqueeKeyframes(BTreeSet<KeyframeSelection>),
+    /// The keyframe marquee ended: keep the live result.
+    SettleKeyframes,
+    /// Click empty lane space: clear the keyframe scope only.
+    ClearKeyframes,
+    /// Expand or collapse an item's keyframe lanes.
+    SetLaneOpen { item: ItemId, open: bool },
+    /// Delete the selected keyframes in one undo step.
+    DeleteKeyframes(BTreeSet<KeyframeSelection>),
     /// Deselect everything.
     ClearSelection,
     /// Open one preview gesture. `select` is an item to select alone first

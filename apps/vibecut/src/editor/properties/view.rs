@@ -9,9 +9,12 @@ use crate::kit;
 mod dialog;
 
 use super::{
-    AUDIO_GAIN_SCRUB, ElementKind, ItemId, OPACITY_SCRUB, PropertiesTab, SelectionScope,
+    AUDIO_GAIN_SCRUB, ElementKind, ItemId, OPACITY_SCRUB, PropertiesTab, ScrubSpec, SelectionScope,
     TEXT_SIZE_SCRUB, shared_fields,
 };
+
+/// Left edge of the value column inside a 39 px property row.
+const VALUE_COLUMN: f32 = 120.0;
 
 fn is_basic(tab: PropertiesTab) -> bool {
     matches!(
@@ -190,6 +193,83 @@ impl<'a, 'c> Panel<'a, 'c> {
             key: key.to_owned(),
             value,
         });
+    }
+
+    /// A diamond per animatable field in this row, at the right of the label column.
+    fn keyframe_diamonds(
+        &mut self,
+        ui: &mut egui::Ui,
+        row: Rect,
+        item: ItemId,
+        specs: &[ScrubSpec],
+    ) {
+        let animate: Vec<ScrubSpec> = specs
+            .iter()
+            .copied()
+            .filter(|spec| {
+                matches!(
+                    spec.field,
+                    "opacity"
+                        | "audio_gain"
+                        | "transform.positionX"
+                        | "transform.positionY"
+                        | "transform.scaleX"
+                        | "transform.scaleY"
+                        | "transform.rotate"
+                )
+            })
+            .collect();
+        if animate.is_empty() {
+            return;
+        }
+        let Some((start, end)) = super::read::range_of(self.cx.session.project(), item) else {
+            return;
+        };
+        let at = self.cx.playhead;
+        let inside = start <= at && at <= end;
+        let relative = at.saturating_sub(start);
+        let width = theme::size::CONTROL * animate.len() as f32;
+        let rect = Rect::from_min_max(
+            egui::pos2(row.left() + VALUE_COLUMN - width - 4.0, row.top()),
+            egui::pos2(row.left() + VALUE_COLUMN - 4.0, row.bottom()),
+        );
+        let mut strip = ui.new_child(
+            egui::UiBuilder::new()
+                .max_rect(rect)
+                .layout(egui::Layout::left_to_right(egui::Align::Center)),
+        );
+        strip.spacing_mut().item_spacing.x = 0.0;
+        for spec in animate {
+            let id = format!("inspector.keyframe.{}", spec.field);
+            let exists =
+                super::read::has_key_at(self.cx.session.project(), item, spec.field, relative);
+            let label = self.tr(if exists {
+                Text::RemoveKeyframe
+            } else {
+                Text::AddKeyframe
+            });
+            let response = strip
+                .add_enabled_ui(inside, |ui| {
+                    kit::icon_button(ui, &id, crate::kit::Icon::Diamond, label, exists)
+                })
+                .inner;
+            self.remember_with_icon(id, Some(crate::kit::Icon::Diamond.name()), &response);
+            if response.clicked() && inside {
+                let value = super::read::item_value_at(
+                    self.cx.session.project(),
+                    item,
+                    spec.field,
+                    relative,
+                )
+                .unwrap_or(0.0);
+                self.actions.push(Action::ToggleKeyframe {
+                    item,
+                    field: spec.field,
+                    time: relative,
+                    value,
+                });
+            }
+        }
     }
 
     fn project_details(&mut self, ui: &mut egui::Ui) {

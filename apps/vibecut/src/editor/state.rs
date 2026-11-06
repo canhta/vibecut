@@ -131,6 +131,8 @@ pub struct Inspection {
     pub position: Tick,
     pub selection: Vec<ItemId>,
     pub selection_scope: SelectionScope,
+    /// Items whose keyframe lanes are open, in stable id order.
+    pub expanded_lanes: Vec<ItemId>,
     pub zoom: f32,
     /// Persisted/logical horizontal offset in seconds at the left edge.
     pub scroll: f32,

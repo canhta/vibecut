@@ -26,7 +26,7 @@ mod timing;
 use timing::{display_short_time, display_time, drop_frame};
 
 use crate::color_picker::{ColorTarget, EyedropperState, Picker};
-use crate::selection::{SelectionScope, SelectionScopes, shared_fields};
+use crate::selection::{KeyframeSelection, SelectionScope, SelectionScopes, shared_fields};
 use crate::snapping::{SnapCandidate, SnapSource, snap_point};
 use crate::{
     Error, Result,
@@ -119,6 +119,12 @@ impl Editor {
         let keymap = Keymap::resolve(&preferences.keybindings);
         let keybinding_issues = keymap.issues().to_vec();
         let keymap_source = preferences.keybindings.clone();
+        let timeline_lanes: Vec<ItemId> = preferences
+            .timeline_lanes
+            .iter()
+            .copied()
+            .map(ItemId)
+            .collect();
         Self {
             session,
             playback,
@@ -141,7 +147,11 @@ impl Editor {
             panels: BTreeMap::new(),
             frame: frame::State::default(),
             player: player::State::new(preferences_fit, preferences_zoom),
-            timeline: timeline::State::new(zoom, scroll),
+            timeline: {
+                let mut state = timeline::State::new(zoom, scroll);
+                state.restore_lanes(timeline_lanes);
+                state
+            },
             fullscreen_commanded: false,
             snapshot: preview::SnapshotDialog::default(),
             error: None,
@@ -204,6 +214,7 @@ impl Editor {
             position: self.playback.position()?,
             selection: self.selection.iter().copied().collect(),
             selection_scope: self.selection_scopes.active(&self.selection),
+            expanded_lanes: self.timeline.expanded_lanes(),
             zoom: self.timeline.zoom(),
             scroll: self.timeline.scroll(),
             min_zoom: self.timeline.min_zoom(self.session.project().duration()),

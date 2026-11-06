@@ -304,6 +304,15 @@ impl Channel {
     pub fn extrapolation(&self) -> (Extrapolation, Extrapolation) {
         (self.before, self.after)
     }
+    /// Replace the outside-the-keys policy while keeping every key and the base value.
+    pub fn set_extrapolation(&mut self, before: Extrapolation, after: Extrapolation) -> Result<()> {
+        let mut next = self.clone();
+        next.before = before;
+        next.after = after;
+        next.validate()?;
+        *self = next;
+        Ok(())
+    }
     /// Returns exact stored endpoint values; scalar interior handles use segment-relative f64 math.
     pub fn value_at(&self, time: Tick) -> ParamValue {
         let Some(first) = self.keys.first() else {
