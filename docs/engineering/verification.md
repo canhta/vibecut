@@ -2,7 +2,7 @@
 
 ## Checks
 
-Commit only green; choose the smallest covering check. Rust compilations follow the [build admission policy](../agents/orchestration.md#tickets-and-placement); provision native dependencies with `cargo xtask ffmpeg` once per machine before its first local Rust build.
+Commit only green; choose the smallest covering check. Rust compilations follow the [build admission policy](../agents/orchestration.md#placement-and-builds); provision native dependencies with `cargo xtask ffmpeg` once per machine before its first local Rust build.
 
 | Change/stage | Check |
 |---|---|

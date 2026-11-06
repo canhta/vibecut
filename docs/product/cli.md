@@ -2,7 +2,7 @@
 
 `vibecut-cli` opens projects, runs editor commands, probes media and exports MP4; adapter boundaries follow [architecture](../engineering/architecture.md#contracts).
 
-Build with `cargo build -p vibecut-cli` through the [build wrapper](../agents/orchestration.md#tickets-and-placement); output is `target/<profile>/vibecut-cli`.
+Build with `cargo build -p vibecut-cli` through the [build wrapper](../agents/orchestration.md#placement-and-builds); output is `target/<profile>/vibecut-cli`.
 
 ## Commands
 

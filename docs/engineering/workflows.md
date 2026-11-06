@@ -8,7 +8,7 @@
 4. Implement one ticket through existing owners, re-reading shared files before editing to retain concurrent changes. Update owning docs in the same change.
 5. Run [verification](verification.md); finish when every Verify item has a command and result.
 
-Commits use a Conventional Commits subject and `git commit -s`; ticket placement and branches follow [orchestration](../agents/orchestration.md#tickets-and-placement).
+Commits use a Conventional Commits subject and `git commit -s`; ticket placement and branches follow [orchestration](../agents/orchestration.md#placement-and-builds).
 
 ## Copy imports
 
