@@ -1,10 +1,12 @@
-//! MCP composition. Engine admission remains the sole command/receipt owner.
+//! Adapts authenticated MCP transports to engine control admission.
 mod socket;
 #[cfg(test)]
 mod tests;
 mod transport;
+use transport::{Framed, frame};
 
-use crate::{CliError, Output};
+use crate::args::CliError;
+use crate::output::Output;
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 use engine::{
     ByteBudget, Command, EditError, Session,
@@ -365,7 +367,7 @@ impl Inbox {
         value: Value,
         publish: impl FnOnce(&project::Project, &project::Metadata) -> engine::Result<()>,
     ) -> engine::Result<Value> {
-        let request = crate::control_session::build_control_request(session, value)?;
+        let request = crate::session::build_control_request(session, value)?;
         let caller = Caller {
             principal: "local-mcp",
             external: true,
@@ -672,7 +674,10 @@ impl Drop for Server {
     }
 }
 
-pub(super) fn run(args: Vec<OsString>) -> Result<Output, CliError> {
+pub(super) fn run(
+    context: &crate::session::Context,
+    args: Vec<OsString>,
+) -> Result<Output, CliError> {
     let mut project = None;
     let mut attach = false;
     let mut socket = None;
@@ -729,10 +734,7 @@ pub(super) fn run(args: Vec<OsString>) -> Result<Output, CliError> {
         session.restore_metadata(lease.metadata())?;
         let mut saved_project = session.project().as_ref().clone();
         let mut saved_metadata = session.metadata().clone();
-        let (mut handler, mut inbox) = Inbox::new(
-            grants,
-            ByteBudget::new(crate::job_runtime::CLI_MEMORY_LIMIT)?,
-        )?;
+        let (mut handler, mut inbox) = Inbox::new(grants, context.budget()?)?;
         handler.full = full;
         let worker = std::thread::spawn(move || -> Result<(), CliError> {
             let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(
@@ -750,7 +752,7 @@ pub(super) fn run(args: Vec<OsString>) -> Result<Output, CliError> {
                     if save {
                         let project_dirty = &saved_project != session.project().as_ref();
                         let metadata_dirty = &saved_metadata != session.metadata() || project_dirty;
-                        crate::control_session::save_control_state(
+                        crate::session::save_control_state(
                             &mut session,
                             &mut lease,
                             project_dirty,
@@ -786,10 +788,5 @@ pub(super) fn run(args: Vec<OsString>) -> Result<Output, CliError> {
             .map_err(|_| CliError::Rejected("MCP worker failed"))??;
         result?;
     }
-    Ok(Output {
-        value: Value::Null,
-        human: String::new(),
-        silent: true,
-        exit: 0,
-    })
+    Ok(Output::new(Value::Null, String::new(), true, 0))
 }

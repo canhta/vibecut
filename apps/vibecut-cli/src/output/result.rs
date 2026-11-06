@@ -1,0 +1,76 @@
+//! Presents a CLI result without repeating command execution.
+use crate::args::CliError;
+use serde_json::{Value, json};
+use std::io;
+use std::io::Write as _;
+use std::path::Path;
+use time::Tick;
+
+/// One command result. Both forms are always built so `--json` never re-runs work.
+/// A streamed command writes its own protocol and returns a silent result with
+/// the process status of its final frame.
+pub struct Output {
+    value: Value,
+    human: String,
+    silent: bool,
+    exit: u8,
+}
+impl Output {
+    pub(crate) fn new(value: Value, human: String, silent: bool, exit: u8) -> Self {
+        Self {
+            value,
+            human,
+            silent,
+            exit,
+        }
+    }
+
+    #[cfg(test)]
+    pub(crate) fn value(&self) -> &Value {
+        &self.value
+    }
+
+    pub fn write(&self, json_output: bool) -> Result<(), CliError> {
+        if self.silent {
+            return Ok(());
+        }
+        let text = if json_output {
+            serde_json::to_string_pretty(&self.value)?
+        } else {
+            self.human.clone()
+        };
+        let mut stdout = io::stdout().lock();
+        writeln!(stdout, "{text}")?;
+        Ok(())
+    }
+    pub fn exit_code(&self) -> u8 {
+        self.exit
+    }
+}
+
+pub(crate) fn json_path(path: &Path) -> Result<String, CliError> {
+    path.to_str()
+        .map(str::to_owned)
+        .ok_or(CliError::Unsupported(
+            "non-UTF-8 path cannot be represented in JSON",
+        ))
+}
+
+pub(crate) fn hex(bytes: &[u8]) -> String {
+    const DIGITS: &[u8; 16] = b"0123456789abcdef";
+    let mut output = String::with_capacity(bytes.len() * 2);
+    for byte in bytes {
+        let high = DIGITS.get(usize::from(byte >> 4)).copied().unwrap_or(b'0');
+        let low = DIGITS
+            .get(usize::from(byte & 0x0f))
+            .copied()
+            .unwrap_or(b'0');
+        output.push(char::from(high));
+        output.push(char::from(low));
+    }
+    output
+}
+
+pub(crate) fn tick_json(tick: Tick) -> Value {
+    json!({"ticks": tick.0, "seconds": tick.seconds()})
+}

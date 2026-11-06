@@ -1,9 +1,5 @@
-//! OS-owned authentication: private Unix directory + peer uid, or a protected
-//! Windows named-pipe DACL granting only its owner. No client-config secret.
-use super::{
-    Handler,
-    transport::{Framed, frame},
-};
+//! Authenticates local MCP peers with OS-owned access controls.
+use super::{Framed, Handler, frame};
 #[cfg(unix)]
 use interprocess::local_socket::{GenericFilePath, ToFsName};
 #[cfg(windows)]

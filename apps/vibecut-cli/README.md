@@ -6,18 +6,23 @@ jobs, and maps typed results to stdout/stderr and stable exit codes. It owns no
 timeline, codec, export-admission or provider logic and has no UI dependencies.
 
 `lib.rs` wires the public `run`, `Output` and `CliError` entry points.
-`commands` has one owner for each native command group: `probe`, `project`,
-`exec`, `scenes`, `normalize`, `export`, `captions`, `subtitle`, `clips`,
-`sounds`, `providers`, `model`, `fonts` and the generated `catalog`.
-The existing `batch` and `mcp` modules retain their command/transport ownership.
+The module doors follow [structure](../../docs/engineering/structure.md#cli):
 
-Internal adapter responsibilities are separate owners: `arguments` parses native
-arguments and holds the usage text; `output` formats results and paths;
-`exit_codes` maps typed failures to diagnostics and stable process statuses;
-`control_session` owns trusted CLI policy, framed requests and session/save
-composition shared with MCP. `progress` observes jobs and writes stderr progress,
-`consent` prints upload scope and applies the explicit grant, `job_runtime`
-selects CLI runtime settings and budgets, and `paths` resolves destination aliases.
+| Owner | Responsibility |
+|---|---|
+| `args.rs` / `args/` | Native argument interpretation with stable typed refusals |
+| `output.rs` / `output/` | Process results, progress presentation, upload disclosures |
+| `session.rs` / `session/` | Leased control lifetime, shared export admission, runtime settings |
+| `commands.rs` / `commands/` | Native command dispatch through `run(context, args)` adapters |
+| `mcp.rs` / `mcp/` | Authenticated MCP protocol composition |
+
+Command siblings are grouped by project operations, media work, AI workflows,
+asset libraries and generated catalogs. Each native command has a single `run`
+entry point behind its module file; implementations stay private. Commands use
+only the `args`, `output`, `session` and MCP interfaces, never sibling commands.
+The process context carries the existing 2 GiB memory setting; each job retains
+its own budget with unchanged admission settings. Engine still owns actual
+export admission and execution; `session` only composes the existing entry points.
 
 `mcp` owns the stdio protocol adapter and OS-permissioned attach transport, composed
 by the desktop app through this library. [MCP control](../../docs/product/mcp.md)
@@ -122,11 +127,6 @@ which parses and maps styles through the captions owner and returns the
 registered `captions.import` command. The CLI prints counts and line-numbered
 warnings, applies the command under the same lease/save path and never
 reimplements ASS parsing or style mapping.
-
-The single integration binary groups CLI behaviour in `tests/it/cli/` by command.
-Its `process`, `project_fixture` and `media_fixture` modules own dev-only subprocess
-and fixture setup; control framing and batch/sound fixtures stay with their tests.
-Unit tests stay beside their production owner.
 
 `cargo test -p vibecut-cli` covers command dispatch, Unicode/space paths, refused
 parameters, subprocess lease contention, progress, export geometry, keyframed

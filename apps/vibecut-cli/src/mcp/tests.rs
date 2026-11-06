@@ -1,3 +1,4 @@
+//! Verifies the owning module interface.
 #![allow(clippy::unwrap_used, clippy::panic, clippy::indexing_slicing)]
 use super::*;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
