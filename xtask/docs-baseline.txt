@@ -1,11 +1,9 @@
 index	docs/adr/0001-project-foundations.md	not listed in docs/README.md
 index	docs/adr/0002-desktop-media-and-time.md	not listed in docs/README.md
 index	docs/adr/0003-whisper-callback-boundary.md	not listed in docs/README.md
-index	docs/agents/domain.md	not listed in docs/README.md
-index	docs/engineering/commands.md	not listed in docs/README.md
-index	docs/engineering/structure.md	not listed in docs/README.md
-index	docs/product/mcp.md	not listed in docs/README.md
-index	docs/product/tokens.md	not listed in docs/README.md
+index	docs/adr/0004-module-structure.md	not listed in docs/README.md
+index	docs/adr/0005-three-windows.md	not listed in docs/README.md
+index	docs/adr/0006-closed-command-catalog.md	not listed in docs/README.md
 map	apps/vibecut-cli/README.md	module map has no row for folder `commands/ai`
 map	apps/vibecut-cli/README.md	module map has no row for folder `commands/catalog`
 map	apps/vibecut-cli/README.md	module map has no row for folder `commands/libraries`
@@ -22,6 +20,7 @@ map	crates/engine/README.md	module map has no row for folder `libraries/sound_li
 map	crates/engine/README.md	module map has no row for folder `runtime/cache_storage`
 map	crates/engine/README.md	module map has no row for folder `runtime/staged_publication`
 map	crates/engine/README.md	module map has no row for folder `session/edit`
+map	crates/engine/README.md	module map has no row for folder `session/wire`
 map	crates/engine/README.md	module map has no row for folder `shorts/batch_export`
 map	crates/engine/README.md	module map has no row for folder `shorts/suggestion`
 map	crates/engine/README.md	module map has no row for folder `store/recovery_workflow`
@@ -49,8 +48,6 @@ text	crates/media/README.md	tracker id `p1-clips/12`
 text	crates/media/README.md	tracker id `ticket 18`
 text	crates/media/tests/fixtures/vision/README.md	tracker id `p1-clips/12`
 text	crates/render/README.md	tracker id `p0-core/78`
-text	docs/engineering/verification.md	tracker id `ticket 02`
-text	docs/engineering/workflows.md	tracker id `p0-core/44`
 text	docs/product/keyboard.md	tracker id `p1-parity/16`
 text	docs/product/keyboard.md	tracker id `p1-parity/20`
 text	docs/product/ui.md	tracker id `ticket 117`
