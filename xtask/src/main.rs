@@ -3,12 +3,11 @@ mod build;
 mod checkout;
 mod cleanup;
 mod distribution;
-mod docs;
 mod ffmpeg;
 mod i18n;
 mod measure;
-mod modules;
 mod orca;
+mod policy;
 mod reports;
 mod tickets;
 
@@ -55,8 +54,8 @@ fn checks(root: &Path) -> Result<(), String> {
     assets(root)?;
     i18n::check(root)?;
     names(root)?;
-    modules::check(root)?;
-    docs::check(root)?;
+    policy::modules::check(root)?;
+    policy::docs::check(root)?;
     checked(root, env!("CARGO"), &["fmt", "--all", "--", "--check"])?;
     Ok(())
 }
@@ -504,13 +503,13 @@ fn run() -> Result<ExitCode, String> {
         ["ffmpeg", "--target", target] => ffmpeg::provision(Some(target)),
         ["layers"] => layers(root),
         ["assets"] => assets(root),
-        ["modules"] => modules::check(root),
+        ["modules"] => policy::modules::check(root),
         ["docs"] => {
             layers(root)?;
             assets(root)?;
             i18n::check(root)?;
             names(root)?;
-            docs::check(root)
+            policy::docs::check(root)
         }
         ["i18n"] => i18n::check(root),
         ["new-crate", name] => new_crate(root, name),

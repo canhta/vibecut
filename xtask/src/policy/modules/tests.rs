@@ -436,12 +436,12 @@ group = "base"
 path = "src/editor"
 
 [[crate.folder.layer]]
-name = "frame"
-groups = ["frame"]
-
-[[crate.folder.layer]]
 name = "features"
 groups = ["assets", "player"]
+
+[[crate.folder.layer]]
+name = "frame"
+groups = ["frame"]
 
 [[crate.folder.module]]
 name = "frame"
@@ -458,6 +458,7 @@ group = "player"
 
 #[test]
 fn folder_tables_enforce_layers_and_groups_below_a_folder_interface() {
+    // Layers list lowest first: the frame sits above the areas and may call them.
     let tree = Tree::new();
     tree.config(EDITOR_FOLDER);
     tree.write("crates/foo/src/lib.rs", "//! Foo.\npub mod editor;\n");
@@ -467,11 +468,11 @@ fn folder_tables_enforce_layers_and_groups_below_a_folder_interface() {
     );
     tree.write(
         "crates/foo/src/editor/frame.rs",
-        "//! Frame.\nuse crate::editor::assets::Assets;\npub struct Frame;\n",
+        "//! Frame.\nuse crate::editor::assets::Assets;\nuse crate::editor::player::Player;\npub struct Frame;\n",
     );
     tree.write(
         "crates/foo/src/editor/assets.rs",
-        "//! Assets.\npub struct Assets;\n",
+        "//! Assets.\nuse crate::editor::frame::Frame;\npub struct Assets;\n",
     );
     tree.write(
         "crates/foo/src/editor/player.rs",
@@ -479,7 +480,7 @@ fn folder_tables_enforce_layers_and_groups_below_a_folder_interface() {
     );
     let error = check(&tree.0).unwrap_err();
     for expected in [
-        "crates/foo/src/editor/frame.rs",
+        "crates/foo/src/editor/assets.rs",
         "[layer]",
         "structure rule 4",
         "higher layer",
@@ -487,10 +488,7 @@ fn folder_tables_enforce_layers_and_groups_below_a_folder_interface() {
     ] {
         assert!(error.contains(expected), "{expected}: {error}");
     }
-    tree.write(
-        "crates/foo/src/editor/frame.rs",
-        "//! Frame.\npub struct Frame;\n",
-    );
+    assert!(!error.contains("editor/frame.rs"), "{error}");
     tree.write(
         "crates/foo/src/editor/assets.rs",
         "//! Assets.\nuse crate::editor::player::Player;\npub struct Assets;\n",
@@ -502,8 +500,52 @@ fn folder_tables_enforce_layers_and_groups_below_a_folder_interface() {
     );
     tree.write(
         "crates/foo/src/editor/assets.rs",
-        "//! Assets.\nuse crate::editor::frame::Frame;\npub struct Assets;\n",
+        "//! Assets.\npub struct Assets;\n",
     );
+    check(&tree.0).unwrap();
+}
+
+#[test]
+fn folder_tables_reach_nested_importers_and_relative_paths() {
+    let tree = Tree::new();
+    tree.config(EDITOR_FOLDER);
+    tree.write("crates/foo/src/lib.rs", "//! Foo.\npub mod editor;\n");
+    tree.write(
+        "crates/foo/src/editor.rs",
+        "//! Editor.\npub mod frame;\npub mod assets;\npub mod player;\n",
+    );
+    tree.write("crates/foo/src/editor/frame.rs", "//! Frame.\n");
+    tree.write(
+        "crates/foo/src/editor/assets.rs",
+        "//! Assets.\npub struct Assets;\n",
+    );
+    tree.write(
+        "crates/foo/src/editor/player.rs",
+        "//! Player.\nmod view;\n",
+    );
+    tree.write(
+        "crates/foo/src/editor/player/view.rs",
+        "//! View.\nuse crate::editor::assets::Assets;\n",
+    );
+    let error = check(&tree.0).unwrap_err();
+    assert!(
+        error.contains("crates/foo/src/editor/player/view.rs: [layer]")
+            && error.contains("crosses feature groups"),
+        "{error}"
+    );
+    tree.write(
+        "crates/foo/src/editor/player/view.rs",
+        "//! View.\nuse super::super::assets::Assets;\n",
+    );
+    let error = check(&tree.0).unwrap_err();
+    assert!(error.contains("crosses feature groups"), "{error}");
+    tree.write(
+        "crates/foo/src/editor/player/view.rs",
+        "//! View.\nuse crate::editor::frame::Frame;\n",
+    );
+    let error = check(&tree.0).unwrap_err();
+    assert!(error.contains("higher layer"), "{error}");
+    tree.write("crates/foo/src/editor/player/view.rs", "//! View.\n");
     check(&tree.0).unwrap();
 }
 

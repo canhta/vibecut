@@ -6,7 +6,7 @@ Commit only green; choose the smallest covering check. Rust compilations follow 
 
 | Change/stage | Check |
 |---|---|
-| Markdown, tickets, assets only | `cargo xtask docs` (layers, assets/sidecars, i18n catalog audit, name gate) |
+| Markdown, tickets, assets only | `cargo xtask docs` (layers, assets/sidecars, i18n catalog audit, name gate, docs index, README module maps, tracker-free Markdown) |
 | One Rust crate, iteration | `cargo test -p <crate>` and `cargo clippy -p <crate> --all-targets` |
 | App UI strings | `cargo xtask i18n` (en/vi completeness, unused keys, direct egui literals) |
 | Code handoff, frozen SHA | `cargo xtask ci --require-oracles` once (fmt, Clippy, all tests/doctests, layers, assets, names, required oracles) |
@@ -17,7 +17,7 @@ Commit only green; choose the smallest covering check. Rust compilations follow 
 | Clean rebase | Reuse the receipt; no full CI rerun |
 | Platform scope of a receipt | A full-CI receipt from any supported OS counts; a change touching platform-specific code (`cfg` for an OS, native/FFI, file-system paths and locking, build or provisioning scripts) also needs a receipt from each affected OS that has a local build host; an affected OS without one is listed unverified in the report and left to hosted CI on `main` |
 
-The build wrapper leaves a CI receipt and reuses it for the same tree. `cargo xtask ci [--require-oracles]` is the aggregate entry: `checks` (fmt/layers/assets/names/modules), `clippy`, workspace tests/doctests. `cargo xtask modules` enforces the [structure](structure.md#enforcement) rules a script can check. Hosted execution/triggers belong to [workflows](workflows.md#hosted-ci).
+The build wrapper leaves a CI receipt and reuses it for the same tree. `cargo xtask ci [--require-oracles]` is the aggregate entry: `checks` (fmt/layers/assets/names/modules/docs), `clippy`, workspace tests/doctests. `cargo xtask modules` enforces the [structure](structure.md#enforcement) rules a script can check; `cargo xtask docs` also enforces that `docs/README.md` links every docs page, each crate and app README maps its folder modules, and tracked Markdown carries no tracker ids (only-shrinking `xtask/docs-baseline.txt`). Hosted execution/triggers belong to [workflows](workflows.md#hosted-ci).
 
 Required mode rejects missing, unusable or pre-6.0 external ffmpeg/ffprobe, sets `VIBECUT_REQUIRE_ORACLES=1` so skips fail, and prints tool paths/versions plus fixture size/SHA-256 receipts. Fast/offline CI labels skipped oracles; skips never count as acceptance. The name gate rejects local `.scratch/forbidden-names.txt` regexes in tracked files and branch commit messages.
 

@@ -42,7 +42,6 @@ folder	crates/ai/src	19 direct children (limit 12)
 folder	crates/media/src	13 direct children (limit 12)
 folder	crates/project/src	18 direct children (limit 12)
 folder	crates/render/src	16 direct children (limit 12)
-folder	xtask/src	13 direct children (limit 12)
 interface	crates/media/tests/it/common/mod.rs	module interface is `mod.rs`; use `foo.rs` beside `foo/`
 interface	crates/render/tests/it/common/mod.rs	module interface is `mod.rs`; use `foo.rs` beside `foo/`
 interface	crates/text/tests/it/common/mod.rs	module interface is `mod.rs`; use `foo.rs` beside `foo/`
