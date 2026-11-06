@@ -1,21 +1,18 @@
 //! Executes a bounded file of export requests.
+//!
+//! A job file names projects and destinations only. The batch admits the request, loads each
+//! project once as an immutable snapshot, and submits the existing `engine::submit_export` jobs
+//! in file order. Render owns pixels, staging and the publication fence; the engine owns
+//! scheduling, cancellation and terminal results.
 mod admission;
 mod execution;
 mod request;
-use admission::load;
-use execution::execute;
-pub(crate) use request::run;
-// Executes a bounded file of export requests.
-// Bounded, validated headless batch render over the engine export job owner.
-//
-// A job file names projects and destinations only. This adapter parses and
-// admits the request, loads each project once as an immutable snapshot, and
-// submits the existing `engine::submit_export` jobs in file order. Render owns
-// pixels, staging and the publication fence; the engine owns scheduling,
-// cancellation and terminal results.
 use crate::session::Aspect;
+use admission::load;
 use engine::control;
+use execution::execute;
 use project::Project;
+pub(crate) use request::run;
 use serde::Deserialize;
 use std::collections::BTreeMap;
 use std::path::PathBuf;

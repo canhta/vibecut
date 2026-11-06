@@ -3,14 +3,6 @@ use super::{
     JobFile, MAX_BATCH_JOBS, MAX_BATCH_PROJECT_BYTES, MAX_JOB_FILE_BYTES, MAX_JOB_PATH_BYTES,
     PreparedBatch, PreparedJob,
 };
-// Executes a bounded file of export requests.
-// Bounded, validated headless batch render over the engine export job owner.
-//
-// A job file names projects and destinations only. This adapter parses and
-// admits the request, loads each project once as an immutable snapshot, and
-// submits the existing `engine::submit_export` jobs in file order. Render owns
-// pixels, staging and the publication fence; the engine owns scheduling,
-// cancellation and terminal results.
 use crate::CliError;
 use crate::output::json_path;
 use crate::session::resolve_target;
