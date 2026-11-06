@@ -29,23 +29,16 @@ pub fn poll_workspace(
             .editor
             .as_deref_mut()
             .ok_or(engine::EditError::RecoveryBusy)?;
-        let before = editor.session.revision();
-        let result = inbox.execute_project(&mut editor.session, value, |_, _| {
-            Err(engine::EditError::Permission)
-        });
-        if editor.session.revision() != before {
-            let project = editor.session.project().clone();
-            let position = editor
-                .playback
-                .position()
-                .map_err(|_| engine::EditError::Invalid("playback position"))?
-                .clamp(time::Tick::ZERO, project.duration());
-            editor
-                .playback
-                .seek(position, editor.playback.playing(), project)
-                .map_err(|_| engine::EditError::Invalid("playback refresh"))?;
-        }
-        result
+        editor
+            .activate_with(None, |editor| {
+                Ok(inbox.execute_project(&mut editor.session, value, |_, _| {
+                    Err(engine::EditError::Permission)
+                })?)
+            })
+            .map_err(|error| match error {
+                Error::Engine(error) => error,
+                _ => engine::EditError::Invalid("editor activation"),
+            })
     })?;
     for window in workspace.windows.values_mut() {
         if let Some(editor) = &mut window.editor {

@@ -14,9 +14,21 @@ impl Editor {
         if let Some(ticket) = spec.pending_ticket() {
             return Err(Error::NotAvailable(ticket));
         }
+        self.activate_with(Some(id), |editor| {
+            editor.activate_action(id, spec, argument)
+        })
+    }
+
+    /// Apply an admitted input through the editor's shared activation lifecycle.
+    /// Socket inputs omit the widget id; engine admission remains inside `execute`.
+    pub(crate) fn activate_with<T>(
+        &mut self,
+        id: Option<&str>,
+        execute: impl FnOnce(&mut Self) -> Result<T>,
+    ) -> Result<T> {
         let flushed = if let Some(subtitles) = &mut self.subtitles {
             if matches!(
-                id,
+                id.unwrap_or_default(),
                 "subtitles.dismiss"
                     | "subtitles.cancel"
                     | "subtitles.consent.approve"
@@ -32,15 +44,37 @@ impl Editor {
         if flushed {
             self.sync_preview();
         }
-        if !self.action_enabled(id) {
+        if let Some(id) = id
+            && !self.action_enabled(id)
+        {
+            let (spec, _) = actions::resolve(id).ok_or(Error::Unsupported("widget action"))?;
             return Err(Error::ActionDisabled(spec.id));
         }
         self.session.set_selection(self.selection.clone())?;
         self.remember_view()?;
+        let before = self.session.project().clone();
+        let result = execute(self)?;
+        if id.is_none() {
+            self.selection = self.session.selection().clone();
+            self.prune_selection();
+        }
+        self.prune_media_selection();
+        if !Arc::ptr_eq(&before, self.session.project()) {
+            self.sync_preview();
+        }
+        self.remember_view()?;
+        Ok(result)
+    }
+
+    fn activate_action(
+        &mut self,
+        id: &str,
+        spec: &actions::ActionSpec,
+        argument: Option<u64>,
+    ) -> Result<()> {
         let at = self.playback.position()?;
         let duration = self.session.project().duration();
         let playing = self.playback.playing();
-        let before = self.session.project().clone();
         match spec.target {
             ActionTarget::Engine(route) => self.execute_engine_action(route)?,
             ActionTarget::Pending { ticket, .. } => return Err(Error::NotAvailable(ticket)),
@@ -334,11 +368,6 @@ impl Editor {
                 }
             },
         }
-        self.prune_media_selection();
-        if !Arc::ptr_eq(&before, self.session.project()) {
-            self.sync_preview();
-        }
-        self.remember_view()?;
         Ok(())
     }
 }

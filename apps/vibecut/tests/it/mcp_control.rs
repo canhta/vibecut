@@ -25,6 +25,7 @@ fn foreground() -> String {
 
 #[test]
 fn mcp_real_app_background_attach_never_creates_a_window_or_takes_focus() {
+    socket_edits_activate_editor();
     let root = tempfile::tempdir().unwrap();
     let project = root.path().join("project.json");
     let snapshot = project::Project::empty(project::ProjectId(42), "background".into()).unwrap();
@@ -97,4 +98,272 @@ fn mcp_real_app_background_attach_never_creates_a_window_or_takes_focus() {
         );
         std::thread::sleep(Duration::from_millis(25));
     }
+}
+
+// Additional rows of the control behaviour: real socket -> inbox -> editor,
+// while a kittest caption field still owns its uncommitted draft.
+fn socket_edits_activate_editor() {
+    use egui_kittest::{
+        Harness,
+        kittest::{By, Queryable},
+    };
+    use vibecut::{catalog::Preferences, egui, workspace::Workspace};
+
+    for (command, draft) in [("delete", false), ("project.rename", true)] {
+        let root = tempfile::tempdir().unwrap();
+        let mut workspace =
+            Workspace::new(root.path().join("recovery"), Preferences::default(), None).unwrap();
+        let editor = caption_editor();
+        let item = editor
+            .session
+            .project()
+            .data()
+            .scene()
+            .timeline
+            .iter()
+            .flat_map(|track| &track.items)
+            .next()
+            .unwrap()
+            .id;
+        let id = workspace.register_editor(Box::new(editor));
+        let mut h = Harness::builder()
+            .with_size(egui::vec2(1440.0, 1000.0))
+            .build_ui_state(
+                |ui, workspace: &mut Workspace| workspace.focused_editor_mut().unwrap().ui(ui),
+                workspace,
+            );
+        h.run_steps(3);
+        h.state_mut()
+            .editor_mut(id)
+            .unwrap()
+            .activate(&format!("timeline.item.{}", item.0))
+            .unwrap();
+        let expected = if draft {
+            let field = "subtitles.text.cue-0.vi";
+            h.get(By::new().predicate(|n| n.author_id() == Some("subtitles.cue.cue-0")))
+                .click_accesskit();
+            h.run_steps(3);
+            h.get(By::new().predicate(|n| n.author_id() == Some(field)))
+                .focus();
+            h.run_steps(2);
+            h.get(By::new().predicate(|n| n.author_id() == Some(field)))
+                .type_text(" pending draft");
+            h.run_steps(2);
+            Some(
+                h.get(By::new().predicate(|n| n.author_id() == Some(field)))
+                    .value()
+                    .unwrap()
+                    .to_owned(),
+            )
+        } else {
+            None
+        };
+        let editor = h.state_mut().editor_mut(id).unwrap();
+        let generation = editor.playback.generation();
+        let revision = editor.session.revision();
+        let endpoint = if cfg!(windows) {
+            std::path::PathBuf::from(format!(
+                "vibecut-activation-{}-{command}",
+                std::process::id()
+            ))
+        } else {
+            root.path().join("private/control.sock")
+        };
+        let mut server = vibecut_cli::mcp::Server::bind(
+            &endpoint,
+            Default::default(),
+            editor.playback.budget().clone(),
+        )
+        .unwrap();
+        let cli = std::path::Path::new(env!("CARGO_BIN_EXE_vibecut"))
+            .with_file_name(format!("vibecut-cli{}", std::env::consts::EXE_SUFFIX));
+        let params = if command == "delete" {
+            json!({"items":[item]})
+        } else {
+            json!({"name":"Agent rename"})
+        };
+        let mut child = Process(
+            Command::new(cli)
+                .args(["mcp", "--attach", "--socket"])
+                .arg(&endpoint)
+                .stdin(Stdio::piped())
+                .stdout(Stdio::piped())
+                .stderr(Stdio::null())
+                .spawn()
+                .unwrap(),
+        );
+        let mut input = child.0.stdin.take().unwrap();
+        writeln!(input, "{}", json!({"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-11-25","capabilities":{},"clientInfo":{"name":"activation-test","version":"1"}}})).unwrap();
+        let mut reader = BufReader::new(child.0.stdout.take().unwrap());
+        let mut line = String::new();
+        reader.read_line(&mut line).unwrap();
+        writeln!(
+            input,
+            "{}",
+            json!({"jsonrpc":"2.0","method":"notifications/initialized"})
+        )
+        .unwrap();
+        writeln!(input, "{}", json!({"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"command_run","arguments":{"request_id":"activation","base_rev":revision,"idempotency_key":"activation","command":command,"params":params,"project_id":id}}})).unwrap();
+        let (send, receive) = std::sync::mpsc::channel();
+        let response = std::thread::spawn(move || {
+            let mut line = String::new();
+            reader.read_line(&mut line).unwrap();
+            send.send(serde_json::from_str::<Value>(&line).unwrap())
+                .unwrap();
+        });
+        let deadline = Instant::now() + Duration::from_secs(10);
+        let response_value = loop {
+            vibecut::control::poll_workspace(h.state_mut(), &mut server.inbox).unwrap();
+            if let Ok(value) = receive.try_recv() {
+                break value;
+            }
+            assert!(Instant::now() < deadline, "control request timed out");
+            std::thread::sleep(Duration::from_millis(2));
+        };
+        response.join().unwrap();
+        let editor = h.state_mut().editor_mut(id).unwrap();
+        assert!(
+            editor.playback.generation() > generation,
+            "{command}: stale preview"
+        );
+        assert_eq!(
+            editor.inspect().unwrap().selection,
+            editor
+                .session
+                .selection()
+                .iter()
+                .copied()
+                .collect::<Vec<_>>(),
+            "{command}: stale selection"
+        );
+        if let Some(expected) = expected {
+            let cues = editor
+                .session
+                .project()
+                .data()
+                .scene()
+                .timeline
+                .iter()
+                .flat_map(|track| &track.items)
+                .find_map(|item| match &item.content {
+                    project::ItemParams::Caption(p) => Some(&p.cues),
+                    _ => None,
+                })
+                .unwrap();
+            assert_eq!(
+                cues.cues[0].texts[&captions::LanguageTag::parse("vi").unwrap()]
+                    .text
+                    .as_str(),
+                expected,
+                "socket edit skipped caption draft"
+            );
+            assert_eq!(
+                response_value.pointer("/result/structuredContent/value/value"),
+                Some(&json!("stale_revision")),
+                "flushing the draft must preserve control revision admission: {response_value}"
+            );
+            assert_eq!(editor.session.project().data().name.as_str(), "Captions");
+            editor.activate("edit.undo").unwrap();
+            let cues = editor
+                .session
+                .project()
+                .data()
+                .scene()
+                .timeline
+                .iter()
+                .flat_map(|track| &track.items)
+                .find_map(|item| match &item.content {
+                    project::ItemParams::Caption(p) => Some(&p.cues),
+                    _ => None,
+                })
+                .unwrap();
+            assert_ne!(
+                cues.cues[0].texts[&captions::LanguageTag::parse("vi").unwrap()]
+                    .text
+                    .as_str(),
+                expected,
+                "draft must be its own undoable edit"
+            );
+        } else {
+            assert_eq!(
+                response_value.pointer("/result/structuredContent/value/status"),
+                Some(&json!("result")),
+                "{response_value}"
+            );
+            assert!(
+                editor.inspect().unwrap().selection.is_empty(),
+                "deleted item remains selected"
+            );
+        }
+    }
+}
+
+fn caption_editor() -> vibecut::Editor {
+    use engine::{ByteBudget, Command, NewItem, Session};
+    use time::{SourceRange, TICKS_PER_SECOND, Tick};
+    let mut session = Session::new(
+        project::Project::empty(project::ProjectId(9), "Captions".into()).unwrap(),
+        30,
+    )
+    .unwrap();
+    session
+        .execute(
+            "import.add_asset",
+            json!({"asset":{
+                "ephemeral":true, "id":1, "path":std::env::temp_dir().join("control-caption.srt"),
+                "content_hash":media::ContentHash::from_bytes(b"control caption"),
+                "probe":{"format":"srt","duration":null,"streams":[]}
+            }}),
+        )
+        .unwrap();
+    let language = captions::LanguageTag::parse("vi").unwrap();
+    session
+        .apply(Command::InsertItem {
+            placement: engine::Placement::Auto,
+            item: NewItem {
+                retime: Default::default(),
+                animations: Default::default(),
+                source_asset: Some(media::AssetId(1)),
+                source_range: SourceRange::new(Tick::ZERO, Tick(10 * TICKS_PER_SECOND)).unwrap(),
+                start: Tick::ZERO,
+                content: project::ItemParams::Caption(project::CaptionParams {
+                    cues: captions::CueTrack {
+                        cues: vec![captions::Cue {
+                            id: "cue-0".into(),
+                            range: SourceRange::new(
+                                Tick(TICKS_PER_SECOND),
+                                Tick(3 * TICKS_PER_SECOND),
+                            )
+                            .unwrap(),
+                            source_lang: language.clone(),
+                            texts: [(
+                                language,
+                                captions::CueText {
+                                    text: "Cha\u{0300}o ba\u{0323}n".into(),
+                                    edited: false,
+                                    translation_ref: None,
+                                },
+                            )]
+                            .into(),
+                            style: None,
+                        }],
+                    },
+                }),
+            },
+        })
+        .unwrap();
+    let playback = vibecut::playback::Playback::new(
+        &session,
+        ByteBudget::new(256 << 20).unwrap(),
+        std::sync::Arc::new(vibecut::playback::Files),
+    )
+    .unwrap();
+    let mut preferences = vibecut::catalog::Preferences {
+        assets_tab: vibecut::panels::AssetsTab::Captions,
+        ..Default::default()
+    };
+    preferences.subtitles.source = "vi".into();
+    let mut editor = vibecut::Editor::new(session, playback, preferences);
+    editor.prepare_subtitles().unwrap();
+    editor
 }
