@@ -1,6 +1,16 @@
 # Agent orchestration
 
-Rules for the coordinator and workers. Each rule lives here once; hosts, commands and quirks are maintainer-private (`.scratch/process/orchestration.md`), per-work-type tiers and verdicts are in `.scratch/agents.md`. Before any action that dispatches, merges, deletes or pushes, re-read the section that governs it; do not act from memory.
+Rules for the coordinator and workers. Each rule lives here once; hosts, commands and quirks are maintainer-private (`.scratch/process/orchestration.md`), per-work-type tiers and verdicts are in `.scratch/agents.md`. Before an action, re-read only its section; do not act from memory:
+
+| Action | Section |
+|---|---|
+| open a session, wake | Coordinator loop 1-2 |
+| answer a message | Coordinator loop 3 |
+| a worker reports (`worker_done`) | Review and merge 1; Coordinator loop 4 |
+| write or send a spec | Coordinator loop 5 |
+| choose agent or host | Routing; Placement and builds |
+| merge or push | Review and merge 5-7 |
+| clean up | Coordinator loop 4 (remote: pull reports first) |
 
 ## Roles
 
@@ -73,6 +83,6 @@ On every wake, in this order:
 3. `changes` also for dual versions, legacy shims, deprecated paths and compatibility code. Unsettled product or policy questions go to the coordinator as questions, not `changes`, and do not affect tiers.
 4. Never skip, mask, loosen or special-case a test to get green. A failure called known cites a bug ticket (file one first if absent); a failure matching an open bug ticket never blocks the merge. Stop only for a failure no ticket explains.
 5. Merge immediately when approved: rebase onto `origin/main`, regenerate `Cargo.lock` on conflict, apply [checks](../engineering/verification.md#checks), push fast-forward to `main`, repeat on rejection. Local checks are the only gate; nobody waits for hosted CI. The last merger fixes or reverts red `main` at once.
-6. Every commit on `main` builds: resolve a rebase conflict in the commit that causes it or squash first; run `git grep -n '^<<<<<<< '` over the range before pushing. `aca291f` and `5bb3179` broke this; bisect across them needs `git bisect skip`.
+6. Every commit on `main` builds: resolve a rebase conflict in the commit that causes it or squash first; run `git grep -n '^<<<<<<< '` over the range before pushing.
 7. After merge: write `## Answer` with SHA and evidence, set `Status: resolved`, add one decision line to the milestone map.
 8. Outward-facing actions (upstream posts, visibility changes, publishing) need the maintainer's explicit approval.
