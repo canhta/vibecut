@@ -13,6 +13,7 @@ mod orca;
 mod reports;
 mod sherpa;
 mod tickets;
+mod ui_compare;
 
 use serde_json::Value;
 use std::collections::BTreeMap;
@@ -509,10 +510,11 @@ fn run() -> Result<ExitCode, String> {
         ["new-crate", name] => new_crate(root, name),
         ["ui-audit"] => ui_audit(root, &[]),
         ["ui-audit", scenes @ ..] => ui_audit(root, scenes),
+        ["ui-compare", ..] => ui_compare::run(root, args.get(1..).unwrap_or(&[])),
         ["ci"] => ci(root, false),
         ["ci", "--require-oracles"] => ci(root, true),
         _ => Err(
-            "usage: cargo xtask <dist COMMAND [OPTIONS]|build -- COMMAND [ARGS...]|frontier [ASSIGNEE]|board [PORT]|ffmpeg [--target PLATFORM|--cache-key]|ui-audit [SCENE...]|sherpa [--arch x86_64|aarch64]|media-bench|clip-eval SET [OPTIONS]|cleanup [--environment NAME] [--dry-run] TARGET...|pull-reports [--environment NAME] [--ssh HOST] [--dry-run] WORKTREE...|ci [--require-oracles]|checks|clippy|lint|test|docs|i18n|layers|assets|new-crate NAME>"
+            "usage: cargo xtask <dist COMMAND [OPTIONS]|build -- COMMAND [ARGS...]|frontier [ASSIGNEE]|board [PORT]|ffmpeg [--target PLATFORM|--cache-key]|ui-audit [SCENE...]|ui-compare OURS REFERENCE [--region X,Y,W,H] [--out DIR] [--max-error F]|sherpa [--arch x86_64|aarch64]|media-bench|clip-eval SET [OPTIONS]|cleanup [--environment NAME] [--dry-run] TARGET...|pull-reports [--environment NAME] [--ssh HOST] [--dry-run] WORKTREE...|ci [--require-oracles]|checks|clippy|lint|test|docs|i18n|layers|assets|new-crate NAME>"
                 .into(),
         ),
     }.map(|()| ExitCode::SUCCESS)
