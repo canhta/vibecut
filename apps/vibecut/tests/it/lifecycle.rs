@@ -632,6 +632,56 @@ fn project_windows_keep_independent_edits_undo_and_playback_and_reopen_focuses_o
     idle(&mut app);
     assert_eq!(app.windows.len(), 2);
     paths[0] = copy;
+    // A cancel that arrives after the save published still completes the Save As:
+    // the window adopts the copy's identity and the 161 lane carry runs. The
+    // runner starts the queued worker on a tick; publication is then awaited on
+    // disk without ticking, so the cancel deterministically lands after the
+    // engine rekeyed the editor but before the runner joins the finished job.
+    let late = root.path().join("cancel-after-publish.vibecut");
+    app.focus(first).unwrap();
+    app.persist(Some(late.clone()), false, false, false)
+        .unwrap();
+    app.tick();
+    let deadline = Instant::now() + Duration::from_secs(20);
+    let published = loop {
+        if let Ok(loaded) = project::load(&late)
+            && loaded.project.data().id != first
+        {
+            break loaded.project.data().id;
+        }
+        assert!(Instant::now() < deadline, "save-as publication timeout");
+        std::thread::yield_now();
+    };
+    app.focused_window_mut().unwrap().cancel_pending();
+    idle(&mut app);
+    assert!(app.error().is_none(), "{:?}", app.error());
+    assert_eq!(app.focused_project(), Some(published));
+    assert_eq!(
+        app.preferences.timeline_lanes.get(&published),
+        Some(&lanes),
+        "a cancel after publication still carries the open lanes to the copy"
+    );
+    assert_eq!(
+        app.preferences.timeline_lanes.get(&first),
+        Some(&lanes),
+        "the issuing project keeps its own lanes after a late cancel"
+    );
+    first = published;
+    // A cancel before the queued worker starts publishes nothing: the window
+    // keeps its identity and lane set, exactly like any other cancelled save.
+    let early = root.path().join("cancel-before-publish.vibecut");
+    app.focus(first).unwrap();
+    app.persist(Some(early.clone()), false, false, false)
+        .unwrap();
+    app.focused_window_mut().unwrap().cancel_pending();
+    idle(&mut app);
+    assert!(!early.exists(), "cancel before publication writes no copy");
+    assert_eq!(app.focused_project(), Some(first));
+    assert_eq!(
+        app.preferences.timeline_lanes.get(&first),
+        Some(&lanes),
+        "cancel before publication leaves the lanes unchanged"
+    );
     // Explicit window harness targets preserve the same automation ids in either window.
     let mut harness = crate::gpu::builder()
         .with_size(egui::vec2(1440.0, 900.0))

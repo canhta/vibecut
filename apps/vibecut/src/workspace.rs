@@ -764,6 +764,13 @@ impl EditorWindow {
     pub fn busy(&self) -> bool {
         self.pending.is_some() || self.picker.is_some()
     }
+    /// Ask the pending lifecycle operation to stop. Publication may already have
+    /// won the race; its completion decides whether the operation succeeded.
+    pub fn cancel_pending(&mut self) {
+        if let Some(pending) = &self.pending {
+            pending.cancel.cancel();
+        }
+    }
     pub fn error(&self) -> Option<&Error> {
         self.error.as_ref()
     }
@@ -1156,7 +1163,14 @@ impl EditorWindow {
                 .map(Error::Worker)
                 .unwrap_or(Error::Engine(EditError::WorkerPanicked)))
         });
-        if pending.cancel.cancelled() {
+        // A Save As whose publication already completed is a successful Save As
+        // even when the cancel arrives afterwards: the engine has rekeyed the
+        // editor to the copy, so dropping the completion would leave the window
+        // on the new id without carrying its lanes. A cancel before publication
+        // produced no completed Persist result and still changes nothing.
+        let published_save_as = save_as_from.is_some()
+            && matches!(&result, Ok(Completed::Persisted { result: Ok(()), .. }));
+        if pending.cancel.cancelled() && !published_save_as {
             self.startup_path = None;
             self.retry_path = None;
             return;
@@ -1280,19 +1294,24 @@ impl EditorWindow {
                     self.error = Some(e);
                 }
             }
-        } else if let Some(pending) = &self.pending {
+        } else if let Some(pending) = self.pending.as_ref() {
+            let text = pending.text;
+            let mut cancel = false;
             ui.vertical_centered(|ui| {
                 ui.add_space(100.0);
                 ui.heading(egui::RichText::new(self.tr(Text::AppName)).size(28.0));
                 ui.add_space(28.0);
                 ui.spinner();
-                ui.label(self.tr(pending.text));
-                if matches!(pending.text, Text::LoadingProject)
+                ui.label(self.tr(text));
+                if matches!(text, Text::LoadingProject)
                     && self.button(ui, "project.operation.cancel", Icon::X, Text::Cancel)
                 {
-                    pending.cancel.cancel();
+                    cancel = true;
                 }
             });
+            if cancel {
+                self.cancel_pending();
+            }
         } else if self.picker.is_some() {
             ui.vertical_centered(|ui| {
                 ui.add_space(100.0);
