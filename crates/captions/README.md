@@ -9,10 +9,9 @@ translation providers and subtitle rendering.
 
 | Module | Responsibility |
 |---|---|
-| `interchange` | Imports and exports SRT, WebVTT and ASS interchange. |
-| `interchange/srt` | Parses SRT subtitle files. |
-| `interchange/vtt` | Parses WebVTT subtitle files. |
-| `interchange/ass` | Parses ASS documents and maps their styles. |
+| `interchange` | Reads and writes SRT and WebVTT subtitle files. |
+| `interchange/ass` | Parses ASS documents into typed cues. |
+| `interchange/ass/style` | Maps ASS style records and colours onto cue styles. |
 | `segment` | Generates subtitle cues from transcripts. |
 | `segment/units` | Derives indivisible speech units from words, spans or plain text. |
 | `segment/layout` | Fits speech units into the configured lines. |

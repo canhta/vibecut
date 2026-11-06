@@ -6,7 +6,6 @@ mod draw;
 pub mod effects;
 mod evaluation;
 pub mod mask;
-pub(crate) mod oversample;
 mod raster;
 pub(crate) mod transform;
 

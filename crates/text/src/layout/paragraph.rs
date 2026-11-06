@@ -1,6 +1,6 @@
 //! Shapes text runs and emits positioned lines.
 
-use super::breaks::{advance_prefix, grapheme_boundaries, line_ranges, range_width, trim_end};
+use super::breaks::{grapheme_boundaries, line_ranges, range_width, trim_end};
 use super::{Align, Bounds, Glyph, Layout, LayoutOptions, Line, TextError};
 use crate::fonts::{self, FaceId, Resolved};
 use harfrust::{Buffer, Direction, Feature, ShapeOptions, ShaperFont, Tag, shape};
@@ -373,6 +373,27 @@ fn shape_run(
         });
     }
     Ok(())
+}
+
+/// Prefix sums of shaped advances by byte offset.
+fn advance_prefix(text: &str, glyphs: &[ShapedGlyph], base: usize) -> Vec<f32> {
+    let mut advances = vec![0.0f32; text.len().saturating_add(1)];
+    for glyph in glyphs {
+        if let Some(local) = glyph.cluster.checked_sub(base)
+            && let Some(slot) = advances.get_mut(local)
+        {
+            *slot += glyph.advance;
+        }
+    }
+    let mut prefix = vec![0.0f32; text.len().saturating_add(1)];
+    let mut total = 0.0f32;
+    for (index, advance) in advances.iter().enumerate() {
+        total += advance;
+        if let Some(slot) = prefix.get_mut(index + 1) {
+            *slot = total;
+        }
+    }
+    prefix
 }
 
 fn glyphs_same(a: &[ShapedGlyph], b: &[ShapedGlyph]) -> bool {

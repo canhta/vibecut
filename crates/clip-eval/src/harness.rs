@@ -1,15 +1,15 @@
 //! Runs the fixed label set and writes its scored report.
 mod report;
-mod scoring;
+mod suggestion;
 
 pub use report::{Aggregate, RangeReport, Report, SuggestionReport, VideoReport};
 use report::{file_name, file_stem, git_rev, micros, millis, write_report};
-use scoring::{RunContext, estimate_provider, run_provider, score};
+use suggestion::{RunContext, estimate_provider, run_provider};
 
 use crate::baseline::{Baseline, BaselineInput};
 use crate::budget::Budget;
 use crate::label::{LabelFile, ResolvedSettings, sha256_bytes, sha256_file, verify_hash};
-use crate::metrics::Metrics;
+use crate::metrics::{Evaluation, Metrics, evaluate};
 use crate::transcript;
 use crate::{Error, Result};
 use ai::clips::{
@@ -252,16 +252,17 @@ pub fn run(options: &Options) -> Result<RunOutput> {
         };
         let current = run_provider(&context, &mut video_notes, estimate, &mut budget)?;
         let current_wall = millis(current_started.elapsed());
-        let current_metrics = score(
-            &label.clips,
-            &current,
-            &cached.transcript,
+        let current_metrics = evaluate(&Evaluation {
+            labels: &label.clips,
+            suggestions: &current.shorts,
+            transcript: &cached.transcript,
             profile,
-            &settings,
-            options.k,
-            estimate.saturating_add(cached.cost_micros),
-            current_wall,
-        )?;
+            settings: &settings,
+            k: options.k,
+            cost_micros: estimate.saturating_add(cached.cost_micros),
+            wall_ms: current_wall,
+            snap_failures: current.snap_failures,
+        })?;
 
         let (baseline_metrics, baseline_cost) = if options.provider == Provider::Heuristic {
             let mut metrics = current_metrics.clone();
@@ -276,16 +277,17 @@ pub fn run(options: &Options) -> Result<RunOutput> {
             };
             let baseline_run = run_provider(&baseline_context, &mut video_notes, 0, &mut budget)?;
             let baseline_wall = millis(baseline_started.elapsed());
-            let metrics = score(
-                &label.clips,
-                &baseline_run,
-                &cached.transcript,
+            let metrics = evaluate(&Evaluation {
+                labels: &label.clips,
+                suggestions: &baseline_run.shorts,
+                transcript: &cached.transcript,
                 profile,
-                &settings,
-                options.k,
-                0,
-                baseline_wall,
-            )?;
+                settings: &settings,
+                k: options.k,
+                cost_micros: 0,
+                wall_ms: baseline_wall,
+                snap_failures: baseline_run.snap_failures,
+            })?;
             (metrics, 0)
         };
 
@@ -487,4 +489,140 @@ fn baseline_input(
         k,
         energy,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use ai::clips::{ClipSource, MAX_WIRE, MODE};
+    use ai::{CostEstimate, Money, Operation, Request, Scope};
+    use time::{SourceRange, Tick};
+
+    #[test]
+    fn synthetic_wav_hash_is_stable_and_verified() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("source.wav");
+        crate::label::write_synthetic_wav(&path, 2.0).unwrap();
+        let first = crate::label::sha256_file(&path).unwrap();
+        crate::label::write_synthetic_wav(&path, 2.0).unwrap();
+        assert_eq!(first, crate::label::sha256_file(&path).unwrap());
+    }
+
+    struct FakeProvider {
+        config: ProviderConfig,
+        estimate: u64,
+    }
+
+    impl ClipSuggester for FakeProvider {
+        fn config(&self) -> &ProviderConfig {
+            &self.config
+        }
+        fn capabilities(&self, _: &Scope) -> ai::Capabilities {
+            ai::Capabilities {
+                model: "fake-model".into(),
+                mode: MODE.into(),
+                operation: Operation::SuggestClips,
+                languages: vec![LanguageTag::parse("en").unwrap()],
+                target_languages: Vec::new(),
+                timing: std::collections::BTreeSet::new(),
+                diarization: ai::Support::Unsupported,
+                live_audio_input: ai::Support::Unsupported,
+                file_result_stream: ai::Support::Unsupported,
+                max_upload_bytes: Some(MAX_WIRE),
+                max_duration_micros: None,
+                evidence: ai::Evidence::FixtureVerified,
+                revision: "test".into(),
+            }
+        }
+        fn estimate(&self, _: &Scope) -> CostEstimate {
+            CostEstimate::UpperBound(Money::new("USD", self.estimate).unwrap())
+        }
+        fn source(&self) -> ClipSource {
+            ClipSource::Llm
+        }
+        fn suggest(
+            &self,
+            _: &ClipInput,
+            _: &Request<'_>,
+            _: &dyn ExecutionHooks,
+        ) -> std::result::Result<Vec<ai::clips::ClipProposal>, ai::Error> {
+            Ok(Vec::new())
+        }
+    }
+
+    #[test]
+    fn second_video_is_refused_by_the_cumulative_run_budget() {
+        use captions::{Fingerprint, NfcText, Segment, Word};
+        let transcript = Transcript {
+            source_lang: LanguageTag::parse("en").unwrap(),
+            fingerprint: Fingerprint {
+                provider: "fixture".into(),
+                model: "fixture".into(),
+                settings: "fixture".into(),
+            },
+            segments: vec![Segment {
+                id: "s0".into(),
+                range: SourceRange::new(Tick::ZERO, Tick(4 * time::TICKS_PER_SECOND)).unwrap(),
+                text: NfcText::from("One."),
+                words: vec![Word {
+                    text: NfcText::from("One."),
+                    range: Some(
+                        SourceRange::new(Tick::ZERO, Tick(4 * time::TICKS_PER_SECOND)).unwrap(),
+                    ),
+                    speaker: None,
+                    confidence: None,
+                }],
+                spans: None,
+            }],
+        };
+        let settings = crate::label::Settings {
+            count: 1,
+            min_duration_seconds: 1.0,
+            max_duration_seconds: 10.0,
+            min_segment_duration_seconds: 1.0,
+            ..crate::label::Settings::default()
+        }
+        .resolve()
+        .unwrap();
+        let registry = LanguageRegistry::standard().unwrap();
+        let language = LanguageTag::parse("en").unwrap();
+        let profile = registry.profile(&language);
+        let input = build_input(&transcript, profile, &settings, &language).unwrap();
+        let provider = FakeProvider {
+            config: ProviderConfig::new(
+                "fake".into(),
+                "fake-model".into(),
+                "fake-settings".into(),
+                Location::Remote {
+                    backend: "fake".into(),
+                    base_url: "https://example.invalid".into(),
+                    auth_ref: "test".into(),
+                },
+            )
+            .unwrap(),
+            estimate: 344_064,
+        };
+        let estimate = estimate_provider(&provider, &input, "sha").unwrap();
+        assert_eq!(estimate, 344_064);
+        let context = RunContext {
+            provider: &provider,
+            input: &input,
+            transcript: &transcript,
+            profile,
+            settings: &settings,
+            source_sha: "sha",
+            source: Path::new("unused"),
+            energy: false,
+        };
+        let mut budget = Budget::new(350_000);
+        let mut notes = Vec::new();
+        run_provider(&context, &mut notes, estimate, &mut budget).unwrap();
+        assert!(matches!(
+            run_provider(&context, &mut notes, estimate, &mut budget),
+            Err(Error::CostCap {
+                estimate: 688_128,
+                cap: 350_000
+            })
+        ));
+    }
 }

@@ -1,7 +1,5 @@
-//! Imports and exports SRT, WebVTT and ASS subtitle interchange.
+//! Reads and writes SRT and WebVTT subtitle files.
 pub mod ass;
-mod srt;
-mod vtt;
 
 use crate::{Cue, CueText, CueTrack, Error, LanguageTag, Warning, WarningKind};
 use encoding_rs::{UTF_8, UTF_16BE, UTF_16LE, WINDOWS_1252};
@@ -26,7 +24,7 @@ pub struct Export {
     pub text: String,
     pub warnings: Vec<Warning>,
 }
-pub(super) fn warn(warnings: &mut Vec<Warning>, position: usize, kind: WarningKind) {
+fn warn(warnings: &mut Vec<Warning>, position: usize, kind: WarningKind) {
     warnings.push(Warning { position, kind });
 }
 pub(crate) fn decode(bytes: &[u8], warnings: &mut Vec<Warning>) -> Result<String, Error> {
@@ -59,7 +57,7 @@ pub(crate) fn decode(bytes: &[u8], warnings: &mut Vec<Warning>) -> Result<String
     }
     Ok(text.replace("\r\n", "\n").replace('\r', "\n"))
 }
-pub(super) fn clock(value: &str) -> Option<Tick> {
+fn clock(value: &str) -> Option<Tick> {
     let (whole, fraction) = value.rsplit_once([',', '.']).unwrap_or((value, "0"));
     if fraction.is_empty() || fraction.len() > 9 || !fraction.bytes().all(|b| b.is_ascii_digit()) {
         return None;
@@ -85,7 +83,7 @@ pub(super) fn clock(value: &str) -> Option<Tick> {
     let whole = Tick::from_units(seconds, 1, Rounding::Nearest).ok()?;
     whole.checked_add(Tick::from_units(fraction.parse().ok()?, scale, Rounding::Nearest).ok()?)
 }
-pub(super) fn timing(line: &str) -> Option<(Tick, Tick, bool)> {
+fn timing(line: &str) -> Option<(Tick, Tick, bool)> {
     let (start, rest) = line.split_once("-->")?;
     let mut parts = rest.split_whitespace();
     Some((
@@ -94,7 +92,7 @@ pub(super) fn timing(line: &str) -> Option<(Tick, Tick, bool)> {
         parts.next().is_some(),
     ))
 }
-pub(super) fn format_ms(ms: i64, separator: char) -> String {
+fn format_ms(ms: i64, separator: char) -> String {
     format!(
         "{:02}:{:02}:{:02}{separator}{:03}",
         ms / 3_600_000,
@@ -105,14 +103,14 @@ pub(super) fn format_ms(ms: i64, separator: char) -> String {
 }
 
 /// One timed cue block with repaired bounds and its text lines.
-pub(super) struct Block<'a> {
-    pub start: Tick,
-    pub end: Tick,
-    pub body: Vec<&'a str>,
+struct Block<'a> {
+    start: Tick,
+    end: Tick,
+    body: Vec<&'a str>,
 }
 
 /// Split decoded text into timed blocks, reporting VTT header/metadata differences.
-pub(super) fn read_blocks<'a>(
+fn read_blocks<'a>(
     text: &'a str,
     format: Format,
     warnings: &mut Vec<Warning>,
@@ -192,7 +190,7 @@ pub(super) fn read_blocks<'a>(
 }
 
 /// Build one cue from a timed block; VTT entity decoding happens before storage.
-pub(super) fn cue(
+fn cue(
     block: Block<'_>,
     id: usize,
     language: &LanguageTag,
@@ -222,20 +220,19 @@ pub(super) fn cue(
     })
 }
 
-/// Repair a parsed cue list and return it with parser warnings first.
-pub(super) fn finish(cues: Vec<Cue>, warnings: Vec<Warning>) -> Result<Import, Error> {
-    let mut track = CueTrack { cues };
-    let mut warnings = warnings;
-    warnings.extend(track.repair()?);
-    Ok(Import { track, warnings })
-}
-
 /// Decode and parse a single source language. Malformed entries produce positional warnings.
 pub fn parse(bytes: &[u8], format: Format, language: LanguageTag) -> Result<Import, Error> {
-    match format {
-        Format::Srt => srt::parse(bytes, language),
-        Format::WebVtt => vtt::parse(bytes, language),
-    }
+    let mut warnings = Vec::new();
+    let text = decode(bytes, &mut warnings)?;
+    let decode_entities = format == Format::WebVtt;
+    let cues = read_blocks(&text, format, &mut warnings)?
+        .into_iter()
+        .enumerate()
+        .map(|(index, block)| cue(block, index + 1, &language, decode_entities))
+        .collect::<Result<Vec<_>, _>>()?;
+    let mut track = CueTrack { cues };
+    warnings.extend(track.repair()?);
+    Ok(Import { track, warnings })
 }
 
 /// Export one language or an ordered bilingual pair. Missing/empty entries warn and are omitted.

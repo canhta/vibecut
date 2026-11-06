@@ -1,10 +1,8 @@
 //! EBU R128 / BS.1770-4 integrated loudness and true-peak measurement, plus the
 //! two-pass planner that derives clip and master gains from the shared mix graph.
+use super::oversample::{Interpolator, PolyphaseBank, true_peak_factor};
 use crate::{
-    Error, ExecutionHooks, MemoryKind, Result, SourceProvider, Stage,
-    audio::Chain,
-    check,
-    oversample::{Interpolator, PolyphaseBank, true_peak_factor},
+    Error, ExecutionHooks, MemoryKind, Result, SourceProvider, Stage, audio::Chain, check,
 };
 use project::{ItemId, LoudnessGains, Project};
 use std::f64::consts::PI;

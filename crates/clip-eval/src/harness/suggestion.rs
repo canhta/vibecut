@@ -1,9 +1,8 @@
-//! Calls one provider and scores the clips it returns.
+//! Calls one provider and snaps the clips it proposes to source boundaries.
 
 use super::{NoHooks, RangeReport, SuggestionReport};
 use crate::budget::Budget;
 use crate::label::ResolvedSettings;
-use crate::metrics::{Evaluation, Metrics, evaluate};
 use crate::{Error, Result};
 use ai::clips::{ClipInput, ClipSource, ClipSuggester, MAX_WIRE, MODE, suggest_clips};
 use ai::{Consent, CostEstimate, Money, Operation, Request, SampleRange, Scope};
@@ -220,30 +219,4 @@ fn energy_windows(
         range,
         Arc::new(std::sync::atomic::AtomicBool::new(false)),
     )?)
-}
-
-/// Score one provider run against the label set.
-#[allow(clippy::too_many_arguments, reason = "one scoring boundary")]
-pub(super) fn score(
-    labels: &[crate::label::LabelledClip],
-    run: &ProviderRun,
-    transcript: &Transcript,
-    profile: &LanguageProfile,
-    settings: &ResolvedSettings,
-    k: usize,
-    cost_micros: u64,
-    wall_ms: u64,
-) -> Result<Metrics> {
-    evaluate(&Evaluation {
-        labels,
-        suggestions: &run.shorts,
-        transcript,
-        profile,
-        settings,
-        k,
-        cost_micros,
-        wall_ms,
-        snap_failures: run.snap_failures,
-    })
-    .map_err(Error::from)
 }

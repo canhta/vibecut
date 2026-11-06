@@ -1,4 +1,5 @@
 //! Runs a staged project export and hands the result to publication.
+mod destination;
 mod execution;
 mod publication;
 
@@ -6,6 +7,7 @@ use crate::{
     Error, ExecutionHooks, FileSources, RenderSettings, Renderer, Result, SourceProvider, Stage,
     Unavailable, check,
 };
+pub use destination::validate_output_path;
 use execution::{OmittedSources, admission, copy_export, copy_plan, encoded_export};
 use media::{Container, EncodePreference};
 use project::{
@@ -13,7 +15,6 @@ use project::{
     atomic::{Overwrite, StreamingStage},
 };
 use publication::publish;
-pub use publication::validate_output_path;
 use std::{collections::BTreeSet, path::Path};
 use time::{FrameRate, Tick, TimeRange};
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]

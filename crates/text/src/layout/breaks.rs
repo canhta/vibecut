@@ -1,31 +1,9 @@
 //! Computes line ranges from shaped advances and Unicode break opportunities.
 
 use super::LineBreak;
-use super::paragraph::ShapedGlyph;
 use std::ops::Range;
 use unicode_linebreak::linebreaks;
 use unicode_segmentation::UnicodeSegmentation;
-
-/// Prefix sums of shaped advances by byte offset.
-pub(super) fn advance_prefix(text: &str, glyphs: &[ShapedGlyph], base: usize) -> Vec<f32> {
-    let mut advances = vec![0.0f32; text.len().saturating_add(1)];
-    for glyph in glyphs {
-        if let Some(local) = glyph.cluster.checked_sub(base)
-            && let Some(slot) = advances.get_mut(local)
-        {
-            *slot += glyph.advance;
-        }
-    }
-    let mut prefix = vec![0.0f32; text.len().saturating_add(1)];
-    let mut total = 0.0f32;
-    for (index, advance) in advances.iter().enumerate() {
-        total += advance;
-        if let Some(slot) = prefix.get_mut(index + 1) {
-            *slot = total;
-        }
-    }
-    prefix
-}
 
 pub(super) fn grapheme_boundaries(text: &str) -> Vec<usize> {
     let mut boundaries: Vec<usize> = text.grapheme_indices(true).map(|(i, _)| i).collect();

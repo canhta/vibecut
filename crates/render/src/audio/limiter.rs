@@ -1,6 +1,6 @@
 //! Bounds mixed audio peaks.
 
-use crate::oversample::{Interpolator, PolyphaseBank, true_peak_factor};
+use super::oversample::{Interpolator, PolyphaseBank, true_peak_factor};
 use std::collections::VecDeque;
 
 /// Linked-channel look-ahead dynamics with a final sample-peak safety ceiling.

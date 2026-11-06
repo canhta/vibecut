@@ -2,6 +2,7 @@
 mod limiter;
 mod loudness;
 mod mix;
+mod oversample;
 mod retime;
 
 pub use loudness::{LoudnessReport, Measurement, measure_loudness};

@@ -12,7 +12,6 @@ pub use export::{
 };
 pub use image::Image;
 use media::AssetId;
-pub(crate) use scene::oversample;
 pub use scene::{
     CaptionBackground, CaptionOutline, CaptionPosition, CaptionStyle, Fit, Placement,
     RasterCacheStats, Rect, RenderSettings, Renderer,

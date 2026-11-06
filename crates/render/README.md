@@ -15,9 +15,9 @@ Hardware decoding remains enabled; requested quality and bitrate are retained.
 | Folder | Responsibility | Interface items |
 |---|---|---|
 | `scene/` | Evaluates project items into one RGBA frame. | `Renderer`, `RenderSettings`, `Rect`, `Placement`, `Fit`, `RasterCacheStats` |
-| `scene/` transform, blend, mask, effects, color, oversample, caption | Applies the per-item visual stages in working space. | `blend`, `color`, `effects`, `mask` |
-| `audio/` | Owns every project audio stage from mix to limiter. | `AudioBlock`, `AudioMixer`, `mix_audio`, `measure_loudness` |
-| `export/` | Executes the staged export and hands it to publication. | `export`, `export_with_sources`, `validate_output_path` |
+| `scene/` transform, blend, mask, effects, color, caption | Applies the per-item visual stages in working space. | `blend`, `color`, `effects`, `mask` |
+| `audio/` mix, retime, loudness, limiter, oversample | Owns every project audio stage from mix to limiter. | `AudioBlock`, `AudioMixer`, `mix_audio`, `measure_loudness` |
+| `export/` execution, destination, publication | Runs a staged project export and hands the result to publication. | `export`, `export_with_sources`, `validate_output_path` |
 | `image` | Owns the RGBA frame buffer and its bounded allocation. | `Image` |
 | `sources` | Provides decoded video and audio samples. | `SourceProvider`, `FileSources` |
 

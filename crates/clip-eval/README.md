@@ -10,7 +10,7 @@ is not a gate here.
 | Module | Responsibility |
 |---|---|
 | `harness` | Runs the fixed label set and writes its scored report. |
-| `harness/scoring` | Calls one provider and scores the clips it returns. |
+| `harness/suggestion` | Calls one provider and snaps the clips it proposes to source boundaries. |
 | `harness/report` | Owns the persisted evaluation report and its Markdown rendering. |
 | `asr` | Prepares an opt-in transcript through the speech provider. |
 | `baseline` | Holds the pinned main-revision baseline inputs and metrics. |
