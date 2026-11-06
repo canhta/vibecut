@@ -524,3 +524,88 @@ fn nullable_command_fields_are_still_required_in_json() {
     assert!(s.execute("keyframes.set_handle",json!({"item":2,"path":"opacity","component":null,"time":0,"side":"out","tangent":"broken"})).is_err());
     assert_eq!(s.project(), &before);
 }
+#[test]
+fn text_background_channels_survive_trim_retime_and_the_file() {
+    let scalar = |from: f64, to: f64| {
+        Channel::new(
+            ParamValue::Scalar(from),
+            vec![
+                Keyframe::new(frame(100), ParamValue::Scalar(from)),
+                Keyframe::new(frame(400), ParamValue::Scalar(to)),
+            ],
+            Extrapolation::Hold,
+            Extrapolation::Hold,
+        )
+        .unwrap()
+    };
+    let mut animations = Animations::default();
+    animations
+        .set(
+            AnimationPath::new("background.offsetX").unwrap(),
+            Param::Value(scalar(0.0, 40.0)),
+        )
+        .unwrap();
+    let rgba = [(1.0, 0.0), (0.0, 0.0), (0.0, 1.0), (1.0, 1.0)];
+    animations
+        .set(
+            AnimationPath::new("background.color").unwrap(),
+            Param::Color(Box::new(rgba.map(|(from, to)| scalar(from, to)))),
+        )
+        .unwrap();
+    let mut s = session();
+    {
+        // Replace the fixture's overlay with a text item carrying the background channels.
+        let mut data = s.project().as_ref().clone().into_data();
+        data.scene_mut().timeline.overlays.first_mut().unwrap().kind = TrackKind::Text;
+        let item = data
+            .scene_mut()
+            .timeline
+            .iter_mut()
+            .flat_map(|t| &mut t.items)
+            .find(|i| i.id == ItemId(2))
+            .unwrap();
+        item.content = ItemParams::Text(TextParams {
+            background: Some(TextBackground::default()),
+            ..TextParams::new("Xin chào")
+        });
+        item.animations = animations;
+        s = Session::new(Project::new(data).unwrap(), 100).unwrap();
+    }
+    let offset = AnimationPath::new("background.offsetX").unwrap();
+    let colour = AnimationPath::new("background.color").unwrap();
+    let times = |s: &Session, path: &AnimationPath, component| {
+        item(s, ItemId(2))
+            .animations
+            .get(path)
+            .unwrap()
+            .channel(component)
+            .unwrap()
+            .keys()
+            .iter()
+            .map(|k| k.time)
+            .collect::<Vec<_>>()
+    };
+    let original = s.project().clone();
+    s.apply(Command::TrimStart {
+        item: ItemId(2),
+        at: frame(110),
+    })
+    .unwrap();
+    // The item start moved 10 frames; keys keep their exact source-time curve.
+    assert_eq!(times(&s, &offset, None), [frame(90), frame(390)]);
+    assert_eq!(
+        times(&s, &colour, Some(ColorComponent::B)),
+        [frame(90), frame(390)]
+    );
+    s.execute(
+        "keyframes.scale_time",
+        json!({"item":2,"numerator":2,"denominator":1}),
+    )
+    .unwrap();
+    assert_eq!(times(&s, &offset, None), [frame(180), frame(780)]);
+    let bytes = encode(s.project(), true).unwrap();
+    assert_eq!(&decode(&bytes).unwrap().project, s.project().as_ref());
+    s.undo().unwrap();
+    s.undo().unwrap();
+    assert_eq!(s.project(), &original);
+}

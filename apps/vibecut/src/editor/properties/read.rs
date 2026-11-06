@@ -35,6 +35,20 @@ pub(super) fn item_value(project: &project::Project, item: ItemId, field: &str) 
             )
         }
         ("text_size", ItemParams::Text(params)) => Some(f64::from(params.font_size)),
+        ("text_letter_spacing", ItemParams::Text(params)) => Some(f64::from(params.letter_spacing)),
+        ("text_line_height", ItemParams::Text(params)) => Some(f64::from(params.line_height)),
+        (field, ItemParams::Text(params)) if field.starts_with("text_background_") => {
+            // Unset boxes show the defaults a first edit would create.
+            let background = params.background.clone().unwrap_or_default();
+            Some(f64::from(match field {
+                "text_background_padding_x" => background.padding_x,
+                "text_background_padding_y" => background.padding_y,
+                "text_background_offset_x" => background.offset_x,
+                "text_background_offset_y" => background.offset_y,
+                "text_background_corner_radius" => background.radius,
+                _ => return None,
+            }))
+        }
         ("audio_gain", ItemParams::Audio(params)) => Some(f64::from(params.volume)),
         ("audio_gain", ItemParams::Video(params)) => Some(f64::from(params.volume)),
         ("speed", ItemParams::Audio(_) | ItemParams::Video(_)) => Some(item.retime.speed.as_f64()),

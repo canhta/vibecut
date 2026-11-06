@@ -257,7 +257,8 @@ fn click(harness: &mut Harness<Editor>, id: &str) {
     if matches!(
         id,
         "inspector.text_color.picker" | "inspector.background_color"
-    ) {
+    ) || id.starts_with("inspector.text_")
+    {
         for _ in 0..12 {
             let panel = harness.state().panels["inspector"];
             let top = widget_rect(harness, "inspector.tab.text").bottom() + 8.0;
@@ -662,7 +663,8 @@ fn shared_picker_edits_background_graphic_mask_and_canvas_through_commands() {
                     serde_json::json!({
                         "item": fixture.text,
                         "patch": {"field": "text_background", "value": {
-                            "color": [1, 2, 3, 4], "padding": 17.0, "radius": 9.0
+                            "color": [1, 2, 3, 4], "padding_x": 17.0, "padding_y": 15.0,
+                            "offset_x": 0.0, "offset_y": 0.0, "radius": 9.0
                         }}
                     }),
                 )
@@ -685,7 +687,7 @@ fn shared_picker_edits_background_graphic_mask_and_canvas_through_commands() {
                 };
                 let background = p.background.unwrap();
                 assert_eq!(background.color, chosen);
-                assert_eq!(background.padding, 17.0);
+                assert_eq!((background.padding_x, background.padding_y), (17.0, 15.0));
                 assert_eq!(background.radius, 9.0);
             }
             "inspector.graphic_fill" => assert!(
@@ -857,6 +859,7 @@ fn every_registry_kind_has_its_reference_tab_set() {
                 PropertiesTab::Text,
                 PropertiesTab::Transform,
                 PropertiesTab::Blending,
+                PropertiesTab::Effects,
             ][..],
         ),
         (
@@ -1320,6 +1323,121 @@ fn text_size(harness: &Harness<Editor>, id: ItemId) -> f32 {
         panic!("text")
     };
     params.font_size
+}
+
+fn text_params(harness: &Harness<Editor>, id: ItemId) -> project::TextParams {
+    let ItemParams::Text(params) = item(harness, id).content else {
+        panic!("text")
+    };
+    params
+}
+
+#[test]
+fn text_tab_edits_every_style_field_one_undo_step_each_and_shows_effects() {
+    use project::{TextAlign, TextDecoration};
+    let mut fixture = fixture();
+    // A healthy generated preview for the screenshot, as the colour test does.
+    fixture.editor.session.execute("delete",serde_json::json!({"items":[fixture.video,fixture.silent_video,fixture.image,fixture.audio]})).unwrap();
+    fixture
+        .editor
+        .playback
+        .seek(Tick::ZERO, false, fixture.editor.session.project().clone())
+        .unwrap();
+    let mut harness = build(fixture.editor);
+    harness.run_steps(3);
+    select(&mut harness, fixture.text);
+    let text = fixture.text;
+    // Each toggle row is one registered edit, one undo step, and reads back what it wrote.
+    type Check = fn(&project::TextParams) -> bool;
+    let toggles: [(&str, Check); 7] = [
+        ("inspector.text_weight.bold", |p| p.weight == 700),
+        ("inspector.text_weight.normal", |p| p.weight == 400),
+        ("inspector.text_italic.italic", |p| p.italic),
+        ("inspector.text_decoration.underline", |p| {
+            p.decoration == TextDecoration::Underline
+        }),
+        ("inspector.text_decoration.line_through", |p| {
+            p.decoration == TextDecoration::LineThrough
+        }),
+        ("inspector.text_align.left", |p| p.align == TextAlign::Left),
+        ("inspector.text_align.right", |p| {
+            p.align == TextAlign::Right
+        }),
+    ];
+    for (id, holds) in toggles {
+        let before = harness.state().session.project().clone();
+        click(&mut harness, id);
+        assert!(holds(&text_params(&harness, text)), "{id}");
+        harness.state_mut().session.undo().unwrap();
+        assert_eq!(harness.state().session.project(), &before, "{id} undo");
+        harness.state_mut().session.redo().unwrap();
+        harness.run_steps(2);
+    }
+    // Turn the box on with the shared toggle, then every numeric row commits through the field.
+    click(&mut harness, "inspector.text_background");
+    assert!(text_params(&harness, text).background.is_some());
+    for (id, value, holds) in [
+        (
+            "inspector.text_letter_spacing",
+            "3.5",
+            (|p: &project::TextParams| p.letter_spacing == 3.5) as Check,
+        ),
+        ("inspector.text_line_height", "44", |p| {
+            p.line_height == 44.0
+        }),
+        ("inspector.text_background_padding_x", "20", |p| {
+            p.background.as_ref().unwrap().padding_x == 20.0
+        }),
+        ("inspector.text_background_padding_y", "8", |p| {
+            p.background.as_ref().unwrap().padding_y == 8.0
+        }),
+        ("inspector.text_background_offset_x", "-14", |p| {
+            p.background.as_ref().unwrap().offset_x == -14.0
+        }),
+        ("inspector.text_background_offset_y", "6", |p| {
+            p.background.as_ref().unwrap().offset_y == 6.0
+        }),
+        ("inspector.text_background_corner_radius", "12", |p| {
+            p.background.as_ref().unwrap().radius == 12.0
+        }),
+    ] {
+        let before = harness.state().session.project().clone();
+        enter(&mut harness, id, value);
+        assert!(holds(&text_params(&harness, text)), "{id}");
+        harness.state_mut().session.undo().unwrap();
+        assert_eq!(harness.state().session.project(), &before, "{id} undo");
+        harness.state_mut().session.redo().unwrap();
+        harness.run_steps(2);
+    }
+    // Hostile entries clamp to the field's range instead of reaching the model.
+    enter(&mut harness, "inspector.text_background_padding_x", "9999");
+    assert_eq!(
+        text_params(&harness, text).background.unwrap().padding_x,
+        project::TextBackground::MAX_EXTENT
+    );
+    enter(&mut harness, "inspector.text_background_offset_y", "-99999");
+    assert_eq!(
+        text_params(&harness, text).background.unwrap().offset_y,
+        -project::TextBackground::MAX_OFFSET
+    );
+    let before = harness.state().session.project().clone();
+    enter(&mut harness, "inspector.text_letter_spacing", "wide");
+    assert_eq!(
+        harness.state().session.project(),
+        &before,
+        "words are refused"
+    );
+    enter(&mut harness, "inspector.text_background_padding_x", "20");
+
+    // Text exposes the shared Effects tab beside Transform and Blending.
+    assert!(has_widget(&harness, "inspector.tab.effects"));
+    assert!(has_widget(&harness, "inspector.group.basic"));
+    let image = harness.render().expect("offscreen render");
+    let target = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../target");
+    std::fs::create_dir_all(&target).unwrap();
+    image.save(target.join("p1-27-text.png")).unwrap();
+    click(&mut harness, "inspector.tab.effects");
+    assert!(has_widget(&harness, "effects.stack.empty"));
 }
 
 /// Offscreen screenshot evidence; wgpu rendering stays out of CI.

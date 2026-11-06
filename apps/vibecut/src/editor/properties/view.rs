@@ -480,6 +480,7 @@ impl<'a, 'c> Panel<'a, 'c> {
                             Text::BackgroundColor,
                             ColorTarget::Background(item),
                         );
+                        panel.text_style_controls(ui, item);
                     },
                 );
             }
@@ -633,6 +634,7 @@ impl<'a, 'c> Panel<'a, 'c> {
                         | ElementKind::Image
                         | ElementKind::Sticker
                         | ElementKind::Graphic
+                        | ElementKind::Text
                 ) =>
             {
                 self.effects_stack(ui, item);
@@ -656,6 +658,8 @@ fn body_ui(ui: &mut egui::Ui, area: Rect) -> egui::Ui {
 mod speed;
 
 mod effects;
+
+mod text_style;
 
 mod appearance;
 

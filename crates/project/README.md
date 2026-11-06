@@ -71,9 +71,14 @@ Audio items carry `AudioParams::source`. The default `upload` source references 
 Names, notes and text use captions' NFC text owner. Canvas frames must have exact,
 positive integer tick durations. Canvas area is at most 2^26 pixels; output audio
 admits 8–192 kHz. Audio/video source volume and master volume admit -60..20 dB on a 0.01 dB grid; loudness targets admit -50..-5 LUFS and -20..0 dBTP on the same grid, and measured gains -60..60 dB for at most 4,096 sorted clips; font sizes admit 1..4096 pixels.
-Text items also carry a 1..256-byte font-family name, an optional padded RGBA
-background box, and x/y canvas percentages in 0..=100 (default 50/84.5 reproduces
-the original lower-third box). Typed invalid/unsupported/limit errors refuse a whole candidate.
+Text items also carry a 1..256-byte font-family name, line `align` (left, centre,
+right; default centre), `decoration` (none, underline, line-through), an optional RGBA
+background box and x/y canvas percentages in 0..=100 (default 50/84.5 reproduces
+the original lower-third box). The box has `padding_x`/`padding_y` and `radius` in 0..=128
+and `offset_x`/`offset_y` in -1024..=1024 canvas pixels; it follows the text bounds, and
+its `background.*` animation channels (colour, padding, offset, corner radius) override
+the stored values while keyed. Weight, slant, spacing and line height are the
+typography fields above; sizes are project canvas pixels, scaled with the output. Typed invalid/unsupported/limit errors refuse a whole candidate.
 
 `ProjectData.original_canvas_size` is the optional first visual media size, not a
 second user canvas setting. It starts null and retains the first inserted media's
@@ -208,7 +213,7 @@ or renderer output claim is made.
 ## Persistence and limits
 
 `encode`/`decode` use one JSON envelope: `format`, `schema_version`, `generator`,
-`project`. Current schema 18 adds item `retime` (speed, pitch policy and the retained processing window of split pieces) and ordered transition split pieces; schema 17 added `settings.loudness` (clip/master targets and the last measured gains) to schema 16 timeline `transitions`, which followed schema 15 audio/video clip `fades`, schema 14 optional imported cue style, schema 13 text weight, italic, letter spacing and line height (also on text masks), and schema 12 audio `source` (upload or library provenance), volume/mute and master controls.
+`project`. Current schema 19 splits the text background `padding` into `padding_x`/`padding_y` and adds its `offset_x`/`offset_y` plus text `align` and `decoration`; schema 18 added item `retime` (speed, pitch policy and the retained processing window of split pieces) and ordered transition split pieces; schema 17 added `settings.loudness` (clip/master targets and the last measured gains) to schema 16 timeline `transitions`, which followed schema 15 audio/video clip `fades`, schema 14 optional imported cue style, schema 13 text weight, italic, letter spacing and line height (also on text masks), and schema 12 audio `source` (upload or library provenance), volume/mute and master controls.
 ProjectId is stored as a canonical decimal string, preserving
 all u64 identity bits for control clients; other IDs remain numeric. Schemas 1-17
 are refused rather than migrated or silently defaulted. Older schemas return `TooOld`, newer schemas `TooNew`; there are no

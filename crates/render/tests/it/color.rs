@@ -62,7 +62,10 @@ fn graphic_stroke_and_text_background_reach_the_shared_compositor() {
         color: project::Color([0; 4]),
         background: Some(project::TextBackground {
             color: project::Color([0, 255, 0, 255]),
-            padding: 0.,
+            padding_x: 0.,
+            padding_y: 0.,
+            offset_x: 0.,
+            offset_y: 0.,
             radius: 0.,
         }),
         ..Default::default()

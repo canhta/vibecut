@@ -166,8 +166,11 @@ project JSON and optional persisted metadata.
 100,000 IDs) and one typed `patch`: `audio_gain` in −120..=24 dB, `audio_muted`, `text_content`,
 `text_font` (1..=256 bytes), `text_size` in 1..=4096 px,
 `text_color` as four RGBA bytes, `text_background` as an optional padded box,
-`text_background_color` as RGBA bytes, preserving padding/radius or creating a
-baseline box if absent, and
+`text_background_color` as RGBA bytes, `text_background_padding_x`/`_padding_y`/
+`_corner_radius` in 0..=128 and `text_background_offset_x`/`_offset_y` in -1024..=1024
+canvas pixels (each preserves the other box fields or creates a baseline box if absent),
+`text_weight`, `text_italic`, `text_letter_spacing`, `text_line_height`, `text_align`
+(`left`/`center`/`right`), `text_decoration` (`none`/`underline`/`line_through`), and
 `text_position_x`/`text_position_y` as canvas percentages in 0..=100. All numbers
 must be finite.
 Text content/font patches copy at most the control owner's `MAX_TEXT_BYTES` budget

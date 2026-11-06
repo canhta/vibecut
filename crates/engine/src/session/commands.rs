@@ -75,6 +75,13 @@ pub enum ItemParamPatch {
     TextColor(Color),
     TextBackground(Option<project::TextBackground>),
     TextBackgroundColor(Color),
+    TextBackgroundPaddingX(f32),
+    TextBackgroundPaddingY(f32),
+    TextBackgroundOffsetX(f32),
+    TextBackgroundOffsetY(f32),
+    TextBackgroundCornerRadius(f32),
+    TextAlign(project::TextAlign),
+    TextDecoration(project::TextDecoration),
     TextPositionX(f32),
     TextPositionY(f32),
     #[serde(rename = "transform.positionX")]
@@ -122,6 +129,13 @@ impl ItemParamPatch {
                     | Self::TextColor(_)
                     | Self::TextBackground(_)
                     | Self::TextBackgroundColor(_)
+                    | Self::TextBackgroundPaddingX(_)
+                    | Self::TextBackgroundPaddingY(_)
+                    | Self::TextBackgroundOffsetX(_)
+                    | Self::TextBackgroundOffsetY(_)
+                    | Self::TextBackgroundCornerRadius(_)
+                    | Self::TextAlign(_)
+                    | Self::TextDecoration(_)
                     | Self::TextPositionX(_)
                     | Self::TextPositionY(_),
                 ItemParams::Text(_)
@@ -152,15 +166,22 @@ impl ItemParamPatch {
             Self::TextLineHeight(v) => project::valid_line_height(*v),
             Self::TextSize(v) => v.is_finite() && (1.0..=4096.0).contains(v),
             Self::TextColor(_)
+            | Self::TextAlign(_)
+            | Self::TextDecoration(_)
             | Self::TextBackgroundColor(_)
             | Self::GraphicFill(_)
             | Self::GraphicStroke(_) => true,
-            Self::TextBackground(background) => background.as_ref().is_none_or(|background| {
-                background.padding.is_finite()
-                    && background.radius.is_finite()
-                    && (0.0..=128.0).contains(&background.padding)
-                    && (0.0..=128.0).contains(&background.radius)
-            }),
+            Self::TextBackground(background) => background
+                .as_ref()
+                .is_none_or(project::TextBackground::valid),
+            Self::TextBackgroundPaddingX(v)
+            | Self::TextBackgroundPaddingY(v)
+            | Self::TextBackgroundCornerRadius(v) => {
+                v.is_finite() && (0.0..=project::TextBackground::MAX_EXTENT).contains(v)
+            }
+            Self::TextBackgroundOffsetX(v) | Self::TextBackgroundOffsetY(v) => {
+                v.is_finite() && v.abs() <= project::TextBackground::MAX_OFFSET
+            }
             Self::TextPositionX(v) | Self::TextPositionY(v) => {
                 v.is_finite() && (0.0..=100.0).contains(v)
             }

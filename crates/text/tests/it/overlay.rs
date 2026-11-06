@@ -46,11 +46,8 @@ fn two_line_vietnamese_frame_overlay_is_a_repeatable_golden() {
             width: 4.0,
             kind: StrokeKind::Outer,
         }),
-        background: Some(Rectangle {
-            color: Color::rgba(0, 0, 0, 150),
-            padding: 28.0,
-            radius: 18.0,
-        }),
+        background: Some(Rectangle::uniform(Color::rgba(0, 0, 0, 150), 28.0, 18.0)),
+        decoration: text::Decoration::None,
     };
     let canvas = Canvas {
         width: 1080,
@@ -84,6 +81,7 @@ fn two_line_vietnamese_frame_overlay_is_a_repeatable_golden() {
             fill: Color::WHITE,
             outline: None,
             background: None,
+            decoration: text::Decoration::None,
         },
     )
     .expect("text-only render");

@@ -1,7 +1,7 @@
 //! Evaluates project items into the rendered frame.
 
 use super::draw::{blur, draw, horizontal_window};
-use super::raster::{TextEntry, TextFace, TextKey, raster_text};
+use super::raster::{TextBox, TextEntry, TextFace, TextKey, raster_text};
 use super::{Fit, Placement, RasterCacheStats, Rect, RenderSettings, Renderer};
 use crate::{
     CaptionPosition, CaptionStyle, Error, ExecutionHooks, Image, MemoryKind, Result,
@@ -317,27 +317,72 @@ impl<'a> Renderer<'a> {
                     ItemParams::Text(p) => {
                         let scale =
                             self.settings.width as f32 / self.project.data().canvas.width as f32;
-                        let background = p
-                            .background
-                            .as_ref()
-                            .map(|b| (b.padding * scale, b.radius * scale, b.color.0));
+                        // Style animations share the item clock; unkeyed fields keep the stored value.
+                        let fill = crate::color::at(&item.animations, "color", local, p.color)?;
+                        let background = match &p.background {
+                            None => None,
+                            Some(b) => {
+                                let scalar = |path: &str, base: f32| -> Result<f32> {
+                                    scalar_at(&item.animations, path, local, base)
+                                };
+                                Some(TextBox {
+                                    padding_x: scalar("background.paddingX", b.padding_x)?
+                                        .clamp(0.0, project::TextBackground::MAX_EXTENT)
+                                        * scale,
+                                    padding_y: scalar("background.paddingY", b.padding_y)?
+                                        .clamp(0.0, project::TextBackground::MAX_EXTENT)
+                                        * scale,
+                                    offset_x: scalar("background.offsetX", b.offset_x)?.clamp(
+                                        -project::TextBackground::MAX_OFFSET,
+                                        project::TextBackground::MAX_OFFSET,
+                                    ) * scale,
+                                    offset_y: scalar("background.offsetY", b.offset_y)?.clamp(
+                                        -project::TextBackground::MAX_OFFSET,
+                                        project::TextBackground::MAX_OFFSET,
+                                    ) * scale,
+                                    radius: scalar("background.cornerRadius", b.radius)?
+                                        .clamp(0.0, project::TextBackground::MAX_EXTENT)
+                                        * scale,
+                                    color: crate::color::at(
+                                        &item.animations,
+                                        "background.color",
+                                        local,
+                                        b.color,
+                                    )?
+                                    .0,
+                                })
+                            }
+                        };
                         let style = text::style_name(p.weight, p.italic);
+                        // The raster grows by the box margin on every side; the text keeps its place.
+                        let margin = f64::from(background.map_or(0.0, TextBox::margin));
+                        let mut grown = placement;
+                        grown.destination = Rect {
+                            x: placement.destination.x - margin / f64::from(self.settings.width),
+                            y: placement.destination.y - margin / f64::from(self.settings.height),
+                            width: placement.destination.width
+                                + 2.0 * margin / f64::from(self.settings.width),
+                            height: placement.destination.height
+                                + 2.0 * margin / f64::from(self.settings.height),
+                        };
                         let image = self.text(
                             p.content.as_str(),
                             p.font_size,
-                            p.color.0,
-                            placement,
+                            fill.0,
+                            grown,
                             None,
                             TextFace {
                                 family: p.font.as_str(),
                                 style: &style,
                                 letter_spacing: p.letter_spacing,
                                 line_height: p.line_height,
+                                align: p.align,
+                                decoration: p.decoration,
                             },
                             background,
                             hooks,
                         )?;
-                        draw(&mut out, &image, placement, hooks)?;
+                        draw(&mut out, &image, grown, hooks)?;
                     }
                     ItemParams::Caption(p) => {
                         for cue in
@@ -386,10 +431,9 @@ impl<'a> Renderer<'a> {
                                 }
                                 let style = self.settings.caption_style.clone();
                                 let scale = self.settings.height as f32 / 1080.0;
-                                let background = style
-                                    .background
-                                    .as_ref()
-                                    .map(|b| (b.padding * scale, b.radius * scale, b.color));
+                                let background = style.background.as_ref().map(|b| {
+                                    TextBox::uniform(b.padding * scale, b.radius * scale, b.color)
+                                });
                                 let image = self.text(
                                     &value,
                                     style.size,
@@ -471,6 +515,7 @@ impl<'a> Renderer<'a> {
                                         letter_spacing: mask.letter_spacing * 1080.0
                                             / canvas_height,
                                         line_height: mask.line_height * 1080.0 / canvas_height,
+                                        ..Default::default()
                                     },
                                     None,
                                     hooks,
@@ -601,7 +646,7 @@ impl<'a> Renderer<'a> {
         placement: Placement,
         caption: Option<&CaptionStyle>,
         face: TextFace<'_>,
-        background: Option<(f32, f32, [u8; 4])>,
+        background: Option<TextBox>,
         hooks: &dyn ExecutionHooks,
     ) -> Result<Arc<Image>> {
         let font = face.family;
@@ -643,8 +688,9 @@ impl<'a> Renderer<'a> {
             outline: caption
                 .and_then(|s| s.outline.as_ref())
                 .map(|o| ((o.width * scale).to_bits(), o.color)),
-            background: background
-                .map(|(padding, radius, color)| (padding.to_bits(), radius.to_bits(), color)),
+            background: background.map(TextBox::key),
+            align: face.align,
+            decoration: face.decoration,
             position: caption.map_or(CaptionPosition::Top, |s| s.position),
             max_lines: caption.map(|s| s.max_lines),
         };
@@ -694,6 +740,14 @@ impl<'a> Renderer<'a> {
         self.cache_stats.bytes += bytes;
         self.cache_stats.entries = self.text_cache.len();
         Ok(image)
+    }
+}
+/// Finite scalar channel value at the item-local time, or the stored base when unkeyed.
+fn scalar_at(animations: &project::Animations, path: &str, at: Tick, base: f32) -> Result<f32> {
+    match animations.value_at(&project::AnimationPath::new(path)?, at)? {
+        None => Ok(base),
+        Some(ParamValue::Scalar(v)) if v.is_finite() => Ok(v as f32),
+        _ => Err(Error::Invalid("text style animation value")),
     }
 }
 fn source_time(item: &Item, at: Tick) -> Result<Tick> {

@@ -1581,21 +1581,38 @@ fn text_style_patches_update_one_field_and_validate() {
         ItemParamPatch::TextLineHeight(60.0),
         ItemParamPatch::TextBackground(Some(project::TextBackground {
             color: Color([9, 8, 7, 128]),
-            padding: 6.0,
+            padding_x: 6.0,
+            padding_y: 5.0,
+            offset_x: -2.0,
+            offset_y: 3.0,
             radius: 3.0,
         })),
         ItemParamPatch::TextBackgroundColor(Color([7, 6, 5, 128])),
+        ItemParamPatch::TextBackgroundPaddingX(14.0),
+        ItemParamPatch::TextBackgroundPaddingY(9.0),
+        ItemParamPatch::TextBackgroundOffsetX(-30.5),
+        ItemParamPatch::TextBackgroundOffsetY(12.0),
+        ItemParamPatch::TextBackgroundCornerRadius(20.0),
+        ItemParamPatch::TextAlign(project::TextAlign::Right),
+        ItemParamPatch::TextDecoration(project::TextDecoration::LineThrough),
         ItemParamPatch::TextPositionX(25.0),
         ItemParamPatch::TextPositionY(30.0),
     ] {
+        let before = s.project().clone();
         assert!(
             s.apply(Command::SetItemParamMany {
                 items: vec![item],
-                patch
+                patch: patch.clone()
             })
             .unwrap()
             .changed
         );
+        // Every key is one undo step and redo restores it exactly.
+        let edited = s.project().clone();
+        s.undo().unwrap();
+        assert_eq!(s.project(), &before, "{patch:?} undo");
+        s.redo().unwrap();
+        assert_eq!(s.project(), &edited, "{patch:?} redo");
     }
     let ItemParams::Text(p) = &get(&s, item.0).content else {
         panic!("text fixture")
@@ -1609,8 +1626,28 @@ fn text_style_patches_update_one_field_and_validate() {
     assert_eq!(p.font_size, 24.0);
     assert_eq!(p.color, Color([1, 2, 3, 255]));
     assert_eq!(p.background.as_ref().unwrap().color, Color([7, 6, 5, 128]));
-    assert_eq!(p.background.as_ref().unwrap().padding, 6.0);
-    assert_eq!(p.background.as_ref().unwrap().radius, 3.0);
+    let background = p.background.as_ref().unwrap();
+    assert_eq!(
+        (
+            background.padding_x,
+            background.padding_y,
+            background.radius
+        ),
+        (14.0, 9.0, 20.0)
+    );
+    assert_eq!((background.offset_x, background.offset_y), (-30.5, 12.0));
+    assert_eq!(
+        (p.align, p.decoration),
+        (
+            project::TextAlign::Right,
+            project::TextDecoration::LineThrough
+        )
+    );
+    // The patched style serialises with the stable field names the file format and CLI use.
+    let json = serde_json::to_value(&get(&s, item.0).content).unwrap();
+    assert_eq!(json["params"]["align"], "right");
+    assert_eq!(json["params"]["decoration"], "line_through");
+    assert_eq!(json["params"]["background"]["offset_x"], -30.5);
     assert_eq!(p.position, project::TextPosition { x: 25.0, y: 30.0 });
 
     let after = s.project().clone();
@@ -1624,9 +1661,17 @@ fn text_style_patches_update_one_field_and_validate() {
         ItemParamPatch::TextLineHeight(f32::INFINITY),
         ItemParamPatch::TextPositionX(101.0),
         ItemParamPatch::TextPositionY(f32::NAN),
+        ItemParamPatch::TextBackgroundPaddingX(-1.0),
+        ItemParamPatch::TextBackgroundPaddingY(129.0),
+        ItemParamPatch::TextBackgroundCornerRadius(f32::NAN),
+        ItemParamPatch::TextBackgroundOffsetX(project::TextBackground::MAX_OFFSET + 1.0),
+        ItemParamPatch::TextBackgroundOffsetY(f32::INFINITY),
         ItemParamPatch::TextBackground(Some(project::TextBackground {
             color: Color([0; 4]),
-            padding: 129.0,
+            padding_x: 129.0,
+            padding_y: 0.0,
+            offset_x: 0.0,
+            offset_y: 0.0,
             radius: 0.0,
         })),
     ] {

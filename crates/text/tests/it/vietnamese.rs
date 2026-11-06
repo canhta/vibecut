@@ -52,6 +52,7 @@ fn nfc_and_nfd_shapes_render_identically_without_tofu() {
             kind: StrokeKind::Outer,
         }),
         background: None,
+        decoration: text::Decoration::None,
     };
     let canvas = Canvas {
         width: 1100,

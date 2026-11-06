@@ -733,3 +733,149 @@ fn control_commands_render_a_transition_midpoint_frame() {
     let (code, stderr) = control.finish();
     assert_eq!(code, 0, "{stderr}");
 }
+
+#[test]
+fn control_sets_every_text_style_key_and_the_snapshot_shows_it() {
+    use time::TimeRange;
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("text.vibecut");
+    let mut data = project::Project::empty(project::ProjectId(0), "Text".into())
+        .unwrap()
+        .into_data();
+    data.canvas.width = 320;
+    data.canvas.height = 180;
+    data.scene_mut().timeline.insert_track(project::Track {
+        id: project::TrackId(1),
+        name: "Text".into(),
+        kind: project::TrackKind::Text,
+        muted: false,
+        hidden: false,
+        locked: false,
+        items: vec![project::Item {
+            retime: Default::default(),
+            blend_mode: Default::default(),
+            masks: Vec::new(),
+            effects: vec![],
+            animations: Default::default(),
+            id: project::ItemId(10),
+            source_asset: None,
+            source_range: TimeRange::new(Tick::ZERO, Tick(time::TICKS_PER_SECOND)).unwrap(),
+            start: Tick::ZERO,
+            content: project::ItemParams::Text(project::TextParams {
+                font_size: 20.0,
+                ..project::TextParams::new("Xin chào")
+            }),
+        }],
+    });
+    fs::write(
+        &path,
+        project::encode(&project::Project::new(data).unwrap(), true).unwrap(),
+    )
+    .unwrap();
+
+    let mut control = ControlSession::start(&path, &[]);
+    let inspect = control.send(control_request("r0", "inspect", json!({}), None, None));
+    let mut rev = inspect["rev_after"].as_str().unwrap().to_owned();
+    let mut snapshot = |control: &mut ControlSession, rev: &str, name: &str| {
+        let out = dir.path().join(name);
+        let response = control.send(control_request(
+            name,
+            "preview.snapshot",
+            json!({"time":0,"path":out}),
+            Some(rev),
+            Some(name),
+        ));
+        assert_eq!(response["exit_code"], 0, "{response}");
+        fs::read(out).unwrap()
+    };
+    let before = snapshot(&mut control, &rev, "before.png");
+
+    for (index, (field, value)) in [
+        ("text_weight", json!(700)),
+        ("text_italic", json!(true)),
+        ("text_decoration", json!("underline")),
+        ("text_align", json!("left")),
+        ("text_letter_spacing", json!(2.5)),
+        ("text_line_height", json!(30.0)),
+        ("text_background_padding_x", json!(10.0)),
+        ("text_background_padding_y", json!(6.0)),
+        ("text_background_offset_x", json!(8.0)),
+        ("text_background_offset_y", json!(-4.0)),
+        ("text_background_corner_radius", json!(5.0)),
+        ("text_background_color", json!([200, 0, 0, 255])),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let response = control.send(control_request(
+            &format!("e{index}"),
+            "timeline.set_item_param",
+            json!({"item":10,"patch":{"field":field,"value":value}}),
+            Some(&rev),
+            Some(&format!("edit-{index}")),
+        ));
+        assert_eq!(response["exit_code"], 0, "{field}: {response}");
+        assert_eq!(
+            response["value"]["value"]["outcome"]["changed"], true,
+            "{field}"
+        );
+        rev = response["rev_after"].as_str().unwrap().to_owned();
+    }
+    // Unknown words and out-of-range values are refused and leave the revision alone.
+    for (index, (field, value)) in [
+        ("text_align", json!("justify")),
+        ("text_decoration", json!("overline")),
+        ("text_background_padding_x", json!(500.0)),
+        ("text_background_offset_y", json!(-5000.0)),
+        ("text_weight", json!(1000)),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let response = control.send(control_request(
+            &format!("bad{index}"),
+            "timeline.set_item_param",
+            json!({"item":10,"patch":{"field":field,"value":value}}),
+            Some(&rev),
+            Some(&format!("bad-{index}")),
+        ));
+        assert_ne!(response["exit_code"], 0, "{field}: {response}");
+    }
+    let after = snapshot(&mut control, &rev, "after.png");
+    assert_eq!(&after[..8], b"\x89PNG\r\n\x1a\n");
+    assert_ne!(before, after, "the styled frame differs from the plain one");
+    let (code, stderr) = control.finish();
+    assert_eq!(code, 0, "{stderr}");
+
+    let saved = project::load(&path).unwrap().project;
+    let item = saved
+        .data()
+        .scene()
+        .timeline
+        .iter()
+        .flat_map(|t| &t.items)
+        .next()
+        .unwrap();
+    let project::ItemParams::Text(text) = &item.content else {
+        panic!("text item")
+    };
+    assert_eq!(
+        (text.weight, text.italic, text.decoration, text.align),
+        (
+            700,
+            true,
+            project::TextDecoration::Underline,
+            project::TextAlign::Left
+        )
+    );
+    let background = text.background.as_ref().unwrap();
+    assert_eq!(
+        (
+            background.padding_x,
+            background.padding_y,
+            background.offset_x,
+            background.offset_y
+        ),
+        (10.0, 6.0, 8.0, -4.0)
+    );
+}

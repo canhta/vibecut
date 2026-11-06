@@ -98,6 +98,24 @@ fn item_patch(field: &str, value: &str) -> Result<ItemParamPatch> {
                 .map_err(|_| Error::Invalid("text size"))?,
         ),
         "text_color" => ItemParamPatch::TextColor(parse_color(value)?),
+        "text_weight" => ItemParamPatch::TextWeight(
+            value
+                .trim()
+                .parse()
+                .map_err(|_| Error::Invalid("text weight"))?,
+        ),
+        "text_italic" => ItemParamPatch::TextItalic(parse_flag(value, "text style")?),
+        "text_align" => ItemParamPatch::TextAlign(parse_word(value, "text alignment")?),
+        "text_decoration" => ItemParamPatch::TextDecoration(parse_word(value, "text decoration")?),
+        "text_letter_spacing" => ItemParamPatch::TextLetterSpacing(parse_number(value)?),
+        "text_line_height" => ItemParamPatch::TextLineHeight(parse_number(value)?),
+        "text_background_padding_x" => ItemParamPatch::TextBackgroundPaddingX(parse_number(value)?),
+        "text_background_padding_y" => ItemParamPatch::TextBackgroundPaddingY(parse_number(value)?),
+        "text_background_offset_x" => ItemParamPatch::TextBackgroundOffsetX(parse_number(value)?),
+        "text_background_offset_y" => ItemParamPatch::TextBackgroundOffsetY(parse_number(value)?),
+        "text_background_corner_radius" => {
+            ItemParamPatch::TextBackgroundCornerRadius(parse_number(value)?)
+        }
         "text_background" => {
             let value = value.trim();
             ItemParamPatch::TextBackground(if value.eq_ignore_ascii_case("none") {
@@ -118,6 +136,23 @@ fn item_patch(field: &str, value: &str) -> Result<ItemParamPatch> {
         ),
         _ => return Err(Error::Invalid("shared field")),
     })
+}
+fn parse_number(value: &str) -> Result<f32> {
+    value
+        .trim()
+        .parse()
+        .map_err(|_| Error::Invalid("text number"))
+}
+fn parse_flag(value: &str, what: &'static str) -> Result<bool> {
+    match value.trim() {
+        "true" | "1" => Ok(true),
+        "false" | "0" => Ok(false),
+        _ => Err(Error::Invalid(what)),
+    }
+}
+/// A snake_case enum word such as `line_through`.
+fn parse_word<T: serde::de::DeserializeOwned>(value: &str, what: &'static str) -> Result<T> {
+    serde_json::from_value(serde_json::json!(value.trim())).map_err(|_| Error::Invalid(what))
 }
 fn parse_color(value: &str) -> Result<project::Color> {
     Ok(render::color::parse_hex(value)?)

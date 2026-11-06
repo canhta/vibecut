@@ -132,6 +132,7 @@ impl ElementKind {
                 PropertiesTab::Text,
                 PropertiesTab::Transform,
                 PropertiesTab::Blending,
+                PropertiesTab::Effects,
             ],
             Self::Video => &[
                 PropertiesTab::Transform,

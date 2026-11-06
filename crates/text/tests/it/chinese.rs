@@ -81,11 +81,12 @@ fn simplified_and_traditional_chinese_wrap_and_render() -> Result<(), Box<dyn Er
             width: 4.0,
             kind: StrokeKind::Outer,
         }),
-        background: Some(text::Rectangle {
-            color: Color::rgba(0, 0, 0, 150),
-            padding: 24.0,
-            radius: 16.0,
-        }),
+        background: Some(text::Rectangle::uniform(
+            Color::rgba(0, 0, 0, 150),
+            24.0,
+            16.0,
+        )),
+        decoration: text::Decoration::None,
     };
     let canvas = Canvas {
         width: 760,

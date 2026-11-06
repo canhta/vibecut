@@ -53,7 +53,10 @@ RGBA8 value: six/eight hex digits, hue 0..360 degrees, saturation/value/alpha
 0..1. Finite HSV entries clamp; non-finite input refuses. Alpha stays straight
 and independent of RGB. Existing linear composite colour channels use the same
 transfer conversion owner as the compositor. Text background boxes consume
-project's typed `TextParams.background`; generated solid overlays consume `params.strokeColor` as a
+project's typed `TextParams.background` (padding, offset, radius, colour, each overridden
+by its keyed `background.*` channel at the item-local time; text colour by `color`). The
+raster grows by the box margin on every side, so padding and offset never move the text and
+preview and export draw the same cached raster; generated solid overlays consume `params.strokeColor` as a
 two-project-pixel inside stroke. Fully transparent defaults retain the old picture.
 
 Every working pixel is **RGBA, premultiplied alpha, linear-light f32**, finite

@@ -12,6 +12,7 @@ mod masks;
 mod media_pipeline;
 mod output_alias;
 mod support;
+mod text_style;
 mod transform;
 
 mod retime_audio;

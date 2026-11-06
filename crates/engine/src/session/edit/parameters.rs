@@ -93,6 +93,41 @@ pub(super) fn apply_patch(
                 p.background.get_or_insert_with(Default::default).color = *value;
             }
         }
+        crate::ItemParamPatch::TextAlign(v) => {
+            if let ItemParams::Text(p) = &mut target.content {
+                p.align = *v;
+            }
+        }
+        crate::ItemParamPatch::TextDecoration(v) => {
+            if let ItemParams::Text(p) = &mut target.content {
+                p.decoration = *v;
+            }
+        }
+        crate::ItemParamPatch::TextBackgroundPaddingX(v) => {
+            if let ItemParams::Text(p) = &mut target.content {
+                p.background.get_or_insert_with(Default::default).padding_x = *v;
+            }
+        }
+        crate::ItemParamPatch::TextBackgroundPaddingY(v) => {
+            if let ItemParams::Text(p) = &mut target.content {
+                p.background.get_or_insert_with(Default::default).padding_y = *v;
+            }
+        }
+        crate::ItemParamPatch::TextBackgroundOffsetX(v) => {
+            if let ItemParams::Text(p) = &mut target.content {
+                p.background.get_or_insert_with(Default::default).offset_x = *v;
+            }
+        }
+        crate::ItemParamPatch::TextBackgroundOffsetY(v) => {
+            if let ItemParams::Text(p) = &mut target.content {
+                p.background.get_or_insert_with(Default::default).offset_y = *v;
+            }
+        }
+        crate::ItemParamPatch::TextBackgroundCornerRadius(v) => {
+            if let ItemParams::Text(p) = &mut target.content {
+                p.background.get_or_insert_with(Default::default).radius = *v;
+            }
+        }
         crate::ItemParamPatch::TextPositionX(v) => {
             if let ItemParams::Text(p) = &mut target.content {
                 p.position.x = *v;

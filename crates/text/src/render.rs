@@ -14,6 +14,12 @@ use crate::raster::{Mask, Path, Xform, fill_into};
 const SYNTH_ITALIC_SLANT: f32 = 0.2126;
 /// Synthetic bold outline growth as a fraction of the font size.
 const SYNTH_BOLD: f32 = 0.025;
+/// Decoration bar thickness as a fraction of the font size.
+const DECORATION_THICKNESS: f32 = 0.07;
+/// Underline top below the baseline as a fraction of the font size.
+const UNDERLINE_OFFSET: f32 = 0.1;
+/// Line-through centre above the baseline as a fraction of the font size.
+const STRIKE_HEIGHT: f32 = 0.3;
 /// Largest accepted canvas, bounding the RGBA allocation to 256 MiB.
 const MAX_CANVAS_PIXELS: u64 = 64 << 20;
 
@@ -37,10 +43,38 @@ pub struct Outline {
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Rectangle {
     pub color: Color,
-    /// Extra space in pixels on every side.
-    pub padding: f32,
+    /// Extra space in pixels left and right of the content bounds.
+    pub padding_x: f32,
+    /// Extra space in pixels above and below the content bounds.
+    pub padding_y: f32,
+    /// Shift of the whole box from the content bounds, in pixels (y down).
+    pub offset_x: f32,
+    pub offset_y: f32,
     /// Corner radius in pixels; zero draws square corners.
     pub radius: f32,
+}
+
+impl Rectangle {
+    /// Box with the same padding on every side and no offset.
+    pub fn uniform(color: Color, padding: f32, radius: f32) -> Self {
+        Self {
+            color,
+            padding_x: padding,
+            padding_y: padding,
+            offset_x: 0.0,
+            offset_y: 0.0,
+            radius,
+        }
+    }
+}
+
+/// A line drawn across every laid-out line in the fill colour.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+pub enum Decoration {
+    #[default]
+    None,
+    Underline,
+    LineThrough,
 }
 
 /// How a layout is painted.
@@ -49,6 +83,7 @@ pub struct Paint {
     pub fill: Color,
     pub outline: Option<Outline>,
     pub background: Option<Rectangle>,
+    pub decoration: Decoration,
 }
 
 impl Default for Paint {
@@ -57,6 +92,7 @@ impl Default for Paint {
             fill: Color::WHITE,
             outline: None,
             background: None,
+            decoration: Decoration::None,
         }
     }
 }
@@ -201,8 +237,12 @@ pub fn render(
         return Err(RenderError::InvalidOutline);
     }
     if let Some(background) = paint.background
-        && !(background.padding.is_finite()
-            && background.padding >= 0.0
+        && !(background.padding_x.is_finite()
+            && background.padding_x >= 0.0
+            && background.padding_y.is_finite()
+            && background.padding_y >= 0.0
+            && background.offset_x.is_finite()
+            && background.offset_y.is_finite()
             && background.radius.is_finite()
             && background.radius >= 0.0)
     {
@@ -221,10 +261,10 @@ pub fn render(
     if let Some(background) = paint.background {
         let bounds = layout.bounds;
         let path = Path::round_rect(
-            ox + bounds.x0 - background.padding,
-            oy + bounds.y0 - background.padding,
-            ox + bounds.x1 + background.padding,
-            oy + bounds.y1 + background.padding,
+            ox + bounds.x0 - background.padding_x + background.offset_x,
+            oy + bounds.y0 - background.padding_y + background.offset_y,
+            ox + bounds.x1 + background.padding_x + background.offset_x,
+            oy + bounds.y1 + background.padding_y + background.offset_y,
             background.radius,
         );
         let mut mask = Mask::new(width, height);
@@ -236,6 +276,29 @@ pub fn render(
     for glyph in &layout.glyphs {
         let path = glyph_path(glyph);
         fill_into(&path, &mut fill_mask, ox + glyph.x, oy + glyph.y);
+    }
+    if paint.decoration != Decoration::None {
+        for line in &layout.lines {
+            let size = layout.glyphs[line.glyphs.clone()]
+                .first()
+                .map_or(0.0, |glyph| glyph.size);
+            if size <= 0.0 || line.width <= 0.0 {
+                continue;
+            }
+            let thickness = (size * DECORATION_THICKNESS).max(1.0);
+            let top = match paint.decoration {
+                Decoration::Underline => line.baseline + size * UNDERLINE_OFFSET,
+                _ => line.baseline - size * STRIKE_HEIGHT - thickness / 2.0,
+            };
+            let bar = Path::round_rect(
+                ox + line.x,
+                oy + top,
+                ox + line.x + line.width,
+                oy + top + thickness,
+                0.0,
+            );
+            fill_into(&bar, &mut fill_mask, 0.0, 0.0);
+        }
     }
 
     if let Some(outline) = paint.outline {
@@ -322,11 +385,8 @@ mod tests {
                     width: 4.0,
                     kind: StrokeKind::Outer,
                 }),
-                background: Some(Rectangle {
-                    color: Color::rgba(0, 0, 0, 160),
-                    padding: 12.0,
-                    radius: 6.0,
-                }),
+                background: Some(Rectangle::uniform(Color::rgba(0, 0, 0, 160), 12.0, 6.0)),
+                decoration: Decoration::None,
             },
         )
         .expect("render");
@@ -364,6 +424,7 @@ mod tests {
                 fill: Color::WHITE,
                 outline: None,
                 background: None,
+                decoration: Decoration::None,
             },
         )
         .expect("fill");
@@ -379,6 +440,7 @@ mod tests {
                     kind: StrokeKind::Outer,
                 }),
                 background: None,
+                decoration: Decoration::None,
             },
         )
         .expect("outline");

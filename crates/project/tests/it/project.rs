@@ -99,6 +99,16 @@ fn item(id: u64, start: i64) -> Item {
             letter_spacing: -1.5,
             line_height: 52.0,
             color: Color([255; 4]),
+            align: project::TextAlign::Left,
+            decoration: project::TextDecoration::Underline,
+            background: Some(project::TextBackground {
+                color: Color([10, 20, 30, 40]),
+                padding_x: 14.0,
+                padding_y: 9.0,
+                offset_x: -30.5,
+                offset_y: 12.0,
+                radius: 20.0,
+            }),
             ..Default::default()
         }),
     }
@@ -397,7 +407,12 @@ fn model_trust_boundaries() {
     });
     cases.push(d);
     type Corrupt = fn(&mut TextParams);
-    let text_style: [Corrupt; 11] = [
+    let text_style: [Corrupt; 16] = [
+        |p| p.background.as_mut().unwrap().padding_x = -1.0,
+        |p| p.background.as_mut().unwrap().padding_y = 128.5,
+        |p| p.background.as_mut().unwrap().radius = f32::NAN,
+        |p| p.background.as_mut().unwrap().offset_x = project::TextBackground::MAX_OFFSET + 1.0,
+        |p| p.background.as_mut().unwrap().offset_y = f32::NEG_INFINITY,
         |p| p.font_size = f32::INFINITY,
         |p| p.font = "  ".into(),
         |p| p.weight = 0,

@@ -364,18 +364,86 @@ impl Default for TextPosition {
 #[serde(deny_unknown_fields)]
 pub struct TextBackground {
     pub color: Color,
-    /// Project canvas pixels; scaled with the output like the font size.
-    pub padding: f32,
+    /// Horizontal padding in project canvas pixels; scaled with the output like the font size.
+    pub padding_x: f32,
+    /// Vertical padding in project canvas pixels.
+    pub padding_y: f32,
+    /// Shift of the box from the text bounds in project canvas pixels (y down).
+    pub offset_x: f32,
+    pub offset_y: f32,
     pub radius: f32,
 }
 impl Default for TextBackground {
     fn default() -> Self {
         Self {
             color: Color([0, 0, 0, 160]),
-            padding: 12.0,
+            padding_x: 12.0,
+            padding_y: 12.0,
+            offset_x: 0.0,
+            offset_y: 0.0,
             radius: 4.0,
         }
     }
+}
+impl TextBackground {
+    /// Largest padding or radius in project canvas pixels.
+    pub const MAX_EXTENT: f32 = 128.0;
+    /// Largest box offset magnitude in project canvas pixels.
+    pub const MAX_OFFSET: f32 = 1024.0;
+    /// Whether every geometry field is finite and within its documented range.
+    pub fn valid(&self) -> bool {
+        let extent = |v: f32| v.is_finite() && (0.0..=Self::MAX_EXTENT).contains(&v);
+        let offset = |v: f32| v.is_finite() && v.abs() <= Self::MAX_OFFSET;
+        extent(self.padding_x)
+            && extent(self.padding_y)
+            && extent(self.radius)
+            && offset(self.offset_x)
+            && offset(self.offset_y)
+    }
+}
+/// Horizontal alignment of lines inside the text box.
+#[derive(
+    Clone,
+    Copy,
+    Debug,
+    Default,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Serialize,
+    Deserialize,
+    schemars::JsonSchema,
+)]
+#[serde(rename_all = "snake_case")]
+pub enum TextAlign {
+    Left,
+    #[default]
+    Center,
+    Right,
+}
+/// Line drawn across the text in its fill colour.
+#[derive(
+    Clone,
+    Copy,
+    Debug,
+    Default,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Serialize,
+    Deserialize,
+    schemars::JsonSchema,
+)]
+#[serde(rename_all = "snake_case")]
+pub enum TextDecoration {
+    #[default]
+    None,
+    Underline,
+    LineThrough,
 }
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
@@ -388,6 +456,10 @@ pub struct TextParams {
     /// CSS weight 100..=900 (400 regular, 700 bold).
     pub weight: u16,
     pub italic: bool,
+    #[serde(default)]
+    pub align: TextAlign,
+    #[serde(default)]
+    pub decoration: TextDecoration,
     /// Extra advance after every grapheme cluster, in project canvas pixels (scaled with
     /// the output like the font size); negative tightens.
     pub letter_spacing: f32,
@@ -411,6 +483,8 @@ impl TextParams {
             font_size: 48.0,
             weight: crate::typography::DEFAULT_WEIGHT,
             italic: false,
+            align: TextAlign::default(),
+            decoration: TextDecoration::default(),
             letter_spacing: 0.0,
             line_height: 0.0,
             color: Color([255; 4]),
@@ -933,12 +1007,7 @@ fn validate(data: &ProjectData) -> Result<()> {
                         || !p.position.y.is_finite()
                         || !(0.0..=100.0).contains(&p.position.x)
                         || !(0.0..=100.0).contains(&p.position.y)
-                        || p.background.as_ref().is_some_and(|background| {
-                            !background.padding.is_finite()
-                                || !background.radius.is_finite()
-                                || !(0.0..=128.0).contains(&background.padding)
-                                || !(0.0..=128.0).contains(&background.radius)
-                        })
+                        || p.background.as_ref().is_some_and(|b| !b.valid())
                     {
                         return Err(Error::Invalid("text style"));
                     }

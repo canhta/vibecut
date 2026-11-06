@@ -24,4 +24,4 @@ pub use fonts::{
 };
 pub use layout::{Align, Bounds, Glyph, Layout, LayoutOptions, Line, LineBreak, TextError, layout};
 pub use mask::{StrokeKind, coverage_signed_distance};
-pub use render::{Canvas, Image, Outline, Paint, Rectangle, RenderError, render};
+pub use render::{Canvas, Decoration, Image, Outline, Paint, Rectangle, RenderError, render};
