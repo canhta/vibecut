@@ -1,7 +1,11 @@
 //! Remove ticket worktrees and delete only branches proven merged into origin/main.
 use super::Perform;
 use crate::orca::{self, CommandLine};
-use std::{fs, path::{Path, PathBuf}, process::Output};
+use std::{
+    fs,
+    path::{Path, PathBuf},
+    process::Output,
+};
 
 pub(super) fn worktree_remove_command(environment: Option<&str>, path: &Path) -> CommandLine {
     let selector = format!("path:{}", path.display());

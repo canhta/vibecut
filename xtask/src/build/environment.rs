@@ -268,7 +268,11 @@ pub(super) fn sysctl_load(program: impl AsRef<OsStr>) -> Option<f64> {
 /// idle time (Microsoft, `GetSystemTimes`), so busy fraction is
 /// `1 - idle_delta / (kernel_delta + user_delta)`.
 #[cfg(any(windows, test))]
-pub(super) fn processor_load(idle: (u64, u64), kernel: (u64, u64), user: (u64, u64)) -> Option<f64> {
+pub(super) fn processor_load(
+    idle: (u64, u64),
+    kernel: (u64, u64),
+    user: (u64, u64),
+) -> Option<f64> {
     let idle = u128::from(idle.1.checked_sub(idle.0)?);
     let kernel = u128::from(kernel.1.checked_sub(kernel.0)?);
     let user = u128::from(user.1.checked_sub(user.0)?);

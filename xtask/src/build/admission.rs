@@ -1,6 +1,16 @@
 //! Admit one build command into a FIFO queue and claim a job-budgeted warm slot.
-use super::{environment::{START_RAMP, load_within_bound}, queue::{Queue, open, try_lock}, slot::{Slot, owner}};
-use std::{ffi::{OsStr, OsString}, fs, io::{self, Write}, path::Path, time::SystemTime};
+use super::{
+    environment::{START_RAMP, load_within_bound},
+    queue::{Queue, open, try_lock},
+    slot::{Slot, owner},
+};
+use std::{
+    ffi::{OsStr, OsString},
+    fs,
+    io::{self, Write},
+    path::Path,
+    time::SystemTime,
+};
 
 /// Capacity facts fixed for one admission attempt.
 #[derive(Clone, Copy)]

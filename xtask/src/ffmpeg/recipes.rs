@@ -1,9 +1,21 @@
 //! Platform FFmpeg, zlib, opus, libvpx and x264 configure and build recipes.
-use super::{archives::sha256, command::{capture, run}, fetch::{X264_URL, X264_VERSION, source, zlib_source}};
+use super::{
+    archives::sha256,
+    command::{capture, run},
+    fetch::{X264_URL, X264_VERSION, source, zlib_source},
+};
 use sha2::{Digest, Sha256};
-use std::{env, fs, path::{Path, PathBuf}, process::Command};
+use std::{
+    env, fs,
+    path::{Path, PathBuf},
+    process::Command,
+};
 
-pub(super) fn ffmpeg_configure_flags(prefix: &Path, target: &str, arch: &str) -> Result<Vec<String>, String> {
+pub(super) fn ffmpeg_configure_flags(
+    prefix: &Path,
+    target: &str,
+    arch: &str,
+) -> Result<Vec<String>, String> {
     let os = target
         .split('-')
         .next()
@@ -84,7 +96,12 @@ pub(super) fn ffmpeg_configure_flags(prefix: &Path, target: &str, arch: &str) ->
     Ok(flags)
 }
 
-pub(super) fn build_zlib(source: &Path, prefix: &Path, target: &str, arch: &str) -> Result<(), String> {
+pub(super) fn build_zlib(
+    source: &Path,
+    prefix: &Path,
+    target: &str,
+    arch: &str,
+) -> Result<(), String> {
     let build = source.join(target);
     fs::create_dir_all(&build).map_err(|e| e.to_string())?;
     let mut configure = Command::new("cmake");

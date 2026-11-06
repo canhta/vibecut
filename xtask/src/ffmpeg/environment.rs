@@ -1,6 +1,16 @@
 //! Host discovery, install prefix, native runtime paths and compiler environment.
-use super::{archive_cache, archives::sha256, recipes::{patch_id, patches}};
-use std::{env, ffi::OsStr, fs, path::{Path, PathBuf}, process::Command};
+use super::{
+    archive_cache,
+    archives::sha256,
+    recipes::{patch_id, patches},
+};
+use std::{
+    env,
+    ffi::OsStr,
+    fs,
+    path::{Path, PathBuf},
+    process::Command,
+};
 
 pub fn host() -> Result<String, String> {
     let os = match env::consts::OS {

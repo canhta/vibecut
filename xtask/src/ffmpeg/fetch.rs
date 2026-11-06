@@ -1,6 +1,14 @@
 //! Resolve stable source versions, fetch them and extract a pristine tree.
-use super::{archives::{fetch, sha256}, command::{capture, run}, verify::{SourceError, pinned_zlib_sha256}};
-use std::{fs, path::{Path, PathBuf}, process::Command};
+use super::{
+    archives::{fetch, sha256},
+    command::{capture, run},
+    verify::{SourceError, pinned_zlib_sha256},
+};
+use std::{
+    fs,
+    path::{Path, PathBuf},
+    process::Command,
+};
 
 pub(super) const X264_VERSION: &str = "20191217-2245";
 pub(super) const X264_URL: &str = "https://download.videolan.org/pub/videolan/x264/snapshots/x264-snapshot-20191217-2245-stable.tar.bz2";
@@ -73,7 +81,11 @@ pub(super) fn source(
     Ok(dir)
 }
 /// Fetch, verify and extract zlib before any install prefix exists.
-pub(super) fn zlib_source(base: &Path, version: &str, receipt: &mut String) -> Result<PathBuf, SourceError> {
+pub(super) fn zlib_source(
+    base: &Path,
+    version: &str,
+    receipt: &mut String,
+) -> Result<PathBuf, SourceError> {
     let expected = pinned_zlib_sha256(version)?;
     let sources = base.join("sources");
     fs::create_dir_all(&sources).map_err(|error| SourceError::Io {

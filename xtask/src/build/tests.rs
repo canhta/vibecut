@@ -1,18 +1,15 @@
 //! Cross-process admission, capacity, memory, load and receipt tests.
-use super::*;
 use super::admission::*;
 use super::environment::*;
 use super::queue::*;
 use super::receipt::*;
+use super::*;
 use std::ffi::OsStr;
 use std::fs::{self, File};
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::{Duration, Instant, SystemTime};
-
-
-
 
 struct Directory(PathBuf);
 impl Directory {

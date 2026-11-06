@@ -1,13 +1,12 @@
 //! Cleanup argument, dispatch-release, branch-safety and scope tests.
-use super::*;
 use super::dispatch::*;
 use super::options::*;
 use super::worktree::*;
+use super::*;
 use crate::orca::Worker;
 use std::collections::HashSet;
 use std::fs;
 use std::path::{Path, PathBuf};
-
 
 #[test]
 fn arguments_classify_dispatches_and_worktrees_and_reject_hostile_paths() {
@@ -394,8 +393,7 @@ fn discovery_failures_keep_the_exit_code_non_zero_after_targets_continue() {
 #[test]
 fn worktree_removal_targets_the_resolved_path_and_deletes_the_branch() {
     assert_eq!(
-        worktree_remove_command(Some("Window"), Path::new("/workspaces/repo/ticket-58"))
-            .render(),
+        worktree_remove_command(Some("Window"), Path::new("/workspaces/repo/ticket-58")).render(),
         "orca worktree rm --worktree path:/workspaces/repo/ticket-58 --delete-branch --environment Window"
     );
     assert_eq!(

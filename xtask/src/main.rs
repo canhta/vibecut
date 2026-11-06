@@ -521,8 +521,9 @@ fn run() -> Result<ExitCode, String> {
 #[cfg(test)]
 mod tests {
     use super::{
-        assets, checked, layers, names, new_crate,
+        assets, checked,
         ffmpeg::{Version, inventory, parse_version},
+        layers, names, new_crate,
     };
     use std::fs;
     use std::path::{Path, PathBuf};

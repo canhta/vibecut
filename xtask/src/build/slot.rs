@@ -1,6 +1,17 @@
 //! Warm target slots: lease lifetime, owner records and worktree switch preparation.
-use super::{cache::{remove_dir, used_bytes}, environment::GIB, queue::Lock};
-use std::{ffi::OsStr, fs::{self, File}, io, path::{Path, PathBuf}, process::{Command, ExitStatus}, time::SystemTime};
+use super::{
+    cache::{remove_dir, used_bytes},
+    environment::GIB,
+    queue::Lock,
+};
+use std::{
+    ffi::OsStr,
+    fs::{self, File},
+    io,
+    path::{Path, PathBuf},
+    process::{Command, ExitStatus},
+    time::SystemTime,
+};
 
 pub(super) struct Slot {
     pub(super) lock: Lock,
@@ -10,7 +21,7 @@ pub(super) struct Slot {
 
 impl Slot {
     #[cfg(unix)]
-    pub(super)     fn execute(&mut self, command: &mut Command) -> io::Result<ExitStatus> {
+    pub(super) fn execute(&mut self, command: &mut Command) -> io::Result<ExitStatus> {
         // Only this slot descriptor crosses exec. Queue/admission descriptors
         // retain CLOEXEC. Closing the launcher must not explicitly unlock the
         // shared open-file description while a child/descendant still holds it.
@@ -29,7 +40,7 @@ impl Slot {
     }
 
     #[cfg(windows)]
-    pub(super)     fn execute(&mut self, command: &mut Command) -> io::Result<ExitStatus> {
+    pub(super) fn execute(&mut self, command: &mut Command) -> io::Result<ExitStatus> {
         // Keep the lease until wait observes exit, including forced child exit.
         // Windows launcher death is a documented limitation: std cannot safely
         // inherit this lease and winsafe has no Job Object interface yet.

@@ -33,7 +33,10 @@ pub(super) enum ReleaseOutcome {
     NoOwnedTerminal,
 }
 
-pub(super) fn confirm_release(receipt: &serde_json::Value, dispatch: &str) -> Result<ReleaseOutcome, String> {
+pub(super) fn confirm_release(
+    receipt: &serde_json::Value,
+    dispatch: &str,
+) -> Result<ReleaseOutcome, String> {
     let result = receipt
         .get("result")
         .ok_or("worker-release returned no result")?;
@@ -55,7 +58,10 @@ pub(super) fn confirm_release(receipt: &serde_json::Value, dispatch: &str) -> Re
 
 /// Returns the release receipt for `worker-release`, and `None` for commands
 /// that only need their exit status.
-pub(super) fn perform(command: &CommandLine, dry_run: bool) -> Result<Option<serde_json::Value>, String> {
+pub(super) fn perform(
+    command: &CommandLine,
+    dry_run: bool,
+) -> Result<Option<serde_json::Value>, String> {
     if !dry_run
         && command
             .args

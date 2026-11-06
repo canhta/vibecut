@@ -1,13 +1,13 @@
 //! Release settled Orca workers, remove ticket worktrees and prune build caches.
 mod dispatch;
 mod options;
-mod worktree;
 #[cfg(test)]
 mod tests;
+mod worktree;
 
+use crate::orca::{self, CommandLine};
 use dispatch::{ObservedWorker, discover_workers, perform, release_dispatch};
 use options::{Options, Target, parse};
-use crate::orca::{self, CommandLine};
 use std::{collections::HashSet, path::Path};
 use worktree::{pull, remove_worktree};
 

@@ -1,12 +1,12 @@
 //! Cross-process FIFO build admission, warm slots and clean-tree CI receipts.
 mod admission;
 mod cache;
+#[cfg(test)]
+mod cache_tests;
 mod environment;
 mod queue;
 mod receipt;
 mod slot;
-#[cfg(test)]
-mod cache_tests;
 #[cfg(test)]
 mod tests;
 

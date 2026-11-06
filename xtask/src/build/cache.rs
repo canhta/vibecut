@@ -1,6 +1,14 @@
 //! Age and size-prune the shared build cache without touching held slots.
-use super::{environment::GIB, queue::{open, try_lock}};
-use std::{fs, io, path::{Path, PathBuf}, process::Command, time::{Duration, SystemTime}};
+use super::{
+    environment::GIB,
+    queue::{open, try_lock},
+};
+use std::{
+    fs, io,
+    path::{Path, PathBuf},
+    process::Command,
+    time::{Duration, SystemTime},
+};
 
 pub(super) fn cache() -> Result<PathBuf, String> {
     // Same per-user cache owner as native provisioning.
@@ -128,7 +136,12 @@ pub(super) fn prune_incrementals(slot: &Path, now: SystemTime, dry_run: bool) ->
 /// `deps` directory. Runs only for an idle slot that is over budget, so a warm
 /// slot is preserved when its stale entries alone bring it back under the
 /// limit. Returns the bytes removed (or that a dry run would remove).
-pub(super) fn prune_stale_deps(path: &Path, depth: usize, now: SystemTime, dry_run: bool) -> io::Result<u64> {
+pub(super) fn prune_stale_deps(
+    path: &Path,
+    depth: usize,
+    now: SystemTime,
+    dry_run: bool,
+) -> io::Result<u64> {
     if depth == 0 {
         return Ok(0);
     }
@@ -162,7 +175,11 @@ pub(super) fn prune_stale_deps(path: &Path, depth: usize, now: SystemTime, dry_r
     Ok(freed)
 }
 
-pub(super) fn prune_stale_dep_entries(deps: &Path, now: SystemTime, dry_run: bool) -> io::Result<u64> {
+pub(super) fn prune_stale_dep_entries(
+    deps: &Path,
+    now: SystemTime,
+    dry_run: bool,
+) -> io::Result<u64> {
     let entries = match fs::read_dir(deps) {
         Ok(entries) => entries,
         Err(error) if changed_under_us(&error) => return Ok(0),
@@ -231,7 +248,12 @@ pub(super) fn slot_numbers(target: &Path) -> io::Result<Vec<usize>> {
     Ok(numbers)
 }
 
-pub(super) fn prune_slots(base: &Path, now: SystemTime, size_limit: u64, dry_run: bool) -> Result<(), String> {
+pub(super) fn prune_slots(
+    base: &Path,
+    now: SystemTime,
+    size_limit: u64,
+    dry_run: bool,
+) -> Result<(), String> {
     let target = base.join("target");
     if !target.is_dir() {
         return Ok(());

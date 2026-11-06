@@ -1,15 +1,12 @@
 //! Build-cache pruning and worktree-switch preparation tests.
-use super::*;
 use super::cache::*;
 use super::environment::*;
 use super::queue::*;
 use super::slot::*;
+use super::*;
 use std::fs::{self, File};
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
-
-
-
 
 #[test]
 fn worktree_switch_prunes_old_binaries_and_disk_guard_refuses_unrecovered_headroom() {
@@ -59,7 +56,6 @@ fn worktree_switch_prunes_old_binaries_and_disk_guard_refuses_unrecovered_headro
     prepare(&base, &root, 1, |_| Ok(headroom.next().unwrap())).unwrap();
     fs::remove_dir_all(root).unwrap();
 }
-
 
 fn age_tree(path: &Path, when: SystemTime) {
     let metadata = fs::symlink_metadata(path).unwrap();
@@ -151,8 +147,7 @@ fn cache_prune_drops_only_stale_dependencies_when_that_restores_the_budget() {
 
     // Dry-run budgeting must account for regular dependency files too.
     let used = used_bytes(&base.join("target/slot-1")).unwrap();
-    let freed =
-        prune_stale_deps(&base.join("target/slot-1"), 4, SystemTime::now(), true).unwrap();
+    let freed = prune_stale_deps(&base.join("target/slot-1"), 4, SystemTime::now(), true).unwrap();
     assert!(freed >= 8192, "dry run did not count the stale file");
     assert!(used.saturating_sub(freed) <= 5000);
     assert!(stale.exists(), "dry run removed the stale file");

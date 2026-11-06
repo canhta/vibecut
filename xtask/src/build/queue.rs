@@ -1,5 +1,9 @@
 //! OS-locked FIFO build queue and admission locks with crash-safe liveness.
-use std::{fs::{self, File, TryLockError}, io, path::{Path, PathBuf}};
+use std::{
+    fs::{self, File, TryLockError},
+    io,
+    path::{Path, PathBuf},
+};
 
 pub(super) struct Lock {
     pub(super) file: File,
@@ -7,7 +11,7 @@ pub(super) struct Lock {
 }
 
 impl Lock {
-    pub(super)     fn new(file: File) -> Self {
+    pub(super) fn new(file: File) -> Self {
         Self {
             file,
             unlock_on_drop: true,
@@ -47,7 +51,7 @@ pub(super) struct Queue {
 }
 
 impl Queue {
-    pub(super)     fn enter(locks: &Path) -> io::Result<Self> {
+    pub(super) fn enter(locks: &Path) -> io::Result<Self> {
         fs::create_dir_all(locks.join("build-queue"))?;
         // Serialize creation + locking, dead-entry pruning, and admission. No
         // observer can mistake a newly created, not-yet-locked waiter for dead.
@@ -82,13 +86,13 @@ impl Queue {
         })
     }
 
-    pub(super)     fn admission(locks: &Path) -> io::Result<Lock> {
+    pub(super) fn admission(locks: &Path) -> io::Result<Lock> {
         let file = open(&locks.join("admission"))?;
         file.lock()?;
         Ok(Lock::new(file))
     }
 
-    pub(super)     fn first(&self) -> io::Result<bool> {
+    pub(super) fn first(&self) -> io::Result<bool> {
         let mut paths = fs::read_dir(self.locks.join("build-queue"))?
             .map(|entry| entry.map(|entry| entry.path()))
             .collect::<io::Result<Vec<_>>>()?;
@@ -111,7 +115,7 @@ impl Queue {
         Err(io::Error::other("build queue entry disappeared"))
     }
 
-    pub(super)     fn leave(&mut self) -> io::Result<()> {
+    pub(super) fn leave(&mut self) -> io::Result<()> {
         // Close before unlink. Caller holds admission.
         drop(self.held.take());
         fs::remove_file(&self.path)

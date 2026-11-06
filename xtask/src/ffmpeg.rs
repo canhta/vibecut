@@ -6,18 +6,18 @@ mod fetch;
 mod oracles;
 mod recipes;
 mod sherpa;
-mod verify;
 #[cfg(test)]
 mod tests;
+mod verify;
 
+pub(crate) use archives::{cache as archive_cache, fetch_limited};
+pub(crate) use environment::{append_encoded_flag, cache};
 pub use environment::{environment, environment_at, external, host, prefix};
 pub use fetch::cache_key;
-pub(crate) use archives::{cache as archive_cache, fetch_limited};
-pub(crate) use sherpa::provision as sherpa_provision;
-pub(crate) use environment::{append_encoded_flag, cache};
-pub(crate) use oracles::{begin, print_fixtures};
 #[cfg(test)]
 pub(crate) use oracles::{Version, inventory, parse_version};
+pub(crate) use oracles::{begin, print_fixtures};
+pub(crate) use sherpa::provision as sherpa_provision;
 
 use environment::native_target;
 use fetch::{ZLIB_REPOSITORY, stable_tag};

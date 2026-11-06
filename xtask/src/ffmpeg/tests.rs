@@ -10,7 +10,6 @@ use std::fs;
 use std::path::PathBuf;
 use std::process::Command;
 
-
 #[test]
 fn external_tools_drop_the_managed_runtime_search_path() {
     let command = external("ffmpeg");
@@ -58,8 +57,7 @@ fn inherited_native_environment_keeps_flags_and_library_paths_stable() {
 #[test]
 fn cargo_children_resolve_external_oracles_with_native_dlls() {
     const CHILD: &str = "VIBECUT_ORACLE_ENV_CHILD";
-    const TEST: &str =
-        "ffmpeg::tests::cargo_children_resolve_external_oracles_with_native_dlls";
+    const TEST: &str = "ffmpeg::tests::cargo_children_resolve_external_oracles_with_native_dlls";
     if let Some(stage) = env::var_os(CHILD) {
         if stage == "oracle" {
             let executable = env::current_exe().unwrap();
@@ -89,8 +87,7 @@ fn cargo_children_resolve_external_oracles_with_native_dlls() {
         assert!(command.status().unwrap().success());
         return;
     }
-    let directory =
-        env::temp_dir().join(format!("vibecut oracle space-{}", std::process::id()));
+    let directory = env::temp_dir().join(format!("vibecut oracle space-{}", std::process::id()));
     let base = directory
         .join(".cache/vibecut/ffmpeg")
         .join(host().unwrap());
@@ -295,8 +292,7 @@ fn patch_discovery_uses_the_invoking_worktrees_manifest() {
         );
         return;
     }
-    let directory =
-        env::temp_dir().join(format!("vibecut-runtime-patches-{}", std::process::id()));
+    let directory = env::temp_dir().join(format!("vibecut-runtime-patches-{}", std::process::id()));
     fs::create_dir_all(directory.join("patches")).unwrap();
     fs::write(directory.join("patches/runtime.patch"), b"runtime fixture").unwrap();
     let status = Command::new(env::current_exe().unwrap())
