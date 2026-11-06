@@ -1,27 +1,34 @@
 # engine
 
-Headless command execution, Session ownership, project snapshots and transient item-selection history,
-bounded background jobs and content-addressed artifact storage, plus batch export
-orchestration for accepted ordered-segment shorts. Processing
-algorithms and decoded/raster caches remain with their domain owners. No widgets,
-device state, app preferences or platform API is required.
+Headless project editing, bounded background execution, persistent sessions and media workflows.
+Domain crates own processing algorithms, decoded/raster storage and persisted project formats.
+Widgets, device state, app preferences and authenticated transports live in consumers.
 
-## Module ownership
-
-| Folder | Responsibility | Interface |
+| Folder | Responsibility | Interface items |
 |---|---|---|
-| `session/` | Owns editable project state. | Session, Command, registry |
-| `runtime/` | Executes bounded background work. | JobRunner, ByteBudget, ArtifactCache, export submission |
-| `store/` | Persists managed project sessions. | ProjectLibrary, Autosave, cover capture |
-| `subtitles/` | Produces source-timed subtitle output. | Providers, transcribe, run, translate_selected, prepare_ass_import |
-| `shorts/` | Produces accepted shorts. | ClipBatch, suggest, prepare_export |
-| `analysis/` | Measures source media. | scene detection, shot analysis, loudness |
-| `artifacts/` | Produces derived project images. | thumbnails, snapshots, effect thumbnails |
-| `libraries/` | Provides external project assets. | FontStore, SoundLibrary |
-| `providers/` | Resolves explicit AI provider choices. | provider attempts, ModelTransfers |
-| `control/` | Admits transport-neutral control calls. | Request, Response, Policy, Cursor |
+| `session/` | Owns editable project state. | `Session`, `Command`, `CommandKind`, `registry`, `JobTarget` |
+| `runtime/` | Executes bounded background work. | `jobs`, `cache`, `ByteBudget`, `submit_export`, `submit_export_publication` |
+| `store/` | Persists managed project sessions. | `library`, `recovery`; private project-cover capture |
+| `subtitles/` | Produces source-timed subtitle output. | `Providers`, `transcribe`, `run`, `translate_selected`, `prepare_ass_import`, `translation` |
+| `shorts/` | Produces accepted shorts. | `clip_suggest`, `clip_boundaries`, `ClipBatch` |
+| `analysis/` | Measures source media. | `scene_detection`, `loudness`, `AnalysisRequest`, `AnalysisJob` |
+| `artifacts/` | Produces derived project images. | `thumbnails`, `snapshot`, `effect_thumbnails` |
+| `libraries/` | Provides external project assets. | `fonts`, `sounds` |
+| `providers/` | Resolves explicit AI provider choices. | `transcribe`, `translate`, `suggest_clips`, `models` |
+| `control/` | Admits transport-neutral commands. | `Request`, `Caller`, `Policy`, `Response`, `Cursor`, `contract_schema` |
 
-## Public entry points
+The crate root retains its existing public namespaces and item exports; the implementation
+folders expose only their consumer-facing interfaces. The dependency table is owned by
+[structure](../../docs/engineering/structure.md#engine) and `xtask/modules.toml`.
+
+Entry points: use [Session commands](#public-entry-points) for edits,
+[control admission](#control-admission-revisions-and-receipts) for transport adapters,
+[the job runner](#background-jobs-and-byte-policy) for bounded work and
+[the subtitle workflow](#subtitle-workflow) for speech-to-caption composition.
+
+## Session
+
+### Public entry points
 
 `Session::new(project, history_limit)` admits 1..=1000 retained undo steps.
 `project()` exposes an immutable `Arc<Project>` for downstream consumers.
@@ -63,7 +70,7 @@ does not perform probe/hash IO. A failed command/batch consumes no IDs; successf
 preview/group children retire their IDs even when their outer operation rolls back. ID exhaustion returns
 a typed error. Reloading a project starts a new Session/identity lifetime.
 
-## Import policy
+### Import policy
 
 `import.add_asset` raises project FPS to the greatest video stream rate, compared
 as exact rationals by `time::FrameRate`; it never lowers FPS. `timeline.insert`
@@ -90,29 +97,7 @@ and its item IDs. Refusal preserves the entire project and history; successful
 removal deletes records only, retaining source files and unrelated content.
 Undo restores the exact records and their project order; redo removes them again.
 
-## ASS caption import
-
-`captions.import { asset, language, start, track, name, cues }` inserts parsed
-`captions::AssCue` values as one `CaptionParams` item on an existing text track
-or a newly allocated track named `name` (default `Captions`). The asset is the
-already-read script identity; no path or file IO runs inside the command. The
-item starts at `start`; source ranges stay in script coordinates and cue styles
-remain per cue. The asset, optional track and item form one command and one undo
-step, so undo removes all three. Empty cue lists, more than 100,000 cues,
-negative starts and invalid cue styles refuse atomically. Every cue stores its
-full style, so a result the project encoder would refuse (about 3,000 cues
-under the 200,000-separator bound) is refused with `Limit` instead of leaving
-a session that cannot be saved; a shared per-item style table would lift that.
-
-`ass_import::prepare_ass_import` reads at most 16 MiB, parses through the
-captions owner and returns the registered command plus cue/style/skipped counts
-and line-numbered warnings for headless adapters. It returns `Limit` for an
-oversized file and `Unsupported` when no cue survives. `captions.import` works
-inside a batch. `docs/engineering/commands.md`, `catalog.digest` and
-`cargo run -p engine --example control_catalog` remain the generated source of
-truth.
-
-## Timeline placement
+### Timeline placement
 
 `timeline.insert { placement, item }` performs track choice, optional allocation
 and insertion as one atomic undo step. `placement` is a tagged object with
@@ -146,7 +131,7 @@ track kinds remain available but cannot receive unsupported item kinds.
 Command integration and fixed-seed random insertion tests cover compatibility,
 ordering/non-overlap, first-main clamping, undo/redo and persistence round trips.
 
-## Transient selection and shared fields
+### Transient selection and shared fields
 
 `timeline.set_item_param` also accepts the exact `transform.positionX`,
 `transform.positionY`, `transform.scaleX`, `transform.scaleY` and
@@ -182,116 +167,7 @@ missing IDs, duplicates, invalid values and locked compatible items refuse the
 entire edit. An all-incompatible selection is a no-op. One successful changed
 command is one undo step, including every item's previous field value.
 
-## Control admission, revisions and receipts
-
-`control::{Request, Caller, Policy, Response}` is the transport-neutral boundary.
-`Session::control_json` parses at most 8 MiB of UTF-8 with duplicate-key refusal,
-32 nested levels, 200,000 nodes, 100,000 members per collection and 4 MiB aggregate
-text. `control_request` also bounds already-allocated requests. Unknown commands,
-wrong types/fields and nested batch publications refuse before effects. Validators
-compile only generated local schemas with network/file resolution disabled.
-API version 1 is independent of the project file schema. The BLAKE3 catalog digest
-covers schemas, static effects/examples and limits, excluding enabled/session state.
-Effectful calls require the exact digest and version; catalog reads need no digest.
-[Generated commands](../../docs/engineering/commands.md) and `catalog.digest` regenerate
-with `cargo run -p engine --example control_catalog`; the conformance test checks
-both against current registry output in CI.
-
-Every Session starts with an OS-random epoch. `revision()` is an opaque string;
-its generation and `JobTarget` share the same Arc invalidation boundary. UI edits,
-undo/redo, preview lifetimes, transaction rollback/net-zero end, view changes and
-successful save advance it; ordinary no-ops/refusals do not. Effectful control
-requests require `base_rev`. A stale revision refuses before any child of a batch.
-Before publishing an admitted JSON/control edit, Session validates the candidate project's actual serialized
-integers and created IDs, including values produced by allocation or tick/keyframe
-arithmetic. Undo/redo validate their destination snapshot before moving history.
-An invalid candidate returns InvalidParams without consuming IDs, advancing
-revision or emitting a project change; its refusal receipt can be replayed. This
-also applies to JSON execution; typed in-process editing keeps the owner
-types' full integer domain.
-The recovery journal descriptor is version 2 for the same ProjectId encoding;
-older descriptors are refused before model decoding, without deleting their files.
-Session/project lifecycle creation and disk saves retain their existing
-`Session::create`/`Autosave` ownership; direct Session edit/control execution returns
-a typed refusal for those commands. Their registry examples declare those routes.
-A composition root that owns the project file may instead call
-`Session::control_lifecycle_save`: it applies the same version, hash, session,
-policy, request-ID, key, revision, capacity and receipt rules as other effects, then
-runs a closure that performs only project/metadata publication, acknowledges the
-save and stores the terminal receipt. Its success and typed execution errors are
-both receipted; a failed publication keeps the composition root's dirty state, the
-same request replays the stored error, and a retry that must execute again uses a
-fresh key.
-
-The composition root supplies `Caller` and a mandatory trusted `Policy`, outside
-client JSON. Engine invokes it on the command and every batch child before effects
-and before receipt replay. It must enforce source/destination/overwrite and provider
-consent through their owners; it is not an authenticated transport implementation.
-External callers cannot begin/commit/cancel gestures, including through generic
-run or batches. External mutations refuse while the UI holds a gesture. Agents use
-atomic batches and undo. Reads do not expose uncommitted gesture snapshots.
-
-Effectful requests require a 1..=128-byte idempotency key. Receipts are scoped by
-trusted principal, Session and key; the fingerprint covers command, params,
-base revision and contract identity, excluding transport/request correlation.
-Replay returns the original revision/result even after later edits; conflicting
-semantics refuse. Mutable Session ownership serializes concurrent callers. The
-ledger retains at most 4096 receipts and 32 MiB without eviction until Session end;
-new effects reserve 128 KiB of available ledger capacity before execution. Mutation
-results have at most 1024 created IDs; returned publication paths are capped at
-4096 encoded bytes. Request IDs and principals are 1..=128 bytes. Refusals before
-reservation do not occupy a key; accepted execution errors do. A new Session refuses
-the old epoch rather than rerunning an uncertain mutation.
-
-Inspection/catalog responses are capped at 8 MiB; oversize reads refuse instead of
-truncating or mixing revisions. Safe wire error codes omit paths, user text,
-provider bodies and Rust Debug. `bounded_json` is the adapter's bounded response
-serializer. No transport, filesystem grant store, CLI persistent Session or MCP
-runtime is introduced here; their composition belongs to the consumers.
-
-`inspect`, `catalog`, `provider_catalog`, `fonts.list`, `fonts.load`, `fonts.download`, `preview`,
-`preview.snapshot`, general `export`, `job_status` and `job_cancel` share the existing declaration
-([font commands](#font-catalog) need an attached font store). Export starts the production
-render job against its admitted immutable snapshot and returns job ID/revision and
-paths. Preview starts a CPU job through the same runner; job_status returns its
-retained inline JPEG result without consuming it. Up to four exact output frames
-are rendered at a maximum 640-pixel edge, JPEG quality 80, with frame/active clip IDs
-burned in through the production text compositor. At most 16 active clips are
-admitted per preview frame; larger label sets refuse. Labels that cannot fit at 14 output pixels within half
-the image also refuse rather than clipping. Preview results retain their
-captured revision; missing sources fail rather than invent picture evidence.
-Images never enter receipts or event queues. Cancel requests obey the runner's
-publication fence. Absent/evicted jobs return JobNotRetained; replaying their start
-receipt never submits another job. Applications keep ticking app-owned jobs after
-a listener disconnects; process shutdown retains JobRunner's cancel/join behavior.
-
-## Control events and resynchronization
-
-One typed `Payload` set covers command result/error, committed project change,
-revision change and job snapshots. Envelopes include API/catalog/session identity,
-revision and string sequence number. Command replies/receipts remain authoritative;
-large read/image results stay on the response path. Project changes require a full
-snapshot rather than pretending created IDs form a complete diff. Gesture previews
-and cancellation emit revision changes, never committed project changes.
-
-`snapshot_and_subscribe(&runner)` captures committed project, revision, current jobs
-and a cursor while Session ownership is held. The owning loop calls `observe_jobs`
-after runner ticks/accepted responses; it uses retained snapshots without draining
-other consumers. Acceptance is visible before job lifecycle events. At most 128
-small live events are retained for every listener together; cursors hold no queue.
-A slow or foreign cursor gets ResyncRequired and must install a fresh snapshot.
-No durable replay or exhaustive transition log is promised; progress can coalesce.
-Terminal snapshots follow the existing runner/publication fence, and repeated polls
-do not duplicate unchanged terminal events. Dropping a cursor never cancels work.
-
-The control tests enumerate registry-owned examples and fixture requirements,
-validate closed schemas, exercise real export/preview jobs, stale requests,
-receipt replay/conflict/exhaustion, hostile parser/integer inputs, policy refusal,
-gesture ownership and snapshot pressure. Measurements and acceptance limitations
-are recorded in the local /07 done report; a build alone proves none of the
-transport or installed-client behavior.
-
-## Transactions, gestures and changes
+### Transactions, gestures and changes
 
 `begin_gesture`, `commit_gesture` and `cancel_gesture` are registered commands and
 have matching typed methods. During a gesture `project()` exposes validated
@@ -321,7 +197,7 @@ termination cannot be recovered. The application owns panic-hook policy. Errors
 preserve project/history/merge state and undrained changes; successful undo/redo
 always break merging. App presentation/scopes/preferences are not Session state.
 
-## Edit semantics and limits
+### Edit semantics and limits
 
 Commands build a private candidate, then validate through `Project::new` before
 publishing one snapshot. Failure leaves project, history and allocation untouched.
@@ -395,7 +271,7 @@ Errors are typed `EditError` categories with safe IDs/static diagnostics and
 retained project/time/caption sources. No raw JSON diagnostics or parameter text is
 returned. Commands perform no IO or retries; processing lifecycle is described below.
 
-## Keyframe commands
+### Keyframe commands
 
 Project owns the [parameter model and evaluator](../project/README.md#animated-parameters).
 Engine adds the registered `keyframes.set_param`, `keyframes.add`,
@@ -416,7 +292,143 @@ retaining out-of-window keys; no second interpolation or tangent algorithm.
 `NewItem.animations` carries explicit animation data on insertion. Rendering and
 CLI property/export wiring are separate consumers of the project evaluator.
 
-## Verification and performance
+### Project lifecycle and view state
+
+`Session::create(Command::CreateProject { id, name }, history_limit)` consumes the
+registered `project.create` command and uses project's default canvas/timeline.
+`project.rename` is an ordinary edit with undo/redo. `project.set_view_state`
+requires `zoom`, `scroll` and `playhead`; it validates through project and changes
+only `Session::metadata`, outside project undo and committed-project notifications.
+View changes are refused inside gestures/groups/batches. `restore_metadata`
+loads the optional sidecar at open and is also refused during transactions.
+
+`Autosave::open` reads metadata after acquiring its writer lease. Its background
+save writes the project and then the sidecar before publishing a receipt. Desktop
+and CLI use that same lease metadata API. `Autosave::execute("project.save", {})`
+queues the registered save; callers must poll/flush and check acknowledgement.
+`Session::execute` refuses create/save because they require lifecycle ownership;
+commands stay in the one generated registry. Destination admission refusals before
+a persistence job starts (including Busy, unsupported names and lease IO errors)
+return their typed error without poisoning the active autosave owner; choosing a
+different destination can succeed. Once a job is admitted, publication and worker
+failures retain the sticky error policy.
+
+### Effect commands
+
+`effects.add { item, effect }`, `effects.remove { item, effect: instance_id }`,
+`effects.reorder { item, order: [instance_id, ...] }`,
+`effects.toggle { item, effect: instance_id, enabled }` and
+`effects.update_param { item, effect: instance_id, key, value }` mutate the project
+stack through normal atomic history. Locked/missing items, duplicate IDs, unknown
+instances, wrong types and out-of-range intensity refuse. Add stores enabled state
+and static parameters; scalar animation overrides use `keyframes.set_param` at
+`effects.<id>.params.intensity`. Remove deletes those animation paths in the same
+undo step. Reorder requires an exact permutation and preserves instance identity
+and animation paths. Toggle preserves params and animation. Param edits replace
+one static scalar; an existing animation still overrides it. Every command uses
+gestures/merged edits for one undo step per continuous interaction. Availability
+requires an unlocked visual item; audio refuses all effect edits. CLI `exec`
+consumes these same registered commands before export.
+
+Derived illustrations use the [effect thumbnail contract](#effect-thumbnails).
+
+### Mask edits
+
+`masks.add`, `masks.remove`, `masks.update` and `masks.reorder` operate on the
+project-owned ordered mask vector through the same atomic candidate/history path.
+Update selects by the supplied mask's stable ID; reorder requires an exact
+permutation. Missing/duplicate identities, invalid parameters and locked tracks
+refuse the entire command or batch. Removal also removes that mask's animation
+channels; undo restores both. Registry schemas and CLI execution share these
+commands and their examples. No app-only mask state or evaluator is introduced.
+
+### Scene commands
+
+`scene.create {name}` appends an empty secondary scene without switching and
+returns its allocated `CreatedId::Scene`. `scene.rename {scene,name}` edits a
+scene name. `scene.delete {scenes}` atomically deletes the selected non-main
+scenes; any unknown or main ID refuses the whole edit. Deleting the active scene
+selects main. Create, rename and multi-delete each use one ordinary undo step;
+delete undo restores scene timelines, items and bookmarks together.
+
+`scene.switch {scene}` selects an existing scene, clears item selection and
+terminates edit coalescing without adding undo history or clearing redo. It is
+refused during gestures/transactions and inside batches. Undo/redo preserves the
+currently selected scene when that scene exists in the restored snapshot;
+otherwise it uses the snapshot's valid scene choice. All timeline commands target
+the active scene; allocation scans every scene on load and never reuses a live
+scene, track, item or bookmark ID.
+
+Switching retains zoom, horizontal scroll and playhead per scene in project's
+optional metadata sidecar, outside undo. New scenes start with default views;
+removed scenes' views are pruned. Canvas/fps/background remain shared. Rendering,
+audio mixing and CLI export use the active scene by default; export settings can
+resolve explicit scopes through project's `SceneScope` and `for_scene` contract.
+
+### Visual item fields
+
+`timeline.set_item_param` accepts `{ "item": 1, "patch": { "field": "blendMode",
+"value": "multiply" } }` or an `opacity` field with a finite 0..=1 value.
+The same typed patch works in `timeline.set_item_param_many`. Visual fields refuse
+audio targets in the single-item command; the shared command skips incompatible
+items. Locked/missing targets refuse atomically. Blend changes retain animation;
+setting constant opacity replaces its animation channel, as `keyframes.set_param`
+does. Keyframe commands still own animated editing. History and persistence retain
+both fields through the existing snapshot path; no adapter owns duplicate values.
+
+### Audio controls
+
+`timeline.set_item_param` and `timeline.set_item_param_many` accept `volume`
+(finite -60..20 dB, step 0.01) and `muted` (bool) patches on audio and video
+items. The Rust variants remain `AudioGain`/`AudioMuted`; old transport field
+names are refused. Constant edits replace the corresponding animation override;
+keyframe commands edit scalar `volume` or held bool `muted` paths through the
+same evaluator. Locked/missing targets and invalid grids refuse atomically.
+`audio.set_master {volume, muted}` changes project-level master controls.
+`audio.set_fade {item, edge, duration, curve}` sets one clip fade (`edge` is `in` or
+`out`, `curve` `equal_power`, `linear` or `exponential`) on audio and video items.
+A negative duration, a non-audible item or a locked track refuses atomically; a
+duration beyond the clip is clamped to the clip minus the other edge, so the two
+fades never overlap. `split_at` is non-destructive: both pieces keep the whole
+shape of any fade reaching them and record the part the other piece holds
+(`Fades::split`), so a cut inside a fade, at its boundary or off the sample grid
+leaves the summed envelope unchanged. Moving a trim edge starts a fresh fade of the
+audible length there. Trimming to its existing position preserves the fade phase.
+Stored durations beyond the shortened clip stay, and render clamps the window.
+All three edits use ordinary gestures, transactions, undo/redo and persistence;
+render owns mastering, sample timing and latency compensation.
+
+### Video transitions
+
+`transition.add {track, from, to, kind, duration, alignment}` allocates a transition
+ID and clamps duration through project's handle rules. `transition.move
+{transition, start}` slides the existing span over its cut, clamping to available
+handles and updating its alignment. `transition.set_duration {transition,
+duration}` resizes following that alignment; `transition.remove {transition}`
+removes only the transition. Locked tracks refuse all four commands. IDs use the
+same nonreused session counter as items, tracks and bookmarks; `CreatedId::Transition`
+reports additions. Every command supports batches, gesture cancellation, undo/redo
+and persistence through the existing session snapshot path.
+
+Clip edits revalidate the affected active timeline before publishing: transitions
+follow moved cuts, clamp after shortening, and disappear when adjacency or handles
+are lost. Splits extend the transition's ordered side pieces while keeping the
+original span and progress. Explicit trim/move/delete edits detach pieces that
+no longer form a contiguous chain reaching the cut, then revalidate the remaining
+side extents. Splits retain the original retime processing window for both video
+mapping and audio replay. Failed edits publish
+neither item nor transition changes. Audio remains on its existing mixer path;
+these transitions are video-only. [Project](../project/README.md#video-transitions)
+owns the admitted kinds and invariant mathematics.
+`audio.set_loudness {scope: clip|master, target_lufs, true_peak_db}` stores an EBU R128
+target (-50..-5 LUFS, -20..0 dBTP; default -14/-1) and drops stale gains;
+`audio.clear_loudness {scope}` removes it; both are ordinary undoable edits that
+persist with the project. Measured gains arrive through `audio.apply_loudness {gains}`
+(validated range and ordering only). See [loudness normalization](#loudness-normalization).
+All three edits use ordinary gestures, transactions, undo/redo and persistence;
+render owns mastering, sample timing and latency compensation.
+
+### Verification and performance
 
 `cargo xtask ci` exercises public JSON and typed commands, atomic failing batches,
 simultaneous moves, locks, exact source/output split and trim math, ripple scope,
@@ -438,23 +450,9 @@ child validation consumes each candidate without another clone. Media bytes and
 decoded frames are never copied by this crate. Byte-budgeted history and larger
 real-world drag latency remain unverified; no bounded-RSS claim is made.
 
-## Render kernel execution
+## Runtime
 
-`JobContext` supplies render's scheduling hook: up to eight workers, capped by
-available parallelism. Each row batch borrows disjoint buffers, runs one task on
-the job thread and uses scoped engine workers for the rest. It reserves 512 KiB
-per extra worker stack before spawning, uses sequential execution when the
-extra stacks do not fit, catches worker panics as typed render
-failures, and joins all tasks on success, cancellation, refusal and unwind.
-There is no detached work or retained pixel pool. Default hooks outside engine
-remain sequential. The existing job-class limits bound simultaneous jobs; each
-job can have at most seven additional row workers during a batch. Native FFmpeg
-conversion receives the same concurrency bound and holds its separately charged
-worker allowance for the converter/encoder lifetime; render/media retain their
-pixel and codec ownership. `tests/it/render_kernels.rs` covers failure joins, stack
-admission, released charges and parallel/sequential pixel equality.
-
-## Background jobs and byte policy
+### Background jobs and byte policy
 
 `jobs::JobRunner::new(config, budget, clock)` schedules blocking adapters on std
 threads. `submit(spec, task)` returns a JobId and CancelToken; `tick()` joins
@@ -504,7 +502,7 @@ operation and weak registry entries are compacted on registration/pressure.
 Reservations are declared allocation ceilings, not an allocator sandbox or RSS
 measurement. Captured task data is caller-owned and must be bounded; submission
 cannot inspect arbitrary closures. The same reservation must not be charged a
-second time by its adapter. Preferences/75 supplies the aggregate limit, rather
+second time by its adapter. The preferences owner supplies the aggregate limit, rather
 than allocating the whole limit independently to each cache.
 
 RunnerConfig admits 1..=16 workers per CPU/GPU-encoder/network class, 1..=10,000
@@ -555,32 +553,7 @@ Call `saved()` after a successful save; it refuses an active transaction and
 invalidates pre-save targets. Opening another Session gives a new identity.
 A valid old artifact may remain cached without being applied.
 
-## Import jobs and thumbnails
-
-The desktop import composer submits `JobKind::Probe` for canonicalize/probe/hash
-and capability checks, publishes each asset before the batch ends, then submits
-`JobKind::Thumbnail` for video/image assets. Both use the existing runner,
-progress stages (`Probe`, `Thumbnail`), cancellation and the aggregate budget;
-the UI keeps completed assets on cancel or failure. `thumbnails::thumbnail_key`
-binds the source content hash, requested frame position and output edge through
-the one artifact-cache policy. `ThumbnailCache::get_or_generate` decodes only on
-a miss; corrupt envelopes or payloads count as misses and regenerate. The CLI's
-`probe` command prints the same metadata and capability matrix, while the app
-maps capabilities to its localized `probing`/`ready`/`unsupported` badges and
-keeps a placeholder when thumbnail generation fails.
-
-`thumbnails::RetainedThumbnail` shares pixels through an Arc and holds the
-aggregate `DecodedFrames` allowance until the last owner drops. It reserves
-four RGBA byte counts for packed pixels, egui CPU image, upload staging and GPU
-texture, plus the retained probe metadata allocation; app owners keep that
-handle while any texture is retained. Geometry follows pixels in memory too,
-so disk eviction or a session-only cache cannot trigger recovery decode on a hit.
-`ThumbnailCache` keeps validated source probe metadata in the same content-keyed
-envelope as pixels, so eviction cannot leave a frame hit requiring recovery
-decode. It never caches machine capabilities. A warm image import can reuse
-geometry before opening a recovery decoder. Cache payloads remain disposable.
-
-## Reuse and ASR checkpoints
+### Reuse and ASR checkpoints
 
 `cache::CacheKey::new(KeyInputs)` hashes versioned, length-delimited BLAKE3 inputs.
 Owners supply canonical normalized settings and semantic content hashes (not paths,
@@ -631,134 +604,147 @@ and disk charges alive through their leases; closed, unleased directories are
 reaccounted on next open. OS/allocator overhead and unopened cache directories are
 outside this active-engine accounting.
 
-## Local model transfers
+#### ASR checkpoints
 
-`models::ModelTransfers` composes the existing JobRunner, ArtifactCache and ai's
-shared streaming transport. `open_default` reuses `ai::models::cache_dir`; `new`
-accepts an already owned cache and injected `ModelIo`. The runner must share that
-cache's ByteBudget. There is one active transfer per cache, including queue/backoff;
-no additional runner or worker loop is created. State mutexes cover ownership
-changes only, never network, file IO or verification.
-
-`submit` requires ai's exact-model `DownloadConsent`, reauthorizes every attempt,
-and reports Download/Verify/Publish stages through existing job events. The app's
-model manager owns showing source, licence and size and obtaining the affirmative
-click before granting consent; provider selection alone cannot authorize download.
-Offline `installed` lookup requires no new download consent and verifies all named
-files before returning a `ModelLease`. Retain that lease for the entire native
-adapter lifetime, including lazy reads by the Gipformer child. Its root lock and
-reader pin prevent another writer or explicit deletion while paths are in use.
-
-ModelBundle is a native entry kind inside the same cache: a content-key directory
-contains immutable catalog-named raw files and `.bundle` metadata in the existing
-72-byte VCACHE01 key/digest envelope. Ordinary artifact files retain their layout.
-Native metadata version 1 rejects other versions and malformed identities. Only an
-atomically published verified-complete marker permits a ModelLease. Partial
-checkpoints remain unavailable to loaders. Models and checkpoints are permanently
-pinned against LRU/generic clear; only explicit `remove` deletes them, and live
-leases refuse removal. Native bundles are exempt from the half-budget entry cap;
-actual logical file and metadata bytes are reported as ModelWeights, with free-disk
-preflight for remaining bytes plus atomic metadata headroom. Uncheckpointed tails
-are reclaimed before append/restart and credited during preflight. Disk-full writes
-still return typed StorageFull if availability changes after the advisory check.
-Unknown directories and symlink targets are never adopted or overwritten.
-
-Transfers stream through a fixed 64 KiB buffer within a 256 KiB job reservation.
-Checkpoints sync raw files before atomically updating offsets every 4 MiB, at EOF,
-on cooperative cancellation or read failure. A killed process resumes only the
-last durable checkpoint and truncates its later tail. Range resumption requires a
-strong matching ETag and exact Content-Range/length; a full 200 response replaces
-the prefix. Weak/missing validators restart from zero. Changed 206 entities reset
-before retry; malformed, encoded, excess, truncated and hash-invalid responses
-cannot publish. HTTPS redirects are bounded to five, forbid credentials/fragments
-and keep signed target URLs ephemeral. Hash/size checks reuse ai's streaming owner.
-The shared client has finite timeouts; cancellation during a blocking request/read
-can wait for the response or timeout. No live remote throughput or Windows runtime
-claim follows from offline integration tests. Weights are never Git or installer
-content; actual model-manager UI and CLI composition remain downstream work.
-
-## Font catalog
-
-`fonts::FontStore` owns the font catalog and download cache; `text` owns resolution and
-raster. A store lists families from three origins and loads them on demand:
-
-- **Bundled** families come from `text::families` with their OFL-1.1 licence and source.
-- **System** families come from `fontdb` (`scan_system`; `scan_directory` for a fixture
-  directory). The scan runs once, on first use, and records family, weight, italic, path and
-  face index only; no font bytes are read until `load`.
-- **Google** families are a curated table (`curated_google_families`) of OFL-1.1 fonts with
-  Vietnamese coverage (Bebas Neue excepted), each file pinned by URL, size and SHA-256 to one
-  commit of the upstream repository, plus the family's licence text. Static faces only:
-  variable axes are outside `text`'s limits.
-
-`list(query)` returns one entry per family name, `query` matched case-insensitively as a
-substring with prefix matches first and then alphabetical order. Precedence for a name that
-appears more than once: bundled, then a cached download, then a system install, then a
-download that is not cached yet. `load(family)` registers the family's faces with
-`text::register` and returns a typed `FontLoad` state (`loaded`, `not_downloaded`,
-`cache_invalid`, `unknown`) with the `effective_family` layout will use: the request when
-loaded, otherwise Inter. Unknown and not-downloaded families are states, not errors, so a
-project that names a font the machine lacks still opens and renders deterministically in
-Inter; IO failures and unreadable font files are errors. Registration is append-only per
-process and bounded (256 faces, 32 MiB per file, 256 MiB total); a second file under the
-same family and style keeps the first.
-
-Downloads never run implicitly. `submit_download(runner, family, accepted)` needs the
-caller's acknowledgement of the displayed source and licence (`fonts.download` carries it as
-`accept_license`; a false value is `permission`) and a catalog family. It is a network job
-(`JobKind::DownloadFont`, retried like model transfers): every file is streamed into a
-private `.partial-*` staging directory, verified against its pinned size and SHA-256, then
-the finished directory is renamed into `<cache>/VibeCut/fonts/<slug>` inside the job's
-publication fence. A failed, cancelled or hash-mismatched job removes the staging
-directory, so no partial cache entry exists; one job per family runs at a time. Each entry
-holds the font files, the family's `OFL.txt` and a `<file>.attribution` record in the
-[asset sidecar format](../../docs/engineering/open-source.md#assets) with the file URL,
-licence id and `license-file`.
-
-Rendering never uses the network. Every `list` and `load` verifies a cached family's files
-against the catalog pins (existence, regular file, size, SHA-256, licence and attribution
-files); any difference reports `cache_invalid` and the files are not served until the next
-explicit download replaces the directory. A new pin therefore invalidates older cached
-bytes the same way a tampered file does.
-
-`fonts.list`, `fonts.load` and `fonts.download` are registry entries (effects `read`,
-`read` and `job_control`) executed against the store attached with `Session::set_fonts`; a
-session without one refuses them. They are outside project history and persistence.
-`fonts.download` returns `job_accepted` with no published paths; poll `job_status` and call
-`fonts.load` afterwards. Composition roots attach `FontStore::native()`, which uses the
-shared HTTPS transport, the `fontdb` system scan and the per-user cache.
-
-Tests (`cargo test -p engine --test it font`): directory enumeration with nested, broken and
-non-font files; search ordering and duplicate collapse; lazy scan and file reads with the
-`text` fallback for unknown families; cold, downloaded and offline warm cache with a counting
-transport; hash, size, truncation and missing-record invalidation; acceptance, catalog and
-single-job refusals; failed, truncated, oversized, mid-stream-cancelled and late-failing
-downloads that leave no entry; hostile catalog data; command results and refusals.
-
-## ASR checkpoints
-
-ASR resume stores **only independently complete invocation chunks**, each under
-its exact content/range/model/settings key. A restarted job probes those keys,
-reuses valid chunks, computes missing ones and assembles a final output only after
-all chunks succeed. The public-job crash test commits chunk one, unwinds before
+A public-job crash test commits chunk one, unwinds before
 whole-result completion, reopens the cache and proves only chunk two executes.
 This establishes checkpoint mechanics with synthetic bytes, not speech-boundary
 quality for long recordings. Encoded-export resume returns a typed refusal in render; independently finalized
 segments and manifest/codec/source identity would be required before admitting it. No partial encoded file is treated as a reusable artifact.
 
-Observed verification: `tests/it/jobs.rs` exercises actual submission with controlled
+Observed verification: `tests/it/runtime/jobs.rs` exercises actual submission with controlled
 cancellation, failure, unwind, oversized results, deterministic retry/backoff,
 resource/queue pressure, 200 completions with stable entry/charged-byte bounds,
 semantic key invalidation, restart checkpoints, corruption, byte eviction, pinning,
-clear during use and stale results after edit/undo/save/Session switch. Retained
-review regressions cover discarded transaction targets, cache-starved processing and read pressure.
+clear during use and stale results after edit/undo/save/Session switch. Regression tests cover discarded transaction targets, cache-starved processing and read pressure.
 Additional boundary tests cover failed/unwinding/net-zero groups and submitted
 outputs, reopened/multiple-cache reclamation, global recency, active pins,
 concurrent reclaimers and repair after unlink failure.
 No new media/render algorithm is introduced; throughput, RSS, provider quality and
 Windows runtime behavior remain unverified by these synthetic lifecycle tests.
 
-## Session recovery and save acknowledgement
+### Render execution
+
+`submit_export` submits an immutable Project snapshot to the real runner's export
+resource class. JobContext implements render's ExecutionHooks, leasing actual
+buffers from the shared ByteBudget under decoded/compositor/export owners rather
+than declaring a second whole-job charge. Render owns pixels/audio/output policy;
+the job never applies editing commands. Completion returns an empty JobOutput
+after the complete file has been atomically published.
+
+Stages expose admission, rendering, mixing, encoding, finalization and publication.
+Cancellation uses the [shared publication fence](#completed-export-publication).
+`tests/it/runtime/export_jobs.rs` verifies both sides of the fence with real production
+render hooks, worker unwind, persistent-cache reclamation and oversized-frame
+refusal before allocation. This does not establish crash/power-loss durability.
+
+`submit_export_with_sources` is the existing export job with an injected render
+source factory, constructed on the engine worker. `submit_export` supplies
+`FileSources`; desktop tests supply gated sources to order cancellation/failure.
+Both share one scheduler, byte accounting, typed result and publication fence.
+
+#### Render kernel execution
+
+`JobContext` supplies render's scheduling hook: up to eight workers, capped by
+available parallelism. Each row batch borrows disjoint buffers, runs one task on
+the job thread and uses scoped engine workers for the rest. It reserves 512 KiB
+per extra worker stack before spawning, uses sequential execution when the
+extra stacks do not fit, catches worker panics as typed render
+failures, and joins all tasks on success, cancellation, refusal and unwind.
+There is no detached work or retained pixel pool. Default hooks outside engine
+remain sequential. The existing job-class limits bound simultaneous jobs; each
+job can have at most seven additional row workers during a batch. Native FFmpeg
+conversion receives the same concurrency bound and holds its separately charged
+worker allowance for the converter/encoder lifetime; render/media retain their
+pixel and codec ownership. `tests/it/runtime/render_kernels.rs` covers failure joins, stack
+admission, released charges and parallel/sequential pixel equality.
+
+#### Completed export publication
+
+Engine's `publication` module owns admission and staged writing for completed
+exports and snapshots. It admits the captured project sources and the adapter's
+protected active project/metadata paths before staging and again after sync,
+then seals cancellation before publishing through project's atomic writer.
+Canonical paths (including case-folded missing names on Windows), hard links,
+live source content identity and protected directories refuse project/source
+aliases even when a source changed since import. The project atomic owner also
+refuses reserved writer-control destinations. Refusal or storage failure preserves
+the previous destination and removes staging files.
+
+`submit_export_publication` copies a retained completed render through this owner
+using a bounded 64 KiB buffer on the job runner. No admission, copy or
+sync runs on the UI thread. The existing `AtomicFs` boundary can inject storage
+failure or gate sync while the event loop ticks and cancels.
+
+Cancellation before the fence and storage failures preserve the prior destination
+and completed input. After the fence a committed destination reports Completed.
+The adapter retains the input until the job terminates and joins the runner before
+cleanup on shutdown. Individual filesystem calls cannot be interrupted; external
+processes racing path replacement are outside the atomic owner's guarantees.
+
+## Store
+
+### Managed project library
+
+`library::ProjectLibrary::open(root, budget)` uses an explicit application-supplied
+native directory, independently of external-file open/save. It holds one exclusive
+catalog lease; another handle returns Busy. A managed project lives in
+`<root>/<16-digit lowercase hex ProjectId>/project.vibecut`, with its existing
+project-owned metadata sidecar and private `media/<16-digit hex AssetId>` files.
+There is no index database: `list()` derives name, main-scene duration, timestamps,
+8-character lowercase hex ID suffix and thumbnail from those owners. IDs retain
+all 64 bits; the suffix is display-only and must never identify a command target.
+The listing admits 1024 projects, 4096 root entries and 16 MiB of retained
+name/thumbnail payload; corrupt managed entries
+return errors instead of silently disappearing. Native app composition of this
+catalog and its projects-page presentation are separate adapter responsibilities.
+
+`execute(target, Command)` handles registered `project.create`, `project.rename`,
+`project.duplicate { id }`, `project.delete`, `project.thumbnail`, `undo` and `redo`.
+The target is the full ProjectId; create/duplicate supply the new full ID. Native
+adapters choose IDs and translate transport into these same typed commands.
+Rename refuses blank/colliding names. Duplicate retains the exact project content
+and name except the new ProjectId and copied-media paths, and starts fresh metadata
+timestamps. It streams/hashes every asset into a private sibling directory, checks
+content identity, syncs files, writes the project and sidecar, then publishes the
+whole directory by rename. Sources must be regular files; missing/changed files,
+IO failure, ID collision or cancellation leave no visible partial project. Copying
+admits at most 1 TiB per project and 64 KiB streaming buffers. `execute_cancellable`
+checks the caller's predicate before commands, between copy chunks and before
+publication. Calls block and belong off the UI thread. Noncooperating filesystem
+replacement races and physical power-loss durability are outside this contract.
+
+Library-local history retains 32 rename/duplicate steps for the handle lifetime.
+Undoing a duplicate moves its complete directory into hidden history storage;
+redo restores those same bytes and copied media. Closing the handle or making a
+new command discards abandoned redo copies. Unexpected project content changes
+refuse undo, and open-project writer leases refuse catalog mutations. Delete is
+**permanent, not undoable** and clears library history: the adapter must obtain
+its confirmation before sending the command. Failed post-delete cleanup can leave
+an unlisted hidden directory; it is never promoted or automatically reused.
+Undo, redo and delete use the project-owned
+[directory-move barrier](../project/README.md#writer-lease-and-save-acknowledgement).
+The library enables it before publishing entries; it excludes new project writers
+across the adjacent-handle close and atomic sibling rename on Windows. Redo also
+leases and validates its hidden source. Existing targets (even empty directories)
+and missing sources refuse without advancing history. An interrupted move leaves
+one complete source or hidden destination, including project, metadata and media.
+After restart, hidden directories remain unlisted and untouched; recovery can
+inspect their project identity and restore a complete `.undo-*` directory to its
+absent ID directory while the library is closed. `.delete-*` directories reflect
+confirmed permanent deletion and are never automatically restored. Windows tests
+cover catalog/control execution, busy writers, hostile moves and interruption
+boundaries; macOS behavior requires platform verification.
+
+`project.thumbnail` captures the active scene at output tick zero through the
+production CPU compositor, at most 128 pixels per edge, independent of playhead
+or preview buffers. Rendering failure (including a denied allocation) stores
+Unavailable, for which adapters show a placeholder. Autosave backfills Missing
+on open, refreshes on saves, and accepts the same command outside content history.
+Desktop exit invokes it even for journal-only close. The project sidecar owns the
+bounded raw RGBA bytes; no compressed image decoder runs during catalog reads.
+
+### Session recovery and save acknowledgement
 
 `recovery::Autosave` composes one Session with persistence. Supply a private root
 under the app data directory, the aggregate ByteBudget, and a monotonic jobs Clock.
@@ -854,7 +840,103 @@ integration tests cover before-load Busy refusal, retained leases across edits a
 receipt acknowledgement, external edit conflict before first save, busy/stale and
 acknowledged Save As, aliases, queued cancellation and worker transfer unwind.
 
-## Translation selection and application
+## Subtitles
+
+### Subtitle workflow
+
+`subtitles` owns the shared end-to-end composition used by the CLI and later UI:
+speech-window extraction, explicit transcription/translation provider choice,
+checkpointed ASR chunks, optional local alignment, cue segmentation, translation
+application and the existing SRT/burn export jobs. It never reimplements captions,
+render, provider consent/cost or cache/checkpoint primitives.
+
+`provider_options()` is offline capability data (operation, model ids, languages,
+local/remote and native timing) for pickers. `choose_transcription`/`choose_translation`
+accept only a listed model and never fall back. `Runtime` selects local threads,
+the explicit GPU request and the shipped Gipformer runner path. `local_asr_runner`
+shares configured/bundled helper discovery between the desktop and CLI roots. `Credentials::new`
+accepts composition-root secrets and validates them; errors name the environment
+entry, never the value.
+
+`Providers::open` loads only the selected adapters. Local Whisper/Gipformer models
+come from verified `ArtifactCache` bundles and keep their `ModelLease` alive for the
+adapter lifetime; text-only ASR additionally loads the pinned `whisper-small-dtw`
+Candle aligner. Missing weights return `ModelMissing`, a missing runner
+`RunnerMissing`, and missing credentials `CredentialMissing`. Remote adapters use
+the official endpoints, shared `ureq` transport and their own disclosures.
+`with_translation` attaches the explicitly selected translator only after an
+auto-detected source language is known, so a same-language local run never requires
+unrelated cloud credentials.
+
+`run(request, providers, runner, cache, consent, progress, cancellation)` imports
+the input, extracts mono 16 kHz windows at speech-safe boundaries, reuses complete
+raw `AsrChunk` cache entries keyed by source content, exact sample range, language
+and provider/model/settings, executes missing windows as Transcribe jobs, then
+applies the selected local aligner as a separate CPU job when the recognition is
+text-only. Raw recognition is committed to the checkpoint cache before alignment,
+so an alignment failure preserves completed ASR work; alignment is recomputed on
+the next run and its request is bound to the exact recognized text by
+`ai::align`. The workflow then assembles with `ai::assemble`, converts and
+segments through captions, applies translation windows through the existing
+`TranslationRun`, and dispatches `export_subtitles`/`burn_subtitles` through the
+real job runner. Silent windows are skipped; no speech, unknown duration and burn
+without video return typed refusals. No project file is written.
+
+`Cancellation` is the operation-wide cooperative signal. `run` passes its media
+flag to extraction, checks it at every stage/window boundary, and cancels the
+active submitted job; `wait_for_job` joins that job before returning. Cancellation
+after a completed ASR window keeps the checkpoint. Export keeps render's existing
+publication fence: once publication is sealed a late cancel cannot turn the
+completed file into `Cancelled`, and cancellation before the fence preserves the
+existing destination. The CLI currently exposes no signal-driven cancel gesture,
+so process interruption remains crash semantics; UI/CLI callers that do have a
+gesture pass the shared token.
+
+Remote upload scopes are prompted through `ConsentPrompt` before every request;
+`DenyUploads` is the default test refusal and `AllowAll` is the explicit test
+grant. `UploadRequest` carries provider/model, languages, audio seconds, payload
+bytes, cost ceiling and the adapter's official policy links. The
+workflow never uploads without a prompt approval and never downloads weights.
+`ModelDownloader` wraps one explicitly consented catalog download and
+`default_cache_root` is the single shared model/checkpoint location.
+
+Tests in `tests/it/subtitles/workflow.rs` cover all six vi/en/zh translation directions and
+every bilingual pair, SRT plus burned MP4 output, ASR checkpoint reuse on a second
+run, remote consent refusal with zero calls, credential refusal, catalog filtering
+and a real generated fixture. They establish composition and failure contracts,
+not model accuracy, live provider quality or Windows behavior.
+
+The desktop also consumes `subtitles::SubtitleTranslator` without opening an ASR
+adapter or model lease. `translate_selected` composes the same translation window,
+request disclosure, `TranslationRun` attempt budget and `Retranslate` application
+for an explicit `TranslationSelection` (cue IDs, target, glossary, force). The
+CLI's whole-track translation delegates to it. Callers requiring atomic multi-window
+application stage a snapshot Session and apply its final command against the live
+Session's captured job target; a failed/cancelled staging run is never applied.
+
+#### ASS caption import
+
+`captions.import { asset, language, start, track, name, cues }` inserts parsed
+`captions::AssCue` values as one `CaptionParams` item on an existing text track
+or a newly allocated track named `name` (default `Captions`). The asset is the
+already-read script identity; no path or file IO runs inside the command. The
+item starts at `start`; source ranges stay in script coordinates and cue styles
+remain per cue. The asset, optional track and item form one command and one undo
+step, so undo removes all three. Empty cue lists, more than 100,000 cues,
+negative starts and invalid cue styles refuse atomically. Every cue stores its
+full style, so a result the project encoder would refuse (about 3,000 cues
+under the 200,000-separator bound) is refused with `Limit` instead of leaving
+a session that cannot be saved; a shared per-item style table would lift that.
+
+`prepare_ass_import` reads at most 16 MiB, parses through the
+captions owner and returns the registered command plus cue/style/skipped counts
+and line-numbered warnings for headless adapters. It returns `Limit` for an
+oversized file and `Unsupported` when no cue survives. `captions.import` works
+inside a batch. `docs/engineering/commands.md`, `catalog.digest` and
+`cargo run -p engine --example control_catalog` remain the generated source of
+truth.
+
+#### Translation selection and application
 
 `translation::window` selects cue IDs from one caption item, includes two source
 context cues on each side, and skips target texts with edited=true unless force
@@ -899,54 +981,7 @@ context, protected and force-retranslated targets, unselected cue preservation,
 atomic hostile-ID refusal, undo and stale-result rejection. These establish the
 execution contract, not human translation quality or actual cloud billing.
 
-## Render execution
-
-`submit_export` submits an immutable Project snapshot to the real runner's export
-resource class. JobContext implements render's ExecutionHooks, leasing actual
-buffers from the shared ByteBudget under decoded/compositor/export owners rather
-than declaring a second whole-job charge. Render owns pixels/audio/output policy;
-the job never applies editing commands. Completion returns an empty JobOutput
-after the complete file has been atomically published.
-
-Stages expose admission, rendering, mixing, encoding, finalization and publication.
-`begin_publish` atomically changes running to publication, or refuses an earlier
-cancel. Publishing is visible without progress throttling. A late cancel cannot
-turn a committed output into Cancelled; shutdown joins that publication. Before
-the fence, cancellation/unwind drops staging and preserves the existing file.
-`tests/it/export_jobs.rs` verifies both sides of the fence with real production
-render hooks, worker unwind, persistent-cache reclamation and oversized-frame
-refusal before allocation. This does not establish crash/power-loss durability.
-
-`submit_export_with_sources` is the existing export job with an injected render
-source factory, constructed on the engine worker. `submit_export` supplies
-`FileSources`; desktop tests supply gated sources to order cancellation/failure.
-Both share one scheduler, byte accounting, typed result and publication fence.
-
-## Frame snapshots
-
-`preview.snapshot {time, path}` renders one frame at the project canvas size through
-the production compositor and publishes a PNG without editing the Session or undo
-history. It is independent of app transport, zoom and transient preview state, so
-the same request is executable from the CLI. A playhead at or past the end clamps to
-the last frame; negative times refuse. An empty project refuses with the typed
-`Project is empty` error.
-
-`snapshot::default_name` returns `<project>-<timecode>.png` using time's shared
-DF/NDF formatter (DF at 29.97/59.94, NDF otherwise), replaces filesystem-reserved
-characters with `-`, and falls back to `snapshot` when the project name sanitizes
-empty. `snapshot::image` returns the same PNG bytes without publishing, for the
-desktop Copy action.
-
-Publication uses the [shared publication owner](#completed-export-publication).
-The desktop and CLI register active project, metadata and recovery paths with
-`Session::protect_paths`. `snapshot::save` and `save_with_budget` retain replacement
-semantics for trusted desktop Save confirmation; control requests default to atomic
-no-clobber unless their trusted `Policy::snapshot_overwrite` grants replacement
-(the CLI's `--allow-overwrite`). The request remains `preview.snapshot {time, path}`.
-External processes racing protected-path replacement retain the atomic owner's
-documented limits.
-
-## Subtitle export commands
+#### Subtitle export commands
 
 The existing `registry()` also declares `export_subtitles` and `burn_subtitles`.
 They publish files without editing the Session or undo history. Dispatch their
@@ -980,9 +1015,11 @@ canvas and placement choices remain available through `submit_export` with
 render's ExportSettings. UI/CLI adapters consume these engine APIs; they do not
 implement their own overlay or serializer.
 
-## Clip suggestion workflow
+## Shorts
 
-`clip_suggest` is the composition used by CLI/03 and later UI/04: the shared
+### Clip suggestion workflow
+
+`clip_suggest` is the composition used by the CLI and desktop: the shared
 `subtitles::transcribe` ASR-to-cue stage, an explicit clip provider, ordered-segment
 ranking and 02 boundary snapping. The caller owns the runner, cache, credentials,
 consent prompt, progress and cancellation token; the module writes no file during
@@ -1020,18 +1057,59 @@ complete files remain. The CLI only selects candidates and prints paths.
 `cargo test -p engine --test it clip_suggest::` covers the ASR-to-snapped workflow,
 source and translated caption preparation, portrait geometry, hostile/empty/
 duplicate selections and the explicit provider catalog/credential refusal. Provider
-attempt/consent tests remain in `tests/it/providers.rs`; media encoding remains in
-`tests/it/clip_export.rs`.
+attempt/consent tests remain in `tests/it/providers/selection.rs`; media encoding remains in
+`tests/it/shorts/clip_export.rs`.
 
 The clip suggestion outcome also retains its source project, source cues,
 transcript, measured speech energy and resolved boundary settings for desktop
 review. Consumers reuse these inputs for safe trimming without re-running ASR or
 energy decoding; the suggestion and snapping algorithms are unchanged.
 
-## Clip batch export
+### Clip boundary adjustment
+
+`clip_boundaries::snap_clip_boundaries` takes explicit shorts as vectors of
+`ai::clips::ClipSourceSegment` in play order, a source Transcript, its resolved
+LanguageProfile and LayoutHooks, media SpeechEnergyWindows and
+ClipBoundarySettings. Suggestion generation is optional. The caller can submit
+media energy decoding through the existing JobRunner with its cancellation token;
+snapping itself performs no IO or project edits.
+
+Every source edge is adjusted independently to an output-fps frame. Selection
+prefers a sentence gap with low RMS, then a sentence gap, low RMS in another safe
+gap, then any word/segment gap. Within a word-gap tier, measured RMS is ranked
+before distance and earlier time, even when every window exceeds the silence
+threshold. The threshold is an explicit amplitude ratio.
+
+Quantization prefers a frame inside a measured safe gap within the configured
+tick tolerance. If no such frame exists, the nearest frame to its lowest-energy
+point may overlap speech by at most half a frame, reported as `WordFade`. The gap
+search stays inside the tolerance; fallback frame rounding adds at most half a
+frame of movement. Clip exports apply 10 ms linear audio ramps at each piece
+edge, clipped to half the piece duration. Missing/incomplete native timing
+protects the whole segment; proportional subtitle timing is never used for cuts.
+A window without a measured word/segment boundary remains a typed refusal.
+
+SnappedShort keeps play order, roles, source-order ranks and repair metadata,
+with adjusted ranges, summed duration and signed original/adjusted tick deltas
+for both edges of every segment. Inputs remain unchanged. Invalid candidates,
+source-order ranks, multiple/misplaced hooks, overlapping source ranges,
+post-adjustment overlap and duration violations are typed refusals. A whole call
+is atomic. Positive total/piece duration limits and a segment limit in 1..=32 are
+caller-selected; at most 32 shorts and 360,001 energy windows are accepted.
+`BoundaryFailure` identifies candidate, safe-frame, overlap or duration refusal
+with zero-based short/segment indices (whole-short failures use segment zero).
+
+Tests inject reordered multi-segment candidates, known-pause PCM generated by
+external FFmpeg, silence conflicting with words, incomplete timing, tolerance and
+frame conflicts, duration/overlap failures, and 128 fixed-seed rational-rate
+samples. `examples/clip_boundary_benchmark.rs` measures a bounded local media and
+Transcript pair, including signed deltas and mid-speech counts against nearest
+frame snapping. This proves source-timing constraints, not ASR accuracy.
+
+### Clip batch export
 
 `ClipBatch::prepare(source_project, ClipBatchRequest)` owns one export job per
-accepted short; UI/04 and CLI/03 submit this same batch and add no renderer, cue
+accepted short; Desktop and CLI consumers submit this same batch and add no renderer, cue
 mapper or retry loop. A short is an ordered `ai::clips::ClipSourceSegment` list in
 play order (`ClipShort::from_suggestion` keeps it) plus a title and optional
 normalized crop. One request names the source asset, the source-timed `CueTrack`,
@@ -1105,297 +1183,11 @@ source alias under overwrite, and retry after a sidecar publication failure with
 manual deletion. Oracle tests generate a synthetic FFmpeg fixture and probe the
 exported 1080x1920 MP4 and both sidecars.
 
-## Sound library
+## Analysis
 
-`sounds` owns the first remote provider that is not an AI adapter. `sounds.search`
-calls `GET https://freesound.org/apiv2/search/` (the `/search/text/` path is
-deprecated) with `sort=downloads_desc`, bounded `page`/`page_size`, explicit
-`fields`, and `filter=license:("Creative Commons 0" OR "Attribution")` while the
-commercial-only switch is on. NC/Sampling+ and undocumented licence values are
-dropped even if the server ignores the filter. Author, licence, attribution,
-source page and preview URL travel on every result.
+### Per-shot analysis
 
-Credentials are bring-your-own: `Token::from_env` reads `FREESOUND_API_KEY` for the
-headless adapter, and the composition root may inject an OS-keychain token. The
-token is held in memory, never serialized, never placed in a URL, and Debug is
-redacted. Without a token search degrades to the saved local library; adding a
-saved sound never requires the network. API errors distinguish `NoCredentials`,
-`Auth`, `Quota`, `RateLimit { retry_after_seconds }`, `Network`, `Server`,
-`InvalidResponse`, `Limit`, `NoAudioDevice`, `NotCached`, `LibraryCorrupt` and
-`Cancelled`; the CLI maps them to stable codes.
-
-`sounds.search` and `sounds.save` are library operations, not project `Session`
-edits: they never enter undo and their callers run remote work off the UI thread.
-`sounds.add_to_timeline` is the registered edit (one undo step) because it does
-mutate the project.
-
-`SoundLibrary` owns a versioned `library.json` plus content-addressed preview bytes
-under the app-supplied root. Saving is an idempotent upsert; unsave and clear-all
-remove unreferenced previews. A project-owned writer lease excludes simultaneous
-handles/processes for the same root; sharing uses one `Arc<SoundLibrary>`.
-A failed library-file publication preserves the in-memory saved list.
-The cache key includes the exact preview URL, so a
-changed URL is a guaranteed miss and stale bytes are removed when no saved sound
-still cites them. Search responses are capped at 1 MiB, library files at 1 MiB
-and 1,024 entries, and previews at 32 MiB. `SoundDownloads` streams through the
-shared runner (`JobKind::SoundDownload`, network retries) with HTTPS-only bounded
-redirects, content-length checks, cancellation before every read/write and atomic
-publication; no credential is sent to preview CDN URLs. `sounds.add_to_timeline`
-takes an asset that already lives in project-owned media and commits it plus the
-audio item in one undo step; the item stores `sourceType=library` metadata. The
-`sounds::add_to_timeline`/`add_saved` helpers first copy the cached preview into the
-caller's project media directory under its content hash (atomic, hash-verified,
-reused when present), so unsave, clear-all and URL invalidation only ever remove
-cache entries and never a file a project references. The CLI uses
-`<project file>.media/`; managed projects pass their own `media` directory. `SoundPreview` composes
-the cache/download owner with an app-owned `PreviewSink`; play/stop are cancellable
-and a missing device is a typed error.
-
-Container export writes deduplicated attribution/licence records from every library
-audio item into the MP4/WebM `comment` tag through media's bounded muxer metadata
-seam. Export refuses more than 64 distinct records or 8 KiB of attribution text
-with a typed size error, preserving any existing output instead of omitting credits.
-
-## Provider selection and fallback
-
-`providers::{transcribe, translate, suggest_clips}` executes an AI-owned
-`ProviderSelection` on the existing job worker with its `ExecutionHooks`. A caller
-that configures a local fallback uses a CPU resource reservation for the whole
-run, so switching from network to inference cannot bypass CPU concurrency limits.
-Every attempt must exactly match the persisted feature/provider order; no adapters are
-inferred, and each adapter is invoked at most once. A successful attempt ends the
-run. Auth, quota, network, server, rate-limit, schema and incomplete-response
-failures advance only to the next configured provider; cancellation, consent,
-cost, input and capability errors stop immediately. Exhaustion returns the last
-typed failure. No retry budget is reset or second scheduler introduced.
-
-Composition implements `providers::Approval` to show provider identity, its
-policy link, exact payload and cost at setup and again immediately before a
-fallback executes. The callback receives `fallback=true` for the renewed prompt;
-a remote attempt without its own exact consent token cannot upload. Approval
-errors stop the run. Clip windows are all approved before a provider's first IO;
-partial results from a failed provider are discarded. Local heuristics are a
-normal explicitly configured `ClipSuggester`, never an implicit recovery path.
-
-`ProviderOutput` retains the exact successful provider configuration beside its
-output; serializable outputs preserve this provenance in job result bytes. Job
-callers retain the complete envelope when storing results, and include the entire
-selection and request settings in cache keys. Recognition remains its existing
-sample-coordinate model, including text-only results when timing is unavailable.
-The functions do not mutate projects; translation results still go through the
-registered edit command. There is no desktop settings UI in this crate.
-
-`cargo test -p engine --test it providers::` observes no-fallback defaults, ordered
-provider failures, renewed approval before any fallback upload, rejection of
-primary-token reuse, refusal/cost/cancellation and exact provenance. Offline
-injected adapters establish execution policy, not third-party model quality.
-
-Clip provider outputs preserve AI-owned ordered source segments, resolved source-order
-ranks and summed duration; consumers use the [AI clip contract](../ai/README.md#transcript-clip-suggestions).
-
-## Clip boundary adjustment
-
-`clip_boundaries::snap_clip_boundaries` takes explicit shorts as vectors of
-`ai::clips::ClipSourceSegment` in play order, a source Transcript, its resolved
-LanguageProfile and LayoutHooks, media SpeechEnergyWindows and
-ClipBoundarySettings. Suggestion generation is optional. The caller can submit
-media energy decoding through the existing JobRunner with its cancellation token;
-snapping itself performs no IO or project edits.
-
-Every source edge is adjusted independently to an output-fps frame. Selection
-prefers a sentence gap with low RMS, then a sentence gap, low RMS in another safe
-gap, then any word/segment gap. Within a word-gap tier, measured RMS is ranked
-before distance and earlier time, even when every window exceeds the silence
-threshold. The threshold is an explicit amplitude ratio.
-
-Quantization prefers a frame inside a measured safe gap within the configured
-tick tolerance. If no such frame exists, the nearest frame to its lowest-energy
-point may overlap speech by at most half a frame, reported as `WordFade`. The gap
-search stays inside the tolerance; fallback frame rounding adds at most half a
-frame of movement. Clip exports apply 10 ms linear audio ramps at each piece
-edge, clipped to half the piece duration. Missing/incomplete native timing
-protects the whole segment; proportional subtitle timing is never used for cuts.
-A window without a measured word/segment boundary remains a typed refusal.
-
-SnappedShort keeps play order, roles, source-order ranks and repair metadata,
-with adjusted ranges, summed duration and signed original/adjusted tick deltas
-for both edges of every segment. Inputs remain unchanged. Invalid candidates,
-source-order ranks, multiple/misplaced hooks, overlapping source ranges,
-post-adjustment overlap and duration violations are typed refusals. A whole call
-is atomic. Positive total/piece duration limits and a segment limit in 1..=32 are
-caller-selected; at most 32 shorts and 360,001 energy windows are accepted.
-`BoundaryFailure` identifies candidate, safe-frame, overlap or duration refusal
-with zero-based short/segment indices (whole-short failures use segment zero).
-
-Tests inject reordered multi-segment candidates, known-pause PCM generated by
-external FFmpeg, silence conflicting with words, incomplete timing, tolerance and
-frame conflicts, duration/overlap failures, and 128 fixed-seed rational-rate
-samples. `examples/clip_boundary_benchmark.rs` measures a bounded local media and
-Transcript pair, including signed deltas and mid-speech counts against nearest
-frame snapping. This proves source-timing constraints, not ASR accuracy.
-
-## Subtitle workflow
-
-`subtitles` owns the shared end-to-end composition used by the CLI and later UI:
-speech-window extraction, explicit transcription/translation provider choice,
-checkpointed ASR chunks, optional local alignment, cue segmentation, translation
-application and the existing SRT/burn export jobs. It never reimplements captions,
-render, provider consent/cost or cache/checkpoint primitives.
-
-`provider_options()` is offline capability data (operation, model ids, languages,
-local/remote and native timing) for pickers. `choose_transcription`/`choose_translation`
-accept only a listed model and never fall back. `Runtime` selects local threads,
-the explicit GPU request and the shipped Gipformer runner path. `local_asr_runner`
-shares configured/bundled helper discovery between the desktop and CLI roots. `Credentials::new`
-accepts composition-root secrets and validates them; errors name the environment
-entry, never the value.
-
-`Providers::open` loads only the selected adapters. Local Whisper/Gipformer models
-come from verified `ArtifactCache` bundles and keep their `ModelLease` alive for the
-adapter lifetime; text-only ASR additionally loads the pinned `whisper-small-dtw`
-Candle aligner. Missing weights return `ModelMissing`, a missing runner
-`RunnerMissing`, and missing credentials `CredentialMissing`. Remote adapters use
-the official endpoints, shared `ureq` transport and their own disclosures.
-`with_translation` attaches the explicitly selected translator only after an
-auto-detected source language is known, so a same-language local run never requires
-unrelated cloud credentials.
-
-`run(request, providers, runner, cache, consent, progress, cancellation)` imports
-the input, extracts mono 16 kHz windows at speech-safe boundaries, reuses complete
-raw `AsrChunk` cache entries keyed by source content, exact sample range, language
-and provider/model/settings, executes missing windows as Transcribe jobs, then
-applies the selected local aligner as a separate CPU job when the recognition is
-text-only. Raw recognition is committed to the checkpoint cache before alignment,
-so an alignment failure preserves completed ASR work; alignment is recomputed on
-the next run and its request is bound to the exact recognized text by
-`ai::align`. The workflow then assembles with `ai::assemble`, converts and
-segments through captions, applies translation windows through the existing
-`TranslationRun`, and dispatches `export_subtitles`/`burn_subtitles` through the
-real job runner. Silent windows are skipped; no speech, unknown duration and burn
-without video return typed refusals. No project file is written.
-
-`Cancellation` is the operation-wide cooperative signal. `run` passes its media
-flag to extraction, checks it at every stage/window boundary, and cancels the
-active submitted job; `wait_for_job` joins that job before returning. Cancellation
-after a completed ASR window keeps the checkpoint. Export keeps render's existing
-publication fence: once publication is sealed a late cancel cannot turn the
-completed file into `Cancelled`, and cancellation before the fence preserves the
-existing destination. The CLI currently exposes no signal-driven cancel gesture,
-so process interruption remains crash semantics; UI/CLI callers that do have a
-gesture pass the shared token.
-
-Remote upload scopes are prompted through `ConsentPrompt` before every request;
-`DenyUploads` is the default test refusal and `AllowAll` is the explicit test
-grant. `UploadRequest` carries provider/model, languages, audio seconds, payload
-bytes, cost ceiling and the adapter's official policy links. The
-workflow never uploads without a prompt approval and never downloads weights.
-`ModelDownloader` wraps one explicitly consented catalog download and
-`default_cache_root` is the single shared model/checkpoint location.
-
-Tests in `tests/it/subtitles.rs` cover all six vi/en/zh translation directions and
-every bilingual pair, SRT plus burned MP4 output, ASR checkpoint reuse on a second
-run, remote consent refusal with zero calls, credential refusal, catalog filtering
-and a real generated fixture. They establish composition and failure contracts,
-not model accuracy, live provider quality or Windows behavior.
-
-The desktop also consumes `subtitles::SubtitleTranslator` without opening an ASR
-adapter or model lease. `translate_selected` composes the same translation window,
-request disclosure, `TranslationRun` attempt budget and `Retranslate` application
-for an explicit `TranslationSelection` (cue IDs, target, glossary, force). The
-CLI's whole-track translation delegates to it. Callers requiring atomic multi-window
-application stage a snapshot Session and apply its final command against the live
-Session's captured job target; a failed/cancelled staging run is never applied.
-
-
-## Project lifecycle and view state
-
-`Session::create(Command::CreateProject { id, name }, history_limit)` consumes the
-registered `project.create` command and uses project's default canvas/timeline.
-`project.rename` is an ordinary edit with undo/redo. `project.set_view_state`
-requires `zoom`, `scroll` and `playhead`; it validates through project and changes
-only `Session::metadata`, outside project undo and committed-project notifications.
-View changes are refused inside gestures/groups/batches. `restore_metadata`
-loads the optional sidecar at open and is also refused during transactions.
-
-`Autosave::open` reads metadata after acquiring its writer lease. Its background
-save writes the project and then the sidecar before publishing a receipt. Desktop
-and CLI use that same lease metadata API. `Autosave::execute("project.save", {})`
-queues the registered save; callers must poll/flush and check acknowledgement.
-`Session::execute` refuses create/save because they require lifecycle ownership;
-commands stay in the one generated registry. Destination admission refusals before
-a persistence job starts (including Busy, unsupported names and lease IO errors)
-return their typed error without poisoning the active autosave owner; choosing a
-different destination can succeed. Once a job is admitted, publication and worker
-failures retain the sticky error policy.
-
-## Effect commands
-
-`effects.add { item, effect }`, `effects.remove { item, effect: instance_id }`,
-`effects.reorder { item, order: [instance_id, ...] }`,
-`effects.toggle { item, effect: instance_id, enabled }` and
-`effects.update_param { item, effect: instance_id, key, value }` mutate the project
-stack through normal atomic history. Locked/missing items, duplicate IDs, unknown
-instances, wrong types and out-of-range intensity refuse. Add stores enabled state
-and static parameters; scalar animation overrides use `keyframes.set_param` at
-`effects.<id>.params.intensity`. Remove deletes those animation paths in the same
-undo step. Reorder requires an exact permutation and preserves instance identity
-and animation paths. Toggle preserves params and animation. Param edits replace
-one static scalar; an existing animation still overrides it. Every command uses
-gestures/merged edits for one undo step per continuous interaction. Availability
-requires an unlocked visual item; audio refuses all effect edits. CLI `exec`
-consumes these same registered commands before export.
-
-`effect_thumbnails::EffectThumbnails` schedules device-injected `EffectThumbnail`
-jobs through the existing runner. The desktop's `GpuEffects::thumbnails` constructs
-it using the same offscreen GPU adapter as preview. Callers supply an accounted,
-downsampled working-space source image and registered `EffectParams`; the result
-is straight sRGB RGBA8 at the input dimensions. Maximum edge is 320 pixels, with
-32 LRU entries (at most 12.5 MiB), charged to the same shared byte budget as the
-runner. The cache belongs to one adapter lifetime; keys hash source pixels,
-geometry and canonical typed params. Consumers request on source/param changes;
-there is no timer or fixed cadence. Tiles and background blur use the same job.
-Cache hits retain job/cancellation semantics. Work and readback run outside cache
-locks; cancellation before the publication fence never caches an unfinished result.
-Typed GPU failure propagates without CPU fallback. Missing/oversized sources,
-invalid params, budget pressure, poisoned state and runner queue limits refuse.
-The UI and tile source selection are separate consumers of this contract.
-
-## Mask edits
-
-`masks.add`, `masks.remove`, `masks.update` and `masks.reorder` operate on the
-project-owned ordered mask vector through the same atomic candidate/history path.
-Update selects by the supplied mask's stable ID; reorder requires an exact
-permutation. Missing/duplicate identities, invalid parameters and locked tracks
-refuse the entire command or batch. Removal also removes that mask's animation
-channels; undo restores both. Registry schemas and CLI execution share these
-commands and their examples. No app-only mask state or evaluator is introduced.
-
-## Scene commands
-
-`scene.create {name}` appends an empty secondary scene without switching and
-returns its allocated `CreatedId::Scene`. `scene.rename {scene,name}` edits a
-scene name. `scene.delete {scenes}` atomically deletes the selected non-main
-scenes; any unknown or main ID refuses the whole edit. Deleting the active scene
-selects main. Create, rename and multi-delete each use one ordinary undo step;
-delete undo restores scene timelines, items and bookmarks together.
-
-`scene.switch {scene}` selects an existing scene, clears item selection and
-terminates edit coalescing without adding undo history or clearing redo. It is
-refused during gestures/transactions and inside batches. Undo/redo preserves the
-currently selected scene when that scene exists in the restored snapshot;
-otherwise it uses the snapshot's valid scene choice. All timeline commands target
-the active scene; allocation scans every scene on load and never reuses a live
-scene, track, item or bookmark ID.
-
-Switching retains zoom, horizontal scroll and playhead per scene in project's
-optional metadata sidecar, outside undo. New scenes start with default views;
-removed scenes' views are pruned. Canvas/fps/background remain shared. Rendering,
-audio mixing and CLI export use the active scene by default; export settings can
-resolve explicit scopes through project's `SceneScope` and `for_scene` contract.
-
-## Per-shot analysis
-
-`shot_analysis::AnalysisRequest::new` binds a shared `SourceAsset`, explicit source
+`AnalysisRequest::new` binds a shared `SourceAsset`, explicit source
 range, ordered disjoint source-time speech ranges, the loaded adapter's complete
 `VisionFingerprint` bytes and `AnalysisSettings`. `submit` queues one local CPU
 `AnalyzeShots` job through `JobRunner`; the composition root supplies the owned
@@ -1497,157 +1289,11 @@ files), `VIBECUT_VISION_SOURCE` (the permitted bounded source) and optional inte
 analysis. Cross-shot matching has focused uncertainty/collision/drift tests and
 an injected job/cache composition test. media's `identity_prepare` and ai's
 `face_embedding` example measure the actual media/tract adapters on local labelled
-boundary crops without logging private media. The ticket report records per-boundary
+boundary crops without logging private media. Local measurements record per-boundary
 agent-labelled results and rejection coverage. Seven-layout integration and general
 speaker/cut accuracy remain separate acceptance, not established by a green build.
 
-## Visual item fields
-
-`timeline.set_item_param` accepts `{ "item": 1, "patch": { "field": "blendMode",
-"value": "multiply" } }` or an `opacity` field with a finite 0..=1 value.
-The same typed patch works in `timeline.set_item_param_many`. Visual fields refuse
-audio targets in the single-item command; the shared command skips incompatible
-items. Locked/missing targets refuse atomically. Blend changes retain animation;
-setting constant opacity replaces its animation channel, as `keyframes.set_param`
-does. Keyframe commands still own animated editing. History and persistence retain
-both fields through the existing snapshot path; no adapter owns duplicate values.
-
-## Managed project library
-
-`library::ProjectLibrary::open(root, budget)` uses an explicit application-supplied
-native directory, independently of external-file open/save. It holds one exclusive
-catalog lease; another handle returns Busy. A managed project lives in
-`<root>/<16-digit lowercase hex ProjectId>/project.vibecut`, with its existing
-project-owned metadata sidecar and private `media/<16-digit hex AssetId>` files.
-There is no index database: `list()` derives name, main-scene duration, timestamps,
-8-character lowercase hex ID suffix and thumbnail from those owners. IDs retain
-all 64 bits; the suffix is display-only and must never identify a command target.
-The listing admits 1024 projects, 4096 root entries and 16 MiB of retained
-name/thumbnail payload; corrupt managed entries
-return errors instead of silently disappearing. Native app composition of this
-catalog and its projects-page presentation are separate adapter responsibilities.
-
-`execute(target, Command)` handles registered `project.create`, `project.rename`,
-`project.duplicate { id }`, `project.delete`, `project.thumbnail`, `undo` and `redo`.
-The target is the full ProjectId; create/duplicate supply the new full ID. Native
-adapters choose IDs and translate transport into these same typed commands.
-Rename refuses blank/colliding names. Duplicate retains the exact project content
-and name except the new ProjectId and copied-media paths, and starts fresh metadata
-timestamps. It streams/hashes every asset into a private sibling directory, checks
-content identity, syncs files, writes the project and sidecar, then publishes the
-whole directory by rename. Sources must be regular files; missing/changed files,
-IO failure, ID collision or cancellation leave no visible partial project. Copying
-admits at most 1 TiB per project and 64 KiB streaming buffers. `execute_cancellable`
-checks the caller's predicate before commands, between copy chunks and before
-publication. Calls block and belong off the UI thread. Noncooperating filesystem
-replacement races and physical power-loss durability are outside this contract.
-
-Library-local history retains 32 rename/duplicate steps for the handle lifetime.
-Undoing a duplicate moves its complete directory into hidden history storage;
-redo restores those same bytes and copied media. Closing the handle or making a
-new command discards abandoned redo copies. Unexpected project content changes
-refuse undo, and open-project writer leases refuse catalog mutations. Delete is
-**permanent, not undoable** and clears library history: the adapter must obtain
-its confirmation before sending the command. Failed post-delete cleanup can leave
-an unlisted hidden directory; it is never promoted or automatically reused.
-Undo, redo and delete use the project-owned
-[directory-move barrier](../project/README.md#writer-lease-and-save-acknowledgement).
-The library enables it before publishing entries; it excludes new project writers
-across the adjacent-handle close and atomic sibling rename on Windows. Redo also
-leases and validates its hidden source. Existing targets (even empty directories)
-and missing sources refuse without advancing history. An interrupted move leaves
-one complete source or hidden destination, including project, metadata and media.
-After restart, hidden directories remain unlisted and untouched; recovery can
-inspect their project identity and restore a complete `.undo-*` directory to its
-absent ID directory while the library is closed. `.delete-*` directories reflect
-confirmed permanent deletion and are never automatically restored. Windows tests
-cover catalog/control execution, busy writers, hostile moves and interruption
-boundaries; macOS verification remains a separate review receipt.
-
-`project.thumbnail` captures the active scene at output tick zero through the
-production CPU compositor, at most 128 pixels per edge, independent of playhead
-or preview buffers. Rendering failure (including a denied allocation) stores
-Unavailable, for which adapters show a placeholder. Autosave backfills Missing
-on open, refreshes on saves, and accepts the same command outside content history.
-Desktop exit invokes it even for journal-only close. The project sidecar owns the
-bounded raw RGBA bytes; no compressed image decoder runs during catalog reads.
-
-## Completed export publication
-
-Engine's `publication` module owns admission and staged writing for completed
-exports and snapshots. It admits the captured project sources and the adapter's
-protected active project/metadata paths before staging and again after sync,
-then seals cancellation before publishing through project's atomic writer.
-Canonical paths (including case-folded missing names on Windows), hard links,
-live source content identity and protected directories refuse project/source
-aliases even when a source changed since import. The project atomic owner also
-refuses reserved writer-control destinations. Refusal or storage failure preserves
-the previous destination and removes staging files.
-
-`submit_export_publication` copies a retained completed render through this owner
-using a bounded 64 KiB buffer on the job runner. No admission, copy or
-sync runs on the UI thread. The existing `AtomicFs` boundary can inject storage
-failure or gate sync while the event loop ticks and cancels.
-
-Cancellation before the fence and storage failures preserve the prior destination
-and completed input. After the fence a committed destination reports Completed.
-The adapter retains the input until the job terminates and joins the runner before
-cleanup on shutdown. Individual filesystem calls cannot be interrupted; external
-processes racing path replacement are outside the atomic owner's guarantees.
-
-## Audio controls
-
-`timeline.set_item_param` and `timeline.set_item_param_many` accept `volume`
-(finite -60..20 dB, step 0.01) and `muted` (bool) patches on audio and video
-items. The Rust variants remain `AudioGain`/`AudioMuted`; old transport field
-names are refused. Constant edits replace the corresponding animation override;
-keyframe commands edit scalar `volume` or held bool `muted` paths through the
-same evaluator. Locked/missing targets and invalid grids refuse atomically.
-`audio.set_master {volume, muted}` changes project-level master controls.
-`audio.set_fade {item, edge, duration, curve}` sets one clip fade (`edge` is `in` or
-`out`, `curve` `equal_power`, `linear` or `exponential`) on audio and video items.
-A negative duration, a non-audible item or a locked track refuses atomically; a
-duration beyond the clip is clamped to the clip minus the other edge, so the two
-fades never overlap. `split_at` is non-destructive: both pieces keep the whole
-shape of any fade reaching them and record the part the other piece holds
-(`Fades::split`), so a cut inside a fade, at its boundary or off the sample grid
-leaves the summed envelope unchanged. Moving a trim edge starts a fresh fade of the
-audible length there. Trimming to its existing position preserves the fade phase.
-Stored durations beyond the shortened clip stay, and render clamps the window.
-All three edits use ordinary gestures, transactions, undo/redo and persistence;
-render owns mastering, sample timing and latency compensation.
-
-## Video transitions
-
-`transition.add {track, from, to, kind, duration, alignment}` allocates a transition
-ID and clamps duration through project's handle rules. `transition.move
-{transition, start}` slides the existing span over its cut, clamping to available
-handles and updating its alignment. `transition.set_duration {transition,
-duration}` resizes following that alignment; `transition.remove {transition}`
-removes only the transition. Locked tracks refuse all four commands. IDs use the
-same nonreused session counter as items, tracks and bookmarks; `CreatedId::Transition`
-reports additions. Every command supports batches, gesture cancellation, undo/redo
-and persistence through the existing session snapshot path.
-
-Clip edits revalidate the affected active timeline before publishing: transitions
-follow moved cuts, clamp after shortening, and disappear when adjacency or handles
-are lost. Splits extend the transition's ordered side pieces while keeping the
-original span and progress. Explicit trim/move/delete edits detach pieces that
-no longer form a contiguous chain reaching the cut, then revalidate the remaining
-side extents. Splits retain the original retime processing window for both video
-mapping and audio replay. Failed edits publish
-neither item nor transition changes. Audio remains on its existing mixer path;
-these transitions are video-only. [Project](../project/README.md#video-transitions)
-owns the admitted kinds and invariant mathematics.
-`audio.set_loudness {scope: clip|master, target_lufs, true_peak_db}` stores an EBU R128
-target (-50..-5 LUFS, -20..0 dBTP; default -14/-1) and drops stale gains;
-`audio.clear_loudness {scope}` removes it; both are ordinary undoable edits that
-persist with the project. Measured gains arrive through `audio.apply_loudness {gains}`
-(validated range and ordering only). See [loudness normalization](#loudness-normalization).
-All three edits use ordinary gestures, transactions, undo/redo and persistence;
-render owns mastering, sample timing and latency compensation.
-
-## Loudness normalization
+### Loudness normalization
 
 `loudness::submit_loudness(runner, cache, project, sources)` queues one CPU
 `MeasureLoudness` job that runs render's [two-pass planner](../render/README.md#audio-clock-and-headroom)
@@ -1665,7 +1311,7 @@ gains are missing or measured for different audio, so preview (which applies sto
 gains as is) and export cannot disagree. Undo restores the gains with the content.
 `vibecut-cli normalize` composes these steps. Limits: 4,096 clips, 1 MiB result.
 
-## Scene detection
+### Scene detection
 
 `scene_detection::DetectionRequest::new(asset, source_range, DetectionSettings)`
 produces source-time `SceneCandidate`s with exact decoded PTS, `HardCut`/`Fade`
@@ -1702,7 +1348,7 @@ existing retime mapping converts source to output ticks. Descending ordinary
 `SplitAt` commands retain the target ID in existing batches, grouped into one
 transaction and one undo step. Each batch respects the existing command limit. Empty
 selection does nothing; any refusal publishes nothing. No unselected candidate
-creates a split. The UI review surface belongs to the separate UI ticket.
+creates a split. The desktop owns the review surface.
 
 Limits: one day, 16 Mi-pixel frames, 4095 candidates, 1 MiB serialized result. Decode streams through media's admitted
 `decode_shot_frames` in <=300-second, <=100,000-frame slices including preroll.
@@ -1725,3 +1371,376 @@ the fix report contains its reproduction and RSS values. The checked-in test is
 reproducible from the branch; Windows/Linux memory measurement remains unverified.
 The edge tables cover an exact 300-second cut, adjacent/interrupted fades,
 first/last-frame spacing, irregular PTS and every cache-key setting.
+
+## Artifacts
+
+### Import jobs and thumbnails
+
+The desktop import composer submits `JobKind::Probe` for canonicalize/probe/hash
+and capability checks, publishes each asset before the batch ends, then submits
+`JobKind::Thumbnail` for video/image assets. Both use the existing runner,
+progress stages (`Probe`, `Thumbnail`), cancellation and the aggregate budget;
+the UI keeps completed assets on cancel or failure. `thumbnails::thumbnail_key`
+binds the source content hash, requested frame position and output edge through
+the one artifact-cache policy. `ThumbnailCache::get_or_generate` decodes only on
+a miss; corrupt envelopes or payloads count as misses and regenerate. The CLI's
+`probe` command prints the same metadata and capability matrix, while the app
+maps capabilities to its localized `probing`/`ready`/`unsupported` badges and
+keeps a placeholder when thumbnail generation fails.
+
+`thumbnails::RetainedThumbnail` shares pixels through an Arc and holds the
+aggregate `DecodedFrames` allowance until the last owner drops. It reserves
+four RGBA byte counts for packed pixels, egui CPU image, upload staging and GPU
+texture, plus the retained probe metadata allocation; app owners keep that
+handle while any texture is retained. Geometry follows pixels in memory too,
+so disk eviction or a session-only cache cannot trigger recovery decode on a hit.
+`ThumbnailCache` keeps validated source probe metadata in the same content-keyed
+envelope as pixels, so eviction cannot leave a frame hit requiring recovery
+decode. It never caches machine capabilities. A warm image import can reuse
+geometry before opening a recovery decoder. Cache payloads remain disposable.
+
+### Frame snapshots
+
+`preview.snapshot {time, path}` renders one frame at the project canvas size through
+the production compositor and publishes a PNG without editing the Session or undo
+history. It is independent of app transport, zoom and transient preview state, so
+the same request is executable from the CLI. A playhead at or past the end clamps to
+the last frame; negative times refuse. An empty project refuses with the typed
+`Project is empty` error.
+
+`snapshot::default_name` returns `<project>-<timecode>.png` using time's shared
+DF/NDF formatter (DF at 29.97/59.94, NDF otherwise), replaces filesystem-reserved
+characters with `-`, and falls back to `snapshot` when the project name sanitizes
+empty. `snapshot::image` returns the same PNG bytes without publishing, for the
+desktop Copy action.
+
+Publication uses the [shared publication owner](#completed-export-publication).
+The desktop and CLI register active project, metadata and recovery paths with
+`Session::protect_paths`. `snapshot::save` and `save_with_budget` retain replacement
+semantics for trusted desktop Save confirmation; control requests default to atomic
+no-clobber unless their trusted `Policy::snapshot_overwrite` grants replacement
+(the CLI's `--allow-overwrite`). The request remains `preview.snapshot {time, path}`.
+External processes racing protected-path replacement retain the atomic owner's
+documented limits.
+
+### Effect thumbnails
+
+`effect_thumbnails::EffectThumbnails` schedules device-injected `EffectThumbnail`
+jobs through the existing runner. The desktop's `GpuEffects::thumbnails` constructs
+it using the same offscreen GPU adapter as preview. Callers supply an accounted,
+downsampled working-space source image and registered `EffectParams`; the result
+is straight sRGB RGBA8 at the input dimensions. Maximum edge is 320 pixels, with
+32 LRU entries (at most 12.5 MiB), charged to the same shared byte budget as the
+runner. The cache belongs to one adapter lifetime; keys hash source pixels,
+geometry and canonical typed params. Consumers request on source/param changes;
+there is no timer or fixed cadence. Tiles and background blur use the same job.
+Cache hits retain job/cancellation semantics. Work and readback run outside cache
+locks; cancellation before the publication fence never caches an unfinished result.
+Typed GPU failure propagates without CPU fallback. Missing/oversized sources,
+invalid params, budget pressure, poisoned state and runner queue limits refuse.
+The UI and tile source selection are separate consumers of this contract.
+
+## Libraries
+
+### Font catalog
+
+`fonts::FontStore` owns the font catalog and download cache; `text` owns resolution and
+raster. A store lists families from three origins and loads them on demand:
+
+- **Bundled** families come from `text::families` with their OFL-1.1 licence and source.
+- **System** families come from `fontdb` (`scan_system`; `scan_directory` for a fixture
+  directory). The scan runs once, on first use, and records family, weight, italic, path and
+  face index only; no font bytes are read until `load`.
+- **Google** families are a curated table (`curated_google_families`) of OFL-1.1 fonts with
+  Vietnamese coverage (Bebas Neue excepted), each file pinned by URL, size and SHA-256 to one
+  commit of the upstream repository, plus the family's licence text. Static faces only:
+  variable axes are outside `text`'s limits.
+
+`list(query)` returns one entry per family name, `query` matched case-insensitively as a
+substring with prefix matches first and then alphabetical order. Precedence for a name that
+appears more than once: bundled, then a cached download, then a system install, then a
+download that is not cached yet. `load(family)` registers the family's faces with
+`text::register` and returns a typed `FontLoad` state (`loaded`, `not_downloaded`,
+`cache_invalid`, `unknown`) with the `effective_family` layout will use: the request when
+loaded, otherwise Inter. Unknown and not-downloaded families are states, not errors, so a
+project that names a font the machine lacks still opens and renders deterministically in
+Inter; IO failures and unreadable font files are errors. Registration is append-only per
+process and bounded (256 faces, 32 MiB per file, 256 MiB total); a second file under the
+same family and style keeps the first.
+
+Downloads never run implicitly. `submit_download(runner, family, accepted)` needs the
+caller's acknowledgement of the displayed source and licence (`fonts.download` carries it as
+`accept_license`; a false value is `permission`) and a catalog family. It is a network job
+(`JobKind::DownloadFont`, retried like model transfers): every file is streamed into a
+private `.partial-*` staging directory, verified against its pinned size and SHA-256, then
+the finished directory is renamed into `<cache>/VibeCut/fonts/<slug>` inside the job's
+publication fence. A failed, cancelled or hash-mismatched job removes the staging
+directory, so no partial cache entry exists; one job per family runs at a time. Each entry
+holds the font files, the family's `OFL.txt` and a `<file>.attribution` record in the
+[asset sidecar format](../../docs/engineering/open-source.md#assets) with the file URL,
+licence id and `license-file`.
+
+Rendering never uses the network. Every `list` and `load` verifies a cached family's files
+against the catalog pins (existence, regular file, size, SHA-256, licence and attribution
+files); any difference reports `cache_invalid` and the files are not served until the next
+explicit download replaces the directory. A new pin therefore invalidates older cached
+bytes the same way a tampered file does.
+
+`fonts.list`, `fonts.load` and `fonts.download` are registry entries (effects `read`,
+`read` and `job_control`) executed against the store attached with `Session::set_fonts`; a
+session without one refuses them. They are outside project history and persistence.
+`fonts.download` returns `job_accepted` with no published paths; poll `job_status` and call
+`fonts.load` afterwards. Composition roots attach `FontStore::native()`, which uses the
+shared HTTPS transport, the `fontdb` system scan and the per-user cache.
+
+Tests (`cargo test -p engine --test it font`): directory enumeration with nested, broken and
+non-font files; search ordering and duplicate collapse; lazy scan and file reads with the
+`text` fallback for unknown families; cold, downloaded and offline warm cache with a counting
+transport; hash, size, truncation and missing-record invalidation; acceptance, catalog and
+single-job refusals; failed, truncated, oversized, mid-stream-cancelled and late-failing
+downloads that leave no entry; hostile catalog data; command results and refusals.
+
+### Sound library
+
+`sounds` owns the first remote provider that is not an AI adapter. `sounds.search`
+calls `GET https://freesound.org/apiv2/search/` (the `/search/text/` path is
+deprecated) with `sort=downloads_desc`, bounded `page`/`page_size`, explicit
+`fields`, and `filter=license:("Creative Commons 0" OR "Attribution")` while the
+commercial-only switch is on. NC/Sampling+ and undocumented licence values are
+dropped even if the server ignores the filter. Author, licence, attribution,
+source page and preview URL travel on every result.
+
+Credentials are bring-your-own: `Token::from_env` reads `FREESOUND_API_KEY` for the
+headless adapter, and the composition root may inject an OS-keychain token. The
+token is held in memory, never serialized, never placed in a URL, and Debug is
+redacted. Without a token search degrades to the saved local library; adding a
+saved sound never requires the network. API errors distinguish `NoCredentials`,
+`Auth`, `Quota`, `RateLimit { retry_after_seconds }`, `Network`, `Server`,
+`InvalidResponse`, `Limit`, `NoAudioDevice`, `NotCached`, `LibraryCorrupt` and
+`Cancelled`; the CLI maps them to stable codes.
+
+`sounds.search` and `sounds.save` are library operations, not project `Session`
+edits: they never enter undo and their callers run remote work off the UI thread.
+`sounds.add_to_timeline` is the registered edit (one undo step) because it does
+mutate the project.
+
+`SoundLibrary` owns a versioned `library.json` plus content-addressed preview bytes
+under the app-supplied root. Saving is an idempotent upsert; unsave and clear-all
+remove unreferenced previews. A project-owned writer lease excludes simultaneous
+handles/processes for the same root; sharing uses one `Arc<SoundLibrary>`.
+A failed library-file publication preserves the in-memory saved list.
+The cache key includes the exact preview URL, so a
+changed URL is a guaranteed miss and stale bytes are removed when no saved sound
+still cites them. Search responses are capped at 1 MiB, library files at 1 MiB
+and 1,024 entries, and previews at 32 MiB. `SoundDownloads` streams through the
+shared runner (`JobKind::SoundDownload`, network retries) with HTTPS-only bounded
+redirects, content-length checks, cancellation before every read/write and atomic
+publication; no credential is sent to preview CDN URLs. `sounds.add_to_timeline`
+takes an asset that already lives in project-owned media and commits it plus the
+audio item in one undo step; the item stores `sourceType=library` metadata. The
+`sounds::add_to_timeline`/`add_saved` helpers first copy the cached preview into the
+caller's project media directory under its content hash (atomic, hash-verified,
+reused when present), so unsave, clear-all and URL invalidation only ever remove
+cache entries and never a file a project references. The CLI uses
+`<project file>.media/`; managed projects pass their own `media` directory. `SoundPreview` composes
+the cache/download owner with an app-owned `PreviewSink`; play/stop are cancellable
+and a missing device is a typed error.
+
+Container export writes deduplicated attribution/licence records from every library
+audio item into the MP4/WebM `comment` tag through media's bounded muxer metadata
+seam. Export refuses more than 64 distinct records or 8 KiB of attribution text
+with a typed size error, preserving any existing output instead of omitting credits.
+
+## Providers
+
+### Provider selection and fallback
+
+`providers::{transcribe, translate, suggest_clips}` executes an AI-owned
+`ProviderSelection` on the existing job worker with its `ExecutionHooks`. A caller
+that configures a local fallback uses a CPU resource reservation for the whole
+run, so switching from network to inference cannot bypass CPU concurrency limits.
+Every attempt must exactly match the persisted feature/provider order; no adapters are
+inferred, and each adapter is invoked at most once. A successful attempt ends the
+run. Auth, quota, network, server, rate-limit, schema and incomplete-response
+failures advance only to the next configured provider; cancellation, consent,
+cost, input and capability errors stop immediately. Exhaustion returns the last
+typed failure. No retry budget is reset or second scheduler introduced.
+
+Composition implements `providers::Approval` to show provider identity, its
+policy link, exact payload and cost at setup and again immediately before a
+fallback executes. The callback receives `fallback=true` for the renewed prompt;
+a remote attempt without its own exact consent token cannot upload. Approval
+errors stop the run. Clip windows are all approved before a provider's first IO;
+partial results from a failed provider are discarded. Local heuristics are a
+normal explicitly configured `ClipSuggester`, never an implicit recovery path.
+
+`ProviderOutput` retains the exact successful provider configuration beside its
+output; serializable outputs preserve this provenance in job result bytes. Job
+callers retain the complete envelope when storing results, and include the entire
+selection and request settings in cache keys. Recognition remains its existing
+sample-coordinate model, including text-only results when timing is unavailable.
+The functions do not mutate projects; translation results still go through the
+registered edit command. There is no desktop settings UI in this crate.
+
+`cargo test -p engine --test it providers::` observes no-fallback defaults, ordered
+provider failures, renewed approval before any fallback upload, rejection of
+primary-token reuse, refusal/cost/cancellation and exact provenance. Offline
+injected adapters establish execution policy, not third-party model quality.
+
+Clip provider outputs preserve AI-owned ordered source segments, resolved source-order
+ranks and summed duration; consumers use the [AI clip contract](../ai/README.md#transcript-clip-suggestions).
+
+### Local model transfers
+
+`models::ModelTransfers` composes the existing JobRunner, ArtifactCache and ai's
+shared streaming transport. `open_default` reuses `ai::models::cache_dir`; `new`
+accepts an already owned cache and injected `ModelIo`. The runner must share that
+cache's ByteBudget. There is one active transfer per cache, including queue/backoff;
+no additional runner or worker loop is created. State mutexes cover ownership
+changes only, never network, file IO or verification.
+
+`submit` requires ai's exact-model `DownloadConsent`, reauthorizes every attempt,
+and reports Download/Verify/Publish stages through existing job events. The app's
+model manager owns showing source, licence and size and obtaining the affirmative
+click before granting consent; provider selection alone cannot authorize download.
+Offline `installed` lookup requires no new download consent and verifies all named
+files before returning a `ModelLease`. Retain that lease for the entire native
+adapter lifetime, including lazy reads by the Gipformer child. Its root lock and
+reader pin prevent another writer or explicit deletion while paths are in use.
+
+ModelBundle is a native entry kind inside the same cache: a content-key directory
+contains immutable catalog-named raw files and `.bundle` metadata in the existing
+72-byte VCACHE01 key/digest envelope. Ordinary artifact files retain their layout.
+Native metadata version 1 rejects other versions and malformed identities. Only an
+atomically published verified-complete marker permits a ModelLease. Partial
+checkpoints remain unavailable to loaders. Models and checkpoints are permanently
+pinned against LRU/generic clear; only explicit `remove` deletes them, and live
+leases refuse removal. Native bundles are exempt from the half-budget entry cap;
+actual logical file and metadata bytes are reported as ModelWeights, with free-disk
+preflight for remaining bytes plus atomic metadata headroom. Uncheckpointed tails
+are reclaimed before append/restart and credited during preflight. Disk-full writes
+still return typed StorageFull if availability changes after the advisory check.
+Unknown directories and symlink targets are never adopted or overwritten.
+
+Transfers stream through a fixed 64 KiB buffer within a 256 KiB job reservation.
+Checkpoints sync raw files before atomically updating offsets every 4 MiB, at EOF,
+on cooperative cancellation or read failure. A killed process resumes only the
+last durable checkpoint and truncates its later tail. Range resumption requires a
+strong matching ETag and exact Content-Range/length; a full 200 response replaces
+the prefix. Weak/missing validators restart from zero. Changed 206 entities reset
+before retry; malformed, encoded, excess, truncated and hash-invalid responses
+cannot publish. HTTPS redirects are bounded to five, forbid credentials/fragments
+and keep signed target URLs ephemeral. Hash/size checks reuse ai's streaming owner.
+The shared client has finite timeouts; cancellation during a blocking request/read
+can wait for the response or timeout. No live remote throughput or Windows runtime
+claim follows from offline integration tests. Weights are never Git or installer
+content; actual model-manager UI and CLI composition remain downstream work.
+
+## Control
+
+### Control admission, revisions and receipts
+
+`control::{Request, Caller, Policy, Response}` is the transport-neutral boundary.
+`Session::control_json` parses at most 8 MiB of UTF-8 with duplicate-key refusal,
+32 nested levels, 200,000 nodes, 100,000 members per collection and 4 MiB aggregate
+text. `control_request` also bounds already-allocated requests. Unknown commands,
+wrong types/fields and nested batch publications refuse before effects. Validators
+compile only generated local schemas with network/file resolution disabled.
+API version 1 is independent of the project file schema. The BLAKE3 catalog digest
+covers schemas, static effects/examples and limits, excluding enabled/session state.
+Effectful calls require the exact digest and version; catalog reads need no digest.
+[Generated commands](../../docs/engineering/commands.md) and `catalog.digest` regenerate
+with `cargo run -p engine --example control_catalog`; the conformance test checks
+both against current registry output in CI.
+
+Every Session starts with an OS-random epoch. `revision()` is an opaque string;
+its generation and `JobTarget` share the same Arc invalidation boundary. UI edits,
+undo/redo, preview lifetimes, transaction rollback/net-zero end, view changes and
+successful save advance it; ordinary no-ops/refusals do not. Effectful control
+requests require `base_rev`. A stale revision refuses before any child of a batch.
+Before publishing an admitted JSON/control edit, Session validates the candidate project's actual serialized
+integers and created IDs, including values produced by allocation or tick/keyframe
+arithmetic. Undo/redo validate their destination snapshot before moving history.
+An invalid candidate returns InvalidParams without consuming IDs, advancing
+revision or emitting a project change; its refusal receipt can be replayed. This
+also applies to JSON execution; typed in-process editing keeps the owner
+types' full integer domain.
+The recovery journal descriptor is version 2 for the same ProjectId encoding;
+older descriptors are refused before model decoding, without deleting their files.
+Session/project lifecycle creation and disk saves retain their existing
+`Session::create`/`Autosave` ownership; direct Session edit/control execution returns
+a typed refusal for those commands. Their registry examples declare those routes.
+A composition root that owns the project file may instead call
+`Session::control_lifecycle_save`: it applies the same version, hash, session,
+policy, request-ID, key, revision, capacity and receipt rules as other effects, then
+runs a closure that performs only project/metadata publication, acknowledges the
+save and stores the terminal receipt. Its success and typed execution errors are
+both receipted; a failed publication keeps the composition root's dirty state, the
+same request replays the stored error, and a retry that must execute again uses a
+fresh key.
+
+The composition root supplies `Caller` and a mandatory trusted `Policy`, outside
+client JSON. Engine invokes it on the command and every batch child before effects
+and before receipt replay. It must enforce source/destination/overwrite and provider
+consent through their owners; it is not an authenticated transport implementation.
+External callers cannot begin/commit/cancel gestures, including through generic
+run or batches. External mutations refuse while the UI holds a gesture. Agents use
+atomic batches and undo. Reads do not expose uncommitted gesture snapshots.
+
+Effectful requests require a 1..=128-byte idempotency key. Receipts are scoped by
+trusted principal, Session and key; the fingerprint covers command, params,
+base revision and contract identity, excluding transport/request correlation.
+Replay returns the original revision/result even after later edits; conflicting
+semantics refuse. Mutable Session ownership serializes concurrent callers. The
+ledger retains at most 4096 receipts and 32 MiB without eviction until Session end;
+new effects reserve 128 KiB of available ledger capacity before execution. Mutation
+results have at most 1024 created IDs; returned publication paths are capped at
+4096 encoded bytes. Request IDs and principals are 1..=128 bytes. Refusals before
+reservation do not occupy a key; accepted execution errors do. A new Session refuses
+the old epoch rather than rerunning an uncertain mutation.
+
+Inspection/catalog responses are capped at 8 MiB; oversize reads refuse instead of
+truncating or mixing revisions. Safe wire error codes omit paths, user text,
+provider bodies and Rust Debug. `bounded_json` is the adapter's bounded response
+serializer. No transport, filesystem grant store, CLI persistent Session or MCP
+runtime is introduced here; their composition belongs to the consumers.
+
+`inspect`, `catalog`, `provider_catalog`, `fonts.list`, `fonts.load`, `fonts.download`, `preview`,
+`preview.snapshot`, general `export`, `job_status` and `job_cancel` share the existing declaration
+([font commands](#font-catalog) need an attached font store). Export starts the production
+render job against its admitted immutable snapshot and returns job ID/revision and
+paths. Preview starts a CPU job through the same runner; job_status returns its
+retained inline JPEG result without consuming it. Up to four exact output frames
+are rendered at a maximum 640-pixel edge, JPEG quality 80, with frame/active clip IDs
+burned in through the production text compositor. At most 16 active clips are
+admitted per preview frame; larger label sets refuse. Labels that cannot fit at 14 output pixels within half
+the image also refuse rather than clipping. Preview results retain their
+captured revision; missing sources fail rather than invent picture evidence.
+Images never enter receipts or event queues. Cancel requests obey the runner's
+publication fence. Absent/evicted jobs return JobNotRetained; replaying their start
+receipt never submits another job. Applications keep ticking app-owned jobs after
+a listener disconnects; process shutdown retains JobRunner's cancel/join behavior.
+
+### Control events and resynchronization
+
+One typed `Payload` set covers command result/error, committed project change,
+revision change and job snapshots. Envelopes include API/catalog/session identity,
+revision and string sequence number. Command replies/receipts remain authoritative;
+large read/image results stay on the response path. Project changes require a full
+snapshot rather than pretending created IDs form a complete diff. Gesture previews
+and cancellation emit revision changes, never committed project changes.
+
+`snapshot_and_subscribe(&runner)` captures committed project, revision, current jobs
+and a cursor while Session ownership is held. The owning loop calls `observe_jobs`
+after runner ticks/accepted responses; it uses retained snapshots without draining
+other consumers. Acceptance is visible before job lifecycle events. At most 128
+small live events are retained for every listener together; cursors hold no queue.
+A slow or foreign cursor gets ResyncRequired and must install a fresh snapshot.
+No durable replay or exhaustive transition log is promised; progress can coalesce.
+Terminal snapshots follow the existing runner/publication fence, and repeated polls
+do not duplicate unchanged terminal events. Dropping a cursor never cancels work.
+
+The control tests enumerate registry-owned examples and fixture requirements,
+validate closed schemas, exercise real export/preview jobs, stale requests,
+receipt replay/conflict/exhaustion, hostile parser/integer inputs, policy refusal,
+gesture ownership and snapshot pressure. These checks do not establish transport or installed-client behavior.
