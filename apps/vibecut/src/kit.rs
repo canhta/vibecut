@@ -1,0 +1,19 @@
+//! Supplies reusable visual primitives without editor state.
+mod icons;
+mod style;
+mod theme;
+mod widgets;
+
+pub(crate) use icons::{Icon, icon, install, tinted};
+pub(crate) use style::{install_fonts, install_theme};
+pub(crate) use theme::{
+    accent, border, bright, disabled, disabled_icon, error_text, field, hover, icon, image_tint,
+    label_font, modal, on_accent, on_scrim, panel, preview_backdrop, radius, scrim, secondary,
+    separator, size, space, strip, success, text, track_rest, type_size, video_border, video_fill,
+    warning, window,
+};
+#[allow(unused_imports)] // Shared contract consumed by the parallel area tickets.
+pub(crate) use widgets::{
+    NumberSpec, SectionResponse, SliderResponse, icon_button, property_row, section_header,
+    slider_stepper, tab_strip,
+};

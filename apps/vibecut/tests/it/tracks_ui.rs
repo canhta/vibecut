@@ -48,7 +48,7 @@ fn track_headers_remain_operable_at_display_density() {
             .iter()
             .find(|w| w.id == "track.0.header")
             .unwrap();
-        assert_eq!(main.rect.width(), 112.0);
+        assert_eq!(main.rect.width(), 123.0);
         assert_eq!(main.rect.height(), 65.0);
         for track in h.state().session.project().data().scene().timeline.iter() {
             let w = inspect

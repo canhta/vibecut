@@ -57,54 +57,11 @@ Evidence: `.spikes/ui-reference/screens-2026-11-04/`, `01-project-list/`, `02-ed
 
 ### Theme and tokens
 
-Dark and light both ship in v1 with the same geometry, type and density; only colour changes. The semantic table below covers Home, dialogs and non-editor surfaces; the editor frame uses the measured palette further down, which supersedes its Window/Panels/Fields/Accent rows until ticket 116 reconciles the semantic tokens. Ratios are WCAG 2.x against the named surface.
-
-| Token | Dark | Light | Contrast | Source (dark) |
-|---|---|---|---|---|
-| Window, top bar, editor chrome | `#0F1113` | `#F4F4F4` | | surface-tertiary |
-| Panels | `#18191C` | `#FFFFFF` | | surface-section |
-| Modals, popovers | `#1C1E20` | `#FFFFFF` | | surface-primary |
-| Fields, controls | `#23262A` | `#EDEDED` | | surface-secondary |
-| Hover, active tab | `#2A2D32` | `#E4E4E4` | | surface-secondary-hover |
-| Text | `#FFFFFF` | `#131517` | 17.6:1 dark panel; 18.3:1 light | font-primary |
-| Secondary text | `#898A8B` | `#565656` | 5.08:1 dark panel (4.39:1 on fields: placeholders only); 6.27:1 light field | font-secondary |
-| Disabled | `#737475` | `#7F7F7F` | not required | font-disabled |
-| Separators (decorative) | `#26272A` | `#E4E4E4` | not required | separator-card, white 6% |
-| Component borders | `#393C3F` | `#828282` | light 3.28:1 on fields; dark fields are identified by fill plus border [proposed] | white 10% |
-| Accent: selection, checked, primary button, focus | `#D1FE17` | `#4F6109` | 15.0:1 dark panel; 6.89:1 light; labels on fill `#131517` (15.6:1) dark, white (6.89:1) light | lime-500 / lime-900 |
-| Highlight: AI markers, badges | `#FF005B` | `#AD003E` | 4.52:1 dark panel; 7.38:1 light | pink-500 / pink-700 |
-| Error | `#FF5462` text, `#E72930` fill | `#D60016` | 5.61:1 dark panel; 5.43:1 light | red-500, surface-error / red-700 |
-| Success | `#53C546` | `#2E7D32` | 7.9:1; 5.13:1 | font-success |
-| Warning | `#F3C977` | `#8A6100` | 11.2:1; 5.54:1 | font-warning |
-| Video clip fill and border | `#0A2A24` | `#E3F7F2` fill, `#0B6B5B` border | 15.3:1 text on light fill | [proposed] track colour, not brand |
-
-- **Accent.** Follow the table for fill/label pairs; white on dark-theme lime is 1.17:1, and dark-theme lime on white is 1.12:1.
-- **Highlight.** Pink is used sparingly: at most one pink mark per view, never selection, a primary button or an error. As a fill it carries an icon, a dot or `#131517` text.
-- **Surfaces.** Adjacent surface steps are subtle by design; 3:1 applies to text and to the boundary of a component, not to decorative separators.
-
-#### Measured editor palette (2026-11-05)
-
-[measured] Sampled in the editor shots; the sample point for each value is in `.spikes/ui-reference/live/tokens.md`. These are the editor-frame colours ticket 116 adopts in place of the earlier chrome values above; the light column remains [proposed] because no light capture exists.
-
-| Role | Value | Shot / region |
-|---|---|---|
-| Window chrome, top bar, panel gutters | `#1C1C1C` | 221643 (650,200) |
-| 42 px strip (feature tabs, player title, properties tabs) | `#303030` | 221643 (300,80) |
-| Panels, timeline canvas | `#262626` | 221643 (300,200) |
-| Active tab, buttons, steppers | `#3B3B3B` | 221643 (100,140) |
-| Fields, inactive sub-tab track | `#1C1C1C` | 221643 (1660,245) |
-| In-panel divider | `#070709` | 221643 (185,300) |
-| Text and icons | `#E0E0E0` | 221643 (1301,190) |
-| Title, bright values | `#FAFAFA` | 221643 brightest in (900–945,48–63) |
-| Secondary text, autosave | `#949494` | 221643 brightest in (138–250,49–63) |
-| Ruler labels | `#6C6C6C` | 221643 dominant in (257–288,648–659) |
-| Timecode slash, scrollbar thumb | `#404040` | 221643 (729–735,576–592) / (194–218,1051–1057) |
-| Accent: active tab, current timecode, toggle, selection | `#57BECB` | 221643 (90,92) |
-| Disabled label/icon | `#5E5E5E` / `#6C6C6C` | 221643 (1350,555) / (221,628) |
-| Video clip fill / waveform | `#1E4C51` / `#33757D` | 221643 (1000,830) / (1000,895) |
-| Selected clip border | `#FFFFFF` | 221643 (1000,824) |
-| Top-bar action fill (`Pro`, `Share`) | `#4F4F4F` | 221643 (1650,56) |
-| Dialog title bar / body / list | `#303030` / `#262626` / `#141414` | 221811 (400,55) / (400,120) / (110,160) |
+The [token contract](tokens.md) links to the single executable value owner,
+`theme.rs`. Geometry follows the [measured reference](#measured-desktop-reference);
+colour and icon choices remain ours. Reference hex samples above are capture
+evidence, not replacement app tokens. Dark/light and status colours keep the
+existing app palette; there is no second numeric palette table to maintain.
 
 ### Type scale
 

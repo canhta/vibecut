@@ -5,7 +5,7 @@
 //! the prepared bytes; this module never reads files or installs UI state on its
 //! own beyond [`install`].
 
-use crate::egui::{self, Color32, ImageSource, Vec2, load::Bytes};
+use eframe::egui::{self, Color32, ImageSource, Vec2, load::Bytes};
 use std::{
     collections::HashMap,
     sync::{Arc, OnceLock},
@@ -171,183 +171,183 @@ impl Icon {
 const ICONS: &[(&str, &[u8])] = &[
     (
         "arrow-clockwise",
-        include_bytes!("../../../assets/icons/phosphor/regular/arrow-clockwise.svg"),
+        include_bytes!("../../../../assets/icons/phosphor/regular/arrow-clockwise.svg"),
     ),
     (
         "arrow-counter-clockwise",
-        include_bytes!("../../../assets/icons/phosphor/regular/arrow-counter-clockwise.svg"),
+        include_bytes!("../../../../assets/icons/phosphor/regular/arrow-counter-clockwise.svg"),
     ),
     (
         "arrow-left",
-        include_bytes!("../../../assets/icons/phosphor/regular/arrow-left.svg"),
+        include_bytes!("../../../../assets/icons/phosphor/regular/arrow-left.svg"),
     ),
     (
         "arrows-horizontal",
-        include_bytes!("../../../assets/icons/phosphor/regular/arrows-horizontal.svg"),
+        include_bytes!("../../../../assets/icons/phosphor/regular/arrows-horizontal.svg"),
     ),
     (
         "arrows-in-line-horizontal",
-        include_bytes!("../../../assets/icons/phosphor/regular/arrows-in-line-horizontal.svg"),
+        include_bytes!("../../../../assets/icons/phosphor/regular/arrows-in-line-horizontal.svg"),
     ),
     (
         "arrows-left-right",
-        include_bytes!("../../../assets/icons/phosphor/regular/arrows-left-right.svg"),
+        include_bytes!("../../../../assets/icons/phosphor/regular/arrows-left-right.svg"),
     ),
     (
         "circle-half",
-        include_bytes!("../../../assets/icons/phosphor/regular/circle-half.svg"),
+        include_bytes!("../../../../assets/icons/phosphor/regular/circle-half.svg"),
     ),
     (
         "corners-out",
-        include_bytes!("../../../assets/icons/phosphor/regular/corners-out.svg"),
+        include_bytes!("../../../../assets/icons/phosphor/regular/corners-out.svg"),
     ),
     (
         "export",
-        include_bytes!("../../../assets/icons/phosphor/regular/export.svg"),
+        include_bytes!("../../../../assets/icons/phosphor/regular/export.svg"),
     ),
     (
         "eye",
-        include_bytes!("../../../assets/icons/phosphor/regular/eye.svg"),
+        include_bytes!("../../../../assets/icons/phosphor/regular/eye.svg"),
     ),
     (
         "eye-slash",
-        include_bytes!("../../../assets/icons/phosphor/regular/eye-slash.svg"),
+        include_bytes!("../../../../assets/icons/phosphor/regular/eye-slash.svg"),
     ),
     (
         "file",
-        include_bytes!("../../../assets/icons/phosphor/regular/file.svg"),
+        include_bytes!("../../../../assets/icons/phosphor/regular/file.svg"),
     ),
     (
         "funnel",
-        include_bytes!("../../../assets/icons/phosphor/regular/funnel.svg"),
+        include_bytes!("../../../../assets/icons/phosphor/regular/funnel.svg"),
     ),
     (
         "film-strip",
-        include_bytes!("../../../assets/icons/phosphor/regular/film-strip.svg"),
+        include_bytes!("../../../../assets/icons/phosphor/regular/film-strip.svg"),
     ),
     (
         "floppy-disk",
-        include_bytes!("../../../assets/icons/phosphor/regular/floppy-disk.svg"),
+        include_bytes!("../../../../assets/icons/phosphor/regular/floppy-disk.svg"),
     ),
     (
         "floppy-disk-back",
-        include_bytes!("../../../assets/icons/phosphor/regular/floppy-disk-back.svg"),
+        include_bytes!("../../../../assets/icons/phosphor/regular/floppy-disk-back.svg"),
     ),
     (
         "folder-open",
-        include_bytes!("../../../assets/icons/phosphor/regular/folder-open.svg"),
+        include_bytes!("../../../../assets/icons/phosphor/regular/folder-open.svg"),
     ),
     (
         "gear-six",
-        include_bytes!("../../../assets/icons/phosphor/regular/gear-six.svg"),
+        include_bytes!("../../../../assets/icons/phosphor/regular/gear-six.svg"),
     ),
     (
         "list-bullets",
-        include_bytes!("../../../assets/icons/phosphor/regular/list-bullets.svg"),
+        include_bytes!("../../../../assets/icons/phosphor/regular/list-bullets.svg"),
     ),
     (
         "lock",
-        include_bytes!("../../../assets/icons/phosphor/regular/lock.svg"),
+        include_bytes!("../../../../assets/icons/phosphor/regular/lock.svg"),
     ),
     (
         "lock-open",
-        include_bytes!("../../../assets/icons/phosphor/regular/lock-open.svg"),
+        include_bytes!("../../../../assets/icons/phosphor/regular/lock-open.svg"),
     ),
     (
         "magnet",
-        include_bytes!("../../../assets/icons/phosphor/regular/magnet.svg"),
+        include_bytes!("../../../../assets/icons/phosphor/regular/magnet.svg"),
     ),
     (
         "magnifying-glass-minus",
-        include_bytes!("../../../assets/icons/phosphor/regular/magnifying-glass-minus.svg"),
+        include_bytes!("../../../../assets/icons/phosphor/regular/magnifying-glass-minus.svg"),
     ),
     (
         "magnifying-glass-plus",
-        include_bytes!("../../../assets/icons/phosphor/regular/magnifying-glass-plus.svg"),
+        include_bytes!("../../../../assets/icons/phosphor/regular/magnifying-glass-plus.svg"),
     ),
     (
         "music-notes",
-        include_bytes!("../../../assets/icons/phosphor/regular/music-notes.svg"),
+        include_bytes!("../../../../assets/icons/phosphor/regular/music-notes.svg"),
     ),
     (
         "pause",
-        include_bytes!("../../../assets/icons/phosphor/regular/pause.svg"),
+        include_bytes!("../../../../assets/icons/phosphor/regular/pause.svg"),
     ),
     (
         "pencil-simple",
-        include_bytes!("../../../assets/icons/phosphor/regular/pencil-simple.svg"),
+        include_bytes!("../../../../assets/icons/phosphor/regular/pencil-simple.svg"),
     ),
     (
         "play",
-        include_bytes!("../../../assets/icons/phosphor/regular/play.svg"),
+        include_bytes!("../../../../assets/icons/phosphor/regular/play.svg"),
     ),
     (
         "plus",
-        include_bytes!("../../../assets/icons/phosphor/regular/plus.svg"),
+        include_bytes!("../../../../assets/icons/phosphor/regular/plus.svg"),
     ),
     (
         "scissors",
-        include_bytes!("../../../assets/icons/phosphor/regular/scissors.svg"),
+        include_bytes!("../../../../assets/icons/phosphor/regular/scissors.svg"),
     ),
     (
         "skip-back",
-        include_bytes!("../../../assets/icons/phosphor/regular/skip-back.svg"),
+        include_bytes!("../../../../assets/icons/phosphor/regular/skip-back.svg"),
     ),
     (
         "skip-forward",
-        include_bytes!("../../../assets/icons/phosphor/regular/skip-forward.svg"),
+        include_bytes!("../../../../assets/icons/phosphor/regular/skip-forward.svg"),
     ),
     (
         "sliders-horizontal",
-        include_bytes!("../../../assets/icons/phosphor/regular/sliders-horizontal.svg"),
+        include_bytes!("../../../../assets/icons/phosphor/regular/sliders-horizontal.svg"),
     ),
     (
         "sparkle",
-        include_bytes!("../../../assets/icons/phosphor/regular/sparkle.svg"),
+        include_bytes!("../../../../assets/icons/phosphor/regular/sparkle.svg"),
     ),
     (
         "squares-four",
-        include_bytes!("../../../assets/icons/phosphor/regular/squares-four.svg"),
+        include_bytes!("../../../../assets/icons/phosphor/regular/squares-four.svg"),
     ),
     (
         "speaker-high",
-        include_bytes!("../../../assets/icons/phosphor/regular/speaker-high.svg"),
+        include_bytes!("../../../../assets/icons/phosphor/regular/speaker-high.svg"),
     ),
     (
         "speaker-slash",
-        include_bytes!("../../../assets/icons/phosphor/regular/speaker-slash.svg"),
+        include_bytes!("../../../../assets/icons/phosphor/regular/speaker-slash.svg"),
     ),
     (
         "sticker",
-        include_bytes!("../../../assets/icons/phosphor/regular/sticker.svg"),
+        include_bytes!("../../../../assets/icons/phosphor/regular/sticker.svg"),
     ),
     (
         "subtitles",
-        include_bytes!("../../../assets/icons/phosphor/regular/subtitles.svg"),
+        include_bytes!("../../../../assets/icons/phosphor/regular/subtitles.svg"),
     ),
     (
         "text-t",
-        include_bytes!("../../../assets/icons/phosphor/regular/text-t.svg"),
+        include_bytes!("../../../../assets/icons/phosphor/regular/text-t.svg"),
     ),
     (
         "translate",
-        include_bytes!("../../../assets/icons/phosphor/regular/translate.svg"),
+        include_bytes!("../../../../assets/icons/phosphor/regular/translate.svg"),
     ),
     (
         "trash",
-        include_bytes!("../../../assets/icons/phosphor/regular/trash.svg"),
+        include_bytes!("../../../../assets/icons/phosphor/regular/trash.svg"),
     ),
     (
         "upload-simple",
-        include_bytes!("../../../assets/icons/phosphor/regular/upload-simple.svg"),
+        include_bytes!("../../../../assets/icons/phosphor/regular/upload-simple.svg"),
     ),
     (
         "waveform",
-        include_bytes!("../../../assets/icons/phosphor/regular/waveform.svg"),
+        include_bytes!("../../../../assets/icons/phosphor/regular/waveform.svg"),
     ),
     (
         "x",
-        include_bytes!("../../../assets/icons/phosphor/regular/x.svg"),
+        include_bytes!("../../../../assets/icons/phosphor/regular/x.svg"),
     ),
 ];
 
@@ -465,7 +465,7 @@ mod tests {
 
     #[test]
     fn every_icon_is_pinned_by_sha256_in_the_assets_readme() {
-        let readme = include_str!("../../../assets/icons/phosphor/README.md");
+        let readme = include_str!("../../../../assets/icons/phosphor/README.md");
         for (name, bytes) in ICONS {
             let digest = hex(&Sha256::digest(bytes));
             let row = format!("| `{name}.svg` | `{digest}` |");

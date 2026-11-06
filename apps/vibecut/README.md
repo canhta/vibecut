@@ -6,6 +6,24 @@ presentation state, stable automation IDs, screenshots, catalog and preferences.
 Engine owns all project edits, job scheduling and aggregate byte accounting;
 render owns every pixel, audio conversion, sample grid and channel mix rule.
 
+## Editor presentation
+
+`editor.rs` retains the public `Editor` facade and its shared presentation
+context. `editor/frame.rs` owns window composition and editor input routing.
+The assets, player, properties, timeline, captions, export and models area files
+are folder interfaces with private `view` and `workflow` implementations; existing
+state projections live with their area. Responsibilities follow
+[structure](../../docs/engineering/structure.md).
+
+The physical extraction preserves existing facade calls and their ordering.
+Area-owned State/show/action migrations belong to the consumer UI tickets;
+known legacy cross-area calls are recorded in the ticket report.
+
+`kit.rs` exposes the app palette, measured geometry, regular icons and the five
+shared controls without an engine dependency. The private legacy theme/icon
+aliases preserve existing app callers. The [token contract](../../docs/product/tokens.md)
+indexes the one executable value owner. No standalone kit demo is installed.
+
 ## Localization
 
 One app-owned catalog in `src/catalog.rs` owns every user-visible string. The

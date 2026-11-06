@@ -414,8 +414,9 @@ fn trim_and_move_drag_commit_one_undo_step_each() {
     let mut harness = harness(fixture.editor);
     harness.run_steps(3);
     let zoom = harness.state().inspect().unwrap().zoom;
-    let timeline = harness.state().panels["timeline"];
-    let body_left = timeline.left() + 12.0 + 112.0;
+    // Read the real track/header boundary so density changes do not alter the
+    // engine time targeted by the gesture.
+    let body_left = widget(&harness, "track.0.header").right();
     let end_handle = widget(&harness, &format!("timeline.item.{}.trim_end", video_a.0));
     drag(
         &mut harness,
@@ -941,14 +942,14 @@ fn every_editor_button_reports_its_embedded_icon() {
         .find(|widget| widget.id == "timeline.split")
         .unwrap();
     assert!(
-        (split.rect.height() - 28.0).abs() < 0.5 && (split.rect.width() - 28.0).abs() < 0.5,
-        "timeline actions keep the 28x28 icon-only hit box, got {:?}",
+        (split.rect.height() - 24.0).abs() < 0.5 && (split.rect.width() - 24.0).abs() < 0.5,
+        "timeline actions use the measured 24x24 icon-only hit box, got {:?}",
         split.rect
     );
     let timeline = harness.state().panels["timeline"];
     assert!(
-        (split.rect.min.y - timeline.top() - 18.0).abs() < 0.5,
-        "timeline toolbar keeps its 40 px row"
+        (split.rect.min.y - timeline.top() - 16.0).abs() < 0.5,
+        "timeline toolbar uses its measured 32 px row within the existing panel inset"
     );
     let undo = format!(
         "Undo ({})",
@@ -1106,8 +1107,9 @@ fn review_trim_release_survives_its_handle_becoming_narrow() {
     let mut harness = harness(fixture.editor);
     harness.run_steps(3);
     let zoom = harness.state().inspect().unwrap().zoom;
-    let timeline = harness.state().panels["timeline"];
-    let body_left = timeline.left() + 12.0 + 112.0;
+    // Read the real track/header boundary so density changes do not alter the
+    // engine time targeted by the gesture.
+    let body_left = widget(&harness, "track.0.header").right();
     let handle = widget(&harness, &format!("timeline.item.{}.trim_end", id.0));
     drag(
         &mut harness,

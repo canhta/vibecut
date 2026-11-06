@@ -1,4 +1,4 @@
-//! Native editor frontend. Device creation and window ownership stay in main.
+//! Composes the desktop application from its public interfaces.
 pub mod actions;
 mod ai_task;
 pub mod capture;
@@ -6,11 +6,13 @@ pub mod catalog;
 pub mod color_picker;
 pub mod control;
 pub mod crop;
+mod editor;
 pub mod effect_previews;
 pub mod effects;
 pub mod export;
-mod frontend;
-mod icons;
+mod kit;
+use editor as frontend;
+use kit as icons;
 pub mod import;
 pub mod lifecycle;
 pub mod media_panel;
@@ -23,7 +25,7 @@ pub mod selection;
 pub mod shorts;
 pub mod snapping;
 pub mod subtitles;
-mod theme;
+use kit as theme;
 pub mod workspace;
 pub use eframe::egui;
 pub use frontend::{
