@@ -268,7 +268,11 @@ fn compare(options: &Options) -> Result<Report, String> {
         .map(|(ours, reference)| (ours - reference).abs())
         .collect();
     let whole_error = mean(&difference)?;
-    let tiles = tile_errors(&ours_edge, &reference_edge, region.width, region.height)?;
+    let mut tiles = tile_errors(&ours_edge, &reference_edge, region.width, region.height)?;
+    for tile in &mut tiles {
+        tile.x += region.x;
+        tile.y += region.y;
+    }
 
     fs::create_dir_all(&options.out)
         .map_err(|error| format!("{}: {error}", options.out.display()))?;
@@ -853,6 +857,25 @@ mod tests {
         assert_eq!(side.dimensions(), (128 * 4, 128));
         let heat = image::open(&report.outputs.heatmap).unwrap();
         assert_eq!(heat.dimensions(), (128 * 3, 128));
+    }
+
+    #[test]
+    fn region_tiles_report_image_coordinates() {
+        let scratch = Scratch::new();
+        let ours = save(&scratch, "blank.png", &blank(192, 128));
+        let mut shifted = blank(192, 128);
+        paint(&mut shifted, 72, 40, 16, 16);
+        let reference = save(&scratch, "shifted.png", &shifted);
+        let region = Region {
+            x: 32,
+            y: 32,
+            width: 128,
+            height: 64,
+        };
+        let report = compare(&options(&scratch, &ours, &reference, Some(region), 1.0)).unwrap();
+        let worst = report.worst(1);
+        let tile = worst.first().unwrap();
+        assert_eq!((tile.x, tile.y), (64, 32), "worst tile: {tile:?}");
     }
 
     #[test]
