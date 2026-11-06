@@ -8,6 +8,7 @@ mod evaluation;
 pub mod mask;
 mod raster;
 pub(crate) mod transform;
+pub mod viewport;
 
 use crate::{Error, Image, Result};
 pub use caption::{CaptionBackground, CaptionOutline, CaptionPosition, CaptionStyle};

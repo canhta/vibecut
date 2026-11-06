@@ -3,6 +3,7 @@ use crate::{ExecutionHooks, Image, Result, check};
 use project::{Item, TransformField as F};
 use time::Tick;
 
+#[derive(Clone, Copy, Debug)]
 pub(crate) struct Transform {
     x: f64,
     y: f64,
@@ -22,6 +23,29 @@ impl Transform {
     }
     pub(crate) fn active(&self) -> bool {
         self.x != 0.0 || self.y != 0.0 || self.sx != 1.0 || self.sy != 1.0 || self.radians != 0.0
+    }
+    /// Forward mapping in project canvas pixels, around the placement centre.
+    pub(super) fn point(&self, point: [f64; 2], center: [f64; 2]) -> [f64; 2] {
+        let (sin, cos) = self.radians.sin_cos();
+        let dx = (point[0] - center[0]) * self.sx;
+        let dy = (point[1] - center[1]) * self.sy;
+        [
+            center[0] + self.x + dx * cos - dy * sin,
+            center[1] + self.y + dx * sin + dy * cos,
+        ]
+    }
+    pub(super) fn unrotate(&self, point: [f64; 2], center: [f64; 2]) -> [f64; 2] {
+        let (sin, cos) = self.radians.sin_cos();
+        let dx = point[0] - center[0] - self.x;
+        let dy = point[1] - center[1] - self.y;
+        [dx * cos + dy * sin, -dx * sin + dy * cos]
+    }
+    pub(super) fn inverse(&self, point: [f64; 2], center: [f64; 2]) -> [f64; 2] {
+        let [x, y] = self.unrotate(point, center);
+        [x / self.sx + center[0], y / self.sy + center[1]]
+    }
+    pub(super) fn scale(&self) -> [f64; 2] {
+        [self.sx, self.sy]
     }
     pub(crate) fn apply(
         &self,

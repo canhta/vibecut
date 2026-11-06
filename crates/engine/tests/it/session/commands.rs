@@ -80,6 +80,133 @@ fn session() -> Session {
 }
 
 #[test]
+fn viewport_transform_text_preview_is_atomic_reversible_and_persistent() {
+    let mut data = project().into_data();
+    let track = data.scene_mut().timeline.overlays.first_mut().unwrap();
+    track.kind = TrackKind::Text;
+    for item in &mut track.items {
+        item.content = ItemParams::Text(project::TextParams::new("Keep"));
+    }
+    let mut s = Session::new(Project::new(data).unwrap(), 20).unwrap();
+    let initial = project::encode(s.project(), false).unwrap();
+    let viewport = render::viewport::Viewport::new(
+        render::Rect {
+            x: 0.,
+            y: 0.,
+            width: 1920.,
+            height: 1080.,
+        },
+        [1920, 1080],
+        1.,
+        [0., 0.],
+    )
+    .unwrap();
+    let renderer = render::Renderer::new(
+        s.project(),
+        render::RenderSettings::from_project(s.project()),
+    )
+    .unwrap();
+    let selected = renderer
+        .hit_test(&viewport, [960., 913.], Tick::ZERO)
+        .unwrap()
+        .unwrap();
+    assert_eq!(selected, ItemId(10));
+    s.set_selection([selected].into()).unwrap();
+    let preview = |x: f64, text: &str| {
+        json!({"commands":[
+            {"command":"timeline.set_item_param","params":{"item":10,"patch":{"field":"transform.positionX","value":x}}},
+            {"command":"timeline.set_item_param","params":{"item":10,"patch":{"field":"transform.positionY","value":-25.0}}},
+            {"command":"timeline.set_item_param","params":{"item":10,"patch":{"field":"transform.scaleX","value":0.5}}},
+            {"command":"timeline.set_item_param","params":{"item":10,"patch":{"field":"transform.scaleY","value":0.75}}},
+            {"command":"timeline.set_item_param","params":{"item":10,"patch":{"field":"transform.rotate","value":35.0}}},
+            {"command":"timeline.set_item_param","params":{"item":10,"patch":{"field":"text_content","value":text}}}
+        ]})
+    };
+    for x in [10., 40., -20.] {
+        s.execute(
+            "timeline.preview",
+            preview(x, "Tie\u{0302}\u{0301}ng Vie\u{0323}\u{0302}t"),
+        )
+        .unwrap();
+    }
+    assert_eq!(project::encode(s.project(), false).unwrap(), initial);
+    assert_eq!(s.history_len(), (0, 0));
+    let candidate = s.preview_project().unwrap().clone();
+    for invalid in [
+        json!({"commands":[{"command":"timeline.set_item_param","params":{"item":999,"patch":{"field":"transform.positionX","value":2.}}}]}),
+        json!({"commands":[{"command":"timeline.set_item_param","params":{"item":10,"patch":{"field":"transform.scaleX","value":0.}}}]}),
+        json!({"commands":[{"command":"timeline.set_item_param","params":{"item":10,"patch":{"field":"text_content","value":"tentative"}}},{"command":"undo","params":{}}]}),
+    ] {
+        assert!(s.execute("timeline.preview", invalid).is_err());
+        assert_eq!(s.preview_project(), Some(&candidate));
+        assert_eq!(project::encode(s.project(), false).unwrap(), initial);
+    }
+    s.execute("timeline.discard_preview", json!({})).unwrap();
+    assert_eq!(project::encode(s.project(), false).unwrap(), initial);
+    assert_eq!(s.selection(), &[selected].into());
+    assert_eq!(s.history_len(), (0, 0));
+    // Reversing every edit to its original value produces no history entry.
+    s.execute("timeline.preview", preview(20., "draft"))
+        .unwrap();
+    s.execute("timeline.preview", json!({"commands":[]}))
+        .unwrap();
+    assert!(
+        !s.execute("timeline.commit_preview", json!({}))
+            .unwrap()
+            .changed
+    );
+    assert_eq!(s.history_len(), (0, 0));
+    s.execute(
+        "timeline.preview",
+        preview(-20., "Tie\u{0302}\u{0301}ng Vie\u{0323}\u{0302}t"),
+    )
+    .unwrap();
+    assert!(
+        s.execute("timeline.commit_preview", json!({}))
+            .unwrap()
+            .changed
+    );
+    assert_eq!(s.history_len(), (1, 0));
+    assert!(s.preview_project().is_none());
+    let edited = project::encode(s.project(), false).unwrap();
+    let loaded = project::decode(&edited).unwrap().project;
+    assert_eq!(&loaded, s.project().as_ref());
+    let edited_item = get(&s, 10);
+    for (field, expected) in project::TransformField::ALL
+        .into_iter()
+        .zip([-20., -25., 0.5, 0.75, 35.])
+    {
+        assert_eq!(
+            field.value_at(&edited_item.animations, Tick::ZERO).unwrap(),
+            expected
+        );
+    }
+    assert!(matches!(&edited_item.content,ItemParams::Text(p) if p.content.as_str()=="Tiếng Việt"));
+    s.undo().unwrap();
+    assert_eq!(project::encode(s.project(), false).unwrap(), initial);
+    assert!(!s.can_undo());
+    s.redo().unwrap();
+    assert_eq!(project::encode(s.project(), false).unwrap(), edited);
+    let mut data = loaded.into_data();
+    data.scene_mut()
+        .timeline
+        .overlays
+        .first_mut()
+        .unwrap()
+        .locked = true;
+    let mut locked = Session::new(Project::new(data).unwrap(), 20).unwrap();
+    let before = locked.project().clone();
+    assert!(
+        locked
+            .execute("timeline.preview", preview(25., "refused"))
+            .is_err()
+    );
+    assert_eq!(locked.project(), &before);
+    assert!(locked.preview_project().is_none());
+    assert_eq!(locked.history_len(), (0, 0));
+}
+
+#[test]
 fn timeline_preview_isolated_replacement_commit_discard_and_history() {
     let mut s = session();
     let bytes = project::encode(s.project(), false).unwrap();

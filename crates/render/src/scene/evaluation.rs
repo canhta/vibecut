@@ -52,7 +52,7 @@ impl<'a> Renderer<'a> {
         self.frame(at, sources, hooks, true)
     }
     /// Static placement with project-owned keyframed opacity applied at `local`.
-    fn placement_at(&self, item: &Item, local: Tick) -> Result<Placement> {
+    pub(super) fn placement_at(&self, item: &Item, local: Tick) -> Result<Placement> {
         let mut placement = self.placement(item);
         let Some(value) = item.animations.value_at(&self.opacity_path, local)? else {
             return Ok(placement);

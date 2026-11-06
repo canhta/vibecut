@@ -26,6 +26,8 @@ Language for the editor's privacy and execution boundaries.
 - **Word**: Recognized source text with optional source range, speaker and confidence.
 - **CueTrack**: A collection of timed cues for subtitle validation and export.
 - **Selection**: The timeline items chosen as the targets of an editing action.
+- **Viewport**: The screen region displaying a project's canvas, fitted with letterboxing and adjusted by preview zoom and pan.
+- **Handle**: A point on an item's selection box used to change its scale; its displayed position follows the item's rotation.
 - **Selection scope**: The current level of selection: timeline items, keyframes within items, or points within a mask. Clearing a selection acts on the most specific occupied scope first.
 - **Face track**: Observations of one visible face within a single shot; its identifier is local to that shot.
 - **Cross-shot identity**: A confident link from a face track to an earlier face track serving as its anchor. An uncertain link stays Unknown; it is not a claim about a person's name.

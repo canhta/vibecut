@@ -12,7 +12,7 @@ Hardware decoding remains enabled; requested quality and bitrate are retained.
 
 | Module | Responsibility | Interface items | Contract |
 |---|---|---|---|
-| `scene/` | Evaluates project items into one RGBA frame. | `Renderer`, `RenderSettings`, `Rect`, `Placement`, `Fit`, `RasterCacheStats` | [Working pixels and scene](src/scene/README.md) |
+| `scene/` | Evaluates project items into one RGBA frame. | `Renderer`, `RenderSettings`, `Rect`, `Placement`, `Fit`, `RasterCacheStats`, `viewport` | [Working pixels and scene](src/scene/README.md) |
 | `audio/` | Owns every project audio stage from mix to limiter. | `AudioBlock`, `AudioMixer`, `mix_audio`, `measure_loudness` | [Audio clock and headroom](src/audio/README.md) |
 | `export/` | Runs a staged project export through to publication. | `export`, `export_with_sources`, `validate_output_path` | [Export and publication](src/export/README.md) |
 | `image` | Owns the RGBA frame buffer and its bounded allocation. | `Image` | [source](src/image.rs) |

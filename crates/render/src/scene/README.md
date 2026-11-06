@@ -25,6 +25,55 @@ Cancellation is checked per row. Identity transforms retain the existing fast pa
 Preview and export consume the same result. Content is clipped to the canvas
 before transformation; expanding the off-canvas raster extent is not implemented.
 
+## Preview viewport geometry
+
+`render::viewport::Viewport` owns screen/canvas conversion for player input,
+snapping and mask tools. Its constructor takes a logical-screen-pixel rectangle,
+project canvas dimensions, a positive zoom about the fitted canvas centre and
+screen-pixel pan. Aspect-fit letterboxing precedes zoom and pan. Conversion stays
+defined beyond the canvas for captured drags; invalid/non-finite or unrepresentable
+geometry returns `render::Error::Invalid`. `canvas_distance` converts screen-pixel
+tolerances without applying translation.
+
+`Renderer::item_geometry(id, output_tick)` evaluates the same placement, opacity
+and transform as pixels; no UI transform evaluator exists. `hit_test(viewport,
+screen_point, output_tick)` walks bottom-to-top render order and returns the
+topmost selectable `ItemId`, which the caller passes to `Session::set_selection`.
+The viewport must name this project's canvas. Hidden/locked tracks, audio, fully
+transparent solid overlays, empty text, zero evaluated opacity and inactive caption
+cues are excluded. Time and screen/canvas edges are half-open. Geometric selection
+uses the destination rectangle (including transparent pixels inside a text/media
+box); source-fit letterboxes, masks and effect transparency do not cut holes in
+that box. Selection does not decode or rasterize media.
+Active transitions use project's resolved source-handle contributors, excluding
+zero-weight sides and both clips at the opaque dip midpoint.
+
+`ItemGeometry::handle_position` applies scale, clockwise rotation and translation
+around the placement centre before canvas-to-screen conversion. Eight `Handle`
+positions run clockwise from top-left. `hit_handle` chooses the nearest within an
+explicit logical-screen-pixel radius; no reference radius is assumed. `scale_at`
+takes an absolute canvas pointer: centre-anchored edge handles scale their own
+axis, corners scale both independently, and crossing the centre clamps to the
+project-owned minimum rather than flips. This per-axis policy is explicit;
+exact reference handle radius/axis coupling remains unverified.
+`rotation_handle_position` places the rotation grip beyond the rotated top midpoint
+with a caller-chosen constant screen-pixel gap, independent of zoom.
+
+Edits use the [existing engine preview transaction](../../../engine/README.md#transactions-gestures-and-changes).
+The caller converts the current pointer relative to its gesture origin and submits
+absolute `timeline.set_item_param` patches for `transform.positionX/Y`,
+`transform.scaleX/Y`, `transform.rotate` or `text_content` inside `timeline.preview`.
+Every update replaces the candidate from the committed origin; end with
+`timeline.commit_preview` (one undo step) or `timeline.discard_preview` (no edit).
+Geometry reads `preview_project()` while a candidate exists. Widgets, pointer
+capture and inline text editing belong to the player, with no separate snapshots.
+
+`tests/it/viewport.rs` covers conversion, hostile coordinates, rotated handles,
+per-axis clamp, pixel agreement and visibility/ordering boundaries. Engine's
+`viewport_transform_text_preview_is_atomic_reversible_and_persistent` covers the
+shared selection, preview failure/cancel/reversal, one-step history and persisted
+transform/NFC text round-trip.
+
 `color` owns hex and HSV entry conversion over project's existing straight sRGB
 RGBA8 value: six/eight hex digits, hue 0..360 degrees, saturation/value/alpha
 0..1. Finite HSV entries clamp; non-finite input refuses. Alpha stays straight

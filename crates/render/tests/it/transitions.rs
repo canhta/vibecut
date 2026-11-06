@@ -43,6 +43,50 @@ fn scene(kind: &str) -> Project {
 }
 
 #[test]
+fn viewport_hit_test_selects_visible_transition_contributors_in_source_handles() {
+    for definition in TRANSITION_DEFINITIONS {
+        let project = scene(definition.kind);
+        let renderer = Renderer::new(&project, RenderSettings::from_project(&project)).unwrap();
+        let viewport = render::viewport::Viewport::new(
+            Rect {
+                x: 0.,
+                y: 0.,
+                width: 4.,
+                height: 4.,
+            },
+            [4, 4],
+            1.,
+            [0., 0.],
+        )
+        .unwrap();
+        for at in [79, 80, 81, 99, 100, 101, 119, 120] {
+            let expected = if definition.dip.is_some() {
+                if at < 100 {
+                    Some(ItemId(10))
+                } else if at == 100 {
+                    None
+                } else {
+                    Some(ItemId(11))
+                }
+            } else if at <= 80 {
+                Some(ItemId(10))
+            } else {
+                Some(ItemId(11))
+            };
+            assert_eq!(
+                renderer.hit_test(&viewport, [2., 2.], Tick(at)).unwrap(),
+                expected,
+                "{} at {at}",
+                definition.kind
+            );
+            if let Some(id) = expected {
+                assert!(renderer.item_geometry(id, Tick(at)).unwrap().is_some());
+            }
+        }
+    }
+}
+
+#[test]
 fn every_catalog_kind_has_start_mid_end_goldens_without_flash_or_frame_drop() {
     for def in TRANSITION_DEFINITIONS {
         let p = scene(def.kind);

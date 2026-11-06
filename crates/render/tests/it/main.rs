@@ -14,6 +14,7 @@ mod output_alias;
 mod support;
 mod text_style;
 mod transform;
+mod viewport;
 
 mod retime_audio;
 mod transitions;

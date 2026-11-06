@@ -40,6 +40,7 @@ The [glossary](../../GLOSSARY.md) owns domain definitions; crate READMEs own con
 | Font catalog, system/bundled/Google fonts, download cache, `fonts.*` commands | [engine fonts](../../crates/engine/README.md#font-catalog); resolution and raster in [text](../../crates/text/src/fonts/README.md) |
 | Row tasks and native conversion worker allowance | [engine kernel execution](../../crates/engine/README.md#render-kernel-execution) |
 | Export execution | [render](../../crates/render/src/export/README.md#export-and-publication) |
+| Preview screen/canvas conversion, selectable item geometry, rotated handles | [render viewport](../../crates/render/src/scene/README.md#preview-viewport-geometry) |
 | Loudness measurement, gains and export admission | [render planner](../../crates/render/src/audio/README.md#audio-clock-and-headroom) / [engine job](../../crates/engine/README.md#loudness-normalization) |
 | Clip naming, cue mapping, per-short cancel/retry | [shorts batch export](../../crates/shorts/src/batch_export/README.md) |
 | Local model catalog, consent, integrity, transport / transfers, cache bundles / manager presentation | [ai catalog](../../crates/ai/src/models/README.md) / [engine transfers](../../crates/engine/README.md#local-model-transfers) / [app manager](../../apps/vibecut/README.md#local-model-manager) |

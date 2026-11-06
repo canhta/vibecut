@@ -8,6 +8,36 @@ struct Signal {
     level: f32,
     impulse: bool,
 }
+
+#[test]
+fn viewport_audio_only_project_has_no_visual_selection() {
+    let project = fixture();
+    let renderer = Renderer::new(&project, RenderSettings::from_project(&project)).unwrap();
+    let viewport = render::viewport::Viewport::new(
+        Rect {
+            x: 0.,
+            y: 0.,
+            width: 1920.,
+            height: 1080.,
+        },
+        [1920, 1080],
+        1.,
+        [0., 0.],
+    )
+    .unwrap();
+    assert!(
+        renderer
+            .item_geometry(project::ItemId(1), Tick::ZERO)
+            .unwrap()
+            .is_none()
+    );
+    assert_eq!(
+        renderer
+            .hit_test(&viewport, [960., 540.], Tick::ZERO)
+            .unwrap(),
+        None
+    );
+}
 impl SourceProvider for Signal {
     fn status(
         &mut self,

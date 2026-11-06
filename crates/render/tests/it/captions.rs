@@ -75,6 +75,37 @@ fn settings(p: &project::Project) -> RenderSettings {
     });
     settings
 }
+
+#[test]
+fn viewport_caption_visibility_follows_half_open_cue_range() {
+    let project = scene(&[("en", "Hello")]);
+    let renderer = Renderer::new(&project, RenderSettings::from_project(&project)).unwrap();
+    let viewport = render::viewport::Viewport::new(
+        Rect {
+            x: 0.,
+            y: 0.,
+            width: 360.,
+            height: 640.,
+        },
+        [360, 640],
+        1.,
+        [0., 0.],
+    )
+    .unwrap();
+    for (at, visible) in [(Tick::ZERO, false), (tick(1, 4), true), (tick(3, 2), false)] {
+        assert_eq!(
+            renderer
+                .item_geometry(project::ItemId(1), at)
+                .unwrap()
+                .is_some(),
+            visible
+        );
+        assert_eq!(
+            renderer.hit_test(&viewport, [180., 550.], at).unwrap(),
+            Some(project::ItemId(u64::from(visible)))
+        );
+    }
+}
 fn hash(bytes: &[u8]) -> u64 {
     bytes.iter().fold(0xcbf29ce484222325u64, |h, b| {
         (h ^ u64::from(*b)).wrapping_mul(0x100000001b3)
