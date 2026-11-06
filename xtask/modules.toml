@@ -1,0 +1,295 @@
+# Intra-crate layer table for `cargo xtask modules`.
+#
+# Layers are lowest first and imports go downward only. A module's group names
+# the structure.md folder it belongs to; current flat files map to the future
+# group so the direction is enforced before the folder move lands. Modules in a
+# non-feature layer share that layer's group name, so kernel and substrate may
+# collaborate internally; feature groups never import each other.
+#
+# Engine: docs/engineering/structure.md#engine.
+
+[[crate]]
+name = "engine"
+path = "crates/engine"
+
+[[crate.layer]]
+name = "kernel"
+groups = ["kernel"]
+
+[[crate.layer]]
+name = "substrate"
+groups = ["substrate"]
+
+[[crate.layer]]
+name = "features"
+groups = [
+    "subtitles",
+    "shorts",
+    "analysis",
+    "artifacts",
+    "libraries",
+    "providers",
+]
+
+[[crate.module]]
+name = "session"
+group = "kernel"
+
+[[crate.module]]
+name = "control"
+group = "kernel"
+
+[[crate.module]]
+name = "jobs"
+group = "substrate"
+
+[[crate.module]]
+name = "budget"
+group = "substrate"
+
+[[crate.module]]
+name = "cache"
+group = "substrate"
+
+[[crate.module]]
+name = "publication"
+group = "substrate"
+
+[[crate.module]]
+name = "rendering"
+group = "substrate"
+
+[[crate.module]]
+name = "library"
+group = "substrate"
+
+[[crate.module]]
+name = "recovery"
+group = "substrate"
+
+# session/ session, command registry and edit families.
+[[crate.module]]
+name = "commands"
+group = "kernel"
+
+[[crate.module]]
+name = "edit"
+group = "kernel"
+
+[[crate.module]]
+name = "transitions"
+group = "kernel"
+
+# features/subtitles
+[[crate.module]]
+name = "subtitles"
+group = "subtitles"
+
+[[crate.module]]
+name = "ass_import"
+group = "subtitles"
+
+[[crate.module]]
+name = "translation"
+group = "subtitles"
+
+# features/shorts
+[[crate.module]]
+name = "clip_suggest"
+group = "shorts"
+
+[[crate.module]]
+name = "clip_boundaries"
+group = "shorts"
+
+[[crate.module]]
+name = "clip_export"
+group = "shorts"
+
+# features/analysis
+[[crate.module]]
+name = "scene_detection"
+group = "analysis"
+
+[[crate.module]]
+name = "shot_analysis"
+group = "analysis"
+
+[[crate.module]]
+name = "loudness"
+group = "analysis"
+
+# features/artifacts
+[[crate.module]]
+name = "thumbnail"
+group = "artifacts"
+
+[[crate.module]]
+name = "thumbnails"
+group = "artifacts"
+
+[[crate.module]]
+name = "snapshot"
+group = "artifacts"
+
+[[crate.module]]
+name = "effect_thumbnails"
+group = "artifacts"
+
+[[crate.module]]
+name = "control_preview"
+group = "artifacts"
+
+# features/libraries
+[[crate.module]]
+name = "sounds"
+group = "libraries"
+
+[[crate.module]]
+name = "fonts"
+group = "libraries"
+
+# features/providers
+[[crate.module]]
+name = "providers"
+group = "providers"
+
+[[crate.module]]
+name = "models"
+group = "providers"
+
+# Desktop app: docs/engineering/structure.md#desktop-app-appsvibecutsrc.
+# Foundation sits below shell; the editor areas are independent features and
+# the windows above them route area actions.
+
+[[crate]]
+name = "vibecut"
+path = "apps/vibecut"
+
+[[crate.layer]]
+name = "foundation"
+groups = ["foundation"]
+
+[[crate.layer]]
+name = "shell"
+groups = ["shell"]
+
+[[crate.layer]]
+name = "areas"
+groups = [
+    "assets",
+    "player",
+    "properties",
+    "timeline",
+    "captions",
+    "export",
+    "models",
+]
+
+[[crate.layer]]
+name = "windows"
+groups = ["home", "editor", "shorts"]
+
+[[crate.module]]
+name = "icons"
+group = "foundation"
+
+[[crate.module]]
+name = "theme"
+group = "foundation"
+
+[[crate.module]]
+name = "catalog"
+group = "foundation"
+
+[[crate.module]]
+name = "actions"
+group = "foundation"
+
+[[crate.module]]
+name = "workspace"
+group = "shell"
+
+[[crate.module]]
+name = "lifecycle"
+group = "shell"
+
+[[crate.module]]
+name = "control"
+group = "shell"
+
+[[crate.module]]
+name = "capture"
+group = "shell"
+
+[[crate.module]]
+name = "media_panel"
+group = "assets"
+
+[[crate.module]]
+name = "import"
+group = "assets"
+
+[[crate.module]]
+name = "effects"
+group = "assets"
+
+[[crate.module]]
+name = "effect_previews"
+group = "assets"
+
+[[crate.module]]
+name = "preview"
+group = "player"
+
+[[crate.module]]
+name = "playback"
+group = "player"
+
+[[crate.module]]
+name = "crop"
+group = "player"
+
+[[crate.module]]
+name = "panels"
+group = "properties"
+
+[[crate.module]]
+name = "selection"
+group = "properties"
+
+[[crate.module]]
+name = "color_picker"
+group = "properties"
+
+[[crate.module]]
+name = "snapping"
+group = "timeline"
+
+[[crate.module]]
+name = "subtitles"
+group = "captions"
+
+[[crate.module]]
+name = "export"
+group = "export"
+
+[[crate.module]]
+name = "model_manager"
+group = "models"
+
+[[crate.module]]
+name = "ai_task"
+group = "models"
+
+[[crate.module]]
+name = "projects"
+group = "home"
+
+[[crate.module]]
+name = "frontend"
+group = "editor"
+
+[[crate.module]]
+name = "shorts"
+group = "shorts"

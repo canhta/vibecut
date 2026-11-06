@@ -8,6 +8,7 @@ mod clip_eval;
 mod distribution;
 mod ffmpeg;
 mod i18n;
+mod modules;
 mod oracles;
 mod orca;
 mod reports;
@@ -58,6 +59,7 @@ fn checks(root: &Path) -> Result<(), String> {
     assets(root)?;
     i18n::check(root)?;
     names(root)?;
+    modules::check(root)?;
     checked(root, env!("CARGO"), &["fmt", "--all", "--", "--check"])?;
     Ok(())
 }
@@ -500,6 +502,7 @@ fn run() -> Result<ExitCode, String> {
         ["ffmpeg", "--target", target] => ffmpeg::provision(Some(target)),
         ["layers"] => layers(root),
         ["assets"] => assets(root),
+        ["modules"] => modules::check(root),
         ["docs"] => {
             layers(root)?;
             assets(root)?;
@@ -514,7 +517,7 @@ fn run() -> Result<ExitCode, String> {
         ["ci"] => ci(root, false),
         ["ci", "--require-oracles"] => ci(root, true),
         _ => Err(
-            "usage: cargo xtask <dist COMMAND [OPTIONS]|build -- COMMAND [ARGS...]|frontier [ASSIGNEE]|board [PORT]|ffmpeg [--target PLATFORM|--cache-key]|ui-audit [SCENE...]|ui-compare OURS REFERENCE [--region X,Y,W,H] [--out DIR] [--max-error F] [--max-tile-error F]|sherpa [--arch x86_64|aarch64]|media-bench|clip-eval SET [OPTIONS]|cleanup [--environment NAME] [--dry-run] TARGET...|pull-reports [--environment NAME] [--ssh HOST] [--dry-run] WORKTREE...|ci [--require-oracles]|checks|clippy|lint|test|docs|i18n|layers|assets|new-crate NAME>"
+            "usage: cargo xtask <dist COMMAND [OPTIONS]|build -- COMMAND [ARGS...]|frontier [ASSIGNEE]|board [PORT]|ffmpeg [--target PLATFORM|--cache-key]|ui-audit [SCENE...]|ui-compare OURS REFERENCE [--region X,Y,W,H] [--out DIR] [--max-error F] [--max-tile-error F]|sherpa [--arch x86_64|aarch64]|media-bench|clip-eval SET [OPTIONS]|cleanup [--environment NAME] [--dry-run] TARGET...|pull-reports [--environment NAME] [--ssh HOST] [--dry-run] WORKTREE...|ci [--require-oracles]|checks|clippy|lint|test|docs|i18n|layers|assets|modules|new-crate NAME>"
                 .into(),
         ),
     }.map(|()| ExitCode::SUCCESS)

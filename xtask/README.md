@@ -22,6 +22,7 @@ so direct and aggregate checks share Cargo fingerprints.
 | `cleanup [--environment NAME] [--dry-run] TARGET...` | Release settled worker dispatches or remove worktree targets, prune two-day-old build sessions/slots; `--dry-run` prints the plan |
 | `pull-reports [--environment NAME] [--ssh HOST] [--dry-run] <worktree>...` | Merge a worktree's `.scratch` reports into the main checkout without overwriting newer local files |
 | `checks`, `docs`, `layers`, `assets` | Repository policy; `checks` also checks formatting and the integration-test entry point |
+| `modules` | Module structure gate: responsibility docs, banned names, folder width and intra-crate layer direction from `xtask/modules.toml`, with only-shrinking `xtask/modules-baseline.txt` |
 | `clippy`, `test`, `lint`, `ci [--require-oracles]` | Individual or aggregate [verification](../docs/engineering/verification.md) |
 | `ffmpeg [--target PLATFORM]`, `ffmpeg --cache-key` | Resolve/provision native media dependencies and cache identity |
 | `media-bench`, `clip-eval SET [OPTIONS]` | Media and labelled clip-pipeline measurements |
