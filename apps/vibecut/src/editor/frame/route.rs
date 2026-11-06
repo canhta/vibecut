@@ -293,7 +293,8 @@ impl Editor {
         });
         match self
             .session
-            .execute_with_ripple("timeline.preview", params, self.preferences.ripple) {
+            .execute_with_ripple("timeline.preview", params, self.preferences.ripple)
+        {
             Ok(_) => {
                 // `project()` stays committed; only the timeline paints the
                 // candidate, so the player needs no restart until publication.
@@ -467,8 +468,7 @@ impl Editor {
             .and_then(|_| {
                 self.session
                     .execute_with_ripple(command, params, self.preferences.ripple)
-            })
-        {
+            }) {
             Ok(_) => {
                 self.prune_selection();
                 if !std::sync::Arc::ptr_eq(&before, self.session.project()) {
