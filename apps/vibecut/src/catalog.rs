@@ -1701,7 +1701,17 @@ mod tests {
                 serde_json::json!({
                     "format": "webm",
                     "quality": "very_high",
-                    "include_audio": false
+                    "include_audio": false,
+                    "output": {
+                        "bit_rate": null,
+                        "codec": "automatic",
+                        "fps": null,
+                        "profile": "automatic",
+                        "range": {"kind": "full"},
+                        "resolution": null,
+                        "scene": {"kind": "active"},
+                        "version": 1
+                    }
                 }),
             ),
         ] {

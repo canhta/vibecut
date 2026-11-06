@@ -473,7 +473,7 @@ commands! {
     Inspect, "inspect", "Inspect project", Read {} => Timeline, serde_json::json!({}), curated = true;
     Preview, "preview", "Preview frames", JobControl { frames: Vec<i64> } => Timeline, serde_json::json!({"frames":[0]}), grant = Agent, curated = true;
     Snapshot, "preview.snapshot", "Save preview snapshot", FilePublish { time: Tick, path: std::path::PathBuf } => Timeline, serde_json::json!({"time":0,"path":"$output/snapshot.png"}), available = PlayableTimeline;
-    Export, "export", "Export video", FilePublish { settings: render::OutputOptions, path: std::path::PathBuf, overwrite: bool } => Timeline, serde_json::json!({"settings":render::OutputOptions::default(),"path":"$output/export.mp4","overwrite":false}), curated = true;
+    Export, "export", "Export video", FilePublish { settings: render::OutputOptions, path: std::path::PathBuf, overwrite: bool } => Timeline, serde_json::json!({"settings":render::OutputOptions{range:render::RangeChoice::InOut{start:time::Tick::ZERO,end:time::Tick(8467200000_i64)},..render::OutputOptions::default()},"path":"$output/export.mp4","overwrite":false}), curated = true;
     JobStatus, "job_status", "Inspect job", Read { job: super::wire::JobId } => Job, serde_json::json!({"job":0}), curated = true;
     JobCancel, "job_cancel", "Cancel job", JobControl { job: super::wire::JobId } => Job, serde_json::json!({"job":0}), grant = Agent, curated = true;
     Catalog, "catalog", "Command catalog", Read {} => Timeline, serde_json::json!({});

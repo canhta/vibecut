@@ -271,7 +271,7 @@ fn control_refuses_unknown_extra_and_out_of_range_frames() {
     assert_eq!(refused["exit_code"], 2);
 
     let mut version = control_request("x2", "inspect", json!({}), None, None);
-    version["api_version"] = json!(2);
+    version["api_version"] = json!(3);
     let refused = control.send(version);
     assert_eq!(response_error(&refused), "schema_mismatch");
     assert_eq!(refused["exit_code"], 2);
@@ -464,7 +464,7 @@ fn control_requires_an_explicit_overwrite_grant() {
         "r1",
         "export",
         json!({
-            "range":{"start":0,"end":time::TICKS_PER_SECOND},
+            "settings":{"version":1,"resolution":null,"fps":null,"bit_rate":null,"codec":"automatic","profile":"automatic","scene":{"kind":"active"},"range":{"kind":"in_out","start":0,"end":time::TICKS_PER_SECOND}},
             "path":path,
             "overwrite":true,
         }),
