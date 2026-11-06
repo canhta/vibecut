@@ -1,11 +1,11 @@
-//! App colour tokens shared by the editor and workspace shells.
+//! Owns the app design tokens.
 //!
-//! [`docs/product/ui.md`] owns every value in the dark/light table. UI modules
-//! ask this file for tokens instead of carrying colour literals.
+//! Canonical app palette and measured layout tokens. `docs/product/tokens.md`
+//! indexes the geometry provenance; reference colours are not adopted here.
 
 #![allow(dead_code)] // tokens are a shared contract; later UI tickets consume some.
 
-use crate::egui::Color32;
+use eframe::egui::Color32;
 
 // Dark: brand reference surface tokens. Light: the matching reference ramp.
 const WINDOW_DARK: Color32 = Color32::from_rgb(0x0F, 0x11, 0x13);
@@ -199,4 +199,100 @@ mod tests {
             assert_eq!(actual, expected, "token case {index}");
         }
     }
+}
+
+/// Measured space scale: outer/field insets, tab padding and panel gutters.
+pub(crate) mod space {
+    pub const HAIRLINE: f32 = 1.0;
+    pub const XXS: f32 = 2.0;
+    pub const XS: f32 = 4.0;
+    pub const ICON_LABEL: f32 = 5.0;
+    pub const SM: f32 = 6.0;
+    pub const PANEL_GUTTER: f32 = 7.0;
+    pub const MD: f32 = 8.0;
+    pub const ROW_INSET: f32 = 10.0;
+    pub const LG: f32 = 12.0;
+    pub const GRID: f32 = 15.0;
+    pub const XL: f32 = 16.0;
+    pub const TAB_GAP: f32 = 28.0;
+}
+/// Only panel and control corners are measured; dialog corners remain proposed.
+pub(crate) mod radius {
+    pub const PANEL: u8 = 0;
+    pub const CONTROL: u8 = 4;
+}
+/// Inter-equivalent sizes inferred from measured capital heights.
+pub(crate) mod type_size {
+    pub const BODY: f32 = 12.0;
+    pub const CHROME: f32 = 14.0;
+}
+/// Measured boxes and row pitches from the desktop capture set.
+pub(crate) mod size {
+    pub const TOPBAR: f32 = 36.0;
+    pub const TAB_STRIP: f32 = 42.0;
+    pub const TOOLBAR: f32 = 32.0;
+    pub const FIELD: f32 = 22.0;
+    pub const CONTROL: f32 = 24.0;
+    pub const PROPERTY_ROW: f32 = 39.0;
+    pub const SECTION: f32 = 55.0;
+    pub const SHORTCUT_ROW: f32 = 40.0;
+    pub const VIDEO_TRACK: f32 = 76.0;
+    pub const CLIP: f32 = 74.0;
+    pub const TRACK_LABEL: f32 = 123.0;
+    pub const SCROLLBAR: f32 = 6.0;
+    pub const SUBNAV: f32 = 120.0;
+    pub const SUBNAV_BUTTON: f32 = 104.0;
+    pub const TAB_MIN: f32 = 48.0;
+    pub const SEGMENT_WIDTH: f32 = 115.0;
+    pub const STEPPER: f32 = 16.0;
+    pub const VALUE: f32 = 54.0;
+    pub const KEYFRAME: f32 = 27.0;
+    pub const KEYFRAME_DIAMOND: f32 = 10.0;
+    pub const POSITION: f32 = 66.5;
+    pub const SLIDER: f32 = 336.0;
+    pub const SLIDER_RAIL: f32 = 2.0;
+    pub const SLIDER_THUMB_WIDTH: f32 = 8.0;
+    pub const SLIDER_THUMB_HEIGHT: f32 = 12.0;
+    pub const ZOOM_SLIDER: f32 = 96.0;
+    pub const MEDIA_THUMB_WIDTH: f32 = 120.0;
+    pub const MEDIA_THUMB_HEIGHT: f32 = 73.0;
+    pub const MEDIA_LABEL_HEIGHT: f32 = 16.0;
+    pub const AUDIO_ROW: f32 = 48.0;
+    pub const EFFECT_CARD: f32 = 88.0;
+    pub const EFFECT_PITCH: f32 = 116.0;
+    pub const SHORTCUT_BUTTON: f32 = 72.0;
+    pub const EXPORT_WIDTH: f32 = 67.0;
+}
+/// Measured glyph boxes; larger empty-state glyphs are not editor measurements.
+pub(crate) mod icon {
+    pub const DENSE: f32 = 16.0;
+    pub const PLAY: f32 = 12.0;
+    pub const LAYOUT_WIDTH: f32 = 18.0;
+}
+/// Header and field roles reuse the app palette.
+pub(crate) fn strip(dark: bool) -> Color32 {
+    hover(dark)
+}
+pub(crate) fn bright(dark: bool) -> Color32 {
+    text(dark)
+}
+pub(crate) fn track_rest(dark: bool) -> Color32 {
+    border(dark)
+}
+pub(crate) fn waveform(dark: bool) -> Color32 {
+    if dark {
+        VIDEO_BORDER_DARK
+    } else {
+        VIDEO_BORDER_LIGHT
+    }
+}
+/// Measured label weight, using the already bundled font.
+pub(crate) fn label_font() -> eframe::egui::FontId {
+    eframe::egui::FontId::new(
+        type_size::BODY,
+        eframe::egui::FontFamily::Name("Inter-SemiBold".into()),
+    )
+}
+pub(crate) fn disabled_icon(dark: bool) -> Color32 {
+    disabled(dark)
 }
