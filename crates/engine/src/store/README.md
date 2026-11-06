@@ -41,7 +41,7 @@ refuse undo, and open-project writer leases refuse catalog mutations. Delete is
 its confirmation before sending the command. Failed post-delete cleanup can leave
 an unlisted hidden directory; it is never promoted or automatically reused.
 Undo, redo and delete use the project-owned
-[directory-move barrier](../../../project/README.md#writer-lease-and-save-acknowledgement).
+[directory-move barrier](../../../project/src/writer/README.md#writer-lease-and-save-acknowledgement).
 The library enables it before publishing entries; it excludes new project writers
 across the adjacent-handle close and atomic sibling rename on Windows. Redo also
 leases and validates its hidden source. Existing targets (even empty directories)

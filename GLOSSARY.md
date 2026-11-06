@@ -31,7 +31,7 @@ Language for the editor's privacy and execution boundaries.
 - **Selection scope**: The current level of selection: timeline items, keyframes within items, or points within a mask. Clearing a selection acts on the most specific occupied scope first.
 - **Face track**: Observations of one visible face within a single shot; its identifier is local to that shot.
 - **Cross-shot identity**: A confident link from a face track to an earlier face track serving as its anchor. An uncertain link stays Unknown; it is not a claim about a person's name.
-- **Transition**: A video-only timeline entity joining adjacent clips over their shared cut; [project](crates/project/README.md#video-transitions) owns its kinds, alignment and source-handle bounds.
+- **Transition**: A video-only timeline entity joining adjacent clips over their shared cut; [project](crates/project/src/transition/README.md#video-transitions) owns its kinds, alignment and source-handle bounds.
 - **Scene-change candidate**: A possible hard cut or gradual transition in source media, with a source time and confidence, awaiting review before it becomes a timeline split.
 - **Project**: The editable document: its identity and name, canvas, assets, scenes, active scene and output settings; [project](crates/project/README.md) owns its validation, persistence and writer lease.
 - **Project library**: The managed set of projects that Home lists, searches and trashes, with each project's cover image and metadata; the store owns it, not the file system.
