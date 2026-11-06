@@ -37,6 +37,10 @@ pub struct Workspace {
     home_open: bool,
     shorts_window: bool,
     models: Option<crate::model_manager::ModelManager>,
+    /// Project files seen this session (catalog rows and open windows), so
+    /// lane memory is dropped only on proof the file is gone.
+    lane_paths: BTreeMap<project::ProjectId, PathBuf>,
+    lane_prune_key: Vec<project::ProjectId>,
 }
 
 impl Workspace {
@@ -84,6 +88,8 @@ impl Workspace {
             home_open: true,
             shorts_window: false,
             models: None,
+            lane_paths: BTreeMap::new(),
+            lane_prune_key: Vec::new(),
         })
     }
     pub fn control_budget(&self) -> ByteBudget {
@@ -319,16 +325,44 @@ impl Workspace {
             }
         }
     }
-    /// Lane preferences outlive project windows, but only for projects that
-    /// still exist. The catalog is authoritative once its listing has settled;
-    /// open windows keep their own entries even before Home lists them.
+    /// Lane preferences outlive project windows. An entry goes only when its
+    /// project no longer exists: not open, not listed by a settled catalog, and
+    /// its project file (seen this session) is gone. A project opened from a
+    /// file keeps its lanes while the file exists; one never seen this session
+    /// has no evidence of deletion and is kept.
     fn prune_lane_preferences(&mut self) {
-        let Some(ids) = self.projects.settled_ids() else {
+        for entry in self.projects.entries() {
+            self.lane_paths.insert(entry.id, entry.path.clone());
+        }
+        for (id, window) in &self.windows {
+            if let Some(path) = &window.path {
+                self.lane_paths.insert(*id, path.clone());
+            }
+        }
+        let listed: BTreeSet<project::ProjectId> = self
+            .projects
+            .settled_ids()
+            .map(Iterator::collect)
+            .unwrap_or_default();
+        let mut key: Vec<_> = self
+            .windows
+            .keys()
+            .copied()
+            .chain(listed.iter().copied())
+            .collect();
+        key.sort_unstable();
+        key.dedup();
+        if key == self.lane_prune_key {
             return;
-        };
-        let known: BTreeSet<project::ProjectId> = ids.chain(self.windows.keys().copied()).collect();
-        self.preferences
-            .retain_timeline_lanes(|project| known.contains(&project));
+        }
+        self.lane_prune_key = key;
+        let paths = &self.lane_paths;
+        let windows = &self.windows;
+        self.preferences.retain_timeline_lanes(|id| {
+            windows.contains_key(&id)
+                || listed.contains(&id)
+                || paths.get(&id).is_none_or(|path| path.exists())
+        });
     }
     fn project_action(&mut self, action: HomeAction) {
         let result = match action {
@@ -1774,5 +1808,41 @@ mod tests {
                 .as_str(),
             "picker test"
         );
+    }
+    #[test]
+    fn lane_preferences_are_dropped_only_for_projects_whose_file_is_gone() {
+        let root = tempfile::tempdir().unwrap();
+        let mut workspace =
+            Workspace::new(root.path().join("recovery"), Preferences::default(), None).unwrap();
+        let deadline = std::time::Instant::now() + Duration::from_secs(10);
+        while workspace.busy() {
+            workspace.tick();
+            assert!(std::time::Instant::now() < deadline);
+            std::thread::sleep(Duration::from_millis(1));
+        }
+        let kept_file = root.path().join("opened-from-file.vibecut");
+        std::fs::write(&kept_file, b"x").unwrap();
+        let id = project::ProjectId;
+        workspace.lane_paths.insert(id(1), kept_file);
+        workspace
+            .lane_paths
+            .insert(id(2), root.path().join("deleted.vibecut"));
+        for project in [1, 2, 3] {
+            workspace
+                .preferences
+                .timeline_lanes
+                .insert(id(project), BTreeSet::from([7]));
+        }
+        workspace.lane_prune_key = vec![id(99)];
+        workspace.prune_lane_preferences();
+        // 1: file-opened project, file exists, window closed -> kept.
+        // 2: file gone -> dropped. 3: never seen this session -> kept.
+        let remaining: Vec<_> = workspace
+            .preferences
+            .timeline_lanes
+            .keys()
+            .copied()
+            .collect();
+        assert_eq!(remaining, vec![id(1), id(3)]);
     }
 }

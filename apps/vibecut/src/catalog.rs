@@ -1232,9 +1232,8 @@ impl Preferences {
     pub fn section_open(&self, key: &str, default: bool) -> bool {
         self.sections.get(key).copied().unwrap_or(default)
     }
-    /// Forget lane memory for projects the catalog no longer contains. The
-    /// caller supplies the authoritative set; an unsaturated catalog must not
-    /// call this.
+    /// Forget lane memory for projects `keep` rejects; the caller decides
+    /// existence (see `Workspace::prune_lane_preferences`).
     pub fn retain_timeline_lanes(&mut self, keep: impl Fn(project::ProjectId) -> bool) {
         self.timeline_lanes.retain(|project, _| keep(*project));
     }
@@ -1653,8 +1652,7 @@ mod tests {
                 "{key} must round-trip"
             );
         }
-        // Lane memory is keyed by project and pruned to the projects a settled
-        // catalog still knows; one project's set never overwrites another's.
+        // Lane memory is keyed by project and pruned by the caller's existence test; one project's set never overwrites another's.
         let mut pruned = loaded.clone();
         pruned.retain_timeline_lanes(|project| project == project::ProjectId(12));
         assert_eq!(
