@@ -16,7 +16,7 @@ Where code lives, how it is grouped, and how modules depend on each other. [Arch
 2. **The folder is the grouping unit.** A folder holds one layer or one feature, and its direct children are siblings of one kind. When children fall into two groups, or when two of them share a prefix (`clip_*`, `shot_*`, `control_*`), make a folder. More than about 12 direct children is a prompt to regroup, not a number to game.
 3. **Interface at the folder door.** Layout is `foo.rs` plus `foo/`, never `foo/mod.rs` (the Rust Book's current style, already used by `cache.rs`/`cache/`; do not mix styles in one module). `foo.rs` states the responsibility, declares children `mod x;` (private), and re-exports only the interface (`pub use`). Siblings and other folders reach a module only through that interface; nothing imports another module's internals. Default visibility is private, then `pub(super)`, then `pub(crate)`; `pub` only for the crate's own interface. Struct fields are private by default and a public field is a commitment ([API Guidelines C-STRUCT-PRIVATE](https://rust-lang.github.io/api-guidelines/future-proofing.html)); hide an implementation type behind a newtype when callers need less than it offers; seal a trait whose implementers must stay ours; every crate and every module file carries a `//!` doc that states responsibility.
 4. **Dependencies point one way** (below). A lower layer never imports a higher one. Features never import each other; shared logic moves down to the lowest layer that both can use, or the two communicate through a seam owned by the layer below.
-5. **Tests cross the interface.** A module's tests call its interface; a behaviour that can only be tested through internals means the interface or the module boundary is wrong. Test files follow the module they test and are named by behaviour.
+5. **Tests cross the interface.** A module's tests call its interface; a behaviour that can only be tested through internals means the interface or the module boundary is wrong. Test files follow the module they test ([Naming](#naming)).
 6. **Where does new code go** (ask in this order): an existing owner of the concept, extended through its interface; a new module inside the folder of the layer and feature that owns it; a new folder only when a second responsibility appears; a new crate only when the boundary must be compiler-enforced and a second consumer or an independent seam exists ([architecture](architecture.md#crate-map)); see Modules and crates below. A ticket names the owning module, says whether it adds a module, and does not widen an interface without saying why.
 7. **Review asks four questions:** is the code in its owner; did an interface grow, and could it stay small; does each touched module still pass the one-sentence test; did an import cross a layer or a feature. Any "no" is `changes`.
 
@@ -29,7 +29,7 @@ One convention, taken from [GLOSSARY](../../GLOSSARY.md):
 - Provider modules are `<family>/<operation>`: `providers/anthropic/translate`.
 - Types use glossary terms; a new concept enters the glossary before it enters a public type.
 - Test files are named by behaviour area and test functions are behaviour sentences: `trim_refuses_past_source_end`.
-- Test helpers live in `tests/it/support.rs` plus `tests/it/support/`, never `common/` or `mod.rs`.
+- Test helpers are dev-only and live in `tests/it/support.rs` plus `tests/it/support/`, never `common/` or `mod.rs`.
 - App test files carry no `_ui` suffix: the binary is the app.
 
 ## Engine (`crates/engine/src`)
