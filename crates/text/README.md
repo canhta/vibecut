@@ -2,111 +2,25 @@
 
 Unicode shaping, line layout and CPU rasterization for overlay titles and burn-ins.
 
-## Modules
 
-| Module | Responsibility |
-|---|---|
-| `layout` | Lays out a paragraph from normalized text into positioned lines. |
-| `layout/breaks` | Computes line ranges from shaped advances and Unicode break opportunities. |
-| `layout/paragraph` | Turns shaped text runs into positioned lines. |
-| `fonts` | Owns the bundled font database and deterministic family/style resolution. |
-| `color` | Owns the small sRGB colour type text drawing needs. |
-| `mask` | Computes outlines from an exact Euclidean distance transform. |
-| `raster` | Rasterizes glyph outlines and boxes with anti-aliasing. |
-| `render` | Extracts glyph outlines and composites premultiplied RGBA8 images. |
+| Module | Responsibility | Contract |
+|---|---|---|
+| `layout/` | Lays out a paragraph from normalized text into positioned lines. | [Layout](src/layout/README.md) |
+| `fonts` | Owns the bundled font database and deterministic family/style resolution. | [Fonts](src/fonts/README.md) |
+| `color` | Owns the small sRGB colour type text drawing needs. | [source](src/color.rs) |
+| `mask` | Computes outlines from an exact Euclidean distance transform. | [Mask coverage](src/mask/README.md) |
+| `raster` | Rasterizes glyph outlines and boxes with anti-aliasing. | [source](src/raster.rs) |
+| `render` | Extracts glyph outlines and composites premultiplied RGBA8 images. | [Rendering](src/render/README.md) |
 
 The crate root re-exports the same public names at unchanged crate-root paths.
 
 ## Contract
-
-`layout(text, &LayoutOptions) -> Result<Layout, TextError>` normalizes the input to NFC, shapes
-it with the bundled faces, breaks lines, and returns positioned glyphs and line boxes.
-`LayoutOptions` carries the family, style, pixel size, maximum wrap width, alignment, baseline
-distance, line limit, an ordered fallback-family chain, a line-breaking mode and letter
-spacing. Letter spacing adds its pixel value after every grapheme cluster, including a line's
-last one (negative values tighten), and counts toward wrapping and line width; it is finite and
-at most 4096 px in magnitude. `style_name(weight, italic)` turns a CSS weight 100..=900 and an
-italic flag into the style vocabulary `resolve` understands. All layout coordinates are pixels
-with y down; the origin is the top-left of the text box.
-
-`render(&Layout, Canvas, origin, &Paint) -> Result<Image, RenderError>` rasterizes the glyphs
-into a premultiplied RGBA8 image with a fill colour, an optional outer/centre/inner outline,
-an optional underline or line-through bar per line (fill colour, 7% of the font size thick;
-underline top 10% below the baseline, line-through centred 30% above it), and an optional
-rounded background box with separate horizontal and vertical padding and a pixel offset from
-the content bounds. Rendering uses no GPU, clock, network or filesystem input.
 
 Public entry points: `layout`, `render`, `resolve`, `style_name`, `fallback_chain`,
 `fallback_for`, `face`, `families`, `register`, `generation`, `is_available`, `FontData`,
 `FontError`, `Layout`, `Line`, `Glyph`, `LayoutOptions`, `Align`, `LineBreak`, `TextError`,
 `Paint`, `Outline`, `StrokeKind`, `Rectangle`, `Canvas`, `Image`, `RenderError` and `Color`.
 Mask and path internals are private; callers paint through `render`.
-`coverage_signed_distance(width, height, coverage, cancelled)` shares the outline
-Euclidean distance transform with render's text masks. It accepts exact, finite
-0..=1 glyph coverage, returns negative-inside distances in output pixels, and
-preserves fractional edge coverage. Dimensions admit at most 64 Mi pixels;
-invalid length/values, allocation failure and cancellation return typed errors.
-Cancellation is checked per input row and transform row/column. A budgeted caller
-reserves 16 bytes/pixel plus 20 bytes per longer axis plus 4 bytes for temporary
-and returned distance buffers; the input working image is separately owned.
-
-## Language data
-
-Language profiles are owned by `captions`; this crate does not match language tags. A profile
-supplies `LayoutOptions::fallbacks` (family names in order) and `LayoutOptions::line_break`
-(`Unicode` for UAX #14, `Grapheme` to break at every grapheme boundary). Adding a language adds
-profile data and font assets, not layout code. An empty chain uses the generic bundled order.
-
-## Fonts
-
-`register(FontData)` adds a font file a catalog read (the catalog supplies family, style, weight
-and italic; nothing is parsed from the name table) so `resolve` and `fallback_chain` find the
-family. Registration is append-only for the process: identical bytes return the existing face,
-a different file under the same family and style is `Conflict`, bundled family names are
-reserved so bundled fallback order never changes, and at most 256 faces, 32 MiB per file and
-256 MiB in total are accepted (registered bytes are retained). Registered faces join only an
-explicit `fallbacks` chain, never the generic bundled order. `generation()` counts registered
-faces; a caller that caches layouts or rasters includes it in its key (render's text cache
-does). Enumeration, downloads and licences of non-bundled fonts belong to
-[engine](../engine/README.md#font-catalog).
-
-| Family | Faces | Source |
-|---|---|---|
-| Inter | Regular, Medium, SemiBold, Bold, Italic | OFL-1.1 |
-| Noto Serif | Regular | OFL-1.1 |
-| VibeCut Sans CJK | Regular | OFL-1.1 subset of Noto Sans SC |
-
-The CJK face is a 2.1 MB subset covering GB2312, Big5 level 1, ASCII, CJK punctuation and
-fullwidth forms (9,804 characters). The full Noto Sans SC Regular face is 8.3 MB; the subset
-keeps the repository asset small while covering common Simplified and Traditional Chinese.
-Characters outside the subset resolve deterministically to the preferred face and render as a
-missing glyph. A full-font or downloadable-font follow-up can extend coverage without changing
-layout logic. Every asset has a licence and attribution sidecar under `assets/fonts/`.
-
-The [CJK attribution](../../assets/fonts/VibeCutSansCJK-Regular.otf.attribution) owns the
-external fontTools 4.68.0 regeneration procedure: pinned Sans2.004 archive/source/output
-SHA-256 values, exact GB2312 and Big5 byte ranges, Unicode ranges and explicit characters,
-literal `pyftsubset` options, renamed name IDs and timestamp handling. Verify those hashes
-before replacing the committed font; regeneration is outside the repository build.
-
-Fallback is deterministic: the preferred face wins when it covers the character; otherwise the
-profile chain is searched in order, then the bundled table order. Whitespace and control
-characters stay on the preferred face.
-
-## Limits
-
-- Left-to-right text only; bidirectional reordering and vertical layout are excluded.
-- Registered faces are never unloaded within a process.
-- No hyphenation, OpenType feature toggles, variable-font axes, colour emoji or hinting.
-- Input text is capped at 16 MiB; canvases at 64 M pixels (256 MiB of RGBA8); font size at
-  4096 px and explicit line height at 16,384 px.
-- CR, CRLF, NEL, line separator, paragraph separator, vertical tab and form feed become LF before
-  shaping; mandatory breaks therefore never reach the shaper as tofu.
-- Every line's final span is shaped independently whenever a boundary ligature or cross-boundary
-  kerning changes its context; a nominal-shaping comparison lets unaffected lines reuse the
-  paragraph shape. A multi-grapheme line that still exceeds the width is split further without
-  dropping its prefix; a single grapheme wider than the wrap width occupies its own line.
-- Line ranges always tile the complete source (apart from intentional max-lines overflow).
 
 ## Tests and goldens
 
@@ -128,9 +42,3 @@ alignment, truncation and input validation. Integration tests cover:
 The tests write PNGs under the repository `target/` and compare repeated renders byte for byte
 and NFC/NFD pixels exactly. The pinned checksums are regression goldens: changing them requires
 visual inspection and an explained re-bless, never automatic acceptance.
-
-## Performance
-
-No release-mode benchmark is recorded. A debug test lays out 8,000 single-character lines and a
-two-line window over the same input under a five-second bound, which guards the former
-quadratic wrapping behavior but is not a production benchmark.

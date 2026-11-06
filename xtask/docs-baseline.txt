@@ -50,7 +50,6 @@ map	crates/engine/README.md	module map has no row for folder `session/edit`
 map	crates/engine/README.md	module map has no row for folder `session/wire`
 map	crates/engine/README.md	module map has no row for folder `store/recovery_workflow`
 map	crates/project/README.md	README has no module map table
-map	crates/text/README.md	folder module `layout` has no README
 text	apps/vibecut/README.md	tracker id `p1-parity/33`
 text	apps/vibecut/README.md	tracker id `p1-parity/75`
 text	apps/vibecut/README.md	tracker id `p1-parity/97`
