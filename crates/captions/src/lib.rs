@@ -1,13 +1,13 @@
 //! Source-timed transcripts, multilingual cues and forgiving subtitle interchange.
-pub mod ass;
-mod io;
+mod interchange;
 mod language;
 mod mapping;
 mod segment;
 mod span;
 mod timing;
-pub use ass::{AssCue, AssImport, AssWarning, AssWarningKind, parse_ass};
-pub use io::{Export, Format, Import, export, parse};
+pub use interchange::ass;
+pub use interchange::ass::{AssCue, AssImport, AssWarning, AssWarningKind, parse_ass};
+pub use interchange::{Export, Format, Import, export, parse};
 pub use language::{LanguageProfile, LanguageRegistry, LanguageTag};
 pub use mapping::{CueFragmentId, EditMapping, MappedRange, MappedTick};
 pub use segment::{

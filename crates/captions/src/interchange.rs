@@ -1,3 +1,8 @@
+//! Imports and exports SRT, WebVTT and ASS subtitle interchange.
+pub mod ass;
+mod srt;
+mod vtt;
+
 use crate::{Cue, CueText, CueTrack, Error, LanguageTag, Warning, WarningKind};
 use encoding_rs::{UTF_8, UTF_16BE, UTF_16LE, WINDOWS_1252};
 use std::collections::BTreeMap;
@@ -21,7 +26,7 @@ pub struct Export {
     pub text: String,
     pub warnings: Vec<Warning>,
 }
-fn warn(warnings: &mut Vec<Warning>, position: usize, kind: WarningKind) {
+pub(super) fn warn(warnings: &mut Vec<Warning>, position: usize, kind: WarningKind) {
     warnings.push(Warning { position, kind });
 }
 pub(crate) fn decode(bytes: &[u8], warnings: &mut Vec<Warning>) -> Result<String, Error> {
@@ -54,7 +59,7 @@ pub(crate) fn decode(bytes: &[u8], warnings: &mut Vec<Warning>) -> Result<String
     }
     Ok(text.replace("\r\n", "\n").replace('\r', "\n"))
 }
-fn clock(value: &str) -> Option<Tick> {
+pub(super) fn clock(value: &str) -> Option<Tick> {
     let (whole, fraction) = value.rsplit_once([',', '.']).unwrap_or((value, "0"));
     if fraction.is_empty() || fraction.len() > 9 || !fraction.bytes().all(|b| b.is_ascii_digit()) {
         return None;
@@ -80,7 +85,7 @@ fn clock(value: &str) -> Option<Tick> {
     let whole = Tick::from_units(seconds, 1, Rounding::Nearest).ok()?;
     whole.checked_add(Tick::from_units(fraction.parse().ok()?, scale, Rounding::Nearest).ok()?)
 }
-fn timing(line: &str) -> Option<(Tick, Tick, bool)> {
+pub(super) fn timing(line: &str) -> Option<(Tick, Tick, bool)> {
     let (start, rest) = line.split_once("-->")?;
     let mut parts = rest.split_whitespace();
     Some((
@@ -89,12 +94,31 @@ fn timing(line: &str) -> Option<(Tick, Tick, bool)> {
         parts.next().is_some(),
     ))
 }
-/// Decode and parse a single source language. Malformed entries produce positional warnings.
-pub fn parse(bytes: &[u8], format: Format, language: LanguageTag) -> Result<Import, Error> {
-    let mut warnings = Vec::new();
-    let text = decode(bytes, &mut warnings)?;
+pub(super) fn format_ms(ms: i64, separator: char) -> String {
+    format!(
+        "{:02}:{:02}:{:02}{separator}{:03}",
+        ms / 3_600_000,
+        (ms / 60_000) % 60,
+        (ms / 1000) % 60,
+        ms % 1000
+    )
+}
+
+/// One timed cue block with repaired bounds and its text lines.
+pub(super) struct Block<'a> {
+    pub start: Tick,
+    pub end: Tick,
+    pub body: Vec<&'a str>,
+}
+
+/// Split decoded text into timed blocks, reporting VTT header/metadata differences.
+pub(super) fn read_blocks<'a>(
+    text: &'a str,
+    format: Format,
+    warnings: &mut Vec<Warning>,
+) -> Result<Vec<Block<'a>>, Error> {
     let lines: Vec<_> = text.lines().collect();
-    let mut cues = Vec::new();
+    let mut blocks = Vec::new();
     let mut i = 0;
     if format == Format::WebVtt {
         if lines.first().is_some_and(|s| {
@@ -105,11 +129,11 @@ pub fn parse(bytes: &[u8], format: Format, language: LanguageTag) -> Result<Impo
                 .get(i)
                 .is_some_and(|s| !s.trim().is_empty() && timing(s).is_none())
             {
-                warn(&mut warnings, i + 1, WarningKind::Metadata);
+                warn(warnings, i + 1, WarningKind::Metadata);
                 i += 1;
             }
         } else {
-            warn(&mut warnings, 0, WarningKind::MissingHeader);
+            warn(warnings, 0, WarningKind::MissingHeader);
         }
     }
     while let Some(line) = lines.get(i) {
@@ -125,22 +149,22 @@ pub fn parse(bytes: &[u8], format: Format, language: LanguageTag) -> Result<Impo
                 || *line == "REGION")
             && !lines.get(i + 1).is_some_and(|s| timing(s).is_some())
         {
-            warn(&mut warnings, i + 1, WarningKind::Metadata);
+            warn(warnings, i + 1, WarningKind::Metadata);
             while lines.get(i).is_some_and(|s| !s.trim().is_empty()) {
                 i += 1;
             }
             continue;
         }
-        let pos = i + 1;
+        let position = i + 1;
         let Some((start, mut end, settings)) = timing(line) else {
             if !lines.get(i + 1).is_some_and(|s| timing(s).is_some()) {
-                warn(&mut warnings, pos, WarningKind::Malformed);
+                warn(warnings, position, WarningKind::Malformed);
             }
             i += 1;
             continue;
         };
         if settings {
-            warn(&mut warnings, pos, WarningKind::Metadata);
+            warn(warnings, position, WarningKind::Metadata);
         }
         i += 1;
         let mut body = Vec::new();
@@ -157,47 +181,63 @@ pub fn parse(bytes: &[u8], format: Format, language: LanguageTag) -> Result<Impo
             i += 1;
         }
         if end <= start {
-            warn(&mut warnings, pos, WarningKind::Duration);
+            warn(warnings, position, WarningKind::Duration);
             end = start
                 .checked_add(Tick::from_units(1, 1000, Rounding::Nearest)?)
                 .ok_or(Error::Invalid("duration overflow"))?;
         }
-        let text = body.join("\n");
-        let text = if format == Format::WebVtt {
-            text.replace("&lt;", "<")
-                .replace("&gt;", ">")
-                .replace("&amp;", "&")
-        } else {
-            text
-        };
-        cues.push(Cue {
-            id: (cues.len() + 1).to_string().into(),
-            range: SourceRange::new(start, end)?,
-            source_lang: language.clone(),
-            texts: BTreeMap::from([(
-                language.clone(),
-                CueText {
-                    text: text.into(),
-                    edited: false,
-                    translation_ref: None,
-                },
-            )]),
-            style: None,
-        });
+        blocks.push(Block { start, end, body });
     }
+    Ok(blocks)
+}
+
+/// Build one cue from a timed block; VTT entity decoding happens before storage.
+pub(super) fn cue(
+    block: Block<'_>,
+    id: usize,
+    language: &LanguageTag,
+    decode_entities: bool,
+) -> Result<Cue, Error> {
+    let text = block.body.join("\n");
+    let text = if decode_entities {
+        text.replace("&lt;", "<")
+            .replace("&gt;", ">")
+            .replace("&amp;", "&")
+    } else {
+        text
+    };
+    Ok(Cue {
+        id: id.to_string().into(),
+        range: SourceRange::new(block.start, block.end)?,
+        source_lang: language.clone(),
+        texts: BTreeMap::from([(
+            language.clone(),
+            CueText {
+                text: text.into(),
+                edited: false,
+                translation_ref: None,
+            },
+        )]),
+        style: None,
+    })
+}
+
+/// Repair a parsed cue list and return it with parser warnings first.
+pub(super) fn finish(cues: Vec<Cue>, warnings: Vec<Warning>) -> Result<Import, Error> {
     let mut track = CueTrack { cues };
+    let mut warnings = warnings;
     warnings.extend(track.repair()?);
     Ok(Import { track, warnings })
 }
-fn format_ms(ms: i64, separator: char) -> String {
-    format!(
-        "{:02}:{:02}:{:02}{separator}{:03}",
-        ms / 3_600_000,
-        (ms / 60_000) % 60,
-        (ms / 1000) % 60,
-        ms % 1000
-    )
+
+/// Decode and parse a single source language. Malformed entries produce positional warnings.
+pub fn parse(bytes: &[u8], format: Format, language: LanguageTag) -> Result<Import, Error> {
+    match format {
+        Format::Srt => srt::parse(bytes, language),
+        Format::WebVtt => vtt::parse(bytes, language),
+    }
 }
+
 /// Export one language or an ordered bilingual pair. Missing/empty entries warn and are omitted.
 pub fn export(
     track: &CueTrack,

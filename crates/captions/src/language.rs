@@ -1,3 +1,5 @@
+//! BCP 47 language tags and editable subtitle profiles.
+
 use crate::Error;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;

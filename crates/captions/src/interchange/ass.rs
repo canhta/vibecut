@@ -587,7 +587,7 @@ fn decode_document(
     suppressed: &mut usize,
 ) -> Result<String, Error> {
     let mut inner = Vec::new();
-    let text = crate::io::decode(bytes, &mut inner)?;
+    let text = super::decode(bytes, &mut inner)?;
     for warning in inner {
         let kind = match warning.kind {
             WarningKind::Bom => AssWarningKind::Bom,

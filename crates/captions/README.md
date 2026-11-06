@@ -2,8 +2,28 @@
 
 Headless source-timed transcript and multilingual cue storage, BCP 47 language
 profiles, readable cue segmentation, pure source-to-output edit mapping and
-SRT/WebVTT interchange. Excludes
+SRT, WebVTT and ASS interchange. Excludes
 translation providers and subtitle rendering.
+
+## Modules
+
+| Module | Responsibility |
+|---|---|
+| `interchange` | Imports and exports SRT, WebVTT and ASS interchange. |
+| `interchange/srt` | Parses SRT subtitle files. |
+| `interchange/vtt` | Parses WebVTT subtitle files. |
+| `interchange/ass` | Parses ASS documents and maps their styles. |
+| `segment` | Generates subtitle cues from transcripts. |
+| `segment/units` | Derives indivisible speech units from words, spans or plain text. |
+| `segment/layout` | Fits speech units into the configured lines. |
+| `segment/assembly` | Turns speech units into positioned cues. |
+| `segment/validate` | Rejects transcripts outside the segmentation contract. |
+| `mapping` | Maps source ticks to output ticks through edit cut lists. |
+| `timing` | Owns source timing identity and explicit raw/NFC/display correspondence. |
+| `language` | Owns BCP 47 language tags and editable subtitle profiles. |
+| `span` | Owns raw-to-NFC text correspondence at grapheme granularity. |
+
+The crate root re-exports the same public names at unchanged crate-root paths.
 
 ## Entry points and persistence
 
@@ -164,7 +184,9 @@ Netflix delivery compliance: our counts use graphemes, and no shot analysis,
 linguistic reduction or children's/SDH preset is implied.
 
 
-## Interchange and deterministic repairs
+## Interchange
+
+### SRT and WebVTT
 
 `parse(bytes, format, source_lang)` accepts up to 16 MiB: UTF-8, UTF-8 BOM,
 UTF-16LE/BE with BOM, or Windows-1252 fallback. BOM, encoding fallback, malformed
@@ -196,7 +218,7 @@ Collapsed durations expand to 1 ms and push following starts as needed; overflow
 errors. After canonical export, SRT import/export is byte-stable. Sub-millisecond
 source precision and file formatting/metadata are not preserved.
 
-## ASS import and style mapping
+### ASS import and style mapping
 
 `parse_ass(bytes)` imports Advanced SubStation Alpha/SSA text as typed `AssCue`
 values with an optional static `CueStyle`; it is deliberately as forgiving as

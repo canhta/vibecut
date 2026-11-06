@@ -14,11 +14,6 @@ doc	crates/ai/src/policy.rs	first line is not a //! responsibility line
 doc	crates/ai/src/vision/decisions.rs	first line is not a //! responsibility line
 doc	crates/ai/src/vision/reidentification.rs	first line is not a //! responsibility line
 doc	crates/ai/src/vision/tract.rs	first line is not a //! responsibility line
-doc	crates/captions/src/io.rs	first line is not a //! responsibility line
-doc	crates/captions/src/language.rs	first line is not a //! responsibility line
-doc	crates/captions/src/mapping.rs	first line is not a //! responsibility line
-doc	crates/captions/src/segment.rs	first line is not a //! responsibility line
-doc	crates/captions/src/span.rs	first line is not a //! responsibility line
 doc	crates/media/src/decode.rs	first line is not a //! responsibility line
 doc	crates/media/src/encode.rs	first line is not a //! responsibility line
 doc	crates/media/src/model.rs	first line is not a //! responsibility line

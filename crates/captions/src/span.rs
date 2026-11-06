@@ -1,3 +1,5 @@
+//! Raw-to-NFC text correspondence at grapheme granularity.
+
 use crate::{Error, NfcText};
 use std::ops::Range;
 use unicode_segmentation::UnicodeSegmentation;

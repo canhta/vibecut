@@ -1,3 +1,5 @@
+//! Maps source ticks to output ticks through edit cut lists.
+
 use crate::{CueTrack, Error, NfcText};
 use time::{SourceRange, Tick};
 
