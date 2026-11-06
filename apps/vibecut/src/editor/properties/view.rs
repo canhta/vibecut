@@ -237,13 +237,12 @@ impl<'a, 'c> Panel<'a, 'c> {
         let inside = start <= at && at <= end;
         let relative = at.saturating_sub(start);
         // CapCut shows one diamond for a position or scale pair.
-        let mut groups: Vec<Vec<ScrubSpec>> = Vec::new();
+        let mut groups: Vec<(&str, Vec<ScrubSpec>)> = Vec::new();
         for spec in animate {
+            let key = diamond_group(spec.field);
             match groups.last_mut() {
-                Some(group) if diamond_group(group[0].field) == diamond_group(spec.field) => {
-                    group.push(spec);
-                }
-                _ => groups.push(vec![spec]),
+                Some((last, group)) if *last == key => group.push(spec),
+                _ => groups.push((key, vec![spec])),
             }
         }
         let width = theme::size::CONTROL * groups.len() as f32;
@@ -257,8 +256,10 @@ impl<'a, 'c> Panel<'a, 'c> {
                 .layout(egui::Layout::left_to_right(egui::Align::Center)),
         );
         strip.spacing_mut().item_spacing.x = 0.0;
-        for group in groups {
-            let lead = group[0].field;
+        for (_, group) in groups {
+            let Some(lead) = group.first().map(|spec| spec.field) else {
+                continue;
+            };
             let id = format!("inspector.keyframe.{lead}");
             let exists = group.iter().all(|spec| {
                 super::read::has_key_at(self.cx.session.project(), item, spec.field, relative)
