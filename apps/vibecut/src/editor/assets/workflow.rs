@@ -2,6 +2,7 @@
 mod import;
 mod insertion;
 mod selection;
+mod sounds;
 mod transition;
 pub(super) use transition::{cuts, refusal, selected_cut};
 

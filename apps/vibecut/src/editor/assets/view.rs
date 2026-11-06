@@ -3,6 +3,7 @@ mod browser;
 mod deletion;
 mod effects;
 mod feedback;
+mod sounds;
 mod transition;
 
 use super::{
@@ -124,6 +125,10 @@ pub(super) fn show(state: &mut State, cx: &Model, ui: &mut egui::Ui) -> Vec<Acti
                     view.transition_nav(ui);
                     return;
                 }
+                if cx.preferences.assets_tab == AssetsTab::Sounds {
+                    view.sounds_nav(ui);
+                    return;
+                }
                 let label = view.tr(active);
                 let response = ui.add_sized(
                     [theme::size::SUBNAV_BUTTON, theme::size::CONTROL],
@@ -180,7 +185,8 @@ pub(super) fn show(state: &mut State, cx: &Model, ui: &mut egui::Ui) -> Vec<Acti
             AssetsTab::Media if cx.rows.is_empty() && !cx.importing && !cx.failed => {
                 view.empty_media(ui)
             }
-            AssetsTab::Media | AssetsTab::Sounds => view.browser(ui),
+            AssetsTab::Media => view.browser(ui),
+            AssetsTab::Sounds => view.sounds(ui),
             AssetsTab::Effects => view.effects(ui),
             AssetsTab::Transitions => view.transitions(ui),
             AssetsTab::Text => {

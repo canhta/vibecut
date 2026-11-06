@@ -25,8 +25,8 @@ pub mod snapping;
 pub mod subtitles;
 pub mod workspace;
 pub use editor::{
-    AssetInspection, AssetState, Editor, Inspection, PREFERENCE_COMMAND, ShortcutRow, ShortcutTab,
-    ShortcutsInspection, WidgetState,
+    AssetInspection, AssetState, Client, Editor, Inspection, PREFERENCE_COMMAND, ShortcutRow,
+    ShortcutTab, ShortcutsInspection, Sounds, SoundsMode, SoundsProblem, SoundsView, WidgetState,
 };
 pub use eframe::egui;
 

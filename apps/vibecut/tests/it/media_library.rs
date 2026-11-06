@@ -874,12 +874,13 @@ fn local_audio_row_adds_its_source_through_the_existing_insert_command() {
         assert!(Instant::now() < deadline);
         std::thread::sleep(Duration::from_millis(2));
     }
-    editor.preferences.assets_tab = vibecut::panels::AssetsTab::Sounds;
+    editor.preferences.assets_tab = vibecut::panels::AssetsTab::Media;
     let mut harness = build(editor);
     harness.run_steps(3);
     assert!(has_widget(&harness, "media.asset.4"));
-    assert!(!has_widget(&harness, "media.asset.1"));
-    click(&mut harness, "media.asset.4.add");
+    assert!(has_widget(&harness, "media.asset.1"));
+    click(&mut harness, "media.asset.4");
+    click(&mut harness, "media.insert");
     let items: Vec<_> = harness
         .state()
         .session

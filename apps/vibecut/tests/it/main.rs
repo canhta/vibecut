@@ -18,6 +18,7 @@ mod projects_ui;
 mod review_regressions;
 mod scenes_ui;
 mod shorts_ui;
+mod sounds_ui;
 mod timeline_ui;
 mod tracks_ui;
 mod transitions;

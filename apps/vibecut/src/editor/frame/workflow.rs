@@ -17,6 +17,7 @@ impl Editor {
         {
             self.error = Some(e.to_string());
         }
+        self.tick_sounds();
         if let Some(dialog) = &mut self.export
             && let Err(error) = dialog.tick(self.session.project(), self.preferences.export)
         {

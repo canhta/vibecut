@@ -11,6 +11,7 @@ mod timeline;
 mod widgets;
 
 mod state;
+pub use assets::sounds::{Client, Sounds, SoundsMode, SoundsProblem, SoundsView};
 use state::{
     AUDIO_GAIN_SCRUB, AssetRow, EffectReorder, MediaMarquee, MediaReveal, OPACITY_SCRUB,
     PreferenceCommand, PreferenceHistory, SHORTCUT_CONTROL_HEIGHT, SHORTCUT_ROW_HEIGHT,
@@ -190,6 +191,9 @@ impl Editor {
             restoring_asset: None,
             thumbnail_textures: std::cell::RefCell::default(),
             thumbnail_root: None,
+            sound_library: None,
+            sounds: None,
+            sound_media_dir: None,
             subtitles: None,
         }
     }
@@ -299,6 +303,7 @@ impl Editor {
             media_order,
             media_highlight,
             media_delete_pending,
+            sounds: self.sounds.as_ref().map(|sounds| sounds.view()),
             export_options: self.preferences.export,
             export: self
                 .export

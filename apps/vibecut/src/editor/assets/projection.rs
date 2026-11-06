@@ -141,5 +141,6 @@ pub(in crate::editor) fn prepare(editor: &mut Editor, ctx: &egui::Context) {
         reveal: editor.media_reveal.map(|reveal| reveal.asset),
         marquee: editor.media_marquee.clone(),
         failed: !editor.import_failures.is_empty() || editor.import_notice.is_some(),
+        sounds: editor.sounds.as_ref().map(|sounds| sounds.view()),
     };
 }

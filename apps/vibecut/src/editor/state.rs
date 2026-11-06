@@ -170,6 +170,7 @@ pub struct Inspection {
     pub media_order: Vec<AssetId>,
     pub media_highlight: Option<AssetId>,
     pub media_delete_pending: Vec<AssetId>,
+    pub sounds: Option<super::assets::sounds::SoundsView>,
     pub export: Option<crate::export::ExportInspection>,
     pub export_options: crate::export::ExportOptions,
     pub models: Option<crate::model_manager::ModelInspection>,
@@ -433,5 +434,8 @@ pub struct Editor {
     pub(super) restoring_asset: Option<AssetId>,
     pub(super) thumbnail_textures: std::cell::RefCell<BTreeMap<AssetId, egui::TextureHandle>>,
     pub(super) thumbnail_root: Option<PathBuf>,
+    pub(super) sound_library: Option<Arc<engine::sounds::SoundLibrary>>,
+    pub(super) sounds: Option<super::assets::sounds::Sounds>,
+    pub(super) sound_media_dir: Option<PathBuf>,
     pub subtitles: Option<crate::subtitles::Subtitles>,
 }

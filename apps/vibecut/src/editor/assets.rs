@@ -1,5 +1,6 @@
 //! Owns the assets presentation boundary.
 mod projection;
+pub mod sounds;
 mod state;
 mod transition;
 mod view;
@@ -32,6 +33,7 @@ struct Model {
     reveal: Option<AssetId>,
     marquee: Option<MediaMarquee>,
     failed: bool,
+    sounds: Option<sounds::SoundsView>,
 }
 
 pub(super) fn show(state: &mut State, cx: &super::Context<'_>, ui: &mut egui::Ui) -> Vec<Action> {
@@ -76,6 +78,16 @@ pub(super) enum Action {
     RetryEffect(&'static str),
     TransitionDrag(&'static str),
     AddTransition(&'static str),
+    SoundsMode(sounds::SoundsMode),
+    SoundsSearch {
+        more: bool,
+    },
+    SoundsCommercial(bool),
+    SoundsPreview(u64),
+    SoundsToggleSaved(u64),
+    SoundsAdd(u64),
+    SoundsCancelCache,
+    SoundsRetry,
 }
 
 impl Editor {

@@ -76,6 +76,21 @@ The preview panel follows the [measured player geometry](#measured-frame): a 42 
 
 The assets Effects tab follows the captured 4-column grid [measured]: 88 px cards at 15 px horizontal gaps and a 116 px row pitch (221727: cards x 198/301/403/506, image y 192–278, label y 284–287), with a live thumbnail, name and a 28 px `+` action; the tile itself is the drag handle. The properties Effects tab reuses the measured properties sub-tab bar and 22 px field geometry: each stack row has a 28 px reorder handle, name, eye toggle and trash action, with scrub fields below. Empty, pending, failed, disabled, locked, unsupported and limit states are explicit. Reference geometry for the stack rows is unmeasured; treat their spacing as proposed until the next UI audit.
 
+## Sounds
+
+The assets Audio tab follows the captured 48 px audio row on a 60 px pitch with a
+32 px thumbnail, a 24 px search row and a 120 px sub-navigation column
+(221703: rows at y 188/248/308, search x 198–595/y 128–151). Our search row adds
+the commercial-only switch at the right; the sub-navigation holds Discover and
+Saved. Each row shows the name, `author · duration · licence` and the full
+attribution text; preview, save and add actions are 24 px icon buttons at the
+right. Discover is provider-backed when a credential exists and otherwise the
+saved local library; Saved is always the offline local library. Empty, searching,
+no-token, auth/quota/rate-limit/network, cache progress/cancel, publication and
+no-audio-device states are explicit. Reference geometry for the switch and row
+actions is unmeasured; treat their exact placement as proposed until the next UI
+audit.
+
 ## Transform and colour controls
 
 The Transform tab uses five existing scrub rows with an inline reset arrow: position X/Y, independent scale X/Y and rotation. The reference's reset/value-row pattern is recorded in `.spikes/ui-reference/06-properties/notes.md`; the classic implementation properties registry confirms the five independent channels. The existing field geometry and catalog tokens above remain the source for sizing and colour.

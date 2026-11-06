@@ -28,7 +28,7 @@ use std::{
     path::{Path, PathBuf},
     sync::{
         Arc, Condvar, Mutex,
-        atomic::{AtomicUsize, Ordering},
+        atomic::{AtomicU64, AtomicUsize, Ordering},
     },
     time::{Duration, Instant},
 };
@@ -2704,6 +2704,27 @@ fn assets_scene(theme: Theme, scale: f32, state: &str) -> Result<AppHarness, Fai
         "offline" => vibecut::panels::AssetsTab::Sounds,
         _ => vibecut::panels::AssetsTab::Media,
     };
+    if state == "offline" {
+        static NEXT_SOUNDS: AtomicU64 = AtomicU64::new(0);
+        let root = std::env::temp_dir().join(format!(
+            "vibecut-ui-audit-sounds-{}-{}",
+            std::process::id(),
+            NEXT_SOUNDS.fetch_add(1, Ordering::Relaxed)
+        ));
+        let library = Arc::new(engine::sounds::SoundLibrary::open(&root)?);
+        library.save(&engine::sounds::SoundResult {
+            id: 1,
+            name: "Night Drive".into(),
+            author: "BCD Studio".into(),
+            licence: "Creative Commons 0".into(),
+            attribution: "Night Drive by BCD Studio (Creative Commons 0)".into(),
+            source_url: "https://freesound.org/s/1/".into(),
+            audio_url: "https://cdn.example/1.mp3".into(),
+            duration_ms: 31_000,
+            downloads: 100,
+        })?;
+        editor.set_sound_library(library)?;
+    }
     if state == "loading" {
         editor.set_import_probe(Arc::new(ProgressProbe::new()))?;
         editor.drop_files(vec![

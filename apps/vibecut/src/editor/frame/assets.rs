@@ -53,6 +53,14 @@ impl Editor {
                     }
                     self.effect_textures.remove(kind);
                 }
+                assets::Action::SoundsMode(mode) => self.sounds_set_mode(mode),
+                assets::Action::SoundsSearch { more } => self.sounds_search(more),
+                assets::Action::SoundsCommercial(on) => self.sounds_set_commercial(on),
+                assets::Action::SoundsPreview(id) => self.sounds_preview(id),
+                assets::Action::SoundsToggleSaved(id) => self.sounds_toggle_saved(id),
+                assets::Action::SoundsAdd(id) => self.sounds_add(id),
+                assets::Action::SoundsCancelCache => self.sounds_cancel_cache(),
+                assets::Action::SoundsRetry => self.sounds_retry(),
             }
         }
     }

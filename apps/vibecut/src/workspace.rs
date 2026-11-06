@@ -41,6 +41,7 @@ pub struct Workspace {
     /// lane memory is dropped only on proof the file is gone.
     lane_paths: BTreeMap<project::ProjectId, PathBuf>,
     lane_prune_key: Vec<project::ProjectId>,
+    sounds: Option<Arc<engine::sounds::SoundLibrary>>,
 }
 
 impl Workspace {
@@ -56,6 +57,11 @@ impl Workspace {
     ) -> Result<Self> {
         let budget = ByteBudget::new(768 << 20)?;
         let persistence = ByteBudget::new(256 << 20)?;
+        // One saved-sound library is shared by every project window; the
+        // adjacent writer lease refuses a second in-process owner.
+        let sounds = engine::sounds::SoundLibrary::open(&root.with_file_name("sounds"))
+            .ok()
+            .map(Arc::new);
         let runner = std::rc::Rc::new(std::cell::RefCell::new(JobRunner::new(
             RunnerConfig {
                 concurrency: [2, 1, 1],
@@ -74,6 +80,7 @@ impl Workspace {
             budget.clone(),
             persistence,
             runner,
+            sounds.clone(),
         );
         home.startup_path = path;
         home.submit(Work::Discover, Text::Discovering)?;
@@ -90,6 +97,7 @@ impl Workspace {
             models: None,
             lane_paths: BTreeMap::new(),
             lane_prune_key: Vec::new(),
+            sounds,
         })
     }
     pub fn control_budget(&self) -> ByteBudget {
@@ -97,8 +105,11 @@ impl Workspace {
     }
     /// Register an already-composed editor, retaining its writer lease and
     /// resource policy. Repeated project identities focus their existing window.
-    pub fn register_editor(&mut self, editor: Box<Editor>) -> project::ProjectId {
+    pub fn register_editor(&mut self, mut editor: Box<Editor>) -> project::ProjectId {
         self.rekey_windows();
+        if let Some(sounds) = &self.sounds {
+            let _ = editor.set_sound_library(sounds.clone());
+        }
         let id = editor.session.project().data().id;
         let path = match &editor.session {
             crate::lifecycle::EditorSession::Persistent(s) => s.saved_path().map(ToOwned::to_owned),
@@ -111,6 +122,7 @@ impl Workspace {
                 editor.playback.budget().clone(),
                 self.home.persistence.clone(),
                 self.home.runner.clone(),
+                self.sounds.clone(),
             );
             window.project_window = true;
             window.title = editor.session.project().data().name.as_str().to_owned();
@@ -673,6 +685,7 @@ pub struct EditorWindow {
     budget: ByteBudget,
     persistence: ByteBudget,
     runner: std::rc::Rc<std::cell::RefCell<JobRunner>>,
+    sounds: Option<Arc<engine::sounds::SoundLibrary>>,
     pending: Option<Pending>,
     picker: Option<Picker>,
     candidates: Vec<Candidate>,
@@ -701,6 +714,7 @@ impl EditorWindow {
         budget: ByteBudget,
         persistence: ByteBudget,
         runner: std::rc::Rc<std::cell::RefCell<JobRunner>>,
+        sounds: Option<Arc<engine::sounds::SoundLibrary>>,
     ) -> Self {
         static NEXT_WINDOW: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
         Self {
@@ -720,6 +734,7 @@ impl EditorWindow {
             budget,
             persistence,
             runner,
+            sounds,
             pending: None,
             picker: None,
             candidates: Vec::new(),
@@ -1153,6 +1168,9 @@ impl EditorWindow {
             }
             Ok(Completed::Opened(mut editor)) => {
                 editor.playback.set_device_available(self.device_available);
+                if let Some(sounds) = &self.sounds {
+                    let _ = editor.set_sound_library(sounds.clone());
+                }
                 self.editor = Some(editor);
                 self.retry_path = None;
                 self.startup_path = None;
