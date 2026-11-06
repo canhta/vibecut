@@ -586,9 +586,9 @@ fn picker_hex_hsv_recents_unavailable_and_screenshot() {
         matches!(item(&harness,fixture.text).content,ItemParams::Text(p) if p.color==Color([18,171,52,128]))
     );
     enter(&mut harness, "color.h", "240");
-    enter(&mut harness, "color.s", "1");
-    enter(&mut harness, "color.v", "1");
-    enter(&mut harness, "color.a", "0.5");
+    enter(&mut harness, "color.s", "100");
+    enter(&mut harness, "color.v", "100");
+    enter(&mut harness, "color.a", "50");
     assert!(
         matches!(item(&harness,fixture.text).content,ItemParams::Text(p) if p.color==Color([0,0,255,128]))
     );

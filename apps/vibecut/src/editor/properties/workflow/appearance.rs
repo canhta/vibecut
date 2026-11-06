@@ -1,6 +1,6 @@
 //! Applies appearance drafts.
 
-use crate::editor::properties::{ColorTarget, Editor, Error, Picker, Result};
+use crate::editor::properties::{ColorTarget, Editor, Error, Picker, Result, egui, theme};
 
 impl Editor {
     /// Open the shared picker. Drafts preview through a temporary engine Session;
@@ -10,7 +10,15 @@ impl Editor {
         self.finish_scrub(false);
         let color = target.color(self.session.project())?;
         self.color_base = Some(self.session.project().clone());
-        self.color_picker = Some(Picker::new(target, color));
+        let mut picker = Picker::new(target, color);
+        // Hang off the panel's left edge, below its tab strip.
+        picker.anchor = self.panels.get("inspector").map(|panel| {
+            egui::pos2(
+                panel.left() - theme::space::PANEL_GUTTER,
+                panel.top() + theme::size::TAB_STRIP,
+            )
+        });
+        self.color_picker = Some(picker);
         Ok(())
     }
     /// Inject the native capability boundary for an open picker.
