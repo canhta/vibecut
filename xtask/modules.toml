@@ -183,7 +183,7 @@ name = "ai_task"
 group = "models"
 
 [[crate.module]]
-name = "projects"
+name = "home"
 group = "home"
 
 [[crate.module]]

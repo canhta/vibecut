@@ -200,7 +200,7 @@ fn search_sort_and_view_persist_through_the_preference_store() {
     );
     assert!(
         harness
-            .query_by_label("No projects match your search.")
+            .query_by_label("No matches")
             .is_some()
     );
     harness.get(by("projects.search")).click();
@@ -479,7 +479,7 @@ fn info_dialog_shows_main_duration_created_modified_and_eight_character_id() {
         .get(by("projects.card.0000000000000001.info"))
         .click();
     harness.run_steps(2);
-    assert!(harness.query_by_label("Duration 00:00:05.000").is_some());
+    assert!(harness.query_by_label("Duration 00:05").is_some());
     assert!(harness.query_by_label("Created May 28, 2026").is_some());
     assert!(harness.query_by_label("Modified May 29, 2026").is_some());
     assert!(harness.query_by_label("Project ID 00000001").is_some());
@@ -670,7 +670,7 @@ fn new_project_is_created_in_the_managed_catalog_and_opened() {
     let mut harness = fixture.build(Preferences::default());
     assert!(
         harness
-            .query_by_label("No projects yet. Create your first project.")
+            .query_by_label("No projects yet")
             .is_some()
     );
     harness.get(by("project.create")).click();

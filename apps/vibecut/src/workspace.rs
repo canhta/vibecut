@@ -3,10 +3,10 @@ use crate::{
     Editor, Error, Result,
     catalog::{self, Preferences, Text},
     egui,
+    home::{Action as HomeAction, State as HomeState},
     kit::{self as icons, Icon},
     lifecycle::EditorAction,
     playback::{Files, Playback},
-    projects::{ProjectsAction, ProjectsPage},
 };
 use engine::{
     ByteBudget, Command, EditError, Session,
@@ -28,7 +28,7 @@ use std::{
 /// retains its own editor, writer lease, pending save and close prompt.
 pub struct Workspace {
     pub windows: BTreeMap<project::ProjectId, EditorWindow>,
-    pub projects: ProjectsPage,
+    pub projects: HomeState,
     pub shorts: Option<crate::shorts::Shorts>,
     pub preferences: Preferences,
     home: EditorWindow,
@@ -75,7 +75,7 @@ impl Workspace {
         home.submit(Work::Discover, Text::Discovering)?;
         Ok(Self {
             windows: BTreeMap::new(),
-            projects: ProjectsPage::new(projects_root, budget),
+            projects: HomeState::new(projects_root, budget),
             shorts: None,
             preferences,
             home,
@@ -280,14 +280,14 @@ impl Workspace {
             self.home.error.get_or_insert(error);
         }
     }
-    fn project_action(&mut self, action: ProjectsAction) {
+    fn project_action(&mut self, action: HomeAction) {
         let result = match action {
-            ProjectsAction::Open(path) => self.open(path),
-            ProjectsAction::OpenFile => {
+            HomeAction::Open(path) => self.open(path),
+            HomeAction::OpenFile => {
                 self.home.open_file_requested = true;
                 Ok(())
             }
-            ProjectsAction::Shorts => self.open_shorts(),
+            HomeAction::Shorts => self.open_shorts(),
         };
         if let Err(error) = result {
             self.home.error = Some(error);
@@ -348,12 +348,8 @@ impl Workspace {
             self.home.preferences = self.preferences.clone();
             self.home.ui(ui);
             if !self.home.busy() && self.home.candidates.is_empty() && self.home.error.is_none() {
-                self.projects.ui(ui, &mut self.preferences);
-                if let Some(action) = self.projects.take_action() {
-                    self.project_action(action);
-                }
-                if let Some(shorts) = &self.shorts {
-                    let status = if shorts.cancelling() {
+                let status = self.shorts.as_ref().and_then(|shorts| {
+                    if shorts.cancelling() {
                         Some(Text::ShortsCancelling)
                     } else if shorts.awaiting_consent() {
                         Some(Text::ShortsConsent)
@@ -365,10 +361,10 @@ impl Workspace {
                         Some(Text::ShortsReview)
                     } else {
                         None
-                    };
-                    if let Some(status) = status {
-                        ui.label(catalog::text(self.preferences.locale, status));
                     }
+                });
+                if let Some(action) = self.projects.show(ui, &mut self.preferences, status) {
+                    self.project_action(action);
                 }
             }
             self.home.preferences = self.preferences.clone();

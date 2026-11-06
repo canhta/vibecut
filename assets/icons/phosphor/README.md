@@ -8,8 +8,8 @@ time; there is no runtime network or font request.
 - Source archive: <https://registry.npmjs.org/@phosphor-icons/core/-/core-2.1.1.tgz>
 - Author: Phosphor Icons
 - Licence: MIT, see [LICENSE](LICENSE)
-- Added: p0-core/39; extended: p1-parity/06, p1-parity/09, p1-parity/54
-- Files: 45 unmodified `assets/regular/*.svg` files.
+- Added: p0-core/39; extended: p1-parity/06, p1-parity/09, p1-parity/54, p1-parity/117
+- Files: 49 unmodified `assets/regular/*.svg` files.
 
 SHA-256 of each embedded file:
 
@@ -22,7 +22,9 @@ SHA-256 of each embedded file:
 | `arrows-in-line-horizontal.svg` | `73d0df2946ad58d810e81f1b92a731c21674659135c4d40bb5ac29569a54d924` |
 | `arrows-left-right.svg` | `84c43373542a3ac2e7de3d22ddef0c8eb61ef6ba7a270c6aca5aa493dd40f8b4` |
 | `circle-half.svg` | `4e5376acc240190bf951be566c4649b69936c928f679eba6793412295bb90736` |
+| `copy.svg` | `5a892fc6a72866e60c67db2088a87653cf44b57b1a5d183b36e950cdc5dd66b3` |
 | `corners-out.svg` | `fd79277404b3662b50b737127fb6bf6f63ae93c9b60d9f2aca9122a950ec08c8` |
+| `dots-three.svg` | `ca4e748007101155641ec3041cd129bb03a8030d0eed16e313b9dd75e6beac77` |
 | `export.svg` | `b3323cae86c93d7a4d344e921dc1500f97a73c66e5d9f0e6c46aab64e4a6f616` |
 | `eye-slash.svg` | `070b0296a7df89ebf4cec12436e323b5531d458aa9aed3608924085889e1fd17` |
 | `eye.svg` | `91d39f20bf95e0f36c07bd79b83a85fe6ff4ca20e2759c4afee7419ef80403fe` |
@@ -33,11 +35,13 @@ SHA-256 of each embedded file:
 | `folder-open.svg` | `9157518d00547242d3986c4fdaaf44a62ef056caf3ecee0c88137529947170ea` |
 | `funnel.svg` | `26b847aa9f8566707443669502dcf08bf0a2d1d3cfb2dc1136842f4033104abb` |
 | `gear-six.svg` | `2bb05ec80cc37505a3f21c74989dbb297ab8442a668f5ffbd6a8f7c1d5794c7b` |
+| `house.svg` | `180e9259e99e23da197b59b19394d006d6a5d33e384cc2b9c8381cb0214a5716` |
 | `list-bullets.svg` | `5c685a673fbd053a3c548039725d1a9f902938fbcddaef3c5f958f0a64c19341` |
 | `magnet.svg` | `b62b4c2348845e7b498b274540b9eda464ab1f4f39176e5c5d51f7485f038f5d` |
 | `lock-open.svg` | `8b9f2b734cf20b70327b569ae4e254d5899771b6ea886bb6e9a2facde5582c04` |
 | `lock.svg` | `7f9e0acc09a417a48328cd5b74e95de98989c5af1710ca5da705179da75c72d9` |
 | `magnifying-glass-minus.svg` | `a8478832f12a7a5a231e1ffb1b987fe45f9e1508570b98046e7ff51db7eb1043` |
+| `magnifying-glass.svg` | `f9fa2561978a9a3291e8ae0ebfcb651104f5069fade8f84871627bca68889cde` |
 | `magnifying-glass-plus.svg` | `c61e00fdb994983b59cab26905a7ed45342d7319115d29f50050e26d1f210cb1` |
 | `music-notes.svg` | `b991d76e24e781b864f9ad8b7aa14e516d4fd851871a979928917e20d492eca0` |
 | `pause.svg` | `7a9a8fe311234262b85c6e332f77db4ba9a59b6ca4292c41d327977cf61a2fc9` |
