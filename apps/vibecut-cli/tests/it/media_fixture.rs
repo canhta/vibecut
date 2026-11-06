@@ -1,3 +1,4 @@
+//! Creates synthetic media for subprocess oracle checks.
 use std::{
     ffi::OsStr,
     fs,

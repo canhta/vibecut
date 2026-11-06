@@ -8,8 +8,8 @@ use std::path::Path;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
-#[path = "../../tests/it/common/mod.rs"]
-mod common;
+#[path = "../../tests/it/media_fixture.rs"]
+mod media_fixture;
 
 struct SourceLoss<'a> {
     context: &'a JobContext,
@@ -42,15 +42,15 @@ impl render::ExecutionHooks for SourceLoss<'_> {
 
 #[test]
 fn export_refuses_when_a_source_disappears_mid_job() {
-    if !common::tools() {
+    if !media_fixture::tools() {
         return;
     }
     let dir = tempfile::tempdir().unwrap();
     let input = dir.path().join("midjob.mp4");
     let project = dir.path().join("midjob.vibecut");
     let output = dir.path().join("midjob-out.mp4");
-    common::generate_av(&input);
-    common::media_project(&project, &input, None);
+    media_fixture::generate_av(&input);
+    media_fixture::media_project(&project, &input, None);
     std::fs::write(&output, b"previous").unwrap();
     let removed = Arc::new(AtomicBool::new(false));
     let signal = removed.clone();

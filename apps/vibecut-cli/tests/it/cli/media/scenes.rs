@@ -1,5 +1,6 @@
-use super::process::{bin, code, os, stdout_json};
-use crate::common::{ffmpeg, tools};
+//! Verifies native scenes command behaviour.
+use crate::cli::process::{bin, code, os, stdout_json};
+use crate::media_fixture::{ffmpeg, tools};
 use std::ffi::OsStr;
 use std::path::Path;
 use std::process::Command;

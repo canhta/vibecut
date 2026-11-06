@@ -1,4 +1,5 @@
-use super::process::{bin, cli, code, error_json, os, stdout_json};
+//! Verifies native clips command behaviour.
+use crate::cli::process::{bin, cli, code, error_json, os, stdout_json};
 use std::ffi::OsStr;
 use std::fs;
 use std::process::Command;

@@ -1,7 +1,8 @@
-use super::media_fixture::decoded_rgb;
-use super::process::{bin, code, error_json, os};
-use super::project_fixture::{info, new_project, overlay_project, overlay_project_color};
-use crate::common::tools;
+//! Verifies native control command behaviour.
+use crate::cli::fixtures::decoded_rgb;
+use crate::cli::fixtures::{info, new_project, overlay_project, overlay_project_color};
+use crate::cli::process::{bin, code, error_json, os};
+use crate::media_fixture::tools;
 use serde_json::{Value, json};
 use std::ffi::OsStr;
 use std::fs;

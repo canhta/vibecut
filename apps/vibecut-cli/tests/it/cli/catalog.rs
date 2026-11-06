@@ -1,4 +1,5 @@
-use super::process::{cli, code, os, stdout_json};
+//! Verifies native CLI catalog behaviour.
+use crate::cli::process::{cli, code, os, stdout_json};
 use std::fs;
 use std::path::Path;
 

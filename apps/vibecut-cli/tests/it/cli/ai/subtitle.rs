@@ -1,4 +1,5 @@
-use super::process::{bin, cli, code, error_json, os};
+//! Verifies native subtitle command behaviour.
+use crate::cli::process::{bin, cli, code, error_json, os};
 use std::fs;
 use std::process::Command;
 

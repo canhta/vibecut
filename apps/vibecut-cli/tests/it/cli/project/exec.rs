@@ -1,7 +1,8 @@
-use super::media_fixture::{decoded_mono, decoded_rgb, generate_audio, video_oetf};
-use super::process::{cli, code, error_json, os, stdout_json};
-use super::project_fixture::{add_track, exec, info, new_project, overlay_project_color};
-use crate::common::{generate_av, media_project, tool_command, tools};
+//! Verifies native exec command behaviour.
+use crate::cli::fixtures::{add_track, exec, info, new_project, overlay_project_color};
+use crate::cli::fixtures::{decoded_mono, decoded_rgb, generate_audio, video_oetf};
+use crate::cli::process::{cli, code, error_json, os, stdout_json};
+use crate::media_fixture::{generate_av, media_project, tool_command, tools};
 use serde_json::{Value, json};
 use std::ffi::OsStr;
 use std::fs;

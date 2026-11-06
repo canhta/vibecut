@@ -1,3 +1,4 @@
+//! Verifies native CLI process behaviour.
 use serde_json::Value;
 use std::ffi::OsStr;
 use std::process::{Command, Output, Stdio};

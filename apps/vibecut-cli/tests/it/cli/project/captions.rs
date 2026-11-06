@@ -1,5 +1,6 @@
-use super::process::{cli, code, error_json, os, stdout_json};
-use super::project_fixture::new_project;
+//! Verifies native captions command behaviour.
+use crate::cli::fixtures::new_project;
+use crate::cli::process::{cli, code, error_json, os, stdout_json};
 use std::fs;
 use time::Tick;
 

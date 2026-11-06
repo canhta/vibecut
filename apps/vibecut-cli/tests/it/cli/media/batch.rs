@@ -1,7 +1,8 @@
-use super::media_fixture::decoded_rgb;
-use super::process::{cli, code, error_json, os, stdout_json};
-use super::project_fixture::{overlay_project, overlay_project_color};
-use crate::common::{generate_av, media_project, tools};
+//! Verifies native batch command behaviour.
+use crate::cli::fixtures::decoded_rgb;
+use crate::cli::fixtures::{overlay_project, overlay_project_color};
+use crate::cli::process::{cli, code, error_json, os, stdout_json};
+use crate::media_fixture::{generate_av, media_project, tools};
 use serde_json::{Value, json};
 use std::fs;
 use std::path::Path;

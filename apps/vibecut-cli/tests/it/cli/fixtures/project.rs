@@ -1,11 +1,12 @@
-use super::process::{cli, code, os, stdout_json};
+//! Creates project fixtures for native CLI behaviours.
+use crate::cli::process::{cli, code, os, stdout_json};
 use serde_json::{Value, json};
 use std::ffi::OsStr;
 use std::fs;
 use std::path::Path;
 use time::{Tick, TimeRange};
 
-pub(super) fn new_project(path: &Path) -> Value {
+pub(crate) fn new_project(path: &Path) -> Value {
     let output = cli(&[os("project"), os("new"), path.as_os_str(), os("--json")]);
     assert_eq!(
         code(&output),
@@ -15,7 +16,7 @@ pub(super) fn new_project(path: &Path) -> Value {
     );
     stdout_json(&output)
 }
-pub(super) fn add_track(project: &Path, name: &str) -> Value {
+pub(crate) fn add_track(project: &Path, name: &str) -> Value {
     let params = json!({"name": name, "kind": "video", "placement":{"mode":"auto"}}).to_string();
     let output = cli(&[
         os("exec"),
@@ -32,7 +33,7 @@ pub(super) fn add_track(project: &Path, name: &str) -> Value {
     );
     stdout_json(&output)
 }
-pub(super) fn info(project: &Path) -> Value {
+pub(crate) fn info(project: &Path) -> Value {
     let output = cli(&[os("project"), os("info"), project.as_os_str(), os("--json")]);
     assert_eq!(
         code(&output),
@@ -42,11 +43,11 @@ pub(super) fn info(project: &Path) -> Value {
     );
     stdout_json(&output)
 }
-pub(super) fn overlay_project(project_path: &Path, width: u32, height: u32, duration: Tick) {
+pub(crate) fn overlay_project(project_path: &Path, width: u32, height: u32, duration: Tick) {
     overlay_project_color(project_path, width, height, duration, [30, 160, 90, 255]);
 }
 
-pub(super) fn overlay_project_color(
+pub(crate) fn overlay_project_color(
     project_path: &Path,
     width: u32,
     height: u32,
@@ -84,7 +85,7 @@ pub(super) fn overlay_project_color(
     fs::write(project_path, project::encode(&project, true).unwrap()).unwrap();
 }
 
-pub(super) fn exec(project: &Path, command: &str, params: Value) -> Value {
+pub(crate) fn exec(project: &Path, command: &str, params: Value) -> Value {
     let params = params.to_string();
     let output = cli(&[
         os("exec"),

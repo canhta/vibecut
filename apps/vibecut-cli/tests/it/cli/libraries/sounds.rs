@@ -1,4 +1,5 @@
-use super::process::{cli, os};
+//! Verifies native sounds command behaviour.
+use crate::cli::process::{cli, os};
 use serde_json::{Value, json};
 
 fn wav_fixture() -> Vec<u8> {

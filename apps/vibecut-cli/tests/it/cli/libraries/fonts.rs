@@ -1,4 +1,5 @@
-use super::process::{bin, code, error_json, os, stdout_json};
+//! Verifies native fonts command behaviour.
+use crate::cli::process::{bin, code, error_json, os, stdout_json};
 use std::ffi::OsStr;
 use std::process::Command;
 

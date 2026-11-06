@@ -1,4 +1,5 @@
-use super::process::{cli, code, error_json, os, stdout_json};
+//! Verifies native model command behaviour.
+use crate::cli::process::{cli, code, error_json, os, stdout_json};
 
 #[test]
 fn model_catalog_is_offline_and_download_requires_explicit_consent() {

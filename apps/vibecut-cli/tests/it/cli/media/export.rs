@@ -1,7 +1,8 @@
-use super::media_fixture::{decoded_rgb, generate_audio};
-use super::process::{cli, code, error_json, os, stdout_json};
-use super::project_fixture::overlay_project;
-use crate::common::{generate_av, media_project, tool_command, tools};
+//! Verifies native export command behaviour.
+use crate::cli::fixtures::overlay_project;
+use crate::cli::fixtures::{decoded_rgb, generate_audio};
+use crate::cli::process::{cli, code, error_json, os, stdout_json};
+use crate::media_fixture::{generate_av, media_project, tool_command, tools};
 use serde_json::Value;
 use std::fs;
 use time::{Tick, TimeRange};

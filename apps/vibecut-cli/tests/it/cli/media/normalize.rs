@@ -1,5 +1,6 @@
-use super::process::{cli, code, os, stdout_json};
-use crate::common::{ffmpeg, generate_av, media_project, tool_command, tools};
+//! Verifies native normalize command behaviour.
+use crate::cli::process::{cli, code, os, stdout_json};
+use crate::media_fixture::{ffmpeg, generate_av, media_project, tool_command, tools};
 use serde_json::Value;
 use std::path::Path;
 

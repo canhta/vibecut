@@ -1,4 +1,5 @@
-use super::process::{cli, code, os, stdout_json};
+//! Verifies native providers command behaviour.
+use crate::cli::process::{cli, code, os, stdout_json};
 
 #[test]
 fn providers_list_is_offline_and_capability_filtered() {

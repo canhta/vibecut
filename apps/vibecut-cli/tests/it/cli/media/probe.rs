@@ -1,5 +1,6 @@
-use super::process::{cli, code, os, stdout_json};
-use crate::common::{generate_av, tools};
+//! Verifies native probe command behaviour.
+use crate::cli::process::{cli, code, os, stdout_json};
+use crate::media_fixture::{generate_av, tools};
 
 #[test]
 fn probe_reports_decoded_stream_metadata() {

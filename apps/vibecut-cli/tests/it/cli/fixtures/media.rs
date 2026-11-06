@@ -1,8 +1,9 @@
-use super::process::os;
-use crate::common::{ffmpeg, tool_command};
+//! Creates media fixtures for native CLI behaviours.
+use crate::cli::process::os;
+use crate::media_fixture::{ffmpeg, tool_command};
 use std::path::Path;
 
-pub(super) fn decoded_rgb(path: &Path, width: u32, height: u32, frames: &[usize]) -> Vec<Vec<u8>> {
+pub(crate) fn decoded_rgb(path: &Path, width: u32, height: u32, frames: &[usize]) -> Vec<Vec<u8>> {
     let select = frames
         .iter()
         .map(|frame| format!("eq(n\\,{frame})"))
@@ -35,7 +36,7 @@ pub(super) fn decoded_rgb(path: &Path, width: u32, height: u32, frames: &[usize]
 }
 
 /// BT.709 OETF used by render's opaque video packing.
-pub(super) fn video_oetf(value: f64) -> f64 {
+pub(crate) fn video_oetf(value: f64) -> f64 {
     if value < 0.018 {
         4.5 * value
     } else {
@@ -43,7 +44,7 @@ pub(super) fn video_oetf(value: f64) -> f64 {
     }
 }
 
-pub(super) fn generate_audio(path: &Path) {
+pub(crate) fn generate_audio(path: &Path) {
     ffmpeg(&[
         os("-f"),
         os("lavfi"),
@@ -55,7 +56,7 @@ pub(super) fn generate_audio(path: &Path) {
     ]);
 }
 
-pub(super) fn decoded_mono(path: &Path) -> Vec<f32> {
+pub(crate) fn decoded_mono(path: &Path) -> Vec<f32> {
     let output = tool_command("ffmpeg")
         .args(["-v", "error", "-i"])
         .arg(path)
