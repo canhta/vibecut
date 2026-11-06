@@ -710,9 +710,26 @@ fn stale_batch_and_external_gestures_cannot_bypass_admission() {
         ErrorCode::StaleRevision,
     );
     assert_eq!(s.project(), &before);
-    for id in ["begin_gesture", "commit_gesture", "cancel_gesture"] {
+    for id in [
+        "begin_gesture",
+        "commit_gesture",
+        "cancel_gesture",
+        "timeline.preview",
+        "timeline.commit_preview",
+        "timeline.discard_preview",
+    ] {
         error(
-            run(&mut s, &mut r, id, json!({}), id),
+            run(
+                &mut s,
+                &mut r,
+                id,
+                if id == "timeline.preview" {
+                    json!({"commands":[]})
+                } else {
+                    json!({})
+                },
+                id,
+            ),
             ErrorCode::Permission,
         );
     }
@@ -1107,7 +1124,12 @@ fn deterministic_catalog_and_schema_document_receipts() {
         (Availability::NoTransaction, &["begin_gesture"]),
         (
             Availability::GestureActive,
-            &["cancel_gesture", "commit_gesture"],
+            &[
+                "cancel_gesture",
+                "commit_gesture",
+                "timeline.commit_preview",
+                "timeline.discard_preview",
+            ],
         ),
         (Availability::PlayableTimeline, &["preview.snapshot"]),
         (Availability::CanUndo, &["undo"]),
@@ -1149,7 +1171,9 @@ fn deterministic_catalog_and_schema_document_receipts() {
                 "ripple_delete",
                 "set_item_param",
                 "split_at",
+                "timeline.move_items",
                 "timeline.set_item_param",
+                "timeline.trim",
                 "trim_end",
                 "trim_start",
             ],
@@ -1171,6 +1195,9 @@ fn deterministic_catalog_and_schema_document_receipts() {
             "project.duplicate",
             "project.thumbnail",
             "sounds.add_to_timeline",
+            "timeline.commit_preview",
+            "timeline.discard_preview",
+            "timeline.preview",
         ]
     );
     assert_eq!(
@@ -1313,13 +1340,20 @@ fn external_gesture_ownership_is_also_enforced_inside_generic_batch() {
     let mut s = session();
     let mut r = runner();
     let before = s.revision();
-    for id in ["begin_gesture", "commit_gesture", "cancel_gesture"] {
+    for id in [
+        "begin_gesture",
+        "commit_gesture",
+        "cancel_gesture",
+        "timeline.preview",
+        "timeline.commit_preview",
+        "timeline.discard_preview",
+    ] {
         assert!(matches!(
             run(
                 &mut s,
                 &mut r,
                 "batch",
-                json!({"commands":[{"command":id,"params":{}}]}),
+                json!({"commands":[{"command":id,"params":if id == "timeline.preview" {json!({"commands":[]})} else {json!({})}}]}),
                 id
             )
             .value,

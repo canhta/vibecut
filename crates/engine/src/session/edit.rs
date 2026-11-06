@@ -32,7 +32,9 @@ pub(crate) fn check_budget(command: &Command) -> Result<()> {
             Command::MoveItems { moves } if moves.len() > super::wire::MAX_COLLECTION => {
                 return Err(EditError::Limit);
             }
-            Command::Delete { items }
+            Command::TimelineMoveItems { items, .. }
+            | Command::TimelineTrim { items, .. }
+            | Command::Delete { items }
             | Command::SetItemParamMany { items, .. }
             | Command::SetSpeed { items, .. }
                 if items.len() > super::wire::MAX_COLLECTION =>
@@ -273,6 +275,16 @@ pub(crate) fn apply(
         Command::MoveItems { moves } => {
             data = clips::execute_move_items(data, moves)?;
         }
+        Command::TimelineMoveItems {
+            items,
+            delta,
+            placement,
+        } => {
+            data = clips::move_group(data, items, delta, placement, created, next)?;
+        }
+        Command::TimelineTrim { items, edge, delta } => {
+            data = clips::trim_group(data, items, edge, delta, sources)?;
+        }
         Command::SplitAt { item: id, at } => {
             data = clips::execute_split_at(data, id, at, created, next, sources)?;
         }
@@ -487,6 +499,9 @@ pub(crate) fn apply(
         | Command::SwitchScene { .. }
         | Command::Undo {}
         | Command::Redo {}
+        | Command::TimelinePreview { .. }
+        | Command::TimelineCommitPreview {}
+        | Command::TimelineDiscardPreview {}
         | Command::BeginGesture {}
         | Command::CommitGesture {}
         | Command::CancelGesture {}) => {

@@ -80,6 +80,277 @@ fn session() -> Session {
 }
 
 #[test]
+fn timeline_preview_isolated_replacement_commit_discard_and_history() {
+    let mut s = session();
+    let bytes = project::encode(s.project(), false).unwrap();
+    let preview = |delta| {
+        json!({"commands":[{"command":"timeline.move_items",
+        "params":{"items":[10,11],"delta":delta,"placement":{"mode":"track","track":2}}}]})
+    };
+    s.execute("timeline.preview", preview(20)).unwrap();
+    assert_eq!(project::encode(s.project(), false).unwrap(), bytes);
+    assert_eq!(s.history_len(), (0, 0));
+    assert!(s.take_change().is_none());
+    s.execute("timeline.preview", preview(5)).unwrap();
+    let candidate = s.preview_project().unwrap().clone();
+    assert_eq!(
+        candidate
+            .data()
+            .scene()
+            .timeline
+            .overlays
+            .iter()
+            .flat_map(|t| &t.items)
+            .find(|i| i.id == ItemId(10))
+            .unwrap()
+            .start,
+        Tick(5)
+    );
+    assert!(s.execute("timeline.preview", preview(-1)).is_err());
+    assert_eq!(s.preview_project(), Some(&candidate));
+    s.execute("timeline.discard_preview", json!({})).unwrap();
+    assert_eq!(project::encode(s.project(), false).unwrap(), bytes);
+    assert_eq!(s.history_len(), (0, 0));
+    assert!(s.preview_project().is_none());
+    assert!(s.take_change().is_none());
+    s.execute("timeline.preview", preview(5)).unwrap();
+    s.execute("timeline.commit_preview", json!({})).unwrap();
+    assert_eq!(s.history_len(), (1, 0));
+    assert_eq!(s.project(), &candidate);
+    let committed = project::encode(s.project(), false).unwrap();
+    assert_eq!(project::decode(&committed).unwrap().project, **s.project());
+    s.undo().unwrap();
+    assert_eq!(project::encode(s.project(), false).unwrap(), bytes);
+    s.redo().unwrap();
+    assert_eq!(project::encode(s.project(), false).unwrap(), committed);
+    assert_eq!(
+        s.project()
+            .data()
+            .scene()
+            .timeline
+            .overlays
+            .iter()
+            .find(|t| t.items.iter().any(|i| i.id == ItemId(10)))
+            .unwrap()
+            .id,
+        TrackId(2)
+    );
+}
+
+#[test]
+fn timeline_groups_refuse_hostile_inputs_atomically() {
+    let mut s = session();
+    let before = s.project().clone();
+    for (command, params) in [
+        ("timeline.move_items", json!({"items":[],"delta":1})),
+        ("timeline.move_items", json!({"items":[10,10],"delta":1})),
+        ("timeline.move_items", json!({"items":[10,999],"delta":1})),
+        ("timeline.move_items", json!({"items":[10],"delta":-1})),
+        (
+            "timeline.move_items",
+            json!({"items":[10],"delta":-1,"placement":{"mode":"above","track":0}}),
+        ),
+        ("timeline.move_items", json!({"items":[10],"delta":30})),
+        (
+            "timeline.move_items",
+            json!({"items":[10],"delta":1,"placement":{"mode":"track","track":999}}),
+        ),
+        ("timeline.trim", json!({"items":[],"edge":"end","delta":1})),
+        (
+            "timeline.trim",
+            json!({"items":[10,10],"edge":"end","delta":1}),
+        ),
+        (
+            "timeline.trim",
+            json!({"items":[10,999],"edge":"end","delta":-1}),
+        ),
+        (
+            "timeline.trim",
+            json!({"items":[10,11],"edge":"start","delta":40}),
+        ),
+        (
+            "timeline.trim",
+            json!({"items":[10,11],"edge":"end","delta":21}),
+        ),
+        (
+            "timeline.trim",
+            json!({"items":[10],"edge":"invalid","delta":1}),
+        ),
+        (
+            "timeline.preview",
+            json!({"commands":[{"command":"undo","params":{}}]}),
+        ),
+        (
+            "timeline.preview",
+            json!({"commands":[{"command":"timeline.commit_preview","params":{}}]}),
+        ),
+    ] {
+        assert!(
+            s.execute(command, params.clone()).is_err(),
+            "{command}: {params}"
+        );
+        assert!(Arc::ptr_eq(s.project(), &before));
+        assert_eq!(s.history_len(), (0, 0));
+        assert!(!s.gesture_active());
+    }
+    assert!(s.execute("timeline.commit_preview", json!({})).is_err());
+    assert!(s.execute("timeline.discard_preview", json!({})).is_err());
+    assert!(matches!(
+        s.apply(Command::TimelineMoveItems {
+            items: vec![ItemId(10); 100_001],
+            delta: Tick(0),
+            placement: None
+        }),
+        Err(EditError::Limit)
+    ));
+    assert!(
+        s.apply(Command::TimelineMoveItems {
+            items: vec![ItemId(11)],
+            delta: Tick(i64::MAX),
+            placement: None
+        })
+        .is_err()
+    );
+    s.execute("track.set_locked", json!({"track":1,"locked":true}))
+        .unwrap();
+    let locked = s.project().clone();
+    assert!(
+        s.execute("timeline.move_items", json!({"items":[10],"delta":1}))
+            .is_err()
+    );
+    assert!(
+        s.execute(
+            "timeline.trim",
+            json!({"items":[10],"edge":"end","delta":-1})
+        )
+        .is_err()
+    );
+    assert_eq!(s.project(), &locked);
+}
+
+#[test]
+fn timeline_preview_reversal_preserves_redo_and_retires_created_tracks() {
+    let mut s = session();
+    s.execute("timeline.move_items", json!({"items":[10,11],"delta":2}))
+        .unwrap();
+    s.undo().unwrap();
+    let original = s.project().clone();
+    let history = s.history_len();
+    s.take_change();
+    let preview = |delta| {
+        json!({"commands":[{"command":"timeline.move_items",
+        "params":{"items":[10,11],"delta":delta}}]})
+    };
+    s.execute("timeline.preview", preview(4)).unwrap();
+    assert!(matches!(s.saved(), Err(EditError::TransactionActive)));
+    assert!(matches!(s.undo(), Err(EditError::TransactionActive)));
+    assert!(matches!(
+        s.begin_gesture(),
+        Err(EditError::TransactionActive)
+    ));
+    assert!(s.set_selection([ItemId(10)].into()).is_err());
+    s.execute("timeline.preview", preview(0)).unwrap();
+    assert!(
+        !s.execute("timeline.commit_preview", json!({}))
+            .unwrap()
+            .changed
+    );
+    assert_eq!(s.project(), &original);
+    assert_eq!(s.history_len(), history);
+    assert!(s.can_redo());
+    assert!(s.take_change().is_none());
+    let new_track = json!({"commands":[{"command":"timeline.move_items","params":{
+        "items":[10,11],"delta":1,"placement":{"mode":"above","track":0}}}]});
+    let retired = s
+        .execute("timeline.preview", new_track.clone())
+        .unwrap()
+        .created;
+    s.execute("timeline.discard_preview", json!({})).unwrap();
+    let fresh = s.execute("timeline.preview", new_track).unwrap().created;
+    assert_ne!(retired, fresh);
+    s.execute("timeline.discard_preview", json!({})).unwrap();
+    assert_eq!(s.project(), &original);
+    assert_eq!(s.history_len(), history);
+    s.begin_gesture().unwrap();
+    assert!(s.execute("timeline.preview", preview(1)).is_err());
+    s.cancel_gesture().unwrap();
+}
+
+#[test]
+fn timeline_preview_wire_commit_validates_candidate_and_retains_failed_preview() {
+    for commit in ["timeline.commit_preview", "commit_gesture"] {
+        let mut s = session();
+        let before = s.project().clone();
+        s.apply(Command::TimelinePreview {
+            commands: vec![Command::TimelineMoveItems {
+                items: vec![ItemId(10), ItemId(11)],
+                delta: Tick(1i64 << 53),
+                placement: None,
+            }],
+        })
+        .unwrap();
+        let candidate = s.preview_project().unwrap().clone();
+        assert!(s.execute(commit, json!({})).is_err());
+        assert_eq!(s.project(), &before);
+        assert_eq!(s.preview_project(), Some(&candidate));
+        assert_eq!(s.history_len(), (0, 0));
+        s.execute("timeline.discard_preview", json!({})).unwrap();
+        assert_eq!(s.project(), &before);
+    }
+}
+
+#[test]
+fn timeline_group_new_track_and_main_origin_keep_common_delta() {
+    for placement in [
+        json!({"mode":"above","track":0}),
+        json!({"mode":"below","track":1}),
+    ] {
+        let mut s = session();
+        let before = s.project().clone();
+        let outcome = s
+            .execute(
+                "timeline.move_items",
+                json!({"items":[10,11],"delta":5,"placement":placement}),
+            )
+            .unwrap();
+        assert_eq!(outcome.created.len(), 1);
+        assert_eq!(get(&s, 11).start.0 - get(&s, 10).start.0, 60);
+        let candidate = s.project().clone();
+        s.undo().unwrap();
+        assert_eq!(s.project(), &before);
+        s.redo().unwrap();
+        assert_eq!(s.project(), &candidate);
+        s.execute(
+            "timeline.move_items",
+            json!({"items":[10,11],"delta":50,
+        "placement":{"mode":"track","track":0}}),
+        )
+        .unwrap();
+        assert_eq!(get(&s, 10).start, Tick(0));
+        assert_eq!(get(&s, 11).start, Tick(60));
+    }
+}
+
+proptest! {
+    #![proptest_config(ProptestConfig::with_cases(128))]
+    #[test]
+    fn timeline_group_offsets_survive_moves_and_both_edge_resizes(
+        delta in 0i64..1000, resize in 0i64..20, start_edge in any::<bool>()
+    ) {
+        let mut s = session();
+        s.execute("timeline.move_items", json!({"items":[10,11],"delta":delta})).unwrap();
+        prop_assert_eq!(get(&s,11).start.0-get(&s,10).start.0,60);
+        s.execute("timeline.trim", json!({"items":[10,11],
+            "edge":if start_edge {"start"} else {"end"},"delta":if start_edge {resize} else {-resize}})).unwrap();
+        prop_assert_eq!(get(&s,11).start.0-get(&s,10).start.0,60);
+        prop_assert_eq!(get(&s,10).duration().unwrap(), Tick(40-resize));
+        prop_assert_eq!(get(&s,11).duration().unwrap(), Tick(40-resize));
+        prop_assert!(get(&s,10).end().unwrap() <= get(&s,11).start);
+        prop_assert!(Project::new(s.project().data().clone()).is_ok());
+    }
+}
+
+#[test]
 fn transform_command_bounds_atomicity_undo_and_persistence() {
     let mut session = session();
     for field in project::TransformField::ALL {

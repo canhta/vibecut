@@ -9,6 +9,61 @@ use time::{FrameRate, SourceRange, Speed, TICKS_PER_SECOND, Tick};
 const SECOND: i64 = TICKS_PER_SECOND;
 const FRAME: i64 = SECOND / 30;
 
+#[test]
+fn timeline_group_trim_refuses_unrepresentable_edges_and_source_exhaustion() {
+    let mut s = session(
+        vec![video(1, 0, range(10 * SECOND, 30 * SECOND))],
+        vec![audio(2, 0, range(10 * SECOND, 30 * SECOND))],
+        false,
+    );
+    s.apply(set_speed(&[1, 2], 0.5, true)).unwrap();
+    let before = s.project().clone();
+    let history = s.history_len();
+    for (edge, delta) in [("start", 1), ("end", -1), ("end", 2000 * SECOND)] {
+        assert!(
+            s.execute(
+                "timeline.trim",
+                serde_json::json!({"items":[1,2],
+            "edge":edge,"delta":delta})
+            )
+            .is_err()
+        );
+        assert_eq!(s.project(), &before);
+        assert_eq!(s.history_len(), history);
+    }
+}
+
+proptest::proptest! {
+    #![proptest_config(proptest::test_runner::Config::with_cases(128))]
+    #[test]
+    fn timeline_group_keeps_audio_video_aligned_at_rational_rates(
+        rate in proptest::sample::select(vec![0.5, 1.0, 2.0, 5.0]),
+        movement in 0i64..20, trim in 1i64..20, start_edge in proptest::bool::ANY
+    ) {
+        let mut s = session(vec![video(1, 0, range(10*SECOND,30*SECOND))],
+            vec![audio(2, 0, range(10*SECOND,30*SECOND))], false);
+        s.apply(set_speed(&[1,2], rate, true)).unwrap();
+        s.execute("timeline.move_items", serde_json::json!({"items":[1,2],"delta":movement*SECOND})).unwrap();
+        proptest::prop_assert_eq!(item(&s,1).start,Tick::ZERO);
+        proptest::prop_assert_eq!(item(&s,2).start,Tick::ZERO);
+        // Put the visual on a secondary track so horizontal movement is unconstrained.
+        s.execute("timeline.move_items", serde_json::json!({"items":[1],"delta":0,
+            "placement":{"mode":"above","track":0}})).unwrap();
+        s.execute("timeline.move_items", serde_json::json!({"items":[1,2],"delta":movement*SECOND})).unwrap();
+        let delta = if start_edge {trim*FRAME} else {-trim*FRAME};
+        s.execute("timeline.trim", serde_json::json!({"items":[1,2],
+            "edge":if start_edge {"start"} else {"end"},"delta":delta})).unwrap();
+        let v = item(&s,1);
+        let a = item(&s,2);
+        proptest::prop_assert_eq!(v.start,a.start);
+        proptest::prop_assert_eq!(v.end().unwrap(),a.end().unwrap());
+        proptest::prop_assert_eq!(v.source_range,a.source_range);
+        proptest::prop_assert_eq!(v.retime.speed,speed(rate));
+        let bytes = project::encode(s.project(),false).unwrap();
+        proptest::prop_assert_eq!(&project::decode(&bytes).unwrap().project,s.project().as_ref());
+    }
+}
+
 fn range(a: i64, b: i64) -> SourceRange {
     SourceRange::new(Tick(a), Tick(b)).unwrap()
 }

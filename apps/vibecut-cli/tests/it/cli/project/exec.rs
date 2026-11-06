@@ -9,6 +9,48 @@ use std::fs;
 use time::{Tick, TimeRange};
 
 #[test]
+fn exec_moves_and_trims_timeline_groups() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("group.vibecut");
+    new_project(&path);
+    let track = add_track(&path, "Overlay")["created"][0]["track"]
+        .as_u64()
+        .unwrap();
+    let inserted = exec(
+        &path,
+        "timeline.insert",
+        json!({
+            "placement":{"mode":"track","track":track},
+            "item":{"source_range":{"start":100,"end":200},"start":20,
+                "animations":{},"content":{"kind":"overlay","params":{"color":[1,2,3,255]}}}
+        }),
+    );
+    let id = inserted["placements"][0]["item"].as_u64().unwrap();
+    exec(
+        &path,
+        "timeline.move_items",
+        json!({"items":[id],"delta":10}),
+    );
+    exec(
+        &path,
+        "timeline.trim",
+        json!({"items":[id],"edge":"end","delta":-5}),
+    );
+    let loaded = project::load(&path).unwrap().project;
+    let item = loaded
+        .data()
+        .scene()
+        .timeline
+        .iter()
+        .flat_map(|t| &t.items)
+        .find(|i| i.id.0 == id)
+        .unwrap();
+    assert_eq!(item.start, Tick(30));
+    assert_eq!(item.duration().unwrap(), Tick(95));
+    assert_eq!(item.source_range.end(), Tick(195));
+}
+
+#[test]
 fn exec_mutates_through_engine_and_reports_created_ids() {
     let dir = tempfile::tempdir().unwrap();
     let project = dir.path().join("exec.vibecut");

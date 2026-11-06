@@ -183,6 +183,132 @@ pub(super) fn execute_move_items(mut data: ProjectData, moves: Vec<Move>) -> Res
     move_items(&mut data, moves)?;
     Ok(data)
 }
+
+/// Resolve destinations on the candidate before moving the selection simultaneously.
+pub(super) fn move_group(
+    mut data: ProjectData,
+    ids: Vec<ItemId>,
+    delta: Tick,
+    placement: Option<Placement>,
+    created: &mut Vec<CreatedId>,
+    next: &mut Option<u64>,
+) -> Result<ProjectData> {
+    let mut seen = BTreeSet::new();
+    let mut members = Vec::new();
+    for id in ids {
+        if !seen.insert(id) {
+            return Err(EditError::Invalid("duplicate group item"));
+        }
+        let source = data
+            .scene()
+            .timeline
+            .iter()
+            .find(|t| t.items.iter().any(|i| i.id == id))
+            .ok_or(EditError::NoItem(id))?
+            .id;
+        members.push((source, item(&mut data, id)?.clone()));
+    }
+    if members.is_empty() {
+        return Err(EditError::Invalid("empty timeline group"));
+    }
+    // Remove every member first: auto placement must not collide with the old group.
+    for (_, member) in &members {
+        take_item(&mut data, member.id)?;
+    }
+    let mut destinations = std::collections::BTreeMap::new();
+    let mut moves = Vec::new();
+    for (source, member) in &members {
+        let start = super::add(member.start, delta)?;
+        let target = if let Some(placement) = placement {
+            if let Some(target) = destinations.get(source) {
+                *target
+            } else {
+                let (target, _) = placement_track(
+                    &mut data,
+                    placement,
+                    member.content.kind(),
+                    start,
+                    member.duration()?,
+                    created,
+                    next,
+                )?;
+                destinations.insert(*source, target);
+                target
+            }
+        } else {
+            *source
+        };
+        moves.push(Move {
+            item: member.id,
+            track: target,
+            start,
+        });
+    }
+    // The empty-main origin correction applies to the whole group, including audio.
+    let main = data.scene().timeline.main.id;
+    let correction = if data.scene().timeline.main.items.is_empty() {
+        moves
+            .iter()
+            .filter(|m| m.track == main)
+            .map(|m| m.start)
+            .min()
+            .filter(|start| *start > Tick::ZERO)
+            .unwrap_or(Tick::ZERO)
+    } else {
+        Tick::ZERO
+    };
+    for movement in &mut moves {
+        movement.start = sub(movement.start, correction)?;
+    }
+    // Restore source locations solely for the simultaneous move owner's lock checks.
+    for (source, member) in members {
+        track(&mut data, source)?.items.push(member);
+    }
+    move_items(&mut data, moves)?;
+    Ok(data)
+}
+
+/// Delegate source-time, retime, keyframe and fade handling to the single-edge owner.
+pub(super) fn trim_group(
+    mut data: ProjectData,
+    ids: Vec<ItemId>,
+    edge: crate::TrimEdge,
+    delta: Tick,
+    sources: &mut TrimSources,
+) -> Result<ProjectData> {
+    let mut seen = BTreeSet::new();
+    if ids.is_empty() {
+        return Err(EditError::Invalid("empty timeline group"));
+    }
+    for id in ids {
+        if !seen.insert(id) {
+            return Err(EditError::Invalid("duplicate group item"));
+        }
+        let member = item(&mut data, id)?;
+        let at = super::add(
+            match edge {
+                crate::TrimEdge::Start => member.start,
+                crate::TrimEdge::End => member.end()?,
+            },
+            delta,
+        )?;
+        data = match edge {
+            crate::TrimEdge::Start => execute_trim_start(data, id, at, sources)?,
+            crate::TrimEdge::End => execute_trim_end(data, id, at, sources)?,
+        };
+        let member = item(&mut data, id)?;
+        let actual = match edge {
+            crate::TrimEdge::Start => member.start,
+            crate::TrimEdge::End => member.end()?,
+        };
+        if actual != at {
+            return Err(EditError::Invalid(
+                "group edge is not representable at playback rate",
+            ));
+        }
+    }
+    Ok(data)
+}
 pub(super) fn execute_split_at(
     mut data: ProjectData,
     id: ItemId,

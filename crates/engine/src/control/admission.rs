@@ -91,7 +91,12 @@ impl Session {
         if caller.external
             && matches!(
                 command,
-                Command::BeginGesture {} | Command::CommitGesture {} | Command::CancelGesture {}
+                Command::BeginGesture {}
+                    | Command::CommitGesture {}
+                    | Command::CancelGesture {}
+                    | Command::TimelinePreview { .. }
+                    | Command::TimelineCommitPreview {}
+                    | Command::TimelineDiscardPreview {}
             )
         {
             return Err(EditError::Permission);

@@ -88,6 +88,58 @@ fn value(a: &Animations, t: Tick) -> f64 {
 fn near(a: f64, b: f64) {
     assert!((a - b).abs() < 1e-8, "{a} != {b}");
 }
+
+#[test]
+fn transform_and_graph_edits_share_the_timeline_preview_transaction() {
+    let mut s = session();
+    let before = s.project().clone();
+    s.apply(Command::TimelinePreview {
+        commands: vec![
+            Command::SetItemField {
+                item: ItemId(2),
+                patch: engine::ItemParamPatch::PositionX(120.0),
+            },
+            Command::RetimeKeyframe {
+                item: ItemId(2),
+                path: path(),
+                component: None,
+                from: frame(120),
+                to: frame(100),
+            },
+        ],
+    })
+    .unwrap();
+    assert_eq!(s.project(), &before);
+    let candidate = s.preview_project().unwrap();
+    let changed = candidate
+        .data()
+        .scene()
+        .timeline
+        .iter()
+        .flat_map(|t| &t.items)
+        .find(|i| i.id == ItemId(2))
+        .unwrap();
+    assert_eq!(
+        TransformField::PositionX
+            .value_at(&changed.animations, Tick::ZERO)
+            .unwrap(),
+        120.0
+    );
+    assert_eq!(
+        changed
+            .animations
+            .get(&path())
+            .unwrap()
+            .channel(None)
+            .unwrap()
+            .keys()[1]
+            .time,
+        frame(100)
+    );
+    s.execute("timeline.discard_preview", json!({})).unwrap();
+    assert_eq!(s.project(), &before);
+    assert_eq!(s.history_len(), (0, 0));
+}
 #[test]
 fn registered_headless_edits_undo_redo_and_one_step_per_gesture() {
     let mut s = session();

@@ -31,6 +31,14 @@ Add `--json` to any command for a machine-readable result on stdout. Without it,
 
 `export` options: `--aspect 9:16` renders 1080×1920 and `--aspect 16:9` renders 1920×1080; without it the project canvas is used. `--overwrite` replaces an existing output. `--allow-degraded` is the explicit consent described below.
 
+Timeline group edits use `exec <project> timeline.move_items
+'{"items":[1,2],"delta":100}'` and `exec <project> timeline.trim
+'{"items":[1,2],"edge":"end","delta":-100}'` (PowerShell single-quoted JSON).
+Times are integer output ticks. Optional move `placement` uses the same tagged
+track/above/below placement as insertion; omitted placement retains each track.
+Each invocation saves one atomic edit. Interactive preview stays in an app-owned
+Session through the [engine preview contract](../../../crates/engine/README.md#timeline-placement).
+
 ## Fonts
 
 `vibecut-cli fonts list [--query <text>]` lists families whose name contains the text, prefix matches first and then alphabetical: bundled families, OS-installed families and the curated downloadable catalog, one entry per name (bundled over a cached download over a system install over a download not cached yet). Each entry carries `origin` (`bundled`, `system`, `google`), `state` (`available` or `not_downloaded`), `styles`, and for bundled and catalog families the `license` id and `source` URL. `fonts resolve <family>` loads a family the way a render would and prints `state` (`loaded`, `not_downloaded`, `cache_invalid` or `unknown`) and the `effective_family` layout will use; any state other than `loaded` exits 4 and layout falls back to Inter. Neither command uses the network.

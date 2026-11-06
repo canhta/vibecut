@@ -44,6 +44,7 @@ pub struct Session {
     state: State,
     limit: usize,
     gesture: Option<State>,
+    timeline_preview: bool,
     grouping: bool,
 }
 impl Session {
@@ -94,6 +95,7 @@ impl Session {
             },
             limit: history_limit,
             gesture: None,
+            timeline_preview: false,
             grouping: false,
         })
     }
@@ -167,9 +169,20 @@ impl Session {
         }
         self.apply(command)
     }
-    /// Current immutable snapshot, including a gesture/group preview while active.
+    /// Current immutable snapshot. Timeline previews retain committed content here;
+    /// explicit incremental gestures/groups expose their candidate during the transaction.
     pub fn project(&self) -> &Arc<Project> {
+        if self.timeline_preview
+            && let Some(before) = &self.gesture
+        {
+            return &before.project;
+        }
         &self.state.project
+    }
+    /// Uncommitted gesture snapshot for timeline, transform and graph rendering.
+    /// `timeline.preview` keeps `project()` byte-identical until commit.
+    pub fn preview_project(&self) -> Option<&Arc<Project>> {
+        self.gesture.as_ref().map(|_| &self.state.project)
     }
     /// Adopt an acknowledged Save As without adding or discarding history.
     pub(crate) fn adopt_saved_project(&mut self, project: Arc<Project>) {
@@ -274,6 +287,7 @@ impl Session {
     }
     fn finish_gesture(&mut self) -> Result<Outcome> {
         let before = self.gesture.take().ok_or(EditError::NoGesture)?;
+        self.timeline_preview = false;
         self.squash(before)
     }
     /// Restore project, history and deferred event to gesture entry. Preview IDs are
@@ -283,6 +297,7 @@ impl Session {
     }
     fn revert_gesture(&mut self) -> Result<Outcome> {
         let before = self.gesture.take().ok_or(EditError::NoGesture)?;
+        self.timeline_preview = false;
         let changed = *self.state.project != *before.project;
         let next_id = self.state.next_id;
         self.state = before;
@@ -369,6 +384,7 @@ impl Session {
     fn boundary<T>(&mut self, run: impl FnOnce(&mut Self) -> Result<T>) -> Result<T> {
         let before = self.state.clone();
         let gesture = self.gesture.clone();
+        let timeline_preview = self.timeline_preview;
         let revision = self.revision.clone();
         let event_mark = self.control_mark();
         let metadata = self.metadata.clone();
@@ -380,6 +396,7 @@ impl Session {
                 {
                     self.state = before;
                     self.gesture = gesture;
+                    self.timeline_preview = timeline_preview;
                     self.metadata = metadata;
                     self.revision = revision;
                     self.restore_control_mark(event_mark);
@@ -390,6 +407,7 @@ impl Session {
             Ok(Err(error)) => {
                 self.state = before;
                 self.gesture = gesture;
+                self.timeline_preview = timeline_preview;
                 self.metadata = metadata;
                 self.revision = revision;
                 self.restore_control_mark(event_mark);
@@ -398,6 +416,7 @@ impl Session {
             Err(_) => {
                 self.state = before;
                 self.gesture = gesture;
+                self.timeline_preview = timeline_preview;
                 self.metadata = metadata;
                 self.revision = revision;
                 self.restore_control_mark(event_mark);
@@ -474,7 +493,10 @@ impl Session {
         // if its final child reaches exhaustion and the group must roll back.
         let closing = matches!(
             command,
-            Command::CommitGesture {} | Command::CancelGesture {}
+            Command::CommitGesture {}
+                | Command::CancelGesture {}
+                | Command::TimelineCommitPreview {}
+                | Command::TimelineDiscardPreview {}
         );
         self.generation
             .checked_add(if self.transaction_active() && !closing {
@@ -492,6 +514,20 @@ impl Session {
             ));
         }
         match command {
+            Command::TimelinePreview { commands } => {
+                let batch = Command::Batch { commands };
+                edit::check_budget(&batch)?;
+                if !self.timeline_preview {
+                    self.start_gesture()?;
+                }
+                let before = self.gesture.as_ref().ok_or(EditError::NoGesture)?.clone();
+                let next_id = self.state.next_id;
+                self.state = before;
+                self.state.next_id = next_id;
+                let outcome = self.commit(batch, None, wire)?;
+                self.timeline_preview = true;
+                return Ok(outcome);
+            }
             Command::SwitchScene { scene } => {
                 if self.transaction_active() {
                     return Err(EditError::TransactionActive);
@@ -555,13 +591,13 @@ impl Session {
                 }
                 return self.start_gesture();
             }
-            Command::CommitGesture {} => {
+            Command::CommitGesture {} | Command::TimelineCommitPreview {} => {
                 if wire {
-                    super::wire::validate_wire(self.project().data())?;
+                    super::wire::validate_wire(self.state.project.data())?;
                 }
                 return self.finish_gesture();
             }
-            Command::CancelGesture {} => {
+            Command::CancelGesture {} | Command::TimelineDiscardPreview {} => {
                 if wire && let Some(before) = &self.gesture {
                     super::wire::validate_wire(before.project.data())?;
                 }
@@ -635,7 +671,8 @@ impl Session {
         let locations: std::collections::BTreeMap<_, _> = if allocated.is_empty() {
             Default::default()
         } else {
-            self.project()
+            self.state
+                .project
                 .data()
                 .scene()
                 .timeline

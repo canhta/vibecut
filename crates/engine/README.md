@@ -125,6 +125,36 @@ Undo restores the exact records and their project order; redo removes them again
 
 ### Timeline placement
 
+`timeline.move_items { items, delta, placement? }` moves a nonempty unique
+selection by one signed output-tick delta. Omitted/null placement retains each
+member's track. An explicit placement uses the insertion placement owner; an
+above/below drop allocates one destination per source track, retaining the
+group's horizontal offsets. Empty-main origin correction shifts the whole
+selection, including audio partners, by the same amount. The caller supplies
+every linked partner in `items`; there is no implicit link model. Invalid IDs,
+locked tracks, incompatible kinds, overlaps, negative times and arithmetic
+overflow refuse the entire edit, including any new tracks. Snapping remains a
+caller decision, outside this algebra.
+
+`timeline.trim { items, edge, delta }` moves every selected start/end edge by
+the same signed output-tick delta (`edge: start | end`). It delegates to the
+existing trim owner for source ranges, playback rates, keyframes, cues and
+fades. A refused member, overlap or edge that cannot represent the exact shared
+delta at its playback rate refuses the entire group.
+
+`timeline.preview { commands }` stages a bounded batch of edit commands in the
+same transaction state used by explicit gestures. Each call replaces the whole
+candidate from the entry snapshot, so deltas are absolute from drag start.
+`project()` remains the committed snapshot; `preview_project()` exposes the
+candidate only while a gesture is active. This seam also serves transform and
+graph previews. `timeline.commit_preview {}` publishes one undo step and one
+change event; `timeline.discard_preview {}` restores the exact entry project,
+history and pending change without a history entry. A net-zero commit preserves
+redo. Failed replacement retains the previous valid candidate. Save, undo,
+selection changes and nested gestures refuse while preview is active. Preview
+IDs remain retired after discard. Preview commands are human gesture controls;
+external agents use atomic batches and undo.
+
 `timeline.insert { placement, item }` performs track choice, optional allocation
 and insertion as one atomic undo step. `placement` is a tagged object with
 `mode: auto` (the default), `track` with a track ID, or `above`/`below` with a
