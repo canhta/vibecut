@@ -244,11 +244,7 @@ pub(crate) fn subtitle(args: Vec<OsString>) -> Result<Output, CliError> {
     })
 }
 
-pub(crate) fn translation_required(
-    source: &LanguageTag,
-    target: &LanguageTag,
-    bilingual: bool,
-) -> bool {
+fn translation_required(source: &LanguageTag, target: &LanguageTag, bilingual: bool) -> bool {
     bilingual || source != target
 }
 

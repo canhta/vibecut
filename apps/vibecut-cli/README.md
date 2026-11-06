@@ -123,6 +123,11 @@ registered `captions.import` command. The CLI prints counts and line-numbered
 warnings, applies the command under the same lease/save path and never
 reimplements ASS parsing or style mapping.
 
+The single integration binary groups CLI behaviour in `tests/it/cli/` by command.
+Its `process`, `project_fixture` and `media_fixture` modules own dev-only subprocess
+and fixture setup; control framing and batch/sound fixtures stay with their tests.
+Unit tests stay beside their production owner.
+
 `cargo test -p vibecut-cli` covers command dispatch, Unicode/space paths, refused
 parameters, subprocess lease contention, progress, export geometry, keyframed
 opacity decoded from an export, rectangle masks applied by `exec` and decoded

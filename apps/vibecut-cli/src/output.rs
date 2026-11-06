@@ -56,6 +56,10 @@ pub(crate) fn hex(bytes: &[u8]) -> String {
     output
 }
 
+pub(crate) fn tick_json(tick: Tick) -> Value {
+    json!({"ticks": tick.0, "seconds": tick.seconds()})
+}
+
 #[cfg(test)]
 mod tests {
     #![allow(clippy::unwrap_used, clippy::panic)]
@@ -64,8 +68,4 @@ mod tests {
     fn hex_is_lowercase_and_fixed_width() {
         assert_eq!(hex(&[0x00, 0x0f, 0xa5, 0xff]), "000fa5ff");
     }
-}
-
-pub(crate) fn tick_json(tick: Tick) -> Value {
-    json!({"ticks": tick.0, "seconds": tick.seconds()})
 }
