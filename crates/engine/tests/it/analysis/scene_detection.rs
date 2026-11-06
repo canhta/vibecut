@@ -25,9 +25,15 @@ fn frame(n: i64) -> Tick {
 fn range(n: i64) -> SourceRange {
     SourceRange::new(Tick::ZERO, frame(n)).unwrap()
 }
+/// Fixture ownership is per process: another CI job must never truncate a
+/// source this process is still decoding.
+fn fixture_dir() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../../target/fixtures/scene-detection")
+        .join(std::process::id().to_string())
+}
 pub(super) fn fixture(name: &str, size: u32, count: usize, cuts: bool) -> SourceAsset {
-    let dir =
-        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../target/fixtures/scene-detection");
+    let dir = fixture_dir();
     std::fs::create_dir_all(&dir).unwrap();
     let path = dir.join(format!("{name}.mkv"));
     let mut child = Command::new("ffmpeg")
@@ -104,6 +110,46 @@ pub(super) fn fixture(name: &str, size: u32, count: usize, cuts: bool) -> Source
     assert!(child.wait().unwrap().success());
     SourceAsset::import(AssetId(1), path).unwrap()
 }
+
+/// Independent test processes own independent sources: a second process must
+/// never rewrite a file the first one is decoding (the three-concurrent CI
+/// failure behind p0-core/161).
+#[test]
+fn independent_process_fixtures_never_share_a_live_source() {
+    const PROBE: &str = "VIBECUT_SCENE_FIXTURE_PROBE";
+    let asset = fixture("ownership", 16, 20, false);
+    if std::env::var_os(PROBE).is_some() {
+        println!("FIXTURE={}", asset.path().display());
+        return;
+    }
+    let before = std::fs::read(asset.path()).unwrap();
+    let output = Command::new(std::env::current_exe().unwrap())
+        .args([
+            "--exact",
+            "analysis::scene_detection::independent_process_fixtures_never_share_a_live_source",
+            "--nocapture",
+        ])
+        .env(PROBE, "1")
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "probe failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    let child = stdout
+        .lines()
+        .find_map(|line| line.strip_prefix("FIXTURE="))
+        .expect("probe fixture path");
+    assert_ne!(PathBuf::from(child), asset.path());
+    assert_eq!(
+        std::fs::read(asset.path()).unwrap(),
+        before,
+        "another process rewrote a live source"
+    );
+}
+
 fn setup() -> (JobRunner, ArtifactCache, tempfile::TempDir) {
     setup_clock(Arc::new(SystemClock::default()))
 }
@@ -464,8 +510,7 @@ fn review_larger_than_one_batch_still_undoes_once() {
 
 #[test]
 fn continuous_mandelbrot_zoom_is_not_a_fade() {
-    let dir =
-        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../target/fixtures/scene-detection");
+    let dir = fixture_dir();
     std::fs::create_dir_all(&dir).unwrap();
     let path = dir.join("mandelbrot-zoom.mkv");
     let output = Command::new("ffmpeg")

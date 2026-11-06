@@ -47,8 +47,11 @@ fn fixture() -> Option<SourceAsset> {
                 eprintln!("SKIP shot analysis: ffmpeg unavailable");
                 return None;
             }
+            // Fixture ownership is per process: another CI job must never
+            // truncate a source this process is still decoding.
             let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-                .join("../../target/fixtures/shot-analysis");
+                .join("../../target/fixtures/shot-analysis")
+                .join(std::process::id().to_string());
             std::fs::create_dir_all(&dir).unwrap();
             let path = dir.join("three-shots.mkv");
             let result = Command::new("ffmpeg")
@@ -99,6 +102,49 @@ fn fixture() -> Option<SourceAsset> {
         })
         .clone()
 }
+
+/// Independent test processes own independent sources: a second process must
+/// never rewrite a file the first one is decoding (the three-concurrent CI
+/// failure behind p0-core/161).
+#[test]
+fn independent_process_fixtures_never_share_a_live_source() {
+    const PROBE: &str = "VIBECUT_SHOT_FIXTURE_PROBE";
+    let Some(asset) = fixture() else {
+        return;
+    };
+    if std::env::var_os(PROBE).is_some() {
+        println!("FIXTURE={}", asset.path().display());
+        return;
+    }
+    let before = std::fs::read(asset.path()).unwrap();
+    let output = Command::new(std::env::current_exe().unwrap())
+        .args([
+            "--exact",
+            "analysis::shot_analysis::independent_process_fixtures_never_share_a_live_source",
+            "--nocapture",
+        ])
+        .env(PROBE, "1")
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "probe failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    let child = stdout
+        .lines()
+        .find_map(|line| line.strip_prefix("FIXTURE="))
+        .expect("probe fixture path");
+    assert_ne!(PathBuf::from(child), asset.path());
+    assert_eq!(
+        std::fs::read(asset.path()).unwrap(),
+        before,
+        "another process rewrote a live source"
+    );
+    assert!(asset.probe().duration.is_some());
+}
+
 fn setup() -> (JobRunner, ArtifactCache, tempfile::TempDir) {
     setup_budget(ByteBudget::new(3 << 30).unwrap())
 }
@@ -263,7 +309,13 @@ fn analysis_partitions_shots_keeps_identity_local_and_reuses_only_matching_model
         .submit(&mut runner, &mut cache, Detector::normal(calls.clone()))
         .unwrap();
     assert!(job.finish(&mut runner, &mut cache).unwrap().is_none());
-    assert_eq!(wait(&mut runner, job.id), JobState::Completed);
+    let state = wait(&mut runner, job.id);
+    assert_eq!(
+        state,
+        JobState::Completed,
+        "{:?}",
+        runner.snapshot(job.id).unwrap().error
+    );
     let result = job.finish(&mut runner, &mut cache).unwrap().unwrap();
     assert_eq!(result.shots.len(), 3);
     assert_eq!(
@@ -769,7 +821,13 @@ fn repeated_faces_gain_cross_shot_identity_and_survive_cache_reopen() {
             },
         )
         .unwrap();
-    assert_eq!(wait(&mut runner, job.id), JobState::Completed);
+    let state = wait(&mut runner, job.id);
+    assert_eq!(
+        state,
+        JobState::Completed,
+        "{:?}",
+        runner.snapshot(job.id).unwrap().error
+    );
     let result = job.finish(&mut runner, &mut cache).unwrap().unwrap();
     assert_eq!(result.shots[0].tracks[0].identity, None);
     assert_eq!(
