@@ -290,6 +290,12 @@ const SCENES: &[Scene] = &[
         build: home,
     },
     Scene {
+        name: "home-projects",
+        reference_dark: None,
+        reference_light: None,
+        build: home_projects,
+    },
+    Scene {
         name: "editor-empty",
         reference_dark: Some("capcut/illustrations/capcut-desktop-ui.png"),
         reference_light: Some("capcut/illustrations/capcut-desktop-ui.png"),
@@ -488,6 +494,50 @@ fn home(theme: Theme, scale: f32) -> Result<AppHarness, Failure> {
         app.run_steps(1);
         if !app.state().busy() {
             break;
+        }
+        std::thread::sleep(Duration::from_millis(2));
+    }
+    app.run_steps(2);
+    Ok(app)
+}
+
+/// Home at the measured desktop window size with a full row of projects.
+const HOME_WINDOW: [f32; 2] = [1728.0, 1030.0];
+
+fn home_projects(theme: Theme, scale: f32) -> Result<AppHarness, Failure> {
+    let directory = tempfile::tempdir()?;
+    let root = directory.path().join("projects");
+    {
+        let mut library = engine::library::ProjectLibrary::open(&root, ByteBudget::new(64 << 20)?)?;
+        for id in 1..=10u64 {
+            library.execute(
+                ProjectId(id),
+                Command::CreateProject {
+                    id: ProjectId(id),
+                    name: format!("Draft {id}").into(),
+                },
+            )?;
+        }
+    }
+    let workspace = Workspace::with_projects(
+        directory.path().join("recovery"),
+        root,
+        preferences(theme, Locale::En),
+        None,
+    )?;
+    let mut app = harness_sized(
+        App::Home {
+            workspace: Box::new(workspace),
+            _directory: directory,
+        },
+        scale,
+        HOME_WINDOW,
+    );
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while app.state().busy() {
+        app.run_steps(1);
+        if Instant::now() >= deadline {
+            return Err("home audit timed out".into());
         }
         std::thread::sleep(Duration::from_millis(2));
     }
