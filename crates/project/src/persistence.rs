@@ -83,7 +83,10 @@ pub fn decode(bytes: &[u8]) -> Result<Loaded> {
         });
     }
     let _ = header.project;
-    let envelope: EnvelopeIn = serde_json::from_slice(bytes)?;
+    let mut envelope: EnvelopeIn = serde_json::from_slice(bytes)?;
+    // Files saved before custom sizes rounded may store odd canvases; export
+    // needs even ones, so repair on load instead of refusing the file.
+    envelope.project.round_canvas_even();
     Ok(Loaded {
         project: Project::new(envelope.project)?,
         schema_version: header.schema_version,

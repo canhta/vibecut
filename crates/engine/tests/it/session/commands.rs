@@ -2552,6 +2552,14 @@ fn imported_asset_is_one_undo_step_and_restores_the_exact_record() {
 }
 
 fn policy_asset(id: u64, format: &str, rate: Option<time::FrameRate>) -> SourceAsset {
+    policy_asset_sized(id, format, rate, (640, 360))
+}
+fn policy_asset_sized(
+    id: u64,
+    format: &str,
+    rate: Option<time::FrameRate>,
+    (width, height): (u32, u32),
+) -> SourceAsset {
     SourceAsset::try_from(AssetData {
         ephemeral: true,
         id: AssetId(id),
@@ -2571,8 +2579,8 @@ fn policy_asset(id: u64, format: &str, rate: Option<time::FrameRate>) -> SourceA
                 frame_count: None,
                 variable_frame_rate: None,
                 video: Some(media::VideoInfo {
-                    width: 640,
-                    height: 360,
+                    width,
+                    height,
                     color: Default::default(),
                     bit_depth: Some(8),
                 }),
@@ -2673,6 +2681,36 @@ fn import_policy_ratchets_exact_rates_and_refuses_invalid_metadata_atomically() 
 #[test]
 fn first_media_canvas_is_atomic_persisted_and_batch_ordered() {
     use time::FrameRate as F;
+    // Odd captured media sizes resolve the Original preset to the nearest even
+    // size (ties up), never zero, in one undo step.
+    for ((width, height), even) in [
+        ((641, 361), (642, 362)),
+        ((1, 1), (2, 2)),
+        ((8191, 8191), (8192, 8192)),
+    ] {
+        let mut data = Project::empty(ProjectId(1), "odd".into())
+            .unwrap()
+            .into_data();
+        data.assets.push(policy_asset_sized(
+            1,
+            "mp4",
+            Some(F::FPS_30),
+            (width, height),
+        ));
+        let before = Project::new(data).unwrap();
+        let mut s = Session::new(before.clone(), 10).unwrap();
+        s.apply(policy_insert(1)).unwrap();
+        let size = project::CanvasSize {
+            width: even.0,
+            height: even.1,
+        };
+        let data = s.project().data();
+        assert_eq!((data.canvas.width, data.canvas.height), even);
+        assert_eq!(data.original_canvas_size, Some(size));
+        assert_eq!(data.canvas.preset, Some(project::AspectPreset::Original));
+        s.execute("undo", json!({})).unwrap();
+        assert_eq!(s.project().as_ref(), &before);
+    }
     for format in ["mp4", "png_pipe"] {
         let mut data = Project::empty(ProjectId(1), "policy".into())
             .unwrap()

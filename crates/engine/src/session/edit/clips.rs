@@ -95,10 +95,12 @@ pub(super) fn execute_insert_item(
                 .iter()
                 .find_map(|stream| stream.video.as_ref())
         {
-            let size = project::CanvasSize {
+            // Odd media sizes round like custom entry so the canvas can export.
+            let raw = project::CanvasSize {
                 width: video.width,
                 height: video.height,
             };
+            let size = raw.rounded_even().filter(|s| s.is_valid()).unwrap_or(raw);
             data.canvas.width = size.width;
             data.canvas.height = size.height;
             data.canvas.preset = Some(project::AspectPreset::Original);

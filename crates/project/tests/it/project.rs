@@ -252,6 +252,39 @@ fn all_kinds_roundtrip_missing_unicode_media_and_caption_identity() {
             project
         );
     }
+    // Files written before custom sizes rounded may store odd canvases: load
+    // repairs every stored size to the nearest even one (ties up, never zero)
+    // instead of refusing the file.
+    for ((width, height), even) in [
+        ((1081, 721), (1082, 722)),
+        ((1, 1), (2, 2)),
+        ((8191, 8191), (8192, 8192)),
+        ((1920, 1080), (1920, 1080)),
+    ] {
+        let mut data = project.clone().into_data();
+        let odd = project::CanvasSize { width, height };
+        data.canvas.width = width;
+        data.canvas.height = height;
+        data.canvas.preset = Some(project::AspectPreset::Original);
+        data.canvas.last_custom_size = odd;
+        data.original_canvas_size = Some(odd);
+        let bytes = serde_json::to_vec(&serde_json::json!({
+            "format": FORMAT_ID,
+            "schema_version": SCHEMA_VERSION,
+            "generator": "legacy",
+            "project": data,
+        }))
+        .unwrap();
+        let loaded = decode(&bytes).unwrap().project;
+        let size = project::CanvasSize {
+            width: even.0,
+            height: even.1,
+        };
+        let data = loaded.data();
+        assert_eq!((data.canvas.width, data.canvas.height), even);
+        assert_eq!(data.canvas.last_custom_size, size);
+        assert_eq!(data.original_canvas_size, Some(size));
+    }
     let path = dir.path().join("dự án của tôi.vibecut");
     save_fixture(&path, &project).unwrap();
     assert_eq!(load(&path).unwrap().project, project);
