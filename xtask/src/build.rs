@@ -12,7 +12,7 @@ mod tests;
 
 use admission::{Admission, caller_jobs, claim};
 use cache::{cache, disk_free};
-use environment::{configured_slots, load, memory_available, total_memory};
+use environment::{configured_slots, load, memory, total_memory};
 use queue::Queue;
 use receipt::receipt;
 use slot::{contain, prepare};
@@ -73,13 +73,13 @@ fn run_in(
     let mut said = false;
     let mut slot = loop {
         if let Some(slot) =
-            claim(&mut queue, root, admission, memory_available, load).map_err(|e| e.to_string())?
+            claim(&mut queue, root, admission, memory, load).map_err(|e| e.to_string())?
         {
             break slot;
         }
         if !said {
             eprintln!(
-                "[build] waiting (FIFO; {}-slot capacity, extra builds need 30% free memory, bounded load and a 20s ramp)",
+                "[build] waiting (FIFO; {}-slot capacity, extra builds need 30% free memory after reserving every running build's 3 GiB peak, bounded load and a 20s ramp)",
                 admission.max_slots
             );
             said = true;

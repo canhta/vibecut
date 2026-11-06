@@ -12,6 +12,11 @@ pub(super) const START_RAMP: Duration = Duration::from_secs(20);
 pub(super) const GIB: u64 = 1 << 30;
 /// Worst measured workspace-build memory from verification history (0.3-1.5 GiB).
 pub(super) const WORST_BUILD_BYTES: u64 = GIB + GIB / 2;
+/// Peak memory one running slot can reach after its compile: the worst measured
+/// build (1.5 GiB) plus one 1 GiB link and one 0.5 GiB test binary. Admission
+/// holds this reserve for every live lease because link and test fan-out happen
+/// after compile, so a running neighbour has not provably passed its peak.
+pub(super) const SLOT_PEAK_RESERVE_BYTES: u64 = 3 * GIB;
 /// Unix 1-minute load average must stay below this multiple of logical CPUs.
 #[cfg(not(windows))]
 pub(super) const MAX_LOAD_PER_CPU: f64 = 2.0;
@@ -42,6 +47,41 @@ impl std::fmt::Display for SlotsError {
 }
 
 impl std::error::Error for SlotsError {}
+/// One physical-memory snapshot. Unreadable, zero-total or available-over-total
+/// facts are rejected so admission fails closed instead of reserving nothing.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) struct Memory {
+    pub(super) available: u64,
+    pub(super) total: u64,
+}
+
+impl Memory {
+    pub(super) fn new(available: u64, total: u64) -> Option<Self> {
+        (total > 0 && available <= total).then_some(Self { available, total })
+    }
+}
+
+/// Bytes reserved by `running` live slots. Saturates so a hostile running count
+/// can never wrap the reserve into spare memory.
+pub(super) fn reserved_bytes(running: usize) -> u64 {
+    u64::try_from(running)
+        .unwrap_or(u64::MAX)
+        .saturating_mul(SLOT_PEAK_RESERVE_BYTES)
+}
+
+/// Does free memory minus every running slot's peak reserve stay at or above
+/// `MIN_FREE_PERCENT`? A neighbour admitted during compile still has its link
+/// and test peak ahead, so its whole reserve is outstanding until it exits.
+pub(super) fn memory_fits(memory: Memory, running: usize) -> bool {
+    let spare = u128::from(memory.available).saturating_sub(u128::from(reserved_bytes(running)));
+    spare * 100 >= u128::from(memory.total) * u128::from(MIN_FREE_PERCENT)
+}
+
+/// Does the instant snapshot meet `MIN_FREE_PERCENT` before reserves?
+pub(super) fn memory_available(memory: Memory) -> bool {
+    memory_fits(memory, 0)
+}
+
 /// Upper bound from host facts alone. CPU bounds the number of slots; the shared
 /// job reservations independently bound aggregate jobs. Memory keeps the 30% admission
 /// reservation and divides the rest by the worst measured build footprint.
@@ -114,30 +154,51 @@ pub(super) fn load_within_bound(load: Option<f64>, cpus: usize) -> bool {
         loadavg_within_bound(load, cpus)
     }
 }
-// Each platform reads free physical memory from exactly one source. The
-// `memory_available` dispatcher below is the only admission path: every gated
-// platform feeds the same `MIN_FREE_PERCENT` threshold and `START_RAMP` in
-// `admit_extra`. macOS reads the `sysctl` level, Linux parses `/proc/meminfo`,
-// Windows calls `GlobalMemoryStatusEx`. A source that cannot be read or parsed
-// returns `false` (fail closed), which holds the extra build slot.
+// Each platform reads physical memory from exactly one source. The `memory`
+// dispatcher below is the only admission path: every gated platform feeds the
+// same `MIN_FREE_PERCENT` threshold, slot peak reserve and `START_RAMP` in
+// `admit_extra`. macOS reads the `sysctl` level and `hw.memsize`, Linux parses
+// `/proc/meminfo`, Windows calls `GlobalMemoryStatusEx`. A source that cannot
+// be read or parsed returns `None` (fail closed), which holds the extra slot.
 
 #[cfg(any(target_os = "macos", test))]
-pub(super) fn sysctl_memory_available(program: impl AsRef<OsStr>) -> bool {
-    Command::new(program)
+pub(super) fn sysctl_memory(program: impl AsRef<OsStr>) -> Option<Memory> {
+    let program = program.as_ref();
+    let level = Command::new(program)
         .args(["-n", "kern.memorystatus_level"])
         .output()
         .ok()
         .filter(|out| out.status.success())
         .and_then(|out| String::from_utf8(out.stdout).ok())
-        .and_then(|text| text.trim().parse::<u32>().ok())
-        .is_some_and(|level| level >= MIN_FREE_PERCENT)
+        .and_then(|text| text.trim().parse::<u64>().ok())
+        .filter(|level| *level <= 100)?;
+    let total = sysctl_total_memory(program)?;
+    let available = u64::try_from(u128::from(total) * u128::from(level) / 100).ok()?;
+    Memory::new(available, total)
 }
 
-/// Read Linux free memory from `/proc/meminfo`. A missing or unreadable file
-/// fails closed (holds the extra slot), as a failed macOS/Windows probe does.
+/// Build bytes facts from one `/proc/meminfo` text. Overflow fails closed.
+#[cfg(any(target_os = "linux", test))]
+pub(super) fn meminfo_memory(text: &str) -> Option<Memory> {
+    let meminfo = parse_meminfo(text)?;
+    Memory::new(
+        meminfo.available_kb.checked_mul(1024)?,
+        meminfo.total_kb.checked_mul(1024)?,
+    )
+}
+
+/// Read Linux memory from `/proc/meminfo`. A missing or unreadable file keeps
+/// `None` (holds the extra slot), as a failed macOS/Windows probe does.
+#[cfg(any(target_os = "linux", test))]
+pub(super) fn proc_meminfo_memory(path: impl AsRef<Path>) -> Option<Memory> {
+    fs::read_to_string(path)
+        .ok()
+        .and_then(|text| meminfo_memory(&text))
+}
+
 #[cfg(any(target_os = "linux", test))]
 pub(super) fn proc_meminfo_available(path: impl AsRef<Path>) -> bool {
-    fs::read_to_string(path).is_ok_and(|text| meminfo_memory_available(&text))
+    proc_meminfo_memory(path).is_some_and(memory_available)
 }
 
 /// Pure `/proc/meminfo` parser. A trustworthy line is exactly
@@ -184,10 +245,7 @@ pub(super) fn parse_meminfo(text: &str) -> Option<Meminfo> {
 /// Decide whether `MemAvailable` meets `MIN_FREE_PERCENT` of `MemTotal`.
 #[cfg(any(target_os = "linux", test))]
 pub(super) fn meminfo_memory_available(text: &str) -> bool {
-    parse_meminfo(text).is_some_and(|meminfo| {
-        u128::from(meminfo.available_kb) * 100
-            >= u128::from(meminfo.total_kb) * u128::from(MIN_FREE_PERCENT)
-    })
+    meminfo_memory(text).is_some_and(memory_available)
 }
 
 /// Read total physical memory from `/proc/meminfo`; an unreadable or
@@ -346,28 +404,33 @@ pub(super) fn load() -> Option<f64> {
     }
 }
 
-pub(super) fn memory_available() -> bool {
+/// One Windows memory snapshot in bytes.
+#[cfg(windows)]
+pub(super) fn windows_memory() -> Option<Memory> {
+    winsafe::GlobalMemoryStatusEx()
+        .ok()
+        .and_then(|memory| Memory::new(memory.ullAvailPhys, memory.ullTotalPhys))
+}
+
+pub(super) fn memory() -> Option<Memory> {
     #[cfg(target_os = "macos")]
     {
-        sysctl_memory_available("sysctl")
+        sysctl_memory("sysctl")
     }
     #[cfg(target_os = "linux")]
     {
-        proc_meminfo_available("/proc/meminfo")
+        proc_meminfo_memory("/proc/meminfo")
     }
     #[cfg(windows)]
     {
-        winsafe::GlobalMemoryStatusEx().is_ok_and(|memory| {
-            memory.ullTotalPhys > 0
-                && u128::from(memory.ullAvailPhys) * 100
-                    >= u128::from(memory.ullTotalPhys) * u128::from(MIN_FREE_PERCENT)
-        })
+        windows_memory()
     }
     // Unix platforms without a memory probe keep the historical "admit by
     // available slots alone" behaviour: `run_in` passes `memory_gated = false`
-    // there, so this dispatcher is never called. Fail closed regardless.
+    // there, so this dispatcher is only consulted for job pressure, where an
+    // unknown source leaves the default fan-out unchanged.
     #[cfg(not(any(target_os = "macos", target_os = "linux", windows)))]
     {
-        false
+        None
     }
 }

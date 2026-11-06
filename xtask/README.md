@@ -57,10 +57,17 @@ values are rejected with a typed error before queueing.
 
 On macOS, Linux and Windows, only the first active build bypasses the resource gates.
 Every extra slot requires all of: a 20-second ramp since the last admission, free
-physical memory at or above 30%, and load below the documented bound (1-minute
-loadavg below twice the logical CPUs on Unix; aggregate processor load below 90% on
-Windows, sampled from two `GetSystemTimes` readings). Probe failure blocks extra
-admission (fail closed): macOS uses `sysctl kern.memorystatus_level` and `hw.memsize`,
+physical memory minus a peak reserve for every running slot at or above 30%, and
+load below the documented bound (1-minute loadavg below twice the logical CPUs on
+Unix; aggregate processor load below 90% on Windows, sampled from two
+`GetSystemTimes` readings). Each running slot reserves its 3 GiB peak after
+compile (worst measured build 1.5 GiB plus one 1 GiB link and one 0.5 GiB test
+binary); link and test fan-out happen late, so a neighbour admitted during
+compile has not provably passed its peak and keeps the whole reserve until its
+lease ends. A build admitted while instant free memory is already below 30%
+halves its own `CARGO_BUILD_JOBS` (never below one) to cap its link/test
+fan-out. Probe failure blocks extra admission (fail closed): macOS uses
+`sysctl kern.memorystatus_level` and `hw.memsize`,
 Linux reads `MemAvailable`/`MemTotal` from `/proc/meminfo` and the first field of
 `/proc/loadavg` (a missing, zero-total, truncated or unparsable source holds the
 slot), and Windows uses `GlobalMemoryStatusEx` with `GetSystemTimes`. One source
@@ -260,7 +267,8 @@ last-slot race), mixed-capacity job reservations, concurrent claims and releases
 at the shared job bound, exclusive caller jobs and fail-closed reservation metadata,
 child exit/kill lease release, capacity derivation and override
 validation, shrinking capacity without killing running builds, reuse of slots above
-a shrunk count, memory admission/probe failure, the Linux `/proc/meminfo` and
+a shrunk count, memory admission with per-slot peak reserves and job pressure,
+probe failure, the Linux `/proc/meminfo` and
 `/proc/loadavg` parsers (normal, missing keys, truncated, zero total, hostile values
 and exact thresholds), Windows processor-load arithmetic, receipt cleanliness and
 worktree/disk cleanup. Launcher and descendant survival

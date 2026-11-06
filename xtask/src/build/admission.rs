@@ -1,6 +1,6 @@
 //! Admit one build command into a FIFO queue and claim a job-budgeted warm slot.
 use super::{
-    environment::{START_RAMP, load_within_bound},
+    environment::{Memory, START_RAMP, load_within_bound, memory_available, memory_fits},
     queue::{Queue, open, try_lock},
     slot::{Slot, owner},
 };
@@ -66,7 +66,8 @@ pub(super) fn admit_extra(
     busy: bool,
     last_start: Option<SystemTime>,
     cpus: usize,
-    memory: impl FnOnce() -> bool,
+    running: usize,
+    memory: impl FnOnce() -> Option<Memory>,
     load: impl FnOnce() -> Option<f64>,
 ) -> bool {
     if !memory_gated || !busy {
@@ -75,15 +76,26 @@ pub(super) fn admit_extra(
     last_start
         .and_then(|time| time.elapsed().ok())
         .is_some_and(|age| age >= START_RAMP)
-        && memory()
+        && memory().is_some_and(|memory| memory_fits(memory, running))
         && load_within_bound(load(), cpus)
+}
+
+/// Cap link/test fan-out when this build is admitted while free memory is
+/// already below the floor. An unreadable source keeps the default fan-out:
+/// extra slots are already denied, and non-gated hosts have no source at all.
+pub(super) fn pressured_jobs(jobs: usize, memory: Option<Memory>) -> usize {
+    if memory.is_some_and(|memory| !memory_available(memory)) {
+        (jobs / 2).max(1)
+    } else {
+        jobs
+    }
 }
 
 pub(super) fn claim(
     queue: &mut Queue,
     root: &Path,
     admission: Admission,
-    memory: impl FnOnce() -> bool,
+    memory: impl FnOnce() -> Option<Memory>,
     load: impl FnOnce() -> Option<f64>,
 ) -> io::Result<Option<Slot>> {
     let _admission = Queue::admission(&queue.locks)?;
@@ -98,6 +110,7 @@ pub(super) fn claim(
         return Ok(None);
     }
     let remaining = budget.saturating_sub(reserved);
+    let mut snapshot = None;
     let jobs = if admission.caller_jobs {
         // Explicit Cargo job settings retain their semantics, including counts
         // above the bound, but run exclusively with respect to default jobs.
@@ -109,7 +122,11 @@ pub(super) fn claim(
         if remaining < 2 {
             return Ok(None);
         }
-        (admission.cpus / admission.max_slots).max(2).min(remaining)
+        snapshot = memory();
+        pressured_jobs(
+            (admission.cpus / admission.max_slots).max(2).min(remaining),
+            snapshot,
+        )
     };
     let mut free = Vec::new();
     for number in 1..=admission.max_slots {
@@ -127,7 +144,8 @@ pub(super) fn claim(
             busy,
             last,
             admission.cpus,
-            memory,
+            active,
+            || snapshot,
             load,
         )
     {

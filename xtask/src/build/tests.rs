@@ -59,6 +59,15 @@ fn test_admission(max_slots: usize, memory_gated: bool) -> Admission {
     }
 }
 
+/// A snapshot far above the 30% floor with no reserve, used where a test only
+/// cares about slots, jobs or load rather than memory pressure.
+fn ample_memory() -> Memory {
+    Memory {
+        available: 64 * GIB,
+        total: 64 * GIB,
+    }
+}
+
 fn wait(path: &Path) {
     let start = Instant::now();
     while !path.exists() {
@@ -164,7 +173,7 @@ fn build_process() {
         test_admission(3, false)
     };
     let slot = loop {
-        if let Some(slot) = claim(&mut queue, &root, admission, || false, || None).unwrap() {
+        if let Some(slot) = claim(&mut queue, &root, admission, || None, || None).unwrap() {
             break slot;
         }
         std::thread::sleep(Duration::from_millis(5));
@@ -250,15 +259,9 @@ fn fifo_survives_crashed_waiter_and_holder_without_overbooking_last_slot() {
     for _ in 0..3 {
         let mut queue = Queue::enter(&locks).unwrap();
         slots.push(
-            claim(
-                &mut queue,
-                root,
-                test_admission(3, false),
-                || false,
-                || None,
-            )
-            .unwrap()
-            .unwrap(),
+            claim(&mut queue, root, test_admission(3, false), || None, || None)
+                .unwrap()
+                .unwrap(),
         );
     }
     let mut dead = worker(root, "dead");
@@ -324,15 +327,9 @@ fn fifo_survives_crashed_waiter_and_holder_without_overbooking_last_slot() {
     let _held = (0..2)
         .map(|_| {
             let mut queue = Queue::enter(&locks).unwrap();
-            claim(
-                &mut queue,
-                root,
-                test_admission(3, false),
-                || false,
-                || None,
-            )
-            .unwrap()
-            .unwrap()
+            claim(&mut queue, root, test_admission(3, false), || None, || None)
+                .unwrap()
+                .unwrap()
         })
         .collect::<Vec<_>>();
     #[cfg(unix)]
@@ -370,7 +367,7 @@ fn fifo_survives_crashed_waiter_and_holder_without_overbooking_last_slot() {
                 &mut queued,
                 root,
                 test_admission(3, false),
-                || false,
+                || None,
                 || None
             )
             .unwrap()
@@ -384,7 +381,7 @@ fn fifo_survives_crashed_waiter_and_holder_without_overbooking_last_slot() {
                 &mut queued,
                 root,
                 test_admission(3, false),
-                || false,
+                || None,
                 || None,
             )
             .unwrap()
@@ -416,7 +413,7 @@ fn fifo_survives_crashed_waiter_and_holder_without_overbooking_last_slot() {
             &mut queued,
             root,
             test_admission(3, false),
-            || false,
+            || None,
             || None
         )
         .unwrap()
@@ -428,28 +425,130 @@ fn fifo_survives_crashed_waiter_and_holder_without_overbooking_last_slot() {
 #[test]
 fn memory_probe_failure_blocks_only_extra_slots_and_observes_ramp() {
     let directory = Directory::new();
-    assert!(!sysctl_memory_available(directory.0.join("missing-sysctl")));
+    assert_eq!(sysctl_memory(directory.0.join("missing-sysctl")), None);
     let old = SystemTime::now() - Duration::from_secs(30);
-    for (memory_gated, busy, start, memory, load, expected) in [
-        (true, false, None, false, None, true),
-        (true, true, Some(old), false, Some(0.0), false),
-        (true, true, Some(old), true, Some(0.0), true),
-        (true, true, Some(old), true, None, false),
-        (true, true, Some(old), true, Some(overloaded_load()), false),
-        (true, true, Some(SystemTime::now()), true, Some(0.0), false),
-        (true, true, None, true, Some(0.0), false),
-        (false, true, None, false, None, true),
+    // 64 GiB * 30% = 19.2 GiB floor; one running slot reserves a 3 GiB peak.
+    let total = 64 * GIB;
+    let plenty = Memory {
+        available: 60 * GIB,
+        total,
+    };
+    let low = Memory {
+        available: 10 * GIB,
+        total,
+    };
+    let at = |available| Memory { available, total };
+    for (memory_gated, busy, start, running, memory, load, expected) in [
+        // The first build is never memory-gated; unreadable facts only hold extras.
+        (true, false, None, 0, None, None, true),
+        (true, true, Some(old), 0, None, Some(0.0), false),
+        (true, true, Some(old), 0, Some(plenty), Some(0.0), true),
+        (true, true, Some(old), 0, Some(low), Some(0.0), false),
+        // Must 154: free minus every running slot's reserve decides admission.
+        // 22 GiB - 3 GiB = 19 GiB stays below the 19.2 GiB floor; 23 GiB - 3 GiB
+        // clears it. Each extra live slot subtracts another 3 GiB peak.
+        (
+            true,
+            true,
+            Some(old),
+            1,
+            Some(at(22 * GIB)),
+            Some(0.0),
+            false,
+        ),
+        (
+            true,
+            true,
+            Some(old),
+            1,
+            Some(at(23 * GIB)),
+            Some(0.0),
+            true,
+        ),
+        (
+            true,
+            true,
+            Some(old),
+            2,
+            Some(at(25 * GIB)),
+            Some(0.0),
+            false,
+        ),
+        (
+            true,
+            true,
+            Some(old),
+            2,
+            Some(at(26 * GIB)),
+            Some(0.0),
+            true,
+        ),
+        (
+            true,
+            true,
+            Some(old),
+            3,
+            Some(at(28 * GIB)),
+            Some(0.0),
+            false,
+        ),
+        (true, true, Some(old), 0, Some(plenty), None, false),
+        (
+            true,
+            true,
+            Some(old),
+            0,
+            Some(plenty),
+            Some(overloaded_load()),
+            false,
+        ),
+        (
+            true,
+            true,
+            Some(SystemTime::now()),
+            0,
+            Some(plenty),
+            Some(0.0),
+            false,
+        ),
+        (true, true, None, 0, Some(plenty), Some(0.0), false),
+        (false, true, None, 0, None, None, true),
     ] {
         assert_eq!(
-            admit_extra(memory_gated, busy, start, 4, || memory, || load),
+            admit_extra(memory_gated, busy, start, 4, running, || memory, || load),
             expected
+        );
+    }
+
+    // Exact reserve boundary: the 30% floor admits, one byte below it waits,
+    // each running slot moves the required free memory up by one 3 GiB peak,
+    // and a reserve larger than free memory saturates to zero spare.
+    let total = 32 * GIB;
+    let threshold = u64::try_from((u128::from(total) * 30).div_ceil(100)).unwrap();
+    let (reserve, floor) = (SLOT_PEAK_RESERVE_BYTES, threshold - 1);
+    for (available, running, expected) in [
+        (threshold, 0, true),
+        (floor, 0, false),
+        (threshold + reserve, 1, true),
+        (threshold + reserve - 1, 1, false),
+        (threshold + 2 * reserve, 2, true),
+        (threshold + 2 * reserve - 1, 2, false),
+        (threshold + 3 * reserve, 3, true),
+        (threshold + 3 * reserve - 1, 3, false),
+        (reserve, 1, false),
+        (0, 0, false),
+    ] {
+        assert_eq!(
+            memory_fits(Memory { available, total }, running),
+            expected,
+            "free={available} running={running}"
         );
     }
 
     let root = &directory.0;
     let locks = root.join("locks");
     let mut first = Queue::enter(&locks).unwrap();
-    let held = claim(&mut first, root, test_admission(3, true), || false, || None)
+    let held = claim(&mut first, root, test_admission(3, true), || None, || None)
         .unwrap()
         .unwrap();
     let mut second = Queue::enter(&locks).unwrap();
@@ -465,7 +564,7 @@ fn memory_probe_failure_blocks_only_extra_slots_and_observes_ramp() {
             &mut second,
             root,
             test_admission(3, true),
-            || false,
+            || None,
             || Some(0.0)
         )
         .unwrap()
@@ -476,7 +575,7 @@ fn memory_probe_failure_blocks_only_extra_slots_and_observes_ramp() {
             &mut third,
             root,
             test_admission(3, true),
-            || true,
+            || Some(ample_memory()),
             || Some(0.0)
         )
         .unwrap()
@@ -484,16 +583,47 @@ fn memory_probe_failure_blocks_only_extra_slots_and_observes_ramp() {
         "low memory must not let a later waiter overtake the second build"
     );
     assert!(
-        claim(&mut second, root, test_admission(3, true), || true, || None)
-            .unwrap()
-            .is_none(),
+        claim(
+            &mut second,
+            root,
+            test_admission(3, true),
+            || Some(ample_memory()),
+            || None
+        )
+        .unwrap()
+        .is_none(),
         "an unreadable load source must hold the extra slot"
+    );
+    // The held lease's 3 GiB reserve is wired into `claim`, not only the pure
+    // table: one byte below the reserved floor waits, exactly at it admits.
+    let total = 32 * GIB;
+    let threshold = u64::try_from((u128::from(total) * 30).div_ceil(100)).unwrap();
+    let reserved_floor = threshold + SLOT_PEAK_RESERVE_BYTES;
+    assert!(
+        claim(
+            &mut second,
+            root,
+            test_admission(3, true),
+            || Some(Memory {
+                available: reserved_floor - 1,
+                total
+            }),
+            || Some(0.0)
+        )
+        .unwrap()
+        .is_none(),
+        "a running slot's peak reserve was not subtracted from free memory"
     );
     let admitted = claim(
         &mut second,
         root,
         test_admission(3, true),
-        || true,
+        || {
+            Some(Memory {
+                available: reserved_floor,
+                total,
+            })
+        },
         || Some(0.0),
     )
     .unwrap()
@@ -504,7 +634,7 @@ fn memory_probe_failure_blocks_only_extra_slots_and_observes_ramp() {
             &mut third,
             root,
             test_admission(3, true),
-            || true,
+            || Some(ample_memory()),
             || Some(0.0)
         )
         .unwrap()
@@ -649,7 +779,8 @@ fn linux_memory_probe_uses_shared_admission_path() {
         true,
         Some(old),
         4,
-        || meminfo_memory_available(bad),
+        0,
+        || meminfo_memory(bad),
         || Some(0.0)
     ));
     assert!(admit_extra(
@@ -657,7 +788,8 @@ fn linux_memory_probe_uses_shared_admission_path() {
         true,
         Some(old),
         4,
-        || meminfo_memory_available(good),
+        0,
+        || meminfo_memory(good),
         || Some(0.0)
     ));
     assert!(
@@ -666,7 +798,8 @@ fn linux_memory_probe_uses_shared_admission_path() {
             true,
             Some(SystemTime::now()),
             4,
-            || meminfo_memory_available(good),
+            0,
+            || meminfo_memory(good),
             || Some(0.0)
         ),
         "the ramp still gates extra admission on Linux"
@@ -677,7 +810,8 @@ fn linux_memory_probe_uses_shared_admission_path() {
         false,
         None,
         4,
-        || meminfo_memory_available(bad),
+        0,
+        || meminfo_memory(bad),
         || None
     ));
 }
@@ -850,7 +984,7 @@ fn mixed_capacities_reserve_only_remaining_host_jobs() {
                 cpus: 20,
                 ..test_admission(ceiling, false)
             },
-            || false,
+            || None,
             || None,
         )
         .unwrap()
@@ -865,14 +999,14 @@ fn mixed_capacities_reserve_only_remaining_host_jobs() {
         ..test_admission(20, false)
     };
     assert!(
-        claim(&mut next, root, admission, || false, || None)
+        claim(&mut next, root, admission, || None, || None)
             .unwrap()
             .is_none()
     );
     // A released lease frees its entire reservation; stale metadata does
     // not consume jobs, even when another slot number is selected.
     drop(held.remove(1));
-    let replacement = claim(&mut next, root, admission, || false, || None)
+    let replacement = claim(&mut next, root, admission, || None, || None)
         .unwrap()
         .unwrap();
     assert_eq!(replacement.jobs, 2);
@@ -892,7 +1026,7 @@ fn mixed_capacities_reserve_only_remaining_host_jobs() {
                     cpus: 3,
                     ..test_admission(ceiling, false)
                 },
-                || false,
+                || None,
                 || None,
             )
             .unwrap()
@@ -909,13 +1043,70 @@ fn mixed_capacities_reserve_only_remaining_host_jobs() {
                 cpus: 3,
                 ..test_admission(3, false)
             },
-            || false,
+            || None,
             || None
         )
         .unwrap()
         .is_none(),
         "one remaining job cannot admit a two-job build"
     );
+
+    // Must 2: a build admitted while free memory is under the floor caps its
+    // own link/test fan-out; an above-floor snapshot keeps the normal formula,
+    // and pressure never drops below one job.
+    let directory = Directory::new();
+    let root = &directory.0;
+    let locks = root.join("locks");
+    let mut queue = Queue::enter(&locks).unwrap();
+    let compressed = claim(
+        &mut queue,
+        root,
+        test_admission(1, true),
+        || {
+            Some(Memory {
+                available: 8 * GIB,
+                total: 32 * GIB,
+            })
+        },
+        || None,
+    )
+    .unwrap()
+    .unwrap();
+    assert_eq!(compressed.jobs, TEST_CPUS / 2);
+    let directory = Directory::new();
+    let root = &directory.0;
+    let mut queue = Queue::enter(&root.join("locks")).unwrap();
+    let normal = claim(
+        &mut queue,
+        root,
+        test_admission(1, true),
+        || Some(ample_memory()),
+        || None,
+    )
+    .unwrap()
+    .unwrap();
+    assert_eq!(normal.jobs, TEST_CPUS);
+    let directory = Directory::new();
+    let root = &directory.0;
+    let mut queue = Queue::enter(&root.join("locks")).unwrap();
+    let single = claim(
+        &mut queue,
+        root,
+        Admission {
+            cpus: 1,
+            ..test_admission(1, true)
+        },
+        || {
+            Some(Memory {
+                available: 8 * GIB,
+                total: 32 * GIB,
+            })
+        },
+        || None,
+    )
+    .unwrap()
+    .unwrap();
+    assert_eq!(single.jobs, 1);
 }
 
 #[test]
@@ -951,7 +1142,7 @@ fn concurrent_admission_and_release_preserve_fifo_and_job_budget() {
                 &mut queue,
                 root,
                 test_admission(ceiling, false),
-                || false,
+                || None,
                 || None,
             )
             .unwrap()
@@ -1002,7 +1193,7 @@ fn caller_jobs_and_unreadable_reservations_hold_default_admission() {
         caller_jobs: true,
         ..test_admission(8, false)
     };
-    let held = claim(&mut queue, root, explicit, || false, || None)
+    let held = claim(&mut queue, root, explicit, || None, || None)
         .unwrap()
         .unwrap();
     assert_eq!(held.jobs, 16);
@@ -1018,7 +1209,7 @@ fn caller_jobs_and_unreadable_reservations_hold_default_admission() {
                     max_slots: cpus.min(default.max_slots),
                     ..default
                 },
-                || false,
+                || None,
                 || None
             )
             .unwrap()
@@ -1027,12 +1218,12 @@ fn caller_jobs_and_unreadable_reservations_hold_default_admission() {
         );
     }
     drop(held);
-    let held = claim(&mut next, root, default, || false, || None)
+    let held = claim(&mut next, root, default, || None, || None)
         .unwrap()
         .unwrap();
     let mut next = Queue::enter(&locks).unwrap();
     assert!(
-        claim(&mut next, root, explicit, || false, || None)
+        claim(&mut next, root, explicit, || None, || None)
             .unwrap()
             .is_none()
     );
@@ -1044,14 +1235,14 @@ fn caller_jobs_and_unreadable_reservations_hold_default_admission() {
             fs::remove_file(&metadata).unwrap();
         }
         assert!(
-            claim(&mut next, root, default, || false, || None)
+            claim(&mut next, root, default, || None, || None)
                 .unwrap()
                 .is_none()
         );
     }
     drop(held);
     assert!(
-        claim(&mut next, root, explicit, || false, || None)
+        claim(&mut next, root, explicit, || None, || None)
             .unwrap()
             .is_some()
     );
@@ -1066,20 +1257,14 @@ fn shrinking_capacity_never_kills_running_builds() {
     let locks = root.join("locks");
     let mut first = Queue::enter(&locks).unwrap();
     let mut second = Queue::enter(&locks).unwrap();
-    let held_a = claim(
-        &mut first,
-        root,
-        test_admission(4, false),
-        || false,
-        || None,
-    )
-    .unwrap()
-    .unwrap();
+    let held_a = claim(&mut first, root, test_admission(4, false), || None, || None)
+        .unwrap()
+        .unwrap();
     let held_b = claim(
         &mut second,
         root,
         test_admission(4, false),
-        || false,
+        || None,
         || None,
     )
     .unwrap()
@@ -1095,7 +1280,7 @@ fn shrinking_capacity_never_kills_running_builds() {
             &mut shrunk,
             root,
             test_admission(1, false),
-            || false,
+            || None,
             || None
         )
         .unwrap()
@@ -1122,7 +1307,7 @@ fn shrinking_capacity_never_kills_running_builds() {
         &mut shrunk,
         root,
         test_admission(2, false),
-        || false,
+        || None,
         || None,
     )
     .unwrap()
@@ -1155,7 +1340,7 @@ fn slots_beyond_a_shrunk_count_are_reused_not_deleted() {
             cpus: 16,
             ..test_admission(9, false)
         },
-        || false,
+        || None,
         || None,
     )
     .unwrap()
