@@ -3,9 +3,10 @@ mod boundaries;
 pub mod clip_boundaries {
     //! Snaps accepted source segments to safe edges.
     pub use super::boundaries::{
-        BoundaryAdjustment, BoundaryFailure, BoundaryKind, ClipBoundarySettings, SegmentAdjustment,
-        SnappedShort, snap_clip_boundaries,
+        BoundaryAdjustment, BoundaryKind, ClipBoundarySettings, SegmentAdjustment, SnappedShort,
+        snap_clip_boundaries,
     };
+    pub use crate::BoundaryFailure;
 }
 mod batch_export;
 pub use batch_export::{

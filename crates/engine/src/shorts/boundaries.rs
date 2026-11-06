@@ -1,5 +1,5 @@
 //! Independent source-edge snapping for ordered, potentially reordered shorts.
-use crate::{EditError, Result};
+use crate::{BoundaryFailure, EditError, Result};
 use ai::clips::{ClipRole, ClipSourceSegment};
 use captions::{LanguageProfile, LayoutHooks, Transcript};
 use media::SpeechEnergyWindow;
@@ -54,15 +54,6 @@ pub struct SnappedShort {
     /// One pair of signed deltas per segment, in playback order.
     pub adjustments: Vec<SegmentAdjustment>,
     pub duration: Tick,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum BoundaryFailure {
-    NoSafeFrame,
-    SegmentDuration,
-    TotalDuration,
-    SegmentOverlap,
-    Candidate,
 }
 
 struct Gap {

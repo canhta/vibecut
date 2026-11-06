@@ -66,6 +66,17 @@ pub struct AssetUsage {
     pub items: Vec<project::ItemId>,
 }
 
+/// Typed reason payload for a clip-boundary refusal.
+/// Owned with `EditError` so feature workflows can depend on the error contract.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum BoundaryFailure {
+    NoSafeFrame,
+    SegmentDuration,
+    TotalDuration,
+    SegmentOverlap,
+    Candidate,
+}
+
 /// Safe diagnostic categories: never include parameter values or user text.
 #[derive(Debug, thiserror::Error)]
 pub enum EditError {
@@ -92,7 +103,7 @@ pub enum EditError {
     ClipBoundary {
         short: usize,
         segment: usize,
-        reason: clip_boundaries::BoundaryFailure,
+        reason: BoundaryFailure,
     },
     #[error("cache is in use")]
     CacheBusy,
