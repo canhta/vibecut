@@ -16,11 +16,15 @@ const BLUR_RADIUS: u32 = 2;
 /// that changes how strong an edge is, but not where, scores near zero.
 const EDGE_SATURATION: f64 = 1.0;
 const DEFAULT_MAX_ERROR: f64 = 0.02;
+/// Per-tile scale differs from the whole-region scale by an order of magnitude,
+/// so it gets its own limit. Measured: a recolour scores ~0.07 worst tile, a
+/// 6 px move of one block ~0.21, a panel move ~0.30.
+const DEFAULT_MAX_TILE_ERROR: f64 = 0.15;
 const WORST_TILES: usize = 10;
 const MAX_DIMENSION: u32 = 16_384;
 const MAX_PIXELS: u64 = 9_000_000;
 const MAX_OUTPUT_PIXELS: u64 = 36_000_000;
-const USAGE: &str = "usage: cargo xtask ui-compare OURS.png REFERENCE.png [--region X,Y,W,H] [--out DIR] [--max-error F]";
+const USAGE: &str = "usage: cargo xtask ui-compare OURS.png REFERENCE.png [--region X,Y,W,H] [--out DIR] [--max-error F] [--max-tile-error F]";
 
 #[derive(Clone, Copy)]
 struct Region {
@@ -36,6 +40,7 @@ struct Options {
     region: Option<Region>,
     out: PathBuf,
     max_error: f64,
+    max_tile_error: f64,
 }
 
 #[derive(Debug)]
@@ -75,12 +80,28 @@ pub fn run(root: &Path, args: &[String]) -> Result<(), String> {
         report.width,
         report.height
     );
+    let worst = report.worst(WORST_TILES);
+    let whole_exceeded = report.whole_error > options.max_error;
+    let worst_tile = worst.first().copied();
+    let tile_exceeded = worst_tile.is_some_and(|tile| tile.error > options.max_tile_error);
     println!(
-        "ui-compare: whole-region edge MAE {:.9}",
-        report.whole_error
+        "ui-compare: whole-region edge MAE {:.9} ({} --max-error {:.9})",
+        report.whole_error,
+        if whole_exceeded { "exceeds" } else { "within" },
+        options.max_error
     );
+    if let Some(tile) = worst_tile {
+        println!(
+            "ui-compare: worst-tile edge MAE {:.9} at x={} y={} ({} --max-tile-error {:.9})",
+            tile.error,
+            tile.x,
+            tile.y,
+            if tile_exceeded { "exceeds" } else { "within" },
+            options.max_tile_error
+        );
+    }
     println!("ui-compare: worst tiles (edge MAE):");
-    for tile in report.worst(WORST_TILES) {
+    for tile in worst {
         println!(
             "  x={} y={} {}x{} mae={:.9}",
             tile.x, tile.y, tile.width, tile.height, tile.error
@@ -92,23 +113,26 @@ pub fn run(root: &Path, args: &[String]) -> Result<(), String> {
         report.outputs.heatmap.display(),
         report.outputs.tiles.display()
     );
-    if report.whole_error > options.max_error {
-        return Err(format!(
-            "ui-compare: whole-region edge MAE {:.9} exceeds --max-error {:.9}",
-            report.whole_error, options.max_error
-        ));
+    if whole_exceeded || tile_exceeded {
+        let mut failures = Vec::new();
+        if whole_exceeded {
+            failures.push(format!(
+                "whole-region edge MAE {:.9} exceeds --max-error {:.9}",
+                report.whole_error, options.max_error
+            ));
+        }
+        if let Some(tile) = worst_tile.filter(|_| tile_exceeded) {
+            failures.push(format!(
+                "tile x={} y={} {}x{} edge MAE {:.9} exceeds --max-tile-error {:.9}",
+                tile.x, tile.y, tile.width, tile.height, tile.error, options.max_tile_error
+            ));
+        }
+        return Err(format!("ui-compare: failed: {}", failures.join("; ")));
     }
-    if let Some(tile) = report
-        .tiles
-        .iter()
-        .find(|tile| tile.error > options.max_error)
-    {
-        return Err(format!(
-            "ui-compare: tile x={} y={} {}x{} edge MAE {:.9} exceeds --max-error {:.9}",
-            tile.x, tile.y, tile.width, tile.height, tile.error, options.max_error
-        ));
-    }
-    println!("ui-compare: pass (--max-error {:.9})", options.max_error);
+    println!(
+        "ui-compare: pass (--max-error {:.9}, --max-tile-error {:.9})",
+        options.max_error, options.max_tile_error
+    );
     Ok(())
 }
 
@@ -118,6 +142,7 @@ impl Options {
         let mut region = None;
         let mut out = None;
         let mut max_error = DEFAULT_MAX_ERROR;
+        let mut max_tile_error = DEFAULT_MAX_TILE_ERROR;
         let mut index = 0;
         while let Some(arg) = args.get(index) {
             match arg.as_str() {
@@ -148,6 +173,21 @@ impl Options {
                         })?;
                     index += 2;
                 }
+                "--max-tile-error" => {
+                    let value = args
+                        .get(index + 1)
+                        .ok_or_else(|| format!("--max-tile-error needs a number\n{USAGE}"))?;
+                    max_tile_error = value
+                        .parse::<f64>()
+                        .ok()
+                        .filter(|value| value.is_finite() && *value >= 0.0)
+                        .ok_or_else(|| {
+                            format!(
+                                "--max-tile-error must be a finite non-negative number\n{USAGE}"
+                            )
+                        })?;
+                    index += 2;
+                }
                 option if option.starts_with("--") => {
                     return Err(format!("unknown option `{option}`\n{USAGE}"));
                 }
@@ -167,6 +207,7 @@ impl Options {
             region,
             out: out.unwrap_or_else(|| root.join("target/ui-compare")),
             max_error,
+            max_tile_error,
         })
     }
 }
@@ -669,6 +710,7 @@ mod tests {
             region,
             out: scratch.path("out"),
             max_error,
+            max_tile_error: DEFAULT_MAX_TILE_ERROR,
         }
     }
 
@@ -718,6 +760,41 @@ mod tests {
     }
 
     #[test]
+    fn recoloured_copy_passes_both_default_limits() {
+        let scratch = Scratch::new();
+        let ours = save(&scratch, "ours.png", &scene());
+        let reference = save(&scratch, "tinted.png", &tinted(&scene()));
+        let report = compare(&options(
+            &scratch,
+            &ours,
+            &reference,
+            None,
+            DEFAULT_MAX_ERROR,
+        ))
+        .unwrap();
+        let worst = report.worst(1).first().map_or(0.0, |tile| tile.error);
+        assert!(
+            report.whole_error <= DEFAULT_MAX_ERROR,
+            "recolour whole error {} above the default",
+            report.whole_error
+        );
+        assert!(
+            worst <= DEFAULT_MAX_TILE_ERROR,
+            "recolour worst tile {worst} above the default"
+        );
+        run(
+            &scratch.0,
+            &[
+                ours.display().to_string(),
+                reference.display().to_string(),
+                "--out".to_owned(),
+                scratch.path("cli").display().to_string(),
+            ],
+        )
+        .unwrap();
+    }
+
+    #[test]
     fn recolour_with_other_contrast_stays_far_below_a_moved_panel() {
         let scratch = Scratch::new();
         let ours = save(&scratch, "ours.png", &scene());
@@ -764,14 +841,17 @@ mod tests {
                 scratch.path("cli").display().to_string(),
                 "--max-error".to_owned(),
                 limit.to_string(),
+                "--max-tile-error".to_owned(),
+                limit.to_string(),
             ],
         )
         .unwrap_err();
         assert!(error.contains("tile x=64 y=32"), "{error}");
+        assert!(error.contains("exceeds --max-tile-error"), "{error}");
     }
 
     #[test]
-    fn panel_moved_six_pixels_scores_high() {
+    fn panel_moved_six_pixels_fails_on_the_whole_limit() {
         let scratch = Scratch::new();
         let ours = save(&scratch, "ours.png", &scene());
         let reference = save(&scratch, "moved.png", &move_panel(scene()));
@@ -795,11 +875,61 @@ mod tests {
                 reference.display().to_string(),
                 "--out".to_owned(),
                 scratch.path("cli").display().to_string(),
+                // Isolate the whole-region limit: the tile limit would also trip.
+                "--max-tile-error".to_owned(),
+                "10".to_owned(),
             ],
         )
         .unwrap_err();
         assert!(error.contains("whole-region edge MAE"), "{error}");
         assert!(error.contains("exceeds --max-error"), "{error}");
+        assert!(!error.contains("--max-tile-error"), "{error}");
+    }
+
+    #[test]
+    fn six_pixel_block_move_fails_on_the_tile_limit() {
+        let scratch = Scratch::new();
+        let mut reference_image = blank(192, 128);
+        paint(&mut reference_image, 72, 36, 24, 24);
+        let ours = save(&scratch, "block.png", &block_at(66));
+        let reference = save(&scratch, "block-moved.png", &reference_image);
+        let report = compare(&options(
+            &scratch,
+            &ours,
+            &reference,
+            None,
+            DEFAULT_MAX_ERROR,
+        ))
+        .unwrap();
+        let worst = report.worst(1).first().copied().unwrap();
+        assert!(
+            report.whole_error <= DEFAULT_MAX_ERROR,
+            "one block move should stay inside the whole limit: {}",
+            report.whole_error
+        );
+        assert!(
+            worst.error > DEFAULT_MAX_TILE_ERROR,
+            "one block move must fail the tile limit: {worst:?}"
+        );
+        let error = run(
+            &scratch.0,
+            &[
+                ours.display().to_string(),
+                reference.display().to_string(),
+                "--out".to_owned(),
+                scratch.path("cli").display().to_string(),
+            ],
+        )
+        .unwrap_err();
+        assert!(error.contains("tile x="), "{error}");
+        assert!(error.contains("exceeds --max-tile-error"), "{error}");
+        assert!(!error.contains("exceeds --max-error"), "{error}");
+    }
+
+    fn block_at(x: u32) -> RgbaImage {
+        let mut image = blank(192, 128);
+        paint(&mut image, x, 36, 24, 24);
+        image
     }
 
     fn move_panel(mut image: RgbaImage) -> RgbaImage {
@@ -920,6 +1050,7 @@ mod tests {
             region: None,
             out: scratch.path("out-again"),
             max_error: DEFAULT_MAX_ERROR,
+            max_tile_error: DEFAULT_MAX_TILE_ERROR,
         };
         let second = compare(&second_options).unwrap();
         for (left, right) in [
@@ -974,6 +1105,24 @@ mod tests {
                     ours.clone(),
                     ours.clone(),
                     "--max-error".to_owned(),
+                    "-1".to_owned(),
+                ],
+                "finite non-negative",
+            ),
+            (
+                vec![
+                    ours.clone(),
+                    ours.clone(),
+                    "--max-tile-error".to_owned(),
+                    "NaN".to_owned(),
+                ],
+                "finite non-negative",
+            ),
+            (
+                vec![
+                    ours.clone(),
+                    ours.clone(),
+                    "--max-tile-error".to_owned(),
                     "-1".to_owned(),
                 ],
                 "finite non-negative",
