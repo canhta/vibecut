@@ -10,7 +10,7 @@ const MINIMUM_MAJOR: u32 = 6;
 const TOOLS: [&str; 2] = ["ffmpeg", "ffprobe"];
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(super) struct Version {
+pub(crate) struct Version {
     pub major: u32,
     pub minor: u32,
 }
@@ -20,7 +20,7 @@ impl std::fmt::Display for Version {
     }
 }
 
-pub(super) struct Tool {
+pub(crate) struct Tool {
     name: &'static str,
     path: Option<PathBuf>,
     version: Option<Version>,
@@ -28,7 +28,7 @@ pub(super) struct Tool {
     problem: Option<String>,
 }
 
-pub(super) struct Fixture {
+pub(crate) struct Fixture {
     pub relative: PathBuf,
     pub bytes: u64,
     pub sha256: String,
@@ -36,7 +36,7 @@ pub(super) struct Fixture {
 
 /// Print the CI mode, tool receipt and, in required mode, fail on any missing,
 /// old or unusable external oracle.
-pub(super) fn begin(required: bool) -> Result<(), String> {
+pub(crate) fn begin(required: bool) -> Result<(), String> {
     if required {
         eprintln!("ci: required-oracles mode: external ffmpeg/ffprobe must be present and usable");
     } else {
@@ -156,7 +156,7 @@ fn resolve(name: &str) -> Option<PathBuf> {
     None
 }
 
-pub(super) fn parse_version(output: &str) -> Option<Version> {
+pub(crate) fn parse_version(output: &str) -> Option<Version> {
     let line = output.lines().next()?;
     let rest = line.split("version ").nth(1)?;
     let token = rest.split_whitespace().next()?.trim_start_matches('n');
@@ -178,7 +178,7 @@ fn number(part: &str) -> Option<u32> {
 }
 
 /// Print every fixture currently under `target/fixtures` with its size and hash.
-pub(super) fn print_fixtures(root: &Path) -> Result<(), String> {
+pub(crate) fn print_fixtures(root: &Path) -> Result<(), String> {
     let fixtures = inventory(root)?;
     eprintln!("fixtures: {} file(s) under target/fixtures", fixtures.len());
     for fixture in fixtures {
@@ -192,7 +192,7 @@ pub(super) fn print_fixtures(root: &Path) -> Result<(), String> {
     Ok(())
 }
 
-pub(super) fn inventory(root: &Path) -> Result<Vec<Fixture>, String> {
+pub(crate) fn inventory(root: &Path) -> Result<Vec<Fixture>, String> {
     let base = root.join("target/fixtures");
     let mut paths = Vec::new();
     walk(&base, &mut paths)?;

@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::{env, fs};
 
-pub(super) fn cache(component: &str) -> Result<PathBuf, String> {
+pub(crate) fn cache(component: &str) -> Result<PathBuf, String> {
     // MSYS HOME can be /home/name, which is not a Windows absolute path and
     // disagrees with the native runner's cache location.
     let variable = if cfg!(windows) { "USERPROFILE" } else { "HOME" };
@@ -18,11 +18,11 @@ pub(super) fn cache(component: &str) -> Result<PathBuf, String> {
     Ok(PathBuf::from(home).join(".cache/vibecut").join(component))
 }
 
-pub(super) fn fetch(url: &str, destination: &Path) -> Result<(), String> {
+pub(crate) fn fetch(url: &str, destination: &Path) -> Result<(), String> {
     fetch_limited(url, destination, None)
 }
 
-pub(super) fn fetch_limited(
+pub(crate) fn fetch_limited(
     url: &str,
     destination: &Path,
     limit: Option<u64>,
@@ -53,7 +53,7 @@ pub(super) fn fetch_limited(
     fs::rename(tmp, destination).map_err(|e| e.to_string())
 }
 
-pub(super) fn sha256(path: &Path) -> Result<String, String> {
+pub(crate) fn sha256(path: &Path) -> Result<String, String> {
     use std::io::Read;
     let mut file = fs::File::open(path).map_err(|e| e.to_string())?;
     let mut hash = Sha256::new();

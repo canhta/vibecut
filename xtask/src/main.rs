@@ -1,5 +1,4 @@
 //! Workspace checks and admitted crate scaffolding.
-mod archives;
 mod benchmark;
 mod build;
 mod checkout;
@@ -9,7 +8,6 @@ mod distribution;
 mod ffmpeg;
 mod i18n;
 mod modules;
-mod oracles;
 mod orca;
 mod reports;
 mod sherpa;
@@ -34,8 +32,8 @@ fn main() -> ExitCode {
 }
 
 fn ci(root: &Path, require_oracles: bool) -> Result<(), String> {
-    let checks = oracles::begin(require_oracles).and_then(|()| run_checks(root, require_oracles));
-    let fixtures = oracles::print_fixtures(root);
+    let checks = ffmpeg::begin(require_oracles).and_then(|()| run_checks(root, require_oracles));
+    let fixtures = ffmpeg::print_fixtures(root);
     checks.and(fixtures)
 }
 
@@ -85,8 +83,8 @@ fn lint(root: &Path) -> Result<(), String> {
 }
 
 fn tests(root: &Path, args: &[&str], required: bool) -> Result<(), String> {
-    let checks = oracles::begin(required).and_then(|()| cargo_check(root, args, required));
-    let fixtures = oracles::print_fixtures(root);
+    let checks = ffmpeg::begin(required).and_then(|()| cargo_check(root, args, required));
+    let fixtures = ffmpeg::print_fixtures(root);
     checks.and(fixtures)
 }
 
@@ -488,11 +486,11 @@ fn run() -> Result<ExitCode, String> {
         ["ffmpeg"] => ffmpeg::provision(None),
         ["ffmpeg", "--cache-key"] => ffmpeg::cache_key(),
         ["sherpa"] => {
-            println!("{}", sherpa::provision(root, env::consts::ARCH, archives::fetch_limited)?.display());
+            println!("{}", sherpa::provision(root, env::consts::ARCH, ffmpeg::fetch_limited)?.display());
             Ok(())
         }
         ["sherpa", "--arch", arch] => {
-            println!("{}", sherpa::provision(root, arch, archives::fetch_limited)?.display());
+            println!("{}", sherpa::provision(root, arch, ffmpeg::fetch_limited)?.display());
             Ok(())
         }
         ["checks"] => checks(root),
@@ -527,7 +525,7 @@ fn run() -> Result<ExitCode, String> {
 mod tests {
     use super::{
         assets, checked, layers, names, new_crate,
-        oracles::{Version, inventory, parse_version},
+        ffmpeg::{Version, inventory, parse_version},
     };
     use std::fs;
     use std::path::{Path, PathBuf};
