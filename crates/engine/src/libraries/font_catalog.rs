@@ -30,7 +30,7 @@ const ADMITTED_BY: &str = "p1-parity-28";
 /// Pin of the curated upstream tree; every URL and hash below belongs to this commit.
 const GOOGLE_FONTS_COMMIT: &str = "eb20e9cf19d97cf579fa3867d729d4222d6c59e1";
 
-pub use crate::control::{FontEntry, FontLoad, FontLoadState, FontOrigin, FontState};
+pub use crate::session::wire::{FontEntry, FontLoad, FontLoadState, FontOrigin, FontState};
 
 pub use crate::FontError;
 
