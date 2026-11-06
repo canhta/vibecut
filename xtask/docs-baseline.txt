@@ -14,7 +14,6 @@ text	docs/product/agent-control/keyboard.md	tracker id `p1-parity/16`
 text	docs/product/agent-control/keyboard.md	tracker id `p1-parity/20`
 text	packaging/README.md	tracker id `p0-core/44`
 text	packaging/README.md	tracker id `p2-platform/02`
-map	crates/project/README.md	README has no module map table
 map	apps/vibecut/README.md	README has no module map table
 text	apps/vibecut/README.md	tracker id `p1-parity/33`
 text	apps/vibecut/README.md	tracker id `p1-parity/75`

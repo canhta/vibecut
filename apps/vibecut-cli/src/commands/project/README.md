@@ -1,9 +1,9 @@
 # Project commands
 
 `control` is the first external consumer of the
-[engine control contract](../../../../../crates/engine/README.md#control-admission-revisions-and-receipts).
+[engine control contract](../../../../../crates/engine/src/control/README.md#control-admission-revisions-and-receipts).
 One process is one engine Session: it opens the project under the
-[writer lease](../../../../../crates/project/README.md#writer-lease-and-save-acknowledgement)
+[writer lease](../../../../../crates/project/src/writer/README.md#writer-lease-and-save-acknowledgement)
 before reading, holds it through the final save, and releases it on exit. Requests
 are newline-delimited JSON objects on stdin (`request_id`, `command`, `params`, and
 optionally `idempotency_key`, `base_rev`, `api_version`, `registry_hash`,
@@ -39,14 +39,14 @@ interruption follows crash semantics, so the OS releases the lease, in-flight wo
 stops with the process and unsaved edits are lost. Use `job_cancel` for graceful
 job cancellation.
 
-`exec` uses [engine commands](../../../../../crates/engine/README.md#public-entry-points)
-and holds the [project lease](../../../../../crates/project/README.md#writer-lease-and-save-acknowledgement)
+`exec` uses [engine commands](../../../../../crates/engine/src/session/README.md#public-entry-points)
+and holds the [project lease](../../../../../crates/project/src/writer/README.md#writer-lease-and-save-acknowledgement)
 from load through save. Scene commands use that same registry. Export uses the saved
 active scene (including its derived duration) and
 [render admission](../../../../../crates/render/src/export/README.md#export-and-publication) through
 engine jobs, with a fixed 2 GiB aggregate budget.
 
-`captions import` calls the [engine ASS adapter](../../../../../crates/engine/README.md#ass-caption-import),
+`captions import` calls the [engine ASS adapter](../../../../../crates/engine/src/subtitles/README.md#ass-caption-import),
 which parses and maps styles through the captions owner and returns the
 registered `captions.import` command. The CLI prints counts and line-numbered
 warnings, applies the command under the same lease/save path and never
@@ -61,7 +61,7 @@ sidecars default through project. Busy/conflict refusals keep their typed codes.
 
 A shared-field edit uses the same registry, for example:
 `exec project.json timeline.set_item_param_many '{"items":[10,11],"patch":{"field":"text_size","value":48}}'`.
-See the [engine shared-field contract](../../../../../crates/engine/README.md#transient-selection-and-shared-fields)
+See the [engine shared-field contract](../../../../../crates/engine/src/session/edit/README.md#transient-selection-and-shared-fields)
 for compatibility and atomic refusal rules.
 
 Blend/opacity edits use `exec project.json timeline.set_item_param
@@ -70,7 +70,7 @@ Blend/opacity edits use `exec project.json timeline.set_item_param
 The ordinary export path evaluates both through the shared renderer.
 
 Video transition edits use `exec` or `control` with the four registered
-[`transition.*` commands](../../../../../crates/engine/README.md#video-transitions).
+[`transition.*` commands](../../../../../crates/engine/src/session/edit/README.md#video-transitions).
 `preview.snapshot` renders transition frames through the shared compositor;
 `control_commands_render_a_transition_midpoint_frame` exercises add and PNG
 publication in a real CLI subprocess. No transition-specific adapter path exists.
