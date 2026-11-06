@@ -2,7 +2,7 @@
 
 use crate::editor::assets::{
     AssetRow, AssetState, Color32, Icon, Locale, MediaKind, SourceAsset, StreamKind, Text,
-    TrackKind, UnsupportedReason, catalog, display_time, theme,
+    TrackKind, catalog, display_time, theme,
 };
 
 pub(in crate::editor::assets) fn asset_kind(
@@ -26,23 +26,6 @@ pub(in crate::editor::assets) fn asset_kind(
         Err(engine::EditError::Unsupported(
             "media has no video or audio stream",
         ))
-    }
-}
-pub(in crate::editor::assets) fn asset_state_text(locale: Locale, state: AssetState) -> String {
-    match state {
-        AssetState::Probing => catalog::text(locale, Text::AssetProbing).to_owned(),
-        AssetState::Ready => catalog::text(locale, Text::AssetReady).to_owned(),
-        AssetState::Unsupported(reason) => {
-            let reason = match reason {
-                UnsupportedReason::DecoderUnavailable => {
-                    catalog::text(locale, Text::UnsupportedDecoder).to_owned()
-                }
-                UnsupportedReason::OpenFailed => {
-                    catalog::text(locale, Text::UnsupportedOpenFailed).to_owned()
-                }
-            };
-            catalog::format(locale, Text::AssetUnsupported, &[("reason", &reason)])
-        }
     }
 }
 pub(in crate::editor::assets) fn asset_state_color(state: AssetState, dark: bool) -> Color32 {
@@ -77,7 +60,6 @@ pub(in crate::editor::assets) fn asset_row(
         MediaKind::Other => (Text::Media, Icon::File),
     };
     let type_label = catalog::text(locale, kind).to_owned();
-    let mut brief = vec![type_label.clone()];
     info.push(type_label);
     info.push(asset.probe().duration.map_or_else(
         || catalog::text(locale, Text::DurationUnknown).to_owned(),
@@ -85,7 +67,6 @@ pub(in crate::editor::assets) fn asset_row(
     ));
     if let Some(size) = size {
         let size = format_media_size(locale, size);
-        brief.push(size.clone());
         info.push(size);
     }
     if let Some(video) = video {
@@ -123,7 +104,6 @@ pub(in crate::editor::assets) fn asset_row(
         id: asset.id(),
         name: file_name(asset.path()),
         info: info.join(" · "),
-        brief: brief.join(" · "),
         icon,
         state,
         duration: asset.probe().duration,

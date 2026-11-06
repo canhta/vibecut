@@ -116,7 +116,7 @@ impl Editor {
             }
             match id {
                 "header" => self.header(&mut child),
-                "media" => super::super::assets::show(self, &mut child),
+                "media" => self.show_assets(&mut child),
                 "preview" => self.show_player(&mut child),
                 "inspector" => self.inspector(&mut child),
                 _ => self.timeline_panel(&mut child),

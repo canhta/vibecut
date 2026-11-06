@@ -100,6 +100,45 @@ pub(crate) fn zoom_rail(ui: &mut Ui, id: &str, rect: Rect, value: &mut f32) -> R
     response
 }
 
+/// A rounded dashed border for upload surfaces, using the shared focus ink.
+pub(crate) fn dashed_outline(ui: &Ui, rect: Rect, radius: u8, focused: bool) {
+    use std::f32::consts::{FRAC_PI_2, PI};
+    let rect = rect.shrink(space::HAIRLINE / 2.0);
+    let radius = (f32::from(radius) - space::HAIRLINE / 2.0)
+        .max(0.0)
+        .min(rect.width() / 2.0)
+        .min(rect.height() / 2.0);
+    let mut points = Vec::with_capacity(21);
+    for (center, start) in [
+        (rect.left_top() + Vec2::splat(radius), PI),
+        (rect.right_top() + Vec2::new(-radius, radius), -FRAC_PI_2),
+        (rect.right_bottom() - Vec2::splat(radius), 0.0),
+        (rect.left_bottom() + Vec2::new(radius, -radius), FRAC_PI_2),
+    ] {
+        for step in 0..=4 {
+            let angle = start + FRAC_PI_2 * step as f32 / 4.0;
+            points.push(center + Vec2::new(angle.cos(), angle.sin()) * radius);
+        }
+    }
+    if let Some(first) = points.first().copied() {
+        points.push(first);
+    }
+    let dark = ui.visuals().dark_mode;
+    paint(ui).extend(egui::Shape::dashed_line(
+        &points,
+        Stroke::new(
+            space::HAIRLINE,
+            if focused {
+                theme::accent(dark)
+            } else {
+                theme::border(dark)
+            },
+        ),
+        space::XXS,
+        space::XXS,
+    ));
+}
+
 /// A dense icon action with keyboard focus, tooltip and a stable automation ID.
 pub(crate) fn icon_button(
     ui: &mut Ui,
@@ -265,11 +304,19 @@ pub(crate) fn badge_button(ui: &mut Ui, id: &str, label: &str) -> Response {
 }
 
 /// Feature tab: icon above label, with the measured strip height and inset.
-fn icon_tab(ui: &mut Ui, id: &str, glyph: Icon, label: &str, selected: bool) -> Response {
+pub(crate) fn icon_tab(
+    ui: &mut Ui,
+    id: &str,
+    glyph: Icon,
+    label: &str,
+    selected: bool,
+    width: Option<f32>,
+) -> Response {
     let color = ink(ui, selected);
-    let font = theme::label_font();
+    let mut font = theme::label_font();
+    font.size = theme::type_size::SMALL_LABEL;
     let text = paint(ui).layout_no_wrap(label.to_owned(), font, color);
-    let width = (text.size().x + space::LG * 2.0).max(size::TAB_MIN);
+    let width = width.unwrap_or_else(|| (text.size().x + space::SM * 2.0).max(size::TAB_MIN));
     let response = ui
         .push_id(id, |ui| {
             let (rect, response) =
@@ -285,14 +332,14 @@ fn icon_tab(ui: &mut Ui, id: &str, glyph: Icon, label: &str, selected: bool) -> 
                 glyph,
                 color,
                 Rect::from_center_size(
-                    egui::pos2(rect.center().x, top + icon::DENSE / 2.0),
+                    egui::pos2(rect.center().x, top + icon::DENSE / 2.0 + space::XS),
                     Vec2::splat(icon::DENSE),
                 ),
             );
             paint(ui).galley(
                 egui::pos2(
                     rect.center().x - text.size().x / 2.0,
-                    top + icon::DENSE + space::ICON_LABEL,
+                    top + icon::DENSE + space::ICON_LABEL - space::HAIRLINE,
                 ),
                 text,
                 color,
@@ -323,7 +370,7 @@ pub(crate) fn tab_strip(
             .map(|(index, (label, glyph))| {
                 let cell_id = format!("{id}.{index}");
                 if let Some(glyph) = glyph {
-                    let response = icon_tab(ui, &cell_id, *glyph, label, index == *selected);
+                    let response = icon_tab(ui, &cell_id, *glyph, label, index == *selected, None);
                     if response.clicked() {
                         *selected = index;
                     }

@@ -55,3 +55,15 @@ impl Editor {
         }
     }
 }
+
+impl Editor {
+    pub(in crate::editor) fn effect_name(
+        &self,
+        definition: &project::EffectDefinition,
+    ) -> &'static str {
+        match definition.kind {
+            "blur" => self.tr(Text::EffectBlur),
+            _ => definition.name,
+        }
+    }
+}

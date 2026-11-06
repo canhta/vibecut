@@ -256,7 +256,6 @@ pub(super) struct AssetRow {
     pub(super) id: AssetId,
     pub(super) name: String,
     pub(super) info: String,
-    pub(super) brief: String,
     pub(super) icon: Icon,
     pub(super) state: AssetState,
     pub(super) duration: Option<Tick>,
@@ -413,6 +412,7 @@ pub struct Editor {
     /// Time base for transient UI timers (toast and media reveal).
     pub(super) clock: Arc<dyn Clock>,
     pub(super) toast: Option<Toast>,
+    pub(super) assets: super::assets::State,
     pub(super) media_selection: BTreeSet<AssetId>,
     pub(super) media_anchor: Option<AssetId>,
     pub(super) media_sizes: BTreeMap<AssetId, (ContentHash, Option<u64>)>,

@@ -1,296 +1,378 @@
-//! Renders the media browser.
-
-use crate::editor::assets::{
-    Align2, AssetId, AssetRow, AssetState, BTreeMap, BUTTON_ICON, Color32, Editor, FontId, Icon,
-    Id, MEDIA_CARD_GAP, MEDIA_CARD_HEIGHT, MEDIA_CARD_WIDTH, MEDIA_ROW_HEIGHT, MediaMarquee,
-    MediaSortKey, MediaSortOrder, MediaView, Rect, SourceAsset, Text, Vec2, asset_row,
-    asset_state_color, asset_state_text, catalog, display_short_time, egui, file_name, icons,
-    theme,
+//! Renders searchable media rows with stable interaction identities.
+use super::{
+    Action, Align2, AssetRow, AssetState, AssetsTab, Color32, Filter, FontId, Icon, Id, MediaKind,
+    MediaSortKey, MediaSortOrder, MediaView, Rect, Row, Text, Vec2, View, asset_state_color,
+    catalog, display_short_time, egui, icons, theme,
 };
 
-impl Editor {
-    pub(in crate::editor) fn media_view(&mut self, ui: &mut egui::Ui) {
-        ui.label(
-            egui::RichText::new(self.tr(Text::Media))
-                .size(16.0)
-                .strong(),
+impl View<'_> {
+    pub(super) fn browser(&mut self, ui: &mut egui::Ui) {
+        let area = ui.available_rect_before_wrap();
+        let toolbar_height = self.toolbar(ui);
+        let filter = Rect::from_min_size(
+            area.min + Vec2::new(0.0, toolbar_height + 12.0),
+            Vec2::new(area.width(), 12.0),
         );
-        ui.add_space(theme::space::MD);
-        self.refresh_media_sizes();
-        let importing = self.importing();
-        self.media_toolbar(ui, importing);
-        if self.button(ui, "text.insert", Icon::TextT, Text::TextItem, true) {
-            self.action("text.insert");
-        }
-        // Reserve the line whether or not a selection exists so selecting an
-        // asset never shifts the grid under a subsequent click.
-        let count = if !importing && !self.media_selection.is_empty() {
-            catalog::format_count(
-                self.preferences.locale,
-                self.media_selection.len() as u64,
-                Text::SelectedCountOne,
-                Text::SelectedCountOther,
-            )
-        } else {
-            String::new()
-        };
-        ui.add_sized(
-            [ui.available_width(), 20.0],
-            egui::Label::new(
-                egui::RichText::new(count)
-                    .size(theme::type_size::CHROME)
-                    .color(self.secondary()),
-            ),
+        ui.scope_builder(
+            egui::UiBuilder::new()
+                .id_salt("media.filter.row")
+                .max_rect(filter),
+            |ui| {
+                ui.spacing_mut().interact_size.y = 12.0;
+                ui.spacing_mut().button_padding = Vec2::ZERO;
+                if self.cx.preferences.assets_tab == AssetsTab::Sounds {
+                    ui.label(
+                        egui::RichText::new(self.tr(Text::AssetsAll)).size(theme::type_size::BODY),
+                    );
+                    return;
+                }
+                let menu = ui.menu_button(
+                    egui::RichText::new(self.tr(self.state.filter.label()))
+                        .size(theme::type_size::BODY),
+                    |ui| {
+                        for filter in Filter::ALL {
+                            let response = ui.selectable_label(
+                                self.state.filter == filter,
+                                self.tr(filter.label()),
+                            );
+                            self.remember(
+                                format!("assets.filter.{}", filter.id()),
+                                &response,
+                                None,
+                            );
+                            if response.clicked() {
+                                self.state.filter = filter;
+                                ui.close();
+                            }
+                        }
+                    },
+                );
+                self.remember("assets.filter", &menu.response, None);
+            },
         );
-        ui.add_space(theme::space::MD);
-        let locale = self.preferences.locale;
-        let order = self.media_order();
-        let sizes = self.media_size_map();
-        let by_id: BTreeMap<AssetId, &SourceAsset> = self
-            .session
-            .project()
-            .data()
-            .assets
+        let search = self
+            .state
+            .searches
+            .get(&self.cx.preferences.assets_tab)
+            .map(|value| value.to_lowercase())
+            .unwrap_or_default();
+        let cx = self.cx;
+        let rows: Vec<_> = cx
+            .rows
             .iter()
-            .map(|asset| (asset.id(), asset))
-            .collect();
-        let mut rows: Vec<AssetRow> = order
-            .iter()
-            .filter_map(|id| {
-                by_id.get(id).map(|asset| {
-                    let state = self
-                        .asset_states
-                        .get(id)
-                        .copied()
-                        .unwrap_or(AssetState::Probing);
-                    asset_row(asset, locale, sizes.get(id).copied().flatten(), state)
-                })
+            .filter(|row| {
+                let kind = row.kind;
+                let filter = if self.cx.preferences.assets_tab == AssetsTab::Sounds {
+                    Filter::Audio
+                } else {
+                    self.state.filter
+                };
+                let matches = match filter {
+                    Filter::All => true,
+                    Filter::Video => kind == MediaKind::Video,
+                    Filter::Audio => kind == MediaKind::Audio,
+                    Filter::Image => kind == MediaKind::Image,
+                };
+                matches && row.display.name.to_lowercase().contains(&search)
             })
             .collect();
-        rows.extend(self.pending_imports.iter().map(|(id, path)| AssetRow {
-            id: *id,
-            name: file_name(path),
-            info: asset_state_text(locale, AssetState::Probing),
-            brief: asset_state_text(locale, AssetState::Probing),
-            icon: Icon::UploadSimple,
-            state: AssetState::Probing,
-            duration: None,
-        }));
-        if rows.is_empty() {
-            ui.label(self.tr(Text::EmptyMedia));
-        } else {
-            match self.preferences.media_view {
-                MediaView::Grid => self.media_grid(ui, &rows, importing),
-                MediaView::List => self.media_list(ui, &rows, importing),
-            }
-            if self.media_selection.is_empty() && !importing {
-                ui.label(
-                    egui::RichText::new(self.tr(Text::SelectAssets))
-                        .small()
-                        .color(self.secondary()),
-                );
-            }
-        }
-        if !self.import_failures.is_empty() {
-            ui.separator();
-            ui.label(
-                egui::RichText::new(self.tr(Text::ImportIssues))
-                    .size(theme::type_size::CHROME)
-                    .strong(),
+        let results =
+            Rect::from_min_max(area.min + Vec2::new(0.0, toolbar_height + 36.0), area.max);
+        ui.scope_builder(
+            egui::UiBuilder::new()
+                .id_salt("media.results")
+                .max_rect(results),
+            |ui| {
+                if rows.is_empty() {
+                    self.empty(
+                        ui,
+                        if self.cx.failed {
+                            Icon::X
+                        } else if self.cx.importing {
+                            Icon::UploadSimple
+                        } else {
+                            Icon::FolderOpen
+                        },
+                        if self.cx.failed {
+                            Text::AssetsImportError
+                        } else if self.cx.importing {
+                            Text::Importing
+                        } else if search.is_empty() {
+                            Text::AssetsNoMedia
+                        } else {
+                            Text::AssetsNoMatches
+                        },
+                    );
+                } else {
+                    self.grid(ui, &rows);
+                }
+                if self.cx.failed && !rows.is_empty() {
+                    ui.label(
+                        egui::RichText::new(self.tr(Text::AssetsImportError))
+                            .size(theme::type_size::BODY)
+                            .color(theme::error_text(self.cx.preferences.dark)),
+                    );
+                }
+            },
+        );
+    }
+
+    fn toolbar(&mut self, ui: &mut egui::Ui) -> f32 {
+        let width = (ui.clip_rect().right() - ui.cursor().min.x).max(24.0);
+        let media = self.cx.preferences.assets_tab == AssetsTab::Media;
+        if !media {
+            let row = Rect::from_min_size(ui.cursor().min, Vec2::new(width, theme::size::CONTROL));
+            let search = Rect::from_min_size(
+                row.min,
+                Vec2::new((width - 41.0).max(24.0), theme::size::CONTROL),
             );
-            for failure in &self.import_failures {
-                let name = file_name(&failure.path);
-                ui.label(
-                    egui::RichText::new(catalog::format(
-                        self.preferences.locale,
-                        Text::FailureDetail,
-                        &[("name", &name), ("reason", &failure.reason)],
-                    ))
-                    .small()
-                    .color(self.secondary()),
-                );
-            }
+            ui.scope_builder(
+                egui::UiBuilder::new()
+                    .id_salt("audio.search")
+                    .max_rect(search),
+                |ui| self.search(ui, search.width()),
+            );
+            let sort = Rect::from_min_size(
+                egui::pos2(row.right() - 36.0, row.top()),
+                Vec2::new(36.0, theme::size::CONTROL),
+            );
+            ui.scope_builder(
+                egui::UiBuilder::new().id_salt("audio.sort").max_rect(sort),
+                |ui| self.sort_menu(ui),
+            );
+            ui.advance_cursor_after_rect(row);
+            return theme::size::CONTROL;
         }
-        if let Some(notice) = &self.import_notice {
-            ui.separator();
-            ui.label(egui::RichText::new(notice).small().color(self.secondary()));
+
+        let compact = width < 404.0;
+        let three_rows = width < 260.0;
+        let height = if three_rows {
+            88.0
+        } else if compact {
+            56.0
+        } else {
+            24.0
+        };
+        let (row, _) = ui.allocate_exact_size(Vec2::new(width, height), egui::Sense::hover());
+        let importing = self.cx.importing;
+        {
+            let rect = Rect::from_min_size(row.min, Vec2::new(72.0, 24.0));
+            ui.scope_builder(
+                egui::UiBuilder::new()
+                    .id_salt("media.import.tool")
+                    .max_rect(rect),
+                |ui| {
+                    let response = ui.add_enabled(
+                        !importing,
+                        egui::Button::image_and_text(
+                            icons::tinted(
+                                Icon::UploadSimple,
+                                theme::icon::DENSE,
+                                theme::text(self.cx.preferences.dark),
+                            ),
+                            egui::RichText::new(self.tr(Text::Import)).size(theme::type_size::BODY),
+                        )
+                        .gap(theme::space::ICON_LABEL)
+                        .stroke(egui::Stroke::NONE)
+                        .min_size(rect.size()),
+                    );
+                    crate::kit::dashed_outline(
+                        ui,
+                        response.rect,
+                        theme::radius::CONTROL,
+                        response.has_focus(),
+                    );
+                    self.remember("file.import", &response, Some(Icon::UploadSimple));
+                    if response.clicked() {
+                        self.actions.push(Action::Command("file.import".into()));
+                    }
+                },
+            );
+            let rect = Rect::from_min_size(
+                row.min + Vec2::new(80.0, 0.0),
+                Vec2::new(if width < 150.0 { 24.0 } else { 62.0 }, 24.0),
+            );
+            ui.scope_builder(
+                egui::UiBuilder::new()
+                    .id_salt("media.text.tool")
+                    .max_rect(rect),
+                |ui| {
+                    let response = ui
+                        .add_enabled(
+                            !importing,
+                            egui::Button::image(icons::tinted(
+                                Icon::TextT,
+                                16.0,
+                                theme::text(self.cx.preferences.dark),
+                            ))
+                            .min_size(rect.size()),
+                        )
+                        .on_hover_text(self.tr(Text::TextItem));
+                    self.remember("text.insert", &response, Some(Icon::TextT));
+                    if response.clicked() {
+                        self.actions.push(Action::Command("text.insert".into()));
+                    }
+                },
+            );
         }
+        let search = Rect::from_min_size(
+            row.min
+                + Vec2::new(
+                    if compact { 0.0 } else { 150.0 },
+                    if compact { 32.0 } else { 0.0 },
+                ),
+            Vec2::new(width.min(148.0), 24.0),
+        );
+        ui.scope_builder(
+            egui::UiBuilder::new()
+                .id_salt("media.search.tool")
+                .max_rect(search),
+            |ui| self.search(ui, search.width()),
+        );
+        let offset = if three_rows {
+            0.0
+        } else if compact {
+            150.0
+        } else {
+            316.0
+        };
+        let positions = if compact {
+            [(offset, 24.0), (offset + 32.0, 32.0), (offset + 72.0, 24.0)]
+        } else {
+            [(offset, 24.0), (offset + 34.0, 32.0), (offset + 79.0, 24.0)]
+        };
+        for (index, (x, width)) in positions.into_iter().enumerate() {
+            let rect = Rect::from_min_size(
+                row.min + Vec2::new(x, if three_rows { 64.0 } else { 0.0 }),
+                Vec2::new(width, 24.0),
+            );
+            ui.scope_builder(
+                egui::UiBuilder::new()
+                    .id_salt(("media.tool", index))
+                    .max_rect(rect),
+                |ui| match index {
+                    0 => {
+                        let (glyph, label) = if self.cx.preferences.media_view == MediaView::Grid {
+                            (Icon::SquaresFour, Text::SwitchToList)
+                        } else {
+                            (Icon::ListBullets, Text::SwitchToGrid)
+                        };
+                        if self.icon(ui, "media.view", glyph, label, !importing) {
+                            self.actions.push(Action::Command("media.view".into()));
+                        }
+                    }
+                    1 => self.sort_menu(ui),
+                    _ => {
+                        if self.icon(
+                            ui,
+                            "media.insert",
+                            Icon::Plus,
+                            Text::AddToTimeline,
+                            !importing && !self.cx.selection.is_empty(),
+                        ) {
+                            self.actions.push(Action::Command("media.insert".into()));
+                        }
+                    }
+                },
+            );
+        }
+        height
     }
-    pub(in crate::editor) fn media_toolbar(&mut self, ui: &mut egui::Ui, importing: bool) {
-        ui.horizontal(|ui| {
-            let (icon, label) = match self.preferences.media_view {
-                MediaView::Grid => (Icon::ListBullets, Text::SwitchToList),
-                MediaView::List => (Icon::SquaresFour, Text::SwitchToGrid),
-            };
-            if self.icon_only(
-                ui,
-                "media.view",
-                icon,
-                self.tr(label),
-                None,
-                None,
-                !importing,
-            ) {
-                self.action("media.view");
-            }
-            ui.add_enabled_ui(!importing, |ui| self.media_sort_menu(ui));
-            if self.button(
-                ui,
-                "file.import",
-                Icon::UploadSimple,
-                Text::Import,
-                !importing,
-            ) {
-                self.action("file.import");
-            }
-            if self.icon_only(
-                ui,
-                "media.insert",
-                Icon::Plus,
-                self.tr(Text::AddToTimeline),
-                None,
-                None,
-                !importing && !self.media_selection.is_empty(),
-            ) {
-                self.action("media.insert");
-            }
+
+    fn sort_menu(&mut self, ui: &mut egui::Ui) {
+        let menu = ui
+            .add_enabled_ui(!self.cx.importing, |ui| {
+                ui.spacing_mut().interact_size.y = theme::size::CONTROL;
+                ui.visuals_mut().widgets.inactive.weak_bg_fill = Color32::TRANSPARENT;
+                ui.visuals_mut().widgets.inactive.bg_stroke = egui::Stroke::NONE;
+                egui::ComboBox::from_id_salt(Id::unique("media.sort"))
+                    .selected_text("")
+                    .width(32.0)
+                    .show_ui(ui, |ui| {
+                        for key in MediaSortKey::ALL {
+                            let text = match key {
+                                MediaSortKey::Name => Text::SortName,
+                                MediaSortKey::Type => Text::SortType,
+                                MediaSortKey::Duration => Text::SortDuration,
+                                MediaSortKey::Size => Text::SortSize,
+                            };
+                            let response = ui.selectable_label(
+                                key == self.cx.preferences.media_sort.key,
+                                self.tr(text),
+                            );
+                            self.remember(format!("media.sort.{}", key.id()), &response, None);
+                            if response.clicked() {
+                                self.actions
+                                    .push(Action::Command(format!("media.sort.{}", key.id())));
+                                ui.close();
+                            }
+                        }
+                    })
+            })
+            .inner;
+        let order = self.tr(match self.cx.preferences.media_sort.order {
+            MediaSortOrder::Asc => Text::SortAscending,
+            MediaSortOrder::Desc => Text::SortDescending,
         });
-    }
-    pub(in crate::editor) fn media_sort_label(&self, key: MediaSortKey) -> &'static str {
-        self.tr(match key {
+        let key = self.tr(match self.cx.preferences.media_sort.key {
             MediaSortKey::Name => Text::SortName,
             MediaSortKey::Type => Text::SortType,
             MediaSortKey::Duration => Text::SortDuration,
             MediaSortKey::Size => Text::SortSize,
-        })
-    }
-    pub(in crate::editor) fn media_sort_menu(&mut self, ui: &mut egui::Ui) {
-        let current = self.preferences.media_sort;
-        let arrow = match current.order {
-            MediaSortOrder::Asc => "↑",
-            MediaSortOrder::Desc => "↓",
-        };
-        let selected = format!("{} {arrow}", self.media_sort_label(current.key));
-        let combo = egui::ComboBox::from_id_salt(Id::unique("media.sort"))
-            .selected_text(selected)
-            .width(120.0)
-            .show_ui(ui, |ui| {
-                for key in MediaSortKey::ALL {
-                    let active = current.key == key;
-                    let arrow = if active { arrow } else { "" };
-                    let response = ui.selectable_label(
-                        active,
-                        format!("{} {arrow}", self.media_sort_label(key)),
-                    );
-                    self.remember(format!("media.sort.{}", key.id()), &response);
-                    if response.clicked() {
-                        self.action(&format!("media.sort.{}", key.id()));
-                        ui.close();
-                    }
-                }
-            });
-        let order = self.tr(match current.order {
-            MediaSortOrder::Asc => Text::SortAscending,
-            MediaSortOrder::Desc => Text::SortDescending,
         });
-        let tooltip = catalog::format(
-            self.preferences.locale,
+        let response = menu.response.on_hover_text(catalog::format(
+            self.cx.preferences.locale,
             Text::SortTooltip,
-            &[
-                ("key", self.media_sort_label(current.key)),
-                ("order", order),
-            ],
+            &[("key", key), ("order", order)],
+        ));
+        icons::tinted(
+            Icon::ListBullets,
+            16.0,
+            theme::text(self.cx.preferences.dark),
+        )
+        .paint_at(
+            ui,
+            Rect::from_center_size(
+                egui::pos2(response.rect.left() + 10.0, response.rect.center().y),
+                Vec2::splat(16.0),
+            ),
         );
-        let response = combo.response.on_hover_text(tooltip.clone());
-        self.remember("media.sort", &response);
-        if let Some(state) = self.widgets.get_mut("media.sort") {
-            state.tooltip = Some(tooltip);
-        }
+        self.remember("media.sort", &response, Some(Icon::ListBullets));
     }
-    pub(in crate::editor) fn media_viewport_height(&self, ui: &egui::Ui) -> f32 {
-        let reserved = if self.import_failures.is_empty() && self.import_notice.is_none() {
-            16.0
+
+    fn grid(&mut self, ui: &mut egui::Ui, rows: &[&Row]) {
+        let list = self.cx.preferences.media_view == MediaView::List
+            || self.cx.preferences.assets_tab == AssetsTab::Sounds;
+        let width = (ui.clip_rect().right() - ui.cursor().min.x).max(0.0);
+        let columns = if list {
+            1
         } else {
-            120.0
+            ((width + theme::space::GRID) / (theme::size::MEDIA_THUMB_WIDTH + theme::space::GRID))
+                .floor()
+                .max(1.0) as usize
         };
-        (ui.clip_rect().bottom() - ui.cursor().min.y - reserved).max(80.0)
-    }
-    pub(in crate::editor) fn media_grid(
-        &mut self,
-        ui: &mut egui::Ui,
-        rows: &[AssetRow],
-        importing: bool,
-    ) {
-        let width = (ui.clip_rect().right() - ui.cursor().min.x).max(0.0);
-        let columns = ((width + MEDIA_CARD_GAP) / (MEDIA_CARD_WIDTH + MEDIA_CARD_GAP))
-            .floor()
-            .max(1.0) as usize;
-        let content_height = rows.len().div_ceil(columns) as f32
-            * (MEDIA_CARD_HEIGHT + MEDIA_CARD_GAP)
-            - MEDIA_CARD_GAP;
-        let viewport_height = self.media_viewport_height(ui);
+        let cell = if list {
+            Vec2::new(width, theme::size::AUDIO_ROW)
+        } else {
+            Vec2::new(
+                theme::size::MEDIA_THUMB_WIDTH,
+                theme::size::MEDIA_THUMB_HEIGHT + 6.0 + theme::size::MEDIA_LABEL_HEIGHT,
+            )
+        };
+        let pitch = if list {
+            60.0
+        } else {
+            cell.y + theme::space::GRID
+        };
+        let viewport = (ui.available_height() - if self.cx.failed { 30.0 } else { 0.0 }).max(32.0);
         egui::ScrollArea::vertical()
-            .id_salt("media.grid")
-            .max_height(viewport_height)
-            .show(ui, |ui| {
-                let (content, _) = ui.allocate_exact_size(
-                    Vec2::new(width, content_height.max(viewport_height)),
-                    egui::Sense::hover(),
-                );
-                let background = ui.interact(
-                    content,
-                    Id::unique("media.marquee"),
-                    egui::Sense::click_and_drag(),
-                );
-                self.remember("media.marquee", &background);
-                let mut rects = Vec::with_capacity(rows.len());
-                for (index, row) in rows.iter().enumerate() {
-                    let column = index % columns;
-                    let line = index / columns;
-                    let rect = Rect::from_min_size(
-                        content.min
-                            + Vec2::new(
-                                column as f32 * (MEDIA_CARD_WIDTH + MEDIA_CARD_GAP),
-                                line as f32 * (MEDIA_CARD_HEIGHT + MEDIA_CARD_GAP),
-                            ),
-                        Vec2::new(MEDIA_CARD_WIDTH, MEDIA_CARD_HEIGHT),
-                    );
-                    let response = ui
-                        .scope_builder(egui::UiBuilder::new().max_rect(rect), |ui| {
-                            self.media_asset(ui, row, importing, true)
-                        })
-                        .inner;
-                    if self
-                        .media_reveal
-                        .is_some_and(|reveal| reveal.asset == row.id)
-                    {
-                        ui.scroll_to_rect(rect, Some(egui::Align::Center));
-                    }
-                    if response.clicked() {
-                        let modifiers = ui.ctx().input(|input| input.modifiers);
-                        self.select_asset(row.id, modifiers);
-                    }
-                    rects.push((row.id, rect));
-                }
-                self.media_marquee(ui, content, &background, &rects);
-            });
-    }
-    pub(in crate::editor) fn media_list(
-        &mut self,
-        ui: &mut egui::Ui,
-        rows: &[AssetRow],
-        importing: bool,
-    ) {
-        let width = (ui.clip_rect().right() - ui.cursor().min.x).max(0.0);
-        let viewport_height = self.media_viewport_height(ui);
-        egui::ScrollArea::vertical()
-            .id_salt("media.list")
-            .max_height(viewport_height)
+            .id_salt(if list { "media.list" } else { "media.grid" })
+            .max_height(viewport)
             .show(ui, |ui| {
                 let (content, _) = ui.allocate_exact_size(
                     Vec2::new(
                         width,
-                        (rows.len() as f32 * MEDIA_ROW_HEIGHT).max(viewport_height),
+                        (rows.len().div_ceil(columns) as f32 * pitch).max(viewport),
                     ),
                     egui::Sense::hover(),
                 );
@@ -299,281 +381,223 @@ impl Editor {
                     Id::unique("media.marquee"),
                     egui::Sense::click_and_drag(),
                 );
-                self.remember("media.marquee", &background);
-                let mut rects = Vec::with_capacity(rows.len());
+                self.remember("media.marquee", &background, None);
+                let mut rects = Vec::new();
                 for (index, row) in rows.iter().enumerate() {
                     let rect = Rect::from_min_size(
-                        content.min + Vec2::new(0.0, index as f32 * MEDIA_ROW_HEIGHT),
-                        Vec2::new(content.width(), MEDIA_ROW_HEIGHT - 2.0),
+                        content.min
+                            + Vec2::new(
+                                (index % columns) as f32 * (cell.x + theme::space::GRID),
+                                (index / columns) as f32 * pitch,
+                            ),
+                        cell,
                     );
-                    let response = ui
-                        .scope_builder(egui::UiBuilder::new().max_rect(rect), |ui| {
-                            self.media_asset(ui, row, importing, false)
-                        })
-                        .inner;
-                    if self
-                        .media_reveal
-                        .is_some_and(|reveal| reveal.asset == row.id)
-                    {
+                    self.asset(ui, &row.display, rect, list);
+                    if self.cx.reveal == Some(row.display.id) {
                         ui.scroll_to_rect(rect, Some(egui::Align::Center));
                     }
-                    if response.clicked() {
-                        let modifiers = ui.ctx().input(|input| input.modifiers);
-                        self.select_asset(row.id, modifiers);
-                    }
-                    rects.push((row.id, rect));
+                    rects.push((row.display.id, rect));
                 }
-                self.media_marquee(ui, content, &background, &rects);
+                if let Some(marquee) = &self.cx.marquee
+                    && let Some(pointer) = ui.input(|input| input.pointer.interact_pos())
+                {
+                    let rect = Rect::from_two_pos(marquee.origin, pointer).intersect(content);
+                    ui.painter().rect_filled(
+                        rect,
+                        0.0,
+                        theme::accent(self.cx.preferences.dark).gamma_multiply(0.15),
+                    );
+                    ui.painter().rect_stroke(
+                        rect,
+                        0.0,
+                        egui::Stroke::new(1.0, theme::accent(self.cx.preferences.dark)),
+                        egui::StrokeKind::Inside,
+                    );
+                }
+                self.actions.push(Action::Marquee {
+                    content,
+                    background: Box::new(background),
+                    rects,
+                });
             });
     }
-    pub(in crate::editor) fn media_marquee(
-        &mut self,
-        ui: &mut egui::Ui,
-        content: Rect,
-        background: &egui::Response,
-        rects: &[(AssetId, Rect)],
-    ) {
-        let modifiers = ui.ctx().input(|input| input.modifiers);
-        if background.drag_started()
-            && self.media_marquee.is_none()
-            && let Some(origin) = ui.input(|input| input.pointer.press_origin())
-            && !rects.iter().any(|(_, rect)| rect.contains(origin))
-        {
-            self.media_marquee = Some(MediaMarquee {
-                origin,
-                before: self.media_selection.clone(),
-                additive: modifiers.command || modifiers.ctrl || modifiers.shift,
-                moved: false,
-            });
-        }
-        if let Some(marquee) = self.media_marquee.clone()
-            && let Some(pointer) = ui.input(|input| input.pointer.interact_pos())
-        {
-            let rect = Rect::from_two_pos(marquee.origin, pointer).intersect(content);
-            let mut selected =
-                crate::selection::intersections(rect.min, rect.max, rects.iter().copied());
-            if marquee.additive {
-                selected.extend(&marquee.before);
-            }
-            self.media_selection = selected;
-            if let Some(state) = &mut self.media_marquee {
-                state.moved |= marquee.origin.distance(pointer) > 4.0;
-            }
-            ui.painter().with_clip_rect(content).rect_filled(
-                rect,
-                0.0,
-                self.accent().gamma_multiply(0.15),
-            );
-            ui.painter().with_clip_rect(content).rect_stroke(
-                rect,
-                0.0,
-                egui::Stroke::new(1.0, self.accent()),
-                egui::StrokeKind::Inside,
-            );
-        }
-        if background.drag_stopped()
-            && let Some(marquee) = self.media_marquee.take()
-        {
-            if !marquee.moved {
-                self.media_selection.clear();
-                self.media_anchor = None;
-            }
-            self.session.end_merge();
-        }
-        if background.clicked() {
-            self.media_selection.clear();
-            self.media_anchor = None;
-            self.session.end_merge();
-        }
-    }
-    pub(in crate::editor) fn media_asset(
-        &mut self,
-        ui: &mut egui::Ui,
-        row: &AssetRow,
-        importing: bool,
-        grid: bool,
-    ) -> egui::Response {
-        let rect = ui.max_rect();
+
+    fn asset(&mut self, ui: &mut egui::Ui, row: &AssetRow, rect: Rect, list: bool) {
         let response = ui.interact(
             rect,
             Id::unique(("media.asset", row.id.0)),
             egui::Sense::click(),
         );
-        self.remember_with_icon(
+        self.remember(
             format!("media.asset.{}", row.id.0),
-            Some(row.icon.name()),
             &response,
+            Some(row.icon),
         );
-        response
-            .widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, row.name.as_str()));
-        if response.secondary_clicked() && !self.media_selection.contains(&row.id) {
-            self.media_selection = [row.id].into_iter().collect();
-            self.media_anchor = Some(row.id);
-            self.session.end_merge();
+        response.widget_info(|| {
+            egui::WidgetInfo::labeled(egui::Role::Button, !self.cx.importing, &row.name)
+        });
+        if response.clicked() {
+            self.actions
+                .push(Action::Select(row.id, ui.input(|input| input.modifiers)));
         }
-        let selected = self.media_selection.contains(&row.id);
-        let highlighted = self
-            .media_reveal
-            .is_some_and(|reveal| reveal.asset == row.id);
-        let dark = self.preferences.dark;
-        let fill = if selected {
-            self.accent()
-        } else if response.hovered() {
-            theme::hover(dark)
+        if response.secondary_clicked() && !self.cx.selection.contains(&row.id) {
+            self.actions
+                .push(Action::Select(row.id, egui::Modifiers::NONE));
+        }
+        let selected = self.cx.selection.contains(&row.id);
+        let dark = self.cx.preferences.dark;
+        if list {
+            ui.painter().rect_filled(
+                rect,
+                theme::radius::UPLOAD,
+                if selected || response.hovered() {
+                    theme::hover(dark)
+                } else {
+                    theme::field(dark)
+                },
+            );
+        }
+        let thumb = if list {
+            Rect::from_min_size(rect.min + Vec2::splat(8.0), Vec2::splat(32.0))
         } else {
-            self.control_fill()
+            Rect::from_min_size(
+                rect.min,
+                Vec2::new(rect.width(), theme::size::MEDIA_THUMB_HEIGHT),
+            )
         };
-        let text = if selected {
-            theme::on_accent(dark)
+        ui.painter().rect_filled(thumb, 4.0, theme::field(dark));
+        if let Some(texture) = self.cx.thumbnails.get(&row.id) {
+            let scale =
+                (thumb.width() / texture.size_vec2().x).min(thumb.height() / texture.size_vec2().y);
+            let image = Rect::from_center_size(thumb.center(), texture.size_vec2() * scale);
+            let response = ui.put(
+                image,
+                egui::Image::new((texture.id(), image.size()))
+                    .corner_radius(theme::radius::CONTROL),
+            );
+            self.remember(
+                format!("media.asset.{}.thumbnail", row.id.0),
+                &response,
+                None,
+            );
         } else {
-            self.text_color()
+            icons::tinted(row.icon, 24.0, theme::secondary(dark)).paint_at(
+                ui,
+                Rect::from_center_size(thumb.center(), Vec2::splat(24.0)),
+            );
+        }
+        if selected || self.cx.reveal == Some(row.id) || response.hovered() {
+            ui.painter().rect_stroke(
+                thumb,
+                4.0,
+                egui::Stroke::new(1.0, theme::accent(dark)),
+                egui::StrokeKind::Inside,
+            );
+        }
+        if !list && let Some(duration) = row.duration {
+            let galley = ui.painter().layout_no_wrap(
+                display_short_time(duration),
+                FontId::proportional(theme::type_size::BODY),
+                theme::on_scrim(),
+            );
+            let origin = thumb.right_top() - Vec2::new(galley.size().x + 4.0, -2.0);
+            ui.painter().rect_filled(
+                Rect::from_min_size(origin, galley.size()),
+                2.0,
+                theme::scrim(),
+            );
+            ui.painter().galley(origin, galley, theme::on_scrim());
+        }
+        let name = if list {
+            egui::pos2(thumb.right() + 8.0, rect.top() + 8.0)
+        } else {
+            rect.min + Vec2::new(0.0, theme::size::MEDIA_THUMB_HEIGHT + 6.0)
         };
         let painter = ui.painter().with_clip_rect(rect);
-        painter.rect_filled(rect, theme::radius::CONTROL, fill);
-        painter.rect_stroke(
-            rect,
-            4.0,
-            egui::Stroke::new(
-                if highlighted { 2.0 } else { 1.0 },
-                if highlighted {
-                    self.accent()
-                } else {
-                    self.border()
-                },
-            ),
-            egui::StrokeKind::Inside,
+        painter.text(
+            name,
+            Align2::LEFT_TOP,
+            &row.name,
+            if list {
+                theme::label_font()
+            } else {
+                FontId::proportional(theme::type_size::BODY)
+            },
+            theme::text(dark),
         );
-        let secondary = if selected {
-            theme::on_accent(dark)
-        } else {
-            self.secondary()
-        };
-        if grid {
-            let thumbnail = Rect::from_min_size(
-                rect.min + Vec2::new(4.0, 4.0),
-                Vec2::new(rect.width() - 8.0, 58.0),
-            );
-            painter.rect_filled(thumbnail, theme::radius::CONTROL, theme::field(dark));
-            self.media_thumbnail(ui, row, thumbnail, 24.0, self.text_color());
-            if let Some(duration) = row.duration {
-                let label = display_short_time(duration);
-                let badge = Rect::from_min_size(
-                    thumbnail.right_bottom() - Vec2::new(4.0, 4.0),
-                    Vec2::new(0.0, 0.0),
-                );
-                let galley = painter.layout_no_wrap(
-                    label,
-                    FontId::proportional(theme::type_size::CHROME),
-                    theme::on_scrim(),
-                );
-                let badge = Rect::from_min_size(
-                    badge.min - Vec2::new(galley.size().x + 4.0, galley.size().y + 2.0),
-                    galley.size() + Vec2::new(4.0, 2.0),
-                );
-                painter.rect_filled(badge, theme::radius::CONTROL, theme::scrim());
-                painter.galley(badge.min + Vec2::new(2.0, 1.0), galley, theme::on_scrim());
-            }
+        if list {
             painter.text(
-                egui::pos2(rect.left() + 5.0, thumbnail.bottom() + 5.0),
+                name + Vec2::new(0.0, 16.0),
                 Align2::LEFT_TOP,
-                &row.name,
-                FontId::proportional(theme::type_size::CHROME),
-                text,
-            );
-            painter.text(
-                egui::pos2(rect.left() + 5.0, thumbnail.bottom() + 27.0),
-                Align2::LEFT_TOP,
-                &row.brief,
-                FontId::proportional(theme::type_size::CHROME),
-                secondary,
-            );
-        } else {
-            let thumbnail = Rect::from_center_size(
-                egui::pos2(rect.left() + 36.0, rect.center().y),
-                Vec2::new(64.0, 36.0),
-            );
-            self.media_thumbnail(ui, row, thumbnail, BUTTON_ICON, text);
-            painter.text(
-                egui::pos2(rect.left() + 74.0, rect.center().y - 2.0),
-                Align2::LEFT_BOTTOM,
-                &row.name,
-                FontId::proportional(theme::type_size::CHROME),
-                text,
-            );
-            painter.text(
-                egui::pos2(rect.left() + 74.0, rect.center().y + 2.0),
-                Align2::LEFT_TOP,
-                &row.info,
-                FontId::proportional(theme::type_size::CHROME),
-                secondary,
+                row.duration
+                    .map(display_short_time)
+                    .unwrap_or_else(|| self.tr(Text::DurationUnknown).to_owned()),
+                FontId::proportional(theme::type_size::BODY),
+                theme::secondary(dark),
             );
         }
-        let status_rect = Rect::from_min_size(
-            if grid {
-                rect.min + Vec2::splat(6.0)
-            } else {
-                egui::pos2(rect.right() - 102.0, rect.top() + 3.0)
-            },
-            Vec2::new((rect.width() - 12.0).min(96.0), 20.0),
-        );
-        painter.rect_filled(status_rect, theme::radius::CONTROL, self.control_fill());
-        let status = ui.put(
+        let status_rect = Rect::from_min_size(thumb.min + Vec2::splat(2.0), Vec2::splat(16.0));
+        let status = ui.interact(
             status_rect,
-            egui::Label::new(
-                egui::RichText::new(asset_state_text(self.preferences.locale, row.state))
-                    .size(theme::type_size::CHROME)
-                    .color(asset_state_color(row.state, dark)),
-            )
-            .truncate(),
+            Id::unique(("media.status", row.id.0)),
+            egui::Sense::hover(),
         );
-        self.remember(format!("media.asset.{}.status", row.id.0), &status);
-        let ids: Vec<AssetId> = if selected {
-            self.media_selection.iter().copied().collect()
-        } else {
-            vec![row.id]
-        };
-        let label = if ids.len() == 1 {
-            self.tr(Text::DeleteItemOne).to_owned()
-        } else {
-            catalog::format_count(
-                self.preferences.locale,
-                ids.len() as u64,
-                Text::DeleteItemsOther,
-                Text::DeleteItemsOther,
-            )
-        };
-        response.context_menu(|ui| {
-            let delete = ui.add_enabled(!importing, egui::Button::new(label));
-            self.remember("media.delete", &delete);
-            if delete.clicked() {
-                self.request_media_delete(ids.clone());
+        self.remember(format!("media.asset.{}.status", row.id.0), &status, None);
+        if row.state != AssetState::Ready {
+            let glyph = if row.state == AssetState::Probing {
+                Icon::ArrowClockwise
+            } else {
+                Icon::X
+            };
+            icons::tinted(glyph, 12.0, asset_state_color(row.state, dark))
+                .paint_at(ui, status_rect);
+            status.on_hover_text(if row.state == AssetState::Probing {
+                self.tr(Text::Importing)
+            } else {
+                self.tr(Text::AssetsImportError)
+            });
+        }
+        if self.cx.preferences.assets_tab == AssetsTab::Sounds {
+            let add = Rect::from_center_size(
+                egui::pos2(rect.right() - 16.0, rect.center().y),
+                Vec2::splat(24.0),
+            );
+            let id = format!("media.asset.{}.add", row.id.0);
+            let clicked = ui
+                .scope_builder(egui::UiBuilder::new().id_salt(&id).max_rect(add), |ui| {
+                    self.icon(ui, &id, Icon::Plus, Text::AddToTimeline, !self.cx.importing)
+                })
+                .inner;
+            if clicked {
+                self.actions
+                    .push(Action::Select(row.id, egui::Modifiers::NONE));
+                self.actions.push(Action::Command("media.insert".into()));
+            }
+        }
+        response.on_hover_text(&row.info).context_menu(|ui| {
+            let response = ui.add_enabled(
+                !self.cx.importing,
+                egui::Button::new(if selected && self.cx.selection.len() > 1 {
+                    catalog::format_count(
+                        self.cx.preferences.locale,
+                        self.cx.selection.len() as u64,
+                        Text::DeleteItemsOther,
+                        Text::DeleteItemsOther,
+                    )
+                } else {
+                    self.tr(Text::DeleteItemOne).to_owned()
+                }),
+            );
+            self.remember("media.delete", &response, Some(Icon::Trash));
+            if response.clicked() {
+                let ids = if selected {
+                    self.cx.selection.iter().copied().collect()
+                } else {
+                    vec![row.id]
+                };
+                self.actions.push(Action::Delete(ids));
                 ui.close();
             }
         });
-        response
-    }
-    pub(in crate::editor) fn media_thumbnail(
-        &mut self,
-        ui: &mut egui::Ui,
-        row: &AssetRow,
-        rect: Rect,
-        fallback_size: f32,
-        color: Color32,
-    ) {
-        if let Some(texture) = self.thumbnail_texture(ui.ctx(), row.id) {
-            let size = texture.size_vec2();
-            let scale = (rect.width() / size.x).min(rect.height() / size.y);
-            let image_rect = Rect::from_center_size(rect.center(), size * scale);
-            let response = ui.put(
-                image_rect,
-                egui::Image::new((texture.id(), image_rect.size())),
-            );
-            self.remember(format!("media.asset.{}.thumbnail", row.id.0), &response);
-        } else {
-            icons::tinted(row.icon, fallback_size, color).paint_at(
-                ui,
-                Rect::from_center_size(rect.center(), Vec2::splat(fallback_size)),
-            );
-        }
     }
 }

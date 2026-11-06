@@ -58,6 +58,7 @@ enum App {
     },
     Editor(Box<Editor>),
     Player(Box<Editor>),
+    Assets(Box<Editor>),
     Shorts(Box<vibecut::shorts::State>),
 }
 impl App {
@@ -102,25 +103,36 @@ impl App {
                 };
                 vibecut::shorts::show(shorts, &cx, ui);
             }
+            Self::Assets(editor) => {
+                let rect =
+                    egui::Rect::from_min_size(egui::pos2(9.0, 36.0), egui::vec2(582.0, 532.0));
+                let mut child = ui.new_child(egui::UiBuilder::new().max_rect(rect));
+                child.set_clip_rect(rect);
+                editor.assets_ui(&mut child);
+            }
         }
     }
     fn busy(&self) -> bool {
         match self {
             Self::Home { workspace, .. } => workspace.busy(),
-            Self::Editor(_) | Self::Player(_) => false,
+            Self::Editor(_) | Self::Player(_) | Self::Assets(_) => false,
             Self::Shorts(shorts) => shorts.busy(),
         }
     }
     fn inspect(&self) -> Result<Inspection, Failure> {
         match self {
-            Self::Editor(editor) | Self::Player(editor) => Ok(editor.inspect()?),
+            Self::Editor(editor) | Self::Player(editor) | Self::Assets(editor) => {
+                Ok(editor.inspect()?)
+            }
             Self::Home { .. } => Err("the Home scene has no editor inspection".into()),
             Self::Shorts(_) => Err("the Shorts scene has no editor inspection".into()),
         }
     }
     fn presented_frame(&self) -> Option<Tick> {
         match self {
-            Self::Editor(editor) | Self::Player(editor) => editor.presented_frame(),
+            Self::Editor(editor) | Self::Player(editor) | Self::Assets(editor) => {
+                editor.presented_frame()
+            }
             Self::Shorts(shorts) => shorts.preview().and_then(|editor| editor.presented_frame()),
             Self::Home { workspace, .. } => workspace
                 .focused_editor()
@@ -148,7 +160,9 @@ impl AuditApp {
     }
     fn session(&self) -> Option<&Session> {
         match &self.app {
-            App::Editor(editor) | App::Player(editor) => Some(&editor.session),
+            App::Editor(editor) | App::Player(editor) | App::Assets(editor) => {
+                Some(&editor.session)
+            }
             App::Home { .. } => None,
             App::Shorts(shorts) => shorts.preview().map(|editor| &*editor.session),
         }
@@ -277,6 +291,66 @@ const SCENES: &[Scene] = &[
         reference_dark: None,
         reference_light: None,
         build: |theme, scale| player_scene(theme, scale, true),
+    },
+    Scene {
+        name: "assets-empty",
+        reference_dark: None,
+        reference_light: None,
+        build: |theme, scale| assets_scene(theme, scale, "empty"),
+    },
+    Scene {
+        name: "assets-media",
+        reference_dark: None,
+        reference_light: None,
+        build: |theme, scale| assets_scene(theme, scale, "media"),
+    },
+    Scene {
+        name: "assets-effects",
+        reference_dark: None,
+        reference_light: None,
+        build: |theme, scale| assets_scene(theme, scale, "effects"),
+    },
+    Scene {
+        name: "assets-text",
+        reference_dark: None,
+        reference_light: None,
+        build: |theme, scale| assets_scene(theme, scale, "text"),
+    },
+    Scene {
+        name: "assets-loading",
+        reference_dark: None,
+        reference_light: None,
+        build: |theme, scale| assets_scene(theme, scale, "loading"),
+    },
+    Scene {
+        name: "assets-error",
+        reference_dark: None,
+        reference_light: None,
+        build: |theme, scale| assets_scene(theme, scale, "error"),
+    },
+    Scene {
+        name: "assets-offline",
+        reference_dark: None,
+        reference_light: None,
+        build: |theme, scale| assets_scene(theme, scale, "offline"),
+    },
+    Scene {
+        name: "assets-captions",
+        reference_dark: None,
+        reference_light: None,
+        build: |theme, scale| assets_scene(theme, scale, "captions"),
+    },
+    Scene {
+        name: "assets-media-vi",
+        reference_dark: None,
+        reference_light: None,
+        build: |theme, scale| assets_scene(theme, scale, "media-vi"),
+    },
+    Scene {
+        name: "assets-empty-vi",
+        reference_dark: None,
+        reference_light: None,
+        build: |theme, scale| assets_scene(theme, scale, "empty-vi"),
     },
     Scene {
         name: "captions-empty",
@@ -2190,6 +2264,16 @@ fn main() -> Result<(), Failure> {
             let image = opaque(image, vibecut::window_color(theme.dark()));
             let file = format!("{variant}@{}x.png", scale as u32);
             image.save(output.join(&file))?;
+            if scene.name.starts_with("assets-") && scale == 1.0 {
+                let geometry:Vec<_>=app.state().inspect()?.widgets.into_iter().map(|widget|serde_json::json!({
+                    "id":widget.id,"enabled":widget.enabled,
+                    "rect":[widget.rect.left(),widget.rect.top(),widget.rect.width(),widget.rect.height()]
+                })).collect();
+                std::fs::write(
+                    output.join(format!("{variant}-geometry.json")),
+                    serde_json::to_vec_pretty(&geometry)?,
+                )?;
+            }
             images.push((file, scale));
         }
         let reference = scene.reference(*theme).and_then(|relative| {
@@ -2549,6 +2633,83 @@ fn shorts_scene(
         }
     }
     Ok(app)
+}
+
+/// Uses the area slot at the measured editor size, independent of sibling work.
+fn assets_scene(theme: Theme, scale: f32, state: &str) -> Result<AppHarness, Failure> {
+    let locale = if state.ends_with("-vi") {
+        Locale::Vi
+    } else {
+        Locale::En
+    };
+    let state = state.strip_suffix("-vi").unwrap_or(state);
+    let mut editor = empty_editor(theme, locale)?;
+    if matches!(state, "media" | "offline") {
+        editor.set_import_probe(Arc::new(CompletedProbe))?;
+        editor.set_thumbnailer(Arc::new(AssetsThumbnail))?;
+        editor.drop_files(vec![
+            std::env::temp_dir().join("Interview.mp4"),
+            std::env::temp_dir().join("audio-music.wav"),
+        ])?;
+        let deadline = Instant::now() + Duration::from_secs(10);
+        while editor.importing() {
+            editor.tick();
+            if Instant::now() >= deadline {
+                return Err("assets audit import timed out".into());
+            }
+            std::thread::sleep(Duration::from_millis(2));
+        }
+    }
+    editor.preferences.assets_tab = match state {
+        "effects" => vibecut::panels::AssetsTab::Effects,
+        "text" => vibecut::panels::AssetsTab::Text,
+        "captions" => vibecut::panels::AssetsTab::Captions,
+        "offline" => vibecut::panels::AssetsTab::Sounds,
+        _ => vibecut::panels::AssetsTab::Media,
+    };
+    if state == "loading" {
+        editor.set_import_probe(Arc::new(ProgressProbe::new()))?;
+        editor.drop_files(vec![
+            std::env::temp_dir().join("one.mp4"),
+            std::env::temp_dir().join("two.mp4"),
+        ])?;
+    }
+    if state == "error" {
+        editor.start_import(vec![std::env::temp_dir().join("missing-audit-media.mp4")])?;
+        let deadline = Instant::now() + Duration::from_secs(10);
+        while editor.importing() {
+            editor.tick();
+            if Instant::now() >= deadline {
+                return Err("assets audit refusal timed out".into());
+            }
+            std::thread::sleep(Duration::from_millis(2));
+        }
+    }
+    let mut app = harness_sized(App::Assets(Box::new(editor)), scale, [1727.0, 1029.0]);
+    app.run_steps(4);
+    Ok(app)
+}
+
+/// Own generated pixels, injected through the real thumbnail publication seam.
+struct AssetsThumbnail;
+impl vibecut::import::ThumbnailSource for AssetsThumbnail {
+    fn thumbnail(
+        &self,
+        _: &SourceAsset,
+        _: Tick,
+        _: u32,
+        cancelled: Arc<std::sync::atomic::AtomicBool>,
+    ) -> media::Result<media::Thumbnail> {
+        if cancelled.load(Ordering::Acquire) {
+            return Err(MediaError::Cancelled);
+        }
+        Ok(media::Thumbnail {
+            width: 120,
+            height: 73,
+            frame: Tick::ZERO,
+            pixels: [80, 103, 126, 255].repeat(120 * 73),
+        })
+    }
 }
 
 #[cfg(test)]

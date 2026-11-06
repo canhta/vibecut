@@ -223,12 +223,14 @@ pub(crate) mod radius {
     pub const CONTROL: u8 = 4;
     /// Value fields and steppers (221643 corners: about 2 px; the 4 px mapping was unproven).
     pub const FIELD: u8 = 2;
+    pub const UPLOAD: u8 = 8;
 }
 /// Inter-equivalent sizes inferred from measured capital heights.
 pub(crate) mod type_size {
     pub const BADGE: f32 = 10.0;
     pub const PLAYER_VALUE: f32 = 11.0;
     pub const PLAYER_TITLE: f32 = 11.0;
+    pub const SMALL_LABEL: f32 = 11.0;
     pub const BODY: f32 = 12.0;
     pub const CHROME: f32 = 14.0;
     /// Ruler captions: digit height 8 px in 221643.
@@ -275,6 +277,7 @@ pub(crate) mod size {
     pub const SUBNAV: f32 = 120.0;
     pub const SUBNAV_BUTTON: f32 = 104.0;
     pub const TAB_MIN: f32 = 48.0;
+    pub const FEATURE_TAB_PITCH: f32 = 49.0;
     pub const SEGMENT_WIDTH: f32 = 115.0;
     pub const STEPPER: f32 = 16.0;
     pub const VALUE: f32 = 54.0;
@@ -293,6 +296,7 @@ pub(crate) mod size {
     pub const MEDIA_LABEL_HEIGHT: f32 = 16.0;
     pub const AUDIO_ROW: f32 = 48.0;
     pub const EFFECT_CARD: f32 = 88.0;
+    pub const EFFECT_THUMB_HEIGHT: f32 = 86.0;
     pub const EFFECT_PITCH: f32 = 116.0;
     pub const SHORTCUT_BUTTON: f32 = 72.0;
     pub const TOGGLE_WIDTH: f32 = 36.0;

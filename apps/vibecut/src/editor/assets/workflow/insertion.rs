@@ -24,8 +24,9 @@ impl Editor {
         }
         let at = match self.playback.position() {
             Ok(at) => at,
-            Err(error) => {
-                self.set_toast(self.tr(Text::InsertFailed), Some(error_detail(&error)));
+            Err(_error) => {
+                tracing::warn!(category = "asset_position", "insertion unavailable");
+                self.set_toast(self.tr(Text::InsertFailed), None);
                 return;
             }
         };
@@ -116,17 +117,19 @@ impl Editor {
                 self.session.end_merge();
             }
             Err(error) => {
+                tracing::warn!(category = "asset_insert", "insertion failed");
                 let detail = error_detail(&error);
                 self.import_notice = Some(detail.clone());
-                self.set_toast(self.tr(Text::InsertFailed), Some(detail));
+                self.set_toast(self.tr(Text::InsertFailed), None);
             }
         }
     }
     pub(in crate::editor) fn insert_text(&mut self) {
         let at = match self.playback.position() {
             Ok(at) => at,
-            Err(error) => {
-                self.set_toast(self.tr(Text::TextInsertFailed), Some(error_detail(&error)));
+            Err(_error) => {
+                tracing::warn!(category = "asset_position", "insertion unavailable");
+                self.set_toast(self.tr(Text::TextInsertFailed), None);
                 return;
             }
         };
@@ -160,9 +163,10 @@ impl Editor {
                 self.properties.clear_drafts();
             }
             Err(error) => {
+                tracing::warn!(category = "asset_insert", "insertion failed");
                 let detail = error_detail(&error);
                 self.import_notice = Some(detail.clone());
-                self.set_toast(self.tr(Text::TextInsertFailed), Some(detail));
+                self.set_toast(self.tr(Text::TextInsertFailed), None);
             }
         }
     }

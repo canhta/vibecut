@@ -23,9 +23,11 @@ state projections live with their area. Responsibilities follow
 
 The physical extraction preserves existing facade calls and their ordering.
 The player owns its retained view state and renders from read-only context,
-returning requests for the frame to route. Remaining State/show/action migrations
-belong to their consumer UI tickets; retained cross-area calls are recorded in
-the ticket report.
+returning requests for the frame to route. The assets State owns its navigation
+drafts and prepared workflow projection; `show` consumes the shared
+`editor::Context` and returns Action values routed by the frame. Its offscreen
+audit uses the same surface. Remaining State/show/action migrations belong to
+their consumer UI tickets; retained cross-area calls are recorded in each report.
 
 `kit.rs` exposes the app palette, measured geometry, regular icons and the
 shared controls without an engine dependency. All callers import that interface
@@ -128,13 +130,14 @@ media's FFmpeg probe interrupt and 64 KiB hash reads; each successful file becom
 an asset immediately, so a later refusal or cancel keeps earlier assets. Published
 imports refresh playback against the updated snapshot, including ratcheted FPS. The media
 panel omits media-owned ephemeral assets from rows and selection while retaining
-them in the project for internal commands. The panel shows the probe type/duration/resolution/audio format, multi-select assets,
+them in the project for internal commands. Cards show a filename and duration;
+probe type, resolution and audio format are available on hover. The panel can multi-select assets,
 and an "Add to timeline" action that inserts only the selected assets in one undo
 step through engine auto placement. The engine chooses compatible tracks and
 creates secondary tracks on demand; the app owns no placement policy. While a batch runs, an overlay shows completed/total
 progress and a 2 px accent bar, disables import/insert, and offers Cancel. Partial
-failures remain listed with their typed media reason and close with a toast counting
-imported, failed and unfinished files; a terminal runner failure stays a typed
+failures use short recovery copy and close with a concise toast; typed probe
+details remain in diagnostics. A terminal runner failure stays a typed
 error and never reports success. Insert synchronizes playback against the new
 immutable project snapshot. Image placement remains with its later feature
 ticket.
@@ -231,11 +234,11 @@ controls are visible but disabled until settings import/export (p1-parity/75).
 Two resizable columns and a horizontal
 divider start at the UI design's 25/50/25 and 50/50 proportions. Drags clamp
 assets/properties to 15–40%, preview to 30–85% and the timeline to 15–70%, so no
-region reaches zero. The assets panel has the reference's nine-tab vertical icon
-bar (Media, Sounds, Text, Stickers, Effects, Transitions, Captions, Adjustment,
-Settings) with tooltips and top/bottom scroll fades; Media owns the live library,
-Transitions and Adjustment are thin stubs until their feature tickets, and the
-remaining tabs show the same catalog stub until their owners land. A single
+region reaches zero. The assets panel has a horizontal icon-over-label strip
+for Media, Audio, Text, Effects and Captions, followed by a per-tab sub-navigation
+column. Unsupported tabs and categories remain hidden. Media owns the live
+library, Audio filters local audio, Text inserts text and Effects lists the engine
+catalogue. A single
 selection shows that element type's properties tabs, and the last tab is
 remembered per type. Text, video with/without source audio, image, sticker,
 graphic, audio and effect have the reference tab sets in `src/panels.rs`; image

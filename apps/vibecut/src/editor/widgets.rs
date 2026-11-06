@@ -1,9 +1,6 @@
 //! Records editor controls for automation.
 
-use super::{
-    BUTTON_ICON, Color32, Editor, Icon, Text, Vec2, WidgetState, actions, catalog, egui, icons,
-    theme,
-};
+use super::{Color32, Editor, Icon, Text, WidgetState, actions, catalog, egui, theme};
 
 impl Editor {
     pub(in crate::editor) fn tr(&self, key: Text) -> &'static str {
@@ -33,34 +30,6 @@ impl Editor {
                 tooltip: None,
             },
         );
-    }
-    pub(in crate::editor) fn button(
-        &mut self,
-        ui: &mut egui::Ui,
-        id: &'static str,
-        icon: Icon,
-        key: Text,
-        enabled: bool,
-    ) -> bool {
-        let enabled = enabled && actions::action(id).is_none_or(|_| self.action_enabled(id));
-        let color = if enabled {
-            self.text_color()
-        } else {
-            theme::disabled(self.preferences.dark)
-        };
-        let image = icons::tinted(icon, BUTTON_ICON, color);
-        let label = egui::RichText::new(self.tr(key)).color(color);
-        let response = ui
-            .push_id(id, |ui| {
-                ui.add_enabled(
-                    enabled,
-                    egui::Button::image_and_text(image, label)
-                        .min_size(Vec2::new(theme::size::CONTROL, theme::size::FIELD)),
-                )
-            })
-            .inner;
-        self.remember_with_icon(id, Some(icon.name()), &response);
-        response.clicked()
     }
     #[allow(clippy::too_many_arguments)]
     pub(in crate::editor) fn icon_only(

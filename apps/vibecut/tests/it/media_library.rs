@@ -352,7 +352,10 @@ fn shift_range_marquee_blank_click_and_escape_follow_the_sorted_order() {
     );
 
     let card = widget_rect(&harness, "media.asset.3");
-    let start = egui::pos2(card.right() + 8.0, card.center().y);
+    let right = (1..=3)
+        .map(|id| widget_rect(&harness, &format!("media.asset.{id}")).right())
+        .fold(0.0_f32, f32::max);
+    let start = egui::pos2(right + 8.0, card.center().y);
     let end = widget_rect(&harness, "media.marquee").left_top() + egui::vec2(2.0, 2.0);
     harness.hover_at(start);
     harness.drag_at(start);
@@ -754,19 +757,14 @@ fn import_batch_shows_progress_and_disables_view_sort_import_and_insert() {
     assert!(harness.state().inspect().unwrap().import_cancelled);
 }
 
-/// The grid card paints its thumbnail, name and kind rows at fixed offsets; a
-/// card shorter than those rows clips the kind line.
+/// The captured grid has one thumbnail followed by a single filename line.
 #[test]
-fn grid_card_is_tall_enough_for_its_thumbnail_name_and_kind_rows() {
+fn grid_card_fits_its_measured_thumbnail_and_filename() {
     let mut harness = build(editor());
     harness.run_steps(3);
     let card = widget_rect(&harness, "media.asset.1");
-    // 4 inset + 58 thumbnail, kind row at +27 below it with a 14 px line.
-    assert!(
-        card.height() >= 4.0 + 58.0 + 27.0 + 14.0,
-        "card {:?} clips its kind row",
-        card
-    );
+    assert_eq!(card.width(), 120.0);
+    assert_eq!(card.height(), 73.0 + 6.0 + 16.0);
 }
 
 /// Offscreen screenshot evidence; wgpu rendering stays out of CI.
@@ -782,4 +780,117 @@ fn media_library_renders_a_representative_grid() {
     std::fs::create_dir_all(&target).unwrap();
     image.save(target.join("p1-09-media.png")).unwrap();
     assert!(image.width() > 0 && image.height() > 0);
+}
+
+#[test]
+fn search_and_type_filter_change_visible_assets_without_editing_the_project() {
+    for (query, expected) in [
+        ("BRAVO", vec![1]),
+        ("alpha", vec![2]),
+        ("missing", vec![]),
+        ("ĐÀ", vec![1]),
+    ] {
+        let mut harness = build(editor_with(
+            Preferences::default(),
+            &[
+                (1, "Bravo-Đà Nẵng.mp4"),
+                (2, "alpha.mp4"),
+                (3, "charlie.mp4"),
+            ],
+        ));
+        harness.run_steps(3);
+        let before = harness.state().session.project().clone();
+        click(&mut harness, "assets.search");
+        harness
+            .get(By::new().predicate(|node| node.author_id() == Some("assets.search")))
+            .type_text(query);
+        harness.run_steps(3);
+        for id in 1..=3 {
+            assert_eq!(
+                has_widget(&harness, &format!("media.asset.{id}")),
+                expected.contains(&id),
+                "query {query}, asset {id}"
+            );
+        }
+        assert!(
+            Arc::ptr_eq(&before, harness.state().session.project()),
+            "search is presentation only"
+        );
+    }
+    let mut harness = build(editor());
+    harness.run_steps(3);
+    let before = harness.state().session.project().clone();
+    for (filter, visible) in [
+        ("audio", false),
+        ("video", true),
+        ("image", false),
+        ("all", true),
+    ] {
+        click(&mut harness, "assets.filter");
+        click(&mut harness, &format!("assets.filter.{filter}"));
+        for id in 1..=3 {
+            assert_eq!(
+                has_widget(&harness, &format!("media.asset.{id}")),
+                visible,
+                "filter {filter}, asset {id}"
+            );
+        }
+        assert!(
+            Arc::ptr_eq(&before, harness.state().session.project()),
+            "filter is presentation only"
+        );
+    }
+}
+
+#[test]
+fn local_audio_row_adds_its_source_through_the_existing_insert_command() {
+    let mut editor = editor();
+    let source = editor.session.project().data().assets[0].clone();
+    let mut data: AssetData = source.into();
+    data.id = AssetId(4);
+    data.path = std::env::temp_dir().join("audio-music.wav");
+    data.content_hash = ContentHash::from_bytes(&[4; 8]);
+    data.probe.streams = vec![stream(StreamKind::Audio, Tick(4 * SECOND))];
+    let asset = SourceAsset::try_from(data).unwrap();
+    editor.session.apply(Command::AddAsset { asset }).unwrap();
+    editor
+        .set_import_probe(Arc::new(RestoredProbe(
+            editor.session.project().data().assets.clone(),
+        )))
+        .unwrap();
+    let deadline = Instant::now() + Duration::from_secs(10);
+    loop {
+        editor.tick();
+        if !editor.importing()
+            && editor
+                .inspect()
+                .unwrap()
+                .assets
+                .iter()
+                .all(|asset| asset.state == "ready")
+        {
+            break;
+        }
+        assert!(Instant::now() < deadline);
+        std::thread::sleep(Duration::from_millis(2));
+    }
+    editor.preferences.assets_tab = vibecut::panels::AssetsTab::Sounds;
+    let mut harness = build(editor);
+    harness.run_steps(3);
+    assert!(has_widget(&harness, "media.asset.4"));
+    assert!(!has_widget(&harness, "media.asset.1"));
+    click(&mut harness, "media.asset.4.add");
+    let items: Vec<_> = harness
+        .state()
+        .session
+        .project()
+        .data()
+        .scene()
+        .timeline
+        .iter()
+        .flat_map(|track| &track.items)
+        .collect();
+    assert_eq!(items.len(), 1);
+    assert_eq!(items[0].source_asset, Some(AssetId(4)));
+    assert!(matches!(items[0].content, ItemParams::Audio(_)));
 }

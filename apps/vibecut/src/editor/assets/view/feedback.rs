@@ -20,46 +20,56 @@ impl Editor {
             .checked_div(self.import_total)
             .unwrap_or(0)
             .min(100);
+        let width = (rect.width() - 24.0).max(48.0);
         egui::Area::new(Id::unique("import.overlay"))
             .order(egui::Order::Foreground)
-            .fixed_pos(rect.min + Vec2::new(12.0, 12.0))
+            .fixed_pos(rect.min + Vec2::new(12.0, theme::size::TAB_STRIP + 12.0))
             .show(ctx, |ui| {
-                ui.set_max_width((rect.width() - 24.0).clamp(220.0, 360.0));
+                ui.set_width(width);
                 egui::Frame::new()
                     .fill(self.panel_fill())
                     .stroke(egui::Stroke::new(1.0, self.border()))
-                    .corner_radius(12)
-                    .inner_margin(16)
+                    .corner_radius(theme::radius::CONTROL)
+                    .inner_margin(12)
                     .show(ui, |ui| {
-                        ui.label(
-                            egui::RichText::new(self.tr(Text::Importing))
-                                .size(16.0)
-                                .strong(),
-                        );
-                        ui.add_space(theme::space::ROW_INSET);
+                        ui.set_width((width - 24.0).max(24.0));
+                        ui.horizontal(|ui| {
+                            let value = catalog::number(self.preferences.locale, percent as u64);
+                            let status = if width < 240.0 {
+                                format!("{value}%")
+                            } else {
+                                catalog::format(
+                                    self.preferences.locale,
+                                    Text::ProcessingPercent,
+                                    &[("status", self.tr(Text::Processing)), ("percent", &value)],
+                                )
+                            };
+                            ui.label(egui::RichText::new(status).size(theme::type_size::BODY));
+                            if self.icon_only(
+                                ui,
+                                "import.cancel",
+                                Icon::X,
+                                self.tr(Text::Cancel),
+                                None,
+                                None,
+                                true,
+                            ) {
+                                self.action("import.cancel");
+                            }
+                        });
                         let (bar, _) = ui.allocate_exact_size(
                             Vec2::new(ui.available_width(), 2.0),
                             egui::Sense::hover(),
                         );
-                        ui.painter()
-                            .rect_filled(bar, theme::radius::PANEL, self.control_fill());
-                        let filled = Rect::from_min_size(
-                            bar.min,
-                            Vec2::new(bar.width() * percent as f32 / 100.0, bar.height()),
+                        ui.painter().rect_filled(bar, 0.0, self.control_fill());
+                        ui.painter().rect_filled(
+                            Rect::from_min_size(
+                                bar.min,
+                                Vec2::new(bar.width() * percent as f32 / 100.0, bar.height()),
+                            ),
+                            0.0,
+                            self.accent(),
                         );
-                        ui.painter()
-                            .rect_filled(filled, theme::radius::PANEL, self.accent());
-                        ui.label(catalog::format(
-                            self.preferences.locale,
-                            Text::ProcessingPercent,
-                            &[
-                                ("status", self.tr(Text::Processing)),
-                                (
-                                    "percent",
-                                    &catalog::number(self.preferences.locale, percent as u64),
-                                ),
-                            ],
-                        ));
                         ui.label(
                             egui::RichText::new(catalog::format(
                                 self.preferences.locale,
@@ -81,12 +91,9 @@ impl Editor {
                                     ),
                                 ],
                             ))
-                            .small()
+                            .size(theme::type_size::BODY)
                             .color(self.secondary()),
                         );
-                        if self.button(ui, "import.cancel", Icon::X, Text::Cancel, true) {
-                            self.action("import.cancel");
-                        }
                     });
             });
     }

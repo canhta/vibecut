@@ -24,8 +24,10 @@ impl Editor {
 }
 
 mod rows;
-pub(super) use rows::{asset_kind, asset_row, asset_state_color, asset_state_text, file_name};
+pub(super) use rows::{asset_kind, asset_row, asset_state_color, file_name};
 
 mod effects;
 
 mod feedback;
+
+mod marquee;
