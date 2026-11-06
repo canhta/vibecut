@@ -5,6 +5,20 @@ shorts out, metrics and a local JSON/Markdown report. This is our own AI logic
 (selection plus boundary snapping), so it is measured; third-party model accuracy
 is not a gate here.
 
+## Modules
+
+| Module | Responsibility |
+|---|---|
+| `harness` | Runs the fixed label set and writes its scored report. |
+| `harness/scoring` | Calls one provider and scores the clips it returns. |
+| `harness/report` | Owns the persisted evaluation report and its Markdown rendering. |
+| `asr` | Prepares an opt-in transcript through the speech provider. |
+| `baseline` | Holds the pinned main-revision baseline inputs and metrics. |
+| `budget` | Holds one cumulative run budget shared by ASR and suggestion invocations. |
+| `label` | Loads one JSON label document per source video. |
+| `metrics` | Defines the labelled clip metrics. |
+| `transcript` | Caches the pipeline's fixed transcript input by source content. |
+
 ## Purpose and exclusions
 
 Owns the labelled-set format, transcript cache lookup, provider/baseline runs,

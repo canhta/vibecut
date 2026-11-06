@@ -71,7 +71,7 @@ fn two_line_vietnamese_frame_overlay_is_a_repeatable_golden() {
     }
 
     assert_eq!(
-        crate::common::checksum(&image),
+        crate::support::checksum(&image),
         VI_GOLDEN,
         "re-bless only after visual inspection"
     );
@@ -113,12 +113,12 @@ fn two_line_vietnamese_frame_overlay_is_a_repeatable_golden() {
 
     let target = target_dir();
     fs::create_dir_all(&target).expect("create target");
-    let first = crate::common::encode(&image);
+    let first = crate::support::encode(&image);
     fs::write(target.join("text-vi.png"), &first).expect("write overlay");
     assert!(first.starts_with(&[137, 80, 78, 71, 13, 10, 26, 10]));
 
     let repeated = render(&laid_out, canvas, (20.0, 820.0), &paint).expect("repeat render");
-    let second = crate::common::encode(&repeated);
+    let second = crate::support::encode(&repeated);
     fs::write(target.join("text-vi-repeat.png"), &second).expect("write repeat overlay");
     assert_eq!(
         first, second,

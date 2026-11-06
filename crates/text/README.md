@@ -2,6 +2,21 @@
 
 Unicode shaping, line layout and CPU rasterization for overlay titles and burn-ins.
 
+## Modules
+
+| Module | Responsibility |
+|---|---|
+| `layout` | Lays out a paragraph from normalized text into positioned lines. |
+| `layout/breaks` | Computes line ranges from shaped advances and Unicode break opportunities. |
+| `layout/paragraph` | Shapes text runs and emits positioned lines. |
+| `fonts` | Owns the bundled font database and deterministic family/style resolution. |
+| `color` | Owns the small sRGB colour type text drawing needs. |
+| `mask` | Computes outlines from an exact Euclidean distance transform. |
+| `raster` | Rasterizes glyph outlines and boxes with anti-aliasing. |
+| `render` | Extracts glyph outlines and composites premultiplied RGBA8 images. |
+
+The crate root re-exports the same public names at unchanged crate-root paths.
+
 ## Contract
 
 `layout(text, &LayoutOptions) -> Result<Layout, TextError>` normalizes the input to NFC, shapes

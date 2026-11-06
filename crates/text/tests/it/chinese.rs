@@ -93,19 +93,19 @@ fn simplified_and_traditional_chinese_wrap_and_render() -> Result<(), Box<dyn Er
     };
     let image = render(&simplified, canvas, (30.0, 40.0), &paint)?;
     assert_eq!(
-        crate::common::checksum(&image),
+        crate::support::checksum(&image),
         ZH_GOLDEN,
         "re-bless only after visual inspection"
     );
 
     let target = target_dir();
     fs::create_dir_all(&target)?;
-    fs::write(target.join("text-zh.png"), crate::common::encode(&image))?;
+    fs::write(target.join("text-zh.png"), crate::support::encode(&image))?;
 
     let repeated = render(&simplified, canvas, (30.0, 40.0), &paint)?;
     assert_eq!(
-        crate::common::encode(&repeated),
-        crate::common::encode(&image)
+        crate::support::encode(&repeated),
+        crate::support::encode(&image)
     );
 
     // The profile's line-breaking mode is data: breaking every grapheme stays inside clusters.

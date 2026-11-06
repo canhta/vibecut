@@ -65,12 +65,12 @@ fn nfc_and_nfd_shapes_render_identically_without_tofu() {
     fs::create_dir_all(&target).expect("create target");
     fs::write(
         target.join("text-vi-nfc.png"),
-        crate::common::encode(&image_a),
+        crate::support::encode(&image_a),
     )
     .expect("write NFC golden");
     fs::write(
         target.join("text-vi-nfd.png"),
-        crate::common::encode(&image_b),
+        crate::support::encode(&image_b),
     )
     .expect("write NFD golden");
 }
