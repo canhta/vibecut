@@ -145,6 +145,8 @@ delta at its playback rate refuses the entire group.
 `timeline.preview { commands }` stages a bounded batch of edit commands in the
 same transaction state used by explicit gestures. Each call replaces the whole
 candidate from the entry snapshot, so deltas are absolute from drag start.
+An empty explicit pointer gesture can enter replacement mode; a candidate that
+already differs from its entry refuses promotion, retaining its staged edits.
 `project()` remains the committed snapshot; `preview_project()` exposes the
 candidate only while a gesture is active. This seam also serves transform and
 graph previews. `timeline.commit_preview {}` publishes one undo step and one
@@ -309,7 +311,18 @@ initial allocation. Project and source constructors retain their own limits.
   establishes separate retained content for each piece. Refusal rolls back retained content
   with the candidate. Retention ends at commit/cancel or a merge boundary.
   Undo restores the original snapshot and all its cue content.
-- `delete` lifts identified items leaving gaps. `ripple_delete` removes one item
+- Ripple policy is independent of app preferences: `Session::apply_with_ripple`
+  and `execute_with_ripple` pass it explicitly for one atomic command, including
+  replacement previews. Headless `timeline.edit { commands, ripple }` supplies
+  the policy atomically for a whole batch; nested policy wrappers refuse.
+  Headless `timeline.set_ripple` sets the session default
+  (off initially, no project/history entry, refused during a transaction).
+  One post-command diff, after the whole batch, closes same-track vacated tails
+  from delete, tail trim or leftward movement. It subtracts every occupied span,
+  closes overlapping group tails once and never shifts another track. Cross-track moves,
+  splits and hide/mute leave followers unchanged. Edit and shifts publish as one
+  undo step; previews rebuild from their baseline, including on reversal.
+- `delete` lifts identified items leaving gaps when ripple policy is off. `ripple_delete` removes one item
   and shifts later items on that track left by its duration, preserving earlier
   gaps; other tracks and bookmarks stay fixed. No cross-track sync lock exists.
 - `set_item_param` replaces the complete typed ItemParams. `track.set_flags`

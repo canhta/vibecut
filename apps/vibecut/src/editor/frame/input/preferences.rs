@@ -1,4 +1,4 @@
-//! Persists editor view preferences.
+//! Persists editor preferences.
 
 use crate::editor::{Editor, PREFERENCE_COMMAND, PreferenceCommand, Result};
 
@@ -10,8 +10,11 @@ impl Editor {
         self.preferences.set(key, value)?;
         let after = self.preferences.get(key)?;
         if before != after {
-            self.preference_history
-                .record(PreferenceCommand::new(key, before, after));
+            // An editing mode must not shadow the project edit's next Undo.
+            if key != "ripple" {
+                self.preference_history
+                    .record(PreferenceCommand::new(key, before, after));
+            }
             if key == "keybindings" {
                 self.sync_keymap();
             }

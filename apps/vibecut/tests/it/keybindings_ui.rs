@@ -275,7 +275,7 @@ fn registered_delete_target_is_executed_by_keys_buttons_and_direct_dispatch() {
             let item = fixture.video_a;
             let mut editor = fixture.editor;
             editor.selection.insert(item);
-            editor.ripple = ripple;
+            editor.preferences.ripple = ripple;
             let actions::ActionTarget::Engine(route) =
                 actions::action("timeline.delete").unwrap().target
             else {

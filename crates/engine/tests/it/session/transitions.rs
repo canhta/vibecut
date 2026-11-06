@@ -244,3 +244,38 @@ fn joint_moves_incoming_splits_and_cancelled_additions_keep_identity_and_cut() {
     add(&mut s, "center", 40).unwrap();
     assert!(tr(&s).id > max_id);
 }
+
+#[test]
+fn ripple_preserves_each_transition_offset_through_exactly_one_shift() {
+    let base = session(false);
+    let mut data = base.project().data().clone();
+    for item in &mut data.scene_mut().timeline.main.items {
+        item.start += Tick(100);
+    }
+    let mut anchor = data.scene().timeline.main.items[0].clone();
+    anchor.id = ItemId(9);
+    anchor.start = Tick::ZERO;
+    anchor.source_range = SourceRange::new(Tick(100), Tick(110)).unwrap();
+    data.scene_mut().timeline.main.items.insert(0, anchor);
+    let mut s = Session::new(Project::new(data).unwrap(), 100).unwrap();
+    add(&mut s, "center", 40).unwrap();
+    let before = s.project().clone();
+    s.execute_with_ripple(
+        "move_items",
+        json!({"moves":[
+            {"item":10,"track":1,"start":50},
+            {"item":11,"track":1,"start":150},
+            {"item":12,"track":1,"start":250}
+        ]}),
+        true,
+    )
+    .unwrap();
+    assert_eq!(tr(&s).start, Tick(130));
+    s.undo().unwrap();
+    assert_eq!(s.project(), &before);
+    let mut s = session(false);
+    s.execute("transition.add", json!({"track":1,"from":11,"to":12,"kind":"cross_dissolve","duration":40,"alignment":"center"})).unwrap();
+    s.execute_with_ripple("delete", json!({"items":[10]}), true)
+        .unwrap();
+    assert_eq!(tr(&s).start, Tick(80));
+}

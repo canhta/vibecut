@@ -97,7 +97,9 @@ impl Editor {
         match spec.target {
             ActionTarget::Pending { .. } => false,
             ActionTarget::Engine(route) => {
-                route.command(self.ripple).enabled(&self.session)
+                route
+                    .command(self.preferences.ripple)
+                    .enabled(&self.session)
                     && match route {
                         EngineAction::Delete | EngineAction::RippleDelete => {
                             !self.selection.is_empty()
@@ -152,7 +154,7 @@ impl Editor {
                     .collect()
             }
             EngineAction::Delete | EngineAction::RippleDelete => {
-                if route.command(self.ripple) == engine::CommandKind::RippleDelete {
+                if route.command(self.preferences.ripple) == engine::CommandKind::RippleDelete {
                     self.selection_by_end(true)
                         .into_iter()
                         .map(|item| serde_json::json!({"item":item}))
@@ -184,7 +186,7 @@ impl Editor {
     }
 
     pub(in crate::editor) fn execute_engine_action(&mut self, route: EngineAction) -> Result<()> {
-        let command = route.command(self.ripple);
+        let command = route.command(self.preferences.ripple);
         if route == EngineAction::InsertMedia {
             self.insert_selected_assets(command);
             return Ok(());
@@ -193,13 +195,18 @@ impl Editor {
         if params.is_empty() {
             return Ok(());
         }
-        let mut created = Vec::new();
-        self.session.transaction(|session| {
-            for params in params {
-                created.extend(session.execute(command.id(), params)?.created);
-            }
-            Ok(())
-        })?;
+        let commands: Vec<_> = params
+            .into_iter()
+            .map(|params| serde_json::json!({"command":command.id(), "params":params}))
+            .collect();
+        let created = self
+            .session
+            .execute_with_ripple(
+                "batch",
+                serde_json::json!({"commands":commands}),
+                self.preferences.ripple,
+            )?
+            .created;
         match route {
             EngineAction::Split => {
                 self.selection = created

@@ -195,7 +195,14 @@ horizontal wheel follows egui content direction.
 levels in dark/light at 1x/2x outside CI. Zoom, horizontal scroll, frame-snapped
 ruler seeking,
 single/Cmd-or-Shift multi-selection, drag move, edge trims, bookmark drag, split,
-delete and ripple delete all dispatch engine commands. Snapping is a persisted preference (on by default) exposed by the
+delete and ripple delete all dispatch engine commands. Ripple editing is a
+persisted toolbar preference (off initially), also bindable in Shortcuts. It
+stays out of app undo history so Undo restores the last project edit. The
+app passes it explicitly into each atomic engine command; the [engine ripple
+policy](../../crates/engine/README.md#edit-semantics-and-limits) owns the gap-closing
+semantics. Pointer
+move/trim previews use the shared replacement transaction, draw its candidate,
+and reverse or discard without changing committed content. Snapping is a persisted preference (on by default) exposed by the
 magnet toolbar control; it converts 10 logical pixels to ticks at the current
 zoom and ranks item start/end, playhead, bookmark and animation-keyframe targets
 by pixel distance then stable source order. The indicator line is drawn only

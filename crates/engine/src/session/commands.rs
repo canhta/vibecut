@@ -461,6 +461,8 @@ commands! {
     MoveBookmark, "bookmark.move", "Move bookmark", Edit { bookmark: BookmarkId, start: Tick } => Timeline, serde_json::json!({"bookmark":1,"start":0});
     Batch, "batch", "Batch edit", Edit { commands: Vec<Command> } => Timeline, serde_json::json!({"commands":[{"command":"timeline.add_track","params":{"name":"Batch","kind":"video"}}]}), curated = true;
     BeginGesture, "begin_gesture", "Begin gesture", SessionControl {} => Timeline, serde_json::json!({}), available = NoTransaction, grant = Human;
+    TimelineEdit, "timeline.edit", "Edit timeline with ripple policy", Edit { commands: Vec<Command>, ripple: bool } => Timeline, serde_json::json!({"commands":[{"command":"delete","params":{"items":[1]}}],"ripple":true});
+    TimelineSetRipple, "timeline.set_ripple", "Set ripple editing", SessionControl { enabled: bool } => Timeline, serde_json::json!({"enabled":false}), available = NoTransaction, grant = Agent;
     TimelinePreview, "timeline.preview", "Preview timeline edits", SessionControl { commands: Vec<Command> } => Timeline, serde_json::json!({"commands":[{"command":"timeline.move_items","params":{"items":[1],"delta":0}}]}), grant = Human;
     TimelineCommitPreview, "timeline.commit_preview", "Commit timeline preview", SessionControl {} => Gesture, serde_json::json!({}), available = GestureActive, grant = Human;
     TimelineDiscardPreview, "timeline.discard_preview", "Discard timeline preview", SessionControl {} => Gesture, serde_json::json!({}), available = GestureActive, grant = Human;

@@ -320,7 +320,8 @@ fn drag(harness: &mut Harness<'_, Editor>, from: egui::Pos2, to: egui::Pos2) {
 pub(crate) fn item(editor: &Editor, id: ItemId) -> &project::Item {
     editor
         .session
-        .project()
+        .preview_project()
+        .unwrap_or(editor.session.project())
         .data()
         .scene()
         .timeline
@@ -870,7 +871,11 @@ fn drag_preview_keeps_committed_history_and_indicator_until_commit() {
     );
     assert!(harness.state().session.gesture_active());
     assert_eq!(serde_json::to_vec(committed.data()).unwrap(), before);
-    assert_ne!(harness.state().session.project(), &committed);
+    assert_eq!(harness.state().session.project(), &committed);
+    assert_ne!(
+        harness.state().session.preview_project().unwrap(),
+        &committed
+    );
     assert_eq!(
         harness.state().session.history_len(),
         history,
@@ -2890,4 +2895,142 @@ fn keyframe_lanes_and_volume_line_render_the_audit_screenshot() {
     image.save(&path).unwrap();
     eprintln!("keyframe screenshot: {}", path.display());
     assert!(path.is_file());
+}
+
+#[test]
+fn ripple_toolbar_delete_trim_split_and_cross_track_move_share_the_policy() {
+    for enabled in [false, true] {
+        let fixture = fixture();
+        let a = fixture.video_a;
+        let b = fixture.video_b;
+        let mut harness = crate::gpu::builder()
+            .with_size(egui::vec2(1727.0, 1029.0))
+            .build_ui_state(|ui, editor: &mut Editor| editor.ui(ui), fixture.editor);
+        harness.run_steps(3);
+        if enabled {
+            harness
+                .get(By::new().predicate(|n| n.author_id() == Some("timeline.ripple")))
+                .click();
+            harness.run_steps(2);
+        }
+        assert_eq!(harness.state().preferences.ripple, enabled);
+        let before = project::encode(harness.state().session.project(), false).unwrap();
+        let history = harness.state().session.history_len().0;
+        let zoom = harness.state().inspect().unwrap().zoom;
+        let handle = widget(&harness, &format!("timeline.item.{}.trim_end", a.0));
+        if enabled {
+            // A return to the press point restores the follower as well as the edge.
+            harness.drag_at(handle.center());
+            harness.run_steps(1);
+            harness.hover_at(handle.center() - egui::vec2(zoom, 0.0));
+            harness.run_steps(2);
+            assert_eq!(item(harness.state(), b).start, Tick(5 * SECOND));
+            assert_eq!(
+                project::encode(harness.state().session.project(), false).unwrap(),
+                before
+            );
+            let generation = harness.state().playback.generation();
+            harness.hover_at(handle.center());
+            harness.run_steps(2);
+            assert!(
+                harness.state().playback.generation() > generation,
+                "reversal must refresh the restored preview"
+            );
+            harness.drop_at(handle.center());
+            harness.run_steps(2);
+            assert_eq!(
+                project::encode(harness.state().session.project(), false).unwrap(),
+                before
+            );
+            assert_eq!(harness.state().session.history_len().0, history);
+        }
+        drag(
+            &mut harness,
+            handle.center(),
+            handle.center() - egui::vec2(zoom, 0.0),
+        );
+        assert_eq!(item(harness.state(), a).end().unwrap(), Tick(5 * SECOND));
+        assert_eq!(
+            item(harness.state(), b).start,
+            Tick(if enabled { 5 } else { 6 } * SECOND)
+        );
+        assert_eq!(harness.state().session.history_len().0, history + 1);
+        harness.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::Z);
+        harness.run_steps(2);
+        assert_eq!(
+            project::encode(harness.state().session.project(), false).unwrap(),
+            before
+        );
+        // A split covers the complete former span and cannot ripple its follower.
+        let snapshot = harness.state().session.project().clone();
+        harness
+            .state_mut()
+            .playback
+            .seek(Tick(3 * SECOND), false, snapshot)
+            .unwrap();
+        harness.state_mut().selection = [a].into_iter().collect();
+        let before_split = count(harness.state());
+        harness.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::B);
+        harness.run_steps(2);
+        assert_eq!(
+            count(harness.state()),
+            before_split + 1,
+            "the split must actually run"
+        );
+        assert_eq!(item(harness.state(), b).start, Tick(6 * SECOND));
+        harness.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::Z);
+        harness.run_steps(2);
+        let target = track(
+            &mut harness.state_mut().session,
+            "Overlay",
+            TrackKind::Video,
+        );
+        harness.run_steps(2);
+        let body = widget(&harness, &format!("timeline.item.{}", a.0));
+        let destination = widget(&harness, &format!("track.{}.header", target.0));
+        drag(
+            &mut harness,
+            body.center(),
+            egui::pos2(body.center().x, destination.center().y),
+        );
+        let location = harness
+            .state()
+            .session
+            .project()
+            .data()
+            .scene()
+            .timeline
+            .iter()
+            .find(|t| t.items.iter().any(|i| i.id == a))
+            .unwrap()
+            .id;
+        assert_eq!(location, target);
+        assert_eq!(item(harness.state(), b).start, Tick(6 * SECOND));
+        harness.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::Z);
+        harness.run_steps(2);
+        harness.state_mut().selection = [a].into_iter().collect();
+        harness.key_press(egui::Key::Delete);
+        harness.run_steps(2);
+        assert!(item_opt(harness.state(), a).is_none());
+        assert_eq!(
+            item(harness.state(), b).start,
+            Tick(if enabled { 0 } else { 6 } * SECOND)
+        );
+        {
+            eprintln!(
+                "ripple toggle enabled={enabled}: {:?}",
+                widget(&harness, "timeline.ripple")
+            );
+            let image = harness.render().unwrap();
+            let target = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../target");
+            std::fs::create_dir_all(&target).unwrap();
+            image
+                .save(target.join(if enabled {
+                    "p1-22-ripple.png"
+                } else {
+                    "p1-22-ripple-off.png"
+                }))
+                .unwrap();
+        }
+    }
 }

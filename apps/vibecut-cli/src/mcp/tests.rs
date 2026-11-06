@@ -290,6 +290,8 @@ fn every_registry_command_has_an_explicit_grant_and_effect() {
         ("add_bookmark", Effect::Edit, true, true),
         ("bookmark.move", Effect::Edit, true, true),
         ("batch", Effect::Edit, true, true),
+        ("timeline.edit", Effect::Edit, true, true),
+        ("timeline.set_ripple", Effect::SessionControl, true, true),
         ("begin_gesture", Effect::SessionControl, false, false),
         ("timeline.preview", Effect::SessionControl, false, false),
         (

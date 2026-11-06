@@ -46,6 +46,7 @@ pub struct Session {
     gesture: Option<State>,
     timeline_preview: bool,
     grouping: bool,
+    ripple: bool,
 }
 impl Session {
     /// Retain 1..=1000 undo snapshots plus current/pending/active transaction snapshots.
@@ -97,6 +98,7 @@ impl Session {
             gesture: None,
             timeline_preview: false,
             grouping: false,
+            ripple: false,
         })
     }
     /// Create the default canvas/timeline through the registered lifecycle command.
@@ -365,26 +367,44 @@ impl Session {
     pub fn execute(&mut self, command_id: &str, params: Value) -> Result<Outcome> {
         self.boundary(|session| {
             let command = super::wire::decode_command(command_id, params)?;
-            session.commit(command, None, true)
+            session.commit(command, None, true, session.ripple)
         })
     }
     pub fn apply(&mut self, command: Command) -> Result<Outcome> {
         self.apply_merged(command, None)
     }
+    /// Apply one atomic edit using the caller's explicit ripple policy. The policy
+    /// also covers replacement previews; it never reads an app preference store.
+    pub fn apply_with_ripple(&mut self, command: Command, ripple: bool) -> Result<Outcome> {
+        self.boundary(|session| session.commit(command, None, false, ripple))
+    }
+    /// Strict JSON dispatch with an explicit ripple policy for this edit only.
+    pub fn execute_with_ripple(
+        &mut self,
+        id: &str,
+        params: Value,
+        ripple: bool,
+    ) -> Result<Outcome> {
+        self.boundary(|session| {
+            let command = super::wire::decode_command(id, params)?;
+            session.commit(command, None, true, ripple)
+        })
+    }
     /// Equal keys coalesce consecutive changed edits. Explicit gestures group all their
     /// commands regardless of key. Refusal/unwind preserves the previous merge state.
     pub fn apply_merged(&mut self, command: Command, key: Option<&str>) -> Result<Outcome> {
-        self.boundary(|session| session.commit(command, key, false))
+        self.boundary(|session| session.commit(command, key, false, session.ripple))
     }
     /// Control and JSON admission share the candidate invariant; typed
     /// in-process editing retains the owner's full integer domain.
     pub(crate) fn apply_control(&mut self, command: Command) -> Result<Outcome> {
-        self.boundary(|session| session.commit(command, None, true))
+        self.boundary(|session| session.commit(command, None, true, session.ripple))
     }
     fn boundary<T>(&mut self, run: impl FnOnce(&mut Self) -> Result<T>) -> Result<T> {
         let before = self.state.clone();
         let gesture = self.gesture.clone();
         let timeline_preview = self.timeline_preview;
+        let ripple = self.ripple;
         let revision = self.revision.clone();
         let event_mark = self.control_mark();
         let metadata = self.metadata.clone();
@@ -397,6 +417,7 @@ impl Session {
                     self.state = before;
                     self.gesture = gesture;
                     self.timeline_preview = timeline_preview;
+                    self.ripple = ripple;
                     self.metadata = metadata;
                     self.revision = revision;
                     self.restore_control_mark(event_mark);
@@ -408,6 +429,7 @@ impl Session {
                 self.state = before;
                 self.gesture = gesture;
                 self.timeline_preview = timeline_preview;
+                self.ripple = ripple;
                 self.metadata = metadata;
                 self.revision = revision;
                 self.restore_control_mark(event_mark);
@@ -417,6 +439,7 @@ impl Session {
                 self.state = before;
                 self.gesture = gesture;
                 self.timeline_preview = timeline_preview;
+                self.ripple = ripple;
                 self.metadata = metadata;
                 self.revision = revision;
                 self.restore_control_mark(event_mark);
@@ -479,7 +502,21 @@ impl Session {
         })
     }
 
-    fn commit(&mut self, command: Command, key: Option<&str>, wire: bool) -> Result<Outcome> {
+    fn commit(
+        &mut self,
+        command: Command,
+        key: Option<&str>,
+        wire: bool,
+        ripple: bool,
+    ) -> Result<Outcome> {
+        let (command, ripple) = match command {
+            Command::TimelineEdit { commands, ripple } => {
+                let command = Command::Batch { commands };
+                edit::check_budget(&command)?;
+                (command, ripple)
+            }
+            command => (command, ripple),
+        };
         let command = match command {
             Command::AddLibrarySound {
                 placement,
@@ -514,17 +551,40 @@ impl Session {
             ));
         }
         match command {
+            Command::TimelineSetRipple { enabled } => {
+                if self.transaction_active() {
+                    return Err(EditError::TransactionActive);
+                }
+                let changed = self.ripple != enabled;
+                self.ripple = enabled;
+                if changed {
+                    self.invalidate_revision(false)?;
+                }
+                return Ok(Outcome {
+                    changed,
+                    created: Vec::new(),
+                    placements: Vec::new(),
+                });
+            }
             Command::TimelinePreview { commands } => {
                 let batch = Command::Batch { commands };
                 edit::check_budget(&batch)?;
                 if !self.timeline_preview {
-                    self.start_gesture()?;
+                    if let Some(before) = &self.gesture {
+                        // The UI may promote its empty pointer gesture, but a
+                        // replacement cannot discard an earlier incremental edit.
+                        if before.project != self.state.project {
+                            return Err(EditError::TransactionActive);
+                        }
+                    } else {
+                        self.start_gesture()?;
+                    }
                 }
                 let before = self.gesture.as_ref().ok_or(EditError::NoGesture)?.clone();
                 let next_id = self.state.next_id;
                 self.state = before;
                 self.state.next_id = next_id;
-                let outcome = self.commit(batch, None, wire)?;
+                let outcome = self.commit(batch, None, wire, ripple)?;
                 self.timeline_preview = true;
                 return Ok(outcome);
             }
@@ -608,6 +668,10 @@ impl Session {
             _ => {}
         }
         edit::check_budget(&command)?;
+        let mut command = command;
+        if ripple {
+            edit::lift_ripple_deletes(&mut command);
+        }
         let candidate = self.state.project.data().clone();
         let mut created = Vec::new();
         let mut next_id = self.state.next_id;
@@ -627,6 +691,11 @@ impl Session {
             &mut sources,
             &mut copied_text_bytes,
         )?;
+        let next = if ripple {
+            edit::ripple(self.state.project.data(), next)?
+        } else {
+            next
+        };
         if wire {
             // The batch is still one local candidate: refuse before publishing,
             // allocating persistent IDs, changing history or advancing revision.
@@ -816,6 +885,7 @@ mod tests {
                     kind: project::TrackKind::Video,
                 },
                 None,
+                false,
                 false,
             )?;
             panic!("injected command unwind");

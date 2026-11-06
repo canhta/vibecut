@@ -1,7 +1,5 @@
 //! Routes the actions an area returns to the owners that apply them.
-use crate::editor::{
-    Command, Context, CreatedId, Editor, ItemId, Result, Tick, egui, frame, timeline,
-};
+use crate::editor::{Command, Context, Editor, ItemId, Result, Tick, egui, frame, timeline};
 
 impl Editor {
     /// The read-only services every area receives.
@@ -13,7 +11,7 @@ impl Editor {
             dark: self.preferences.dark,
             save_status: self.save_status(),
             playhead: self.playback.position().unwrap_or(Tick::ZERO),
-            ripple: self.ripple,
+            ripple: self.preferences.ripple,
             preferences: &self.preferences,
             playback: &self.playback,
             keybindings: &self.preferences.keybindings,
@@ -225,8 +223,35 @@ impl Editor {
         if !self.session.gesture_active() {
             return;
         }
-        match self.session.apply(command) {
-            Ok(outcome) if outcome.changed => self.sync_preview(),
+        // Absolute pointer targets are rebuilt from the shared preview baseline,
+        // so reversing a drag also reverses every ripple shift.
+        let command = match command {
+            command @ (Command::MoveItems { .. }
+            | Command::TrimStart { .. }
+            | Command::TrimEnd { .. }) => Command::TimelinePreview {
+                commands: vec![command],
+            },
+            command => command,
+        };
+        let previous = self
+            .session
+            .preview_project()
+            .unwrap_or(self.session.project())
+            .clone();
+        match self
+            .session
+            .apply_with_ripple(command, self.preferences.ripple)
+        {
+            Ok(_)
+                if previous.as_ref()
+                    != self
+                        .session
+                        .preview_project()
+                        .unwrap_or(self.session.project())
+                        .as_ref() =>
+            {
+                self.sync_preview()
+            }
             Ok(_) => {}
             Err(error) => self.error = Some(error.to_string()),
         }
@@ -236,22 +261,42 @@ impl Editor {
             return;
         }
         let moved = (|| -> Result<()> {
-            let track = match target {
-                timeline::DropTarget::Track(track) => track,
-                timeline::DropTarget::New { kind, placement } => {
-                    let outcome = self.session.apply(Command::AddTrack {
-                        name: format!("{kind:?}").into(),
-                        kind,
-                        placement,
-                    })?;
-                    match outcome.created.first() {
-                        Some(CreatedId::Track(id)) => *id,
-                        _ => return Err(engine::EditError::Invalid("track allocation").into()),
-                    }
-                }
+            let original = self
+                .session
+                .project()
+                .data()
+                .scene()
+                .timeline
+                .iter()
+                .flat_map(|track| &track.items)
+                .find(|i| i.id == item)
+                .ok_or(engine::EditError::NoItem(item))?
+                .start;
+            let placement = match target {
+                timeline::DropTarget::Track(track) => engine::Placement::Track { track },
+                timeline::DropTarget::New {
+                    placement: engine::TrackPlacement::Above { track },
+                    ..
+                } => engine::Placement::Above { track },
+                timeline::DropTarget::New {
+                    placement: engine::TrackPlacement::Below { track },
+                    ..
+                } => engine::Placement::Below { track },
+                timeline::DropTarget::New { .. } => engine::Placement::Auto,
             };
-            self.session
-                .apply(Command::MoveItem { item, track, start })?;
+            let delta = start
+                .checked_sub(original)
+                .ok_or(engine::EditError::Invalid("time overflow"))?;
+            self.session.apply_with_ripple(
+                Command::TimelinePreview {
+                    commands: vec![Command::TimelineMoveItems {
+                        items: vec![item],
+                        delta,
+                        placement: Some(placement),
+                    }],
+                },
+                self.preferences.ripple,
+            )?;
             Ok(())
         })();
         if let Err(error) = moved {
@@ -276,8 +321,8 @@ impl Editor {
     fn discard_gesture(&mut self) {
         if self.session.gesture_active() {
             match self.session.cancel_gesture() {
-                Ok(outcome) if outcome.changed => self.sync_preview(),
-                Ok(_) => {}
+                // Closing a preview lifetime fences even a net-zero drag.
+                Ok(_) => self.sync_preview(),
                 Err(error) => self.error = Some(error.to_string()),
             }
         }
@@ -362,8 +407,10 @@ impl Editor {
         match self
             .session
             .set_selection(self.selection.clone())
-            .and_then(|_| self.session.execute(command, params))
-        {
+            .and_then(|_| {
+                self.session
+                    .execute_with_ripple(command, params, self.preferences.ripple)
+            }) {
             Ok(_) => {
                 self.prune_selection();
                 if !std::sync::Arc::ptr_eq(&before, self.session.project()) {

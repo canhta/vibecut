@@ -1139,7 +1139,10 @@ fn deterministic_catalog_and_schema_document_receipts() {
             Availability::CaptionItem,
             &["burn_subtitles", "export_subtitles"][..],
         ),
-        (Availability::NoTransaction, &["begin_gesture"]),
+        (
+            Availability::NoTransaction,
+            &["begin_gesture", "timeline.set_ripple"],
+        ),
         (
             Availability::GestureActive,
             &[

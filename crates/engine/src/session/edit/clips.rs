@@ -1,8 +1,8 @@
 //! Applies clips commands to a candidate project.
 use super::{
-    Arc, BTreeSet, CreatedId, EditError, Item, ItemId, ItemParams, Move, NewItem, Placement,
-    ProjectData, Result, SourceRange, Tick, TrackId, TrimSources, alloc, fades_mut, item,
-    placement_track, ratchet_fps, sub, take_item, track, unlocked,
+    Arc, BTreeMap, BTreeSet, CreatedId, EditError, Item, ItemId, ItemParams, Move, NewItem,
+    Placement, ProjectData, Result, SourceRange, Tick, TrackId, TrimSources, alloc, fades_mut,
+    item, placement_track, ratchet_fps, sub, take_item, track, unlocked,
 };
 
 pub(super) fn move_items(data: &mut ProjectData, moves: Vec<Move>) -> Result<()> {
@@ -430,4 +430,122 @@ pub(super) fn execute_ripple_delete(mut data: ProjectData, id: ItemId) -> Result
     }
 
     Ok(data)
+}
+
+/// Close only same-track tails vacated by one complete edit candidate.
+pub(crate) fn close_vacated_tails(
+    before: &ProjectData,
+    after: project::Project,
+) -> Result<project::Project> {
+    let locations: BTreeMap<_, _> = after
+        .data()
+        .scene()
+        .timeline
+        .iter()
+        .flat_map(|track| {
+            track
+                .items
+                .iter()
+                .map(move |item| (item.id, (track.id, item)))
+        })
+        .collect();
+    let mut shifts = BTreeMap::new();
+    for track in before.scene().timeline.iter() {
+        let Some(next_track) = after
+            .data()
+            .scene()
+            .timeline
+            .iter()
+            .find(|t| t.id == track.id)
+        else {
+            continue;
+        };
+        let mut vacated = Vec::new();
+        for item in &track.items {
+            let end = item.end()?;
+            let start = match locations.get(&item.id) {
+                // Moving to another track is a lift, never a deletion.
+                Some((id, _)) if *id != track.id => continue,
+                Some((_, next)) => next.end()?,
+                None => item.start,
+            };
+            if start < end {
+                vacated.push((start, end));
+            }
+        }
+        // Group members can vacate overlapping tails when moved beyond their
+        // former spans. Close their union once, preserving occupied material.
+        vacated.sort_unstable();
+        let mut merged: Vec<(Tick, Tick)> = Vec::new();
+        for (start, end) in vacated {
+            if let Some(last) = merged.last_mut()
+                && start <= last.1
+            {
+                last.1 = last.1.max(end);
+            } else {
+                merged.push((start, end));
+            }
+        }
+        let mut gaps = Vec::new();
+        let mut occupied = next_track.items.iter().peekable();
+        for (start, end) in merged {
+            let mut cursor = start;
+            // Subtract ALL occupied output, including split pieces and clips that
+            // moved into a vacancy. A leftward move closes its entire tail.
+            while let Some(next) = occupied.peek() {
+                if next.start >= end {
+                    break;
+                }
+                let next_end = next.end()?;
+                if next_end <= cursor {
+                    occupied.next();
+                    continue;
+                }
+                if next.start > cursor {
+                    gaps.push((cursor, next.start));
+                }
+                cursor = cursor.max(next_end);
+                if cursor >= end {
+                    break;
+                }
+                occupied.next();
+            }
+            if cursor < end {
+                gaps.push((cursor, end));
+            }
+        }
+        if !gaps.is_empty() {
+            shifts.insert(track.id, gaps);
+        }
+    }
+    if shifts.is_empty() {
+        return Ok(after);
+    }
+    let cuts = crate::transitions::cuts(&after.data().scene().timeline);
+    let mut data = after.into_data();
+    for track in data.scene_mut().timeline.iter_mut() {
+        let Some(gaps) = shifts.get(&track.id) else {
+            continue;
+        };
+        let mut gaps = gaps.iter().peekable();
+        let mut shift = Tick::ZERO;
+        for item in &mut track.items {
+            while let Some((start, end)) = gaps.peek() {
+                if *end > item.start {
+                    break;
+                }
+                shift = super::add(shift, super::sub(*end, *start)?)?;
+                gaps.next();
+            }
+            if shift != Tick::ZERO {
+                if track.locked {
+                    return Err(EditError::Locked(track.id));
+                }
+                item.start = super::sub(item.start, shift)?;
+            }
+        }
+    }
+    super::check_timeline(&mut data)?;
+    crate::transitions::revalidate(&mut data, &cuts);
+    Ok(project::Project::new(data)?)
 }

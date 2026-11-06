@@ -14,7 +14,11 @@ impl Editor {
     /// Old generations are fenced by `Playback::seek`; the position is clamped when
     /// an edit shortens the timeline and the transport state is preserved when able.
     pub(in crate::editor) fn sync_preview(&mut self) {
-        let project = self.session.project().clone();
+        let project = self
+            .session
+            .preview_project()
+            .unwrap_or(self.session.project())
+            .clone();
         let duration = project.duration();
         let at = self
             .playback

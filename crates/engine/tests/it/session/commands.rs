@@ -398,9 +398,18 @@ fn timeline_preview_reversal_preserves_redo_and_retires_created_tracks() {
     s.execute("timeline.discard_preview", json!({})).unwrap();
     assert_eq!(s.project(), &original);
     assert_eq!(s.history_len(), history);
+    // An empty pointer gesture is promoted to a replacement preview and discards cleanly.
     s.begin_gesture().unwrap();
+    s.execute("timeline.preview", preview(1)).unwrap();
+    s.execute("timeline.discard_preview", json!({})).unwrap();
+    assert_eq!(s.project(), &original);
+    // A gesture that already staged an edit refuses: a replacement would drop it.
+    s.begin_gesture().unwrap();
+    s.execute("timeline.move_items", json!({"items":[10,11],"delta":1}))
+        .unwrap();
     assert!(s.execute("timeline.preview", preview(1)).is_err());
     s.cancel_gesture().unwrap();
+    assert_eq!(s.project(), &original);
 }
 
 #[test]
@@ -3606,4 +3615,403 @@ fn rollback_must_invalidate_target_captured_in_discarded_preview() {
         ),
         "discarded preview target was accepted against rolled-back content"
     );
+}
+
+fn ripple_fixture(lengths: &[i64], gap: i64) -> (Session, TrackId, TrackId) {
+    let mut data = project().into_data();
+    let track = data.scene().timeline.overlays.first().unwrap().id;
+    let other = data.scene().timeline.overlays.get(1).unwrap().id;
+    let template = data
+        .scene()
+        .timeline
+        .overlays
+        .first()
+        .unwrap()
+        .items
+        .first()
+        .unwrap()
+        .clone();
+    let mut start = gap;
+    data.scene_mut()
+        .timeline
+        .overlays
+        .first_mut()
+        .unwrap()
+        .items = lengths
+        .iter()
+        .enumerate()
+        .map(|(i, length)| {
+            let mut item = template.clone();
+            item.id = ItemId(10 + i as u64);
+            item.start = Tick(start);
+            item.source_range = range(100, 100 + length);
+            start += length;
+            item
+        })
+        .collect();
+    let mut marker = template;
+    marker.id = ItemId(30);
+    marker.start = Tick(100_000);
+    data.scene_mut().timeline.overlays.get_mut(1).unwrap().items = vec![marker];
+    (
+        Session::new(Project::new(data).unwrap(), 100).unwrap(),
+        track,
+        other,
+    )
+}
+fn ripple_layout(s: &Session) -> Vec<(TrackId, ItemId, Tick, Tick)> {
+    s.project()
+        .data()
+        .scene()
+        .timeline
+        .iter()
+        .flat_map(|t| {
+            t.items
+                .iter()
+                .map(move |i| (t.id, i.id, i.start, i.end().unwrap()))
+        })
+        .collect()
+}
+
+proptest! {
+    #[test]
+    fn ripple_edit_properties_preserve_adjacency_scope_and_history(
+        lengths in prop::collection::vec(2i64..1000, 5),
+        gap in 1i64..1000, index in 0usize..5, operation in 0u8..6,
+        enabled in any::<bool>(),
+    ) {
+        let (mut s, track, other) = ripple_fixture(&lengths, gap);
+        let before = project::encode(s.project(), false).unwrap();
+        let before_layout = ripple_layout(&s);
+        let start = gap + lengths.iter().take(index).sum::<i64>();
+        let command = match operation {
+            0 => Command::Delete { items: vec![ItemId(10 + index as u64)] },
+            1 => Command::TrimEnd { item: ItemId(10 + index as u64), at: Tick(start + lengths[index] - 1) },
+            2 => Command::MoveItem { item: ItemId(10), track, start: Tick(0) },
+            3 => Command::MoveItem { item: ItemId(10), track: other, start: Tick::ZERO },
+            4 => Command::SplitAt { item: ItemId(10 + index as u64), at: Tick(start + 1) },
+            _ => Command::SetTrackFlags { track, hidden: true, muted: true, locked: false },
+        };
+        // Off is exactly the pre-existing edit semantics, including allocated ids.
+        let mut baseline = Session::new(s.project().as_ref().clone(), 100).unwrap();
+        baseline.apply(command.clone()).unwrap();
+        s.apply_with_ripple(command, enabled).unwrap();
+        let after_layout = ripple_layout(&s);
+        if !enabled || operation >= 3 {
+            prop_assert_eq!(s.project(), baseline.project());
+        } else {
+            let items: Vec<_> = after_layout.iter().filter(|row| row.0 == track).collect();
+            for pair in items.windows(2) {
+                prop_assert_eq!(pair[0].3, pair[1].2);
+            }
+        }
+        prop_assert_eq!(after_layout.iter().find(|row| row.1 == ItemId(30)), before_layout.iter().find(|row| row.1 == ItemId(30)));
+        let after = project::encode(s.project(), false).unwrap();
+        prop_assert_eq!(s.history_len(), (1, 0));
+        s.apply(Command::Undo {}).unwrap();
+        prop_assert_eq!(project::encode(s.project(), false).unwrap(), before);
+        s.apply(Command::Redo {}).unwrap();
+        prop_assert_eq!(project::encode(s.project(), false).unwrap(), after);
+    }
+}
+
+#[test]
+fn ripple_preview_reversal_discard_and_refusal_preserve_the_baseline() {
+    let (mut s, track, _) = ripple_fixture(&[40, 40, 40], 20);
+    let before = project::encode(s.project(), false).unwrap();
+    s.execute("timeline.set_ripple", json!({"enabled":true}))
+        .unwrap();
+    let preview = |at| Command::TimelinePreview {
+        commands: vec![Command::TrimEnd {
+            item: ItemId(10),
+            at: Tick(at),
+        }],
+    };
+    // The desktop starts a gesture before its first replacement preview.
+    s.begin_gesture().unwrap();
+    s.apply_with_ripple(preview(40), true).unwrap();
+    assert_eq!(
+        s.preview_project()
+            .unwrap()
+            .data()
+            .scene()
+            .timeline
+            .overlays[0]
+            .items[1]
+            .start,
+        Tick(40)
+    );
+    assert_eq!(project::encode(s.project(), false).unwrap(), before);
+    assert!(matches!(
+        s.execute("timeline.set_ripple", json!({"enabled":false})),
+        Err(EditError::TransactionActive)
+    ));
+    s.apply_with_ripple(preview(60), true).unwrap();
+    assert_eq!(s.preview_project().unwrap().as_ref(), s.project().as_ref());
+    s.apply_with_ripple(preview(40), true).unwrap();
+    assert!(s.apply_with_ripple(preview(-1), true).is_err());
+    s.execute("timeline.discard_preview", json!({})).unwrap();
+    assert_eq!(project::encode(s.project(), false).unwrap(), before);
+    assert_eq!(s.history_len(), (0, 0));
+    s.apply(Command::Delete {
+        items: vec![ItemId(10)],
+    })
+    .unwrap();
+    assert_eq!(
+        ripple_layout(&s)
+            .iter()
+            .find(|row| row.1 == ItemId(11))
+            .unwrap()
+            .2,
+        Tick(20)
+    );
+    s.apply(Command::Undo {}).unwrap();
+    s.begin_gesture().unwrap();
+    s.apply(Command::TrimEnd {
+        item: ItemId(10),
+        at: Tick(40),
+    })
+    .unwrap();
+    let staged = s.project().clone();
+    assert!(matches!(
+        s.apply_with_ripple(preview(60), true),
+        Err(EditError::TransactionActive)
+    ));
+    assert_eq!(s.project(), &staged);
+    s.cancel_gesture().unwrap();
+    s.apply(Command::SetTrackFlags {
+        track,
+        hidden: false,
+        muted: false,
+        locked: true,
+    })
+    .unwrap();
+    let locked = project::encode(s.project(), false).unwrap();
+    assert!(matches!(
+        s.apply(Command::Delete {
+            items: vec![ItemId(10)]
+        }),
+        Err(EditError::Locked(_))
+    ));
+    assert_eq!(project::encode(s.project(), false).unwrap(), locked);
+    assert!(
+        s.execute("timeline.set_ripple", json!({"enabled":"yes"}))
+            .is_err()
+    );
+    assert!(
+        s.execute(
+            "batch",
+            json!({"commands":[{"command":"timeline.set_ripple","params":{"enabled":false}}]})
+        )
+        .is_err()
+    );
+}
+
+#[test]
+fn ripple_batch_subtracts_occupied_spans_and_never_closes_an_old_gap_twice() {
+    let (mut s, track, _) = ripple_fixture(&[10, 10, 10], 20);
+    s.execute("timeline.set_ripple", json!({"enabled":true}))
+        .unwrap();
+    s.apply(Command::Batch {
+        commands: vec![
+            Command::RippleDelete { item: ItemId(10) },
+            Command::RippleDelete { item: ItemId(12) },
+        ],
+    })
+    .unwrap();
+    assert_eq!(
+        ripple_layout(&s)
+            .iter()
+            .find(|row| row.1 == ItemId(11))
+            .unwrap()
+            .2,
+        Tick(20)
+    );
+    s.apply(Command::Undo {}).unwrap();
+    // Material inserted into a deletion's old span must not be shifted into overlap.
+    s.apply(Command::Batch {
+        commands: vec![
+            Command::Delete {
+                items: vec![ItemId(10)],
+            },
+            Command::InsertItem {
+                placement: engine::Placement::Track { track },
+                item: new_item(20, 5),
+            },
+        ],
+    })
+    .unwrap();
+    assert_eq!(
+        ripple_layout(&s)
+            .iter()
+            .find(|row| row.1 == ItemId(11))
+            .unwrap()
+            .2,
+        Tick(25)
+    );
+    // A move wholly before its original span still keeps its old follower adjacent.
+    let (mut s, track, _) = ripple_fixture(&[10, 10], 50);
+    s.apply_with_ripple(
+        Command::MoveItem {
+            item: ItemId(10),
+            track,
+            start: Tick(0),
+        },
+        true,
+    )
+    .unwrap();
+    assert_eq!(
+        ripple_layout(&s)
+            .iter()
+            .find(|row| row.1 == ItemId(11))
+            .unwrap()
+            .2,
+        Tick(10)
+    );
+    // Overlapping group tails are a union, not two independently counted gaps.
+    let (mut s, track, _) = ripple_fixture(&[10, 10, 10], 50);
+    s.apply_with_ripple(
+        Command::MoveItems {
+            moves: vec![
+                Move {
+                    item: ItemId(10),
+                    track,
+                    start: Tick(0),
+                },
+                Move {
+                    item: ItemId(11),
+                    track,
+                    start: Tick(10),
+                },
+            ],
+        },
+        true,
+    )
+    .unwrap();
+    assert_eq!(
+        ripple_layout(&s)
+            .iter()
+            .find(|row| row.1 == ItemId(12))
+            .unwrap()
+            .2,
+        Tick(20)
+    );
+}
+
+#[test]
+fn ripple_json_entries_use_one_diff_and_reject_hostile_edits_atomically() {
+    for (id, params, expected) in [
+        ("delete", json!({"items":[10]}), 20),
+        ("ripple_delete", json!({"item":10}), 20),
+        ("trim_end", json!({"item":10,"at":40}), 40),
+        ("trim_start", json!({"item":10,"at":40}), 60),
+        (
+            "timeline.trim",
+            json!({"items":[10],"edge":"end","delta":-20}),
+            40,
+        ),
+        ("move_item", json!({"item":10,"track":2,"start":10}), 50),
+        (
+            "move_items",
+            json!({"moves":[{"item":10,"track":2,"start":10}]}),
+            50,
+        ),
+        ("timeline.move_items", json!({"items":[10],"delta":-10}), 50),
+    ] {
+        let (mut s, track, _) = ripple_fixture(&[40, 40], 20);
+        let mut params = params;
+        if let Some(value) = params.get_mut("track") {
+            *value = json!(track);
+        }
+        if let Some(value) = params.pointer_mut("/moves/0/track") {
+            *value = json!(track);
+        }
+        let before = project::encode(s.project(), false).unwrap();
+        s.execute_with_ripple(id, params, true).unwrap();
+        assert_eq!(
+            ripple_layout(&s)
+                .iter()
+                .find(|row| row.1 == ItemId(11))
+                .unwrap()
+                .2,
+            Tick(expected),
+            "{id}"
+        );
+        s.apply(Command::Undo {}).unwrap();
+        assert_eq!(project::encode(s.project(), false).unwrap(), before);
+        assert!(
+            s.execute_with_ripple(
+                "move_item",
+                json!({"item":10,"track":track,"start":i64::MAX}),
+                true
+            )
+            .is_err()
+        );
+        assert_eq!(project::encode(s.project(), false).unwrap(), before);
+    }
+    let (mut s, _, _) = ripple_fixture(&[], 0);
+    assert!(
+        !s.execute_with_ripple("delete", json!({"items":[]}), true)
+            .unwrap()
+            .changed
+    );
+    let (mut s, _, _) = ripple_fixture(&[1], 0);
+    s.execute_with_ripple("delete", json!({"items":[10]}), true)
+        .unwrap();
+    assert!(!ripple_layout(&s).iter().any(|row| row.1 == ItemId(10)));
+}
+
+#[test]
+fn ripple_wire_policy_is_atomic_explicit_and_cannot_nest() {
+    for (default, explicit) in [(false, true), (true, false)] {
+        let (mut s, _, _) = ripple_fixture(&[40, 40], 20);
+        s.execute("timeline.set_ripple", json!({"enabled":default}))
+            .unwrap();
+        s.execute(
+            "timeline.edit",
+            json!({"commands":[{"command":"delete","params":{"items":[10]}}],"ripple":explicit}),
+        )
+        .unwrap();
+        assert_eq!(
+            ripple_layout(&s)
+                .iter()
+                .find(|row| row.1 == ItemId(11))
+                .unwrap()
+                .2,
+            Tick(if explicit { 20 } else { 60 })
+        );
+        s.apply(Command::Undo {}).unwrap();
+        let before = project::encode(s.project(), false).unwrap();
+        let history = s.history_len();
+        for params in [
+            json!({"commands":[]}),
+            json!({"commands":[],"ripple":"yes"}),
+            json!({"commands":[{"command":"undo","params":{}}],"ripple":true}),
+        ] {
+            assert!(s.execute("timeline.edit", params).is_err());
+            assert_eq!(project::encode(s.project(), false).unwrap(), before);
+            assert_eq!(s.history_len(), history);
+        }
+        assert!(matches!(
+            s.apply(Command::TimelineEdit {
+                commands: vec![
+                    Command::Delete { items: vec![] };
+                    engine::control::MAX_BATCH_COMMANDS + 1
+                ],
+                ripple: true,
+            }),
+            Err(EditError::Limit)
+        ));
+        assert_eq!(project::encode(s.project(), false).unwrap(), before);
+        for command in ["batch", "timeline.edit"] {
+            let mut params = json!({"commands":[{"command":"delete","params":{"items":[10]}},
+                {"command":"timeline.edit","params":{"commands":[],"ripple":true}}]});
+            if command == "timeline.edit" {
+                params["ripple"] = json!(true);
+            }
+            assert!(s.execute(command, params).is_err());
+            assert_eq!(project::encode(s.project(), false).unwrap(), before);
+            assert_eq!(s.history_len(), history);
+        }
+    }
 }

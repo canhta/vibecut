@@ -205,7 +205,11 @@ impl State {
         cx: &Context<'_>,
         layout: &TimelineLayout,
     ) -> TimelineViews {
-        let data = cx.session.project().data();
+        let data = cx
+            .session
+            .preview_project()
+            .unwrap_or(cx.session.project())
+            .data();
         let mut rows = Vec::new();
         let mut raw_items: Vec<RawItem> = Vec::new();
         let mut offset = 0.0;

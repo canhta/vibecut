@@ -105,7 +105,7 @@ impl Session {
         let mut pending = vec![&command];
         while let Some(child) = pending.pop() {
             caller.policy.authorize(child, self.project())?;
-            if let Command::Batch { commands } = child {
+            if let Command::Batch { commands } | Command::TimelineEdit { commands, .. } = child {
                 pending.extend(commands);
             }
         }

@@ -296,7 +296,13 @@ impl Editor {
                         serde_json::json!({"key":"snapping", "value":after}),
                     )?;
                 }
-                UiAction::Ripple => self.ripple = !self.ripple,
+                UiAction::Ripple => {
+                    let after = !self.preferences.ripple;
+                    self.dispatch(
+                        PREFERENCE_COMMAND,
+                        serde_json::json!({"key":"ripple", "value":after}),
+                    )?;
+                }
                 UiAction::ZoomIn => self.zoom_timeline(ZOOM_STEP),
                 UiAction::ZoomOut => self.zoom_timeline(1.0 / ZOOM_STEP),
                 UiAction::Theme => {

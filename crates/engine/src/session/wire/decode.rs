@@ -30,7 +30,10 @@ pub(crate) fn decode_command(id: &str, params: Value) -> Result<Command> {
     let command: Command = serde_json::from_value(json!({"command":id,"params":params}))
         .map_err(|_| EditError::InvalidParams)?;
     // Includes nested publications/session controls, before any first child effect.
-    if matches!(command, Command::Batch { .. }) {
+    if matches!(
+        command,
+        Command::Batch { .. } | Command::TimelineEdit { .. }
+    ) {
         crate::session::check_budget(&command)?;
     }
     Ok(command)

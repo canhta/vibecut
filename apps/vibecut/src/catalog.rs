@@ -963,6 +963,7 @@ pub const PREFERENCE_KEYS: &[&str] = &[
     "locale",
     "dark",
     "snapping",
+    "ripple",
     "panels",
     "sections",
     "export",
@@ -1087,6 +1088,9 @@ pub struct Preferences {
     /// Timeline snapping; on by default and persisted across runs.
     #[serde(default = "default_snapping")]
     pub snapping: bool,
+    /// Close vacated same-track tails after timeline edits; off by default.
+    #[serde(default)]
+    pub ripple: bool,
     /// Ratios of the full content rectangle; validated when loaded and set.
     pub panels: [f32; 3],
     /// Open/closed state by property-section key.
@@ -1145,6 +1149,7 @@ impl Default for Preferences {
             locale: Locale::En,
             dark: true,
             snapping: true,
+            ripple: false,
             panels: DEFAULT_PANELS,
             sections: BTreeMap::new(),
             assets_tab: AssetsTab::default(),
@@ -1250,6 +1255,7 @@ impl Preferences {
             "locale" => Ok(serde_json::to_value(self.locale)?),
             "dark" => Ok(serde_json::Value::Bool(self.dark)),
             "snapping" => Ok(serde_json::Value::Bool(self.snapping)),
+            "ripple" => Ok(serde_json::Value::Bool(self.ripple)),
             "panels" => Ok(serde_json::to_value(self.panels)?),
             "sections" => Ok(serde_json::to_value(&self.sections)?),
             "export" => Ok(serde_json::to_value(self.export)?),
@@ -1280,6 +1286,7 @@ impl Preferences {
             "locale" => self.locale = serde_json::from_value(value)?,
             "dark" => self.dark = serde_json::from_value(value)?,
             "snapping" => self.snapping = serde_json::from_value(value)?,
+            "ripple" => self.ripple = serde_json::from_value(value)?,
             "panels" => self.panels = validate_panels(serde_json::from_value(value)?)?,
             "sections" => {
                 self.sections = serde_json::from_value(value)?;
@@ -1562,6 +1569,7 @@ mod tests {
         assert_eq!(Preferences::default().locale, Locale::En);
         assert_eq!(Preferences::default().panels, DEFAULT_PANELS);
         assert!(Preferences::default().snapping);
+        assert!(!Preferences::default().ripple);
         assert_eq!(Preferences::system().locale, Locale::from_system());
     }
 
@@ -1602,6 +1610,7 @@ mod tests {
             ("locale", serde_json::json!("vi")),
             ("dark", serde_json::json!(false)),
             ("snapping", serde_json::json!(false)),
+            ("ripple", serde_json::json!(true)),
             ("panels", serde_json::json!([0.30, 0.20, 0.35])),
             ("sections", serde_json::json!({"inspector.canvas": false})),
             ("assets_tab", serde_json::json!("captions")),
@@ -1699,6 +1708,7 @@ mod tests {
         std::fs::write(store.path(), &original).expect("write preferences");
         let loaded = store.load().expect("load preferences");
         assert!(loaded.snapping);
+        assert!(!loaded.ripple);
         let bytes = std::fs::read(store.path()).expect("read preferences");
         assert_eq!(
             bytes, original,

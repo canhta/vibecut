@@ -5,6 +5,7 @@ use crate::{
     catalog::Preferences,
     playback::{Files, Playback},
 };
+use engine::CreatedId;
 use engine::{ByteBudget, NewItem};
 use project::{Project, ProjectId, TrackId, TrackKind};
 use std::{collections::BTreeSet, sync::Arc};
@@ -87,7 +88,8 @@ fn shift(item: ItemId, track: TrackId, start: i64) -> timeline::Action {
 fn start_of(editor: &Editor, item: ItemId) -> Tick {
     editor
         .session
-        .project()
+        .preview_project()
+        .unwrap_or(editor.session.project())
         .data()
         .scene()
         .timeline
@@ -228,9 +230,12 @@ fn commands_seeks_activations_scene_renames_and_failures_reach_their_owners() {
     );
     editor.route_timeline(vec![timeline::Action::Seek(Tick(2 * SECOND))]);
     assert_eq!(editor.playback.position().unwrap(), Tick(2 * SECOND));
-    assert!(!editor.ripple);
+    assert!(!editor.preferences.ripple);
     editor.route_timeline(vec![timeline::Action::Activate("timeline.ripple".into())]);
-    assert!(editor.ripple, "activation goes through the action registry");
+    assert!(
+        editor.preferences.ripple,
+        "activation goes through the action registry"
+    );
     // A rename the engine refuses is reported and its draft stays open.
     editor.route_timeline(vec![timeline::Action::RenameScene {
         scene: project::SceneId(99),

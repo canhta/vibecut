@@ -23,7 +23,10 @@ pub(crate) fn check_budget(command: &Command) -> Result<()> {
             return Err(EditError::Limit);
         }
         match command {
-            Command::Batch { commands } => {
+            Command::TimelineEdit { .. } if depth != 0 => {
+                return Err(EditError::Invalid("nested ripple policy"));
+            }
+            Command::Batch { commands } | Command::TimelineEdit { commands, .. } => {
                 if commands.len() > super::wire::MAX_BATCH_COMMANDS {
                     return Err(EditError::Limit);
                 }
@@ -477,6 +480,7 @@ pub(crate) fn apply(
                 data = apply(data, command, created, next, sources, copied_text_bytes)?.into_data();
             }
         }
+        Command::TimelineEdit { .. } => return Err(EditError::Invalid("nested ripple policy")),
         command @ (Command::Inspect {}
         | Command::Preview { .. }
         | Command::Snapshot { .. }
@@ -499,6 +503,7 @@ pub(crate) fn apply(
         | Command::SwitchScene { .. }
         | Command::Undo {}
         | Command::Redo {}
+        | Command::TimelineSetRipple { .. }
         | Command::TimelinePreview { .. }
         | Command::TimelineCommitPreview {}
         | Command::TimelineDiscardPreview {}
@@ -545,3 +550,18 @@ mod retime;
 mod text;
 mod tracks;
 mod transitions;
+
+pub(crate) use clips::close_vacated_tails as ripple;
+
+/// A global ripple pass replaces command-local shifts, including inside batches.
+/// Run only after the command budget is admitted.
+pub(crate) fn lift_ripple_deletes(command: &mut Command) {
+    let mut stack = vec![command];
+    while let Some(command) = stack.pop() {
+        match command {
+            Command::RippleDelete { item } => *command = Command::Delete { items: vec![*item] },
+            Command::Batch { commands } => stack.extend(commands),
+            _ => {}
+        }
+    }
+}

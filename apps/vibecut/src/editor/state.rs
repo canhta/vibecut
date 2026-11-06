@@ -390,7 +390,6 @@ pub struct Editor {
     pub(super) effect_previews: Option<crate::effect_previews::EffectPreviews>,
     pub(super) effect_textures: BTreeMap<String, egui::TextureHandle>,
     pub(super) effect_drag: Option<String>,
-    pub ripple: bool,
     pub(super) last_view: project::ViewState,
     pub(super) widgets: BTreeMap<String, WidgetState>,
     pub panels: BTreeMap<&'static str, Rect>,
