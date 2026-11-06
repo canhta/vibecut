@@ -5,3 +5,6 @@ xtask/patches/*.patch text eol=lf
 crates/engine/catalog.digest text eol=lf
 docs/product/agent-control/commands.md text eol=lf
 docs/product/agent-control/keyboard.md text eol=lf
+
+# Icon bytes are pinned by SHA-256 in the assets README; the working tree must keep LF.
+assets/icons/**/*.svg text eol=lf
