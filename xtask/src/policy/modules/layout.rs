@@ -112,7 +112,7 @@ pub(super) fn folder_rules(tracked: &[String]) -> BTreeSet<Violation> {
         };
         let count = entries
             .iter()
-            .filter(|entry| entry.as_str() != "mod.rs")
+            .filter(|entry| !matches!(entry.as_str(), "mod.rs" | "README.md"))
             .filter(|entry| {
                 entry
                     .strip_suffix(".rs")

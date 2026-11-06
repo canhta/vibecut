@@ -1,6 +1,6 @@
 # Closed command catalog
 
-Status: Proposed. It takes effect when one declaration replaces the split matches; until then the current contract stays in the [engine README](../../crates/engine/README.md#control).
+Status: Proposed. It takes effect when one declaration replaces the split matches; until then the current contract stays in the [engine README](../../crates/engine/src/control/README.md).
 
 The command set is one closed enum, not a string registry. Each declaration carries every per-command fact once: its execution family, its availability rule, its grant class, whether a curated transport tool exposes it, and its lifecycle routing. Executors live per family under `session/edit/` and are reached through the declaration. Schema, digest and the agent-facing [command reference](../product/agent-control/commands.md) are generated from that one source by one command.
 
@@ -8,4 +8,4 @@ The reason is failure direction. A string registry ends in wildcard arms that an
 
 Rejected: per-transport allowlists (three hand-maintained lists drift), an open command registry (unknown ids become runtime policy), and deriving availability from the enabled state of a running Session (a catalog read would need a Session).
 
-Current contracts live in the [engine README](../../crates/engine/README.md#control-admission-revisions-and-receipts); [structure](../engineering/structure.md#engine-cratesenginesrc) owns where the families and executors sit.
+Current contracts live in the [engine README](../../crates/engine/src/control/README.md#control-admission-revisions-and-receipts); [structure](../engineering/structure.md#engine-cratesenginesrc) owns where the families and executors sit.

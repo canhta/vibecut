@@ -1,0 +1,32 @@
+# Completed export publication
+
+## Completed export publication
+
+`sanitize_file_name` is the shared portable name sanitizer used by the desktop
+export dialog. It normalizes NFC, replaces forbidden characters, trims trailing
+dots/spaces, escapes reserved device stems case-insensitively even with extensions,
+and limits output to 255 UTF-8 bytes without splitting a grapheme. Empty export
+names use `Untitled Project`. `default_file_name` reserves the extension inside
+that limit. Snapshots retain their `-` replacement and `snapshot` fallback while
+using the same sanitizer with space reserved for the timecode and PNG suffix.
+
+Engine's `publication` module owns admission and staged writing for completed
+exports and snapshots. It admits the captured project sources and the adapter's
+protected active project/metadata paths before staging and again after sync,
+then seals cancellation before publishing through project's atomic writer.
+Canonical paths (including case-folded missing names on Windows), hard links,
+live source content identity and protected directories refuse project/source
+aliases even when a source changed since import. The project atomic owner also
+refuses reserved writer-control destinations. Refusal or storage failure preserves
+the previous destination and removes staging files.
+
+`submit_export_publication` copies a retained completed render through this owner
+using a bounded 64 KiB buffer on the job runner. No admission, copy or
+sync runs on the UI thread. The existing `AtomicFs` boundary can inject storage
+failure or gate sync while the event loop ticks and cancels.
+
+Cancellation before the fence and storage failures preserve the prior destination
+and completed input. After the fence a committed destination reports Completed.
+The adapter retains the input until the job terminates and joins the runner before
+cleanup on shutdown. Individual filesystem calls cannot be interrupted; external
+processes racing path replacement are outside the atomic owner's guarantees.

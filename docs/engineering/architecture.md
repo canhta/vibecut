@@ -28,35 +28,35 @@ The [glossary](../../GLOSSARY.md) owns domain definitions; crate READMEs own con
 | Area | Contract owner |
 |---|---|
 | SourceAsset, codecs, probe, packet/frame timing | [media](../../crates/media/src/read/README.md) |
-| Project, scenes, validation, persistence, writer lease | [project](../../crates/project/README.md#writer-lease-and-save-acknowledgement) |
-| Video transitions | [project model/invariants](../../crates/project/README.md#video-transitions), [engine edits](../../crates/engine/README.md#video-transitions), [render evaluation](../../crates/render/src/scene/README.md#video-transitions) |
-| Param and keyframes | [project animation](../../crates/project/README.md#animated-parameters) |
+| Project, scenes, validation, persistence, writer lease | [project](../../crates/project/src/writer/README.md#writer-lease-and-save-acknowledgement) |
+| Video transitions | [project model/invariants](../../crates/project/src/transition/README.md#video-transitions), [engine edits](../../crates/engine/src/session/edit/README.md#video-transitions), [render evaluation](../../crates/render/src/scene/README.md#video-transitions) |
+| Param and keyframes | [project animation](../../crates/project/src/animation/README.md#animated-parameters) |
 | SourceRange | [time](../../crates/time/README.md) |
 | Transcript, Cue, CueStyle, EditMapping, LanguageProfile | [captions](../../crates/captions/README.md) |
-| Managed catalog, copied-media publication and catalog history | [engine library](../../crates/engine/README.md#managed-project-library); project retains metadata/persistence |
-| Session, registry, transactions, gestures, undo/redo | [engine](../../crates/engine/README.md#transactions-gestures-and-changes) |
-| Control schemas, revisions, receipts, resync events | [engine control](../../crates/engine/README.md#control-admission-revisions-and-receipts) |
-| Job runner, scheduling, retries, checkpoints, aggregate bytes | [engine jobs](../../crates/engine/README.md#background-jobs-and-byte-policy) |
-| Font catalog, system/bundled/Google fonts, download cache, `fonts.*` commands | [engine fonts](../../crates/engine/README.md#font-catalog); resolution and raster in [text](../../crates/text/src/fonts/README.md) |
-| Row tasks and native conversion worker allowance | [engine kernel execution](../../crates/engine/README.md#render-kernel-execution) |
+| Managed catalog, copied-media publication and catalog history | [engine library](../../crates/engine/src/store/README.md#managed-project-library); project retains metadata/persistence |
+| Session, registry, transactions, gestures, undo/redo | [engine](../../crates/engine/src/session/README.md#transactions-gestures-and-changes) |
+| Control schemas, revisions, receipts, resync events | [engine control](../../crates/engine/src/control/README.md#control-admission-revisions-and-receipts) |
+| Job runner, scheduling, retries, checkpoints, aggregate bytes | [engine jobs](../../crates/engine/src/runtime/README.md#background-jobs-and-byte-policy) |
+| Font catalog, system/bundled/Google fonts, download cache, `fonts.*` commands | [engine fonts](../../crates/engine/src/libraries/font_catalog/README.md#font-catalog); resolution and raster in [text](../../crates/text/src/fonts/README.md) |
+| Row tasks and native conversion worker allowance | [engine kernel execution](../../crates/engine/src/runtime/README.md#render-kernel-execution) |
 | Export execution | [render](../../crates/render/src/export/README.md#export-and-publication) |
 | Preview screen/canvas conversion, selectable item geometry, rotated handles | [render viewport](../../crates/render/src/scene/README.md#preview-viewport-geometry) |
-| Loudness measurement, gains and export admission | [render planner](../../crates/render/src/audio/README.md#audio-clock-and-headroom) / [engine job](../../crates/engine/README.md#loudness-normalization) |
+| Loudness measurement, gains and export admission | [render planner](../../crates/render/src/audio/README.md#audio-clock-and-headroom) / [engine job](../../crates/engine/src/analysis/README.md#loudness-normalization) |
 | Clip naming, cue mapping, per-short cancel/retry | [shorts batch export](../../crates/shorts/src/batch_export/README.md) |
-| Local model catalog, consent, integrity, transport / transfers, cache bundles / manager presentation | [ai catalog](../../crates/ai/src/models/README.md) / [engine transfers](../../crates/engine/README.md#local-model-transfers) / [app manager](../../apps/vibecut/README.md#local-model-manager) |
+| Local model catalog, consent, integrity, transport / transfers, cache bundles / manager presentation | [ai catalog](../../crates/ai/src/models/README.md) / [engine transfers](../../crates/engine/src/providers/README.md#local-model-transfers) / [app manager](../../apps/vibecut/src/model_manager/README.md#local-model-manager) |
 | Clip boundary snapping / speech groups / energy | [shorts](../../crates/shorts/src/boundaries/README.md) / [captions](../../crates/captions/src/segment/README.md#source-cut-units) / [media](../../crates/media/src/audio_extract/README.md#speech-energy-windows) |
-| Shot analysis and complete artifact caching | [engine analysis](../../crates/engine/README.md#per-shot-analysis) |
+| Shot analysis and complete artifact caching | [engine analysis](../../crates/engine/src/analysis/shot_analysis/README.md#per-shot-analysis) |
 | Vision preparation / inference, face embeddings and shape-plan cache | [media](../../crates/media/src/vision_prep/README.md#vision-preparation) / [ai detectors](../../crates/ai/src/vision/README.md) |
 | Provider capabilities, consent, cost / text timing / isolated Gipformer | [ai](../../crates/ai/src/policy/README.md) / [recognition](../../crates/ai/src/assembly/README.md) / [local runner](../../crates/ai/src/gipformer/README.md) |
-| Sound search, saved local sounds, preview cache and attribution | [engine sounds](../../crates/engine/README.md#sound-library) |
-| Translation windows and response validation / selection, retry, edit protection | [ai translation](../../crates/ai/src/translation/README.md) / [engine application](../../crates/engine/README.md#translation-selection-and-application) |
+| Sound search, saved local sounds, preview cache and attribution | [engine sounds](../../crates/engine/src/libraries/sound_library/README.md#sound-library) |
+| Translation windows and response validation / selection, retry, edit protection | [ai translation](../../crates/ai/src/translation/README.md) / [engine application](../../crates/engine/src/transcript/README.md#translation-selection-and-application) |
 | SpeechSynthesizer capabilities, requests, consent, PCM validation | [ai speech](../../crates/ai/src/speech/README.md) |
 
 Engine wraps media/render/AI execution, supplying progress and cancellation hooks. Persistent artifacts use content keys; frame/glyph caches stay with data owners and share accounting leases. Engine owns speech provider selection, retry budgets, jobs and placement.
 
 Every project mutation goes through the engine registry; UI/CLI/MCP/plugins translate their transport into it. CLI owns parsing/typed exit codes, MCP tools/transports, app widgets/preferences/transient state. A shared control library needs working CLI and MCP consumers; until then its first adapter owns the code.
 
-Per-project view state stays outside editable content and undo: engine Session exposes its command, project owns the bounded [metadata sidecar](../../crates/project/README.md#optional-project-metadata) under WriterLease. Engine owns [recovery scheduling, session liveness and save acknowledgement](../../crates/engine/README.md#session-recovery-and-save-acknowledgement); project owns snapshot format/writes/rotation, app presents recovery choices.
+Per-project view state stays outside editable content and undo: engine Session exposes its command, project owns the bounded [metadata sidecar](../../crates/project/src/metadata/README.md#optional-project-metadata) under WriterLease. Engine owns [recovery scheduling, session liveness and save acknowledgement](../../crates/engine/src/store/recovery_workflow/README.md#session-recovery-and-save-acknowledgement); project owns snapshot format/writes/rotation, app presents recovery choices.
 
 ## Languages
 

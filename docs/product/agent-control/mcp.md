@@ -1,6 +1,6 @@
 # MCP control
 
-The CLI owns the MCP adapter over the [engine control contract](../../../crates/engine/README.md#control-admission-revisions-and-receipts).
+The CLI owns the MCP adapter over the [engine control contract](../../../crates/engine/src/control/README.md#control-admission-revisions-and-receipts).
 It uses the official `rmcp` SDK, targets MCP 2026-07-28 and negotiates older client
 versions through the SDK. MCP Tasks are not advertised. Preview/export calls start
 engine jobs; poll `job_status` and use `job_cancel` for graceful job cancellation.

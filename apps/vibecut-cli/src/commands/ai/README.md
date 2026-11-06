@@ -1,7 +1,7 @@
 # AI commands
 
 `subtitle`, `providers` and
-`model` are adapters over the [engine subtitle workflow](../../../../../crates/engine/README.md#subtitle-workflow):
+`model` are adapters over the [engine subtitle workflow](../../../../../crates/engine/src/subtitles/README.md#subtitle-workflow):
 the CLI parses flags, prints local/remote capabilities and upload disclosures, and
 never implements chunking, consent/cost, transcription, translation, checkpoint or
 serialization logic. `subtitle` has no graceful signal-to-job cancellation handler;

@@ -6,7 +6,7 @@ jobs, and maps typed results to stdout/stderr and stable exit codes. It owns no
 timeline, codec, export-admission or provider logic and has no UI dependencies.
 
 `lib.rs` wires the public `run`, `Output` and `CliError` entry points.
-The module doors follow [structure](../../docs/engineering/structure.md#cli):
+The module doors follow [structure](../../docs/engineering/structure.md#cli-appsvibecut-clisrc):
 
 
 | Module | Responsibility | Contract |

@@ -14,7 +14,7 @@ stores one operation, a primary and an explicitly configured ordered list of up 
 seven distinct fallback configurations. New selections and missing serialized
 fallback lists default to no fallback. Schema version 1 and duplicate/size checks
 apply on deserialization; upload approvals are never persisted with settings.
-Engine owns [fallback execution](../../../engine/README.md#provider-selection-and-fallback).
+Engine owns [fallback execution](../../../engine/src/providers/README.md#provider-selection-and-fallback).
 
 `Money` uses integer millionths and a three-letter uppercase currency. Estimates
 are free, an upper bound, or unknown. Remote execution refuses unknown estimates,
