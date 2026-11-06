@@ -2,6 +2,8 @@
 mod import;
 mod insertion;
 mod selection;
+mod transition;
+pub(super) use transition::{cuts, refusal, selected_cut};
 
 use super::{AssetsTab, Editor, Result};
 

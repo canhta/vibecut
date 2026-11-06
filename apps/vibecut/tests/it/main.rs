@@ -19,6 +19,7 @@ mod scenes_ui;
 mod shorts_ui;
 mod timeline_ui;
 mod tracks_ui;
+mod transitions;
 
 mod mcp_control;
 mod media_probe_ui;

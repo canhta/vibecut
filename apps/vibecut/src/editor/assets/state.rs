@@ -6,6 +6,9 @@ pub(in crate::editor) struct State {
     pub(super) model: Model,
     pub(super) searches: BTreeMap<AssetsTab, String>,
     pub(super) filter: Filter,
+    pub(super) transition_family: Option<&'static str>,
+    pub(super) transition_previews: BTreeMap<&'static str, super::transition::Preview>,
+    pub(in crate::editor) transition_drag: Option<(&'static str, std::sync::Arc<project::Project>)>,
 }
 
 #[derive(Clone, Copy, Default, PartialEq, Eq)]

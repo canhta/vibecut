@@ -202,6 +202,7 @@ impl Editor {
             self.properties.reorder = None;
         }
         self.finish_effect_drag(ui.ctx());
+        self.finish_transition_drag(ui.ctx());
         ui.ctx()
             .request_repaint_after(std::time::Duration::from_millis(
                 if self.playback.playing() { 8 } else { 33 },

@@ -3,6 +3,7 @@ mod browser;
 mod deletion;
 mod effects;
 mod feedback;
+mod transition;
 
 use super::{
     Action, Align2, AssetRow, AssetState, AssetsTab, Color32, EffectRow, FontId, Icon, Id,
@@ -34,6 +35,7 @@ pub(super) fn show(state: &mut State, cx: &Model, ui: &mut egui::Ui) -> Vec<Acti
                         AssetsTab::Sounds,
                         AssetsTab::Text,
                         AssetsTab::Effects,
+                        AssetsTab::Transitions,
                         AssetsTab::Captions,
                     ] {
                         let id = format!("assets.tab.{}", tab.id());
@@ -44,7 +46,7 @@ pub(super) fn show(state: &mut State, cx: &Model, ui: &mut egui::Ui) -> Vec<Acti
                         });
                         let response = if compact {
                             ui.allocate_ui_with_layout(
-                                Vec2::new(rect.width() / 5.0, 42.0),
+                                Vec2::new(rect.width() / 6.0, 42.0),
                                 egui::Layout::centered_and_justified(egui::Direction::TopDown),
                                 |ui| {
                                     crate::kit::icon_button(
@@ -67,6 +69,9 @@ pub(super) fn show(state: &mut State, cx: &Model, ui: &mut egui::Ui) -> Vec<Acti
                                 if cx.preferences.locale == catalog::Locale::En {
                                     Some(if tab == AssetsTab::Media {
                                         theme::size::TAB_MIN
+                                    } else if tab == AssetsTab::Transitions {
+                                        // Wider label pitch in the measured feature strip.
+                                        61.0
                                     } else {
                                         theme::size::FEATURE_TAB_PITCH
                                     })
@@ -115,6 +120,10 @@ pub(super) fn show(state: &mut State, cx: &Model, ui: &mut egui::Ui) -> Vec<Acti
             egui::UiBuilder::new().max_rect(nav.shrink2(Vec2::new(8.0, 15.0))),
             |ui| {
                 ui.spacing_mut().item_spacing.y = 8.0;
+                if cx.preferences.assets_tab == AssetsTab::Transitions {
+                    view.transition_nav(ui);
+                    return;
+                }
                 let label = view.tr(active);
                 let response = ui.add_sized(
                     [theme::size::SUBNAV_BUTTON, theme::size::CONTROL],
@@ -173,6 +182,7 @@ pub(super) fn show(state: &mut State, cx: &Model, ui: &mut egui::Ui) -> Vec<Acti
             }
             AssetsTab::Media | AssetsTab::Sounds => view.browser(ui),
             AssetsTab::Effects => view.effects(ui),
+            AssetsTab::Transitions => view.transitions(ui),
             AssetsTab::Text => {
                 if nav.width() == 0.0
                     && view.icon(ui, "text.insert", Icon::TextT, Text::AssetsAddText, true)
@@ -265,6 +275,7 @@ impl View<'_> {
             id,
             response: response.clone(),
             glyph,
+            tooltip: None,
         })));
     }
     fn icon(
@@ -284,7 +295,13 @@ impl View<'_> {
         response.clicked()
     }
     fn search(&mut self, ui: &mut egui::Ui, width: f32) {
-        let hint = self.tr(Text::AssetsSearch);
+        let hint = self.tr(
+            if self.cx.preferences.assets_tab == AssetsTab::Transitions {
+                Text::TransitionSearch
+            } else {
+                Text::AssetsSearch
+            },
+        );
         let draft = self
             .state
             .searches

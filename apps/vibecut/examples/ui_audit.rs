@@ -311,6 +311,18 @@ const SCENES: &[Scene] = &[
         build: |theme, scale| assets_scene(theme, scale, "effects"),
     },
     Scene {
+        name: "assets-transitions",
+        reference_dark: None,
+        reference_light: None,
+        build: |theme, scale| assets_scene(theme, scale, "transitions"),
+    },
+    Scene {
+        name: "assets-transitions-vi",
+        reference_dark: None,
+        reference_light: None,
+        build: |theme, scale| assets_scene(theme, scale, "transitions-vi"),
+    },
+    Scene {
         name: "assets-text",
         reference_dark: None,
         reference_light: None,
@@ -2662,6 +2674,7 @@ fn assets_scene(theme: Theme, scale: f32, state: &str) -> Result<AppHarness, Fai
     }
     editor.preferences.assets_tab = match state {
         "effects" => vibecut::panels::AssetsTab::Effects,
+        "transitions" => vibecut::panels::AssetsTab::Transitions,
         "text" => vibecut::panels::AssetsTab::Text,
         "captions" => vibecut::panels::AssetsTab::Captions,
         "offline" => vibecut::panels::AssetsTab::Sounds,

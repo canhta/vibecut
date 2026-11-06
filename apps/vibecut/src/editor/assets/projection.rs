@@ -7,7 +7,7 @@ use super::{
 pub(in crate::editor) fn prepare(editor: &mut Editor, ctx: &egui::Context) {
     let rows = if !matches!(
         editor.preferences.assets_tab,
-        AssetsTab::Text | AssetsTab::Effects | AssetsTab::Captions
+        AssetsTab::Text | AssetsTab::Effects | AssetsTab::Transitions | AssetsTab::Captions
     ) {
         editor.refresh_media_sizes();
         let sizes = editor.media_size_map();
@@ -111,15 +111,28 @@ pub(in crate::editor) fn prepare(editor: &mut Editor, ctx: &egui::Context) {
             | AssetsTab::Sounds
             | AssetsTab::Text
             | AssetsTab::Effects
+            | AssetsTab::Transitions
             | AssetsTab::Captions
     ) {
         preferences.assets_tab = AssetsTab::Media;
     }
+    let (transition_refusal, transition_drag_enabled) =
+        if preferences.assets_tab == AssetsTab::Transitions {
+            let cuts = super::workflow::cuts(editor);
+            let reason = super::workflow::selected_cut(editor, &cuts)
+                .map(|cut| super::workflow::refusal(editor, cut))
+                .unwrap_or(Some(Text::TransitionSelectCut));
+            (reason, !cuts.is_empty())
+        } else {
+            (None, false)
+        };
     editor.assets.model = Model {
         preferences,
         rows,
         thumbnails,
         effects,
+        transition_refusal,
+        transition_drag_enabled,
         importing: editor.importing(),
         selection: editor.media_selection.clone(),
         reveal: editor.media_reveal.map(|reveal| reveal.asset),

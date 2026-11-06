@@ -1,6 +1,7 @@
 //! Owns the assets presentation boundary.
 mod projection;
 mod state;
+mod transition;
 mod view;
 mod workflow;
 pub(super) use projection::prepare;
@@ -24,6 +25,8 @@ struct Model {
     rows: Vec<Row>,
     thumbnails: BTreeMap<AssetId, egui::TextureHandle>,
     effects: Vec<EffectRow>,
+    transition_refusal: Option<Text>,
+    transition_drag_enabled: bool,
     importing: bool,
     selection: BTreeSet<AssetId>,
     reveal: Option<AssetId>,
@@ -53,6 +56,7 @@ pub(super) struct Recorded {
     pub(super) id: String,
     pub(super) response: egui::Response,
     pub(super) glyph: Option<Icon>,
+    pub(super) tooltip: Option<String>,
 }
 /// Intentions routed by the frame after painting has released its read borrow.
 pub(super) enum Action {
@@ -70,6 +74,8 @@ pub(super) enum Action {
     EffectDrag(&'static str),
     AddEffect(&'static str),
     RetryEffect(&'static str),
+    TransitionDrag(&'static str),
+    AddTransition(&'static str),
 }
 
 impl Editor {

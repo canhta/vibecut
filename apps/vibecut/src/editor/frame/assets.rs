@@ -19,11 +19,16 @@ impl Editor {
                 assets::Action::Command(id) => self.action(&id),
                 assets::Action::Select(id, modifiers) => self.select_asset(id, modifiers),
                 assets::Action::Delete(ids) => self.request_media_delete(ids),
-                assets::Action::Record(widget) => self.remember_with_icon(
-                    widget.id,
-                    widget.glyph.map(|glyph| glyph.name()),
-                    &widget.response,
-                ),
+                assets::Action::Record(widget) => {
+                    self.remember_with_icon(
+                        &widget.id,
+                        widget.glyph.map(|glyph| glyph.name()),
+                        &widget.response,
+                    );
+                    if let Some(state) = self.widgets.get_mut(&widget.id) {
+                        state.tooltip = widget.tooltip;
+                    }
+                }
                 assets::Action::Marquee {
                     content,
                     background,
@@ -35,6 +40,8 @@ impl Editor {
                 }
                 assets::Action::EffectDrag(kind) => self.effect_drag = Some(kind.to_owned()),
                 assets::Action::AddEffect(kind) => self.add_effect_from_selection(kind),
+                assets::Action::TransitionDrag(kind) => self.begin_transition_drag(kind),
+                assets::Action::AddTransition(kind) => self.add_transition_from_selection(kind),
                 assets::Action::RetryEffect(kind) => {
                     if let Some(definition) = project::effect_definitions()
                         .iter()

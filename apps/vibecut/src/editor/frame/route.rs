@@ -195,6 +195,9 @@ impl Editor {
     }
     /// Escape: abandon the innermost pointer interaction in progress.
     pub(in crate::editor) fn cancel_interaction(&mut self) {
+        if self.assets.transition_drag.take().is_some() {
+            return;
+        }
         if self.media_marquee.take().is_some() {
             self.media_selection.clear();
             self.media_anchor = None;
