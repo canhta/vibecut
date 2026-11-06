@@ -2,6 +2,27 @@
 use crate::editor::{Editor, Error, PathBuf, Result};
 
 impl Editor {
+    /// Start with typed caller settings without mutating editable project content.
+    pub(in crate::editor) fn run_export(
+        &mut self,
+        options: crate::export::ExportOptions,
+    ) -> Result<()> {
+        if self.session.transaction_active() {
+            return Err(Error::Engine(engine::EditError::TransactionActive));
+        }
+        if self.export.is_none() {
+            self.export = Some(crate::export::ExportDialog::new(
+                self.playback.budget().clone(),
+                self.playback.render_state()?,
+            )?);
+        }
+        let dialog = self
+            .export
+            .as_mut()
+            .ok_or(Error::Invalid("export dialog"))?;
+        dialog.show(self.session.project());
+        dialog.start(self.session.project().clone(), options)
+    }
     /// Accept the native export save picker's result without opening OS UI in tests.
     pub fn export_picked_file(&mut self, path: PathBuf) -> Result<()> {
         let protected = self
@@ -29,9 +50,14 @@ impl Editor {
     /// Default filename and last directory for the native save dialog.
     pub fn export_save_defaults(&self) -> (String, Option<PathBuf>) {
         (
-            crate::export::default_file_name(
-                self.session.project().data().name.as_str(),
-                self.export_save_format().extension(),
+            self.export.as_ref().map_or_else(
+                || {
+                    crate::export::default_file_name(
+                        self.session.project().data().name.as_str(),
+                        self.export_save_format().extension(),
+                    )
+                },
+                |dialog| dialog.save_name(self.session.project(), self.preferences.export),
             ),
             self.preferences.export_directory.clone(),
         )

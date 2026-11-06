@@ -195,19 +195,39 @@ impl Editor {
                         dialog.show(self.session.project());
                     }
                 }
-                UiAction::RunExport => {
-                    if self.export.is_none() {
-                        self.export = Some(crate::export::ExportDialog::new(
-                            self.playback.budget().clone(),
-                            self.playback.render_state()?,
-                        )?);
+                UiAction::RunExport => self.run_export(self.preferences.export)?,
+                action @ (UiAction::ExportMarkIn | UiAction::ExportMarkOut) => {
+                    let mut options = self.preferences.export;
+                    let (mut start, mut end) = match options.output.range {
+                        render::RangeChoice::InOut { start, end } => (start, end),
+                        _ => (time::Tick::ZERO, duration),
+                    };
+                    let at = self
+                        .session
+                        .project()
+                        .data()
+                        .canvas
+                        .fps
+                        .snap_nearest(at.clamp(time::Tick::ZERO, duration))?;
+                    if action == UiAction::ExportMarkIn {
+                        start = at;
+                    } else {
+                        end = at;
                     }
-                    let dialog = self
-                        .export
-                        .as_mut()
-                        .ok_or(Error::Unsupported("export dialog"))?;
-                    dialog.show(self.session.project());
-                    dialog.start(self.session.project().clone(), self.preferences.export)?;
+                    options.output.scene = render::SceneChoice::Active;
+                    options.output.range = render::RangeChoice::InOut { start, end };
+                    self.dispatch(
+                        crate::editor::PREFERENCE_COMMAND,
+                        serde_json::json!({"key":"export","value":options}),
+                    )?;
+                }
+                UiAction::ExportInOut => {
+                    let mut options = self.preferences.export;
+                    options.output.scene = render::SceneChoice::Active;
+                    if !matches!(options.output.range, render::RangeChoice::InOut { .. }) {
+                        return Err(Error::Invalid("set in/out markers before exporting"));
+                    }
+                    self.run_export(options)?;
                 }
                 UiAction::RetryExport => {
                     let dialog = self

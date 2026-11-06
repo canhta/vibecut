@@ -6,6 +6,22 @@ pub(in crate::editor) fn show(editor: &mut Editor, ctx: &egui::Context) {
         return;
     };
     let mut options = editor.preferences.export;
+    let items: Vec<_> = editor
+        .session
+        .project()
+        .data()
+        .scene()
+        .timeline
+        .iter()
+        .flat_map(|track| &track.items)
+        .filter(|item| editor.selection.contains(&item.id))
+        .collect();
+    dialog.selection_range = items
+        .iter()
+        .map(|item| item.start)
+        .min()
+        .zip(items.iter().filter_map(|item| item.end().ok()).max())
+        .and_then(|(start, end)| time::TimeRange::new(start, end).ok());
     let output = dialog.ui(
         ctx,
         editor.preferences.locale,

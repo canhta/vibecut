@@ -86,6 +86,9 @@ both in sync.
 | `models.open` — Manage models | View | — | — | model manager |
 | `export.run` — Run export | View | — | — | export dialog |
 | `export.retry` — Retry export | View | — | — | export dialog |
+| `export.mark_in` — Set in point | View | I | — | export range |
+| `export.mark_out` — Set out point | View | O | — | export range |
+| `export.in_out` — Export in/out range | View | Shift+X | — | export range |
 | `scene.rename` — Rename scene | View | — | — | scene rename input |
 | `scene.row` — Choose scene | View | — | — | scene switcher |
 | `timeline.item` — Select item | View | — | — | timeline selection |

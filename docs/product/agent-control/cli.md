@@ -155,7 +155,17 @@ Lease admission for reads and writes follows the [CLI owner contract](../../../a
 
 ## Export admission
 
-The CLI keeps MP4 output as its default contract, independent of the destination extension. Desktop export exposes MP4, MOV and WebM through the same render settings/execution owner; the CLI does not infer a different container from a `.mov` or `.webm` filename.
+The output extension selects MP4/H.264, MOV/H.264 or WebM/VP9 through the shared
+render owner. `--settings <JSON>` accepts the versioned `render::OutputOptions`
+contract: `version: 1`, nullable `resolution: [width,height]`, `fps: {num,den}`,
+`bit_rate`, `codec: automatic|h264|vp9`, `profile: automatic|main|high`,
+`range: {kind: full}` or `{kind: in_out|selected, start, end}` in ticks, and
+`scene: {kind: active|all}` or `{kind: selected, scene: <id>}`. All fields are
+required; older versions and unknown fields refuse. Defaults and bounds belong
+to the [render contract](../../../crates/render/README.md).
+`--aspect` remains an output geometry override; explicit settings resolution wins.
+All scenes use distinct `<stem>-scene-<id>.<ext>` destinations. JSON success adds
+`paths` containing every completed file; `path` remains the requested output stem.
 
 `export` uses render's finished-file path: output is staged and published only after encoding, muxing and a final source revalidation. A required source that is missing or whose content hash changed refuses the export with exit code 4 and `unavailable` entries naming the asset ID, item ID, source tick range and reason (`missing`, `changed`, `metadata`, `video` or `audio`). No partial final file is promoted and an existing destination is preserved.
 

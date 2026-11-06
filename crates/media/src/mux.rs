@@ -11,6 +11,12 @@ pub enum Container {
     WebM,
 }
 impl Container {
+    /// Resolve the admitted video containers from an ASCII extension.
+    pub fn from_extension(extension: &str) -> Option<Self> {
+        [Self::Mp4, Self::Mov, Self::WebM]
+            .into_iter()
+            .find(|container| container.name().eq_ignore_ascii_case(extension))
+    }
     fn name(self) -> &'static str {
         match self {
             Self::Mp4 => "mp4",

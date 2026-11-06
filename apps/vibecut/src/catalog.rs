@@ -616,6 +616,32 @@ catalog! {
     ExportTextFailure { key: "export_text_failure", en: "Text doesn't fit. Adjust it and retry.", vi: "Văn bản không vừa khung. Hãy chỉnh lại rồi thử lại." },
     ExportTitle { key: "export_title", en: "Export", vi: "Xuất" },
     ExportFormat { key: "export_format", en: "Format", vi: "Định dạng" },
+    ExportName { key: "export_name", en: "Name", vi: "Tên" },
+    ExportDestination { key: "export_destination", en: "Save to", vi: "Lưu vào" },
+    ExportChooseAfter { key: "export_choose_after", en: "Choose after export", vi: "Chọn sau khi xuất" },
+    ExportResolution { key: "export_resolution", en: "Resolution", vi: "Độ phân giải" },
+    ExportProjectCanvas { key: "export_project_canvas", en: "Match project", vi: "Theo dự án" },
+    ExportFrameRate { key: "export_frame_rate", en: "Frame rate", vi: "Tốc độ khung hình" },
+    ExportAutomatic { key: "export_automatic", en: "Automatic", vi: "Tự động" },
+    ExportCodec { key: "export_codec", en: "Video type", vi: "Loại video" },
+    ExportBitRate { key: "export_bit_rate", en: "Bit rate", vi: "Tốc độ bit" },
+    ExportCustom { key: "export_custom", en: "Custom", vi: "Tùy chỉnh" },
+    ExportCustomSize { key: "export_custom_size", en: "Custom size", vi: "Kích thước tùy chỉnh" },
+    ExportWidth { key: "export_width", en: "Width", vi: "Rộng" },
+    ExportHeight { key: "export_height", en: "Height", vi: "Cao" },
+    ExportProfile { key: "export_profile", en: "H.264 profile", vi: "Cấu hình H.264" },
+    ExportScene { key: "export_scene", en: "Scene", vi: "Cảnh" },
+    ExportActiveScene { key: "export_active_scene", en: "Active scene", vi: "Cảnh hiện tại" },
+    ExportAllScenes { key: "export_all_scenes", en: "All scenes", vi: "Tất cả cảnh" },
+    ExportMissingScene { key: "export_missing_scene", en: "Choose a scene", vi: "Chọn cảnh" },
+    ExportRange { key: "export_range", en: "Range", vi: "Phạm vi" },
+    ExportFullRange { key: "export_full_range", en: "Full timeline", vi: "Toàn bộ dòng thời gian" },
+    ExportInOut { key: "export_in_out", en: "In/out markers", vi: "Điểm vào/ra" },
+    ExportSelection { key: "export_selection", en: "Selected clips", vi: "Clip đã chọn" },
+    ExportIn { key: "export_in", en: "In", vi: "Vào" },
+    ExportOut { key: "export_out", en: "Out", vi: "Ra" },
+    ExportEstimatedSize { key: "export_estimated_size", en: "Size: about", vi: "Dung lượng: khoảng" },
+    ExportInvalidRange { key: "export_invalid_range", en: "Check the range and export settings.", vi: "Kiểm tra phạm vi và thiết lập xuất." },
     ExportQuality { key: "export_quality", en: "Quality", vi: "Chất lượng" },
     ExportMp4 { key: "export_mp4", en: "MP4", vi: "MP4" },
     ExportMov { key: "export_mov", en: "MOV", vi: "MOV" },
@@ -896,7 +922,7 @@ fn civil_from_days(days: i64) -> (i64, u32, u32) {
 }
 
 /// Bumped when the local preference document changes incompatibly.
-pub const PREFERENCES_VERSION: u32 = 5;
+pub const PREFERENCES_VERSION: u32 = 6;
 const MAX_PREFERENCES_BYTES: u64 = 16384;
 /// Total open-lane entries across every project; keeps the document bounded.
 const MAX_TIMELINE_LANES: usize = 4096;
@@ -1183,6 +1209,7 @@ impl Preferences {
         }
         validate_panels(self.panels)?;
         self.subtitles.validate()?;
+        self.export.output.validate()?;
         self.validate_sections()?;
         self.validate_properties_tabs()?;
         if !self.preview_zoom.is_finite()
@@ -1373,6 +1400,9 @@ impl PreferenceStore {
     pub fn load_with_warning(&self) -> (Preferences, Option<PreferenceIssue>) {
         let mut value = match self.read() {
             Ok(value) => value,
+            Err(Error::Unsupported("preferences version")) => {
+                return (Preferences::system(), Some(PreferenceIssue::Version));
+            }
             Err(_) => return (Preferences::system(), Some(PreferenceIssue::Read)),
         };
         if value.version != PREFERENCES_VERSION {
@@ -1432,13 +1462,17 @@ impl PreferenceStore {
         if bytes.len() as u64 > MAX_PREFERENCES_BYTES {
             return Err(Error::Invalid("preference size"));
         }
-        Ok(serde_json::from_slice(&bytes)?)
+        let value: serde_json::Value = serde_json::from_slice(&bytes)?;
+        if value.get("version").and_then(serde_json::Value::as_u64)
+            != Some(u64::from(PREFERENCES_VERSION))
+        {
+            return Err(Error::Unsupported("preferences version"));
+        }
+        Ok(serde_json::from_value(value)?)
     }
     pub fn save(&self, value: &Preferences) -> Result<()> {
         value.validate()?;
-        if let Ok(previous) = self.read()
-            && previous.version != PREFERENCES_VERSION
-        {
+        if matches!(self.read(), Err(Error::Unsupported("preferences version"))) {
             return Err(Error::Unsupported("preferences version"));
         }
         if let Some(parent) = self.path.parent() {
@@ -1806,19 +1840,21 @@ mod tests {
     fn older_preference_version_is_refused_and_bytes_are_retained() {
         let dir = tempfile::tempdir().expect("temporary preferences");
         let store = PreferenceStore::new(dir.path().join("preferences.json"));
-        std::fs::write(
-            store.path(),
-            br#"{"version":1,"locale":"vi","dark":false,"panels":[0.25,0.25,0.5]}"#,
-        )
-        .expect("write old preferences");
-        let bytes = std::fs::read(store.path()).expect("read old preferences");
-        assert!(matches!(
-            store.load(),
-            Err(Error::Unsupported("preferences version"))
-        ));
-        assert_eq!(store.load_with_warning().1, Some(PreferenceIssue::Version));
-        assert!(store.save(&Preferences::default()).is_err());
-        assert_eq!(std::fs::read(store.path()).expect("retained bytes"), bytes);
+        for document in [
+            br#"{"version":1,"locale":"vi","dark":false,"panels":[0.25,0.25,0.5]}"#.as_slice(),
+            br#"{"version":4,"locale":"en","dark":true,"panels":[0.25,0.25,0.5],"export":{"format":"mp4","quality":"high","include_audio":true}}"#.as_slice(),
+            br#"{"version":5,"locale":"en","dark":true,"panels":[0.25,0.25,0.5],"export":{"format":"mp4","quality":"high","include_audio":true}}"#.as_slice(),
+        ] {
+            std::fs::write(store.path(), document).expect("write old preferences");
+            let bytes = std::fs::read(store.path()).expect("read old preferences");
+            assert!(matches!(
+                store.load(),
+                Err(Error::Unsupported("preferences version"))
+            ));
+            assert_eq!(store.load_with_warning().1, Some(PreferenceIssue::Version));
+            assert!(store.save(&Preferences::default()).is_err());
+            assert_eq!(std::fs::read(store.path()).expect("retained bytes"), bytes);
+        }
     }
 
     #[test]

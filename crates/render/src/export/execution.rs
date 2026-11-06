@@ -91,6 +91,9 @@ pub(super) fn copy_plan<'a>(
     settings: &ExportSettings,
     hooks: &dyn ExecutionHooks,
 ) -> Result<Option<CopyPlan<'a>>> {
+    if settings.profile != media::H264Profile::Automatic {
+        return Ok(None);
+    }
     if !settings.render.placements.is_empty() || settings.render.background_blur.is_some() {
         return Ok(None);
     }
@@ -255,6 +258,7 @@ pub(super) fn encoded_export(
         webm: matches!(settings.container, Container::WebM),
         bit_rate: settings.bit_rate,
         quality: settings.quality,
+        profile: settings.profile,
         conversion_threads: threads,
         ..VideoEncoderSettings::h264(
             settings.render.width,

@@ -98,7 +98,10 @@ fn project(empty: bool, source: bool) -> Project {
     Project::new(d).unwrap()
 }
 fn editor(empty: bool, source: bool) -> Editor {
-    let session = Session::new(project(empty, source), 10).unwrap();
+    editor_project(project(empty, source))
+}
+fn editor_project(project: Project) -> Editor {
+    let session = Session::new(project, 10).unwrap();
     let playback = Playback::new(
         &session,
         ByteBudget::new(768 << 20).unwrap(),
@@ -115,6 +118,11 @@ fn harness(editor: Editor) -> Harness<'static, Editor> {
 fn click(h: &mut Harness<'_, Editor>, id: &str) {
     h.run_steps(3);
     h.get(By::new().predicate(|n| n.author_id() == Some(id)))
+        .scroll_to_me();
+    // Editor styling reinstalls scroll animation after harness setup. Let it
+    // settle before the mouse coordinates for the next click are chosen.
+    h.run_steps(20);
+    h.get(By::new().predicate(|n| n.author_id() == Some(id)))
         .click();
     h.run_steps(3);
 }
@@ -125,7 +133,7 @@ fn enabled(h: &Harness<'_, Editor>, id: &str) -> bool {
         .widgets
         .iter()
         .find(|w| w.id == id)
-        .unwrap()
+        .unwrap_or_else(|| panic!("missing widget {id}"))
         .enabled
 }
 fn wait(h: &mut Harness<'_, Editor>) -> vibecut::export::ExportPhase {
@@ -273,7 +281,8 @@ fn export_choices_default_persist_and_empty_timeline_refuses() {
             ExportOptions {
                 format: ExportFormat::Webm,
                 quality: ExportQuality::VeryHigh,
-                include_audio: false
+                include_audio: false,
+                ..Default::default()
             }
         );
         h.state_mut().activate("edit.undo").unwrap();
@@ -410,6 +419,7 @@ fn export_failure_panel_copies_only_diagnostics_and_retry_keeps_settings() {
             format: ExportFormat::Webm,
             quality: ExportQuality::VeryHigh,
             include_audio: false,
+            ..Default::default()
         })
     );
     assert_eq!(state.unavailable.len(), 1);
@@ -465,6 +475,7 @@ fn export_failure_panel_copies_only_diagnostics_and_retry_keeps_settings() {
             format: ExportFormat::Webm,
             quality: ExportQuality::VeryHigh,
             include_audio: false,
+            ..Default::default()
         })
     );
     h.state_mut()
@@ -515,47 +526,84 @@ fn cancelling_export_returns_to_settings_and_leaves_no_final_file() {
 
 #[test]
 fn missing_media_refusal_needs_consent_and_retry_reports_the_same_ranges() {
-    let dir = tempfile::tempdir().unwrap();
-    let destination = dir.path().join("degraded.mp4");
-    let mut h = harness(editor(false, true));
-    h.run_steps(2);
-    let project_before = h.state().session.project().clone();
-    click(&mut h, "file.export");
-    let (sources, _) = restored_source(false);
-    h.state_mut()
-        .export
-        .as_mut()
-        .unwrap()
-        .set_sources(sources)
-        .unwrap();
-    click(&mut h, "export.run");
-    assert_eq!(wait(&mut h), vibecut::export::ExportPhase::Failed);
-    let state = h.state().export.as_ref().unwrap().inspect();
-    assert_eq!(state.unavailable.len(), 1);
-    assert_eq!(state.unavailable[0].asset, AssetId(1));
-    assert_eq!(
-        state.unavailable[0].range,
-        SourceRange::new(Tick::ZERO, Tick(TICKS_PER_SECOND / 10)).unwrap()
-    );
-    assert!(!state.consent);
-    assert!(Arc::ptr_eq(&project_before, h.state().session.project()));
-    click(&mut h, "export.consent");
-    assert!(h.state().export.as_ref().unwrap().inspect().consent);
-    click(&mut h, "export.retry");
-    assert_eq!(wait(&mut h), vibecut::export::ExportPhase::Ready);
-    h.state_mut()
-        .export_picked_file(destination.clone())
-        .unwrap();
-    wait(&mut h);
-    assert!(destination.exists());
-    assert!(Arc::ptr_eq(&project_before, h.state().session.project()));
+    for count in [1, 20] {
+        let dir = tempfile::tempdir().unwrap();
+        let destination = dir.path().join("degraded.mp4");
+        let mut data = project(false, true).into_data();
+        let first = data.scene().timeline.main.items[0].clone();
+        for index in 1..count {
+            let mut item = first.clone();
+            item.id = project::ItemId(index + 1);
+            item.start = Tick(first.source_range.duration().0 * index as i64);
+            data.scene_mut().timeline.main.items.push(item);
+        }
+        let mut h = harness(editor_project(Project::new(data).unwrap()));
+        h.run_steps(2);
+        let project_before = h.state().session.project().clone();
+        click(&mut h, "file.export");
+        let (sources, _) = restored_source(false);
+        h.state_mut()
+            .export
+            .as_mut()
+            .unwrap()
+            .set_sources(sources)
+            .unwrap();
+        click(&mut h, "export.run");
+        assert_eq!(wait(&mut h), vibecut::export::ExportPhase::Failed);
+        let state = h.state().export.as_ref().unwrap().inspect();
+        assert_eq!(state.unavailable.len(), count as usize);
+        assert_eq!(state.unavailable[0].asset, AssetId(1));
+        assert_eq!(
+            state.unavailable[0].range,
+            SourceRange::new(Tick::ZERO, Tick(TICKS_PER_SECOND / 10)).unwrap()
+        );
+        assert!(!state.consent);
+        assert!(Arc::ptr_eq(&project_before, h.state().session.project()));
+        let retry = h
+            .state()
+            .inspect()
+            .unwrap()
+            .widgets
+            .into_iter()
+            .find(|widget| widget.id == "export.retry")
+            .unwrap();
+        assert!(
+            retry.rect.bottom() <= 800.0,
+            "failure footer clipped: {:?}",
+            retry.rect
+        );
+        click(&mut h, "export.consent");
+        assert!(h.state().export.as_ref().unwrap().inspect().consent);
+        click(&mut h, "export.retry");
+        assert_eq!(wait(&mut h), vibecut::export::ExportPhase::Ready);
+        h.state_mut()
+            .export_picked_file(destination.clone())
+            .unwrap();
+        wait(&mut h);
+        assert!(destination.exists());
+        assert!(Arc::ptr_eq(&project_before, h.state().session.project()));
+    }
 }
 
 #[test]
 fn cancelled_save_keeps_the_finished_export_for_a_later_save() {
     let dir = tempfile::tempdir().unwrap();
     let destination = dir.path().join("second-save.mp4");
-    let mut h = harness(editor(false, true));
+    let mut data = project(false, true).into_data();
+    let mut secondary = data.scene().clone();
+    secondary.id = project::SceneId(2);
+    secondary.is_main = false;
+    secondary.name = "Second".into();
+    for track in secondary.timeline.iter_mut() {
+        track.id = project::TrackId(track.id.0 + 10);
+        for item in &mut track.items {
+            item.id = project::ItemId(item.id.0 + 10);
+        }
+    }
+    data.scenes.insert(secondary).unwrap();
+    let mut e = editor_project(Project::new(data).unwrap());
+    e.preferences.export.output.scene = render::SceneChoice::All;
+    let mut h = harness(e);
     h.run_steps(2);
     click(&mut h, "file.export");
     let (sources, _) = restored_source(true);
@@ -572,6 +620,7 @@ fn cancelled_save_keeps_the_finished_export_for_a_later_save() {
     assert!(state.open);
     assert!(state.finished.as_ref().is_some_and(|path| path.exists()));
     let finished = state.finished.unwrap();
+    assert!(h.state().export_save_defaults().0.ends_with("-scene-0.mp4"));
     assert!(h.state_mut().activate("export.retry").is_err());
     // A failed save must retain the finished output and leave existing data intact.
     let blocked = dir.path().join("directory.mp4");
@@ -617,6 +666,29 @@ fn cancelled_save_keeps_the_finished_export_for_a_later_save() {
     assert!(destination.exists());
     assert_ne!(std::fs::read(&destination).unwrap(), b"previous export");
     assert!(!finished.exists());
+    assert_eq!(
+        h.state().export.as_ref().unwrap().phase(),
+        vibecut::export::ExportPhase::Ready
+    );
+    assert!(h.state().export_save_defaults().0.ends_with("-scene-2.mp4"));
+    h.state_mut().export_save_cancelled();
+    let second_finished = h
+        .state()
+        .export
+        .as_ref()
+        .unwrap()
+        .inspect()
+        .finished
+        .unwrap();
+    assert!(second_finished.exists());
+    let second_destination = dir.path().join("second-scene.mp4");
+    h.state_mut()
+        .export_picked_file(second_destination.clone())
+        .unwrap();
+    wait(&mut h);
+    assert!(second_destination.is_file());
+    assert!(!second_finished.exists());
+    assert!(!h.state().export.as_ref().unwrap().inspect().open);
 }
 
 #[test]
@@ -640,6 +712,13 @@ fn retry_reuses_settings_into_new_output_and_preserves_a_prior_file() {
     assert_eq!(wait(&mut h), vibecut::export::ExportPhase::Failed);
     assert_eq!(std::fs::read(&destination).unwrap(), b"previous");
     assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 1);
+    click(&mut h, "export.close");
+    click(&mut h, "file.export");
+    assert_eq!(
+        h.state().export.as_ref().unwrap().phase(),
+        vibecut::export::ExportPhase::Settings
+    );
+    assert!(enabled(&h, "export.run"));
 }
 
 #[test]
@@ -669,6 +748,7 @@ fn filenames_are_sanitized_and_export_preferences_roundtrip() {
         format: ExportFormat::Webm,
         quality: ExportQuality::VeryHigh,
         include_audio: false,
+        ..Default::default()
     };
     assert!(!options.settings(&project(false, false)).include_audio);
     let dir = tempfile::tempdir().unwrap();
@@ -682,6 +762,117 @@ fn filenames_are_sanitized_and_export_preferences_roundtrip() {
     let loaded = store.load().unwrap();
     assert_eq!(loaded.export, options);
     assert_eq!(loaded.export_directory, preferences.export_directory);
+}
+
+#[test]
+fn export_output_panel_persists_scene_range_refuses_empty_and_never_edits_project() {
+    let mut h = harness(editor(false, false));
+    let rate = h.state().session.project().data().canvas.fps;
+    h.state_mut()
+        .dispatch(
+            "playback.seek",
+            serde_json::json!({"time":rate.tick_of(1).unwrap().0}),
+        )
+        .unwrap();
+    h.state_mut().activate("export.mark_in").unwrap();
+    h.state_mut()
+        .dispatch(
+            "playback.seek",
+            serde_json::json!({"time":rate.tick_of(2).unwrap().0}),
+        )
+        .unwrap();
+    h.state_mut().activate("export.mark_out").unwrap();
+    assert_eq!(
+        h.state().preferences.export.output.range,
+        render::RangeChoice::InOut {
+            start: rate.tick_of(1).unwrap(),
+            end: rate.tick_of(2).unwrap()
+        }
+    );
+    let before = project::encode(h.state().session.project(), false).unwrap();
+    click(&mut h, "file.export");
+    click(&mut h, "export.resolution");
+    click(&mut h, "export.resolution.720");
+    assert_eq!(
+        h.state().preferences.export.output.resolution,
+        Some([720, 720])
+    );
+    click(&mut h, "export.custom.size");
+    assert!(enabled(&h, "export.width"));
+    for id in [
+        "export.resolution",
+        "export.fps",
+        "export.codec",
+        "export.profile",
+        "export.scene",
+        "export.range",
+    ] {
+        assert!(enabled(&h, id), "{id}");
+    }
+    click(&mut h, "export.range");
+    assert!(!enabled(&h, "export.range.selected"));
+    click(&mut h, "export.range.full");
+    h.state_mut().selection.insert(project::ItemId(1));
+    click(&mut h, "export.range");
+    click(&mut h, "export.range.selected");
+    assert!(matches!(
+        h.state().preferences.export.output.range,
+        render::RangeChoice::Selected { .. }
+    ));
+    click(&mut h, "export.scene");
+    click(&mut h, "export.scene.all");
+    click(&mut h, "export.range");
+    click(&mut h, "export.range.in_out");
+    assert!(enabled(&h, "export.range.in"));
+    h.state_mut().preferences.export.output.range = render::RangeChoice::InOut {
+        start: Tick::ZERO,
+        end: Tick::ZERO,
+    };
+    h.run_steps(3);
+    assert!(!enabled(&h, "export.run"));
+    let invalid = h.state().preferences.export;
+    assert!(
+        h.state_mut()
+            .export
+            .as_mut()
+            .unwrap()
+            .start(Arc::new(project(false, false)), invalid)
+            .is_err()
+    );
+    let fps = h.state().session.project().data().canvas.fps;
+    h.state_mut().preferences.export.output.range = render::RangeChoice::InOut {
+        start: fps.tick_of(1).unwrap(),
+        end: fps.tick_of(2).unwrap(),
+    };
+    h.state_mut().preferences.export.output.resolution = Some([64, 64]);
+    h.state_mut().preferences.export.output.bit_rate = Some(100_000);
+    h.run_steps(3);
+    assert!(enabled(&h, "export.run"));
+    let dir = tempfile::tempdir().unwrap();
+    let store = PreferenceStore::new(dir.path().join("prefs.json"));
+    store.save(&h.state().preferences).unwrap();
+    assert_eq!(store.load().unwrap().export, h.state().preferences.export);
+    let screenshot = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../target/p1-74-export-options.png");
+    if let Some(parent) = screenshot.parent() {
+        std::fs::create_dir_all(parent).unwrap();
+    }
+    h.render().unwrap().save(&screenshot).unwrap();
+    let options = h.state().preferences.export;
+    h.state_mut()
+        .dispatch("export.run", serde_json::to_value(options).unwrap())
+        .unwrap();
+    assert_eq!(wait(&mut h), vibecut::export::ExportPhase::Ready);
+    assert_eq!(
+        project::encode(h.state().session.project(), false).unwrap(),
+        before
+    );
+    h.state_mut().activate("edit.undo").unwrap();
+    h.state_mut().activate("edit.redo").unwrap();
+    assert_eq!(
+        project::encode(h.state().session.project(), false).unwrap(),
+        before
+    );
 }
 #[test]
 fn review_reproduction_save_refuses_to_replace_source_media() {

@@ -1,6 +1,22 @@
 # Export and publication
 
-`export/` execution, destination, publication.
+`export/` options, execution, destination, publication.
+
+`OutputOptions` is the versioned portable extension of export settings. Version 1
+requires all fields and refuses unknown fields or another version. Defaults match
+the project canvas and frame rate, the full timeline and active scene. Explicit
+output geometry must be even, at least 2 pixels per edge and at most 64 Mi-pixels;
+target bitrate is 1,000..=1,000,000,000 bits/s. Optional rates use `FrameRate::COMMON`.
+The codec is automatic, H.264 for MP4/MOV or VP9 for WebM; incompatible pairs
+refuse. H.264 profiles are automatic, Main or High; an explicit profile always
+encodes. Quality presets and include-audio remain the caller's existing settings.
+
+Ranges are full, in/out markers or an explicit selected-clip bounding range.
+Marker endpoints are ticks snapped to the nearest project frame (ties later),
+then refused if negative, empty, reversed or beyond the scene. Each scene uses
+its own duration and shared project canvas/rate/background. `ranges` validates
+every immutable snapshot before execution; `paths` gives all-scene outputs stable
+`<stem>-scene-<id>.<extension>` names. Export never changes project JSON or history.
 
 `export` uses `FileSources`; `export_with_sources` accepts an explicit source
 owner. Settings select exact range, canvas/crop, fps, bitrate/quality,

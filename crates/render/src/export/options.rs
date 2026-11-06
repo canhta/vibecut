@@ -1,0 +1,222 @@
+//! Resolves portable output choices against immutable scene snapshots.
+use crate::{Error, ExportSettings, Result};
+use project::{Project, SceneId, SceneScope};
+use serde::{Deserialize, Serialize};
+use time::{FrameRate, Tick, TimeRange};
+
+#[derive(
+    Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema,
+)]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
+pub enum RangeChoice {
+    #[default]
+    Full,
+    InOut {
+        start: Tick,
+        end: Tick,
+    },
+    Selected {
+        start: Tick,
+        end: Tick,
+    },
+}
+#[derive(
+    Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema,
+)]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
+pub enum SceneChoice {
+    #[default]
+    Active,
+    All,
+    Selected {
+        scene: SceneId,
+    },
+}
+#[derive(
+    Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema,
+)]
+#[serde(rename_all = "snake_case")]
+pub enum VideoCodec {
+    #[default]
+    Automatic,
+    H264,
+    Vp9,
+}
+/// Versioned portable extension of the existing export settings. Runtime render
+/// caches, effect adapters, overwrite consent and destinations never serialize.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct OutputOptions {
+    pub version: u32,
+    /// None matches the project canvas; explicit dimensions change output only.
+    #[serde(deserialize_with = "required_option")]
+    #[schemars(with = "RequiredNullable<[u32; 2]>")]
+    pub resolution: Option<[u32; 2]>,
+    #[serde(deserialize_with = "required_option")]
+    #[schemars(with = "RequiredNullable<FrameRate>")]
+    pub fps: Option<FrameRate>,
+    #[serde(deserialize_with = "required_option")]
+    #[schemars(with = "RequiredNullable<usize>")]
+    pub bit_rate: Option<usize>,
+    pub codec: VideoCodec,
+    pub profile: media::H264Profile,
+    pub range: RangeChoice,
+    pub scene: SceneChoice,
+}
+
+struct RequiredNullable<T>(std::marker::PhantomData<T>);
+impl<T: schemars::JsonSchema> schemars::JsonSchema for RequiredNullable<T> {
+    fn schema_name() -> std::borrow::Cow<'static, str> {
+        format!("RequiredNullable_{}", T::schema_name()).into()
+    }
+    fn inline_schema() -> bool {
+        true
+    }
+    fn json_schema(generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
+        generator.subschema_for::<Option<T>>()
+    }
+}
+fn required_option<'de, D: serde::Deserializer<'de>, T: Deserialize<'de>>(
+    deserializer: D,
+) -> std::result::Result<Option<T>, D::Error> {
+    Option::<T>::deserialize(deserializer)
+}
+impl Default for OutputOptions {
+    fn default() -> Self {
+        Self {
+            version: 1,
+            resolution: None,
+            fps: None,
+            bit_rate: None,
+            codec: VideoCodec::Automatic,
+            profile: media::H264Profile::Automatic,
+            range: RangeChoice::Full,
+            scene: SceneChoice::Active,
+        }
+    }
+}
+impl OutputOptions {
+    /// Stable scene ids disambiguate equal names without accepting path fragments.
+    pub fn paths(
+        self,
+        project: &Project,
+        output: &std::path::Path,
+    ) -> Result<Vec<std::path::PathBuf>> {
+        let scenes = self.ranges(project)?;
+        if !matches!(self.scene, SceneChoice::All) {
+            return Ok(vec![output.to_owned()]);
+        }
+        let stem = output
+            .file_stem()
+            .ok_or(Error::Invalid("output filename"))?;
+        let extension = output
+            .extension()
+            .ok_or(Error::Invalid("output extension"))?;
+        Ok(scenes
+            .iter()
+            .map(|(scene, _)| {
+                let mut name = stem.to_os_string();
+                name.push(format!("-scene-{}.", scene.0));
+                name.push(extension);
+                output.with_file_name(name)
+            })
+            .collect())
+    }
+    pub fn validate(self) -> Result<()> {
+        if self.version != 1 {
+            return Err(Error::Unsupported("export options version"));
+        }
+        if let Some([w, h]) = self.resolution
+            && (w < 2
+                || h < 2
+                || !w.is_multiple_of(2)
+                || !h.is_multiple_of(2)
+                || u64::from(w) * u64::from(h) > 1 << 26)
+        {
+            return Err(Error::Invalid("output resolution"));
+        }
+        if self
+            .bit_rate
+            .is_some_and(|rate| !(1_000..=1_000_000_000).contains(&rate))
+        {
+            return Err(Error::Invalid("output bit rate"));
+        }
+        if let Some(fps) = self.fps
+            && (!FrameRate::COMMON.contains(&fps)
+                || i128::from(time::TICKS_PER_SECOND) * i128::from(fps.den())
+                    % i128::from(fps.num())
+                    != 0)
+        {
+            return Err(Error::Invalid("output frame rate"));
+        }
+        Ok(())
+    }
+    /// Admit every scene and range before starting any file.
+    pub fn ranges(self, project: &Project) -> Result<Vec<(SceneId, TimeRange)>> {
+        self.validate()?;
+        let scope = match self.scene {
+            SceneChoice::Active => SceneScope::Active,
+            SceneChoice::All => SceneScope::All,
+            SceneChoice::Selected { scene } => SceneScope::Selected(vec![scene]),
+        };
+        project
+            .scene_ids(&scope)?
+            .into_iter()
+            .map(|id| {
+                let scene = project
+                    .data()
+                    .scenes
+                    .get(id)
+                    .ok_or(Error::Invalid("scene not found"))?;
+                let range = self.range_at(scene.duration(), project.data().canvas.fps)?;
+                Ok((id, range))
+            })
+            .collect()
+    }
+    fn range_at(self, duration: Tick, fps: FrameRate) -> Result<TimeRange> {
+        let (start, end) = match self.range {
+            RangeChoice::Full => (Tick::ZERO, duration),
+            RangeChoice::InOut { start, end } | RangeChoice::Selected { start, end } => {
+                if start < Tick::ZERO || end > duration || start >= end {
+                    return Err(Error::Invalid("export range"));
+                }
+                (fps.snap_nearest(start)?, fps.snap_nearest(end)?)
+            }
+        };
+        if start < Tick::ZERO || start >= end || end > duration {
+            return Err(Error::Invalid("empty or invalid export range"));
+        }
+        Ok(TimeRange::new(start, end)?)
+    }
+    pub fn apply(self, settings: &mut ExportSettings) -> Result<()> {
+        self.validate()?;
+        let webm = matches!(settings.container, media::Container::WebM);
+        if matches!(
+            (self.codec, webm),
+            (VideoCodec::H264, true) | (VideoCodec::Vp9, false)
+        ) || (webm && self.profile != media::H264Profile::Automatic)
+        {
+            return Err(Error::Unsupported("codec/profile for container"));
+        }
+        if let Some([width, height]) = self.resolution {
+            settings.render.width = width;
+            settings.render.height = height;
+        }
+        if let Some(fps) = self.fps {
+            settings.fps = fps;
+        }
+        if let Some(rate) = self.bit_rate {
+            settings.bit_rate = rate;
+        }
+        settings.profile = self.profile;
+        if self.resolution.is_some()
+            || self.fps.is_some()
+            || self.bit_rate.is_some()
+            || self.codec != VideoCodec::Automatic
+            || self.profile != media::H264Profile::Automatic
+        {
+            settings.mode = crate::ExportMode::Encode;
+        }
+        Ok(())
+    }
+}

@@ -9,6 +9,12 @@
   midstream against stale mux parameters. Frame-aware swscale uses Lanczos,
   accurate rounding and frame color/chroma metadata when conversion is required.
 
+`VideoEncoderSettings.profile` selects automatic, Main or High for H.264 through
+the encoder's `profile` option; VP9 refuses explicit H.264 profiles. The
+`export_container_available` registry probe admits only installed H.264/AAC or
+VP9/Opus encoder pairs. Device-specific open failures retain the typed encoder
+failure path rather than silently changing the requested profile.
+
 ## Input and quality boundaries
 
 Input formats/codecs come from the resolved FFmpeg build. The development recipe
@@ -24,7 +30,7 @@ conditional; no AV1 software decoder is promised by this build recipe.
 | MP4 HEVC 10-bit PQ | Software decode, color/bit-depth metadata and HDR stream copy |
 | WebM VP9 | Lanczos resize, BT.709 tags, mux and CLI decode |
 | WebM Opus | AAC-to-Opus frame-size conversion, padding/duration and CLI decode |
-| MOV | FFmpeg muxer admitted; dedicated runtime fixture remains unverified |
+| MOV | H.264/AAC export probed through the CLI, including High profile and exact output frame counts |
 | M4A AAC speech | 16 kHz mono chunk extraction, exact tick tiling, silence hint and per-chunk ffprobe |
 
 Unknown SDR color tags resolve to the project's BT.709 limited-range default.

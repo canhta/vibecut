@@ -4,6 +4,17 @@ Headless project editing, bounded background execution, persistent sessions and 
 Domain crates own processing algorithms, decoded/raster storage and persisted project formats.
 Widgets, device state, app preferences and authenticated transports live in consumers.
 
+`submit_scene_exports_with_sources` admits portable `render::OutputOptions`, resolves
+all scene snapshots and executes them in one cancellable job. Every scene file is
+finalized in private temporary storage before user output publication begins;
+cancellation or rendering failure removes private files and preserves destinations.
+The final publication phase uses the existing job fence and per-file atomic
+publication. A filesystem failure while publishing multiple outputs can leave
+earlier complete outputs; it never publishes a partial file. The caller owns
+project-file protection and the output grant authorizes every generated path.
+Control API version 2 requires `export.settings` with this typed contract rather
+than the previous standalone range; explicitly older API envelopes are refused.
+
 | Folder | Responsibility | Interface items |
 |---|---|---|
 | `session/` | Owns editable project state and the wire contract. | `Session`, `Command`, `CommandKind`, `registry`, `JobTarget`, `wire` |

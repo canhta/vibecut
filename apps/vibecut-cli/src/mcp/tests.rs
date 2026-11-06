@@ -19,7 +19,7 @@ fn output_grant_rejects_unselected_parent_before_filesystem_resolution() {
     let grant = Grants::output(&output).unwrap();
     let project = project::Project::empty(project::ProjectId(1), "grant".into()).unwrap();
     let export = |path| Command::Export {
-        range: time::TimeRange::new(time::Tick::ZERO, time::Tick(1)).unwrap(),
+        settings: render::OutputOptions::default(),
         path,
         overwrite: false,
     };

@@ -169,6 +169,195 @@ pub fn submit_export_with_sources(
     )
 }
 
+/// One cancellable job finalizes every scene privately before publication.
+/// Rendering failure/cancellation preserves all destinations; publication is
+/// per-file atomic, so a later publication failure can leave earlier files.
+pub fn submit_scene_exports_with_sources(
+    runner: &mut JobRunner,
+    input: CacheKey,
+    project: Arc<project::Project>,
+    options: render::OutputOptions,
+    settings: render::ExportSettings,
+    paths: Vec<PathBuf>,
+    sources: impl Fn() -> Box<dyn render::SourceProvider> + Send + Sync + 'static,
+) -> Result<(JobId, CancelToken), EditError> {
+    let scenes = options.ranges(&project)?;
+    if scenes.len() != paths.len() {
+        return Err(EditError::Invalid("scene output paths"));
+    }
+    if paths
+        .iter()
+        .collect::<std::collections::BTreeSet<_>>()
+        .len()
+        != paths.len()
+    {
+        return Err(EditError::Invalid("duplicate scene output paths"));
+    }
+    for (id, _) in &scenes {
+        super::loudness_admission::admit(&project.for_scene(*id)?)?;
+    }
+    let mut settings = settings;
+    options.apply(&mut settings)?;
+    if let [(scene, range)] = scenes.as_slice() {
+        let snapshot = if *scene == project.data().current_scene_id {
+            project.clone()
+        } else {
+            Arc::new(project.for_scene(*scene)?)
+        };
+        settings.render.placements.retain(|id, _| {
+            snapshot
+                .data()
+                .scene()
+                .timeline
+                .iter()
+                .any(|track| track.items.iter().any(|item| item.id == *id))
+        });
+        return submit_export_with_sources(
+            runner,
+            input,
+            snapshot,
+            *range,
+            settings,
+            paths
+                .first()
+                .ok_or(EditError::Invalid("scene output path"))?
+                .clone(),
+            sources,
+        );
+    }
+    runner.submit(
+        JobSpec {
+            kind: JobKind::Export,
+            class: ResourceClass::GpuEncoder,
+            input,
+            bytes: JobBytes::default(),
+        },
+        move |context| {
+            for path in &paths {
+                render::validate_output_path(&project, path, context)?;
+                // Admit overwrite, namespace and write permission before paying
+                // for every scene; publication rechecks the destination later.
+                drop(project::atomic::StreamingStage::new(
+                    path,
+                    settings.overwrite,
+                    settings.max_bytes,
+                )?);
+            }
+            let staging = SceneExportStaging::new()?;
+            let hooks = SceneStagingHooks(context);
+            let mut completed = Vec::new();
+            for (index, ((scene, range), path)) in scenes.iter().zip(&paths).enumerate() {
+                let snapshot = project.for_scene(*scene)?;
+                let temporary = staging.0.join(format!("scene-{index}"));
+                let mut staged_settings = settings.clone();
+                staged_settings.render.placements.retain(|id, _| {
+                    snapshot
+                        .data()
+                        .scene()
+                        .timeline
+                        .iter()
+                        .any(|track| track.items.iter().any(|item| item.id == *id))
+                });
+                staged_settings.overwrite = project::atomic::Overwrite::Refuse;
+                render::export_with_sources(
+                    &snapshot,
+                    *range,
+                    &staged_settings,
+                    &temporary,
+                    sources().as_mut(),
+                    &hooks,
+                )?;
+                completed.push((temporary, path));
+            }
+            // All scenes are finalized before crossing the job's one publication
+            // fence. Cancellation during rendering publishes no scene files.
+            for (temporary, path) in completed {
+                super::staged_publication::Publication {
+                    project: &project,
+                    path,
+                    protected: &[],
+                    hooks: context,
+                }
+                .write(
+                    settings.overwrite,
+                    settings.max_bytes,
+                    &project::atomic::Fs,
+                    |writer| {
+                        let mut input = std::fs::File::open(temporary)?;
+                        use std::io::{Read, Write};
+                        let _lease = render::ExecutionHooks::reserve(
+                            context,
+                            render::MemoryKind::Export,
+                            64 << 10,
+                        )?;
+                        let mut buffer = vec![0; 64 << 10];
+                        loop {
+                            if context.cancelled() {
+                                return Err(EditError::Cancelled);
+                            }
+                            let count = input.read(&mut buffer)?;
+                            if count == 0 {
+                                break;
+                            }
+                            writer.write_all(
+                                buffer
+                                    .get(..count)
+                                    .ok_or(EditError::Invalid("scene publication read"))?,
+                            )?;
+                        }
+                        Ok(())
+                    },
+                )?;
+            }
+            Ok(Vec::new())
+        },
+    )
+}
+
+struct SceneExportStaging(PathBuf);
+impl SceneExportStaging {
+    fn new() -> Result<Self, EditError> {
+        let mut nonce = [0_u8; 16];
+        getrandom::fill(&mut nonce).map_err(|_| EditError::Invalid("export staging identity"))?;
+        let path = std::fs::canonicalize(std::env::temp_dir())?.join(format!(
+            "vibecut-scenes-{:032x}",
+            u128::from_le_bytes(nonce)
+        ));
+        std::fs::create_dir(&path)?;
+        Ok(Self(path))
+    }
+}
+impl Drop for SceneExportStaging {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.0);
+    }
+}
+struct SceneStagingHooks<'a>(&'a JobContext);
+impl render::ExecutionHooks for SceneStagingHooks<'_> {
+    fn cancelled(&self) -> bool {
+        self.0.cancelled()
+    }
+    fn parallelism(&self) -> usize {
+        render::ExecutionHooks::parallelism(self.0)
+    }
+    fn run_tasks(
+        &self,
+        tasks: &mut [&mut (dyn FnMut() -> render::Result<()> + Send)],
+    ) -> render::Result<()> {
+        render::ExecutionHooks::run_tasks(self.0, tasks)
+    }
+    fn reserve(
+        &self,
+        kind: render::MemoryKind,
+        bytes: u64,
+    ) -> render::Result<Box<dyn render::Reservation>> {
+        render::ExecutionHooks::reserve(self.0, kind, bytes)
+    }
+    fn progress(&self, stage: render::Stage, fraction: f32) -> render::Result<()> {
+        render::ExecutionHooks::progress(self.0, stage, fraction)
+    }
+}
+
 /// Publish a completed export on the runner. The snapshot and protected project
 /// paths are admitted before staging and again before the cancellation fence.
 /// Failure/cancel retains the completed input; the caller owns its lifetime.

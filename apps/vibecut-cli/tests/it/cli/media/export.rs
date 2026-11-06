@@ -8,6 +8,126 @@ use std::fs;
 use time::{Tick, TimeRange};
 
 #[test]
+fn typed_export_options_cover_formats_ranges_profiles_and_scene_scope_with_probe() {
+    if !tools() {
+        return;
+    }
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("options.vibecut");
+    overlay_project(&path, 64, 64, Tick(time::TICKS_PER_SECOND));
+    let before = fs::read(&path).unwrap();
+    for (extension, codec, profile) in [
+        ("MP4", render::VideoCodec::H264, media::H264Profile::Main),
+        ("mov", render::VideoCodec::H264, media::H264Profile::High),
+        (
+            "webm",
+            render::VideoCodec::Vp9,
+            media::H264Profile::Automatic,
+        ),
+    ] {
+        for range_kind in [0, 1, 2] {
+            let output_path = dir.path().join(format!("{range_kind}.{extension}"));
+            let start = Tick(time::TICKS_PER_SECOND / 4);
+            let end = Tick(time::TICKS_PER_SECOND / 2);
+            let options = render::OutputOptions {
+                resolution: Some([64, 96]),
+                fps: Some(time::FrameRate::FPS_24),
+                bit_rate: Some(200_000),
+                codec,
+                profile,
+                range: match range_kind {
+                    0 => render::RangeChoice::Full,
+                    1 => render::RangeChoice::InOut { start, end },
+                    _ => render::RangeChoice::Selected { start, end },
+                },
+                ..Default::default()
+            };
+            let settings = serde_json::to_string(&options).unwrap();
+            let output = cli(&[
+                os("export"),
+                path.as_os_str(),
+                os("--out"),
+                output_path.as_os_str(),
+                os("--settings"),
+                os(&settings),
+                os("--json"),
+            ]);
+            assert_eq!(
+                code(&output),
+                0,
+                "{}",
+                String::from_utf8_lossy(&output.stderr)
+            );
+            let probe = tool_command("ffprobe")
+                .args([
+                    "-v",
+                    "error",
+                    "-count_frames",
+                    "-show_streams",
+                    "-of",
+                    "json",
+                ])
+                .arg(&output_path)
+                .output()
+                .unwrap();
+            assert!(probe.status.success());
+            let value: Value = serde_json::from_slice(&probe.stdout).unwrap();
+            let video = value["streams"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|stream| stream["codec_type"] == "video")
+                .unwrap();
+            assert_eq!(
+                (video["width"].as_u64(), video["height"].as_u64()),
+                (Some(64), Some(96))
+            );
+            assert_eq!(video["r_frame_rate"], "24/1");
+            // Timeline markers snap on the project frame grid before resampling.
+            let project = project::load(&path).unwrap().project;
+            let duration = options.ranges(&project).unwrap()[0].1.duration();
+            let frames = (duration.0 + time::FrameRate::FPS_24.frame_duration().unwrap().0 - 1)
+                / time::FrameRate::FPS_24.frame_duration().unwrap().0;
+            assert_eq!(video["nb_read_frames"], frames.to_string());
+            assert_eq!(
+                video["codec_name"],
+                if extension == "webm" { "vp9" } else { "h264" }
+            );
+            if profile != media::H264Profile::Automatic {
+                assert_eq!(
+                    video["profile"],
+                    if profile == media::H264Profile::Main {
+                        "Main"
+                    } else {
+                        "High"
+                    }
+                );
+            }
+            assert_eq!(fs::read(&path).unwrap(), before);
+        }
+    }
+    let invalid = serde_json::to_string(&render::OutputOptions {
+        range: render::RangeChoice::InOut {
+            start: Tick::ZERO,
+            end: Tick::ZERO,
+        },
+        ..Default::default()
+    })
+    .unwrap();
+    let destination = dir.path().join("refused.mp4");
+    let output = cli(&[
+        os("export"),
+        path.as_os_str(),
+        os("--out"),
+        destination.as_os_str(),
+        os("--settings"),
+        os(&invalid),
+    ]);
+    assert_ne!(code(&output), 0);
+    assert!(!destination.exists());
+}
+
+#[test]
 fn export_writes_a_completed_file_and_keeps_progress_on_stderr() {
     let dir = tempfile::tempdir().unwrap();
     let project = dir.path().join("overlay.vibecut");
@@ -104,6 +224,78 @@ fn export_writes_a_completed_file_and_keeps_progress_on_stderr() {
             .unwrap();
         let value: Value = serde_json::from_slice(&probe.stdout).unwrap();
         assert_eq!(value["streams"][0]["nb_frames"], "30");
+        let before = fs::read(&project).unwrap();
+        for (scope, stem, count) in [
+            (render::SceneChoice::All, "all", 2),
+            (
+                render::SceneChoice::Selected {
+                    scene: project::SceneId(0),
+                },
+                "main",
+                1,
+            ),
+        ] {
+            let destination = dir.path().join(format!("{stem}.mp4"));
+            let settings = serde_json::to_string(&render::OutputOptions {
+                scene: scope,
+                resolution: Some([64, 64]),
+                ..Default::default()
+            })
+            .unwrap();
+            let output = cli(&[
+                os("export"),
+                project.as_os_str(),
+                os("--out"),
+                destination.as_os_str(),
+                os("--settings"),
+                os(&settings),
+                os("--json"),
+            ]);
+            assert_eq!(
+                code(&output),
+                0,
+                "{}",
+                String::from_utf8_lossy(&output.stderr)
+            );
+            let paths = stdout_json(&output)["paths"].as_array().unwrap().clone();
+            assert_eq!(paths.len(), count);
+            for path in paths {
+                let name = path.as_str().unwrap();
+                let path = std::path::Path::new(name);
+                let red = scope != render::SceneChoice::All || name.contains("-scene-0.");
+                let rgb = decoded_rgb(path, 64, 64, &[0]);
+                let pixel = &rgb.first().unwrap()[..3];
+                for (actual, expected) in
+                    pixel
+                        .iter()
+                        .zip(if red { [255, 0, 0] } else { [0, 255, 0] })
+                {
+                    assert!(
+                        (i32::from(*actual) - expected).abs() <= 12,
+                        "{name}: {pixel:?}"
+                    );
+                }
+                let probe = tool_command("ffprobe")
+                    .args([
+                        "-v",
+                        "error",
+                        "-show_entries",
+                        "stream=nb_frames",
+                        "-of",
+                        "json",
+                    ])
+                    .arg(path)
+                    .output()
+                    .unwrap();
+                assert!(probe.status.success());
+                let value: Value = serde_json::from_slice(&probe.stdout).unwrap();
+                assert_eq!(
+                    value["streams"][0]["nb_frames"],
+                    if red { "60" } else { "30" }
+                );
+            }
+            assert_eq!(fs::read(&project).unwrap(), before);
+        }
     }
 }
 

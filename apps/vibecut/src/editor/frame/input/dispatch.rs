@@ -14,6 +14,10 @@ impl Editor {
     /// App action dispatcher shared by UI and agents. Preference edits use
     /// `ui.prefs.set` with `{"key": ..., "value": ...}` typed params.
     pub fn dispatch(&mut self, id: &str, params: serde_json::Value) -> Result<()> {
+        if id == "export.run" {
+            let options: crate::export::ExportOptions = serde_json::from_value(params)?;
+            return self.run_export(options);
+        }
         if id == "playback.seek" {
             let time = params
                 .get("time")

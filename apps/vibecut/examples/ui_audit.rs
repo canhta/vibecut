@@ -660,9 +660,15 @@ const SCENES: &[Scene] = &[
     },
     Scene {
         name: "export-dialog",
-        reference_dark: Some("capcut/illustrations/capcut-export-panel.png"),
-        reference_light: Some("capcut/illustrations/capcut-desktop-export-settings.png"),
+        reference_dark: Some("capcut/capcut-desktop-export-2k4k.png"),
+        reference_light: Some("capcut/capcut-desktop-export-2k4k.png"),
         build: export_dialog,
+    },
+    Scene {
+        name: "export-resolution",
+        reference_dark: Some("capcut/capcut-desktop-export-2k4k.png"),
+        reference_light: Some("capcut/capcut-desktop-export-2k4k.png"),
+        build: export_resolution,
     },
     Scene {
         name: "close-prompt",
@@ -2218,10 +2224,26 @@ impl ImportProbe for ProgressProbe {
 
 fn export_dialog(theme: Theme, scale: f32) -> Result<AppHarness, Failure> {
     let (mut editor, _) = media_editor(theme, Locale::En)?;
+    editor.session.execute(
+        "project.set_canvas",
+        serde_json::json!({"width":360,"height":640}),
+    )?;
     editor.activate("file.export")?;
-    let mut app = app_editor(editor, scale);
+    let mut app = harness_sized(App::Editor(Box::new(editor)), scale, [1727.0, 1029.0]);
     wait_for_presented(&mut app)?;
     app.run_steps(4);
+    Ok(app)
+}
+
+fn export_resolution(theme: Theme, scale: f32) -> Result<AppHarness, Failure> {
+    let mut app = export_dialog(theme, scale)?;
+    if let App::Editor(editor) = &mut app.state_mut().app {
+        editor.preferences.export.output.resolution = Some([1440, 2560]);
+    }
+    app.run_steps(2);
+    app.get(By::new().predicate(|node| node.author_id() == Some("export.resolution")))
+        .click();
+    app.run_steps(20);
     Ok(app)
 }
 
@@ -2276,7 +2298,9 @@ fn main() -> Result<(), Failure> {
             let image = opaque(image, vibecut::window_color(theme.dark()));
             let file = format!("{variant}@{}x.png", scale as u32);
             image.save(output.join(&file))?;
-            if scene.name.starts_with("assets-") && scale == 1.0 {
+            if (scene.name.starts_with("assets-") || scene.name.starts_with("export-"))
+                && scale == 1.0
+            {
                 let geometry:Vec<_>=app.state().inspect()?.widgets.into_iter().map(|widget|serde_json::json!({
                     "id":widget.id,"enabled":widget.enabled,
                     "rect":[widget.rect.left(),widget.rect.top(),widget.rect.width(),widget.rect.height()]

@@ -3,6 +3,223 @@ use crate::support::*;
 use render::*;
 use std::sync::atomic::Ordering;
 use time::{Tick, TimeRange};
+
+#[test]
+fn export_options_refuse_hostile_geometry_rates_versions_and_incompatible_codecs() {
+    let p = solid_project(1, 64, 64, [0, 0, 0, 255]);
+    let mut original = ExportSettings::from_project(&p);
+    OutputOptions::default().apply(&mut original).unwrap();
+    assert!(matches!(original.mode, ExportMode::Auto));
+    for choice in [
+        OutputOptions {
+            resolution: Some([64, 64]),
+            ..Default::default()
+        },
+        OutputOptions {
+            fps: Some(time::FrameRate::FPS_24),
+            ..Default::default()
+        },
+        OutputOptions {
+            bit_rate: Some(100_000),
+            ..Default::default()
+        },
+        OutputOptions {
+            codec: VideoCodec::H264,
+            ..Default::default()
+        },
+        OutputOptions {
+            profile: media::H264Profile::Main,
+            ..Default::default()
+        },
+    ] {
+        let mut settings = ExportSettings::from_project(&p);
+        choice.apply(&mut settings).unwrap();
+        assert!(matches!(settings.mode, ExportMode::Encode));
+    }
+    let encoded = serde_json::to_value(OutputOptions::default()).unwrap();
+    for field in encoded.as_object().unwrap().keys() {
+        let mut incomplete = encoded.clone();
+        incomplete.as_object_mut().unwrap().remove(field);
+        assert!(
+            serde_json::from_value::<OutputOptions>(incomplete).is_err(),
+            "missing {field}"
+        );
+    }
+    let mut unknown = encoded;
+    unknown["unknown"] = true.into();
+    assert!(serde_json::from_value::<OutputOptions>(unknown).is_err());
+    for resolution in [[2, 2], [8192, 8192]] {
+        OutputOptions {
+            resolution: Some(resolution),
+            ..Default::default()
+        }
+        .validate()
+        .unwrap();
+    }
+    for resolution in [
+        [0, 64],
+        [63, 64],
+        [64, 1],
+        [u32::MAX, u32::MAX],
+        [16384, 16384],
+    ] {
+        assert!(
+            OutputOptions {
+                resolution: Some(resolution),
+                ..Default::default()
+            }
+            .ranges(&p)
+            .is_err()
+        );
+    }
+    for rate in [0, 999, 1_000_000_001, usize::MAX] {
+        assert!(
+            OutputOptions {
+                bit_rate: Some(rate),
+                ..Default::default()
+            }
+            .validate()
+            .is_err()
+        );
+    }
+    for version in [0, 2, u32::MAX] {
+        assert!(matches!(
+            OutputOptions {
+                version,
+                ..Default::default()
+            }
+            .validate(),
+            Err(Error::Unsupported(_))
+        ));
+    }
+    assert!(
+        OutputOptions {
+            fps: Some(time::FrameRate::new(31, 1).unwrap()),
+            ..Default::default()
+        }
+        .validate()
+        .is_err()
+    );
+    let mut settings = ExportSettings::from_project(&p);
+    assert!(
+        OutputOptions {
+            codec: VideoCodec::Vp9,
+            ..Default::default()
+        }
+        .apply(&mut settings)
+        .is_err()
+    );
+    settings.container = media::Container::WebM;
+    for options in [
+        OutputOptions {
+            codec: VideoCodec::H264,
+            ..Default::default()
+        },
+        OutputOptions {
+            profile: media::H264Profile::High,
+            ..Default::default()
+        },
+    ] {
+        assert!(options.apply(&mut settings).is_err());
+    }
+}
+
+#[test]
+fn export_range_snaps_ticks_refuses_empty_and_resolves_scene_durations_without_edits() {
+    let p = solid_project(2, 64, 64, [0, 0, 0, 255]);
+    let fps = p.data().canvas.fps;
+    let frame = fps.frame_duration().unwrap();
+    let mut data = p.clone().into_data();
+    let mut other = data.scene().clone();
+    other.id = project::SceneId(9);
+    other.is_main = false;
+    other.name = "Other".into();
+    other.timeline.main.id = project::TrackId(8);
+    for track in other.timeline.iter_mut() {
+        track.id = project::TrackId(track.id.0 + 10);
+        for item in &mut track.items {
+            item.id = project::ItemId(item.id.0 + 10);
+            item.source_range = TimeRange::new(Tick::ZERO, tick(1, 1)).unwrap();
+        }
+    }
+    data.scenes.insert(other).unwrap();
+    let p = project::Project::new(data).unwrap();
+    let before = project::encode(&p, false).unwrap();
+    let options = OutputOptions {
+        scene: SceneChoice::All,
+        ..Default::default()
+    };
+    let scenes = options.ranges(&p).unwrap();
+    assert_eq!(
+        scenes.iter().map(|(_, r)| r.duration()).collect::<Vec<_>>(),
+        vec![tick(2, 1), tick(1, 1)]
+    );
+    assert_eq!(
+        options.paths(&p, std::path::Path::new("out.mp4")).unwrap(),
+        vec![
+            std::path::PathBuf::from("out-scene-0.mp4"),
+            "out-scene-9.mp4".into()
+        ]
+    );
+    let selected = OutputOptions {
+        scene: SceneChoice::Selected {
+            scene: project::SceneId(9),
+        },
+        ..Default::default()
+    };
+    assert_eq!(selected.ranges(&p).unwrap()[0].1.duration(), tick(1, 1));
+    assert!(
+        OutputOptions {
+            scene: SceneChoice::Selected {
+                scene: project::SceneId(u64::MAX)
+            },
+            ..Default::default()
+        }
+        .ranges(&p)
+        .is_err()
+    );
+    for (start, end) in [
+        (Tick(-1), frame),
+        (frame, frame),
+        (frame, Tick::ZERO),
+        (Tick::ZERO, tick(3, 1)),
+        (Tick(1), Tick(2)),
+    ] {
+        assert!(
+            OutputOptions {
+                range: RangeChoice::InOut { start, end },
+                ..Default::default()
+            }
+            .ranges(&p)
+            .is_err()
+        );
+    }
+    for range in [
+        RangeChoice::InOut {
+            start: Tick(frame.0 + 1),
+            end: Tick(frame.0 * 3 - 1),
+        },
+        RangeChoice::Selected {
+            start: Tick(frame.0 + 1),
+            end: Tick(frame.0 * 3 - 1),
+        },
+    ] {
+        let range = OutputOptions {
+            range,
+            ..Default::default()
+        }
+        .ranges(&p)
+        .unwrap()[0]
+            .1;
+        assert_eq!((range.start(), range.end()), (frame, Tick(frame.0 * 3)));
+    }
+    let bytes = serde_json::to_vec(&options).unwrap();
+    assert_eq!(
+        serde_json::from_slice::<OutputOptions>(&bytes).unwrap(),
+        options
+    );
+    assert_eq!(project::encode(&p, false).unwrap(), before);
+}
 #[test]
 fn working_pixels_linear_premultiplied_and_hostile_dimensions() {
     let hooks = Hooks::default();
@@ -534,93 +751,102 @@ fn publication_preserves_destination_on_cancel_fail_finalize_and_mux_limit() {
         return;
     }
     let dir = tempfile::tempdir().unwrap();
-    let path = dir.path().join("existing movie.mp4");
     let p = solid_project(1, 64, 64, [120, 160, 40, 255]);
-    for failure in [
-        Stage::Render,
-        Stage::Finalize,
-        Stage::Finalized,
-        Stage::Publish,
+    for (container, extension) in [
+        (media::Container::Mp4, "mp4"),
+        (media::Container::Mov, "mov"),
+        (media::Container::WebM, "webm"),
     ] {
-        std::fs::write(&path, b"original").unwrap();
+        let path = dir.path().join(format!("existing movie.{extension}"));
+        for failure in [
+            Stage::Render,
+            Stage::Finalize,
+            Stage::Finalized,
+            Stage::Publish,
+        ] {
+            std::fs::write(&path, b"original").unwrap();
+            let h = Hooks {
+                event: Some(std::sync::Arc::new(move |s| {
+                    if s == failure {
+                        Err(Error::Io(std::io::Error::other(
+                            "injected write/finalize/rename failure",
+                        )))
+                    } else {
+                        Ok(())
+                    }
+                })),
+                ..Default::default()
+            };
+            let mut settings = ExportSettings::from_project(&p);
+            settings.overwrite = project::atomic::Overwrite::Replace;
+            settings.mode = ExportMode::Encode;
+            settings.container = container;
+            assert!(
+                export(
+                    &p,
+                    TimeRange::new(Tick::ZERO, tick(1, 1)).unwrap(),
+                    &settings,
+                    &path,
+                    &h
+                )
+                .is_err()
+            );
+            assert_eq!(std::fs::read(&path).unwrap(), b"original");
+            assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 1);
+        }
+        let h = Hooks::default();
+        let state = h.state.clone();
         let h = Hooks {
             event: Some(std::sync::Arc::new(move |s| {
-                if s == failure {
-                    Err(Error::Io(std::io::Error::other(
-                        "injected write/finalize/rename failure",
-                    )))
-                } else {
-                    Ok(())
+                if s == Stage::Finalized {
+                    state.store(1, Ordering::SeqCst);
                 }
+                Ok(())
             })),
-            ..Default::default()
+            ..h
         };
-        let mut settings = ExportSettings::from_project(&p);
-        settings.overwrite = project::atomic::Overwrite::Replace;
-        settings.mode = ExportMode::Encode;
+        let mut s = ExportSettings::from_project(&p);
+        s.overwrite = project::atomic::Overwrite::Replace;
+        s.mode = ExportMode::Encode;
+        s.container = container;
+        assert!(matches!(
+            export(
+                &p,
+                TimeRange::new(Tick::ZERO, tick(1, 1)).unwrap(),
+                &s,
+                &path,
+                &h
+            ),
+            Err(Error::Cancelled)
+        ));
+        assert_eq!(std::fs::read(&path).unwrap(), b"original");
+        assert_eq!(h.used.load(Ordering::SeqCst), 0);
+        s.max_bytes = 100;
         assert!(
             export(
                 &p,
                 TimeRange::new(Tick::ZERO, tick(1, 1)).unwrap(),
-                &settings,
+                &s,
                 &path,
-                &h
+                &Hooks::default()
             )
             .is_err()
         );
         assert_eq!(std::fs::read(&path).unwrap(), b"original");
         assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 1);
+        s.resume = true;
+        assert!(matches!(
+            export(
+                &p,
+                TimeRange::new(Tick::ZERO, tick(1, 1)).unwrap(),
+                &s,
+                &path,
+                &Hooks::default()
+            ),
+            Err(Error::Unsupported(_))
+        ));
+        std::fs::remove_file(path).unwrap();
     }
-    let h = Hooks::default();
-    let state = h.state.clone();
-    let h = Hooks {
-        event: Some(std::sync::Arc::new(move |s| {
-            if s == Stage::Finalized {
-                state.store(1, Ordering::SeqCst);
-            }
-            Ok(())
-        })),
-        ..h
-    };
-    let mut s = ExportSettings::from_project(&p);
-    s.overwrite = project::atomic::Overwrite::Replace;
-    s.mode = ExportMode::Encode;
-    assert!(matches!(
-        export(
-            &p,
-            TimeRange::new(Tick::ZERO, tick(1, 1)).unwrap(),
-            &s,
-            &path,
-            &h
-        ),
-        Err(Error::Cancelled)
-    ));
-    assert_eq!(std::fs::read(&path).unwrap(), b"original");
-    assert_eq!(h.used.load(Ordering::SeqCst), 0);
-    s.max_bytes = 100;
-    assert!(
-        export(
-            &p,
-            TimeRange::new(Tick::ZERO, tick(1, 1)).unwrap(),
-            &s,
-            &path,
-            &Hooks::default()
-        )
-        .is_err()
-    );
-    assert_eq!(std::fs::read(&path).unwrap(), b"original");
-    assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 1);
-    s.resume = true;
-    assert!(matches!(
-        export(
-            &p,
-            TimeRange::new(Tick::ZERO, tick(1, 1)).unwrap(),
-            &s,
-            &path,
-            &Hooks::default()
-        ),
-        Err(Error::Unsupported(_))
-    ));
 }
 #[test]
 fn encoded_color_patch_uses_same_compositor_and_has_valid_audio_video() {

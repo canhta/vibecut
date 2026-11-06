@@ -572,15 +572,30 @@ inline editor separately in both themes at 1x/2x.
 
 ## Export dialog
 
-The header Export action opens a modal with format and quality disclosures plus an
+The header Export action opens a modal with format and quality rows plus an
 inline Include audio switch that is on by default. Choices use the existing
 English/Vietnamese catalog and app preference store: MP4 by default, MOV or WebM;
 low/medium/high/very_high quality (default high); audio included by default. The
 presets request quality 55/70/85/95 and 3/6/12/24 Mb/s respectively through media's
 existing encoder contract. These are explicit encoder requests, not measured
-perceptual guarantees. Canvas geometry and exact frame rate follow the project. The
+perceptual guarantees. Canvas geometry and exact frame rate default to the project. The
 dialog always encodes so a selected quality is applied; the core retains its
 separate Auto/copy modes.
+
+`export/settings` renders `render::OutputOptions`: resolution presets preserve
+canvas ratio, custom even dimensions change output only, and explicit frame rate,
+target bitrate, compatible codec and H.264 profile feed the same renderer. Range
+is full by default, or frame-snapped in/out markers or the selected clips' bounding
+range. Scene scope is active by default, all, or a named scene. Preferences
+version 6 persists these choices and refuses earlier versions. `Editor::dispatch`
+accepts typed `ExportOptions` for `export.run`; Retry retains the original settings
+and immutable snapshot. The project and its undo history never store export state.
+
+All-scene output is rendered as one staged batch, then saved one scene at a time
+with distinct scene-id filenames through the existing native save workflow.
+Cancelling a save picker retains the current and remaining completed files;
+closing the export dialog discards them. Range errors disable Export before any
+job is submitted. The settings child owns the output controls inside `export`.
 
 `export.run` writes only to a unique temporary output. On completion the app opens
 the asynchronous native save dialog with the sanitized `<ProjectName>.<ext>` and

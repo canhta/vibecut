@@ -1,7 +1,9 @@
 //! Runs a staged project export through to publication.
 mod destination;
 mod execution;
+mod options;
 mod publication;
+pub use options::{OutputOptions, RangeChoice, SceneChoice, VideoCodec};
 
 use crate::{
     Error, ExecutionHooks, FileSources, RenderSettings, Renderer, Result, SourceProvider, Stage,
@@ -38,6 +40,7 @@ pub struct ExportSettings {
     pub container: Container,
     pub bit_rate: usize,
     pub quality: u8,
+    pub profile: media::H264Profile,
     pub encoder: EncodePreference,
     pub include_audio: bool,
     pub channels: u16,
@@ -62,6 +65,7 @@ impl ExportSettings {
             container: Container::Mp4,
             bit_rate: 12_000_000,
             quality: 85,
+            profile: media::H264Profile::Automatic,
             encoder: EncodePreference::default(),
             include_audio: true,
             channels: 2,

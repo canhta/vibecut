@@ -11,8 +11,10 @@ use engine::{
         CancelToken, JobId, JobRunner, JobSnapshot, JobStage, JobState, RunnerConfig, SystemClock,
     },
 };
+pub use render::{OutputOptions, RangeChoice, SceneChoice};
 use serde::{Deserialize, Serialize};
 use std::{path::PathBuf, sync::Arc, time::Duration};
+mod settings;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -79,6 +81,7 @@ pub struct ExportOptions {
     pub format: ExportFormat,
     pub quality: ExportQuality,
     pub include_audio: bool,
+    pub output: OutputOptions,
 }
 impl Default for ExportOptions {
     fn default() -> Self {
@@ -86,6 +89,7 @@ impl Default for ExportOptions {
             format: ExportFormat::Mp4,
             quality: ExportQuality::High,
             include_audio: true,
+            output: OutputOptions::default(),
         }
     }
 }
@@ -139,6 +143,10 @@ pub struct ExportDialog {
     snapshot: Option<JobSnapshot>,
     cancelling: bool,
     temp: Option<PathBuf>,
+    scene_outputs: std::collections::VecDeque<PathBuf>,
+    attempt_project: Option<Arc<project::Project>>,
+    pub(crate) selection_range: Option<time::TimeRange>,
+    save_index: usize,
     finished: Option<PathBuf>,
     pending_save: bool,
     attempt: Option<ExportOptions>,
@@ -178,6 +186,10 @@ impl ExportDialog {
             snapshot: None,
             cancelling: false,
             temp: None,
+            scene_outputs: Default::default(),
+            attempt_project: None,
+            selection_range: None,
+            save_index: 0,
             finished: None,
             pending_save: false,
             attempt: None,
@@ -249,9 +261,14 @@ impl ExportDialog {
     pub fn show(&mut self, project: &project::Project) {
         if !self.open {
             self.consent = false;
-            if self.finished.is_none() {
+            if self.finished.is_none() && !self.active() {
                 self.error = None;
                 self.diagnostics = None;
+                self.snapshot = None;
+                self.job = None;
+                self.unavailable.clear();
+                self.refused = None;
+                self.attempt_project = None;
             }
         }
         self.open = true;
@@ -263,27 +280,15 @@ impl ExportDialog {
             self.cancelling = self.active();
         }
     }
-    pub fn tick(&mut self, project: &Arc<project::Project>, options: ExportOptions) -> Result<()> {
+    pub fn tick(
+        &mut self,
+        _project: &Arc<project::Project>,
+        _options: ExportOptions,
+    ) -> Result<()> {
         self.runner.tick()?;
         self.runner.drain_events();
         if let Some((id, _)) = self.job {
             self.snapshot = self.runner.snapshot(id);
-        }
-        if self.refused.as_ref().is_some_and(|(p, a)| {
-            self.finished.is_none() && (!Arc::ptr_eq(p, project) || *a != options.include_audio)
-        }) {
-            self.consent = false;
-            self.unavailable.clear();
-            if !self.active() {
-                self.snapshot = None;
-                self.job = None;
-                self.refused = None;
-                self.temp = None;
-                self.finished = None;
-                self.pending_save = false;
-                self.diagnostics = None;
-            }
-            return Ok(());
         }
         let state = self.snapshot.as_ref().map(|snapshot| snapshot.state);
         let failure = self
@@ -294,9 +299,14 @@ impl ExportDialog {
             Some(JobState::Completed) => {
                 self.cancelling = false;
                 if let Some(path) = self.publishing.take() {
-                    self.discard_finished();
+                    if let Some(finished) = self.finished.take() {
+                        let _ = std::fs::remove_file(finished);
+                    }
                     self.saved = Some(path);
-                    self.open = false;
+                    self.save_index = self.save_index.saturating_add(1);
+                    self.finished = self.scene_outputs.pop_front();
+                    self.pending_save = self.finished.is_some();
+                    self.open = self.finished.is_some();
                     self.snapshot = None;
                     self.job = None;
                     self.diagnostics = None;
@@ -308,6 +318,14 @@ impl ExportDialog {
                 }
             }
             Some(JobState::Failed) => {
+                if self.publishing.is_none() {
+                    self.discard_scene_outputs();
+                }
+                if self.publishing.is_none()
+                    && let Some(path) = self.temp.take()
+                {
+                    let _ = std::fs::remove_file(path);
+                }
                 self.cancelling = false;
                 if let Some(error) = &failure
                     && let engine::EditError::Render(render::Error::Unavailable(items)) =
@@ -322,6 +340,9 @@ impl ExportDialog {
                     .map(|error| diagnostics(error, &self.unavailable));
             }
             Some(JobState::Cancelled) => {
+                if self.publishing.is_none() {
+                    self.discard_scene_outputs();
+                }
                 if let Some(temp) = self.temp.take() {
                     let _ = std::fs::remove_file(temp);
                 }
@@ -343,14 +364,26 @@ impl ExportDialog {
         if self.active() {
             return Err(Error::Invalid("export in progress"));
         }
-        self.empty = project.duration() == time::Tick::ZERO;
+        self.empty = match options.output.scene {
+            SceneChoice::Selected { scene } => {
+                project
+                    .data()
+                    .scenes
+                    .get(scene)
+                    .ok_or(Error::Invalid("scene not found"))?
+                    .duration()
+                    == time::Tick::ZERO
+            }
+            _ => project.duration() == time::Tick::ZERO,
+        };
         if self.empty {
             return Err(Error::EmptyTimeline);
         }
         let path = temp_output(options.format.extension());
-        let range = time::TimeRange::new(time::Tick::ZERO, project.duration())?;
+        let paths = options.output.paths(&project, &path)?;
         let mut settings = options.settings(&project);
         settings.render = self.render_state.settings(&project)?;
+        options.output.apply(&mut settings)?;
         settings.overwrite = project::atomic::Overwrite::Replace;
         let same = self
             .refused
@@ -374,13 +407,13 @@ impl ExportDialog {
             translation: [0; 32],
         })?;
         let sources = self.sources.clone();
-        let job = engine::submit_export_with_sources(
+        let job = engine::submit_scene_exports_with_sources(
             &mut self.runner,
             key,
             project.clone(),
-            range,
+            options.output,
             settings,
-            path.clone(),
+            paths.clone(),
             move || sources.create(),
         )?;
         if strict {
@@ -391,7 +424,12 @@ impl ExportDialog {
         self.job = Some(job);
         self.cancelling = false;
         self.error = None;
-        self.temp = Some(path);
+        self.discard_finished();
+        let mut paths = std::collections::VecDeque::from(paths);
+        self.temp = paths.pop_front();
+        self.scene_outputs = paths;
+        self.attempt_project = Some(project.clone());
+        self.save_index = 0;
         self.finished = None;
         self.pending_save = false;
         self.diagnostics = None;
@@ -418,7 +456,7 @@ impl ExportDialog {
         let options = self
             .attempt
             .ok_or(Error::Invalid("no export settings to retry"))?;
-        self.start(project, options)
+        self.start(self.attempt_project.clone().unwrap_or(project), options)
     }
     pub fn take_save_request(
         &mut self,
@@ -430,11 +468,19 @@ impl ExportDialog {
         }
         self.pending_save = false;
         Some(SaveRequest {
-            name: default_file_name(
-                project.data().name.as_str(),
-                self.attempt.unwrap_or(options).format.extension(),
-            ),
+            name: self.save_name(project, options),
         })
+    }
+    pub fn save_name(&self, project: &project::Project, options: ExportOptions) -> String {
+        let options = self.attempt.unwrap_or(options);
+        let project = self.attempt_project.as_deref().unwrap_or(project);
+        let mut name = project.data().name.as_str().to_owned();
+        if options.output.scene == SceneChoice::All
+            && let Some(scene) = project.data().scenes.iter().nth(self.save_index)
+        {
+            name.push_str(&format!("-scene-{}", scene.id.0));
+        }
+        default_file_name(&name, options.format.extension())
     }
     pub fn save_to(&mut self, path: PathBuf, protected: Vec<PathBuf>) -> Result<()> {
         if self.active() {
@@ -475,10 +521,16 @@ impl ExportDialog {
         self.saved.take()
     }
     pub fn discard_finished(&mut self) {
+        self.discard_scene_outputs();
         if let Some(path) = self.finished.take() {
             let _ = std::fs::remove_file(path);
         }
         self.pending_save = false;
+    }
+    fn discard_scene_outputs(&mut self) {
+        for path in self.scene_outputs.drain(..) {
+            let _ = std::fs::remove_file(path);
+        }
     }
 }
 
@@ -535,33 +587,49 @@ impl ExportDialog {
         }
         let tr = |k| catalog::text(locale, k);
         let active = self.active();
+        let frame = egui::Frame::window(&ctx.global_style())
+            .corner_radius(12)
+            .inner_margin(24);
+        let frame_margin = frame.total_margin();
         let modal = egui::Modal::new(egui::Id::unique("export.dialog"))
-            .frame(
-                egui::Frame::window(&ctx.global_style())
-                    .corner_radius(12)
-                    .inner_margin(24),
-            )
+            .frame(frame)
             .show(ctx, |ui| {
-                ui.set_width(852.0_f32.min(ctx.content_rect().width() - 96.0));
+                ui.style_mut().override_font_id = Some(egui::FontId::proportional(14.0));
+                ui.set_width(
+                    900.0_f32.min(ctx.content_rect().width() - 48.0) - frame_margin.sum().x,
+                );
+                let dialog_height = 820.0_f32.min(ctx.content_rect().height() - 48.0);
+                ui.set_height(dialog_height - frame_margin.sum().y);
                 ui.label(
                     egui::RichText::new(tr(Text::ExportTitle))
                         .strong()
                         .size(18.0),
                 );
                 ui.add_space(12.0);
-                ui.label(project.data().name.as_str());
-                ui.add_space(16.0);
-                let body_height = (ctx.content_rect().height() - 360.0).clamp(280.0, 460.0);
+                let reserved = if self.phase() == ExportPhase::Settings {
+                    198.0
+                } else {
+                    258.0
+                };
+                let body_height = (dialog_height - reserved).max(180.0);
                 ui.horizontal_top(|ui| {
-                    let settings_width =
-                        ui.available_width() - 247.0 - 2.0 * ui.spacing().item_spacing.x;
+                    ui.spacing_mut().item_spacing.x = 0.0;
+                    let wide = ui.available_width() >= 800.0;
+                    let leading = if wide { 108.0 - frame_margin.left } else { 0.0 };
+                    let gap = if wide { 114.0 } else { 20.0 };
+                    let settings_width = ui.available_width() - leading - 227.0 - gap;
+                    ui.add_space(leading);
                     ui.allocate_ui_with_layout(
                         egui::vec2(227.0, body_height),
                         egui::Layout::top_down(egui::Align::Center),
                         |ui| {
-                            ui.label(tr(Text::Preview));
                             let (rect, _) = ui.allocate_exact_size(
-                                egui::vec2(227.0, body_height - 28.0),
+                                egui::vec2(
+                                    227.0,
+                                    (227.0 * project.data().canvas.height as f32
+                                        / project.data().canvas.width as f32)
+                                        .min(body_height),
+                                ),
                                 egui::Sense::hover(),
                             );
                             ui.painter().rect_filled(rect, 4.0, theme::window(dark));
@@ -597,8 +665,9 @@ impl ExportDialog {
                             }
                         },
                     );
-                    ui.add_space(20.0);
+                    ui.add_space(gap);
                     ui.vertical(|ui| {
+                        ui.spacing_mut().item_spacing.x = 8.0;
                         ui.set_width(settings_width);
                         ui.set_min_height(body_height);
                         egui::ScrollArea::vertical()
@@ -606,63 +675,6 @@ impl ExportDialog {
                             .max_height(body_height)
                             .show(ui, |ui| {
                                 ui.add_enabled_ui(!active, |ui| {
-                                    let header = egui::CollapsingHeader::new(format!(
-                                        "{} · {}",
-                                        tr(Text::ExportFormat),
-                                        tr(options.format.label())
-                                    ))
-                                    .id_salt("export.format")
-                                    .default_open(false)
-                                    .show(ui, |ui| {
-                                        for (format, id) in [
-                                            (ExportFormat::Mp4, "export.format.mp4"),
-                                            (ExportFormat::Mov, "export.format.mov"),
-                                            (ExportFormat::Webm, "export.format.webm"),
-                                        ] {
-                                            let r = ui.radio_value(
-                                                &mut options.format,
-                                                format,
-                                                tr(format.label()),
-                                            );
-                                            result.widgets.push((id, r));
-                                        }
-                                    });
-                                    result
-                                        .widgets
-                                        .push(("export.format", header.header_response));
-                                    ui.add_space(14.0);
-                                    let header = egui::CollapsingHeader::new(format!(
-                                        "{} · {}",
-                                        tr(Text::ExportQuality),
-                                        tr(options.quality.label())
-                                    ))
-                                    .id_salt("export.quality")
-                                    .default_open(false)
-                                    .show(ui, |ui| {
-                                        for (quality, id) in [
-                                            (ExportQuality::Low, "export.quality.low"),
-                                            (ExportQuality::Medium, "export.quality.medium"),
-                                            (ExportQuality::High, "export.quality.high"),
-                                            (ExportQuality::VeryHigh, "export.quality.very_high"),
-                                        ] {
-                                            let r = ui.radio_value(
-                                                &mut options.quality,
-                                                quality,
-                                                tr(quality.label()),
-                                            );
-                                            result.widgets.push((id, r));
-                                        }
-                                    });
-                                    result
-                                        .widgets
-                                        .push(("export.quality", header.header_response));
-                                    ui.add_space(14.0);
-                                    let r = ui.checkbox(
-                                        &mut options.include_audio,
-                                        tr(Text::IncludeAudio),
-                                    );
-                                    result.widgets.push(("export.audio.include", r));
-                                    ui.add_space(14.0);
                                     if !self.unavailable.is_empty() {
                                         ui.colored_label(
                                             theme::warning(dark),
@@ -672,7 +684,17 @@ impl ExportDialog {
                                         let r = ui
                                             .checkbox(&mut self.consent, tr(Text::ExportDegraded));
                                         result.widgets.push(("export.consent", r));
+                                        ui.add_space(14.0);
                                     }
+                                    settings::show(
+                                        ui,
+                                        locale,
+                                        options,
+                                        project,
+                                        self.selection_range,
+                                        &mut result,
+                                    );
+                                    ui.add_space(14.0);
                                 });
                             });
                     });
@@ -680,7 +702,8 @@ impl ExportDialog {
                 ui.add_space(16.0);
                 ui.separator();
                 ui.add_space(12.0);
-                self.empty = project.duration() == time::Tick::ZERO;
+                self.empty = options.output.scene == SceneChoice::Active
+                    && project.duration() == time::Tick::ZERO;
                 if self.empty {
                     ui.colored_label(theme::error_text(dark), tr(Text::ExportEmpty));
                 }
@@ -702,9 +725,6 @@ impl ExportDialog {
                             .and_then(|snapshot| snapshot.error.as_deref())
                             .map_or(Text::ExportFailure, export_failure);
                         ui.colored_label(theme::error_text(dark), tr(label));
-                        if !self.unavailable.is_empty() {
-                            unavailable_details(ui, project, &self.unavailable, locale);
-                        }
                     }
                     ExportPhase::Ready | ExportPhase::Settings => {
                         if self.error.is_some() {
@@ -712,10 +732,25 @@ impl ExportDialog {
                         }
                     }
                 }
+                ui.add_space((ui.available_height() - 34.0).max(0.0));
                 ui.horizontal(|ui| {
-                    ui.label(catalog::export_duration(
-                        locale,
-                        project.duration().seconds(),
+                    let duration = options.output.ranges(project).map_or(0.0, |scenes| {
+                        scenes
+                            .iter()
+                            .map(|(_, range)| range.duration().seconds())
+                            .sum()
+                    });
+                    let rate = options.output.bit_rate.unwrap_or(options.quality.value().1) as f64
+                        + if options.include_audio {
+                            192_000.0
+                        } else {
+                            0.0
+                        };
+                    ui.label(format!(
+                        "{} | {} {} MB",
+                        catalog::export_duration(locale, duration),
+                        tr(Text::ExportEstimatedSize),
+                        catalog::decimal(locale, duration * rate / 8_000_000.0, 1)
                     ));
                     ui.with_layout(
                         egui::Layout::right_to_left(egui::Align::Center),
@@ -775,8 +810,14 @@ impl ExportDialog {
                                 result.widgets.push(("export.close", r));
                             }
                             ExportPhase::Settings => {
+                                let r =
+                                    ui.add_sized([90.0, 34.0], egui::Button::new(tr(Text::Cancel)));
+                                if r.clicked() {
+                                    self.open = false;
+                                }
+                                result.widgets.push(("export.close", r));
                                 let r = ui.add_enabled(
-                                    !self.empty,
+                                    settings::valid(options, project),
                                     egui::Button::new(
                                         egui::RichText::new(tr(Text::Export))
                                             .color(theme::on_accent(dark)),
@@ -788,12 +829,6 @@ impl ExportDialog {
                                     result.action = Some(Action::Start);
                                 }
                                 result.widgets.push(("export.run", r));
-                                let r =
-                                    ui.add_sized([90.0, 34.0], egui::Button::new(tr(Text::Cancel)));
-                                if r.clicked() {
-                                    self.open = false;
-                                }
-                                result.widgets.push(("export.close", r));
                             }
                         },
                     );

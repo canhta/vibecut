@@ -120,7 +120,7 @@ impl Session {
                 Ok(ControlResult::Snapshot { snapshot })
             }
             Command::Export {
-                range,
+                settings: options,
                 path,
                 overwrite,
             } => {
@@ -128,23 +128,40 @@ impl Session {
                     return Err(EditError::TransactionActive);
                 }
                 let mut settings = render::ExportSettings::from_project(self.project());
+                settings.container = path
+                    .extension()
+                    .and_then(|extension| extension.to_str())
+                    .and_then(media::Container::from_extension)
+                    .ok_or(EditError::Invalid("export container extension"))?;
+                let paths = options.paths(self.project(), &path)?;
+                for output in &paths {
+                    caller.policy.authorize(
+                        &Command::Export {
+                            settings: options,
+                            path: output.clone(),
+                            overwrite,
+                        },
+                        self.project(),
+                    )?;
+                }
                 settings.overwrite = if overwrite {
                     project::atomic::Overwrite::Replace
                 } else {
                     project::atomic::Overwrite::Refuse
                 };
-                let (job, _) = crate::submit_export(
+                let (job, _) = crate::submit_scene_exports_with_sources(
                     runner,
                     crate::control_preview::control_key(fingerprint)?,
                     self.project().clone(),
-                    range,
+                    options,
                     settings,
-                    path.clone(),
+                    paths.clone(),
+                    || Box::new(render::FileSources::default()),
                 )?;
                 Ok(ControlResult::JobAccepted {
                     job,
                     revision: self.revision(),
-                    paths: vec![path],
+                    paths,
                 })
             }
             command @ (Command::ExportSubtitles { .. } | Command::BurnSubtitles { .. }) => {

@@ -146,6 +146,89 @@ fn add(s: &mut Session, r: &mut JobRunner, key: &str) {
         key,
     ));
 }
+
+#[test]
+fn export_control_admits_typed_settings_refuses_old_range_and_preserves_revision() {
+    let mut data = session().project().data().clone();
+    data.canvas.width = 64;
+    data.canvas.height = 64;
+    data.scene_mut().timeline.insert_track(Track {
+        id: TrackId(1),
+        name: "Picture".into(),
+        kind: TrackKind::Video,
+        muted: false,
+        hidden: false,
+        locked: false,
+        items: vec![Item {
+            id: ItemId(1),
+            start: Tick::ZERO,
+            source_asset: None,
+            source_range: SourceRange::new(Tick::ZERO, Tick(time::TICKS_PER_SECOND)).unwrap(),
+            content: ItemParams::Overlay(OverlayParams {
+                color: Color([20, 80, 120, 255]),
+            }),
+            blend_mode: Default::default(),
+            retime: Default::default(),
+            masks: vec![],
+            effects: vec![],
+            animations: Default::default(),
+        }],
+    });
+    let mut session = Session::new(Project::new(data).unwrap(), 10).unwrap();
+    let mut runner = runner();
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("typed.mp4");
+    let before = project::encode(session.project(), false).unwrap();
+    let revision = session.revision();
+    let settings = render::OutputOptions {
+        resolution: Some([64, 64]),
+        range: render::RangeChoice::InOut {
+            start: Tick::ZERO,
+            end: Tick(time::TICKS_PER_SECOND / 2),
+        },
+        ..Default::default()
+    };
+    let response = ok(run(
+        &mut session,
+        &mut runner,
+        "export",
+        json!({"settings":settings,"path":path,"overwrite":false}),
+        "typed-export",
+    ));
+    let job = match response {
+        ControlResult::JobAccepted { job, paths, .. } => {
+            assert_eq!(paths, vec![path.clone()]);
+            job
+        }
+        other => panic!("{other:?}"),
+    };
+    let deadline = std::time::Instant::now() + Duration::from_secs(60);
+    loop {
+        runner.tick().unwrap();
+        let snapshot = runner.snapshot(job).unwrap();
+        if matches!(
+            snapshot.state,
+            JobState::Completed | JobState::Failed | JobState::Cancelled
+        ) {
+            assert_eq!(snapshot.state, JobState::Completed, "{:?}", snapshot.error);
+            break;
+        }
+        assert!(std::time::Instant::now() < deadline);
+        std::thread::sleep(Duration::from_millis(1));
+    }
+    assert!(path.exists());
+    assert_eq!(session.revision(), revision);
+    assert_eq!(project::encode(session.project(), false).unwrap(), before);
+    let refused = run(
+        &mut session,
+        &mut runner,
+        "export",
+        json!({"range":{"start":0,"end":1},"path":path,"overwrite":true}),
+        "old-export",
+    );
+    assert!(matches!(refused.value, ResponseValue::Error(_)));
+    runner.shutdown();
+}
 fn seed() -> Session {
     let mut data = session().project().data().clone();
     data.canvas.width = 64;
@@ -596,17 +679,19 @@ fn invalid_shape_version_unknown_and_nested_extra_refuse_before_effects() {
         assert_eq!(s.revision(), rev);
         assert_eq!(s.history_len(), history);
     }
-    let mut bad = request(
-        &s,
-        "timeline.add_track",
-        json!({"name":"x","kind":"video"}),
-        "bad-version",
-    );
-    bad.api_version += 1;
-    error(
-        s.control_request(bad, caller(&Allow), &mut r).unwrap(),
-        ErrorCode::SchemaMismatch,
-    );
+    for version in [control::API_VERSION - 1, control::API_VERSION + 1] {
+        let mut bad = request(
+            &s,
+            "timeline.add_track",
+            json!({"name":"x","kind":"video"}),
+            "bad-version",
+        );
+        bad.api_version = version;
+        error(
+            s.control_request(bad, caller(&Allow), &mut r).unwrap(),
+            ErrorCode::SchemaMismatch,
+        );
+    }
     let mut bad = request(
         &s,
         "timeline.add_track",
@@ -767,7 +852,7 @@ fn stale_batch_and_external_gestures_cannot_bypass_admission() {
         ErrorCode::TransactionActive,
     );
     s.cancel_gesture().unwrap();
-    let malformed = json!({"commands":[{"command":"timeline.add_track","params":{"name":"early","kind":"video"}},{"command":"export","params":{"range":{"start":0,"end":1},"path":"/never","overwrite":false}}]});
+    let malformed = json!({"commands":[{"command":"timeline.add_track","params":{"name":"early","kind":"video"}},{"command":"export","params":{"settings":render::OutputOptions::default(),"path":"/never","overwrite":false}}]});
     assert!(matches!(
         run(&mut s, &mut r, "batch", malformed, "mixed").value,
         ResponseValue::Error(_)
@@ -1070,7 +1155,7 @@ fn policy_refusal_and_nested_policy_are_safe_before_io() {
     let mut requests = vec![request(
         &s,
         "export",
-        json!({"range":{"start":0,"end":1},"path":"/secret/private","overwrite":true}),
+        json!({"settings":render::OutputOptions::default(),"path":"/secret/private","overwrite":true}),
         "denied",
     )];
     requests.push(request(&s,"batch",json!({"commands":[{"command":"timeline.add_track","params":{"name":"private text","kind":"video"}}]}),"batch-denied"));

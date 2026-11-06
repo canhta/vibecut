@@ -13,7 +13,7 @@ use serde_json::json;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
-use time::{Tick, TimeRange};
+use time::TimeRange;
 
 #[derive(Clone, Copy)]
 pub(crate) enum Aspect {
@@ -28,18 +28,32 @@ pub(crate) fn export_project(
     aspect: Option<Aspect>,
     allow_degraded: bool,
     overwrite: bool,
+    options: render::OutputOptions,
 ) -> Result<Output, CliError> {
-    export_project_with(
+    export_configured(
         context,
         project_path,
         output,
         aspect,
         allow_degraded,
         overwrite,
-        engine::submit_export,
+        options,
+        move |runner, key, project, _, settings, path| {
+            let paths = options.paths(&project, &path)?;
+            engine::submit_scene_exports_with_sources(
+                runner,
+                key,
+                project,
+                options,
+                settings,
+                paths,
+                || Box::new(render::FileSources::default()),
+            )
+        },
     )
 }
 
+#[cfg(test)]
 pub(crate) fn export_project_with(
     context: &Context,
     project_path: PathBuf,
@@ -56,19 +70,61 @@ pub(crate) fn export_project_with(
         PathBuf,
     ) -> Result<(JobId, engine::jobs::CancelToken), EditError>,
 ) -> Result<Output, CliError> {
+    export_configured(
+        context,
+        project_path,
+        output,
+        aspect,
+        allow_degraded,
+        overwrite,
+        render::OutputOptions::default(),
+        submit,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn export_configured(
+    context: &Context,
+    project_path: PathBuf,
+    output: PathBuf,
+    aspect: Option<Aspect>,
+    allow_degraded: bool,
+    overwrite: bool,
+    options: render::OutputOptions,
+    submit: impl FnOnce(
+        &mut JobRunner,
+        CacheKey,
+        Arc<Project>,
+        TimeRange,
+        render::ExportSettings,
+        PathBuf,
+    ) -> Result<(JobId, engine::jobs::CancelToken), EditError>,
+) -> Result<Output, CliError> {
     let loaded = project::load(&project_path)?;
     let project = loaded.project;
-    if same_target(&project_path, &output)? {
-        return Err(CliError::Usage(
-            "export output must not replace the project file".into(),
-        ));
-    }
-    let duration = project.duration();
-    if duration <= Tick::ZERO {
+    if options.scene == render::SceneChoice::Active && project.duration() == time::Tick::ZERO {
         return Err(CliError::Rejected("project timeline is empty"));
     }
-    let range = TimeRange::new(Tick::ZERO, duration)?;
-    let settings = export_settings(&project, aspect, allow_degraded, overwrite);
+    let paths = options.paths(&project, &output)?;
+    for path in &paths {
+        if same_target(&project_path, path)? {
+            return Err(CliError::Usage(
+                "export output must not replace the project file".into(),
+            ));
+        }
+    }
+    let range = options
+        .ranges(&project)?
+        .first()
+        .ok_or(CliError::Rejected("no scenes"))?
+        .1;
+    let mut settings = export_settings(&project, aspect, allow_degraded, overwrite);
+    settings.container = output
+        .extension()
+        .and_then(|extension| extension.to_str())
+        .and_then(media::Container::from_extension)
+        .ok_or_else(|| CliError::Usage("output extension must be mp4, mov or webm".into()))?;
+    options.apply(&mut settings)?;
     let key = export_job_key(&project, range, &settings)?;
 
     let budget = context.budget()?;
@@ -96,6 +152,7 @@ pub(crate) fn export_project_with(
     runner.shutdown();
     let value = json!({
         "path": json_path(&output)?,
+        "paths": paths.iter().map(|path| json_path(path)).collect::<Result<Vec<_>, _>>()?,
         "status": "completed",
     });
     Ok(Output::new(

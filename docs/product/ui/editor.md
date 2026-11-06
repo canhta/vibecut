@@ -44,8 +44,26 @@ The model manager reuses the export modal's 12 px radius, 24 px inner margin and
 ## Export and settings
 
 - Export is a 900x820 px modal: 227 px cover column plus settings, using [layout radii](#layout-grid) and [density](#density).
+- The static export capture (`capcut/capcut-desktop-export-2k4k.png`) normalized
+  from its 900x830 px dialog crop at (665,277) in the 2235x1293 image to the
+  specified 900x820 size places the cover
+  at x=108, the setting labels at x=449 and values at x=580, relative to the
+  dialog. Video value width is about 280 px; video rows use a 48 px pitch. The 24 px
+  frame inset leaves 84 px before the cover and 114 px between cover and form.
+  Short viewports compact the form and retain a scrollable settings area. Name
+  is the project name; destination selection remains the existing native save
+  workflow after rendering, which the read-only destination row explains.
 - Footer: `Duration: Ns | Size: about N MB` at 14 px, then a 90x34 px `Export` button and a 90x34 px `Cancel` button.
 - Video section: Resolution (480P, 720P, 1080P, 2K, 4K, 8K), Bit rate, Codec, Format (MP4), Frame rate, Colour space; Audio is a collapsed section.
+- Output settings extend the existing format/quality/audio choices: project-canvas
+  resolution by default, ratio-preserving presets (including observed web 360P),
+  custom even dimensions, project frame rate or 24/25/30/50/60, target bitrate and
+  compatible codec/profile. Active scene and full timeline are defaults; all/named
+  scene and frame-snapped in/out or selected-clip bounds are explicit choices.
+  Invalid ranges disable Export. Canvas size remains in project properties;
+  unsupported optical-flow and colour-space controls stay hidden.
+  The captured Codec row is labelled `Video type` under the creator-copy rule;
+  automatic resolves to H.264 for MP4/MOV and VP9 for WebM.
 - Settings is a 480 px modal: 34 px tab bar with Draft, Edit, Performance, General; [standard rows/fields](#density), 16 px checkboxes.
 - The assets panel leads with the measured 42 px horizontal feature strip: Media, Audio, Text, Stickers, Effects, Transitions, Captions, Filters, Adjustment, Templates and the AI avatar, each a 16 px icon over a 12 px semibold label, active in the accent. The old 36 px vertical icon rail is superseded. Beneath it, a 120 px sub-navigation column and a 24 px tool row (Import/Record/search) sit above the asset grid or list. A selected element's properties view uses the measured 12 px type tabs at the 42 px strip row (active accent, no underline) and the 460×24 sub-tab bar; the empty and multi-select views keep the shared-field presentation, and `Project`/`Details` remain the inspector header switch. Geometry follows [layout](#layout-grid), styling follows [iconography](index.md#iconography).
 - Scrub number fields use the measured 22 px row: a 16×22 stepper and a typed entry in a 22 px field with an optional unit suffix; the active value previews during the drag and commits once on release.
@@ -99,6 +117,6 @@ Captions lives in the assets-panel tab. Generate and translation settings use co
 ## Gaps
 
 - Multi-track timeline geometry: only one video track is captured, so audio/text/sticker/effect track heights, clip colours and vertical stacking are unmeasured. The single main track's offset below the ruler is also unexplained.
-- Menus, context menus, the keyframe lane, selected text/caption properties, the export dialog, and error/offline/import-failure states are not captured.
+- Menus, context menus, the keyframe lane, selected text/caption properties, and error/offline/import-failure states are not captured.
 - Panel min/max sizes: only one window size has been observed.
 - Shortcut search, rebinding capture, conflict state and preset management are not captured. The measured dialog shows four tabs, a preset dropdown, the list and Reset/Save/Cancel only.

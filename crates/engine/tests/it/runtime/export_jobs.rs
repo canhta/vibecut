@@ -88,6 +88,135 @@ fn complete(r: &mut JobRunner, id: JobId) -> JobSnapshot {
         std::thread::sleep(Duration::from_millis(1));
     }
 }
+
+fn two_scenes() -> Arc<project::Project> {
+    let original = project();
+    let mut data = original.as_ref().clone().into_data();
+    let mut secondary = data.scene().clone();
+    secondary.id = project::SceneId(2);
+    secondary.is_main = false;
+    secondary.name = "Second".into();
+    for track in secondary.timeline.iter_mut() {
+        track.id = project::TrackId(track.id.0 + 10);
+        for item in &mut track.items {
+            item.id = project::ItemId(item.id.0 + 10);
+        }
+    }
+    data.scenes.insert(secondary).unwrap();
+    Arc::new(project::Project::new(data).unwrap())
+}
+
+#[test]
+fn scene_export_admission_refuses_invalid_destinations_before_rendering() {
+    let project = two_scenes();
+    let directory = tempfile::tempdir().unwrap();
+    let first = directory.path().join("first.mp4");
+    let second = directory.path().join("second.mp4");
+    std::fs::write(&first, b"original").unwrap();
+    let budget = ByteBudget::new(192 << 20).unwrap();
+    let mut runner = runner(&budget, Arc::new(SystemClock::default()));
+    let settings = render::ExportSettings::from_project(&project);
+    let options = render::OutputOptions {
+        scene: render::SceneChoice::All,
+        ..Default::default()
+    };
+    for paths in [
+        vec![],
+        vec![first.clone()],
+        vec![first.clone(), first.clone()],
+        vec![
+            first.clone(),
+            second.clone(),
+            directory.path().join("third.mp4"),
+        ],
+    ] {
+        assert!(
+            engine::submit_scene_exports_with_sources(
+                &mut runner,
+                key(100),
+                project.clone(),
+                options,
+                settings.clone(),
+                paths,
+                || Box::new(render::FileSources::default())
+            )
+            .is_err()
+        );
+    }
+    let created = Arc::new(AtomicUsize::new(0));
+    let calls = created.clone();
+    let (job, _) = engine::submit_scene_exports_with_sources(
+        &mut runner,
+        key(101),
+        project,
+        options,
+        settings,
+        vec![first.clone(), second.clone()],
+        move || {
+            calls.fetch_add(1, Ordering::SeqCst);
+            Box::new(render::FileSources::default())
+        },
+    )
+    .unwrap();
+    assert_eq!(complete(&mut runner, job).state, JobState::Failed);
+    assert_eq!(created.load(Ordering::SeqCst), 0);
+    assert_eq!(std::fs::read(first).unwrap(), b"original");
+    assert!(!second.exists());
+    assert_eq!(std::fs::read_dir(directory.path()).unwrap().count(), 1);
+    runner.shutdown();
+}
+
+#[test]
+fn scene_batch_cancel_after_first_finalization_preserves_every_destination_and_project() {
+    let project = two_scenes();
+    let before = project::encode(&project, false).unwrap();
+    let directory = tempfile::tempdir().unwrap();
+    let paths = vec![
+        directory.path().join("first.mp4"),
+        directory.path().join("second.mp4"),
+    ];
+    for path in &paths {
+        std::fs::write(path, b"original").unwrap();
+    }
+    let budget = ByteBudget::new(192 << 20).unwrap();
+    let mut runner = runner(&budget, Arc::new(SystemClock::default()));
+    let mut settings = render::ExportSettings::from_project(&project);
+    settings.include_audio = false;
+    settings.overwrite = project::atomic::Overwrite::Replace;
+    let token_slot = Arc::new(std::sync::Mutex::new(None::<CancelToken>));
+    let retained = token_slot.clone();
+    let started = Arc::new(AtomicUsize::new(0));
+    let count = started.clone();
+    let options = render::OutputOptions {
+        scene: render::SceneChoice::All,
+        ..Default::default()
+    };
+    let (id, token) = engine::submit_scene_exports_with_sources(
+        &mut runner,
+        key(99),
+        project.clone(),
+        options,
+        settings,
+        paths.clone(),
+        move || {
+            if count.fetch_add(1, Ordering::SeqCst) == 1 {
+                retained.lock().unwrap().as_ref().unwrap().cancel();
+            }
+            Box::new(render::FileSources::default())
+        },
+    )
+    .unwrap();
+    *token_slot.lock().unwrap() = Some(token);
+    assert_eq!(complete(&mut runner, id).state, JobState::Cancelled);
+    assert_eq!(started.load(Ordering::SeqCst), 2);
+    for path in paths {
+        assert_eq!(std::fs::read(path).unwrap(), b"original");
+    }
+    assert_eq!(std::fs::read_dir(directory.path()).unwrap().count(), 2);
+    assert_eq!(project::encode(&project, false).unwrap(), before);
+    runner.shutdown();
+    assert_eq!(budget.snapshot().unwrap().used, 0);
+}
 #[test]
 fn export_job_accounts_bytes_reclaims_cache_and_preserves_live_pin() {
     let dir = tempfile::tempdir().unwrap();

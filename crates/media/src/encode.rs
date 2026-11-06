@@ -10,6 +10,25 @@ use time::{FrameRate, Rounding};
 const MAX_ENCODED_VIDEO_BATCH_BYTES: usize = 64 * 1024 * 1024;
 const MAX_VIDEO_ENCODER_THREADS: usize = 8;
 
+#[derive(
+    Clone,
+    Copy,
+    Debug,
+    Default,
+    PartialEq,
+    Eq,
+    serde::Serialize,
+    serde::Deserialize,
+    schemars::JsonSchema,
+)]
+#[serde(rename_all = "snake_case")]
+pub enum H264Profile {
+    #[default]
+    Automatic,
+    Main,
+    High,
+}
+
 fn encoded_video_batch_bytes(retained: usize, packet: &ff::Packet) -> Result<usize> {
     let bytes = retained
         .checked_add(4 * std::mem::size_of::<Packet>())
@@ -45,6 +64,7 @@ pub struct VideoEncoderSettings {
     pub frame_rate: FrameRate,
     pub bit_rate: usize,
     pub quality: u8,
+    pub profile: H264Profile,
     pub color: ColorInfo,
     pub webm: bool,
     /// FFmpeg input-conversion workers, 1..=8; caller owns scheduling/accounting.
@@ -60,6 +80,7 @@ impl VideoEncoderSettings {
             frame_rate,
             bit_rate: 12_000_000,
             quality: 85,
+            profile: H264Profile::Automatic,
             color,
             webm: false,
             conversion_threads: 1,
@@ -123,6 +144,16 @@ pub fn h264_encoder_available() -> bool {
     video_candidates(false)
         .iter()
         .any(|(name, _)| ff::encoder::find_by_name(name).is_some())
+}
+
+/// Registry admission for the built-in video/audio pairs; opening still reports
+/// device-specific failures through the normal encoder error path.
+pub fn export_container_available(container: crate::Container) -> bool {
+    let webm = matches!(container, crate::Container::WebM);
+    video_candidates(webm)
+        .iter()
+        .any(|(name, _)| ff::encoder::find_by_name(name).is_some())
+        && ff::encoder::find_by_name(if webm { "libopus" } else { "aac" }).is_some()
 }
 
 pub struct VideoEncoder {
@@ -243,6 +274,21 @@ impl VideoEncoder {
                 }
                 ffi::encoder_color(&mut encoder, settings.color)?;
                 let mut options = ff::Dictionary::new();
+                if !settings.webm {
+                    match settings.profile {
+                        H264Profile::Automatic => {}
+                        // MF exposes the generic integer AVCodecContext option;
+                        // unlike the other backends it has no named constants.
+                        H264Profile::Main => {
+                            options.set("profile", if name == "h264_mf" { "77" } else { "main" })
+                        }
+                        H264Profile::High => {
+                            options.set("profile", if name == "h264_mf" { "100" } else { "high" })
+                        }
+                    }
+                } else if settings.profile != H264Profile::Automatic {
+                    return Err(MediaError::Unsupported("H.264 profile on VP9"));
+                }
                 match name {
                     "h264_videotoolbox" => {
                         options.set("allow_sw", if quality_mode { "0" } else { "1" });

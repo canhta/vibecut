@@ -7,8 +7,8 @@ mod sources;
 
 pub use audio::{AudioBlock, AudioMixer, LoudnessReport, Measurement, measure_loudness, mix_audio};
 pub use export::{
-    ExportMode, ExportReceipt, ExportSettings, HdrPolicy, export, export_with_sources,
-    validate_output_path,
+    ExportMode, ExportReceipt, ExportSettings, HdrPolicy, OutputOptions, RangeChoice, SceneChoice,
+    VideoCodec, export, export_with_sources, validate_output_path,
 };
 pub use image::Image;
 use media::AssetId;

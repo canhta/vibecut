@@ -11,8 +11,14 @@ pub(crate) fn run(context: &Context, args: Vec<OsString>) -> Result<Output, CliE
     let mut aspect = None;
     let mut allow_degraded = false;
     let mut overwrite = false;
+    let mut options = render::OutputOptions::default();
     while let Some(arg) = args.next() {
         match utf8(&arg, "export flag")? {
+            "--settings" => {
+                let value = args.next().ok_or_else(export_usage)?;
+                options = serde_json::from_str(utf8(&value, "export settings")?)
+                    .map_err(|_| CliError::Usage("invalid typed export settings".into()))?;
+            }
             "--out" => {
                 output = Some(PathBuf::from(args.next().ok_or_else(|| {
                     CliError::Usage("--out requires an output path".into())
@@ -45,12 +51,13 @@ pub(crate) fn run(context: &Context, args: Vec<OsString>) -> Result<Output, CliE
         aspect,
         allow_degraded,
         overwrite,
+        options,
     )
 }
 
 fn export_usage() -> CliError {
     CliError::Usage(
-        "usage: vibecut-cli export <project> --out <mp4> [--aspect 9:16] [--allow-degraded] [--overwrite]"
+        "usage: vibecut-cli export <project> --out <mp4|mov|webm> [--settings <JSON>] [--aspect 9:16] [--allow-degraded] [--overwrite]"
             .into(),
     )
 }
