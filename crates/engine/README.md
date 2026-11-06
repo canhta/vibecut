@@ -458,6 +458,14 @@ closures run inside `catch_unwind`. `shutdown` and Drop cancel and join all acti
 workers. Adapters must check cancellation and put finite timeouts on blocking IO;
 a noncooperating adapter can delay shutdown. Abort/OOM cannot be recovered.
 
+`ByteBudget::child(limit)` adds per-project admission while retaining leases
+against the parent app policy. Admission refuses on either limit and rolls back
+partial reservations; releasing a child lease releases aggregate accounting.
+Artifacts registered by a child participate in the parent's aggregate LRU using
+one root recency clock. Model disk reporting also propagates through child
+leases. Separate root policies reserve persistence headroom independently from
+export/preview memory at the app composition boundary.
+
 One shared `ByteBudget` is cloned into every owner. Its snapshot publishes total
 used/limit and per-owner bytes for decoded frames, compositor intermediates,
 in-flight export, persistent artifacts, cache readers/staging, job results and native

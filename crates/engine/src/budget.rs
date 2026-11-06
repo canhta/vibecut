@@ -54,16 +54,21 @@ impl BudgetSnapshot {
 #[derive(Clone)]
 pub struct ByteBudget(Arc<BudgetState>);
 struct BudgetState {
+    parent: Option<ByteBudget>,
     accounting: Mutex<BudgetSnapshot>,
     artifacts: Mutex<Vec<Weak<StoredArtifact>>>,
     clock: AtomicU64,
 }
 impl ByteBudget {
     pub fn new(limit: u64) -> Result<Self, EditError> {
+        Self::with_parent(limit, None)
+    }
+    fn with_parent(limit: u64, parent: Option<Self>) -> Result<Self, EditError> {
         if limit == 0 {
             return Err(EditError::Limit);
         }
         Ok(Self(Arc::new(BudgetState {
+            parent,
             accounting: Mutex::new(BudgetSnapshot {
                 limit,
                 used: 0,
@@ -72,6 +77,11 @@ impl ByteBudget {
             artifacts: Mutex::new(Vec::new()),
             clock: AtomicU64::new(0),
         })))
+    }
+    /// Per-project admission with aggregate app accounting. Every child lease
+    /// also retains a parent lease; refusal rolls back both reservations.
+    pub fn child(&self, limit: u64) -> Result<Self, EditError> {
+        Self::with_parent(limit, Some(self.clone()))
     }
     pub(crate) fn same_policy(&self, other: &Self) -> bool {
         Arc::ptr_eq(&self.0, &other.0)
@@ -85,6 +95,9 @@ impl ByteBudget {
             .clone())
     }
     pub(crate) fn stamp(&self) -> u64 {
+        if let Some(parent) = &self.0.parent {
+            return parent.stamp();
+        }
         let mut current = self.0.clock.load(Ordering::Relaxed);
         loop {
             match self.0.clock.compare_exchange_weak(
@@ -107,6 +120,10 @@ impl ByteBudget {
             .map_err(|_| EditError::JobPoisoned)?;
         artifacts.retain(|entry| entry.upgrade().is_some_and(|a| !a.removed()));
         artifacts.push(Arc::downgrade(artifact));
+        drop(artifacts);
+        if let Some(parent) = &self.0.parent {
+            parent.register(artifact)?;
+        }
         Ok(())
     }
     /// Reserve before allocation. On pressure, reclaim unpinned persistent
@@ -143,6 +160,12 @@ impl ByteBudget {
         Err(EditError::BudgetFull)
     }
     fn try_reserve(&self, owner: ByteOwner, bytes: u64) -> Result<ByteLease, EditError> {
+        let parent = self
+            .0
+            .parent
+            .as_ref()
+            .map(|p| p.reserve(owner, bytes).map(Box::new))
+            .transpose()?;
         let mut state = self
             .0
             .accounting
@@ -165,6 +188,7 @@ impl ByteBudget {
         *count = count.checked_add(bytes).ok_or(EditError::BudgetFull)?;
         state.used = next;
         Ok(ByteLease {
+            parent,
             budget: self.clone(),
             owner,
             bytes,
@@ -173,6 +197,7 @@ impl ByteBudget {
 }
 /// Keep alive for the entire allocation/file lifetime, including in-flight users.
 pub struct ByteLease {
+    parent: Option<Box<ByteLease>>,
     budget: ByteBudget,
     owner: ByteOwner,
     bytes: u64,
@@ -197,10 +222,14 @@ impl ByteLease {
             .owners
             .get_mut(self.owner.index())
             .ok_or(EditError::Limit)?;
-        *count = count
+        let next_count = count
             .checked_sub(self.bytes)
             .and_then(|n| n.checked_add(bytes))
             .ok_or(EditError::BudgetFull)?;
+        if let Some(parent) = &mut self.parent {
+            parent.resize_models(bytes)?;
+        }
+        *count = next_count;
         state.used = next;
         self.bytes = bytes;
         Ok(())

@@ -714,41 +714,54 @@ fn reopened_cache_admits_large_work_and_protects_pinned_readers() {
 }
 #[test]
 fn read_reclaims_other_caches_by_global_recency_and_refuses_all_pinned_pressure() {
-    let first = tempfile::tempdir().unwrap();
-    let second = tempfile::tempdir().unwrap();
-    let budget = ByteBudget::new(1000).unwrap();
-    let (mut a, _) = ArtifactCache::open(first.path(), budget.clone(), 10).unwrap();
-    let (mut b, _) = ArtifactCache::open(second.path(), budget.clone(), 10).unwrap();
-    a.put(key(0), &[0; 328]).unwrap();
-    for n in 1..=5 {
-        b.put(key(n), &[n; 28]).unwrap();
+    for project_children in [false, true] {
+        let first = tempfile::tempdir().unwrap();
+        let second = tempfile::tempdir().unwrap();
+        let budget = ByteBudget::new(1000).unwrap();
+        let first_budget = if project_children {
+            budget.child(1000).unwrap()
+        } else {
+            budget.clone()
+        };
+        let second_budget = if project_children {
+            budget.child(1000).unwrap()
+        } else {
+            budget.clone()
+        };
+        let (mut a, _) = ArtifactCache::open(first.path(), first_budget.clone(), 10).unwrap();
+        let (mut b, _) = ArtifactCache::open(second.path(), second_budget, 10).unwrap();
+        a.put(key(0), &[0; 328]).unwrap();
+        for n in 1..=5 {
+            b.put(key(n), &[n; 28]).unwrap();
+        }
+        let touched = b.get(key(1)).unwrap().unwrap();
+        drop(touched);
+        let large = a.get(key(0)).unwrap().unwrap();
+        assert_eq!(large.bytes(), [0; 328]);
+        assert!(b.get(key(2)).unwrap().is_none());
+        assert!(b.get(key(1)).unwrap().is_some());
+        drop(large);
+        a.clear().unwrap();
+        b.clear().unwrap();
+        // Reopened heterogeneous reads use the same reclaimer, not a per-cache workaround.
+        a.put(key(0), &[0; 328]).unwrap();
+        for n in 1..=5 {
+            a.put(key(n), &[n; 28]).unwrap();
+        }
+        drop(a);
+        let (mut a, _) = ArtifactCache::open(first.path(), first_budget, 10).unwrap();
+        assert_eq!(a.get(key(0)).unwrap().unwrap().bytes(), [0; 328]);
+        a.clear().unwrap();
+        a.put(key(1), &[1; 328]).unwrap();
+        b.put(key(2), &[2; 128]).unwrap();
+        let other = b.get(key(2)).unwrap().unwrap(); // 600 disk + 200 pin: only 200 free
+        assert!(matches!(a.get(key(1)), Err(EditError::BudgetFull)));
+        assert_eq!(other.bytes(), [2; 128]);
+        drop(other);
+        assert_eq!(a.get(key(1)).unwrap().unwrap().bytes(), [1; 328]);
     }
-    let touched = b.get(key(1)).unwrap().unwrap();
-    drop(touched);
-    let large = a.get(key(0)).unwrap().unwrap();
-    assert_eq!(large.bytes(), [0; 328]);
-    assert!(b.get(key(2)).unwrap().is_none());
-    assert!(b.get(key(1)).unwrap().is_some());
-    drop(large);
-    a.clear().unwrap();
-    b.clear().unwrap();
-    // Reopened heterogeneous reads use the same reclaimer, not a per-cache workaround.
-    a.put(key(0), &[0; 328]).unwrap();
-    for n in 1..=5 {
-        a.put(key(n), &[n; 28]).unwrap();
-    }
-    drop(a);
-    let (mut a, _) = ArtifactCache::open(first.path(), budget.clone(), 10).unwrap();
-    assert_eq!(a.get(key(0)).unwrap().unwrap().bytes(), [0; 328]);
-    a.clear().unwrap();
-    a.put(key(1), &[1; 328]).unwrap();
-    b.put(key(2), &[2; 128]).unwrap();
-    let other = b.get(key(2)).unwrap().unwrap(); // 600 disk + 200 pin: only 200 free
-    assert!(matches!(a.get(key(1)), Err(EditError::BudgetFull)));
-    assert_eq!(other.bytes(), [2; 128]);
-    drop(other);
-    assert_eq!(a.get(key(1)).unwrap().unwrap().bytes(), [1; 328]);
 }
+
 #[test]
 fn concurrent_reclaimers_preserve_live_pins_and_accounting() {
     let dir = tempfile::tempdir().unwrap();
@@ -863,4 +876,35 @@ fn import_jobs_expose_the_registered_probe_and_thumbnail_ids() {
             kind
         );
     }
+}
+
+#[test]
+fn project_budget_children_account_globally_and_roll_back_refused_reservations() {
+    let app = ByteBudget::new(1000).unwrap();
+    assert!(app.child(0).is_err());
+    let first = app.child(600).unwrap();
+    let second = app.child(600).unwrap();
+    let a = first.reserve(ByteOwner::Export, 600).unwrap();
+    assert!(matches!(
+        first.reserve(ByteOwner::DecodedFrames, 1),
+        Err(EditError::BudgetFull)
+    ));
+    assert_eq!(
+        app.snapshot().unwrap().used,
+        600,
+        "refused child reservation rolls back parent"
+    );
+    assert_eq!(first.snapshot().unwrap().used, 600);
+    assert!(matches!(
+        second.reserve(ByteOwner::Export, 401),
+        Err(EditError::BudgetFull)
+    ));
+    assert_eq!(second.snapshot().unwrap().used, 0);
+    let b = second.reserve(ByteOwner::Export, 400).unwrap();
+    assert_eq!(app.snapshot().unwrap().used, 1000);
+    drop(a);
+    assert_eq!(first.snapshot().unwrap().used, 0);
+    assert_eq!(app.snapshot().unwrap().used, 400);
+    drop(b);
+    assert_eq!(app.snapshot().unwrap().used, 0);
 }
