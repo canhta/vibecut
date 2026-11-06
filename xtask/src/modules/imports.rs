@@ -143,24 +143,33 @@ pub(super) fn root_reexports(
     let text = fs::read_to_string(&entry).map_err(|e| format!("{}: {e}", entry.display()))?;
     let file =
         syn::parse_file(&text).map_err(|e| format!("{}: invalid Rust: {e}", entry.display()))?;
-    let mut names = BTreeMap::new();
+    let mut bindings = Vec::new();
     for item in &file.items {
-        let Item::Use(item) = item else { continue };
-        let mut bindings = Vec::new();
-        expand(&item.tree, &mut Vec::new(), &mut bindings);
-        for (path, name) in bindings {
-            let mut segments = path.iter().map(String::as_str);
-            let mut head = segments.next();
-            if matches!(head, Some("crate" | "self")) {
-                head = segments.next();
-            }
-            if let Some(module) = head
-                && crate_table.placements.contains_key(module)
-                && name != "*"
-                && path.len() > 1
-            {
-                names.insert(name, module.to_owned());
-            }
+        if let Item::Use(item) = item {
+            expand(&item.tree, &mut Vec::new(), &mut bindings);
+        }
+    }
+    // `use editor as frontend;` renames a module; `pub use frontend::Editor;` re-exports through it.
+    let mut aliases = BTreeMap::new();
+    for (path, name) in &bindings {
+        if let [module] = path.as_slice()
+            && module != name
+            && crate_table.placements.contains_key(module)
+        {
+            aliases.insert(name.clone(), module.clone());
+        }
+    }
+    let mut names = aliases.clone();
+    for (path, name) in bindings {
+        let mut segments = path.iter().map(String::as_str);
+        let mut head = segments.next();
+        if matches!(head, Some("crate" | "self")) {
+            head = segments.next();
+        }
+        let Some(head) = head else { continue };
+        let module = aliases.get(head).map_or(head, String::as_str);
+        if crate_table.placements.contains_key(module) && name != "*" && path.len() > 1 {
+            names.insert(name, module.to_owned());
         }
     }
     Ok(names)

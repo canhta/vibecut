@@ -35,6 +35,7 @@ impl Table {
 
     pub(super) fn validate(&self, sources: &[&str]) -> Result<(), String> {
         for entry in &self.crates {
+            let mut present = BTreeSet::new();
             for file in sources {
                 if is_test_source(file) {
                     continue;
@@ -51,6 +52,17 @@ impl Table {
                         entry.path
                     ));
                 }
+                present.insert(top.clone());
+            }
+            if let Some(gone) = entry
+                .placements
+                .keys()
+                .find(|name| !present.contains(*name))
+            {
+                return Err(format!(
+                    "{CONFIG}: `{}` places module `{gone}`, which no longer exists; remove it",
+                    entry.path
+                ));
             }
         }
         Ok(())

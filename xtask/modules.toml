@@ -194,11 +194,7 @@ name = "frame"
 groups = ["editor"]
 
 [[crate.module]]
-name = "icons"
-group = "foundation"
-
-[[crate.module]]
-name = "theme"
+name = "kit"
 group = "foundation"
 
 [[crate.module]]
@@ -290,7 +286,7 @@ name = "projects"
 group = "home"
 
 [[crate.module]]
-name = "frontend"
+name = "editor"
 group = "editor"
 
 [[crate.module]]

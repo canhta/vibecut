@@ -533,3 +533,34 @@ fn baseline_must_be_sorted_unique_and_well_formed() {
         assert!(error.contains(expected), "{expected}: {error}");
     }
 }
+
+#[test]
+fn root_module_aliases_resolve_and_stale_table_entries_fail() {
+    let tree = Tree::new();
+    tree.config(LAYERS);
+    tree.write(
+        "crates/foo/src/lib.rs",
+        "//! Foo.\nmod low;\nmod one;\nmod two;\nmod high;\nuse high as top;\n",
+    );
+    tree.write("crates/foo/src/low.rs", "//! Low.\nuse crate::top::High;\n");
+    tree.write("crates/foo/src/one.rs", "//! One.\n");
+    tree.write("crates/foo/src/two.rs", "//! Two.\n");
+    tree.write("crates/foo/src/high.rs", "//! High.\npub struct High;\n");
+    let error = check(&tree.0).unwrap_err();
+    assert!(
+        error.contains("crates/foo/src/low.rs: [layer]") && error.contains("higher layer"),
+        "{error}"
+    );
+    tree.write("crates/foo/src/low.rs", "//! Low.\n");
+    check(&tree.0).unwrap();
+    fs::remove_file(tree.0.join("crates/foo/src/two.rs")).unwrap();
+    git(
+        &tree.0,
+        &["rm", "--quiet", "--cached", "--", "crates/foo/src/two.rs"],
+    );
+    let error = check(&tree.0).unwrap_err();
+    assert!(
+        error.contains("`two`") && error.contains("no longer exists"),
+        "{error}"
+    );
+}
