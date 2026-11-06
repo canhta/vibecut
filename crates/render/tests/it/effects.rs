@@ -268,8 +268,7 @@ fn color_grade_controls_on_the_chart() {
     assert!(high[1][0] < 0.05 && low[1][0] > 0.05);
     // saturation: -50 removes chroma at constant luma, +50 doubles it.
     let (_, grey) = graded([0.0, 0.0, -50.0, 0.0]);
-    for i in 5..12 {
-        let p = grey[i];
+    for (i, p) in grey.iter().copied().enumerate().take(12).skip(5) {
         assert!(near(p[0], p[1]) && near(p[1], p[2]), "{i}");
         assert!(near(p[0], luma(chart()[i])), "{i}");
     }
@@ -278,8 +277,8 @@ fn color_grade_controls_on_the_chart() {
         vivid[11][0],
         (0.6 * 2.0 - luma(chart()[11])).clamp(0.0, 1.0)
     ));
-    for i in 0..5 {
-        assert!(near(vivid[i][0], chart()[i][0]), "grey stays grey");
+    for (v, c) in vivid.iter().zip(chart()).take(5) {
+        assert!(near(v[0], c[0]), "grey stays grey");
     }
     // hue: +50 is 180 degrees about the grey axis; red maps to a cyan-ish tone.
     let (_, half) = graded([0.0, 0.0, 0.0, 50.0]);
@@ -289,11 +288,8 @@ fn color_grade_controls_on_the_chart() {
         near(back[5][1], half[5][1]) && near(back[5][2], half[5][2]),
         "+-180 coincide"
     );
-    for i in 0..5 {
-        assert!(
-            near(half[i][0], chart()[i][0]),
-            "grey is invariant under hue"
-        );
+    for (h, c) in half.iter().zip(chart()).take(5) {
+        assert!(near(h[0], c[0]), "grey is invariant under hue");
     }
     // combined grade, and every output stays a valid premultiplied pixel.
     let (_, mixed) = graded([20.0, -30.0, 40.0, -25.0]);
