@@ -1,2 +1,11 @@
 [alias]
 xtask = "run --package xtask --target-dir target/xtask --"
+
+# Windows MSVC links with the rust-lld shipped beside rustc in the toolchain.
+# rustc resolves it from the sysroot, so no PATH or Visual Studio installation
+# change is needed; other targets keep their platform linker.
+[target.x86_64-pc-windows-msvc]
+linker = "rust-lld"
+
+[target.aarch64-pc-windows-msvc]
+linker = "rust-lld"
