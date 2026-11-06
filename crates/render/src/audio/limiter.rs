@@ -1,3 +1,5 @@
+//! Bounds mixed audio peaks.
+
 use crate::oversample::{Interpolator, PolyphaseBank, true_peak_factor};
 use std::collections::VecDeque;
 

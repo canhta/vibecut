@@ -1,3 +1,5 @@
+//! Caption typography and safe-area placement.
+
 use crate::{Error, Result};
 use serde::{Deserialize, Serialize};
 

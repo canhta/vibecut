@@ -1,5 +1,5 @@
 #![allow(clippy::unwrap_used, clippy::indexing_slicing, clippy::panic)]
-use crate::common::*;
+use crate::support::*;
 use render::*;
 use time::{Speed, Tick, TimeRange};
 

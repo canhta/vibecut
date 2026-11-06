@@ -1,5 +1,5 @@
 #![allow(clippy::unwrap_used, clippy::indexing_slicing)]
-use crate::common::{Empty, Hooks, solid_project};
+use crate::support::{Empty, Hooks, solid_project};
 use project::{AnimationPath, Param, ParamValue};
 use render::{RenderSettings, Renderer};
 use time::Tick;

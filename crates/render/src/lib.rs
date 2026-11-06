@@ -1,29 +1,23 @@
 //! Shared CPU pixels, absolute-sample audio, and finalized export execution.
 mod audio;
-pub mod blend;
-mod caption;
-pub mod color;
-mod limiter;
-mod loudness;
-mod oversample;
-mod retime;
-pub use caption::{CaptionBackground, CaptionOutline, CaptionPosition, CaptionStyle};
-pub mod effects;
 mod export;
 mod image;
-pub mod mask;
 mod scene;
 mod sources;
-mod transform;
-pub use audio::{AudioBlock, AudioMixer, mix_audio};
+
+pub use audio::{AudioBlock, AudioMixer, LoudnessReport, Measurement, measure_loudness, mix_audio};
 pub use export::{
     ExportMode, ExportReceipt, ExportSettings, HdrPolicy, export, export_with_sources,
     validate_output_path,
 };
 pub use image::Image;
-pub use loudness::{LoudnessReport, Measurement, measure_loudness};
 use media::AssetId;
-pub use scene::{Fit, Placement, RasterCacheStats, Rect, RenderSettings, Renderer};
+pub(crate) use scene::oversample;
+pub use scene::{
+    CaptionBackground, CaptionOutline, CaptionPosition, CaptionStyle, Fit, Placement,
+    RasterCacheStats, Rect, RenderSettings, Renderer,
+};
+pub use scene::{blend, color, effects, mask};
 pub use sources::{FileSources, SourceProvider};
 use time::SourceRange;
 

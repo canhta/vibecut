@@ -27,7 +27,7 @@ pub trait EffectCompositor: Send + Sync {
         mode: project::BlendMode,
         hooks: &dyn ExecutionHooks,
     ) -> Result<()> {
-        crate::blend::composite(below, item, opacity, mode, hooks)
+        super::blend::composite(below, item, opacity, mode, hooks)
     }
     /// Unsupported requests fall back to CPU at the renderer; other failures propagate.
     /// Implementations must reserve all transient bytes and check cancellation.

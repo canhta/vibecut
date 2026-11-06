@@ -1,5 +1,5 @@
 #![allow(clippy::unwrap_used, clippy::indexing_slicing)]
-use super::common::{Empty, Hooks};
+use super::support::{Empty, Hooks};
 use project::*;
 use render::*;
 use render::{Error, Result};

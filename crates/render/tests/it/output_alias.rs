@@ -1,5 +1,5 @@
 #![allow(clippy::unwrap_used, clippy::panic, clippy::indexing_slicing)]
-use crate::common::*;
+use crate::support::*;
 use render::{Error, validate_output_path};
 use std::path::Path;
 

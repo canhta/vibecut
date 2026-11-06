@@ -24,20 +24,11 @@ doc	crates/project/src/bounds.rs	first line is not a //! responsibility line
 doc	crates/project/src/model.rs	first line is not a //! responsibility line
 doc	crates/project/src/persistence.rs	first line is not a //! responsibility line
 doc	crates/project/src/transition.rs	first line is not a //! responsibility line
-doc	crates/render/src/audio.rs	first line is not a //! responsibility line
-doc	crates/render/src/caption.rs	first line is not a //! responsibility line
-doc	crates/render/src/export.rs	first line is not a //! responsibility line
-doc	crates/render/src/image.rs	first line is not a //! responsibility line
-doc	crates/render/src/limiter.rs	first line is not a //! responsibility line
-doc	crates/render/src/scene.rs	first line is not a //! responsibility line
-doc	crates/render/src/sources.rs	first line is not a //! responsibility line
 folder	apps/vibecut/src	29 direct children (limit 12)
 folder	crates/ai/src	19 direct children (limit 12)
 folder	crates/media/src	13 direct children (limit 12)
 folder	crates/project/src	18 direct children (limit 12)
-folder	crates/render/src	16 direct children (limit 12)
 interface	crates/media/tests/it/common/mod.rs	module interface is `mod.rs`; use `foo.rs` beside `foo/`
-interface	crates/render/tests/it/common/mod.rs	module interface is `mod.rs`; use `foo.rs` beside `foo/`
 interface	crates/text/tests/it/common/mod.rs	module interface is `mod.rs`; use `foo.rs` beside `foo/`
 layer	apps/vibecut/src/actions.rs	crate::media_panel is in higher layer features/assets (module actions is foundation/foundation)
 layer	apps/vibecut/src/catalog.rs	crate::export is in higher layer features/export (module catalog is foundation/foundation)

@@ -1,5 +1,5 @@
 #![allow(clippy::unwrap_used, clippy::indexing_slicing, clippy::panic)]
-use crate::common::*;
+use crate::support::*;
 use project::LoudnessTarget;
 use render::*;
 use std::{ffi::OsStr, path::Path};

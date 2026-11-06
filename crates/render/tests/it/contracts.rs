@@ -1,5 +1,5 @@
 #![allow(clippy::unwrap_used, clippy::panic, clippy::indexing_slicing)]
-use crate::common::*;
+use crate::support::*;
 use render::*;
 use std::sync::atomic::Ordering;
 use time::{Tick, TimeRange};

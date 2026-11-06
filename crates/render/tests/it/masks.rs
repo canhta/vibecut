@@ -1,5 +1,5 @@
 #![allow(clippy::unwrap_used)]
-use crate::common::Hooks;
+use crate::support::Hooks;
 use render::{
     Error, Image,
     mask::{FlatMask, scale_by},
@@ -172,7 +172,7 @@ fn hostile_degenerate_budget_and_cancellation_inputs_refuse() {
         let project = masked_scene(40, 40, vec![mask]);
         let image = render::Renderer::new(&project, render::RenderSettings::from_project(&project))
             .unwrap()
-            .render_frame(time::Tick::ZERO, &mut crate::common::Empty, &h)
+            .render_frame(time::Tick::ZERO, &mut crate::support::Empty, &h)
             .unwrap();
         assert!(image.pixels().iter().all(|p| p[3] == expected));
     }
@@ -212,7 +212,7 @@ fn hostile_degenerate_budget_and_cancellation_inputs_refuse() {
     assert!(matches!(
         render::Renderer::new(&project, settings)
             .unwrap()
-            .render_frame(time::Tick::ZERO, &mut crate::common::Empty, &limited),
+            .render_frame(time::Tick::ZERO, &mut crate::support::Empty, &limited),
         Err(Error::Invalid("effect output dimensions"))
     ));
     assert_eq!(limited.used.load(Ordering::SeqCst), 0);
@@ -321,7 +321,7 @@ fn builtin_contours_appearance_and_strokes_at_two_resolutions() {
                     render::Renderer::new(&project, render::RenderSettings::from_project(&project))
                         .unwrap();
                 let image = renderer
-                    .render_frame(time::Tick::ZERO, &mut crate::common::Empty, &h)
+                    .render_frame(time::Tick::ZERO, &mut crate::support::Empty, &h)
                     .unwrap();
                 if appearance == "hard" {
                     let rotated = masked_scene(w, height, vec![rotated]);
@@ -330,7 +330,7 @@ fn builtin_contours_appearance_and_strokes_at_two_resolutions() {
                         render::RenderSettings::from_project(&rotated),
                     )
                     .unwrap()
-                    .render_frame(time::Tick::ZERO, &mut crate::common::Empty, &h)
+                    .render_frame(time::Tick::ZERO, &mut crate::support::Empty, &h)
                     .unwrap();
                     assert!(
                         image
@@ -375,10 +375,10 @@ fn builtin_contours_appearance_and_strokes_at_two_resolutions() {
             "{appearance} built-ins at both resolutions"
         );
     }
-    let root = crate::common::root();
+    let root = crate::support::root();
     std::fs::write(root.join("mask-contours.rgb"), atlas).unwrap();
-    if crate::common::tools() {
-        crate::common::ffmpeg(&[
+    if crate::support::tools() {
+        crate::support::ffmpeg(&[
             "-f".as_ref(),
             "rawvideo".as_ref(),
             "-pixel_format".as_ref(),
@@ -456,7 +456,7 @@ fn mask_coverage_benchmark() {
         let hard = masked_scene(w, height, vec![mask.clone()]);
         let hard = render::Renderer::new(&hard, render::RenderSettings::from_project(&hard))
             .unwrap()
-            .render_frame(time::Tick::ZERO, &mut crate::common::Empty, &h)
+            .render_frame(time::Tick::ZERO, &mut crate::support::Empty, &h)
             .unwrap();
         let area = hard.pixels().iter().map(|p| f64::from(p[3])).sum::<f64>();
         let analytic = std::f64::consts::PI * (f64::from(height) * 0.3).powi(2);
@@ -472,10 +472,10 @@ fn mask_coverage_benchmark() {
             render::Renderer::new(&baseline, render::RenderSettings::from_project(&baseline))
                 .unwrap();
         let expected = masked_renderer
-            .render_frame(time::Tick::ZERO, &mut crate::common::Empty, &h)
+            .render_frame(time::Tick::ZERO, &mut crate::support::Empty, &h)
             .unwrap();
         baseline_renderer
-            .render_frame(time::Tick::ZERO, &mut crate::common::Empty, &h)
+            .render_frame(time::Tick::ZERO, &mut crate::support::Empty, &h)
             .unwrap();
         h.peak
             .store(h.used.load(Ordering::SeqCst), Ordering::SeqCst);
@@ -486,13 +486,13 @@ fn mask_coverage_benchmark() {
         for _ in 0..repetitions {
             let start = Instant::now();
             let image = baseline_renderer
-                .render_frame(time::Tick::ZERO, &mut crate::common::Empty, &h)
+                .render_frame(time::Tick::ZERO, &mut crate::support::Empty, &h)
                 .unwrap();
             baseline_ms += start.elapsed().as_secs_f64() * 1000.;
             std::hint::black_box(image);
             let start = Instant::now();
             let image = masked_renderer
-                .render_frame(time::Tick::ZERO, &mut crate::common::Empty, &h)
+                .render_frame(time::Tick::ZERO, &mut crate::support::Empty, &h)
                 .unwrap();
             masked_ms += start.elapsed().as_secs_f64() * 1000.;
             for (a, b) in image.pixels().iter().zip(expected.pixels()) {
@@ -552,7 +552,7 @@ fn ordered_modes_and_unclipped_strokes_keep_premultiplied_channels() {
         );
         let image = render::Renderer::new(&project, render::RenderSettings::from_project(&project))
             .unwrap()
-            .render_frame(time::Tick::ZERO, &mut crate::common::Empty, &h)
+            .render_frame(time::Tick::ZERO, &mut crate::support::Empty, &h)
             .unwrap();
         assert_eq!(alpha(&image, 25, 20), expected);
     }
@@ -578,7 +578,7 @@ fn ordered_modes_and_unclipped_strokes_keep_premultiplied_channels() {
     );
     let image = render::Renderer::new(&project, settings)
         .unwrap()
-        .render_frame(time::Tick::ZERO, &mut crate::common::Empty, &h)
+        .render_frame(time::Tick::ZERO, &mut crate::support::Empty, &h)
         .unwrap();
     let p = image.pixels().get(20 * 40 + 8).unwrap();
     assert!((p[0] - (1. - 128. / 255.) * 0.5).abs() < 1e-6);
@@ -614,7 +614,7 @@ fn ordered_modes_and_unclipped_strokes_keep_premultiplied_channels() {
         render::Renderer::new(&project, render::RenderSettings::from_project(&project)).unwrap();
     for (at, expected) in [(5, 0.2), (10, 0.5), (15, 0.8)] {
         let image = renderer
-            .render_frame(frame(at), &mut crate::common::Empty, &h)
+            .render_frame(frame(at), &mut crate::support::Empty, &h)
             .unwrap();
         assert!(
             (alpha(&image, 20, 20) - expected).abs() < 1e-6,
@@ -635,7 +635,7 @@ fn text_mask_typography_changes_coverage() {
         let project = masked_scene(128, 64, vec![mask]);
         render::Renderer::new(&project, render::RenderSettings::from_project(&project))
             .unwrap()
-            .render_frame(time::Tick::ZERO, &mut crate::common::Empty, &h)
+            .render_frame(time::Tick::ZERO, &mut crate::support::Empty, &h)
             .unwrap()
     };
     let plain = render(&|_| {});

@@ -1,3 +1,5 @@
+//! Provides decoded video and audio samples to the renderer.
+
 use crate::{
     AudioBlock, Error, ExecutionHooks, Image, MemoryKind, Reservation, Result, UnavailableReason,
     check,

@@ -1,5 +1,5 @@
 #![allow(clippy::unwrap_used, clippy::panic, clippy::indexing_slicing)]
-use crate::common::*;
+use crate::support::*;
 use project::{AnimationPath, BlendMode, Param, ParamValue};
 use render::*;
 use serde::Deserialize;

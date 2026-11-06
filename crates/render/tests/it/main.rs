@@ -4,7 +4,6 @@ mod audio_mixer;
 mod blend;
 mod captions;
 mod color;
-mod common;
 mod contracts;
 mod effects;
 mod goldens;
@@ -12,6 +11,7 @@ mod loudness;
 mod masks;
 mod media_pipeline;
 mod output_alias;
+mod support;
 mod transform;
 
 mod retime_audio;

@@ -1,3 +1,5 @@
+//! Owns the RGBA frame buffer and its bounded allocation.
+
 use crate::{Error, ExecutionHooks, MemoryKind, Reservation, Result, vector};
 use std::sync::OnceLock;
 /// Row-major, RGBA, premultiplied alpha, linear light, finite f32 in 0..=1.

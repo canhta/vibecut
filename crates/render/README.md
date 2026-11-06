@@ -7,8 +7,21 @@ aggregate byte policy. No UI, device or persisted render state; it evaluates
 project-owned keyframed opacity.
 
 `ExportSettings::from_project` uses media's platform encoder default: software
-encoding on Windows pending p0-core/78 hardware picture-integrity verification.
+encoding on Windows pending hardware picture-integrity verification.
 Hardware decoding remains enabled; requested quality and bitrate are retained.
+
+## Modules
+
+| Folder | Responsibility | Interface items |
+|---|---|---|
+| `scene/` | Evaluates project items into one RGBA frame. | `Renderer`, `RenderSettings`, `Rect`, `Placement`, `Fit`, `RasterCacheStats` |
+| `scene/` transform, blend, mask, effects, color, oversample, caption | Applies the per-item visual stages in working space. | `blend`, `color`, `effects`, `mask` |
+| `audio/` | Owns every project audio stage from mix to limiter. | `AudioBlock`, `AudioMixer`, `mix_audio`, `measure_loudness` |
+| `export/` | Executes the staged export and hands it to publication. | `export`, `export_with_sources`, `validate_output_path` |
+| `image` | Owns the RGBA frame buffer and its bounded allocation. | `Image` |
+| `sources` | Provides decoded video and audio samples. | `SourceProvider`, `FileSources` |
+
+The crate root re-exports the same public names and module paths.
 
 ## Working pixels and scene
 
@@ -113,6 +126,167 @@ MP4 test measures decoded pixel error and writes `caption-burn-decoded.png` unde
 public renderer with and without raster reuse at 1080×1920; measurements and host
 limits live in the ticket's local evidence report.
 
+## Effects and desktop adapter
+
+`effects::EffectCompositor` receives a working item image, evaluated ordered pass
+list, optional item/mask coverage and the already-composited track-below image.
+`CpuEffects` is the reference and CLI/export default; `RenderSettings.effects`
+optionally injects the desktop adapter. Unsupported GPU capability falls back to
+CPU; cancellation, budget and invalid-data failures propagate. The renderer paints
+an effected item into a transparent output-sized layer, filters it, then composites
+it over the unchanged below image. Effects disable video stream copy.
+
+Blur intensity uses the static project value unless its scalar `Param` override
+exists. Evaluation uses project item-local time; animated overshoot clamps to
+0–100. Sigma is intensity/5 times min(output width/1920, output height/1080).
+The normalized separable Gaussian clamps edge taps and processes all RGBA channels
+in premultiplied linear f32, without colour/alpha conversion. Sigma <=0.01 output
+pixels is an identity. Above sigma 8, n=ceil((sigma/8)^2) iterations use sigma/sqrt(n)
+per axis, capped at 256 iterations and 49 taps per pass. Independent finite kernels
+approximate the untruncated Gaussian; they do not claim source bit identity.
+
+The desktop WGSL adapter consumes the same pass weights/entry names and admits
+maximum absolute CPU/GPU working-channel error 2e-5. Deterministic mixed-alpha
+fixtures at 1x/2x and a repeated-pass fixture exercise the interface in desktop
+tests; render tests pin sigma at 1080p/4K, channel energy, transparent coverage,
+animated overrides, budget refusal and cancellation. A missing native GPU is a
+labelled skip in offline CI and a failure in required-oracle mode. Measurements
+and benchmark commands live in the ticket's local report.
+
+## Mask coverage primitives
+
+`mask::FlatMask` rasterizes an evaluated closed contour with nonzero winding;
+`prepare_builtin` supplies rectangle, cinematic band, ellipse, heart, diamond
+and star contours, with cubic chord tolerance 0.05 output pixels. `SplitMask`
+evaluates an unbounded half-plane so frame edges never introduce artificial
+feather or stroke. Feather is a symmetric signed-distance ramp: a one-pixel
+linear ramp at zero feather, smoothstep over the feather width at >=1 pixel.
+Expansion precedes invert, then opacity scales coverage. Stroke uses distances
+on the retained/removed sides for inside/centre/outside alignment, with independent
+one-output-pixel antialiasing; mask feather affects body coverage only.
+
+`RasterMask::from_image` consumes already-ingressed glyph alpha and reuses text's
+Euclidean distance transform. No glyph renderer or transfer conversion lives in
+the mask engine. One prepared distance raster serves coverage and stroke passes.
+All coverage images use the compositor's premultiplied linear space; `scale_by`
+scales every item channel together. Effects consume working pixels before masking. Geometry mismatches refuse before mutation. Contour/scratch,
+raster-distance and image allocations hold compositor reservations; cancellation
+is checked per row, including text's distance-transform rows/columns.
+
+`Renderer` consumes project mask vectors for every visual layer. Its order is:
+item effects, combined coverage in vector order, enabled strokes in vector order,
+then item opacity, blend and source-over. None modes are skipped. Strokes remain visible
+outside the combined coverage. Only the current mask's raster/distance data is
+retained; accumulated coverage and accumulated premultiplied strokes are bounded
+working images. Active masks disable video stream copy for Auto and forced-copy
+export admission.
+
+Mask geometry uses the placed item's output rectangle. Project-pixel appearance
+widths scale by the smaller output/item axis ratio; text uses the existing bundled
+font/cache/ingress and height scaling, then a working-space affine sample and one
+shared distance transform for coverage and stroke. Cubic flattening and contour
+geometry have a 65,536-point admission bound; unsupported/extreme output geometry
+refuses before uncontrolled allocation. No mask-local glyph renderer or cache.
+
+`tests/it/masks.rs` exercises the public mask kernels and all built-ins through the
+production Renderer at two resolutions. The compositor golden includes masks,
+blur, transparent source edges, half item opacity and an encoded/decode oracle;
+engine and CLI own edit/history/persistence and real rectangle export checks.
+
+The ignored production-frame benchmark in [tests/it/masks.rs](tests/it/masks.rs)
+measures enabled-mask cost against an unmasked baseline. The local task report
+records hardware, shared host load, process RSS and quality metrics; these
+measurements do not establish codec throughput or UI latency.
+## Blend formulas in working space
+
+`blend::composite` is the CPU reference for preview and export, including CLI.
+It accepts equal-size working images and finite opacity in 0..=1. Effects and
+mask/stroke coverage precede blend; opacity scales every source channel exactly
+once after those operations. Zero opacity leaves the backdrop bit-identical and
+the renderer skips that item, including its background-blur contribution.
+
+Let `b`, `s` denote straight **linear-light** channel values recovered temporarily
+from premultiplied backdrop/source RGB, with backdrop alpha `ab` and effective
+source alpha `as = source_alpha * opacity`. Working images remain premultiplied;
+there is no sRGB conversion or per-mode transfer choice. With `B(b,s)` below:
+
+`out_rgb = source_rgb * opacity * (1-ab) + backdrop_rgb * (1-as) + as*ab*B`
+
+`out_alpha = as + ab*(1-as)`.
+
+Zero source alpha bypasses division. Zero backdrop alpha uses ordinary over.
+Clamp roundoff to `0..out_alpha`. The following table defines each component;
+nonseparable functions operate on all three linear components together.
+
+| Mode | B(b,s) |
+|---|---|
+| normal | s |
+| darken | min(b,s) |
+| multiply | b*s |
+| color-burn | b=1: 1; s=0: 0; otherwise 1-min(1,(1-b)/s) |
+| lighten | max(b,s) |
+| screen | b+s-b*s |
+| plus-lighter | min(1,b+s) |
+| color-dodge | b=0: 0; s=1: 1; otherwise min(1,b/(1-s)) |
+| overlay | b<=0.5: 2*b*s; otherwise 1-2*(1-b)*(1-s) |
+| soft-light | s<=0.5: b-(1-2*s)*b*(1-b); otherwise b+(2*s-1)*(D(b)-b) |
+| hard-light | s<=0.5: 2*b*s; otherwise 1-2*(1-b)*(1-s) |
+| difference | abs(b-s) |
+| exclusion | b+s-2*b*s |
+| hue | SetLum(SetSat(s,Sat(b)),Lum(b)) |
+| saturation | SetLum(SetSat(b,Sat(s)),Lum(b)) |
+| color | SetLum(s,Lum(b)) |
+| luminosity | SetLum(b,Lum(s)) |
+
+`D(b)=((16*b-12)*b+4)*b` for b<=0.25, otherwise sqrt(b).
+`Lum(c)=0.3*r+0.59*g+0.11*b` is the nonseparable blend convention,
+not BT.709 colorimetric luminance. `Sat(c)=max(c)-min(c)`.
+`SetSat(c,t)=(c-min(c))*t/(max(c)-min(c))`, or zero for range <=1e-6.
+`SetLum(c,t)` adds `t-Lum(c)` to every component, then clips around its
+luminosity: for original minimum n<0 use `l+(c-l)*l/max(l-n,1e-6)`;
+for original maximum x>1 use `l+(c-l)*(1-l)/max(x-l,1e-6)`.
+Plus-lighter here is the registry's saturated additive **blend function** with
+source-over alpha, rather than the separate Porter-Duff additive operator.
+These are the [W3C blend formulas](https://www.w3.org/TR/compositing-1/#blending),
+evaluated in this editor's established linear space.
+
+`tests/fixtures/blend-linear.json` pins a 4x4 working image pair and independent
+f64 expected pixels for all 17 modes at opacity 0/0.5/1. CPU tolerance is 3e-6
+absolute per working channel. The desktop WGSL path uses the same fixtures and
+additional mixed-alpha grids at 1x/2x, with maximum absolute error 2e-5.
+`tests/it/blend.rs` checks mask/opacity order and preview identity. Its WebM/VP9
+encoded edge and patch oracle compares final decoded RGBA to opaque BT.709 output:
+maximum channel difference 20/255, RGBA MSE 8 and flat-patch channel difference
+6/255, allowing 4:2:0 chroma edge
+reconstruction. Working-space checks retain the tighter float tolerance.
+The ignored `blend_frame_benchmark` measures 640x360, ten warm frames per mode.
+
+
+`Rect::validate_crop` exposes the compositor's existing source-normalized rectangle
+admission for reusable desktop crop controls; preview/export keep the same bounds
+and geometry validation. It adds no alternate crop renderer.
+
+## Video transitions
+
+The active transition replaces its two clips in track order over its half-open
+span. Project resolves one piece on each complete transition side at that output
+tick, including the first/last piece's handles beyond its side extent. Progress
+always uses the unchanged timeline span, even after repeated splits. Both
+contributors use the retained source mapping and pass
+through the existing item compositor (effects, masks, transform, opacity and blend)
+over the same backdrop. Premultiplied linear-light frames then interpolate, either
+directly or through the definition's opaque dip colour. Hidden tracks contribute
+no transition pixels; video mute remains an audio control. The exact end resumes
+the incoming clip with no extra frame or gap. Preview, CLI snapshots and export
+share this path; audio crossfades are excluded. Export's stream-copy plan, HDR detection and source admission select clips with
+`Timeline::rendered_items`, so a range inside one clip that overlaps a transition span
+re-encodes through the compositor and checks the other clip's source.
+
+Backdrop and outgoing images retain normal compositor byte leases. Cancellation
+checks during copying, item processing and each interpolation row release every
+partial image on failure. Deterministic transition goldens cover every admitted
+[project definition](../project/README.md#video-transitions), source-handle ticks,
+masked/effected opacity, hidden/muted tracks and cancellation/retry.
 ## Audio clock and headroom
 
 `mix_audio(project, absolute_start_sample, frames, channels, sources, hooks)` is
@@ -343,164 +517,3 @@ exactly (SSIM 1, PSNR infinity); external-reference SSIM is 0.994169 and PSNR
 math are shared. These observations cover this fixture and host, not other
 canvases, hardware, formats or guaranteed latency under concurrent workloads.
 
-## Effects and desktop adapter
-
-`effects::EffectCompositor` receives a working item image, evaluated ordered pass
-list, optional item/mask coverage and the already-composited track-below image.
-`CpuEffects` is the reference and CLI/export default; `RenderSettings.effects`
-optionally injects the desktop adapter. Unsupported GPU capability falls back to
-CPU; cancellation, budget and invalid-data failures propagate. The renderer paints
-an effected item into a transparent output-sized layer, filters it, then composites
-it over the unchanged below image. Effects disable video stream copy.
-
-Blur intensity uses the static project value unless its scalar `Param` override
-exists. Evaluation uses project item-local time; animated overshoot clamps to
-0–100. Sigma is intensity/5 times min(output width/1920, output height/1080).
-The normalized separable Gaussian clamps edge taps and processes all RGBA channels
-in premultiplied linear f32, without colour/alpha conversion. Sigma <=0.01 output
-pixels is an identity. Above sigma 8, n=ceil((sigma/8)^2) iterations use sigma/sqrt(n)
-per axis, capped at 256 iterations and 49 taps per pass. Independent finite kernels
-approximate the untruncated Gaussian; they do not claim source bit identity.
-
-The desktop WGSL adapter consumes the same pass weights/entry names and admits
-maximum absolute CPU/GPU working-channel error 2e-5. Deterministic mixed-alpha
-fixtures at 1x/2x and a repeated-pass fixture exercise the interface in desktop
-tests; render tests pin sigma at 1080p/4K, channel energy, transparent coverage,
-animated overrides, budget refusal and cancellation. A missing native GPU is a
-labelled skip in offline CI and a failure in required-oracle mode. Measurements
-and benchmark commands live in the ticket's local report.
-
-## Mask coverage primitives
-
-`mask::FlatMask` rasterizes an evaluated closed contour with nonzero winding;
-`prepare_builtin` supplies rectangle, cinematic band, ellipse, heart, diamond
-and star contours, with cubic chord tolerance 0.05 output pixels. `SplitMask`
-evaluates an unbounded half-plane so frame edges never introduce artificial
-feather or stroke. Feather is a symmetric signed-distance ramp: a one-pixel
-linear ramp at zero feather, smoothstep over the feather width at >=1 pixel.
-Expansion precedes invert, then opacity scales coverage. Stroke uses distances
-on the retained/removed sides for inside/centre/outside alignment, with independent
-one-output-pixel antialiasing; mask feather affects body coverage only.
-
-`RasterMask::from_image` consumes already-ingressed glyph alpha and reuses text's
-Euclidean distance transform. No glyph renderer or transfer conversion lives in
-the mask engine. One prepared distance raster serves coverage and stroke passes.
-All coverage images use the compositor's premultiplied linear space; `scale_by`
-scales every item channel together. Effects consume working pixels before masking. Geometry mismatches refuse before mutation. Contour/scratch,
-raster-distance and image allocations hold compositor reservations; cancellation
-is checked per row, including text's distance-transform rows/columns.
-
-`Renderer` consumes project mask vectors for every visual layer. Its order is:
-item effects, combined coverage in vector order, enabled strokes in vector order,
-then item opacity, blend and source-over. None modes are skipped. Strokes remain visible
-outside the combined coverage. Only the current mask's raster/distance data is
-retained; accumulated coverage and accumulated premultiplied strokes are bounded
-working images. Active masks disable video stream copy for Auto and forced-copy
-export admission.
-
-Mask geometry uses the placed item's output rectangle. Project-pixel appearance
-widths scale by the smaller output/item axis ratio; text uses the existing bundled
-font/cache/ingress and height scaling, then a working-space affine sample and one
-shared distance transform for coverage and stroke. Cubic flattening and contour
-geometry have a 65,536-point admission bound; unsupported/extreme output geometry
-refuses before uncontrolled allocation. No mask-local glyph renderer or cache.
-
-`tests/it/masks.rs` exercises the public mask kernels and all built-ins through the
-production Renderer at two resolutions. The compositor golden includes masks,
-blur, transparent source edges, half item opacity and an encoded/decode oracle;
-engine and CLI own edit/history/persistence and real rectangle export checks.
-
-The ignored production-frame benchmark in [tests/it/masks.rs](tests/it/masks.rs)
-measures enabled-mask cost against an unmasked baseline. The local task report
-records hardware, shared host load, process RSS and quality metrics; these
-measurements do not establish codec throughput or UI latency.
-## Blend formulas in working space
-
-`blend::composite` is the CPU reference for preview and export, including CLI.
-It accepts equal-size working images and finite opacity in 0..=1. Effects and
-mask/stroke coverage precede blend; opacity scales every source channel exactly
-once after those operations. Zero opacity leaves the backdrop bit-identical and
-the renderer skips that item, including its background-blur contribution.
-
-Let `b`, `s` denote straight **linear-light** channel values recovered temporarily
-from premultiplied backdrop/source RGB, with backdrop alpha `ab` and effective
-source alpha `as = source_alpha * opacity`. Working images remain premultiplied;
-there is no sRGB conversion or per-mode transfer choice. With `B(b,s)` below:
-
-`out_rgb = source_rgb * opacity * (1-ab) + backdrop_rgb * (1-as) + as*ab*B`
-
-`out_alpha = as + ab*(1-as)`.
-
-Zero source alpha bypasses division. Zero backdrop alpha uses ordinary over.
-Clamp roundoff to `0..out_alpha`. The following table defines each component;
-nonseparable functions operate on all three linear components together.
-
-| Mode | B(b,s) |
-|---|---|
-| normal | s |
-| darken | min(b,s) |
-| multiply | b*s |
-| color-burn | b=1: 1; s=0: 0; otherwise 1-min(1,(1-b)/s) |
-| lighten | max(b,s) |
-| screen | b+s-b*s |
-| plus-lighter | min(1,b+s) |
-| color-dodge | b=0: 0; s=1: 1; otherwise min(1,b/(1-s)) |
-| overlay | b<=0.5: 2*b*s; otherwise 1-2*(1-b)*(1-s) |
-| soft-light | s<=0.5: b-(1-2*s)*b*(1-b); otherwise b+(2*s-1)*(D(b)-b) |
-| hard-light | s<=0.5: 2*b*s; otherwise 1-2*(1-b)*(1-s) |
-| difference | abs(b-s) |
-| exclusion | b+s-2*b*s |
-| hue | SetLum(SetSat(s,Sat(b)),Lum(b)) |
-| saturation | SetLum(SetSat(b,Sat(s)),Lum(b)) |
-| color | SetLum(s,Lum(b)) |
-| luminosity | SetLum(b,Lum(s)) |
-
-`D(b)=((16*b-12)*b+4)*b` for b<=0.25, otherwise sqrt(b).
-`Lum(c)=0.3*r+0.59*g+0.11*b` is the nonseparable blend convention,
-not BT.709 colorimetric luminance. `Sat(c)=max(c)-min(c)`.
-`SetSat(c,t)=(c-min(c))*t/(max(c)-min(c))`, or zero for range <=1e-6.
-`SetLum(c,t)` adds `t-Lum(c)` to every component, then clips around its
-luminosity: for original minimum n<0 use `l+(c-l)*l/max(l-n,1e-6)`;
-for original maximum x>1 use `l+(c-l)*(1-l)/max(x-l,1e-6)`.
-Plus-lighter here is the registry's saturated additive **blend function** with
-source-over alpha, rather than the separate Porter-Duff additive operator.
-These are the [W3C blend formulas](https://www.w3.org/TR/compositing-1/#blending),
-evaluated in this editor's established linear space.
-
-`tests/fixtures/blend-linear.json` pins a 4x4 working image pair and independent
-f64 expected pixels for all 17 modes at opacity 0/0.5/1. CPU tolerance is 3e-6
-absolute per working channel. The desktop WGSL path uses the same fixtures and
-additional mixed-alpha grids at 1x/2x, with maximum absolute error 2e-5.
-`tests/it/blend.rs` checks mask/opacity order and preview identity. Its WebM/VP9
-encoded edge and patch oracle compares final decoded RGBA to opaque BT.709 output:
-maximum channel difference 20/255, RGBA MSE 8 and flat-patch channel difference
-6/255, allowing 4:2:0 chroma edge
-reconstruction. Working-space checks retain the tighter float tolerance.
-The ignored `blend_frame_benchmark` measures 640x360, ten warm frames per mode.
-
-
-`Rect::validate_crop` exposes the compositor's existing source-normalized rectangle
-admission for reusable desktop crop controls; preview/export keep the same bounds
-and geometry validation. It adds no alternate crop renderer.
-
-## Video transitions
-
-The active transition replaces its two clips in track order over its half-open
-span. Project resolves one piece on each complete transition side at that output
-tick, including the first/last piece's handles beyond its side extent. Progress
-always uses the unchanged timeline span, even after repeated splits. Both
-contributors use the retained source mapping and pass
-through the existing item compositor (effects, masks, transform, opacity and blend)
-over the same backdrop. Premultiplied linear-light frames then interpolate, either
-directly or through the definition's opaque dip colour. Hidden tracks contribute
-no transition pixels; video mute remains an audio control. The exact end resumes
-the incoming clip with no extra frame or gap. Preview, CLI snapshots and export
-share this path; audio crossfades are excluded. Export's stream-copy plan, HDR detection and source admission select clips with
-`Timeline::rendered_items`, so a range inside one clip that overlaps a transition span
-re-encodes through the compositor and checks the other clip's source.
-
-Backdrop and outgoing images retain normal compositor byte leases. Cancellation
-checks during copying, item processing and each interpolation row release every
-partial image on failure. Deterministic transition goldens cover every admitted
-[project definition](../project/README.md#video-transitions), source-handle ticks,
-masked/effected opacity, hidden/muted tracks and cancellation/retry.
