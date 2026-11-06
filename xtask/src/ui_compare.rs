@@ -12,6 +12,9 @@ use std::{
 
 const TILE: u32 = 32;
 const BLUR_RADIUS: u32 = 2;
+/// Edge strength saturates here (in normalised-luminance units) so a recolour
+/// that changes how strong an edge is, but not where, scores near zero.
+const EDGE_SATURATION: f64 = 1.0;
 const DEFAULT_MAX_ERROR: f64 = 0.02;
 const WORST_TILES: usize = 10;
 const MAX_DIMENSION: u32 = 16_384;
@@ -377,7 +380,8 @@ fn sobel(values: &[f64], width: u32, height: u32) -> Result<Vec<f64>, String> {
                 -top_left + top_right - 2.0 * left + 2.0 * right - bottom_left + bottom_right;
             let gradient_y =
                 -top_left - 2.0 * top - top_right + bottom_left + 2.0 * bottom + bottom_right;
-            output.push((gradient_x * gradient_x + gradient_y * gradient_y).sqrt());
+            let magnitude = (gradient_x * gradient_x + gradient_y * gradient_y).sqrt();
+            output.push((magnitude / EDGE_SATURATION).tanh());
         }
     }
     Ok(output)
@@ -622,6 +626,19 @@ mod tests {
         image
     }
 
+    /// Same layout, different fill colours whose luminance ratios differ from
+    /// the scene, so edge strengths change but edge positions do not.
+    fn tinted(image: &RgbaImage) -> RgbaImage {
+        RgbaImage::from_fn(image.width(), image.height(), |x, y| {
+            let [red, ..] = image.get_pixel(x, y).0;
+            match (red > 128, x < 120) {
+                (true, _) => Rgba([40, 90, 70, 255]),
+                (false, true) => Rgba([150, 40, 120, 255]),
+                (false, false) => Rgba([30, 120, 90, 255]),
+            }
+        })
+    }
+
     fn inverted(image: &RgbaImage) -> RgbaImage {
         RgbaImage::from_fn(image.width(), image.height(), |x, y| {
             let [red, green, blue, alpha] = image.get_pixel(x, y).0;
@@ -693,6 +710,23 @@ mod tests {
             report.whole_error < 1e-9,
             "recoloured layout should not carry structure error: {}",
             report.whole_error
+        );
+    }
+
+    #[test]
+    fn recolour_with_other_contrast_stays_far_below_a_moved_panel() {
+        let scratch = Scratch::new();
+        let ours = save(&scratch, "ours.png", &scene());
+        let tinted = save(&scratch, "tinted.png", &tinted(&scene()));
+        let moved = save(&scratch, "moved.png", &move_panel(scene()));
+        let recoloured = compare(&options(&scratch, &ours, &tinted, None, 1.0)).unwrap();
+        let shifted = compare(&options(&scratch, &ours, &moved, None, 1.0)).unwrap();
+        let worst = |report: &Report| report.worst(1).first().map_or(0.0, |tile| tile.error);
+        assert!(
+            worst(&recoloured) * 4.0 < worst(&shifted),
+            "recolour tile {} vs moved tile {}",
+            worst(&recoloured),
+            worst(&shifted)
         );
     }
 
