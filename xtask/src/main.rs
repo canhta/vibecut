@@ -437,7 +437,7 @@ fn new_crate(root: &Path, name: &str) -> Result<(), String> {
         )
         .map_err(|e| e.to_string())?;
         fs::write(dir.join("Cargo.toml"), format!("[package]\nname = \"{name}\"\nversion.workspace = true\nedition.workspace = true\nlicense.workspace = true\npublish = false\n\n[lints]\nworkspace = true\n")).map_err(|e| e.to_string())?;
-        fs::write(dir.join("README.md"), format!("# {name}\n\nThe [architecture](../../docs/engineering/architecture.md#crate-map) owns this crate's responsibility.\nBefore delivery, document purpose/exclusions, public API, supported inputs, limits and verification under the [README contract](../../docs/engineering/standards.md#public-apis-and-crate-readme).\n")).map_err(|e| e.to_string())
+        fs::write(dir.join("README.md"), format!("# {name}\n\nThe [architecture](../../docs/engineering/architecture.md#crate-map) owns this crate's responsibility.\nBefore delivery, document purpose/exclusions, the public interface, the module map and each module's contract under the [README contract](../../docs/engineering/standards.md#public-apis-and-crate-readme).\n")).map_err(|e| e.to_string())
     })();
     if result.is_err() {
         fs::remove_dir_all(&dir).map_err(|e| e.to_string())?;

@@ -36,4 +36,4 @@ Text is NFC; edit, count and split by grapheme cluster. Test Vietnamese combinin
 
 ## Public APIs and crate README
 
-Expose `pub` APIs only to real consumers; constructors validate invariants. Public docs state units, bounds, failures and cancellation. Each crate README states purpose, exclusions, entry points, supported inputs, limits, tests and measured evidence.
+Expose `pub` APIs only to real consumers; constructors validate invariants. Public docs state units, bounds, failures and cancellation. Each crate README states purpose and exclusions, gives the public interface in a few lines and maps its top-level modules to their READMEs; each module README states that module's contract, supported inputs, limits, tests and measured evidence.

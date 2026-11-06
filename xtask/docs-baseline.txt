@@ -4,6 +4,17 @@ index	docs/adr/0003-whisper-callback-boundary.md	not listed in docs/README.md
 index	docs/adr/0004-module-structure.md	not listed in docs/README.md
 index	docs/adr/0005-three-windows.md	not listed in docs/README.md
 index	docs/adr/0006-closed-command-catalog.md	not listed in docs/README.md
+map	apps/vibecut-cli/README.md	folder module `args` has no README
+map	apps/vibecut-cli/README.md	folder module `commands/ai` has no README
+map	apps/vibecut-cli/README.md	folder module `commands/catalog` has no README
+map	apps/vibecut-cli/README.md	folder module `commands/libraries` has no README
+map	apps/vibecut-cli/README.md	folder module `commands/media/batch` has no README
+map	apps/vibecut-cli/README.md	folder module `commands/media` has no README
+map	apps/vibecut-cli/README.md	folder module `commands/project` has no README
+map	apps/vibecut-cli/README.md	folder module `commands` has no README
+map	apps/vibecut-cli/README.md	folder module `mcp` has no README
+map	apps/vibecut-cli/README.md	folder module `output` has no README
+map	apps/vibecut-cli/README.md	folder module `session` has no README
 map	apps/vibecut-cli/README.md	module map has no row for folder `commands/ai`
 map	apps/vibecut-cli/README.md	module map has no row for folder `commands/catalog`
 map	apps/vibecut-cli/README.md	module map has no row for folder `commands/libraries`
@@ -11,7 +22,28 @@ map	apps/vibecut-cli/README.md	module map has no row for folder `commands/media/
 map	apps/vibecut-cli/README.md	module map has no row for folder `commands/media`
 map	apps/vibecut-cli/README.md	module map has no row for folder `commands/project`
 map	apps/vibecut/README.md	README has no module map table
-map	crates/ai/README.md	README has no module map table
+map	crates/captions/README.md	folder module `interchange/ass` has no README
+map	crates/captions/README.md	folder module `interchange` has no README
+map	crates/captions/README.md	folder module `segment` has no README
+map	crates/clip-eval/README.md	folder module `harness` has no README
+map	crates/engine/README.md	folder module `analysis/shot_analysis` has no README
+map	crates/engine/README.md	folder module `analysis` has no README
+map	crates/engine/README.md	folder module `artifacts` has no README
+map	crates/engine/README.md	folder module `control` has no README
+map	crates/engine/README.md	folder module `libraries/font_catalog` has no README
+map	crates/engine/README.md	folder module `libraries/sound_library` has no README
+map	crates/engine/README.md	folder module `libraries` has no README
+map	crates/engine/README.md	folder module `providers` has no README
+map	crates/engine/README.md	folder module `runtime/cache_storage` has no README
+map	crates/engine/README.md	folder module `runtime/staged_publication` has no README
+map	crates/engine/README.md	folder module `runtime` has no README
+map	crates/engine/README.md	folder module `session/edit` has no README
+map	crates/engine/README.md	folder module `session/wire` has no README
+map	crates/engine/README.md	folder module `session` has no README
+map	crates/engine/README.md	folder module `store/recovery_workflow` has no README
+map	crates/engine/README.md	folder module `store` has no README
+map	crates/engine/README.md	folder module `subtitles` has no README
+map	crates/engine/README.md	folder module `transcript` has no README
 map	crates/engine/README.md	module map has no row for folder `analysis/shot_analysis`
 map	crates/engine/README.md	module map has no row for folder `libraries/font_catalog`
 map	crates/engine/README.md	module map has no row for folder `libraries/sound_library`
@@ -22,6 +54,10 @@ map	crates/engine/README.md	module map has no row for folder `session/wire`
 map	crates/engine/README.md	module map has no row for folder `store/recovery_workflow`
 map	crates/media/README.md	README has no module map table
 map	crates/project/README.md	README has no module map table
+map	crates/render/README.md	folder module `audio` has no README
+map	crates/render/README.md	folder module `export` has no README
+map	crates/render/README.md	folder module `scene` has no README
+map	crates/text/README.md	folder module `layout` has no README
 text	apps/vibecut/README.md	tracker id `p1-parity/33`
 text	apps/vibecut/README.md	tracker id `p1-parity/75`
 text	apps/vibecut/README.md	tracker id `p1-parity/97`
@@ -30,12 +66,6 @@ text	assets/icons/phosphor/README.md	tracker id `p1-parity/06`
 text	assets/icons/phosphor/README.md	tracker id `p1-parity/09`
 text	assets/icons/phosphor/README.md	tracker id `p1-parity/117`
 text	assets/icons/phosphor/README.md	tracker id `p1-parity/54`
-text	crates/ai/README.md	tracker id `p0-core/14`
-text	crates/ai/README.md	tracker id `p1-clips/01`
-text	crates/ai/README.md	tracker id `p1-clips/13`
-text	crates/ai/README.md	tracker id `p1-clips/14`
-text	crates/ai/README.md	tracker id `p1-clips/15`
-text	crates/ai/README.md	tracker id `p2-dubbing/06`
 text	crates/media/README.md	tracker id `p0-core/78`
 text	crates/media/README.md	tracker id `p1-clips/12`
 text	crates/media/README.md	tracker id `ticket 18`

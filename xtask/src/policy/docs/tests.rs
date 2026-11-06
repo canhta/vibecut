@@ -111,6 +111,12 @@ fn module_maps_cover_folder_modules_and_reject_stale_rows() {
         error.contains("module map has no row for folder `editor/assets`"),
         "{error}"
     );
+    assert!(
+        error.contains("folder module `editor` has no README"),
+        "{error}"
+    );
+    tree.write("crates/foo/src/editor/README.md", "# Editor\n");
+    tree.write("crates/foo/src/editor/assets/README.md", "# Assets\n");
     tree.write(
         "crates/foo/README.md",
         "# foo\n\n| Folder | Responsibility |\n|---|---|\n| `editor/` | Editor. |\n| `editor/assets/` | Assets. |\n",

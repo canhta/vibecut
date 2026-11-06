@@ -42,14 +42,14 @@ The [glossary](../../GLOSSARY.md) owns domain definitions; crate READMEs own con
 | Export execution | [render](../../crates/render/README.md#export-and-publication) |
 | Loudness measurement, gains and export admission | [render planner](../../crates/render/README.md#audio-clock-and-headroom) / [engine job](../../crates/engine/README.md#loudness-normalization) |
 | Clip naming, cue mapping, per-short cancel/retry | [shorts batch export](../../crates/shorts/src/batch_export/README.md) |
-| Local model catalog, consent, integrity, transport / transfers, cache bundles / manager presentation | [ai catalog](../../crates/ai/README.md#model-catalog-and-language-neutral-weights) / [engine transfers](../../crates/engine/README.md#local-model-transfers) / [app manager](../../apps/vibecut/README.md#local-model-manager) |
+| Local model catalog, consent, integrity, transport / transfers, cache bundles / manager presentation | [ai catalog](../../crates/ai/src/models/README.md) / [engine transfers](../../crates/engine/README.md#local-model-transfers) / [app manager](../../apps/vibecut/README.md#local-model-manager) |
 | Clip boundary snapping / speech groups / energy | [shorts](../../crates/shorts/src/boundaries/README.md) / [captions](../../crates/captions/README.md#source-cut-units) / [media](../../crates/media/README.md#speech-energy-windows) |
 | Shot analysis and complete artifact caching | [engine analysis](../../crates/engine/README.md#per-shot-analysis) |
-| Vision preparation / inference, face embeddings and shape-plan cache | [media](../../crates/media/README.md#vision-preparation) / [ai detectors](../../crates/ai/README.md#local-vision-detectors) |
-| Provider capabilities, consent, cost / text timing / isolated Gipformer | [ai](../../crates/ai/README.md#consent-and-cost) / [recognition](../../crates/ai/README.md#recognition-and-time) / [local runner](../../crates/ai/README.md#local-gipformer) |
+| Vision preparation / inference, face embeddings and shape-plan cache | [media](../../crates/media/README.md#vision-preparation) / [ai detectors](../../crates/ai/src/vision/README.md) |
+| Provider capabilities, consent, cost / text timing / isolated Gipformer | [ai](../../crates/ai/src/policy/README.md) / [recognition](../../crates/ai/src/assembly/README.md) / [local runner](../../crates/ai/src/gipformer/README.md) |
 | Sound search, saved local sounds, preview cache and attribution | [engine sounds](../../crates/engine/README.md#sound-library) |
-| Translation windows and response validation / selection, retry, edit protection | [ai translation](../../crates/ai/README.md#contextual-text-translation) / [engine application](../../crates/engine/README.md#translation-selection-and-application) |
-| SpeechSynthesizer capabilities, requests, consent, PCM validation | [ai speech](../../crates/ai/README.md#speech-synthesis) |
+| Translation windows and response validation / selection, retry, edit protection | [ai translation](../../crates/ai/src/translation/README.md) / [engine application](../../crates/engine/README.md#translation-selection-and-application) |
+| SpeechSynthesizer capabilities, requests, consent, PCM validation | [ai speech](../../crates/ai/src/speech/README.md) |
 
 Engine wraps media/render/AI execution, supplying progress and cancellation hooks. Persistent artifacts use content keys; frame/glyph caches stay with data owners and share accounting leases. Engine owns speech provider selection, retry budgets, jobs and placement.
 

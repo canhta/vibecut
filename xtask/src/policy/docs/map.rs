@@ -1,4 +1,5 @@
-//! Each crate and app README maps every folder module below `src/`.
+//! Each crate and app README maps every folder module below `src/`, and each
+//! folder module carries its own contract README.
 use super::{MAP, Violation, test_path};
 use std::{
     collections::{BTreeMap, BTreeSet},
@@ -49,6 +50,7 @@ pub(super) fn check(root: &Path) -> Result<BTreeSet<Violation>, String> {
         }
     }
     let mut violations = BTreeSet::new();
+    let tracked: BTreeSet<&str> = tracked.iter().map(String::as_str).collect();
     for readme in readmes {
         let Some(package) = package_readme(readme) else {
             continue;
@@ -71,6 +73,13 @@ pub(super) fn check(root: &Path) -> Result<BTreeSet<Violation>, String> {
                     path: readme.clone(),
                     rule: MAP,
                     detail: format!("module map has no row for folder `{folder}`"),
+                });
+            }
+            if !tracked.contains(format!("{package}/src/{folder}/README.md").as_str()) {
+                violations.insert(Violation {
+                    path: readme.clone(),
+                    rule: MAP,
+                    detail: format!("folder module `{folder}` has no README"),
                 });
             }
         }

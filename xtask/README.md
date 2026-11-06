@@ -168,7 +168,7 @@ without changing native FFmpeg or public layouts.
 Windows workspace Cargo children also receive the managed static `/MD` Sherpa
 library directory through `SHERPA_ONNX_LIB_DIR`, preserving Rust's default dynamic
 MSVC CRT. Native AI archive selection, cache integrity and explicit overrides belong
-to [ai's native build contract](../crates/ai/README.md#local-gipformer).
+to [ai's native build contract](../crates/ai/src/gipformer/README.md).
 
 On Windows, the FFmpeg environment owner projects only DLLs from the verified native
 prefix into `runtime-dlls` using atomic hard links, and prepends that directory to

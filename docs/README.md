@@ -14,7 +14,7 @@
 | Licences, FFmpeg distribution, assets, model weights, privacy | [Open-source policy](engineering/open-source.md) | - |
 | Crates and edges, the layer of each crate | [Architecture](engineering/architecture.md) | structure.md beyond its own rules |
 | Inside a crate: folders, layers, naming | [Structure](engineering/structure.md), `xtask/modules.toml` | standards.md beyond its link |
-| Contract of one module | its crate README, section of its folder | architecture.md beyond the index row |
+| Contract of one module | its folder README, or the crate README for a single-file module | architecture.md beyond the index row |
 | Why a decision was made | [ADRs](adr/README.md) | owner docs |
 | Domain model, glossary and ADR conventions | [Domain docs](agents/domain.md) | - |
 | Domain term | [Glossary](../GLOSSARY.md) | - |
