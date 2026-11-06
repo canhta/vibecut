@@ -148,10 +148,14 @@ pub(super) fn compliance(tools: &Tools, prefix: &Path, destination: &Path) -> Re
     }
     tree(&licenses, destination)?;
     copy(&prefix.join("BUILD.txt"), &destination.join("BUILD.txt"))?;
+    // The recipe is the whole `ffmpeg` module (interface beside its folder), not
+    // one file: the build steps live in the folder.
+    let recipe = destination.join("build-recipe");
     copy(
         &tools.root.join("xtask/src/ffmpeg.rs"),
-        &destination.join("build-recipe.rs"),
+        &recipe.join("ffmpeg.rs"),
     )?;
+    tree(&tools.root.join("xtask/src/ffmpeg"), &recipe.join("ffmpeg"))?;
     for identity in identities {
         let name = format!("{}-{}.archive", identity.name, identity.version);
         copy(
@@ -864,6 +868,23 @@ mod tests {
                 .contains("license")
         );
     }
+    #[test]
+    fn distribution_carries_the_whole_ffmpeg_build_recipe() {
+        let temp = Temp::new(&env::temp_dir()).expect("temp");
+        let prefix = sdk(&temp.0);
+        let tools = Tools::new(&workspace());
+        let out = temp.0.join("valid");
+        compliance(&tools, &prefix, &out).expect("complete distribution");
+        for (file, needle) in [
+            ("ffmpeg.rs", "pub fn provision"),
+            ("ffmpeg/recipes.rs", "--disable-autodetect"),
+            ("ffmpeg/fetch.rs", "ZLIB_REPOSITORY"),
+        ] {
+            let shipped = text(&out.join("build-recipe").join(file)).expect(file);
+            assert!(shipped.contains(needle), "{file} lacks {needle}");
+        }
+    }
+
     #[test]
     fn zlib_license_and_corresponding_source_are_required() {
         for (removed, expected) in [
