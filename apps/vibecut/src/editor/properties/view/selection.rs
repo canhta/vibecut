@@ -25,7 +25,7 @@ impl Panel<'_, '_> {
             }
             _ => {}
         }
-        let fields = shared_fields(self.cx.session.project(), &self.cx.selection);
+        let fields = shared_fields(self.cx.session.project(), self.cx.selection);
         if fields.is_empty() {
             ui.label(self.tr(Text::NoSharedFields));
         }
