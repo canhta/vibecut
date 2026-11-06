@@ -1,4 +1,4 @@
-//! Adapts native clip requests to the engine workflow.
+//! Adapts native clip requests to the shorts workflow.
 use crate::args::CliError;
 use crate::args::{number_arg, parse_selection, seconds_arg, seconds_ticks, utf8};
 use crate::output::CliProgress;
@@ -9,11 +9,13 @@ use crate::session::{cli_runner, cli_runtime};
 use engine::cache::ArtifactCache;
 use engine::subtitles::{Cost, LanguageTag};
 use engine::{
-    ClipCandidate, ClipDropReason, ClipExportRequest, ClipRequest, ClipRole, ClipSettings,
-    ClipSource, ClipSourceSegment, ClipSuggestionOutcome, NfcText, SnapSettings, clip_suggest,
-    subtitles,
+    ClipDropReason, ClipRole, ClipSettings, ClipSource, ClipSourceSegment, NfcText, subtitles,
 };
 use serde_json::{Value, json};
+use shorts::{
+    ClipCandidate, ClipExportRequest, ClipRequest, ClipSuggestionOutcome, SnapSettings,
+    clip_suggest,
+};
 use std::ffi::OsString;
 use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
@@ -395,7 +397,7 @@ fn clips_json(
     outcome: &ClipSuggestionOutcome,
     input: &Path,
     settings: &ClipSettings,
-    exported: Option<&engine::ClipExportOutcome>,
+    exported: Option<&shorts::ClipExportOutcome>,
     languages: &[LanguageTag],
 ) -> Result<Value, CliError> {
     let candidates: Vec<Value> = outcome
@@ -510,7 +512,7 @@ fn segment_json(segment: &ClipSourceSegment) -> Value {
         "source_order": segment.source_order,
     })
 }
-fn adjustment_json(value: &engine::clip_boundaries::BoundaryAdjustment) -> Value {
+fn adjustment_json(value: &shorts::clip_boundaries::BoundaryAdjustment) -> Value {
     json!({
         "original": tick_json(value.original),
         "adjusted": tick_json(value.adjusted),
@@ -531,22 +533,22 @@ fn clip_role_name(role: ClipRole) -> &'static str {
         ClipRole::Payoff => "payoff",
     }
 }
-fn boundary_kind_name(kind: engine::clip_boundaries::BoundaryKind) -> &'static str {
+fn boundary_kind_name(kind: shorts::clip_boundaries::BoundaryKind) -> &'static str {
     match kind {
-        engine::clip_boundaries::BoundaryKind::SentenceSilence => "sentence_silence",
-        engine::clip_boundaries::BoundaryKind::Sentence => "sentence",
-        engine::clip_boundaries::BoundaryKind::Silence => "silence",
-        engine::clip_boundaries::BoundaryKind::WordOrSegment => "word_or_segment",
-        engine::clip_boundaries::BoundaryKind::WordFade => "word_fade",
+        shorts::clip_boundaries::BoundaryKind::SentenceSilence => "sentence_silence",
+        shorts::clip_boundaries::BoundaryKind::Sentence => "sentence",
+        shorts::clip_boundaries::BoundaryKind::Silence => "silence",
+        shorts::clip_boundaries::BoundaryKind::WordOrSegment => "word_or_segment",
+        shorts::clip_boundaries::BoundaryKind::WordFade => "word_fade",
     }
 }
-fn boundary_failure_name(reason: engine::clip_boundaries::BoundaryFailure) -> &'static str {
+fn boundary_failure_name(reason: shorts::clip_boundaries::BoundaryFailure) -> &'static str {
     match reason {
-        engine::clip_boundaries::BoundaryFailure::NoSafeFrame => "no_safe_frame",
-        engine::clip_boundaries::BoundaryFailure::SegmentDuration => "segment_duration",
-        engine::clip_boundaries::BoundaryFailure::TotalDuration => "total_duration",
-        engine::clip_boundaries::BoundaryFailure::SegmentOverlap => "segment_overlap",
-        engine::clip_boundaries::BoundaryFailure::Candidate => "candidate",
+        shorts::clip_boundaries::BoundaryFailure::NoSafeFrame => "no_safe_frame",
+        shorts::clip_boundaries::BoundaryFailure::SegmentDuration => "segment_duration",
+        shorts::clip_boundaries::BoundaryFailure::TotalDuration => "total_duration",
+        shorts::clip_boundaries::BoundaryFailure::SegmentOverlap => "segment_overlap",
+        shorts::clip_boundaries::BoundaryFailure::Candidate => "candidate",
     }
 }
 fn drop_reason_name(reason: ClipDropReason) -> &'static str {
@@ -572,7 +574,7 @@ fn format_name(format: engine::Format) -> &'static str {
 
 fn clips_human(
     outcome: &ClipSuggestionOutcome,
-    exported: Option<&engine::ClipExportOutcome>,
+    exported: Option<&shorts::ClipExportOutcome>,
 ) -> String {
     let mut human = format!(
         "source: {}\nprovider: {} ({})\ntranscription: {} ({})\n",

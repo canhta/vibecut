@@ -664,8 +664,8 @@ scenes through the shared audit registry in both themes and at 1x/2x.
 ## Long video to shorts
 
 The Home `home.shorts` card opens a separate native viewport. `Shorts` owns its
-bounded presentation/review history; `LocalVideoWorkflow` composes engine's
-`clip_suggest::suggest` against the picked/dropped local video. Provider and model
+bounded presentation/review history; `LocalVideoWorkflow` composes the [shorts workflow](../../crates/shorts/README.md)
+through `clip_suggest::suggest` against the picked/dropped local video. Provider and model
 pickers use offline capability data. Local heuristics are an explicit choice;
 remote ASR and suggestions stop at an exact per-upload disclosure (provider,
 model, language, audio duration, payload bytes, cost ceiling and policy links).
@@ -676,7 +676,7 @@ Candidates show title, duration, editorial score, reason and heuristic/AI source
 The shared catalog formats metadata and numeric fields; trim values parse the
 same en/vi decimal and grouping notation, refusing malformed or mixed input.
 Changing the runtime locale refreshes trim drafts without changing source ticks.
-Review retains roles and both play/source ranks, safe engine boundary snapping,
+Review retains roles and both play/source ranks, safe shorts boundary snapping,
 accept/reject and a source-normalized 9:16 crop. The reusable `crop` control moves
 within source bounds, with keyboard arrows and Escape rollback. Review actions
 have a separate 100-step undo/redo history; a whole crop gesture is one step.

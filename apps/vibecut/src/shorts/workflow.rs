@@ -1,13 +1,13 @@
-//! Composition only; engine owns ASR, suggestion, snapping, consent and caches.
+//! Composes source-to-shorts generation for the app.
 use super::{GenerationRequest, Generator, ReviewSource, TaskEvents};
 use engine::Result;
 use engine::{
     ByteBudget,
     cache::ArtifactCache,
-    clip_suggest::{self, ClipRequest, SnapSettings},
     jobs::{JobRunner, RunnerConfig, SystemClock},
     subtitles::{self, Cancellation},
 };
+use shorts::clip_suggest::{self, ClipRequest, SnapSettings};
 use std::{sync::Arc, time::Duration};
 use time::{TICKS_PER_SECOND, Tick};
 

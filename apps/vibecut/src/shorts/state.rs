@@ -1,21 +1,24 @@
-//! Shorts state: explicit generation, undoable review and engine exports.
+//! Retains review state for accepted shorts.
 use crate::{
     Editor, Error, Result,
     catalog::{self, Locale, Preferences, Text},
     crop, egui,
     playback::{Files, Playback, Sources},
 };
-pub use engine::ClipCandidate as Candidate;
 use engine::ClipSourceSegment;
 use engine::{
-    ByteBudget, ClipBatch, ClipBatchRequest, ClipShort, Command, NewItem, Session,
+    ByteBudget, Command, NewItem, Session,
     cache::{ArtifactKind, CacheKey, KeyInputs},
-    clip_boundaries::{ClipBoundarySettings, snap_clip_boundaries},
     jobs::{
         CancelToken, JobId, JobKind, JobRunner, JobSpec, JobState, ResourceClass, RunnerConfig,
         SystemClock,
     },
     subtitles::Cancellation,
+};
+pub use shorts::ClipCandidate as Candidate;
+use shorts::{
+    ClipBatch, ClipBatchRequest, ClipShort,
+    clip_boundaries::{ClipBoundarySettings, snap_clip_boundaries},
 };
 use std::{
     collections::VecDeque,
@@ -80,7 +83,7 @@ pub struct GenerationRequest {
     pub max_seconds: u32,
     pub max_segments: usize,
 }
-/// Injectable composition boundary. Production calls the shared engine clip workflow;
+/// Injectable composition boundary. Production calls the shared shorts workflow;
 /// tests inject bounded results/failures while using the same job and widget paths.
 pub trait Generator: Send + Sync + 'static {
     fn run(

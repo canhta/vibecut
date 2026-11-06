@@ -13,6 +13,7 @@ name = "clip-eval"
 path = "src/main.rs"
 
 [dependencies]
+shorts = { path = "../shorts" }
 ai = { path = "../ai", default-features = false }
 captions = { path = "../captions" }
 engine = { path = "../engine" }

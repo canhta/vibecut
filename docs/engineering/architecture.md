@@ -13,10 +13,11 @@ The core runs headless: editing, tests and the CLI need no window or UI toolkit;
 | text | crates/text | Unicode shaping and rasterization | - |
 | render | crates/render | CPU compositor, caption overlay, audio mix, export execution | time, media, project, captions, text |
 | ai | crates/ai | Provider interfaces, capabilities, consent and cost, AI adapters | time, media, captions |
-| engine | crates/engine | Session, commands, history, recovery scheduling, jobs, cache, adapter selection, clip batch export and per-shot analysis | time, media, project, captions, text, render, ai |
-| clip-eval | crates/clip-eval | Fixed labelled clip-pipeline evaluation harness, metrics and local reports | time, media, captions, ai, engine |
-| vibecut-cli | apps/vibecut-cli | Headless adapter: CLI arguments, typed exit codes, dispatch, control-session lifetime, project lease composition, export admission, bounded batch job files, MCP tools and authenticated local transport | engine, media, project, render, time |
-| vibecut | apps/vibecut | Desktop app: UI, playback, model-manager presentation, wgpu compositor, preferences, app controls and inspection; composes the CLI-owned MCP adapter | time, engine, media, project, captions, text, render, ai, vibecut-cli |
+| engine | crates/engine | Session, commands, history, recovery scheduling, jobs, cache, adapter selection and per-shot analysis | time, media, project, captions, text, render, ai |
+| shorts | crates/shorts | Clip suggestion, boundary snapping and accepted-short batch export | time, media, project, captions, render, ai, engine |
+| clip-eval | crates/clip-eval | Fixed labelled clip-pipeline evaluation harness, metrics and local reports | time, media, captions, ai, engine, shorts |
+| vibecut-cli | apps/vibecut-cli | Headless adapter: CLI arguments, typed exit codes, dispatch, control-session lifetime, project lease composition, export admission, bounded batch job files, MCP tools and authenticated local transport | engine, media, project, render, time, shorts |
+| vibecut | apps/vibecut | Desktop app: UI, playback, model-manager presentation, wgpu compositor, preferences, app controls and inspection; composes the CLI-owned MCP adapter | time, engine, media, project, captions, text, render, ai, vibecut-cli, shorts |
 
 Only `media` links FFmpeg. Render's CPU compositor is the reference shared by preview and export; the app owns the optional wgpu adapter behind render's interface. Update this table in the same change that adds a responsibility or edge.
 
@@ -40,9 +41,9 @@ The [glossary](../../GLOSSARY.md) owns domain definitions; crate READMEs own con
 | Row tasks and native conversion worker allowance | [engine kernel execution](../../crates/engine/README.md#render-kernel-execution) |
 | Export execution | [render](../../crates/render/README.md#export-and-publication) |
 | Loudness measurement, gains and export admission | [render planner](../../crates/render/README.md#audio-clock-and-headroom) / [engine job](../../crates/engine/README.md#loudness-normalization) |
-| Clip naming, cue mapping, per-short cancel/retry | [engine batch export](../../crates/engine/README.md#clip-batch-export) |
+| Clip naming, cue mapping, per-short cancel/retry | [shorts batch export](../../crates/shorts/src/batch_export/README.md) |
 | Local model catalog, consent, integrity, transport / transfers, cache bundles / manager presentation | [ai catalog](../../crates/ai/README.md#model-catalog-and-language-neutral-weights) / [engine transfers](../../crates/engine/README.md#local-model-transfers) / [app manager](../../apps/vibecut/README.md#local-model-manager) |
-| Clip boundary snapping / speech groups / energy | [engine](../../crates/engine/README.md#clip-boundary-adjustment) / [captions](../../crates/captions/README.md#source-cut-units) / [media](../../crates/media/README.md#speech-energy-windows) |
+| Clip boundary snapping / speech groups / energy | [shorts](../../crates/shorts/src/boundaries/README.md) / [captions](../../crates/captions/README.md#source-cut-units) / [media](../../crates/media/README.md#speech-energy-windows) |
 | Shot analysis and complete artifact caching | [engine analysis](../../crates/engine/README.md#per-shot-analysis) |
 | Vision preparation / inference, face embeddings and shape-plan cache | [media](../../crates/media/README.md#vision-preparation) / [ai detectors](../../crates/ai/README.md#local-vision-detectors) |
 | Provider capabilities, consent, cost / text timing / isolated Gipformer | [ai](../../crates/ai/README.md#consent-and-cost) / [recognition](../../crates/ai/README.md#recognition-and-time) / [local runner](../../crates/ai/README.md#local-gipformer) |

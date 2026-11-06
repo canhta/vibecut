@@ -1,19 +1,8 @@
 //! Produces source-snapped suggestions for accepted shorts.
-use crate::EditError;
-use crate::cache::{ArtifactCache, ArtifactKind, CacheKey, KeyInputs};
 use crate::clip_boundaries::{
     BoundaryFailure, ClipBoundarySettings, SegmentAdjustment, snap_clip_boundaries,
 };
-use crate::jobs::{JobBytes, JobKind, JobRunner, JobSpec, JobState, ResourceClass};
-use crate::providers as engine_providers;
-use crate::providers::{
-    CatalogOperation, ConsentPrompt, Cost, Credentials, Providers, UploadRequest,
-};
-use crate::shorts::{ClipBatch, ClipBatchRequest, ClipPaths, ClipShort, MAX_BATCH_CLIPS};
-use crate::transcript::{
-    Cancellation, Progress, Stage, Transcription, build_session, hex, transcribe, translate_track,
-    wait_for_job,
-};
+use crate::{ClipBatch, ClipBatchRequest, ClipPaths, ClipShort, MAX_BATCH_CLIPS};
 use ai::clips::{
     ANTHROPIC_SETTINGS, AnthropicClipSuggester, ClipDisclosure, ClipInput, ClipProposal,
     ClipSegment, ClipSettings, ClipSource, ClipSourceSegment, ClipSuggester, ClipSuggestion,
@@ -22,6 +11,17 @@ use ai::clips::{
 };
 use ai::{Consent, CostEstimate, Location, Money, Operation, ProviderConfig, SampleRange, Scope};
 use captions::{Cue, CueTrack, Format, LanguageTag, NfcText};
+use engine::EditError;
+use engine::cache::{ArtifactCache, ArtifactKind, CacheKey, KeyInputs};
+use engine::jobs::{JobBytes, JobKind, JobRunner, JobSpec, JobState, ResourceClass};
+use engine::providers as engine_providers;
+use engine::providers::{
+    CatalogOperation, ConsentPrompt, Cost, Credentials, Providers, UploadRequest,
+};
+use engine::transcript::{
+    Cancellation, Progress, Stage, Transcription, build_session, transcribe, translate_track,
+    wait_for_job,
+};
 use media::SourceAsset;
 use project::Project;
 use std::path::PathBuf;

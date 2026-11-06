@@ -211,8 +211,10 @@ pub fn translate_selected(
 
 /// Translate one source-timed cue set into a target language without writing a
 /// project. Reuses the subtitle translation window/consent/job path.
+/// Duration is in source ticks; missing providers, invalid cues, refused consent
+/// and cooperative cancellation retain their existing typed execution failures.
 #[allow(clippy::too_many_arguments)]
-pub(crate) fn translate_track(
+pub fn translate_track(
     asset: &SourceAsset,
     duration: Tick,
     cues: &[Cue],

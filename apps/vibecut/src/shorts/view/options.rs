@@ -123,7 +123,7 @@ fn providers(state: &mut State, ui: &mut egui::Ui) {
             &state.request.suggestion_model,
         )
     };
-    let options = engine::clip_suggest::suggestion_options();
+    let options = shorts::clip_suggest::suggestion_options();
     let combo = egui::ComboBox::from_id_salt(egui::Id::unique("shorts.suggester"))
         .width(380.0)
         .selected_text(label)
@@ -163,7 +163,7 @@ fn providers(state: &mut State, ui: &mut egui::Ui) {
                     (
                         o.id,
                         if o.id == "openai" {
-                            engine::clip_suggest::OPENAI_POLICY_URL
+                            shorts::clip_suggest::OPENAI_POLICY_URL
                         } else {
                             "https://elevenlabs.io/terms-of-use"
                         },

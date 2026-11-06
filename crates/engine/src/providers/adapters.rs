@@ -62,7 +62,8 @@ impl Credentials {
             anthropic: key(anthropic)?,
         })
     }
-    pub(crate) fn openai(&self) -> Result<&ApiKey, EditError> {
+    /// Resolve the configured OpenAI credential for a selected adapter or refuse.
+    pub fn openai(&self) -> Result<&ApiKey, EditError> {
         self.openai
             .as_ref()
             .ok_or(EditError::CredentialMissing("OPENAI_API_KEY"))
@@ -72,7 +73,8 @@ impl Credentials {
             .as_ref()
             .ok_or(EditError::CredentialMissing("ELEVENLABS_API_KEY"))
     }
-    pub(crate) fn anthropic(&self) -> Result<&ApiKey, EditError> {
+    /// Resolve the configured Anthropic credential for a selected adapter or refuse.
+    pub fn anthropic(&self) -> Result<&ApiKey, EditError> {
         self.anthropic
             .as_ref()
             .ok_or(EditError::CredentialMissing("ANTHROPIC_API_KEY"))

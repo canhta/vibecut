@@ -7,12 +7,13 @@
 use ai::clips::{ClipRole, ClipSourceSegment};
 use captions::{Cue, CueText, CueTrack, Format, LanguageTag};
 use engine::jobs::{JobRunner, JobSnapshot, JobState, RunnerConfig, SystemClock};
-use engine::{ByteBudget, ClipBatch, ClipBatchRequest, ClipShort, EditError};
+use engine::{ByteBudget, EditError};
 use media::{
     AssetData, AssetId, AudioInfo, ColorInfo, ContentHash, SourceAsset, SourceProbe, SourceStream,
     StreamKind, TimeBase, VideoInfo,
 };
 use project::{Project, ProjectId};
+use shorts::{ClipBatch, ClipBatchRequest, ClipShort};
 use std::{
     collections::BTreeMap,
     path::{Path, PathBuf},

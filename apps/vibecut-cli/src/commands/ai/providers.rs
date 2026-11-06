@@ -3,9 +3,10 @@ use crate::args::CliError;
 use crate::args::utf8;
 use crate::output::Output;
 use crate::session::Context;
+use engine::subtitles;
 use engine::subtitles::{CatalogOperation, ProviderOption};
-use engine::{clip_suggest, subtitles};
 use serde_json::{Value, json};
+use shorts::clip_suggest;
 use std::ffi::OsString;
 
 pub(crate) fn run(_context: &Context, args: Vec<OsString>) -> Result<Output, CliError> {

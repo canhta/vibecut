@@ -6,7 +6,7 @@ use super::{
     Credentials, Cue, EditError, FrameRate, Instant, JobBytes, JobKind, JobRunner, JobSpec,
     KeyInputs, LanguageTag, MAX_WIRE, MODE, Money, NfcText, Operation, Progress, PromptApproval,
     Providers, RejectedClip, ResourceClass, SampleRange, Scope, SnapSettings, SourceAsset,
-    SourceRange, Stage, Tick, Transcription, build_session, build_suggester, engine_providers, hex,
+    SourceRange, Stage, Tick, Transcription, build_session, build_suggester, engine_providers,
     snap_clip_boundaries, transcribe, upload_request, wait_for_job,
 };
 fn clip_input(
@@ -114,7 +114,10 @@ fn snap_candidate(
 }
 
 pub(super) fn fingerprint(asset: &SourceAsset) -> String {
-    format!("clips:{}", hex(&asset.content_hash().0))
+    format!(
+        "clips:{}",
+        blake3::Hash::from(asset.content_hash().0).to_hex()
+    )
 }
 
 /// Transcribe, suggest, and snap one source file. No output file is written.
@@ -269,7 +272,9 @@ pub fn suggest(
         SourceRange::new(Tick::ZERO, duration)?,
         cancel.media_flag(),
     )?;
-    let profile = providers.language_profile(&source_language)?;
+    let profile = captions::LanguageRegistry::standard()?
+        .profile(&source_language)
+        .clone();
     let boundaries = snap_settings(&asset, duration, &request.settings, &request.snap)?;
     let mut clips = Vec::new();
     let mut rejected = Vec::new();

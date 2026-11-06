@@ -19,8 +19,6 @@ map	crates/engine/README.md	module map has no row for folder `runtime/cache_stor
 map	crates/engine/README.md	module map has no row for folder `runtime/staged_publication`
 map	crates/engine/README.md	module map has no row for folder `session/edit`
 map	crates/engine/README.md	module map has no row for folder `session/wire`
-map	crates/engine/README.md	module map has no row for folder `shorts/batch_export`
-map	crates/engine/README.md	module map has no row for folder `shorts/suggestion`
 map	crates/engine/README.md	module map has no row for folder `store/recovery_workflow`
 map	crates/media/README.md	README has no module map table
 map	crates/project/README.md	README has no module map table

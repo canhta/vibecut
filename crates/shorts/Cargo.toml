@@ -1,0 +1,26 @@
+[package]
+name = "shorts"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish = false
+
+[lints]
+workspace = true
+
+[dependencies]
+engine = { path = "../engine" }
+ai = { path = "../ai", default-features = false }
+project = { path = "../project" }
+time = { path = "../time" }
+media = { path = "../media" }
+render = { path = "../render" }
+captions = { path = "../captions" }
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.154"
+unicode-segmentation = "1.13.3"
+blake3 = "1.8.7"
+
+[dev-dependencies]
+proptest = "1.12.0"
+tempfile = "3.27.0"

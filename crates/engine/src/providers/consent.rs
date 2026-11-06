@@ -29,7 +29,8 @@ pub trait ConsentPrompt {
 pub struct DenyUploads;
 pub struct AllowAll;
 impl Cost {
-    pub(crate) fn add(&mut self, next: &CostEstimate) {
+    /// Accumulate an estimate, saturating micros and marking mixed currencies unknown.
+    pub fn add(&mut self, next: &CostEstimate) {
         match (&mut *self, next) {
             (Self::Unknown, _) => {}
             (_, CostEstimate::Unknown) => *self = Self::Unknown,

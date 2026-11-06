@@ -5,15 +5,14 @@
     dead_code
 )]
 use captions::{Fingerprint, LanguageTag, Segment, Transcript};
-use engine::{
-    ByteBudget, Command, Session, clip_boundaries::ClipBoundarySettings, subtitles::Cancellation,
-};
+use engine::{ByteBudget, Command, Session, subtitles::Cancellation};
 use engine::{ClipProposal, ClipRole, ClipSource, ClipSourceSegment};
 use media::{
     AssetData, AssetId, ColorInfo, ContentHash, SourceAsset, SourceProbe, SourceStream, StreamKind,
     TimeBase, VideoInfo,
 };
 use project::{Project, ProjectId};
+use shorts::clip_boundaries::ClipBoundarySettings;
 use std::sync::{Arc, Mutex};
 use time::{FrameRate, SourceRange, TICKS_PER_SECOND, Tick};
 use vibecut::{

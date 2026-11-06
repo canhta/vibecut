@@ -17,6 +17,7 @@ test = true
 workspace = true
 
 [dependencies]
+shorts = { path = "../../crates/shorts" }
 vibecut-cli = { path = "../vibecut-cli" }
 pollster = "1.0.1"
 

@@ -163,7 +163,7 @@ library cleanup cannot remove it; it never downloads implicitly. Missing cache,
 missing credential, auth, quota, rate-limit, network and no-audio-device failures
 keep distinct stable codes, and no command prints or persists the token.
 
-`clips` is an adapter over the [engine clip suggestion workflow](../../crates/engine/README.md#clip-suggestion-workflow):
+`clips` is an adapter over the [shorts suggestion workflow](../../crates/shorts/src/suggestion/README.md):
 it parses suggestion, ASR, translation and export flags, prints the provider's
 upload scope before any remote byte leaves the machine, and maps candidates or
 typed failures to stdout/stderr. It owns no segmentation, prompt, selection,

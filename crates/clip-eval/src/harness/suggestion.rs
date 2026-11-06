@@ -7,7 +7,7 @@ use crate::{Error, Result};
 use ai::clips::{ClipInput, ClipSource, ClipSuggester, MAX_WIRE, MODE, suggest_clips};
 use ai::{Consent, CostEstimate, Money, Operation, Request, SampleRange, Scope};
 use captions::{LanguageProfile, Transcript};
-use engine::clip_boundaries::{ClipBoundarySettings, snap_clip_boundaries};
+use shorts::clip_boundaries::{ClipBoundarySettings, snap_clip_boundaries};
 use std::path::Path;
 use std::sync::Arc;
 use time::{SourceRange, Tick};

@@ -973,6 +973,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2",
+ "shorts",
  "tempfile",
  "thiserror 2.0.21",
  "time 0.1.0",
@@ -5304,6 +5305,25 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f8fadd59c855ef2080decdef8ff161eb6661b86933c9d82e5ba29dc602a55aba"
 
 [[package]]
+name = "shorts"
+version = "0.1.0"
+dependencies = [
+ "ai",
+ "blake3",
+ "captions",
+ "engine",
+ "media",
+ "project",
+ "proptest",
+ "render",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "time 0.1.0",
+ "unicode-segmentation",
+]
+
+[[package]]
 name = "signal-hook-registry"
 version = "1.4.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6425,6 +6445,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2",
+ "shorts",
  "skrifa 0.49.0",
  "sys-locale",
  "tempfile",
@@ -6451,6 +6472,7 @@ dependencies = [
  "same-file",
  "serde",
  "serde_json",
+ "shorts",
  "tempfile",
  "thiserror 2.0.21",
  "time 0.1.0",

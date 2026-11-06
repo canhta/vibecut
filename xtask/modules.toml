@@ -17,7 +17,7 @@ groups = ["substrate"]
 
 [[crate.layer]]
 name = "features"
-groups = ["subtitles", "shorts", "analysis", "artifacts", "libraries"]
+groups = ["subtitles", "analysis", "artifacts", "libraries"]
 
 [[crate.layer]]
 name = "control"
@@ -38,10 +38,6 @@ group = "substrate"
 [[crate.module]]
 name = "subtitles"
 group = "subtitles"
-
-[[crate.module]]
-name = "shorts"
-group = "shorts"
 
 [[crate.module]]
 name = "analysis"
@@ -66,6 +62,31 @@ group = "substrate"
 [[crate.module]]
 name = "control"
 group = "control"
+
+# Shorts operations are independent; only the suggestion workflow composes them.
+[[crate]]
+name = "shorts"
+path = "crates/shorts"
+
+[[crate.layer]]
+name = "operations"
+groups = ["boundaries", "batch_export"]
+
+[[crate.layer]]
+name = "workflow"
+groups = ["suggestion"]
+
+[[crate.module]]
+name = "boundaries"
+group = "boundaries"
+
+[[crate.module]]
+name = "batch_export"
+group = "batch_export"
+
+[[crate.module]]
+name = "suggestion"
+group = "suggestion"
 
 # Desktop app: docs/engineering/structure.md#desktop-app-appsvibecutsrc.
 # Foundation (kit, i18n, input) sits below shell. Home, Shorts and each editor

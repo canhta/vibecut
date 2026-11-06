@@ -8,8 +8,9 @@ use ai::clips::{ClipRole, ClipSourceSegment};
 use captions::{
     Fingerprint, LanguageRegistry, LanguageTag, LayoutHooks, Segment, Transcript, Word,
 };
-use engine::{EditError, clip_boundaries::*};
+use engine::EditError;
 use media::SpeechEnergyWindow;
+use shorts::clip_boundaries::*;
 use time::{FrameRate, Rounding, SourceRange, Tick};
 
 fn t(seconds: f64) -> Tick {

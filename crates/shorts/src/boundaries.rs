@@ -1,7 +1,7 @@
 //! Independent source-edge snapping for ordered, potentially reordered shorts.
-use crate::{BoundaryFailure, EditError, Result};
 use ai::clips::{ClipRole, ClipSourceSegment};
 use captions::{LanguageProfile, LayoutHooks, Transcript};
+use engine::{BoundaryFailure, EditError, Result};
 use media::SpeechEnergyWindow;
 use serde::Serialize;
 use time::{FrameRate, SourceRange, Tick};

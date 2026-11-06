@@ -6,7 +6,7 @@ pub mod clip_boundaries {
         BoundaryAdjustment, BoundaryKind, ClipBoundarySettings, SegmentAdjustment, SnappedShort,
         snap_clip_boundaries,
     };
-    pub use crate::BoundaryFailure;
+    pub use engine::BoundaryFailure;
 }
 mod batch_export;
 pub use batch_export::{
@@ -23,3 +23,9 @@ pub mod clip_suggest {
         export, prepare_export, suggest, suggestion_options,
     };
 }
+
+pub use clip_suggest::{
+    ClipCandidate, ClipExportOutcome, ClipExportPaths, ClipExportPrep, ClipExportRequest,
+    ClipRequest, ClipSuggestionOutcome, RejectedClip, SnapSettings, SuggestionOption,
+    SuggestionProvider, check_suggestion_credentials, choose_suggestion, suggestion_options,
+};

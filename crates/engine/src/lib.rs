@@ -21,15 +21,8 @@ mod store;
 pub use store::library;
 pub use store::recovery;
 pub mod subtitles;
-mod transcript;
+pub mod transcript;
 pub use transcript::translation;
-mod shorts;
-pub use shorts::clip_boundaries;
-pub use shorts::clip_suggest;
-pub use shorts::{
-    ClipBatch, ClipBatchRequest, ClipPaths, ClipShort, ClipSubtitlePath, MAX_BATCH_CLIPS,
-    MAX_BATCH_CUE_BYTES, MAX_CLIP_SEGMENTS,
-};
 mod analysis;
 pub use analysis::loudness;
 pub use analysis::scene_detection;
@@ -52,11 +45,7 @@ pub use ai::clips::{
 };
 pub use captions::{AssWarning, AssWarningKind, Format, NfcText};
 pub use providers::models;
-pub use shorts::clip_suggest::{
-    ClipCandidate, ClipExportOutcome, ClipExportPaths, ClipExportPrep, ClipExportRequest,
-    ClipRequest, ClipSuggestionOutcome, RejectedClip, SnapSettings, SuggestionOption,
-    SuggestionProvider, check_suggestion_credentials, choose_suggestion, suggestion_options,
-};
+
 pub use subtitles::{AssImportReport, AssImportRequest, prepare_ass_import};
 /// One media asset's timeline usage, retained in the typed removal refusal.
 /// Item IDs are stable identifiers, never user-authored text.

@@ -224,7 +224,9 @@ fn align_recognition(
         .map_err(|_| EditError::Invalid("aligned recognition is malformed"))
 }
 
-pub(crate) fn wait_for_job(
+/// Pump one submitted job to its terminal state, forwarding progress and cancellation.
+/// Completed publication wins a late cancellation; failed jobs retain their typed source.
+pub fn wait_for_job(
     runner: &mut JobRunner,
     id: JobId,
     token: &CancelToken,

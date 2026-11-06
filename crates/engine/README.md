@@ -10,15 +10,14 @@ Widgets, device state, app preferences and authenticated transports live in cons
 | `runtime/` | Executes bounded background work. | `jobs`, `cache`, `ByteBudget`, `submit_export`, `submit_export_publication`, `admit_loudness` |
 | `store/` | Persists managed project sessions. | `library`, `recovery`; private project-cover capture |
 | `subtitles/` | Produces source-timed subtitle output. | `run`, `prepare_ass_import`; also reachable at their old `subtitles::` paths: `Providers`, `transcribe`, `translate_selected` |
-| `transcript/` | Acquires source-timed cues from the user's chosen providers, shared by `subtitles/` and `shorts/`. | `transcribe`, `translate_selected`, `Cancellation`, `Progress`, `translation` |
-| `shorts/` | Produces accepted shorts. | `clip_suggest`, `clip_boundaries`, `ClipBatch` |
+| `transcript/` | Acquires source-timed cues from the user's chosen providers, shared by subtitles and the [shorts crate](../shorts/README.md). | `transcribe`, `translate_selected`, `translate_track`, `build_session`, `wait_for_job`, `Cancellation`, `Progress`, `translation` |
 | `analysis/` | Measures source media. | `scene_detection`, `loudness`, `AnalysisRequest`, `AnalysisJob` |
 | `artifacts/` | Produces derived project images. | `thumbnails`, `snapshot`, `effect_thumbnails` |
 | `libraries/` | Provides external project assets. | `fonts`, `sounds` |
 | `providers/` | Resolves explicit AI provider choices, their consent and the local models. | `Providers`, `Credentials`, `ConsentPrompt`, `provider_options`, `model_info`, `transcribe`, `translate`, `suggest_clips`, `models` |
 | `control/` | Admits transport-neutral commands; the top layer, the only one that calls every feature. | `Caller`, `Policy`, `Session::control_request`, `snapshot_and_subscribe` |
 
-The crate root retains its existing public namespaces and item exports; the implementation
+The crate root exposes its consumer-facing namespaces and item exports; the implementation
 folders expose only their consumer-facing interfaces. The dependency table is owned by
 [structure](../../docs/engineering/structure.md#engine) and `xtask/modules.toml`.
 
@@ -26,6 +25,21 @@ Entry points: use [Session commands](#public-entry-points) for edits,
 [control admission](#control-admission-revisions-and-receipts) for transport adapters,
 [the job runner](#background-jobs-and-byte-policy) for bounded work and
 [the subtitle workflow](#subtitle-workflow) for speech-to-caption composition.
+
+
+The kernel owns `BoundaryFailure`, the typed payload of `EditError::ClipBoundary`.
+It carries refusal categories and zero-based indices without depending on a feature.
+The [shorts crate](../shorts/README.md) owns suggestion, snapping and batch export.
+
+The public `transcript` interface shares source-timed acquisition, cue-session assembly,
+translation and job waiting with downstream workflows. `Cancellation::checkpoint`
+refuses the next stage; `media_flag` shares cancellation with media decoding.
+Provider credentials expose only the selected OpenAI or Anthropic key lookup, returning
+the existing typed missing-credential refusal before adapter construction.
+
+`Cost::add` accumulates provider estimates with the existing saturation and currency
+rules. `JobRunner::batch_capacity` bounds downstream batches by resource concurrency
+and retained terminal results, keeping scheduling policy inside engine.
 
 ## Session
 
@@ -972,7 +986,7 @@ The CLI downloads a catalog model through `models::ModelTransfers::open_native`,
 interface the desktop uses, granting `DownloadConsent` after its `--yes-download` action;
 `default_cache_root` is the single shared model/checkpoint location. Provider choice, credentials,
 consent and model availability live in `providers/`; speech windows, ASR checkpoints and cue
-translation live in `transcript/`, which `subtitles/` and `shorts/` both call.
+translation live in `transcript/`, which subtitles and the [shorts crate](../shorts/README.md) both call.
 
 Tests in `tests/it/subtitles/workflow.rs` cover all six vi/en/zh translation directions and
 every bilingual pair, SRT plus burned MP4 output, ASR checkpoint reuse on a second
@@ -1088,174 +1102,6 @@ asset/range diagnostics and preserves the previous destination. Advanced codec,
 canvas and placement choices remain available through `submit_export` with
 render's ExportSettings. UI/CLI adapters consume these engine APIs; they do not
 implement their own overlay or serializer.
-
-## Shorts
-
-### Clip suggestion workflow
-
-`clip_suggest` is the composition used by the CLI and desktop: the shared
-`transcript::transcribe` ASR-to-cue stage, an explicit clip provider, ordered-segment
-ranking and 02 boundary snapping. The caller owns the runner, cache, credentials,
-consent prompt, progress and cancellation token; the module writes no file during
-suggestion.
-
-`choose_suggestion` accepts only the offline `suggestion_options` catalog rows:
-local `heuristic`, OpenAI `gpt-6-luna`/`gpt-6.1-sol`, or Anthropic
-`claude-sonnet-5-5`. There is no fallback list. Suggestion runs as a bounded `SuggestClips` job;
-transient remote failures use the runner’s existing attempt/backoff policy, while
-local and permanent failures are returned. Retries retain the exact approved
-scopes and their per-invocation cost ceiling; reported cost includes all attempts. Remote adapters receive only transcript
-segments (IDs, text, ranges and settings), never audio. Before the first upload,
-`UploadRequest` names the provider, endpoint, model, exact payload bytes, cost
-ceiling and the provider's data-retention/training policy link; refusal stops
-before any adapter receives data. `DenyUploads` is the test default.
-
-`ClipRequest` resolves the source language (or asks local whisper), runs ASR,
-builds the AI `ClipInput` from the resulting cues, and executes
-`ai::clips::suggest_clips` on the shared runner. Candidates then pass through
-`snap_clip_boundaries` with the source frame rate, caller tolerance/RMS and
-duration/segment limits. A snap refusal drops that candidate with a typed
-`RejectedClip` reason instead of publishing an unsnapped range; AI drops keep
-their `ClipDropReason`. Candidate segments keep play order, roles, source-order
-ranks and signed edge deltas.
-
-`prepare_export` validates 1..=1000 distinct candidate indices, translates the
-source cue track for each requested non-source language through the subtitle
-translation path, and calls 05's `ClipBatch::prepare`. `export` keeps up to the
-runner's export concurrency in flight (capped by terminal-result retention),
-refilling slots as shorts complete and pumping the runner when its queue is full.
-A failed admission or job cancels and drains admitted siblings before returning
-its typed error; already published
-complete files remain. The CLI only selects candidates and prints paths.
-
-`cargo test -p engine --test it clip_suggest::` covers the ASR-to-snapped workflow,
-source and translated caption preparation, portrait geometry, hostile/empty/
-duplicate selections and the explicit provider catalog/credential refusal. Provider
-attempt/consent tests remain in `tests/it/providers/selection.rs`; media encoding remains in
-`tests/it/shorts/clip_export.rs`.
-
-The clip suggestion outcome also retains its source project, source cues,
-transcript, measured speech energy and resolved boundary settings for desktop
-review. Consumers reuse these inputs for safe trimming without re-running ASR or
-energy decoding; the suggestion and snapping algorithms are unchanged.
-
-### Clip boundary adjustment
-
-`clip_boundaries::snap_clip_boundaries` takes explicit shorts as vectors of
-`ai::clips::ClipSourceSegment` in play order, a source Transcript, its resolved
-LanguageProfile and LayoutHooks, media SpeechEnergyWindows and
-ClipBoundarySettings. Suggestion generation is optional. The caller can submit
-media energy decoding through the existing JobRunner with its cancellation token;
-snapping itself performs no IO or project edits.
-
-Every source edge is adjusted independently to an output-fps frame. Selection
-prefers a sentence gap with low RMS, then a sentence gap, low RMS in another safe
-gap, then any word/segment gap. Within a word-gap tier, measured RMS is ranked
-before distance and earlier time, even when every window exceeds the silence
-threshold. The threshold is an explicit amplitude ratio.
-
-Quantization prefers a frame inside a measured safe gap within the configured
-tick tolerance. If no such frame exists, the nearest frame to its lowest-energy
-point may overlap speech by at most half a frame, reported as `WordFade`. The gap
-search stays inside the tolerance; fallback frame rounding adds at most half a
-frame of movement. Clip exports apply 10 ms linear audio ramps at each piece
-edge, clipped to half the piece duration. Missing/incomplete native timing
-protects the whole segment; proportional subtitle timing is never used for cuts.
-A window without a measured word/segment boundary remains a typed refusal.
-
-SnappedShort keeps play order, roles, source-order ranks and repair metadata,
-with adjusted ranges, summed duration and signed original/adjusted tick deltas
-for both edges of every segment. Inputs remain unchanged. Invalid candidates,
-source-order ranks, multiple/misplaced hooks, overlapping source ranges,
-post-adjustment overlap and duration violations are typed refusals. A whole call
-is atomic. Positive total/piece duration limits and a segment limit in 1..=32 are
-caller-selected; at most 32 shorts and 360,001 energy windows are accepted.
-`BoundaryFailure` identifies candidate, safe-frame, overlap or duration refusal
-with zero-based short/segment indices (whole-short failures use segment zero).
-
-Tests inject reordered multi-segment candidates, known-pause PCM generated by
-external FFmpeg, silence conflicting with words, incomplete timing, tolerance and
-frame conflicts, duration/overlap failures, and 128 fixed-seed rational-rate
-samples. `examples/clip_boundary_benchmark.rs` measures a bounded local media and
-Transcript pair, including signed deltas and mid-speech counts against nearest
-frame snapping. This proves source-timing constraints, not ASR accuracy.
-
-### Clip batch export
-
-`ClipBatch::prepare(source_project, ClipBatchRequest)` owns one export job per
-accepted short; Desktop and CLI consumers submit this same batch and add no renderer, cue
-mapper or retry loop. A short is an ordered `ai::clips::ClipSourceSegment` list in
-play order (`ClipShort::from_suggestion` keeps it) plus a title and optional
-normalized crop. One request names the source asset, the source-timed `CueTrack`,
-the existing output directory, none or one/two distinct caption languages, sidecar
-formats (none, SRT, WebVTT or both), overwrite/degraded consent and a per-artifact
-byte ceiling.
-
-Preparation builds one derived immutable Project per short without touching media.
-Video items keep each piece's exact source range at cumulative output starts, so
-source gaps contribute no output duration and one piece is the single-range case.
-Audio comes from each piece's source audio. The output is 1080x1920 (9:16) with
-render's Cover fit: center crop by default, or the supplied normalized crop rect
-for every piece. Joining forces `ExportMode::Encode`.
-
-Cues map through captions' `EditMapping` over the ordered `(piece range, cumulative
-output start)` pairs: fully cut cues drop, partial cues clip at piece edges, gaps
-remain gaps, and play-order gaps never shift text. Each piece's caption item stores
-the same clipped source-coordinate cues, so render's burn-in and `subtitle_file`'s
-SRT/VTT output read one mapping. A requested language missing from any selected cue
-refuses that short at preparation instead of failing during render.
-
-Output names derive from the NFC title: characters illegal on Windows (`< > : " /
-\ | ? *`), controls and bidi overrides become `-`; trailing spaces/dots are trimmed;
-reserved device names are prefixed; the base is limited to 200 UTF-8 bytes on
-grapheme boundaries; duplicates get deterministic `-2`, `-3` suffixes. Outputs are
-`<base>.mp4` plus `<base>.srt`/`<base>.vtt`. Empty titles fall back to `clip-NN`. No
-user text appears in job errors.
-
-`prepare` accepts 1..=1000 shorts, 1..=32 pieces per short, nonnegative
-nonoverlapping source ranges inside a known asset duration, one or two distinct
-languages, at most one of each sidecar format, a 1 byte..=1 TiB artifact ceiling
-and at most 256 MiB of prepared cue content across the batch. Request-level failures are `Invalid`; short-level failures are
-`EditError::ClipExport { short, reason }`; a source asset without video is refused.
-
-`submit_one(runner, index)` enqueues one prepared short and refuses an
-out-of-range or already submitted index before touching the runner;
-`submit(&mut runner)` enqueues every remaining short in order. The runner owns
-concurrency and queue bounds. `job_id`/`snapshot` expose per-short progress, `cancel`/`cancel_all`
-stop queued or running work and `retry` resubmits a failed or cancelled short with
-its prepared inputs (a completed, running or evicted job is refused). A repeated
-`submit` adds nothing. Sidecars are staged through project's StreamingStage before
-the MP4 and published only after render's MP4 publication; a prepublish failure or
-cancellation therefore leaves no new artifact, and every published file is
-complete. A publication failure after the MP4 is reported but cannot roll back the
-already complete MP4 or an existing MP4, which is preserved.
-
-Each short retains publication progress across retries. `retry` skips artifacts
-this short already published (checking that they still exist), republishes only
-missing ones under the original overwrite policy, and re-renders the MP4 when it
-is gone. It never treats an artifact this batch did not publish as skippable, so a
-sidecar failure after the MP4 retries without deleting the MP4 or granting blanket
-overwrite permission. Sidecar-only retries seal cancellation through the same
-job publication fence: a late cancel cannot relabel committed output as Cancelled.
-
-Missing or changed sources return render's typed `Unavailable` entries per job; the
-batch does not silently degrade without `allow_degraded`. Storage exhaustion and
-the byte ceiling surface as typed IO/project failures from the bounded stages,
-leaving previous destinations and no staging orphan. Every artifact path is
-validated through render's shared output admission against the retained immutable
-original project, not only the selected source, so exporting into any original
-project source path or hard link is refused even with overwrite permission.
-Retry reuses the prepared snapshot, so relinking a source requires preparing a new
-batch.
-
-`cargo test -p engine --test it clip_export::` covers play-order joining, gap exclusion,
-one concatenated mapping against `subtitle_file`, bilingual cue ordering, portrait
-crop placement, Unicode/bounded/unique names, hostile ranges/languages/formats,
-missing sources per short, cancel mid-batch with neighbour completion and retry,
-storage ceilings for sidecars and the MP4, refusal of an unselected video or sidecar
-source alias under overwrite, and retry after a sidecar publication failure without
-manual deletion. Oracle tests generate a synthetic FFmpeg fixture and probe the
-exported 1080x1920 MP4 and both sidecars.
 
 ## Analysis
 

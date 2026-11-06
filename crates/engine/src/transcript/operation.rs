@@ -55,10 +55,12 @@ impl Cancellation {
     pub fn cancelled(&self) -> bool {
         self.flag.load(std::sync::atomic::Ordering::Acquire)
     }
-    pub(crate) fn media_flag(&self) -> Arc<AtomicBool> {
+    /// Share this operation's cancellation flag with bounded media decoding.
+    pub fn media_flag(&self) -> Arc<AtomicBool> {
         self.flag.clone()
     }
-    pub(crate) fn checkpoint(&self) -> Result<(), EditError> {
+    /// Refuse the next operation stage after cooperative cancellation.
+    pub fn checkpoint(&self) -> Result<(), EditError> {
         if self.cancelled() {
             Err(EditError::Cancelled)
         } else {

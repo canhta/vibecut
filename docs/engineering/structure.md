@@ -42,9 +42,8 @@ Layers, lowest first. Imports go downward only.
 | Substrate | `runtime/` | Job runner, byte budget, content-addressed cache, staged publication, verified transfer |
 | Substrate | `store/` | Managed project library, session recovery and the project cover image used by both |
 | Substrate | `providers/` | Provider choice with explicit consent, local model availability and transfers |
-| Substrate | `transcript/` | Speech windows, ASR checkpoints and cue translation runs; the one cue path used by `subtitles/` and `shorts/` |
+| Substrate | `transcript/` | Speech windows, ASR checkpoints and cue translation runs; the one cue path used by subtitles and the shorts crate |
 | Features | `subtitles/` | Subtitle workflow: orchestration, SRT export, burn-in, ASS import |
-| Features | `shorts/` | Long video to shorts: clip suggestion, boundary snapping, batch export |
 | Features | `analysis/` | Source analysis that never mutates a project: scene detection, shot analysis, loudness |
 | Features | `artifacts/` | Derived images: source and frame thumbnails, frame snapshots, effect images, bounded control previews |
 | Features | `libraries/` | External asset libraries: sounds, fonts |
@@ -72,7 +71,7 @@ An editor area is one module whose interface is its `State` and its `show(...)` 
 
 ## Modules and crates
 
-Rule: start as a folder with the import direction enforced by `cargo xtask modules`; promote a folder to a crate (named for the concept, placed in its layer in the crate map) when it has a second consumer, an independent seam (a provider family, a codec, a platform), heavy dependencies the rest should not rebuild for, or its direction keeps being violated. Candidates, in order: the feature layers above the engine kernel (`subtitles`, `shorts`, `analysis`, `libraries`) as crates layered above `engine`, and the pure edit algebra out of `session/edit`. The folder split is step one, so the later cut is mechanical. A kit crate (`kit/`) follows when a second UI consumer (the audit example already is one) justifies it. [ADR 0004](../adr/0004-module-structure.md) records why folders come first and which parts of the studied reference we took.
+Rule: start as a folder with the import direction enforced by `cargo xtask modules`; promote a folder to a crate (named for the concept, placed in its layer in the crate map) when it has a second consumer, an independent seam (a provider family, a codec, a platform), heavy dependencies the rest should not rebuild for, or its direction keeps being violated. The shorts feature is already promoted above engine for its desktop, CLI and evaluation consumers. Remaining candidates, in order: the feature layers above the engine kernel (`subtitles`, `analysis`, `libraries`) as crates layered above `engine`, and the pure edit algebra out of `session/edit`. The folder split is step one, so the later cut is mechanical. A kit crate (`kit/`) follows when a second UI consumer (the audit example already is one) justifies it. [ADR 0004](../adr/0004-module-structure.md) records why folders come first and which parts of the studied reference we took.
 
 ## Other crates
 

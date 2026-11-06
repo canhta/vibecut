@@ -4,7 +4,9 @@ use captions::{Cue, CueTrack};
 use media::SourceAsset;
 use project::{Animations, CaptionParams, ItemParams, Project, ProjectId, TrackId, TrackKind};
 use time::{SourceRange, Tick};
-pub(crate) fn build_session(
+/// Build a source-timed caption session through the edit registry.
+/// Duration is in ticks; invalid source ranges or project geometry refuse atomically.
+pub fn build_session(
     asset: &SourceAsset,
     cues: &[Cue],
     duration: Tick,

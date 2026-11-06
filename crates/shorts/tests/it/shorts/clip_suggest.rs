@@ -18,9 +18,12 @@ use engine::subtitles::{
     TranscriptionProvider, TranslationProvider,
 };
 use engine::{
-    ByteBudget, ClipExportRequest, ClipRequest, ClipSettings, SnapSettings,
-    clip_suggest::{self, SuggestionProvider},
+    ByteBudget, ClipSettings,
     jobs::{JobRunner, RunnerConfig, SystemClock},
+};
+use shorts::{
+    ClipExportRequest, ClipRequest, SnapSettings,
+    clip_suggest::{self, SuggestionProvider},
 };
 use std::{
     collections::BTreeSet,
@@ -286,7 +289,7 @@ fn suggest(
     input: &Path,
     providers: &Providers,
     runner: &mut JobRunner,
-) -> engine::ClipSuggestionOutcome {
+) -> shorts::ClipSuggestionOutcome {
     let root = tempfile::tempdir().unwrap();
     let (mut cache, _) =
         engine::cache::ArtifactCache::open(root.path(), ByteBudget::new(1 << 30).unwrap(), 8)

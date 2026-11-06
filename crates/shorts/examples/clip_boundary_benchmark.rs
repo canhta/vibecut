@@ -1,7 +1,7 @@
 //! Bounded real/synthetic input measurement; transcript stays in local files.
 use ai::clips::{ClipRole, ClipSourceSegment};
 use captions::{LanguageRegistry, LayoutHooks, Transcript};
-use engine::clip_boundaries::{ClipBoundarySettings, snap_clip_boundaries};
+use shorts::clip_boundaries::{ClipBoundarySettings, snap_clip_boundaries};
 use std::{
     path::PathBuf,
     sync::{Arc, atomic::AtomicBool},
