@@ -279,8 +279,10 @@ pub fn render(
     }
     if paint.decoration != Decoration::None {
         for line in &layout.lines {
-            let size = layout.glyphs[line.glyphs.clone()]
-                .first()
+            let size = layout
+                .glyphs
+                .get(line.glyphs.clone())
+                .and_then(|glyphs| glyphs.first())
                 .map_or(0.0, |glyph| glyph.size);
             if size <= 0.0 || line.width <= 0.0 {
                 continue;
