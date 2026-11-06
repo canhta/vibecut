@@ -9,7 +9,33 @@ impl Panel<'_, '_> {
     fn effect_name(&self, definition: &project::EffectDefinition) -> &'static str {
         match definition.kind {
             "blur" => self.tr(Text::EffectBlur),
+            "color_grade" => self.tr(Text::EffectColorGrade),
             _ => definition.name,
+        }
+    }
+
+    /// Adjust tab: the item's colour-grade effect, shown at neutral until the
+    /// first edit adds it to the stack (`set_effect_param` creates it).
+    pub(super) fn adjust_controls(&mut self, ui: &mut egui::Ui, item: ItemId) {
+        let Some(definition) = project::effect_definitions()
+            .iter()
+            .find(|definition| definition.kind == "color_grade")
+        else {
+            return;
+        };
+        let existing = read::item(self.cx.session.project(), item).and_then(|candidate| {
+            candidate
+                .effects
+                .iter()
+                .find(|effect| matches!(effect.params, project::EffectParams::ColorGrade { .. }))
+                .map(|effect| effect.id.clone())
+        });
+        let id = existing.unwrap_or_else(|| definition.kind.to_owned());
+        for parameter in definition.params {
+            let current =
+                read::effect_param_value(self.cx.session.project(), item, &id, parameter.key)
+                    .unwrap_or(parameter.default);
+            self.effect_scrub_field(ui, item, &id, parameter, current);
         }
     }
 
@@ -121,15 +147,13 @@ impl Panel<'_, '_> {
                     });
                     if let Some(definition) = effect_definition(&effect.params) {
                         for parameter in definition.params {
-                            if read::effect_param_value(
+                            if let Some(current) = read::effect_param_value(
                                 self.cx.session.project(),
                                 item,
                                 &effect.id,
                                 parameter.key,
-                            )
-                            .is_some()
-                            {
-                                self.effect_scrub_field(ui, item, &effect.id, parameter);
+                            ) {
+                                self.effect_scrub_field(ui, item, &effect.id, parameter, current);
                             }
                         }
                     }
@@ -180,16 +204,16 @@ impl Panel<'_, '_> {
         item: ItemId,
         effect: &str,
         parameter: &project::EffectParamDefinition,
+        current: f64,
     ) {
-        let Some(current) =
-            read::effect_param_value(self.cx.session.project(), item, effect, parameter.key)
-        else {
-            return;
-        };
         let spec = effect_scrub_spec(parameter);
         ui.add_space(theme::space::MD);
         let label = match parameter.key {
             "intensity" => self.tr(Text::EffectIntensity),
+            "brightness" => self.tr(Text::Brightness),
+            "contrast" => self.tr(Text::Contrast),
+            "saturation" => self.tr(Text::Saturation),
+            "hue" => self.tr(Text::Hue),
             _ => parameter.name,
         };
         let caption = ui.label(label);

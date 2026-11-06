@@ -140,12 +140,14 @@ impl ElementKind {
                 PropertiesTab::Speed,
                 PropertiesTab::Blending,
                 PropertiesTab::Masks,
+                PropertiesTab::Adjust,
                 PropertiesTab::Effects,
             ],
             Self::Image => &[
                 PropertiesTab::Transform,
                 PropertiesTab::Blending,
                 PropertiesTab::Masks,
+                PropertiesTab::Adjust,
                 PropertiesTab::Effects,
             ],
             Self::Sticker => &[
@@ -186,18 +188,20 @@ pub enum PropertiesTab {
     Speed,
     Blending,
     Masks,
+    Adjust,
     Effects,
     Graphic,
 }
 
 impl PropertiesTab {
-    pub const ALL: [Self; 8] = [
+    pub const ALL: [Self; 9] = [
         Self::Text,
         Self::Transform,
         Self::Audio,
         Self::Speed,
         Self::Blending,
         Self::Masks,
+        Self::Adjust,
         Self::Effects,
         Self::Graphic,
     ];
@@ -210,6 +214,7 @@ impl PropertiesTab {
             Self::Speed => "speed",
             Self::Blending => "blending",
             Self::Masks => "masks",
+            Self::Adjust => "adjust",
             Self::Effects => "effects",
             Self::Graphic => "graphic",
         }
@@ -227,6 +232,7 @@ impl PropertiesTab {
             Self::Speed => Text::Speed,
             Self::Blending => Text::Blending,
             Self::Masks => Text::Masks,
+            Self::Adjust => Text::Adjust,
             Self::Effects => Text::Effects,
             Self::Graphic => Text::Graphic,
         }

@@ -408,7 +408,9 @@ symlink refusal, external project replacement and round-trip independence.
 defaults and animation capability for UI consumers. `Item.effects` is an ordered stack of at most 64 visual `EffectInstance`s. Instance
 IDs are item-local ASCII animation identifiers (1–64 bytes); duplicates refuse.
 `EffectParams::Blur` stores finite intensity 0–100 (default 15); `enabled` bypasses
-an instance. Audio items refuse visual effects. Evaluation/device work belongs to
+an instance. `EffectParams::ColorGrade` stores finite brightness, contrast,
+saturation and hue, each -50..=50 with 0 identity (controls and ranges are new, not
+measured parity; `GRADE_MIN`/`GRADE_MAX`); it has no animation paths. Audio items refuse visual effects. Evaluation/device work belongs to
 render/the desktop app. Animated overrides use the existing `Animations` map and
 `Param` storage at `effects.<instance-id>.params.intensity`, with scalar channels
 only. No second keyframe store is introduced. Removing an effect removes its

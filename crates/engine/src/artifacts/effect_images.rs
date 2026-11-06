@@ -96,9 +96,17 @@ impl EffectThumbnails {
                         return Ok(result);
                     }
                 }
-                let EffectParams::Blur { intensity } = params;
-                let passes =
-                    render::effects::blur_passes(intensity, source.width(), source.height())?;
+                let passes = match params {
+                    EffectParams::Blur { intensity } => {
+                        render::effects::blur_passes(intensity, source.width(), source.height())?
+                    }
+                    EffectParams::ColorGrade {
+                        brightness,
+                        contrast,
+                        saturation,
+                        hue,
+                    } => render::effects::grade_passes(brightness, contrast, saturation, hue)?,
+                };
                 let image = cache.adapter.apply(
                     &source,
                     &passes,

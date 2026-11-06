@@ -22,6 +22,28 @@ fn gaussian(@builtin(global_invocation_id) id: vec3<u32>) {
     dst[id.y * p.width + id.x] = clamp(sum, vec4<f32>(0.0), vec4<f32>(a));
 }
 
+// Mirrors render::effects::grade_pixel; weights = [gain, exponent, saturation, hue radians].
+@compute @workgroup_size(8, 8)
+fn grade(@builtin(global_invocation_id) id: vec3<u32>) {
+    if id.x >= p.width || id.y >= p.height { return; }
+    let i = id.y * p.width + id.x;
+    let px = src[i];
+    if px.a <= 0.0 { dst[i] = px; return; }
+    var c = max(px.rgb / px.a * weights[0], vec3<f32>(0.0));
+    c = 0.18 * pow(c / 0.18, vec3<f32>(weights[1]));
+    let l = dot(c, vec3<f32>(0.2126, 0.7152, 0.0722));
+    c = vec3<f32>(l) + (c - vec3<f32>(l)) * weights[2];
+    let cs = cos(weights[3]);
+    let k = sin(weights[3]) * 0.5773503;
+    let off = (1.0 - cs) / 3.0;
+    let a = cs + off;
+    let o = vec3<f32>(
+        a * c.r + (off - k) * c.g + (off + k) * c.b,
+        (off + k) * c.r + a * c.g + (off - k) * c.b,
+        (off - k) * c.r + (off + k) * c.g + a * c.b);
+    dst[i] = vec4<f32>(clamp(o, vec3<f32>(0.0), vec3<f32>(1.0)) * px.a, px.a);
+}
+
 fn channel(mode: u32, b: f32, s: f32) -> f32 {
     switch mode {
         case 1u: { return min(b,s); }

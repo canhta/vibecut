@@ -97,6 +97,29 @@ fn gpu_matches_cpu_working_pixels_at_both_scales() {
             eprintln!("scale={scale} intensity={intensity} max_abs={max}");
             assert!(max <= 2e-5, "GPU difference {max}");
         }
+        for grade in [
+            [50.0, 0.0, 0.0, 0.0],
+            [-50.0, 50.0, -50.0, 0.0],
+            [0.0, -50.0, 50.0, 50.0],
+            [20.0, -30.0, 40.0, -25.0],
+            [50.0; 4],
+            [-50.0; 4],
+        ] {
+            let passes = grade_passes(grade[0], grade[1], grade[2], grade[3]).unwrap();
+            let inputs = || EffectInputs {
+                coverage: None,
+                below: &image,
+            };
+            let cpu = CpuEffects.apply(&image, &passes, inputs(), &Hooks).unwrap();
+            let actual = gpu.apply(&image, &passes, inputs(), &Hooks).unwrap();
+            let max = cpu
+                .pixels()
+                .iter()
+                .zip(actual.pixels())
+                .flat_map(|(a, b)| a.iter().zip(b).map(|(a, b)| (a - b).abs()))
+                .fold(0.0_f32, f32::max);
+            assert!(max <= 1e-4, "GPU grade difference {grade:?}: {max}");
+        }
         let below = Image::from_working_pixels(
             w,
             h,

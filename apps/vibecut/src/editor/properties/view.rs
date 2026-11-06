@@ -627,6 +627,17 @@ impl<'a, 'c> Panel<'a, 'c> {
                     },
                 );
             }
+            PropertiesTab::Adjust if matches!(kind, ElementKind::Video | ElementKind::Image) => {
+                self.panel_section(
+                    ui,
+                    "inspector.section.adjust",
+                    "inspector.adjust",
+                    Text::Adjust,
+                    true,
+                    false,
+                    |panel, ui| panel.adjust_controls(ui, item),
+                );
+            }
             PropertiesTab::Effects
                 if matches!(
                     kind,

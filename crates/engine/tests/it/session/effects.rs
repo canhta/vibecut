@@ -529,3 +529,63 @@ fn audio_refuses_even_an_empty_effect_reorder() {
         ));
     }
 }
+
+#[test]
+fn color_grade_controls_clamp_undo_per_gesture_and_persist() {
+    let mut s = session();
+    let neutral = json!({"id":"color_grade","enabled":true,"params":{"kind":"color_grade","brightness":0.0,"contrast":0.0,"saturation":0.0,"hue":0.0}});
+    s.execute("effects.add", json!({"item":2,"effect":neutral}))
+        .unwrap();
+    let added = s.project().clone();
+    // Every control: both limits accepted, one step past either refused atomically.
+    for key in ["brightness", "contrast", "saturation", "hue"] {
+        for edge in [-50.0, 50.0] {
+            s.execute(
+                "effects.update_param",
+                json!({"item":2,"effect":"color_grade","key":key,"value":edge}),
+            )
+            .unwrap();
+            s.apply(Command::Undo {}).unwrap();
+            assert_eq!(s.project(), &added, "{key} {edge}");
+        }
+        let held = s.project().clone();
+        for bad in [-50.5, 50.5, 1e300] {
+            assert!(
+                s.execute(
+                    "effects.update_param",
+                    json!({"item":2,"effect":"color_grade","key":key,"value":bad})
+                )
+                .is_err()
+            );
+            assert_eq!(s.project(), &held);
+        }
+    }
+    assert!(
+        s.execute(
+            "effects.update_param",
+            json!({"item":2,"effect":"color_grade","key":"intensity","value":1.0})
+        )
+        .is_err()
+    );
+    // A drag gesture of many updates is a single undo step.
+    s.begin_gesture().unwrap();
+    for v in [5.0, 12.0, 20.0] {
+        s.execute(
+            "effects.update_param",
+            json!({"item":2,"effect":"color_grade","key":"contrast","value":v}),
+        )
+        .unwrap();
+    }
+    s.commit_gesture().unwrap();
+    let graded = s.project().clone();
+    assert!(matches!(
+        item(&s).effects[0].params,
+        EffectParams::ColorGrade { contrast, .. } if contrast == 20.0
+    ));
+    let saved = project::encode(&graded, false).unwrap();
+    assert_eq!(&project::decode(&saved).unwrap().project, graded.as_ref());
+    s.apply(Command::Undo {}).unwrap();
+    assert_eq!(s.project(), &added);
+    s.apply(Command::Redo {}).unwrap();
+    assert_eq!(s.project(), &graded);
+}

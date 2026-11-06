@@ -139,6 +139,15 @@ CPU; cancellation, budget and invalid-data failures propagate. The renderer pain
 an effected item into a transparent output-sized layer, filters it, then composites
 it over the unchanged below image. Effects disable video stream copy.
 
+Colour grade (`EffectParams::ColorGrade`, one `grade` pass of four weights) runs in
+the premultiplied linear working space on the straight colour, in this order:
+brightness = linear gain 2^(v/50) (+-1 stop); contrast = power 1+v/100 about linear
+mid grey 0.18; saturation = Rec. 709 luma blend 1+v/50; hue = rotation of
+v/50*180 degrees about the grey axis; then clamp to 0..1 and re-premultiply.
+All-zero emits no pass (identity). `grade_pixel` is the reference the app's
+`grade` shader mirrors, so preview, GPU and export agree within float tolerance.
+Masks apply after the grade, so a masked item grades only inside its mask.
+
 Blur intensity uses the static project value unless its scalar `Param` override
 exists. Evaluation uses project item-local time; animated overshoot clamps to
 0–100. Sigma is intensity/5 times min(output width/1920, output height/1080).

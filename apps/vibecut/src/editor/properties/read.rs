@@ -92,6 +92,10 @@ pub(super) fn effect_param_value(
         .find(|candidate| candidate.id == effect)?;
     match (&effect.params, key) {
         (project::EffectParams::Blur { intensity }, "intensity") => Some(*intensity),
+        (project::EffectParams::ColorGrade { brightness, .. }, "brightness") => Some(*brightness),
+        (project::EffectParams::ColorGrade { contrast, .. }, "contrast") => Some(*contrast),
+        (project::EffectParams::ColorGrade { saturation, .. }, "saturation") => Some(*saturation),
+        (project::EffectParams::ColorGrade { hue, .. }, "hue") => Some(*hue),
         _ => None,
     }
 }

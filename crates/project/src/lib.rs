@@ -7,7 +7,8 @@ mod fade;
 pub use fade::{Fade, FadeCurve, FadeEdge, FadeSpans, Fades};
 mod mask;
 pub use effects::{
-    EffectDefinition, EffectInstance, EffectParamDefinition, EffectParams, effect_definitions,
+    EffectDefinition, EffectInstance, EffectParamDefinition, EffectParams, GRADE_MAX, GRADE_MIN,
+    effect_definitions,
 };
 pub use mask::{
     MASK_SCALARS, Mask, MaskMode, MaskPath, MaskShape, MaskStroke, MaskVertex, StrokeAlign,

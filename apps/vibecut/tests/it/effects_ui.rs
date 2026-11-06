@@ -565,6 +565,7 @@ fn effect_param_scrub_reverses_cancels_and_commits_once() {
     open_effect_tabs(&mut harness, video);
     let intensity = |harness: &Harness<Editor>| match effects(harness, video)[0].params {
         project::EffectParams::Blur { intensity } => intensity,
+        _ => panic!("not a blur"),
     };
 
     let history = harness.state().session.history_len();
@@ -771,6 +772,126 @@ fn effect_preferences_round_trip_through_the_app_store() {
     store.save(&harness.state().preferences).unwrap();
     let restored = store.load().unwrap();
     assert_eq!(restored.assets_tab, vibecut::panels::AssetsTab::Effects);
+}
+
+fn grade(harness: &Harness<Editor>, id: ItemId) -> Option<[f64; 4]> {
+    effects(harness, id)
+        .into_iter()
+        .find_map(|effect| match effect.params {
+            project::EffectParams::ColorGrade {
+                brightness,
+                contrast,
+                saturation,
+                hue,
+            } => Some([brightness, contrast, saturation, hue]),
+            _ => None,
+        })
+}
+
+fn type_value(harness: &mut Harness<Editor>, id: &str, text: &str) {
+    click(harness, id);
+    harness.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::A);
+    harness.event(egui::Event::Text(text.into()));
+    harness.key_press(egui::Key::Enter);
+    harness.run_steps(3);
+}
+
+#[test]
+fn adjust_tab_grades_visual_clips_with_one_undo_step_per_gesture() {
+    let fixture = fixture();
+    let (video, image, audio) = (fixture.video, fixture.image, fixture.audio);
+    let mut harness = build(fixture.editor);
+    harness.run_steps(3);
+    select(&mut harness, audio);
+    assert!(!has_widget(&harness, "inspector.tab.adjust"));
+    select(&mut harness, fixture.graphic);
+    assert!(!has_widget(&harness, "inspector.tab.adjust"));
+    for item in [video, image] {
+        select(&mut harness, item);
+        click(&mut harness, "inspector.tab.adjust");
+        for key in ["brightness", "contrast", "saturation", "hue"] {
+            assert!(has_widget(
+                &harness,
+                &format!("effects.color_grade.param.{key}")
+            ));
+        }
+        assert!(grade(&harness, item).is_none(), "viewing adds nothing");
+    }
+    select(&mut harness, video);
+    click(&mut harness, "inspector.tab.adjust");
+    // First typed edit adds the effect carrying the value: one undo step.
+    let history = harness.state().session.history_len();
+    type_value(&mut harness, "effects.color_grade.param.brightness", "20");
+    assert_eq!(grade(&harness, video), Some([20.0, 0.0, 0.0, 0.0]));
+    assert_eq!(harness.state().session.history_len().0, history.0 + 1);
+    // Typed values clamp to the -50..50 range.
+    type_value(&mut harness, "effects.color_grade.param.hue", "999");
+    assert_eq!(grade(&harness, video), Some([20.0, 0.0, 0.0, 50.0]));
+    type_value(&mut harness, "effects.color_grade.param.saturation", "-999");
+    assert_eq!(grade(&harness, video), Some([20.0, 0.0, -50.0, 50.0]));
+    let history = harness.state().session.history_len();
+    type_value(&mut harness, "effects.color_grade.param.contrast", "NaN");
+    assert_eq!(
+        harness.state().session.history_len(),
+        history,
+        "NaN refused"
+    );
+    // A drag on a control is one gesture and one undo step; reversal is a no-op.
+    let start = widget_rect(&harness, "effects.color_grade.param.contrast.scrub").center();
+    drag_to(
+        &mut harness,
+        "effects.color_grade.param.contrast.scrub",
+        egui::vec2(40.0, 0.0),
+    );
+    assert!(harness.state().session.gesture_active());
+    assert_eq!(harness.state().session.history_len(), history);
+    assert!(grade(&harness, video).unwrap()[1] > 0.0);
+    harness.drop_at(start + egui::vec2(40.0, 0.0));
+    harness.run_steps(2);
+    assert_eq!(harness.state().session.history_len().0, history.0 + 1);
+    harness.state_mut().activate("edit.undo").unwrap();
+    harness.run_steps(2);
+    assert_eq!(grade(&harness, video), Some([20.0, 0.0, -50.0, 50.0]));
+    // Everything undoes back to an item with no effect at all.
+    for _ in 0..3 {
+        harness.state_mut().activate("edit.undo").unwrap();
+        harness.run_steps(2);
+    }
+    assert!(grade(&harness, video).is_none());
+    // A locked track refuses the first edit and stays untouched.
+    harness
+        .state_mut()
+        .session
+        .apply(Command::SetTrackFlags {
+            track: fixture.main,
+            muted: false,
+            hidden: false,
+            locked: true,
+        })
+        .unwrap();
+    harness.run_steps(2);
+    type_value(&mut harness, "effects.color_grade.param.brightness", "10");
+    assert!(grade(&harness, video).is_none());
+}
+
+/// Offscreen screenshot evidence; wgpu rendering stays out of CI.
+#[test]
+#[ignore = "renders through wgpu; run with --ignored to refresh target/p1-68-adjust.png"]
+fn adjust_panel_renders_the_grade_controls() {
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let target = root.join("target");
+    std::fs::create_dir_all(&target).unwrap();
+    let fixture = fixture();
+    let video = fixture.video;
+    let mut harness = build(fixture.editor);
+    harness.run_steps(3);
+    select(&mut harness, video);
+    click(&mut harness, "inspector.tab.adjust");
+    type_value(&mut harness, "effects.color_grade.param.brightness", "20");
+    type_value(&mut harness, "effects.color_grade.param.saturation", "-30");
+    let image = harness.render().expect("offscreen render");
+    image.save(target.join("p1-68-adjust.png")).unwrap();
+    assert!(image.width() > 0 && image.height() > 0);
 }
 
 /// Offscreen screenshot evidence; wgpu rendering stays out of CI.

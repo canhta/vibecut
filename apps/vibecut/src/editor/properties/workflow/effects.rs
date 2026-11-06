@@ -1,7 +1,7 @@
 //! Applies effect stack changes.
 
 use crate::editor::properties::{
-    Arc, BTreeSet, Editor, ElementKind, ItemId, Result, Text, effect_params_from_definition,
+    Arc, BTreeSet, Editor, ElementKind, Error, ItemId, Result, Text, effect_params_from_definition,
     error_detail,
 };
 
@@ -192,10 +192,46 @@ impl Editor {
         value: f64,
     ) -> Result<()> {
         self.session.set_selection(self.selection.clone())?;
-        self.session.execute(
-            "effects.update_param",
-            serde_json::json!({"item": item, "effect": effect, "key": key, "value": value}),
-        )?;
+        let present = self
+            .session
+            .project()
+            .data()
+            .scene()
+            .timeline
+            .iter()
+            .flat_map(|track| &track.items)
+            .find(|candidate| candidate.id == item)
+            .is_some_and(|candidate| candidate.effects.iter().any(|e| e.id == effect));
+        if present {
+            self.session.execute(
+                "effects.update_param",
+                serde_json::json!({"item": item, "effect": effect, "key": key, "value": value}),
+            )?;
+        } else {
+            // First edit on a panel that shows a registered effect at neutral:
+            // add it carrying the edited value, inside the open gesture.
+            if let Some(reason) = self.effect_refusal(item) {
+                return Err(Error::Invalid(match reason {
+                    Text::EffectLocked => "track is locked",
+                    _ => "effect unsupported on this item",
+                }));
+            }
+            let mut params = project::effect_definitions()
+                .iter()
+                .find(|definition| definition.kind == effect)
+                .and_then(effect_params_from_definition)
+                .ok_or(Error::Invalid("unknown effect"))?;
+            params.set_scalar(key, value)?;
+            let instance = project::EffectInstance {
+                id: effect.to_owned(),
+                enabled: true,
+                params,
+            };
+            self.session.execute(
+                "effects.add",
+                serde_json::json!({"item": item, "effect": instance}),
+            )?;
+        }
         self.sync_preview();
         Ok(())
     }

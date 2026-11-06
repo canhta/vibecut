@@ -371,6 +371,10 @@ catalog! {
     Graphic { key: "graphic", en: "Graphic", vi: "Đồ họa" },
 
     // Effects panel and per-clip stack.
+    Adjust { key: "adjust", en: "Adjust", vi: "Điều chỉnh" },
+    Brightness { key: "color_brightness", en: "Brightness", vi: "Độ sáng" },
+    Contrast { key: "color_contrast", en: "Contrast", vi: "Độ tương phản" },
+    EffectColorGrade { key: "effect_color_grade", en: "Color adjustment", vi: "Chỉnh màu" },
     EffectBlur { key: "effect_blur", en: "Blur", vi: "Làm mờ" },
     EffectIntensity { key: "effect_intensity", en: "Intensity", vi: "Cường độ" },
     EffectEmptyStack { key: "effect_empty_stack", en: "No effects", vi: "Chưa có hiệu ứng" },
