@@ -61,6 +61,8 @@ layer	apps/vibecut/src/shorts/state.rs	crate::crop crosses feature groups in lay
 layer	apps/vibecut/src/shorts/state.rs	crate::editor is in higher layer frame/editor (module shorts is features/shorts)
 layer	apps/vibecut/src/shorts/state.rs	crate::playback crosses feature groups in layer features (module shorts is shorts, target is player)
 layer	apps/vibecut/src/shorts/view.rs	crate::editor is in higher layer frame/editor (module shorts is features/shorts)
+layer	apps/vibecut/src/shorts/view/toast.rs	crate::export crosses feature groups in layer features (module shorts is shorts, target is export)
+layer	apps/vibecut/src/shorts/view/tools.rs	crate::crop crosses feature groups in layer features (module shorts is shorts, target is player)
 layer	apps/vibecut/src/subtitles.rs	crate::ai_task crosses feature groups in layer features (module subtitles is captions, target is models)
 layer	apps/vibecut/src/subtitles/view.rs	crate::export crosses feature groups in layer features (module subtitles is captions, target is export)
 layer	apps/vibecut/src/workspace.rs	crate::editor is in higher layer frame/editor (module workspace is shell/shell)
