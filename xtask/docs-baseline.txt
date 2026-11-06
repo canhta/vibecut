@@ -22,9 +22,6 @@ map	apps/vibecut-cli/README.md	module map has no row for folder `commands/media/
 map	apps/vibecut-cli/README.md	module map has no row for folder `commands/media`
 map	apps/vibecut-cli/README.md	module map has no row for folder `commands/project`
 map	apps/vibecut/README.md	README has no module map table
-map	crates/captions/README.md	folder module `interchange/ass` has no README
-map	crates/captions/README.md	folder module `interchange` has no README
-map	crates/captions/README.md	folder module `segment` has no README
 map	crates/clip-eval/README.md	folder module `harness` has no README
 map	crates/engine/README.md	folder module `analysis/shot_analysis` has no README
 map	crates/engine/README.md	folder module `analysis` has no README

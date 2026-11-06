@@ -43,7 +43,7 @@ The [glossary](../../GLOSSARY.md) owns domain definitions; crate READMEs own con
 | Loudness measurement, gains and export admission | [render planner](../../crates/render/src/audio/README.md#audio-clock-and-headroom) / [engine job](../../crates/engine/README.md#loudness-normalization) |
 | Clip naming, cue mapping, per-short cancel/retry | [shorts batch export](../../crates/shorts/src/batch_export/README.md) |
 | Local model catalog, consent, integrity, transport / transfers, cache bundles / manager presentation | [ai catalog](../../crates/ai/src/models/README.md) / [engine transfers](../../crates/engine/README.md#local-model-transfers) / [app manager](../../apps/vibecut/README.md#local-model-manager) |
-| Clip boundary snapping / speech groups / energy | [shorts](../../crates/shorts/src/boundaries/README.md) / [captions](../../crates/captions/README.md#source-cut-units) / [media](../../crates/media/src/audio_extract/README.md#speech-energy-windows) |
+| Clip boundary snapping / speech groups / energy | [shorts](../../crates/shorts/src/boundaries/README.md) / [captions](../../crates/captions/src/segment/README.md#source-cut-units) / [media](../../crates/media/src/audio_extract/README.md#speech-energy-windows) |
 | Shot analysis and complete artifact caching | [engine analysis](../../crates/engine/README.md#per-shot-analysis) |
 | Vision preparation / inference, face embeddings and shape-plan cache | [media](../../crates/media/src/vision_prep/README.md#vision-preparation) / [ai detectors](../../crates/ai/src/vision/README.md) |
 | Provider capabilities, consent, cost / text timing / isolated Gipformer | [ai](../../crates/ai/src/policy/README.md) / [recognition](../../crates/ai/src/assembly/README.md) / [local runner](../../crates/ai/src/gipformer/README.md) |
@@ -59,7 +59,7 @@ Per-project view state stays outside editable content and undo: engine Session e
 
 ## Languages
 
-Languages are BCP 47 data (`vi`, `en`, `zh-Hans`, `zh-Hant`), each with one [captions profile](../../crates/captions/README.md#entry-points-and-persistence). Provider adapters declare language capabilities and keep per-language decode settings as profile data. Adding a language adds a profile, fonts and an optional UI catalog; unknown tags use the generic profile.
+Languages are BCP 47 data (`vi`, `en`, `zh-Hans`, `zh-Hant`), each with one [captions profile](../../crates/captions/src/language/README.md). Provider adapters declare language capabilities and keep per-language decode settings as profile data. Adding a language adds a profile, fonts and an optional UI catalog; unknown tags use the generic profile.
 
 ## Media and time
 
