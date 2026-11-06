@@ -6,7 +6,6 @@ use super::{
 use std::{
     fs, io,
     path::{Path, PathBuf},
-    process::Command,
     time::{Duration, SystemTime},
 };
 
@@ -368,6 +367,7 @@ pub(super) fn disk_free(path: &Path) -> Result<u64, String> {
 
 #[cfg(unix)]
 pub(super) fn disk_free(path: &Path) -> Result<u64, String> {
+    use std::process::Command;
     let result = Command::new("df").args(["-Pk"]).arg(path).output();
     let result = result.map_err(|e| format!("disk free-space query: {e}"))?;
     if !result.status.success() {

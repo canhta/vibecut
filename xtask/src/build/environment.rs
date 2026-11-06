@@ -1,5 +1,7 @@
 //! Host capacity, memory, load and `VIBECUT_BUILD_SLOTS` facts for admission.
-use std::{ffi::OsStr, process::Command, time::Duration};
+#[cfg(any(target_os = "macos", test))]
+use std::process::Command;
+use std::{ffi::OsStr, time::Duration};
 #[cfg(any(target_os = "linux", test))]
 use std::{fs, path::Path};
 

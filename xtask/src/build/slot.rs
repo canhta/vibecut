@@ -5,7 +5,6 @@ use super::{
     queue::Lock,
 };
 use std::{
-    ffi::OsStr,
     fs::{self, File},
     io,
     path::{Path, PathBuf},
@@ -153,7 +152,7 @@ pub(super) fn prepare(
 
 #[cfg(unix)]
 pub(super) fn paths(bytes: &[u8]) -> Result<Vec<PathBuf>, String> {
-    use std::os::unix::ffi::OsStrExt;
+    use std::{ffi::OsStr, os::unix::ffi::OsStrExt};
     Ok(bytes
         .split(|b| *b == 0)
         .filter(|s| !s.is_empty())
