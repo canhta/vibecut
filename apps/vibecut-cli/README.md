@@ -14,11 +14,11 @@ The module doors follow [structure](../../docs/engineering/structure.md#cli):
 | `output.rs` / `output/` | Process results, progress presentation, upload disclosures |
 | `session.rs` / `session/` | Leased control lifetime, shared export admission, runtime settings |
 | `commands.rs` / `commands/` | Native command dispatch through `run(context, args)` adapters |
-| `mcp.rs` / `mcp/` | Authenticated MCP protocol composition |
+| `mcp.rs` / `mcp/` | MCP surface: `grants` (trusted bounds), `inbox` (engine-side queue), `handler` (tool surface), `server` (desktop listener), `command` (the `mcp` CLI command), `socket`/`transport` (authenticated framing) |
 
 Command siblings are grouped by project operations, media work, AI workflows,
-asset libraries and generated catalogs. Each native command has a single `run`
-entry point behind its module file; implementations stay private. Commands use
+asset libraries and generated catalogs. Each native command module exposes a single
+`run(context, args)` entry point and keeps its helpers private. Commands use
 only the `args`, `output`, `session` and MCP interfaces, never sibling commands.
 The process context carries the existing 2 GiB memory setting; each job retains
 its own budget with unchanged admission settings. Engine still owns actual

@@ -1,7 +1,15 @@
 //! Verifies the owning module interface.
 #![allow(clippy::unwrap_used, clippy::panic, clippy::indexing_slicing)]
 use super::*;
+use engine::{
+    ByteBudget, Command, EditError, Session,
+    control::{self, Policy},
+};
+use rmcp::ServiceExt;
+use serde_json::{Value, json};
+use std::time::{Duration, Instant};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+use tokio::sync::oneshot;
 
 #[test]
 fn output_grant_rejects_unselected_parent_before_filesystem_resolution() {
