@@ -1,5 +1,5 @@
 //! Windows Sherpa static libraries matching Rust's dynamic MSVC CRT.
-use crate::ffmpeg::{archive_cache as cache, sha256};
+use super::archives::{cache, sha256};
 use serde_json::{Value, json};
 use std::fs;
 use std::path::{Path, PathBuf};

@@ -1,5 +1,5 @@
 //! Provisioning, environment and source-recipe tests for the native media SDK.
-use super::*;
+use super::archives::sha256;
 use super::command::*;
 use super::environment::*;
 use super::fetch::*;

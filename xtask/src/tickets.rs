@@ -419,7 +419,7 @@ fn serve(root: &Path, stream: &mut TcpStream) -> Result<(), String> {
             Some("/") => (
                 "200 OK",
                 "text/html; charset=utf-8",
-                include_str!("board.html").to_owned(),
+                include_str!("tickets/board.html").to_owned(),
             ),
             Some("/data.json") => match load(root).and_then(|tickets| data(&tickets)) {
                 Ok(data) => ("200 OK", "application/json", data.to_string()),

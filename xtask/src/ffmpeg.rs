@@ -5,13 +5,15 @@ mod environment;
 mod fetch;
 mod oracles;
 mod recipes;
+mod sherpa;
 mod verify;
 #[cfg(test)]
 mod tests;
 
 pub use environment::{environment, environment_at, external, host, prefix};
 pub use fetch::cache_key;
-pub(crate) use archives::{cache as archive_cache, fetch_limited, sha256};
+pub(crate) use archives::{cache as archive_cache, fetch_limited};
+pub(crate) use sherpa::provision as sherpa_provision;
 pub(crate) use environment::{append_encoded_flag, cache};
 pub(crate) use oracles::{begin, print_fixtures};
 #[cfg(test)]

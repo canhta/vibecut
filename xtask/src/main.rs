@@ -1,18 +1,15 @@
 //! Workspace checks and admitted crate scaffolding.
-mod benchmark;
 mod build;
 mod checkout;
 mod cleanup;
-mod clip_eval;
 mod distribution;
 mod ffmpeg;
 mod i18n;
+mod measure;
 mod modules;
 mod orca;
 mod reports;
-mod sherpa;
 mod tickets;
-mod ui_compare;
 
 use serde_json::Value;
 use std::collections::BTreeMap;
@@ -474,7 +471,7 @@ fn run() -> Result<ExitCode, String> {
         .as_slice()
     {
         ["dist", ..] => distribution::run(root, args.get(1..).unwrap_or(&[])),
-        ["media-bench"] => benchmark::media(root),
+        ["media-bench"] => measure::media(root),
         ["frontier"] => tickets::frontier(root, None),
         ["frontier", "--blocking"] => tickets::blocking(root),
         ["frontier", assignee] => tickets::frontier(root, Some(assignee)),
@@ -482,15 +479,15 @@ fn run() -> Result<ExitCode, String> {
         ["pull-reports", ..] => reports::run(root, args.get(1..).unwrap_or(&[])),
         ["board"] => tickets::board(root, 8765),
         ["board", port] => tickets::board(root, port.parse().map_err(|_| "invalid port")?),
-        ["clip-eval", ..] => clip_eval::run(root, args.get(1..).unwrap_or(&[])),
+        ["clip-eval", ..] => measure::clip_eval(root, args.get(1..).unwrap_or(&[])),
         ["ffmpeg"] => ffmpeg::provision(None),
         ["ffmpeg", "--cache-key"] => ffmpeg::cache_key(),
         ["sherpa"] => {
-            println!("{}", sherpa::provision(root, env::consts::ARCH, ffmpeg::fetch_limited)?.display());
+            println!("{}", ffmpeg::sherpa_provision(root, env::consts::ARCH, ffmpeg::fetch_limited)?.display());
             Ok(())
         }
         ["sherpa", "--arch", arch] => {
-            println!("{}", sherpa::provision(root, arch, ffmpeg::fetch_limited)?.display());
+            println!("{}", ffmpeg::sherpa_provision(root, arch, ffmpeg::fetch_limited)?.display());
             Ok(())
         }
         ["checks"] => checks(root),
@@ -511,7 +508,7 @@ fn run() -> Result<ExitCode, String> {
         ["new-crate", name] => new_crate(root, name),
         ["ui-audit"] => ui_audit(root, &[]),
         ["ui-audit", scenes @ ..] => ui_audit(root, scenes),
-        ["ui-compare", ..] => ui_compare::run(root, args.get(1..).unwrap_or(&[])),
+        ["ui-compare", ..] => measure::ui_compare(root, args.get(1..).unwrap_or(&[])),
         ["ci"] => ci(root, false),
         ["ci", "--require-oracles"] => ci(root, true),
         _ => Err(
