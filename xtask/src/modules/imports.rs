@@ -1,7 +1,7 @@
 //! Intra-crate import direction and folder-interface rules over parsed Rust.
 use super::{
     INTERFACE, LAYER, Violation,
-    config::{CrateTable, Table, module_path},
+    config::{CrateTable, FolderTable, Placement, Table, inside, module_path},
     is_test_source, relative,
     syntax::{is_cfg_test, item_attrs},
 };
@@ -86,6 +86,39 @@ pub(super) fn imports(
                     });
                 }
             }
+            if let Some((folder, importer, place)) = folder_placements(crate_table, &at, &target) {
+                let importer_name = at
+                    .get(..=folder.prefix.len())
+                    .unwrap_or_default()
+                    .join("::");
+                let target_name = target
+                    .get(..=folder.prefix.len())
+                    .unwrap_or_default()
+                    .join("::");
+                if place.layer > importer.layer {
+                    violations.insert(Violation {
+                        path: file.to_string(),
+                        rule: LAYER,
+                        detail: format!(
+                            "crate::{target_name} is in higher layer {}/{} inside folder `{}` (module {importer_name} is {}/{})",
+                            place.layer_name,
+                            place.group,
+                            folder.path,
+                            importer.layer_name,
+                            importer.group
+                        ),
+                    });
+                } else if place.layer == importer.layer && place.group != importer.group {
+                    violations.insert(Violation {
+                        path: file.to_string(),
+                        rule: LAYER,
+                        detail: format!(
+                            "crate::{target_name} crosses feature groups in layer {} inside folder `{}` (module {importer_name} is {}, target is {})",
+                            place.layer_name, folder.path, importer.group, place.group
+                        ),
+                    });
+                }
+            }
             // A folder's own children may use each other; only outsiders go through its door.
             if reexported || importer_top == Some(target_top) {
                 continue;
@@ -125,6 +158,24 @@ pub(super) fn imports(
         }
     }
     Ok(violations)
+}
+
+/// The deepest folder table that places both the importer and the target module.
+fn folder_placements<'a>(
+    crate_table: &'a CrateTable,
+    importer: &[String],
+    target: &[String],
+) -> Option<(&'a FolderTable, &'a Placement, &'a Placement)> {
+    crate_table
+        .folders
+        .iter()
+        .filter(|folder| inside(folder, importer) && inside(folder, target))
+        .max_by_key(|folder| folder.prefix.len())
+        .and_then(|folder| {
+            let importer = folder.placements.get(importer.get(folder.prefix.len())?)?;
+            let target = folder.placements.get(target.get(folder.prefix.len())?)?;
+            Some((folder, importer, target))
+        })
 }
 
 /// Names the crate root re-exports from its top-level modules, mapped to the module.

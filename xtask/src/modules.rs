@@ -11,7 +11,7 @@ use std::{collections::BTreeSet, path::Path};
 use baseline::baseline;
 use config::config;
 use imports::imports;
-use layout::{file_name, folder_rules, inline_names, leading_doc};
+use layout::{file_name, folder_rules, inline_names, leading_doc, mod_file, test_folder_rules};
 
 const CONFIG: &str = "xtask/modules.toml";
 const BASELINE: &str = "xtask/modules-baseline.txt";
@@ -66,14 +66,15 @@ pub fn check(root: &Path) -> Result<(), String> {
     config.validate(&sources)?;
     let mut violations = BTreeSet::new();
     for path in &sources {
-        if is_test_source(path) {
-            continue;
-        }
-        violations.extend(leading_doc(root, path)?);
+        violations.extend(mod_file(path));
         violations.extend(file_name(path));
         violations.extend(inline_names(root, path)?);
+        if !is_test_source(path) {
+            violations.extend(leading_doc(root, path)?);
+        }
     }
     violations.extend(folder_rules(&tracked));
+    violations.extend(test_folder_rules(&tracked));
     violations.extend(imports(root, &config, &sources)?);
     let baseline = baseline(root)?;
     let mut errors: Vec<String> = violations

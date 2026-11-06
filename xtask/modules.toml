@@ -1,4 +1,8 @@
 # Intra-crate layer table; imports point toward lower layers.
+#
+# A crate may also add `[[crate.folder]]` tables with `path = "src/<folder>"` and
+# the same `layer` and `module` arrays, scoped to that folder's children. The
+# editor table lands with its area split; none are configured yet.
 [[crate]]
 name = "engine"
 path = "crates/engine"

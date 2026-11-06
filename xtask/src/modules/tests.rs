@@ -32,6 +32,11 @@ impl Tree {
         git(&self.0, &["-c", "core.autocrlf=false", "add", "--", path]);
     }
 
+    fn remove(&self, path: &str) {
+        fs::remove_file(self.0.join(path)).unwrap();
+        git(&self.0, &["rm", "--quiet", "--cached", "--", path]);
+    }
+
     fn config(&self, text: &str) {
         fs::write(self.0.join(CONFIG), text).unwrap();
     }
@@ -344,6 +349,194 @@ fn doc_line_edge_cases() {
         assert!(error.contains(expected), "{expected}: {error}");
     }
     assert!(!error.contains("empty Rust source"), "{error}");
+}
+
+#[test]
+fn mod_rs_fails_in_src_and_tests() {
+    let tree = Tree::new();
+    tree.write("crates/foo/src/lib.rs", "//! Foo.\n");
+    tree.write("crates/foo/src/thing/mod.rs", "//! Thing.\n");
+    let error = check(&tree.0).unwrap_err();
+    for expected in [
+        "crates/foo/src/thing/mod.rs",
+        "[interface]",
+        "structure rule 3",
+        "use `foo.rs` beside `foo/`",
+    ] {
+        assert!(error.contains(expected), "{expected}: {error}");
+    }
+    tree.remove("crates/foo/src/thing/mod.rs");
+    tree.write("crates/foo/src/thing.rs", "//! Thing.\n");
+    tree.write("crates/foo/src/thing/child.rs", "//! Child.\n");
+    check(&tree.0).unwrap();
+
+    tree.write("crates/foo/tests/it/mod.rs", "mod case;\n");
+    let error = check(&tree.0).unwrap_err();
+    assert!(
+        error.contains("crates/foo/tests/it/mod.rs: [interface]"),
+        "{error}"
+    );
+    assert!(!error.contains("[doc]"), "{error}");
+    tree.remove("crates/foo/tests/it/mod.rs");
+    tree.write("crates/foo/tests/it/main.rs", "mod case;\n");
+    check(&tree.0).unwrap();
+}
+
+#[test]
+fn banned_names_cover_test_module_trees() {
+    let tree = Tree::new();
+    tree.write("crates/foo/src/lib.rs", "//! Foo.\n");
+    tree.write("crates/foo/tests/it/support.rs", "//! Support.\n");
+    check(&tree.0).unwrap();
+    tree.write("crates/foo/tests/it/helpers.rs", "//! Helpers.\n");
+    let error = check(&tree.0).unwrap_err();
+    for expected in [
+        "crates/foo/tests/it/helpers.rs",
+        "[name]",
+        "`helpers` is banned",
+    ] {
+        assert!(error.contains(expected), "{expected}: {error}");
+    }
+    tree.remove("crates/foo/tests/it/helpers.rs");
+    tree.write(
+        "crates/foo/tests/it/support.rs",
+        "//! Support.\nmod misc {}\n",
+    );
+    let error = check(&tree.0).unwrap_err();
+    assert!(
+        error.contains("crates/foo/tests/it/support.rs: [name]")
+            && error.contains("`misc` is banned"),
+        "{error}"
+    );
+    tree.write("crates/foo/tests/it/support.rs", "//! Support.\n");
+    tree.write("crates/foo/tests/it/common/case.rs", "//! Case.\n");
+    let error = check(&tree.0).unwrap_err();
+    assert!(
+        error.contains("crates/foo/tests/it/common: [name]")
+            && error.contains("`common` is banned"),
+        "{error}"
+    );
+    tree.remove("crates/foo/tests/it/common/case.rs");
+    check(&tree.0).unwrap();
+}
+
+const EDITOR_FOLDER: &str = r#"[[crate]]
+name = "foo"
+path = "crates/foo"
+
+[[crate.layer]]
+name = "base"
+groups = ["base"]
+
+[[crate.module]]
+name = "editor"
+group = "base"
+
+[[crate.folder]]
+path = "src/editor"
+
+[[crate.folder.layer]]
+name = "frame"
+groups = ["frame"]
+
+[[crate.folder.layer]]
+name = "features"
+groups = ["assets", "player"]
+
+[[crate.folder.module]]
+name = "frame"
+group = "frame"
+
+[[crate.folder.module]]
+name = "assets"
+group = "assets"
+
+[[crate.folder.module]]
+name = "player"
+group = "player"
+"#;
+
+#[test]
+fn folder_tables_enforce_layers_and_groups_below_a_folder_interface() {
+    let tree = Tree::new();
+    tree.config(EDITOR_FOLDER);
+    tree.write("crates/foo/src/lib.rs", "//! Foo.\npub mod editor;\n");
+    tree.write(
+        "crates/foo/src/editor.rs",
+        "//! Editor.\npub mod frame;\npub mod assets;\npub mod player;\n",
+    );
+    tree.write(
+        "crates/foo/src/editor/frame.rs",
+        "//! Frame.\nuse crate::editor::assets::Assets;\npub struct Frame;\n",
+    );
+    tree.write(
+        "crates/foo/src/editor/assets.rs",
+        "//! Assets.\npub struct Assets;\n",
+    );
+    tree.write(
+        "crates/foo/src/editor/player.rs",
+        "//! Player.\npub struct Player;\n",
+    );
+    let error = check(&tree.0).unwrap_err();
+    for expected in [
+        "crates/foo/src/editor/frame.rs",
+        "[layer]",
+        "structure rule 4",
+        "higher layer",
+        "inside folder `src/editor`",
+    ] {
+        assert!(error.contains(expected), "{expected}: {error}");
+    }
+    tree.write(
+        "crates/foo/src/editor/frame.rs",
+        "//! Frame.\npub struct Frame;\n",
+    );
+    tree.write(
+        "crates/foo/src/editor/assets.rs",
+        "//! Assets.\nuse crate::editor::player::Player;\npub struct Assets;\n",
+    );
+    let error = check(&tree.0).unwrap_err();
+    assert!(
+        error.contains("crosses feature groups") && error.contains("inside folder `src/editor`"),
+        "{error}"
+    );
+    tree.write(
+        "crates/foo/src/editor/assets.rs",
+        "//! Assets.\nuse crate::editor::frame::Frame;\npub struct Assets;\n",
+    );
+    check(&tree.0).unwrap();
+}
+
+#[test]
+fn folder_tables_reject_unplaced_and_stale_folder_modules() {
+    let tree = Tree::new();
+    tree.config(EDITOR_FOLDER);
+    tree.write("crates/foo/src/lib.rs", "//! Foo.\npub mod editor;\n");
+    tree.write(
+        "crates/foo/src/editor.rs",
+        "//! Editor.\npub mod frame;\npub mod assets;\npub mod player;\npub mod missing;\n",
+    );
+    tree.write("crates/foo/src/editor/frame.rs", "//! Frame.\n");
+    tree.write("crates/foo/src/editor/assets.rs", "//! Assets.\n");
+    tree.write("crates/foo/src/editor/player.rs", "//! Player.\n");
+    tree.write("crates/foo/src/editor/missing.rs", "//! Missing.\n");
+    let error = check(&tree.0).unwrap_err();
+    assert!(
+        error.contains("folder `src/editor` module `missing` has no layer and group"),
+        "{error}"
+    );
+    tree.write(
+        "crates/foo/src/editor.rs",
+        "//! Editor.\npub mod frame;\npub mod assets;\npub mod player;\n",
+    );
+    tree.remove("crates/foo/src/editor/missing.rs");
+    check(&tree.0).unwrap();
+    tree.remove("crates/foo/src/editor/player.rs");
+    let error = check(&tree.0).unwrap_err();
+    assert!(
+        error.contains("folder `src/editor` places module `player`, which no longer exists"),
+        "{error}"
+    );
 }
 
 #[test]

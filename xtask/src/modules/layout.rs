@@ -1,6 +1,6 @@
 //! File-level structure rules: responsibility line, banned names and folder width.
 use super::{
-    BANNED, DOC, FOLDER, FOLDER_LIMIT, NAME, Violation, is_test_source,
+    BANNED, DOC, FOLDER, FOLDER_LIMIT, INTERFACE, NAME, Violation, has_test_dir, is_test_source,
     syntax::{is_cfg_test, item_attrs},
 };
 use std::{
@@ -32,6 +32,20 @@ pub(super) fn leading_doc(root: &Path, path: &str) -> Result<Option<Violation>, 
         }));
     }
     Ok(None)
+}
+
+pub(super) fn mod_file(path: &str) -> Option<Violation> {
+    if Path::new(path)
+        .file_name()
+        .is_some_and(|name| name == "mod.rs")
+    {
+        return Some(Violation {
+            path: path.to_owned(),
+            rule: INTERFACE,
+            detail: "module interface is `mod.rs`; use `foo.rs` beside `foo/`".into(),
+        });
+    }
+    None
 }
 
 pub(super) fn file_name(path: &str) -> Option<Violation> {
@@ -110,6 +124,37 @@ pub(super) fn folder_rules(tracked: &[String]) -> BTreeSet<Violation> {
                 path: dir.clone(),
                 rule: FOLDER,
                 detail: format!("{count} direct children (limit {FOLDER_LIMIT})"),
+            });
+        }
+    }
+    violations
+}
+
+/// Banned names also apply to module trees under `tests/`, `examples/` and `benches/`.
+pub(super) fn test_folder_rules(tracked: &[String]) -> BTreeSet<Violation> {
+    let mut dirs = BTreeSet::new();
+    for path in tracked {
+        if !has_test_dir(path) {
+            continue;
+        }
+        let parts: Vec<&str> = path.split('/').collect();
+        for end in 1..parts.len() {
+            let dir = parts.get(..end).unwrap_or_default().join("/");
+            if has_test_dir(&dir) {
+                dirs.insert(dir);
+            }
+        }
+    }
+    let mut violations = BTreeSet::new();
+    for dir in dirs {
+        let Some(name) = dir.rsplit('/').next().map(str::to_owned) else {
+            continue;
+        };
+        if banned(&name) {
+            violations.insert(Violation {
+                path: dir,
+                rule: NAME,
+                detail: format!("module name `{name}` is banned"),
             });
         }
     }
