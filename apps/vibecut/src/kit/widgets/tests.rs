@@ -72,15 +72,21 @@ fn slider_stepper_arrows_clamp_to_the_range() {
 
 #[test]
 fn buttons_dispatch_clicks_only_when_enabled() {
-    for primary in [false, true] {
+    for variant in ["icon", "primary", "play", "round", "badge"] {
         for enabled in [false, true] {
             let mut harness = harness(
                 move |ui, clicks: &mut u32| {
                     ui.add_enabled_ui(enabled, |ui| {
-                        let response = if primary {
-                            action_button(ui, "tool", Icon::Plus, "Add", size::EXPORT_WIDTH)
-                        } else {
-                            icon_button(ui, "tool", Icon::Plus, "Add", true)
+                        let response = match variant {
+                            "primary" => {
+                                action_button(ui, "tool", Icon::Plus, "Add", size::EXPORT_WIDTH)
+                            }
+                            "play" => transport_button(ui, "tool", Icon::Play, "Add", false),
+                            "round" => {
+                                transport_button(ui, "tool", Icon::ArrowClockwise, "Add", true)
+                            }
+                            "badge" => badge_button(ui, "tool", "Add"),
+                            _ => icon_button(ui, "tool", Icon::Plus, "Add", true),
                         };
                         if response.clicked() {
                             *clicks += 1;
@@ -92,7 +98,7 @@ fn buttons_dispatch_clicks_only_when_enabled() {
             harness.run();
             harness.get_by_label("Add").click();
             harness.run();
-            assert_eq!(*harness.state(), u32::from(enabled));
+            assert_eq!(*harness.state(), u32::from(enabled), "{variant}/{enabled}");
         }
     }
 }

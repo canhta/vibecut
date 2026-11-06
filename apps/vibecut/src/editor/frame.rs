@@ -13,6 +13,8 @@ use crate::{
 
 /// Read-only composition inputs shared by editor areas.
 pub(crate) struct Context<'a> {
+    pub(crate) playback: &'a crate::playback::Playback,
+    pub(crate) keybindings: &'a crate::actions::KeybindingPreferences,
     pub(crate) session: &'a engine::Session,
     #[allow(dead_code)] // Consumed by the parallel area interface migrations.
     pub(crate) selection: &'a std::collections::BTreeSet<project::ItemId>,
@@ -22,6 +24,12 @@ pub(crate) struct Context<'a> {
     /// What the selection currently scopes: items, mask points or keyframes.
     pub(crate) scope: crate::selection::SelectionScope,
     pub(super) save_status: Text,
+}
+
+impl Context<'_> {
+    pub(crate) fn tr(&self, key: Text) -> &'static str {
+        crate::catalog::text(self.locale, key)
+    }
 }
 
 /// Transient editor-window chrome, independent of every other window.

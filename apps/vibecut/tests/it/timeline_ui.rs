@@ -884,11 +884,26 @@ fn every_editor_button_reports_its_embedded_icon() {
         );
         std::thread::sleep(std::time::Duration::from_millis(2));
     }
+    // Observe both real popovers: opening one closes the other.
     harness
         .get(By::new().predicate(|node| node.author_id() == Some("window.menu")))
         .click();
+    harness.run_steps(3);
+    let mut widgets = harness.state().inspect().unwrap().widgets;
+    harness.key_press(egui::Key::Escape);
     harness.run_steps(2);
-    let widgets = harness.state().inspect().unwrap().widgets;
+    harness
+        .get(By::new().predicate(|node| node.author_id() == Some("preview.menu")))
+        .click();
+    harness.run_steps(3);
+    for widget in harness.state().inspect().unwrap().widgets {
+        if let Some(previous) = widgets.iter_mut().find(|previous| previous.id == widget.id) {
+            *previous = widget;
+        } else {
+            widgets.push(widget);
+        }
+    }
+
     let icon = |id: &str| {
         widgets
             .iter()
@@ -918,6 +933,9 @@ fn every_editor_button_reports_its_embedded_icon() {
         ("media.asset.2", "music-notes"),
         ("transport.back", "skip-back"),
         ("transport.play", "play"),
+        ("preview.menu", "list-bullets"),
+        ("preview.zoom", "magnifying-glass-plus"),
+        ("preview.fullscreen", "corners-out"),
         ("transport.forward", "skip-forward"),
         ("preview.retry", "arrow-clockwise"),
         ("edit.undo", "arrow-counter-clockwise"),

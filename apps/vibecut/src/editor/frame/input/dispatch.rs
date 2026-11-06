@@ -33,7 +33,7 @@ impl Editor {
             return Ok(());
         }
         if id == "preview.set_zoom" {
-            let viewport = self.preview_viewport;
+            let viewport = self.player.viewport;
             let canvas = self.preview_canvas_size();
             if params
                 .get("fit")

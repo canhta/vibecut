@@ -14,7 +14,7 @@ pub(crate) use theme::{
 };
 #[allow(unused_imports)] // Shared contract consumed by the parallel area tickets.
 pub(crate) use widgets::{
-    NumberSpec, SectionResponse, SliderResponse, action_button, icon_button, property_row,
-    rail_slider, section_header, section_header_with, segmented, slider_stepper, stepper,
-    tab_strip, text_tabs, toggle, value_field,
+    NumberSpec, SectionResponse, SliderResponse, action_button, badge_button, icon_button,
+    property_row, rail_slider, section_header, section_header_with, segmented, slider_stepper,
+    stepper, tab_strip, text_tabs, toggle, transport_button, value_field,
 };

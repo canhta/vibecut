@@ -85,6 +85,19 @@ fn build(editor: Editor) -> Harness<'static, Editor> {
 }
 
 fn click(h: &mut Harness<Editor>, id: &str) {
+    if h.query_all(By::new().predicate(|node| node.author_id() == Some(id)))
+        .next()
+        .is_none()
+    {
+        let menu = if id.starts_with("preview.zoom.") {
+            "preview.zoom"
+        } else {
+            "preview.menu"
+        };
+        h.get(By::new().predicate(|node| node.author_id() == Some(menu)))
+            .click();
+        h.run_steps(3);
+    }
     h.get(By::new().predicate(|node| node.author_id() == Some(id)))
         .click();
     h.run_steps(3);
@@ -189,6 +202,9 @@ fn timecode_round_trips_at_every_supported_rate_and_invalid_text_is_restored() {
         assert_eq!(h.state().inspect().unwrap().position, target, "{rate:?}");
         assert_eq!(h.state().inspect().unwrap().timecode, label, "{rate:?}");
         assert!(h.query_by_label("Invalid timecode").is_some(), "{rate:?}");
+        click(&mut h, "preview.retry");
+        assert!(h.query_by_label("Invalid timecode").is_none(), "{rate:?}");
+        assert_eq!(h.state().inspect().unwrap().position, target);
     }
 }
 
@@ -394,6 +410,14 @@ fn snapshot_dialog_cancel_success_failure_and_copy_are_typed() {
     let blocked = dir.path().join("blocked");
     std::fs::create_dir(&blocked).unwrap();
     assert!(h.state_mut().snapshot_picked_file(blocked).is_err());
+    h.run_steps(3);
+    assert!(
+        h.query_by_label(vibecut::catalog::text(
+            h.state().preferences.locale,
+            Text::SnapshotFailed
+        ))
+        .is_some()
+    );
     let inspect = h.state().inspect().unwrap();
     assert!(matches!(
         inspect.snapshot_error,
@@ -401,6 +425,10 @@ fn snapshot_dialog_cancel_success_failure_and_copy_are_typed() {
     ));
     assert!(inspect.snapshot_saved.is_none());
     assert!(inspect.import_toast.is_none());
+    assert_eq!(json(h.state().session.project()), bytes);
+
+    click(&mut h, "preview.retry");
+    assert!(h.state().inspect().unwrap().snapshot_error.is_none());
     assert_eq!(json(h.state().session.project()), bytes);
 
     // Success publishes canvas-sized PNG bytes at the playhead.
@@ -512,11 +540,90 @@ fn preview_timecode_and_zoom_labels_are_localised() {
         locale: vibecut::catalog::Locale::Vi,
         ..Default::default()
     };
-    let h = build(editor(project(FrameRate::FPS_30, 640, 360, false), prefs));
+    let mut h = build(editor(project(FrameRate::FPS_30, 640, 360, false), prefs));
     assert!(h.query_by_label("Mã thời gian không hợp lệ").is_none());
     // The locale retains stable automation ids for the controls.
     assert!(widget(&h, "preview.timecode").enabled);
+    click(&mut h, "preview.menu");
     assert!(widget(&h, "preview.snapshot").enabled);
+}
+
+#[test]
+fn player_footer_stays_on_one_row_in_both_languages() {
+    for locale in [vibecut::catalog::Locale::En, vibecut::catalog::Locale::Vi] {
+        let mut h = build(editor(
+            project(FrameRate::FPS_30, 640, 360, false),
+            Preferences {
+                locale,
+                ..Default::default()
+            },
+        ));
+        let play = widget(&h, "transport.play").rect;
+        let panel = h.state().panels["preview"];
+        assert!((widget(&h, "preview.menu").rect.center().y - panel.top() - 21.0).abs() < 1.0);
+        assert!(
+            (widget(&h, "preview.fullscreen").rect.center().y - panel.bottom() + 22.0).abs() < 1.0
+        );
+
+        let current = widget(&h, "preview.timecode").rect;
+        let fullscreen = widget(&h, "preview.fullscreen").rect;
+        assert!((play.center().y - current.center().y).abs() < 1.0);
+        assert!((play.center().y - fullscreen.center().y).abs() < 1.0);
+        assert!(current.right() < play.left());
+        assert!(play.right() < widget(&h, "preview.quality").rect.left());
+        assert!(widget(&h, "preview.menu").rect.bottom() < widget(&h, "preview.canvas").rect.top());
+        click(&mut h, "preview.ratio");
+        assert!(
+            h.query_by_label(&format!("640 {} 360", '\u{00d7}'))
+                .is_some()
+        );
+        h.key_press(egui::Key::Escape);
+        h.state_mut().playback.set_device_available(false);
+        h.run_steps(3);
+        let audio = widget(&h, "preview.audio_status");
+        assert!(!audio.enabled);
+        assert!(!audio.rect.intersects(widget(&h, "preview.timecode").rect));
+    }
+}
+
+#[test]
+fn pending_preview_invalidates_presented_readiness_until_the_replacement_is_polled() {
+    let mut model = editor(
+        project(FrameRate::FPS_30, 640, 360, false),
+        Preferences::default(),
+    );
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+    while model.playback.frame().is_none() {
+        assert!(
+            std::time::Instant::now() < deadline,
+            "initial preview timed out"
+        );
+        model.tick();
+        std::thread::sleep(std::time::Duration::from_millis(2));
+    }
+    // The dedicated preview surface deliberately does not poll: its host owns the clock.
+    let mut h = Harness::builder()
+        .with_size(egui::vec2(628.0, 532.0))
+        .build_ui_state(|ui, model: &mut Editor| model.preview_ui(ui), model);
+    h.run_steps(3);
+    assert!(h.state().presented_frame().is_some());
+    h.state_mut().playback.clear().unwrap();
+    assert!(h.state().playback.frame().is_none());
+    h.run_steps(3);
+    assert!(
+        h.state().presented_frame().is_none(),
+        "loading must not claim the old frame is still presented"
+    );
+    while h.state().playback.frame().is_none() {
+        assert!(
+            std::time::Instant::now() < deadline,
+            "replacement preview timed out"
+        );
+        h.state_mut().tick();
+        std::thread::sleep(std::time::Duration::from_millis(2));
+    }
+    h.run_steps(3);
+    assert!(h.state().presented_frame().is_some());
 }
 
 /// Offscreen evidence for the ticket; wgpu stays out of CI.

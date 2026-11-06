@@ -68,12 +68,12 @@ impl Editor {
         {
             self.keyboard(ui.ctx());
         }
-        if self.preview_fullscreen != self.fullscreen_commanded {
+        if self.player.fullscreen != self.fullscreen_commanded {
             ui.ctx()
-                .send_viewport_cmd(egui::ViewportCommand::Fullscreen(self.preview_fullscreen));
-            self.fullscreen_commanded = self.preview_fullscreen;
+                .send_viewport_cmd(egui::ViewportCommand::Fullscreen(self.player.fullscreen));
+            self.fullscreen_commanded = self.player.fullscreen;
         }
-        if self.preview_fullscreen {
+        if self.player.fullscreen {
             let rect = ui.max_rect();
             let rect = Rect::from_min_size(rect.min, rect.size().max(Vec2::ZERO));
             ui.painter().rect_filled(
@@ -90,7 +90,7 @@ impl Editor {
                     ))),
             );
             child.set_clip_rect(rect);
-            super::super::player::show(self, &mut child);
+            self.show_player(&mut child);
             self.toast(ui.ctx());
             return;
         }
@@ -137,7 +137,7 @@ impl Editor {
             match id {
                 "header" => self.header(&mut child),
                 "media" => super::super::assets::show(self, &mut child),
-                "preview" => super::super::player::show(self, &mut child),
+                "preview" => self.show_player(&mut child),
                 "inspector" => self.inspector(&mut child),
                 _ => super::super::timeline::show(self, &mut child),
             }
@@ -234,9 +234,11 @@ impl Editor {
             selection: &self.selection,
             locale: self.preferences.locale,
             dark: self.preferences.dark,
-            save_status: Text::NotSaved, // Only the window header shows it.
             preferences: &self.preferences,
             scope: self.selection_scopes.active(&self.selection),
+            save_status: Text::NotSaved, // Only the window header shows it.
+            playback: &self.playback,
+            keybindings: &self.preferences.keybindings,
         };
         let actions = super::super::properties::show(&mut self.properties, &cx, ui);
         for widget in self.properties.take_widgets() {
@@ -251,8 +253,58 @@ impl Editor {
         }
         super::super::properties::apply(self, actions);
     }
-    pub(in crate::editor) fn header(&mut self, ui: &mut egui::Ui) {
-        let save_status = if self.persistence_error.is_some() {
+    /// Render the player through its read-only boundary, then route its requests.
+    pub(in crate::editor) fn show_player(&mut self, ui: &mut egui::Ui) {
+        use super::super::player::{self, Action};
+        self.player.failed = self.error.is_some() || self.playback.error().is_some();
+        self.player.snapshot_failed = self.snapshot.error.is_some();
+        let cx = crate::editor::Context {
+            session: &self.session,
+            selection: &self.selection,
+            locale: self.preferences.locale,
+            dark: self.preferences.dark,
+            preferences: &self.preferences,
+            scope: self.selection_scopes.active(&self.selection),
+            playback: &self.playback,
+            keybindings: &self.preferences.keybindings,
+            save_status: self.save_status(),
+        };
+        let actions = player::show(&mut self.player, &cx, ui);
+        for action in actions {
+            match action {
+                Action::Remember {
+                    id,
+                    icon,
+                    tooltip,
+                    response,
+                } => {
+                    self.remember_with_icon(&id, icon, &response);
+                    if let Some(widget) = self.widgets.get_mut(&id) {
+                        widget.tooltip = tooltip;
+                    }
+                }
+                Action::Command(command) => self.action(&command),
+                Action::CommitTimecode => self.commit_timecode(),
+                Action::Retry => {
+                    self.player.timecode_error = None;
+                    self.snapshot.error = None;
+                    self.action("preview.retry");
+                }
+                Action::Copy => {
+                    if let Err(error) = self.copy_snapshot(ui.ctx()) {
+                        self.error = Some(error.to_string());
+                    }
+                }
+                Action::Zoom(factor) => {
+                    if let Err(error) = self.preview_zoom_by(factor) {
+                        self.error = Some(error.to_string());
+                    }
+                }
+            }
+        }
+    }
+    fn save_status(&self) -> Text {
+        if self.persistence_error.is_some() {
             Text::SaveFailed
         } else {
             match &self.session {
@@ -265,15 +317,20 @@ impl Editor {
                     }
                 }
             }
-        };
+        }
+    }
+    pub(in crate::editor) fn header(&mut self, ui: &mut egui::Ui) {
+        let save_status = self.save_status();
         let cx = crate::editor::Context {
             session: &self.session,
             selection: &self.selection,
             locale: self.preferences.locale,
             dark: self.preferences.dark,
-            save_status,
             preferences: &self.preferences,
             scope: self.selection_scopes.active(&self.selection),
+            save_status,
+            playback: &self.playback,
+            keybindings: &self.preferences.keybindings,
         };
         let actions = super::show(&mut self.frame, &cx, ui);
         for (id, icon, response) in std::mem::take(&mut self.frame.widgets) {

@@ -226,11 +226,23 @@ pub(crate) mod radius {
 }
 /// Inter-equivalent sizes inferred from measured capital heights.
 pub(crate) mod type_size {
+    pub const BADGE: f32 = 10.0;
+    pub const PLAYER_VALUE: f32 = 11.0;
+    pub const PLAYER_TITLE: f32 = 11.0;
     pub const BODY: f32 = 12.0;
     pub const CHROME: f32 = 14.0;
 }
 /// Measured boxes and row pitches from the desktop capture set.
 pub(crate) mod size {
+    pub const PLAYER_FOOTER: f32 = 44.0;
+    pub const PLAYER_FIT_ROW: f32 = 26.0;
+    pub const PLAYER_FIT_OFFSET: f32 = 24.0;
+    pub const PLAYER_TIMECODE: f32 = 64.0;
+    pub const PLAYER_SCENES_X: f32 = 171.0;
+    pub const PLAYER_RATIO_X: f32 = 49.5;
+    pub const PLAYER_RATIO_WIDTH: f32 = 36.0;
+    pub const PLAYER_ZOOM_X: f32 = 86.0;
+    pub const PLAYER_QUALITY_X: f32 = 117.0;
     pub const TOPBAR: f32 = 36.0;
     pub const TAB_STRIP: f32 = 42.0;
     pub const TOOLBAR: f32 = 32.0;

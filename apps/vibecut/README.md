@@ -22,8 +22,10 @@ state projections live with their area. Responsibilities follow
 [structure](../../docs/engineering/structure.md).
 
 The physical extraction preserves existing facade calls and their ordering.
-Area-owned State/show/action migrations belong to the consumer UI tickets;
-known legacy cross-area calls are recorded in the ticket report.
+The player owns its retained view state and renders from read-only context,
+returning requests for the frame to route. Remaining State/show/action migrations
+belong to their consumer UI tickets; retained cross-area calls are recorded in
+the ticket report.
 
 `kit.rs` exposes the app palette, measured geometry, regular icons and the
 shared controls without an engine dependency. All callers import that interface

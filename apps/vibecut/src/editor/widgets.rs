@@ -62,31 +62,6 @@ impl Editor {
         self.remember_with_icon(id, Some(icon.name()), &response);
         response.clicked()
     }
-    pub(in crate::editor) fn preset_button(
-        &mut self,
-        ui: &mut egui::Ui,
-        id: &str,
-        label: &str,
-        selected: bool,
-    ) -> bool {
-        let response = ui
-            .push_id(id, |ui| ui.selectable_label(selected, label))
-            .inner;
-        self.remember(id, &response);
-        response.clicked()
-    }
-
-    pub(in crate::editor) fn menu_button(
-        &mut self,
-        ui: &mut egui::Ui,
-        id: &str,
-        key: Text,
-        enabled: bool,
-    ) -> bool {
-        let response = ui.add_enabled(enabled, egui::Button::new(self.tr(key)));
-        self.remember(id, &response);
-        response.clicked()
-    }
     #[allow(clippy::too_many_arguments)]
     pub(in crate::editor) fn icon_only(
         &mut self,

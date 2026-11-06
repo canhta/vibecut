@@ -4,7 +4,7 @@ use super::{
     Arc, AssetId, BTreeMap, BTreeSet, BookmarkId, Clock, ContentHash, Duration, EyedropperState,
     Icon, ImportFailure, ImportQueue, ItemId, KeybindingIssue, Keymap, MediaSort, MediaView,
     PathBuf, Playback, Preferences, Rect, SelectionScope, SelectionScopes, SourceRange, Text, Tick,
-    TrackId, UnsupportedReason, Vec2, actions, egui, preview, theme,
+    TrackId, UnsupportedReason, actions, egui, preview, theme,
 };
 
 #[derive(Clone, Debug)]
@@ -252,11 +252,6 @@ pub(super) struct Toast {
     pub(super) until: Duration,
 }
 #[derive(Clone, Debug)]
-pub(super) struct TimecodeEdit {
-    pub(super) text: String,
-    pub(super) focus: bool,
-}
-#[derive(Clone, Debug)]
 pub(super) struct AssetRow {
     pub(super) id: AssetId,
     pub(super) name: String,
@@ -438,19 +433,12 @@ pub struct Editor {
     pub(super) widgets: BTreeMap<String, WidgetState>,
     pub panels: BTreeMap<&'static str, Rect>,
     pub(super) frame: super::frame::State,
-    pub(super) preview_view: preview::View,
-    pub(super) preview_viewport: Vec2,
-    pub(super) preview_fullscreen: bool,
+    pub(super) player: super::player::State,
     pub(super) fullscreen_commanded: bool,
-    pub(super) timecode_edit: Option<TimecodeEdit>,
-    pub(super) timecode_error: Option<Text>,
     pub snapshot: preview::SnapshotDialog,
     pub(super) drag: Option<DragState>,
     pub(super) bookmark_drag: Option<BookmarkDrag>,
     pub(super) snap_indicator: Option<Tick>,
-    pub(super) texture: Option<egui::TextureHandle>,
-    pub(super) texture_key: Option<(u64, Tick)>,
-    pub(super) texture_owner: Option<std::sync::Arc<crate::playback::Frame>>,
     pub(super) error: Option<String>,
     pub(crate) persistence_error: Option<std::sync::Arc<engine::EditError>>,
     pub(super) configured: bool,

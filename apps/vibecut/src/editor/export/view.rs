@@ -12,7 +12,7 @@ pub(in crate::editor) fn show(editor: &mut Editor, ctx: &egui::Context) {
         editor.preferences.dark,
         &mut options,
         editor.session.project(),
-        editor.texture.as_ref(),
+        editor.player.texture.as_ref(),
     );
     match output.action {
         Some(crate::export::Action::Start) => {

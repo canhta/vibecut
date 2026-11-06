@@ -158,6 +158,10 @@ fn every_widget_has_unique_locale_stable_id_and_input_reaches_engine() {
         "locale redo restores the Vietnamese catalog"
     );
     harness
+        .get(By::new().predicate(|n| n.author_id() == Some("preview.menu")))
+        .click();
+    harness.run_steps(3);
+    harness
         .get(By::new().predicate(|n| n.author_id() == Some("transport.forward")))
         .click();
     harness.run_steps(3);
@@ -180,7 +184,7 @@ fn transport_widget_identity_survives_preview_frame_arrival_and_empty_transition
         format!(
             "{:?}",
             harness
-                .get(By::new().predicate(|n| n.author_id() == Some("transport.forward")))
+                .get(By::new().predicate(|n| n.author_id() == Some("transport.play")))
                 .accesskit_node()
                 .id()
         )
@@ -193,7 +197,7 @@ fn transport_widget_identity_survives_preview_frame_arrival_and_empty_transition
     }
     let with_frame = node_id(&harness);
 
-    // Remove the only item so the canvas takes its empty branch. The forward
+    // Remove the only item so the canvas takes its empty branch. The play
     // control stays rendered (disabled) with the same automation id.
     let item = {
         let project = harness.state().session.project();

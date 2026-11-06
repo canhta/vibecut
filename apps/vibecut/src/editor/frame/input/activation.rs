@@ -338,7 +338,7 @@ impl Editor {
                 UiAction::ProjectInspector => self.properties.details = false,
                 UiAction::DetailsInspector => self.properties.details = true,
                 UiAction::PreviewSnapshot => self.open_snapshot_dialog()?,
-                UiAction::PreviewFullscreen => self.preview_fullscreen = !self.preview_fullscreen,
+                UiAction::PreviewFullscreen => self.player.fullscreen = !self.player.fullscreen,
                 UiAction::PreviewFit => self.set_preview_fit()?,
                 UiAction::PreviewZoomIn => self.preview_zoom_by(preview::ZOOM_STEP)?,
                 UiAction::PreviewZoomOut => self.preview_zoom_by(1.0 / preview::ZOOM_STEP)?,
@@ -346,7 +346,7 @@ impl Editor {
                     let percent =
                         u32::try_from(argument.ok_or(Error::Unsupported("preview zoom"))?)
                             .map_err(|_| Error::Unsupported("preview zoom"))?;
-                    let viewport = self.preview_viewport;
+                    let viewport = self.player.viewport;
                     let canvas = self.preview_canvas_size();
                     let zoom = preview::normalize_zoom(percent as f32 / 100.0)
                         .ok_or(Error::Invalid("preview zoom"))?;

@@ -57,6 +57,7 @@ enum App {
         _directory: tempfile::TempDir,
     },
     Editor(Box<Editor>),
+    Player(Box<Editor>),
     Shorts(Box<vibecut::shorts::State>),
 }
 impl App {
@@ -64,6 +65,37 @@ impl App {
         match self {
             Self::Home { workspace, .. } => workspace.ui(ui),
             Self::Editor(editor) => editor.ui(ui),
+            Self::Player(editor) => {
+                let initialized = ui.ctx().data_mut(|data| {
+                    let id = egui::Id::unique("player.audit.initialized");
+                    let initialized = data.get_temp::<bool>(id).unwrap_or(false);
+                    data.insert_temp(id, true);
+                    initialized
+                });
+                if !initialized {
+                    editor.ui(ui);
+                    return;
+                }
+                editor.tick();
+                ui.painter().rect_filled(
+                    ui.max_rect(),
+                    0,
+                    vibecut::window_color(editor.preferences.dark),
+                );
+                let rect = egui::Rect::from_min_size(
+                    egui::pos2(654.0, 74.0),
+                    egui::vec2(
+                        if editor.session.project().duration() == Tick::ZERO {
+                            578.0
+                        } else {
+                            628.0
+                        },
+                        532.0,
+                    ),
+                );
+                let mut child = ui.new_child(egui::UiBuilder::new().max_rect(rect));
+                editor.preview_ui(&mut child);
+            }
             Self::Shorts(shorts) => {
                 let cx = vibecut::shorts::Context {
                     editor_available: true,
@@ -75,20 +107,20 @@ impl App {
     fn busy(&self) -> bool {
         match self {
             Self::Home { workspace, .. } => workspace.busy(),
-            Self::Editor(_) => false,
+            Self::Editor(_) | Self::Player(_) => false,
             Self::Shorts(shorts) => shorts.busy(),
         }
     }
     fn inspect(&self) -> Result<Inspection, Failure> {
         match self {
-            Self::Editor(editor) => Ok(editor.inspect()?),
+            Self::Editor(editor) | Self::Player(editor) => Ok(editor.inspect()?),
             Self::Home { .. } => Err("the Home scene has no editor inspection".into()),
             Self::Shorts(_) => Err("the Shorts scene has no editor inspection".into()),
         }
     }
     fn presented_frame(&self) -> Option<Tick> {
         match self {
-            Self::Editor(editor) => editor.presented_frame(),
+            Self::Editor(editor) | Self::Player(editor) => editor.presented_frame(),
             Self::Shorts(shorts) => shorts.preview().and_then(|editor| editor.presented_frame()),
             Self::Home { workspace, .. } => workspace
                 .focused_editor()
@@ -116,7 +148,7 @@ impl AuditApp {
     }
     fn session(&self) -> Option<&Session> {
         match &self.app {
-            App::Editor(editor) => Some(&editor.session),
+            App::Editor(editor) | App::Player(editor) => Some(&editor.session),
             App::Home { .. } => None,
             App::Shorts(shorts) => shorts.preview().map(|editor| &*editor.session),
         }
@@ -162,6 +194,90 @@ impl Scene {
 }
 
 const SCENES: &[Scene] = &[
+    Scene {
+        name: "player-timecode",
+        reference_dark: None,
+        reference_light: None,
+        build: |theme, scale| player_variant(theme, scale, "timecode"),
+    },
+    Scene {
+        name: "player-invalid",
+        reference_dark: None,
+        reference_light: None,
+        build: |theme, scale| player_variant(theme, scale, "invalid"),
+    },
+    Scene {
+        name: "player-fullscreen",
+        reference_dark: None,
+        reference_light: None,
+        build: |theme, scale| player_variant(theme, scale, "fullscreen"),
+    },
+    Scene {
+        name: "player-menu",
+        reference_dark: None,
+        reference_light: None,
+        build: |theme, scale| player_variant(theme, scale, "menu"),
+    },
+    Scene {
+        name: "player-zoom",
+        reference_dark: None,
+        reference_light: None,
+        build: |theme, scale| player_variant(theme, scale, "zoom"),
+    },
+    Scene {
+        name: "player-ratio",
+        reference_dark: None,
+        reference_light: None,
+        build: |theme, scale| player_variant(theme, scale, "ratio"),
+    },
+    Scene {
+        name: "player-quality",
+        reference_dark: None,
+        reference_light: None,
+        build: |theme, scale| player_variant(theme, scale, "quality"),
+    },
+    Scene {
+        name: "player-loading",
+        reference_dark: None,
+        reference_light: None,
+        build: |theme, scale| player_variant(theme, scale, "loading"),
+    },
+    Scene {
+        name: "player-failed",
+        reference_dark: None,
+        reference_light: None,
+        build: |theme, scale| player_variant(theme, scale, "failed"),
+    },
+    Scene {
+        name: "player-offline",
+        reference_dark: None,
+        reference_light: None,
+        build: |theme, scale| player_variant(theme, scale, "offline"),
+    },
+    Scene {
+        name: "player-zoomed",
+        reference_dark: None,
+        reference_light: None,
+        build: |theme, scale| player_variant(theme, scale, "zoomed"),
+    },
+    Scene {
+        name: "player-vi",
+        reference_dark: None,
+        reference_light: None,
+        build: |theme, scale| player_variant(theme, scale, "vi"),
+    },
+    Scene {
+        name: "player-media",
+        reference_dark: None,
+        reference_light: None,
+        build: |theme, scale| player_scene(theme, scale, false),
+    },
+    Scene {
+        name: "player-empty",
+        reference_dark: None,
+        reference_light: None,
+        build: |theme, scale| player_scene(theme, scale, true),
+    },
     Scene {
         name: "captions-empty",
         reference_dark: Some("live/06-text-captions/shots/web/06-web-captions-panel.png"),
@@ -1064,6 +1180,174 @@ fn timeline_zoom(theme: Theme, scale: f32, zoom: f64) -> Result<AppHarness, Fail
     wait_for_presented(&mut app)?;
     app.run_steps(3);
     Ok(app)
+}
+
+fn player_editor(theme: Theme, empty: bool) -> Result<Editor, Failure> {
+    let mut session = empty_session("Interview")?;
+    let rate = FrameRate::FPS_30;
+    let duration = rate.tick_of((3600 + 18 * 60 + 28) * 30 + 6)?;
+    session.execute(
+        "scene.rename",
+        serde_json::json!({"scene":session.project().data().current_scene_id,"name":"Timeline 01"}),
+    )?;
+    if !empty {
+        let mut asset: AssetData = source_asset(
+            1,
+            StreamKind::Video,
+            std::env::temp_dir().join("player-source.mp4"),
+        )?
+        .into();
+        asset.probe.duration = Some(duration);
+        asset.probe.streams = vec![source_stream(StreamKind::Video, duration)?];
+        session.apply(Command::AddAsset {
+            asset: SourceAsset::try_from(asset)?,
+        })?;
+        let main = session.project().data().scene().timeline.main.id;
+        insert(
+            &mut session,
+            main,
+            Tick::ZERO,
+            SourceRange::new(Tick::ZERO, duration)?,
+            Some(AssetId(1)),
+            ItemParams::Video(VideoParams {
+                source_audio_enabled: true,
+                volume: 0.0,
+                muted: false,
+                fades: Default::default(),
+            }),
+        )?;
+    }
+    let mut playback = Playback::new(
+        &session,
+        ByteBudget::new(256 << 20)?,
+        Arc::new(SyntheticSources),
+    )?;
+    playback.set_device_available(true);
+    if !empty {
+        playback.seek(rate.tick_of(11 * 30 + 7)?, false, session.project().clone())?;
+    }
+    let mut editor = Editor::new(session, playback, preferences(theme, Locale::En));
+    if !empty {
+        wait_for_frame(&mut editor)?;
+    }
+    Ok(editor)
+}
+fn player_scene(theme: Theme, scale: f32, empty: bool) -> Result<AppHarness, Failure> {
+    player_variant(theme, scale, if empty { "empty" } else { "media" })
+}
+fn player_variant(theme: Theme, scale: f32, variant: &str) -> Result<AppHarness, Failure> {
+    let mut editor = player_editor(theme, variant == "empty")?;
+    if variant == "offline" {
+        editor.playback.set_device_available(false);
+    }
+    if variant == "vi" {
+        editor.preferences.locale = Locale::Vi;
+    }
+    if variant == "zoomed" {
+        editor.dispatch("preview.set_zoom", serde_json::json!({"zoom":1.25}))?;
+    }
+    if matches!(variant, "loading" | "failed") {
+        editor.playback = Playback::new(
+            &editor.session,
+            ByteBudget::new(256 << 20)?,
+            if variant == "loading" {
+                Arc::new(LoadingSources)
+            } else {
+                Arc::new(Files)
+            },
+        )?;
+        editor.playback.set_device_available(true);
+    }
+    if variant == "fullscreen" {
+        editor.activate("preview.fullscreen")?;
+    }
+    let app_root = if variant == "fullscreen" {
+        App::Editor(Box::new(editor))
+    } else {
+        App::Player(Box::new(editor))
+    };
+    let mut app = harness_sized(app_root, scale, [1840.0, 1142.0]);
+    app.run_steps(3);
+    if !matches!(variant, "empty" | "loading" | "failed") {
+        wait_for_presented(&mut app)?;
+    }
+    if variant == "failed" {
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while !app
+            .state()
+            .inspect()?
+            .widgets
+            .iter()
+            .any(|widget| widget.id == "preview.retry")
+        {
+            if Instant::now() >= deadline {
+                return Err("player failure audit timed out".into());
+            }
+            app.run_steps(1);
+            std::thread::sleep(Duration::from_millis(2));
+        }
+    }
+    if let Some(id) = match variant {
+        "menu" => Some("preview.menu"),
+        "zoom" => Some("preview.zoom"),
+        "ratio" => Some("preview.ratio"),
+        "quality" => Some("preview.quality"),
+        "timecode" | "invalid" => Some("preview.timecode"),
+        _ => None,
+    } {
+        app.get(By::new().predicate(|node| node.author_id() == Some(id)))
+            .click();
+        app.run_steps(3);
+    }
+    if variant == "invalid" {
+        app.get(By::new().predicate(|node| node.author_id() == Some("preview.timecode")))
+            .type_text("99:99:99:99");
+        app.key_press(egui::Key::Enter);
+        app.run_steps(3);
+    }
+    Ok(app)
+}
+/// Keep the loading scene genuinely pending until its preview jobs are cancelled.
+struct LoadingSources;
+impl Sources for LoadingSources {
+    fn create(&self) -> Box<dyn SourceProvider> {
+        Box::new(LoadingFrames)
+    }
+}
+struct LoadingFrames;
+impl SourceProvider for LoadingFrames {
+    fn status(
+        &mut self,
+        _: &SourceAsset,
+        _: bool,
+        hooks: &dyn ExecutionHooks,
+    ) -> render::Result<Option<UnavailableReason>> {
+        let deadline = Instant::now() + Duration::from_secs(30);
+        while !hooks.cancelled() && Instant::now() < deadline {
+            std::thread::sleep(Duration::from_millis(2));
+        }
+        Err(render::Error::Cancelled)
+    }
+    fn video(
+        &mut self,
+        _: &SourceAsset,
+        _: ItemId,
+        _: Tick,
+        _: &dyn ExecutionHooks,
+    ) -> render::Result<Option<Image>> {
+        Ok(None)
+    }
+    fn audio(
+        &mut self,
+        _: &SourceAsset,
+        _: ItemId,
+        _: i64,
+        frames: usize,
+        rate: u32,
+        hooks: &dyn ExecutionHooks,
+    ) -> render::Result<AudioBlock> {
+        AudioBlock::new(rate, 2, frames, MemoryKind::Decoded, hooks)
+    }
 }
 
 fn editor_media(theme: Theme, scale: f32) -> Result<AppHarness, Failure> {

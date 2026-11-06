@@ -1,8 +1,13 @@
 //! Applies player transport requests.
 use crate::editor::{
-    DEFAULT_ZOOM, Editor, Error, MAX_ZOOM, MIN_ZOOM_FLOOR, PathBuf, Result, Text, Tick, Vec2,
-    display_time, drop_frame, egui, preview,
+    DEFAULT_ZOOM, Editor, Error, FrameRate, MAX_ZOOM, MIN_ZOOM_FLOOR, PathBuf, Result, Text, Tick,
+    Vec2, display_time, drop_frame, egui, preview,
 };
+
+pub(super) fn format_timecode(at: Tick, rate: FrameRate) -> String {
+    time::format_timecode(at, rate, drop_frame(rate))
+        .unwrap_or_else(|_| display_time(at.max(Tick::ZERO)))
+}
 
 impl Editor {
     /// Restart preview/audio work against the current immutable project snapshot.
@@ -29,14 +34,13 @@ impl Editor {
     }
     pub(in crate::editor) fn format_timecode(&self, at: Tick) -> String {
         let rate = self.session.project().data().canvas.fps;
-        time::format_timecode(at, rate, drop_frame(rate))
-            .unwrap_or_else(|_| display_time(at.max(Tick::ZERO)))
+        format_timecode(at, rate)
     }
     pub(in crate::editor) fn current_timecode(&self) -> String {
         self.format_timecode(self.playback.position().unwrap_or(Tick::ZERO))
     }
     pub(in crate::editor) fn commit_timecode(&mut self) {
-        let Some(edit) = self.timecode_edit.take() else {
+        let Some(edit) = self.player.timecode_edit.take() else {
             return;
         };
         let duration = self.session.project().duration();
@@ -48,18 +52,18 @@ impl Editor {
                 {
                     self.error = Some(error.to_string());
                 } else {
-                    self.timecode_error = None;
+                    self.player.timecode_error = None;
                 }
             }
-            _ => self.timecode_error = Some(Text::TimecodeInvalid),
+            _ => self.player.timecode_error = Some(Text::TimecodeInvalid),
         }
     }
     pub(in crate::editor) fn cancel_timecode(&mut self) {
-        self.timecode_edit = None;
-        self.timecode_error = None;
+        self.player.timecode_edit = None;
+        self.player.timecode_error = None;
     }
     pub(in crate::editor) fn set_preview_fit(&mut self) -> Result<()> {
-        self.preview_view.set_fit();
+        self.player.view.set_fit();
         self.preferences
             .set("preview_fit", serde_json::Value::Bool(true))?;
         Ok(())
@@ -71,7 +75,8 @@ impl Editor {
         canvas: [u32; 2],
     ) -> Result<()> {
         let zoom = self
-            .preview_view
+            .player
+            .view
             .set_zoom(zoom, viewport, canvas)
             .ok_or(Error::Invalid("preview zoom"))?;
         self.preferences
@@ -81,15 +86,15 @@ impl Editor {
         Ok(())
     }
     pub(in crate::editor) fn preview_zoom_by(&mut self, factor: f32) -> Result<()> {
-        let viewport = self.preview_viewport;
+        let viewport = self.player.viewport;
         let canvas = self.preview_canvas_size();
-        let base = if self.preview_view.fit {
-            self.preview_view.scale(viewport, canvas)
+        let base = if self.player.view.fit {
+            self.player.view.scale(viewport, canvas)
         } else {
-            self.preview_view.zoom
+            self.player.view.zoom
         };
         let target = preview::step_zoom(base, factor);
-        if (target - self.preview_view.zoom).abs() < f32::EPSILON && !self.preview_view.fit {
+        if (target - self.player.view.zoom).abs() < f32::EPSILON && !self.player.view.fit {
             return Ok(());
         }
         self.set_preview_zoom(target, viewport, canvas)
@@ -234,6 +239,13 @@ impl Editor {
     }
     /// Shared transport and preview surface for dedicated review windows.
     pub fn preview_ui(&mut self, ui: &mut egui::Ui) {
-        super::show(self, ui);
+        if !self.configured {
+            Self::fonts(ui.ctx());
+            crate::kit::install(ui.ctx());
+            self.configured = true;
+        }
+        Self::theme(ui.ctx(), self.preferences.dark);
+        crate::kit::install_editor_density(ui.ctx());
+        self.show_player(ui);
     }
 }

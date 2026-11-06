@@ -147,6 +147,85 @@ pub(crate) fn action_button(
     response
 }
 
+/// Compact transport action with a smaller glyph or a circular contrasting face.
+pub(crate) fn transport_button(
+    ui: &mut Ui,
+    id: &str,
+    glyph: Icon,
+    label: &str,
+    round: bool,
+) -> Response {
+    let response = ui
+        .push_id(id, |ui| {
+            let (rect, response) =
+                ui.allocate_exact_size(Vec2::splat(size::CONTROL), Sense::click());
+            let color = ink(ui, false);
+            if round {
+                paint(ui).circle_filled(rect.center(), icon::DENSE / 2.0, color);
+                icons::tinted(glyph, icon::PLAY, theme::panel(ui.visuals().dark_mode)).paint_at(
+                    ui,
+                    Rect::from_center_size(rect.center(), Vec2::splat(icon::PLAY)),
+                );
+            } else {
+                if response.hovered() || response.has_focus() {
+                    paint(ui).rect_filled(
+                        rect,
+                        radius::CONTROL,
+                        theme::hover(ui.visuals().dark_mode),
+                    );
+                }
+                icons::tinted(glyph, icon::PLAY, color).paint_at(
+                    ui,
+                    Rect::from_center_size(rect.center(), Vec2::splat(icon::PLAY)),
+                );
+            }
+            response.widget_info(|| {
+                egui::WidgetInfo::labeled(egui::Role::Button, ui.is_enabled(), label)
+            });
+            response
+        })
+        .inner
+        .on_hover_text(label);
+    author(&response, id);
+    focus_ring(ui, &response);
+    response
+}
+
+/// Outlined value badge inside a comfortable pointer target.
+pub(crate) fn badge_button(ui: &mut Ui, id: &str, label: &str) -> Response {
+    let response = ui
+        .push_id(id, |ui| {
+            let (rect, response) = ui.allocate_exact_size(
+                Vec2::new(size::PLAYER_RATIO_WIDTH, size::FIELD),
+                Sense::click(),
+            );
+            let color = ink(ui, false);
+            let galley = paint(ui).layout_no_wrap(
+                label.to_owned(),
+                egui::FontId::proportional(type_size::BADGE),
+                color,
+            );
+            let badge =
+                Rect::from_center_size(rect.center(), galley.size() + Vec2::new(space::XS, 0.0));
+            paint(ui).rect_stroke(
+                badge,
+                radius::PANEL,
+                Stroke::new(space::HAIRLINE, color),
+                egui::StrokeKind::Inside,
+            );
+            paint(ui).galley(rect.center() - galley.size() / 2.0, galley, color);
+            response.widget_info(|| {
+                egui::WidgetInfo::labeled(egui::Role::Button, ui.is_enabled(), label)
+            });
+            response
+        })
+        .inner
+        .on_hover_text(label);
+    author(&response, id);
+    focus_ring(ui, &response);
+    response
+}
+
 /// Feature tab: icon above label, with the measured strip height and inset.
 fn icon_tab(ui: &mut Ui, id: &str, glyph: Icon, label: &str, selected: bool) -> Response {
     let color = ink(ui, selected);

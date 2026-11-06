@@ -15,7 +15,7 @@ use state::{
     AUDIO_GAIN_SCRUB, AssetRow, BookmarkDrag, DragMode, DragOrigin, DragState, EffectReorder,
     MediaMarquee, MediaReveal, OPACITY_SCRUB, PreferenceCommand, PreferenceHistory,
     SHORTCUT_CONTROL_HEIGHT, SHORTCUT_ROW_HEIGHT, SHORTCUT_TEXT_SIZE, SHORTCUT_TITLE_SIZE,
-    SPEED_SCRUB, ScrubDrag, ScrubSpec, ScrubTarget, TEXT_SIZE_SCRUB, TimecodeEdit, Toast,
+    SPEED_SCRUB, ScrubDrag, ScrubSpec, ScrubTarget, TEXT_SIZE_SCRUB, Toast,
 };
 pub use state::{
     AssetInspection, AssetState, Editor, Inspection, ShortcutRow, ShortcutTab, ShortcutsInspection,
@@ -92,9 +92,6 @@ const HORIZONTAL_WHEEL_STEP: f32 = 40.0;
 const RULER_LABEL_SPACING: f32 = 120.0;
 const RULER_TICK_SPACING: f32 = 18.0;
 const LABEL_CHARS: usize = 120;
-const PREVIEW_FOOTER_HEIGHT: f32 = 158.0;
-// Legacy editable timecode width; the player area ticket owns its layout.
-const TIMECODE_WIDTH: f32 = 104.0;
 
 /// App action id for every preference edit; engine history is untouched.
 pub const PREFERENCE_COMMAND: &str = "ui.prefs.set";
@@ -157,19 +154,12 @@ impl Editor {
             widgets: BTreeMap::new(),
             panels: BTreeMap::new(),
             frame: frame::State::default(),
-            preview_view: preview::View::new(preferences_fit, preferences_zoom),
-            preview_viewport: Vec2::new(640.0, 360.0),
-            preview_fullscreen: false,
+            player: player::State::new(preferences_fit, preferences_zoom),
             fullscreen_commanded: false,
-            timecode_edit: None,
-            timecode_error: None,
             snapshot: preview::SnapshotDialog::default(),
             drag: None,
             bookmark_drag: None,
             snap_indicator: None,
-            texture: None,
-            texture_key: None,
-            texture_owner: None,
             error: None,
             persistence_error: None,
             configured: false,
@@ -244,12 +234,12 @@ impl Editor {
             snapping: self.preferences.snapping,
             snap_indicator: self.snap_indicator,
             ripple: self.ripple,
-            preview_zoom: self.preview_view.zoom,
-            preview_fit: self.preview_view.fit,
-            preview_offset: self.preview_view.offset,
-            preview_fullscreen: self.preview_fullscreen,
+            preview_zoom: self.player.view.zoom,
+            preview_fit: self.player.view.fit,
+            preview_offset: self.player.view.offset,
+            preview_fullscreen: self.player.fullscreen,
             timecode: self.current_timecode(),
-            timecode_editing: self.timecode_edit.is_some(),
+            timecode_editing: self.player.timecode_edit.is_some(),
             snapshot_dialog_open: self.snapshot.is_open(),
             snapshot_saved: self.snapshot.saved.clone(),
             snapshot_error: self.snapshot.error,
@@ -369,7 +359,7 @@ impl Editor {
     }
     /// Last frame submitted by the frontend for presentation, independent of decode-ahead.
     pub fn presented_frame(&self) -> Option<Tick> {
-        self.texture_key.map(|(_, at)| at)
+        self.player.texture_key.map(|(_, at)| at)
     }
     /// Replace the UI timer clock in tests; production uses the system clock.
     /// Set it before raising a timed state so its deadline uses this clock.

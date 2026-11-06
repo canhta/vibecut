@@ -8,13 +8,13 @@ impl Editor {
         if self.overlay_open || egui::Popup::is_any_open(ctx) {
             return;
         }
-        if self.preview_fullscreen {
+        if self.player.fullscreen {
             if consume(ctx, egui::Modifiers::NONE, egui::Key::Escape) {
-                self.preview_fullscreen = false;
+                self.player.fullscreen = false;
             }
             return;
         }
-        if self.timecode_edit.is_some() {
+        if self.player.timecode_edit.is_some() {
             if consume(ctx, egui::Modifiers::NONE, egui::Key::Escape) {
                 self.cancel_timecode();
             }
