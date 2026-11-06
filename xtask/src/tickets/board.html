@@ -16,7 +16,7 @@ button,input,select{font:inherit;color:inherit}button,summary{cursor:pointer}but
 .bar{position:sticky;top:0;z-index:20;background:var(--panel);border-bottom:1px solid var(--line)}
 .bar-in{max-width:1240px;margin:auto;padding:14px 24px;display:flex;align-items:center;gap:10px}
 .brand{font-weight:700;letter-spacing:-.02em}.brandmark{width:23px;height:23px;border-radius:6px;display:grid;place-items:center;background:var(--accent);color:var(--panel)}
-.brandmark svg{width:12px;height:12px;fill:currentColor}.live{margin-left:auto;display:flex;align-items:center;gap:6px;color:var(--muted);font-size:12px}.live i{width:6px;height:6px;border-radius:50%;background:var(--resolved)}.live.off i{background:var(--blocked)}
+.brandmark svg{width:12px;height:12px;fill:currentColor}.live{margin-left:auto;display:flex;align-items:center;gap:6px;color:var(--muted);font-size:12px;border:0;background:none;padding:2px;font-family:inherit;cursor:pointer}.live:hover{color:var(--ink)}.live i{width:6px;height:6px;border-radius:50%;background:var(--resolved)}.live.off i{background:var(--blocked)}
 .updated{color:var(--muted);font-size:12px}.muted{color:var(--muted)}
 main{max-width:1240px;margin:auto;padding:30px 24px 48px}
 .page-heading{display:flex;align-items:baseline;justify-content:space-between;gap:16px;margin-bottom:24px}.page-heading h1{font-size:25px;font-weight:650;letter-spacing:-.025em}.page-heading p{font-size:12px;color:var(--muted)}
@@ -111,6 +111,8 @@ dialog::backdrop{background:rgba(6,10,12,.48);backdrop-filter:blur(2px)}
 @media(max-width:760px){
 .bar-in{padding:10px 16px}.updated{display:none}main{padding:20px 16px 32px}.page-heading{margin-bottom:18px}.page-heading h1{font-size:21px}.page-heading p{display:none}
 .filter-btn{min-height:38px;padding:0 12px;font-size:12.5px}
+#filtersDlg{inset:56px 12px auto 12px;width:auto;max-height:calc(100dvh - 68px)}
+.filter-close{width:36px;height:36px}
 .chips{margin-bottom:12px}.chip{height:30px;font-size:12px}
 .delivery-head strong{font-size:25px}.delivery-head span{font-size:12px}.overview{margin-bottom:24px;padding-bottom:20px}.delivery-bar{height:12px}.legend{gap:10px;font-size:11px}.project-metrics{gap:12px;margin-top:18px}.metric b{font-size:20px}.metric span{font-size:11px}.dashboard{grid-template-columns:1fr;gap:28px}.sidebar{grid-template-columns:1fr;gap:28px}.milestone>summary{padding:12px 0}.milestone-name{font-size:13px}.percent{font-size:14px}.milestone-meta{font-size:11px;gap:10px}.priority-chart{height:155px}.ticket-row{grid-template-columns:minmax(0,1fr) 75px;gap:2px 8px;padding:9px 4px;min-height:44px}.ticket-id{grid-column:1}.ticket-name{grid-column:1}.ticket-state{grid-column:2;grid-row:1/3}
 dialog{position:fixed;inset:auto 0 0;margin:0;width:100%;max-width:100%;max-height:92dvh;border-radius:14px 14px 0 0}.ttitle{font-size:16px}.tbody{font-size:14px;padding:12px 16px}.md table{display:block;overflow-x:auto}.md h1{white-space:normal}.sheet input,.sheet select{height:44px;font-size:16px}.close{min-height:40px;min-width:40px}.tbtn{min-height:40px}.reset{min-height:34px;padding:6px 2px}.tfoot{padding-bottom:calc(10px + env(safe-area-inset-bottom))}
@@ -120,7 +122,7 @@ dialog{position:fixed;inset:auto 0 0;margin:0;width:100%;max-width:100%;max-heig
 @media(min-width:761px){.filterbar{display:flex}.filter-btn{display:none}}
 @media(prefers-reduced-motion:reduce){.milestone-name svg{transition:none}}
 </style></head><body>
-<header class="bar"><div class="bar-in"><span class="brandmark" aria-hidden="true"><svg viewBox="0 0 12 12"><path d="M3 2v8l7-4z"/></svg></span><span class="brand">VibeCut</span><span class="live" id="live"><i></i><span>Live</span></span><span class="updated" id="updated">Loading...</span><button class="filter-btn" id="filterBtn" popovertarget="filtersDlg" aria-label="Filter tickets">Filters<span class="count" id="filterCount" hidden>0</span></button></div></header>
+<header class="bar"><div class="bar-in"><span class="brandmark" aria-hidden="true"><svg viewBox="0 0 12 12"><path d="M3 2v8l7-4z"/></svg></span><span class="brand">VibeCut</span><button class="live" id="live" type="button" title="Refresh now" aria-label="Refresh board"><i></i><span>Live</span></button><span class="updated" id="updated">Loading...</span><button class="filter-btn" id="filterBtn" popovertarget="filtersDlg" aria-label="Filter tickets">Filters<span class="count" id="filterCount" hidden>0</span></button></div></header>
 <main><div class="page-heading"><h1>Project overview</h1><p>Delivery across all milestones</p></div>
 <div class="filterbar" id="filterbar" aria-label="Filters">
   <label class="search"><svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="8.5" cy="8.5" r="5"/><path d="m12.5 12.5 4 4"/></svg><input id="searchDesktop" data-f="q" placeholder="Search tickets" autocomplete="off" aria-label="Search tickets"></label>
@@ -132,7 +134,7 @@ dialog{position:fixed;inset:auto 0 0;margin:0;width:100%;max-width:100%;max-heig
 </div>
 <div class="chips" id="chips" hidden></div>
 <div id="overview"><p class="empty">Loading project progress...</p></div></main>
-<div id="filtersDlg" popover aria-labelledby="filtersTitle">
+<div id="filtersDlg" popover role="dialog" aria-labelledby="filtersTitle">
   <div class="sheet">
     <div class="filter-heading"><h2 id="filtersTitle">Filters</h2><button class="filter-close" type="button" popovertarget="filtersDlg" popovertargetaction="hide" aria-label="Close filters"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="m4 4 8 8M12 4l-8 8"/></svg></button></div>
     <label>Search <span class="search"><svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="8.5" cy="8.5" r="5"/><path d="m12.5 12.5 4 4"/></svg><input id="searchSheet" data-f="q" placeholder="ID, title, assignee" autocomplete="off" aria-label="Search tickets"></span></label>
@@ -348,11 +350,11 @@ async function load(){
     if(state.p&&!data.some(t=>t.priority===state.p))state.p="";
     if(state.a&&!data.some(t=>base(t.assignee)===state.a))state.a="";
     if(state.s&&!data.some(t=>t.status===state.s))state.s="";
-    $("#live").classList.remove('off');$("#live").lastElementChild.textContent='Live';$("#updated").textContent='Updated '+new Date(lastLoad).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});
+    $("#live").classList.remove('off');$("#live").lastElementChild.textContent='Live';$("#live").title='Refresh now';$("#updated").textContent='Updated '+new Date(lastLoad).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});
     if(payload.signature!==signature){signature=payload.signature;fillSelects();syncControls();render();if(ticketId){const now=data.find(t=>t.id===ticketId);if(now&&(!opened||now.mtime!==opened.mtime))openTicket(ticketId);}}
     else syncControls();
     if(!ticketId&&params.get('t')){const id=params.get('t');params.delete('t');openTicket(id);}
-  }catch{$("#live").classList.add('off');$("#live").lastElementChild.textContent=lastLoad?'Offline - showing saved view':'Offline';$("#updated").textContent='Retrying...';if(!lastLoad)$("#overview").innerHTML='<p class="empty">Cannot load project progress. Retrying...</p>';}
+  }catch{$("#live").classList.add('off');$("#live").lastElementChild.textContent='Offline';$("#live").title=lastLoad?'Offline - showing last loaded data. Tap to retry.':'Offline. Tap to retry.';$("#updated").textContent='Retrying...';if(!lastLoad)$("#overview").innerHTML='<p class="empty">Cannot load project progress. Retrying...</p>';}
 }
 $("#closeTicket").addEventListener('click',()=>$("#ticket").close());
 $("#prevTicket").addEventListener('click',()=>step(-1));$("#nextTicket").addEventListener('click',()=>step(1));
@@ -377,5 +379,6 @@ document.addEventListener('keydown',e=>{
   if(e.key==='ArrowRight'){e.preventDefault();step(1);}if(e.key==='ArrowLeft'){e.preventDefault();step(-1);}
 });
 document.addEventListener('visibilitychange',()=>{if(!document.hidden)load();});
-saveUrl();syncControls();load();setInterval(load,10000);
+$("#live").addEventListener('click',()=>load());
+saveUrl();syncControls();load();setInterval(load,60000);
 </script></body></html>
