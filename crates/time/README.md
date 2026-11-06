@@ -12,6 +12,20 @@ samples, rational container timebases, frame indices and DF/NDF editor timecode.
 Excludes media probing, variable-frame-rate policy, binary LTC/VITC encoding,
 project persistence and every platform dependency.
 
+## Modules
+
+| Module | Responsibility |
+|---|---|
+| `tick` | Counts media time in exact integer ticks. |
+| `rate` | Compares rational frame rates and converts them to and from ticks. |
+| `range` | Holds nonempty half-open ranges in output and source ticks. |
+| `rounding` | Applies the explicit rational rounding policy. |
+| `timecode` | Formats and parses signed DF/NDF editor labels. |
+| `speed` | Maps constant playback speed to exact source and output durations. |
+
+The crate root declares these modules, owns `TimeError`, and re-exports the same
+public names at unchanged crate-root paths.
+
 ## Public entry points
 
 - `TICKS_PER_SECOND`, `Tick`, `Tick::from_seconds_f64`, `Tick::from_units`,

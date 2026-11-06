@@ -1,3 +1,5 @@
+//! Signed drop-frame and non-drop-frame editor timecode labels.
+
 use crate::{FrameRate, Tick, TimeError};
 
 /// Format the frame containing `time` as `[-]HH:MM:SS:FF` (NDF) or

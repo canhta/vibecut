@@ -70,7 +70,7 @@ impl Speed {
 
     /// The reduced ratio `(num, den)` with `speed = num / den`.
     pub fn ratio(self) -> (i64, i64) {
-        let divisor = i64::from(crate::gcd(u64::from(self.0), 1000) as u16);
+        let divisor = i64::from(crate::rounding::gcd(u64::from(self.0), 1000) as u16);
         (i64::from(self.0) / divisor, 1000 / divisor)
     }
 
@@ -134,7 +134,7 @@ impl Speed {
     /// The reduced factor `(num, den)` that stretches output time when changing
     /// from `self` to `target`: durations multiply by `self / target`.
     pub fn stretch_to(self, target: Self) -> (i64, i64) {
-        let divisor = crate::gcd(u64::from(self.0), u64::from(target.0)) as i64;
+        let divisor = crate::rounding::gcd(u64::from(self.0), u64::from(target.0)) as i64;
         (i64::from(self.0) / divisor, i64::from(target.0) / divisor)
     }
 }

@@ -36,7 +36,6 @@ doc	crates/render/src/image.rs	first line is not a //! responsibility line
 doc	crates/render/src/limiter.rs	first line is not a //! responsibility line
 doc	crates/render/src/scene.rs	first line is not a //! responsibility line
 doc	crates/render/src/sources.rs	first line is not a //! responsibility line
-doc	crates/time/src/timecode.rs	first line is not a //! responsibility line
 folder	apps/vibecut/src	29 direct children (limit 12)
 folder	crates/ai/src	19 direct children (limit 12)
 folder	crates/media/src	13 direct children (limit 12)
