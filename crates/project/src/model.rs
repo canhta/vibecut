@@ -156,10 +156,8 @@ pub struct Canvas {
     pub fps: FrameRate,
     pub background: Color,
     /// Selected fixed preset; `None` after custom width/height entry.
-    #[serde(default)]
     pub preset: Option<AspectPreset>,
     /// Last committed custom size, restored when the creator returns to custom.
-    #[serde(default = "default_custom_size")]
     pub last_custom_size: CanvasSize,
 }
 const fn default_custom_size() -> CanvasSize {

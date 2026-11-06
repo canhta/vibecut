@@ -2426,6 +2426,13 @@ fn canvas_settings_commit_one_step_and_keep_exact_rationals() {
         }
     );
 
+    commit(
+        &mut s,
+        "project.set_canvas",
+        json!({"width":1081,"height":721}),
+    );
+    commit(&mut s, "project.set_fps", json!({"num":48,"den":2}));
+    assert_eq!(s.project().data().canvas.fps, time::FrameRate::FPS_24);
     commit(&mut s, "project.set_fps", json!({"num":24000,"den":1001}));
     assert_eq!(s.project().data().canvas.fps, time::FrameRate::FPS_23_976);
     assert_eq!(s.project().data().canvas.fps.label(), "23.976");
@@ -2482,6 +2489,8 @@ fn canvas_settings_reject_invalid_sizes_rates_and_preset_mismatches() {
     for params in [
         json!({"width":0,"height":1080}),
         json!({"width":1920,"height":0}),
+        json!({"width":-1,"height":1080}),
+        json!({"width":67_108_865,"height":1}),
         json!({"width":u32::MAX,"height":u32::MAX}),
         json!({"width":1080,"height":1920,"preset":"16:9"}),
         json!({"width":1080,"height":1920,"preset":"original"}),
