@@ -1,54 +1,31 @@
 //! Validated headless timeline snapshots and versioned project persistence.
+
 mod animation;
-mod blend;
-pub use blend::BlendMode;
-mod effects;
-mod fade;
-pub use fade::{Fade, FadeCurve, FadeEdge, FadeSpans, Fades};
-mod mask;
-pub use effects::{
-    EffectDefinition, EffectInstance, EffectParamDefinition, EffectParams, GRADE_MAX, GRADE_MIN,
-    effect_definitions,
-};
-pub use mask::{
-    MASK_SCALARS, Mask, MaskMode, MaskPath, MaskShape, MaskStroke, MaskVertex, StrokeAlign,
-};
-pub mod atomic;
-pub mod autosave;
-mod bezier;
-mod bounds;
+mod model;
+mod persistence;
+mod visual;
+
 pub use animation::{
-    AnimationPath, Animations, Channel, ColorComponent, CurveHandle, Extrapolation, HandleSide,
-    Keyframe, MAX_ANIMATION_PATHS, MAX_CHANNEL_KEYS, MAX_PROJECT_KEYS, Param, ParamValue, Segment,
+    AnimationPath, Animations, Channel, ColorComponent, CurveHandle, Cut, Extrapolation, Fade,
+    FadeCurve, FadeEdge, FadeSpans, Fades, HandleSide, Keyframe, MAX_ANIMATION_PATHS,
+    MAX_CHANNEL_KEYS, MAX_PROJECT_KEYS, Param, ParamValue, Retime, RetimeWindow, Segment,
     TangentMode,
 };
-mod metadata;
-/// Read optional bounded metadata without acquiring an editing lease (catalog display).
-pub fn read_metadata(path: &std::path::Path) -> Metadata {
-    metadata::load(path)
-}
-mod model;
-mod transition;
-pub use transition::{
-    TRANSITION_DEFINITIONS, Transition, TransitionAlignment, TransitionDefinition, TransitionId,
-    transition_definition,
-};
-mod transform;
-pub use metadata::{METADATA_VERSION, Metadata, Thumbnail, ViewState, path as metadata_path};
-pub use transform::TransformField;
-mod retime;
-pub use retime::{Cut, Retime, RetimeWindow};
-mod persistence;
-mod typography;
-mod writer;
-pub use atomic::atomic_write;
 pub use model::*;
-pub use persistence::{FORMAT_ID, Loaded, SCHEMA_VERSION, decode, encode, load};
-pub use typography::{
-    DEFAULT_WEIGHT, MAX_LETTER_SPACING, MAX_LINE_HEIGHT, valid_letter_spacing, valid_line_height,
+pub use persistence::atomic;
+pub use persistence::autosave;
+pub use persistence::{
+    FORMAT_ID, Loaded, METADATA_VERSION, Metadata, SCHEMA_VERSION, SaveReceipt, Thumbnail,
+    ViewState, WriterLease, atomic_write, decode, encode, load, metadata_path, read_metadata,
+};
+pub use visual::{
+    BlendMode, DEFAULT_WEIGHT, EffectDefinition, EffectInstance, EffectParamDefinition,
+    EffectParams, GRADE_MAX, GRADE_MIN, MASK_SCALARS, MAX_LETTER_SPACING, MAX_LINE_HEIGHT, Mask,
+    MaskMode, MaskPath, MaskShape, MaskStroke, MaskVertex, StrokeAlign, TRANSITION_DEFINITIONS,
+    TransformField, Transition, TransitionAlignment, TransitionDefinition, TransitionId,
+    effect_definitions, transition_definition, valid_letter_spacing, valid_line_height,
     valid_weight,
 };
-pub use writer::{SaveReceipt, WriterLease};
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {

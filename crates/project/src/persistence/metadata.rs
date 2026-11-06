@@ -158,7 +158,7 @@ pub(crate) fn save(
     if bytes.len() > 524288 {
         return Err(Error::TooLarge("metadata"));
     }
-    crate::atomic::atomic_write_checked(&path(project)?, &bytes, check)
+    super::atomic::atomic_write_checked(&path(project)?, &bytes, check)
 }
 
 impl std::fmt::Debug for Thumbnail {

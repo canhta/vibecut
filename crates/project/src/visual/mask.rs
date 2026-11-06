@@ -88,7 +88,7 @@ impl MaskShape {
             content: content.into(),
             font_size,
             font: "Inter".into(),
-            weight: crate::typography::DEFAULT_WEIGHT,
+            weight: super::typography::DEFAULT_WEIGHT,
             italic: false,
             letter_spacing: 0.0,
             line_height: 0.0,
@@ -172,7 +172,7 @@ impl Mask {
             } if content.as_str().len() > 4096
                 || !font_size.is_finite()
                 || !(1.0..=4096.0).contains(font_size)
-                || !crate::typography::valid(
+                || !super::typography::valid(
                     font.as_str(),
                     *weight,
                     *letter_spacing,

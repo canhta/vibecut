@@ -1,3 +1,4 @@
+//! Persisted video transition entities and their source-handle bounds.
 use crate::{Error, Item, ItemId, ItemParams, ProjectData, Result, Timeline, TrackId, TrackKind};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;

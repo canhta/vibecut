@@ -60,7 +60,7 @@ pub fn save(project_path: &Path, project: &Project, keep: usize) -> Result<PathB
     let dir = directory(project_path);
     fs::create_dir_all(&dir)?;
     let path = dir.join(format!("snapshot-{next:020}.vibecut"));
-    crate::atomic::atomic_write_new(&path, &bytes)?;
+    super::atomic::atomic_write_new(&path, &bytes)?;
     paths.push(path.clone());
     let remove = paths.len().saturating_sub(keep);
     for old in paths.into_iter().take(remove) {

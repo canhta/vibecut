@@ -1,5 +1,8 @@
 //! One adjacent OS lease plus a full-content precondition for project publication.
-use crate::{Error, Loaded, Project, Result, persistence::read_bytes};
+use super::atomic;
+use super::metadata;
+use super::read_bytes;
+use crate::{Error, Loaded, Project, Result};
 use media::ContentHash;
 use std::{
     ffi::OsString,
@@ -216,7 +219,7 @@ impl WriterLease {
         {
             return Err(Error::Unsupported("project move must stay in its library"));
         }
-        crate::atomic::admit_destination(destination)?;
+        atomic::admit_destination(destination)?;
         let gate_path = root.join(DIRECTORY_MOVES);
         let gate = open_control(&gate_path, false)?;
         gate.try_lock().map_err(lock_error)?;
@@ -244,13 +247,13 @@ impl WriterLease {
 
     /// Optional presentation state under the same canonical project lease.
     pub fn metadata(&self) -> crate::Metadata {
-        crate::metadata::load(&self.path)
+        metadata::load(&self.path)
     }
 
     /// Atomically publish bounded metadata, refusing a changed project or lease.
     pub fn save_metadata(&self, metadata: &crate::Metadata) -> Result<()> {
         self.checked_current()?;
-        crate::metadata::save(&self.path, metadata, || self.checked_current().map(|_| ()))
+        metadata::save(&self.path, metadata, || self.checked_current().map(|_| ()))
     }
 
     /// Load only bytes matching the acquisition/save baseline. A noncooperating
@@ -267,9 +270,7 @@ impl WriterLease {
     pub fn save(&mut self, project: &Project) -> Result<SaveReceipt> {
         let bytes = crate::encode(project, true)?;
         self.checked_current()?;
-        crate::atomic::atomic_write_checked(&self.path, &bytes, || {
-            self.checked_current().map(|_| ())
-        })?;
+        atomic::atomic_write_checked(&self.path, &bytes, || self.checked_current().map(|_| ()))?;
         let hash = ContentHash::from_bytes(&bytes);
         self.baseline = Some(hash);
         Ok(SaveReceipt {
@@ -395,10 +396,10 @@ impl std::fmt::Debug for WriterLease {
     }
 }
 fn resolve(path: &Path) -> Result<PathBuf> {
-    crate::atomic::admit_destination(path)?;
+    atomic::admit_destination(path)?;
     match fs::canonicalize(path) {
         Ok(path) => {
-            crate::atomic::admit_destination(&path)?;
+            atomic::admit_destination(&path)?;
             if !path.is_file() {
                 return Err(Error::Unsupported(
                     "writer destination is not a regular file",
@@ -594,7 +595,7 @@ mod tests {
             let child = std::process::Command::new(std::env::current_exe().unwrap())
                 .args([
                     "--exact",
-                    "writer::tests::interrupted_directory_move_keeps_complete_reacquirable_project",
+                    "persistence::writer::tests::interrupted_directory_move_keeps_complete_reacquirable_project",
                 ])
                 .env(CHILD_ROOT, root.path())
                 .env(CHILD_PHASE, interruption.to_string())

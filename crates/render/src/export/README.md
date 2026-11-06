@@ -58,4 +58,4 @@ cancel arriving after its fence, so a committed file is reported Completed.
 Before the fence cancellation/failure preserves the prior file. After the atomic
 publish there are no fallible progress callbacks or result allocations.
 Crash-orphan, replacement and filesystem guarantees belong to
-[project](../../../project/src/atomic/README.md#streaming-output).
+[project](../../../project/src/persistence/README.md#streaming-output).

@@ -323,7 +323,7 @@ re-encodes through the compositor and checks the other clip's source.
 Backdrop and outgoing images retain normal compositor byte leases. Cancellation
 checks during copying, item processing and each interpolation row release every
 partial image on failure. Deterministic transition goldens cover every admitted
-[project definition](../../../project/src/transition/README.md#video-transitions), source-handle ticks,
+[project definition](../../../project/src/visual/README.md#video-transitions), source-handle ticks,
 masked/effected opacity, hidden/muted tracks and cancellation/retry.
 
 Horizontal interpolation retains only two destination-width rows per active

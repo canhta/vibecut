@@ -1,4 +1,19 @@
-use crate::{Error, Project, Result, bounds};
+//! Versioned project JSON ingestion, publication and recovery snapshots.
+
+pub mod atomic;
+pub mod autosave;
+mod metadata;
+mod streaming;
+mod writer;
+
+pub use atomic::atomic_write;
+pub use metadata::{METADATA_VERSION, Metadata, Thumbnail, ViewState, path as metadata_path};
+pub use writer::{SaveReceipt, WriterLease};
+
+use crate::{
+    Error, Project, Result,
+    visual::{MAX_BYTES, Writer, check},
+};
 use serde::{Deserialize, Serialize};
 use std::{fs::File, io::Read, path::Path};
 pub const FORMAT_ID: &str = "vibecut.project";
@@ -47,7 +62,7 @@ pub fn encode(project: &Project, pretty: bool) -> Result<Vec<u8>> {
         generator: format!("VibeCut {}", env!("CARGO_PKG_VERSION")),
         project,
     };
-    let mut writer = bounds::Writer(Vec::new());
+    let mut writer = Writer(Vec::new());
     let result = if pretty {
         serde_json::to_writer_pretty(&mut writer, &envelope)
     } else {
@@ -59,13 +74,13 @@ pub fn encode(project: &Project, pretty: bool) -> Result<Vec<u8>> {
         }
         return Err(error.into());
     }
-    bounds::check(&writer.0)?;
+    check(&writer.0)?;
     Ok(writer.0)
 }
 /// Bounded JSON parse followed by complete invariant validation. Old/new schemas
 /// are refused before parsing the body as the current model.
 pub fn decode(bytes: &[u8]) -> Result<Loaded> {
-    bounds::check(bytes)?;
+    check(bytes)?;
     let header: Header = serde_json::from_slice(bytes)?;
     if header.format != FORMAT_ID {
         return Err(Error::Invalid("format identifier"));
@@ -100,12 +115,16 @@ pub fn load(path: &Path) -> Result<Loaded> {
 pub(crate) fn read_bytes(path: &Path) -> Result<Vec<u8>> {
     let mut bytes = Vec::new();
     File::open(path)?
-        .take((bounds::MAX_BYTES + 1) as u64)
+        .take((MAX_BYTES + 1) as u64)
         .read_to_end(&mut bytes)?;
-    if bytes.len() > bounds::MAX_BYTES {
+    if bytes.len() > MAX_BYTES {
         return Err(Error::TooLarge("project file"));
     }
     Ok(bytes)
+}
+/// Read optional bounded metadata without acquiring an editing lease (catalog display).
+pub fn read_metadata(path: &Path) -> Metadata {
+    metadata::load(path)
 }
 
 impl std::fmt::Debug for Loaded {
