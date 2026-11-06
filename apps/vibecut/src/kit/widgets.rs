@@ -530,3 +530,6 @@ pub(crate) fn slider_stepper(ui: &mut Ui, value: &mut f64, spec: NumberSpec<'_>)
     })
     .inner
 }
+
+#[cfg(test)]
+mod tests;
