@@ -55,7 +55,7 @@ Editor areas, each a module `editor/<area>.rs` with folder `editor/<area>/`: `as
 
 ## CLI (`apps/vibecut-cli/src`)
 
-`args/` (parsing and typed exit codes), `output/`, `session/` (control-session lifetime, project lease, export admission), `mcp/` (tools and authenticated transport), `commands/<group>/` (one module per command group with a single `run(context, args) -> Result<Output, CliError>` interface); `lib.rs` only wires them.
+`args/` (parsing and typed exit codes), `output/`, `session/` (control-session lifetime, project lease, export admission), `mcp/` (tools and authenticated transport), `commands/` (one module per command, each with `run(context, args) -> Result<Output, CliError>`; a folder groups commands only when they share code, and then exposes each command's `run`, not a group-level dispatcher, which would be a pass-through); `lib.rs` only wires them.
 
 ## Modules and crates
 
