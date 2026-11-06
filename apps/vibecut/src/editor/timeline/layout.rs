@@ -49,6 +49,8 @@ pub(super) struct ItemView {
     pub(super) source_asset: Option<AssetId>,
     /// Base clip volume in dB for audio items, used when the channel is unkeyed.
     pub(super) volume: Option<f32>,
+    /// Main-track item at the timeline origin: its start cannot move left.
+    pub(super) pinned: bool,
     pub(super) lanes: Vec<ItemLane>,
 }
 #[derive(Clone, Copy, Debug)]
@@ -125,6 +127,8 @@ struct RawItem {
     source_asset: Option<AssetId>,
     volume: Option<f32>,
     channels: Vec<ChannelLane>,
+    /// Main-track item at the timeline origin: its start cannot move left.
+    pinned: bool,
 }
 struct ChannelLane {
     path: project::AnimationPath,
@@ -205,11 +209,7 @@ impl State {
         cx: &Context<'_>,
         layout: &TimelineLayout,
     ) -> TimelineViews {
-        let data = cx
-            .session
-            .preview_project()
-            .unwrap_or(cx.session.project())
-            .data();
+        let data = cx.staged_project().data();
         let mut rows = Vec::new();
         let mut raw_items: Vec<RawItem> = Vec::new();
         let mut offset = 0.0;
@@ -259,6 +259,7 @@ impl State {
                     source_asset: item.source_asset,
                     volume,
                     channels,
+                    pinned: main && item.start == Tick::ZERO,
                 });
             }
             rows.push(TrackRow {
@@ -277,7 +278,7 @@ impl State {
             });
             offset += base_height + lane_height + TRACK_GAP;
         }
-        let duration = cx.session.project().duration();
+        let duration = cx.staged_project().duration();
         let bookmarks = data
             .scene()
             .bookmarks
@@ -330,6 +331,7 @@ impl State {
                 overlay: raw.overlay,
                 source_asset: raw.source_asset,
                 volume: raw.volume,
+                pinned: raw.pinned,
                 lanes,
             });
         }

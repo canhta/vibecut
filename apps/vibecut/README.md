@@ -200,9 +200,16 @@ persisted toolbar preference (off initially), also bindable in Shortcuts. It
 stays out of app undo history so Undo restores the last project edit. The
 app passes it explicitly into each atomic engine command; the [engine ripple
 policy](../../crates/engine/README.md#edit-semantics-and-limits) owns the gap-closing
-semantics. Pointer
-move/trim previews use the shared replacement transaction, draw its candidate,
-and reverse or discard without changing committed content. Snapping is a persisted preference (on by default) exposed by the
+semantics. Move and edge trim stage
+the group contract: each pointer update sends absolute `timeline.move_items` or
+`timeline.trim` params through `timeline.preview`, the panel paints
+`preview_project()` while the committed project stays byte-identical, and the
+release either publishes one undo step with `timeline.commit_preview` or
+discards with `timeline.discard_preview` (Escape, gesture reversal and a refused
+candidate). A move drop outlines the landing row or draws an insertion line for
+the track a release creates; a refusal paints the engine's reason above the
+scrollbar; a main-track item at the origin is pinned with an accent edge and
+cannot move left. Snapping is a persisted preference (on by default) exposed by the
 magnet toolbar control; it converts 10 logical pixels to ticks at the current
 zoom and ranks item start/end, playhead, bookmark and animation-keyframe targets
 by pixel distance then stable source order. The indicator line is drawn only

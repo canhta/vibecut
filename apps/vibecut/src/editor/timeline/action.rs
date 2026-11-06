@@ -1,19 +1,65 @@
 //! Names the requests the timeline panel hands back to the frame.
 
-use crate::editor::timeline::{
-    BTreeSet, ItemId, KeyframeSelection, Tick, TrackId, TrackKind, egui,
-};
+use crate::editor::timeline::{BTreeSet, ItemId, KeyframeSelection, Tick, egui};
 
-/// Where a dragged clip lands when it is released over another track.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(in crate::editor) enum DropTarget {
-    /// An existing track.
-    Track(TrackId),
-    /// A new track of the clip's kind, allocated beside `placement`.
-    New {
-        kind: TrackKind,
-        placement: engine::TrackPlacement,
+/// One timeline gesture command from the group move/trim contract.
+///
+/// The panel never applies these itself: the frame stages each one with
+/// `timeline.preview` and publishes or discards the whole candidate.
+#[derive(Clone, Debug)]
+pub(in crate::editor) enum Gesture {
+    /// `timeline.move_items`: one delta keeps the selected group rigid.
+    Move {
+        items: Vec<ItemId>,
+        delta: Tick,
+        /// `None` retains each member's track; an explicit placement moves the
+        /// whole selection and may allocate one destination per source track.
+        placement: Option<engine::Placement>,
     },
+    /// `timeline.trim`: one delta moves every selected start or end edge.
+    Trim {
+        items: Vec<ItemId>,
+        edge: engine::TrimEdge,
+        delta: Tick,
+    },
+}
+
+impl Gesture {
+    /// The registered command this gesture stages.
+    pub(in crate::editor) fn command(&self) -> &'static str {
+        match self {
+            Self::Move { .. } => "timeline.move_items",
+            Self::Trim { .. } => "timeline.trim",
+        }
+    }
+    /// The command would leave every member where the gesture found it.
+    pub(in crate::editor) fn is_noop(&self) -> bool {
+        match self {
+            Self::Move {
+                delta, placement, ..
+            } => *delta == Tick::ZERO && placement.is_none(),
+            Self::Trim { delta, .. } => *delta == Tick::ZERO,
+        }
+    }
+    /// Strictly typed JSON parameters for the staged command.
+    pub(in crate::editor) fn params(&self) -> serde_json::Value {
+        match self {
+            Self::Move {
+                items,
+                delta,
+                placement,
+            } => serde_json::json!({
+                "items": items,
+                "delta": delta,
+                "placement": placement,
+            }),
+            Self::Trim { items, edge, delta } => serde_json::json!({
+                "items": items,
+                "edge": edge,
+                "delta": delta,
+            }),
+        }
+    }
 }
 
 /// A cross-area request. The panel never mutates the session, the
@@ -62,19 +108,19 @@ pub(in crate::editor) enum Action {
     DeleteKeyframes(BTreeSet<KeyframeSelection>),
     /// Deselect everything.
     ClearSelection,
-    /// Open one preview gesture. `select` is an item to select alone first
+    /// Open one explicit gesture. `select` is an item to select alone first
     /// because the gesture grabbed an unselected clip.
     BeginGesture { select: Option<ItemId> },
     /// Apply one preview command inside the open gesture.
     Preview(Box<engine::Command>),
-    /// Move a clip to another track (allocating one if needed) inside the gesture.
-    MoveToTrack {
-        item: ItemId,
-        start: Tick,
-        target: DropTarget,
-    },
     /// Publish the open gesture as one undo step.
     EndGesture,
+    /// Arm the group-preview contract: the next `PreviewGesture` starts it.
+    BeginPreview { select: Option<ItemId> },
+    /// Replace the whole staged candidate with this group command.
+    PreviewGesture(Box<Gesture>),
+    /// Publish the staged candidate as one undo step.
+    EndPreview,
     /// Abandon every open gesture (a drop the panel could not complete).
     CancelInteraction,
     /// Surface an error to the user.

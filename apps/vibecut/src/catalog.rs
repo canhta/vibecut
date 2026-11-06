@@ -607,6 +607,11 @@ catalog! {
     Magnet { key: "magnet", en: "Main track magnet", vi: "Nam châm rãnh chính" },
     TrackMore { key: "track_more", en: "More", vi: "Thêm" },
     TrackToggle { key: "track_toggle", en: "{action}: {track}", vi: "{action}: {track}" },
+    PinnedToStart {
+        key: "pinned_to_start",
+        en: "Pinned to the timeline start",
+        vi: "Ghim ở đầu dòng thời gian"
+    },
 
     // Timeline actions.
     Undo { key: "undo", en: "Undo", vi: "Hoàn tác" },

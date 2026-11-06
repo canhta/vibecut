@@ -82,6 +82,39 @@ impl State {
             );
         }
         self.paint_lane_toggle(cx, ui, item, visible, ink);
+        if item.pinned {
+            // The main track's first item cannot move before the origin: a
+            // 3 px accent edge marks the pinned start.
+            painter.rect_filled(
+                Rect::from_min_max(
+                    visible.left_top(),
+                    egui::pos2(visible.left() + 3.0, visible.bottom()),
+                ),
+                0.0,
+                ink.accent(),
+            );
+            let label = tr(cx, Text::PinnedToStart);
+            let hit = Rect::from_min_max(
+                visible.left_top(),
+                egui::pos2(
+                    visible.left() + 10.0,
+                    visible.top() + 24.0_f32.min(visible.height()),
+                ),
+            );
+            let response = ui.interact(
+                hit,
+                Id::unique(("timeline.item.pinned", item.id.0)),
+                egui::Sense::hover(),
+            );
+            response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Label, true, label));
+            self.remember_with(
+                format!("timeline.item.{}.pinned", item.id.0),
+                None,
+                Some(label.to_owned()),
+                &response,
+            );
+            response.on_hover_text(label);
+        }
         if item.kind == TrackKind::Audio {
             self.paint_volume_line(cx, ui, item, inner, ink, layout);
         }
@@ -376,8 +409,7 @@ fn volume_channel<'a>(
     cx: &'a Context<'_>,
     item: crate::editor::timeline::ItemId,
 ) -> Option<&'a project::Channel> {
-    cx.session
-        .project()
+    cx.staged_project()
         .data()
         .scene()
         .timeline

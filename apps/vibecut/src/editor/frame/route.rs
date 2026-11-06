@@ -1,5 +1,5 @@
 //! Routes the actions an area returns to the owners that apply them.
-use crate::editor::{Command, Context, Editor, ItemId, Result, Tick, egui, frame, timeline};
+use crate::editor::{Command, Context, Editor, ItemId, Tick, egui, frame, timeline};
 
 impl Editor {
     /// The read-only services every area receives.
@@ -108,14 +108,15 @@ impl Editor {
                 }
                 Action::BeginGesture { select } => self.begin_drag_gesture(select),
                 Action::Preview(command) => self.preview_gesture(*command),
-                Action::MoveToTrack {
-                    item,
-                    start,
-                    target,
-                } => self.move_to_track(item, start, target),
                 Action::EndGesture => self.end_drag_gesture(),
+                Action::BeginPreview { select } => self.begin_timeline_preview(select),
+                Action::PreviewGesture(gesture) => self.preview_timeline(*gesture),
+                Action::EndPreview => self.end_timeline_preview(),
                 Action::CancelInteraction => self.cancel_interaction(),
-                Action::Fail(message) => self.error = Some(message),
+                Action::Fail(message) => {
+                    self.timeline.refuse(message.clone());
+                    self.error = Some(message);
+                }
             }
         }
     }
@@ -198,6 +199,9 @@ impl Editor {
     }
 
     fn begin_drag_gesture(&mut self, select: Option<ItemId>) {
+        if self.timeline.preview_armed() {
+            self.discard_timeline_preview();
+        }
         if let Some(item) = select {
             self.select_single(item);
         }
@@ -256,54 +260,107 @@ impl Editor {
             Err(error) => self.error = Some(error.to_string()),
         }
     }
-    fn move_to_track(&mut self, item: ItemId, start: Tick, target: timeline::DropTarget) {
-        if !self.session.gesture_active() {
+    /// Arm the group contract: only the selection is applied before the first
+    /// staged command, so `timeline.preview` can open its own gesture.
+    fn begin_timeline_preview(&mut self, select: Option<ItemId>) {
+        if let Some(item) = select {
+            self.select_single(item);
+        }
+        self.session.end_merge();
+        if self.session.transaction_active()
+            && let Err(error) = self.session.cancel_gesture()
+        {
+            self.error = Some(error.to_string());
+            self.timeline.abandon_gesture();
             return;
         }
-        let moved = (|| -> Result<()> {
-            let original = self
-                .session
-                .project()
-                .data()
-                .scene()
-                .timeline
-                .iter()
-                .flat_map(|track| &track.items)
-                .find(|i| i.id == item)
-                .ok_or(engine::EditError::NoItem(item))?
-                .start;
-            let placement = match target {
-                timeline::DropTarget::Track(track) => engine::Placement::Track { track },
-                timeline::DropTarget::New {
-                    placement: engine::TrackPlacement::Above { track },
-                    ..
-                } => engine::Placement::Above { track },
-                timeline::DropTarget::New {
-                    placement: engine::TrackPlacement::Below { track },
-                    ..
-                } => engine::Placement::Below { track },
-                timeline::DropTarget::New { .. } => engine::Placement::Auto,
-            };
-            let delta = start
-                .checked_sub(original)
-                .ok_or(engine::EditError::Invalid("time overflow"))?;
-            self.session.apply_with_ripple(
-                Command::TimelinePreview {
-                    commands: vec![Command::TimelineMoveItems {
-                        items: vec![item],
-                        delta,
-                        placement: Some(placement),
-                    }],
-                },
-                self.preferences.ripple,
-            )?;
-            Ok(())
-        })();
-        if let Err(error) = moved {
-            // The release already ended the pointer drag, so only the gesture is left to undo.
+        if let Err(error) = self.session.set_selection(self.selection.clone()) {
             self.error = Some(error.to_string());
-            self.discard_gesture();
             self.timeline.abandon_gesture();
+            return;
+        }
+        self.timeline.arm_preview();
+    }
+    /// Stage one `timeline.move_items`/`timeline.trim`; each call replaces the
+    /// whole candidate from the gesture entry snapshot.
+    fn preview_timeline(&mut self, gesture: timeline::Gesture) {
+        if !self.timeline.preview_armed() {
+            return;
+        }
+        let command = gesture.command();
+        let params = serde_json::json!({
+            "commands": [{"command": command, "params": gesture.params()}]
+        });
+        match self
+            .session
+            .execute_with_ripple("timeline.preview", params, self.preferences.ripple) {
+            Ok(_) => {
+                // `project()` stays committed; only the timeline paints the
+                // candidate, so the player needs no restart until publication.
+                self.timeline.mark_preview(command, gesture.is_noop());
+            }
+            Err(error) => {
+                // The engine refused the whole candidate: drop the gesture and
+                // show its reason instead of leaving a stale preview.
+                self.timeline.abandon_gesture();
+                self.timeline.refuse(error.to_string());
+                self.discard_staged_preview();
+            }
+        }
+    }
+    /// Publish the staged candidate as one undo step.
+    fn end_timeline_preview(&mut self) {
+        if self.timeline.preview_command().is_some() {
+            // A reversal can leave every member at its entry position while
+            // item order shifted; discard it so no undo step is published.
+            if self.timeline.preview_noop() {
+                self.discard_staged_preview();
+            } else {
+                match self
+                    .session
+                    .execute("timeline.commit_preview", serde_json::json!({}))
+                {
+                    Ok(outcome) if outcome.changed => self.sync_preview(),
+                    Ok(_) => {}
+                    Err(error) => {
+                        // A refused publication must not leave the gesture open.
+                        self.error = Some(error.to_string());
+                        let _ = self
+                            .session
+                            .execute("timeline.discard_preview", serde_json::json!({}));
+                    }
+                }
+                self.timeline.clear_preview();
+            }
+        } else {
+            self.timeline.clear_preview();
+        }
+        self.prune_selection();
+    }
+    /// Restore the entry project without a history entry.
+    fn discard_staged_preview(&mut self) {
+        if self.session.gesture_active() {
+            match self
+                .session
+                .execute("timeline.discard_preview", serde_json::json!({}))
+            {
+                Ok(_) => {}
+                Err(error) => self.error = Some(error.to_string()),
+            }
+        }
+        self.timeline.clear_preview();
+    }
+    /// Escape on a timeline drag: discard the staged candidate.
+    fn discard_timeline_preview(&mut self) {
+        if self.timeline.preview_command().is_some() {
+            self.discard_staged_preview();
+        } else {
+            self.timeline.clear_preview();
+            if self.session.gesture_active()
+                && let Err(error) = self.session.cancel_gesture()
+            {
+                self.error = Some(error.to_string());
+            }
         }
     }
     /// Publish the open gesture as one undo step.
@@ -379,7 +436,7 @@ impl Editor {
             return;
         }
         if self.timeline.cancel_drag() {
-            self.discard_gesture();
+            self.discard_timeline_preview();
         } else if let Some(before) = self.timeline.cancel_marquee() {
             self.selection = before;
             self.selection_changed();
@@ -410,7 +467,8 @@ impl Editor {
             .and_then(|_| {
                 self.session
                     .execute_with_ripple(command, params, self.preferences.ripple)
-            }) {
+            })
+        {
             Ok(_) => {
                 self.prune_selection();
                 if !std::sync::Arc::ptr_eq(&before, self.session.project()) {

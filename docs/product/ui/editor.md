@@ -37,6 +37,24 @@ Shots 221513 (empty) and 221643 (populated).
 - Timeline (221643, re-measured): toolbar 32 px with a 1 px rule below; ruler 22 px (ticks start 3 px under its top: 5.5 px minor, 10.5 px labelled; `MM:SS` captions with 8 px digits, about 11 px type; ten ticks per 3 s label at 71.5 px/s); lanes start 28 px below the ruler top and end 12 px above the panel bottom, where a 6 px scrollbar with a 24×6 thumb sits 4 px down; a 5 px shadow edges the lanes at the header boundary; a single track is centred in the lanes (152 px above, 148 px below); 76 px video track (74 px clip: 17 px top band, 39 px filmstrip, 16 px waveform), 123 px header column with five 24 px cells (kind glyph, lock, eye, mute, more), playhead handle 10×15 over a 1 px line [measured]. Audio, text, sticker, effect, filter and adjustment track heights are unmeasured (proposed: audio 40 px, others 32 px).
 - Clip trim handles are 8 px wide with a 12 px capture area [proposed]; the captured clip is selected (1 px white border) and no trim handle is visible.
 
+## Timeline gestures
+
+Move and resize stage the group move/trim contract candidate: the timeline paints
+`preview_project()` while the committed project stays untouched, and one drop
+publishes a single undo step. Escape or a refusal discards the candidate.
+
+- A move drop highlights the landing row with a 2 px accent outline on a 10 %
+  accent wash, or draws a 2 px accent insertion line with an 8×4 left cap between
+  lanes; the line marks the track a release creates. **Proposed** (drag states are
+  uncaptured).
+- A refused move or trim shows the engine's reason in an 11 px warning pill at
+  the bottom-left of the lanes, 1 px warning outline on the panel fill, above the
+  scrollbar. **Proposed**.
+- A main-track item at the timeline origin is pinned: a 3 px accent edge marks
+  the pinned start beside the left trim handle, and its tooltip explains the pin.
+  **Proposed**.
+
+
 ## Local models
 
 The model manager reuses the export modal's 12 px radius, 24 px inner margin and 34 px footer buttons at an 880 px width. A scrollable model list shows each id and its installed/download state; the selected model's detail shows provider, language scope, exact size, licence and source links, per-file SHA-256 and the policy restriction. Only the affirmative footer Download click grants transfer consent; non-permissive licences add an explicit review checkbox first. Progress, Cancel, Resume and typed storage/network/integrity errors stay in the same footer. The layout is our own application of the [layout grid](#layout-grid) and [density](#density); no external reference capture exists for it, so treat its spacing as proposed until the next UI audit.

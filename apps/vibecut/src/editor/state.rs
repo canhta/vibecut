@@ -142,6 +142,14 @@ pub struct Inspection {
     /// Active snap target tick while a preview gesture holds one; `None` hides
     /// the indicator and proves snapping chose no candidate.
     pub snap_indicator: Option<Tick>,
+    /// Command id of the candidate staged by the group preview contract.
+    pub preview: Option<&'static str>,
+    /// Latest move/trim refusal shown in the timeline.
+    pub timeline_refusal: Option<String>,
+    /// Landing hint for a move drag (`track:N`, `insert_above:N`, `insert_below:N`).
+    pub drop_zone: Option<String>,
+    /// Main-track items pinned at the timeline origin.
+    pub pinned: Vec<ItemId>,
     pub ripple: bool,
     pub preview_zoom: f32,
     pub preview_fit: bool,

@@ -1,8 +1,8 @@
 //! Renders timeline tracks.
 
 use crate::editor::timeline::{
-    Action, BTreeSet, Context, FontId, ICON_BUTTON, Icon, Id, ItemId, ItemView, Locale, Rect,
-    State, Text, TimelineLayout, TrackKind, TrackRow, Vec2, catalog, egui, icons, theme,
+    Action, BTreeSet, Context, DropZone, FontId, ICON_BUTTON, Icon, Id, ItemId, ItemView, Locale,
+    Rect, State, Text, TimelineLayout, TrackKind, TrackRow, Vec2, catalog, egui, icons, theme,
     view::{Ink, tr},
 };
 
@@ -287,6 +287,7 @@ impl State {
                 }
             }
         }
+        self.paint_drop_zone(ui, layout, rows, &ink);
         if background.drag_started()
             && self.drag.is_none()
             && let Some(origin) = ui.input(|i| i.pointer.press_origin())
@@ -338,6 +339,113 @@ impl State {
                 );
             }
         }
+    }
+    /// Highlight the row or the gap a release would land on.
+    fn paint_drop_zone(
+        &self,
+        ui: &egui::Ui,
+        layout: &TimelineLayout,
+        rows: &[TrackRow],
+        ink: &Ink,
+    ) {
+        let Some(zone) = self.drop_zone else {
+            return;
+        };
+        let painter = ui.painter().with_clip_rect(layout.body);
+        match zone {
+            DropZone::Track(track) => {
+                let Some(row) = rows.iter().find(|row| row.id == track) else {
+                    return;
+                };
+                let rect = Rect::from_min_size(
+                    egui::pos2(
+                        layout.body.left(),
+                        layout.body.top() + row.top - self.vertical_scroll,
+                    ),
+                    Vec2::new(layout.body.width(), row.height),
+                )
+                .intersect(layout.body);
+                if rect.is_positive() {
+                    painter.rect_filled(rect, 2.0, ink.accent().gamma_multiply(0.10));
+                    painter.rect_stroke(
+                        rect,
+                        2.0,
+                        egui::Stroke::new(2.0, ink.accent()),
+                        egui::StrokeKind::Inside,
+                    );
+                }
+            }
+            DropZone::Insert { track, above } => {
+                let Some(row) = rows.iter().find(|row| row.id == track) else {
+                    return;
+                };
+                let y = layout.body.top() + row.top - self.vertical_scroll
+                    + if above { 0.0 } else { row.height };
+                if y < layout.body.top() || y > layout.body.bottom() {
+                    return;
+                }
+                painter.line_segment(
+                    [
+                        egui::pos2(layout.body.left(), y),
+                        egui::pos2(layout.body.right(), y),
+                    ],
+                    egui::Stroke::new(2.0, ink.accent()),
+                );
+                // A small cap at the header edge marks the new-track insertion.
+                painter.rect_filled(
+                    Rect::from_min_size(
+                        egui::pos2(layout.body.left(), y - 2.0),
+                        Vec2::new(8.0, 4.0),
+                    ),
+                    1.0,
+                    ink.accent(),
+                );
+            }
+        }
+    }
+    /// Show the engine's refusal for a staged move/trim over the lanes.
+    pub(in crate::editor::timeline) fn paint_refusal(
+        &mut self,
+        cx: &Context<'_>,
+        ui: &egui::Ui,
+        layout: &TimelineLayout,
+    ) {
+        let Some(message) = self.refusal.clone() else {
+            return;
+        };
+        let ink = Ink::of(cx);
+        let warning = theme::warning(ink.dark());
+        let max = (layout.body.width() - 16.0).max(80.0);
+        let galley = ui.painter().layout(
+            message.clone(),
+            FontId::proportional(theme::type_size::BADGE),
+            warning,
+            max - 16.0,
+        );
+        let size = Vec2::new(galley.size().x + 16.0, galley.size().y + 8.0);
+        let rect = Rect::from_min_size(
+            egui::pos2(
+                layout.body.left() + 8.0,
+                (layout.body.bottom() - size.y - 8.0).max(layout.body.top() + 8.0),
+            ),
+            size,
+        );
+        let painter = ui.painter().with_clip_rect(layout.body);
+        painter.rect_filled(rect, theme::radius::CONTROL, ink.panel());
+        painter.rect_stroke(
+            rect,
+            theme::radius::CONTROL,
+            egui::Stroke::new(1.0, warning),
+            egui::StrokeKind::Inside,
+        );
+        painter.galley(
+            egui::pos2(rect.left() + 8.0, rect.top() + 4.0),
+            galley,
+            warning,
+        );
+        let response = ui.interact(rect, Id::unique("timeline.refusal"), egui::Sense::hover());
+        response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Label, true, &message));
+        self.remember_with("timeline.refusal", None, Some(message), &response);
     }
     /// The context menu shared by a header's right click and its more button.
     fn track_menu(&mut self, cx: &Context<'_>, ui: &mut egui::Ui, row: &TrackRow) {

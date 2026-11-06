@@ -321,7 +321,7 @@ pub(crate) fn item(editor: &Editor, id: ItemId) -> &project::Item {
     editor
         .session
         .preview_project()
-        .unwrap_or(editor.session.project())
+        .unwrap_or_else(|| editor.session.project())
         .data()
         .scene()
         .timeline
@@ -871,10 +871,19 @@ fn drag_preview_keeps_committed_history_and_indicator_until_commit() {
     );
     assert!(harness.state().session.gesture_active());
     assert_eq!(serde_json::to_vec(committed.data()).unwrap(), before);
-    assert_eq!(harness.state().session.project(), &committed);
+    assert_eq!(
+        harness.state().session.project(),
+        &committed,
+        "the committed snapshot is untouched until commit"
+    );
     assert_ne!(
         harness.state().session.preview_project().unwrap(),
-        &committed
+        &committed,
+        "the staged candidate carries the move"
+    );
+    assert_eq!(
+        harness.state().inspect().unwrap().preview,
+        Some("timeline.move_items")
     );
     assert_eq!(
         harness.state().session.history_len(),
@@ -1072,6 +1081,20 @@ fn text_item_id(editor: &Editor) -> ItemId {
         .iter()
         .flat_map(|track| track.items.iter())
         .find(|item| matches!(item.content, ItemParams::Text(_)))
+        .unwrap()
+        .id
+}
+
+/// The track holding `item`, copied so callers can mutate the session.
+fn item_track(editor: &Editor, item: ItemId) -> TrackId {
+    editor
+        .session
+        .project()
+        .data()
+        .scene()
+        .timeline
+        .iter()
+        .find(|track| track.items.iter().any(|candidate| candidate.id == item))
         .unwrap()
         .id
 }
@@ -2128,7 +2151,20 @@ fn drop_at_track_edges_creates_one_track_and_one_undo_step() {
                 None => header.center().y,
             },
         );
-        drag(&mut h, body.center(), target);
+        h.drag_at(body.center());
+        h.run_steps(1);
+        h.hover_at(target);
+        h.run_steps(2);
+        let staged = h.state().inspect().unwrap();
+        let zone = match edge {
+            Some(true) => format!("insert_below:{}", source.0),
+            Some(false) => format!("insert_above:{}", source.0),
+            None => format!("track:{}", target_track.0),
+        };
+        assert_eq!(staged.drop_zone.as_deref(), Some(zone.as_str()));
+        assert!(staged.preview.is_some(), "the drop zone stages a candidate");
+        h.drop_at(target);
+        h.run_steps(2);
         let after = h.state().session.project().clone();
         assert_eq!(
             after.data().scene().timeline.track_count(),
@@ -2161,6 +2197,312 @@ fn drop_at_track_edges_creates_one_track_and_one_undo_step() {
         assert_eq!(h.state().session.project(), &after);
         assert_eq!(h.state().session.history_len(), history);
     }
+}
+
+#[test]
+fn group_drag_stages_only_the_moved_clips_and_commits_one_step() {
+    let fixture = fixture();
+    let video_a = fixture.video_a;
+    let video_b = fixture.video_b;
+    let text = text_item_id(&fixture.editor);
+    let audio = audio_item(&fixture.editor);
+    let mut editor = fixture.editor;
+    editor.selection = [video_b, text].into_iter().collect();
+    let committed = editor.session.project().clone();
+    let bytes = serde_json::to_vec(committed.data()).unwrap();
+    let history = editor.session.history_len();
+    // The reference capture's logical content size, so the screenshot can sit
+    // beside it at 1:1.
+    let mut h = crate::gpu::builder()
+        .with_size(egui::vec2(1727.0, 1029.0))
+        .build_ui_state(|ui, e: &mut Editor| e.ui(ui), editor);
+    h.run_steps(3);
+    let zoom = h.state().inspect().unwrap().zoom;
+    let body = widget(&h, &format!("timeline.item.{}", video_b.0));
+    let target = egui::pos2(body.center().x + 2.1 * zoom, body.center().y);
+    h.drag_at(body.center());
+    h.run_steps(1);
+    h.hover_at(target);
+    h.run_steps(2);
+    {
+        let state = h.state();
+        assert_eq!(
+            state.session.project(),
+            &committed,
+            "the committed project is untouched while previewing"
+        );
+        assert_eq!(
+            serde_json::to_vec(state.session.project().data()).unwrap(),
+            bytes
+        );
+        assert_ne!(state.session.preview_project().unwrap(), &committed);
+        let inspection = state.inspect().unwrap();
+        assert_eq!(inspection.preview, Some("timeline.move_items"));
+        assert_eq!(state.session.history_len(), history);
+        assert_eq!(item(state, video_b).start, Tick(8 * SECOND));
+        assert_eq!(item(state, text).start, Tick(4 * SECOND));
+        assert_eq!(
+            item(state, video_b).start - item(state, text).start,
+            Tick(4 * SECOND),
+            "the group keeps its entry spacing"
+        );
+        assert_eq!(
+            item(state, video_a).start,
+            Tick::ZERO,
+            "unselected clips do not move"
+        );
+        assert_eq!(item(state, audio).start, Tick::ZERO);
+    }
+    let image = h.render().unwrap();
+    let target_path =
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target/p1-15-drag.png");
+    std::fs::create_dir_all(target_path.parent().unwrap()).unwrap();
+    image.save(&target_path).unwrap();
+    eprintln!("group drag screenshot: {}", target_path.display());
+    h.drop_at(target);
+    h.run_steps(2);
+    assert_eq!(h.state().session.history_len().0, history.0 + 1);
+    assert_eq!(item(h.state(), video_b).start, Tick(8 * SECOND));
+    assert!(h.state().inspect().unwrap().preview.is_none());
+}
+
+#[test]
+fn escape_mid_drag_discards_the_staged_candidate() {
+    let fixture = fixture();
+    let video_b = fixture.video_b;
+    let text = text_item_id(&fixture.editor);
+    let mut editor = fixture.editor;
+    editor.selection = [video_b, text].into_iter().collect();
+    let committed = editor.session.project().clone();
+    let bytes = serde_json::to_vec(committed.data()).unwrap();
+    let history = editor.session.history_len();
+    let mut h = harness(editor);
+    h.run_steps(3);
+    let zoom = h.state().inspect().unwrap().zoom;
+    let body = widget(&h, &format!("timeline.item.{}", video_b.0));
+    h.drag_at(body.center());
+    h.run_steps(1);
+    h.hover_at(egui::pos2(body.center().x + 2.0 * zoom, body.center().y));
+    h.run_steps(2);
+    assert_eq!(item(h.state(), video_b).start, Tick(8 * SECOND));
+    h.key_press(egui::Key::Escape);
+    h.run_steps(2);
+    let state = h.state();
+    assert_eq!(
+        serde_json::to_vec(state.session.project().data()).unwrap(),
+        bytes,
+        "Escape restores the entry project bytes"
+    );
+    assert_eq!(state.session.project(), &committed);
+    assert_eq!(state.session.history_len(), history);
+    assert!(!state.session.gesture_active());
+    let inspection = state.inspect().unwrap();
+    assert!(inspection.preview.is_none() && inspection.timeline_refusal.is_none());
+    assert_eq!(item(state, video_b).start, Tick(6 * SECOND));
+    assert_eq!(item(state, text).start, Tick(2 * SECOND));
+}
+
+#[test]
+fn returning_a_group_to_the_press_point_commits_no_history() {
+    // Two items on one track so a zero-delta move would otherwise reorder them.
+    let mut session = Session::new(
+        Project::empty(ProjectId(126), "Reverse".into()).unwrap(),
+        20,
+    )
+    .unwrap();
+    let text_track = track(&mut session, "Text", TrackKind::Text);
+    let text = ItemParams::Text(project::TextParams {
+        content: "Hello".into(),
+        font_size: 48.0,
+        color: Color([255, 255, 255, 255]),
+        ..Default::default()
+    });
+    let first = insert(
+        &mut session,
+        text_track,
+        Tick::ZERO,
+        SourceRange::new(Tick::ZERO, Tick(SECOND)).unwrap(),
+        None,
+        text.clone(),
+    );
+    let second = insert(
+        &mut session,
+        text_track,
+        Tick(4 * SECOND),
+        SourceRange::new(Tick(4 * SECOND), Tick(5 * SECOND)).unwrap(),
+        None,
+        text,
+    );
+    let mut playback = Playback::new(
+        &session,
+        ByteBudget::new(64 << 20).unwrap(),
+        Arc::new(Files),
+    )
+    .unwrap();
+    playback.set_device_available(true);
+    let mut editor = Editor::new(session, playback, Preferences::default());
+    editor.selection.insert(first);
+    let before = serde_json::to_vec(editor.session.project().data()).unwrap();
+    let history = editor.session.history_len();
+    let mut h = harness(editor);
+    h.run_steps(3);
+    let body = widget(&h, &format!("timeline.item.{}", first.0));
+    let from = body.center();
+    h.drag_at(from);
+    h.run_steps(1);
+    h.hover_at(from + egui::vec2(30.0, 0.0));
+    h.run_steps(2);
+    assert_ne!(item(h.state(), first).start, Tick::ZERO);
+    h.hover_at(from);
+    h.run_steps(2);
+    h.drop_at(from);
+    h.run_steps(2);
+    assert_eq!(
+        serde_json::to_vec(h.state().session.project().data()).unwrap(),
+        before,
+        "a reversed gesture publishes the entry project"
+    );
+    assert_eq!(
+        h.state().session.history_len(),
+        history,
+        "a net-zero commit adds no undo step"
+    );
+    assert_eq!(item(h.state(), first).start, Tick::ZERO);
+    assert_eq!(item(h.state(), second).start, Tick(4 * SECOND));
+}
+
+#[test]
+fn group_trim_previews_every_selected_edge_and_commits_one_step() {
+    let fixture = fixture();
+    let video_a = fixture.video_a;
+    let text = text_item_id(&fixture.editor);
+    let mut editor = fixture.editor;
+    editor.selection = [video_a, text].into_iter().collect();
+    let committed = editor.session.project().clone();
+    let history = editor.session.history_len();
+    let mut h = harness(editor);
+    h.run_steps(3);
+    let zoom = h.state().inspect().unwrap().zoom;
+    let body_left = widget(&h, "track.0.header").right();
+    let handle = widget(&h, &format!("timeline.item.{}.trim_end", video_a.0));
+    let target = egui::pos2(body_left + 5.0 * zoom, handle.center().y);
+    h.drag_at(handle.center());
+    h.run_steps(1);
+    h.hover_at(target);
+    h.run_steps(2);
+    {
+        let state = h.state();
+        assert_eq!(state.session.project(), &committed);
+        assert_eq!(
+            state.inspect().unwrap().preview,
+            Some("timeline.trim"),
+            "resize consumes the group trim command"
+        );
+        assert_eq!(item(state, video_a).end().unwrap(), Tick(5 * SECOND));
+        assert_eq!(
+            item(state, text).end().unwrap(),
+            Tick(4 * SECOND),
+            "every selected end edge moves by the same delta"
+        );
+        assert_eq!(state.session.history_len(), history);
+    }
+    h.drop_at(target);
+    h.run_steps(2);
+    assert_eq!(h.state().session.history_len().0, history.0 + 1);
+    assert_eq!(item(h.state(), video_a).end().unwrap(), Tick(5 * SECOND));
+    h.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::Z);
+    h.run_steps(2);
+    assert_eq!(item(h.state(), video_a).end().unwrap(), Tick(6 * SECOND));
+    assert_eq!(item(h.state(), text).end().unwrap(), Tick(5 * SECOND));
+}
+
+#[test]
+fn a_refused_group_move_shows_the_reason_and_discards_the_preview() {
+    let fixture = fixture();
+    let video_b = fixture.video_b;
+    let text = text_item_id(&fixture.editor);
+    let text_track = item_track(&fixture.editor, text);
+    let mut editor = fixture.editor;
+    editor
+        .session
+        .execute(
+            "track.set_locked",
+            serde_json::json!({"track": text_track, "locked": true}),
+        )
+        .unwrap();
+    editor.selection = [video_b, text].into_iter().collect();
+    let before = editor.session.project().clone();
+    let history = editor.session.history_len();
+    let mut h = harness(editor);
+    h.run_steps(3);
+    let zoom = h.state().inspect().unwrap().zoom;
+    let body = widget(&h, &format!("timeline.item.{}", video_b.0));
+    h.drag_at(body.center());
+    h.run_steps(1);
+    h.hover_at(egui::pos2(body.center().x + 1.0 * zoom, body.center().y));
+    h.run_steps(2);
+    let state = h.state();
+    assert_eq!(
+        state.session.project(),
+        &before,
+        "a refused preview publishes nothing"
+    );
+    assert_eq!(state.session.history_len(), history);
+    assert!(!state.session.gesture_active());
+    let inspection = state.inspect().unwrap();
+    assert!(inspection.preview.is_none(), "the candidate is discarded");
+    let reason = inspection
+        .timeline_refusal
+        .as_deref()
+        .expect("the engine refusal is shown");
+    assert!(reason.contains("locked"), "{reason}");
+    widget(&h, "timeline.refusal");
+    h.drop_at(egui::pos2(body.center().x + 1.0 * zoom, body.center().y));
+    h.run_steps(2);
+    assert_eq!(h.state().session.project(), &before);
+}
+
+#[test]
+fn a_main_track_item_at_the_origin_is_pinned_and_cannot_move_left() {
+    let mut session =
+        Session::new(Project::empty(ProjectId(125), "Pinned".into()).unwrap(), 20).unwrap();
+    let main = session.project().data().scene().timeline.main.id;
+    let item_id = insert(
+        &mut session,
+        main,
+        Tick::ZERO,
+        SourceRange::new(Tick::ZERO, Tick(6 * SECOND)).unwrap(),
+        None,
+        ItemParams::Overlay(project::OverlayParams {
+            color: Color([255, 0, 0, 255]),
+        }),
+    );
+    let mut playback = Playback::new(
+        &session,
+        ByteBudget::new(64 << 20).unwrap(),
+        Arc::new(Files),
+    )
+    .unwrap();
+    playback.set_device_available(true);
+    let mut editor = Editor::new(session, playback, Preferences::default());
+    editor.selection.insert(item_id);
+    let history = editor.session.history_len();
+    let mut h = harness(editor);
+    h.run_steps(3);
+    assert!(h.state().inspect().unwrap().pinned.contains(&item_id));
+    widget(&h, &format!("timeline.item.{}.pinned", item_id.0));
+    let body = widget(&h, &format!("timeline.item.{}", item_id.0));
+    drag(
+        &mut h,
+        body.center(),
+        body.center() - egui::vec2(120.0, 0.0),
+    );
+    assert_eq!(
+        item(h.state(), item_id).start,
+        Tick::ZERO,
+        "the main track's first item stays pinned at the origin"
+    );
+    assert_eq!(h.state().session.history_len(), history);
 }
 
 #[test]
@@ -2333,30 +2675,19 @@ fn edge_scroll_clamp_reversal_and_escape_preserve_drag_origin() {
     h.run_steps(1);
     assert_eq!(h.state().session.project(), &before);
     assert!(!h.state().session.gesture_active());
+    assert!(h.state().inspect().unwrap().preview.is_none());
     let restored = h.state().playback.generation();
-    assert!(
-        restored > generation,
-        "Escape must restart the preview generation"
+    assert_eq!(
+        restored, generation,
+        "a staged preview never restarts the player, so Escape needs no new generation"
     );
-    // The restored frame is produced asynchronously. Wait for the state the
-    // test needs instead of asserting an exact frame count: a frame from the
-    // restored generation is valid whenever it lands, a frame from the
-    // cancelled drag is not.
-    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
-    loop {
-        h.run_steps(1);
-        if let Some(frame) = h.state().playback.frame() {
-            assert_eq!(
-                frame.epoch, restored,
-                "a cancelled-drag preview frame must not stay visible"
-            );
-            break;
-        }
+    // No player request ever saw the drag, so any visible frame belongs to the
+    // committed generation rather than to a cancelled candidate.
+    if let Some(frame) = h.state().playback.frame() {
         assert!(
-            std::time::Instant::now() < deadline,
-            "the restored preview never produced a frame"
+            frame.epoch <= generation,
+            "a cancelled-drag preview frame must not be visible"
         );
-        std::thread::sleep(std::time::Duration::from_millis(2));
     }
 }
 

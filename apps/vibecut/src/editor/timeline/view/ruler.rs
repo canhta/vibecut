@@ -16,7 +16,7 @@ impl State {
     ) {
         let ink = Ink::of(cx);
         let painter = ui.painter().with_clip_rect(layout.ruler);
-        let rate = cx.session.project().data().canvas.fps;
+        let rate = cx.staged_project().data().canvas.fps;
         let config = ruler_config(self.zoom, rate);
         let start = f64::from(self.scroll);
         let end = start + f64::from(layout.ruler.width() / self.zoom);

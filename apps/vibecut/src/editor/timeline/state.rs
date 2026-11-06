@@ -18,15 +18,27 @@ pub(in crate::editor::timeline) struct DragOrigin {
     pub(in crate::editor::timeline) track: TrackId,
     pub(in crate::editor::timeline) start: Tick,
     pub(in crate::editor::timeline) end: Tick,
+    /// Source window and rate: trim bounds read the member's own headroom.
+    pub(in crate::editor::timeline) source_range: SourceRange,
+    pub(in crate::editor::timeline) speed: time::Speed,
 }
 #[derive(Clone, Debug)]
 pub(in crate::editor::timeline) struct DragState {
     pub(in crate::editor::timeline) item: ItemId,
     pub(in crate::editor::timeline) mode: DragMode,
     pub(in crate::editor::timeline) press_x: f32,
+    /// Last snapped delta staged for this gesture.
+    pub(in crate::editor::timeline) delta: Tick,
     pub(in crate::editor::timeline) origins: Vec<DragOrigin>,
     pub(in crate::editor::timeline) source_range: SourceRange,
     pub(in crate::editor::timeline) speed: time::Speed,
+}
+
+/// Where a clip drop would land: an existing row or a new track between rows.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(in crate::editor) enum DropZone {
+    Track(TrackId),
+    Insert { track: TrackId, above: bool },
 }
 #[derive(Clone, Copy, Debug)]
 pub(in crate::editor::timeline) struct BookmarkDrag {
@@ -155,6 +167,16 @@ pub(in crate::editor) struct State {
     /// Pixel scroll captured when zoom crossed the playhead-anchor threshold.
     pub(in crate::editor::timeline) pre_anchor_scroll: Option<f32>,
     pub(in crate::editor::timeline) drag: Option<DragState>,
+    /// Highlighted landing row or insertion line while a move drag is over the lanes.
+    pub(in crate::editor::timeline) drop_zone: Option<DropZone>,
+    /// Command id of the candidate staged by the group preview contract.
+    pub(in crate::editor::timeline) preview: Option<&'static str>,
+    /// The last staged command leaves every member at its entry position.
+    pub(in crate::editor::timeline) preview_noop: bool,
+    /// The gesture armed the preview contract and may stage a candidate.
+    pub(in crate::editor::timeline) preview_armed: bool,
+    /// Latest refusal from a staged move/trim, painted until the next gesture.
+    pub(in crate::editor::timeline) refusal: Option<String>,
     pub(in crate::editor::timeline) bookmark_drag: Option<BookmarkDrag>,
     pub(in crate::editor::timeline) snap_indicator: Option<Tick>,
     pub(in crate::editor::timeline) marquee: Option<(egui::Pos2, BTreeSet<ItemId>, bool)>,
@@ -188,6 +210,11 @@ impl State {
             viewport: 1000.0,
             pre_anchor_scroll: None,
             drag: None,
+            drop_zone: None,
+            preview: None,
+            preview_noop: false,
+            preview_armed: false,
+            refusal: None,
             bookmark_drag: None,
             snap_indicator: None,
             marquee: None,
@@ -328,7 +355,62 @@ impl State {
         self.bookmark_drag = None;
         self.keyframe_drag = None;
         self.volume_drag = None;
+        self.drop_zone = None;
+        self.preview = None;
+        self.preview_noop = false;
+        self.preview_armed = false;
         self.snap_indicator = None;
+    }
+    /// Arm the group-preview contract before the first staged command.
+    pub(in crate::editor) fn arm_preview(&mut self) {
+        self.preview = None;
+        self.preview_armed = true;
+        self.refusal = None;
+    }
+    /// Whether a staged group command may be sent now.
+    pub(in crate::editor) fn preview_armed(&self) -> bool {
+        self.preview_armed
+    }
+    /// Record the command id backing the live candidate.
+    pub(in crate::editor) fn mark_preview(&mut self, command: &'static str, noop: bool) {
+        self.preview = Some(command);
+        self.preview_noop = noop;
+        self.preview_armed = true;
+        self.refusal = None;
+    }
+    /// The staged command would leave every member at its entry position.
+    pub(in crate::editor) fn preview_noop(&self) -> bool {
+        self.preview_noop
+    }
+    /// The command id behind the live candidate, if any.
+    pub(in crate::editor) fn preview_command(&self) -> Option<&'static str> {
+        self.preview
+    }
+    /// Publish or discard finished: stop accepting staged commands.
+    pub(in crate::editor) fn clear_preview(&mut self) {
+        self.preview = None;
+        self.preview_noop = false;
+        self.preview_armed = false;
+    }
+    /// Show why a staged command was refused; the candidate is already gone.
+    pub(in crate::editor) fn refuse(&mut self, message: impl Into<String>) {
+        self.refusal = Some(message.into());
+    }
+    pub(in crate::editor) fn refusal(&self) -> Option<&str> {
+        self.refusal.as_deref()
+    }
+    /// The last landing hint, as a stable automation string.
+    pub(in crate::editor) fn drop_zone_label(&self) -> Option<String> {
+        self.drop_zone.map(|zone| match zone {
+            DropZone::Track(track) => format!("track:{}", track.0),
+            DropZone::Insert { track, above } => {
+                format!(
+                    "insert_{}:{}",
+                    if above { "above" } else { "below" },
+                    track.0
+                )
+            }
+        })
     }
     /// Escape on a keyframe retime; the frame cancels the session gesture.
     pub(in crate::editor) fn cancel_keyframe_drag(&mut self) -> bool {
@@ -360,6 +442,7 @@ impl State {
     pub(in crate::editor) fn cancel_drag(&mut self) -> bool {
         let had = self.drag.take().is_some();
         if had {
+            self.drop_zone = None;
             self.snap_indicator = None;
         }
         had

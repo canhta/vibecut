@@ -61,7 +61,7 @@ pub(in crate::editor) fn show(
 ) -> Vec<Action> {
     let layout = TimelineLayout::new(ui.max_rect());
     state.viewport = layout.body.width().max(1.0);
-    let duration = cx.session.project().duration();
+    let duration = cx.staged_project().duration();
     let min = state.min_zoom(duration);
     if state.zoom < min {
         state.apply_zoom(min, duration, cx.playhead);
@@ -83,6 +83,7 @@ pub(in crate::editor) fn show(
     state.paint_playhead(cx, ui, &layout);
     state.playhead_interaction(cx, ui, &layout);
     state.scrollbars(cx, ui, &layout, duration, &rows);
+    state.paint_refusal(cx, ui, &layout);
     if empty_items && !rows.is_empty() {
         let empty = tr(cx, Text::EmptyTimeline);
         ui.painter().text(

@@ -126,9 +126,9 @@ impl State {
         }
         let scene = Rect::from_min_size(egui::pos2(right - CELL - 1.0, top), Vec2::splat(CELL));
 
-        let name = cx.session.project().data().scene().name.as_str().to_owned();
+        let name = cx.staged_project().data().scene().name.as_str().to_owned();
         self.toolbar_scene(cx, ui, scene, &name);
-        let magnet = cx.session.project().data().scene().timeline.magnet;
+        let magnet = cx.staged_project().data().scene().timeline.magnet;
         self.toolbar_button(
             cx,
             ui,
@@ -179,7 +179,7 @@ impl State {
             Text::ZoomIn,
             None,
         );
-        let duration = cx.session.project().duration();
+        let duration = cx.staged_project().duration();
         let min = self.min_zoom(duration);
         let mut value = zoom_to_slider(self.zoom, min);
         let response = crate::kit::zoom_rail(ui, "timeline.zoom_slider", slider, &mut value);

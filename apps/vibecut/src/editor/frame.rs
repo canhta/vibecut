@@ -45,6 +45,13 @@ impl Context<'_> {
     pub(crate) fn frame_ticks(&self) -> time::Tick {
         frame_ticks(self.session)
     }
+    /// The project the timeline draws: a staged preview when one is open,
+    /// otherwise the committed snapshot. Other areas keep the committed view.
+    pub(crate) fn staged_project(&self) -> &std::sync::Arc<project::Project> {
+        self.session
+            .preview_project()
+            .unwrap_or_else(|| self.session.project())
+    }
 }
 
 /// Tooltip text from an action's first effective chord.

@@ -11,8 +11,8 @@ mod state;
 mod view;
 mod workflow;
 
-pub(super) use action::{Action, DropTarget};
-pub(super) use state::State;
+pub(super) use action::{Action, Gesture};
+pub(super) use state::{DropZone, State};
 pub(super) use view::{TOOLBAR_ACTIONS, add_track_params, show, show_scenes};
 
 use super::{

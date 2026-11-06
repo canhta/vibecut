@@ -217,7 +217,7 @@ fn toolbar_buttons_return_their_registered_action_and_respect_availability() {
 }
 
 #[test]
-fn clip_drag_returns_one_gesture_and_never_edits_the_session() {
+fn clip_drag_returns_one_preview_gesture_and_never_edits_the_session() {
     for (selected, moves) in [(vec![], 1), (vec![0], 1), (vec![0, 1], 2)] {
         let mut rig = Rig::new();
         let ids = [rig.first, rig.second];
@@ -239,38 +239,42 @@ fn clip_drag_returns_one_gesture_and_never_edits_the_session() {
             "show must not edit the project"
         );
         assert!(!rig.session.gesture_active());
-        let Some(Action::BeginGesture { select }) = returned.first() else {
-            panic!("expected the gesture first: {returned:?}");
+        let Some(Action::BeginPreview { select }) = returned.first() else {
+            panic!("expected the preview gesture first: {returned:?}");
         };
         assert_eq!(
             *select,
             (!grabbed_selected).then_some(ids[0]),
             "an unselected clip is selected alone first"
         );
-        assert!(matches!(returned.last(), Some(Action::EndGesture)));
+        assert!(matches!(returned.last(), Some(Action::EndPreview)));
         assert_eq!(
             returned
                 .iter()
-                .filter(|action| matches!(action, Action::BeginGesture { .. }))
+                .filter(|action| matches!(action, Action::BeginPreview { .. }))
                 .count(),
             1
         );
         assert_eq!(
             returned
                 .iter()
-                .filter(|action| matches!(action, Action::EndGesture))
+                .filter(|action| matches!(action, Action::EndPreview))
                 .count(),
             1
         );
         let mut previews = 0;
         for action in &returned[1..returned.len() - 1] {
-            let Action::Preview(command) = action else {
+            let Action::PreviewGesture(gesture) = action else {
                 panic!("only previews between begin and end: {action:?}");
             };
-            let Command::MoveItems { moves: batch } = command.as_ref() else {
-                panic!("a move drag previews moves: {command:?}");
+            let Gesture::Move {
+                items, placement, ..
+            } = gesture.as_ref()
+            else {
+                panic!("a move drag previews moves: {gesture:?}");
             };
-            assert_eq!(batch.len(), moves);
+            assert!(placement.is_none(), "a horizontal drag keeps its tracks");
+            assert_eq!(items.len(), moves);
             previews += 1;
         }
         assert!(previews > 0, "{returned:?}");

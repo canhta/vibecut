@@ -5,8 +5,7 @@ use crate::{
     catalog::Preferences,
     playback::{Files, Playback},
 };
-use engine::CreatedId;
-use engine::{ByteBudget, NewItem};
+use engine::{ByteBudget, CreatedId, NewItem};
 use project::{Project, ProjectId, TrackId, TrackKind};
 use std::{collections::BTreeSet, sync::Arc};
 use time::{SourceRange, TICKS_PER_SECOND};
@@ -75,13 +74,11 @@ fn rig() -> Rig {
     }
 }
 
-fn shift(item: ItemId, track: TrackId, start: i64) -> timeline::Action {
-    timeline::Action::Preview(Box::new(Command::MoveItems {
-        moves: vec![engine::Move {
-            item,
-            track,
-            start: Tick(start),
-        }],
+fn shift(item: ItemId, delta: i64) -> timeline::Action {
+    timeline::Action::PreviewGesture(Box::new(timeline::Gesture::Move {
+        items: vec![item],
+        delta: Tick(delta),
+        placement: None,
     }))
 }
 
@@ -89,7 +86,7 @@ fn start_of(editor: &Editor, item: ItemId) -> Tick {
     editor
         .session
         .preview_project()
-        .unwrap_or(editor.session.project())
+        .unwrap_or_else(|| editor.session.project())
         .data()
         .scene()
         .timeline
@@ -111,13 +108,13 @@ fn previews_and_drops_outside_an_open_gesture_edit_nothing() {
     let project = editor.session.project().clone();
     let history = editor.session.history_len();
     editor.route_timeline(vec![
-        shift(first, track, 9 * SECOND),
-        timeline::Action::MoveToTrack {
-            item: first,
-            start: Tick(9 * SECOND),
-            target: timeline::DropTarget::Track(track),
-        },
-        timeline::Action::EndGesture,
+        shift(first, SECOND),
+        timeline::Action::PreviewGesture(Box::new(timeline::Gesture::Move {
+            items: vec![first],
+            delta: Tick::ZERO,
+            placement: Some(engine::Placement::Track { track }),
+        })),
+        timeline::Action::EndPreview,
     ]);
     assert!(Arc::ptr_eq(&project, editor.session.project()));
     assert_eq!(editor.session.history_len(), history);
@@ -127,18 +124,16 @@ fn previews_and_drops_outside_an_open_gesture_edit_nothing() {
 #[test]
 fn a_gesture_publishes_one_undo_step_from_many_previews() {
     let Rig {
-        mut editor,
-        first,
-        track,
-        ..
+        mut editor, first, ..
     } = rig();
     let history = editor.session.history_len().0;
+    let before = editor.session.project().clone();
     editor.route_timeline(vec![
-        timeline::Action::BeginGesture {
+        timeline::Action::BeginPreview {
             select: Some(first),
         },
-        shift(first, track, 2 * SECOND),
-        shift(first, track, 3 * SECOND),
+        shift(first, SECOND),
+        shift(first, 2 * SECOND),
     ]);
     assert!(editor.session.gesture_active());
     assert_eq!(
@@ -152,34 +147,50 @@ fn a_gesture_publishes_one_undo_step_from_many_previews() {
         history,
         "previews are not history"
     );
-    editor.route_timeline(vec![timeline::Action::EndGesture]);
+    assert_eq!(
+        editor.session.project(),
+        &before,
+        "the committed snapshot stays byte-identical while previewing"
+    );
+    assert_eq!(
+        editor.inspect().unwrap().preview,
+        Some("timeline.move_items")
+    );
+    editor.route_timeline(vec![timeline::Action::EndPreview]);
     assert!(!editor.session.gesture_active());
     assert_eq!(editor.session.history_len().0, history + 1);
     assert_eq!(start_of(&editor, first), Tick(3 * SECOND));
+    assert_eq!(editor.inspect().unwrap().preview, None);
 }
 
 #[test]
 fn a_refused_track_drop_rolls_the_whole_gesture_back() {
     let Rig {
-        mut editor,
-        first,
-        track,
-        ..
+        mut editor, first, ..
     } = rig();
     let before = editor.session.project().clone();
     let history = editor.session.history_len();
     editor.route_timeline(vec![
-        timeline::Action::BeginGesture { select: None },
-        shift(first, track, 2 * SECOND),
-        timeline::Action::MoveToTrack {
-            item: first,
-            start: Tick(2 * SECOND),
-            target: timeline::DropTarget::Track(TrackId(999)),
-        },
-        // The release also ends the gesture; there is nothing left to publish.
-        timeline::Action::EndGesture,
+        timeline::Action::BeginPreview { select: None },
+        shift(first, SECOND),
+        timeline::Action::PreviewGesture(Box::new(timeline::Gesture::Move {
+            items: vec![first],
+            delta: Tick(SECOND),
+            placement: Some(engine::Placement::Track {
+                track: TrackId(999),
+            }),
+        })),
+        // The release also ends the gesture; nothing is left to publish.
+        timeline::Action::EndPreview,
     ]);
-    assert!(editor.error.is_some(), "the refusal is reported");
+    assert!(
+        editor
+            .inspect()
+            .unwrap()
+            .timeline_refusal
+            .is_some_and(|reason| reason.contains("999")),
+        "the timeline paints the engine's reason"
+    );
     assert!(!editor.session.gesture_active());
     assert_eq!(editor.session.project(), &before);
     assert_eq!(editor.session.history_len(), history);

@@ -39,7 +39,7 @@ impl State {
                 input.modifiers,
             )
         });
-        let duration = cx.session.project().duration();
+        let duration = cx.staged_project().duration();
         let (_, max_scroll) = self.scroll_bounds(layout, duration);
         if (zoom - 1.0).abs() > 0.01 {
             self.apply_zoom(self.zoom * zoom, duration, cx.playhead);
