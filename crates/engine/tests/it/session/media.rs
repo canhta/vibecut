@@ -1,62 +1,22 @@
 #![allow(clippy::unwrap_used, clippy::panic, clippy::indexing_slicing)]
 use engine::{Command, EditError, NewItem, Placement, Session};
-use media::{
-    AssetData, AssetId, AudioInfo, ColorInfo, ContentHash, SourceAsset, SourceProbe, SourceStream,
-    StreamKind, TimeBase, VideoInfo,
-};
+use media::{AssetId, SourceAsset};
 use project::{ItemParams, Project, ProjectId};
-use time::{FrameRate, SourceRange, Tick};
+use time::{SourceRange, Tick};
 
 fn asset(id: u64, path: &str) -> SourceAsset {
-    SourceAsset::try_from(AssetData {
-        ephemeral: false,
-        id: AssetId(id),
-        path: std::env::temp_dir().join(path),
-        content_hash: ContentHash([id as u8; 32]),
-        probe: SourceProbe {
-            format: "mp4".into(),
-            duration: Some(Tick(10_000)),
-            streams: vec![
-                SourceStream {
-                    index: 0,
-                    kind: StreamKind::Video,
-                    codec: "h264".into(),
-                    time_base: TimeBase::new(1, 1_000).unwrap(),
-                    duration: Some(Tick(10_000)),
-                    start: None,
-                    frame_rate: Some(FrameRate::FPS_30),
-                    frame_count: None,
-                    variable_frame_rate: None,
-                    video: Some(VideoInfo {
-                        width: 1920,
-                        height: 1080,
-                        color: ColorInfo::default(),
-                        bit_depth: Some(8),
-                    }),
-                    audio: None,
-                },
-                SourceStream {
-                    index: 1,
-                    kind: StreamKind::Audio,
-                    codec: "aac".into(),
-                    time_base: TimeBase::new(1, 1_000).unwrap(),
-                    duration: Some(Tick(10_000)),
-                    start: None,
-                    frame_rate: None,
-                    frame_count: None,
-                    variable_frame_rate: None,
-                    video: None,
-                    audio: Some(AudioInfo {
-                        sample_rate: 48_000,
-                        channels: 2,
-                        initial_padding: 0,
-                        trailing_padding: 0,
-                    }),
-                },
-            ],
-        },
-    })
-    .unwrap()
+    testkit::source::asset(id, std::env::temp_dir().join(path))
+        .format("mp4")
+        .duration(Tick(10_000))
+        .hash([id as u8; 32])
+        .stream(testkit::source::video().duration(Tick(10_000)).build())
+        .stream(
+            testkit::source::audio()
+                .index(1)
+                .duration(Tick(10_000))
+                .build(),
+        )
+        .build()
 }
 
 fn session() -> Session {

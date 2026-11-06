@@ -4,19 +4,21 @@
 //! exclusive lock on that directory's `.lock` file for its lifetime. At first
 //! use it removes sibling directories whose lock it can take: their owner is
 //! gone, so the files cannot be live sources.
-#![allow(clippy::unwrap_used, clippy::panic)]
-
 use std::{
-    fs::{File, TryLockError},
+    fs::File,
     path::{Path, PathBuf},
-    sync::{Mutex, OnceLock},
+    sync::{
+        Mutex, OnceLock,
+        atomic::{AtomicU64, Ordering},
+    },
 };
 
 static OWNED: OnceLock<Mutex<Vec<(String, File)>>> = OnceLock::new();
+static NEXT_TEMP: AtomicU64 = AtomicU64::new(0);
 
 /// Root of this process's generated fixtures for `area`, created and locked on
 /// first use.
-pub fn fixture_dir(area: &str) -> PathBuf {
+pub fn dir(area: &str) -> PathBuf {
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("../../target/fixtures")
         .join(area);
@@ -35,15 +37,49 @@ pub fn fixture_dir(area: &str) -> PathBuf {
         .unwrap();
     match lock.try_lock() {
         Ok(()) => {}
-        Err(TryLockError::WouldBlock) => panic!(
+        Err(std::fs::TryLockError::WouldBlock) => panic!(
             "fixture owner for {area} is already locked in process {}",
             std::process::id()
         ),
-        Err(TryLockError::Error(error)) => panic!("cannot lock fixture owner {area}: {error}"),
+        Err(std::fs::TryLockError::Error(error)) => {
+            panic!("cannot lock fixture owner {area}: {error}")
+        }
     }
     prune(&root, &own);
     owned.push((area.to_owned(), lock));
     own
+}
+
+/// Publishes `dir/name` by writing a temporary sibling through `write` and
+/// renaming it into place, so readers never observe a partial file. Returns an
+/// existing non-empty fixture without running `write`.
+pub fn publish(dir: &Path, name: &str, write: impl FnOnce(&Path)) -> PathBuf {
+    std::fs::create_dir_all(dir).unwrap();
+    let path = dir.join(name);
+    if nonempty(&path) {
+        return path;
+    }
+    let temp = dir.join(format!(
+        ".{}.{}.{name}",
+        std::process::id(),
+        NEXT_TEMP.fetch_add(1, Ordering::Relaxed)
+    ));
+    let _ = std::fs::remove_file(&temp);
+    write(&temp);
+    match std::fs::rename(&temp, &path) {
+        Ok(()) => {}
+        Err(_) if nonempty(&path) => {
+            let _ = std::fs::remove_file(&temp);
+        }
+        Err(error) => panic!("publish fixture {name}: {error}"),
+    }
+    path
+}
+
+fn nonempty(path: &Path) -> bool {
+    std::fs::metadata(path)
+        .map(|meta| meta.len() > 0)
+        .unwrap_or(false)
 }
 
 fn prune(root: &Path, own: &Path) {

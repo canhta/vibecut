@@ -86,7 +86,7 @@ fn wav_16k_mono(samples: &[i16]) -> Vec<u8> {
 fn mfcc_fixture() -> PathBuf {
     static PATH: OnceLock<PathBuf> = OnceLock::new();
     PATH.get_or_init(|| {
-        let dir = crate::support::fixtures_dir().join("vision");
+        let dir = testkit::fixture::dir("media").join("vision");
         std::fs::create_dir_all(&dir).unwrap();
         let path = dir.join("mfcc_reference.wav");
         let mut state = 0x1234_5678u32;
@@ -337,7 +337,8 @@ fn mfcc_range_is_globally_anchored() {
     for (name, path, tolerance, id, part_start, offset, long_source) in [
         (
             "44.1 kHz PCM",
-            crate::support::generate(
+            testkit::oracle::generate(
+                &testkit::fixture::dir("media"),
                 "vision mfcc 44k",
                 "vision_mfcc_44100.wav",
                 &[
@@ -357,7 +358,8 @@ fn mfcc_range_is_globally_anchored() {
         ),
         (
             "44.1 kHz AAC",
-            crate::support::generate(
+            testkit::oracle::generate(
+                &testkit::fixture::dir("media"),
                 "vision mfcc compressed seek",
                 "vision_mfcc_44100.m4a",
                 &[
@@ -379,7 +381,8 @@ fn mfcc_range_is_globally_anchored() {
         ),
         (
             "44.1 kHz Matroska PCM",
-            crate::support::generate(
+            testkit::oracle::generate(
+                &testkit::fixture::dir("media"),
                 "vision mfcc coarse matroska",
                 "vision_mfcc_44100_coarse.mkv",
                 &[
@@ -401,7 +404,8 @@ fn mfcc_range_is_globally_anchored() {
         ),
         (
             "44.1 kHz Matroska PCM sample-aligned rounded PTS",
-            crate::support::generate(
+            testkit::oracle::generate(
+                &testkit::fixture::dir("media"),
                 "vision mfcc coarse exact tick matroska",
                 "vision_mfcc_44100_coarse_exact_tick.mkv",
                 &[
@@ -423,7 +427,8 @@ fn mfcc_range_is_globally_anchored() {
         ),
         (
             "three-hour PCM with bounded anchor reuse",
-            crate::support::generate(
+            testkit::oracle::generate(
+                &testkit::fixture::dir("media"),
                 "vision mfcc long source",
                 "vision_3h_silence.wav",
                 &[
@@ -621,7 +626,8 @@ fn mfcc_range_is_globally_anchored() {
         }
     }
 
-    let Some(path) = crate::support::generate(
+    let Some(path) = testkit::oracle::generate(
+        &testkit::fixture::dir("media"),
         "vision mfcc unknown duration",
         "vision_unknown_duration.mkv",
         &[
@@ -671,7 +677,8 @@ fn mfcc_cancellation_stops_between_frames() {
 }
 
 fn video_source() -> Option<PathBuf> {
-    crate::support::generate(
+    testkit::oracle::generate(
+        &testkit::fixture::dir("media"),
         "vision cfr",
         "vision_cfr.mp4",
         &[
@@ -693,7 +700,8 @@ fn video_source() -> Option<PathBuf> {
 }
 
 fn long_gop_source() -> Option<PathBuf> {
-    crate::support::generate(
+    testkit::oracle::generate(
+        &testkit::fixture::dir("media"),
         "vision long gop",
         "vision_long_gop.mp4",
         &[
@@ -719,7 +727,8 @@ fn long_gop_source() -> Option<PathBuf> {
 }
 
 fn vfr_source() -> Option<PathBuf> {
-    crate::support::generate(
+    testkit::oracle::generate(
+        &testkit::fixture::dir("media"),
         "vision vfr",
         "vision_vfr.mp4",
         &[

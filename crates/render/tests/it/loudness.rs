@@ -57,35 +57,20 @@ impl SourceProvider for Tone {
 }
 
 fn audio_asset(id: u64, path: std::path::PathBuf, seconds: i64, rate: u32) -> media::SourceAsset {
-    media::SourceAsset::try_from(media::AssetData {
-        ephemeral: false,
-        id: media::AssetId(id),
-        path,
-        content_hash: media::ContentHash::from_bytes(&[id as u8]),
-        probe: media::SourceProbe {
-            format: "wav".into(),
-            duration: Some(tick(seconds * i64::from(rate), i64::from(rate))),
-            streams: vec![media::SourceStream {
-                index: 0,
-                kind: media::StreamKind::Audio,
-                codec: "pcm_f32le".into(),
-                time_base: media::TimeBase::new(1, rate as i32).unwrap(),
-                start: None,
-                duration: Some(tick(seconds * i64::from(rate), i64::from(rate))),
-                frame_rate: None,
-                frame_count: None,
-                variable_frame_rate: None,
-                video: None,
-                audio: Some(media::AudioInfo {
-                    sample_rate: rate,
-                    channels: 2,
-                    initial_padding: 0,
-                    trailing_padding: 0,
-                }),
-            }],
-        },
-    })
-    .unwrap()
+    let duration = tick(seconds * i64::from(rate), i64::from(rate));
+    testkit::source::asset(id, path)
+        .format("wav")
+        .duration(duration)
+        .content_hash(media::ContentHash::from_bytes(&[id as u8]))
+        .stream(
+            testkit::source::audio()
+                .codec("pcm_f32le")
+                .time_base(media::TimeBase::new(1, rate as i32).unwrap())
+                .duration(duration)
+                .sample_rate(rate)
+                .build(),
+        )
+        .build()
 }
 
 /// One audio clip per `(asset, start_seconds, seconds)` on one audio track.

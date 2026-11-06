@@ -21,6 +21,7 @@ tempfile.workspace = true
 
 [dev-dependencies]
 proptest.workspace = true
+testkit.workspace = true
 
 [target.'cfg(windows)'.dependencies]
 file-id = "0.2.3"

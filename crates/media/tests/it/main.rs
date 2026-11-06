@@ -6,5 +6,4 @@ mod hostile_input;
 mod import_metadata;
 mod pipeline;
 mod speech_extraction;
-mod support;
 mod vision_preparation;

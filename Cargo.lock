@@ -166,6 +166,7 @@ dependencies = [
  "serde_json",
  "sha2",
  "sherpa-onnx",
+ "testkit",
  "thiserror 2.0.21",
  "time 0.1.0",
  "tokenizers",
@@ -1718,6 +1719,7 @@ dependencies = [
  "serde_json",
  "sha2",
  "tempfile",
+ "testkit",
  "text",
  "thiserror 2.0.21",
  "time 0.1.0",
@@ -3213,6 +3215,7 @@ dependencies = [
  "schemars",
  "serde",
  "serde_json",
+ "testkit",
  "thiserror 2.0.21",
  "time 0.1.0",
 ]
@@ -4430,6 +4433,7 @@ dependencies = [
  "serde",
  "serde_json",
  "tempfile",
+ "testkit",
  "thiserror 2.0.21",
  "time 0.1.0",
 ]
@@ -4858,6 +4862,7 @@ dependencies = [
  "serde",
  "serde_json",
  "tempfile",
+ "testkit",
  "text",
  "thiserror 2.0.21",
  "time 0.1.0",
@@ -5320,6 +5325,7 @@ dependencies = [
  "serde",
  "serde_json",
  "tempfile",
+ "testkit",
  "time 0.1.0",
  "unicode-segmentation",
 ]
@@ -5685,6 +5691,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "06794f8f6c5c898b3275aebefa6b8a1cb24cd2c6c79397ab15774837a0bc5755"
 dependencies = [
  "winapi-util",
+]
+
+[[package]]
+name = "testkit"
+version = "0.1.0"
+dependencies = [
+ "media",
+ "serde_json",
+ "time 0.1.0",
 ]
 
 [[package]]
@@ -6450,6 +6465,7 @@ dependencies = [
  "skrifa 0.49.0",
  "sys-locale",
  "tempfile",
+ "testkit",
  "text",
  "thiserror 2.0.21",
  "time 0.1.0",
@@ -6475,6 +6491,7 @@ dependencies = [
  "serde_json",
  "shorts",
  "tempfile",
+ "testkit",
  "thiserror 2.0.21",
  "time 0.1.0",
  "tokio",

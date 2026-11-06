@@ -225,42 +225,19 @@ impl ThumbnailCache {
 #[allow(clippy::unwrap_used, clippy::panic)]
 mod tests {
     use super::*;
-    use media::{AssetData, AssetId, SourceProbe, SourceStream, StreamKind, TimeBase, VideoInfo};
+
     use std::sync::{
         Arc,
         atomic::{AtomicUsize, Ordering},
     };
 
     fn sample_asset(id: u64, hash: u8) -> SourceAsset {
-        SourceAsset::try_from(AssetData {
-            ephemeral: false,
-            id: AssetId(id),
-            path: std::env::temp_dir().join("fixture.mp4"),
-            content_hash: ContentHash([hash; 32]),
-            probe: SourceProbe {
-                format: "mov,mp4".into(),
-                duration: Some(Tick(1_000)),
-                streams: vec![SourceStream {
-                    index: 0,
-                    kind: StreamKind::Video,
-                    codec: "h264".into(),
-                    time_base: TimeBase::new(1, 1_000).unwrap(),
-                    duration: Some(Tick(1_000)),
-                    start: None,
-                    frame_rate: Some(time::FrameRate::FPS_30),
-                    frame_count: None,
-                    variable_frame_rate: None,
-                    video: Some(VideoInfo {
-                        width: 1920,
-                        height: 1080,
-                        color: media::ColorInfo::default(),
-                        bit_depth: Some(8),
-                    }),
-                    audio: None,
-                }],
-            },
-        })
-        .unwrap()
+        testkit::source::asset(id, std::env::temp_dir().join("fixture.mp4"))
+            .format("mov,mp4")
+            .duration(Tick(1_000))
+            .hash([hash; 32])
+            .stream(testkit::source::video().duration(Tick(1_000)).build())
+            .build()
     }
 
     fn thumbnail() -> Thumbnail {

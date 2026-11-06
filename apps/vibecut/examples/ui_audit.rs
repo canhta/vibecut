@@ -13,10 +13,7 @@ use egui_kittest::{
     kittest::{By, Queryable},
 };
 use engine::{ByteBudget, Command, CreatedId, NewItem, Placement, Session, TrackPlacement};
-use media::{
-    AssetData, AssetId, AudioInfo, ColorInfo, ContentHash, MediaError, SourceAsset, SourceProbe,
-    SourceStream, StreamKind, TimeBase, VideoInfo,
-};
+use media::{AssetData, AssetId, ContentHash, MediaError, SourceAsset, SourceStream, StreamKind};
 use project::{
     AudioParams, Color, ItemId, ItemParams, OverlayParams, Project, ProjectId, TextParams, TrackId,
     TrackKind, VideoParams,
@@ -1018,49 +1015,18 @@ fn models_locale(theme: Theme, scale: f32, locale: Locale) -> Result<AppHarness,
 }
 
 fn source_stream(kind: StreamKind, duration: Tick) -> Result<SourceStream, Failure> {
-    Ok(SourceStream {
-        index: 0,
-        kind,
-        codec: match kind {
-            StreamKind::Video => "h264".into(),
-            StreamKind::Audio => "aac".into(),
-            StreamKind::Other => "data".into(),
-        },
-        time_base: TimeBase::new(1, 1_000)?,
-        duration: Some(duration),
-        start: None,
-        frame_rate: (kind == StreamKind::Video).then_some(FrameRate::FPS_30),
-        frame_count: None,
-        variable_frame_rate: None,
-        video: (kind == StreamKind::Video).then_some(VideoInfo {
-            width: 1920,
-            height: 1080,
-            color: ColorInfo::default(),
-            bit_depth: Some(8),
-        }),
-        audio: (kind == StreamKind::Audio).then_some(AudioInfo {
-            sample_rate: 48_000,
-            channels: 2,
-            initial_padding: 0,
-            trailing_padding: 0,
-        }),
-    })
+    Ok(testkit::source::stream(kind).duration(duration).build())
 }
 
 fn source_asset(id: u64, kind: StreamKind, path: PathBuf) -> Result<SourceAsset, Failure> {
     let path = std::path::absolute(path)?;
     let duration = Tick(10 * SECOND);
-    Ok(SourceAsset::try_from(AssetData {
-        ephemeral: false,
-        id: AssetId(id),
-        path: std::path::absolute(path)?,
-        content_hash: ContentHash::from_bytes(&[id as u8; 8]),
-        probe: SourceProbe {
-            format: "mov,mp4".into(),
-            duration: Some(duration),
-            streams: vec![source_stream(kind, duration)?],
-        },
-    })?)
+    Ok(testkit::source::asset(id, path)
+        .format("mov,mp4")
+        .duration(duration)
+        .content_hash(ContentHash::from_bytes(&[id as u8; 8]))
+        .stream(source_stream(kind, duration)?)
+        .build())
 }
 
 fn range(start: i64, end: i64) -> Result<SourceRange, Failure> {

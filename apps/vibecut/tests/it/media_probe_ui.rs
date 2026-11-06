@@ -7,9 +7,8 @@
 )]
 use engine::{ByteBudget, Session};
 use media::{
-    AssetData, AssetId, ColorInfo, ContentHash, Decodability, ImportedSource, MediaError,
-    ProbeCapabilities, SourceAsset, SourceProbe, SourceStream, StreamCapability, StreamKind,
-    Thumbnail, TimeBase, UnsupportedReason, VideoInfo,
+    AssetData, AssetId, Decodability, ImportedSource, MediaError, ProbeCapabilities, SourceAsset,
+    StreamCapability, StreamKind, Thumbnail, UnsupportedReason,
 };
 use project::{Project, ProjectId};
 use std::{
@@ -20,7 +19,7 @@ use std::{
     },
     time::{Duration, Instant},
 };
-use time::{FrameRate, Tick};
+use time::Tick;
 use vibecut::{
     Editor,
     catalog::Preferences,
@@ -37,40 +36,16 @@ fn asset(id: u64, hash: u8, video: bool, path: impl Into<PathBuf>) -> SourceAsse
     } else {
         StreamKind::Audio
     };
-    SourceAsset::try_from(AssetData {
-        ephemeral: false,
-        id: AssetId(id),
-        path: path.into(),
-        content_hash: ContentHash([hash; 32]),
-        probe: SourceProbe {
-            format: "mov,mp4".into(),
-            duration: Some(Tick(4 * SECOND)),
-            streams: vec![SourceStream {
-                index: 0,
-                kind,
-                codec: if video { "h264".into() } else { "aac".into() },
-                time_base: TimeBase::new(1, 1_000).unwrap(),
-                duration: Some(Tick(4 * SECOND)),
-                start: None,
-                frame_rate: video.then_some(FrameRate::FPS_30),
-                frame_count: None,
-                variable_frame_rate: None,
-                video: video.then_some(VideoInfo {
-                    width: 320,
-                    height: 180,
-                    color: ColorInfo::default(),
-                    bit_depth: Some(8),
-                }),
-                audio: (!video).then_some(media::AudioInfo {
-                    sample_rate: 48_000,
-                    channels: 2,
-                    initial_padding: 0,
-                    trailing_padding: 0,
-                }),
-            }],
-        },
-    })
-    .unwrap()
+    let mut stream = testkit::source::stream(kind).duration(Tick(4 * SECOND));
+    if video {
+        stream = stream.size(320, 180);
+    }
+    testkit::source::asset(id, path.into())
+        .format("mov,mp4")
+        .duration(Tick(4 * SECOND))
+        .hash([hash; 32])
+        .stream(stream.build())
+        .build()
 }
 
 fn capabilities(asset: &SourceAsset, decodable: bool) -> ProbeCapabilities {

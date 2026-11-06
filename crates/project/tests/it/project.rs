@@ -1,9 +1,6 @@
 #![allow(clippy::unwrap_used, reason = "validated test fixtures and assertions")]
 use captions::{Cue, CueText, CueTrack, LanguageTag};
-use media::{
-    AssetAvailability, AssetData, AssetId, AudioInfo, ColorInfo, ContentHash, SourceAsset,
-    SourceProbe, SourceStream, StreamKind, TimeBase, VideoInfo,
-};
+use media::{AssetAvailability, AssetData, AssetId, ContentHash, SourceAsset, TimeBase};
 use project::*;
 use std::{collections::BTreeMap, fs, path::PathBuf};
 use time::{FrameRate, SourceRange, Tick};
@@ -18,55 +15,27 @@ pub(crate) fn empty() -> Project {
     Project::empty(ProjectId(1), "Dự án Việt Nam".into()).unwrap()
 }
 pub(crate) fn source(path: PathBuf) -> SourceAsset {
-    SourceAsset::try_from(AssetData {
-        ephemeral: false,
-        id: AssetId(3),
-        path,
-        content_hash: ContentHash([1; 32]),
-        probe: SourceProbe {
-            format: "mp4".into(),
-            duration: Some(Tick(1000)),
-            streams: vec![
-                SourceStream {
-                    index: 0,
-                    kind: StreamKind::Video,
-                    codec: "h264".into(),
-                    time_base: TimeBase::new(1, 30000).unwrap(),
-                    duration: Some(Tick(1000)),
-                    start: Some(Tick(0)),
-                    frame_rate: Some(FrameRate::FPS_29_97),
-                    frame_count: None,
-                    variable_frame_rate: None,
-                    video: Some(VideoInfo {
-                        width: 1920,
-                        height: 1080,
-                        color: ColorInfo::default(),
-                        bit_depth: Some(8),
-                    }),
-                    audio: None,
-                },
-                SourceStream {
-                    index: 1,
-                    kind: StreamKind::Audio,
-                    codec: "aac".into(),
-                    time_base: TimeBase::new(1, 48000).unwrap(),
-                    duration: None,
-                    start: Some(Tick(25)),
-                    frame_rate: None,
-                    frame_count: None,
-                    variable_frame_rate: None,
-                    video: None,
-                    audio: Some(AudioInfo {
-                        sample_rate: 48000,
-                        channels: 2,
-                        initial_padding: 1024,
-                        trailing_padding: 0,
-                    }),
-                },
-            ],
-        },
-    })
-    .unwrap()
+    testkit::source::asset(3, path)
+        .format("mp4")
+        .duration(Tick(1000))
+        .hash([1; 32])
+        .stream(
+            testkit::source::video()
+                .time_base(TimeBase::new(1, 30000).unwrap())
+                .duration(Tick(1000))
+                .start(Tick(0))
+                .frame_rate(FrameRate::FPS_29_97)
+                .build(),
+        )
+        .stream(
+            testkit::source::audio()
+                .index(1)
+                .time_base(TimeBase::new(1, 48000).unwrap())
+                .start(Tick(25))
+                .padding(1024, 0)
+                .build(),
+        )
+        .build()
 }
 fn item(id: u64, start: i64) -> Item {
     Item {

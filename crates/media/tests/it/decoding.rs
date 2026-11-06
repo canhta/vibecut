@@ -25,7 +25,7 @@ fn pixels(frame: &VideoFrame) -> Vec<u8> {
 }
 
 fn check_fixture(path: &Path, width: u32, height: u32, expected_frames: usize) {
-    let oracle = crate::support::command("ffmpeg")
+    let oracle = testkit::oracle::command("ffmpeg")
         .args(["-v", "error", "-i"])
         .arg(path)
         .args([
@@ -35,7 +35,7 @@ fn check_fixture(path: &Path, width: u32, height: u32, expected_frames: usize) {
         .unwrap();
     assert!(oracle.status.success());
     assert_eq!(
-        crate::support::decoded_frames(path, "v:0"),
+        testkit::oracle::decoded_frames(path, "v:0"),
         expected_frames as u64
     );
     let frame_size = (width * height * 3 / 2) as usize;
@@ -112,7 +112,8 @@ fn check_fixture(path: &Path, width: u32, height: u32, expected_frames: usize) {
 
 #[test]
 fn mpeg4_preview_decodes_all_frames_with_identical_pixels() {
-    let Some(path) = crate::support::generate(
+    let Some(path) = testkit::oracle::generate(
+        &testkit::fixture::dir("media"),
         "MPEG-4 preview decode",
         "decode_mpeg4_320x180.mp4",
         &[
@@ -144,7 +145,8 @@ fn mpeg4_small_and_unaligned_frames_with_reordering() {
     for (width, height) in [(16, 16), (318, 178), (320, 192)] {
         let source = format!("testsrc2=size={width}x{height}:rate=30:duration=1");
         let name = format!("decode_mpeg4_{width}x{height}_bframes.mp4");
-        let Some(path) = crate::support::generate(
+        let Some(path) = testkit::oracle::generate(
+            &testkit::fixture::dir("media"),
             "MPEG-4 decoder boundaries",
             &name,
             &[

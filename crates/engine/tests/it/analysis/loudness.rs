@@ -68,35 +68,18 @@ fn session() -> Session {
         .into_data();
     let seconds = Tick(4 * time::TICKS_PER_SECOND);
     data.assets.push(
-        media::SourceAsset::try_from(media::AssetData {
-            ephemeral: false,
-            id: media::AssetId(1),
-            path: std::env::temp_dir().join("loudness.wav"),
-            content_hash: media::ContentHash::from_bytes(&[5]),
-            probe: media::SourceProbe {
-                format: "wav".into(),
-                duration: Some(seconds),
-                streams: vec![media::SourceStream {
-                    index: 0,
-                    kind: media::StreamKind::Audio,
-                    codec: "pcm_f32le".into(),
-                    time_base: media::TimeBase::new(1, 48000).unwrap(),
-                    start: None,
-                    duration: Some(seconds),
-                    frame_rate: None,
-                    frame_count: None,
-                    variable_frame_rate: None,
-                    video: None,
-                    audio: Some(media::AudioInfo {
-                        sample_rate: 48000,
-                        channels: 2,
-                        initial_padding: 0,
-                        trailing_padding: 0,
-                    }),
-                }],
-            },
-        })
-        .unwrap(),
+        testkit::source::asset(1, std::env::temp_dir().join("loudness.wav"))
+            .format("wav")
+            .duration(seconds)
+            .content_hash(media::ContentHash::from_bytes(&[5]))
+            .stream(
+                testkit::source::audio()
+                    .codec("pcm_f32le")
+                    .time_base(media::TimeBase::new(1, 48000).unwrap())
+                    .duration(seconds)
+                    .build(),
+            )
+            .build(),
     );
     data.scene_mut().timeline.insert_track(project::Track {
         id: project::TrackId(1),

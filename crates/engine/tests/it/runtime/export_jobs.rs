@@ -673,24 +673,16 @@ fn registered_burn_job_exports_and_typed_missing_media_preserves_previous_output
         content_hash: data.assets[0].content_hash(),
         probe: data.assets[0].probe().clone(),
     };
-    asset.probe.streams.push(media::SourceStream {
-        index: 0,
-        kind: media::StreamKind::Video,
-        codec: "h264".into(),
-        time_base: media::TimeBase::new(1, 30).unwrap(),
-        duration: Some(time::Tick(3 * time::TICKS_PER_SECOND)),
-        start: Some(time::Tick::ZERO),
-        frame_rate: Some(time::FrameRate::FPS_30),
-        frame_count: Some(90),
-        variable_frame_rate: Some(false),
-        audio: None,
-        video: Some(media::VideoInfo {
-            width: 360,
-            height: 640,
-            bit_depth: Some(8),
-            color: media::ColorInfo::default(),
-        }),
-    });
+    asset.probe.streams.push(
+        testkit::source::video()
+            .time_base(media::TimeBase::new(1, 30).unwrap())
+            .duration(time::Tick(3 * time::TICKS_PER_SECOND))
+            .start(time::Tick::ZERO)
+            .frame_count(90)
+            .variable_frame_rate(false)
+            .size(360, 640)
+            .build(),
+    );
     data.assets[0] = media::SourceAsset::try_from(asset).unwrap();
     let video = data
         .scene_mut()

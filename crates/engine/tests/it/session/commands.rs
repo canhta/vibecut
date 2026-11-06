@@ -950,7 +950,7 @@ proptest! {
 
 #[test]
 fn media_handles_and_typed_parameter_validation_are_atomic() {
-    use media::{AudioInfo, ColorInfo, SourceStream, StreamKind, TimeBase, VideoInfo};
+    use media::{AudioInfo, ColorInfo, StreamKind, TimeBase, VideoInfo};
     use project::{AudioParams, VideoParams};
     let mut data = project().into_data();
     data.scene_mut().timeline.overlays.clear();
@@ -965,55 +965,49 @@ fn media_handles_and_typed_parameter_validation_are_atomic() {
             items: vec![],
         });
     }
-    let stream = |index, kind, video, audio| SourceStream {
-        index,
-        kind,
-        codec: "fixture".into(),
-        time_base: TimeBase::new(1, 1000).unwrap(),
-        duration: Some(Tick(1000)),
-        start: Some(Tick(0)),
-        frame_rate: None,
-        frame_count: None,
-        variable_frame_rate: None,
-        video,
-        audio,
-    };
+    let stream =
+        |index: usize, kind: StreamKind, video: Option<VideoInfo>, audio: Option<AudioInfo>| {
+            let mut builder = testkit::source::stream(kind)
+                .index(index)
+                .codec("fixture")
+                .time_base(TimeBase::new(1, 1000).unwrap())
+                .duration(Tick(1000))
+                .start(Tick(0));
+            if let Some(video) = video {
+                builder = builder.video_info(video);
+            }
+            if let Some(audio) = audio {
+                builder = builder.audio_info(audio);
+            }
+            builder.build()
+        };
     data.assets.push(
-        SourceAsset::try_from(AssetData {
-            ephemeral: false,
-            id: AssetId(1),
-            path: std::env::temp_dir().join("Tiếng Việt missing media.mp4"),
-            content_hash: ContentHash([0; 32]),
-            probe: SourceProbe {
-                format: "mp4".into(),
-                duration: Some(Tick(1000)),
-                streams: vec![
-                    stream(
-                        0,
-                        StreamKind::Video,
-                        Some(VideoInfo {
-                            width: 16,
-                            height: 16,
-                            color: ColorInfo::default(),
-                            bit_depth: Some(8),
-                        }),
-                        None,
-                    ),
-                    stream(
-                        1,
-                        StreamKind::Audio,
-                        None,
-                        Some(AudioInfo {
-                            sample_rate: 48000,
-                            channels: 2,
-                            initial_padding: 0,
-                            trailing_padding: 0,
-                        }),
-                    ),
-                ],
-            },
-        })
-        .unwrap(),
+        testkit::source::asset(1, std::env::temp_dir().join("Tiếng Việt missing media.mp4"))
+            .format("mp4")
+            .duration(Tick(1000))
+            .stream(stream(
+                0,
+                StreamKind::Video,
+                Some(VideoInfo {
+                    width: 16,
+                    height: 16,
+                    color: ColorInfo::default(),
+                    bit_depth: Some(8),
+                }),
+                None,
+            ))
+            .stream(stream(
+                1,
+                StreamKind::Audio,
+                None,
+                Some(AudioInfo {
+                    sample_rate: 48000,
+                    channels: 2,
+                    initial_padding: 0,
+                    trailing_padding: 0,
+                }),
+            ))
+            .build(),
     );
     let mut s = Session::new(Project::new(data).unwrap(), 20).unwrap();
     let out = s
@@ -2560,35 +2554,20 @@ fn policy_asset_sized(
     rate: Option<time::FrameRate>,
     (width, height): (u32, u32),
 ) -> SourceAsset {
-    SourceAsset::try_from(AssetData {
-        ephemeral: true,
-        id: AssetId(id),
-        path: std::env::temp_dir().join("policy source"),
-        content_hash: ContentHash([0; 32]),
-        probe: SourceProbe {
-            format: format.into(),
-            duration: Some(Tick(1000)),
-            streams: vec![media::SourceStream {
-                index: 0,
-                kind: media::StreamKind::Video,
-                codec: "synthetic".into(),
-                time_base: media::TimeBase::new(1, 1000).unwrap(),
-                duration: Some(Tick(1000)),
-                start: None,
-                frame_rate: rate,
-                frame_count: None,
-                variable_frame_rate: None,
-                video: Some(media::VideoInfo {
-                    width,
-                    height,
-                    color: Default::default(),
-                    bit_depth: Some(8),
-                }),
-                audio: None,
-            }],
-        },
-    })
-    .unwrap()
+    let stream = testkit::source::video()
+        .codec("synthetic")
+        .duration(Tick(1000))
+        .size(width, height);
+    let stream = match rate {
+        Some(rate) => stream.frame_rate(rate),
+        None => stream.no_frame_rate(),
+    };
+    testkit::source::asset(id, std::env::temp_dir().join("policy source"))
+        .ephemeral(true)
+        .format(format)
+        .duration(Tick(1000))
+        .stream(stream.build())
+        .build()
 }
 fn policy_insert(id: u64) -> Command {
     Command::InsertItem {
@@ -3268,35 +3247,18 @@ fn audio_reorder_is_screen_order_and_main_cannot_move() {
 fn audio_controls_are_atomic_undoable_persisted_and_strict() {
     let mut data = project().into_data();
     // Reuse the existing synthetic media fixture without filesystem IO.
-    let source = media::SourceAsset::try_from(media::AssetData {
-        ephemeral: false,
-        id: AssetId(7),
-        path: std::env::temp_dir().join("audio-controls.wav"),
-        content_hash: ContentHash::from_bytes(&[7]),
-        probe: SourceProbe {
-            format: "wav".into(),
-            duration: Some(Tick(1000)),
-            streams: vec![media::SourceStream {
-                index: 0,
-                kind: media::StreamKind::Audio,
-                codec: "pcm_f32le".into(),
-                time_base: media::TimeBase::new(1, 48000).unwrap(),
-                start: None,
-                duration: Some(Tick(1000)),
-                frame_rate: None,
-                frame_count: None,
-                variable_frame_rate: None,
-                video: None,
-                audio: Some(media::AudioInfo {
-                    sample_rate: 48000,
-                    channels: 2,
-                    initial_padding: 0,
-                    trailing_padding: 0,
-                }),
-            }],
-        },
-    })
-    .unwrap();
+    let source = testkit::source::asset(7, std::env::temp_dir().join("audio-controls.wav"))
+        .format("wav")
+        .duration(Tick(1000))
+        .content_hash(ContentHash::from_bytes(&[7]))
+        .stream(
+            testkit::source::audio()
+                .codec("pcm_f32le")
+                .time_base(media::TimeBase::new(1, 48000).unwrap())
+                .duration(Tick(1000))
+                .build(),
+        )
+        .build();
     data.assets.push(source);
     data.scene_mut().timeline.insert_track(Track {
         id: TrackId(8),

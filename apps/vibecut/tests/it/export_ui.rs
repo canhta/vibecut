@@ -4,10 +4,7 @@ use egui_kittest::{
     kittest::{By, Queryable},
 };
 use engine::{ByteBudget, Session};
-use media::{
-    AssetData, AssetId, ContentHash, SourceAsset, SourceProbe, SourceStream, StreamKind, TimeBase,
-    VideoInfo,
-};
+use media::{AssetData, AssetId, ContentHash, SourceAsset, TimeBase};
 use project::{ItemParams, Project, ProjectId};
 use std::{
     path::PathBuf,
@@ -18,7 +15,7 @@ use std::{
     },
     time::{Duration, Instant},
 };
-use time::{FrameRate, SourceRange, TICKS_PER_SECOND, Tick};
+use time::{SourceRange, TICKS_PER_SECOND, Tick};
 use vibecut::{
     Editor,
     catalog::{Locale, PreferenceStore, Preferences},
@@ -39,35 +36,20 @@ fn project(empty: bool, source: bool) -> Project {
     let range = SourceRange::new(Tick::ZERO, Tick(TICKS_PER_SECOND / 10)).unwrap();
     if source {
         d.assets.push(
-            SourceAsset::try_from(AssetData {
-                ephemeral: false,
-                id: AssetId(1),
-                path: temp_target("vibecut-export-source-missing.mp4"),
-                content_hash: ContentHash::from_bytes(b"source"),
-                probe: SourceProbe {
-                    format: "mp4".into(),
-                    duration: Some(range.duration()),
-                    streams: vec![SourceStream {
-                        index: 0,
-                        kind: StreamKind::Video,
-                        codec: "h264".into(),
-                        time_base: TimeBase::new(1, 30).unwrap(),
-                        duration: Some(range.duration()),
-                        start: None,
-                        frame_rate: Some(FrameRate::FPS_30),
-                        frame_count: Some(3),
-                        variable_frame_rate: Some(false),
-                        video: Some(VideoInfo {
-                            width: 64,
-                            height: 64,
-                            color: Default::default(),
-                            bit_depth: Some(8),
-                        }),
-                        audio: None,
-                    }],
-                },
-            })
-            .unwrap(),
+            testkit::source::asset(1, temp_target("vibecut-export-source-missing.mp4"))
+                .format("mp4")
+                .duration(range.duration())
+                .content_hash(ContentHash::from_bytes(b"source"))
+                .stream(
+                    testkit::source::video()
+                        .time_base(TimeBase::new(1, 30).unwrap())
+                        .duration(range.duration())
+                        .frame_count(3)
+                        .variable_frame_rate(false)
+                        .size(64, 64)
+                        .build(),
+                )
+                .build(),
         );
     }
     if !empty {

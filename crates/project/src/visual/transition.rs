@@ -505,35 +505,18 @@ mod tests {
     fn media_handles_bound_both_sides_and_zero_handles_refuse() {
         let mut d = data();
         d.assets.push(
-            media::SourceAsset::try_from(media::AssetData {
-                ephemeral: false,
-                id: media::AssetId(1),
-                path: std::env::temp_dir().join("transition-handles"),
-                content_hash: media::ContentHash([0; 32]),
-                probe: media::SourceProbe {
-                    format: "synthetic".into(),
-                    duration: Some(Tick(117)),
-                    streams: vec![media::SourceStream {
-                        index: 0,
-                        kind: media::StreamKind::Video,
-                        codec: "rgba".into(),
-                        time_base: media::TimeBase::new(1, 30).unwrap(),
-                        start: None,
-                        duration: Some(Tick(117)),
-                        frame_rate: Some(time::FrameRate::FPS_30),
-                        frame_count: None,
-                        variable_frame_rate: None,
-                        video: Some(media::VideoInfo {
-                            width: 4,
-                            height: 4,
-                            color: media::ColorInfo::default(),
-                            bit_depth: Some(8),
-                        }),
-                        audio: None,
-                    }],
-                },
-            })
-            .unwrap(),
+            testkit::source::asset(1, std::env::temp_dir().join("transition-handles"))
+                .format("synthetic")
+                .duration(Tick(117))
+                .stream(
+                    testkit::source::video()
+                        .codec("rgba")
+                        .time_base(media::TimeBase::new(1, 30).unwrap())
+                        .duration(Tick(117))
+                        .size(4, 4)
+                        .build(),
+                )
+                .build(),
         );
         for i in &mut d.scene_mut().timeline.main.items {
             i.source_asset = Some(media::AssetId(1));

@@ -15,7 +15,8 @@ fn source() -> Option<std::path::PathBuf> {
     static SOURCE: std::sync::OnceLock<Option<std::path::PathBuf>> = std::sync::OnceLock::new();
     SOURCE
         .get_or_init(|| {
-            crate::support::generate(
+            testkit::oracle::generate(
+                &testkit::fixture::dir("media"),
                 "hostile input seed",
                 "ffmpeg_hostile_seed.mp4",
                 &[
@@ -38,7 +39,7 @@ fn native_unicode_paths_cancellation_and_sparse_streaming() {
     let Some(source) = source() else {
         return;
     };
-    let dir = crate::support::fixtures_dir().join("thư mục 输出");
+    let dir = testkit::fixture::dir("media").join("thư mục 输出");
     std::fs::create_dir_all(&dir).unwrap();
     let path = dir.join("clip có dấu.mp4");
     std::fs::copy(&source, &path).unwrap();
@@ -86,7 +87,7 @@ fn truncated_and_mutated_inputs_return_without_rust_panics() {
         return;
     };
     let original = std::fs::read(source).unwrap();
-    let path = crate::support::fixtures_dir().join("ffmpeg_hostile.bin");
+    let path = testkit::fixture::dir("media").join("ffmpeg_hostile.bin");
     for n in (0..original.len()).step_by((original.len() / 80).max(1)) {
         std::fs::write(&path, &original[..n]).unwrap();
         assert!(
@@ -169,7 +170,7 @@ fn hostile_pssh_is_bounded_on_small_worker_stack() {
     let addition = box_bytes.repeat(20_000);
     bytes[index..index + 4].copy_from_slice(&((size + addition.len()) as u32).to_be_bytes());
     bytes.splice(index + size..index + size, addition);
-    let path = crate::support::fixtures_dir().join("hostile-20000-pssh.mp4");
+    let path = testkit::fixture::dir("media").join("hostile-20000-pssh.mp4");
     std::fs::write(&path, bytes).unwrap();
     let mut child = std::process::Command::new(std::env::current_exe().unwrap())
         .args([

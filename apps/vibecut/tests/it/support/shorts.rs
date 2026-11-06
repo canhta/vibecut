@@ -7,10 +7,7 @@
 use captions::{Fingerprint, LanguageTag, Segment, Transcript};
 use engine::{ByteBudget, Command, Session, transcript::Cancellation};
 use engine::{ClipProposal, ClipRole, ClipSource, ClipSourceSegment};
-use media::{
-    AssetData, AssetId, ColorInfo, ContentHash, SourceAsset, SourceProbe, SourceStream, StreamKind,
-    TimeBase, VideoInfo,
-};
+use media::{AssetId, SourceAsset, TimeBase};
 use project::{Project, ProjectId};
 use shorts::clip_boundaries::ClipBoundarySettings;
 use std::sync::{Arc, Mutex};
@@ -30,35 +27,20 @@ pub fn source() -> ReviewSource {
     source_at(0)
 }
 pub fn source_at(offset: i64) -> ReviewSource {
-    let asset = SourceAsset::try_from(AssetData {
-        ephemeral: false,
-        id: AssetId(1),
-        path: std::env::temp_dir().join("vibecut-shorts-missing.mp4"),
-        content_hash: ContentHash([0; 32]),
-        probe: SourceProbe {
-            format: "fixture".into(),
-            duration: Some(tick(offset + 20)),
-            streams: vec![SourceStream {
-                index: 0,
-                kind: StreamKind::Video,
-                codec: "h264".into(),
-                time_base: TimeBase::new(1, 30).unwrap(),
-                duration: Some(tick(offset + 20)),
-                start: Some(Tick::ZERO),
-                frame_rate: Some(FrameRate::FPS_30),
-                frame_count: Some(((offset + 20) * 30) as u64),
-                variable_frame_rate: Some(false),
-                video: Some(VideoInfo {
-                    width: 320,
-                    height: 180,
-                    color: ColorInfo::default(),
-                    bit_depth: Some(8),
-                }),
-                audio: None,
-            }],
-        },
-    })
-    .unwrap();
+    let asset = testkit::source::asset(1, std::env::temp_dir().join("vibecut-shorts-missing.mp4"))
+        .format("fixture")
+        .duration(tick(offset + 20))
+        .stream(
+            testkit::source::video()
+                .time_base(TimeBase::new(1, 30).unwrap())
+                .duration(tick(offset + 20))
+                .start(Tick::ZERO)
+                .frame_count(((offset + 20) * 30) as u64)
+                .variable_frame_rate(false)
+                .size(320, 180)
+                .build(),
+        )
+        .build();
     let mut session = Session::new(
         Project::empty(ProjectId(1), "Interview".into()).unwrap(),
         100,

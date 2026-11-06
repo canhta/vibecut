@@ -1,8 +1,7 @@
 #![allow(dead_code, clippy::unwrap_used, clippy::panic)]
 use render::{Error, ExecutionHooks, MemoryKind, Reservation, Result, Stage};
 use std::{
-    path::{Path, PathBuf},
-    process::Command,
+    path::PathBuf,
     sync::{
         Arc,
         atomic::{AtomicU8, AtomicU64, Ordering},
@@ -88,69 +87,17 @@ impl ExecutionHooks for Hooks {
         Ok(())
     }
 }
+pub use testkit::oracle::command as tool_command;
+pub use testkit::oracle::{ffmpeg, probe, rgba};
+
 pub fn tools() -> bool {
-    let available = ["ffmpeg", "ffprobe"].iter().all(|tool| {
-        match tool_command(tool).arg("-version").output() {
-            Ok(output) => {
-                assert!(output.status.success(), "found {tool} but it failed");
-                true
-            }
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => false,
-            Err(e) => panic!("cannot run {tool}: {e}"),
-        }
-    });
-    if !available {
-        assert!(
-            std::env::var_os("VIBECUT_REQUIRE_ORACLES").is_none(),
-            "required ffmpeg/ffprobe missing"
-        );
-        eprintln!("SKIP render oracle: ffmpeg/ffprobe missing");
-    }
-    available
+    testkit::oracle::require("render oracle")
 }
+
 pub fn root() -> PathBuf {
-    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../target/fixtures/render");
-    std::fs::create_dir_all(&path).unwrap();
-    path
+    testkit::fixture::dir("render")
 }
-pub fn ffmpeg(args: &[&std::ffi::OsStr]) {
-    let output = tool_command("ffmpeg")
-        .args(["-hide_banner", "-loglevel", "error", "-y"])
-        .args(args)
-        .output()
-        .unwrap();
-    assert!(
-        output.status.success(),
-        "ffmpeg failed: {}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-}
-pub fn rgba(path: &Path) -> Vec<u8> {
-    let output = tool_command("ffmpeg")
-        .args(["-v", "error", "-i"])
-        .arg(path)
-        .args(["-frames:v", "1", "-f", "rawvideo", "-pix_fmt", "rgba", "-"])
-        .output()
-        .unwrap();
-    assert!(output.status.success());
-    output.stdout
-}
-pub fn probe(path: &Path) -> serde_json::Value {
-    let output = tool_command("ffprobe")
-        .args([
-            "-v",
-            "error",
-            "-show_streams",
-            "-show_format",
-            "-of",
-            "json",
-        ])
-        .arg(path)
-        .output()
-        .unwrap();
-    assert!(output.status.success());
-    serde_json::from_slice(&output.stdout).unwrap()
-}
+
 pub fn tick(samples: i64, rate: i64) -> time::Tick {
     time::Tick::from_units(samples, rate, time::Rounding::Nearest).unwrap()
 }
@@ -214,19 +161,4 @@ impl render::SourceProvider for Empty {
     ) -> Result<render::AudioBlock> {
         panic!("unexpected audio read")
     }
-}
-
-pub fn tool_command(program: &str) -> Command {
-    let mut c = Command::new(program);
-    c.env_remove("DYLD_LIBRARY_PATH")
-        .env_remove("LD_LIBRARY_PATH");
-    if let (Some(prefix), Some(paths)) = (std::env::var_os("FFMPEG_DIR"), std::env::var_os("PATH"))
-    {
-        let production = PathBuf::from(prefix).join("bin");
-        let paths: Vec<_> = std::env::split_paths(&paths)
-            .filter(|path| path != &production)
-            .collect();
-        c.env("PATH", std::env::join_paths(paths).unwrap());
-    }
-    c
 }

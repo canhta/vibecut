@@ -469,35 +469,19 @@ fn audio_refuses_even_an_empty_effect_reorder() {
     let duration = item.source_range.end();
     data.scene_mut().timeline.insert_track(track);
     data.assets.push(
-        media::SourceAsset::try_from(media::AssetData {
-            ephemeral: false,
-            id: media::AssetId(1),
-            path: std::env::temp_dir().join("audio-fixture.wav"),
-            content_hash: media::ContentHash([0; 32]),
-            probe: media::SourceProbe {
-                format: "wav".into(),
-                duration: Some(duration),
-                streams: vec![media::SourceStream {
-                    index: 0,
-                    kind: media::StreamKind::Audio,
-                    codec: "pcm_s16le".into(),
-                    time_base: media::TimeBase::new(1, 48000).unwrap(),
-                    duration: Some(duration),
-                    start: Some(Tick::ZERO),
-                    frame_rate: None,
-                    frame_count: None,
-                    variable_frame_rate: None,
-                    video: None,
-                    audio: Some(media::AudioInfo {
-                        sample_rate: 48000,
-                        channels: 1,
-                        initial_padding: 0,
-                        trailing_padding: 0,
-                    }),
-                }],
-            },
-        })
-        .unwrap(),
+        testkit::source::asset(1, std::env::temp_dir().join("audio-fixture.wav"))
+            .format("wav")
+            .duration(duration)
+            .stream(
+                testkit::source::audio()
+                    .codec("pcm_s16le")
+                    .time_base(media::TimeBase::new(1, 48000).unwrap())
+                    .duration(duration)
+                    .start(Tick::ZERO)
+                    .channels(1)
+                    .build(),
+            )
+            .build(),
     );
     let mut s = Session::new(Project::new(data).unwrap(), 20).unwrap();
     for (command, params) in [

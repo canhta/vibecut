@@ -40,21 +40,11 @@ fn fixture() -> Option<PathBuf> {
     static FIXTURE: OnceLock<Option<PathBuf>> = OnceLock::new();
     FIXTURE
         .get_or_init(|| {
-            let directory =
-                Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target/fixtures/engine");
-            std::fs::create_dir_all(&directory).ok()?;
-            let path = directory.join("subtitle-2s.mp4");
-            if std::fs::metadata(&path).is_ok_and(|meta| meta.len() > 0) {
-                return Some(path);
-            }
-            let output = std::process::Command::new("ffmpeg")
-                .env_remove("DYLD_LIBRARY_PATH")
-                .env_remove("LD_LIBRARY_PATH")
-                .args([
-                    "-y",
-                    "-hide_banner",
-                    "-loglevel",
-                    "error",
+            testkit::oracle::generate(
+                &testkit::fixture::dir("engine"),
+                "subtitle fixture",
+                "subtitle-2s.mp4",
+                &[
                     "-f",
                     "lavfi",
                     "-i",
@@ -70,20 +60,8 @@ fn fixture() -> Option<PathBuf> {
                     "-c:a",
                     "aac",
                     "-shortest",
-                ])
-                .arg(&path)
-                .output()
-                .ok()?;
-            if !output.status.success() {
-                assert_ne!(
-                    std::env::var("VIBECUT_REQUIRE_ORACLES").as_deref(),
-                    Ok("1"),
-                    "ffmpeg fixture generation failed: {}",
-                    String::from_utf8_lossy(&output.stderr)
-                );
-                return None;
-            }
-            Some(path)
+                ],
+            )
         })
         .clone()
 }

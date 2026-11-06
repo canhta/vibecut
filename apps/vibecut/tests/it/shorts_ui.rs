@@ -1,8 +1,6 @@
 #![allow(clippy::unwrap_used, clippy::panic, clippy::indexing_slicing)]
 #[path = "support/shorts.rs"]
 mod fixture;
-#[path = "../../../../crates/media/tests/it/support.rs"]
-mod media_oracle;
 use egui_kittest::{
     Harness,
     kittest::{By, Queryable},
@@ -180,7 +178,7 @@ fn review_actions_and_play_order_reach_preview_and_single_step_editor_insertion(
         }
         assert!(editor.playback.error().is_none());
     }
-    if !media_oracle::require_oracles("Shorts editor crop export") {
+    if !testkit::oracle::require("Shorts editor crop export") {
         return;
     }
     // Export through the real editor dialog after handoff and edit undo/redo.
@@ -272,7 +270,7 @@ fn review_actions_and_play_order_reach_preview_and_single_step_editor_insertion(
     }
     // Independent FFmpeg decoding: average of the encoded first frame must be
     // red (the left crop), rather than the blue default centered placement.
-    let decoded = media_oracle::command("ffmpeg")
+    let decoded = testkit::oracle::command("ffmpeg")
         .args(["-v", "error", "-i"])
         .arg(&path)
         .args([

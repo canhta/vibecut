@@ -7,17 +7,18 @@ The core runs headless: editing, tests and the CLI need no window or UI toolkit;
 | Package | Path | Owns | May depend on |
 |---|---|---|---|
 | time | crates/time | Ticks, rational rates, source ranges | - |
-| media | crates/media | Safe FFmpeg I/O: probe, demux/mux, decode/encode, hardware acceleration, conversion, speech and vision media preparation | time |
-| project | crates/project | Scene/timeline/animation model, validation/evaluation, persistence, atomic file writes | time, media, captions |
+| media | crates/media | Safe FFmpeg I/O: probe, demux/mux, decode/encode, hardware acceleration, conversion, speech and vision media preparation | time, testkit |
+| testkit | crates/testkit | Dev-only synthetic media fixture builders, generated-fixture paths and FFmpeg/FFprobe oracle discovery | media, time |
+| project | crates/project | Scene/timeline/animation model, validation/evaluation, persistence, atomic file writes | time, media, captions, testkit |
 | captions | crates/captions | Transcript and cue model, segmentation, mapping, language profiles, SRT/VTT/ASS import | time |
 | text | crates/text | Unicode shaping and rasterization | - |
-| render | crates/render | CPU compositor, caption overlay, audio mix, export execution | time, media, project, captions, text |
-| ai | crates/ai | Provider interfaces, capabilities, consent and cost, AI adapters | time, media, captions |
-| engine | crates/engine | Session, commands, history, recovery scheduling, jobs, cache, adapter selection and per-shot analysis | time, media, project, captions, text, render, ai |
-| shorts | crates/shorts | Clip suggestion, boundary snapping and accepted-short batch export | time, media, project, captions, render, ai, engine |
+| render | crates/render | CPU compositor, caption overlay, audio mix, export execution | time, media, project, captions, text, testkit |
+| ai | crates/ai | Provider interfaces, capabilities, consent and cost, AI adapters | time, media, captions, testkit |
+| engine | crates/engine | Session, commands, history, recovery scheduling, jobs, cache, adapter selection and per-shot analysis | time, media, project, captions, text, render, ai, testkit |
+| shorts | crates/shorts | Clip suggestion, boundary snapping and accepted-short batch export | time, media, project, captions, render, ai, engine, testkit |
 | clip-eval | crates/clip-eval | Fixed labelled clip-pipeline evaluation harness, metrics and local reports | time, media, captions, ai, engine, shorts |
-| vibecut-cli | apps/vibecut-cli | Headless adapter: CLI arguments, typed exit codes, dispatch, control-session lifetime, project lease composition, export admission, bounded batch job files, MCP tools and authenticated local transport | engine, media, project, render, time, shorts |
-| vibecut | apps/vibecut | Desktop app: UI, playback, model-manager presentation, wgpu compositor, preferences, app controls and inspection; composes the CLI-owned MCP adapter | time, engine, media, project, captions, text, render, ai, vibecut-cli, shorts |
+| vibecut-cli | apps/vibecut-cli | Headless adapter: CLI arguments, typed exit codes, dispatch, control-session lifetime, project lease composition, export admission, bounded batch job files, MCP tools and authenticated local transport | engine, media, project, render, time, shorts, testkit |
+| vibecut | apps/vibecut | Desktop app: UI, playback, model-manager presentation, wgpu compositor, preferences, app controls and inspection; composes the CLI-owned MCP adapter | time, engine, media, project, captions, text, render, ai, vibecut-cli, shorts, testkit |
 
 Only `media` links FFmpeg. Render's CPU compositor is the reference shared by preview and export; the app owns the optional wgpu adapter behind render's interface. Update this table in the same change that adds a responsibility or edge.
 

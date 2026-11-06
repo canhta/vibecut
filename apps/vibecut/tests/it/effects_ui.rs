@@ -9,13 +9,10 @@ use egui_kittest::{
     kittest::{By, Queryable},
 };
 use engine::{ByteBudget, Command, CreatedId, NewItem, Placement, Session};
-use media::{
-    AssetData, AssetId, AudioInfo, ColorInfo, ContentHash, SourceAsset, SourceProbe, SourceStream,
-    TimeBase, VideoInfo,
-};
+use media::{AssetId, ContentHash, SourceAsset, SourceStream};
 use project::{Color, ItemId, ItemParams, Project, ProjectId, TrackId, TrackKind};
 use std::{path::PathBuf, sync::Arc};
-use time::{FrameRate, SourceRange, TICKS_PER_SECOND, Tick};
+use time::{SourceRange, TICKS_PER_SECOND, Tick};
 use vibecut::{
     Editor,
     catalog::{PreferenceStore, Preferences},
@@ -36,51 +33,26 @@ struct Fixture {
 }
 
 fn stream(kind: media::StreamKind, frame_count: Option<u64>) -> SourceStream {
-    SourceStream {
-        index: 0,
-        kind,
-        codec: match kind {
-            media::StreamKind::Video => "h264".into(),
-            media::StreamKind::Audio => "aac".into(),
-            media::StreamKind::Other => "data".into(),
-        },
-        time_base: TimeBase::new(1, 1_000).unwrap(),
-        duration: Some(Tick(10 * SECOND)),
-        start: None,
-        frame_rate: (kind == media::StreamKind::Video).then_some(FrameRate::FPS_30),
-        frame_count,
-        variable_frame_rate: None,
-        video: (kind == media::StreamKind::Video).then_some(VideoInfo {
-            width: 1920,
-            height: 1080,
-            color: ColorInfo::default(),
-            bit_depth: Some(8),
-        }),
-        audio: (kind == media::StreamKind::Audio).then_some(AudioInfo {
-            sample_rate: 48_000,
-            channels: 2,
-            initial_padding: 0,
-            trailing_padding: 0,
-        }),
+    let mut builder = testkit::source::stream(kind).duration(Tick(10 * SECOND));
+    if let Some(frame_count) = frame_count {
+        builder = builder.frame_count(frame_count);
     }
+    builder.build()
 }
 
 fn asset(id: u64, mut streams: Vec<SourceStream>) -> SourceAsset {
     for (index, stream) in streams.iter_mut().enumerate() {
         stream.index = index;
     }
-    SourceAsset::try_from(AssetData {
-        id: AssetId(id),
-        ephemeral: false,
-        path: std::env::temp_dir().join(format!("vibecut-effects-{id}.mp4")),
-        content_hash: ContentHash::from_bytes(&[id as u8; 8]),
-        probe: SourceProbe {
-            format: "mov,mp4".into(),
-            duration: Some(Tick(10 * SECOND)),
-            streams,
-        },
-    })
-    .unwrap()
+    testkit::source::asset(
+        id,
+        std::env::temp_dir().join(format!("vibecut-effects-{id}.mp4")),
+    )
+    .format("mov,mp4")
+    .duration(Tick(10 * SECOND))
+    .content_hash(ContentHash::from_bytes(&[id as u8; 8]))
+    .streams(streams)
+    .build()
 }
 
 fn add_track(session: &mut Session, name: &str, kind: TrackKind) -> TrackId {

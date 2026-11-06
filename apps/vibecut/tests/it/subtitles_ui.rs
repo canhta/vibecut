@@ -641,35 +641,20 @@ fn source_clip(e: &mut Editor) -> project::ItemId {
     let duration = Tick(10 * TICKS_PER_SECOND);
     e.session
         .apply(Command::AddAsset {
-            asset: media::SourceAsset::try_from(media::AssetData {
-                ephemeral: false,
-                id: media::AssetId(2),
-                path: std::env::temp_dir().join("subtitle-synthetic.wav"),
-                content_hash: media::ContentHash::from_bytes(b"speech fixture"),
-                probe: media::SourceProbe {
-                    format: "wav".into(),
-                    duration: Some(duration),
-                    streams: vec![media::SourceStream {
-                        index: 0,
-                        kind: media::StreamKind::Audio,
-                        codec: "pcm_s16le".into(),
-                        time_base: media::TimeBase::new(1, 48000).unwrap(),
-                        duration: Some(duration),
-                        start: Some(Tick::ZERO),
-                        frame_rate: None,
-                        frame_count: None,
-                        variable_frame_rate: None,
-                        video: None,
-                        audio: Some(media::AudioInfo {
-                            sample_rate: 48000,
-                            channels: 1,
-                            initial_padding: 0,
-                            trailing_padding: 0,
-                        }),
-                    }],
-                },
-            })
-            .unwrap(),
+            asset: testkit::source::asset(2, std::env::temp_dir().join("subtitle-synthetic.wav"))
+                .format("wav")
+                .duration(duration)
+                .content_hash(media::ContentHash::from_bytes(b"speech fixture"))
+                .stream(
+                    testkit::source::audio()
+                        .codec("pcm_s16le")
+                        .time_base(media::TimeBase::new(1, 48000).unwrap())
+                        .duration(duration)
+                        .start(Tick::ZERO)
+                        .channels(1)
+                        .build(),
+                )
+                .build(),
         })
         .unwrap();
     e.session

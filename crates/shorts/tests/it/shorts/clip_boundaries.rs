@@ -353,21 +353,22 @@ fn refuses_post_snap_overlap_duration_and_hostile_inputs() {
 #[test]
 fn real_decoded_fixture_has_known_pauses_and_cancellation() {
     use std::sync::{Arc, atomic::AtomicBool};
-    if oracle_command().arg("-version").output().is_err() {
-        assert_ne!(
-            std::env::var("VIBECUT_REQUIRE_ORACLES").as_deref(),
-            Ok("1"),
-            "required ffmpeg missing"
-        );
-        eprintln!("SKIP clip boundary audio fixture: ffmpeg missing");
+    let dir = testkit::fixture::dir("clip-boundaries");
+    let Some(path) = testkit::oracle::generate(
+        &dir,
+        "clip boundary audio fixture",
+        "known-pauses.wav",
+        &[
+            "-f",
+            "lavfi",
+            "-i",
+            "aevalsrc=if(between(t\\,0.2\\,1.6)+between(t\\,2.4\\,3.6)+between(t\\,4.4\\,5.6)\\,0.2*sin(2*PI*440*t)\\,0):s=16000:d=6",
+            "-c:a",
+            "pcm_f32le",
+        ],
+    ) else {
         return;
-    }
-    let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../../target/fixtures/clip-boundaries");
-    std::fs::create_dir_all(&dir).unwrap();
-    let path = dir.join("known-pauses.wav");
-    let status=oracle_command().args(["-hide_banner","-loglevel","error","-y","-f","lavfi","-i","aevalsrc=if(between(t\\,0.2\\,1.6)+between(t\\,2.4\\,3.6)+between(t\\,4.4\\,5.6)\\,0.2*sin(2*PI*440*t)\\,0):s=16000:d=6","-c:a","pcm_f32le"]).arg(&path).status().unwrap();
-    assert!(status.success());
+    };
     let asset = media::SourceAsset::import(media::AssetId(1), path).unwrap();
     let energy =
         media::analyze_speech_energy(&asset, range(0., 6.), Arc::new(AtomicBool::new(false)))
@@ -432,22 +433,6 @@ proptest::proptest! {
             }
         }
     }
-}
-
-fn oracle_command() -> std::process::Command {
-    let mut command = std::process::Command::new("ffmpeg");
-    command
-        .env_remove("DYLD_LIBRARY_PATH")
-        .env_remove("LD_LIBRARY_PATH");
-    if let (Some(prefix), Some(paths)) = (std::env::var_os("FFMPEG_DIR"), std::env::var_os("PATH"))
-    {
-        let production = std::path::PathBuf::from(prefix).join("bin");
-        let paths: Vec<_> = std::env::split_paths(&paths)
-            .filter(|p| p != &production)
-            .collect();
-        command.env("PATH", std::env::join_paths(paths).unwrap());
-    }
-    command
 }
 
 #[test]

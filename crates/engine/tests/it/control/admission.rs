@@ -253,35 +253,19 @@ fn seed() -> Session {
         (98, "vibecut-control-unused-source.mp4"),
     ] {
         data.assets.push(
-            media::SourceAsset::try_from(media::AssetData {
-                ephemeral: false,
-                id: media::AssetId(id),
-                path: std::env::temp_dir().join(path),
-                content_hash: media::ContentHash::from_bytes(b"fixture"),
-                probe: media::SourceProbe {
-                    format: "mp4".into(),
-                    duration: Some(duration),
-                    streams: vec![media::SourceStream {
-                        index: 0,
-                        kind: media::StreamKind::Video,
-                        codec: "h264".into(),
-                        time_base: media::TimeBase::new(1, 30000).unwrap(),
-                        duration: Some(duration),
-                        start: Some(Tick::ZERO),
-                        frame_rate: Some(FrameRate::FPS_30),
-                        frame_count: None,
-                        variable_frame_rate: None,
-                        video: Some(media::VideoInfo {
-                            width: 64,
-                            height: 64,
-                            color: media::ColorInfo::default(),
-                            bit_depth: Some(8),
-                        }),
-                        audio: None,
-                    }],
-                },
-            })
-            .unwrap(),
+            testkit::source::asset(id, std::env::temp_dir().join(path))
+                .format("mp4")
+                .duration(duration)
+                .content_hash(media::ContentHash::from_bytes(b"fixture"))
+                .stream(
+                    testkit::source::video()
+                        .time_base(media::TimeBase::new(1, 30000).unwrap())
+                        .duration(duration)
+                        .start(Tick::ZERO)
+                        .size(64, 64)
+                        .build(),
+                )
+                .build(),
         );
     }
     data.scene_mut().timeline.overlays = vec![
@@ -397,35 +381,21 @@ fn with_audio(seed: &Session) -> Session {
     }
     let duration = Tick(time::TICKS_PER_SECOND);
     data.assets.push(
-        media::SourceAsset::try_from(media::AssetData {
-            ephemeral: false,
-            id: media::AssetId(97),
-            path: std::env::temp_dir().join("vibecut-control-audio-source.wav"),
-            content_hash: media::ContentHash::from_bytes(b"audio fixture"),
-            probe: media::SourceProbe {
-                format: "wav".into(),
-                duration: Some(duration),
-                streams: vec![media::SourceStream {
-                    index: 0,
-                    kind: media::StreamKind::Audio,
-                    codec: "pcm_f32le".into(),
-                    time_base: media::TimeBase::new(1, 48000).unwrap(),
-                    start: None,
-                    duration: Some(duration),
-                    frame_rate: None,
-                    frame_count: None,
-                    variable_frame_rate: None,
-                    video: None,
-                    audio: Some(media::AudioInfo {
-                        sample_rate: 48000,
-                        channels: 2,
-                        initial_padding: 0,
-                        trailing_padding: 0,
-                    }),
-                }],
-            },
-        })
-        .unwrap(),
+        testkit::source::asset(
+            97,
+            std::env::temp_dir().join("vibecut-control-audio-source.wav"),
+        )
+        .format("wav")
+        .duration(duration)
+        .content_hash(media::ContentHash::from_bytes(b"audio fixture"))
+        .stream(
+            testkit::source::audio()
+                .codec("pcm_f32le")
+                .time_base(media::TimeBase::new(1, 48000).unwrap())
+                .duration(duration)
+                .build(),
+        )
+        .build(),
     );
     data.scene_mut().timeline.insert_track(Track {
         id: TrackId(5),

@@ -797,7 +797,7 @@ fn live_speech() -> Option<Vec<f32>> {
     if !status.success() {
         return None;
     }
-    let status = crate::media_oracle::command("ffmpeg")
+    let status = testkit::oracle::command("ffmpeg")
         .args(["-hide_banner", "-loglevel", "error", "-y", "-i"])
         .arg(&aiff)
         .args(["-ar", "16000", "-ac", "1", "-f", "f32le"])

@@ -67,35 +67,18 @@ fn fixture(thousandths: u16, maintain_pitch: bool, output_seconds: f64) -> proje
         .unwrap()
         .into_data();
     data.assets.push(
-        media::SourceAsset::try_from(media::AssetData {
-            ephemeral: false,
-            id: media::AssetId(1),
-            path: std::env::temp_dir().join("retime.wav"),
-            content_hash: media::ContentHash::from_bytes(&[7]),
-            probe: media::SourceProbe {
-                format: "wav".into(),
-                duration: Some(long),
-                streams: vec![media::SourceStream {
-                    index: 0,
-                    kind: media::StreamKind::Audio,
-                    codec: "pcm_f32le".into(),
-                    time_base: media::TimeBase::new(1, 48000).unwrap(),
-                    start: None,
-                    duration: Some(long),
-                    frame_rate: None,
-                    frame_count: None,
-                    variable_frame_rate: None,
-                    video: None,
-                    audio: Some(media::AudioInfo {
-                        sample_rate: 48000,
-                        channels: 2,
-                        initial_padding: 0,
-                        trailing_padding: 0,
-                    }),
-                }],
-            },
-        })
-        .unwrap(),
+        testkit::source::asset(1, std::env::temp_dir().join("retime.wav"))
+            .format("wav")
+            .duration(long)
+            .content_hash(media::ContentHash::from_bytes(&[7]))
+            .stream(
+                testkit::source::audio()
+                    .codec("pcm_f32le")
+                    .time_base(media::TimeBase::new(1, 48000).unwrap())
+                    .duration(long)
+                    .build(),
+            )
+            .build(),
     );
     data.scene_mut().timeline.insert_track(project::Track {
         id: project::TrackId(1),

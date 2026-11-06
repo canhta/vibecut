@@ -158,36 +158,16 @@ pub fn file_size(path: &Path) -> Option<u64> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use media::{
-        AssetData, AudioInfo, ColorInfo, ContentHash, SourceProbe, SourceStream, TimeBase,
-        VideoInfo,
-    };
-    use time::FrameRate;
+    use media::SourceStream;
 
     fn stream(kind: StreamKind, frame_count: Option<u64>) -> SourceStream {
-        SourceStream {
-            index: 0,
-            kind,
-            codec: "test".into(),
-            time_base: TimeBase::new(1, 1_000).unwrap(),
-            duration: Some(Tick(10_000)),
-            start: None,
-            frame_rate: (kind == StreamKind::Video).then_some(FrameRate::FPS_30),
-            frame_count,
-            variable_frame_rate: None,
-            video: (kind == StreamKind::Video).then_some(VideoInfo {
-                width: 1920,
-                height: 1080,
-                color: ColorInfo::default(),
-                bit_depth: Some(8),
-            }),
-            audio: (kind == StreamKind::Audio).then_some(AudioInfo {
-                sample_rate: 48_000,
-                channels: 2,
-                initial_padding: 0,
-                trailing_padding: 0,
-            }),
+        let mut builder = testkit::source::stream(kind)
+            .codec("test")
+            .duration(Tick(10_000));
+        if let Some(frame_count) = frame_count {
+            builder = builder.frame_count(frame_count);
         }
+        builder.build()
     }
 
     fn asset(id: u64, name: &str, duration: Tick, streams: Vec<SourceStream>) -> SourceAsset {
@@ -201,18 +181,12 @@ mod tests {
         duration: Tick,
         streams: Vec<SourceStream>,
     ) -> SourceAsset {
-        SourceAsset::try_from(AssetData {
-            ephemeral: false,
-            id: AssetId(id),
-            path: std::env::temp_dir().join(name),
-            content_hash: ContentHash([id as u8; 32]),
-            probe: SourceProbe {
-                format: format.into(),
-                duration: Some(duration),
-                streams,
-            },
-        })
-        .unwrap()
+        testkit::source::asset(id, std::env::temp_dir().join(name))
+            .format(format)
+            .duration(duration)
+            .hash([id as u8; 32])
+            .streams(streams)
+            .build()
     }
 
     fn ids(assets: &[SourceAsset], sort: MediaSort) -> Vec<AssetId> {

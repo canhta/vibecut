@@ -947,11 +947,8 @@ mod acceleration_tests {
         }
         muxer.finish().unwrap();
         assert_eq!(count, 48);
-        assert_eq!(
-            crate::read::oracle_support::decoded_frames(&output, "v:0"),
-            48
-        );
-        assert!(crate::read::oracle_support::decodes(&output));
+        assert_eq!(testkit::oracle::decoded_frames(&output, "v:0"), 48);
+        assert!(testkit::oracle::decodes(&output));
         let mut output = VideoReader::open(&output).unwrap();
         let mut decoded = 0;
         while let Some(frame) = output.next_frame().unwrap() {

@@ -17,16 +17,13 @@ mod speech;
 mod translation;
 mod vision;
 
-#[path = "../../../media/tests/it/support.rs"]
-mod media_oracle;
-
 #[test]
 #[allow(clippy::expect_used)]
 fn external_speech_fixture_conversion_uses_its_own_runtime() {
-    if !media_oracle::require_oracles("external speech fixture conversion") {
+    if !testkit::oracle::require("external speech fixture conversion") {
         return;
     }
-    let output = media_oracle::command("ffmpeg")
+    let output = testkit::oracle::command("ffmpeg")
         .args([
             "-v",
             "error",

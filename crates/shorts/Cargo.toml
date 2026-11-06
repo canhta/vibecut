@@ -24,3 +24,4 @@ blake3.workspace = true
 [dev-dependencies]
 proptest.workspace = true
 tempfile.workspace = true
+testkit.workspace = true

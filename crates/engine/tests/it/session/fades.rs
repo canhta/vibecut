@@ -1,6 +1,6 @@
 #![allow(clippy::unwrap_used, reason = "validated test fixtures and assertions")]
 use engine::Session;
-use media::{AssetData, AssetId, ContentHash, SourceProbe};
+use media::{AssetId, ContentHash};
 use project::{
     AudioParams, Fade, FadeCurve, Item, ItemId, ItemParams, Project, ProjectId, Track, TrackId,
     TrackKind,
@@ -19,35 +19,18 @@ fn session_len(len: i64) -> Session {
         .unwrap()
         .into_data();
     data.assets.push(
-        media::SourceAsset::try_from(AssetData {
-            ephemeral: false,
-            id: AssetId(7),
-            path: std::env::temp_dir().join("fades.wav"),
-            content_hash: ContentHash::from_bytes(&[7]),
-            probe: SourceProbe {
-                format: "wav".into(),
-                duration: Some(Tick(len)),
-                streams: vec![media::SourceStream {
-                    index: 0,
-                    kind: media::StreamKind::Audio,
-                    codec: "pcm_f32le".into(),
-                    time_base: media::TimeBase::new(1, 48000).unwrap(),
-                    start: None,
-                    duration: Some(Tick(len)),
-                    frame_rate: None,
-                    frame_count: None,
-                    variable_frame_rate: None,
-                    video: None,
-                    audio: Some(media::AudioInfo {
-                        sample_rate: 48000,
-                        channels: 2,
-                        initial_padding: 0,
-                        trailing_padding: 0,
-                    }),
-                }],
-            },
-        })
-        .unwrap(),
+        testkit::source::asset(7, std::env::temp_dir().join("fades.wav"))
+            .format("wav")
+            .duration(Tick(len))
+            .content_hash(ContentHash::from_bytes(&[7]))
+            .stream(
+                testkit::source::audio()
+                    .codec("pcm_f32le")
+                    .time_base(media::TimeBase::new(1, 48000).unwrap())
+                    .duration(Tick(len))
+                    .build(),
+            )
+            .build(),
     );
     data.scene_mut().timeline.insert_track(Track {
         id: TrackId(8),

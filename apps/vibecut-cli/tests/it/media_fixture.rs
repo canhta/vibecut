@@ -1,63 +1,16 @@
 //! Creates synthetic media for subprocess oracle checks.
-use std::{
-    ffi::OsStr,
-    fs,
-    path::Path,
-    process::{Command, Stdio},
-};
+use std::{ffi::OsStr, fs, path::Path};
 use time::{Tick, TimeRange};
 fn os(value: &str) -> &OsStr {
     OsStr::new(value)
 }
 
-pub(super) fn tool_command(program: &str) -> Command {
-    let mut command = Command::new(program);
-    // Production's shared libraries must not replace the external oracle's.
-    command
-        .env_remove("DYLD_LIBRARY_PATH")
-        .env_remove("LD_LIBRARY_PATH");
-    if let (Some(prefix), Some(paths)) = (std::env::var_os("FFMPEG_DIR"), std::env::var_os("PATH"))
-    {
-        let production = std::path::PathBuf::from(prefix).join("bin");
-        let paths: Vec<_> = std::env::split_paths(&paths)
-            .filter(|path| path != &production)
-            .collect();
-        command.env("PATH", std::env::join_paths(paths).unwrap());
-    }
-    command
-}
+#[allow(unused_imports)]
+pub use testkit::oracle::command as tool_command;
+pub use testkit::oracle::ffmpeg;
 
 pub(super) fn tools() -> bool {
-    let available = ["ffmpeg", "ffprobe"].iter().all(|tool| {
-        match tool_command(tool).arg("-version").output() {
-            Ok(output) => {
-                assert!(output.status.success(), "found {tool} but it failed");
-                true
-            }
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => false,
-            Err(error) => panic!("cannot run {tool}: {error}"),
-        }
-    });
-    if !available {
-        assert!(
-            std::env::var_os("VIBECUT_REQUIRE_ORACLES").is_none(),
-            "required ffmpeg/ffprobe missing"
-        );
-        eprintln!("SKIP CLI oracle: ffmpeg/ffprobe missing");
-    }
-    available
-}
-pub(super) fn ffmpeg(args: &[&OsStr]) {
-    let status = tool_command("ffmpeg")
-        .arg("-v")
-        .arg("error")
-        .arg("-y")
-        .args(args)
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .status()
-        .unwrap();
-    assert!(status.success());
+    testkit::oracle::require("CLI oracle")
 }
 pub(super) fn generate_av(path: &Path) {
     ffmpeg(&[

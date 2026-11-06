@@ -194,35 +194,19 @@ fn invalid_targets_are_disabled_with_reasons_without_history() {
             }
             "locked" => data.scene_mut().timeline.main.locked = true,
             "handles" => {
-                let asset = media::SourceAsset::try_from(media::AssetData {
-                    ephemeral: false,
-                    id: media::AssetId(1),
-                    path: std::env::temp_dir().join("transition-handles.mp4"),
-                    content_hash: media::ContentHash([0; 32]),
-                    probe: media::SourceProbe {
-                        format: "synthetic".into(),
-                        duration: Some(Tick(2 * SECOND)),
-                        streams: vec![media::SourceStream {
-                            index: 0,
-                            kind: media::StreamKind::Video,
-                            codec: "rgba".into(),
-                            time_base: media::TimeBase::new(1, 30).unwrap(),
-                            start: None,
-                            duration: Some(Tick(2 * SECOND)),
-                            frame_rate: Some(time::FrameRate::FPS_30),
-                            frame_count: None,
-                            variable_frame_rate: None,
-                            video: Some(media::VideoInfo {
-                                width: 4,
-                                height: 4,
-                                color: Default::default(),
-                                bit_depth: Some(8),
-                            }),
-                            audio: None,
-                        }],
-                    },
-                })
-                .unwrap();
+                let asset =
+                    testkit::source::asset(1, std::env::temp_dir().join("transition-handles.mp4"))
+                        .format("synthetic")
+                        .duration(Tick(2 * SECOND))
+                        .stream(
+                            testkit::source::video()
+                                .codec("rgba")
+                                .time_base(media::TimeBase::new(1, 30).unwrap())
+                                .duration(Tick(2 * SECOND))
+                                .size(4, 4)
+                                .build(),
+                        )
+                        .build();
                 data.assets.push(asset);
                 data.scene_mut().timeline.main.items[0].source_asset = Some(media::AssetId(1));
                 data.scene_mut().timeline.main.items[0].content =

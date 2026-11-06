@@ -661,35 +661,17 @@ fn preview_audio_mix_obeys_item_gain_and_mute() {
     }
 
     let duration = tick(1, 1);
-    let source = media::SourceAsset::try_from(media::AssetData {
-        ephemeral: false,
-        id: media::AssetId(1),
-        path: std::env::temp_dir().join("vibecut-audio-ui.mp4"),
-        content_hash: media::ContentHash::from_bytes(&[1; 8]),
-        probe: media::SourceProbe {
-            format: "mov,mp4".into(),
-            duration: Some(duration),
-            streams: vec![media::SourceStream {
-                index: 0,
-                kind: media::StreamKind::Audio,
-                codec: "aac".into(),
-                time_base: media::TimeBase::new(1, 48_000).unwrap(),
-                duration: Some(duration),
-                start: None,
-                frame_rate: None,
-                frame_count: None,
-                variable_frame_rate: None,
-                video: None,
-                audio: Some(media::AudioInfo {
-                    sample_rate: 48_000,
-                    channels: 2,
-                    initial_padding: 0,
-                    trailing_padding: 0,
-                }),
-            }],
-        },
-    })
-    .unwrap();
+    let source = testkit::source::asset(1, std::env::temp_dir().join("vibecut-audio-ui.mp4"))
+        .format("mov,mp4")
+        .duration(duration)
+        .content_hash(media::ContentHash::from_bytes(&[1; 8]))
+        .stream(
+            testkit::source::audio()
+                .time_base(media::TimeBase::new(1, 48_000).unwrap())
+                .duration(duration)
+                .build(),
+        )
+        .build();
     let base = |volume, muted| {
         let mut data = project::Project::empty(project::ProjectId(0), "".into())
             .unwrap()

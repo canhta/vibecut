@@ -61,7 +61,7 @@ A UI ticket's report states the whole-region error before and after for every ch
 
 ## Fixtures
 
-Generate synthetic media with ffmpeg into `target/fixtures/<area>/`; record generator command/tool version and apply oracle admission above. Goldens fix canvas, rate, fonts and CPU rendering; put actual/diff images under `target/`. Re-bless only after visual inspection with a reason.
+Generate synthetic media with ffmpeg into `target/fixtures/<area>/<pid>/` through `testkit::oracle::generate`, which publishes atomically; record generator command/tool version and apply oracle admission above. Goldens fix canvas, rate, fonts and CPU rendering; put actual/diff images under `target/`. Re-bless only after visual inspection with a reason.
 
 ## Evidence
 

@@ -12,7 +12,6 @@ use engine::{
 };
 use media::{AssetId, SourceAsset};
 use std::{
-    process::Command,
     sync::{
         Arc,
         atomic::{AtomicUsize, Ordering},
@@ -31,33 +30,17 @@ fn fixture() -> Option<SourceAsset> {
     static FIXTURE: std::sync::OnceLock<Option<SourceAsset>> = std::sync::OnceLock::new();
     FIXTURE
         .get_or_init(|| {
-            let mut tool = Command::new("ffmpeg");
-            tool.env_remove("DYLD_LIBRARY_PATH")
-                .env_remove("LD_LIBRARY_PATH");
-            if !tool
-                .arg("-version")
-                .output()
-                .is_ok_and(|r| r.status.success())
-            {
-                assert!(
-                    std::env::var_os("VIBECUT_REQUIRE_ORACLES").is_none(),
-                    "required ffmpeg missing"
-                );
-                eprintln!("SKIP shot analysis: ffmpeg unavailable");
+            if !testkit::oracle::require("shot analysis") {
                 return None;
             }
             // Fixture ownership is per process: another CI job must never
             // truncate a source this process is still decoding.
-            let dir = crate::support::fixture_dir("shot-analysis");
-            let path = dir.join("three-shots.mkv");
-            let result = Command::new("ffmpeg")
-                .env_remove("DYLD_LIBRARY_PATH")
-                .env_remove("LD_LIBRARY_PATH")
-                .args([
-                    "-hide_banner",
-                    "-loglevel",
-                    "error",
-                    "-y",
+            let dir = testkit::fixture::dir("shot-analysis");
+            let path = testkit::oracle::generate(
+                &dir,
+                "shot analysis",
+                "three-shots.mkv",
+                &[
                     "-f",
                     "lavfi",
                     "-i",
@@ -85,15 +68,8 @@ fn fixture() -> Option<SourceAsset> {
                     "-c:a",
                     "pcm_s16le",
                     "-shortest",
-                ])
-                .arg(&path)
-                .output()
-                .unwrap();
-            assert!(
-                result.status.success(),
-                "{}",
-                String::from_utf8_lossy(&result.stderr)
-            );
+                ],
+            )?;
             Some(SourceAsset::import(AssetId(1), path).unwrap())
         })
         .clone()
@@ -567,9 +543,7 @@ fn short_and_audio_absent_evidence_stays_unknown_and_pre_cancel_never_runs() {
         Err(media::MediaError::TooLarge(_))
     ));
     let delayed_path = asset.path().with_file_name("late-audio.mkv");
-    let output = Command::new("ffmpeg")
-        .env_remove("DYLD_LIBRARY_PATH")
-        .env_remove("LD_LIBRARY_PATH")
+    let output = testkit::oracle::command("ffmpeg")
         .args(["-hide_banner", "-loglevel", "error", "-y", "-i"])
         .arg(asset.path())
         .args(["-itsoffset", "6", "-i"])
@@ -602,9 +576,7 @@ fn short_and_audio_absent_evidence_stays_unknown_and_pre_cancel_never_runs() {
         SpeakerState::Unknown
     );
     let path = asset.path().with_file_name("video-only.mkv");
-    let output = Command::new("ffmpeg")
-        .env_remove("DYLD_LIBRARY_PATH")
-        .env_remove("LD_LIBRARY_PATH")
+    let output = testkit::oracle::command("ffmpeg")
         .args(["-hide_banner", "-loglevel", "error", "-y", "-i"])
         .arg(asset.path())
         .args(["-an", "-c:v", "copy"])

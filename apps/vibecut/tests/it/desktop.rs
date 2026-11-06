@@ -885,35 +885,18 @@ fn new_seek_cancels_audio_preroll_and_keeps_the_replacement_epoch_alive() {
     data.canvas.width = 64;
     data.canvas.height = 64;
     data.assets.push(
-        media::SourceAsset::try_from(media::AssetData {
-            ephemeral: false,
-            id: media::AssetId(1),
-            path: std::env::temp_dir().join("vibecut-audio-seek.wav"),
-            content_hash: media::ContentHash::from_bytes(&[8]),
-            probe: media::SourceProbe {
-                format: "wav".into(),
-                duration: Some(duration),
-                streams: vec![media::SourceStream {
-                    index: 0,
-                    kind: media::StreamKind::Audio,
-                    codec: "pcm_f32le".into(),
-                    time_base: media::TimeBase::new(1, 48000).unwrap(),
-                    start: None,
-                    duration: Some(duration),
-                    frame_rate: None,
-                    frame_count: None,
-                    variable_frame_rate: None,
-                    video: None,
-                    audio: Some(media::AudioInfo {
-                        sample_rate: 48000,
-                        channels: 2,
-                        initial_padding: 0,
-                        trailing_padding: 0,
-                    }),
-                }],
-            },
-        })
-        .unwrap(),
+        testkit::source::asset(1, std::env::temp_dir().join("vibecut-audio-seek.wav"))
+            .format("wav")
+            .duration(duration)
+            .content_hash(media::ContentHash::from_bytes(&[8]))
+            .stream(
+                testkit::source::audio()
+                    .codec("pcm_f32le")
+                    .time_base(media::TimeBase::new(1, 48000).unwrap())
+                    .duration(duration)
+                    .build(),
+            )
+            .build(),
     );
     data.scene_mut().timeline.insert_track(project::Track {
         id: project::TrackId(1),

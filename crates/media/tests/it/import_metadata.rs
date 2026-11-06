@@ -5,8 +5,6 @@
     clippy::panic,
     clippy::indexing_slicing
 )]
-use super::support;
-
 use media::{
     Decodability, MediaKind, MediaMetadata, PacketReader, ProbeCapabilities, SourceAsset,
     SourceProbe, StreamKind, THUMBNAIL_MAX_EDGE, UnsupportedReason, thumbnail_at_with_read_bytes,
@@ -24,7 +22,7 @@ fn inspect(path: &Path) -> (SourceProbe, MediaMetadata, ProbeCapabilities) {
 }
 
 fn encoder_available(name: &str) -> bool {
-    let output = support::command("ffmpeg")
+    let output = testkit::oracle::command("ffmpeg")
         .args(["-hide_banner", "-encoders"])
         .output()
         .expect("ffmpeg -encoders");
@@ -35,7 +33,8 @@ fn encoder_available(name: &str) -> bool {
 }
 
 fn h264_audio() -> Option<PathBuf> {
-    support::generate(
+    testkit::oracle::generate(
+        &testkit::fixture::dir("media"),
         "metadata matrix",
         "metadata-h264-aac.mp4",
         &[
@@ -61,7 +60,8 @@ fn h264_audio() -> Option<PathBuf> {
 }
 
 fn h264_23976() -> Option<PathBuf> {
-    support::generate(
+    testkit::oracle::generate(
+        &testkit::fixture::dir("media"),
         "metadata matrix",
         "metadata-h264-23976.mp4",
         &[
@@ -78,7 +78,8 @@ fn h264_23976() -> Option<PathBuf> {
 }
 
 fn image(name: &str, codec: &str) -> Option<PathBuf> {
-    support::generate(
+    testkit::oracle::generate(
+        &testkit::fixture::dir("media"),
         "metadata matrix",
         name,
         &[
@@ -106,7 +107,12 @@ fn audio(name: &str, codec: &str, extra: &[&str]) -> Option<PathBuf> {
         codec,
     ];
     args.extend_from_slice(extra);
-    support::generate("metadata matrix", name, &args)
+    testkit::oracle::generate(
+        &testkit::fixture::dir("media"),
+        "metadata matrix",
+        name,
+        &args,
+    )
 }
 
 fn assert_decodable(capabilities: &ProbeCapabilities, kind: StreamKind, what: &str) {
@@ -137,18 +143,27 @@ fn video_metadata_matches_ffprobe_including_rational_frame_rate() {
     assert_eq!((exact.exact.num(), exact.exact.den()), (30_000, 1_001));
     assert_eq!(exact.rounded, 30);
     assert_eq!(
-        support::stream_field(&path, "v:0", "r_frame_rate"),
+        testkit::oracle::stream_field(&path, "v:0", "r_frame_rate"),
         "30000/1001"
     );
-    assert_eq!(support::stream_field(&path, "v:0", "width"), "128");
-    assert_eq!(support::stream_field(&path, "v:0", "height"), "72");
-    assert_eq!(support::stream_field(&path, "v:0", "codec_name"), "h264");
-    assert_eq!(support::stream_field(&path, "a:0", "codec_name"), "aac");
-    assert_eq!(support::stream_field(&path, "a:0", "sample_rate"), "48000");
+    assert_eq!(testkit::oracle::stream_field(&path, "v:0", "width"), "128");
+    assert_eq!(testkit::oracle::stream_field(&path, "v:0", "height"), "72");
+    assert_eq!(
+        testkit::oracle::stream_field(&path, "v:0", "codec_name"),
+        "h264"
+    );
+    assert_eq!(
+        testkit::oracle::stream_field(&path, "a:0", "codec_name"),
+        "aac"
+    );
+    assert_eq!(
+        testkit::oracle::stream_field(&path, "a:0", "sample_rate"),
+        "48000"
+    );
     assert_decodable(&capabilities, StreamKind::Video, "h264");
     assert_decodable(&capabilities, StreamKind::Audio, "aac");
     let observed = metadata.duration.unwrap().seconds();
-    support::approx(observed, support::duration(&path), 0.05, "duration");
+    testkit::oracle::approx(observed, testkit::oracle::duration(&path), 0.05, "duration");
     assert!(
         probe
             .streams
@@ -167,7 +182,7 @@ fn display_rounding_keeps_the_exact_rational_for_23976_and_2997() {
     assert_eq!((rate.exact.num(), rate.exact.den()), (24_000, 1_001));
     assert_eq!(rate.rounded, 24);
     assert_eq!(
-        support::stream_field(&path, "v:0", "r_frame_rate"),
+        testkit::oracle::stream_field(&path, "v:0", "r_frame_rate"),
         "24000/1001"
     );
     let Some(path) = h264_audio() else {
@@ -222,8 +237,8 @@ fn jpeg_still_records_dimensions_and_thumbnail() {
         return;
     };
     assert_still_import(&path, "mjpeg", 64, 48);
-    assert_eq!(support::stream_field(&path, "v:0", "width"), "64");
-    assert_eq!(support::stream_field(&path, "v:0", "height"), "48");
+    assert_eq!(testkit::oracle::stream_field(&path, "v:0", "width"), "64");
+    assert_eq!(testkit::oracle::stream_field(&path, "v:0", "height"), "48");
 }
 
 #[test]
@@ -247,13 +262,13 @@ fn audio_metadata_matches_ffprobe() {
         assert_eq!(metadata.display_frame_rate, None, "{name}");
         assert!(!metadata.needs_thumbnail(), "{name}");
         assert!(
-            support::stream_field(&path, "a:0", "sample_rate") == "44100",
+            testkit::oracle::stream_field(&path, "a:0", "sample_rate") == "44100",
             "{name}"
         );
         assert_decodable(&capabilities, StreamKind::Audio, name);
-        support::approx(
+        testkit::oracle::approx(
             metadata.duration.unwrap().seconds(),
-            support::duration(&path),
+            testkit::oracle::duration(&path),
             0.1,
             name,
         );
@@ -266,7 +281,8 @@ fn hevc_capability_is_a_typed_supported_or_unsupported_result() {
         eprintln!("skipping HEVC matrix row: ffmpeg has no libx265 encoder");
         return;
     }
-    let Some(path) = support::generate(
+    let Some(path) = testkit::oracle::generate(
+        &testkit::fixture::dir("media"),
         "metadata matrix",
         "metadata-hevc.mp4",
         &[
@@ -319,7 +335,8 @@ fn thumbnail_position_decodes_forward_past_the_preceding_keyframe() {
 
 #[test]
 fn probe_and_thumbnail_read_a_bounded_prefix_of_a_large_file() {
-    let Some(path) = support::generate(
+    let Some(path) = testkit::oracle::generate(
+        &testkit::fixture::dir("media"),
         "metadata bounds",
         "metadata-large.mp4",
         &[
@@ -400,7 +417,8 @@ fn thumbnail_native_geometry_boundary_uses_small_output_or_a_typed_refusal() {
     for (width, admitted) in [(2048, true), (2049, false)] {
         let name = format!("thumbnail-native-bound-{width}.jpg");
         let input = format!("color=blue:size={width}x1024,format=yuv444p");
-        let Some(path) = support::generate(
+        let Some(path) = testkit::oracle::generate(
+            &testkit::fixture::dir("media"),
             "thumbnail native bounds",
             &name,
             &[

@@ -8,5 +8,4 @@ mod runtime;
 mod session;
 mod store;
 mod subtitles;
-mod support;
 mod transcript;

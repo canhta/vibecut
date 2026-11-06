@@ -285,35 +285,18 @@ fn transition_consumes_both_video_handles_at_exact_source_ticks() {
     }
     let mut d = scene("cross_dissolve").into_data();
     d.assets.push(
-        media::SourceAsset::try_from(media::AssetData {
-            ephemeral: false,
-            id: media::AssetId(1),
-            path: std::env::temp_dir().join("transition-pixels"),
-            content_hash: media::ContentHash([0; 32]),
-            probe: media::SourceProbe {
-                format: "synthetic".into(),
-                duration: Some(Tick(1000)),
-                streams: vec![media::SourceStream {
-                    index: 0,
-                    kind: media::StreamKind::Video,
-                    codec: "rgba".into(),
-                    time_base: media::TimeBase::new(1, 30).unwrap(),
-                    start: None,
-                    duration: Some(Tick(1000)),
-                    frame_rate: Some(time::FrameRate::FPS_30),
-                    frame_count: None,
-                    variable_frame_rate: None,
-                    video: Some(media::VideoInfo {
-                        width: 4,
-                        height: 4,
-                        color: media::ColorInfo::default(),
-                        bit_depth: Some(8),
-                    }),
-                    audio: None,
-                }],
-            },
-        })
-        .unwrap(),
+        testkit::source::asset(1, std::env::temp_dir().join("transition-pixels"))
+            .format("synthetic")
+            .duration(Tick(1000))
+            .stream(
+                testkit::source::video()
+                    .codec("rgba")
+                    .time_base(media::TimeBase::new(1, 30).unwrap())
+                    .duration(Tick(1000))
+                    .size(4, 4)
+                    .build(),
+            )
+            .build(),
     );
     for i in &mut d.scene_mut().timeline.main.items {
         i.source_asset = Some(media::AssetId(1));

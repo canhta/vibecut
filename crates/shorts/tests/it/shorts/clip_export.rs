@@ -8,16 +8,12 @@ use ai::clips::{ClipRole, ClipSourceSegment};
 use captions::{Cue, CueText, CueTrack, Format, LanguageTag};
 use engine::jobs::{JobRunner, JobSnapshot, JobState, RunnerConfig, SystemClock};
 use engine::{ByteBudget, EditError};
-use media::{
-    AssetData, AssetId, AudioInfo, ColorInfo, ContentHash, SourceAsset, SourceProbe, SourceStream,
-    StreamKind, TimeBase, VideoInfo,
-};
+use media::{AssetData, AssetId, SourceAsset, SourceStream, StreamKind, TimeBase};
 use project::{Project, ProjectId};
 use shorts::{ClipBatch, ClipBatchRequest, ClipShort};
 use std::{
     collections::BTreeMap,
     path::{Path, PathBuf},
-    process::Command,
     sync::Arc,
     time::{Duration, Instant},
 };
@@ -47,45 +43,23 @@ fn segment(start: i64, end: i64, order: usize) -> ClipSourceSegment {
     }
 }
 fn stream(index: usize, kind: StreamKind) -> SourceStream {
-    let video = (kind == StreamKind::Video).then(|| VideoInfo {
-        width: 320,
-        height: 180,
-        bit_depth: Some(8),
-        color: ColorInfo::default(),
-    });
-    let audio = (kind == StreamKind::Audio).then_some(AudioInfo {
-        sample_rate: 48_000,
-        channels: 2,
-        initial_padding: 0,
-        trailing_padding: 0,
-    });
-    SourceStream {
-        index,
-        kind,
-        codec: "fixture".into(),
-        time_base: TimeBase::new(1, 30).unwrap(),
-        duration: None,
-        start: Some(Tick::ZERO),
-        frame_rate: (kind == StreamKind::Video).then_some(FrameRate::FPS_30),
-        frame_count: None,
-        variable_frame_rate: (kind == StreamKind::Video).then_some(false),
-        video,
-        audio,
+    let mut builder = testkit::source::stream(kind)
+        .index(index)
+        .codec("fixture")
+        .time_base(TimeBase::new(1, 30).unwrap())
+        .start(Tick::ZERO);
+    if kind == StreamKind::Video {
+        builder = builder.size(320, 180).variable_frame_rate(false);
     }
+    builder.build()
 }
 fn asset(id: u64, path: PathBuf, duration: i64) -> SourceAsset {
-    SourceAsset::try_from(AssetData {
-        ephemeral: false,
-        id: AssetId(id),
-        path,
-        content_hash: ContentHash([0; 32]),
-        probe: SourceProbe {
-            format: "fixture".into(),
-            duration: Some(seconds(duration)),
-            streams: vec![stream(0, StreamKind::Video), stream(1, StreamKind::Audio)],
-        },
-    })
-    .unwrap()
+    testkit::source::asset(id, path)
+        .format("fixture")
+        .duration(seconds(duration))
+        .stream(stream(0, StreamKind::Video))
+        .stream(stream(1, StreamKind::Audio))
+        .build()
 }
 fn project(asset: SourceAsset) -> Project {
     let mut data = project::Project::empty(ProjectId(0), "source".into())
@@ -150,33 +124,10 @@ fn wait(batch: &ClipBatch, runner: &mut JobRunner) -> Vec<JobSnapshot> {
         std::thread::sleep(Duration::from_millis(2));
     }
 }
-fn tool(program: &str) -> Command {
-    let mut command = Command::new(program);
-    command
-        .env_remove("DYLD_LIBRARY_PATH")
-        .env_remove("LD_LIBRARY_PATH");
-    command
-}
-fn oracles() -> bool {
-    let available = ["ffmpeg", "ffprobe"].iter().all(|program| {
-        tool(program)
-            .arg("-version")
-            .output()
-            .is_ok_and(|output| output.status.success())
-    });
-    if !available {
-        assert!(
-            std::env::var_os("VIBECUT_REQUIRE_ORACLES").is_none(),
-            "required ffmpeg/ffprobe missing"
-        );
-        eprintln!("SKIP clip export oracle: ffmpeg/ffprobe missing");
-    }
-    available
-}
 fn fixture(directory: &Path, seconds: u32) -> PathBuf {
     let path = directory.join("source.mp4");
     let duration = seconds.to_string();
-    let output = tool("ffmpeg")
+    let output = testkit::oracle::command("ffmpeg")
         .args(["-hide_banner", "-loglevel", "error", "-y", "-f", "lavfi"])
         .args([
             "-i",
@@ -763,7 +714,7 @@ fn existing_destination_is_preserved_and_sidecars_are_not_published() {
 
 #[test]
 fn bilingual_ordered_segments_export_mp4_and_subtitle_sidecars() {
-    if !oracles() {
+    if !testkit::oracle::require("clip export oracle") {
         return;
     }
     let dir = tempfile::tempdir().unwrap();
@@ -869,7 +820,7 @@ fn bilingual_ordered_segments_export_mp4_and_subtitle_sidecars() {
 
 #[test]
 fn cancelling_mid_batch_completes_neighbours_and_retry_finishes() {
-    if !oracles() {
+    if !testkit::oracle::require("clip export oracle") {
         return;
     }
     let dir = tempfile::tempdir().unwrap();
@@ -931,7 +882,7 @@ fn cancelling_mid_batch_completes_neighbours_and_retry_finishes() {
 
 #[test]
 fn cancel_all_mid_batch_keeps_completed_shorts_and_stops_the_rest() {
-    if !oracles() {
+    if !testkit::oracle::require("clip export oracle") {
         return;
     }
     let dir = tempfile::tempdir().unwrap();
@@ -977,7 +928,7 @@ fn cancel_all_mid_batch_keeps_completed_shorts_and_stops_the_rest() {
 
 #[test]
 fn video_storage_ceiling_preserves_previous_output() {
-    if !oracles() {
+    if !testkit::oracle::require("clip export oracle") {
         return;
     }
     let dir = tempfile::tempdir().unwrap();
@@ -1091,7 +1042,7 @@ fn source_sidecar_alias_is_refused_before_publication() {
 
 #[test]
 fn source_video_alias_is_refused_even_with_overwrite() {
-    if !oracles() {
+    if !testkit::oracle::require("clip export oracle") {
         return;
     }
     let dir = tempfile::tempdir().unwrap();
@@ -1133,7 +1084,7 @@ fn source_video_alias_is_refused_even_with_overwrite() {
 
 #[test]
 fn retry_resumes_after_sidecar_publication_failure_without_overwrite() {
-    if !oracles() {
+    if !testkit::oracle::require("clip export oracle") {
         return;
     }
     let dir = tempfile::tempdir().unwrap();

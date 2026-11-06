@@ -29,7 +29,7 @@ One convention, taken from [GLOSSARY](../../GLOSSARY.md):
 - Provider modules are `<family>/<operation>`: `providers/anthropic/translate`.
 - Types use glossary terms; a new concept enters the glossary before it enters a public type.
 - Test files are named by behaviour area and test functions are behaviour sentences: `trim_refuses_past_source_end`.
-- Test helpers are dev-only and live in `tests/it/support.rs` plus `tests/it/support/`, never `common/` or `mod.rs`.
+- Test helpers are dev-only and live in `tests/it/support.rs` plus `tests/it/support/`, never `common/` or `mod.rs`; helpers shared by two or more crates live in the dev-only `testkit` crate.
 - App test files carry no `_ui` suffix: the binary is the app.
 
 ## Engine (`crates/engine/src`)

@@ -39,3 +39,4 @@ win-authorization-sys = "0.1.0"
 [dev-dependencies]
 tempfile.workspace = true
 tokio = { version = "1.54.1", features = ["test-util"] }
+testkit.workspace = true

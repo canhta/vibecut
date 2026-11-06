@@ -347,7 +347,8 @@ mod import_regressions {
     use super::*;
     #[test]
     fn recovered_thumbnail_belongs_to_the_first_video_stream() {
-        let Some(path) = crate::read::oracle_support::generate(
+        let Some(path) = testkit::oracle::generate(
+            &testkit::fixture::dir("media"),
             "multi-stream recovery thumbnail",
             "recovery-two-videos.mkv",
             &[
@@ -404,7 +405,8 @@ mod import_regressions {
 
     #[test]
     fn jpeg_cold_import_delivers_one_frame_and_cached_probe_delivers_none() {
-        let Some(path) = crate::read::oracle_support::generate(
+        let Some(path) = testkit::oracle::generate(
+            &testkit::fixture::dir("media"),
             "image decode reuse",
             "import-reuse.jpg",
             &[
@@ -483,7 +485,8 @@ mod import_regressions {
 
     #[test]
     fn geometry_recovery_without_deliverable_packets_keeps_its_finite_read_window() {
-        let Some(path) = crate::read::oracle_support::generate(
+        let Some(path) = testkit::oracle::generate(
+            &testkit::fixture::dir("media"),
             "recovery bounds",
             "recovery-bounds.mp4",
             &[

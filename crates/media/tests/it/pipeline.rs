@@ -16,7 +16,8 @@ pub fn source() -> Option<std::path::PathBuf> {
     static SOURCE: std::sync::OnceLock<Option<std::path::PathBuf>> = std::sync::OnceLock::new();
     SOURCE
         .get_or_init(|| {
-            crate::support::generate(
+            testkit::oracle::generate(
+                &testkit::fixture::dir("media"),
                 "FFmpeg media",
                 "ffmpeg_source.mp4",
                 &[
@@ -75,7 +76,7 @@ fn probe_decode_seek_and_stream_copy() {
     let mut audio_decoder = AudioDecoder::new(audio).unwrap();
     let mut pts = Vec::new();
     let mut samples = 0usize;
-    let output = crate::support::fixtures_dir().join("ffmpeg_remux.mp4");
+    let output = testkit::fixture::dir("media").join("ffmpeg_remux.mp4");
     let mut mux = Muxer::create(&output, Container::Mp4).unwrap();
     for stream in &probe.streams {
         mux.add_stream(stream).unwrap();
@@ -107,22 +108,22 @@ fn probe_decode_seek_and_stream_copy() {
     mux.finish().unwrap();
     assert_eq!(
         pts.len(),
-        crate::support::decoded_frames(&path, "v:0") as usize
+        testkit::oracle::decoded_frames(&path, "v:0") as usize
     );
     assert!(pts.windows(2).all(|p| p[0] < p[1]));
     assert!(samples >= 48_000);
-    assert!(crate::support::decodes(&output));
+    assert!(testkit::oracle::decodes(&output));
     assert_eq!(
-        crate::support::stream_field(&output, "v:0", "codec_name"),
+        testkit::oracle::stream_field(&output, "v:0", "codec_name"),
         "h264"
     );
     assert_eq!(
-        crate::support::stream_field(&output, "a:0", "sample_rate"),
+        testkit::oracle::stream_field(&output, "a:0", "sample_rate"),
         "48000"
     );
-    crate::support::approx(
-        crate::support::duration(&output),
-        crate::support::duration(&path),
+    testkit::oracle::approx(
+        testkit::oracle::duration(&output),
+        testkit::oracle::duration(&path),
         0.05,
         "remux duration",
     );
@@ -186,7 +187,7 @@ fn hardware_preference_encodes_and_preserves_color() {
     if cfg!(windows) {
         assert_eq!(encoder.name(), "h264_mf (software)");
     }
-    let output = crate::support::fixtures_dir().join("ffmpeg_encoded.mp4");
+    let output = testkit::fixture::dir("media").join("ffmpeg_encoded.mp4");
     let mut mux = Muxer::create(&output, Container::Mp4).unwrap();
     let track = mux
         .add_parameters(&encoder.parameters(), encoder.time_base())
@@ -201,20 +202,20 @@ fn hardware_preference_encodes_and_preserves_color() {
     }
     mux.finish().unwrap();
     assert_eq!(
-        crate::support::decoded_frames(&output, "v:0"),
+        testkit::oracle::decoded_frames(&output, "v:0"),
         frames.len() as u64
     );
-    assert!(crate::support::decodes(&output));
+    assert!(testkit::oracle::decodes(&output));
     assert_eq!(
-        crate::support::stream_field(&output, "v:0", "color_space"),
+        testkit::oracle::stream_field(&output, "v:0", "color_space"),
         "bt709"
     );
     assert_eq!(
-        crate::support::stream_field(&output, "v:0", "color_primaries"),
+        testkit::oracle::stream_field(&output, "v:0", "color_primaries"),
         "bt709"
     );
     assert_eq!(
-        crate::support::stream_field(&output, "v:0", "color_transfer"),
+        testkit::oracle::stream_field(&output, "v:0", "color_transfer"),
         "bt709"
     );
     println!(
@@ -222,7 +223,7 @@ fn hardware_preference_encodes_and_preserves_color() {
         encoder.name(),
         frames.len()
     );
-    let check = crate::support::command("ffmpeg")
+    let check = testkit::oracle::command("ffmpeg")
         .args(["-v", "error", "-i"])
         .arg(&output)
         .args(["-f", "null", "-"])
@@ -248,7 +249,8 @@ fn streaming_h264_preserves_every_picture_identity() {
         ));
     }
     let filter = filters.join(",");
-    let Some(path) = crate::support::generate(
+    let Some(path) = testkit::oracle::generate(
+        &testkit::fixture::dir("media"),
         "streaming H.264 picture identity",
         "ffmpeg_picture_identity_1080p60s.mp4",
         &[
@@ -303,7 +305,7 @@ fn streaming_h264_preserves_every_picture_identity() {
         if preference.is_none() {
             assert_eq!(encoder.name(), "h264_mf (software)");
         }
-        let output = crate::support::fixtures_dir().join(format!("picture-identity-{label}.mp4"));
+        let output = testkit::fixture::dir("media").join(format!("picture-identity-{label}.mp4"));
         let mut mux = Muxer::create(&output, Container::Mp4).unwrap();
         let track = mux
             .add_parameters(&encoder.parameters(), encoder.time_base())
@@ -363,11 +365,11 @@ fn streaming_h264_preserves_every_picture_identity() {
         }
         assert_eq!(checked, 1800);
         assert_eq!(
-            crate::support::stream_field(&output, "v:0", "color_range"),
+            testkit::oracle::stream_field(&output, "v:0", "color_range"),
             "tv"
         );
         for tag in ["color_space", "color_primaries", "color_transfer"] {
-            assert_eq!(crate::support::stream_field(&output, "v:0", tag), "bt709");
+            assert_eq!(testkit::oracle::stream_field(&output, "v:0", tag), "bt709");
         }
     }
 }
@@ -387,7 +389,7 @@ fn timestamps_do_not_round_trip_through_float() {
 
 #[test]
 fn long_1080p_encode_drains_every_delayed_frame() {
-    if !crate::support::require_oracles("long encoder drain") {
+    if !testkit::oracle::require("long encoder drain") {
         return;
     }
     let rate = time::FrameRate::new(30, 1).unwrap();
@@ -402,8 +404,8 @@ fn long_1080p_encode_drains_every_delayed_frame() {
     let settings = VideoEncoderSettings::h264(1920, 1080, rate, first.color());
     let mut encoder =
         VideoEncoder::with_preference(settings, &first, media::EncodePreference::Software).unwrap();
-    std::fs::create_dir_all(crate::support::fixtures_dir()).unwrap();
-    let output = crate::support::fixtures_dir().join("long_encoder_drain.mp4");
+    std::fs::create_dir_all(testkit::fixture::dir("media")).unwrap();
+    let output = testkit::fixture::dir("media").join("long_encoder_drain.mp4");
     let mut mux = Muxer::create(&output, Container::Mp4).unwrap();
     let track = mux
         .add_parameters(&encoder.parameters(), encoder.time_base())
@@ -431,14 +433,14 @@ fn long_1080p_encode_drains_every_delayed_frame() {
         Err(media::MediaError::Invalid(_))
     ));
     mux.finish().unwrap();
-    assert_eq!(crate::support::decoded_frames(&output, "v:0"), 1800);
-    crate::support::approx(
-        crate::support::duration(&output),
+    assert_eq!(testkit::oracle::decoded_frames(&output, "v:0"), 1800);
+    testkit::oracle::approx(
+        testkit::oracle::duration(&output),
         60.0,
         1.0 / 30.0,
         "drained duration",
     );
-    assert!(crate::support::decodes(&output));
+    assert!(testkit::oracle::decodes(&output));
 }
 
 #[test]
@@ -457,7 +459,7 @@ fn audio_encode_and_resample_preserve_clock_and_sample_counts() {
     let mut decoder = AudioDecoder::new(&stream).unwrap();
     let mut encoder =
         media::AudioEncoder::new(media::AudioEncoderSettings::aac(48_000, 2)).unwrap();
-    let output = crate::support::fixtures_dir().join("ffmpeg_audio.m4a");
+    let output = testkit::fixture::dir("media").join("ffmpeg_audio.m4a");
     let mut mux = Muxer::create(&output, Container::Mp4).unwrap();
     let track = mux
         .add_parameters(&encoder.parameters(), encoder.time_base())
@@ -504,17 +506,17 @@ fn audio_encode_and_resample_preserve_clock_and_sample_counts() {
     mux.finish().unwrap();
     assert_eq!(input_samples, 48_000);
     assert_eq!(mono.len(), 16_000);
-    crate::support::approx(
-        crate::support::duration(&output),
+    testkit::oracle::approx(
+        testkit::oracle::duration(&output),
         1.0,
         1.0 / 48_000.0,
         "AAC duration including priming",
     );
-    assert!(crate::support::decodes(&output));
+    assert!(testkit::oracle::decodes(&output));
     // FFmpeg before 9 decodes the trailing AAC frame padding that the edit list
     // excludes (fixed in 68b53a8dbfdf). Bound the oracle to the fixture's 1 s
     // presentation interval so every admitted version reports the same samples.
-    let reference = crate::support::command("ffmpeg")
+    let reference = testkit::oracle::command("ffmpeg")
         .args(["-v", "error", "-t", "1.0", "-i"])
         .arg(&path)
         .args(["-vn", "-ac", "1", "-ar", "16000", "-f", "f32le", "-"])
@@ -566,7 +568,7 @@ fn webm_vp9_scaling_has_bt709_tags_and_complete_frames() {
         VideoEncoderSettings::h264(64, 48, stream.frame_rate.unwrap(), frames[0].color());
     settings.webm = true;
     let mut encoder = VideoEncoder::new(settings, &frames[0]).unwrap();
-    let path = crate::support::fixtures_dir().join("ffmpeg_scaled.webm");
+    let path = testkit::fixture::dir("media").join("ffmpeg_scaled.webm");
     let mut mux = Muxer::create(&path, Container::WebM).unwrap();
     let track = mux
         .add_parameters(&encoder.parameters(), encoder.time_base())
@@ -581,19 +583,19 @@ fn webm_vp9_scaling_has_bt709_tags_and_complete_frames() {
     }
     mux.finish().unwrap();
     assert_eq!(
-        crate::support::decoded_frames(&path, "v:0"),
+        testkit::oracle::decoded_frames(&path, "v:0"),
         frames.len() as u64
     );
     assert_eq!(
-        crate::support::stream_field(&path, "v:0", "codec_name"),
+        testkit::oracle::stream_field(&path, "v:0", "codec_name"),
         "vp9"
     );
-    assert_eq!(crate::support::stream_field(&path, "v:0", "width"), "64");
+    assert_eq!(testkit::oracle::stream_field(&path, "v:0", "width"), "64");
     assert_eq!(
-        crate::support::stream_field(&path, "v:0", "color_space"),
+        testkit::oracle::stream_field(&path, "v:0", "color_space"),
         "bt709"
     );
-    assert!(crate::support::decodes(&path));
+    assert!(testkit::oracle::decodes(&path));
 }
 
 #[test]
@@ -613,7 +615,7 @@ fn opus_reframes_aac_without_changing_duration() {
     let mut settings = media::AudioEncoderSettings::aac(48_000, 2);
     settings.webm = true;
     let mut encoder = media::AudioEncoder::new(settings).unwrap();
-    let output = crate::support::fixtures_dir().join("ffmpeg_opus.webm");
+    let output = testkit::fixture::dir("media").join("ffmpeg_opus.webm");
     let mut mux = Muxer::create(&output, Container::WebM).unwrap();
     let track = mux
         .add_parameters(&encoder.parameters(), encoder.time_base())
@@ -637,21 +639,22 @@ fn opus_reframes_aac_without_changing_duration() {
     }
     mux.finish().unwrap();
     assert_eq!(
-        crate::support::stream_field(&output, "a:0", "codec_name"),
+        testkit::oracle::stream_field(&output, "a:0", "codec_name"),
         "opus"
     );
-    crate::support::approx(
-        crate::support::duration(&output),
+    testkit::oracle::approx(
+        testkit::oracle::duration(&output),
         1.0,
         0.021,
         "Opus duration including padding",
     );
-    assert!(crate::support::decodes(&output));
+    assert!(testkit::oracle::decodes(&output));
 }
 
 #[test]
 fn hdr_is_preserved_by_stream_copy_and_refused_by_sdr_encoder() {
-    let Some(path) = crate::support::generate(
+    let Some(path) = testkit::oracle::generate(
+        &testkit::fixture::dir("media"),
         "HDR test",
         "ffmpeg_hdr_pq10.mp4",
         &[
@@ -681,7 +684,7 @@ fn hdr_is_preserved_by_stream_copy_and_refused_by_sdr_encoder() {
     let mut reader = PacketReader::open(&path).unwrap();
     let stream = reader.probe().streams[0].clone();
     let mut decoder = VideoDecoder::new(&stream, DecodePreference::Software).unwrap();
-    let output = crate::support::fixtures_dir().join("ffmpeg_hdr_copy.mp4");
+    let output = testkit::fixture::dir("media").join("ffmpeg_hdr_copy.mp4");
     let mut mux = Muxer::create(&output, Container::Mp4).unwrap();
     let track = mux.add_stream(&stream).unwrap();
     let mut frames = Vec::new();
@@ -701,14 +704,14 @@ fn hdr_is_preserved_by_stream_copy_and_refused_by_sdr_encoder() {
     ));
     mux.finish().unwrap();
     assert_eq!(
-        crate::support::stream_field(&output, "v:0", "color_transfer"),
+        testkit::oracle::stream_field(&output, "v:0", "color_transfer"),
         "smpte2084"
     );
     assert_eq!(
-        crate::support::stream_field(&output, "v:0", "color_primaries"),
+        testkit::oracle::stream_field(&output, "v:0", "color_primaries"),
         "bt2020"
     );
-    assert_eq!(crate::support::decoded_frames(&output, "v:0"), 3);
+    assert_eq!(testkit::oracle::decoded_frames(&output, "v:0"), 3);
 }
 
 #[test]
@@ -716,8 +719,8 @@ fn speech_pcm_constructor_and_short_final_aac_frame() {
     assert!(media::AudioFrame::from_planar_f32(Tick::ZERO, 16_000, &[vec![f32::NAN]]).is_err());
     let mut encoder =
         media::AudioEncoder::new(media::AudioEncoderSettings::aac(16_000, 1)).unwrap();
-    let path = crate::support::fixtures_dir().join("speech-contract.m4a");
-    std::fs::create_dir_all(crate::support::fixtures_dir()).unwrap();
+    let path = testkit::fixture::dir("media").join("speech-contract.m4a");
+    std::fs::create_dir_all(testkit::fixture::dir("media")).unwrap();
     let mut mux = Muxer::create(&path, Container::Mp4).unwrap();
     let track = mux
         .add_parameters(&encoder.parameters(), encoder.time_base())
@@ -739,20 +742,21 @@ fn speech_pcm_constructor_and_short_final_aac_frame() {
     }
     mux.finish().unwrap();
     assert!(media::PacketReader::open(&path).is_ok());
-    if crate::support::require_oracles("speech contract") {
-        crate::support::approx(
-            crate::support::duration(&path),
+    if testkit::oracle::require("speech contract") {
+        testkit::oracle::approx(
+            testkit::oracle::duration(&path),
             2333.0 / 16_000.0,
             1.0 / 16_000.0,
             "short final AAC frame",
         );
-        assert!(crate::support::decodes(&path));
+        assert!(testkit::oracle::decodes(&path));
     }
 }
 
 #[test]
 fn cross_container_codec_tags() {
-    let Some(path) = crate::support::generate(
+    let Some(path) = testkit::oracle::generate(
+        &testkit::fixture::dir("media"),
         "AVI stream copy",
         "codec-tag.avi",
         &[
@@ -770,15 +774,15 @@ fn cross_container_codec_tags() {
         return;
     };
     let mut reader = PacketReader::open(path).unwrap();
-    let output = crate::support::fixtures_dir().join("codec-tag.mp4");
+    let output = testkit::fixture::dir("media").join("codec-tag.mp4");
     let mut mux = Muxer::create(&output, Container::Mp4).unwrap();
     mux.add_stream(&reader.probe().streams[0]).unwrap();
     while let Some(packet) = reader.next_packet().unwrap() {
         mux.write_packet(0, &packet).unwrap();
     }
     mux.finish().unwrap();
-    assert_eq!(crate::support::decoded_frames(&output, "v:0"), 5);
-    assert!(crate::support::decodes(&output));
+    assert_eq!(testkit::oracle::decoded_frames(&output, "v:0"), 5);
+    assert!(testkit::oracle::decodes(&output));
 }
 
 #[test]
@@ -821,7 +825,7 @@ fn source_asset_import_retains_native_path_and_persistable_probe() {
     let Some(original) = source() else {
         return;
     };
-    let path = crate::support::fixtures_dir().join("nguồn phim dự án.mp4");
+    let path = testkit::fixture::dir("media").join("nguồn phim dự án.mp4");
     std::fs::copy(original, &path).unwrap();
     let asset = media::SourceAsset::import(media::AssetId(42), path.clone()).unwrap();
     assert_eq!(asset.path(), std::fs::canonicalize(&path).unwrap());
@@ -932,7 +936,8 @@ fn bounded_conversion_threads_preserve_all_decoded_rgba_rows() {
 
 #[test]
 fn aligned_horizontal_conversion_matches_full_frame_at_fractional_crop_neighbors() {
-    let Some(path) = crate::support::generate(
+    let Some(path) = testkit::oracle::generate(
+        &testkit::fixture::dir("media"),
         "conversion windows",
         "conversion-window.mp4",
         &[

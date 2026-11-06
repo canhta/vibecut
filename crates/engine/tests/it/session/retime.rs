@@ -72,55 +72,27 @@ fn speed(value: f64) -> Speed {
 }
 fn asset() -> media::SourceAsset {
     let long = Tick(600 * SECOND);
-    media::SourceAsset::try_from(media::AssetData {
-        ephemeral: false,
-        id: media::AssetId(1),
-        path: std::env::temp_dir().join("vibecut-retime.mp4"),
-        content_hash: media::ContentHash::from_bytes(b"retime"),
-        probe: media::SourceProbe {
-            format: "mp4".into(),
-            duration: Some(long),
-            streams: vec![
-                media::SourceStream {
-                    index: 0,
-                    kind: media::StreamKind::Video,
-                    codec: "h264".into(),
-                    time_base: media::TimeBase::new(1, 30000).unwrap(),
-                    duration: Some(long),
-                    start: Some(Tick::ZERO),
-                    frame_rate: Some(FrameRate::FPS_30),
-                    frame_count: None,
-                    variable_frame_rate: None,
-                    video: Some(media::VideoInfo {
-                        width: 64,
-                        height: 64,
-                        color: media::ColorInfo::default(),
-                        bit_depth: Some(8),
-                    }),
-                    audio: None,
-                },
-                media::SourceStream {
-                    index: 1,
-                    kind: media::StreamKind::Audio,
-                    codec: "aac".into(),
-                    time_base: media::TimeBase::new(1, 48000).unwrap(),
-                    duration: Some(long),
-                    start: Some(Tick::ZERO),
-                    frame_rate: None,
-                    frame_count: None,
-                    variable_frame_rate: None,
-                    video: None,
-                    audio: Some(media::AudioInfo {
-                        sample_rate: 48000,
-                        channels: 2,
-                        initial_padding: 0,
-                        trailing_padding: 0,
-                    }),
-                },
-            ],
-        },
-    })
-    .unwrap()
+    testkit::source::asset(1, std::env::temp_dir().join("vibecut-retime.mp4"))
+        .format("mp4")
+        .duration(long)
+        .content_hash(media::ContentHash::from_bytes(b"retime"))
+        .stream(
+            testkit::source::video()
+                .time_base(media::TimeBase::new(1, 30000).unwrap())
+                .duration(long)
+                .start(Tick::ZERO)
+                .size(64, 64)
+                .build(),
+        )
+        .stream(
+            testkit::source::audio()
+                .index(1)
+                .time_base(media::TimeBase::new(1, 48000).unwrap())
+                .duration(long)
+                .start(Tick::ZERO)
+                .build(),
+        )
+        .build()
 }
 fn video(id: u64, start: i64, source: SourceRange) -> Item {
     Item {

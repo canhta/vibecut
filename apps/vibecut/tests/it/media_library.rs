@@ -10,9 +10,8 @@ use egui_kittest::{
 };
 use engine::{ByteBudget, Command, Session, jobs::Clock};
 use media::{
-    AssetData, AssetId, AudioInfo, ColorInfo, ContentHash, Decodability, ImportedSource,
-    MediaError, ProbeCapabilities, SourceAsset, SourceProbe, SourceStream, StreamCapability,
-    StreamKind, Thumbnail, TimeBase, VideoInfo,
+    AssetData, AssetId, ContentHash, Decodability, ImportedSource, MediaError, ProbeCapabilities,
+    SourceAsset, SourceStream, StreamCapability, StreamKind, Thumbnail,
 };
 use project::{ItemParams, Project, ProjectId};
 use std::{
@@ -23,7 +22,7 @@ use std::{
     },
     time::{Duration, Instant},
 };
-use time::{FrameRate, SourceRange, TICKS_PER_SECOND, Tick};
+use time::{SourceRange, TICKS_PER_SECOND, Tick};
 use vibecut::{
     Editor,
     catalog::{PreferenceStore, Preferences},
@@ -36,50 +35,23 @@ use vibecut::{
 const SECOND: i64 = TICKS_PER_SECOND;
 
 fn stream(kind: StreamKind, duration: Tick) -> SourceStream {
-    SourceStream {
-        index: 0,
-        kind,
-        codec: match kind {
-            StreamKind::Video => "h264".into(),
-            StreamKind::Audio => "aac".into(),
-            StreamKind::Other => "data".into(),
-        },
-        time_base: TimeBase::new(1, 1_000).unwrap(),
-        duration: Some(duration),
-        start: None,
-        frame_rate: (kind == StreamKind::Video).then_some(FrameRate::FPS_30),
-        frame_count: None,
-        variable_frame_rate: None,
-        video: (kind == StreamKind::Video).then_some(VideoInfo {
-            width: 1920,
-            height: 1080,
-            color: ColorInfo::default(),
-            bit_depth: Some(8),
-        }),
-        audio: (kind == StreamKind::Audio).then_some(AudioInfo {
-            sample_rate: 48_000,
-            channels: 2,
-            initial_padding: 0,
-            trailing_padding: 0,
-        }),
-    }
+    testkit::source::stream(kind).duration(duration).build()
 }
 
 fn source_asset(id: u64, name: &str, duration: Option<Tick>) -> SourceAsset {
-    SourceAsset::try_from(AssetData {
-        ephemeral: false,
-        id: AssetId(id),
-        path: std::env::temp_dir()
+    let mut builder = testkit::source::asset(
+        id,
+        std::env::temp_dir()
             .join("vibecut-media-library")
             .join(name),
-        content_hash: ContentHash::from_bytes(&[id as u8; 8]),
-        probe: SourceProbe {
-            format: "mov,mp4".into(),
-            duration,
-            streams: vec![stream(StreamKind::Video, duration.unwrap_or(Tick::ZERO))],
-        },
-    })
-    .unwrap()
+    )
+    .format("mov,mp4")
+    .content_hash(ContentHash::from_bytes(&[id as u8; 8]))
+    .stream(stream(StreamKind::Video, duration.unwrap_or(Tick::ZERO)));
+    if let Some(duration) = duration {
+        builder = builder.duration(duration);
+    }
+    builder.build()
 }
 
 fn editor_with(preferences: Preferences, assets: &[(u64, &str)]) -> Editor {

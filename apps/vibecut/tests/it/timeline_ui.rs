@@ -9,13 +9,10 @@ use egui_kittest::{
     kittest::{By, NodeT, Queryable},
 };
 use engine::{ByteBudget, Command, CreatedId, NewItem, Session};
-use media::{
-    AssetData, AssetId, AudioInfo, ColorInfo, ContentHash, SourceAsset, SourceProbe, SourceStream,
-    TimeBase, VideoInfo,
-};
+use media::{AssetData, AssetId, ContentHash, SourceAsset, SourceProbe, SourceStream};
 use project::{Color, ItemId, ItemParams, Project, ProjectId, TrackId, TrackKind};
 use std::{path::PathBuf, sync::Arc};
-use time::{FrameRate, SourceRange, TICKS_PER_SECOND, Tick};
+use time::{SourceRange, TICKS_PER_SECOND, Tick};
 use vibecut::{
     Editor,
     catalog::{Locale, Preferences},
@@ -32,48 +29,19 @@ pub(crate) struct Fixture {
 }
 
 fn source_stream(kind: media::StreamKind, duration: Tick) -> SourceStream {
-    SourceStream {
-        index: 0,
-        kind,
-        codec: match kind {
-            media::StreamKind::Video => "h264".into(),
-            media::StreamKind::Audio => "aac".into(),
-            media::StreamKind::Other => "data".into(),
-        },
-        time_base: TimeBase::new(1, 1_000).unwrap(),
-        duration: Some(duration),
-        start: None,
-        frame_rate: (kind == media::StreamKind::Video).then_some(FrameRate::FPS_30),
-        frame_count: None,
-        variable_frame_rate: None,
-        video: (kind == media::StreamKind::Video).then_some(VideoInfo {
-            width: 1920,
-            height: 1080,
-            color: ColorInfo::default(),
-            bit_depth: Some(8),
-        }),
-        audio: (kind == media::StreamKind::Audio).then_some(AudioInfo {
-            sample_rate: 48_000,
-            channels: 2,
-            initial_padding: 0,
-            trailing_padding: 0,
-        }),
-    }
+    testkit::source::stream(kind).duration(duration).build()
 }
 
 fn asset(id: u64, kind: media::StreamKind) -> SourceAsset {
-    SourceAsset::try_from(AssetData {
-        ephemeral: false,
-        id: AssetId(id),
-        path: std::env::temp_dir().join(format!("vibecut-timeline-{id}.mp4")),
-        content_hash: ContentHash::from_bytes(&[id as u8; 8]),
-        probe: SourceProbe {
-            format: "mov,mp4".into(),
-            duration: Some(Tick(10 * SECOND)),
-            streams: vec![source_stream(kind, Tick(10 * SECOND))],
-        },
-    })
-    .unwrap()
+    testkit::source::asset(
+        id,
+        std::env::temp_dir().join(format!("vibecut-timeline-{id}.mp4")),
+    )
+    .format("mov,mp4")
+    .duration(Tick(10 * SECOND))
+    .content_hash(ContentHash::from_bytes(&[id as u8; 8]))
+    .stream(source_stream(kind, Tick(10 * SECOND)))
+    .build()
 }
 
 fn insert(

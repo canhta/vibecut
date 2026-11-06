@@ -12,7 +12,7 @@ mod reports;
 mod tickets;
 
 use serde_json::Value;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::env;
 use std::fs;
 use std::path::Path;
@@ -128,7 +128,13 @@ fn checked(root: &Path, program: &str, args: &[&str]) -> Result<Vec<u8>, String>
     Ok(out.stdout)
 }
 
-fn policy(root: &Path) -> Result<BTreeMap<String, (String, Vec<String>)>, String> {
+struct Rule {
+    path: String,
+    allowed: Vec<String>,
+    dev_only: bool,
+}
+
+fn policy(root: &Path) -> Result<BTreeMap<String, Rule>, String> {
     let doc = fs::read_to_string(root.join("docs/engineering/architecture.md"))
         .map_err(|e| e.to_string())?;
     let mut rules = BTreeMap::new();
@@ -143,8 +149,18 @@ fn policy(root: &Path) -> Result<BTreeMap<String, (String, Vec<String>)>, String
                 .filter(|d| *d != "-")
                 .map(str::to_owned)
                 .collect();
+            let dev_only = cells
+                .get(3)
+                .is_some_and(|owns| owns.to_ascii_lowercase().starts_with("dev-only"));
             if rules
-                .insert((*name).into(), ((*path).into(), allowed))
+                .insert(
+                    (*name).into(),
+                    Rule {
+                        path: (*path).into(),
+                        allowed,
+                        dev_only,
+                    },
+                )
                 .is_some()
             {
                 return Err(format!("duplicate architecture package: {name}"));
@@ -251,6 +267,11 @@ fn layers(root: &Path) -> Result<(), String> {
         .and_then(Value::as_array)
         .ok_or("metadata has no members")?;
     let mut errors = Vec::new();
+    let dev_only: BTreeSet<&str> = rules
+        .iter()
+        .filter(|(_, rule)| rule.dev_only)
+        .map(|(name, _)| name.as_str())
+        .collect();
     for p in packages.iter().filter(|p| members.contains(&p["id"])) {
         let name = p["name"].as_str().ok_or("package has no name")?;
         integration_test_layout(p)?;
@@ -260,14 +281,14 @@ fn layers(root: &Path) -> Result<(), String> {
         let (path, allowed) = if name == "xtask" {
             ("xtask".to_owned(), Vec::new())
         } else {
-            let (path, allowed) = rules
+            let rule = rules
                 .get(name)
                 .ok_or_else(|| format!("unadmitted package: {name}"))?;
             let manifest = Path::new(p["manifest_path"].as_str().ok_or("missing manifest path")?);
-            if manifest != root.join(path).join("Cargo.toml") {
-                errors.push(format!("{name}: expected {path}/Cargo.toml"));
+            if manifest != root.join(&rule.path).join("Cargo.toml") {
+                errors.push(format!("{name}: expected {}/Cargo.toml", rule.path));
             }
-            (path.clone(), allowed.clone())
+            (rule.path.clone(), rule.allowed.clone())
         };
         if !path.starts_with("apps/") {
             errors.extend(deps.iter().filter_map(|d| forbidden_app_only(name, d)));
@@ -281,6 +302,14 @@ fn layers(root: &Path) -> Result<(), String> {
                 });
             if internal && !allowed.iter().any(|a| a == dep) {
                 errors.push(format!("forbidden workspace edge: {name} -> {dep}"));
+            }
+            if internal && dev_only.contains(dep) {
+                let kind = d["kind"].as_str().unwrap_or("normal");
+                if kind != "dev" {
+                    errors.push(format!(
+                        "{name} -> {dep}: dev-only crate must be a [dev-dependencies] entry (kind {kind})"
+                    ));
+                }
             }
         }
     }
@@ -421,9 +450,10 @@ fn ui_audit(root: &Path, scenes: &[&str]) -> Result<(), String> {
 
 fn new_crate(root: &Path, name: &str) -> Result<(), String> {
     let rules = policy(root)?;
-    let (path, _) = rules
+    let path = &rules
         .get(name)
-        .ok_or("name must be admitted in architecture.md")?;
+        .ok_or("name must be admitted in architecture.md")?
+        .path;
     if !path.starts_with("crates/") {
         return Err("scaffold supports core libraries only".into());
     }
@@ -721,6 +751,49 @@ mod tests {
                 .unwrap_err()
                 .contains("forbidden workspace edge: vibecut -> time")
         );
+    }
+
+    #[test]
+    fn dev_only_crates_are_admitted_only_in_dev_dependencies() {
+        let ws = Workspace::new();
+        new_crate(&ws.0, "time").unwrap();
+        new_crate(&ws.0, "testkit").unwrap();
+        let architecture = ws.0.join("docs/engineering/architecture.md");
+        let policy = fs::read_to_string(&architecture).unwrap();
+        let narrowed = policy
+            .lines()
+            .map(|line| {
+                if line.starts_with("| time |") {
+                    let mut cells: Vec<_> = line.split('|').collect();
+                    if let Some(edges) = cells.get_mut(4) {
+                        *edges = " testkit ";
+                    }
+                    cells.join("|")
+                } else {
+                    line.to_owned()
+                }
+            })
+            .collect::<Vec<_>>()
+            .join("\n");
+        fs::write(&architecture, narrowed).unwrap();
+        let manifest = ws.0.join("crates/time/Cargo.toml");
+        let original = fs::read_to_string(&manifest).unwrap();
+        for table in ["dependencies", "build-dependencies"] {
+            fs::write(
+                &manifest,
+                format!("{original}\n[{table}]\ntestkit = {{ path = \"../testkit\" }}\n"),
+            )
+            .unwrap();
+            let error = layers(&ws.0).unwrap_err();
+            assert!(error.contains("time -> testkit"), "{error}");
+            assert!(error.contains("dev-only"), "{error}");
+        }
+        fs::write(
+            &manifest,
+            format!("{original}\n[dev-dependencies]\ntestkit = {{ path = \"../testkit\" }}\n"),
+        )
+        .unwrap();
+        layers(&ws.0).unwrap();
     }
 
     #[test]

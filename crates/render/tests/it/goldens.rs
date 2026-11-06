@@ -1,7 +1,7 @@
 #![allow(clippy::unwrap_used, clippy::panic, clippy::indexing_slicing)]
 use crate::support::*;
 use render::*;
-use time::{FrameRate, Tick, TimeRange};
+use time::{Tick, TimeRange};
 struct Pixels;
 impl SourceProvider for Pixels {
     fn status(
@@ -46,35 +46,21 @@ impl SourceProvider for Pixels {
     }
 }
 fn scene() -> project::Project {
-    let asset = media::SourceAsset::try_from(media::AssetData {
-        ephemeral: false,
-        id: media::AssetId(1),
-        path: std::env::temp_dir().join("render-synthetic-source"),
-        content_hash: media::ContentHash([0; 32]),
-        probe: media::SourceProbe {
-            format: "synthetic".into(),
-            duration: Some(tick(1, 1)),
-            streams: vec![media::SourceStream {
-                index: 0,
-                kind: media::StreamKind::Video,
-                codec: "rgba".into(),
-                time_base: media::TimeBase::new(1, 30).unwrap(),
-                duration: Some(tick(1, 1)),
-                start: Some(Tick::ZERO),
-                frame_rate: Some(FrameRate::FPS_30),
-                frame_count: Some(30),
-                variable_frame_rate: Some(false),
-                video: Some(media::VideoInfo {
-                    width: 4,
-                    height: 4,
-                    color: media::ColorInfo::default(),
-                    bit_depth: Some(8),
-                }),
-                audio: None,
-            }],
-        },
-    })
-    .unwrap();
+    let asset = testkit::source::asset(1, std::env::temp_dir().join("render-synthetic-source"))
+        .format("synthetic")
+        .duration(tick(1, 1))
+        .stream(
+            testkit::source::video()
+                .codec("rgba")
+                .time_base(media::TimeBase::new(1, 30).unwrap())
+                .duration(tick(1, 1))
+                .start(Tick::ZERO)
+                .frame_count(30)
+                .variable_frame_rate(false)
+                .size(4, 4)
+                .build(),
+        )
+        .build();
     let mut d = project::Project::empty(project::ProjectId(0), "".into())
         .unwrap()
         .into_data();

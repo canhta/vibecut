@@ -791,7 +791,8 @@ pub(crate) mod recovery_tests {
     use time::Rounding;
 
     pub(crate) fn fixture() -> Option<std::path::PathBuf> {
-        crate::read::oracle_support::generate(
+        testkit::oracle::generate(
+            &testkit::fixture::dir("media"),
             "accelerated recovery",
             "accelerated-recovery-bframes.mp4",
             &[
@@ -944,7 +945,8 @@ pub(crate) mod recovery_tests {
 
     #[test]
     fn missing_presentation_timestamps_keep_the_typed_error_without_recovery() {
-        let Some(path) = crate::read::oracle_support::generate(
+        let Some(path) = testkit::oracle::generate(
+            &testkit::fixture::dir("media"),
             "missing video timestamps",
             "accelerated-no-pts.h264",
             &[

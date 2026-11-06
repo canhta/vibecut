@@ -4,10 +4,6 @@ mod decode;
 mod demux;
 mod thumbnail;
 
-#[cfg(test)]
-#[path = "../tests/it/support.rs"]
-pub(crate) mod oracle_support;
-
 pub use decode::{
     AudioDecoder, AudioFrame, DecodePreference, RgbaConverter, VideoDecoder, VideoFrame,
     VideoReader,

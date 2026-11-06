@@ -17,6 +17,7 @@ media = { path = "crates/media" }
 project = { path = "crates/project" }
 render = { path = "crates/render" }
 shorts = { path = "crates/shorts" }
+testkit = { path = "crates/testkit" }
 text = { path = "crates/text" }
 time = { path = "crates/time" }
 

@@ -13,7 +13,7 @@ use media::{AssetId, SourceAsset};
 use project::{Item, ItemId, ItemParams, Project, ProjectId, VideoParams};
 use std::{
     io::Write,
-    process::{Command, Stdio},
+    process::Stdio,
     sync::Arc,
     time::{Duration, Instant},
 };
@@ -27,80 +27,79 @@ fn range(n: i64) -> SourceRange {
 /// Fixture ownership is per process: another CI job must never truncate a
 /// source this process is still decoding.
 pub(super) fn fixture(name: &str, size: u32, count: usize, cuts: bool) -> SourceAsset {
-    let dir = crate::support::fixture_dir("scene-detection");
-    let path = dir.join(format!("{name}.mkv"));
-    let mut child = Command::new("ffmpeg")
-        .env_remove("DYLD_LIBRARY_PATH")
-        .env_remove("LD_LIBRARY_PATH")
-        .args([
-            "-hide_banner",
-            "-loglevel",
-            "error",
-            "-y",
-            "-f",
-            "rawvideo",
-            "-pixel_format",
-            "rgb24",
-            "-video_size",
-        ])
-        .arg(format!("{size}x{size}"))
-        .args([
-            "-framerate",
-            "10",
-            "-i",
-            "pipe:0",
-            "-c:v",
-            "ffv1",
-            "-pix_fmt",
-            "bgr0",
-        ])
-        .arg(&path)
-        .stdin(Stdio::piped())
-        .spawn()
-        .unwrap();
-    let mut input = child.stdin.take().unwrap();
-    for n in 0..count {
-        let color = if name == "slice-cut" {
-            if n < 3000 { [0, 0, 0] } else { [255, 255, 255] }
-        } else if name.starts_with("marker-overflow") {
-            if n.is_multiple_of(2) {
+    let dir = testkit::fixture::dir("scene-detection");
+    let path = testkit::fixture::publish(&dir, &format!("{name}.mkv"), |path| {
+        let mut child = testkit::oracle::command("ffmpeg")
+            .args([
+                "-hide_banner",
+                "-loglevel",
+                "error",
+                "-y",
+                "-f",
+                "rawvideo",
+                "-pixel_format",
+                "rgb24",
+                "-video_size",
+            ])
+            .arg(format!("{size}x{size}"))
+            .args([
+                "-framerate",
+                "10",
+                "-i",
+                "pipe:0",
+                "-c:v",
+                "ffv1",
+                "-pix_fmt",
+                "bgr0",
+            ])
+            .arg(path)
+            .stdin(Stdio::piped())
+            .spawn()
+            .unwrap();
+        let mut input = child.stdin.take().unwrap();
+        for n in 0..count {
+            let color = if name == "slice-cut" {
+                if n < 3000 { [0, 0, 0] } else { [255, 255, 255] }
+            } else if name.starts_with("marker-overflow") {
+                if n.is_multiple_of(2) {
+                    [0, 0, 0]
+                } else {
+                    [255, 255, 255]
+                }
+            } else if !cuts || n < 10 {
                 [0, 0, 0]
-            } else {
+            } else if n < 20 {
                 [255, 255, 255]
+            } else if n <= 30 {
+                [255, 0, 0]
+            } else if n <= 40 {
+                let blue = ((n - 30) * 255 / 10) as u8;
+                [255 - blue, 0, blue]
+            } else {
+                [0, 0, 255]
+            };
+            let mut pixels = vec![0; (size * size * 3) as usize];
+            for pixel in pixels.as_chunks_mut::<3>().0 {
+                pixel.copy_from_slice(&color);
             }
-        } else if !cuts || n < 10 {
-            [0, 0, 0]
-        } else if n < 20 {
-            [255, 255, 255]
-        } else if n <= 30 {
-            [255, 0, 0]
-        } else if n <= 40 {
-            let blue = ((n - 30) * 255 / 10) as u8;
-            [255 - blue, 0, blue]
-        } else {
-            [0, 0, 255]
-        };
-        let mut pixels = vec![0; (size * size * 3) as usize];
-        for pixel in pixels.as_chunks_mut::<3>().0 {
-            pixel.copy_from_slice(&color);
-        }
-        if name == "same-histogram" {
-            for y in 0..size as usize {
-                for x in 0..size as usize {
-                    let value = if (x < size as usize / 2) == (n < 10) {
-                        0
-                    } else {
-                        255
-                    };
-                    pixels[(y * size as usize + x) * 3..(y * size as usize + x) * 3 + 3]
-                        .fill(value);
+            if name == "same-histogram" {
+                for y in 0..size as usize {
+                    for x in 0..size as usize {
+                        let value = if (x < size as usize / 2) == (n < 10) {
+                            0
+                        } else {
+                            255
+                        };
+                        pixels[(y * size as usize + x) * 3..(y * size as usize + x) * 3 + 3]
+                            .fill(value);
+                    }
                 }
             }
+            input.write_all(&pixels).unwrap();
         }
-        input.write_all(&pixels).unwrap();
-    }
-    drop(input);
-    assert!(child.wait().unwrap().success());
+        drop(input);
+        assert!(child.wait().unwrap().success());
+    });
     SourceAsset::import(AssetId(1), path).unwrap()
 }
 
@@ -468,16 +467,12 @@ fn review_larger_than_one_batch_still_undoes_once() {
 
 #[test]
 fn continuous_mandelbrot_zoom_is_not_a_fade() {
-    let dir = crate::support::fixture_dir("scene-detection");
-    let path = dir.join("mandelbrot-zoom.mkv");
-    let output = Command::new("ffmpeg")
-        .env_remove("DYLD_LIBRARY_PATH")
-        .env_remove("LD_LIBRARY_PATH")
-        .args([
-            "-hide_banner",
-            "-loglevel",
-            "error",
-            "-y",
+    let dir = testkit::fixture::dir("scene-detection");
+    let Some(path) = testkit::oracle::generate(
+        &dir,
+        "mandelbrot zoom",
+        "mandelbrot-zoom.mkv",
+        &[
             "-f",
             "lavfi",
             "-i",
@@ -486,15 +481,10 @@ fn continuous_mandelbrot_zoom_is_not_a_fade() {
             "12",
             "-c:v",
             "ffv1",
-        ])
-        .arg(&path)
-        .output()
-        .unwrap();
-    assert!(
-        output.status.success(),
-        "{}",
-        String::from_utf8_lossy(&output.stderr)
-    );
+        ],
+    ) else {
+        return;
+    };
     let asset = SourceAsset::import(AssetId(1), path).unwrap();
     let result = detect(&DetectionRequest::new(asset, range(120), Default::default()).unwrap());
     assert!(

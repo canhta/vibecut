@@ -238,35 +238,21 @@ impl render::SourceProvider for Pattern {
 fn parallel_draw_matches_sequential_at_chunk_edges_and_half_reductions() {
     execute(32 << 20, |h| {
         let duration = time::Tick(time::TICKS_PER_SECOND);
-        let asset = media::SourceAsset::try_from(media::AssetData {
-            ephemeral: false,
-            id: media::AssetId(1),
-            path: std::env::temp_dir().join("kernel-source"),
-            content_hash: media::ContentHash([0; 32]),
-            probe: media::SourceProbe {
-                format: "synthetic".into(),
-                duration: Some(duration),
-                streams: vec![media::SourceStream {
-                    index: 0,
-                    kind: media::StreamKind::Video,
-                    codec: "rgba".into(),
-                    time_base: media::TimeBase::new(1, 30).unwrap(),
-                    duration: Some(duration),
-                    start: Some(time::Tick::ZERO),
-                    frame_rate: Some(time::FrameRate::FPS_30),
-                    frame_count: Some(30),
-                    variable_frame_rate: Some(false),
-                    video: Some(media::VideoInfo {
-                        width: 521,
-                        height: 269,
-                        color: media::ColorInfo::default(),
-                        bit_depth: Some(8),
-                    }),
-                    audio: None,
-                }],
-            },
-        })
-        .unwrap();
+        let asset = testkit::source::asset(1, std::env::temp_dir().join("kernel-source"))
+            .format("synthetic")
+            .duration(duration)
+            .stream(
+                testkit::source::video()
+                    .codec("rgba")
+                    .time_base(media::TimeBase::new(1, 30).unwrap())
+                    .duration(duration)
+                    .start(time::Tick::ZERO)
+                    .frame_count(30)
+                    .variable_frame_rate(false)
+                    .size(521, 269)
+                    .build(),
+            )
+            .build();
         let mut data = project::Project::empty(project::ProjectId(0), "".into())
             .unwrap()
             .into_data();

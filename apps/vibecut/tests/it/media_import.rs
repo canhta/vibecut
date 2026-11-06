@@ -10,8 +10,8 @@ use egui_kittest::{
 };
 use engine::{ByteBudget, Command, Session};
 use media::{
-    AssetData, AssetId, AudioInfo, ColorInfo, ContentHash, ImportedSource, MediaError,
-    ProbeCapabilities, SourceAsset, SourceProbe, SourceStream, StreamKind, TimeBase, VideoInfo,
+    AssetData, AssetId, ContentHash, ImportedSource, MediaError, ProbeCapabilities, SourceAsset,
+    SourceStream, StreamKind,
 };
 use project::{ItemParams, Project, ProjectId, TrackKind};
 use std::{
@@ -40,33 +40,7 @@ fn path(name: impl std::fmt::Display) -> PathBuf {
 }
 
 fn stream(kind: StreamKind, duration: Tick) -> SourceStream {
-    SourceStream {
-        index: 0,
-        kind,
-        codec: match kind {
-            StreamKind::Video => "h264".into(),
-            StreamKind::Audio => "aac".into(),
-            StreamKind::Other => "data".into(),
-        },
-        time_base: TimeBase::new(1, 1_000).unwrap(),
-        duration: Some(duration),
-        start: None,
-        frame_rate: (kind == StreamKind::Video).then_some(FrameRate::FPS_30),
-        frame_count: None,
-        variable_frame_rate: None,
-        video: (kind == StreamKind::Video).then_some(VideoInfo {
-            width: 1920,
-            height: 1080,
-            color: ColorInfo::default(),
-            bit_depth: Some(8),
-        }),
-        audio: (kind == StreamKind::Audio).then_some(AudioInfo {
-            sample_rate: 48_000,
-            channels: 2,
-            initial_padding: 0,
-            trailing_padding: 0,
-        }),
-    }
+    testkit::source::stream(kind).duration(duration).build()
 }
 
 fn source_asset(
@@ -76,18 +50,14 @@ fn source_asset(
     path: impl Into<PathBuf>,
 ) -> SourceAsset {
     let path: PathBuf = path.into();
-    SourceAsset::try_from(AssetData {
-        ephemeral: false,
-        id: AssetId(id),
-        path: std::path::absolute(path).unwrap(),
-        content_hash: ContentHash::from_bytes(&[id as u8; 8]),
-        probe: SourceProbe {
-            format: "mov,mp4".into(),
-            duration,
-            streams: vec![stream(kind, duration.unwrap_or(Tick::ZERO))],
-        },
-    })
-    .unwrap_or_else(|error| panic!("source asset: {error:?}"))
+    let mut builder = testkit::source::asset(id, std::path::absolute(path).unwrap())
+        .format("mov,mp4")
+        .content_hash(ContentHash::from_bytes(&[id as u8; 8]))
+        .stream(stream(kind, duration.unwrap_or(Tick::ZERO)));
+    if let Some(duration) = duration {
+        builder = builder.duration(duration);
+    }
+    builder.build()
 }
 
 fn imported(asset: SourceAsset) -> ImportedSource {
