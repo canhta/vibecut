@@ -301,168 +301,165 @@ impl Picker {
                 112.0,
             )),
         };
-        window
-            .show(ctx, |ui| {
-                let [r, g, b, a] = self.color.0;
-                let swatch = Color32::from_rgba_unmultiplied(r, g, b, a);
-                let (rect, _) = ui.allocate_exact_size(
-                    Vec2::new(ui.available_width(), 24.0),
-                    egui::Sense::hover(),
-                );
-                ui.painter().rect_filled(rect, 4.0, swatch);
-                let caption = ui.label(catalog::text(locale, Text::ColorHex));
-                let response = ui
-                    .add(
-                        egui::TextEdit::singleline(&mut self.hex)
-                            .id(Id::unique("color.hex"))
-                            .char_limit(9),
-                    )
+        window.show(ctx, |ui| {
+            let [r, g, b, a] = self.color.0;
+            let swatch = Color32::from_rgba_unmultiplied(r, g, b, a);
+            let (rect, _) =
+                ui.allocate_exact_size(Vec2::new(ui.available_width(), 24.0), egui::Sense::hover());
+            ui.painter().rect_filled(rect, 4.0, swatch);
+            let caption = ui.label(catalog::text(locale, Text::ColorHex));
+            let response = ui
+                .add(
+                    egui::TextEdit::singleline(&mut self.hex)
+                        .id(Id::unique("color.hex"))
+                        .char_limit(9),
+                )
+                .labelled_by(caption.id);
+            if response.changed() {
+                self.invalid = render::color::parse_hex(&self.hex).is_err();
+            }
+            if (response.lost_focus()
+                || response.has_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)))
+                && self.hex != render::color::hex(self.color)
+                && let Ok(color) = render::color::parse_hex(&self.hex)
+            {
+                self.set(color);
+                event.preview = true;
+                event.commit = true;
+            }
+            event.widgets.push(("color.hex".into(), response));
+            for (index, id, label, max) in [
+                (0, "h", Text::Hue, 360.0),
+                (1, "s", Text::Saturation, 1.0),
+                (2, "v", Text::Value, 1.0),
+                (3, "a", Text::Alpha, 1.0),
+            ] {
+                let caption = ui.label(catalog::text(locale, label));
+                let mut value = self.hsva.get(index).copied().unwrap_or(0.0);
+                let slider = ui
+                    .add(egui::Slider::new(&mut value, 0.0..=max).show_value(false))
                     .labelled_by(caption.id);
-                if response.changed() {
-                    self.invalid = render::color::parse_hex(&self.hex).is_err();
+                if slider.changed() {
+                    if let Some(component) = self.hsva.get_mut(index) {
+                        *component = value;
+                    }
+                    if let Ok(color) = render::color::from_hsva(self.hsva) {
+                        self.color = color;
+                        self.hex = render::color::hex(color);
+                        self.refresh_entries();
+                        event.preview = true;
+                    }
                 }
-                if (response.lost_focus()
-                    || response.has_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)))
-                    && self.hex != render::color::hex(self.color)
-                    && let Ok(color) = render::color::parse_hex(&self.hex)
+                if slider.drag_stopped()
+                    || slider.changed() && !ui.input(|i| i.pointer.primary_down())
                 {
-                    self.set(color);
-                    event.preview = true;
                     event.commit = true;
                 }
-                event.widgets.push(("color.hex".into(), response));
-                for (index, id, label, max) in [
-                    (0, "h", Text::Hue, 360.0),
-                    (1, "s", Text::Saturation, 1.0),
-                    (2, "v", Text::Value, 1.0),
-                    (3, "a", Text::Alpha, 1.0),
-                ] {
-                    let caption = ui.label(catalog::text(locale, label));
-                    let mut value = self.hsva.get(index).copied().unwrap_or(0.0);
-                    let slider = ui
-                        .add(egui::Slider::new(&mut value, 0.0..=max).show_value(false))
-                        .labelled_by(caption.id);
-                    if slider.changed() {
-                        if let Some(component) = self.hsva.get_mut(index) {
+                event.widgets.push((format!("color.{id}.slider"), slider));
+                let Some(entry) = self.entries.get_mut(index) else {
+                    continue;
+                };
+                let response = ui
+                    .add(
+                        egui::TextEdit::singleline(entry)
+                            .id(Id::unique(format!("color.{id}")))
+                            .char_limit(32),
+                    )
+                    .labelled_by(caption.id);
+                if response.lost_focus()
+                    || response.has_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter))
+                {
+                    if let Ok(value) = entry.trim().parse::<f64>() {
+                        let value = if index == 0 { value } else { value / 100.0 };
+                        let mut values = self.hsva;
+                        if let Some(component) = values.get_mut(index) {
                             *component = value;
                         }
-                        if let Ok(color) = render::color::from_hsva(self.hsva) {
-                            self.color = color;
-                            self.hex = render::color::hex(color);
-                            self.refresh_entries();
+                        if self.set_hsva(values).is_ok() {
                             event.preview = true;
-                        }
-                    }
-                    if slider.drag_stopped()
-                        || slider.changed() && !ui.input(|i| i.pointer.primary_down())
-                    {
-                        event.commit = true;
-                    }
-                    event.widgets.push((format!("color.{id}.slider"), slider));
-                    let Some(entry) = self.entries.get_mut(index) else {
-                        continue;
-                    };
-                    let response = ui
-                        .add(
-                            egui::TextEdit::singleline(entry)
-                                .id(Id::unique(format!("color.{id}")))
-                                .char_limit(32),
-                        )
-                        .labelled_by(caption.id);
-                    if response.lost_focus()
-                        || response.has_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter))
-                    {
-                        if let Ok(value) = entry.trim().parse::<f64>() {
-                            let value = if index == 0 { value } else { value / 100.0 };
-                            let mut values = self.hsva;
-                            if let Some(component) = values.get_mut(index) {
-                                *component = value;
-                            }
-                            if self.set_hsva(values).is_ok() {
-                                event.preview = true;
-                                event.commit = true;
-                            } else {
-                                self.invalid = true;
-                            }
+                            event.commit = true;
                         } else {
                             self.invalid = true;
                         }
+                    } else {
+                        self.invalid = true;
                     }
-                    event.widgets.push((format!("color.{id}"), response));
                 }
-                for (label, colors, prefix) in [
-                    (
-                        Text::Swatches,
-                        vec![
-                            Color([255, 255, 255, 255]),
-                            Color([0, 0, 0, 255]),
-                            Color([255, 0, 0, 255]),
-                            Color([0, 255, 0, 255]),
-                            Color([0, 0, 255, 255]),
-                            Color([255, 255, 0, 255]),
-                            Color([0, 255, 255, 255]),
-                            Color([255, 0, 255, 255]),
-                        ],
-                        "swatch",
-                    ),
-                    (Text::RecentColors, recent.to_vec(), "recent"),
-                ] {
-                    ui.label(catalog::text(locale, label));
-                    ui.horizontal_wrapped(|ui| {
-                        for (index, color) in colors.iter().enumerate() {
-                            let [r, g, b, a] = color.0;
-                            let response = ui
-                                .add(
-                                    egui::Button::new(String::new())
-                                        .fill(Color32::from_rgba_unmultiplied(r, g, b, a))
-                                        .min_size(Vec2::splat(24.0)),
-                                )
-                                .on_hover_text(render::color::hex(*color));
-                            response.widget_info(|| {
-                                egui::WidgetInfo::labeled(
-                                    egui::Role::Button,
-                                    true,
-                                    render::color::hex(*color),
-                                )
-                            });
-                            if response.clicked() {
-                                self.set(*color);
-                                event.preview = true;
-                                event.commit = true;
-                            }
-                            event
-                                .widgets
-                                .push((format!("color.{prefix}.{index}"), response));
+                event.widgets.push((format!("color.{id}"), response));
+            }
+            for (label, colors, prefix) in [
+                (
+                    Text::Swatches,
+                    vec![
+                        Color([255, 255, 255, 255]),
+                        Color([0, 0, 0, 255]),
+                        Color([255, 0, 0, 255]),
+                        Color([0, 255, 0, 255]),
+                        Color([0, 0, 255, 255]),
+                        Color([255, 255, 0, 255]),
+                        Color([0, 255, 255, 255]),
+                        Color([255, 0, 255, 255]),
+                    ],
+                    "swatch",
+                ),
+                (Text::RecentColors, recent.to_vec(), "recent"),
+            ] {
+                ui.label(catalog::text(locale, label));
+                ui.horizontal_wrapped(|ui| {
+                    for (index, color) in colors.iter().enumerate() {
+                        let [r, g, b, a] = color.0;
+                        let response = ui
+                            .add(
+                                egui::Button::new(String::new())
+                                    .fill(Color32::from_rgba_unmultiplied(r, g, b, a))
+                                    .min_size(Vec2::splat(24.0)),
+                            )
+                            .on_hover_text(render::color::hex(*color));
+                        response.widget_info(|| {
+                            egui::WidgetInfo::labeled(
+                                egui::Role::Button,
+                                true,
+                                render::color::hex(*color),
+                            )
+                        });
+                        if response.clicked() {
+                            self.set(*color);
+                            event.preview = true;
+                            event.commit = true;
                         }
-                    });
-                }
-                let response = ui.add(egui::Button::image_and_text(
-                    crate::kit::tinted(crate::kit::Icon::Eye, 16.0, ui.visuals().text_color()),
-                    catalog::text(locale, Text::Eyedropper),
-                ));
-                if response.clicked() && self.native.start().is_err() {
-                    self.native.state = EyedropperState::Unavailable;
-                }
-                event.widgets.push(("color.eyedropper".into(), response));
-                let status = match self.native.state {
-                    EyedropperState::Unavailable => Some(Text::EyedropperUnavailable),
-                    EyedropperState::Failed => Some(Text::EyedropperFailed),
-                    EyedropperState::Pending => Some(Text::EyedropperPending),
-                    _ => None,
-                };
-                if let Some(status) = status {
-                    let response = ui.label(catalog::text(locale, status));
-                    event
-                        .widgets
-                        .push(("color.eyedropper.status".into(), response));
-                }
-                if self.invalid {
-                    ui.label(catalog::text(locale, Text::InvalidColor));
-                }
-                let cancel = ui.button(catalog::text(locale, Text::Cancel));
-                event.cancel |= cancel.clicked();
-                event.widgets.push(("color.cancel".into(), cancel));
-            });
+                        event
+                            .widgets
+                            .push((format!("color.{prefix}.{index}"), response));
+                    }
+                });
+            }
+            let response = ui.add(egui::Button::image_and_text(
+                crate::kit::tinted(crate::kit::Icon::Eye, 16.0, ui.visuals().text_color()),
+                catalog::text(locale, Text::Eyedropper),
+            ));
+            if response.clicked() && self.native.start().is_err() {
+                self.native.state = EyedropperState::Unavailable;
+            }
+            event.widgets.push(("color.eyedropper".into(), response));
+            let status = match self.native.state {
+                EyedropperState::Unavailable => Some(Text::EyedropperUnavailable),
+                EyedropperState::Failed => Some(Text::EyedropperFailed),
+                EyedropperState::Pending => Some(Text::EyedropperPending),
+                _ => None,
+            };
+            if let Some(status) = status {
+                let response = ui.label(catalog::text(locale, status));
+                event
+                    .widgets
+                    .push(("color.eyedropper.status".into(), response));
+            }
+            if self.invalid {
+                ui.label(catalog::text(locale, Text::InvalidColor));
+            }
+            let cancel = ui.button(catalog::text(locale, Text::Cancel));
+            event.cancel |= cancel.clicked();
+            event.widgets.push(("color.cancel".into(), cancel));
+        });
         event
     }
 }
