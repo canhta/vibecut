@@ -1,4 +1,4 @@
-//! Shapes text runs and emits positioned lines.
+//! Turns shaped text runs into positioned lines.
 
 use super::breaks::{grapheme_boundaries, line_ranges, range_width, trim_end};
 use super::{Align, Bounds, Glyph, Layout, LayoutOptions, Line, TextError};

@@ -1,4 +1,4 @@
-//! Reads and writes SRT and WebVTT subtitle files.
+//! Round-trips SRT and WebVTT subtitle files through cue tracks.
 pub mod ass;
 
 use crate::{Cue, CueText, CueTrack, Error, LanguageTag, Warning, WarningKind};

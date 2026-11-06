@@ -9,7 +9,7 @@ translation providers and subtitle rendering.
 
 | Module | Responsibility |
 |---|---|
-| `interchange` | Reads and writes SRT and WebVTT subtitle files. |
+| `interchange` | Round-trips SRT and WebVTT subtitle files through cue tracks. |
 | `interchange/ass` | Parses ASS documents into typed cues. |
 | `interchange/ass/style` | Maps ASS style records and colours onto cue styles. |
 | `segment` | Generates subtitle cues from transcripts. |

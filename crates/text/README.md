@@ -8,7 +8,7 @@ Unicode shaping, line layout and CPU rasterization for overlay titles and burn-i
 |---|---|
 | `layout` | Lays out a paragraph from normalized text into positioned lines. |
 | `layout/breaks` | Computes line ranges from shaped advances and Unicode break opportunities. |
-| `layout/paragraph` | Shapes text runs and emits positioned lines. |
+| `layout/paragraph` | Turns shaped text runs into positioned lines. |
 | `fonts` | Owns the bundled font database and deterministic family/style resolution. |
 | `color` | Owns the small sRGB colour type text drawing needs. |
 | `mask` | Computes outlines from an exact Euclidean distance transform. |

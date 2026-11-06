@@ -1,4 +1,4 @@
-//! Runs the fixed label set and writes its scored report.
+//! Runs the fixed label set into a scored report.
 mod report;
 mod suggestion;
 

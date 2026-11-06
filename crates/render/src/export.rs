@@ -1,4 +1,4 @@
-//! Runs a staged project export and hands the result to publication.
+//! Runs a staged project export through to publication.
 mod destination;
 mod execution;
 mod publication;
