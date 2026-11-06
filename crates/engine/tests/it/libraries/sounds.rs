@@ -300,6 +300,63 @@ impl DownloadTransport for CancellingDownload {
     }
 }
 
+/// Deterministic cancel gate for job publication. The reader marks the worker thread at end of
+/// stream; the clock, read by `commit_publication` only after it sealed the job, then fires the
+/// token. `Before` fires the token at end of stream instead, ahead of the fence.
+struct Gate {
+    token: Mutex<Option<engine::jobs::CancelToken>>,
+    armed: Mutex<Option<std::thread::ThreadId>>,
+    fired: AtomicBool,
+    before_fence: bool,
+    base: engine::jobs::SystemClock,
+}
+impl Gate {
+    fn fire(&self) {
+        if let Some(token) = self.token.lock().unwrap().take() {
+            token.cancel();
+            self.fired.store(true, Ordering::Release);
+        }
+    }
+}
+impl engine::jobs::Clock for Gate {
+    fn now(&self) -> std::time::Duration {
+        let armed = *self.armed.lock().unwrap();
+        if armed == Some(std::thread::current().id()) {
+            self.fire();
+        }
+        self.base.now()
+    }
+}
+struct GateReader(Cursor<Vec<u8>>, Arc<Gate>);
+impl Read for GateReader {
+    fn read(&mut self, out: &mut [u8]) -> std::io::Result<usize> {
+        let n = self.0.read(out)?;
+        if n == 0 {
+            if self.1.before_fence {
+                self.1.fire();
+            } else {
+                *self.1.armed.lock().unwrap() = Some(std::thread::current().id());
+            }
+        }
+        Ok(n)
+    }
+}
+struct GateDownload(Arc<Gate>);
+impl DownloadTransport for GateDownload {
+    fn get(
+        &self,
+        _url: &str,
+        _headers: &[(String, String)],
+    ) -> Result<HttpStreamResponse, ai::Error> {
+        let bytes = wav();
+        Ok(HttpStreamResponse {
+            status: 200,
+            headers: vec![("content-length".into(), bytes.len().to_string())],
+            body: Box::new(GateReader(Cursor::new(bytes), self.0.clone())),
+        })
+    }
+}
+
 fn wav() -> Vec<u8> {
     let samples = 2000u32;
     let data_len = samples * 2;
@@ -855,4 +912,48 @@ fn sound_download_jobs_complete_and_cancel_through_the_shared_runner() {
             .cache_path("https://cdn.example/cancelled-job.mp3")
             .exists()
     );
+
+    // Cancel decided at the publication fence: ahead of it nothing is published; once the
+    // fence sealed, the late cancel is a no-op and the verified file is renamed into place.
+    for (before_fence, url) in [
+        (true, "https://cdn.example/gate-before.mp3"),
+        (false, "https://cdn.example/gate-after.mp3"),
+    ] {
+        let gate = Arc::new(Gate {
+            token: Mutex::new(None),
+            armed: Mutex::new(None),
+            fired: AtomicBool::new(false),
+            before_fence,
+            base: SystemClock::default(),
+        });
+        let gated = SoundDownloads::new(library.clone(), Arc::new(GateDownload(gate.clone())));
+        let mut runner =
+            JobRunner::new(config, ByteBudget::new(8 << 20).unwrap(), gate.clone()).unwrap();
+        let (id, cancel) = gated.submit(&mut runner, url).unwrap();
+        *gate.token.lock().unwrap() = Some(cancel);
+        let deadline = std::time::Instant::now() + Duration::from_secs(10);
+        loop {
+            runner.tick().unwrap();
+            let state = runner.snapshot(id).unwrap().state;
+            if matches!(
+                state,
+                JobState::Completed | JobState::Cancelled | JobState::Failed
+            ) {
+                assert_eq!(
+                    state,
+                    if before_fence {
+                        JobState::Cancelled
+                    } else {
+                        JobState::Completed
+                    }
+                );
+                break;
+            }
+            assert!(std::time::Instant::now() < deadline);
+            std::thread::yield_now();
+        }
+        assert!(gate.fired.load(Ordering::Acquire));
+        assert_eq!(library.cached(url).unwrap().is_some(), !before_fence);
+        assert_eq!(library.cache_path(url).exists(), !before_fence);
+    }
 }
