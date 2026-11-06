@@ -385,7 +385,14 @@ impl AnalysisRequest {
         )?;
         let result = request.analyze(ctx)?;
         let mut cuts = vec![self.range.start()];
-        cuts.extend(result.candidates.into_iter().map(|c| c.at));
+        // Shot boundaries stay hard cuts only; fade candidates are for review, not shots.
+        cuts.extend(
+            result
+                .candidates
+                .into_iter()
+                .filter(|c| c.kind == crate::scene_detection::ChangeKind::HardCut)
+                .map(|c| c.at),
+        );
         cuts.push(self.range.end());
         Ok(cuts)
     }
