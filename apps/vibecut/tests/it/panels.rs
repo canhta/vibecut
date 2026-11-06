@@ -923,9 +923,15 @@ fn active_tab_is_remembered_per_element_kind_across_reselection() {
     click(&mut harness, "inspector.tab.blending");
     assert!(has_widget(&harness, "inspector.opacity"));
     select(&mut harness, fixture.text);
+    // The strip lists the text tab, the basic group (its transform sub-tab is active) and effects.
     assert_eq!(
         visible_tabs(&harness),
-        names(ElementKind::Text.tabs()),
+        [
+            "inspector.tab.text",
+            "inspector.tab.effects",
+            "inspector.tab.transform",
+            "inspector.tab.blending"
+        ],
         "text keeps its own tab, not the video's"
     );
     assert!(!has_widget(&harness, "inspector.text_size"));
