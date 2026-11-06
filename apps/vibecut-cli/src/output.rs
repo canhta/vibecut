@@ -1,8 +1,9 @@
 use crate::exit_codes::CliError;
-use serde_json::Value;
+use serde_json::{Value, json};
 use std::io;
 use std::io::Write as _;
 use std::path::Path;
+use time::Tick;
 
 /// One command result. Both forms are always built so `--json` never re-runs work.
 /// A streamed command writes its own protocol and returns a silent result with
@@ -53,4 +54,18 @@ pub(crate) fn hex(bytes: &[u8]) -> String {
         output.push(char::from(low));
     }
     output
+}
+
+#[cfg(test)]
+mod tests {
+    #![allow(clippy::unwrap_used, clippy::panic)]
+    use super::*;
+    #[test]
+    fn hex_is_lowercase_and_fixed_width() {
+        assert_eq!(hex(&[0x00, 0x0f, 0xa5, 0xff]), "000fa5ff");
+    }
+}
+
+pub(crate) fn tick_json(tick: Tick) -> Value {
+    json!({"ticks": tick.0, "seconds": tick.seconds()})
 }

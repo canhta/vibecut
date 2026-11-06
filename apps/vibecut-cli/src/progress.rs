@@ -1,12 +1,7 @@
 use crate::exit_codes::CliError;
 use engine::EditError;
-use engine::jobs::JobId;
-use engine::jobs::JobRunner;
-use engine::jobs::JobSnapshot;
-use engine::jobs::JobStage;
-use engine::jobs::JobState;
-use engine::subtitles::Progress;
-use engine::subtitles::Stage;
+use engine::jobs::{JobId, JobRunner, JobSnapshot, JobStage, JobState};
+use engine::subtitles::{Progress, Stage};
 use std::io;
 use std::io::Write as _;
 use std::sync::Arc;

@@ -5,6 +5,12 @@ edits through the engine registry, composes project writer leases and engine exp
 jobs, and maps typed results to stdout/stderr and stable exit codes. It owns no
 timeline, codec, export-admission or provider logic and has no UI dependencies.
 
+`lib.rs` wires the public `run`, `Output` and `CliError` entry points.
+`commands` has one owner for each native command group: `probe`, `project`,
+`exec`, `scenes`, `normalize`, `export`, `captions`, `subtitle`, `clips`,
+`sounds`, `providers`, `model`, `fonts` and the generated `catalog`.
+The existing `batch` and `mcp` modules retain their command/transport ownership.
+
 Internal adapter responsibilities are separate owners: `arguments` parses native
 arguments and holds the usage text; `output` formats results and paths;
 `exit_codes` maps typed failures to diagnostics and stable process statuses;

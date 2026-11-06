@@ -365,7 +365,7 @@ impl Inbox {
         value: Value,
         publish: impl FnOnce(&project::Project, &project::Metadata) -> engine::Result<()>,
     ) -> engine::Result<Value> {
-        let request = crate::build_control_request(session, value)?;
+        let request = crate::control_session::build_control_request(session, value)?;
         let caller = Caller {
             principal: "local-mcp",
             external: true,
@@ -729,8 +729,10 @@ pub(super) fn run(args: Vec<OsString>) -> Result<Output, CliError> {
         session.restore_metadata(lease.metadata())?;
         let mut saved_project = session.project().as_ref().clone();
         let mut saved_metadata = session.metadata().clone();
-        let (mut handler, mut inbox) =
-            Inbox::new(grants, ByteBudget::new(crate::CLI_MEMORY_LIMIT)?)?;
+        let (mut handler, mut inbox) = Inbox::new(
+            grants,
+            ByteBudget::new(crate::job_runtime::CLI_MEMORY_LIMIT)?,
+        )?;
         handler.full = full;
         let worker = std::thread::spawn(move || -> Result<(), CliError> {
             let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(
@@ -748,7 +750,7 @@ pub(super) fn run(args: Vec<OsString>) -> Result<Output, CliError> {
                     if save {
                         let project_dirty = &saved_project != session.project().as_ref();
                         let metadata_dirty = &saved_metadata != session.metadata() || project_dirty;
-                        crate::save_control_state(
+                        crate::control_session::save_control_state(
                             &mut session,
                             &mut lease,
                             project_dirty,

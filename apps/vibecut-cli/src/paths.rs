@@ -1,7 +1,6 @@
 use crate::exit_codes::CliError;
 use std::io;
-use std::path::Path;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 pub(crate) fn same_target(left: &Path, right: &Path) -> Result<bool, CliError> {
     Ok(resolve_target(left)? == resolve_target(right)?)

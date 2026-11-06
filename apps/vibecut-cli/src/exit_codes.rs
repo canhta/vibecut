@@ -1,6 +1,5 @@
 use engine::EditError;
-use serde_json::Value;
-use serde_json::json;
+use serde_json::{Value, json};
 use std::io;
 use std::io::Write as _;
 use std::sync::Arc;
@@ -159,5 +158,28 @@ fn reason_name(reason: render::UnavailableReason) -> &'static str {
         render::UnavailableReason::Metadata => "metadata",
         render::UnavailableReason::Video => "video",
         render::UnavailableReason::Audio => "audio",
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    #![allow(clippy::unwrap_used, clippy::panic)]
+    use super::*;
+    #[test]
+    fn exit_codes_are_stable() {
+        assert_eq!(CliError::Usage("".into()).exit_code(), 2);
+        assert_eq!(CliError::Project(project::Error::Busy).exit_code(), 3);
+        assert_eq!(CliError::Project(project::Error::Conflict).exit_code(), 3);
+        assert_eq!(
+            CliError::Render(render::Error::Unavailable(Vec::new())).exit_code(),
+            4
+        );
+        assert_eq!(CliError::Rejected("").exit_code(), 5);
+        assert_eq!(CliError::Render(render::Error::Cancelled).exit_code(), 6);
+        assert_eq!(
+            CliError::Media(media::MediaError::Invalid("")).exit_code(),
+            6
+        );
+        assert_eq!(CliError::Io(io::Error::other("")).exit_code(), 7);
     }
 }

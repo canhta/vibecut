@@ -5,12 +5,31 @@
 //! submits the existing `engine::submit_export` jobs in file order. Render owns
 //! pixels, staging and the publication fence; the engine owns scheduling,
 //! cancellation and terminal results.
-use super::*;
+use crate::commands::export::{Aspect, export_job_key, export_settings};
+use crate::job_runtime::CLI_MEMORY_LIMIT;
+use crate::output::json_path;
+use crate::paths::resolve_target;
+use crate::progress::{progress_percent, stage_name};
+use crate::{CliError, Output};
+use engine::cache::CacheKey;
+use engine::control;
 use engine::jobs::{CancelToken, JobRunner, JobState};
+use engine::jobs::{JobId, JobStage};
+use engine::jobs::{RunnerConfig, SystemClock};
+use engine::{ByteBudget, EditError, NfcText};
+use project::Project;
 use serde::Deserialize;
+use serde_json::{Value, json};
 use std::collections::{BTreeMap, BTreeSet};
+use std::ffi::OsString;
 use std::fs::{self, File};
+use std::io;
 use std::io::Read;
+use std::io::Write as _;
+use std::path::{Path, PathBuf};
+use std::sync::Arc;
+use std::time::Duration;
+use time::{Tick, TimeRange};
 
 /// One job file is bounded before any JSON allocation or project IO.
 pub(crate) const MAX_JOB_FILE_BYTES: usize = 1 << 20;
@@ -500,6 +519,7 @@ fn wait_for_job(
 mod tests {
     #![allow(clippy::unwrap_used, clippy::panic)]
     use super::*;
+    use project::ProjectId;
     use project::{Item, ItemId, ItemParams, OverlayParams, Project, Track, TrackId, TrackKind};
 
     fn overlay_project() -> Project {

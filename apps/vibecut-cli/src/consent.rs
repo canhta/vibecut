@@ -1,10 +1,6 @@
 use engine::EditError;
-use engine::subtitles::CatalogOperation;
-use engine::subtitles::ConsentPrompt;
-use engine::subtitles::Cost;
-use engine::subtitles::UploadRequest;
-use serde_json::Value;
-use serde_json::json;
+use engine::subtitles::{CatalogOperation, ConsentPrompt, Cost, UploadRequest};
+use serde_json::{Value, json};
 use std::io;
 use std::io::Write as _;
 
