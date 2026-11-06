@@ -2319,6 +2319,117 @@ fn timeline_geometry_follows_the_measured_rows() {
     let undo = widget(&harness, "edit.undo");
     let redo = widget(&harness, "edit.redo");
     assert!((redo.center().x - undo.center().x - 36.0).abs() < 0.5);
+    let slider = widget(&harness, "timeline.zoom_slider");
+    assert!(
+        painted_shapes(&harness).into_iter().any(|shape| {
+            matches!(shape, egui::Shape::Rect(rect)
+            if rect.rect.size() == egui::vec2(8.0, 12.0)
+                && slider.contains_rect(rect.rect))
+        }),
+        "zoom thumb follows the measured 8 by 12 px owner value"
+    );
+}
+
+#[test]
+fn horizontal_scrollbar_has_a_visible_thumb() {
+    let mut h = harness(fixture().editor);
+    h.run_steps(3);
+    let bar = widget(&h, "timeline.scroll_h");
+    assert_eq!(bar.height(), 6.0);
+    assert!(
+        painted_shapes(&h).into_iter().any(|shape| {
+            matches!(shape, egui::Shape::Rect(rect)
+            if rect.rect.height() == 6.0 && rect.rect.width() > 0.0
+                && rect.rect.width() < bar.width()
+                && bar.contains_rect(rect.rect) && rect.fill.a() > 0)
+        }),
+        "the scrollbar must paint a nonzero thumb inside its hit area"
+    );
+}
+
+#[test]
+fn clip_details_remain_visible_after_scrolling_deep_into_a_long_clip() {
+    let mut f = fixture();
+    let duration = Tick(60 * SECOND);
+    let source = SourceAsset::try_from(AssetData {
+        ephemeral: false,
+        id: AssetId(3),
+        path: std::env::temp_dir().join("vibecut-long-timeline.mp4"),
+        content_hash: ContentHash::from_bytes(&[3; 8]),
+        probe: SourceProbe {
+            format: "mov,mp4".into(),
+            duration: Some(duration),
+            streams: vec![source_stream(media::StreamKind::Video, duration)],
+        },
+    })
+    .unwrap();
+    f.editor
+        .session
+        .apply(Command::AddAsset { asset: source })
+        .unwrap();
+    let video = track(&mut f.editor.session, "Long video", TrackKind::Video);
+    let id = insert(
+        &mut f.editor.session,
+        video,
+        Tick::ZERO,
+        SourceRange::new(Tick::ZERO, duration).unwrap(),
+        Some(AssetId(3)),
+        ItemParams::Video(project::VideoParams {
+            fades: Default::default(),
+            source_audio_enabled: true,
+            volume: 0.0,
+            muted: false,
+        }),
+    );
+    let mut h = harness(f.editor);
+    for scroll in [0.0, 4_000.0, 40_000.0] {
+        h.state_mut()
+            .session
+            .execute(
+                "project.set_view_state",
+                serde_json::json!({"zoom":100,"scroll":scroll,"playhead":0}),
+            )
+            .unwrap();
+        h.run_steps(3);
+        let clip = widget(&h, &format!("timeline.item.{}", id.0));
+        let middle = clip.center().x;
+        let shapes = painted_shapes(&h);
+        assert!(
+            shapes.iter().any(|shape| {
+                matches!(shape, egui::Shape::Rect(rect)
+                if rect.rect.height() > 37.0 && rect.rect.height() < 40.0
+                    && rect.rect.contains(egui::pos2(middle, clip.top() + 30.0)))
+            }),
+            "filmstrip must cover the visible clip at scroll {scroll}"
+        );
+        assert!(
+            shapes.iter().any(|shape| {
+                matches!(shape, egui::Shape::LineSegment { points, .. }
+                if (points[0].x - middle).abs() < 4.0
+                    && points[0].y > clip.bottom() - 17.0
+                    && points[1].y < clip.bottom() && points[1].y > points[0].y)
+            }),
+            "waveform must cover the visible clip at scroll {scroll}"
+        );
+    }
+}
+
+fn painted_shapes<'a>(harness: &'a Harness<'_, Editor>) -> Vec<&'a egui::Shape> {
+    let mut pending: Vec<_> = harness
+        .output()
+        .shapes
+        .iter()
+        .map(|shape| &shape.shape)
+        .collect();
+    let mut shapes = Vec::new();
+    while let Some(shape) = pending.pop() {
+        if let egui::Shape::Vec(children) = shape {
+            pending.extend(children);
+        } else {
+            shapes.push(shape);
+        }
+    }
+    shapes
 }
 
 #[test]

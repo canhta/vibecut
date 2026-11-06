@@ -287,7 +287,7 @@ pub(crate) mod size {
     pub const SLIDER_THUMB_HEIGHT: f32 = 12.0;
     pub const ZOOM_SLIDER: f32 = 96.0;
     /// Zoom slider thumb is 6 px wide (221643 x 1632-1637, y 584-595); the 8 px thumb is the properties slider.
-    pub const ZOOM_THUMB_WIDTH: f32 = 6.0;
+    pub const ZOOM_THUMB_WIDTH: f32 = 8.0;
     pub const MEDIA_THUMB_WIDTH: f32 = 120.0;
     pub const MEDIA_THUMB_HEIGHT: f32 = 73.0;
     pub const MEDIA_LABEL_HEIGHT: f32 = 16.0;

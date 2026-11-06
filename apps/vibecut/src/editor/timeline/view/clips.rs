@@ -153,9 +153,15 @@ impl Editor {
         });
         let tile = (strip.height() * aspect).max(8.0);
         let hover = theme::hover(dark);
-        let mut index = 0;
-        let mut x = strip.left();
-        while x < strip.right() && index < 512 {
+        let visible = strip.intersect(painter.clip_rect());
+        if !visible.is_positive() {
+            return;
+        }
+        let first = ((visible.left() - strip.left()) / tile).floor();
+        let left = visible.left() - (visible.left() - strip.left()).rem_euclid(tile);
+        let count = ((visible.right() - left) / tile).ceil() as usize;
+        for index in 0..count {
+            let x = left + index as f32 * tile;
             let rect =
                 Rect::from_min_size(egui::pos2(x, strip.top()), Vec2::new(tile, strip.height()));
             match &texture {
@@ -168,7 +174,7 @@ impl Editor {
                     );
                 }
                 None => {
-                    let shade = if index % 2 == 0 {
+                    let shade = if (first + index as f32).rem_euclid(2.0) < 1.0 {
                         hover
                     } else {
                         theme::field(dark)
@@ -176,8 +182,6 @@ impl Editor {
                     painter.rect_filled(rect.shrink(0.5), 0.0, shade);
                 }
             }
-            x += tile;
-            index += 1;
         }
     }
 }
@@ -190,13 +194,20 @@ fn paint_waveform(
     color: Color32,
     reach: f32,
 ) {
+    let visible = area.intersect(painter.clip_rect());
+    if !visible.is_positive() {
+        return;
+    }
     let center = area.center().y;
-    let bars = ((area.width() / 3.0).floor() as usize).min(1024);
-    for index in 0..bars {
-        let t = index as f32 / bars.max(1) as f32;
+    let bars = (area.width() / 3.0).floor().max(1.0);
+    let first = ((visible.left() - area.left()) / 3.0).floor();
+    let left = visible.left() - (visible.left() - area.left()).rem_euclid(3.0);
+    let count = ((visible.right() - left) / 3.0).ceil() as usize;
+    for index in 0..count {
+        let t = (first + index as f32) / bars;
         let scale = ((t * 47.0 + item.id.0 as f32).sin() * 0.5 + 0.5) * 0.8 + 0.1;
         let half = (area.height() * 0.5 * reach * scale).max(1.0);
-        let x = area.left() + index as f32 * 3.0 + 1.5;
+        let x = left + index as f32 * 3.0 + 1.5;
         painter.line_segment(
             [egui::pos2(x, center - half), egui::pos2(x, center + half)],
             egui::Stroke::new(1.0, color),

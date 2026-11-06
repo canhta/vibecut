@@ -91,7 +91,7 @@ impl Editor {
     ) {
         let (view, max) = self.scroll_bounds(layout, duration);
         let content = view + max;
-        let track = layout.horizontal.shrink2(Vec2::new(0.0, 3.0));
+        let track = layout.horizontal;
         let thumb_width =
             ((view / content) * track.width()).clamp(12.0_f32.min(track.width()), track.width());
         let fraction = if max > 0.0 { self.scroll / max } else { 0.0 };
