@@ -8,7 +8,7 @@ use egui_kittest::{
     Harness,
     kittest::{By, Queryable},
 };
-use engine::{ByteBudget, Command, Session};
+use engine::{ByteBudget, Command, Session, jobs::Clock};
 use media::{
     AssetData, AssetId, AudioInfo, ColorInfo, ContentHash, Decodability, ImportedSource,
     MediaError, ProbeCapabilities, SourceAsset, SourceProbe, SourceStream, StreamCapability,
@@ -19,7 +19,7 @@ use std::{
     path::PathBuf,
     sync::{
         Arc, Condvar, Mutex,
-        atomic::{AtomicBool, AtomicUsize, Ordering},
+        atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering},
     },
     time::{Duration, Instant},
 };
@@ -211,6 +211,22 @@ fn has_widget(harness: &Harness<Editor>, id: &str) -> bool {
         .widgets
         .iter()
         .any(|widget| widget.id == id)
+}
+
+/// A clock the test advances explicitly, so timed UI state never depends on
+/// how long a frame took on a loaded host.
+#[derive(Default)]
+struct ManualClock(AtomicU64);
+impl ManualClock {
+    fn advance(&self, duration: Duration) {
+        self.0
+            .fetch_add(duration.as_millis() as u64, Ordering::SeqCst);
+    }
+}
+impl Clock for ManualClock {
+    fn now(&self) -> Duration {
+        Duration::from_millis(self.0.load(Ordering::SeqCst))
+    }
 }
 
 fn widget_rect(harness: &Harness<Editor>, id: &str) -> egui::Rect {
@@ -562,7 +578,10 @@ fn reveal_switches_tab_scrolls_and_expires_without_touching_project_json() {
         .iter()
         .map(|(id, name)| (*id, name.as_str()))
         .collect();
-    let mut harness = build(editor_with(Preferences::default(), &assets));
+    let clock = Arc::new(ManualClock::default());
+    let mut editor = editor_with(Preferences::default(), &assets);
+    editor.set_clock(clock.clone());
+    let mut harness = build(editor);
     harness.run_steps(3);
     click(&mut harness, "assets.tab.sounds");
     let before = serde_json::to_vec(harness.state().session.project().data()).unwrap();
@@ -585,13 +604,22 @@ fn reveal_switches_tab_scrolls_and_expires_without_touching_project_json() {
     let after = serde_json::to_vec(harness.state().session.project().data()).unwrap();
     assert_eq!(before, after, "reveal never changes project JSON");
 
-    std::thread::sleep(Duration::from_millis(1600));
+    // The 1.5 s highlight is driven by the injected clock, so this asserts the
+    // deadline boundary itself rather than racing a sleep against frame time.
+    clock.advance(Duration::from_millis(1499));
+    harness.run_steps(2);
+    assert_eq!(
+        harness.state().inspect().unwrap().media_highlight,
+        Some(AssetId(30)),
+        "the highlight is still visible just before the 1.5 s deadline"
+    );
+    clock.advance(Duration::from_millis(1));
     harness.state_mut().tick();
     harness.run_steps(2);
     assert_eq!(
         harness.state().inspect().unwrap().media_highlight,
         None,
-        "the 1.5 s highlight expires"
+        "the 1.5 s highlight expires at its deadline"
     );
 }
 

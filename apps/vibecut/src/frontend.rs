@@ -18,14 +18,17 @@ use crate::{
     playback::Playback,
     preview, theme,
 };
-use engine::{Command, CreatedId, ItemParamPatch, NewItem, Session};
+use engine::{
+    Command, CreatedId, ItemParamPatch, NewItem, Session,
+    jobs::{Clock, SystemClock},
+};
 use media::{AssetId, ContentHash, SourceAsset, StreamKind, UnsupportedReason};
 use project::{BookmarkId, ItemId, ItemParams, TrackId, TrackKind};
 use std::{
     collections::{BTreeMap, BTreeSet},
     path::{Path, PathBuf},
     sync::Arc,
-    time::{Duration, Instant},
+    time::Duration,
 };
 use time::{FrameRate, Rounding, SourceRange, TICKS_PER_SECOND, Tick};
 
@@ -304,7 +307,7 @@ impl PreferenceHistory {
 struct Toast {
     text: String,
     detail: Option<String>,
-    until: Instant,
+    until: Duration,
 }
 #[derive(Clone, Debug)]
 struct TimecodeEdit {
@@ -324,7 +327,7 @@ struct AssetRow {
 #[derive(Clone, Copy, Debug)]
 struct MediaReveal {
     asset: AssetId,
-    until: Instant,
+    until: Duration,
 }
 #[derive(Clone, Debug)]
 struct MediaMarquee {
@@ -652,6 +655,8 @@ pub struct Editor {
     import_failures: Vec<ImportFailure>,
     import_notice: Option<String>,
     import_error: Option<Arc<engine::EditError>>,
+    /// Time base for transient UI timers (toast and media reveal).
+    clock: Arc<dyn Clock>,
     toast: Option<Toast>,
     media_selection: BTreeSet<AssetId>,
     media_anchor: Option<AssetId>,
@@ -767,6 +772,7 @@ impl Editor {
             import_failures: Vec::new(),
             import_notice: None,
             import_error: None,
+            clock: Arc::new(SystemClock::default()),
             toast: None,
             media_selection: BTreeSet::new(),
             media_anchor: None,
@@ -950,6 +956,11 @@ impl Editor {
     /// Last frame submitted by the frontend for presentation, independent of decode-ahead.
     pub fn presented_frame(&self) -> Option<Tick> {
         self.texture_key.map(|(_, at)| at)
+    }
+    /// Replace the UI timer clock in tests; production uses the system clock.
+    /// Set it before raising a timed state so its deadline uses this clock.
+    pub fn set_clock(&mut self, clock: Arc<dyn Clock>) {
+        self.clock = clock;
     }
     /// Replace the media boundary in tests; production keeps the media owner.
     pub fn set_import_probe(&mut self, probe: Arc<dyn ImportProbe>) -> Result<()> {
@@ -1231,14 +1242,14 @@ impl Editor {
         self.toast = Some(Toast {
             text: text.to_owned(),
             detail,
-            until: Instant::now() + std::time::Duration::from_secs(5),
+            until: self.clock.now() + Duration::from_secs(5),
         });
     }
     fn truncate_toast(&mut self) {
         if self
             .toast
             .as_ref()
-            .is_some_and(|toast| Instant::now() >= toast.until)
+            .is_some_and(|toast| self.clock.now() >= toast.until)
         {
             self.toast = None;
         }
@@ -1379,7 +1390,7 @@ impl Editor {
         }
         self.media_reveal = Some(MediaReveal {
             asset,
-            until: Instant::now() + MEDIA_REVEAL,
+            until: self.clock.now() + MEDIA_REVEAL,
         });
         self.session.end_merge();
         Ok(())
@@ -3679,7 +3690,7 @@ impl Editor {
         if self
             .media_reveal
             .as_ref()
-            .is_some_and(|reveal| Instant::now() >= reveal.until)
+            .is_some_and(|reveal| self.clock.now() >= reveal.until)
         {
             self.media_reveal = None;
         }
