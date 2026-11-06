@@ -27,10 +27,27 @@ Language for the editor's privacy and execution boundaries.
 - **CueTrack**: A collection of timed cues for subtitle validation and export.
 - **Selection**: The timeline items chosen as the targets of an editing action.
 - **Selection scope**: The current level of selection: timeline items, keyframes within items, or points within a mask. Clearing a selection acts on the most specific occupied scope first.
-
 - **Face track**: Observations of one visible face within a single shot; its identifier is local to that shot.
 - **Cross-shot identity**: A confident link from a face track to an earlier face track serving as its anchor. An uncertain link stays Unknown; it is not a claim about a person's name.
-
-- **Transition**: a video-only timeline entity joining adjacent clips over their shared cut; [project](crates/project/README.md#video-transitions) owns its kinds, alignment and source-handle bounds.
-
+- **Transition**: A video-only timeline entity joining adjacent clips over their shared cut; [project](crates/project/README.md#video-transitions) owns its kinds, alignment and source-handle bounds.
 - **Scene-change candidate**: A possible hard cut or gradual transition in source media, with a source time and confidence, awaiting review before it becomes a timeline split.
+- **Project**: The editable document: its identity and name, canvas, assets, scenes, active scene and output settings; [project](crates/project/README.md) owns its validation, persistence and writer lease.
+- **Project library**: The managed set of projects that Home lists, searches and trashes, with each project's cover image and metadata; the store owns it, not the file system.
+- **Scene**: One timeline inside a Project, with a name, a main flag, tracks and bookmarks; a project has one main scene and up to 255 secondary scenes, while assets, canvas and output audio stay project-level.
+- **Track**: An ordered lane of items of one kind: Video, Audio, Text, Sticker, Effect, Filter or Adjustment; the main Video track always exists.
+- **Item**: One object on a timeline track: content or a source reference, start, duration, animated parameters, effects and masks, with an identity unique across the project.
+- **Clip**: A video or audio item, the kinds the timeline draws with a filmstrip and waveform; [project](crates/project/README.md) calls every timeline object an item, and clip names those two kinds.
+- **Short**: A suggested vertical clip: a source range with a title, role and play order that a user accepts for batch export from Long video to shorts.
+- **Effect**: One entry in an item's ordered effect stack, with a kind, typed parameters and an enabled flag; the effect owner declares it, `project` stores and validates it, and rendering executes it.
+- **Param**: An animated parameter override for one animation path, holding an explicit base value and its keyframes even when no keys remain.
+- **Keyframe**: One timed value inside a Param, with an interpolation segment and optional in/out handles.
+- **Mask**: An item-relative shape that limits where the item draws, with feather, expansion, stroke and an ordered add/subtract list.
+- **Revision**: An opaque Session-local token that advances on every accepted mutation and that effectful control requests must supply as `base_rev`.
+- **Receipt**: The stored terminal outcome of an effectful control request, keyed by principal, Session and idempotency key, replayed instead of re-executing a retry.
+- **Writer lease**: An exclusive OS lock on the sidecar beside a project file, held from load through save so only one process may write that project.
+- **Window**: One top-level OS window: Home, Editor or Long video to shorts, each with its own size, top bar and chrome.
+- **Panel**: One of the four resizable regions of the Editor: assets, player, properties or timeline.
+- **Feature tab**: A tab inside the assets panel that switches its feature: Media, Audio, Text, Stickers, Effects, Transitions, Captions, Filters, Adjustment, Templates or AI.
+- **Area**: An editor module that owns one panel's or dialog's state and returns the actions it wants; its interface is `State` and `show`.
+- **Kit**: The shared UI foundation of tokens, icons and widgets used by all three windows; it knows nothing about the engine.
+- **Automation id**: A stable identifier on an interactive widget that survives locale and layout changes, through which agents and tests address input.
