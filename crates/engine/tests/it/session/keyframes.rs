@@ -228,6 +228,66 @@ fn delete_selection_removes_every_listed_key_atomically() {
     assert!(s.execute("keyframes.delete_selection", stale).is_err());
     assert_eq!(s.history_len().0, history + 1, "a stale list adds no step");
     s.undo().unwrap();
+    let hostile = [
+        ("empty selection", json!({"keys":[]})),
+        (
+            "duplicate entry refuses the whole list",
+            json!({"keys":[
+                {"item":2,"path":"opacity","component":null,"time":frame(0)},
+                {"item":2,"path":"opacity","component":null,"time":frame(0)},
+            ]}),
+        ),
+        (
+            "one stale entry spares the valid one",
+            json!({"keys":[
+                {"item":2,"path":"opacity","component":null,"time":frame(0)},
+                {"item":2,"path":"opacity","component":null,"time":frame(7)},
+            ]}),
+        ),
+        (
+            "unknown item",
+            json!({"keys":[{"item":99,"path":"opacity","component":null,"time":frame(0)}]}),
+        ),
+    ];
+    let history = s.history_len().0;
+    let project = s.project().clone();
+    for (case, args) in hostile {
+        assert!(
+            s.execute("keyframes.delete_selection", args).is_err(),
+            "{case}"
+        );
+        assert_eq!(s.history_len().0, history, "{case}");
+        assert_eq!(s.project(), &project, "{case}");
+    }
+    s.execute("track.set_locked", json!({"track":2,"locked":true}))
+        .unwrap();
+    let locked = s.history_len().0;
+    let project = s.project().clone();
+    let one = json!({"keys":[{"item":2,"path":"opacity","component":null,"time":frame(0)}]});
+    assert!(
+        s.execute("keyframes.delete_selection", one).is_err(),
+        "locked track"
+    );
+    let toggle = json!({"item":2,"path":"opacity","component":null,"time":frame(40),"value":{"kind":"scalar","value":0.5}});
+    assert!(
+        s.execute("keyframes.toggle_at", toggle).is_err(),
+        "locked track"
+    );
+    let extrapolate =
+        json!({"item":2,"path":"opacity","component":null,"before":"hold","after":"hold"});
+    assert!(
+        s.execute("keyframes.set_extrapolation", extrapolate)
+            .is_err(),
+        "locked track"
+    );
+    assert_eq!((s.history_len().0, s.project()), (locked, &project));
+    s.execute("track.set_locked", json!({"track":2,"locked":false}))
+        .unwrap();
+    let wrong_kind = json!({"item":2,"path":"opacity","component":null,"time":frame(40),"value":{"kind":"bool","value":true}});
+    assert!(
+        s.execute("keyframes.toggle_at", wrong_kind).is_err(),
+        "value kind mismatch"
+    );
     assert_eq!(
         item(&s, ItemId(2))
             .animations

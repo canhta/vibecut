@@ -43,12 +43,13 @@ pub(in crate::editor) enum Action {
     },
     SetBackground(project::Color),
     ResetTransform(ItemId),
-    /// Add a key at the playhead, or remove the one already there.
+    /// Add a key at the playhead on every listed field that lacks one, or remove
+    /// them all when each already has one: one diamond, one undo step.
     ToggleKeyframe {
         item: ItemId,
-        field: &'static str,
+        /// Field and its value at the playhead.
+        fields: Vec<(&'static str, f64)>,
         time: time::Tick,
-        value: f64,
     },
     /// Upsert a key at the playhead while a channel is already animated.
     SetKeyframeAt {

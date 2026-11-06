@@ -46,12 +46,9 @@ pub(in crate::editor) fn apply(editor: &mut Editor, actions: Vec<Action>) {
                 }
                 result
             }
-            Action::ToggleKeyframe {
-                item,
-                field,
-                time,
-                value,
-            } => editor.toggle_keyframe(item, field, time, value),
+            Action::ToggleKeyframe { item, fields, time } => {
+                editor.toggle_keyframes(item, &fields, time)
+            }
             Action::SetKeyframeAt {
                 item,
                 field,

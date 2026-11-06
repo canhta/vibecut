@@ -13,6 +13,14 @@ use super::{
     TEXT_SIZE_SCRUB, shared_fields,
 };
 
+/// Fields that share one diamond: an X/Y pair keys together.
+fn diamond_group(field: &str) -> &str {
+    match field {
+        "transform.positionX" | "transform.positionY" => "transform.position",
+        "transform.scaleX" | "transform.scaleY" => "transform.scale",
+        other => other,
+    }
+}
 /// Left edge of the value column inside a 39 px property row.
 const VALUE_COLUMN: f32 = 120.0;
 
@@ -228,7 +236,17 @@ impl<'a, 'c> Panel<'a, 'c> {
         let at = self.cx.playhead;
         let inside = start <= at && at <= end;
         let relative = at.saturating_sub(start);
-        let width = theme::size::CONTROL * animate.len() as f32;
+        // CapCut shows one diamond for a position or scale pair.
+        let mut groups: Vec<Vec<ScrubSpec>> = Vec::new();
+        for spec in animate {
+            match groups.last_mut() {
+                Some(group) if diamond_group(group[0].field) == diamond_group(spec.field) => {
+                    group.push(spec);
+                }
+                _ => groups.push(vec![spec]),
+            }
+        }
+        let width = theme::size::CONTROL * groups.len() as f32;
         let rect = Rect::from_min_max(
             egui::pos2(row.left() + VALUE_COLUMN - width - 4.0, row.top()),
             egui::pos2(row.left() + VALUE_COLUMN - 4.0, row.bottom()),
@@ -239,10 +257,12 @@ impl<'a, 'c> Panel<'a, 'c> {
                 .layout(egui::Layout::left_to_right(egui::Align::Center)),
         );
         strip.spacing_mut().item_spacing.x = 0.0;
-        for spec in animate {
-            let id = format!("inspector.keyframe.{}", spec.field);
-            let exists =
-                super::read::has_key_at(self.cx.session.project(), item, spec.field, relative);
+        for group in groups {
+            let lead = group[0].field;
+            let id = format!("inspector.keyframe.{lead}");
+            let exists = group.iter().all(|spec| {
+                super::read::has_key_at(self.cx.session.project(), item, spec.field, relative)
+            });
             let label = self.tr(if exists {
                 Text::RemoveKeyframe
             } else {
@@ -255,18 +275,23 @@ impl<'a, 'c> Panel<'a, 'c> {
                 .inner;
             self.remember_with_icon(id, Some(crate::kit::Icon::Diamond.name()), &response);
             if response.clicked() && inside {
-                let value = super::read::item_value_at(
-                    self.cx.session.project(),
-                    item,
-                    spec.field,
-                    relative,
-                )
-                .unwrap_or(0.0);
+                let fields = group
+                    .iter()
+                    .map(|spec| {
+                        let value = super::read::item_value_at(
+                            self.cx.session.project(),
+                            item,
+                            spec.field,
+                            relative,
+                        )
+                        .unwrap_or(0.0);
+                        (spec.field, value)
+                    })
+                    .collect();
                 self.actions.push(Action::ToggleKeyframe {
                     item,
-                    field: spec.field,
+                    fields,
                     time: relative,
-                    value,
                 });
             }
         }

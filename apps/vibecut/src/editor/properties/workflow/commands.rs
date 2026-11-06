@@ -16,30 +16,42 @@ impl Editor {
         self.sync_preview();
         Ok(())
     }
-    /// Toggle the diamond on one animatable field at the playhead.
-    pub fn toggle_keyframe(
+    /// Toggle one diamond over its fields at the playhead as one undo step: keys
+    /// are removed when every field has one, otherwise added where missing.
+    pub fn toggle_keyframes(
         &mut self,
         item: ItemId,
-        field: &str,
+        fields: &[(&'static str, f64)],
         time: time::Tick,
-        value: f64,
     ) -> Result<()> {
         self.session.set_selection(self.selection.clone())?;
-        let path = if field == "audio_gain" {
-            "volume"
-        } else {
-            field
-        };
-        self.session.execute(
-            "keyframes.toggle_at",
-            serde_json::json!({
-                "item": item,
-                "path": path,
-                "component": null,
-                "time": time,
-                "value": {"kind": "scalar", "value": value},
-            }),
-        )?;
+        let all = fields.iter().all(|(field, _)| {
+            super::super::read::has_key_at(self.session.project(), item, field, time)
+        });
+        self.session.transaction(|session| {
+            for (field, value) in fields {
+                let has = super::super::read::has_key_at(session.project(), item, field, time);
+                if has != all {
+                    continue;
+                }
+                let path = if *field == "audio_gain" {
+                    "volume"
+                } else {
+                    field
+                };
+                session.execute(
+                    "keyframes.toggle_at",
+                    serde_json::json!({
+                        "item": item,
+                        "path": path,
+                        "component": null,
+                        "time": time,
+                        "value": {"kind": "scalar", "value": value},
+                    }),
+                )?;
+            }
+            Ok(())
+        })?;
         self.sync_preview();
         Ok(())
     }

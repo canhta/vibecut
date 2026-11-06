@@ -2594,6 +2594,32 @@ fn property_diamond_toggles_a_keyframe_at_the_playhead() {
     let diamond = widget(&harness, "inspector.keyframe.opacity");
     click_at(&mut harness, diamond.center());
     assert_eq!(key_count(&harness), 0, "a second press removes the key");
+    // An X/Y pair shares one diamond: both keys land, and go, in one undo step.
+    harness
+        .get(By::new().predicate(|n| n.author_id() == Some("inspector.tab.transform")))
+        .click();
+    harness.run_steps(2);
+    let keys_of = |harness: &Harness<'_, Editor>, field: &str| {
+        let path = project::AnimationPath::new(field).unwrap();
+        item(harness.state(), id)
+            .animations
+            .get(&path)
+            .map_or(0, |param| match param {
+                project::Param::Value(channel) => channel.keys().len(),
+                project::Param::Color(_) => 0,
+            })
+    };
+    let history = harness.state().session.history_len();
+    let diamond = widget(&harness, "inspector.keyframe.transform.positionX");
+    click_at(&mut harness, diamond.center());
+    assert_eq!(keys_of(&harness, "transform.positionX"), 1);
+    assert_eq!(keys_of(&harness, "transform.positionY"), 1);
+    assert_eq!(harness.state().session.history_len().0, history.0 + 1);
+    let diamond = widget(&harness, "inspector.keyframe.transform.positionX");
+    click_at(&mut harness, diamond.center());
+    assert_eq!(keys_of(&harness, "transform.positionX"), 0);
+    assert_eq!(keys_of(&harness, "transform.positionY"), 0);
+    assert_eq!(harness.state().session.history_len().0, history.0 + 2);
 }
 
 #[test]
