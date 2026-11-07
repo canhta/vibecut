@@ -694,57 +694,67 @@ impl ModelManager {
             ));
             ui.add(egui::ProgressBar::new(job.snapshot.progress).show_percentage());
         }
-        ui.horizontal(|ui| {
-            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                let active = self.active();
-                let close = ui.add_enabled(
-                    !active,
-                    egui::Button::new(tr(Text::ModelClose)).min_size(egui::vec2(90.0, 34.0)),
-                );
-                if close.clicked() {
-                    self.open = false;
-                    self.accepted.clear();
-                }
-                record(widgets, "models.close".into(), close);
-                if active {
-                    let cancelling = self.job.as_ref().is_some_and(|job| job.cancelling);
-                    let cancel = ui.add_enabled(
-                        !cancelling,
-                        egui::Button::new(tr(Text::ModelCancel)).min_size(egui::vec2(90.0, 34.0)),
-                    );
-                    if cancel.clicked() {
-                        self.cancel();
-                    }
-                    record(widgets, "models.cancel".into(), cancel);
-                } else if let Some(id) = self.selected.clone()
-                    && let Some(model) = self.model(&id).cloned()
-                    && !self.installed.get(&id).copied().unwrap_or(false)
-                {
-                    let consent = model.default_eligible() || self.accepted.contains(&id);
-                    let enabled = !self.checking && consent;
-                    let label = if self.resumable(&id) {
-                        Text::ModelResume
-                    } else {
-                        Text::ModelDownload
-                    };
-                    let response = ui.add_enabled(
-                        enabled,
-                        egui::Button::new(
-                            egui::RichText::new(tr(label)).color(theme::on_accent(dark)),
-                        )
-                        .fill(theme::accent(dark))
-                        .min_size(egui::vec2(120.0, 34.0)),
-                    );
-                    if response.clicked()
-                        && let Err(error) = self.start(&id)
-                    {
-                        self.problem = Some(problem_for(&error_from(error)));
-                        self.problem_model = Some(id.clone());
-                    }
-                    record(widgets, format!("models.download.{id}"), response);
-                }
-            });
-        });
+        // One explicit scope for the action row: the installed check, a problem
+        // row and the job progress above appear asynchronously, and without it
+        // every button here would derive a new widget id and drop a held press.
+        ui.scope_builder(
+            egui::UiBuilder::new().scope_id(ui.make_persistent_id("models.footer.actions")),
+            |ui| {
+                ui.horizontal(|ui| {
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        let active = self.active();
+                        let close = ui.add_enabled(
+                            !active,
+                            egui::Button::new(tr(Text::ModelClose))
+                                .min_size(egui::vec2(90.0, 34.0)),
+                        );
+                        if close.clicked() {
+                            self.open = false;
+                            self.accepted.clear();
+                        }
+                        record(widgets, "models.close".into(), close);
+                        if active {
+                            let cancelling = self.job.as_ref().is_some_and(|job| job.cancelling);
+                            let cancel = ui.add_enabled(
+                                !cancelling,
+                                egui::Button::new(tr(Text::ModelCancel))
+                                    .min_size(egui::vec2(90.0, 34.0)),
+                            );
+                            if cancel.clicked() {
+                                self.cancel();
+                            }
+                            record(widgets, "models.cancel".into(), cancel);
+                        } else if let Some(id) = self.selected.clone()
+                            && let Some(model) = self.model(&id).cloned()
+                            && !self.installed.get(&id).copied().unwrap_or(false)
+                        {
+                            let consent = model.default_eligible() || self.accepted.contains(&id);
+                            let enabled = !self.checking && consent;
+                            let label = if self.resumable(&id) {
+                                Text::ModelResume
+                            } else {
+                                Text::ModelDownload
+                            };
+                            let response = ui.add_enabled(
+                                enabled,
+                                egui::Button::new(
+                                    egui::RichText::new(tr(label)).color(theme::on_accent(dark)),
+                                )
+                                .fill(theme::accent(dark))
+                                .min_size(egui::vec2(120.0, 34.0)),
+                            );
+                            if response.clicked()
+                                && let Err(error) = self.start(&id)
+                            {
+                                self.problem = Some(problem_for(&error_from(error)));
+                                self.problem_model = Some(id.clone());
+                            }
+                            record(widgets, format!("models.download.{id}"), response);
+                        }
+                    });
+                });
+            },
+        );
     }
 }
 fn terminal(state: JobState) -> bool {

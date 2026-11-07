@@ -235,6 +235,16 @@ fn click(harness: &mut Harness<'_, Editor>, id: &str) {
         .click();
     harness.run_steps(3);
 }
+/// The AccessKit node id egui assigned to the widget behind one automation id.
+fn node_id(harness: &Harness<'_, Editor>, id: &str) -> String {
+    format!(
+        "{:?}",
+        harness
+            .get(By::new().predicate(|node| node.author_id() == Some(id)))
+            .accesskit_node()
+            .id()
+    )
+}
 fn inspect(harness: &Harness<'_, Editor>) -> vibecut::model_manager::ModelInspection {
     harness.state().inspect().unwrap().models.unwrap()
 }
@@ -427,6 +437,50 @@ fn checksum_failure_is_discarded_and_reported() {
             .is_some()
     );
     assert!(inspection.installed.is_empty());
+}
+
+#[test]
+fn footer_rows_do_not_shift_the_model_action_controls() {
+    // The footer draws the installed-check spinner, a problem row and the job
+    // progress above its buttons. They appear asynchronously, so a press that
+    // straddles the update must still resolve to the same widget.
+    let dir = tempfile::tempdir().unwrap();
+    let expected = vec![3u8; 64 * 1024];
+    let fixture = model("fixture-footer", "MIT", &expected);
+    let http = Arc::new(Http::default());
+    http.push(Reply::ok(Arc::from(vec![4u8; expected.len()]), "\"one\""));
+    let manager = manager(
+        dir.path(),
+        vec![fixture],
+        http,
+        Arc::new(Io {
+            available: u64::MAX,
+        }),
+    );
+    let mut harness = harness(open(manager, "fixture-footer"));
+    wait_check(&mut harness);
+    let close = node_id(&harness, "models.close");
+    let download = node_id(&harness, "models.download.fixture-footer");
+
+    click(&mut harness, "models.download.fixture-footer");
+    wait_terminal(&mut harness);
+    assert_eq!(inspect(&harness).problem, Some(ModelProblem::Integrity));
+    assert!(
+        harness
+            .query_by_label("Download was damaged. Try again.")
+            .is_some(),
+        "the problem row is drawn above the buttons"
+    );
+    assert_eq!(
+        node_id(&harness, "models.close"),
+        close,
+        "Close must keep its widget id when the problem row appears"
+    );
+    assert_eq!(
+        node_id(&harness, "models.download.fixture-footer"),
+        download,
+        "the download control must keep its widget id when the problem row appears"
+    );
 }
 
 #[test]

@@ -3,7 +3,7 @@
 use captions::CueTrack;
 use egui_kittest::{
     Harness,
-    kittest::{By, Queryable},
+    kittest::{By, NodeT, Queryable},
 };
 use engine::{ByteBudget, Command, Session, providers::Cost, transcript::Cancellation};
 use project::ItemParams;
@@ -54,6 +54,15 @@ fn wait(h: &mut Harness<'_, Editor>, ready: impl Fn(&Editor) -> bool) {
         );
         std::thread::sleep(Duration::from_millis(2));
     }
+}
+/// The AccessKit node id egui assigned to the widget behind one automation id.
+fn node_id(h: &Harness<'_, Editor>, id: &str) -> String {
+    format!(
+        "{:?}",
+        h.get(By::new().predicate(|n| n.author_id() == Some(id)))
+            .accesskit_node()
+            .id()
+    )
 }
 fn track(e: &Editor) -> CueTrack {
     e.session
@@ -289,6 +298,9 @@ fn import_is_atomic_bounded_and_export_uses_selected_bilingual_languages() {
 
 struct TranslateWorkflow {
     calls: Arc<AtomicUsize>,
+    /// Holds the provider call until the test opens the gate, so a job stays
+    /// running while the busy block is on screen.
+    gate: Option<Gate>,
 }
 impl Workflow for TranslateWorkflow {
     fn run(
@@ -323,6 +335,7 @@ impl Workflow for TranslateWorkflow {
             Arc::new(Translator {
                 config,
                 calls: self.calls.clone(),
+                gate: self.gate.clone(),
             }),
             "context-window".into(),
         );
@@ -372,6 +385,7 @@ impl Workflow for TranslateWorkflow {
 struct Translator {
     config: ai::ProviderConfig,
     calls: Arc<AtomicUsize>,
+    gate: Option<Gate>,
 }
 impl ai::Translator for Translator {
     fn config(&self) -> &ai::ProviderConfig {
@@ -403,6 +417,13 @@ impl ai::Translator for Translator {
         _: &ai::Request<'_>,
         _: &dyn ai::ExecutionHooks,
     ) -> std::result::Result<ai::Translation, ai::Error> {
+        if let Some(gate) = &self.gate {
+            let (locked, opened) = &**gate;
+            let mut open = locked.lock().unwrap();
+            while !*open {
+                open = opened.wait(open).unwrap();
+            }
+        }
         self.calls.fetch_add(1, Ordering::SeqCst);
         Ok(ai::Translation {
             source_language: window.source_language.clone(),
@@ -426,11 +447,80 @@ fn translated_editor(source: &str, calls: Arc<AtomicUsize>) -> Editor {
     e.subtitles = Some(
         Subtitles::with_workflow(
             e.playback.budget().clone(),
-            Arc::new(TranslateWorkflow { calls }),
+            Arc::new(TranslateWorkflow { calls, gate: None }),
         )
         .unwrap(),
     );
     e
+}
+type Gate = Arc<(std::sync::Mutex<bool>, std::sync::Condvar)>;
+/// Opens the gate on unwind so a failed assertion cannot leave the provider
+/// thread blocked while the editor joins it.
+struct OpenOnDrop(Gate);
+impl Drop for OpenOnDrop {
+    fn drop(&mut self) {
+        let (locked, opened) = &*self.0;
+        *locked.lock().unwrap() = true;
+        opened.notify_all();
+    }
+}
+fn held_editor(source: &str, calls: Arc<AtomicUsize>, gate: &Gate) -> Editor {
+    let mut e = editor(source);
+    e.subtitles = Some(
+        Subtitles::with_workflow(
+            e.playback.budget().clone(),
+            Arc::new(TranslateWorkflow {
+                calls,
+                gate: Some(gate.clone()),
+            }),
+        )
+        .unwrap(),
+    );
+    e
+}
+#[test]
+fn busy_block_does_not_shift_the_controls_below_it() {
+    // The busy block draws a spinner, the job stage and Cancel above the cue
+    // toolbar. It appears with an async job, so a press held across the update
+    // must still land on the same widget.
+    let gate: Gate = Arc::new((std::sync::Mutex::new(false), std::sync::Condvar::new()));
+    let calls = Arc::new(AtomicUsize::new(0));
+    let mut h = harness(held_editor("vi", calls.clone(), &gate), 1.0);
+    // Declared after the harness so it drops first and unblocks the provider
+    // thread before the editor joins it, even when an assertion fails.
+    let _release_on_exit = OpenOnDrop(gate.clone());
+    h.run_steps(3);
+    click(&mut h, "subtitles.cue.cue-0");
+    let toolbar = node_id(&h, "subtitles.select_all");
+
+    with_panel(h.state_mut(), |p, s, o| p.translate(s, o).unwrap());
+    wait(&mut h, |e| panel(e).consent.is_some());
+    click(&mut h, "subtitles.consent.approve");
+    wait(&mut h, |e| panel(e).busy);
+    assert_eq!(
+        node_id(&h, "subtitles.select_all"),
+        toolbar,
+        "the cue toolbar must keep its widget id while the busy block is drawn"
+    );
+    assert_eq!(
+        h.query_all(By::new().predicate(|n| n.author_id() == Some("subtitles.cancel")))
+            .count(),
+        1,
+        "the busy block must offer Cancel while the job runs"
+    );
+
+    {
+        let (locked, opened) = &*gate;
+        *locked.lock().unwrap() = true;
+        opened.notify_all();
+    }
+    wait(&mut h, |e| !panel(e).busy);
+    assert_eq!(calls.load(Ordering::SeqCst), 1);
+    assert_eq!(
+        node_id(&h, "subtitles.select_all"),
+        toolbar,
+        "the cue toolbar must keep its widget id after the busy block leaves"
+    );
 }
 #[test]
 fn translation_all_pairs_and_scripts_uses_fresh_consent_and_protects_manual_text() {

@@ -38,8 +38,12 @@ impl Controls {
         icon: Icon,
         enabled: bool,
     ) -> bool {
+        // One explicit scope per control: the busy block above appears with the
+        // async job, and without it every control below would derive a new
+        // widget id and drop a press that straddles the update.
+        let scope = ui.make_persistent_id(id);
         let r = ui
-            .push_id(id, |ui| {
+            .scope_builder(egui::UiBuilder::new().scope_id(scope), |ui| {
                 ui.add_enabled(
                     enabled,
                     egui::Button::image_and_text(
@@ -67,8 +71,9 @@ impl Controls {
         icon: Icon,
         enabled: bool,
     ) -> bool {
+        let scope = ui.make_persistent_id(id);
         let r = ui
-            .push_id(id, |ui| {
+            .scope_builder(egui::UiBuilder::new().scope_id(scope), |ui| {
                 ui.add_enabled(
                     enabled,
                     egui::Button::image(icons::tinted(icon, 16.0, ui.visuals().text_color()))
