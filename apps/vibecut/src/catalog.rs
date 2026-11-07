@@ -757,6 +757,28 @@ catalog! {
     AssetDimensions { key: "asset_dimensions", en: "{width}×{height}", vi: "{width}×{height}" },
     AssetFps { key: "asset_fps", en: "{rate} fps", vi: "{rate} fps" },
     AssetAudio { key: "asset_audio", en: "{rate} Hz · {channels} ch", vi: "{rate} Hz · {channels} kênh" },
+
+    // Font picker.
+    FontsAll { key: "fonts_all", en: "All fonts", vi: "Tất cả phông chữ" },
+    FontsMine { key: "fonts_mine", en: "My fonts", vi: "Phông của tôi" },
+    FontsFavorites { key: "fonts_favorites", en: "Favorites", vi: "Yêu thích" },
+    FontsSearch { key: "fonts_search", en: "Search fonts…", vi: "Tìm phông chữ…" },
+    FontsLoading { key: "fonts_loading", en: "Loading fonts…", vi: "Đang tải phông chữ…" },
+    FontsLoadFailed { key: "fonts_load_failed", en: "Failed to load font previews", vi: "Không tải được bản xem trước phông chữ" },
+    FontsNone { key: "fonts_none", en: "No fonts found", vi: "Không tìm thấy phông chữ" },
+    FontsSystem { key: "fonts_system", en: "System", vi: "Hệ thống" },
+    FontsGoogle { key: "fonts_google", en: "Google", vi: "Google" },
+    FontsCustom { key: "fonts_custom", en: "Custom", vi: "Tùy chỉnh" },
+    FontNotDownloaded { key: "font_not_downloaded", en: "Not downloaded", vi: "Chưa tải" },
+    FontDownload { key: "font_download", en: "Download", vi: "Tải xuống" },
+    FontDownloading { key: "font_downloading", en: "Downloading…", vi: "Đang tải…" },
+    FontDownloadFailed { key: "font_download_failed", en: "Download failed", vi: "Tải xuống thất bại" },
+    FontUpload { key: "font_upload", en: "Upload font", vi: "Tải phông lên" },
+    FontUploadHint { key: "font_upload_hint", en: "Custom font import is coming soon.", vi: "Nhập phông tùy chỉnh sẽ sớm có." },
+    FontFavorite { key: "font_favorite", en: "Favorite {family}", vi: "Yêu thích {family}" },
+    FontFavoriteOn { key: "font_favorite_on", en: "★", vi: "★" },
+    FontFavoriteOff { key: "font_favorite_off", en: "☆", vi: "☆" },
+    FontClose { key: "font_close", en: "Close", vi: "Đóng" },
 }
 
 /// The message for `key` in `locale`.
@@ -1040,6 +1062,7 @@ pub const PREFERENCE_KEYS: &[&str] = &[
     "keybindings",
     "recent_colors",
     "timeline_lanes",
+    "font_picker",
 ];
 
 /// A splitter drag that keeps every region non-empty and inside its limits.
@@ -1132,6 +1155,56 @@ impl WindowGeometry {
     }
 }
 
+/// The font picker's source tabs. `MyFonts` stays hidden until font import
+/// exists; `Favorites` is app behaviour backed by the preference store.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum FontTab {
+    #[default]
+    All,
+    MyFonts,
+    Favorites,
+}
+impl FontTab {
+    pub const fn id(self) -> &'static str {
+        match self {
+            Self::All => "all",
+            Self::MyFonts => "my_fonts",
+            Self::Favorites => "favorites",
+        }
+    }
+    pub fn from_id(id: &str) -> Option<Self> {
+        [Self::All, Self::MyFonts, Self::Favorites]
+            .into_iter()
+            .find(|tab| tab.id() == id)
+    }
+}
+/// The font picker's persisted tab and favourite family names.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct FontPickerPreferences {
+    #[serde(default)]
+    pub tab: FontTab,
+    #[serde(default)]
+    pub favorites: Vec<String>,
+}
+const MAX_FONT_FAVORITES: usize = 256;
+const MAX_FONT_FAMILY_BYTES: usize = 128;
+impl FontPickerPreferences {
+    fn validate(&self) -> Result<()> {
+        if self.favorites.len() > MAX_FONT_FAVORITES
+            || self
+                .favorites
+                .iter()
+                .any(|family| family.is_empty() || family.len() > MAX_FONT_FAMILY_BYTES)
+            || self.favorites.iter().collect::<BTreeSet<_>>().len() != self.favorites.len()
+        {
+            return Err(Error::Invalid("font favourites"));
+        }
+        Ok(())
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Preferences {
@@ -1194,6 +1267,9 @@ pub struct Preferences {
     /// to: item ids restart in every project.
     #[serde(default)]
     pub timeline_lanes: BTreeMap<project::ProjectId, BTreeSet<u64>>,
+    /// Font picker tab and favourite families; presentation only.
+    #[serde(default)]
+    pub font_picker: FontPickerPreferences,
 }
 pub(crate) const fn default_preview_fit() -> bool {
     true
@@ -1226,6 +1302,7 @@ impl Default for Preferences {
             keybindings: KeybindingPreferences::default(),
             recent_colors: Vec::new(),
             timeline_lanes: BTreeMap::new(),
+            font_picker: FontPickerPreferences::default(),
         }
     }
 }
@@ -1269,6 +1346,7 @@ impl Preferences {
         if self.timeline_lane_count() > MAX_TIMELINE_LANES {
             return Err(Error::Invalid("timeline lanes"));
         }
+        self.font_picker.validate()?;
         if serde_json::to_vec(self)?.len() as u64 > MAX_PREFERENCES_BYTES {
             return Err(Error::Invalid("preference size"));
         }
@@ -1358,6 +1436,7 @@ impl Preferences {
             "keybindings" => Ok(serde_json::to_value(&self.keybindings)?),
             "recent_colors" => Ok(serde_json::to_value(&self.recent_colors)?),
             "timeline_lanes" => Ok(serde_json::to_value(&self.timeline_lanes)?),
+            "font_picker" => Ok(serde_json::to_value(&self.font_picker)?),
             _ => Err(Error::Unsupported("preference key")),
         }
     }
@@ -1391,6 +1470,7 @@ impl Preferences {
             "keybindings" => self.keybindings = serde_json::from_value(value)?,
             "recent_colors" => self.recent_colors = serde_json::from_value(value)?,
             "timeline_lanes" => self.timeline_lanes = serde_json::from_value(value)?,
+            "font_picker" => self.font_picker = serde_json::from_value(value)?,
             _ => return Err(Error::Unsupported("preference key")),
         }
         Ok(())
@@ -1478,6 +1558,10 @@ impl PreferenceStore {
         }
         if value.timeline_lane_count() > MAX_TIMELINE_LANES {
             value.timeline_lanes.clear();
+            issue = Some(PreferenceIssue::Layout);
+        }
+        if value.font_picker.validate().is_err() {
+            value.font_picker = FontPickerPreferences::default();
             issue = Some(PreferenceIssue::Layout);
         }
         (value, issue)
@@ -1734,6 +1818,10 @@ mod tests {
                 serde_json::json!({"12": [3, 4], "13": [7]}),
             ),
             (
+                "font_picker",
+                serde_json::json!({"tab": "favorites", "favorites": ["Anton", "Inter"]}),
+            ),
+            (
                 "export",
                 serde_json::json!({
                     "format": "webm",
@@ -1971,6 +2059,48 @@ mod tests {
         assert_eq!(issue, Some(PreferenceIssue::Layout));
         assert!(loaded.properties_tabs.is_empty());
         assert_eq!(loaded.assets_tab, AssetsTab::Media);
+    }
+
+    #[test]
+    fn font_picker_preferences_validate_tabs_and_favorite_families_atomically() {
+        let mut preferences = Preferences::default();
+        preferences
+            .set(
+                "font_picker",
+                serde_json::json!({"tab": "my_fonts", "favorites": ["Anton", "Inter"]}),
+            )
+            .expect("valid font preferences");
+        assert_eq!(preferences.font_picker.tab, FontTab::MyFonts);
+        assert_eq!(preferences.font_picker.favorites, ["Anton", "Inter"]);
+        for value in [
+            serde_json::json!({"tab": "unknown", "favorites": []}),
+            serde_json::json!({"tab": "all", "favorites": ["Inter", "Inter"]}),
+            serde_json::json!({"tab": "all", "favorites": [""]}),
+            serde_json::json!({"tab": "all", "favorites": ["x".repeat(129)]}),
+            serde_json::json!({"tab": "all", "favorites": vec!["Inter"; 257]}),
+            serde_json::json!({"tab": "all", "favorites": [], "extra": true}),
+        ] {
+            let before = preferences.clone();
+            assert!(preferences.set("font_picker", value).is_err());
+            assert_eq!(preferences, before);
+        }
+        let dir = tempfile::tempdir().expect("temporary preferences");
+        let store = PreferenceStore::new(dir.path().join("preferences.json"));
+        std::fs::write(
+            store.path(),
+            serde_json::to_vec(&Preferences {
+                font_picker: FontPickerPreferences {
+                    tab: FontTab::Favorites,
+                    favorites: vec![String::new()],
+                },
+                ..Default::default()
+            })
+            .expect("encode preferences"),
+        )
+        .expect("write preferences");
+        let (loaded, issue) = store.load_with_warning();
+        assert_eq!(issue, Some(PreferenceIssue::Layout));
+        assert_eq!(loaded.font_picker, FontPickerPreferences::default());
     }
 
     #[test]

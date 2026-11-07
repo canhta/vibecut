@@ -8,6 +8,7 @@ impl Panel<'_, '_> {
     pub(super) fn shared_inspector(&mut self, ui: &mut egui::Ui) {
         if self.state.selection != *self.cx.selection {
             self.state.drafts.clear();
+            self.state.font_picker.close();
             self.state.selection = self.cx.selection.clone();
         }
         ui.label(catalog::format_count(
@@ -82,41 +83,27 @@ impl Panel<'_, '_> {
                 continue;
             }
             if field.id == "text_font" {
-                let current = field
-                    .value
+                let current = field.value.clone();
+                let label = current
                     .clone()
                     .unwrap_or_else(|| self.tr(Text::EmptyValue).to_owned());
-                let mut chosen = None;
                 let (row, mut value_ui) = self.row_value_ui(ui, theme::size::PROPERTY_ROW);
                 self.row_label(ui, row, self.tr(Text::TextFont));
-                let response = value_ui
-                    .scope(|ui| {
-                        ui.spacing_mut().interact_size.y = theme::size::FIELD;
-                        egui::ComboBox::from_id_salt(Id::unique("inspector.text_font"))
-                            .selected_text(current)
-                            .width(ui.available_width())
-                            .show_ui(ui, |ui| {
-                                for (family, _) in text::families() {
-                                    let selected = field.value.as_deref() == Some(family.as_str());
-                                    let response = ui.selectable_label(selected, family.as_str());
-                                    self.remember(
-                                        format!("inspector.text_font.{family}"),
-                                        &response,
-                                    );
-                                    if response.clicked() {
-                                        chosen = Some(family);
-                                    }
-                                }
-                            })
-                            .response
-                    })
-                    .inner;
+                let width = value_ui.available_width();
+                let response = value_ui.add_sized(
+                    [width, theme::size::FIELD],
+                    egui::Button::new(label).truncate(),
+                );
                 response.widget_info(|| {
                     egui::WidgetInfo::labeled(egui::Role::ComboBox, true, self.tr(Text::TextFont))
                 });
                 self.remember("inspector.text_font", &response);
-                if let Some(font) = chosen {
-                    self.set_shared_field("text_font", &font);
+                if response.clicked() {
+                    let anchor = self.state.area.map_or_else(
+                        || response.rect.left_top(),
+                        |area| egui::pos2(area.left() - theme::space::PANEL_GUTTER, row.top()),
+                    );
+                    self.state.font_picker.open(anchor, current);
                 }
                 self.compatible_count(ui, field.compatible);
                 continue;

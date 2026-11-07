@@ -66,6 +66,7 @@ pub(in crate::editor) fn show(
     ui.spacing_mut().item_spacing = Vec2::ZERO;
     panel.area(&mut ui, area);
     panel.picker_dialog(ui.ctx());
+    panel.font_dialog(ui.ctx());
     panel.actions
 }
 
@@ -412,6 +413,7 @@ impl<'a, 'c> Panel<'a, 'c> {
         if self.state.selection != *self.cx.selection {
             self.state.drafts.clear();
             self.state.focus = None;
+            self.state.font_picker.close();
             self.state.selection = self.cx.selection.clone();
         }
         let tabs: Vec<PropertiesTab> = kind
@@ -770,3 +772,5 @@ mod appearance;
 mod number_edit;
 
 mod selection;
+
+mod font_picker;

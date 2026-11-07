@@ -189,6 +189,8 @@ pub struct Inspection {
     pub eyedropper: Option<EyedropperState>,
     /// Present while the shortcuts dialog is open.
     pub shortcuts: Option<ShortcutsInspection>,
+    /// Font picker state, tab, favourites and download.
+    pub font_picker: crate::font_picker::Inspection,
 }
 #[derive(Clone, Debug)]
 pub(super) struct PreferenceCommand {
@@ -446,4 +448,6 @@ pub struct Editor {
     pub(super) sounds: Option<super::assets::sounds::Sounds>,
     pub(super) sound_media_dir: Option<PathBuf>,
     pub subtitles: Option<crate::subtitles::Subtitles>,
+    /// Catalog commands for the font picker; opened lazily on first use.
+    pub(super) font_backend: Option<Box<dyn crate::font_picker::Backend>>,
 }

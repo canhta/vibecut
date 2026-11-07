@@ -38,6 +38,8 @@ pub(super) struct State {
     pub(super) picker: Option<Picker>,
     /// Project the open picker previews against; a different project closes it.
     pub(super) color_base: Option<Arc<project::Project>>,
+    /// Font picker popover, its catalog and download.
+    pub(super) font_picker: crate::font_picker::State,
     /// Rect of the last drawn panel, where the picker hangs off.
     pub(super) area: Option<Rect>,
     widgets: Vec<Widget>,
@@ -55,6 +57,7 @@ impl Default for State {
             reorder: None,
             picker: None,
             color_base: None,
+            font_picker: crate::font_picker::State::default(),
             area: None,
             widgets: Vec::new(),
         }

@@ -97,6 +97,15 @@ impl Editor {
     pub(crate) fn fonts(ctx: &egui::Context) {
         crate::kit::install_fonts(ctx);
     }
+    /// Inject the catalog command adapter. Production opens it lazily; tests
+    /// and audits supply a recording fake.
+    pub fn set_font_backend(&mut self, backend: Box<dyn crate::font_picker::Backend>) {
+        self.font_backend = Some(backend);
+    }
+    /// Wire the My fonts tab once font import (80) supplies imported families.
+    pub fn set_font_imports_available(&mut self, available: bool) {
+        self.properties.font_picker.has_imports = available;
+    }
 
     pub fn new(session: Session, playback: Playback, preferences: Preferences) -> Self {
         Self::with_session(
@@ -195,6 +204,7 @@ impl Editor {
             sounds: None,
             sound_media_dir: None,
             subtitles: None,
+            font_backend: None,
         }
     }
     /// Attach the engine autosave owner without duplicating its Session.
@@ -332,6 +342,10 @@ impl Editor {
             keybinding_issues: self.keybinding_issues.clone(),
             color_preview: self.properties.picker.as_ref().map(|p| p.color),
             eyedropper: self.properties.picker.as_ref().map(|p| p.native.state),
+            font_picker: self
+                .properties
+                .font_picker
+                .inspect(&self.preferences.font_picker),
             shortcuts: self.shortcuts_open.then(|| {
                 let platform = actions::Platform::current();
                 let rows = actions::actions()

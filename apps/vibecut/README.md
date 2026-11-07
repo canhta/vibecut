@@ -45,6 +45,7 @@ The desktop binary is `vibecut`; the headless CLI is `vibecut-cli`.
 | `effects.rs` | Implements the desktop GPU effect adapter. | [GPU effects](src/effects/README.md) |
 | `effect_previews.rs` | Schedules effect tile previews. | [Effect previews](src/effect_previews/README.md) |
 | `export.rs` / `export/` | Presents export and its saved choices. | [Export settings](src/export/README.md) |
+| `font_picker.rs` | Presents the font catalog, favourites and explicit downloads. | [Font picker](src/font_picker/README.md) |
 | `home.rs` / `home/` | Owns the project library window. | [Projects page](src/home/README.md) |
 | `home/view/` | Draws the Home window. | [Home view](src/home/view/README.md) |
 | `import.rs` | Runs background media import. | [Media import](src/import/README.md) |

@@ -104,6 +104,8 @@ pub(in crate::editor) enum Action {
         params: serde_json::Value,
         recent: Vec<project::Color>,
     },
+    /// Font picker commands, preferences and family selection.
+    Font(crate::font_picker::Action),
     Error(String),
 }
 
@@ -205,6 +207,9 @@ impl State {
             .is_some_and(|base| !Arc::ptr_eq(base, project))
         {
             actions.extend(self.close_picker());
+        }
+        if self.font_picker.open && self.details {
+            self.font_picker.close();
         }
         if self
             .reorder

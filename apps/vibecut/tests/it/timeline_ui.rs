@@ -1770,6 +1770,13 @@ fn text_insert_and_style_controls_use_one_undo_step_per_edit() {
         .click();
     harness.run_steps(2);
     harness
+        .get(By::new().predicate(|n| n.author_id() == Some("fonts.search")))
+        .click();
+    harness.run_steps(1);
+    harness.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::A);
+    harness.event(egui::Event::Text("Noto Serif".into()));
+    harness.run_steps(2);
+    harness
         .get(By::new().predicate(|n| n.author_id() == Some("inspector.text_font.Noto Serif")))
         .click();
     harness.run_steps(2);

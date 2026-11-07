@@ -46,6 +46,7 @@ impl Editor {
         }
         self.apply_import_events();
         self.restore_asset_state();
+        self.poll_fonts();
         self.truncate_toast();
         if self
             .media_reveal

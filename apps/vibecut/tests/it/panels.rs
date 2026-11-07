@@ -6,17 +6,24 @@
 )]
 use egui_kittest::{
     Harness,
-    kittest::{By, Queryable},
+    kittest::{By, NodeT, Queryable},
 };
+use engine::control::{FontEntry, FontLoad, FontLoadState, FontOrigin, FontState, JobView};
+use engine::jobs::{JobId, JobKind, JobStage, JobState};
 use engine::{ByteBudget, Command, CreatedId, NewItem, Placement, Session};
 use media::{AssetId, ContentHash, SourceAsset, SourceStream};
 use project::{Color, ItemId, ItemParams, Project, ProjectId, TrackId, TrackKind};
-use std::{path::PathBuf, sync::Arc};
+use std::{
+    collections::BTreeMap,
+    path::PathBuf,
+    sync::{Arc, Mutex},
+};
 use time::{SourceRange, TICKS_PER_SECOND, Tick};
 use vibecut::{
     Editor,
-    catalog::{PreferenceStore, Preferences},
+    catalog::{FontTab, PreferenceStore, Preferences},
     egui,
+    font_picker::{Backend, Status},
     panels::{AssetsTab, ElementKind, PropertiesTab},
     playback::{Files, Playback},
 };
@@ -1435,4 +1442,392 @@ fn panel_tabs_render_a_representative_editor() {
     std::fs::create_dir_all(&target).unwrap();
     image.save(target.join("p1-06-panels.png")).unwrap();
     assert!(image.width() > 0 && image.height() > 0);
+}
+
+#[derive(Clone)]
+struct FakeFonts {
+    inner: Arc<Mutex<FakeInner>>,
+}
+struct FakeInner {
+    commands: Vec<&'static str>,
+    fail_list: bool,
+    entries: Vec<FontEntry>,
+    loads: BTreeMap<String, FontLoadState>,
+    job_state: JobState,
+    job_progress: f32,
+    fail_download: bool,
+}
+impl FakeFonts {
+    fn new() -> Self {
+        Self {
+            inner: Arc::new(Mutex::new(FakeInner {
+                commands: Vec::new(),
+                fail_list: false,
+                entries: vec![
+                    font_entry("Inter", FontOrigin::Bundled, FontState::Available, None),
+                    font_entry("Broken", FontOrigin::Bundled, FontState::Available, None),
+                    font_entry(
+                        "Noto Serif",
+                        FontOrigin::Bundled,
+                        FontState::Available,
+                        None,
+                    ),
+                    font_entry(
+                        "Lobster",
+                        FontOrigin::Google,
+                        FontState::NotDownloaded,
+                        Some(61_000),
+                    ),
+                    font_entry("Arial", FontOrigin::System, FontState::Available, None),
+                ],
+                loads: BTreeMap::from([("Broken".into(), FontLoadState::NotDownloaded)]),
+                job_state: JobState::Running,
+                job_progress: 0.4,
+                fail_download: false,
+            })),
+        }
+    }
+    fn commands(&self) -> Vec<&'static str> {
+        self.inner.lock().unwrap().commands.clone()
+    }
+    fn count(&self, command: &str) -> usize {
+        self.commands().iter().filter(|id| **id == command).count()
+    }
+    fn fail_list(&self, fail: bool) {
+        self.inner.lock().unwrap().fail_list = fail;
+    }
+    fn fail_download(&self, fail: bool) {
+        self.inner.lock().unwrap().fail_download = fail;
+    }
+    fn set_job(&self, state: JobState, progress: f32) {
+        let mut inner = self.inner.lock().unwrap();
+        inner.job_state = state;
+        inner.job_progress = progress;
+    }
+    fn mark_available(&self, family: &str) {
+        let mut inner = self.inner.lock().unwrap();
+        if let Some(entry) = inner
+            .entries
+            .iter_mut()
+            .find(|entry| entry.family == family)
+        {
+            entry.state = FontState::Available;
+            entry.download_bytes = None;
+        }
+    }
+}
+impl Backend for FakeFonts {
+    fn list(&mut self, _: &mut Session, _: Option<&str>) -> vibecut::Result<Vec<FontEntry>> {
+        let mut inner = self.inner.lock().unwrap();
+        inner.commands.push("fonts.list");
+        if inner.fail_list {
+            return Err(vibecut::Error::Invalid("font list"));
+        }
+        Ok(inner.entries.clone())
+    }
+    fn load(&mut self, _: &mut Session, family: &str) -> vibecut::Result<FontLoad> {
+        let mut inner = self.inner.lock().unwrap();
+        inner.commands.push("fonts.load");
+        let state = inner
+            .loads
+            .get(family)
+            .copied()
+            .unwrap_or(FontLoadState::Loaded);
+        Ok(FontLoad {
+            family: family.to_owned(),
+            state,
+            origin: Some(FontOrigin::Bundled),
+            effective_family: if state == FontLoadState::Loaded {
+                family.to_owned()
+            } else {
+                "Inter".into()
+            },
+            styles: vec!["Regular".into()],
+        })
+    }
+    fn download(&mut self, _: &mut Session, family: &str) -> vibecut::Result<JobId> {
+        let mut inner = self.inner.lock().unwrap();
+        inner.commands.push("fonts.download");
+        if inner.fail_download {
+            return Err(vibecut::Error::Invalid("font download"));
+        }
+        inner.job_state = JobState::Running;
+        inner.job_progress = 0.0;
+        let _ = family;
+        Ok(JobId(7))
+    }
+    fn job(&mut self, job: JobId) -> Option<JobView> {
+        let inner = self.inner.lock().unwrap();
+        Some(JobView {
+            id: job,
+            kind: JobKind::DownloadFont,
+            stage: JobStage::Download,
+            progress: inner.job_progress,
+            state: inner.job_state,
+            attempts: 0,
+            error: None,
+            result: None,
+        })
+    }
+    fn cancel(&mut self, _: &mut Session, _: JobId) -> vibecut::Result<()> {
+        let mut inner = self.inner.lock().unwrap();
+        inner.commands.push("job_cancel");
+        inner.job_state = JobState::Cancelling;
+        Ok(())
+    }
+}
+fn font_entry(
+    family: &str,
+    origin: FontOrigin,
+    state: FontState,
+    download_bytes: Option<u64>,
+) -> FontEntry {
+    FontEntry {
+        family: family.into(),
+        origin,
+        styles: vec!["Regular".into()],
+        state,
+        license: (origin == FontOrigin::Google).then(|| "OFL-1.1".into()),
+        source: (origin == FontOrigin::Google).then(|| "https://github.com/google/fonts".into()),
+        download_bytes,
+    }
+}
+fn fonts_editor(fixture: Fixture, fonts: &FakeFonts) -> (Editor, ItemId) {
+    let mut editor = fixture.editor;
+    editor.set_font_backend(Box::new(fonts.clone()));
+    (editor, fixture.text)
+}
+fn open_font_picker(harness: &mut Harness<Editor>) {
+    harness.run_steps(2);
+    click(harness, "inspector.text_font");
+    // Frame one draws Loading, then the list request is applied.
+    harness.run_steps(1);
+    assert!(font_picker(harness).open, "the trigger opens the picker");
+    harness.run_steps(1);
+}
+fn font_picker(harness: &Harness<Editor>) -> vibecut::font_picker::Inspection {
+    harness.state().inspect().unwrap().font_picker
+}
+fn type_search(harness: &mut Harness<Editor>, text: &str) {
+    click(harness, "fonts.search");
+    harness.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::A);
+    harness.key_press(egui::Key::Backspace);
+    harness.event(egui::Event::Text(text.into()));
+    harness.run_steps(2);
+}
+
+#[test]
+fn font_picker_lists_search_tabs_and_favorites_through_commands() {
+    let fixture = fixture();
+    let fonts = FakeFonts::new();
+    let (editor, text) = fonts_editor(fixture, &fonts);
+    let mut harness = build(editor);
+    harness.run_steps(3);
+    select(&mut harness, text);
+    let project = harness.state().session.project().clone();
+
+    harness
+        .get(By::new().predicate(|node| node.author_id() == Some("inspector.text_font")))
+        .click();
+    harness.run_steps(1);
+    assert!(
+        has_widget(&harness, "fonts.loading"),
+        "the opening frame renders the loading state"
+    );
+    harness.run_steps(1);
+    assert_eq!(font_picker(&harness).status, Status::Ready);
+    assert_eq!(fonts.count("fonts.list"), 1);
+    assert!(has_widget(&harness, "inspector.text_font.Inter"));
+    assert!(has_widget(&harness, "fonts.download.Lobster"));
+    assert_eq!(
+        harness.state().session.project(),
+        &project,
+        "listing fonts never mutates the project"
+    );
+
+    type_search(&mut harness, "not");
+    assert!(has_widget(&harness, "inspector.text_font.Noto Serif"));
+    assert!(!has_widget(&harness, "inspector.text_font.Inter"));
+    type_search(&mut harness, "zzzz");
+    assert!(has_widget(&harness, "fonts.empty"));
+    type_search(&mut harness, "");
+
+    // My fonts stays hidden until import exists; Custom is visible but disabled.
+    assert!(!has_widget(&harness, "fonts.tab.my_fonts"));
+    assert!(
+        harness
+            .get(By::new().predicate(|node| node.author_id() == Some("fonts.upload")))
+            .accesskit_node()
+            .is_disabled()
+    );
+    assert!(
+        harness
+            .get(By::new().predicate(|node| node.author_id() == Some("fonts.category.custom")))
+            .accesskit_node()
+            .is_disabled()
+    );
+    harness.state_mut().set_font_imports_available(true);
+    harness.run_steps(2);
+    assert!(has_widget(&harness, "fonts.tab.my_fonts"));
+    click(&mut harness, "fonts.tab.my_fonts");
+    assert!(has_widget(&harness, "fonts.empty"), "no imports exist yet");
+
+    click(&mut harness, "fonts.tab.favorites");
+    assert!(has_widget(&harness, "fonts.empty"));
+    click(&mut harness, "fonts.tab.all");
+    click(&mut harness, "fonts.favorite.Noto Serif");
+    assert_eq!(
+        harness.state().preferences.font_picker.favorites,
+        ["Noto Serif"]
+    );
+    assert_eq!(
+        harness.state().session.project(),
+        &project,
+        "favoriting never mutates the project"
+    );
+    click(&mut harness, "fonts.tab.favorites");
+    assert!(has_widget(&harness, "inspector.text_font.Noto Serif"));
+    assert!(!has_widget(&harness, "inspector.text_font.Inter"));
+
+    let history = harness.state().session.history_len().0;
+    click(&mut harness, "inspector.text_font.Noto Serif");
+    harness.run_steps(2);
+    assert_eq!(fonts.count("fonts.load"), 1);
+    assert_eq!(harness.state().session.history_len().0, history + 1);
+    let ItemParams::Text(text) = &item(&harness, text).content else {
+        panic!("text item");
+    };
+    assert_eq!(text.font.as_str(), "Noto Serif");
+    assert!(!font_picker(&harness).open);
+
+    // The persisted tab and favourite survive close and reopen.
+    open_font_picker(&mut harness);
+    let inspection = font_picker(&harness);
+    assert!(inspection.open, "{inspection:?}");
+    assert_eq!(inspection.tab, FontTab::Favorites, "{inspection:?}");
+    assert_eq!(inspection.status, Status::Ready, "{inspection:?}");
+    assert!(inspection.favorites.iter().any(|name| name == "Noto Serif"));
+    assert!(
+        has_widget(&harness, "inspector.text_font.Noto Serif"),
+        "{inspection:?}"
+    );
+}
+
+#[test]
+fn font_picker_error_retry_and_failed_preview_fallback() {
+    let fixture = fixture();
+    let fonts = FakeFonts::new();
+    fonts.fail_list(true);
+    let (editor, text) = fonts_editor(fixture, &fonts);
+    let mut harness = build(editor);
+    harness.run_steps(3);
+    select(&mut harness, text);
+    let project = harness.state().session.project().clone();
+    harness
+        .get(By::new().predicate(|node| node.author_id() == Some("inspector.text_font")))
+        .click();
+    harness.run_steps(3);
+    assert_eq!(font_picker(&harness).status, Status::Failed);
+    assert!(has_widget(&harness, "fonts.error"));
+    assert!(has_widget(&harness, "fonts.retry"));
+    assert_eq!(
+        harness.state().session.project(),
+        &project,
+        "a failed list leaves the project untouched"
+    );
+    fonts.fail_list(false);
+    click(&mut harness, "fonts.retry");
+    harness.run_steps(2);
+    assert_eq!(font_picker(&harness).status, Status::Ready);
+    assert_eq!(fonts.count("fonts.list"), 2);
+
+    // A failed registration falls back silently to the next available family.
+    let history = harness.state().session.history_len().0;
+    click(&mut harness, "inspector.text_font.Broken");
+    harness.run_steps(2);
+    assert_eq!(harness.state().session.history_len().0, history + 1);
+    let ItemParams::Text(text) = &item(&harness, text).content else {
+        panic!("text item");
+    };
+    assert_eq!(text.font.as_str(), "Noto Serif");
+    assert_eq!(font_picker(&harness).status, Status::Ready);
+    assert!(!font_picker(&harness).open);
+}
+
+#[test]
+fn font_picker_download_cancel_and_failure_states() {
+    let fixture = fixture();
+    let fonts = FakeFonts::new();
+    let (editor, text) = fonts_editor(fixture, &fonts);
+    let mut harness = build(editor);
+    harness.run_steps(3);
+    select(&mut harness, text);
+    open_font_picker(&mut harness);
+    let project = harness.state().session.project().clone();
+
+    click(&mut harness, "fonts.download.Lobster");
+    harness.run_steps(2);
+    let download = font_picker(&harness).download.expect("download started");
+    assert_eq!(download.family, "Lobster");
+    assert_eq!(fonts.count("fonts.download"), 1);
+    assert!(has_widget(&harness, "fonts.progress"));
+    assert!(has_widget(&harness, "fonts.cancel"));
+    assert_eq!(
+        harness.state().session.project(),
+        &project,
+        "downloading never mutates the project"
+    );
+
+    click(&mut harness, "fonts.cancel");
+    harness.run_steps(2);
+    assert_eq!(fonts.count("job_cancel"), 1);
+    assert!(font_picker(&harness).download.unwrap().cancelling);
+    assert!(has_widget(&harness, "fonts.downloading"));
+    fonts.set_job(JobState::Cancelled, 0.4);
+    harness.run_steps(2);
+    assert!(font_picker(&harness).download.is_none());
+
+    // The submission itself can be refused without a job.
+    fonts.fail_download(true);
+    click(&mut harness, "fonts.download.Lobster");
+    harness.run_steps(2);
+    assert!(font_picker(&harness).download.unwrap().failed);
+    assert!(has_widget(&harness, "fonts.download_failed"));
+    fonts.fail_download(false);
+
+    // A job that fails keeps its family for an explicit retry.
+    click(&mut harness, "fonts.download_retry.Lobster");
+    harness.run_steps(1);
+    fonts.set_job(JobState::Failed, 0.4);
+    harness.run_steps(2);
+    assert!(font_picker(&harness).download.unwrap().failed);
+
+    fonts.mark_available("Lobster");
+    click(&mut harness, "fonts.download_retry.Lobster");
+    harness.run_steps(1);
+    fonts.set_job(JobState::Completed, 1.0);
+    harness.run_steps(3);
+    assert!(font_picker(&harness).download.is_none());
+    assert!(
+        fonts.count("fonts.list") >= 2,
+        "a finished download relists"
+    );
+    assert!(has_widget(&harness, "inspector.text_font.Lobster"));
+}
+
+#[test]
+fn font_picker_screenshot_is_available() {
+    let fixture = fixture();
+    let fonts = FakeFonts::new();
+    let (editor, text) = fonts_editor(fixture, &fonts);
+    let mut harness = build(editor);
+    harness.run_steps(3);
+    select(&mut harness, text);
+    open_font_picker(&mut harness);
+    click(&mut harness, "fonts.favorite.Noto Serif");
+    let image = harness.render().expect("offscreen render");
+    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../target/p1-28-fonts.png");
+    std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+    image.save(&path).unwrap();
+    assert!(path.exists());
 }

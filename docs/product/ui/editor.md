@@ -115,6 +115,10 @@ The Transform tab uses five existing scrub rows with an inline reset arrow: posi
 
 The shared colour window uses hex plus labelled HSV/alpha entries and sliders, swatches and recent colours. Sliders preview immediately and publish once on release; Escape/close cancels the draft. It is reused for text, text background, graphic fill/stroke, mask stroke and canvas background. The implementation reference's separate change/change-end events inform the interaction; the exact window layout, sixteen-colour newest-first recent list and fixed two-pixel graphic stroke are **proposed**, with coordinator approval to fill the uncaptured layout gap. `inspector-transform` and `inspector-color` are the audit scenes. The native sampler's unavailable/pending/failed copy is localized in the same window; unavailable platforms retain all manual colour entry controls.
 
+## Font picker
+
+The text Font row opens a 320 px popover hung off the properties panel's left edge. It has a search field, the source tabs All fonts / My fonts / Favorites, and inside All fonts a System/Google filter plus a disabled Custom category. My fonts stays hidden until imported families exist (80); Favorites and the last tab persist through preferences. Rows show the family, the source state and a favorite toggle; catalog families not yet downloaded show their size with an explicit Download action, then progress with Cancel, and a failed transfer or a failed preview list shows Retry. Loading, "Failed to load font previews", "No fonts found" and a silent fallback to the next available family are explicit states. There is no desktop capture of this popover: its 320 px width, 288 px list ceiling and row spacing are **proposed** from the shared panel and field geometry and the implementation reference's 288 px list.
+
 ## Canvas settings
 
 With no element selected the inspector's Settings tab shows two sections using

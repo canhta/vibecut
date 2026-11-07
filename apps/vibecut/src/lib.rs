@@ -10,6 +10,7 @@ mod editor;
 pub mod effect_previews;
 pub mod effects;
 pub mod export;
+pub mod font_picker;
 pub mod home;
 pub mod import;
 mod kit;
