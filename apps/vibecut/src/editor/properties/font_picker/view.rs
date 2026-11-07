@@ -287,13 +287,15 @@ fn font_row(
         });
     }
 
+    // Add the label itself instead of sizing it into the column: add_sized
+    // centres a narrow label in its box, which would centre the family name.
+    // The whole column still takes the click through a separate response.
     let mut name_ui = ui.new_child(
         egui::UiBuilder::new()
             .max_rect(name_rect)
             .layout(egui::Layout::left_to_right(Align::Center)),
     );
-    let name = name_ui.add_sized(
-        [name_rect.width(), ROW_HEIGHT],
+    let text = name_ui.add(
         egui::Label::new(
             egui::RichText::new(family)
                 .font(egui::FontId::new(
@@ -303,8 +305,13 @@ fn font_row(
                 .color(theme::text(dark)),
         )
         .halign(Align::LEFT)
-        .truncate()
-        .sense(Sense::click()),
+        .truncate(),
+    );
+    record(&mut event.widgets, &format!("fonts.name.{family}"), text);
+    let name = name_ui.interact(
+        name_rect,
+        ui.scope_id().with(("fonts.name_row", family)),
+        Sense::click(),
     );
     name.widget_info(|| egui::WidgetInfo::selected(egui::Role::Button, true, selected, family));
     record(
@@ -323,33 +330,49 @@ fn font_row(
         }
     }
 
-    let mut state_ui = ui.new_child(
-        egui::UiBuilder::new()
-            .max_rect(state_rect)
-            .layout(egui::Layout::top_down(Align::LEFT)),
-    );
-    let (status, detail, id) = row_status(entry, active, locale);
-    let status = state_ui.label(egui::RichText::new(status).small().color(
-        if active.is_some_and(|download| download.failed) {
-            theme::error_text(dark)
-        } else {
-            theme::secondary(dark)
-        },
-    ));
-    record(
-        &mut event.widgets,
-        &format!("fonts.state.{family}"),
-        status.clone(),
-    );
-    if id == "fonts.downloading" || id == "fonts.download_failed" {
-        record(&mut event.widgets, id, status);
-    }
-    if let Some(detail) = detail {
-        state_ui.label(
-            egui::RichText::new(detail)
-                .small()
-                .color(theme::secondary(dark)),
+    if let Some((status, detail, id)) = row_status(entry, active, locale) {
+        // Stack the state lines on the row's centre line. top_down starts at
+        // its rect's top, so the rect itself carries the vertical offset.
+        let line = ui.text_style_height(&egui::TextStyle::Small);
+        let gap = ui.spacing().item_spacing.y;
+        let lines = if detail.is_some() { 2.0 } else { 1.0 };
+        let height = line * lines + gap * (lines - 1.0);
+        let state_rect = Rect::from_min_size(
+            egui::pos2(state_rect.left(), state_rect.center().y - height * 0.5),
+            Vec2::new(state_rect.width(), height),
         );
+        let mut state_ui = ui.new_child(
+            egui::UiBuilder::new()
+                .max_rect(state_rect)
+                .layout(egui::Layout::top_down(Align::LEFT)),
+        );
+        let status = state_ui.label(egui::RichText::new(status).small().color(
+            if active.is_some_and(|download| download.failed) {
+                theme::error_text(dark)
+            } else {
+                theme::secondary(dark)
+            },
+        ));
+        record(
+            &mut event.widgets,
+            &format!("fonts.state.{family}"),
+            status.clone(),
+        );
+        if id == "fonts.downloading" || id == "fonts.download_failed" {
+            record(&mut event.widgets, id, status);
+        }
+        if let Some(detail) = detail {
+            let size = state_ui.label(
+                egui::RichText::new(detail)
+                    .small()
+                    .color(theme::secondary(dark)),
+            );
+            record(
+                &mut event.widgets,
+                &format!("fonts.state_size.{family}"),
+                size,
+            );
+        }
     }
 
     let mut action_ui = ui.new_child(
@@ -403,29 +426,30 @@ fn font_row(
     }
 }
 
+/// The state cell's lines, or `None` when the row needs no state text.
 fn row_status(
     entry: &FontEntry,
     active: Option<&Download>,
     locale: Locale,
-) -> (String, Option<String>, &'static str) {
+) -> Option<(String, Option<String>, &'static str)> {
     let tr = |key| catalog::text(locale, key);
     if let Some(download) = active {
         if download.failed {
-            return (
+            return Some((
                 tr(Text::FontDownloadFailed).to_owned(),
                 None,
                 "fonts.download_failed",
-            );
+            ));
         }
         if download.cancelling {
-            return (
+            return Some((
                 tr(Text::FontDownloading).to_owned(),
                 None,
                 "fonts.downloading",
-            );
+            ));
         }
         let percent = catalog::number(locale, (download.progress * 100.0).round() as u64);
-        return (
+        return Some((
             catalog::format(
                 locale,
                 Text::FontDownloadingPercent,
@@ -433,15 +457,16 @@ fn row_status(
             ),
             None,
             "fonts.downloading",
-        );
+        ));
     }
     match entry.state {
-        FontState::Available => (tr(Text::FontAvailable).to_owned(), None, ""),
-        FontState::NotDownloaded => (
+        // A ready row says everything through its name and typeface.
+        FontState::Available => None,
+        FontState::NotDownloaded => Some((
             tr(Text::FontNotDownloaded).to_owned(),
             entry.download_bytes.map(|bytes| human_size(locale, bytes)),
             "",
-        ),
+        )),
     }
 }
 
@@ -560,8 +585,80 @@ fn human_size(locale: Locale, bytes: u64) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{chip_fill, chip_ink};
+    use super::{Download, chip_fill, chip_ink, row_status};
+    use crate::catalog::Locale;
     use crate::kit as theme;
+    use engine::control::{FontEntry, FontOrigin, FontState};
+    use engine::jobs::JobId;
+
+    fn entry(state: FontState, download_bytes: Option<u64>) -> FontEntry {
+        FontEntry {
+            family: "Lobster".into(),
+            origin: FontOrigin::Google,
+            styles: vec!["Regular".into()],
+            state,
+            license: None,
+            source: None,
+            download_bytes,
+        }
+    }
+
+    fn download(progress: f32, cancelling: bool, failed: bool) -> Download {
+        Download {
+            family: "Lobster".into(),
+            job: Some(JobId(7)),
+            progress,
+            cancelling,
+            failed,
+        }
+    }
+
+    #[test]
+    fn state_text_appears_only_when_it_adds_information() {
+        assert!(
+            row_status(&entry(FontState::Available, None), None, Locale::En).is_none(),
+            "a ready row carries no state text"
+        );
+        let (status, size, _) = row_status(
+            &entry(FontState::NotDownloaded, Some(61_000)),
+            None,
+            Locale::En,
+        )
+        .expect("a not-downloaded row shows its state");
+        assert_eq!(status, "Not downloaded");
+        assert!(size.expect("the size is shown").ends_with("KB"));
+        let (status, size, _) =
+            row_status(&entry(FontState::NotDownloaded, None), None, Locale::En)
+                .expect("a not-downloaded row without a size still shows its state");
+        assert_eq!(status, "Not downloaded");
+        assert!(size.is_none());
+        let not_downloaded = entry(FontState::NotDownloaded, None);
+        let (status, size, id) = row_status(
+            &not_downloaded,
+            Some(&download(0.4, false, false)),
+            Locale::En,
+        )
+        .expect("a download shows progress");
+        assert!(status.starts_with("Downloading"));
+        assert!(size.is_none());
+        assert_eq!(id, "fonts.downloading");
+        let (status, _, id) = row_status(
+            &not_downloaded,
+            Some(&download(0.4, true, false)),
+            Locale::En,
+        )
+        .expect("a cancelling download still shows");
+        assert_eq!(status, "Downloading…");
+        assert_eq!(id, "fonts.downloading");
+        let (status, _, id) = row_status(
+            &not_downloaded,
+            Some(&download(0.4, false, true)),
+            Locale::En,
+        )
+        .expect("a failed download shows its failure");
+        assert_eq!(status, "Download failed");
+        assert_eq!(id, "fonts.download_failed");
+    }
 
     #[test]
     fn selected_chip_uses_the_accent_fill_and_on_accent_ink() {

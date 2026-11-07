@@ -1679,22 +1679,47 @@ fn font_picker_lists_search_tabs_and_favorites_through_commands() {
         (star.left(), star.width()),
         (star_google.left(), star_google.width())
     );
-    let name = widget_rect(&harness, "inspector.text_font.Inter");
-    let name_google = widget_rect(&harness, "inspector.text_font.Lobster");
+    // Names start at the name column's left edge; the text rect hugs the label.
+    let name = widget_rect(&harness, "fonts.name.Inter");
+    let name_google = widget_rect(&harness, "fonts.name.Lobster");
     assert_eq!(
-        (name.left(), name.width()),
-        (name_google.left(), name_google.width())
+        name.left(),
+        name_google.left(),
+        "every name starts at the same left edge"
     );
-    let state = widget_rect(&harness, "fonts.state.Inter");
-    let state_google = widget_rect(&harness, "fonts.state.Lobster");
+    assert_eq!(
+        name.left(),
+        star.right(),
+        "the name text starts at the name column's left edge"
+    );
+    // Only informative rows carry state text: not downloaded with size, and
+    // later downloading or failed. Ready rows are blank.
+    assert!(
+        !has_widget(&harness, "fonts.state.Inter"),
+        "an available row drops the Available label"
+    );
+    assert!(has_widget(&harness, "fonts.state.Lobster"));
+    let state = widget_rect(&harness, "fonts.state.Lobster");
+    let size = widget_rect(&harness, "fonts.state_size.Lobster");
     assert_eq!(
         state.left(),
-        state_google.left(),
+        size.left(),
         "the state column has one fixed left edge"
     );
-    assert!(name.left() >= star.right());
-    assert!(state.left() >= name.right());
+    assert!(
+        size.top() >= state.bottom() && size.width() > 0.0,
+        "the not-downloaded row stacks its size under its state text"
+    );
+    // The clickable row cell still spans the whole name column.
+    let row = widget_rect(&harness, "inspector.text_font.Inter");
+    assert_eq!(row.left(), name.left());
+    assert!(row.right() <= state.left() + 0.5);
     assert!(widget_rect(&harness, "fonts.download.Lobster").left() >= state.left());
+    // The state block is centred on the same line as the name.
+    assert!(
+        ((state.top() + size.bottom()) * 0.5 - name_google.center().y).abs() < 1.0,
+        "the state text shares the row's centre line with the name"
+    );
 
     type_search(&mut harness, "not");
     assert!(has_widget(&harness, "inspector.text_font.Noto Serif"));
