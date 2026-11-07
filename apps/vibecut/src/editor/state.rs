@@ -108,6 +108,8 @@ pub(super) const SHORTCUT_CONTROL_HEIGHT: f32 = theme::size::FIELD;
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ShortcutRow {
     pub action: String,
+    /// The action's label in the editor's current locale.
+    pub label: String,
     pub category: &'static str,
     pub tab: ShortcutTab,
     pub keys: Vec<String>,

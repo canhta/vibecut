@@ -14,14 +14,8 @@ doc	crates/ai/src/policy.rs	first line is not a //! responsibility line
 doc	crates/ai/src/vision/decisions.rs	first line is not a //! responsibility line
 doc	crates/ai/src/vision/reidentification.rs	first line is not a //! responsibility line
 doc	crates/ai/src/vision/tract.rs	first line is not a //! responsibility line
-folder	apps/vibecut/src	29 direct children (limit 12)
+folder	apps/vibecut/src	32 direct children (limit 12)
 folder	crates/ai/src	19 direct children (limit 12)
-layer	apps/vibecut/src/actions.rs	crate::media_panel is in higher layer features/assets (module actions is foundation/foundation)
-layer	apps/vibecut/src/catalog.rs	crate::export is in higher layer features/export (module catalog is foundation/foundation)
-layer	apps/vibecut/src/catalog.rs	crate::media_panel is in higher layer features/assets (module catalog is foundation/foundation)
-layer	apps/vibecut/src/catalog.rs	crate::panels is in higher layer features/properties (module catalog is foundation/foundation)
-layer	apps/vibecut/src/catalog.rs	crate::preview is in higher layer features/player (module catalog is foundation/foundation)
-layer	apps/vibecut/src/catalog.rs	crate::subtitles is in higher layer features/captions (module catalog is foundation/foundation)
 layer	apps/vibecut/src/export.rs	crate::playback crosses feature groups in layer features (module export is export, target is player)
 layer	apps/vibecut/src/shorts/state.rs	crate::ai_task crosses feature groups in layer features (module shorts is shorts, target is models)
 layer	apps/vibecut/src/shorts/state.rs	crate::crop crosses feature groups in layer features (module shorts is shorts, target is player)
@@ -32,9 +26,3 @@ layer	apps/vibecut/src/shorts/view/toast.rs	crate::export crosses feature groups
 layer	apps/vibecut/src/shorts/view/tools.rs	crate::crop crosses feature groups in layer features (module shorts is shorts, target is player)
 layer	apps/vibecut/src/subtitles.rs	crate::ai_task crosses feature groups in layer features (module subtitles is captions, target is models)
 layer	apps/vibecut/src/subtitles/view.rs	crate::export crosses feature groups in layer features (module subtitles is captions, target is export)
-layer	apps/vibecut/src/workspace.rs	crate::editor is in higher layer frame/editor (module workspace is shell/shell)
-layer	apps/vibecut/src/workspace.rs	crate::home is in higher layer features/home (module workspace is shell/shell)
-layer	apps/vibecut/src/workspace.rs	crate::import is in higher layer features/assets (module workspace is shell/shell)
-layer	apps/vibecut/src/workspace.rs	crate::model_manager is in higher layer features/models (module workspace is shell/shell)
-layer	apps/vibecut/src/workspace.rs	crate::playback is in higher layer features/player (module workspace is shell/shell)
-layer	apps/vibecut/src/workspace.rs	crate::shorts is in higher layer features/shorts (module workspace is shell/shell)

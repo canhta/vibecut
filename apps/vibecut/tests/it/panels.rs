@@ -20,12 +20,11 @@ use std::{
 };
 use time::{SourceRange, TICKS_PER_SECOND, Tick};
 use vibecut::{
-    Editor,
-    catalog::{FontTab, PreferenceStore, Preferences},
-    egui,
+    Editor, egui,
     font_picker::{Backend, Status},
     panels::{AssetsTab, ElementKind, PropertiesTab},
     playback::{Files, Playback},
+    preferences::{FontTab, PreferenceStore, Preferences},
 };
 
 const SECOND: i64 = TICKS_PER_SECOND;

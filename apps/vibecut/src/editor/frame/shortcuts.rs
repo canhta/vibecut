@@ -7,7 +7,7 @@ use crate::editor::{
 
 impl Editor {
     /// Modal shortcuts editor over the one action registry and preference store.
-    /// Rows read effective bindings; catalog, grouping and conflict rules all
+    /// Rows read effective bindings; grouping and conflict rules all
     /// stay owned by their existing modules.
     pub(in crate::editor) fn shortcuts_dialog(&mut self, ctx: &egui::Context) {
         if !self.shortcuts_open {
@@ -374,7 +374,7 @@ impl Editor {
         // Long labels wrap inside the row instead of running into the keys.
         let label_max = (key_right - key_width - (row_rect.left() + 16.0) - 8.0).max(60.0);
         let label = ui.painter().layout(
-            spec.label.to_owned(),
+            self.tr(spec.label).to_owned(),
             FontId::proportional(SHORTCUT_TEXT_SIZE),
             self.text_color(),
             label_max,

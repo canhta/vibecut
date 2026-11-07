@@ -1,8 +1,8 @@
 //! Composes the desktop application from its public interfaces.
 pub mod actions;
 mod ai_task;
+pub mod appearance;
 pub mod capture;
-pub mod catalog;
 pub mod color_picker;
 pub mod control;
 pub mod crop;
@@ -11,13 +11,16 @@ pub mod effect_previews;
 pub mod effects;
 pub mod export;
 pub mod home;
+pub mod i18n;
 pub mod import;
+pub mod input;
 mod kit;
 pub mod lifecycle;
 pub mod media_panel;
 pub mod model_manager;
 pub mod panels;
 pub mod playback;
+pub mod preferences;
 pub mod preview;
 pub mod selection;
 pub mod shorts;

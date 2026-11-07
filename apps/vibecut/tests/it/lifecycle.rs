@@ -1,7 +1,7 @@
 #![allow(clippy::unwrap_used, clippy::panic)]
 use egui_kittest::kittest::{By, Queryable};
 use std::time::{Duration, Instant};
-use vibecut::{catalog::Preferences, egui, workspace::Workspace};
+use vibecut::{egui, preferences::Preferences, workspace::Workspace};
 fn idle(app: &mut Workspace) {
     let deadline = Instant::now() + Duration::from_secs(20);
     while app.busy() {

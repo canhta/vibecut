@@ -1,8 +1,8 @@
 //! Renders the player panel from read-only editor context.
 use super::{Action, Context, State, state::TimecodeEdit};
 use crate::{
-    catalog::Text,
     egui::{self, Align2, FontId, Rect, Sense, Vec2},
+    i18n::Text,
     kit, preview,
 };
 use time::Tick;
@@ -217,7 +217,7 @@ fn remember(cx: &Context<'_>, actions: &mut Vec<Action>, id: &str, response: egu
         chord.map_or_else(
             || label.to_owned(),
             |shortcut| {
-                crate::catalog::format(
+                crate::i18n::format(
                     cx.locale,
                     Text::ActionShortcut,
                     &[("action", label), ("shortcut", &shortcut)],
@@ -287,7 +287,7 @@ fn footer_controls(
     let dark = cx.dark;
     let y = footer.center().y;
     let current = timecode(cx, cx.playback.position().unwrap_or(Tick::ZERO));
-    let total_hint = crate::catalog::format(
+    let total_hint = crate::i18n::format(
         cx.locale,
         Text::TimeTotal,
         &[("duration", &timecode(cx, cx.session.project().duration()))],

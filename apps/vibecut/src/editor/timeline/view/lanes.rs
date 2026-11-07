@@ -4,12 +4,13 @@
 //! timeline snapping, an empty-lane marquee selects, and the lane menu owns the
 //! before/after extrapolation choice.
 
+use crate::i18n;
 use crate::{
-    catalog::{self, Text},
     editor::timeline::{
         Action, Align2, BTreeSet, Context, FontId, Id, ItemId, ItemView, KeyframeSelection, Rect,
         State, Tick, TimelineLayout, Vec2, egui, layout::LANE_HEIGHT, theme, view::Ink,
     },
+    i18n::Text,
 };
 
 impl State {
@@ -218,7 +219,7 @@ impl State {
                 });
             }
             if !cx.keyframes.is_empty() {
-                let response = ui.button(catalog::text(locale, Text::DeleteKeyframes));
+                let response = ui.button(i18n::text(locale, Text::DeleteKeyframes));
                 self.remember(
                     format!(
                         "timeline.lane.{}.{}.delete",
@@ -335,16 +336,16 @@ impl Side {
             Self::After => "after",
         }
     }
-    fn label(self, locale: crate::catalog::Locale) -> &'static str {
+    fn label(self, locale: crate::i18n::Locale) -> &'static str {
         match self {
-            Self::Before => catalog::text(locale, Text::BeforeKeyframes),
-            Self::After => catalog::text(locale, Text::AfterKeyframes),
+            Self::Before => i18n::text(locale, Text::BeforeKeyframes),
+            Self::After => i18n::text(locale, Text::AfterKeyframes),
         }
     }
 }
 trait ExtrapolationLabel {
     fn id(self) -> &'static str;
-    fn label(self, locale: crate::catalog::Locale) -> &'static str;
+    fn label(self, locale: crate::i18n::Locale) -> &'static str;
 }
 impl ExtrapolationLabel for project::Extrapolation {
     fn id(self) -> &'static str {
@@ -353,10 +354,10 @@ impl ExtrapolationLabel for project::Extrapolation {
             Self::Linear => "linear",
         }
     }
-    fn label(self, locale: crate::catalog::Locale) -> &'static str {
+    fn label(self, locale: crate::i18n::Locale) -> &'static str {
         match self {
-            Self::Hold => catalog::text(locale, Text::HoldKeyframes),
-            Self::Linear => catalog::text(locale, Text::LinearKeyframes),
+            Self::Hold => i18n::text(locale, Text::HoldKeyframes),
+            Self::Linear => i18n::text(locale, Text::LinearKeyframes),
         }
     }
 }

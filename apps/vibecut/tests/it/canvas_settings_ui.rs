@@ -13,10 +13,10 @@ use project::{AspectPreset, CanvasSize, Project, ProjectId};
 use std::sync::Arc;
 use vibecut::{
     Editor,
-    catalog::Preferences,
     color_picker::palette,
     egui,
     playback::{Files, Playback},
+    preferences::Preferences,
 };
 
 fn editor() -> Editor {

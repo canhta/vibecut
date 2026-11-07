@@ -4,17 +4,18 @@ use super::{
     BANNER_HEIGHT, CARD_RADIUS, TOOL_CARD,
     widgets::{line, semibold, set_author_id},
 };
+use crate::i18n;
 use crate::{
-    catalog::{self, Locale, Text},
     egui,
     home::state::{Action, State},
+    i18n::{Locale, Text},
     kit::{self, Icon},
 };
 
 /// The full-width banner: one click creates and opens a project.
 pub(super) fn banner(ui: &mut egui::Ui, width: f32, state: &mut State, locale: Locale) {
     let dark = ui.visuals().dark_mode;
-    let label = catalog::text(locale, Text::NewProject);
+    let label = i18n::text(locale, Text::NewProject);
     let enabled = !state.busy();
     let creating = state.creating;
     let id = "project.create";
@@ -31,7 +32,7 @@ pub(super) fn banner(ui: &mut egui::Ui, width: f32, state: &mut State, locale: L
                 ui.painter().rect_filled(rect, CARD_RADIUS, fill);
                 let ink = kit::on_accent(dark);
                 if creating {
-                    let text = egui::RichText::new(catalog::text(locale, Text::LoadingProject))
+                    let text = egui::RichText::new(i18n::text(locale, Text::LoadingProject))
                         .font(semibold(kit::type_size::CHROME))
                         .color(ink);
                     let width_of = ui
@@ -95,7 +96,7 @@ pub(super) fn banner(ui: &mut egui::Ui, width: f32, state: &mut State, locale: L
 pub(super) fn shorts_card(ui: &mut egui::Ui, state: &mut State, locale: Locale) {
     let dark = ui.visuals().dark_mode;
     let id = "home.shorts";
-    let title = catalog::text(locale, Text::Shorts);
+    let title = i18n::text(locale, Text::Shorts);
     let (rect, response) = ui
         .push_id(id, |ui| {
             ui.allocate_exact_size(TOOL_CARD.into(), egui::Sense::click())
@@ -126,7 +127,7 @@ pub(super) fn shorts_card(ui: &mut egui::Ui, state: &mut State, locale: Locale) 
     );
     let hint = line(
         ui,
-        catalog::text(locale, Text::HomeShortsHint),
+        i18n::text(locale, Text::HomeShortsHint),
         egui::FontId::proportional(kit::type_size::BODY),
         kit::secondary(dark),
         inner,

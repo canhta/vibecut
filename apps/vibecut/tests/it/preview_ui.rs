@@ -18,10 +18,10 @@ use std::{
 };
 use time::{FrameRate, SourceRange, TICKS_PER_SECOND, Tick};
 use vibecut::{
-    Editor,
-    catalog::{PreferenceStore, Preferences, Text},
-    egui,
+    Editor, egui,
+    i18n::Text,
     playback::{Files, Playback},
+    preferences::{PreferenceStore, Preferences},
     preview,
 };
 
@@ -458,7 +458,7 @@ fn snapshot_dialog_cancel_success_failure_and_copy_are_typed() {
     assert!(h.state_mut().snapshot_picked_file(blocked).is_err());
     h.run_steps(3);
     assert!(
-        h.query_by_label(vibecut::catalog::text(
+        h.query_by_label(vibecut::i18n::text(
             h.state().preferences.locale,
             Text::SnapshotFailed
         ))
@@ -583,7 +583,7 @@ fn edit_after_timecode_seek_resyncs_playback_and_clamps_at_the_new_end() {
 #[test]
 fn preview_timecode_and_zoom_labels_are_localised() {
     let prefs = Preferences {
-        locale: vibecut::catalog::Locale::Vi,
+        locale: vibecut::i18n::Locale::Vi,
         ..Default::default()
     };
     let mut h = build(editor(project(FrameRate::FPS_30, 640, 360, false), prefs));
@@ -596,7 +596,7 @@ fn preview_timecode_and_zoom_labels_are_localised() {
 
 #[test]
 fn player_footer_stays_on_one_row_in_both_languages() {
-    for locale in [vibecut::catalog::Locale::En, vibecut::catalog::Locale::Vi] {
+    for locale in [vibecut::i18n::Locale::En, vibecut::i18n::Locale::Vi] {
         let mut h = build(editor(
             project(FrameRate::FPS_30, 640, 360, false),
             Preferences {

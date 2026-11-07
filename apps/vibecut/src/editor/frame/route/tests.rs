@@ -1,9 +1,10 @@
 //! Verifies the frame applies the actions the timeline returns.
 #![allow(clippy::unwrap_used, clippy::indexing_slicing, clippy::panic)]
+
 use super::*;
 use crate::{
-    catalog::Preferences,
     playback::{Files, Playback},
+    preferences::Preferences,
 };
 use engine::{ByteBudget, CreatedId, NewItem};
 use project::{Project, ProjectId, TrackId, TrackKind};

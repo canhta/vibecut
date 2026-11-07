@@ -3,8 +3,9 @@
 use crate::editor::assets::{
     Arc, AssetId, AssetState, Command, Editor, Error, ImportEvent, ImportFailure, ImportProbe,
     ImportQueue, PathBuf, Result, SourceAsset, Text, ThumbnailOutcome, ThumbnailSource,
-    UnsupportedReason, catalog, error_detail,
+    UnsupportedReason, error_detail,
 };
+use crate::i18n;
 
 impl Editor {
     /// Replace the media boundary in tests; production keeps the media owner.
@@ -248,10 +249,10 @@ impl Editor {
         let failed_count = self.import_failures.len();
         let unfinished_count = self.import_total.saturating_sub(self.import_completed);
         let locale = self.preferences.locale;
-        let imported = catalog::number(locale, self.import_imported as u64);
-        let failed = catalog::number(locale, failed_count as u64);
-        let unfinished = catalog::number(locale, unfinished_count as u64);
-        let detail = catalog::format(
+        let imported = i18n::number(locale, self.import_imported as u64);
+        let failed = i18n::number(locale, failed_count as u64);
+        let unfinished = i18n::number(locale, unfinished_count as u64);
+        let detail = i18n::format(
             locale,
             Text::ImportSummary,
             &[

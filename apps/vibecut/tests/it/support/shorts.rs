@@ -13,8 +13,8 @@ use shorts::clip_boundaries::ClipBoundarySettings;
 use std::sync::{Arc, Mutex};
 use time::{FrameRate, SourceRange, TICKS_PER_SECOND, Tick};
 use vibecut::{
-    catalog::Preferences,
     playback::Sources,
+    preferences::Preferences,
     shorts::{Candidate, GenerationRequest, Generator, ReviewSource, State as Shorts, TaskEvents},
 };
 pub fn tick(n: i64) -> Tick {
@@ -215,7 +215,7 @@ impl render::SourceProvider for Pixels {
 }
 pub fn app() -> Shorts {
     let mut app = Shorts::with_generator(
-        Preferences::default(),
+        Preferences::default().look(),
         ByteBudget::new(512 << 20).unwrap(),
         Arc::new(Once(Mutex::new(Some(source())))),
         Arc::new(Pixels),

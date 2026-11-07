@@ -3,11 +3,11 @@ use super::{
     State, Tool,
     widgets::{self, bold, corner, icon_tap},
 };
+use crate::i18n;
 use crate::{
-    Error,
-    catalog::{self, Text},
-    crop,
+    Error, crop,
     egui::{self, Align2, Rect, Vec2, pos2, vec2},
+    i18n::Text,
     kit::{self, Icon},
     shorts::state::parse_seconds,
 };
@@ -59,7 +59,7 @@ pub(super) fn show(state: &mut State, ui: &mut egui::Ui, panel: Rect) {
             strip.min + vec2(4.0, 4.0 + TOOL_HEIGHT * index as f32),
             vec2(STRIP_WIDTH - 8.0, TOOL_HEIGHT),
         );
-        let label = catalog::text(state.preferences.locale, text);
+        let label = i18n::text(state.preferences.locale, text);
         let response = widgets::tap(ui, id, cell, label, true);
         let selected = state.tool == Some(tool);
         if selected || response.hovered() {
@@ -120,7 +120,7 @@ pub(super) fn show(state: &mut State, ui: &mut egui::Ui, panel: Rect) {
                     ui.painter().text(
                         head.left_center(),
                         Align2::LEFT_CENTER,
-                        catalog::text(state.preferences.locale, title),
+                        i18n::text(state.preferences.locale, title),
                         bold(16.0),
                         kit::text(dark),
                     );
@@ -133,7 +133,7 @@ pub(super) fn show(state: &mut State, ui: &mut egui::Ui, panel: Rect) {
                         "shorts.tool.close",
                         x,
                         Icon::X,
-                        catalog::text(state.preferences.locale, Text::ProjectsInfoClose),
+                        i18n::text(state.preferences.locale, Text::ProjectsInfoClose),
                         true,
                         false,
                     )

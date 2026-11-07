@@ -1,8 +1,8 @@
 //! A bottom-right notice: the last failure and the export jobs.
 use super::{State, widgets};
 use crate::{
-    catalog::Text,
     egui::{self, Align2, vec2},
+    i18n::Text,
     kit::{self, Icon},
     shorts::state::{failure_text, terminal},
 };

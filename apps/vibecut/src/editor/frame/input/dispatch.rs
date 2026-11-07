@@ -2,8 +2,9 @@
 
 use crate::editor::{
     ActionTarget, Command, CreatedId, Editor, EngineAction, Error, ItemId, PREFERENCE_COMMAND,
-    Result, Text, Tick, UiAction, actions, catalog, preview,
+    Result, Text, Tick, UiAction, actions, preview,
 };
+use crate::i18n;
 
 impl Editor {
     fn split_targets(&self) -> Vec<ItemId> {
@@ -265,73 +266,78 @@ impl Editor {
         }
     }
 
-    pub(in crate::editor) fn engine_action_params(
-        &self,
-        route: EngineAction,
-    ) -> Result<Vec<serde_json::Value>> {
+    pub(in crate::editor) fn engine_commands(&self, route: EngineAction) -> Result<Vec<Command>> {
         Ok(match route {
             EngineAction::Split => {
                 let at = self.playback.position()?;
                 self.split_targets()
                     .into_iter()
-                    .map(|item| serde_json::json!({"item":item,"at":at}))
+                    .map(|item| Command::SplitAt { item, at })
                     .collect()
             }
             EngineAction::SplitLeft | EngineAction::SplitRight => {
                 let at = self.playback.position()?;
-                let targets = self.split_targets();
-                if targets.is_empty() {
+                let items = self.split_targets();
+                if items.is_empty() {
                     Vec::new()
+                } else if route == EngineAction::SplitLeft {
+                    vec![Command::TimelineSplitLeft { items, at }]
                 } else {
-                    vec![serde_json::json!({"items":targets,"at":at})]
+                    vec![Command::TimelineSplitRight { items, at }]
                 }
             }
-            EngineAction::Duplicate => vec![serde_json::json!({"items":self.duplicate_targets()})],
+            EngineAction::Duplicate => vec![Command::DuplicateItems {
+                items: self.duplicate_targets(),
+            }],
             EngineAction::SetHidden => {
-                let targets = self.visual_targets();
-                let hidden = targets.iter().any(|item| !self.item_hidden(*item));
-                vec![serde_json::json!({"items":targets,"hidden":hidden})]
+                let items = self.visual_targets();
+                let hidden = items.iter().any(|item| !self.item_hidden(*item));
+                vec![Command::SetItemsHidden { items, hidden }]
             }
             EngineAction::SetMuted => {
-                let targets = self.audio_targets();
-                let muted = targets.iter().any(|item| !self.item_muted(*item));
-                vec![serde_json::json!({"items":targets,"muted":muted})]
+                let items = self.audio_targets();
+                let muted = items.iter().any(|item| !self.item_muted(*item));
+                vec![Command::SetItemsMuted { items, muted }]
             }
-            EngineAction::ExtractAudio => {
-                vec![serde_json::json!({"items":self.extract_targets()})]
-            }
-            EngineAction::RecoverAudio => {
-                vec![serde_json::json!({"items":self.recover_targets()})]
-            }
+            EngineAction::ExtractAudio => vec![Command::ExtractAudio {
+                items: self.extract_targets(),
+            }],
+            EngineAction::RecoverAudio => vec![Command::RecoverAudio {
+                items: self.recover_targets(),
+            }],
             EngineAction::Delete | EngineAction::RippleDelete => {
                 if route.command(self.preferences.ripple) == engine::CommandKind::RippleDelete {
                     self.selection_by_end(true)
                         .into_iter()
-                        .map(|item| serde_json::json!({"item":item}))
+                        .map(|item| Command::RippleDelete { item })
                         .collect()
                 } else {
-                    vec![serde_json::json!({"items":self.selection})]
+                    vec![Command::Delete {
+                        items: self.selection.iter().copied().collect(),
+                    }]
                 }
             }
-            EngineAction::InsertMedia => Vec::new(), // Placement depends on each preceding outcome.
-            EngineAction::AddTrack => vec![crate::editor::timeline::add_track_params(
+            EngineAction::InsertMedia => Vec::new(),
+            EngineAction::AddTrack => vec![crate::editor::timeline::add_track_command(
                 &self.session,
                 &self.selection,
                 self.preferences.locale,
             )],
             EngineAction::CreateScene => {
                 let count = self.session.project().data().scenes.iter().count();
-                let number = catalog::number(self.preferences.locale, (count + 1) as u64);
-                let name = catalog::format(
+                let number = i18n::number(self.preferences.locale, (count + 1) as u64);
+                let name = i18n::format(
                     self.preferences.locale,
                     Text::SceneDefaultName,
                     &[("n", &number)],
                 );
-                vec![serde_json::json!({"name":name})]
+                vec![Command::CreateScene {
+                    name: engine::NfcText::from(name),
+                }]
             }
-            EngineAction::DeleteScenes => {
-                vec![serde_json::json!({"scenes":self.timeline.scenes.selected()})]
-            }
+            EngineAction::DeleteScenes => vec![Command::DeleteScenes {
+                scenes: self.timeline.scenes.selected().iter().copied().collect(),
+            }],
         })
     }
 
@@ -341,21 +347,13 @@ impl Editor {
             self.insert_selected_assets(command);
             return Ok(());
         }
-        let params = self.engine_action_params(route)?;
-        if params.is_empty() {
+        let commands = self.engine_commands(route)?;
+        if commands.is_empty() {
             return Ok(());
         }
-        let commands: Vec<_> = params
-            .into_iter()
-            .map(|params| serde_json::json!({"command":command.id(), "params":params}))
-            .collect();
         let created = self
             .session
-            .execute_with_ripple(
-                "batch",
-                serde_json::json!({"commands":commands}),
-                self.preferences.ripple,
-            )?
+            .apply_with_ripple(Command::Batch { commands }, self.preferences.ripple)?
             .created;
         let created_items: Vec<ItemId> = created
             .iter()

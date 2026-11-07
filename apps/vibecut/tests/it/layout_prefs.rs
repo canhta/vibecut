@@ -10,10 +10,9 @@ use std::{
     sync::Arc,
 };
 use vibecut::{
-    Editor, PREFERENCE_COMMAND,
-    catalog::{DEFAULT_PANELS, PreferenceStore, Preferences},
-    egui,
+    Editor, PREFERENCE_COMMAND, egui,
     playback::{Files, Playback},
+    preferences::{DEFAULT_PANELS, PreferenceStore, Preferences},
 };
 
 fn editor(preferences: Preferences) -> Editor {
@@ -146,10 +145,10 @@ fn layout_reset_is_undoable_and_never_enters_project_history() {
 #[test]
 fn frame_keeps_chrome_compact_and_window_actions_in_the_menu() {
     for (width, height, scale, locale, dark) in [
-        (1727.0, 1029.0, 1.0, vibecut::catalog::Locale::En, true),
-        (1727.0, 1029.0, 2.0, vibecut::catalog::Locale::Vi, false),
-        (1280.0, 800.0, 1.0, vibecut::catalog::Locale::Vi, true),
-        (1280.0, 800.0, 2.0, vibecut::catalog::Locale::En, false),
+        (1727.0, 1029.0, 1.0, vibecut::i18n::Locale::En, true),
+        (1727.0, 1029.0, 2.0, vibecut::i18n::Locale::Vi, false),
+        (1280.0, 800.0, 1.0, vibecut::i18n::Locale::Vi, true),
+        (1280.0, 800.0, 2.0, vibecut::i18n::Locale::En, false),
     ] {
         let mut harness = crate::gpu::builder()
             .with_size(egui::vec2(width, height))
@@ -355,7 +354,7 @@ fn splitter_commit_refuses_an_edit_that_would_exceed_the_store_budget() {
     for index in 0..64 {
         preferences.windows.insert(
             format!("{index:064}"),
-            vibecut::catalog::WindowGeometry {
+            vibecut::preferences::WindowGeometry {
                 size: [12345.678, 12345.678],
                 position: Some([-12345.678, -23_456.79]),
                 maximized: false,
@@ -422,7 +421,7 @@ fn layout_preferences_render_light_and_dark_screenshots() {
 
 #[test]
 fn window_geometry_is_independent_bounded_and_persisted_outside_project_history() {
-    use vibecut::catalog::WindowGeometry;
+    use vibecut::preferences::WindowGeometry;
     let root = tempfile::tempdir().unwrap();
     let store = PreferenceStore::new(root.path().join("preferences.json"));
     let mut preferences = Preferences::default();

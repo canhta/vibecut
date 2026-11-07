@@ -29,10 +29,9 @@ use std::{
     time::{Duration, Instant},
 };
 use vibecut::{
-    Client, Editor, Sounds, SoundsMode, SoundsProblem,
-    catalog::Preferences,
-    egui,
+    Client, Editor, Sounds, SoundsMode, SoundsProblem, egui,
     playback::{Files, Playback},
+    preferences::Preferences,
 };
 
 fn result(id: u64, licence: &str) -> SoundResult {

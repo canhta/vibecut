@@ -1,5 +1,6 @@
 //! Renders asset deletion confirmation.
-use crate::editor::assets::{Editor, Id, Text, catalog, egui};
+use crate::editor::assets::{Editor, Id, Text, egui};
+use crate::i18n;
 
 impl Editor {
     pub(in crate::editor) fn media_delete_dialog(&mut self, ctx: &egui::Context) {
@@ -13,7 +14,7 @@ impl Editor {
                 self.tr(Text::Delete),
                 self.tr(Text::Media)
             ));
-            ui.label(catalog::format_count(
+            ui.label(i18n::format_count(
                 self.preferences.locale,
                 ids.len() as u64,
                 Text::DeleteMediaPromptOne,

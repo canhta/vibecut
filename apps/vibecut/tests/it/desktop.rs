@@ -12,10 +12,10 @@ use std::{
 };
 use time::{SourceRange, TICKS_PER_SECOND, Tick};
 use vibecut::{
-    Editor,
-    catalog::{Locale, PreferenceStore, Preferences},
-    egui,
+    Editor, egui,
+    i18n::Locale,
     playback::{Files, Playback},
+    preferences::{PreferenceStore, Preferences},
 };
 fn session() -> Session {
     let mut session =

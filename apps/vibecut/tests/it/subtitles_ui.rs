@@ -17,10 +17,10 @@ use std::{
 };
 use time::{TICKS_PER_SECOND, Tick};
 use vibecut::{
-    Editor,
-    catalog::{Locale, PreferenceStore},
-    egui,
+    Editor, egui,
+    i18n::Locale,
     panels::AssetsTab,
+    preferences::PreferenceStore,
     subtitles::{LocalWorkflow, Options, Subtitles, TaskEvents, Work, Workflow},
 };
 #[path = "support/subtitles.rs"]
@@ -919,7 +919,7 @@ fn generate_explicit_choices_insert_once_and_missing_models_offer_setup_without_
     wait(&mut h, |e| !panel(e).busy);
     assert_eq!(
         panel(h.state()).problem,
-        Some(vibecut::catalog::Text::ShortsModelMissing)
+        Some(vibecut::i18n::Text::ShortsModelMissing)
     );
     assert!(h.state().models().is_none());
     assert!(
@@ -957,8 +957,8 @@ fn caption_language_auto_retry_covers_no_speech_low_confidence_and_silent_clips(
         click(&mut h, "subtitles.generate");
         wait(&mut h, |e| !panel(e).busy);
         let expected = match failure {
-            GenerateFailure::LowConfidence => vibecut::catalog::Text::SubLowConfidence,
-            _ => vibecut::catalog::Text::SubNoSpeech,
+            GenerateFailure::LowConfidence => vibecut::i18n::Text::SubLowConfidence,
+            _ => vibecut::i18n::Text::SubNoSpeech,
         };
         assert_eq!(panel(h.state()).problem, Some(expected), "{source}");
         let retry = h
@@ -975,7 +975,7 @@ fn caption_language_auto_retry_covers_no_speech_low_confidence_and_silent_clips(
             } else {
                 assert_eq!(
                     panel(h.state()).problem,
-                    Some(vibecut::catalog::Text::SubNoSpeech)
+                    Some(vibecut::i18n::Text::SubNoSpeech)
                 );
             }
         }
@@ -1204,7 +1204,7 @@ fn concurrent_caption_edits_retain_the_draft_until_explicit_reload() {
     h.run_steps(3);
     assert_eq!(
         panel(h.state()).problem,
-        Some(vibecut::catalog::Text::SubDraftConflict)
+        Some(vibecut::i18n::Text::SubDraftConflict)
     );
     assert!(
         h.get(By::new().predicate(|n| n.author_id() == Some(field)))

@@ -9,8 +9,8 @@ mod view;
 mod workflow;
 
 use crate::{
-    catalog::{Locale, Text},
     egui,
+    i18n::{Locale, Text},
 };
 
 /// Read-only composition inputs shared by editor areas.
@@ -21,7 +21,7 @@ pub(crate) struct Context<'a> {
     pub(crate) selection: &'a std::collections::BTreeSet<project::ItemId>,
     pub(crate) locale: Locale,
     pub(crate) dark: bool,
-    pub(crate) preferences: &'a crate::catalog::Preferences,
+    pub(crate) preferences: &'a crate::preferences::Preferences,
     /// What the selection currently scopes: items, mask points or keyframes.
     pub(crate) scope: crate::selection::SelectionScope,
     /// The selected keyframes, flat across items and channels.
@@ -124,7 +124,7 @@ impl Thumbnails<'_> {
 
 impl Context<'_> {
     pub(crate) fn tr(&self, key: Text) -> &'static str {
-        crate::catalog::text(self.locale, key)
+        crate::i18n::text(self.locale, key)
     }
 }
 

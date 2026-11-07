@@ -1,8 +1,9 @@
 //! Draws the font picker popover and turns its events into picker actions.
 use super::state::{Category, Download, State, Status};
-use crate::catalog::{self, FontPickerPreferences, FontTab, Locale, Text};
 use crate::egui::{self, Align, Align2, Color32, Id, Rect, Sense, Stroke, Vec2};
+use crate::i18n::{self, Locale, Text};
 use crate::kit as theme;
+use crate::preferences::{FontPickerPreferences, FontTab};
 use engine::control::{FontEntry, FontState};
 use std::sync::Arc;
 
@@ -57,7 +58,7 @@ pub fn show(
         return event;
     }
     install_previews(state, ctx);
-    let tr = |key| catalog::text(locale, key);
+    let tr = |key| i18n::text(locale, key);
     let window = egui::Window::new(tr(Text::TextFont))
         .id(Id::unique("fonts.picker"))
         .title_bar(false)
@@ -223,7 +224,7 @@ fn font_row(
     dark: bool,
     event: &mut Event,
 ) {
-    let tr = |key| catalog::text(locale, key);
+    let tr = |key| i18n::text(locale, key);
     let family = entry.family.as_str();
     let favorite = preferences.favorites.iter().any(|name| name == family);
     let selected = state.current.as_deref() == Some(family);
@@ -272,7 +273,7 @@ fn font_row(
             egui::Role::CheckBox,
             true,
             favorite,
-            catalog::format(locale, Text::FontFavorite, &[("family", family)]),
+            i18n::format(locale, Text::FontFavorite, &[("family", family)]),
         )
     });
     record(
@@ -432,7 +433,7 @@ fn row_status(
     active: Option<&Download>,
     locale: Locale,
 ) -> Option<(String, Option<String>, &'static str)> {
-    let tr = |key| catalog::text(locale, key);
+    let tr = |key| i18n::text(locale, key);
     if let Some(download) = active {
         if download.failed {
             return Some((
@@ -448,9 +449,9 @@ fn row_status(
                 "fonts.downloading",
             ));
         }
-        let percent = catalog::number(locale, (download.progress * 100.0).round() as u64);
+        let percent = i18n::number(locale, (download.progress * 100.0).round() as u64);
         return Some((
-            catalog::format(
+            i18n::format(
                 locale,
                 Text::FontDownloadingPercent,
                 &[("state", tr(Text::FontDownloading)), ("percent", &percent)],
@@ -550,7 +551,7 @@ fn category_label(category: Category) -> Text {
 }
 
 fn tab_label(tab: FontTab, locale: Locale) -> &'static str {
-    catalog::text(
+    i18n::text(
         locale,
         match tab {
             FontTab::All => Text::FontsAll,
@@ -576,9 +577,9 @@ fn human_size(locale: Locale, bytes: u64) -> String {
         unit += 1;
     }
     let number = if unit == 0 {
-        catalog::number(locale, bytes)
+        i18n::number(locale, bytes)
     } else {
-        catalog::decimal(locale, value, 1)
+        i18n::decimal(locale, value, 1)
     };
     format!("{number} {}", UNITS.get(unit).copied().unwrap_or("B"))
 }
@@ -586,7 +587,7 @@ fn human_size(locale: Locale, bytes: u64) -> String {
 #[cfg(test)]
 mod tests {
     use super::{Download, chip_fill, chip_ink, row_status};
-    use crate::catalog::Locale;
+    use crate::i18n::Locale;
     use crate::kit as theme;
     use engine::control::{FontEntry, FontOrigin, FontState};
     use engine::jobs::JobId;

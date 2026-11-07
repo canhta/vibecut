@@ -2,10 +2,11 @@
 
 use crate::editor::timeline::{
     Action, Align2, Color32, Context, DragMode, FontId, Icon, Id, ItemParams, ItemView,
-    LABEL_CHARS, Locale, Rect, State, Text, TimelineLayout, TrackKind, Vec2, audio, catalog,
-    display_label, egui, icons, theme,
+    LABEL_CHARS, Locale, Rect, State, Text, TimelineLayout, TrackKind, Vec2, audio, display_label,
+    egui, icons, theme,
     view::{Ink, tr},
 };
+use crate::i18n;
 
 impl State {
     pub(in crate::editor::timeline) fn paint_item(
@@ -472,7 +473,7 @@ impl State {
             return;
         }
         ui.ctx().set_cursor_icon(egui::CursorIcon::ResizeVertical);
-        let text = format!("{} dB", catalog::decimal(cx.locale, f64::from(db), 1));
+        let text = format!("{} dB", i18n::decimal(cx.locale, f64::from(db), 1));
         let anchor = egui::pos2(
             pointer.x.min(inner.right() - 48.0),
             (pointer.y - 18.0).max(inner.top()),
@@ -644,12 +645,12 @@ pub(in crate::editor::timeline) fn item_label(
         ItemParams::Text(params) => {
             let value = params.content.as_str();
             if value.is_empty() {
-                (catalog::text(locale, Text::TextItem).to_owned(), None)
+                (i18n::text(locale, Text::TextItem).to_owned(), None)
             } else {
                 (display_label(value, LABEL_CHARS), None)
             }
         }
-        ItemParams::Caption(_) => (catalog::text(locale, Text::Caption).to_owned(), None),
+        ItemParams::Caption(_) => (i18n::text(locale, Text::Caption).to_owned(), None),
         ItemParams::Overlay(params) => {
             let [r, g, b, _] = params.color.0;
             let color = if dark { [r, g, b, 90] } else { [r, g, b, 60] };

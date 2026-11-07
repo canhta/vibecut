@@ -31,12 +31,12 @@ use std::{
 };
 use time::{FrameRate, SourceRange, TICKS_PER_SECOND, Tick};
 use vibecut::{
-    Editor, Inspection,
-    catalog::{Locale, Preferences},
-    egui,
+    Editor, Inspection, egui,
+    i18n::Locale,
     import::ImportProbe,
     model_manager::ModelManager,
     playback::{Files, Playback, Sources},
+    preferences::Preferences,
     workspace::Workspace,
 };
 
@@ -2553,8 +2553,12 @@ fn shorts_scene(
     } else {
         Arc::new(shorts_fixture::Once(Mutex::new(Some(source))))
     };
-    let mut shorts =
-        Shorts::with_generator(prefs, ByteBudget::new(768 << 20)?, generator, preview)?;
+    let mut shorts = Shorts::with_generator(
+        prefs.look(),
+        ByteBudget::new(768 << 20)?,
+        generator,
+        preview,
+    )?;
     shorts.captions = false;
     if scene != "pick" {
         shorts.pick_video(std::env::temp_dir().join("Interview.mp4"))?;

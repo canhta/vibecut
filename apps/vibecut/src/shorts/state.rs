@@ -1,8 +1,9 @@
 //! Retains review state for accepted shorts.
 use crate::{
     Editor, Error, Result,
-    catalog::{self, Locale, Preferences, Text},
+    appearance::Look,
     crop, egui,
+    i18n::{self, Locale, Text},
     playback::{Files, Playback, Sources},
 };
 use engine::ClipSourceSegment;
@@ -121,7 +122,7 @@ impl std::task::Wake for Repaint {
 }
 
 pub struct State {
-    pub preferences: Preferences,
+    pub preferences: Look,
     pub request: GenerationRequest,
     pub(super) source: Option<ReviewSource>,
     pub(super) reviews: Vec<Review>,
@@ -230,7 +231,7 @@ impl Drop for State {
     }
 }
 impl State {
-    pub fn new(preferences: Preferences, budget: ByteBudget) -> Result<Self> {
+    pub fn new(preferences: Look, budget: ByteBudget) -> Result<Self> {
         Self::with_generator(
             preferences,
             budget,
@@ -239,7 +240,7 @@ impl State {
         )
     }
     pub fn with_generator(
-        preferences: Preferences,
+        preferences: Look,
         budget: ByteBudget,
         generator: Arc<dyn Generator>,
         preview_sources: Arc<dyn Sources>,
@@ -308,7 +309,7 @@ impl State {
                 Pick::Video => Box::pin(
                     rfd::AsyncFileDialog::new()
                         .add_filter(
-                            catalog::text(self.preferences.locale, Text::Video),
+                            i18n::text(self.preferences.locale, Text::Video),
                             &["mp4", "mov", "mkv", "webm", "m4v"],
                         )
                         .pick_file(),
@@ -844,7 +845,7 @@ impl State {
             let mut playback =
                 Playback::new(&session, self.budget.clone(), self.preview_sources.clone())?;
             playback.set_render_settings(settings)?;
-            self.preview = Some(Editor::new(session, playback, self.preferences.clone()));
+            self.preview = Some(Editor::preview(session, playback, self.preferences));
         }
         self.preview_index = Some(self.selected);
         Ok(())
@@ -890,7 +891,7 @@ impl State {
         let batch = self.prepare(&[self.selected], None, std::env::temp_dir())?;
         let prepared = batch.project(0).ok_or(Error::Invalid("editor project"))?;
         let mut data = prepared.data().clone();
-        data.id = crate::workspace::fresh(prepared.data().name.as_str())?
+        data.id = crate::lifecycle::fresh(prepared.data().name.as_str())?
             .project()
             .data()
             .id;
@@ -986,10 +987,10 @@ pub(super) fn terminal(state: JobState) -> bool {
     )
 }
 pub(super) fn seconds(locale: Locale, tick: Tick) -> String {
-    catalog::decimal(locale, tick.0 as f64 / TICKS_PER_SECOND as f64, 3)
+    i18n::decimal(locale, tick.0 as f64 / TICKS_PER_SECOND as f64, 3)
 }
 pub(super) fn parse_seconds(locale: Locale, value: &str) -> Result<Tick> {
-    let value = catalog::parse_decimal(locale, value)?;
+    let value = i18n::parse_decimal(locale, value)?;
     if !(0.0..=10800.0).contains(&value) {
         return Err(Error::Invalid("trim seconds"));
     }

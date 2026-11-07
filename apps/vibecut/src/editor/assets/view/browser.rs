@@ -2,8 +2,9 @@
 use super::{
     Action, Align2, AssetRow, AssetState, AssetsTab, Color32, Filter, FontId, Icon, Id, MediaKind,
     MediaSortKey, MediaSortOrder, MediaView, Rect, Row, Text, Vec2, View, asset_state_color,
-    catalog, display_short_time, egui, icons, theme,
+    display_short_time, egui, icons, theme,
 };
+use crate::i18n;
 
 impl View<'_> {
     pub(super) fn browser(&mut self, ui: &mut egui::Ui) {
@@ -320,7 +321,7 @@ impl View<'_> {
             MediaSortKey::Duration => Text::SortDuration,
             MediaSortKey::Size => Text::SortSize,
         });
-        let response = menu.response.on_hover_text(catalog::format(
+        let response = menu.response.on_hover_text(i18n::format(
             self.cx.preferences.locale,
             Text::SortTooltip,
             &[("key", key), ("order", order)],
@@ -578,7 +579,7 @@ impl View<'_> {
             let response = ui.add_enabled(
                 !self.cx.importing,
                 egui::Button::new(if selected && self.cx.selection.len() > 1 {
-                    catalog::format_count(
+                    i18n::format_count(
                         self.cx.preferences.locale,
                         self.cx.selection.len() as u64,
                         Text::DeleteItemsOther,

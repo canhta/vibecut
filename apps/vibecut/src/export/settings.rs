@@ -1,8 +1,9 @@
 //! Renders output settings over the portable export contract.
 use super::{DialogUi, ExportOptions, RangeChoice, SceneChoice};
+use crate::i18n;
 use crate::{
-    catalog::{self, Locale, Text},
     egui,
+    i18n::{Locale, Text},
 };
 
 const RESOLUTIONS: [(u32, &str, &str); 7] = [
@@ -40,7 +41,7 @@ pub(super) fn show(
     selection: Option<time::TimeRange>,
     result: &mut DialogUi,
 ) {
-    let tr = |key| catalog::text(locale, key);
+    let tr = |key| i18n::text(locale, key);
     let spacious = ui.ctx().content_rect().height() >= 900.0;
     let field_width = (ui.available_width() - 131.0).clamp(96.0, 280.0);
     let identity_width = (ui.available_width() - 100.0).max(96.0);

@@ -1,10 +1,11 @@
 //! Reusable colour draft and native screen-sampler adapter. No project writes.
+use crate::i18n;
 pub mod palette;
 
 use crate::{
     Error, Result,
-    catalog::{self, Locale, Text},
     egui::{self, Color32, Id, Vec2},
+    i18n::{Locale, Text},
 };
 use project::{Color, ItemId};
 
@@ -291,7 +292,7 @@ impl Picker {
             Err(_) => self.native.state = EyedropperState::Failed,
             _ => {}
         }
-        let window = egui::Window::new(catalog::text(locale, Text::ColorPicker))
+        let window = egui::Window::new(i18n::text(locale, Text::ColorPicker))
             .id(Id::unique("color.picker"))
             .resizable(false)
             .collapsible(false)
@@ -309,7 +310,7 @@ impl Picker {
             let (rect, _) =
                 ui.allocate_exact_size(Vec2::new(ui.available_width(), 24.0), egui::Sense::hover());
             ui.painter().rect_filled(rect, 4.0, swatch);
-            let caption = ui.label(catalog::text(locale, Text::ColorHex));
+            let caption = ui.label(i18n::text(locale, Text::ColorHex));
             let response = ui
                 .add(
                     egui::TextEdit::singleline(&mut self.hex)
@@ -336,7 +337,7 @@ impl Picker {
                 (2, "v", Text::Value, 1.0),
                 (3, "a", Text::Alpha, 1.0),
             ] {
-                let caption = ui.label(catalog::text(locale, label));
+                let caption = ui.label(i18n::text(locale, label));
                 let mut value = self.hsva.get(index).copied().unwrap_or(0.0);
                 let slider = ui
                     .add(egui::Slider::new(&mut value, 0.0..=max).show_value(false))
@@ -389,7 +390,7 @@ impl Picker {
                 }
                 event.widgets.push((format!("color.{id}"), response));
             }
-            ui.label(catalog::text(locale, Text::Swatches));
+            ui.label(i18n::text(locale, Text::Swatches));
             egui::ScrollArea::vertical()
                 .id_salt("color.palette")
                 .max_height(180.0)
@@ -425,7 +426,7 @@ impl Picker {
                         }
                     });
                 });
-            ui.label(catalog::text(locale, Text::RecentColors));
+            ui.label(i18n::text(locale, Text::RecentColors));
             ui.horizontal_wrapped(|ui| {
                 for (index, color) in recent.iter().enumerate() {
                     let [r, g, b, a] = color.0;
@@ -455,7 +456,7 @@ impl Picker {
             });
             let response = ui.add(egui::Button::image_and_text(
                 crate::kit::tinted(crate::kit::Icon::Eye, 16.0, ui.visuals().text_color()),
-                catalog::text(locale, Text::Eyedropper),
+                i18n::text(locale, Text::Eyedropper),
             ));
             if response.clicked() && self.native.start().is_err() {
                 self.native.state = EyedropperState::Unavailable;
@@ -468,15 +469,15 @@ impl Picker {
                 _ => None,
             };
             if let Some(status) = status {
-                let response = ui.label(catalog::text(locale, status));
+                let response = ui.label(i18n::text(locale, status));
                 event
                     .widgets
                     .push(("color.eyedropper.status".into(), response));
             }
             if self.invalid {
-                ui.label(catalog::text(locale, Text::InvalidColor));
+                ui.label(i18n::text(locale, Text::InvalidColor));
             }
-            let cancel = ui.button(catalog::text(locale, Text::Cancel));
+            let cancel = ui.button(i18n::text(locale, Text::Cancel));
             event.cancel |= cancel.clicked();
             event.widgets.push(("color.cancel".into(), cancel));
         });

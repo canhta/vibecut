@@ -24,11 +24,10 @@ use std::{
 };
 use time::{FrameRate, TICKS_PER_SECOND, Tick};
 use vibecut::{
-    Editor, Error,
-    catalog::Preferences,
-    egui,
+    Editor, Error, egui,
     import::{ImportEvent, ImportProbe, ImportQueue, MAX_IMPORT_FILES},
     playback::{Files, Playback},
+    preferences::Preferences,
 };
 
 const SECOND: i64 = TICKS_PER_SECOND;

@@ -5,9 +5,10 @@ use super::{
     review::{card_ui, export_button, export_width},
     widgets::{self, bold},
 };
+use crate::i18n;
 use crate::{
-    catalog::{self, Text},
     egui::{self, Align2, Rect, Sense, pos2, vec2},
+    i18n::Text,
     kit::{self, Icon},
 };
 
@@ -32,12 +33,12 @@ pub(super) fn show(state: &mut State, ui: &mut egui::Ui, rect: Rect) {
     {
         state.fail(e, Text::ShortsError);
     }
-    let count = catalog::format(
+    let count = i18n::format(
         state.preferences.locale,
         Text::ShortsCountLabel,
         &[(
             "count",
-            &catalog::number(state.preferences.locale, state.reviews.len() as u64),
+            &i18n::number(state.preferences.locale, state.reviews.len() as u64),
         )],
     );
     let accent = painter.text(

@@ -1,15 +1,17 @@
 //! Nonblocking desktop lifecycle and recovery presentation over engine persistence.
+use crate::i18n;
 use crate::{
-    Editor, Error, Result,
-    catalog::{self, Preferences, Text},
-    egui,
+    Editor, Error, Result, egui,
     home::{Action as HomeAction, State as HomeState},
+    i18n::Text,
     kit::{self as icons, Icon},
     lifecycle::EditorAction,
+    lifecycle::fresh,
     playback::{Files, Playback},
+    preferences::Preferences,
 };
 use engine::{
-    ByteBudget, Command, EditError, Session,
+    ByteBudget, EditError, Session,
     cache::{ArtifactKind, CacheKey, KeyInputs},
     jobs::{
         JobBytes, JobId, JobKind, JobRunner, JobSpec, JobState, ResourceClass, RunnerConfig,
@@ -102,6 +104,10 @@ impl Workspace {
     }
     pub fn control_budget(&self) -> ByteBudget {
         self.home.budget.clone()
+    }
+    /// The copied appearance value every window reads this frame.
+    fn look(&self) -> crate::appearance::Look {
+        self.preferences.look()
     }
     /// Register an already-composed editor, retaining its writer lease and
     /// resource policy. Repeated project identities focus their existing window.
@@ -214,7 +220,7 @@ impl Workspace {
     pub fn open_shorts(&mut self) -> Result<()> {
         if self.shorts.is_none() {
             self.shorts = Some(crate::shorts::State::new(
-                self.preferences.clone(),
+                self.look(),
                 self.home.budget.clone(),
             )?);
         }
@@ -341,7 +347,7 @@ impl Workspace {
         }
     }
     /// Lane preferences outlive project windows. An entry goes only when its
-    /// project no longer exists: not open, not listed by a settled catalog, and
+    /// project no longer exists: not open, not listed by a settled and
     /// its project file (seen this session) is gone. A project opened from a
     /// file keeps its lanes while the file exists; one never seen this session
     /// has no evidence of deletion and is kept.
@@ -465,7 +471,12 @@ impl Workspace {
                         None
                     }
                 });
-                if let Some(action) = self.projects.show(ui, &mut self.preferences, status) {
+                if let Some(action) = self.projects.show(
+                    ui,
+                    self.preferences.look(),
+                    &mut self.preferences.projects,
+                    status,
+                ) {
                     self.project_action(action);
                 }
             }
@@ -483,9 +494,7 @@ impl Workspace {
                 .windows
                 .get(&id)
                 .map(|window| window.title().to_owned())
-                .unwrap_or_else(|| {
-                    catalog::text(self.preferences.locale, Text::AppName).to_owned()
-                });
+                .unwrap_or_else(|| i18n::text(self.preferences.locale, Text::AppName).to_owned());
             let geometry = self
                 .preferences
                 .windows
@@ -497,7 +506,7 @@ impl Workspace {
                     self.focused = Some(id);
                 }
                 self.window_ui(id, ui);
-                if let Some(geometry) = crate::catalog::WindowGeometry::read(ui) {
+                if let Some(geometry) = crate::preferences::WindowGeometry::read(ui) {
                     remember_geometry(&mut self.preferences, format!("editor.{}", id.0), geometry);
                 }
             });
@@ -522,16 +531,16 @@ impl Workspace {
                     .windows
                     .get("shorts")
                     .cloned()
-                    .unwrap_or(crate::catalog::WindowGeometry {
+                    .unwrap_or(crate::preferences::WindowGeometry {
                         size: crate::shorts::WINDOW,
                         ..Default::default()
                     })
                     .builder()
-                    .with_title(catalog::text(shorts.preferences.locale, Text::Shorts)),
+                    .with_title(i18n::text(shorts.preferences.locale, Text::Shorts)),
                 |ui, _| {
                     actions = crate::shorts::show(shorts, &cx, ui);
                     close = ui.input(|i| i.viewport().close_requested());
-                    if let Some(geometry) = crate::catalog::WindowGeometry::read(ui) {
+                    if let Some(geometry) = crate::preferences::WindowGeometry::read(ui) {
                         remember_geometry(&mut self.preferences, "shorts".into(), geometry);
                     }
                 },
@@ -552,7 +561,7 @@ impl Workspace {
                 }
             }
         }
-        if let Some(geometry) = crate::catalog::WindowGeometry::read(ui) {
+        if let Some(geometry) = crate::preferences::WindowGeometry::read(ui) {
             remember_geometry(&mut self.preferences, "home".into(), geometry);
         }
         if self.ready_to_close() {
@@ -565,7 +574,7 @@ impl Workspace {
 fn remember_geometry(
     preferences: &mut Preferences,
     key: String,
-    mut geometry: crate::catalog::WindowGeometry,
+    mut geometry: crate::preferences::WindowGeometry,
 ) {
     if geometry.maximized
         && let Some(previous) = preferences.windows.get(&key)
@@ -723,7 +732,7 @@ impl EditorWindow {
                 NEXT_WINDOW.fetch_add(1, std::sync::atomic::Ordering::Relaxed),
             )),
             editor: None,
-            title: catalog::text(preferences.locale, Text::AppName).to_owned(),
+            title: i18n::text(preferences.locale, Text::AppName).to_owned(),
             retained_models: None,
             focus_home: false,
             project_window: false,
@@ -881,9 +890,9 @@ impl EditorWindow {
                 let format = editor.export_save_format();
                 let (file_name, directory) = editor.export_save_defaults();
                 let mut dialog = rfd::AsyncFileDialog::new()
-                    .set_title(catalog::text(editor.preferences.locale, Text::ExportTitle))
+                    .set_title(i18n::text(editor.preferences.locale, Text::ExportTitle))
                     .add_filter(
-                        catalog::text(editor.preferences.locale, Text::ExportFormat),
+                        i18n::text(editor.preferences.locale, Text::ExportFormat),
                         &[format.extension()],
                     )
                     .set_file_name(file_name);
@@ -901,9 +910,9 @@ impl EditorWindow {
                 let editor = self.editor.as_ref().ok_or(Error::Invalid("no project"))?;
                 let (file_name, directory) = editor.snapshot_save_defaults();
                 let mut dialog = rfd::AsyncFileDialog::new()
-                    .set_title(catalog::text(editor.preferences.locale, Text::SnapshotSave))
+                    .set_title(i18n::text(editor.preferences.locale, Text::SnapshotSave))
                     .add_filter(
-                        catalog::text(editor.preferences.locale, Text::SnapshotFormat),
+                        i18n::text(editor.preferences.locale, Text::SnapshotFormat),
                         &["png"],
                     )
                     .set_file_name(file_name);
@@ -1227,7 +1236,7 @@ impl EditorWindow {
         }
     }
     fn tr(&self, text: Text) -> &'static str {
-        catalog::text(self.preferences.locale, text)
+        i18n::text(self.preferences.locale, text)
     }
     fn button(&self, ui: &mut egui::Ui, id: &'static str, icon: Icon, text: Text) -> bool {
         let image = icons::tinted(icon, 16.0, ui.visuals().text_color());
@@ -1484,22 +1493,6 @@ fn session(root: &std::path::Path, session: Session, budget: ByteBudget) -> Resu
         Schedule::default(),
     )?)
 }
-pub(crate) fn fresh(name: &str) -> Result<Session> {
-    static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
-    let epoch = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map_err(|_| Error::Invalid("system time"))?;
-    let id = u64::try_from(epoch.as_nanos())
-        .map_err(|_| Error::Invalid("project identity"))?
-        .wrapping_add(NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed));
-    Ok(Session::create(
-        Command::CreateProject {
-            id: project::ProjectId(id),
-            name: name.into(),
-        },
-        100,
-    )?)
-}
 fn run(
     work: Work,
     root: &std::path::Path,
@@ -1525,7 +1518,7 @@ fn run(
         }
         Work::New => session(
             root,
-            fresh(catalog::text(preferences.locale, Text::NewProject))?,
+            fresh(i18n::text(preferences.locale, Text::NewProject))?,
             persistence.clone(),
         )?,
         Work::Short(short, settings) => {
@@ -1553,7 +1546,7 @@ fn run(
             {
                 session(
                     root,
-                    fresh(catalog::text(preferences.locale, Text::UntitledProject))?,
+                    fresh(i18n::text(preferences.locale, Text::UntitledProject))?,
                     persistence.clone(),
                 )?
             }
@@ -1645,7 +1638,7 @@ mod tests {
         let sections = preferences.sections.clone();
         let before = preferences.windows.len();
         let key = "x".repeat(64);
-        let geometry = crate::catalog::WindowGeometry {
+        let geometry = crate::preferences::WindowGeometry {
             size: [12345.678, 12345.678],
             position: Some([-12345.678, -23_456.79]),
             maximized: false,
@@ -1658,7 +1651,7 @@ mod tests {
             preferences.windows.len() <= before,
             "history eviction must create room for the new geometry"
         );
-        let maximized = crate::catalog::WindowGeometry {
+        let maximized = crate::preferences::WindowGeometry {
             size: [16000.0, 16000.0],
             position: Some([0.0, 0.0]),
             maximized: true,

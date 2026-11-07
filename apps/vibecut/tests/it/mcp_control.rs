@@ -104,7 +104,7 @@ fn mcp_real_app_background_attach_never_creates_a_window_or_takes_focus() {
 // while a kittest caption field still owns its uncommitted draft.
 fn socket_edits_activate_editor() {
     use egui_kittest::kittest::{By, Queryable};
-    use vibecut::{catalog::Preferences, egui, workspace::Workspace};
+    use vibecut::{egui, preferences::Preferences, workspace::Workspace};
 
     for (command, draft) in [("delete", false), ("project.rename", true)] {
         let root = tempfile::tempdir().unwrap();
@@ -356,7 +356,7 @@ fn caption_editor() -> vibecut::Editor {
         std::sync::Arc::new(vibecut::playback::Files),
     )
     .unwrap();
-    let mut preferences = vibecut::catalog::Preferences {
+    let mut preferences = vibecut::preferences::Preferences {
         assets_tab: vibecut::panels::AssetsTab::Captions,
         ..Default::default()
     };

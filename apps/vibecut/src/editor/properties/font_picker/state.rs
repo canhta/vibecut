@@ -1,6 +1,6 @@
 //! Owns the font picker's catalog state, tab/category filtering and inspection.
-use crate::catalog::{FontPickerPreferences, FontTab};
 use crate::egui;
+use crate::preferences::{FontPickerPreferences, FontTab};
 use engine::control::{FontEntry, FontState};
 use engine::jobs::JobId;
 use std::collections::BTreeSet;
@@ -166,7 +166,7 @@ pub struct Inspection {
 #[cfg(test)]
 mod tests {
     use super::{Category, State, Status};
-    use crate::catalog::{FontPickerPreferences, FontTab};
+    use crate::preferences::{FontPickerPreferences, FontTab};
     use engine::control::{FontEntry, FontOrigin, FontState};
 
     fn entry(family: &str, origin: FontOrigin, state: FontState) -> FontEntry {

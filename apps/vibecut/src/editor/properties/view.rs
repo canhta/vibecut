@@ -1,9 +1,10 @@
 //! Renders the properties area: a 42 px tab strip, then collapsible sections of rows.
 
 use super::{
-    Action, ColorTarget, Context, Rect, State, Text, Vec2, Widget, catalog, egui, element_kind,
-    single, theme,
+    Action, ColorTarget, Context, Rect, State, Text, Vec2, Widget, egui, element_kind, single,
+    theme,
 };
+use crate::i18n;
 use crate::kit;
 
 mod dialog;
@@ -112,7 +113,7 @@ impl<'a, 'c> Panel<'a, 'c> {
     }
 
     fn tr(&self, key: Text) -> &'static str {
-        catalog::text(self.cx.locale, key)
+        i18n::text(self.cx.locale, key)
     }
     fn secondary(&self) -> egui::Color32 {
         theme::secondary(self.cx.dark)
@@ -310,23 +311,23 @@ impl<'a, 'c> Panel<'a, 'c> {
             |panel, ui| {
                 let locale = panel.cx.locale;
                 let data = panel.cx.session.project().data();
-                let width = catalog::number(locale, u64::from(data.canvas.width));
-                let height = catalog::number(locale, u64::from(data.canvas.height));
-                let numerator = catalog::signed(locale, data.canvas.fps.num());
-                let denominator = catalog::signed(locale, data.canvas.fps.den());
-                let rate = catalog::number(locale, u64::from(data.settings.audio_sample_rate));
+                let width = i18n::number(locale, u64::from(data.canvas.width));
+                let height = i18n::number(locale, u64::from(data.canvas.height));
+                let numerator = i18n::signed(locale, data.canvas.fps.num());
+                let denominator = i18n::signed(locale, data.canvas.fps.den());
+                let rate = i18n::number(locale, u64::from(data.settings.audio_sample_rate));
                 let lines = [
-                    catalog::format(
+                    i18n::format(
                         locale,
                         Text::CanvasSize,
                         &[("width", &width), ("height", &height)],
                     ),
-                    catalog::format(
+                    i18n::format(
                         locale,
                         Text::FrameRate,
                         &[("num", &numerator), ("den", &denominator)],
                     ),
-                    catalog::format(locale, Text::SampleRate, &[("rate", &rate)]),
+                    i18n::format(locale, Text::SampleRate, &[("rate", &rate)]),
                 ];
                 for line in lines {
                     panel.detail_row(ui, &line);
@@ -343,11 +344,11 @@ impl<'a, 'c> Panel<'a, 'c> {
             |panel, ui| {
                 let locale = panel.cx.locale;
                 let metadata = panel.cx.session.metadata();
-                let created = catalog::date(locale, metadata.created_unix_ms);
-                let modified = catalog::date(locale, metadata.modified_unix_ms);
+                let created = i18n::date(locale, metadata.created_unix_ms);
+                let modified = i18n::date(locale, metadata.modified_unix_ms);
                 for line in [
-                    catalog::format(locale, Text::CreatedDate, &[("date", &created)]),
-                    catalog::format(locale, Text::ModifiedDate, &[("date", &modified)]),
+                    i18n::format(locale, Text::CreatedDate, &[("date", &created)]),
+                    i18n::format(locale, Text::ModifiedDate, &[("date", &modified)]),
                 ] {
                     panel.detail_row(ui, &line);
                 }

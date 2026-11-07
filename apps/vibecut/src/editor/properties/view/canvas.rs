@@ -1,8 +1,9 @@
 //! Renders the Settings tab's project info and background sections.
 use super::Panel;
+use crate::i18n;
 use crate::{
     color_picker::palette,
-    editor::properties::{Action, ColorTarget, Id, Text, catalog, egui, theme},
+    editor::properties::{Action, ColorTarget, Id, Text, egui, theme},
     kit,
 };
 use project::AspectPreset;
@@ -184,7 +185,7 @@ impl Panel<'_, '_> {
 
     fn frame_rate_row(&mut self, ui: &mut egui::Ui) {
         let current = self.cx.session.project().data().canvas.fps;
-        let label = catalog::format(
+        let label = i18n::format(
             self.cx.locale,
             Text::FpsValue,
             &[("rate", &current.label())],
@@ -200,7 +201,7 @@ impl Panel<'_, '_> {
                         .width(ui.available_width().min(150.0))
                         .show_ui(ui, |ui| {
                             for rate in RATES {
-                                let text = catalog::format(
+                                let text = i18n::format(
                                     self.cx.locale,
                                     Text::FpsValue,
                                     &[("rate", &rate.label())],
@@ -219,7 +220,7 @@ impl Panel<'_, '_> {
                                 }
                             }
                             if !RATES.contains(&current) {
-                                let text = catalog::format(
+                                let text = i18n::format(
                                     self.cx.locale,
                                     Text::FpsValue,
                                     &[("rate", &current.label())],

@@ -1,11 +1,11 @@
 use super::{Options, Pick, Picker, Repaint, Subtitles, key};
+use crate::i18n;
 use crate::{
-    Error, Result,
-    catalog::{Locale, Text},
-    egui,
+    Error, Result, egui,
+    i18n::{Locale, Text},
 };
 use crate::{
-    catalog, kit as theme,
+    kit as theme,
     kit::{self as icons, Icon},
 };
 use captions::LanguageRegistry;
@@ -23,7 +23,7 @@ struct Controls {
 }
 impl Controls {
     fn tr(&self, text: Text) -> &'static str {
-        catalog::text(self.locale, text)
+        i18n::text(self.locale, text)
     }
     fn remember(&mut self, id: impl Into<String>, r: &egui::Response) {
         let id = id.into();
@@ -204,7 +204,7 @@ impl Controls {
 fn provider_name(locale: Locale, provider: &engine::providers::ProviderOption) -> String {
     let name = provider.label.split(" (").next().unwrap_or(provider.id);
     if provider.local {
-        catalog::format(locale, Text::SubProviderLocal, &[("provider", name)])
+        i18n::format(locale, Text::SubProviderLocal, &[("provider", name)])
     } else {
         name.to_owned()
     }
@@ -218,7 +218,7 @@ fn language_name(locale: Locale, tag: &str) -> String {
         "zh-Hant" => Text::SubHant,
         _ => Text::SubChinese,
     };
-    catalog::text(locale, key).into()
+    i18n::text(locale, key).into()
 }
 impl Subtitles {
     /// The assets-panel mount is one call. Engine edits remain in this module.
@@ -434,10 +434,10 @@ impl Subtitles {
                         self.completed = None;
                     }
                 } else if let Some(count) = self.completed {
-                    ui.label(catalog::format(
+                    ui.label(i18n::format(
                         locale,
                         Text::SubDone,
-                        &[("count", &catalog::number(locale, count as u64))],
+                        &[("count", &i18n::number(locale, count as u64))],
                     ));
                 }
                 if busy {
@@ -488,7 +488,7 @@ impl Subtitles {
                 if items.len() > 1 {
                     let mut selected = self.item;
                     let r = egui::ComboBox::from_id_salt(egui::Id::unique("subtitles.item"))
-                        .selected_text(catalog::format(
+                        .selected_text(i18n::format(
                             locale,
                             Text::SubItem,
                             &[("id", &self.item.map_or(String::new(), |i| i.0.to_string()))],
@@ -498,7 +498,7 @@ impl Subtitles {
                                 let r = ui.selectable_value(
                                     &mut selected,
                                     Some(item),
-                                    catalog::format(
+                                    i18n::format(
                                         locale,
                                         Text::SubItem,
                                         &[("id", &item.0.to_string())],
@@ -715,7 +715,7 @@ impl Subtitles {
                     });
                     self.ui_result(result);
                 }
-                ui.label(catalog::format(
+                ui.label(i18n::format(
                     c.locale,
                     Text::SubPage,
                     &[
@@ -894,7 +894,7 @@ impl Subtitles {
         let modal = egui::Modal::new(egui::Id::unique("subtitles.consent")).show(ctx, |ui| {
             ui.set_width(380.0);
             ui.heading(c.tr(Text::SubApprove));
-            ui.label(catalog::format(
+            ui.label(i18n::format(
                 c.locale,
                 Text::ShortsUploadIdentity,
                 &[
@@ -908,14 +908,11 @@ impl Subtitles {
             } else {
                 Text::ShortsUploadTranscript
             }));
-            ui.label(catalog::format(
+            ui.label(i18n::format(
                 c.locale,
                 Text::SubDisclosure,
                 &[
-                    (
-                        "seconds",
-                        &catalog::decimal(c.locale, upload.audio_seconds, 2),
-                    ),
+                    ("seconds", &i18n::decimal(c.locale, upload.audio_seconds, 2)),
                     ("cost", &cost_text(c.locale, &upload.cost)),
                 ],
             ));
@@ -972,27 +969,27 @@ impl Subtitles {
         > = match kind {
             Pick::Import => Box::pin(
                 picker
-                    .add_filter(catalog::text(locale, Text::SubImport), &["srt", "vtt"])
+                    .add_filter(i18n::text(locale, Text::SubImport), &["srt", "vtt"])
                     .pick_file(),
             ),
             Pick::Srt => Box::pin(
                 picker
-                    .set_file_name(format!("{}.srt", catalog::text(locale, Text::SubFileBase)))
+                    .set_file_name(format!("{}.srt", i18n::text(locale, Text::SubFileBase)))
                     .save_file(),
             ),
             Pick::Vtt => Box::pin(
                 picker
-                    .set_file_name(format!("{}.vtt", catalog::text(locale, Text::SubFileBase)))
+                    .set_file_name(format!("{}.vtt", i18n::text(locale, Text::SubFileBase)))
                     .save_file(),
             ),
             Pick::Txt => Box::pin(
                 picker
-                    .set_file_name(format!("{}.txt", catalog::text(locale, Text::SubFileBase)))
+                    .set_file_name(format!("{}.txt", i18n::text(locale, Text::SubFileBase)))
                     .save_file(),
             ),
             Pick::Burn => Box::pin(
                 picker
-                    .set_file_name(format!("{}.mp4", catalog::text(locale, Text::SubFileBase)))
+                    .set_file_name(format!("{}.mp4", i18n::text(locale, Text::SubFileBase)))
                     .save_file(),
             ),
         };
@@ -1207,7 +1204,7 @@ fn time_text(tick: Tick, rate: time::FrameRate, locale: Locale) -> String {
         time::FrameRate::FPS_29_97 | time::FrameRate::FPS_59_94
     );
     time::format_timecode(tick, rate, drop)
-        .unwrap_or_else(|_| catalog::decimal(locale, tick.0 as f64 / TICKS_PER_SECOND as f64, 3))
+        .unwrap_or_else(|_| i18n::decimal(locale, tick.0 as f64 / TICKS_PER_SECOND as f64, 3))
 }
 fn stage_text(stage: Option<Stage>) -> Text {
     match stage {
@@ -1220,12 +1217,12 @@ fn stage_text(stage: Option<Stage>) -> Text {
 }
 fn cost_text(locale: Locale, cost: &Cost) -> String {
     match cost {
-        Cost::Free => catalog::text(locale, Text::ShortsFree).into(),
-        Cost::Unknown => catalog::text(locale, Text::ShortsUnknownCost).into(),
+        Cost::Free => i18n::text(locale, Text::ShortsFree).into(),
+        Cost::Unknown => i18n::text(locale, Text::ShortsUnknownCost).into(),
         Cost::UpperBound { currency, micros } => format!(
             "{} {}",
             currency,
-            catalog::decimal(locale, *micros as f64 / 1_000_000.0, 6)
+            i18n::decimal(locale, *micros as f64 / 1_000_000.0, 6)
         ),
     }
 }

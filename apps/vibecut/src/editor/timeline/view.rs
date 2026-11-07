@@ -1,4 +1,5 @@
 //! Renders the timeline panel.
+use crate::i18n;
 mod clips;
 mod lanes;
 mod ruler;
@@ -7,13 +8,13 @@ mod toolbar;
 mod tracks;
 
 use crate::editor::timeline::{
-    Action, Align2, Color32, Context, FontId, State, Text, TimelineLayout, catalog, egui, theme,
+    Action, Align2, Color32, Context, FontId, State, Text, TimelineLayout, egui, theme,
 };
 
 pub(super) use clips::item_label;
 pub(in crate::editor) use scenes::show_scenes;
 pub(in crate::editor) use toolbar::TOOLBAR_ACTIONS;
-pub(in crate::editor) use tracks::add_track_params;
+pub(in crate::editor) use tracks::add_track_command;
 pub(super) use tracks::track_height;
 
 /// The theme inks of the panel, resolved once for the active appearance.
@@ -49,7 +50,7 @@ impl Ink {
 }
 
 pub(in crate::editor::timeline) fn tr(cx: &Context<'_>, key: Text) -> &'static str {
-    catalog::text(cx.locale, key)
+    i18n::text(cx.locale, key)
 }
 
 /// Paint the whole panel (toolbar, ruler, headers, lanes, scrollbars) and

@@ -24,11 +24,10 @@ use std::{
     time::{Duration, Instant},
 };
 use vibecut::{
-    Editor,
-    catalog::Preferences,
-    egui,
+    Editor, egui,
     model_manager::{ModelManager, ModelProblem},
     playback::{Files, Playback},
+    preferences::Preferences,
 };
 
 struct Reply {

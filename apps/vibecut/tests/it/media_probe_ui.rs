@@ -21,11 +21,10 @@ use std::{
 };
 use time::Tick;
 use vibecut::{
-    Editor,
-    catalog::Preferences,
-    egui,
+    Editor, egui,
     import::{ImportProbe, ThumbnailSource},
     playback::{Files, Playback},
+    preferences::Preferences,
 };
 
 const SECOND: i64 = time::TICKS_PER_SECOND;

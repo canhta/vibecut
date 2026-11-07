@@ -1,7 +1,7 @@
 //! Applies font picker actions: preferences, catalog commands and selection.
 use super::super::font_picker::{Action, Download};
-use crate::catalog;
 use crate::editor::{Editor, PREFERENCE_COMMAND};
+use crate::preferences;
 use crate::{Error, Result};
 use engine::control::FontLoadState;
 use engine::jobs::JobState;
@@ -58,7 +58,7 @@ impl Editor {
         Ok(())
     }
 
-    fn font_tab(&mut self, tab: catalog::FontTab) -> Result<()> {
+    fn font_tab(&mut self, tab: preferences::FontTab) -> Result<()> {
         let mut preferences = self.preferences.font_picker.clone();
         preferences.tab = tab;
         self.properties.font_picker.category = super::super::font_picker::Category::All;

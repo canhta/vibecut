@@ -2,16 +2,17 @@
 
 use super::{Action, State};
 use crate::editor::Context;
+use crate::i18n;
 use crate::{
-    catalog::{self, Text},
     egui::{self, Align2, FontId, Rect, Vec2},
+    i18n::Text,
     kit::{self, Icon},
 };
 
 pub(super) fn show(state: &mut State, cx: &Context<'_>, ui: &mut egui::Ui) -> Vec<Action> {
     state.widgets.clear();
     let mut actions = Vec::new();
-    let tr = |key| catalog::text(cx.locale, key);
+    let tr = |key| i18n::text(cx.locale, key);
     let rect = ui.max_rect();
     let color = kit::text(cx.dark);
     let font = FontId::proportional(kit::type_size::CHROME);

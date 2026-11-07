@@ -6,8 +6,9 @@
 
 use crate::editor::timeline::{
     AssetId, BookmarkId, ItemId, LABEL_WIDTH, Locale, RULER_HEIGHT, Rect, SCROLLBAR,
-    TOOLBAR_HEIGHT, Text, Tick, TrackId, TrackKind, Vec2, catalog, egui, theme,
+    TOOLBAR_HEIGHT, Text, Tick, TrackId, TrackKind, Vec2, egui, theme,
 };
+use crate::i18n;
 
 /// Height of one expanded keyframe lane.
 pub(super) const LANE_HEIGHT: f32 = 20.0;
@@ -171,7 +172,7 @@ fn channels(item: &project::Item, kind: TrackKind, locale: Locale) -> Vec<Channe
         lanes.push(ChannelLane {
             path,
             component: None,
-            label: catalog::text(locale, Text::AudioGain).to_owned(),
+            label: i18n::text(locale, Text::AudioGain).to_owned(),
         });
     }
     lanes
@@ -196,13 +197,13 @@ fn component_of(param: &project::Param, index: usize) -> Option<project::ColorCo
 /// Creator-facing lane labels; extension paths fall back to their last segment.
 fn lane_label(path: &str, locale: Locale) -> &str {
     match path {
-        "transform.positionX" => catalog::text(locale, Text::PositionX),
-        "transform.positionY" => catalog::text(locale, Text::PositionY),
-        "transform.scaleX" => catalog::text(locale, Text::ScaleX),
-        "transform.scaleY" => catalog::text(locale, Text::ScaleY),
-        "transform.rotate" => catalog::text(locale, Text::Rotate),
-        "opacity" => catalog::text(locale, Text::Opacity),
-        "volume" => catalog::text(locale, Text::AudioGain),
+        "transform.positionX" => i18n::text(locale, Text::PositionX),
+        "transform.positionY" => i18n::text(locale, Text::PositionY),
+        "transform.scaleX" => i18n::text(locale, Text::ScaleX),
+        "transform.scaleY" => i18n::text(locale, Text::ScaleY),
+        "transform.rotate" => i18n::text(locale, Text::Rotate),
+        "opacity" => i18n::text(locale, Text::Opacity),
+        "volume" => i18n::text(locale, Text::AudioGain),
         _ => path.rsplit('.').next().unwrap_or(path),
     }
 }

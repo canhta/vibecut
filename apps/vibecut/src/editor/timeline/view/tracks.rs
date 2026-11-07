@@ -2,9 +2,10 @@
 
 use crate::editor::timeline::{
     Action, BTreeSet, Context, DropZone, FontId, ICON_BUTTON, Icon, Id, ItemId, ItemView, Locale,
-    Rect, State, Text, TimelineLayout, TrackKind, TrackRow, Vec2, catalog, egui, icons, theme,
+    Rect, State, Text, TimelineLayout, TrackKind, TrackRow, Vec2, egui, icons, theme,
     view::{Ink, tr},
 };
+use crate::i18n;
 
 impl State {
     pub(in crate::editor::timeline) fn paint_tracks(
@@ -199,7 +200,7 @@ impl State {
                     Id::unique(("track", row.id.0, "more")),
                     egui::Sense::click(),
                 );
-                let hint = catalog::format(
+                let hint = i18n::format(
                     cx.locale,
                     Text::TrackToggle,
                     &[("action", tr(cx, Text::TrackMore)), ("track", &row.name)],
@@ -511,7 +512,7 @@ impl State {
             Id::unique(("track", row.id.0, suffix)),
             egui::Sense::click(),
         );
-        let tooltip = catalog::format(
+        let tooltip = i18n::format(
             cx.locale,
             Text::TrackToggle,
             &[("action", tr(cx, label)), ("track", &row.name)],
@@ -554,14 +555,15 @@ impl State {
     }
 }
 
-/// Params for adding a secondary track compatible with the active section:
-/// audio beside an audio track, otherwise the active overlay kind (Video when
-/// nothing is selected). Above the active track, or the overlay section end otherwise.
-pub(in crate::editor) fn add_track_params(
+/// Typed command for adding a secondary track compatible with the active
+/// section: audio beside an audio track, otherwise the active overlay kind
+/// (Video when nothing is selected). Above the active track, or the overlay
+/// section end otherwise.
+pub(in crate::editor) fn add_track_command(
     session: &engine::Session,
     selection: &BTreeSet<ItemId>,
     locale: Locale,
-) -> serde_json::Value {
+) -> engine::Command {
     let (kind, placement, count) = {
         let data = session.project().data();
         let scene = data.scene();
@@ -578,9 +580,11 @@ pub(in crate::editor) fn add_track_params(
         });
         let placement = match active {
             Some(track) if track.id != scene.timeline.main.id => {
-                serde_json::json!({"mode":"above","track":track.id})
+                engine::TrackPlacement::Above { track: track.id }
             }
-            _ => serde_json::json!({"mode":"above","track":scene.timeline.main.id}),
+            _ => engine::TrackPlacement::Above {
+                track: scene.timeline.main.id,
+            },
         };
         let count = scene
             .timeline
@@ -590,13 +594,17 @@ pub(in crate::editor) fn add_track_params(
             + 1;
         (kind, placement, count)
     };
-    let number = catalog::number(locale, count as u64);
+    let number = i18n::number(locale, count as u64);
     let name = match kind {
-        TrackKind::Audio => catalog::format(locale, Text::AudioTrackName, &[("n", &number)]),
-        TrackKind::Text => catalog::text(locale, Text::TextItem).to_owned(),
-        _ => catalog::format(locale, Text::VideoTrackName, &[("n", &number)]),
+        TrackKind::Audio => i18n::format(locale, Text::AudioTrackName, &[("n", &number)]),
+        TrackKind::Text => i18n::text(locale, Text::TextItem).to_owned(),
+        _ => i18n::format(locale, Text::VideoTrackName, &[("n", &number)]),
     };
-    serde_json::json!({"name":name,"kind":kind,"placement":placement})
+    engine::Command::AddTrack {
+        name: engine::NfcText::from(name),
+        kind,
+        placement,
+    }
 }
 
 /// Inner shadow at the left edge of the lanes (221643 x 132-137: dark to panel over 5 px).

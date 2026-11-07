@@ -14,7 +14,7 @@ use super::{
     ImportQueue, ItemParams, Locale, MEDIA_REVEAL, MediaKind, MediaMarquee, MediaReveal,
     MediaSortKey, MediaSortOrder, MediaView, NewItem, PathBuf, Rect, Result, SelectionScopes,
     SourceAsset, SourceRange, StreamKind, TICKS_PER_SECOND, Text, ThumbnailOutcome,
-    ThumbnailSource, Tick, Toast, TrackKind, UnsupportedReason, Vec2, catalog, display_short_time,
+    ThumbnailSource, Tick, Toast, TrackKind, UnsupportedReason, Vec2, display_short_time,
     display_time, effect_preview_params, egui, error_detail, icons, media_panel, theme,
 };
 use workflow::{asset_kind, asset_row, asset_state_color, file_name};
@@ -22,7 +22,7 @@ use workflow::{asset_kind, asset_row, asset_state_color, file_name};
 /// Read-only workflow projection owned by this area's state.
 #[derive(Default)]
 struct Model {
-    preferences: crate::catalog::Preferences,
+    preferences: crate::preferences::Preferences,
     rows: Vec<Row>,
     thumbnails: BTreeMap<AssetId, egui::TextureHandle>,
     effects: Vec<EffectRow>,

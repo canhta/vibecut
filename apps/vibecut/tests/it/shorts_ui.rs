@@ -13,8 +13,8 @@ use engine::{
 use fixture::{Once, Pixels, range, ready, source, tick, wait};
 use std::sync::{Arc, Mutex, mpsc};
 use vibecut::{
-    catalog::Locale,
     egui,
+    i18n::Locale,
     shorts::{
         Action, Context, Decision, GenerationRequest, Generator, ReviewSource, State as Shorts,
         TaskEvents,
@@ -336,7 +336,7 @@ fn safe_trim_and_invalid_bounds_preserve_history_and_source_ranks() {
     assert_eq!(h.state().reviews()[0], before);
     for (locale, out) in [(Locale::En, "1,014.000"), (Locale::Vi, "1.014,000")] {
         let mut app = Shorts::with_generator(
-            vibecut::catalog::Preferences {
+            vibecut::appearance::Look {
                 locale,
                 ..Default::default()
             },
@@ -454,9 +454,9 @@ fn accepted_export_is_reachable_and_failed_jobs_can_be_retried_or_cancelled() {
     h.run_steps(3);
     assert_eq!(h.state().batch().unwrap().len(), 1);
     assert!(
-        h.query_by_label(vibecut::catalog::text(
+        h.query_by_label(vibecut::i18n::text(
             Locale::En,
-            vibecut::catalog::Text::ShortsSourceUnavailable
+            vibecut::i18n::Text::ShortsSourceUnavailable
         ))
         .is_some()
     );
