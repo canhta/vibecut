@@ -1257,6 +1257,109 @@ fn hostile_raw_tokens_fail_through_public_execution_without_lossy_decoding() {
             "case {case}"
         );
     }
+    // The token-count and cumulative-byte guards are exclusive at 16 MiB. Keep
+    // the exact boundaries accepted (or typed by the next layer) and one byte
+    // or token more a payload refusal, so off-by-one mutants fail here.
+    let per_token = std::mem::size_of::<RawToken>();
+    assert_eq!(
+        16 * 1024 * 1024 % per_token,
+        0,
+        "RawToken must divide the 16 MiB token budget"
+    );
+    let tokens_at_limit = 16 * 1024 * 1024 / per_token;
+    for case in 0..5 {
+        let mut boundary = native.clone();
+        boundary.range = Some(SampleRange::new(16000, 48000).unwrap());
+        boundary.timing.clear();
+        let expected = match case {
+            // Token-count guard: exactly 16 MiB of RawToken structs is
+            // accepted; one more token would be refused.
+            0 => {
+                let text = "a".repeat(tokens_at_limit);
+                boundary.text = text.as_str().into();
+                boundary.raw_tokens = (0..tokens_at_limit)
+                    .map(|_| RawToken {
+                        bytes: vec![b'a'],
+                        range: None,
+                        provenance: Provenance::Native,
+                        confidence: None,
+                    })
+                    .collect();
+                None
+            }
+            // Byte guards: 20 KiB crosses the 16 KiB budget and 1.5 MiB the
+            // 1 MiB budget, while both stay inside the real 16 MiB guard and
+            // the text span budget.
+            1 => {
+                let text = "a".repeat(20 * 1024);
+                boundary.text = text.as_str().into();
+                boundary.raw_tokens = vec![RawToken {
+                    bytes: text.into_bytes(),
+                    range: None,
+                    provenance: Provenance::Native,
+                    confidence: None,
+                }];
+                None
+            }
+            2 => {
+                let text = "漢".repeat(524_288);
+                boundary.text = text.as_str().into();
+                boundary.raw_tokens = vec![RawToken {
+                    bytes: text.into_bytes(),
+                    range: None,
+                    provenance: Provenance::Native,
+                    confidence: None,
+                }];
+                None
+            }
+            // Exactly 16 MiB reaches the byte guard and is refused by the text
+            // span index; one byte more is refused at the guard itself.
+            3 => {
+                let text = "a".repeat(16 * 1024 * 1024);
+                boundary.text = text.as_str().into();
+                boundary.raw_tokens = vec![RawToken {
+                    bytes: text.into_bytes(),
+                    range: None,
+                    provenance: Provenance::Native,
+                    confidence: None,
+                }];
+                Some(Error::Captions(captions::Error::TooLarge))
+            }
+            _ => {
+                let text = "a".repeat(16 * 1024 * 1024 + 1);
+                boundary.text = text.as_str().into();
+                boundary.raw_tokens = vec![RawToken {
+                    bytes: text.into_bytes(),
+                    range: None,
+                    provenance: Provenance::Native,
+                    confidence: None,
+                }];
+                Some(Error::Payload)
+            }
+        };
+        fake.result = vec![boundary];
+        let result = transcribe(
+            &fake,
+            audio(&pcm, &scope),
+            &Request {
+                scope: &scope,
+                consent: None,
+            },
+            None,
+            &Hooks::new(),
+        );
+        match (expected, result) {
+            (None, Ok(_))
+            | (Some(Error::Payload), Err(Error::Payload))
+            | (
+                Some(Error::Captions(captions::Error::TooLarge)),
+                Err(Error::Captions(captions::Error::TooLarge)),
+            ) => {}
+            (expected, result) => {
+                panic!("token boundary case {case}: {expected:?} != {result:?}")
+            }
+        }
+    }
     assert!(!format!("{:?}", native.raw_tokens[0]).contains("bytes"));
 }
 
