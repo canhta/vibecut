@@ -4,29 +4,6 @@ use std::fs;
 use std::path::Path;
 
 #[test]
-fn commands_prints_the_generated_registry() {
-    let output = cli(&[os("commands"), os("--json")]);
-    assert_eq!(code(&output), 0);
-    let value = stdout_json(&output);
-    assert_eq!(value["api_version"], engine::control::API_VERSION);
-    assert_eq!(value["registry_hash"], engine::control::registry_hash());
-    assert_eq!(
-        value["limits"],
-        serde_json::to_value(engine::control::LIMITS).unwrap()
-    );
-    let entries = value["entries"].as_array().unwrap();
-    let add_track = entries
-        .iter()
-        .find(|entry| entry["id"] == "timeline.add_track")
-        .unwrap();
-    assert_eq!(
-        add_track["params_schema"]["$defs"]["NfcText"]["type"],
-        "string"
-    );
-    assert!(entries.iter().any(|entry| entry["id"] == "batch"));
-}
-
-#[test]
 fn generated_catalog_is_deterministic_and_matches_checked_in_output() {
     let first = cli(&[os("commands"), os("--json")]);
     let second = cli(&[os("commands"), os("--json")]);
@@ -37,6 +14,11 @@ fn generated_catalog_is_deterministic_and_matches_checked_in_output() {
         "catalog generation must be byte-identical twice"
     );
     let value = stdout_json(&first);
+    assert_eq!(value["api_version"], engine::control::API_VERSION);
+    assert_eq!(
+        value["limits"],
+        serde_json::to_value(engine::control::LIMITS).unwrap()
+    );
     let keys = value
         .as_object()
         .unwrap()
