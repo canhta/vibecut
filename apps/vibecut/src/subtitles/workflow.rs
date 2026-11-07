@@ -61,6 +61,7 @@ impl Workflow for LocalWorkflow {
                         format: match format {
                             Format::Srt => "srt",
                             Format::WebVtt => "webvtt",
+                            Format::Txt => "txt",
                         }
                         .into(),
                         duration: Some(end),
@@ -109,10 +110,21 @@ impl Workflow for LocalWorkflow {
                     .probe()
                     .duration
                     .ok_or(EditError::Invalid("source duration unavailable"))?;
+                // Auto-detect first; the detected tag then goes to every ASR
+                // request explicitly, exactly like a user-picked language.
+                let language = if options.source == "auto" {
+                    let detected = providers.detect_language(&asset, duration, cancel)?;
+                    if !super::SOURCE_LANGUAGES.contains(&detected.as_str()) {
+                        return Err(EditError::LowConfidence);
+                    }
+                    detected
+                } else {
+                    captions::LanguageTag::parse(&options.source)?
+                };
                 let output = engine::transcript::transcribe(
                     &asset,
                     duration,
-                    &captions::LanguageTag::parse(&options.source)?,
+                    &language,
                     &providers,
                     &mut runner,
                     &mut cache,

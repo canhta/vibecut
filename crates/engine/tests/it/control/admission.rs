@@ -356,6 +356,7 @@ fn seed() -> Session {
                             )]
                             .into_iter()
                             .collect(),
+                            word_ranges: Vec::new(),
                             style: None,
                         }],
                     },

@@ -1,6 +1,6 @@
 # Interchange
 
-## SRT and WebVTT
+## SRT, WebVTT and TXT
 
 `parse(bytes, format, source_lang)` accepts up to 16 MiB: UTF-8, UTF-8 BOM,
 UTF-16LE/BE with BOM, or Windows-1252 fallback. BOM, encoding fallback, malformed
@@ -21,9 +21,11 @@ Repair positions refer to sorted cue ordinals; import syntax positions are lines
 position zero means a document-wide warning. IDs and language edit flags survive
 track repair. Repair can return an error after modifying earlier cues.
 
-`Format` serializes as `srt` or `web_vtt` for engine command dispatch.
+`Format` serializes as `srt`, `web_vtt` or `txt` for engine command dispatch.
 `export(track, format, languages)` selects one tag or two distinct tags in display
-order; missing/empty language text warns and is omitted. Output uses UTF-8/LF;
+order; missing/empty language text warns and is omitted. TXT is export-only: one
+cue per line with whitespace compacted, no clock or header, and bilingual text
+joined with " / ". Parsing TXT refuses with a typed error. Output uses UTF-8/LF;
 blank payload lines are removed with a warning to prevent block splitting. SRT
 renumbers cues; VTT escapes &, < and > and decodes those entities on import.
 SRT rejects payload lines resembling timestamps to prevent cue injection.

@@ -150,6 +150,10 @@ pub enum EditError {
     CredentialMissing(&'static str),
     #[error("auto language detection requires the local whisper.cpp provider")]
     AutoLanguageUnsupported,
+    #[error("no speech recognized")]
+    NoSpeech,
+    #[error("speech recognition confidence is too low")]
+    LowConfidence,
     #[error("remote upload requires explicit consent")]
     ConsentRequired,
     #[error("job/cache IO failed")]

@@ -1518,6 +1518,7 @@ fn caption_project() -> Project {
                 translation_ref: Some("ref".into()),
             },
         )]),
+        word_ranges: Vec::new(),
         style: None,
     };
     data.scene_mut().timeline.insert_track(Track {

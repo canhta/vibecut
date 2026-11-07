@@ -39,8 +39,9 @@ the next run and its request is bound to the exact recognized text by
 `ai::align`. The workflow then assembles with `ai::assemble`, converts and
 segments through captions, applies translation windows through the existing
 `TranslationRun`, and dispatches `export_subtitles`/`burn_subtitles` through the
-real job runner. Silent windows are skipped; no speech, unknown duration and burn
-without video return typed refusals. No project file is written.
+real job runner. Silent windows are skipped; no speech returns `NoSpeech`, mean
+word confidence below the fixed floor returns `LowConfidence`, and unknown
+duration or burn without video return typed refusals. No project file is written.
 
 `Cancellation` is the operation-wide cooperative signal. `run` passes its media
 flag to extraction, checks it at every stage/window boundary, and cancels the
@@ -100,14 +101,15 @@ or their typed `Command` with `submit_export_command`; ordinary edit execution,
 batches and active transactions refuse file publication. Both execute against a
 captured immutable project snapshot in the existing JobRunner.
 
-`export_subtitles` takes `track` (a Text TrackId containing captions), `format` (`srt` or `web_vtt`),
+`export_subtitles` takes `track` (a Text TrackId containing captions), `format` (`srt`, `web_vtt` or `txt`),
 `languages` (one tag or two distinct tags in display order), native `path`, and
 `overwrite` (bool). Ordinary title items on the shared Text track are skipped by
 byte admission and cue serialization; caption items retain their source windows
 and output gaps. `subtitle_file` exposes the same serialization plus captions'
 typed repair warnings for preflight presentation. Each caption item's source
 window maps to its output start through captions' EditMapping, preserving cuts,
-repeated occurrences and timeline gaps. Captions owns the only SRT/VTT serializer.
+repeated occurrences and timeline gaps. TXT is one cue per line with no clock.
+Captions owns the only SRT/VTT/TXT serializer.
 This path opens no media and works with an offline source. Jobs reserve bounded
 mapping/serialization scratch, write through project's StreamingStage, finalize,
 then fence cancellation before atomic publication. Existing files survive refusal

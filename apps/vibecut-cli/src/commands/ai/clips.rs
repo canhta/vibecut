@@ -577,6 +577,7 @@ fn format_name(format: engine::Format) -> &'static str {
     match format {
         engine::Format::Srt => "srt",
         engine::Format::WebVtt => "web_vtt",
+        engine::Format::Txt => "txt",
     }
 }
 

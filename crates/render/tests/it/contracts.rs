@@ -1078,6 +1078,7 @@ fn caption_expansion_is_refused_before_raster_allocation() {
             range,
             source_lang: captions::LanguageTag::parse("vi").unwrap(),
             texts: std::collections::BTreeMap::new(),
+            word_ranges: Vec::new(),
             style: None,
         })
         .collect();

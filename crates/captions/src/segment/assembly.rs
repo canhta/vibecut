@@ -97,6 +97,21 @@ pub(super) fn append_groups(
                 kind: WarningKind::TextLayout,
             });
         }
+        // Only measured ASR units become word timings; estimated/proportional
+        // ranges stay absent so callers never treat them as native.
+        let word_ranges = if slice.iter().all(|unit| {
+            matches!(
+                unit.timing,
+                TimingKind::SourceWords | TimingKind::SourceSpans
+            )
+        }) {
+            slice
+                .iter()
+                .map(|unit| SourceRange::new(unit.range.start, unit.range.end))
+                .collect::<Result<Vec<_>, _>>()?
+        } else {
+            Vec::new()
+        };
         output.cues.push(SegmentedCue {
             cue: Cue {
                 id: format!(
@@ -117,6 +132,7 @@ pub(super) fn append_groups(
                         translation_ref: reference.clone(),
                     },
                 )]),
+                word_ranges,
                 style: None,
             },
             timing,

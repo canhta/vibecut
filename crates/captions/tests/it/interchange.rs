@@ -180,6 +180,23 @@ fn bilingual_vtt_and_rounding() {
     );
     assert!(export(&track, Format::Srt, &[]).is_err());
     assert!(export(&track, Format::Srt, &[lang("vi"), lang("vi")]).is_err());
+    let mut plain =
+        read("00:00,000 --> 00:01,000\nHello\n\n00:02,000 --> 00:03,000\nWorld\n").track;
+    let txt = export(&plain, Format::Txt, &[lang("vi")]).unwrap();
+    assert_eq!(txt.text, "Hello\nWorld\n");
+    assert!(!txt.text.contains("-->"));
+    assert!(parse(txt.text.as_bytes(), Format::Txt, lang("vi")).is_err());
+    plain.cues.first_mut().unwrap().set_text(
+        lang("zh-Hans"),
+        CueText {
+            text: "你好".into(),
+            edited: false,
+            translation_ref: None,
+        },
+        false,
+    );
+    let txt = export(&plain, Format::Txt, &[lang("zh-Hans"), lang("vi")]).unwrap();
+    assert!(txt.text.starts_with("你好 / Hello\n"));
     track.cues.first_mut().unwrap().range = SourceRange::new(
         Tick(TICKS_PER_SECOND / 2000),
         Tick(TICKS_PER_SECOND / 2000 + 1),

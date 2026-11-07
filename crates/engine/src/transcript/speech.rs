@@ -7,13 +7,16 @@ use crate::jobs::JobRunner;
 use crate::providers::{ConsentPrompt, Cost, IdleHooks, Providers};
 use ai::SampleRange;
 use captions::LanguageTag;
-use captions::{Cue, NfcText, SegmentRules, SegmentedCue};
+use captions::{Cue, NfcText, SegmentRules, SegmentedCue, Transcript};
 use media::{SourceAsset, SpeechExtractSettings, SpeechWindow};
 use std::{path::Path, time::Instant};
 use time::{FrameRate, Rounding, SourceRange, Tick};
 pub(crate) const MIN_CAPTION_SECONDS: i64 = 30;
 pub(crate) const MAX_CAPTION_SECONDS: i64 = 300;
 pub(crate) const WORK_BYTES: u64 = 64 * 1024 * 1024;
+/// Below this mean word confidence the run is reported as a likely wrong
+/// language instead of inserting cues a creator would have to delete.
+const MIN_MEAN_CONFIDENCE: f64 = 0.5;
 
 /// Run the shared ASR-to-cue stage. The caller has already imported and validated
 /// media and resolved the source language; jobs, cache and consent stay caller-owned.
@@ -109,13 +112,16 @@ pub fn transcribe(
     }
     cancel.checkpoint()?;
     if recognitions.is_empty() {
-        return Err(EditError::Unsupported("no speech detected"));
+        return Err(EditError::NoSpeech);
     }
 
     cancel.checkpoint()?;
     progress.stage(Stage::Assemble);
     let recognition = ai::assemble(recognitions, &IdleHooks)?;
     let transcript = recognition.to_transcript()?;
+    if mean_confidence(&transcript).is_some_and(|mean| mean < MIN_MEAN_CONFIDENCE) {
+        return Err(EditError::LowConfidence);
+    }
     cancel.checkpoint()?;
     progress.stage(Stage::Segment);
     let rules = SegmentRules::from_profile(&profile, FrameRate::FPS_30)?;
@@ -131,7 +137,7 @@ pub fn transcribe(
         .map(|SegmentedCue { cue, .. }| cue)
         .collect();
     if cues.is_empty() {
-        return Err(EditError::Unsupported("no subtitle cues generated"));
+        return Err(EditError::LowConfidence);
     }
     Ok(Transcription {
         source_language: source_language.clone(),
@@ -158,7 +164,9 @@ impl Providers {
         self.detect_language(&asset, duration, cancel)
     }
 
-    pub(crate) fn detect_language(
+    /// Auto-detect the spoken language of an already-imported asset. The caller
+    /// then supplies the returned tag explicitly to [`transcribe`].
+    pub fn detect_language(
         &self,
         asset: &SourceAsset,
         duration: Tick,
@@ -223,10 +231,22 @@ impl Providers {
             Err(error) => return Err(error.into()),
         }
         cancel.checkpoint()?;
-        detected.ok_or(EditError::Unsupported(
-            "no speech detected for language detection",
-        ))
+        detected.ok_or(EditError::NoSpeech)
     }
+}
+
+/// Mean confidence over recognized words that carry a confidence. Providers
+/// without confidence data return `None` and are never labelled low confidence.
+fn mean_confidence(transcript: &Transcript) -> Option<f64> {
+    let (sum, count) = transcript
+        .segments
+        .iter()
+        .flat_map(|segment| &segment.words)
+        .filter_map(|word| word.confidence)
+        .fold((0.0, 0usize), |(sum, count), confidence| {
+            (sum + f64::from(f32::from(confidence)), count + 1)
+        });
+    (count > 0).then(|| sum / count as f64)
 }
 
 fn detection_window(window: &SpeechWindow) -> Result<(&[f32], SampleRange), EditError> {

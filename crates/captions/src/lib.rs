@@ -210,6 +210,10 @@ pub struct Cue {
     pub range: SourceRange,
     pub source_lang: LanguageTag,
     pub texts: BTreeMap<LanguageTag, CueText>,
+    /// Native ASR word timing inside this cue, in source order. Empty for
+    /// imported or estimated cues; never invented from proportional text.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub word_ranges: Vec<SourceRange>,
     /// Static style preserved from an ASS import; absent for generated/SRT/VTT cues.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub style: Option<CueStyle>,

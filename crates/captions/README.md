@@ -2,7 +2,7 @@
 
 Headless source-timed transcript and multilingual cue storage, BCP 47 language
 profiles, readable cue segmentation, pure source-to-output edit mapping and
-SRT, WebVTT and ASS interchange. Excludes
+SRT, WebVTT, plain TXT and ASS interchange. Excludes
 translation providers and subtitle rendering.
 
 ## Entry points and persistence
@@ -11,8 +11,10 @@ translation providers and subtitle rendering.
 validated confidence, optional `TimingSpans`, and provider/model/settings
 `Fingerprint`. Timing spans retain source unit identity and provenance; tokens,
 characters and syllables never become fake words. `Cue` owns a
-stable ID, validated `SourceRange`, source language, and language-keyed `CueText`
-with independent edit flags and translation references. `set_text` protects edits
+stable ID, validated `SourceRange`, source language, language-keyed `CueText`
+with independent edit flags and translation references, and measured
+`word_ranges` from native ASR timing (empty for imported/estimated cues).
+`set_text` protects edits
 unless explicitly overridden. `CueTrack` groups cues; all models support serde.
 `NfcText` normalizes every stored text on construction/deserialization; its Debug
 is redacted. BCP 47 tags validate syntax and standardize casing without a fixed
@@ -20,7 +22,7 @@ language allowlist. No project store/schema is introduced here.
 
 | Module | Responsibility | Contract |
 |---|---|---|
-| `interchange/` | Round-trips SRT and WebVTT subtitle files through cue tracks. | [SRT and WebVTT](src/interchange/README.md) |
+| `interchange/` | Round-trips SRT and WebVTT subtitle files and exports plain TXT through cue tracks. | [SRT, WebVTT and TXT](src/interchange/README.md) |
 | `interchange/ass/` | Parses ASS documents into typed cues and maps styles. | [ASS import and style mapping](src/interchange/ass/README.md) |
 | `language.rs` | Owns BCP 47 language tags and editable subtitle profiles. | [Language profiles](src/language/README.md) |
 | `mapping.rs` | Maps source ticks to output ticks through edit cut lists. | [Edit mapping](src/mapping/README.md) |

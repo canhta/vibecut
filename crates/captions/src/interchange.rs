@@ -1,4 +1,4 @@
-//! Round-trips SRT and WebVTT subtitle files through cue tracks.
+//! Round-trips SRT and WebVTT subtitle files, and exports plain TXT cue text.
 pub mod ass;
 
 use crate::{Cue, CueText, CueTrack, Error, LanguageTag, Warning, WarningKind};
@@ -13,6 +13,8 @@ use time::{Rounding, SourceRange, Tick};
 pub enum Format {
     Srt,
     WebVtt,
+    /// Plain caption text: one cue per line, no timings or header.
+    Txt,
 }
 #[derive(Clone, Debug)]
 pub struct Import {
@@ -115,6 +117,9 @@ fn read_blocks<'a>(
     format: Format,
     warnings: &mut Vec<Warning>,
 ) -> Result<Vec<Block<'a>>, Error> {
+    if format == Format::Txt {
+        return Err(Error::Invalid("TXT is export-only"));
+    }
     let lines: Vec<_> = text.lines().collect();
     let mut blocks = Vec::new();
     let mut i = 0;
@@ -216,6 +221,7 @@ fn cue(
                 translation_ref: None,
             },
         )]),
+        word_ranges: Vec::new(),
         style: None,
     })
 }
@@ -285,6 +291,17 @@ pub fn export(
             body.push(compact);
         }
         if body.is_empty() {
+            continue;
+        }
+        if format == Format::Txt {
+            // Plain download: one cue per line, languages side by side, no clock.
+            let line = body.join(" / ");
+            let line = line.split_whitespace().collect::<Vec<_>>().join(" ");
+            if line.is_empty() {
+                continue;
+            }
+            text.push_str(&line);
+            text.push('\n');
             continue;
         }
         let mut start = cue.range.start().to_units(1000, Rounding::Nearest)?;

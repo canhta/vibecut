@@ -4,6 +4,7 @@ pub(super) fn extension(format: Format) -> &'static str {
     match format {
         Format::Srt => "srt",
         Format::WebVtt => "vtt",
+        Format::Txt => "txt",
     }
 }
 impl NameSet {

@@ -94,7 +94,7 @@ impl Controls {
                 let tags: &[&str] = if target {
                     &["vi", "en", "zh-Hans", "zh-Hant"]
                 } else {
-                    &["vi", "en", "zh"]
+                    &["auto", "vi", "en", "zh"]
                 };
                 for tag in tags {
                     let r = ui.selectable_value(
@@ -128,7 +128,9 @@ impl Controls {
         operation: CatalogOperation,
         source: &str,
     ) {
-        let tag = LanguageTag::parse(source).ok();
+        let tag = (source != "auto")
+            .then(|| LanguageTag::parse(source).ok())
+            .flatten();
         let options = provider_options_for(operation, tag.as_ref());
         let current = options
             .iter()
@@ -180,6 +182,7 @@ fn provider_name(locale: Locale, provider: &engine::providers::ProviderOption) -
 }
 fn language_name(locale: Locale, tag: &str) -> String {
     let key = match tag {
+        "auto" => Text::SubAuto,
         "vi" => Text::SubVietnamese,
         "en" => Text::SubEnglish,
         "zh-Hans" => Text::SubHans,
@@ -202,6 +205,16 @@ impl Subtitles {
         dark: bool,
     ) -> Vec<(String, egui::Response)> {
         self.refresh(session);
+        // The spoken-language choice belongs to the project, not the window.
+        // A project without an entry starts from Auto; the first render after
+        // construction keeps an explicit caller choice for compatibility.
+        let project = session.project().data().id;
+        if let Some(previous) = self.project
+            && previous != project
+        {
+            options.load_source(project);
+        }
+        self.project = Some(project);
         let previous_options = options.clone();
         self.text_focus = None;
         let mut controls = Controls {
@@ -241,6 +254,7 @@ impl Subtitles {
                                 Icon::Export,
                                 Pick::Vtt,
                             ),
+                            ("subtitles.export.txt", Text::SubTxt, Icon::File, Pick::Txt),
                             (
                                 "subtitles.export.burn",
                                 Text::SubBurn,
@@ -353,12 +367,31 @@ impl Subtitles {
                         });
                     });
                 controls.remember("subtitles.translation.settings", &r.header_response);
+                if options.source != previous_options.source {
+                    options.remember_source(project);
+                }
                 if *options != previous_options {
                     let result = self.flush_drafts(session).map(|_| ());
                     self.ui_result(result);
                 }
                 if let Some(problem) = self.problem {
                     ui.colored_label(theme::error_text(dark), controls.tr(problem));
+                    if matches!(problem, Text::SubNoSpeech | Text::SubLowConfidence)
+                        && options.source != "auto"
+                        && self.retry_source.is_some()
+                        && controls.button(
+                            ui,
+                            "subtitles.retry_auto",
+                            Text::SubRetryAuto,
+                            Icon::ArrowClockwise,
+                            !busy,
+                        )
+                    {
+                        let result = self
+                            .flush_drafts(session)
+                            .and_then(|_| self.retry_auto(session, options));
+                        self.ui_result(result);
+                    }
                     if problem == Text::SubDraftConflict && self.caption(session).is_none() {
                         let label = ui.label(controls.tr(Text::SubDraftRecovery));
                         for ((id, language), draft) in &mut self.drafts {
@@ -661,6 +694,8 @@ impl Subtitles {
         let profiles = LanguageRegistry::standard().ok();
         let mut selected = None;
         let mut save = false;
+        let mut split_at = None;
+        let mut merge = None;
         const PAGE: usize = 50;
         self.page = self.page.min(cues.len().saturating_sub(1) / PAGE);
         if cues.len() > PAGE {
@@ -698,6 +733,9 @@ impl Subtitles {
                     self.ui_result(result);
                 }
             });
+        }
+        if !cues.is_empty() {
+            ui.small(c.tr(Text::SubCueKeys));
         }
         for (index, cue) in cues.iter().enumerate().skip(self.page * PAGE).take(PAGE) {
             ui.separator();
@@ -759,17 +797,43 @@ impl Subtitles {
                     .drafts
                     .entry((cue.id.clone(), language.clone()))
                     .or_insert_with(|| original.into());
-                let r = ui
-                    .add(
-                        egui::TextEdit::multiline(draft)
-                            .id_salt(("subtitles.text", cue.id.as_str(), language.as_str()))
-                            .desired_rows(2)
-                            .char_limit(64 * 1024)
-                            .desired_width(ui.available_width()),
-                    )
-                    .labelled_by(label.id);
+                // Enter splits at the caret; Shift+Enter is the only newline.
+                let output = egui::TextEdit::multiline(draft)
+                    .id_salt(("subtitles.text", cue.id.as_str(), language.as_str()))
+                    .return_key(egui::KeyboardShortcut::new(
+                        egui::Modifiers::SHIFT,
+                        egui::Key::Enter,
+                    ))
+                    .desired_rows(2)
+                    .char_limit(64 * 1024)
+                    .desired_width(ui.available_width())
+                    .show(ui);
+                let r = output.response.response.labelled_by(label.id);
                 if r.has_focus() {
                     self.text_focus = Some(r.id);
+                    if let Some(cursor) = output.cursor_range
+                        && cursor.is_empty()
+                    {
+                        let caret = cursor.primary.index.0;
+                        let (enter, backspace, delete) = ui.input(|i| {
+                            (
+                                i.key_pressed(egui::Key::Enter)
+                                    && !i.modifiers.shift
+                                    && !i.modifiers.command
+                                    && !i.modifiers.alt,
+                                i.key_pressed(egui::Key::Backspace),
+                                i.key_pressed(egui::Key::Delete),
+                            )
+                        });
+                        if enter && let Some(byte) = byte_offset(draft, caret) {
+                            split_at =
+                                Some((cue.id.clone(), language.clone(), draft.clone(), byte));
+                        } else if backspace && caret == 0 {
+                            merge = Some(false);
+                        } else if delete && caret == draft.chars().count() {
+                            merge = Some(true);
+                        }
+                    }
                 }
                 c.remember(
                     format!("subtitles.text.{}.{}", cue.id.as_str(), language.as_str()),
@@ -781,7 +845,23 @@ impl Subtitles {
             }
         }
         // Apply after rendering all fields so the snapshot cannot recreate old drafts.
-        if let Some((index, modifiers)) = selected {
+        if let Some((cue, language, text, caret)) = split_at {
+            let result = self
+                .split_text(session, &cue, language, &text, caret)
+                .map(|_| ());
+            self.ui_result(result);
+            ui.ctx().request_repaint();
+        } else if let Some(down) = merge {
+            let result = self.flush_drafts(session).and_then(|_| {
+                if down {
+                    self.merge_down(session)
+                } else {
+                    self.merge_up(session)
+                }
+            });
+            self.ui_result(result);
+            ui.ctx().request_repaint();
+        } else if let Some((index, modifiers)) = selected {
             match self
                 .flush_drafts(session)
                 .and_then(|_| self.select_cue(session, index, modifiers.shift, modifiers.command))
@@ -900,6 +980,11 @@ impl Subtitles {
                     .set_file_name(format!("{}.vtt", catalog::text(locale, Text::SubFileBase)))
                     .save_file(),
             ),
+            Pick::Txt => Box::pin(
+                picker
+                    .set_file_name(format!("{}.txt", catalog::text(locale, Text::SubFileBase)))
+                    .save_file(),
+            ),
             Pick::Burn => Box::pin(
                 picker
                     .set_file_name(format!("{}.mp4", catalog::text(locale, Text::SubFileBase)))
@@ -989,10 +1074,10 @@ impl Subtitles {
         self.export_file(
             session,
             path,
-            if format == captions::Format::Srt {
-                Pick::Srt
-            } else {
-                Pick::Vtt
+            match format {
+                captions::Format::Srt => Pick::Srt,
+                captions::Format::WebVtt => Pick::Vtt,
+                captions::Format::Txt => Pick::Txt,
             },
             options,
             overwrite,
@@ -1082,12 +1167,13 @@ impl Subtitles {
                 path,
                 overwrite,
             },
-            Pick::Srt | Pick::Vtt => Command::ExportSubtitles {
+            Pick::Srt | Pick::Vtt | Pick::Txt => Command::ExportSubtitles {
                 track,
-                format: if matches!(kind, Pick::Srt) {
-                    captions::Format::Srt
-                } else {
-                    captions::Format::WebVtt
+                format: match kind {
+                    Pick::Srt => captions::Format::Srt,
+                    Pick::Vtt => captions::Format::WebVtt,
+                    Pick::Txt => captions::Format::Txt,
+                    _ => return Err(Error::Invalid("export format")),
                 },
                 languages,
                 path,
@@ -1101,6 +1187,13 @@ impl Subtitles {
         self.completed = None;
         Ok(())
     }
+}
+/// Character index from an egui text cursor to a UTF-8 byte offset.
+fn byte_offset(text: &str, chars: usize) -> Option<usize> {
+    text.char_indices()
+        .map(|(byte, _)| byte)
+        .chain(std::iter::once(text.len()))
+        .nth(chars)
 }
 fn time_text(tick: Tick, locale: Locale) -> String {
     catalog::decimal(locale, tick.0 as f64 / TICKS_PER_SECOND as f64, 3)

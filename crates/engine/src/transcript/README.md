@@ -9,6 +9,14 @@ refuses the next stage; `media_flag` shares cancellation with media decoding.
 Provider credentials expose only the selected OpenAI or Anthropic key lookup, returning
 the existing typed missing-credential refusal before adapter construction.
 
+`Providers::detect_language` auto-detects an already-imported asset's spoken
+language through the local whisper.cpp adapter; composition roots then pass the
+detected tag explicitly, so detection is never a hidden fallback inside
+`transcribe`. A run with no speech returns `NoSpeech`; when every recognized word
+carries confidence and their mean is below the fixed floor, `transcribe` returns
+`LowConfidence` instead of inserting cues for a likely wrong language. Providers
+without confidence data never produce the low-confidence refusal.
+
 The desktop also consumes `SubtitleTranslator` (owned by `transcript/`) without opening an ASR
 adapter or model lease. `translate_selected` composes the same translation window,
 request disclosure, `TranslationRun` attempt budget and `Retranslate` application

@@ -49,6 +49,7 @@ pub(super) fn import_captions(
                     translation_ref: None,
                 },
             )]),
+            word_ranges: Vec::new(),
             style: Some(cue.style),
         });
     }

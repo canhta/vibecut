@@ -1,5 +1,10 @@
 # Segmentation
 
+Generated cues retain measured source word ranges in `Cue::word_ranges` when
+every contributing unit has native word/span timing; estimated or proportional
+units leave the list empty, so callers always distinguish measured timing from a
+layout estimate.
+
 `segment/units` derives indivisible speech units from words, spans or plain text. `segment/layout` fits speech units into the configured lines. `segment/assembly` turns speech units into positioned cues. `segment/validate` rejects transcripts outside the segmentation contract.
 
 `segment_transcript` accepts a transcript, one caller-resolved `LanguageProfile`,

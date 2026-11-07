@@ -26,6 +26,7 @@ pub use workflow::LocalWorkflow;
 #[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct Options {
+    /// `auto` or one of the spoken languages this app's ASR supports.
     pub source: String,
     pub target: String,
     pub transcription: String,
@@ -33,26 +34,40 @@ pub struct Options {
     pub translation: String,
     pub translation_model: String,
     pub bilingual: bool,
+    /// Last spoken-language choice per project; absent means Auto.
+    #[serde(default)]
+    pub project_sources: BTreeMap<project::ProjectId, String>,
 }
 impl Default for Options {
     fn default() -> Self {
         Self {
-            source: "vi".into(),
+            source: "auto".into(),
             target: "en".into(),
             transcription: "whisper.cpp".into(),
             transcription_model: "whisper-large-v3-turbo".into(),
             translation: "openai".into(),
             translation_model: ai::openai::TRANSLATION_MODEL.into(),
             bilingual: false,
+            project_sources: BTreeMap::new(),
         }
     }
 }
+/// Every spoken language the configured ASR adapters actually accept.
+pub const SOURCE_LANGUAGES: [&str; 3] = ["vi", "en", "zh"];
 impl Options {
     pub fn validate(&self) -> Result<()> {
-        if !["vi", "en", "zh"].contains(&self.source.as_str())
+        if (self.source != "auto" && !SOURCE_LANGUAGES.contains(&self.source.as_str()))
             || !["vi", "en", "zh-Hans", "zh-Hant"].contains(&self.target.as_str())
         {
             return Err(Error::Invalid("subtitle language"));
+        }
+        if self.project_sources.len() > 1024
+            || self
+                .project_sources
+                .values()
+                .any(|source| source != "auto" && !SOURCE_LANGUAGES.contains(&source.as_str()))
+        {
+            return Err(Error::Invalid("subtitle project language"));
         }
         engine::providers::choose_transcription(
             &self.transcription,
@@ -61,11 +76,31 @@ impl Options {
         engine::providers::choose_translation(&self.translation, Some(&self.translation_model))?;
         Ok(())
     }
+    /// Auto is the default until a project stores an explicit choice.
+    pub fn source_for(&self, project: project::ProjectId) -> &str {
+        self.project_sources
+            .get(&project)
+            .map_or("auto", String::as_str)
+    }
+    pub fn load_source(&mut self, project: project::ProjectId) {
+        self.source = self.source_for(project).to_owned();
+    }
+    pub fn remember_source(&mut self, project: project::ProjectId) {
+        if self.source_for(project) != self.source {
+            self.project_sources.insert(project, self.source.clone());
+        }
+    }
+    /// Provider filtering sees Auto as "no language filter", never as a tag.
+    pub(crate) fn source_tag(&self) -> Option<LanguageTag> {
+        (self.source != "auto")
+            .then(|| LanguageTag::parse(&self.source).ok())
+            .flatten()
+    }
     pub(crate) fn transcription_supported(&self) -> bool {
         self.validate().is_ok()
             && engine::providers::provider_options_for(
                 engine::providers::CatalogOperation::Transcribe,
-                LanguageTag::parse(&self.source).ok().as_ref(),
+                self.source_tag().as_ref(),
             )
             .iter()
             .any(|p| p.id == self.transcription && p.models.contains(&self.transcription_model))
@@ -133,6 +168,7 @@ enum Pick {
     Import,
     Srt,
     Vtt,
+    Txt,
     Burn,
 }
 struct Picker {
@@ -173,6 +209,8 @@ pub struct Subtitles {
     overwrite: Option<(PathBuf, Pick)>,
     pub(crate) requested_model: Option<String>,
     pub(crate) requested_seek: Option<Tick>,
+    project: Option<project::ProjectId>,
+    retry_source: Option<ItemId>,
 }
 impl Drop for Subtitles {
     fn drop(&mut self) {
@@ -223,6 +261,8 @@ impl Subtitles {
             overwrite: None,
             requested_model: None,
             requested_seek: None,
+            project: None,
+            retry_source: None,
         })
     }
     pub fn busy(&self) -> bool {
@@ -380,6 +420,7 @@ impl Subtitles {
         if !options.transcription_supported() {
             return Err(Error::Invalid("subtitle transcription capability"));
         }
+        self.retry_source = Some(source);
         let item = session
             .project()
             .data()
@@ -418,6 +459,16 @@ impl Subtitles {
                 options: options.clone(),
             },
         )
+    }
+    /// Re-run the last source with auto-detect after a no-speech/low-confidence
+    /// result. The caller's Options keep the new choice for this project.
+    pub fn retry_auto(&mut self, session: &Session, options: &mut Options) -> Result<()> {
+        let source = self.retry_source.ok_or(Error::Invalid("no source media"))?;
+        options.source = "auto".into();
+        if let Some(project) = self.project {
+            options.remember_source(project);
+        }
+        self.generate(session, source, options)
     }
     pub fn import_file(
         &mut self,
@@ -551,6 +602,9 @@ impl Subtitles {
             }
             engine::EditError::CredentialMissing(_) => Text::ShortsCredentialsMissing,
             engine::EditError::RunnerMissing => Text::SubRunnerMissing,
+            engine::EditError::AutoLanguageUnsupported => Text::SubAutoUnsupported,
+            engine::EditError::NoSpeech => Text::SubNoSpeech,
+            engine::EditError::LowConfidence => Text::SubLowConfidence,
             engine::EditError::ConsentRequired => Text::ShortsConsentRequired,
             engine::EditError::StaleResult => Text::SubStale,
             engine::EditError::Cancelled => Text::ShortsJobCancelled,

@@ -282,6 +282,17 @@ fn import_is_atomic_bounded_and_export_uses_selected_bilingual_languages() {
     wait(&mut h, |e| !panel(e).busy);
     assert_eq!(std::fs::read(&output).unwrap(), bytes);
     assert!(panel(h.state()).problem.is_some());
+    // TXT is the caption-only download: one cue per line, no timings.
+    let plain = dir.path().join("captions.txt");
+    with_panel(h.state_mut(), |p, s, o| {
+        p.export_subtitles(s, plain.clone(), captions::Format::Txt, o, false)
+            .unwrap()
+    });
+    wait(&mut h, |e| !panel(e).busy);
+    let text = std::fs::read_to_string(&plain).unwrap();
+    assert!(!text.contains("-->"));
+    assert_eq!(text.lines().count(), 2);
+    assert!(text.contains("Xin chào"));
     let huge = dir.path().join("huge.srt");
     std::fs::File::create(&huge)
         .unwrap()
@@ -654,6 +665,15 @@ fn capabilities_locale_and_choices_persist_without_loading_models() {
         &mut h,
         "subtitles.transcriber.whisper.cpp.whisper-large-v3-turbo",
     );
+    let project = h.state().session.project().data().id;
+    assert_eq!(h.state().preferences.subtitles.source_for(project), "en");
+    assert_eq!(
+        h.state()
+            .preferences
+            .subtitles
+            .source_for(project::ProjectId(99)),
+        "auto"
+    );
     let dir = tempfile::tempdir().unwrap();
     let store = PreferenceStore::new(dir.path().join("prefs.json"));
     store.save(&h.state().preferences).unwrap();
@@ -661,14 +681,26 @@ fn capabilities_locale_and_choices_persist_without_loading_models() {
         store.load().unwrap().subtitles,
         h.state().preferences.subtitles
     );
+    assert_eq!(
+        store.load().unwrap().subtitles.source_for(project),
+        "en",
+        "the spoken-language choice persists per project"
+    );
     h.state_mut().preferences.locale = Locale::Vi;
     h.run_steps(3);
     assert_eq!(h.state().preferences.subtitles.transcription, "whisper.cpp");
     assert!(h.state().models().is_none());
 }
 
+#[derive(Clone, Copy)]
+enum GenerateFailure {
+    NoSpeech,
+    LowConfidence,
+    Silent,
+}
 struct GenerateWorkflow {
     missing: bool,
+    failure: Option<GenerateFailure>,
 }
 impl Workflow for GenerateWorkflow {
     fn run(
@@ -689,6 +721,16 @@ impl Workflow for GenerateWorkflow {
         };
         if self.missing {
             return Err(engine::EditError::ModelMissing("whisper-large-v3-turbo"));
+        }
+        match self.failure {
+            Some(GenerateFailure::NoSpeech) if options.source != "auto" => {
+                return Err(engine::EditError::NoSpeech);
+            }
+            Some(GenerateFailure::LowConfidence) if options.source != "auto" => {
+                return Err(engine::EditError::LowConfidence);
+            }
+            Some(GenerateFailure::Silent) => return Err(engine::EditError::NoSpeech),
+            _ => {}
         }
         engine::transcript::Progress::stage(events, engine::transcript::Stage::Transcribe);
         if ["openai", "elevenlabs"].contains(&options.transcription.as_str()) {
@@ -721,7 +763,13 @@ impl Workflow for GenerateWorkflow {
                 source_range: range,
                 start,
                 content: ItemParams::Caption(project::CaptionParams {
-                    cues: fixture::cues(&options.source),
+                    // Auto-detect resolves to a concrete spoken language; the
+                    // fixture uses vi so the inserted cues stay realistic.
+                    cues: fixture::cues(if options.source == "auto" {
+                        "vi"
+                    } else {
+                        &options.source
+                    }),
                 }),
             },
         })
@@ -790,7 +838,10 @@ fn generate_explicit_choices_insert_once_and_missing_models_offer_setup_without_
         e.subtitles = Some(
             Subtitles::with_workflow(
                 e.playback.budget().clone(),
-                Arc::new(GenerateWorkflow { missing: false }),
+                Arc::new(GenerateWorkflow {
+                    missing: false,
+                    failure: None,
+                }),
             )
             .unwrap(),
         );
@@ -824,7 +875,10 @@ fn generate_explicit_choices_insert_once_and_missing_models_offer_setup_without_
     e.subtitles = Some(
         Subtitles::with_workflow(
             e.playback.budget().clone(),
-            Arc::new(GenerateWorkflow { missing: true }),
+            Arc::new(GenerateWorkflow {
+                missing: true,
+                failure: None,
+            }),
         )
         .unwrap(),
     );
@@ -843,6 +897,256 @@ fn generate_explicit_choices_insert_once_and_missing_models_offer_setup_without_
             .count()
             == 1
     );
+}
+
+#[test]
+fn caption_language_auto_retry_covers_no_speech_low_confidence_and_silent_clips() {
+    for (failure, source, recovers) in [
+        (GenerateFailure::NoSpeech, "vi", true),
+        (GenerateFailure::LowConfidence, "en", true),
+        (GenerateFailure::Silent, "vi", false),
+        (GenerateFailure::Silent, "auto", false),
+    ] {
+        let mut e = editor("vi");
+        let clip = source_clip(&mut e);
+        e.selection.insert(clip);
+        e.preferences.subtitles.source = source.into();
+        e.subtitles = Some(
+            Subtitles::with_workflow(
+                e.playback.budget().clone(),
+                Arc::new(GenerateWorkflow {
+                    missing: false,
+                    failure: Some(failure),
+                }),
+            )
+            .unwrap(),
+        );
+        let mut h = harness(e, 1.0);
+        h.run_steps(3);
+        click(&mut h, "subtitles.generate.settings");
+        click(&mut h, "subtitles.generate");
+        wait(&mut h, |e| !panel(e).busy);
+        let expected = match failure {
+            GenerateFailure::LowConfidence => vibecut::catalog::Text::SubLowConfidence,
+            _ => vibecut::catalog::Text::SubNoSpeech,
+        };
+        assert_eq!(panel(h.state()).problem, Some(expected), "{source}");
+        let retry = h
+            .query_all(By::new().predicate(|n| n.author_id() == Some("subtitles.retry_auto")))
+            .count();
+        assert_eq!(retry, usize::from(source != "auto"), "{source}");
+        if source != "auto" {
+            click(&mut h, "subtitles.retry_auto");
+            wait(&mut h, |e| !panel(e).busy);
+            assert_eq!(h.state().preferences.subtitles.source, "auto");
+            if recovers {
+                assert_eq!(panel(h.state()).completed, Some(3), "{source}");
+                assert_eq!(panel(h.state()).problem, None, "{source}");
+            } else {
+                assert_eq!(
+                    panel(h.state()).problem,
+                    Some(vibecut::catalog::Text::SubNoSpeech)
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn cue_caret_split_line_break_and_neighbour_merge_follow_word_boundaries() {
+    for (text, caret, left, right) in [
+        ("Chào bạn", 4, "Chào", "bạn"),
+        ("Hello friend", 6, "Hello", "friend"),
+    ] {
+        let mut h = harness(editor("vi"), 1.0);
+        h.run_steps(3);
+        click(&mut h, "subtitles.cue.cue-0");
+        with_panel(h.state_mut(), |p, s, _| {
+            p.edit_text(s, &"cue-0".into(), lang("vi"), text).unwrap()
+        });
+        let before = track(h.state());
+        let at = with_panel(h.state_mut(), |p, s, _| {
+            p.split_text(s, &"cue-0".into(), lang("vi"), text, caret)
+                .unwrap()
+        });
+        let after = track(h.state());
+        assert_eq!(after.cues.len(), 4, "{text}");
+        assert_eq!(after.cues[0].texts[&lang("vi")].text.as_str(), left);
+        assert_eq!(after.cues[1].texts[&lang("vi")].text.as_str(), right);
+        assert_eq!(after.cues[0].range.end(), at);
+        assert_eq!(after.cues[1].range.start(), at);
+        assert!(after.cues[0].range.duration() > Tick::ZERO);
+        assert!(after.cues[1].range.duration() > Tick::ZERO);
+        h.state_mut().activate("edit.undo").unwrap();
+        h.run_steps(2);
+        assert_eq!(track(h.state()), before);
+    }
+    // A word with no internal boundary refuses instead of inventing one.
+    let mut h = harness(editor("vi"), 1.0);
+    h.run_steps(3);
+    click(&mut h, "subtitles.cue.cue-0");
+    let before = track(h.state());
+    with_panel(h.state_mut(), |p, s, _| {
+        assert!(
+            p.split_text(s, &"cue-0".into(), lang("vi"), "Hello", 3)
+                .is_err()
+        );
+    });
+    assert_eq!(track(h.state()), before);
+    // A one-tick cue cannot become two nonempty cues.
+    let mut cues = before.clone();
+    cues.cues[0].range = time::SourceRange::new(Tick(10), Tick(11)).unwrap();
+    let item = panel(h.state()).item.unwrap();
+    h.state_mut()
+        .session
+        .apply(Command::SetItemParam {
+            item,
+            content: ItemParams::Caption(project::CaptionParams { cues }),
+        })
+        .unwrap();
+    h.run_steps(2);
+    with_panel(h.state_mut(), |p, s, _| {
+        assert!(
+            p.split_text(s, &"cue-0".into(), lang("vi"), "Chào bạn", 4)
+                .is_err()
+        );
+    });
+    // Native word timing decides the cut time, not a proportional guess.
+    let mut h = harness(editor("vi"), 1.0);
+    h.run_steps(3);
+    click(&mut h, "subtitles.cue.cue-0");
+    let mut cues = track(h.state());
+    let first =
+        time::SourceRange::new(Tick(TICKS_PER_SECOND), Tick(TICKS_PER_SECOND * 3 / 2)).unwrap();
+    let second =
+        time::SourceRange::new(Tick(TICKS_PER_SECOND * 2), Tick(TICKS_PER_SECOND * 5 / 2)).unwrap();
+    let cue = &mut cues.cues[0];
+    cue.texts.get_mut(&lang("vi")).unwrap().text = "one two".into();
+    cue.word_ranges = vec![first, second];
+    let item = panel(h.state()).item.unwrap();
+    h.state_mut()
+        .session
+        .apply(Command::SetItemParam {
+            item,
+            content: ItemParams::Caption(project::CaptionParams { cues }),
+        })
+        .unwrap();
+    h.run_steps(2);
+    let at = with_panel(h.state_mut(), |p, s, _| {
+        p.split_text(s, &"cue-0".into(), lang("vi"), "one two", 3)
+            .unwrap()
+    });
+    assert_eq!(at, first.end());
+    let after = track(h.state());
+    assert_eq!(after.cues[0].word_ranges, vec![first]);
+    assert_eq!(after.cues[1].word_ranges, vec![second]);
+    // Enter in the real field splits at the caret; Shift+Enter only breaks lines.
+    let mut h = harness(editor("vi"), 1.0);
+    h.run_steps(3);
+    click(&mut h, "subtitles.cue.cue-0");
+    let field = "subtitles.text.cue-0.vi";
+    h.get(By::new().predicate(|n| n.author_id() == Some(field)))
+        .focus();
+    h.run_steps(2);
+    h.key_press(egui::Key::Home);
+    h.run_steps(1);
+    for _ in 0..4 {
+        h.key_press(egui::Key::ArrowRight);
+        h.run_steps(1);
+    }
+    h.key_press(egui::Key::Enter);
+    h.run_steps(3);
+    assert_eq!(track(h.state()).cues.len(), 4);
+    assert_eq!(
+        track(h.state()).cues[0].texts[&lang("vi")].text.as_str(),
+        "Chào"
+    );
+    h.state_mut().activate("edit.undo").unwrap();
+    h.run_steps(2);
+    assert_eq!(track(h.state()).cues.len(), 3);
+    let mut h = harness(editor("vi"), 1.0);
+    h.run_steps(3);
+    click(&mut h, "subtitles.cue.cue-0");
+    h.get(By::new().predicate(|n| n.author_id() == Some(field)))
+        .focus();
+    h.run_steps(2);
+    h.key_press_modifiers(egui::Modifiers::SHIFT, egui::Key::Enter);
+    h.run_steps(2);
+    click(&mut h, "subtitles.cue.cue-1");
+    assert_eq!(track(h.state()).cues.len(), 3);
+    assert!(
+        track(h.state()).cues[0].texts[&lang("vi")]
+            .text
+            .as_str()
+            .contains('\n')
+    );
+    // Neighbour merges join text and spans; first/last boundaries refuse.
+    for down in [false, true] {
+        let mut h = harness(editor("vi"), 1.0);
+        h.run_steps(3);
+        click(&mut h, "subtitles.cue.cue-1");
+        let before = track(h.state());
+        with_panel(h.state_mut(), |p, s, _| {
+            if down { p.merge_down(s) } else { p.merge_up(s) }.unwrap()
+        });
+        let after = track(h.state());
+        assert_eq!(after.cues.len(), 2);
+        if down {
+            assert_eq!(after.cues[1].range.end(), before.cues[2].range.end());
+            assert_eq!(
+                after.cues[1].texts[&lang("vi")].text.as_str(),
+                format!(
+                    "{}\n{}",
+                    before.cues[1].texts[&lang("vi")].text.as_str(),
+                    before.cues[2].texts[&lang("vi")].text.as_str()
+                )
+            );
+        } else {
+            assert_eq!(after.cues[0].range.start(), before.cues[0].range.start());
+            assert_eq!(
+                after.cues[0].texts[&lang("vi")].text.as_str(),
+                format!(
+                    "{}\n{}",
+                    before.cues[0].texts[&lang("vi")].text.as_str(),
+                    before.cues[1].texts[&lang("vi")].text.as_str()
+                )
+            );
+        }
+        h.state_mut().activate("edit.undo").unwrap();
+        h.run_steps(2);
+        assert_eq!(track(h.state()), before);
+    }
+    let mut h = harness(editor("vi"), 1.0);
+    h.run_steps(3);
+    click(&mut h, "subtitles.cue.cue-0");
+    with_panel(h.state_mut(), |p, s, _| assert!(p.merge_up(s).is_err()));
+    click(&mut h, "subtitles.cue.cue-2");
+    with_panel(h.state_mut(), |p, s, _| assert!(p.merge_down(s).is_err()));
+    assert_eq!(track(h.state()).cues.len(), 3);
+    // Backspace at the start and Delete at the end are the same merges.
+    let mut h = harness(editor("vi"), 1.0);
+    h.run_steps(3);
+    click(&mut h, "subtitles.cue.cue-1");
+    let field = "subtitles.text.cue-1.vi";
+    h.get(By::new().predicate(|n| n.author_id() == Some(field)))
+        .focus();
+    h.run_steps(2);
+    h.key_press(egui::Key::Home);
+    h.run_steps(1);
+    h.key_press(egui::Key::Backspace);
+    h.run_steps(3);
+    assert_eq!(track(h.state()).cues.len(), 2);
+    let mut h = harness(editor("vi"), 1.0);
+    h.run_steps(3);
+    click(&mut h, "subtitles.cue.cue-1");
+    h.get(By::new().predicate(|n| n.author_id() == Some("subtitles.text.cue-1.vi")))
+        .focus();
+    h.run_steps(2);
+    h.key_press(egui::Key::End);
+    h.run_steps(1);
+    h.key_press(egui::Key::Delete);
+    h.run_steps(3);
+    assert_eq!(track(h.state()).cues.len(), 2);
 }
 
 #[test]

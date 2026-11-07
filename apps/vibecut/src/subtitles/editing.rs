@@ -277,8 +277,9 @@ impl Subtitles {
         }
         self.commit(session, cues)
     }
-    /// Explicit split at the preview playhead. Text divides on whole graphemes;
-    /// timing is user-chosen, never invented source word alignment.
+    /// Explicit split at the preview playhead. Each language divides on its
+    /// nearest word boundary to that time; timing is user-chosen, never invented
+    /// source word alignment. Refuses a cut that would leave an empty cue.
     pub fn split(&mut self, session: &mut Session, at: Tick) -> Result<()> {
         if self.selected.len() != 1 {
             return Err(Error::Invalid("select one cue"));
@@ -300,44 +301,200 @@ impl Subtitles {
             .cues
             .get_mut(index)
             .ok_or(Error::Invalid("cue index"))?;
-        if at <= left.range.start() || at >= left.range.end() {
+        let start = left.range.start();
+        let end = left.range.end();
+        if at <= start || at >= end {
             return Err(Error::Invalid("seek inside selected cue"));
         }
+        // Native word timings win when the cue carries them; otherwise the
+        // playhead stays the user-chosen cut.
+        let at = snap_word_time(start, end, at, &left.word_ranges);
         let mut right = left.clone();
-        for (language, text) in &mut left.texts {
-            let normalized = NormalizedText::new(text.text.as_str())?;
-            let cut = normalized
-                .spans()
-                .get(normalized.spans().len() / 2)
-                .filter(|_| normalized.spans().len() >= 2)
-                .map(|s| s.normalized.start)
+        let keys: Vec<_> = left.texts.keys().cloned().collect();
+        for language in keys {
+            let text = left
+                .texts
+                .get(&language)
+                .ok_or(Error::Invalid("cue language"))?
+                .text
+                .as_str();
+            let cut = cut_for_fraction(text, (at - start).0 as u128, (end - start).0 as u128)
                 .ok_or(Error::Invalid("text too short to split"))?;
-            let a = text
-                .text
-                .as_str()
-                .get(..cut)
-                .ok_or(Error::Invalid("text split"))?
-                .to_owned();
-            let b = text
-                .text
-                .as_str()
-                .get(cut..)
-                .ok_or(Error::Invalid("text split"))?
-                .to_owned();
-            if a.trim().is_empty() || b.trim().is_empty() {
-                return Err(Error::Invalid("text too short to split"));
-            }
-            text.text = a.trim().into();
-            text.edited = true;
+            let (a, b) = divide_text(text, cut)?;
+            left.texts
+                .get_mut(&language)
+                .ok_or(Error::Invalid("cue language"))?
+                .text = a.into();
+            left.texts
+                .get_mut(&language)
+                .ok_or(Error::Invalid("cue language"))?
+                .edited = true;
             let target = right
                 .texts
-                .get_mut(language)
+                .get_mut(&language)
                 .ok_or(Error::Invalid("cue language"))?;
-            target.text = b.trim().into();
+            target.text = b.into();
             target.edited = true;
         }
-        left.range = SourceRange::new(left.range.start(), at)?;
-        right.range = SourceRange::new(at, right.range.end())?;
+        let (left_words, right_words) = split_word_ranges(&left.word_ranges, at);
+        left.word_ranges = left_words;
+        right.word_ranges = right_words;
+        left.range = SourceRange::new(start, at)?;
+        right.range = SourceRange::new(at, end)?;
+        self.finish_split(session, cues, index, right)
+    }
+    /// Enter in a cue field: divide every language at its word boundary nearest
+    /// the caret and the cue at the matching fraction of its span. One undo step.
+    /// `caret` is a UTF-8 byte offset into `text`, the field's current draft.
+    pub fn split_text(
+        &mut self,
+        session: &mut Session,
+        cue: &NfcText,
+        language: LanguageTag,
+        text: &str,
+        caret: usize,
+    ) -> Result<Tick> {
+        if text.len() > 64 * 1024 || text.trim().is_empty() {
+            return Err(Error::Invalid("caption text"));
+        }
+        let (_, p) = self
+            .caption(session)
+            .ok_or(Error::Invalid("caption item"))?;
+        let mut cues = p.cues.clone();
+        let index = cues
+            .cues
+            .iter()
+            .position(|c| &c.id == cue)
+            .ok_or(Error::Invalid("cue identity"))?;
+        let (_, before, total) =
+            caret_word_cut(text, caret).ok_or(Error::Invalid("text too short to split"))?;
+        let source = cues
+            .cues
+            .get_mut(index)
+            .ok_or(Error::Invalid("cue index"))?;
+        let reference = source
+            .texts
+            .get(&language)
+            .and_then(|t| t.translation_ref.clone());
+        source.set_text(
+            language.clone(),
+            CueText {
+                text: text.into(),
+                edited: true,
+                translation_ref: reference,
+            },
+            true,
+        );
+        let start = source.range.start();
+        let end = source.range.end();
+        let exact_at = (language == source.source_lang)
+            .then(|| exact_word_time(text, caret, &source.word_ranges, start, end))
+            .flatten();
+        let mut right = source.clone();
+        let keys: Vec<_> = source.texts.keys().cloned().collect();
+        for key in keys {
+            let value = source
+                .texts
+                .get(&key)
+                .ok_or(Error::Invalid("cue language"))?
+                .text
+                .as_str();
+            let cut = if key == language {
+                text.get(..caret)
+                    .and_then(|_| caret_word_cut(text, caret))
+                    .map(|(byte, _, _)| byte)
+            } else {
+                cut_for_fraction(value, u128::from(before), u128::from(total))
+            }
+            .ok_or(Error::Invalid("text too short to split"))?;
+            let (a, b) = divide_text(value, cut)?;
+            let left = source
+                .texts
+                .get_mut(&key)
+                .ok_or(Error::Invalid("cue language"))?;
+            left.text = a.into();
+            left.edited = true;
+            let target = right
+                .texts
+                .get_mut(&key)
+                .ok_or(Error::Invalid("cue language"))?;
+            target.text = b.into();
+            target.edited = true;
+        }
+        let span = (end - start).0 as u128;
+        if span < 2 {
+            return Err(Error::Invalid("cue too short to split"));
+        }
+        let delta =
+            ((span * u128::from(before) + u128::from(total) / 2) / u128::from(total)) as i64;
+        let delta = delta.clamp(1, (span as i64) - 1);
+        let at = start
+            .checked_add(Tick(delta))
+            .ok_or(Error::Invalid("cue time overflow"))?;
+        let words = cues
+            .cues
+            .get(index)
+            .map(|c| c.word_ranges.clone())
+            .unwrap_or_default();
+        let at = exact_at.unwrap_or_else(|| snap_word_time(start, end, at, &words));
+        let source = cues
+            .cues
+            .get_mut(index)
+            .ok_or(Error::Invalid("cue index"))?;
+        let (left_words, right_words) = split_word_ranges(&source.word_ranges, at);
+        source.word_ranges = left_words;
+        right.word_ranges = right_words;
+        source.range = SourceRange::new(start, at)?;
+        right.range = SourceRange::new(at, end)?;
+        self.finish_split(session, cues, index, right)?;
+        self.requested_seek = Some(at);
+        Ok(at)
+    }
+    /// Join the selected cue's text and span with its previous neighbour.
+    pub fn merge_up(&mut self, session: &mut Session) -> Result<()> {
+        self.merge_neighbour(session, false)
+    }
+    /// Join the selected cue's text and span with its next neighbour.
+    pub fn merge_down(&mut self, session: &mut Session) -> Result<()> {
+        self.merge_neighbour(session, true)
+    }
+    fn merge_neighbour(&mut self, session: &mut Session, down: bool) -> Result<()> {
+        if self.selected.len() != 1 {
+            return Err(Error::Invalid("select one cue"));
+        }
+        let (_, p) = self
+            .caption(session)
+            .ok_or(Error::Invalid("caption item"))?;
+        let index = p
+            .cues
+            .cues
+            .iter()
+            .position(|c| self.selected.contains(&c.id))
+            .ok_or(Error::Invalid("cue identity"))?;
+        let neighbour = if down {
+            index.checked_add(1)
+        } else {
+            index.checked_sub(1)
+        }
+        .ok_or(Error::Invalid("no neighbouring cue"))?;
+        let id = p
+            .cues
+            .cues
+            .get(neighbour)
+            .ok_or(Error::Invalid("no neighbouring cue"))?
+            .id
+            .clone();
+        self.selected.insert(id);
+        self.flush_drafts(session)?;
+        self.merge(session)
+    }
+    fn finish_split(
+        &mut self,
+        session: &mut Session,
+        mut cues: CueTrack,
+        index: usize,
+        mut right: captions::Cue,
+    ) -> Result<()> {
         let original = right.id.as_str().to_owned();
         let mut ordinal = 1usize;
         loop {
@@ -350,8 +507,15 @@ impl Subtitles {
                 .checked_add(1)
                 .ok_or(Error::Invalid("cue identity overflow"))?;
         }
+        let id = right.id.clone();
+        let at = right.range.start();
         cues.cues.insert(index + 1, right);
-        self.commit(session, cues)
+        self.commit(session, cues)?;
+        self.selected.clear();
+        self.selected.insert(id.clone());
+        self.anchor = Some(id);
+        self.requested_seek = Some(at);
+        Ok(())
     }
     /// Merge a contiguous selection only; retain independent language provenance.
     pub fn merge(&mut self, session: &mut Session) -> Result<()> {
@@ -379,6 +543,10 @@ impl Subtitles {
             .get(first..=last)
             .ok_or(Error::Invalid("cue range"))?;
         let mut merged = selected.first().ok_or(Error::Invalid("cue range"))?.clone();
+        merged.word_ranges = selected
+            .iter()
+            .flat_map(|c| c.word_ranges.iter().copied())
+            .collect();
         if selected
             .iter()
             .any(|c| c.source_lang != merged.source_lang || c.texts.keys().ne(merged.texts.keys()))
@@ -431,4 +599,157 @@ impl Subtitles {
             > cue.range.duration().0 as u128
                 * u128::from(profiles.profile(language).graphemes_per_second))
     }
+}
+
+/// Exact native end of the word before the caret when word timing and the
+/// text's word count agree; otherwise `None` so the proportional cut applies.
+fn exact_word_time(
+    text: &str,
+    caret: usize,
+    words: &[SourceRange],
+    start: Tick,
+    end: Tick,
+) -> Option<Tick> {
+    let (cut, _, _) = caret_word_cut(text, caret)?;
+    let index = words_before(text, cut);
+    if words.len() != word_count(text) {
+        return None;
+    }
+    let at = words.get(index.checked_sub(1)?)?.end();
+    (at > start && at < end && index < words.len()).then_some(at)
+}
+
+fn word_count(text: &str) -> usize {
+    if text.chars().any(char::is_whitespace) {
+        text.split_whitespace().count()
+    } else {
+        text.chars().filter(|c| !c.is_whitespace()).count()
+    }
+}
+
+fn words_before(text: &str, cut: usize) -> usize {
+    let left = text.get(..cut).unwrap_or_default();
+    if text.chars().any(char::is_whitespace) {
+        left.split_whitespace().count()
+    } else {
+        left.chars().filter(|c| !c.is_whitespace()).count()
+    }
+}
+
+/// Nearest native word edge to `at`, kept strictly inside the cue. Empty
+/// word timing keeps the caller's exact tick.
+fn snap_word_time(start: Tick, end: Tick, at: Tick, words: &[SourceRange]) -> Tick {
+    words
+        .iter()
+        .flat_map(|word| [word.start(), word.end()])
+        .filter(|tick| *tick > start && *tick < end)
+        .min_by_key(|tick| tick.0.abs_diff(at.0))
+        .unwrap_or(at)
+}
+
+/// Words ending at or before the cut stay left; later words move right.
+fn split_word_ranges(words: &[SourceRange], at: Tick) -> (Vec<SourceRange>, Vec<SourceRange>) {
+    let (left, right) = words.split_at(words.partition_point(|word| word.end() <= at));
+    (left.to_vec(), right.to_vec())
+}
+
+/// Split raw text at a grapheme boundary, dropping only surrounding whitespace.
+fn divide_text(text: &str, cut: usize) -> Result<(String, String)> {
+    if cut == 0 || cut >= text.len() || !text.is_char_boundary(cut) {
+        return Err(Error::Invalid("text too short to split"));
+    }
+    let a = text
+        .get(..cut)
+        .ok_or(Error::Invalid("text split"))?
+        .trim()
+        .to_owned();
+    let b = text
+        .get(cut..)
+        .ok_or(Error::Invalid("text split"))?
+        .trim()
+        .to_owned();
+    if a.is_empty() || b.is_empty() {
+        return Err(Error::Invalid("text too short to split"));
+    }
+    Ok((a, b))
+}
+
+fn is_space(grapheme: &str) -> bool {
+    grapheme.chars().all(char::is_whitespace)
+}
+
+/// Scripts whose words are not separated by spaces, so any grapheme boundary
+/// is a legal word boundary.
+fn unspaced_script(grapheme: &str) -> bool {
+    grapheme.chars().any(|c| {
+        matches!(c as u32,
+            0x0E00..=0x0EFF // Thai, Lao
+            | 0x1000..=0x109F // Myanmar
+            | 0x1780..=0x17FF // Khmer
+            | 0x3040..=0x30FF // Hiragana, Katakana
+            | 0x3400..=0x4DBF // CJK Extension A
+            | 0x4E00..=0x9FFF // CJK Unified Ideographs
+            | 0xF900..=0xFAFF // CJK Compatibility Ideographs
+        )
+    })
+}
+
+/// Every legal cut with the count of non-whitespace graphemes left of it.
+/// Text with word separators cuts only between words; unspaced scripts (zh)
+/// cut on any grapheme boundary.
+fn word_cuts(text: &str) -> Option<(Vec<(usize, u32)>, u32)> {
+    let normalized = NormalizedText::new(text).ok()?;
+    let spans = normalized.spans();
+    let mut cuts = Vec::new();
+    let mut units = 0u32;
+    for (index, span) in spans.iter().enumerate() {
+        if index > 0 {
+            let start = span.raw.start;
+            let previous = spans
+                .get(index - 1)
+                .and_then(|s| text.get(s.raw.clone()))
+                .unwrap_or_default();
+            let current = text.get(span.raw.clone()).unwrap_or_default();
+            let left = text.get(..start).unwrap_or_default();
+            let right = text.get(start..).unwrap_or_default();
+            if !left.trim().is_empty()
+                && !right.trim().is_empty()
+                && (unspaced_script(previous)
+                    || unspaced_script(current)
+                    || is_space(previous)
+                    || is_space(current))
+            {
+                cuts.push((start, units));
+            }
+        }
+        if !is_space(text.get(span.raw.clone()).unwrap_or_default()) {
+            units = units.saturating_add(1);
+        }
+    }
+    (!cuts.is_empty() && units > 0).then_some((cuts, units))
+}
+
+/// Cut at the word boundary nearest a UTF-8 byte caret; returns the byte offset
+/// and the non-whitespace unit counts before and after the whole text.
+fn caret_word_cut(text: &str, caret: usize) -> Option<(usize, u32, u32)> {
+    let (cuts, total) = word_cuts(text)?;
+    let caret = caret.min(text.len());
+    let (byte, before) = cuts
+        .iter()
+        .copied()
+        .min_by_key(|(byte, _)| (byte.abs_diff(caret), *byte))?;
+    Some((byte, before, total))
+}
+
+/// Nearest word boundary to `numerator / denominator` of the text's units.
+fn cut_for_fraction(text: &str, numerator: u128, denominator: u128) -> Option<usize> {
+    if denominator == 0 {
+        return None;
+    }
+    let (cuts, total) = word_cuts(text)?;
+    let target = ((u128::from(total) * numerator + denominator / 2) / denominator) as u32;
+    cuts.iter()
+        .copied()
+        .min_by_key(|(byte, before)| (before.abs_diff(target), *byte))
+        .map(|(byte, _)| byte)
 }
