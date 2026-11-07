@@ -212,6 +212,7 @@ mod tests {
             hidden: false,
             locked: false,
             items: vec![Item {
+                hidden: false,
                 blend_mode: Default::default(),
                 retime: Default::default(),
                 masks: Vec::new(),

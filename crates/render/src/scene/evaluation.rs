@@ -160,6 +160,7 @@ impl<'a> Renderer<'a> {
         if active.len() > 4096 {
             return Err(Error::Invalid("frame layer expansion"));
         }
+        active.retain(|item| !item.hidden);
         let mut layers = active.len();
         for item in &active {
             if let ItemParams::Caption(params) = &item.content {

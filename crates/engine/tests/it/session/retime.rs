@@ -96,6 +96,7 @@ fn asset() -> media::SourceAsset {
 }
 fn video(id: u64, start: i64, source: SourceRange) -> Item {
     Item {
+        hidden: false,
         blend_mode: Default::default(),
         retime: Default::default(),
         masks: Vec::new(),
@@ -115,6 +116,7 @@ fn video(id: u64, start: i64, source: SourceRange) -> Item {
 }
 fn audio(id: u64, start: i64, source: SourceRange) -> Item {
     Item {
+        hidden: false,
         content: ItemParams::Audio(AudioParams {
             fades: Default::default(),
             volume: 0.0,
@@ -365,6 +367,7 @@ fn linked_video_and_audio_stay_in_sync_through_rate_change_trim_and_split() {
 #[test]
 fn speed_edits_refuse_atomically_and_ripple_only_on_a_magnetic_main_track() {
     let overlay = Item {
+        hidden: false,
         source_asset: None,
         content: ItemParams::Overlay(project::OverlayParams {
             color: project::Color([1, 2, 3, 255]),

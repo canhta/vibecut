@@ -45,8 +45,8 @@ both in sync.
 | `edit.copy` — Copy | Edit | Ctrl+C | — | clipboard (unavailable; `p1-parity/20`) |
 | `edit.paste` — Paste | Edit | Ctrl+V | — | clipboard (unavailable; `p1-parity/20`) |
 | `timeline.split` — Split at playhead | Edit | S, Ctrl+B | `split_at` | — |
-| `timeline.split_left` — Split and remove left | Edit | Q | — | timeline commands (unavailable; `p1-parity/16`) |
-| `timeline.split_right` — Split and remove right | Edit | W | — | timeline commands (unavailable; `p1-parity/16`) |
+| `timeline.split_left` — Split and remove left | Edit | Q | `timeline.split_left` | — |
+| `timeline.split_right` — Split and remove right | Edit | W | `timeline.split_right` | — |
 | `timeline.delete` — Delete selection | Edit | Backspace, Delete | `delete` / `ripple_delete` (ripple enabled) | — |
 | `timeline.ripple_delete` — Ripple delete | Edit | Shift+Backspace, Shift+Delete | `ripple_delete` | — |
 | `transport.play` — Play/Pause | Playback | Space | — | playback transport |
@@ -61,7 +61,11 @@ both in sync.
 | `transport.end` — Go to end | Navigation | End | — | playback transport |
 | `timeline.select_all` — Select all | Selection | Ctrl+A | — | timeline selection |
 | `timeline.deselect_all` — Deselect all | Selection | — | — | timeline selection |
-| `timeline.duplicate` — Duplicate | Selection | Ctrl+D | — | timeline commands (unavailable; `p1-parity/16`) |
+| `timeline.duplicate` — Duplicate | Selection | Ctrl+D | `timeline.duplicate` | — |
+| `timeline.set_hidden` — Hide or show selection | Edit | — | `timeline.set_hidden` | — |
+| `timeline.set_muted` — Mute or unmute selection | Edit | — | `timeline.set_muted` | — |
+| `timeline.extract_audio` — Extract audio | Edit | — | `timeline.extract_audio` | — |
+| `timeline.recover_audio` — Recover audio | Edit | — | `timeline.recover_audio` | — |
 | `selection.escape` — Cancel interaction or deselect | Selection | Escape | — | timeline selection |
 | `edit.undo` — Undo | History | Ctrl+Z | — | app and engine history |
 | `edit.redo` — Redo | History | Ctrl+Shift+Z, Ctrl+Y | — | app and engine history |

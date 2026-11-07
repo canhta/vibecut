@@ -15,9 +15,9 @@ optional metadata and bounded streaming output.
 ## Envelope and limits
 
 `encode`/`decode` use one JSON envelope: `format`, `schema_version`, `generator`,
-`project`. Current schema 20 adds `canvas.preset` and `canvas.last_custom_size`; schema 19 splits the text background `padding` into `padding_x`/`padding_y` and adds its `offset_x`/`offset_y` plus text `align` and `decoration`; schema 18 added item `retime` (speed, pitch policy and the retained processing window of split pieces) and ordered transition split pieces; schema 17 added `settings.loudness` (clip/master targets and the last measured gains) to schema 16 timeline `transitions`, which followed schema 15 audio/video clip `fades`, schema 14 optional imported cue style, schema 13 text weight, italic, letter spacing and line height (also on text masks), and schema 12 audio `source` (upload or library provenance), volume/mute and master controls.
+`project`. Current schema 21 adds the item `hidden` flag; schema 20 adds `canvas.preset` and `canvas.last_custom_size`; schema 19 splits the text background `padding` into `padding_x`/`padding_y` and adds its `offset_x`/`offset_y` plus text `align` and `decoration`; schema 18 added item `retime` (speed, pitch policy and the retained processing window of split pieces) and ordered transition split pieces; schema 17 added `settings.loudness` (clip/master targets and the last measured gains) to schema 16 timeline `transitions`, which followed schema 15 audio/video clip `fades`, schema 14 optional imported cue style, schema 13 text weight, italic, letter spacing and line height (also on text masks), and schema 12 audio `source` (upload or library provenance), volume/mute and master controls.
 ProjectId is stored as a canonical decimal string, preserving
-all u64 identity bits for control clients; other IDs remain numeric. Schemas 1-19
+all u64 identity bits for control clients; other IDs remain numeric. Schemas 1-20
 are refused rather than migrated or silently defaulted. Older schemas return `TooOld`, newer schemas `TooNew`; there are no
 migration or compatibility paths. Unknown current-schema project/envelope fields
 are refused. `WriterLease::save` serializes completely before touching the destination;

@@ -8,6 +8,7 @@ const SPEEDS: [u16; 5] = [10, 500, 1000, 2000, 5000];
 
 fn media(source_range: time::SourceRange, thousandths: u16, start: i64) -> Item {
     Item {
+        hidden: false,
         blend_mode: Default::default(),
         retime: Retime {
             window: None,
@@ -67,12 +68,14 @@ fn rate_duration_and_source_range_agree_at_every_boundary_speed() {
 fn check_split(item: &Item, at: Tick) {
     let (left, right) = item.split_at(at).unwrap();
     let left_item = Item {
+        hidden: false,
         source_range: left.source_range,
         start: left.start,
         retime: left.retime,
         ..item.clone()
     };
     let right_item = Item {
+        hidden: false,
         source_range: right.source_range,
         start: right.start,
         retime: right.retime,
@@ -112,6 +115,7 @@ fn check_split(item: &Item, at: Tick) {
             .flatten()
         {
             let trimmed = Item {
+                hidden: false,
                 start: cut.start,
                 source_range: cut.source_range,
                 retime: cut.retime,
@@ -165,6 +169,7 @@ fn split_and_trim_respect_retime_at_boundary_and_odd_cuts() {
                 );
                 assert_eq!(cut.source_range.end(), item.source_range.end());
                 let trimmed = Item {
+                    hidden: false,
                     start: cut.start,
                     source_range: cut.source_range,
                     ..item.clone()
@@ -173,6 +178,7 @@ fn split_and_trim_respect_retime_at_boundary_and_odd_cuts() {
             }
             if let Ok(cut) = item.trim_end(at) {
                 let trimmed = Item {
+                    hidden: false,
                     source_range: cut.source_range,
                     ..item.clone()
                 };

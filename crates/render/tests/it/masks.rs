@@ -675,6 +675,7 @@ fn masked_scene(width: u32, height: u32, masks: Vec<project::Mask>) -> project::
     data.canvas.height = height;
     data.canvas.background = project::Color([0; 4]);
     data.scene_mut().timeline.main.items.push(project::Item {
+        hidden: false,
         blend_mode: Default::default(),
         retime: Default::default(),
         id: project::ItemId(1),

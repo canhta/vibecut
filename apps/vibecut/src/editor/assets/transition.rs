@@ -63,6 +63,7 @@ impl Preview {
         .into_iter()
         .map(|(id, start, color)| {
             Ok(Item {
+                hidden: false,
                 id: ItemId(id),
                 source_asset: None,
                 source_range: SourceRange::new(Tick(0), Tick(100))?,

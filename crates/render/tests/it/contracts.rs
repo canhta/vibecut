@@ -261,6 +261,7 @@ fn track_order_half_opacity_and_half_open_frames() {
         hidden: false,
         locked: false,
         items: vec![project::Item {
+            hidden: false,
             blend_mode: Default::default(),
             retime: Default::default(),
             masks: Vec::new(),
@@ -324,6 +325,7 @@ fn animated_overlay_project(
         hidden: false,
         locked: false,
         items: vec![project::Item {
+            hidden: false,
             blend_mode: Default::default(),
             retime: Default::default(),
             masks: Vec::new(),
@@ -420,6 +422,7 @@ fn text_item_font_background_and_position_reach_the_compositor() {
         hidden: false,
         locked: false,
         items: vec![project::Item {
+            hidden: false,
             blend_mode: Default::default(),
             retime: Default::default(),
             masks: Vec::new(),
@@ -543,6 +546,7 @@ Cut",
         hidden: false,
         locked: false,
         items: vec![project::Item {
+            hidden: false,
             blend_mode: Default::default(),
             retime: Default::default(),
             masks: Vec::new(),
@@ -685,6 +689,7 @@ fn preview_audio_mix_obeys_item_gain_and_mute() {
             hidden: false,
             locked: false,
             items: vec![project::Item {
+                hidden: false,
                 blend_mode: Default::default(),
                 retime: Default::default(),
                 masks: Vec::new(),
@@ -927,6 +932,7 @@ fn immutable_text_reuse_is_bounded_invalidates_and_matches_uncached_pixels() {
         .into_iter()
         .enumerate()
         .map(|(n, (content, font_size, color))| project::Item {
+            hidden: false,
             blend_mode: Default::default(),
             retime: Default::default(),
             masks: Vec::new(),
@@ -1003,6 +1009,7 @@ fn text_cache_releases_inactive_entries_under_new_frame_pressure() {
         .into_iter()
         .enumerate()
         .map(|(n, font_size)| project::Item {
+            hidden: false,
             blend_mode: Default::default(),
             retime: Default::default(),
             masks: Vec::new(),
@@ -1089,6 +1096,7 @@ fn caption_expansion_is_refused_before_raster_allocation() {
         hidden: false,
         locked: false,
         items: vec![project::Item {
+            hidden: false,
             blend_mode: Default::default(),
             retime: Default::default(),
             masks: Vec::new(),

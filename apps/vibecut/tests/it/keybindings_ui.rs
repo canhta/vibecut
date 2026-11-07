@@ -133,9 +133,6 @@ fn pending_actions_are_typed_unavailable_and_never_mutate_the_project() {
     for (action, ticket) in [
         ("edit.copy", "p1-parity/20"),
         ("edit.paste", "p1-parity/20"),
-        ("timeline.duplicate", "p1-parity/16"),
-        ("timeline.split_left", "p1-parity/16"),
-        ("timeline.split_right", "p1-parity/16"),
     ] {
         assert!(matches!(
             editor.activate(action),

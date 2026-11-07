@@ -133,6 +133,7 @@ pub(crate) fn preview(
                     hidden: false,
                     locked: false,
                     items: vec![project::Item {
+                        hidden: false,
                         blend_mode: Default::default(),
                         retime: Default::default(),
                         masks: Vec::new(),
@@ -167,6 +168,7 @@ pub(crate) fn preview(
                     hidden: false,
                     locked: false,
                     items: vec![project::Item {
+                        hidden: false,
                         blend_mode: Default::default(),
                         retime: Default::default(),
                         masks: Vec::new(),

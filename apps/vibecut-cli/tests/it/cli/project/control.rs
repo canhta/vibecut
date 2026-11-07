@@ -752,6 +752,7 @@ fn control_sets_every_text_style_key_and_the_snapshot_shows_it() {
         hidden: false,
         locked: false,
         items: vec![project::Item {
+            hidden: false,
             retime: Default::default(),
             blend_mode: Default::default(),
             masks: Vec::new(),

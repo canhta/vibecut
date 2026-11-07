@@ -13,6 +13,7 @@ pub(crate) fn session(with_transition: bool) -> Session {
         .into_iter()
         .enumerate()
         .map(|(n, id)| Item {
+            hidden: false,
             retime: Default::default(),
             id: ItemId(id),
             source_asset: None,

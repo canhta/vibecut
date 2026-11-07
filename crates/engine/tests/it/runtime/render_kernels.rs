@@ -266,6 +266,7 @@ fn parallel_draw_matches_sequential_at_chunk_edges_and_half_reductions() {
             hidden: false,
             locked: false,
             items: vec![project::Item {
+                hidden: false,
                 blend_mode: Default::default(),
                 retime: Default::default(),
                 masks: Vec::new(),

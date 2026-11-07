@@ -27,6 +27,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut data =
         project::Project::empty(project::ProjectId(1), "Mix benchmark".into())?.into_data();
     data.scene_mut().timeline.main.items.push(project::Item {
+        hidden: false,
         id: project::ItemId(1),
         source_asset: None,
         source_range: TimeRange::new(Tick::ZERO, duration)?,
@@ -53,6 +54,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             muted: false,
             locked: false,
             items: vec![project::Item {
+                hidden: false,
                 id: project::ItemId(id),
                 source_asset: Some(media::AssetId(id)),
                 source_range: TimeRange::new(Tick::ZERO, duration)?,

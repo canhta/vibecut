@@ -49,6 +49,7 @@ fn project() -> Project {
         .unwrap()
         .items = vec![
         Item {
+            hidden: false,
             blend_mode: Default::default(),
             retime: Default::default(),
             masks: Vec::new(),
@@ -61,6 +62,7 @@ fn project() -> Project {
             content: content(),
         },
         Item {
+            hidden: false,
             blend_mode: Default::default(),
             retime: Default::default(),
             masks: Vec::new(),
@@ -539,7 +541,10 @@ fn transform_command_bounds_atomicity_undo_and_persistence() {
     );
 }
 fn get(s: &Session, id: u64) -> &Item {
-    s.project()
+    get_project(s.project(), id)
+}
+fn get_project(project: &Project, id: u64) -> &Item {
+    project
         .data()
         .scene()
         .timeline
@@ -547,6 +552,12 @@ fn get(s: &Session, id: u64) -> &Item {
         .flat_map(|t| &t.items)
         .find(|i| i.id == ItemId(id))
         .unwrap()
+}
+fn get_id(s: &Session, id: ItemId) -> &Item {
+    get(s, id.0)
+}
+fn get_project_id(project: &Project, id: ItemId) -> &Item {
+    get_project(project, id.0)
 }
 #[test]
 fn all_commands_share_registry_and_strict_json_dispatch() {
@@ -673,6 +684,360 @@ fn split_trim_ripple_and_history_use_exact_source_and_output_coordinates() {
         s.redo().unwrap();
     }
     assert!(Arc::ptr_eq(s.project(), &final_state));
+}
+#[test]
+fn split_variants_refuse_boundaries_and_remove_the_requested_side() {
+    let (mut s, _video, _audio, clip) = audible_session();
+    let start = Tick(0);
+    let end = Tick(100);
+    let before = s.project().clone();
+    for at in [start, end, Tick(101)] {
+        for command in [
+            Command::TimelineSplitLeft {
+                items: vec![clip],
+                at,
+            },
+            Command::TimelineSplitRight {
+                items: vec![clip],
+                at,
+            },
+        ] {
+            let result = s.apply(command);
+            let Err(error) = result else {
+                panic!("at {at:?} unexpectedly succeeded");
+            };
+            assert!(
+                matches!(
+                    error,
+                    EditError::Invalid(_) | EditError::Project(project::Error::Invalid(_))
+                ),
+                "at {at:?}: {error:?}"
+            );
+            assert!(Arc::ptr_eq(&before, s.project()));
+        }
+    }
+    let out = s
+        .apply(Command::TimelineSplitLeft {
+            items: vec![clip],
+            at: Tick(40),
+        })
+        .unwrap();
+    let CreatedId::Item(kept) = out.created.first().copied().unwrap() else {
+        panic!("right piece");
+    };
+    assert_eq!(get(&s, kept.0).start, Tick(40));
+    assert_eq!(get(&s, kept.0).source_range, range(40, 100));
+    assert!(
+        !s.project()
+            .data()
+            .scene()
+            .timeline
+            .iter()
+            .any(|track| track.items.iter().any(|item| item.id == clip))
+    );
+    s.undo().unwrap();
+    assert_eq!(get(&s, clip.0).source_range, range(0, 100));
+    s.redo().unwrap();
+    assert_eq!(get(&s, kept.0).source_range, range(40, 100));
+
+    let (mut s, _, _, clip) = audible_session();
+    let out = s
+        .apply(Command::TimelineSplitRight {
+            items: vec![clip],
+            at: Tick(40),
+        })
+        .unwrap();
+    assert!(out.created.is_empty());
+    assert_eq!(get(&s, clip.0).source_range, range(0, 40));
+    assert_eq!(get(&s, clip.0).start, Tick::ZERO);
+    assert_eq!(
+        s.project()
+            .data()
+            .scene()
+            .timeline
+            .iter()
+            .flat_map(|track| &track.items)
+            .count(),
+        2,
+        "the right piece is removed and the audio item stays"
+    );
+    let after = s.project().clone();
+    s.undo().unwrap();
+    assert_eq!(get(&s, clip.0).source_range, range(0, 100));
+    s.redo().unwrap();
+    assert!(Arc::ptr_eq(&after, s.project()));
+}
+
+#[test]
+fn duplicate_keeps_start_and_places_named_tracks_at_highest_insert() {
+    let (mut s, video, _audio, clip) = audible_session();
+    let audio_clip = s
+        .project()
+        .data()
+        .scene()
+        .timeline
+        .audio
+        .first()
+        .unwrap()
+        .items
+        .first()
+        .unwrap()
+        .id;
+    assert_eq!(video, s.project().data().scene().timeline.overlays[0].id);
+    let original_start = get_id(&s, clip).start;
+    let out = s
+        .apply(Command::DuplicateItems {
+            items: vec![clip, audio_clip],
+        })
+        .unwrap();
+    let created: Vec<ItemId> = out
+        .created
+        .iter()
+        .filter_map(|id| match id {
+            CreatedId::Item(item) => Some(*item),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(created.len(), 2);
+    let timeline = &s.project().data().scene().timeline;
+    assert_eq!(timeline.overlays[0].name.as_str(), "Video (copy)");
+    assert_eq!(timeline.overlays[0].kind, TrackKind::Video);
+    assert_eq!(timeline.audio[0].name.as_str(), "Audio (copy)");
+    assert_eq!(timeline.audio[0].kind, TrackKind::Audio);
+    for copy in &created {
+        assert_eq!(get(&s, copy.0).start, original_start);
+        assert_eq!(get(&s, copy.0).hidden, get_id(&s, clip).hidden);
+    }
+    let after = s.project().clone();
+    s.undo().unwrap();
+    assert_eq!(s.project().data().scene().timeline.overlays.len(), 1);
+    assert_eq!(s.project().data().scene().timeline.audio.len(), 1);
+    s.redo().unwrap();
+    assert!(Arc::ptr_eq(&after, s.project()));
+    assert!(matches!(
+        s.apply(Command::DuplicateItems {
+            items: vec![ItemId(999)],
+        }),
+        Err(EditError::NoItem(ItemId(999)))
+    ));
+}
+
+#[test]
+fn hide_and_mute_refuse_incompatible_kinds_and_survive_persistence() {
+    let (mut s, video, _, clip) = audible_session();
+    let audio_clip = s
+        .project()
+        .data()
+        .scene()
+        .timeline
+        .audio
+        .first()
+        .unwrap()
+        .items
+        .first()
+        .unwrap()
+        .id;
+    s.apply(Command::SetItemsHidden {
+        items: vec![clip],
+        hidden: true,
+    })
+    .unwrap();
+    assert!(get_id(&s, clip).hidden);
+    s.apply(Command::SetItemsMuted {
+        items: vec![clip, audio_clip],
+        muted: true,
+    })
+    .unwrap();
+    for id in [clip, audio_clip] {
+        assert!(match &get_id(&s, id).content {
+            ItemParams::Video(params) => params.muted,
+            ItemParams::Audio(params) => params.muted,
+            _ => false,
+        });
+    }
+    let before = s.project().clone();
+    assert!(matches!(
+        s.apply(Command::SetItemsHidden {
+            items: vec![audio_clip],
+            hidden: true,
+        }),
+        Err(EditError::Invalid("audio item has no video"))
+    ));
+    assert!(Arc::ptr_eq(&before, s.project()));
+    s.undo().unwrap();
+    s.undo().unwrap();
+    assert!(!get_id(&s, clip).hidden);
+    s.redo().unwrap();
+    s.redo().unwrap();
+    assert!(get_id(&s, clip).hidden);
+    let bytes = project::encode(s.project(), false).unwrap();
+    let loaded = project::decode(&bytes).unwrap();
+    assert_eq!(loaded.project.data(), s.project().data());
+    assert!(get_project_id(&loaded.project, clip).hidden);
+    assert_eq!(video, s.project().data().scene().timeline.overlays[0].id);
+}
+
+#[test]
+fn extract_and_recover_source_audio_reuse_the_source_range() {
+    let (mut s, _, _, clip) = audible_session();
+    let source = get_id(&s, clip).source_range;
+    let out = s
+        .apply(Command::ExtractAudio { items: vec![clip] })
+        .unwrap();
+    let CreatedId::Item(audio) = out
+        .created
+        .iter()
+        .find(|id| matches!(id, CreatedId::Item(_)))
+        .copied()
+        .unwrap()
+    else {
+        panic!("audio item");
+    };
+    assert!(!matches!(
+        &get_id(&s, clip).content,
+        ItemParams::Video(params) if params.source_audio_enabled
+    ));
+    assert_eq!(get(&s, audio.0).source_range, source);
+    assert_eq!(get(&s, audio.0).start, get_id(&s, clip).start);
+    assert!(matches!(get(&s, audio.0).content, ItemParams::Audio(_)));
+    assert!(s.project().data().scene().timeline.audio.len() >= 2);
+    let extracted = s.project().clone();
+    assert!(matches!(
+        s.apply(Command::ExtractAudio { items: vec![clip] }),
+        Err(EditError::Invalid("source audio is extracted"))
+    ));
+    let bytes = project::encode(s.project(), false).unwrap();
+    let loaded = project::decode(&bytes).unwrap();
+    assert!(matches!(
+        &get_project_id(&loaded.project, clip).content,
+        ItemParams::Video(params) if !params.source_audio_enabled
+    ));
+    assert!(matches!(
+        get_project_id(&loaded.project, audio).content,
+        ItemParams::Audio(_)
+    ));
+    assert_eq!(get_project_id(&loaded.project, audio).source_range, source);
+    s.undo().unwrap();
+    assert!(matches!(
+        &get_id(&s, clip).content,
+        ItemParams::Video(params) if params.source_audio_enabled
+    ));
+    s.redo().unwrap();
+    assert!(Arc::ptr_eq(&extracted, s.project()));
+    s.apply(Command::RecoverAudio { items: vec![clip] })
+        .unwrap();
+    assert!(matches!(
+        &get_id(&s, clip).content,
+        ItemParams::Video(params) if params.source_audio_enabled
+    ));
+    assert!(matches!(
+        s.apply(Command::RecoverAudio { items: vec![clip] }),
+        Err(EditError::Invalid("source audio is enabled"))
+    ));
+    assert!(matches!(
+        s.apply(Command::RecoverAudio { items: vec![audio] }),
+        Err(EditError::Invalid("item is not video"))
+    ));
+    let bytes = project::encode(s.project(), false).unwrap();
+    let loaded = project::decode(&bytes).unwrap();
+    let recovered = &loaded.project;
+    assert!(matches!(
+        &get_project_id(recovered, clip).content,
+        ItemParams::Video(params) if params.source_audio_enabled
+    ));
+    assert!(matches!(
+        get_project(recovered, audio.0).content,
+        ItemParams::Audio(_)
+    ));
+    assert_eq!(loaded.project.data(), s.project().data());
+}
+
+/// One unlocked video overlay with audible source audio and one audio clip.
+fn audible_session() -> (Session, TrackId, TrackId, ItemId) {
+    let mut s = Session::new(Project::empty(ProjectId(7), "Actions".into()).unwrap(), 50).unwrap();
+    let asset = testkit::source::asset(1, std::env::temp_dir().join("vibecut-actions.mp4"))
+        .format("mp4")
+        .duration(Tick(100))
+        .content_hash(ContentHash::from_bytes(b"actions"))
+        .stream(
+            testkit::source::video()
+                .time_base(media::TimeBase::new(1, 30000).unwrap())
+                .duration(Tick(100))
+                .start(Tick::ZERO)
+                .size(64, 64)
+                .build(),
+        )
+        .stream(
+            testkit::source::audio()
+                .index(1)
+                .time_base(media::TimeBase::new(1, 48000).unwrap())
+                .duration(Tick(100))
+                .start(Tick::ZERO)
+                .build(),
+        )
+        .build();
+    s.apply(Command::AddAsset { asset }).unwrap();
+    let mut add = |name: &str, kind: TrackKind| {
+        s.apply(Command::AddTrack {
+            placement: engine::TrackPlacement::Auto,
+            name: name.into(),
+            kind,
+        })
+        .unwrap()
+        .created
+        .first()
+        .and_then(|id| match id {
+            CreatedId::Track(id) => Some(*id),
+            _ => None,
+        })
+        .unwrap()
+    };
+    let video = add("Video", TrackKind::Video);
+    let audio = add("Audio", TrackKind::Audio);
+    let insert = |s: &mut Session, track, start: i64, content: ItemParams| {
+        s.apply(Command::InsertItem {
+            placement: engine::Placement::Track { track },
+            item: NewItem {
+                animations: Default::default(),
+                source_asset: Some(AssetId(1)),
+                source_range: range(start, start + 100),
+                start: Tick(start),
+                retime: Default::default(),
+                content,
+            },
+        })
+        .unwrap()
+        .created
+        .first()
+        .and_then(|id| match id {
+            CreatedId::Item(id) => Some(*id),
+            _ => None,
+        })
+        .unwrap()
+    };
+    let clip = insert(
+        &mut s,
+        video,
+        0,
+        ItemParams::Video(project::VideoParams {
+            fades: Default::default(),
+            source_audio_enabled: true,
+            volume: 0.0,
+            muted: false,
+        }),
+    );
+    insert(
+        &mut s,
+        audio,
+        0,
+        ItemParams::Audio(project::AudioParams {
+            fades: Default::default(),
+            volume: 0.0,
+            muted: false,
+            source: Default::default(),
+        }),
+    );
+    (s, video, audio, clip)
 }
 #[test]
 fn simultaneous_moves_can_swap_but_never_leave_overlap_or_touch_locked_tracks() {
@@ -1184,6 +1549,7 @@ fn measure_large_project_gesture() {
     let track = data.scene_mut().timeline.overlays.first_mut().unwrap();
     track.items = (0..10000)
         .map(|n| Item {
+            hidden: false,
             blend_mode: Default::default(),
             retime: Default::default(),
             masks: Vec::new(),
@@ -1528,6 +1894,7 @@ fn caption_project() -> Project {
         hidden: false,
         locked: false,
         items: vec![Item {
+            hidden: false,
             blend_mode: Default::default(),
             retime: Default::default(),
             masks: Vec::new(),
@@ -2093,6 +2460,7 @@ fn text_patch_expansion_is_bounded_and_atomic() {
         let template = track.items.first().unwrap().clone();
         track.items = (0..6)
             .map(|index| Item {
+                hidden: false,
                 id: ItemId(100 + index),
                 start: Tick(index as i64 * 1000),
                 content: ItemParams::Text(project::TextParams::new("Keep")),
@@ -3268,6 +3636,7 @@ fn audio_controls_are_atomic_undoable_persisted_and_strict() {
         muted: false,
         locked: false,
         items: vec![Item {
+            hidden: false,
             id: ItemId(20),
             source_asset: Some(AssetId(7)),
             source_range: range(0, 1000),

@@ -38,6 +38,7 @@ fn project() -> Arc<project::Project> {
         hidden: false,
         locked: false,
         items: vec![project::Item {
+            hidden: false,
             blend_mode: Default::default(),
             retime: Default::default(),
             masks: Vec::new(),
@@ -486,6 +487,7 @@ fn caption_project() -> project::Project {
             .into_iter()
             .enumerate()
             .map(|(n, at)| Item {
+                hidden: false,
                 blend_mode: Default::default(),
                 retime: Default::default(),
                 masks: Vec::new(),
@@ -528,6 +530,7 @@ fn registered_subtitle_export_maps_repeated_items_and_preserves_gaps_without_med
                 .insert(
                     1,
                     project::Item {
+                        hidden: false,
                         blend_mode: Default::default(),
                         retime: Default::default(),
                         id: project::ItemId(3),

@@ -290,6 +290,7 @@ fn exec_shared_field_id_list_persists_only_compatible_item_fields() {
         locked: false,
         items: (0..2)
             .map(|i| project::Item {
+                hidden: false,
                 retime: Default::default(),
                 blend_mode: Default::default(),
                 masks: Vec::new(),
@@ -360,6 +361,7 @@ fn exec_scrub_equivalent_params_use_the_single_item_command() {
         hidden: false,
         locked: false,
         items: vec![project::Item {
+            hidden: false,
             retime: Default::default(),
             blend_mode: Default::default(),
             masks: Vec::new(),

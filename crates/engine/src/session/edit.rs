@@ -37,6 +37,13 @@ pub(crate) fn check_budget(command: &Command) -> Result<()> {
             }
             Command::TimelineMoveItems { items, .. }
             | Command::TimelineTrim { items, .. }
+            | Command::TimelineSplitLeft { items, .. }
+            | Command::TimelineSplitRight { items, .. }
+            | Command::DuplicateItems { items }
+            | Command::SetItemsHidden { items, .. }
+            | Command::SetItemsMuted { items, .. }
+            | Command::ExtractAudio { items }
+            | Command::RecoverAudio { items }
             | Command::Delete { items }
             | Command::SetItemParamMany { items, .. }
             | Command::SetSpeed { items, .. }
@@ -290,6 +297,27 @@ pub(crate) fn apply(
         }
         Command::SplitAt { item: id, at } => {
             data = clips::execute_split_at(data, id, at, created, next, sources)?;
+        }
+        Command::TimelineSplitLeft { items, at } => {
+            data = clips::execute_split_left(data, items, at, created, next, sources)?;
+        }
+        Command::TimelineSplitRight { items, at } => {
+            data = clips::execute_split_right(data, items, at, created, next, sources)?;
+        }
+        Command::DuplicateItems { items } => {
+            data = clips::execute_duplicate(data, items, created, next)?;
+        }
+        Command::SetItemsHidden { items, hidden } => {
+            data = clips::execute_set_items_hidden(data, items, hidden)?;
+        }
+        Command::SetItemsMuted { items, muted } => {
+            data = clips::execute_set_items_muted(data, items, muted)?;
+        }
+        Command::ExtractAudio { items } => {
+            data = clips::execute_extract_audio(data, items, created, next)?;
+        }
+        Command::RecoverAudio { items } => {
+            data = clips::execute_recover_audio(data, items)?;
         }
         Command::TrimStart { item: id, at } => {
             data = clips::execute_trim_start(data, id, at, sources)?;

@@ -88,6 +88,7 @@ fn fixture(thousandths: u16, maintain_pitch: bool, output_seconds: f64) -> proje
         muted: false,
         locked: false,
         items: vec![project::Item {
+            hidden: false,
             id: project::ItemId(1),
             source_asset: Some(media::AssetId(1)),
             source_range: TimeRange::new(Tick::ZERO, Tick(source_ticks)).unwrap(),

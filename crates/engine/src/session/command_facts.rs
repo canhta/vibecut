@@ -24,6 +24,8 @@ pub enum Availability {
     RemovableTrack,
     /// An unlocked item that carries visual parameters.
     VisualItem,
+    /// An unlocked video item.
+    VideoItem,
     /// Any unlocked item.
     UnlockedItem,
 }
@@ -64,6 +66,12 @@ impl Availability {
                     && t.items
                         .iter()
                         .any(|i| !matches!(i.content, ItemParams::Audio(_)))
+            }),
+            Self::VideoItem => timeline.iter().any(|t| {
+                !t.locked
+                    && t.items
+                        .iter()
+                        .any(|i| matches!(i.content, ItemParams::Video(_)))
             }),
             Self::UnlockedItem => timeline.iter().any(|t| !t.locked && !t.items.is_empty()),
         }

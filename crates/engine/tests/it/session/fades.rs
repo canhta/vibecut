@@ -40,6 +40,7 @@ fn session_len(len: i64) -> Session {
         muted: false,
         locked: false,
         items: vec![Item {
+            hidden: false,
             retime: Default::default(),
             id: ItemId(20),
             source_asset: Some(AssetId(7)),

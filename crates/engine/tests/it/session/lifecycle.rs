@@ -155,6 +155,7 @@ fn thumbnails_backfill_on_open_and_refresh_at_exit_without_preview_state() {
     let mut data = autosave.session().project().data().clone();
     let frame = data.canvas.fps.tick_of(1).unwrap();
     data.scene_mut().timeline.main.items.push(project::Item {
+        hidden: false,
         blend_mode: Default::default(),
         retime: Default::default(),
         masks: Vec::new(),

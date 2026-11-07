@@ -89,6 +89,7 @@ fn session() -> Session {
         muted: false,
         locked: false,
         items: vec![project::Item {
+            hidden: false,
             id: project::ItemId(1),
             source_asset: Some(media::AssetId(1)),
             source_range: TimeRange::new(Tick::ZERO, seconds).unwrap(),

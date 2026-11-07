@@ -40,6 +40,13 @@ impl State {
         let ink = Ink::of(cx);
         let dark = ink.dark();
         let (fill, border, text) = item_palette(item.kind, dark, selected, item.overlay);
+        // Hidden clips stay editable in the timeline at reduced contrast.
+        let dim = if item.hidden { 0.45 } else { 1.0 };
+        let (fill, border, text) = (
+            fill.gamma_multiply(dim),
+            border.gamma_multiply(dim),
+            text.gamma_multiply(dim),
+        );
         let painter = ui.painter().with_clip_rect(visible);
         painter.rect_filled(visible, theme::radius::PANEL, fill);
         let inner = full.shrink(1.0);
@@ -172,16 +179,125 @@ impl State {
                 self.begin_drag(cx, item.id, DragMode::Move, ui);
             }
         }
-        if let Some(asset) = item.source_asset {
-            response.context_menu(|ui| {
-                let reveal = ui.button(tr(cx, Text::RevealMedia));
-                self.remember(format!("timeline.item.{}.reveal", item.id.0), &reveal);
-                if reveal.clicked() {
-                    self.push(Action::Activate(format!("media.reveal.{}", asset.0)));
-                    ui.close();
-                }
+        if response.secondary_clicked() && !selected {
+            self.push(Action::Select {
+                item: item.id,
+                modifiers: egui::Modifiers::NONE,
             });
         }
+        response.context_menu(|ui| self.item_menu(cx, ui, item));
+    }
+
+    /// The clip context menu: split variants, duplicate, delete, hide/mute and
+    /// source-audio extraction, each dispatching its registered action id.
+    fn item_menu(&mut self, cx: &Context<'_>, ui: &mut egui::Ui, item: &ItemView) {
+        let editable = !item.locked;
+        let at = cx.playhead;
+        let splittable = editable && item.start < at && at < item.end;
+        let split = format!("timeline.item.{}.split", item.id.0);
+        if self.menu_action(cx, ui, split, Text::Split, Icon::Scissors, splittable) {
+            self.push(Action::Activate("timeline.split".to_owned()));
+            ui.close();
+        }
+        let split_left = format!("timeline.item.{}.split_left", item.id.0);
+        if self.menu_action(
+            cx,
+            ui,
+            split_left,
+            Text::SplitLeft,
+            Icon::ArrowLeft,
+            splittable,
+        ) {
+            self.push(Action::Activate("timeline.split_left".to_owned()));
+            ui.close();
+        }
+        let split_right = format!("timeline.item.{}.split_right", item.id.0);
+        if self.menu_action(
+            cx,
+            ui,
+            split_right,
+            Text::SplitRight,
+            Icon::ArrowsLeftRight,
+            splittable,
+        ) {
+            self.push(Action::Activate("timeline.split_right".to_owned()));
+            ui.close();
+        }
+        let duplicate = format!("timeline.item.{}.duplicate", item.id.0);
+        if self.menu_action(cx, ui, duplicate, Text::Duplicate, Icon::Copy, editable) {
+            self.push(Action::Activate("timeline.duplicate".to_owned()));
+            ui.close();
+        }
+        let delete = format!("timeline.item.{}.delete", item.id.0);
+        if self.menu_action(cx, ui, delete, Text::Delete, Icon::Trash, editable) {
+            self.push(Action::Activate("timeline.delete".to_owned()));
+            ui.close();
+        }
+        if item.kind != TrackKind::Audio {
+            let (label, icon) = if item.hidden {
+                (Text::ShowItem, Icon::Eye)
+            } else {
+                (Text::HideItem, Icon::EyeSlash)
+            };
+            let hide = format!("timeline.item.{}.hide", item.id.0);
+            if self.menu_action(cx, ui, hide, label, icon, editable) {
+                self.push(Action::Activate("timeline.set_hidden".to_owned()));
+                ui.close();
+            }
+        }
+        if matches!(item.kind, TrackKind::Video | TrackKind::Audio) {
+            let muted = item.muted;
+            let (label, icon) = if muted {
+                (Text::UnmuteItem, Icon::SpeakerHigh)
+            } else {
+                (Text::MuteItem, Icon::SpeakerSlash)
+            };
+            let mute = format!("timeline.item.{}.mute", item.id.0);
+            if self.menu_action(cx, ui, mute, label, icon, editable) {
+                self.push(Action::Activate("timeline.set_muted".to_owned()));
+                ui.close();
+            }
+        }
+        if item.kind == TrackKind::Video {
+            let separated = item.source_audio_enabled == Some(false);
+            let (label, action) = if separated {
+                (Text::RecoverAudio, "timeline.recover_audio")
+            } else {
+                (Text::ExtractAudio, "timeline.extract_audio")
+            };
+            let id = format!("timeline.item.{}.audio", item.id.0);
+            if self.menu_action(cx, ui, id, label, Icon::MusicNotes, editable) {
+                self.push(Action::Activate(action.to_owned()));
+                ui.close();
+            }
+        }
+        if item.source_asset.is_some() {
+            let reveal = format!("timeline.item.{}.reveal", item.id.0);
+            if self.menu_action(cx, ui, reveal, Text::RevealMedia, Icon::FolderOpen, true) {
+                if let Some(asset) = item.source_asset {
+                    self.push(Action::Activate(format!("media.reveal.{}", asset.0)));
+                }
+                ui.close();
+            }
+        }
+    }
+
+    fn menu_action(
+        &mut self,
+        cx: &Context<'_>,
+        ui: &mut egui::Ui,
+        id: String,
+        label: Text,
+        icon: Icon,
+        enabled: bool,
+    ) -> bool {
+        let ink = Ink::of(cx);
+        let response = ui.add_enabled(
+            enabled,
+            egui::Button::image_and_text(icons::tinted(icon, 16.0, ink.text()), tr(cx, label)),
+        );
+        self.remember_icon(id, Some(icon.name()), &response);
+        enabled && response.clicked()
     }
 }
 
