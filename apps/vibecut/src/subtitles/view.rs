@@ -63,6 +63,35 @@ impl Controls {
         self.remember(id, &r);
         r.clicked()
     }
+    /// Text-only button of a fixed width, for the aligned import/export row.
+    fn row_button(
+        &mut self,
+        ui: &mut egui::Ui,
+        id: &str,
+        text: Text,
+        enabled: bool,
+        width: f32,
+    ) -> bool {
+        let label = self.tr(match text {
+            Text::SubImport => Text::Import,
+            Text::SubBurn => Text::SubMp4,
+            _ => text,
+        });
+        let scope = ui.make_persistent_id(id);
+        let r = ui
+            .scope_builder(egui::UiBuilder::new().scope_id(scope), |ui| {
+                ui.add_enabled(
+                    enabled,
+                    egui::Button::new(label)
+                        .wrap_mode(egui::TextWrapMode::Truncate)
+                        .min_size(egui::vec2(width, 26.0)),
+                )
+            })
+            .inner
+            .on_hover_text(self.tr(text));
+        self.remember(id, &r);
+        r.clicked()
+    }
     fn icon_button(
         &mut self,
         ui: &mut egui::Ui,
@@ -230,52 +259,25 @@ impl Subtitles {
                 ui.spacing_mut().item_spacing.x = 4.0;
                 ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Wrap);
                 ui.heading(controls.tr(Text::Caption));
-                let columns = if ui.available_width() >= 180.0 { 2 } else { 1 };
-                egui::Grid::new("subtitles.files")
-                    .num_columns(columns)
-                    .spacing(egui::vec2(4.0, 4.0))
-                    .show(ui, |ui| {
-                        for (index, (id, label, icon, pick)) in [
-                            (
-                                "subtitles.import",
-                                Text::SubImport,
-                                Icon::FolderOpen,
-                                Pick::Import,
-                            ),
-                            (
-                                "subtitles.export.srt",
-                                Text::SubSrt,
-                                Icon::Export,
-                                Pick::Srt,
-                            ),
-                            (
-                                "subtitles.export.vtt",
-                                Text::SubVtt,
-                                Icon::Export,
-                                Pick::Vtt,
-                            ),
-                            ("subtitles.export.txt", Text::SubTxt, Icon::File, Pick::Txt),
-                            (
-                                "subtitles.export.burn",
-                                Text::SubBurn,
-                                Icon::FilmStrip,
-                                Pick::Burn,
-                            ),
-                        ]
-                        .into_iter()
-                        .enumerate()
-                        {
-                            let enabled = !busy
-                                && self.picker.is_none()
-                                && (matches!(pick, Pick::Import) || self.item.is_some());
-                            if controls.button(ui, id, label, icon, enabled) {
-                                self.prepare_pick(ui.ctx(), session, pick, locale);
-                            }
-                            if (index + 1) % columns == 0 {
-                                ui.end_row();
-                            }
+                // One aligned row: Import then the four exports, equal widths.
+                let gap = ui.spacing().item_spacing.x;
+                let width = ((ui.available_width() - gap * 4.0) / 5.0).max(28.0);
+                ui.horizontal(|ui| {
+                    for (id, label, pick) in [
+                        ("subtitles.import", Text::SubImport, Pick::Import),
+                        ("subtitles.export.srt", Text::SubSrt, Pick::Srt),
+                        ("subtitles.export.vtt", Text::SubVtt, Pick::Vtt),
+                        ("subtitles.export.txt", Text::SubTxt, Pick::Txt),
+                        ("subtitles.export.burn", Text::SubBurn, Pick::Burn),
+                    ] {
+                        let enabled = !busy
+                            && self.picker.is_none()
+                            && (matches!(pick, Pick::Import) || self.item.is_some());
+                        if controls.row_button(ui, id, label, enabled, width) {
+                            self.prepare_pick(ui.ctx(), session, pick, locale);
                         }
-                    });
+                    }
+                });
                 let r = egui::CollapsingHeader::new(controls.tr(Text::SubGenerate))
                     .id_salt("subtitles.generate.settings")
                     .default_open(self.item.is_none())
@@ -691,6 +693,7 @@ impl Subtitles {
             return;
         };
         let cues = params.cues.cues.clone();
+        let rate = session.project().data().canvas.fps;
         let profiles = LanguageRegistry::standard().ok();
         let mut selected = None;
         let mut save = false;
@@ -734,26 +737,28 @@ impl Subtitles {
                 }
             });
         }
-        if !cues.is_empty() {
-            ui.small(c.tr(Text::SubCueKeys));
-        }
         for (index, cue) in cues.iter().enumerate().skip(self.page * PAGE).take(PAGE) {
             ui.separator();
             let time = format!(
                 "{} – {}",
-                time_text(cue.range.start(), c.locale),
-                time_text(cue.range.end(), c.locale)
+                time_text(cue.range.start(), rate, c.locale),
+                time_text(cue.range.end(), rate, c.locale)
             );
+            // The chip is as wide as its text; the keyboard hints are its tooltip.
             let r = ui
-                .push_id(("subtitles.cue", cue.id.as_str()), |ui| {
-                    ui.selectable_label(
-                        self.selected.contains(&cue.id),
-                        egui::RichText::new(time).color(if self.selected.contains(&cue.id) {
-                            theme::on_accent(dark)
-                        } else {
-                            theme::text(dark)
-                        }),
-                    )
+                .horizontal(|ui| {
+                    ui.push_id(("subtitles.cue", cue.id.as_str()), |ui| {
+                        ui.selectable_label(
+                            self.selected.contains(&cue.id),
+                            egui::RichText::new(time).color(if self.selected.contains(&cue.id) {
+                                theme::on_accent(dark)
+                            } else {
+                                theme::text(dark)
+                            }),
+                        )
+                        .on_hover_text(c.tr(Text::SubCueKeys))
+                    })
+                    .inner
                 })
                 .inner;
             c.remember(format!("subtitles.cue.{}", cue.id.as_str()), &r);
@@ -1195,8 +1200,14 @@ fn byte_offset(text: &str, chars: usize) -> Option<usize> {
         .chain(std::iter::once(text.len()))
         .nth(chars)
 }
-fn time_text(tick: Tick, locale: Locale) -> String {
-    catalog::decimal(locale, tick.0 as f64 / TICKS_PER_SECOND as f64, 3)
+/// Player timecode (same formatter and drop-frame rule as the transport).
+fn time_text(tick: Tick, rate: time::FrameRate, locale: Locale) -> String {
+    let drop = matches!(
+        rate,
+        time::FrameRate::FPS_29_97 | time::FrameRate::FPS_59_94
+    );
+    time::format_timecode(tick, rate, drop)
+        .unwrap_or_else(|_| catalog::decimal(locale, tick.0 as f64 / TICKS_PER_SECOND as f64, 3))
 }
 fn stage_text(stage: Option<Stage>) -> Text {
     match stage {

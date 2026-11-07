@@ -105,6 +105,26 @@ fn cue_actions_preserve_focused_caption_draft() {
     ] {
         let mut h = harness(editor("vi"), 1.0);
         h.run_steps(3);
+        // The chip shows player timecodes, not raw seconds, and the always-visible
+        // keyboard paragraph is gone (the hint is the chip tooltip).
+        let chip = h
+            .get(By::new().predicate(|n| n.author_id() == Some("subtitles.cue.cue-0")))
+            .accesskit_node()
+            .label()
+            .unwrap_or_default()
+            .to_owned();
+        let timecode = |s: &str| {
+            s.len() == 11
+                && s.matches(':').count() == 3
+                && s.chars().all(|c| c.is_ascii_digit() || c == ':')
+        };
+        let (start, end) = chip.split_once(" – ").expect("range chip");
+        assert!(timecode(start) && timecode(end), "{chip}");
+        assert!(
+            h.query_all(By::new().label_contains("Enter splits at the caret"))
+                .next()
+                .is_none()
+        );
         click(&mut h, "subtitles.cue.cue-0");
         let field = "subtitles.text.cue-0.vi";
         h.get(By::new().predicate(|n| n.author_id() == Some(field)))
