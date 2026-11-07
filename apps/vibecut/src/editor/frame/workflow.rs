@@ -1,5 +1,6 @@
 //! Advances the editor event loop.
-use crate::editor::{Editor, Text, catalog};
+use crate::editor::{Editor, Text};
+use crate::i18n;
 
 impl Editor {
     /// Advance jobs and the device clock even when the OS suppresses painting.
@@ -33,12 +34,12 @@ impl Editor {
                 Err(e) => self.error = Some(e.to_string()),
             }
             if let Some(count) = notice {
-                let message = catalog::format(
+                let message = i18n::format(
                     self.preferences.locale,
                     Text::SubDone,
                     &[(
                         "count",
-                        &catalog::number(self.preferences.locale, count as u64),
+                        &i18n::number(self.preferences.locale, count as u64),
                     )],
                 );
                 self.set_toast(&message, None);

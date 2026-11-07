@@ -1,10 +1,11 @@
 //! Records editor controls for automation.
 
-use super::{Color32, Editor, Icon, Text, WidgetState, actions, catalog, egui, theme};
+use super::{Color32, Editor, Icon, Text, WidgetState, actions, egui, theme};
+use crate::i18n;
 
 impl Editor {
     pub(in crate::editor) fn tr(&self, key: Text) -> &'static str {
-        catalog::text(self.preferences.locale, key)
+        i18n::text(self.preferences.locale, key)
     }
     pub(in crate::editor) fn remember(&mut self, id: impl Into<String>, response: &egui::Response) {
         self.remember_with_icon(id, None, response);
@@ -47,7 +48,7 @@ impl Editor {
         let tooltip = shortcut.map_or_else(
             || label.to_owned(),
             |key| {
-                catalog::format(
+                i18n::format(
                     locale,
                     Text::ActionShortcut,
                     &[("action", label), ("shortcut", key)],

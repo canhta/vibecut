@@ -3,9 +3,10 @@ use super::{
     State, tools,
     widgets::{self, Look, bold, corner, icon_tap},
 };
+use crate::i18n;
 use crate::{
-    catalog::{self, Text},
     egui::{self, Align2, Pos2, Rect, Sense, Stroke, Vec2, pos2, vec2},
+    i18n::Text,
     kit::{self, Icon},
     shorts::{Action, Context, Decision},
 };
@@ -407,10 +408,10 @@ fn header(
     )
     .clicked()
     {
-        state.preferences.locale = if state.preferences.locale == catalog::Locale::En {
-            catalog::Locale::Vi
+        state.preferences.locale = if state.preferences.locale == i18n::Locale::En {
+            i18n::Locale::Vi
         } else {
-            catalog::Locale::En
+            i18n::Locale::En
         };
     }
     // Back to the pick screen sits first in the group; the title takes the left.
@@ -549,7 +550,7 @@ fn preview(state: &mut State, ui: &mut egui::Ui, panel: Rect) {
         ui,
         "transport.play",
         play,
-        catalog::text(state.preferences.locale, tip),
+        i18n::text(state.preferences.locale, tip),
         true,
     );
     kit::tinted(glyph, 16.0, kit::on_scrim())
@@ -592,7 +593,7 @@ fn preview(state: &mut State, ui: &mut egui::Ui, panel: Rect) {
         ui,
         "shorts.scrub",
         track.expand2(vec2(0.0, 8.0)),
-        catalog::text(state.preferences.locale, Text::ShortsSeek),
+        i18n::text(state.preferences.locale, Text::ShortsSeek),
         duration.0 > 0,
     );
     if let Some(pointer) = scrub.interact_pointer_pos()

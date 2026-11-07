@@ -7,9 +7,9 @@ use std::{collections::BTreeMap, sync::Arc};
 use time::{SourceRange, TICKS_PER_SECOND, Tick};
 use vibecut::{
     Editor,
-    catalog::Preferences,
     panels::AssetsTab,
     playback::{Files, Playback},
+    preferences::Preferences,
 };
 pub fn lang(tag: &str) -> LanguageTag {
     LanguageTag::parse(tag).unwrap()

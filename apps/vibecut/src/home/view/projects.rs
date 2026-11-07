@@ -5,9 +5,11 @@ use super::{
     widgets::{display_time, line, menu_action, quiet_buttons, semibold, set_author_id},
 };
 use crate::{
-    catalog::{self, Locale, Preferences, ProjectsSortKey, ProjectsView, Text},
+    appearance::Look,
     egui,
     home::state::{DeleteDialog, RenameDialog, State},
+    home::{ProjectsPreferences, ProjectsSortKey, ProjectsView},
+    i18n::{self, Locale, Text},
     kit::{self, Icon},
 };
 use engine::library::ProjectEntry;
@@ -31,17 +33,22 @@ const SEARCH_WIDTH: f32 = 148.0;
 const LIST_ROW: f32 = 56.0;
 const LIST_THUMB: f32 = 40.0;
 
-pub(super) fn section(ui: &mut egui::Ui, state: &mut State, preferences: &mut Preferences) {
-    let locale = preferences.locale;
-    let dark = preferences.dark;
-    let tr = |key: Text| catalog::text(locale, key);
+pub(super) fn section(
+    ui: &mut egui::Ui,
+    state: &mut State,
+    look: Look,
+    projects: &mut ProjectsPreferences,
+) {
+    let locale = look.locale;
+    let dark = look.dark;
+    let tr = |key: Text| i18n::text(locale, key);
 
-    let shown = state.order(preferences);
+    let shown = state.order(*projects);
     let order: Vec<ProjectId> = shown
         .iter()
         .filter_map(|index| state.entries.get(*index).map(|entry| entry.id))
         .collect();
-    header(ui, state, preferences, &order);
+    header(ui, state, look, projects, &order);
     ui.add_space(16.0);
     notices(ui, state, locale, dark);
     if !state.ready {
@@ -80,7 +87,7 @@ pub(super) fn section(ui: &mut egui::Ui, state: &mut State, preferences: &mut Pr
                     ui.label(egui::RichText::new(tr(text)).color(kit::secondary(dark)));
                 });
             } else {
-                ui.add_enabled_ui(!state.busy(), |ui| match preferences.projects.view {
+                ui.add_enabled_ui(!state.busy(), |ui| match projects.view {
                     ProjectsView::Grid => grid(ui, state, &shown, locale, &mut actions),
                     ProjectsView::List => list(ui, state, &shown, locale, &mut actions),
                 });
@@ -92,7 +99,7 @@ pub(super) fn section(ui: &mut egui::Ui, state: &mut State, preferences: &mut Pr
 }
 
 fn notices(ui: &mut egui::Ui, state: &mut State, locale: Locale, dark: bool) {
-    let tr = |key: Text| catalog::text(locale, key);
+    let tr = |key: Text| i18n::text(locale, key);
     if let Some((text, detail)) = &state.notice {
         ui.horizontal(|ui| {
             ui.label(egui::RichText::new(tr(*text)).color(kit::error_text(dark)));
@@ -139,18 +146,19 @@ fn notices(ui: &mut egui::Ui, state: &mut State, locale: Locale, dark: bool) {
 fn header(
     ui: &mut egui::Ui,
     state: &mut State,
-    preferences: &mut Preferences,
+    look: Look,
+    projects: &mut ProjectsPreferences,
     order: &[ProjectId],
 ) {
-    let locale = preferences.locale;
-    let dark = preferences.dark;
+    let locale = look.locale;
+    let dark = look.dark;
     let width = ui.available_width();
     ui.allocate_ui_with_layout(
         egui::vec2(width, kit::size::CONTROL),
         egui::Layout::left_to_right(egui::Align::Center),
         |ui| {
             ui.label(
-                egui::RichText::new(catalog::text(locale, Text::Projects))
+                egui::RichText::new(i18n::text(locale, Text::Projects))
                     .font(semibold(16.0))
                     .color(kit::text(dark)),
             );
@@ -159,7 +167,7 @@ fn header(
             }
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 ui.spacing_mut().item_spacing.x = 8.0;
-                toolbar(ui, state, preferences, order);
+                toolbar(ui, state, look, projects, order);
             });
         },
     );
@@ -169,11 +177,12 @@ fn header(
 fn toolbar(
     ui: &mut egui::Ui,
     state: &mut State,
-    preferences: &mut Preferences,
+    look: Look,
+    projects: &mut ProjectsPreferences,
     order: &[ProjectId],
 ) {
-    let locale = preferences.locale;
-    let dark = preferences.dark;
+    let locale = look.locale;
+    let dark = look.dark;
     let selected: Vec<ProjectId> = state
         .selection
         .iter()
@@ -182,7 +191,7 @@ fn toolbar(
         .collect();
     let has_selection = !selected.is_empty();
     let actionable = has_selection && !state.busy();
-    let tr = |key: Text| catalog::text(locale, key);
+    let tr = |key: Text| i18n::text(locale, key);
 
     ui.add_enabled_ui(actionable, |ui| {
         if kit::icon_button(
@@ -213,10 +222,10 @@ fn toolbar(
         }
     });
     if let Some((done, total)) = state.duplicate {
-        let done = catalog::number(locale, done as u64);
-        let total = catalog::number(locale, total as u64);
+        let done = i18n::number(locale, done as u64);
+        let total = i18n::number(locale, total as u64);
         ui.label(
-            egui::RichText::new(catalog::format(
+            egui::RichText::new(i18n::format(
                 locale,
                 Text::ProjectsDuplicating,
                 &[("done", &done), ("total", &total)],
@@ -224,9 +233,9 @@ fn toolbar(
             .color(kit::secondary(dark)),
         );
     } else if has_selection {
-        let count = catalog::number(locale, selected.len() as u64);
+        let count = i18n::number(locale, selected.len() as u64);
         ui.label(
-            egui::RichText::new(catalog::format(
+            egui::RichText::new(i18n::format(
                 locale,
                 Text::ProjectsSelected,
                 &[("n", &count)],
@@ -261,17 +270,17 @@ fn toolbar(
                     ProjectsView::List,
                 ),
             ] {
-                let on = preferences.projects.view == view;
+                let on = projects.view == view;
                 if kit::icon_button(ui, id, glyph, tr(label), on).clicked() {
-                    let mut next = preferences.projects;
+                    let mut next = *projects;
                     next.view = view;
-                    state.update_projects(preferences, next);
+                    state.update_projects(projects, next);
                 }
             }
         },
     );
 
-    sort_menu(ui, state, preferences);
+    sort_menu(ui, state, look, projects);
 
     // The old text-first search field stays a visible field so typing needs no
     // extra click; it takes the 24 px control height and the field surface.
@@ -304,23 +313,23 @@ fn toolbar(
     );
 }
 
-fn sort_menu(ui: &mut egui::Ui, state: &mut State, preferences: &mut Preferences) {
-    let locale = preferences.locale;
-    let sort = preferences.projects;
+fn sort_menu(ui: &mut egui::Ui, state: &mut State, look: Look, projects: &mut ProjectsPreferences) {
+    let locale = look.locale;
+    let sort = *projects;
     let order_label = if sort.ascending {
         Text::ProjectsSortAscending
     } else {
         Text::ProjectsSortDescending
     };
-    let value = catalog::format(
+    let value = i18n::format(
         locale,
         Text::ProjectsSortValue,
         &[
-            ("key", catalog::text(locale, sort_key_text(sort.sort))),
-            ("order", catalog::text(locale, order_label)),
+            ("key", i18n::text(locale, sort_key_text(sort.sort))),
+            ("order", i18n::text(locale, order_label)),
         ],
     );
-    let label = catalog::format(locale, Text::ProjectsSort, &[("sort", &value)]);
+    let label = i18n::format(locale, Text::ProjectsSort, &[("sort", &value)]);
     let response = ui
         .scope(|ui| {
             quiet_buttons(ui);
@@ -343,7 +352,7 @@ fn sort_menu(ui: &mut egui::Ui, state: &mut State, preferences: &mut Preferences
                             ProjectsSortKey::Name => "projects.sort.name",
                             ProjectsSortKey::Duration => "projects.sort.duration",
                         };
-                        let label = catalog::text(locale, sort_key_text(candidate));
+                        let label = i18n::text(locale, sort_key_text(candidate));
                         let response = ui
                             .push_id(id, |ui| ui.selectable_label(sort.sort == candidate, label))
                             .inner;
@@ -356,7 +365,7 @@ fn sort_menu(ui: &mut egui::Ui, state: &mut State, preferences: &mut Preferences
                                 next.sort = candidate;
                                 next.ascending = true;
                             }
-                            state.update_projects(preferences, next);
+                            state.update_projects(projects, next);
                             ui.close();
                         }
                     }
@@ -523,7 +532,7 @@ fn card(
     let meta = format!(
         "{} | {}",
         display_time(entry.duration),
-        catalog::date(locale, entry.created_unix_ms)
+        i18n::date(locale, entry.created_unix_ms)
     );
     let meta_rect = egui::Rect::from_min_size(
         egui::pos2(texts.min.x, texts.min.y + 16.0),
@@ -570,7 +579,7 @@ fn card(
                 card_menu_items(ui, &entry.id, actions, locale);
             })
             .response
-            .on_hover_text(catalog::text(locale, Text::ProjectsCardMenu));
+            .on_hover_text(i18n::text(locale, Text::ProjectsCardMenu));
         set_author_id(&response, &format!("{prefix}.menu"));
     });
 }
@@ -649,7 +658,7 @@ fn thumbnail(
             let placeholder = ui.put(
                 glyph,
                 kit::tinted(Icon::FilmStrip, 24.0, kit::secondary(dark))
-                    .alt_text(catalog::text(locale, Text::ProjectsThumbnailMissing)),
+                    .alt_text(i18n::text(locale, Text::ProjectsThumbnailMissing)),
             );
             set_author_id(&placeholder, &format!("{prefix}.thumbnail.placeholder"));
         }
@@ -701,7 +710,7 @@ fn card_menu_items(
             ui,
             &format!("{prefix}.{suffix}"),
             icon,
-            catalog::text(locale, text),
+            i18n::text(locale, text),
         ) {
             actions.push(action);
             ui.close();

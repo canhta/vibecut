@@ -57,10 +57,10 @@ Layers, lowest first. Imports go downward only, and a window never names another
 
 | Layer | Holds | Responsibility |
 |---|---|---|
-| Foundation | `kit/`, `i18n/`, `input/` | Design tokens, icons and shared widgets; the one text catalog; chords, bindings and action dispatch. Knows nothing about the engine |
-| Services | playback, preview frames, job progress, pickers, preference store | One interface each, shared by more than one window; no window state |
+| Foundation | `kit/`, `i18n/`, `input/`, `appearance.rs` | Design tokens, icons and shared widgets; the one text catalog; the copied locale/theme look; chords, bindings and action dispatch. Knows nothing about the engine |
+| Services | playback, preview frames, job progress, pickers | One interface each, shared by more than one window; no window state |
 | Windows and areas | `home/`, `shorts/`, `editor/panels/{assets,player,properties,timeline}`, editor dialogs | One module per window or area behind one interface; each window owns its size, top bar and chrome; each area owns one panel's or dialog's state |
-| Frame | `editor/frame/` | The editor's top bar, window layout and the routing that calls each area and returns its actions |
+| Frame | `editor/frame/`, `actions/`, `preferences/`, `workspace/`, `control/` | The editor's top bar, window layout and the routing that calls each area and returns its actions; the one action registry assembled from each owner's table; the versioned preference document and the window registry until the composition root split |
 | Composition root | app wiring, window registry, control attach | Names every window and lends services; the only layer above the windows |
 
 An editor area is one module whose interface is its `State` and its `show(...)` returning the actions it wants; split inside only when the one-sentence test fails, never into a fixed `state.rs` / `view/` / `workflow.rs` triad. Captions is a feature tab inside `assets/` ([UI design](../product/ui/index.md)), not a fifth panel; the dialogs are `export`, `models` and `settings`; the shortcut list is its own window. Areas never import each other: the frame calls each area, passes the shared context (selection, engine handle) and routes the returned actions. Home, Editor and Long video to shorts import only foundation and service interfaces; they never name each other or the composition root.

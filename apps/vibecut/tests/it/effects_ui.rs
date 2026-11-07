@@ -15,10 +15,10 @@ use std::{path::PathBuf, sync::Arc};
 use time::{SourceRange, TICKS_PER_SECOND, Tick};
 use vibecut::{
     Editor,
-    catalog::{PreferenceStore, Preferences},
     effect_previews::EffectPreviewStatus,
     egui,
     playback::{Files, Playback},
+    preferences::{PreferenceStore, Preferences},
 };
 
 const SECOND: i64 = TICKS_PER_SECOND;

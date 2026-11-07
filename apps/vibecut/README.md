@@ -15,10 +15,10 @@ The desktop binary is `vibecut`; the headless CLI is `vibecut-cli`.
 
 | Module | Responsibility | Contract |
 |---|---|---|
-| `actions.rs` | Owns the action registry, chords and global dispatch. | [Action registry](src/actions/README.md) |
+| `actions.rs` / `actions/` | Owns the action registry and the per-owner action tables. | [Action registry](src/actions/README.md) |
 | `ai_task.rs` | Coalesces AI progress and per-upload consent. | [AI tasks](src/ai_task/README.md) |
+| `appearance.rs` | Carries the locale and theme copy each window draws with. | — |
 | `capture.rs` | Captures bounded fresh frames. | [Capture](src/capture/README.md) |
-| `catalog.rs` | Owns the text catalog and the preference store. | [Localization](src/catalog/README.md) |
 | `color_picker.rs` / `color_picker/` | Owns the reusable colour draft and screen sampler. | [Colour picker](src/color_picker/README.md) |
 | `control.rs` | Runs background control over the live workspace. | [Control](src/control/README.md) |
 | `crop.rs` | Owns transient source-normalized crop interaction. | [Crop](src/crop/README.md) |
@@ -47,7 +47,9 @@ The desktop binary is `vibecut`; the headless CLI is `vibecut-cli`.
 | `export.rs` / `export/` | Presents export and its saved choices. | [Export settings](src/export/README.md) |
 | `home.rs` / `home/` | Owns the project library window. | [Projects page](src/home/README.md) |
 | `home/view/` | Draws the Home window. | [Home view](src/home/view/README.md) |
+| `i18n.rs` / `i18n/` | Owns the text catalog, locales and formatting. | [Localization](src/i18n/README.md) |
 | `import.rs` | Runs background media import. | [Media import](src/import/README.md) |
+| `input.rs` / `input/` | Owns chords, bindings, keymap and global dispatch. | [Key input](src/input/README.md) |
 | `kit.rs` / `kit/` | Supplies reusable visual primitives. | [Kit](src/kit/README.md) |
 | `kit/widgets/` | Renders shared controls. | [Kit widgets](src/kit/widgets/README.md) |
 | `lifecycle.rs` | Adapts desktop sessions to engine persistence. | [Project lifecycle](src/lifecycle/README.md) |
@@ -55,6 +57,7 @@ The desktop binary is `vibecut`; the headless CLI is `vibecut-cli`.
 | `model_manager.rs` | Presents model catalog, consent and transfers. | [Local model manager](src/model_manager/README.md) |
 | `panels.rs` | Registers assets and properties panels. | [Panels](src/panels/README.md) |
 | `playback.rs` | Retains frames and the audio device clock. | [Playback and limits](src/playback/README.md) |
+| `preferences.rs` / `preferences/` | Composes and persists the versioned preference document. | [Preferences](src/preferences/README.md) |
 | `preview.rs` | Presents preview and snapshot requests. | [Preview transport](src/preview/README.md) |
 | `selection.rs` | Holds transient selection scopes and shared values. | [Selection](src/selection/README.md) |
 | `shorts.rs` / `shorts/` | Owns the long-video-to-shorts window. | [Long video to shorts](src/shorts/README.md) |

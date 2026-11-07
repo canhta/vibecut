@@ -2,8 +2,9 @@
 
 use crate::editor::assets::{
     AssetRow, AssetState, Color32, Icon, Locale, MediaKind, SourceAsset, StreamKind, Text,
-    TrackKind, catalog, display_time, theme,
+    TrackKind, display_time, theme,
 };
+use crate::i18n;
 
 pub(in crate::editor::assets) fn asset_kind(
     asset: &SourceAsset,
@@ -59,10 +60,10 @@ pub(in crate::editor::assets) fn asset_row(
         MediaKind::Audio => (Text::Audio, Icon::MusicNotes),
         MediaKind::Other => (Text::Media, Icon::File),
     };
-    let type_label = catalog::text(locale, kind).to_owned();
+    let type_label = i18n::text(locale, kind).to_owned();
     info.push(type_label);
     info.push(asset.probe().duration.map_or_else(
-        || catalog::text(locale, Text::DurationUnknown).to_owned(),
+        || i18n::text(locale, Text::DurationUnknown).to_owned(),
         display_time,
     ));
     if let Some(size) = size {
@@ -70,9 +71,9 @@ pub(in crate::editor::assets) fn asset_row(
         info.push(size);
     }
     if let Some(video) = video {
-        let width = catalog::number(locale, u64::from(video.width));
-        let height = catalog::number(locale, u64::from(video.height));
-        info.push(catalog::format(
+        let width = i18n::number(locale, u64::from(video.width));
+        let height = i18n::number(locale, u64::from(video.height));
+        info.push(i18n::format(
             locale,
             Text::AssetDimensions,
             &[("width", &width), ("height", &height)],
@@ -85,16 +86,16 @@ pub(in crate::editor::assets) fn asset_row(
         .find_map(|stream| stream.frame_rate)
     {
         let value = if rate.den() == 1 {
-            catalog::signed(locale, rate.num())
+            i18n::signed(locale, rate.num())
         } else {
-            catalog::decimal(locale, rate.num() as f64 / rate.den() as f64, 3)
+            i18n::decimal(locale, rate.num() as f64 / rate.den() as f64, 3)
         };
-        info.push(catalog::format(locale, Text::AssetFps, &[("rate", &value)]));
+        info.push(i18n::format(locale, Text::AssetFps, &[("rate", &value)]));
     }
     if let Some(audio) = audio {
-        let rate = catalog::number(locale, u64::from(audio.sample_rate));
-        let channels = catalog::number(locale, u64::from(audio.channels));
-        info.push(catalog::format(
+        let rate = i18n::number(locale, u64::from(audio.sample_rate));
+        let channels = i18n::number(locale, u64::from(audio.channels));
+        info.push(i18n::format(
             locale,
             Text::AssetAudio,
             &[("rate", &rate), ("channels", &channels)],
@@ -112,23 +113,23 @@ pub(in crate::editor::assets) fn asset_row(
 pub(in crate::editor::assets) fn format_media_size(locale: Locale, bytes: u64) -> String {
     let (value, unit) = if bytes >= 1 << 30 {
         (
-            catalog::decimal(locale, bytes as f64 / (1u64 << 30) as f64, 1),
+            i18n::decimal(locale, bytes as f64 / (1u64 << 30) as f64, 1),
             "GB",
         )
     } else if bytes >= 1 << 20 {
         (
-            catalog::decimal(locale, bytes as f64 / (1u64 << 20) as f64, 1),
+            i18n::decimal(locale, bytes as f64 / (1u64 << 20) as f64, 1),
             "MB",
         )
     } else if bytes >= 1 << 10 {
         (
-            catalog::decimal(locale, bytes as f64 / (1u64 << 10) as f64, 1),
+            i18n::decimal(locale, bytes as f64 / (1u64 << 10) as f64, 1),
             "KB",
         )
     } else {
-        (catalog::number(locale, bytes), "B")
+        (i18n::number(locale, bytes), "B")
     };
-    catalog::format(locale, Text::MediaSize, &[("size", &value), ("unit", unit)])
+    i18n::format(locale, Text::MediaSize, &[("size", &value), ("unit", unit)])
 }
 pub(in crate::editor::assets) fn file_name(path: &std::path::Path) -> String {
     path.file_name().map_or_else(

@@ -1,8 +1,9 @@
 //! Renders shared selection properties.
+use crate::i18n;
 use crate::kit;
 
 use super::Panel;
-use crate::editor::properties::{Id, SelectionScope, Text, catalog, egui, shared_fields, theme};
+use crate::editor::properties::{Id, SelectionScope, Text, egui, shared_fields, theme};
 
 impl Panel<'_, '_> {
     pub(super) fn shared_inspector(&mut self, ui: &mut egui::Ui) {
@@ -10,7 +11,7 @@ impl Panel<'_, '_> {
             self.state.drafts.clear();
             self.state.selection = self.cx.selection.clone();
         }
-        ui.label(catalog::format_count(
+        ui.label(i18n::format_count(
             self.cx.locale,
             self.cx.selection.len() as u64,
             Text::SelectedCountOne,
@@ -48,7 +49,7 @@ impl Panel<'_, '_> {
                     serde_json::from_value::<project::BlendMode>(serde_json::json!(v)).ok()
                 });
                 let label = current
-                    .map(|m| self.tr(catalog::blend_label(m)))
+                    .map(|m| self.tr(i18n::blend_label(m)))
                     .unwrap_or_else(|| self.tr(Text::EmptyValue));
                 let response = value_ui
                     .scope(|ui| {
@@ -60,7 +61,7 @@ impl Panel<'_, '_> {
                                 for mode in project::BlendMode::ALL {
                                     let response = ui.selectable_label(
                                         current == Some(mode),
-                                        self.tr(catalog::blend_label(mode)),
+                                        self.tr(i18n::blend_label(mode)),
                                     );
                                     self.remember(
                                         format!("inspector.blendMode.{}", mode.id()),
@@ -253,10 +254,10 @@ impl Panel<'_, '_> {
         if self.cx.selection.len() < 2 {
             return;
         }
-        let compatible = catalog::number(self.cx.locale, compatible as u64);
-        let total = catalog::number(self.cx.locale, self.cx.selection.len() as u64);
+        let compatible = i18n::number(self.cx.locale, compatible as u64);
+        let total = i18n::number(self.cx.locale, self.cx.selection.len() as u64);
         ui.label(
-            egui::RichText::new(catalog::format(
+            egui::RichText::new(i18n::format(
                 self.cx.locale,
                 Text::CompatibleCount,
                 &[("compatible", &compatible), ("total", &total)],

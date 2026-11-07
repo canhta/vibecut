@@ -1,4 +1,5 @@
 //! Coordinates the editor through area interfaces.
+use crate::i18n;
 mod assets;
 mod captions;
 mod export;
@@ -35,8 +36,8 @@ use crate::{
         self, ActionTarget, BlockedReason, Dispatch, DispatchContext, EngineAction,
         KeybindingIssue, Keymap, UiAction,
     },
-    catalog::{self, Locale, Preferences, Text, drag_panel},
     egui::{self, Align2, Color32, FontId, Id, Rect, Vec2},
+    i18n::{Locale, Text},
     import::{
         ImportEvent, ImportFailure, ImportProbe, ImportQueue, ThumbnailOutcome, ThumbnailSource,
     },
@@ -45,6 +46,7 @@ use crate::{
     media_panel::{self, MediaKind, MediaSort, MediaSortKey, MediaSortOrder, MediaView},
     panels::{AssetsTab, ElementKind, PropertiesTab},
     playback::Playback,
+    preferences::{Preferences, drag_panel},
     preview,
 };
 use engine::{
@@ -104,6 +106,16 @@ impl Editor {
             playback,
             preferences,
         )
+    }
+    /// A transient preview editor draws with the caller's appearance and
+    /// defaults for every other preference; the shorts window owns its state.
+    pub fn preview(session: Session, playback: Playback, look: crate::appearance::Look) -> Self {
+        let preferences = Preferences {
+            locale: look.locale,
+            dark: look.dark,
+            ..Preferences::default()
+        };
+        Self::new(session, playback, preferences)
     }
     fn with_session(
         session: crate::lifecycle::EditorSession,
@@ -265,7 +277,7 @@ impl Editor {
                         || failure.path.to_string_lossy().into_owned(),
                         |name| name.to_string_lossy().into_owned(),
                     );
-                    catalog::format(
+                    i18n::format(
                         self.preferences.locale,
                         Text::FailureDetail,
                         &[("name", &name), ("reason", &failure.reason)],
@@ -341,6 +353,7 @@ impl Editor {
                         let chords = self.preferences.keybindings.effective_chords(spec);
                         ShortcutRow {
                             action: spec.id.to_owned(),
+                            label: spec.label.text(self.preferences.locale).to_owned(),
                             category: spec.category.label(),
                             tab: ShortcutTab::for_category(spec.category),
                             keys: chords

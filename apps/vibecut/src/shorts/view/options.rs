@@ -1,8 +1,9 @@
 //! Generation settings: language, who transcribes and suggests, how many and how long.
 use super::{State, named};
 use crate::{
-    catalog::{Locale, Text},
-    egui, kit,
+    egui,
+    i18n::{Locale, Text},
+    kit,
 };
 
 pub(super) fn show(state: &mut State, ui: &mut egui::Ui) {
@@ -42,11 +43,11 @@ pub(super) fn show(state: &mut State, ui: &mut egui::Ui) {
                     1..=32,
                 ),
             ] {
-                ui.label(catalog::text(state.preferences.locale, key));
+                ui.label(i18n::text(state.preferences.locale, key));
                 named(
                     &ui.add(egui::DragValue::new(value).range(range)),
                     id,
-                    catalog::text(state.preferences.locale, key),
+                    i18n::text(state.preferences.locale, key),
                 );
                 ui.end_row();
             }
@@ -62,18 +63,18 @@ pub(super) fn show(state: &mut State, ui: &mut egui::Ui) {
                     &mut state.request.max_seconds,
                 ),
             ] {
-                ui.label(catalog::text(state.preferences.locale, key));
+                ui.label(i18n::text(state.preferences.locale, key));
                 named(
                     &ui.add(egui::DragValue::new(value).range(1..=180)),
                     id,
-                    catalog::text(state.preferences.locale, key),
+                    i18n::text(state.preferences.locale, key),
                 );
                 ui.end_row();
             }
         });
 }
 
-use crate::catalog;
+use crate::i18n;
 
 fn providers(state: &mut State, ui: &mut egui::Ui) {
     use engine::providers::{CatalogOperation, provider_options_for};
@@ -181,7 +182,7 @@ fn providers(state: &mut State, ui: &mut egui::Ui) {
 }
 
 fn provider_label(locale: Locale, provider: &str, model: &str) -> String {
-    catalog::format(
+    i18n::format(
         locale,
         Text::ShortsProviderModel,
         &[("provider", provider), ("model", model)],

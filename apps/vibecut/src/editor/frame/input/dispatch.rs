@@ -2,8 +2,9 @@
 
 use crate::editor::{
     ActionTarget, Command, CreatedId, Editor, EngineAction, Error, PREFERENCE_COMMAND, Result,
-    Text, Tick, UiAction, actions, catalog, preview,
+    Text, Tick, UiAction, actions, preview,
 };
+use crate::i18n;
 
 impl Editor {
     pub(in crate::editor) fn action(&mut self, id: &str) {
@@ -135,10 +136,7 @@ impl Editor {
         }
     }
 
-    pub(in crate::editor) fn engine_action_params(
-        &self,
-        route: EngineAction,
-    ) -> Result<Vec<serde_json::Value>> {
+    pub(in crate::editor) fn engine_commands(&self, route: EngineAction) -> Result<Vec<Command>> {
         Ok(match route {
             EngineAction::Split => {
                 let at = self.playback.position()?;
@@ -154,38 +152,42 @@ impl Editor {
                             && item.end().is_ok_and(|end| at < end)
                             && (self.selection.is_empty() || self.selection.contains(&item.id))
                     })
-                    .map(|item| serde_json::json!({"item":item.id,"at":at}))
+                    .map(|item| Command::SplitAt { item: item.id, at })
                     .collect()
             }
             EngineAction::Delete | EngineAction::RippleDelete => {
                 if route.command(self.preferences.ripple) == engine::CommandKind::RippleDelete {
                     self.selection_by_end(true)
                         .into_iter()
-                        .map(|item| serde_json::json!({"item":item}))
+                        .map(|item| Command::RippleDelete { item })
                         .collect()
                 } else {
-                    vec![serde_json::json!({"items":self.selection})]
+                    vec![Command::Delete {
+                        items: self.selection.iter().copied().collect(),
+                    }]
                 }
             }
-            EngineAction::InsertMedia => Vec::new(), // Placement depends on each preceding outcome.
-            EngineAction::AddTrack => vec![crate::editor::timeline::add_track_params(
+            EngineAction::InsertMedia => Vec::new(),
+            EngineAction::AddTrack => vec![crate::editor::timeline::add_track_command(
                 &self.session,
                 &self.selection,
                 self.preferences.locale,
             )],
             EngineAction::CreateScene => {
                 let count = self.session.project().data().scenes.iter().count();
-                let number = catalog::number(self.preferences.locale, (count + 1) as u64);
-                let name = catalog::format(
+                let number = i18n::number(self.preferences.locale, (count + 1) as u64);
+                let name = i18n::format(
                     self.preferences.locale,
                     Text::SceneDefaultName,
                     &[("n", &number)],
                 );
-                vec![serde_json::json!({"name":name})]
+                vec![Command::CreateScene {
+                    name: engine::NfcText::from(name),
+                }]
             }
-            EngineAction::DeleteScenes => {
-                vec![serde_json::json!({"scenes":self.timeline.scenes.selected()})]
-            }
+            EngineAction::DeleteScenes => vec![Command::DeleteScenes {
+                scenes: self.timeline.scenes.selected().iter().copied().collect(),
+            }],
         })
     }
 
@@ -195,21 +197,13 @@ impl Editor {
             self.insert_selected_assets(command);
             return Ok(());
         }
-        let params = self.engine_action_params(route)?;
-        if params.is_empty() {
+        let commands = self.engine_commands(route)?;
+        if commands.is_empty() {
             return Ok(());
         }
-        let commands: Vec<_> = params
-            .into_iter()
-            .map(|params| serde_json::json!({"command":command.id(), "params":params}))
-            .collect();
         let created = self
             .session
-            .execute_with_ripple(
-                "batch",
-                serde_json::json!({"commands":commands}),
-                self.preferences.ripple,
-            )?
+            .apply_with_ripple(Command::Batch { commands }, self.preferences.ripple)?
             .created;
         match route {
             EngineAction::Split => {

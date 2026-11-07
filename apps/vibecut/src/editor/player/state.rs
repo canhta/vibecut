@@ -1,5 +1,5 @@
 //! Retains preview-only view state between presented frames.
-use crate::{catalog::Text, egui, playback::Frame, preview};
+use crate::{egui, i18n::Text, playback::Frame, preview};
 use std::sync::Arc;
 use time::Tick;
 pub(in crate::editor) struct State {

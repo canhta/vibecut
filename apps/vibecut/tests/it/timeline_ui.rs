@@ -14,10 +14,10 @@ use project::{Color, ItemId, ItemParams, Project, ProjectId, TrackId, TrackKind}
 use std::{path::PathBuf, sync::Arc};
 use time::{SourceRange, TICKS_PER_SECOND, Tick};
 use vibecut::{
-    Editor,
-    catalog::{Locale, Preferences},
-    egui,
+    Editor, egui,
+    i18n::Locale,
     playback::{Files, Playback},
+    preferences::Preferences,
 };
 
 const SECOND: i64 = TICKS_PER_SECOND;
@@ -602,7 +602,7 @@ fn snapping_preference_toggles_through_app_history_and_persists() {
     assert_eq!(harness.state().session.project(), &project);
     assert_eq!(harness.state().session.history_len(), history);
     let dir = tempfile::tempdir().unwrap();
-    let store = vibecut::catalog::PreferenceStore::new(dir.path().join("preferences.json"));
+    let store = vibecut::preferences::PreferenceStore::new(dir.path().join("preferences.json"));
     store.save(&harness.state().preferences).unwrap();
     assert!(!store.load().unwrap().snapping);
     let undo = widget(&harness, "edit.undo");
@@ -2952,7 +2952,7 @@ fn expanded_lane_shows_diamonds_and_drag_retimes_one_undo_step() {
     click_at(&mut harness, lanes.center());
     assert_eq!(harness.state().inspect().unwrap().expanded_lanes, vec![id]);
     let dir = tempfile::tempdir().unwrap();
-    let store = vibecut::catalog::PreferenceStore::new(dir.path().join("preferences.json"));
+    let store = vibecut::preferences::PreferenceStore::new(dir.path().join("preferences.json"));
     store.save(&harness.state().preferences).unwrap();
     let loaded = store.load().unwrap();
     assert_eq!(

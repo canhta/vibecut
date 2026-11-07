@@ -3,6 +3,7 @@
 //! Geometry is the measured desktop reference, in logical px from the window's
 //! content origin, at the 1718×989 window; the page keeps everything centred.
 
+use crate::i18n;
 mod options;
 mod pick;
 mod progress;
@@ -14,9 +15,8 @@ mod widgets;
 
 use super::{Action, Context, state::State};
 use crate::{
-    Editor, Error,
-    catalog::{self, Text},
-    egui,
+    Editor, Error, egui,
+    i18n::Text,
     kit::{self},
 };
 use std::time::Duration;
@@ -40,7 +40,7 @@ pub(super) struct FrameTexture {
 
 impl State {
     pub(super) fn tr(&self, key: Text) -> &'static str {
-        catalog::text(self.preferences.locale, key)
+        i18n::text(self.preferences.locale, key)
     }
 }
 

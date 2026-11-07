@@ -3,9 +3,10 @@ use super::{
     State,
     widgets::{self, Look, bold, corner},
 };
+use crate::i18n;
 use crate::{
-    catalog::{self, Text},
     egui::{self, Align2, Rect, pos2, vec2},
+    i18n::Text,
     kit::{self, Icon},
 };
 use engine::providers::{CatalogOperation, Cost};
@@ -47,7 +48,7 @@ pub(super) fn show(state: &mut State, ui: &mut egui::Ui, rect: Rect) {
         state.cancel();
     }
     let title_x = left + 44.0;
-    let count = catalog::format(
+    let count = i18n::format(
         state.preferences.locale,
         Text::ShortsCountLabel,
         &[("count", "0")],
@@ -97,12 +98,12 @@ pub(super) fn show(state: &mut State, ui: &mut egui::Ui, rect: Rect) {
     painter.text(
         pos2(bar.right() - 8.0, bar.center().y),
         Align2::RIGHT_CENTER,
-        catalog::format(
+        i18n::format(
             state.preferences.locale,
             Text::ShortsPercent,
             &[(
                 "value",
-                &catalog::number(state.preferences.locale, (fraction * 100.0).round() as u64),
+                &i18n::number(state.preferences.locale, (fraction * 100.0).round() as u64),
             )],
         ),
         egui::FontId::proportional(12.0),
@@ -162,7 +163,7 @@ fn consent(state: &mut State, ui: &mut egui::Ui, rect: Rect) {
                     let Some(upload) = &guard.upload else { return };
                     let request = &upload.request;
                     ui.label(
-                        egui::RichText::new(catalog::format(
+                        egui::RichText::new(i18n::format(
                             locale,
                             Text::ShortsUploadIdentity,
                             &[
@@ -183,15 +184,15 @@ fn consent(state: &mut State, ui: &mut egui::Ui, rect: Rect) {
                     for (label, value) in [
                         (
                             Text::ShortsSeconds,
-                            catalog::decimal(locale, request.audio_seconds, 2),
+                            i18n::decimal(locale, request.audio_seconds, 2),
                         ),
                         (
                             Text::ShortsBytes,
-                            catalog::number(locale, request.upload_bytes),
+                            i18n::number(locale, request.upload_bytes),
                         ),
                         (Text::ShortsCost, cost_text(locale, &request.cost)),
                     ] {
-                        ui.label(catalog::format(
+                        ui.label(i18n::format(
                             locale,
                             Text::ShortsValue,
                             &[("label", state.tr(label)), ("value", &value)],
@@ -250,18 +251,18 @@ fn consent(state: &mut State, ui: &mut egui::Ui, rect: Rect) {
     }
 }
 
-pub(super) fn cost_text(locale: catalog::Locale, cost: &Cost) -> String {
+pub(super) fn cost_text(locale: i18n::Locale, cost: &Cost) -> String {
     match cost {
-        Cost::Free => catalog::text(locale, Text::ShortsFree).into(),
-        Cost::Unknown => catalog::text(locale, Text::ShortsUnknownCost).into(),
-        Cost::UpperBound { currency, micros } => catalog::format(
+        Cost::Free => i18n::text(locale, Text::ShortsFree).into(),
+        Cost::Unknown => i18n::text(locale, Text::ShortsUnknownCost).into(),
+        Cost::UpperBound { currency, micros } => i18n::format(
             locale,
             Text::ShortsMoney,
             &[
                 ("currency", currency),
                 (
                     "amount",
-                    &catalog::decimal(locale, *micros as f64 / 1_000_000.0, 6),
+                    &i18n::decimal(locale, *micros as f64 / 1_000_000.0, 6),
                 ),
             ],
         ),

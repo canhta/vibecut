@@ -128,16 +128,28 @@ name = "kit"
 group = "foundation"
 
 [[crate.module]]
-name = "catalog"
+name = "i18n"
+group = "foundation"
+
+[[crate.module]]
+name = "input"
+group = "foundation"
+
+[[crate.module]]
+name = "appearance"
 group = "foundation"
 
 [[crate.module]]
 name = "actions"
-group = "foundation"
+group = "editor"
+
+[[crate.module]]
+name = "preferences"
+group = "editor"
 
 [[crate.module]]
 name = "workspace"
-group = "shell"
+group = "editor"
 
 [[crate.module]]
 name = "lifecycle"
@@ -145,7 +157,7 @@ group = "shell"
 
 [[crate.module]]
 name = "control"
-group = "shell"
+group = "editor"
 
 [[crate.module]]
 name = "capture"

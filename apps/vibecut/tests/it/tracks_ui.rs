@@ -7,10 +7,9 @@ use engine::{ByteBudget, Command, Session};
 use project::{Project, ProjectId, TrackKind};
 use std::sync::Arc;
 use vibecut::{
-    Editor,
-    catalog::Preferences,
-    egui,
+    Editor, egui,
     playback::{Files, Playback},
+    preferences::Preferences,
 };
 fn editor() -> Editor {
     let mut s = Session::new(Project::empty(ProjectId(1), "Tracks".into()).unwrap(), 100).unwrap();

@@ -4,10 +4,11 @@ use super::{
     RAIL_INSET, RAIL_ROW, RAIL_RULE_GAP, ROW_RADIUS, TOP_BAND,
     widgets::{line, semibold, set_author_id},
 };
+use crate::i18n;
 use crate::{
-    catalog::{self, Locale, Text},
     egui,
     home::state::{Action, State},
+    i18n::{Locale, Text},
     kit::{self, Icon},
 };
 
@@ -54,7 +55,7 @@ fn nav_row(
 /// The left rail: Home, a rule, then the tools that open their own window.
 pub(super) fn rail(ui: &mut egui::Ui, rail: egui::Rect, state: &mut State, locale: Locale) {
     let dark = ui.visuals().dark_mode;
-    let tr = |key: Text| catalog::text(locale, key);
+    let tr = |key: Text| i18n::text(locale, key);
     let row =
         |y: f32| egui::Rect::from_min_size(egui::pos2(rail.min.x + RAIL_INSET, y), RAIL_ROW.into());
     let home = row(rail.min.y + TOP_BAND);
@@ -105,7 +106,7 @@ pub(super) fn top_bar(
                     ui,
                     "project.open",
                     Icon::FolderOpen,
-                    catalog::text(locale, Text::OpenProject),
+                    i18n::text(locale, Text::OpenProject),
                     false,
                 )
             })
@@ -119,7 +120,7 @@ pub(super) fn top_bar(
         ui.painter().text(
             egui::pos2(button.min.x - 12.0, button.center().y),
             egui::Align2::RIGHT_CENTER,
-            catalog::text(locale, status),
+            i18n::text(locale, status),
             egui::FontId::proportional(kit::type_size::BODY),
             kit::secondary(dark),
         );

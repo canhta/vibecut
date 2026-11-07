@@ -14,11 +14,10 @@ use project::{Color, ItemId, ItemParams, Project, ProjectId, TrackId, TrackKind}
 use std::{path::PathBuf, sync::Arc};
 use time::{SourceRange, TICKS_PER_SECOND, Tick};
 use vibecut::{
-    Editor,
-    catalog::{PreferenceStore, Preferences},
-    egui,
+    Editor, egui,
     panels::{AssetsTab, ElementKind, PropertiesTab},
     playback::{Files, Playback},
+    preferences::{PreferenceStore, Preferences},
 };
 
 const SECOND: i64 = TICKS_PER_SECOND;

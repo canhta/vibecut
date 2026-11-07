@@ -1,5 +1,5 @@
 //! Background control uses the same Workspace and Session as the visible app.
-use crate::{Error, Result, catalog::Preferences, workspace::Workspace};
+use crate::{Error, Result, preferences::Preferences, workspace::Workspace};
 use std::{
     ffi::OsString,
     path::PathBuf,

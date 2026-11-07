@@ -11,7 +11,7 @@ impl Subtitles {
     /// Commit pending inline drafts before switching tabs or executing another command.
     pub(crate) fn flush_drafts(&mut self, session: &mut Session) -> Result<bool> {
         self.refresh(session);
-        if self.problem == Some(crate::catalog::Text::SubDraftConflict) {
+        if self.problem == Some(crate::i18n::Text::SubDraftConflict) {
             return Err(Error::Invalid("resolve caption draft conflict"));
         }
         let Some((_, p)) = self.caption(session) else {
@@ -92,7 +92,7 @@ impl Subtitles {
             "subtitles.bilingual" => options.bilingual = !options.bilingual,
             "subtitles.force" => self.force = !self.force,
             "subtitles.dismiss" => {
-                if self.problem == Some(crate::catalog::Text::SubDraftConflict) {
+                if self.problem == Some(crate::i18n::Text::SubDraftConflict) {
                     self.drafts.clear();
                     self.draft_project = Some(session.project().clone());
                 }
@@ -224,7 +224,7 @@ impl Subtitles {
     }
     fn commit(&mut self, session: &mut Session, cues: CueTrack) -> Result<()> {
         self.refresh(session);
-        if self.problem == Some(crate::catalog::Text::SubDraftConflict) {
+        if self.problem == Some(crate::i18n::Text::SubDraftConflict) {
             return Err(Error::Invalid("resolve caption draft conflict"));
         }
         if self.busy() || session.transaction_active() {

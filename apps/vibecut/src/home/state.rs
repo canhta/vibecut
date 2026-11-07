@@ -6,8 +6,9 @@
 
 use super::workflow::{Event, Request, catalog_worker, next_id};
 use crate::{
-    catalog::{Preferences, ProjectsPreferences, ProjectsSortKey, Text},
     egui,
+    home::{ProjectsPreferences, ProjectsSortKey},
+    i18n::Text,
 };
 use engine::{ByteBudget, library::ProjectEntry};
 use project::ProjectId;
@@ -155,14 +156,14 @@ impl State {
     }
 
     /// Rows in the persistent sort order after the live search filter.
-    pub fn displayed_ids(&self, preferences: &Preferences) -> Vec<ProjectId> {
-        self.order(preferences)
+    pub fn displayed_ids(&self, projects: ProjectsPreferences) -> Vec<ProjectId> {
+        self.order(projects)
             .into_iter()
             .filter_map(|index| self.entries.get(index).map(|entry| entry.id))
             .collect()
     }
 
-    pub(super) fn order(&self, preferences: &Preferences) -> Vec<usize> {
+    pub(super) fn order(&self, projects: ProjectsPreferences) -> Vec<usize> {
         let needle = engine::NfcText::from(self.search.trim())
             .as_str()
             .to_lowercase();
@@ -175,7 +176,7 @@ impl State {
             })
             .map(|(index, _)| index)
             .collect();
-        let sort = preferences.projects;
+        let sort = projects;
         order.sort_by(|left, right| {
             let Some(a) = self.entries.get(*left) else {
                 return std::cmp::Ordering::Equal;
@@ -461,18 +462,10 @@ impl State {
 
     pub(super) fn update_projects(
         &mut self,
-        preferences: &mut Preferences,
+        current: &mut ProjectsPreferences,
         projects: ProjectsPreferences,
     ) {
-        if preferences.projects == projects {
-            return;
-        }
-        if let Err(error) = preferences.set(
-            "projects",
-            serde_json::to_value(projects).unwrap_or(serde_json::Value::Null),
-        ) {
-            self.notice = Some((Text::ProjectError, Some(error.to_string())));
-        }
+        *current = projects;
     }
 }
 
@@ -555,12 +548,16 @@ mod tests {
             })
             .with_size(egui::vec2(1440.0, 900.0))
             .build_ui_state(
-                |ui, state: &mut (State, Preferences)| {
+                |ui, state: &mut (State, crate::appearance::Look, ProjectsPreferences)| {
                     crate::Editor::theme(ui.ctx(), state.1.dark);
                     state.0.tick();
-                    state.0.show(ui, &mut state.1, None);
+                    state.0.show(ui, state.1, &mut state.2, None);
                 },
-                (page, Preferences::default()),
+                (
+                    page,
+                    crate::appearance::Look::default(),
+                    ProjectsPreferences::default(),
+                ),
             );
         let retry = || By::new().predicate(|node| node.author_id() == Some("projects.retry"));
         for pending in [1, 0] {
@@ -619,24 +616,29 @@ mod tests {
             })
             .with_size(egui::vec2(1440.0, 900.0))
             .build_ui_state(
-                |ui, state: &mut (State, Preferences)| {
+                |ui, state: &mut (State, crate::appearance::Look, ProjectsPreferences)| {
                     crate::Editor::theme(ui.ctx(), state.1.dark);
                     state.0.tick();
-                    state.0.show(ui, &mut state.1, None);
+                    state.0.show(ui, state.1, &mut state.2, None);
                 },
-                (page, Preferences::default()),
+                (
+                    page,
+                    crate::appearance::Look::default(),
+                    ProjectsPreferences::default(),
+                ),
             );
-        let card = |harness: &Harness<'_, (State, Preferences)>| {
-            format!(
-                "{:?}",
-                harness
-                    .get(By::new().predicate(|node| {
-                        node.author_id() == Some("projects.card.0000000000000001")
-                    }))
-                    .accesskit_node()
-                    .id()
-            )
-        };
+        let card =
+            |harness: &Harness<'_, (State, crate::appearance::Look, ProjectsPreferences)>| {
+                format!(
+                    "{:?}",
+                    harness
+                        .get(By::new().predicate(|node| {
+                            node.author_id() == Some("projects.card.0000000000000001")
+                        }))
+                        .accesskit_node()
+                        .id()
+                )
+            };
         harness.run_steps(2);
         let before = card(&harness);
 
@@ -659,7 +661,7 @@ mod tests {
         let locale = harness.state().1.locale;
         assert!(
             harness
-                .query_by_label(crate::catalog::text(locale, Text::LoadingProject))
+                .query_by_label(crate::i18n::text(locale, Text::LoadingProject))
                 .is_some(),
             "the loading row must render while the catalog is pending"
         );

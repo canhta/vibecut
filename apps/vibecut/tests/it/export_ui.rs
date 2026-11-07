@@ -17,11 +17,11 @@ use std::{
 };
 use time::{SourceRange, TICKS_PER_SECOND, Tick};
 use vibecut::{
-    Editor,
-    catalog::{Locale, PreferenceStore, Preferences},
-    egui,
+    Editor, egui,
     export::{ExportFormat, ExportOptions, ExportQuality},
+    i18n::Locale,
     playback::{Files, Playback, Sources},
+    preferences::{PreferenceStore, Preferences},
 };
 
 fn temp_target(name: &str) -> PathBuf {
@@ -298,7 +298,7 @@ fn export_choices_default_persist_and_empty_timeline_refuses() {
     ));
     assert_eq!(
         store.load_with_warning().1,
-        Some(vibecut::catalog::PreferenceIssue::Version)
+        Some(vibecut::preferences::PreferenceIssue::Version)
     );
     assert!(store.save(&Preferences::default()).is_err());
     assert_eq!(std::fs::read(store.path()).unwrap(), previous);
@@ -735,7 +735,7 @@ fn filenames_are_sanitized_and_export_preferences_roundtrip() {
     assert!(!options.settings(&project(false, false)).include_audio);
     let dir = tempfile::tempdir().unwrap();
     let store = PreferenceStore::new(dir.path().join("prefs.json"));
-    let preferences = vibecut::catalog::Preferences {
+    let preferences = vibecut::preferences::Preferences {
         export: options,
         export_directory: Some(dir.path().join("exports")),
         ..Default::default()

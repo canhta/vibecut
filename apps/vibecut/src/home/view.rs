@@ -10,11 +10,9 @@ mod dialogs;
 mod projects;
 mod widgets;
 
+use super::ProjectsPreferences;
 use super::state::State;
-use crate::{
-    catalog::{Preferences, Text},
-    egui,
-};
+use crate::{appearance::Look, egui, i18n::Text};
 
 /// Rail width; the page starts here.
 pub(super) const RAIL: f32 = 240.0;
@@ -44,10 +42,11 @@ const ROW_GAP: f32 = 24.0;
 pub(super) fn show(
     state: &mut State,
     ui: &mut egui::Ui,
-    preferences: &mut Preferences,
+    look: Look,
+    projects: &mut ProjectsPreferences,
     status: Option<Text>,
 ) {
-    let locale = preferences.locale;
+    let locale = look.locale;
     let full = ui.max_rect();
     let rail = egui::Rect::from_min_size(full.min, egui::vec2(RAIL, full.height()));
     let page = egui::Rect::from_min_max(egui::pos2(full.min.x + RAIL, full.min.y), full.max);
@@ -71,7 +70,7 @@ pub(super) fn show(
             ui.add_space(BLOCK_GAP);
             create::shorts_card(ui, state, locale);
             ui.add_space(SECTION_GAP);
-            projects::section(ui, state, preferences);
+            projects::section(ui, state, look, projects);
         });
-    dialogs::show(state, ui.ctx(), preferences);
+    dialogs::show(state, ui.ctx(), look);
 }

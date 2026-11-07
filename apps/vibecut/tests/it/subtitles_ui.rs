@@ -17,10 +17,10 @@ use std::{
 };
 use time::{TICKS_PER_SECOND, Tick};
 use vibecut::{
-    Editor,
-    catalog::{Locale, PreferenceStore},
-    egui,
+    Editor, egui,
+    i18n::Locale,
     panels::AssetsTab,
+    preferences::PreferenceStore,
     subtitles::{LocalWorkflow, Options, Subtitles, TaskEvents, Work, Workflow},
 };
 #[path = "support/subtitles.rs"]
@@ -835,7 +835,7 @@ fn generate_explicit_choices_insert_once_and_missing_models_offer_setup_without_
     wait(&mut h, |e| !panel(e).busy);
     assert_eq!(
         panel(h.state()).problem,
-        Some(vibecut::catalog::Text::ShortsModelMissing)
+        Some(vibecut::i18n::Text::ShortsModelMissing)
     );
     assert!(h.state().models().is_none());
     assert!(
@@ -870,7 +870,7 @@ fn concurrent_caption_edits_retain_the_draft_until_explicit_reload() {
     h.run_steps(3);
     assert_eq!(
         panel(h.state()).problem,
-        Some(vibecut::catalog::Text::SubDraftConflict)
+        Some(vibecut::i18n::Text::SubDraftConflict)
     );
     assert!(
         h.get(By::new().predicate(|n| n.author_id() == Some(field)))

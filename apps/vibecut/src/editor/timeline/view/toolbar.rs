@@ -4,11 +4,11 @@
 //! 12 px between buttons, 1×16 dividers with 8 px either side (221643 y 574-606).
 
 use crate::editor::timeline::{
-    Action, Context, Icon, Rect, State, Text, TimelineLayout, Vec2, catalog, egui, slider_to_zoom,
-    theme,
+    Action, Context, Icon, Rect, State, Text, TimelineLayout, Vec2, egui, slider_to_zoom, theme,
     view::{Ink, tr},
     zoom_to_slider,
 };
+use crate::i18n;
 
 const EDGE: f32 = 4.0;
 const CELL: f32 = theme::size::CONTROL;
@@ -208,7 +208,7 @@ impl State {
         let tooltip = cx.shortcut(id).map_or_else(
             || label.to_owned(),
             |key| {
-                catalog::format(
+                i18n::format(
                     cx.locale,
                     Text::ActionShortcut,
                     &[("action", label), ("shortcut", &key)],

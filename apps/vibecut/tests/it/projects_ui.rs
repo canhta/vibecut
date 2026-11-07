@@ -11,8 +11,9 @@ use std::{
 };
 use time::{SourceRange, TICKS_PER_SECOND, Tick};
 use vibecut::{
-    catalog::{Preferences, ProjectsSortKey, ProjectsView},
     egui,
+    home::{ProjectsSortKey, ProjectsView},
+    preferences::Preferences,
     workspace::Workspace,
 };
 
@@ -144,7 +145,7 @@ fn search_sort_and_view_persist_through_the_preference_store() {
     let ids = harness
         .state()
         .projects
-        .displayed_ids(&harness.state().preferences);
+        .displayed_ids(harness.state().preferences.projects);
     assert_eq!(
         ids,
         vec![ProjectId(3), ProjectId(2), ProjectId(1)],
@@ -159,7 +160,7 @@ fn search_sort_and_view_persist_through_the_preference_store() {
         harness
             .state()
             .projects
-            .displayed_ids(&harness.state().preferences),
+            .displayed_ids(harness.state().preferences.projects),
         vec![ProjectId(2)]
     );
     assert!(
@@ -184,7 +185,7 @@ fn search_sort_and_view_persist_through_the_preference_store() {
         harness
             .state()
             .projects
-            .displayed_ids(&harness.state().preferences)
+            .displayed_ids(harness.state().preferences.projects)
             .len(),
         3
     );
@@ -195,7 +196,7 @@ fn search_sort_and_view_persist_through_the_preference_store() {
         harness
             .state()
             .projects
-            .displayed_ids(&harness.state().preferences)
+            .displayed_ids(harness.state().preferences.projects)
             .is_empty()
     );
     assert!(harness.query_by_label("No matches").is_some());
@@ -209,7 +210,7 @@ fn search_sort_and_view_persist_through_the_preference_store() {
         harness
             .state()
             .projects
-            .displayed_ids(&harness.state().preferences)
+            .displayed_ids(harness.state().preferences.projects)
             .len(),
         3,
         "blank search is treated as no filter"
@@ -235,7 +236,7 @@ fn search_sort_and_view_persist_through_the_preference_store() {
         harness
             .state()
             .projects
-            .displayed_ids(&harness.state().preferences),
+            .displayed_ids(harness.state().preferences.projects),
         vec![ProjectId(1), ProjectId(2), ProjectId(3)]
     );
     harness.get(by("projects.sort")).click();
@@ -246,7 +247,7 @@ fn search_sort_and_view_persist_through_the_preference_store() {
         harness
             .state()
             .projects
-            .displayed_ids(&harness.state().preferences),
+            .displayed_ids(harness.state().preferences.projects),
         vec![ProjectId(3), ProjectId(2), ProjectId(1)]
     );
 
@@ -257,7 +258,7 @@ fn search_sort_and_view_persist_through_the_preference_store() {
         ProjectsView::List
     );
 
-    let store = vibecut::catalog::PreferenceStore::new(fixture.projects.join("prefs.json"));
+    let store = vibecut::preferences::PreferenceStore::new(fixture.projects.join("prefs.json"));
     store.save(&harness.state().preferences).unwrap();
     let loaded = store.load().unwrap();
     assert_eq!(loaded.projects, harness.state().preferences.projects);
@@ -273,7 +274,7 @@ fn search_sort_and_view_persist_through_the_preference_store() {
             harness
                 .state()
                 .projects
-                .displayed_ids(&harness.state().preferences),
+                .displayed_ids(harness.state().preferences.projects),
             vec![ProjectId(1)],
             "canonically equivalent Vietnamese search must match the stored name"
         );

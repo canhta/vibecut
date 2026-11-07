@@ -11,11 +11,11 @@ use project::{
 use std::sync::Arc;
 use time::{SourceRange, TICKS_PER_SECOND, Tick};
 use vibecut::{
-    Editor,
-    catalog::{Locale, Preferences},
-    egui,
+    Editor, egui,
+    i18n::Locale,
     panels::AssetsTab,
     playback::{Files, Playback},
+    preferences::Preferences,
 };
 
 const SECOND: i64 = TICKS_PER_SECOND;

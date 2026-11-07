@@ -1,5 +1,6 @@
 //! Desktop session adapter. The engine remains the only autosave/session owner.
-use engine::{Session, recovery::Autosave};
+use crate::{Error, Result};
+use engine::{Command, Session, recovery::Autosave};
 use std::ops::{Deref, DerefMut};
 
 pub enum EditorSession {
@@ -39,4 +40,21 @@ pub enum EditorAction {
     ImportMedia,
     ExportSave,
     SnapshotSave,
+}
+
+pub(crate) fn fresh(name: &str) -> Result<Session> {
+    static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    let epoch = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_err(|_| Error::Invalid("system time"))?;
+    let id = u64::try_from(epoch.as_nanos())
+        .map_err(|_| Error::Invalid("project identity"))?
+        .wrapping_add(NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed));
+    Ok(Session::create(
+        Command::CreateProject {
+            id: project::ProjectId(id),
+            name: name.into(),
+        },
+        100,
+    )?)
 }

@@ -1,8 +1,9 @@
 //! Maintains editor shortcut bindings.
 
 use crate::editor::{
-    Editor, Error, Keymap, PREFERENCE_COMMAND, Result, ShortcutTab, Text, actions, catalog, egui,
+    Editor, Error, Keymap, PREFERENCE_COMMAND, Result, ShortcutTab, Text, actions, egui,
 };
+use crate::i18n;
 
 impl Editor {
     /// One binding change command for the shortcuts dialog; it uses the same
@@ -76,19 +77,20 @@ impl Editor {
             Error::Keybinding(actions::KeybindingError::Conflict {
                 chord, existing, ..
             }) => {
-                let action = actions::action(existing).map_or(existing.as_str(), |spec| spec.label);
+                let action = actions::action(existing)
+                    .map_or(existing.as_str(), |spec| spec.label.text(locale));
                 let chord = actions::Chord::parse(chord).map_or_else(
                     |_| chord.clone(),
                     |parsed| parsed.display(actions::Platform::current()),
                 );
-                catalog::format(
+                i18n::format(
                     locale,
                     Text::ShortcutsErrorConflict,
                     &[("chord", &chord), ("action", action)],
                 )
             }
             Error::Keybinding(actions::KeybindingError::InvalidChord { text, .. }) => {
-                catalog::format(locale, Text::ShortcutsErrorInvalid, &[("text", text)])
+                i18n::format(locale, Text::ShortcutsErrorInvalid, &[("text", text)])
             }
             other => other.to_string(),
         }

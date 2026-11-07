@@ -13,7 +13,7 @@ mod workflow;
 
 pub(super) use action::{Action, Gesture};
 pub(super) use state::{DropZone, State};
-pub(super) use view::{TOOLBAR_ACTIONS, add_track_params, show, show_scenes};
+pub(super) use view::{TOOLBAR_ACTIONS, add_track_command, show, show_scenes};
 
 use super::{
     Align2, AssetId, BTreeSet, BUTTON_ICON, BookmarkId, Color32, Command, Context, DEFAULT_ZOOM,
@@ -22,8 +22,8 @@ use super::{
     MAX_ZOOM, MIN_ZOOM_FLOOR, PADDING_MAX_RATIO, PADDING_MIN_AT_ZOOM_PERCENT, PADDING_MIN_RATIO,
     RULER_HEIGHT, RULER_LABEL_SPACING, RULER_TICK_SPACING, Rect, Result, Rounding, SCROLLBAR,
     SnapCandidate, SnapSource, SourceRange, TOOLBAR_HEIGHT, TRACK_GAP, Text, Tick, TrackId,
-    TrackKind, Vec2, ZOOM_ANCHOR_THRESHOLD, catalog, display_label, display_time, drop_frame, egui,
-    icons, snap_point, theme,
+    TrackKind, Vec2, ZOOM_ANCHOR_THRESHOLD, display_label, display_time, drop_frame, egui, icons,
+    snap_point, theme,
 };
 
 use layout::{BookmarkView, ItemView, TimelineLayout, TrackRow};

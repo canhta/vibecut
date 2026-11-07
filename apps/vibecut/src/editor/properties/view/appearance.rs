@@ -1,8 +1,9 @@
 //! Renders appearance controls.
 use super::Panel;
 use crate::editor::properties::{
-    Color32, ColorTarget, Id, ItemId, ItemParams, Rect, Text, Vec2, catalog, egui, read, theme,
+    Color32, ColorTarget, Id, ItemId, ItemParams, Rect, Text, Vec2, egui, read, theme,
 };
+use crate::i18n;
 
 use crate::kit;
 
@@ -50,7 +51,7 @@ impl Panel<'_, '_> {
         };
         let (row, mut value_ui) = self.row_value_ui(ui, theme::size::PROPERTY_ROW);
         self.row_label(ui, row, self.tr(Text::BlendMode));
-        let label = self.tr(catalog::blend_label(current));
+        let label = self.tr(i18n::blend_label(current));
         let response = value_ui
             .scope(|ui| {
                 ui.spacing_mut().interact_size.y = theme::size::FIELD;
@@ -61,7 +62,7 @@ impl Panel<'_, '_> {
                         for mode in project::BlendMode::ALL {
                             let response = ui.selectable_label(
                                 current == mode,
-                                self.tr(catalog::blend_label(mode)),
+                                self.tr(i18n::blend_label(mode)),
                             );
                             self.remember(format!("inspector.blendMode.{}", mode.id()), &response);
                             if response.clicked() {

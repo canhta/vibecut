@@ -24,7 +24,7 @@ struct Entry {
 }
 
 pub fn check(root: &Path) -> Result<(), String> {
-    let catalog_path = root.join("apps/vibecut/src/catalog.rs");
+    let catalog_path = root.join("apps/vibecut/src/i18n/text.rs");
     let catalog = fs::read_to_string(&catalog_path)
         .map_err(|e| format!("{}: {e}", catalog_path.display()))?;
     let entries = parse(&catalog)?;
@@ -60,7 +60,7 @@ pub fn check(root: &Path) -> Result<(), String> {
             .map_err(|error| format!("{}: invalid Rust: {error}", path.display()))?;
         let mut audit = Audit {
             path,
-            scan_macros: path.file_name().is_none_or(|name| name != "catalog.rs"),
+            scan_macros: path.as_path() != catalog_path.as_path(),
             used: BTreeSet::new(),
             errors: Vec::new(),
         };
@@ -430,7 +430,7 @@ fn is_cfg_test(attrs: &[Attribute]) -> bool {
 fn parse(source: &str) -> Result<Vec<Entry>, String> {
     let start = source
         .rfind("catalog!")
-        .ok_or("catalog.rs has no catalog! invocation")?;
+        .ok_or("i18n text table has no catalog! invocation")?;
     let source = source
         .get(start..)
         .ok_or_else(|| format!("catalog invocation is not UTF-8 near byte {start}"))?;
@@ -480,7 +480,7 @@ fn parse(source: &str) -> Result<Vec<Entry>, String> {
         search = after_vi;
     }
     if entries.is_empty() {
-        return Err("catalog.rs contains no catalog rows".into());
+        return Err("i18n text table contains no catalog rows".into());
     }
     Ok(entries)
 }
@@ -542,7 +542,7 @@ mod tests {
                 .unwrap()
                 .as_nanos()
         ));
-        fs::create_dir_all(path.join("apps/vibecut/src")).unwrap();
+        fs::create_dir_all(path.join("apps/vibecut/src/i18n")).unwrap();
         path
     }
 
@@ -607,7 +607,7 @@ mod tests {
             Empty { key: "empty", en: "", vi: "Trống" },
             Unused { key: "unused", en: "Unused", vi: "Không dùng" },
         }"#;
-        fs::write(root.join("apps/vibecut/src/catalog.rs"), catalog).unwrap();
+        fs::write(root.join("apps/vibecut/src/i18n/text.rs"), catalog).unwrap();
         fs::write(
             root.join("apps/vibecut/src/frontend.rs"),
             r##"

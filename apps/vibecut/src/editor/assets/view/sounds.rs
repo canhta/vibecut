@@ -1,9 +1,10 @@
 //! Renders the Sounds tab's provider results, saved library and states.
 use super::super::sounds::{SoundsMode, SoundsProblem, SoundsView};
 use super::{
-    Action, Align2, AssetsTab, Color32, FontId, Icon, Id, Rect, Text, Vec2, View, catalog, egui,
-    icons, theme,
+    Action, Align2, AssetsTab, Color32, FontId, Icon, Id, Rect, Text, Vec2, View, egui, icons,
+    theme,
 };
+use crate::i18n;
 
 impl View<'_> {
     pub(super) fn sounds_nav(&mut self, ui: &mut egui::Ui) {
@@ -130,12 +131,12 @@ impl View<'_> {
         }
         if let Some(cache) = view.cache {
             let percent = (cache.progress * 100.0).round().clamp(0.0, 100.0) as u32;
-            let text = catalog::format(
+            let text = i18n::format(
                 self.cx.preferences.locale,
                 Text::SoundsCaching,
                 &[(
                     "percent",
-                    &catalog::number(self.cx.preferences.locale, percent as u64),
+                    &i18n::number(self.cx.preferences.locale, percent as u64),
                 )],
             );
             ui.horizontal(|ui| {
@@ -170,12 +171,12 @@ impl View<'_> {
             return;
         }
         if !list.is_empty() {
-            let count = catalog::format(
+            let count = i18n::format(
                 self.cx.preferences.locale,
                 Text::SoundsResultCount,
                 &[(
                     "count",
-                    &catalog::number(self.cx.preferences.locale, list.len() as u64),
+                    &i18n::number(self.cx.preferences.locale, list.len() as u64),
                 )],
             );
             ui.label(
@@ -267,7 +268,7 @@ impl View<'_> {
             theme::label_font(),
             theme::text(dark),
         );
-        let meta = catalog::format(
+        let meta = i18n::format(
             self.cx.preferences.locale,
             Text::SoundsMeta,
             &[
@@ -445,9 +446,7 @@ impl View<'_> {
     }
 
     fn text_width(&self, text: Text) -> f32 {
-        let characters = catalog::text(self.cx.preferences.locale, text)
-            .chars()
-            .count() as f32;
+        let characters = i18n::text(self.cx.preferences.locale, text).chars().count() as f32;
         characters * 6.0 + 8.0
     }
 }
@@ -459,28 +458,26 @@ fn duration(milliseconds: u64) -> String {
     format!("{minutes}:{seconds:02}")
 }
 
-fn problem_text(locale: catalog::Locale, problem: SoundsProblem) -> String {
+fn problem_text(locale: i18n::Locale, problem: SoundsProblem) -> String {
     match problem {
-        SoundsProblem::Auth => catalog::text(locale, Text::SoundsAuth).to_owned(),
-        SoundsProblem::Quota => catalog::text(locale, Text::SoundsQuota).to_owned(),
-        SoundsProblem::RateLimit(Some(seconds)) => catalog::format(
+        SoundsProblem::Auth => i18n::text(locale, Text::SoundsAuth).to_owned(),
+        SoundsProblem::Quota => i18n::text(locale, Text::SoundsQuota).to_owned(),
+        SoundsProblem::RateLimit(Some(seconds)) => i18n::format(
             locale,
             Text::SoundsRateLimit,
-            &[("seconds", &catalog::number(locale, u64::from(seconds)))],
+            &[("seconds", &i18n::number(locale, u64::from(seconds)))],
         ),
-        SoundsProblem::RateLimit(None) => {
-            catalog::text(locale, Text::SoundsRateLimitSoon).to_owned()
-        }
-        SoundsProblem::Network => catalog::text(locale, Text::SoundsNetwork).to_owned(),
-        SoundsProblem::Server => catalog::text(locale, Text::SoundsServer).to_owned(),
-        SoundsProblem::Invalid => catalog::text(locale, Text::SoundsInvalid).to_owned(),
-        SoundsProblem::Limit => catalog::text(locale, Text::SoundsLimit).to_owned(),
-        SoundsProblem::NoAudioDevice => catalog::text(locale, Text::SoundsNoDevice).to_owned(),
+        SoundsProblem::RateLimit(None) => i18n::text(locale, Text::SoundsRateLimitSoon).to_owned(),
+        SoundsProblem::Network => i18n::text(locale, Text::SoundsNetwork).to_owned(),
+        SoundsProblem::Server => i18n::text(locale, Text::SoundsServer).to_owned(),
+        SoundsProblem::Invalid => i18n::text(locale, Text::SoundsInvalid).to_owned(),
+        SoundsProblem::Limit => i18n::text(locale, Text::SoundsLimit).to_owned(),
+        SoundsProblem::NoAudioDevice => i18n::text(locale, Text::SoundsNoDevice).to_owned(),
         SoundsProblem::NotCached
         | SoundsProblem::Library
         | SoundsProblem::CacheBusy
         | SoundsProblem::CacheFailed
-        | SoundsProblem::Publication => catalog::text(locale, Text::SoundsSaveFailed).to_owned(),
-        SoundsProblem::Cancelled => catalog::text(locale, Text::SoundsCacheFailed).to_owned(),
+        | SoundsProblem::Publication => i18n::text(locale, Text::SoundsSaveFailed).to_owned(),
+        SoundsProblem::Cancelled => i18n::text(locale, Text::SoundsCacheFailed).to_owned(),
     }
 }

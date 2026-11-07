@@ -7,10 +7,9 @@ use engine::{ByteBudget, CreatedId, Session};
 use project::{Project, ProjectId, SceneId};
 use std::sync::Arc;
 use vibecut::{
-    Editor,
-    catalog::Preferences,
-    egui,
+    Editor, egui,
     playback::{Files, Playback},
+    preferences::Preferences,
 };
 #[test]
 fn scene_sheet_switches_and_multideletes_with_main_protected() {

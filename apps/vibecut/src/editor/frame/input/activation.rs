@@ -375,6 +375,13 @@ impl Editor {
                         .ok_or(Error::Invalid("preview zoom"))?;
                     self.set_preview_zoom(zoom, viewport, canvas)?;
                 }
+                UiAction::Seek
+                | UiAction::SetPreviewZoom
+                | UiAction::SetPreference
+                | UiAction::SetKeybinding
+                | UiAction::ResetKeybindings => {
+                    return Err(Error::Unsupported("action requires parameters"));
+                }
                 UiAction::SelectItem => {
                     let item = ItemId(argument.ok_or(Error::Unsupported("item identity"))?);
                     if !self

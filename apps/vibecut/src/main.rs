@@ -9,9 +9,10 @@ use std::{
 use vibecut::{
     Error, Result,
     capture::Capture,
-    catalog::{Locale, PreferenceStore, Preferences, Text},
     egui,
+    i18n::{Locale, Text},
     playback::AudioPort,
+    preferences::{PreferenceStore, Preferences},
     workspace::Workspace,
 };
 
@@ -414,7 +415,7 @@ fn run() -> Result<()> {
             .windows
             .get("home")
             .cloned()
-            .unwrap_or(vibecut::catalog::WindowGeometry {
+            .unwrap_or(vibecut::preferences::WindowGeometry {
                 size: vibecut::home::WINDOW,
                 ..Default::default()
             })
@@ -428,7 +429,7 @@ fn run() -> Result<()> {
         ..Default::default()
     };
     eframe::run_native(
-        vibecut::catalog::text(Locale::En, Text::AppName),
+        vibecut::i18n::text(Locale::En, Text::AppName),
         options,
         Box::new(move |cc| {
             let effects = cc.wgpu_render_state.as_ref().and_then(|state| {

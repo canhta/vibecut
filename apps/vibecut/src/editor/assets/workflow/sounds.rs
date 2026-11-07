@@ -149,8 +149,7 @@ impl Editor {
         }
         self.sync_preview();
         let added =
-            crate::catalog::text(self.preferences.locale, crate::catalog::Text::SoundsAdded)
-                .to_owned();
+            crate::i18n::text(self.preferences.locale, crate::i18n::Text::SoundsAdded).to_owned();
         self.set_toast(&added, None);
         Ok(())
     }

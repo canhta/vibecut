@@ -4,8 +4,8 @@ use super::{
     widgets::{self, Look, bold, corner},
 };
 use crate::{
-    catalog::Text,
     egui::{self, Align2, Pos2, Rect, Stroke, Vec2, pos2, vec2},
+    i18n::Text,
     kit::{self, Icon},
 };
 

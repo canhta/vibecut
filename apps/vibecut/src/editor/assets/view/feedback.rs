@@ -1,6 +1,7 @@
 //! Renders asset feedback.
 
-use crate::editor::assets::{Editor, Icon, Id, Rect, Text, Vec2, catalog, egui, theme};
+use crate::editor::assets::{Editor, Icon, Id, Rect, Text, Vec2, egui, theme};
+use crate::i18n;
 
 impl Editor {
     /// Non-modal import overlay over the media panel. Import controls are
@@ -34,11 +35,11 @@ impl Editor {
                     .show(ui, |ui| {
                         ui.set_width((width - 24.0).max(24.0));
                         ui.horizontal(|ui| {
-                            let value = catalog::number(self.preferences.locale, percent as u64);
+                            let value = i18n::number(self.preferences.locale, percent as u64);
                             let status = if width < 240.0 {
                                 format!("{value}%")
                             } else {
-                                catalog::format(
+                                i18n::format(
                                     self.preferences.locale,
                                     Text::ProcessingPercent,
                                     &[("status", self.tr(Text::Processing)), ("percent", &value)],
@@ -71,20 +72,20 @@ impl Editor {
                             self.accent(),
                         );
                         ui.label(
-                            egui::RichText::new(catalog::format(
+                            egui::RichText::new(i18n::format(
                                 self.preferences.locale,
                                 Text::ImportProgress,
                                 &[
                                     (
                                         "done",
-                                        &catalog::number(
+                                        &i18n::number(
                                             self.preferences.locale,
                                             self.import_completed as u64,
                                         ),
                                     ),
                                     (
                                         "total",
-                                        &catalog::number(
+                                        &i18n::number(
                                             self.preferences.locale,
                                             self.import_total as u64,
                                         ),

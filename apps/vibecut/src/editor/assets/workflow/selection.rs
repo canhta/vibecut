@@ -2,9 +2,9 @@
 
 use crate::editor::assets::{
     Arc, AssetId, AssetState, AssetsTab, BTreeMap, BTreeSet, Editor, Error, MEDIA_REVEAL,
-    MediaReveal, Result, SourceAsset, Text, UnsupportedReason, catalog, egui, error_detail,
-    media_panel,
+    MediaReveal, Result, SourceAsset, Text, UnsupportedReason, egui, error_detail, media_panel,
 };
+use crate::i18n;
 
 impl Editor {
     pub(in crate::editor) fn prune_media_selection(&mut self) {
@@ -184,7 +184,7 @@ impl Editor {
                 if !Arc::ptr_eq(&before, self.session.project()) {
                     self.sync_preview();
                 }
-                let text = catalog::format_count(
+                let text = i18n::format_count(
                     self.preferences.locale,
                     count,
                     Text::MediaDeletedOne,

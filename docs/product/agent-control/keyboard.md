@@ -8,46 +8,39 @@ both in sync.
 <!-- BEGIN GENERATED KEYMAP -->
 | Action | Category | Default keys | Engine command | UI owner |
 |---|---|---|---|---|
-| `media.view` — Toggle media view | View | — | — | media library preferences |
-| `media.sort` — Toggle media sort order | View | — | — | media library preferences |
-| `media.sort.name` — Sort media by name | View | — | — | media library preferences |
-| `media.sort.type` — Sort media by type | View | — | — | media library preferences |
-| `media.sort.duration` — Sort media by duration | View | — | — | media library preferences |
-| `media.sort.size` — Sort media by size | View | — | — | media library preferences |
-| `media.delete` — Request media deletion | Edit | — | — | media removal confirmation |
-| `media.cancel_delete` — Cancel media deletion | Edit | — | — | media removal confirmation |
-| `media.confirm_delete` — Confirm media deletion | Edit | — | — | media removal confirmation workflow |
-| `media.reveal` — Reveal media | File | — | — | media library reveal |
-| `text.insert` — Insert text | Edit | — | — | text insertion workflow |
-| `subtitles.cue` — Select subtitle cue | Edit | — | — | subtitle cue selection |
-| `subtitles.cancel` — Cancel subtitle operation | Edit | — | — | subtitle editor workflow |
-| `subtitles.consent.approve` — Approve subtitle upload | Edit | — | — | subtitle editor workflow |
-| `subtitles.consent.deny` — Deny subtitle upload | Edit | — | — | subtitle editor workflow |
-| `subtitles.generate` — Generate subtitles | Edit | — | — | subtitle editor workflow |
-| `subtitles.translate` — Translate subtitles | Edit | — | — | subtitle editor workflow |
-| `subtitles.split` — Split subtitle cue | Edit | — | — | subtitle editor workflow |
-| `subtitles.merge` — Merge subtitle cues | Edit | — | — | subtitle editor workflow |
-| `subtitles.earlier` — Nudge subtitle earlier | Edit | — | — | subtitle editor workflow |
-| `subtitles.later` — Nudge subtitle later | Edit | — | — | subtitle editor workflow |
-| `subtitles.select_all` — Select all subtitle cues | Edit | — | — | subtitle editor workflow |
-| `subtitles.models` — Manage subtitle model | Edit | — | — | subtitle editor workflow |
-| `subtitles.bilingual` — Toggle bilingual subtitles | Edit | — | — | subtitle editor workflow |
-| `subtitles.force` — Toggle subtitle generation override | Edit | — | — | subtitle editor workflow |
-| `subtitles.dismiss` — Dismiss subtitle notice | Edit | — | — | subtitle editor workflow |
-| `file.import` — Import media | File | — | — | workspace import picker |
-| `file.export` — Export | File | — | — | export dialog |
-| `project.save` — Save | File | — | — | workspace lifecycle |
-| `project.save_as` — Save as | File | — | — | workspace lifecycle |
-| `window.home` — Focus Home | File | — | — | workspace lifecycle |
-| `project.rename` — Rename project | File | — | — | project rename input |
+| `media.view` — Switch media view | View | — | — | media library preferences |
+| `media.sort` — Change media sort order | View | — | — | media library preferences |
+| `media.sort.name` — Sort by name | View | — | — | media library preferences |
+| `media.sort.type` — Sort by type | View | — | — | media library preferences |
+| `media.sort.duration` — Sort by duration | View | — | — | media library preferences |
+| `media.sort.size` — Sort by size | View | — | — | media library preferences |
+| `media.delete` — Delete media | Edit | — | — | media removal confirmation |
+| `media.cancel_delete` — Keep media | Edit | — | — | media removal confirmation |
+| `media.confirm_delete` — Delete media | Edit | — | — | media removal confirmation workflow |
+| `media.reveal` — Show in folder | File | — | — | media library reveal |
+| `text.insert` — Add text | Edit | — | — | text insertion workflow |
+| `subtitles.cue` — Choose a caption | Edit | — | — | subtitle cue selection |
+| `subtitles.cancel` — Cancel caption job | Edit | — | — | subtitle editor workflow |
+| `subtitles.consent.approve` — Allow caption upload | Edit | — | — | subtitle editor workflow |
+| `subtitles.consent.deny` — Keep captions on this computer | Edit | — | — | subtitle editor workflow |
+| `subtitles.generate` — Create captions | Edit | — | — | subtitle editor workflow |
+| `subtitles.translate` — Translate captions | Edit | — | — | subtitle editor workflow |
+| `subtitles.split` — Split caption | Edit | — | — | subtitle editor workflow |
+| `subtitles.merge` — Merge captions | Edit | — | — | subtitle editor workflow |
+| `subtitles.earlier` — Move caption earlier | Edit | — | — | subtitle editor workflow |
+| `subtitles.later` — Move caption later | Edit | — | — | subtitle editor workflow |
+| `subtitles.select_all` — Select all captions | Edit | — | — | subtitle editor workflow |
+| `subtitles.models` — Manage caption data | Edit | — | — | subtitle editor workflow |
+| `subtitles.bilingual` — Toggle bilingual captions | Edit | — | — | subtitle editor workflow |
+| `subtitles.force` — Regenerate captions | Edit | — | — | subtitle editor workflow |
+| `subtitles.dismiss` — Dismiss caption notice | Edit | — | — | subtitle editor workflow |
 | `media.insert` — Add to timeline | File | — | `timeline.insert` | — |
-| `import.cancel` — Cancel import | File | — | — | workspace import queue |
 | `edit.copy` — Copy | Edit | Ctrl+C | — | clipboard (unavailable; `p1-parity/20`) |
 | `edit.paste` — Paste | Edit | Ctrl+V | — | clipboard (unavailable; `p1-parity/20`) |
-| `timeline.split` — Split at playhead | Edit | S, Ctrl+B | `split_at` | — |
+| `timeline.split` — Split | Edit | S, Ctrl+B | `split_at` | — |
 | `timeline.split_left` — Split and remove left | Edit | Q | — | timeline commands (unavailable; `p1-parity/16`) |
 | `timeline.split_right` — Split and remove right | Edit | W | — | timeline commands (unavailable; `p1-parity/16`) |
-| `timeline.delete` — Delete selection | Edit | Backspace, Delete | `delete` / `ripple_delete` (ripple enabled) | — |
+| `timeline.delete` — Delete | Edit | Backspace, Delete | `delete` / `ripple_delete` (ripple enabled) | — |
 | `timeline.ripple_delete` — Ripple delete | Edit | Shift+Backspace, Shift+Delete | `ripple_delete` | — |
 | `transport.play` — Play/Pause | Playback | Space | — | playback transport |
 | `transport.pause` — Pause | Playback | K | — | playback transport |
@@ -62,7 +55,7 @@ both in sync.
 | `timeline.select_all` — Select all | Selection | Ctrl+A | — | timeline selection |
 | `timeline.deselect_all` — Deselect all | Selection | — | — | timeline selection |
 | `timeline.duplicate` — Duplicate | Selection | Ctrl+D | — | timeline commands (unavailable; `p1-parity/16`) |
-| `selection.escape` — Cancel interaction or deselect | Selection | Escape | — | timeline selection |
+| `selection.escape` — Cancel or deselect | Selection | Escape | — | timeline selection |
 | `edit.undo` — Undo | History | Ctrl+Z | — | app and engine history |
 | `edit.redo` — Redo | History | Ctrl+Shift+Z, Ctrl+Y | — | app and engine history |
 | `timeline.snap` — Toggle snapping | Timeline | N | — | timeline view |
@@ -77,14 +70,11 @@ both in sync.
 | `scene.delete` — Delete scenes | Timeline | — | — | scene delete confirmation |
 | `scene.cancel_delete` — Cancel scene delete | Timeline | — | — | scene switcher |
 | `scene.confirm_delete` — Confirm scene delete | Timeline | — | `scene.delete` | — |
-| `appearance.theme` — Toggle theme | View | — | — | preference store |
-| `appearance.locale` — Toggle language | View | — | — | preference store |
-| `layout.reset` — Reset layout | View | — | — | preference store |
 | `inspector.project` — Project properties | View | — | — | selection inspector |
 | `inspector.details` — Element details | View | — | — | selection inspector |
 | `preview.retry` — Retry preview | View | — | — | playback transport |
-| `models.open` — Manage models | View | — | — | model manager |
-| `export.run` — Run export | View | — | — | export dialog |
+| `models.open` — Manage downloads | View | — | — | model manager |
+| `export.run` — Export | View | — | — | export dialog |
 | `export.retry` — Retry export | View | — | — | export dialog |
 | `export.mark_in` — Set in point | View | I | — | export range |
 | `export.mark_out` — Set out point | View | O | — | export range |
@@ -92,13 +82,28 @@ both in sync.
 | `scene.rename` — Rename scene | View | — | — | scene rename input |
 | `scene.row` — Choose scene | View | — | — | scene switcher |
 | `timeline.item` — Select item | View | — | — | timeline selection |
-| `preview.snapshot` — Open snapshot dialog | View | — | — | preview snapshot dialog |
+| `preview.snapshot` — Save a frame | View | — | — | preview snapshot dialog |
 | `preview.fullscreen` — Toggle preview fullscreen | View | — | — | preview viewport |
 | `preview.zoom.fit` — Fit preview | View | — | — | preview view |
 | `preview.zoom.in` — Zoom preview in | View | — | — | preview view |
 | `preview.zoom.out` — Zoom preview out | View | — | — | preview view |
-| `preview.zoom` — Set preview zoom percentage | View | — | — | preview view |
+| `preview.zoom` — Set preview zoom | View | — | — | preview view |
+| `file.import` — Import | File | — | — | workspace import picker |
+| `file.export` — Export | File | — | — | export dialog |
+| `project.save` — Save | File | — | — | workspace lifecycle |
+| `project.save_as` — Save as | File | — | — | workspace lifecycle |
+| `window.home` — Go to Home | File | — | — | workspace lifecycle |
+| `project.rename` — Rename project | File | — | — | project rename input |
+| `import.cancel` — Cancel import | File | — | — | workspace import queue |
+| `appearance.theme` — Toggle theme | View | — | — | preference store |
+| `appearance.locale` — Toggle language | View | — | — | preference store |
+| `layout.reset` — Reset layout | View | — | — | preference store |
 | `shortcuts.open` — Keyboard shortcuts | View | — | — | shortcuts dialog |
+| `playback.seek` — Seek to time | Playback | — | — | playback transport |
+| `preview.set_zoom` — Set preview zoom | View | — | — | preview view |
+| `ui.prefs.set` — Change a setting | View | — | — | preference store |
+| `ui.keybindings.set` — Change a shortcut | View | — | — | shortcut dialog |
+| `ui.keybindings.reset` — Restore shortcuts | View | — | — | shortcut dialog |
 <!-- END GENERATED KEYMAP -->
 
 Every project mutation uses its engine command id (`vibecut-cli commands

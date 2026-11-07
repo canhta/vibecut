@@ -2,10 +2,11 @@
 //!
 //! Transfers, checkpoints, cache accounting and integrity stay with engine/ai;
 //! this module only presents them and requires a click before granting consent.
+use crate::i18n;
 use crate::{
-    Error, Result,
-    catalog::{self, Locale, Text},
-    egui, kit as theme,
+    Error, Result, egui,
+    i18n::{Locale, Text},
+    kit as theme,
 };
 use ai::models::{DownloadConsent, Model};
 use engine::{
@@ -475,7 +476,7 @@ impl ModelManager {
         if !self.open {
             return output;
         }
-        let tr = |key| catalog::text(locale, key);
+        let tr = |key| i18n::text(locale, key);
         let modal = egui::Modal::new(egui::Id::unique("models.dialog"))
             .frame(
                 egui::Frame::window(&ctx.global_style())
@@ -551,7 +552,7 @@ impl ModelManager {
         dark: bool,
         widgets: &mut Vec<(String, egui::Response)>,
     ) {
-        let tr = |key| catalog::text(locale, key);
+        let tr = |key| i18n::text(locale, key);
         let Some(id) = self.selected.clone() else {
             ui.weak(tr(Text::ModelChoose));
             return;
@@ -591,12 +592,12 @@ impl ModelManager {
             .unwrap_or(u64::MAX);
         ui.horizontal_wrapped(|ui| {
             ui.label(egui::RichText::new(tr(Text::ModelSize)).strong());
-            ui.label(catalog::format(
+            ui.label(i18n::format(
                 locale,
                 Text::ModelSizeValue,
                 &[
                     ("size", &human_size(locale, total)),
-                    ("bytes", &catalog::number(locale, total)),
+                    ("bytes", &i18n::number(locale, total)),
                 ],
             ));
         });
@@ -628,7 +629,7 @@ impl ModelManager {
         ui.add_space(10.0);
         ui.label(egui::RichText::new(tr(Text::ModelFiles)).strong());
         for file in &model.files {
-            ui.label(catalog::format(
+            ui.label(i18n::format(
                 locale,
                 Text::ModelFileLine,
                 &[
@@ -660,7 +661,7 @@ impl ModelManager {
         dark: bool,
         widgets: &mut Vec<(String, egui::Response)>,
     ) {
-        let tr = |key| catalog::text(locale, key);
+        let tr = |key| i18n::text(locale, key);
         if self.checking {
             ui.horizontal(|ui| {
                 ui.spinner();
@@ -687,7 +688,7 @@ impl ModelManager {
                 JobStage::Backoff => Text::ModelQueued,
                 _ => Text::ModelDownloading,
             };
-            ui.label(catalog::format(
+            ui.label(i18n::format(
                 locale,
                 Text::ModelProgress,
                 &[("model", &job.model), ("stage", tr(stage))],
@@ -822,5 +823,5 @@ fn human_size(locale: Locale, bytes: u64) -> String {
         return format!("{bytes} B");
     }
     let unit = UNITS.get(unit).copied().unwrap_or("B");
-    format!("{} {unit}", catalog::decimal(locale, value, 2))
+    format!("{} {unit}", i18n::decimal(locale, value, 2))
 }

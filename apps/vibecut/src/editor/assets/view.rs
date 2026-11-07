@@ -1,4 +1,5 @@
 //! Renders the assets surface from a read-only projection.
+use crate::i18n;
 mod browser;
 mod deletion;
 mod effects;
@@ -9,7 +10,7 @@ mod transition;
 use super::{
     Action, Align2, AssetRow, AssetState, AssetsTab, Color32, EffectRow, FontId, Icon, Id,
     MediaKind, MediaSortKey, MediaSortOrder, MediaView, Model, Recorded, Rect, Row, State, Text,
-    Vec2, asset_state_color, catalog, display_short_time, egui, icons, state, theme,
+    Vec2, asset_state_color, display_short_time, egui, icons, state, theme,
 };
 use state::Filter;
 
@@ -67,7 +68,7 @@ pub(super) fn show(state: &mut State, cx: &Model, ui: &mut egui::Ui) -> Vec<Acti
                                 tab.icon(),
                                 label,
                                 tab == cx.preferences.assets_tab,
-                                if cx.preferences.locale == catalog::Locale::En {
+                                if cx.preferences.locale == i18n::Locale::En {
                                     Some(if tab == AssetsTab::Media {
                                         theme::size::TAB_MIN
                                     } else if tab == AssetsTab::Transitions {
@@ -270,7 +271,7 @@ impl View<'_> {
         }
     }
     fn tr(&self, text: Text) -> &'static str {
-        catalog::text(self.cx.preferences.locale, text)
+        i18n::text(self.cx.preferences.locale, text)
     }
     fn remember(&mut self, id: impl Into<String>, response: &egui::Response, glyph: Option<Icon>) {
         let id = id.into();

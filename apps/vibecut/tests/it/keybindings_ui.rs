@@ -7,7 +7,11 @@
 use super::timeline_ui::{fixture, harness, widget};
 use egui_kittest::kittest::{By, Queryable};
 use time::{TICKS_PER_SECOND, Tick};
-use vibecut::{Editor, PREFERENCE_COMMAND, ShortcutTab, actions, catalog::PreferenceStore, egui};
+use vibecut::{
+    Editor, PREFERENCE_COMMAND, ShortcutTab, actions, egui,
+    i18n::{self, Locale},
+    preferences::PreferenceStore,
+};
 
 const SECOND: i64 = TICKS_PER_SECOND;
 
@@ -390,6 +394,57 @@ fn open_shortcuts(harness: &mut egui_kittest::Harness<'_, Editor>) {
 }
 
 #[test]
+fn shortcut_rows_and_conflict_messages_use_the_vietnamese_catalog() {
+    let mut fixture = fixture();
+    fixture.editor.preferences.locale = Locale::Vi;
+    let mut harness = harness(fixture.editor);
+    harness.run_steps(3);
+    open_shortcuts(&mut harness);
+    let rows = harness.state().inspect().unwrap().shortcuts.unwrap().rows;
+    let split = rows
+        .iter()
+        .find(|row| row.action == "timeline.split")
+        .expect("split row");
+    assert_eq!(
+        split.label,
+        i18n::text(Locale::Vi, actions::action("timeline.split").unwrap().label),
+        "the shortcut list must show the Vietnamese action label"
+    );
+    assert!(
+        !split.label.is_ascii(),
+        "the Vietnamese label must not fall back to English"
+    );
+
+    // Every registered action carries its own catalog key with both rows.
+    let mut keys = std::collections::BTreeSet::new();
+    for spec in actions::actions() {
+        assert!(
+            keys.insert(spec.label.key()),
+            "{} reuses catalog key {}",
+            spec.id,
+            spec.label.key()
+        );
+        assert!(!spec.label.text(Locale::En).is_empty(), "{} en", spec.id);
+        assert!(!spec.label.text(Locale::Vi).is_empty(), "{} vi", spec.id);
+    }
+
+    // A conflict names the other action in Vietnamese too.
+    harness
+        .state_mut()
+        .record_shortcut("timeline.split", "N")
+        .expect_err("N is bound to snapping");
+    let shortcuts = harness.state().inspect().unwrap().shortcuts.unwrap();
+    let error = shortcuts.error.expect("conflict message");
+    assert!(
+        error.contains(i18n::text(
+            Locale::Vi,
+            actions::action("timeline.snap").unwrap().label
+        )),
+        "conflict must name the localized action: {error}"
+    );
+}
+
+#[test]
 fn shortcuts_dialog_records_binds_unbound_actions_and_survives_undo_redo() {
     let fixture = fixture();
     let mut harness = harness(fixture.editor);
@@ -506,7 +561,12 @@ fn shortcuts_dialog_refuses_conflicts_and_invalid_chords_without_rebinding() {
     let shortcuts = inspection.shortcuts.unwrap();
     let error = shortcuts.error.as_deref().unwrap();
     assert!(
-        error.contains(actions::action("timeline.split").unwrap().label),
+        error.contains(
+            actions::action("timeline.split")
+                .unwrap()
+                .label
+                .text(vibecut::i18n::Locale::En)
+        ),
         "{error}"
     );
     assert_eq!(shortcuts.recording.as_deref(), Some("timeline.snap"));

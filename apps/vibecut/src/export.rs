@@ -1,8 +1,9 @@
 //! Export presentation and saved choices over the engine's existing export job.
+use crate::i18n;
 use crate::{
-    Error, Result,
-    catalog::{self, Locale, Text},
-    egui, kit as theme,
+    Error, Result, egui,
+    i18n::{Locale, Text},
+    kit as theme,
 };
 use engine::{
     ByteBudget,
@@ -585,7 +586,7 @@ impl ExportDialog {
         if !self.open {
             return result;
         }
-        let tr = |k| catalog::text(locale, k);
+        let tr = |k| i18n::text(locale, k);
         let active = self.active();
         let frame = egui::Frame::window(&ctx.global_style())
             .corner_radius(12)
@@ -748,9 +749,9 @@ impl ExportDialog {
                         };
                     ui.label(format!(
                         "{} | {} {} MB",
-                        catalog::export_duration(locale, duration),
+                        i18n::export_duration(locale, duration),
                         tr(Text::ExportEstimatedSize),
-                        catalog::decimal(locale, duration * rate / 8_000_000.0, 1)
+                        i18n::decimal(locale, duration * rate / 8_000_000.0, 1)
                     ));
                     ui.with_layout(
                         egui::Layout::right_to_left(egui::Align::Center),
@@ -887,13 +888,13 @@ fn unavailable_details(
         };
         ui.label(format!(
             "{} {} · {} {} · {}",
-            catalog::text(locale, Text::SourceAsset),
+            i18n::text(locale, Text::SourceAsset),
             item.asset.0,
-            catalog::text(locale, Text::SourceItem),
+            i18n::text(locale, Text::SourceItem),
             item.item.0,
-            catalog::text(locale, reason)
+            i18n::text(locale, reason)
         ));
-        ui.label(catalog::export_range(
+        ui.label(i18n::export_range(
             locale,
             item.range.start().seconds(),
             item.range.end().seconds(),
@@ -929,7 +930,7 @@ pub(crate) fn job_progress(ui: &mut egui::Ui, snapshot: &JobSnapshot, locale: Lo
         JobStage::Publish => Text::ExportPublish,
         _ => Text::ExportProgress,
     };
-    ui.label(catalog::text(locale, stage));
+    ui.label(i18n::text(locale, stage));
     ui.add(egui::ProgressBar::new(snapshot.progress).show_percentage());
 }
 

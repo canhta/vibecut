@@ -2,17 +2,18 @@
 
 use super::widgets::{action_button, display_time, set_author_id};
 use crate::{
-    catalog::{self, Preferences, Text},
+    appearance::Look,
     egui,
     home::state::State,
+    i18n::{self, Text},
     kit::{self, Icon},
 };
 use project::ProjectId;
 
 /// Modal flows opened from a project card; Escape closes them while idle.
-pub(super) fn show(state: &mut State, ctx: &egui::Context, preferences: &Preferences) {
-    let locale = preferences.locale;
-    let dark = preferences.dark;
+pub(super) fn show(state: &mut State, ctx: &egui::Context, look: Look) {
+    let locale = look.locale;
+    let dark = look.dark;
     let busy = state.busy();
     let escape = ctx.input(|input| input.key_pressed(egui::Key::Escape));
     if escape && !busy {
@@ -25,7 +26,7 @@ pub(super) fn show(state: &mut State, ctx: &egui::Context, preferences: &Prefere
     if let Some(dialog) = &mut state.rename {
         let mut save = false;
         let mut cancel = false;
-        let title = catalog::text(locale, Text::ProjectsRenameTitle);
+        let title = i18n::text(locale, Text::ProjectsRenameTitle);
         let response =
             egui::Modal::new(egui::Id::unique("projects.rename.dialog")).show(ctx, |ui| {
                 ui.heading(title);
@@ -34,7 +35,7 @@ pub(super) fn show(state: &mut State, ctx: &egui::Context, preferences: &Prefere
                 set_author_id(&response, "projects.rename.input");
                 if let Some(error) = &dialog.error {
                     ui.label(
-                        egui::RichText::new(catalog::text(locale, Text::ProjectsRenameInvalid))
+                        egui::RichText::new(i18n::text(locale, Text::ProjectsRenameInvalid))
                             .color(kit::error_text(dark)),
                     );
                     if !error.is_empty() {
@@ -50,7 +51,7 @@ pub(super) fn show(state: &mut State, ctx: &egui::Context, preferences: &Prefere
                         ui,
                         "projects.rename.save",
                         Icon::FloppyDisk,
-                        catalog::text(locale, Text::ProjectsRenameSave),
+                        i18n::text(locale, Text::ProjectsRenameSave),
                         !busy,
                     ) {
                         save = true;
@@ -59,7 +60,7 @@ pub(super) fn show(state: &mut State, ctx: &egui::Context, preferences: &Prefere
                         ui,
                         "projects.rename.cancel",
                         Icon::X,
-                        catalog::text(locale, Text::Cancel),
+                        i18n::text(locale, Text::Cancel),
                         !busy,
                     ) {
                         cancel = true;
@@ -91,25 +92,25 @@ pub(super) fn show(state: &mut State, ctx: &egui::Context, preferences: &Prefere
         };
         let name = entry.name.as_str().to_owned();
         let duration = display_time(entry.duration);
-        let created = catalog::date(locale, entry.created_unix_ms);
-        let modified = catalog::date(locale, entry.modified_unix_ms);
-        let title = catalog::text(locale, Text::ProjectsInfoTitle);
+        let created = i18n::date(locale, entry.created_unix_ms);
+        let modified = i18n::date(locale, entry.modified_unix_ms);
+        let title = i18n::text(locale, Text::ProjectsInfoTitle);
         let mut close = false;
         let response = egui::Modal::new(egui::Id::unique("projects.info.dialog")).show(ctx, |ui| {
             ui.set_width(420.0);
             ui.heading(title);
             ui.label(egui::RichText::new(name).strong().size(16.0));
-            ui.label(catalog::format(
+            ui.label(i18n::format(
                 locale,
                 Text::ProjectsDuration,
                 &[("duration", &duration)],
             ));
-            ui.label(catalog::format(
+            ui.label(i18n::format(
                 locale,
                 Text::CreatedDate,
                 &[("date", &created)],
             ));
-            ui.label(catalog::format(
+            ui.label(i18n::format(
                 locale,
                 Text::ModifiedDate,
                 &[("date", &modified)],
@@ -118,7 +119,7 @@ pub(super) fn show(state: &mut State, ctx: &egui::Context, preferences: &Prefere
                 ui,
                 "projects.info.close",
                 Icon::X,
-                catalog::text(locale, Text::ProjectsInfoClose),
+                i18n::text(locale, Text::ProjectsInfoClose),
                 true,
             ) {
                 close = true;
@@ -144,12 +145,12 @@ pub(super) fn show(state: &mut State, ctx: &egui::Context, preferences: &Prefere
             .collect();
         let mut confirm = false;
         let mut cancel = false;
-        let title = catalog::text(locale, Text::ProjectsDeleteTitle);
+        let title = i18n::text(locale, Text::ProjectsDeleteTitle);
         let response =
             egui::Modal::new(egui::Id::unique("projects.delete.dialog")).show(ctx, |ui| {
                 ui.set_width(420.0);
                 ui.heading(title);
-                ui.label(catalog::text(locale, Text::ProjectsDeletePrompt));
+                ui.label(i18n::text(locale, Text::ProjectsDeletePrompt));
                 let names_label = names.join(", ");
                 let response =
                     ui.add(egui::Label::new(egui::RichText::new(names_label).strong()).wrap());
@@ -162,7 +163,7 @@ pub(super) fn show(state: &mut State, ctx: &egui::Context, preferences: &Prefere
                         ui,
                         "projects.delete.confirm",
                         Icon::Trash,
-                        catalog::text(locale, Text::ProjectsDeleteConfirm),
+                        i18n::text(locale, Text::ProjectsDeleteConfirm),
                         !busy,
                     ) {
                         confirm = true;
@@ -171,7 +172,7 @@ pub(super) fn show(state: &mut State, ctx: &egui::Context, preferences: &Prefere
                         ui,
                         "projects.delete.cancel",
                         Icon::X,
-                        catalog::text(locale, Text::Cancel),
+                        i18n::text(locale, Text::Cancel),
                         !busy,
                     ) {
                         cancel = true;
