@@ -1,6 +1,7 @@
 //! Integration tests share one binary and one copy of their support module.
 
 mod decoding;
+mod fixture_generation;
 mod hostile_input;
 mod import_metadata;
 mod pipeline;
