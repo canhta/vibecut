@@ -584,6 +584,97 @@ mod tests {
     }
 
     #[test]
+    fn notice_rows_and_the_loading_state_do_not_shift_project_card_widget_ids() {
+        use egui_kittest::{
+            Harness,
+            kittest::{By, NodeT, Queryable},
+        };
+        let root = tempfile::tempdir().expect("directory");
+        {
+            let mut catalog = library(root.path());
+            for id in [1, 2] {
+                catalog
+                    .execute(
+                        ProjectId(id),
+                        Command::CreateProject {
+                            id: ProjectId(id),
+                            name: format!("Project {id}").as_str().into(),
+                        },
+                    )
+                    .expect("create");
+            }
+        }
+        let mut page = State::new(root.path().to_owned(), ByteBudget::new(64 << 20).unwrap());
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+        while page.busy() {
+            page.tick();
+            assert!(std::time::Instant::now() < deadline);
+            std::thread::yield_now();
+        }
+        let entries = page.entries.clone();
+        let mut harness = Harness::builder()
+            .with_context_setup(|ctx| {
+                crate::Editor::fonts(ctx);
+                kit::install(ctx);
+            })
+            .with_size(egui::vec2(1440.0, 900.0))
+            .build_ui_state(
+                |ui, state: &mut (State, Preferences)| {
+                    crate::Editor::theme(ui.ctx(), state.1.dark);
+                    state.0.tick();
+                    state.0.show(ui, &mut state.1, None);
+                },
+                (page, Preferences::default()),
+            );
+        let card = |harness: &Harness<'_, (State, Preferences)>| {
+            format!(
+                "{:?}",
+                harness
+                    .get(By::new().predicate(|node| {
+                        node.author_id() == Some("projects.card.0000000000000001")
+                    }))
+                    .accesskit_node()
+                    .id()
+            )
+        };
+        harness.run_steps(2);
+        let before = card(&harness);
+
+        // A notice row joins the section above the grid asynchronously. The
+        // cards below must keep their widget ids or a held press is dropped.
+        harness.state_mut().0.notice = Some((Text::ProjectError, Some("detail".into())));
+        harness.run_steps(2);
+        assert_eq!(
+            card(&harness),
+            before,
+            "a notice row above the grid must not move the cards' widget ids"
+        );
+        harness.state_mut().0.notice = None;
+        harness.run_steps(2);
+
+        // The catalog can be held in its loading state. The spinner row that
+        // replaces the grid must leave the same ids behind when it is released.
+        let release = harness.state_mut().0.defer_initial_catalog();
+        harness.run_steps(2);
+        let locale = harness.state().1.locale;
+        assert!(
+            harness
+                .query_by_label(crate::catalog::text(locale, Text::LoadingProject))
+                .is_some(),
+            "the loading row must render while the catalog is pending"
+        );
+        release();
+        harness.run_steps(2);
+        harness.state_mut().0.set_entries(entries);
+        harness.run_steps(2);
+        assert_eq!(
+            card(&harness),
+            before,
+            "loading frames must not leave the grid with new widget ids"
+        );
+    }
+
+    #[test]
     fn thumbnail_refresh_replaces_only_changed_textures() {
         let root = tempfile::tempdir().expect("directory");
         let mut catalog = library(root.path());

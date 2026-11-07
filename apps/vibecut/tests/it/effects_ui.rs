@@ -6,7 +6,7 @@
 )]
 use egui_kittest::{
     Harness,
-    kittest::{By, Queryable},
+    kittest::{By, NodeT, Queryable},
 };
 use engine::{ByteBudget, Command, CreatedId, NewItem, Placement, Session};
 use media::{AssetId, ContentHash, SourceAsset, SourceStream};
@@ -216,6 +216,17 @@ fn click(harness: &mut Harness<Editor>, id: &str) {
         .get(By::new().predicate(|node| node.author_id() == Some(id)))
         .click();
     harness.run_steps(2);
+}
+
+/// The AccessKit node id egui assigned to the widget behind one automation id.
+fn node_id(harness: &Harness<Editor>, id: &str) -> String {
+    format!(
+        "{:?}",
+        harness
+            .get(By::new().predicate(|node| node.author_id() == Some(id)))
+            .accesskit_node()
+            .id()
+    )
 }
 
 fn has_widget(harness: &Harness<Editor>, id: &str) -> bool {
@@ -510,12 +521,31 @@ fn effect_headers_reorder_toggle_and_remove_through_commands() {
     select(&mut harness, video);
 
     let history = harness.state().session.history_len();
+    let toggle = node_id(&harness, "effects.toggle.blur");
+    let remove = node_id(&harness, "effects.remove.blur");
     click(&mut harness, "effects.toggle.blur");
     assert!(!effects(&harness, video)[0].enabled);
     assert!(has_widget(&harness, "effects.row.blur.disabled"));
+    // The disabled label joins the row above the two controls. A press that
+    // straddles that update must still release on the same widget.
+    assert_eq!(
+        node_id(&harness, "effects.toggle.blur"),
+        toggle,
+        "the toggle must keep its widget id when the disabled label appears"
+    );
+    assert_eq!(
+        node_id(&harness, "effects.remove.blur"),
+        remove,
+        "remove must keep its widget id when the disabled label appears"
+    );
     assert_eq!(harness.state().session.history_len().0, history.0 + 1);
     click(&mut harness, "effects.toggle.blur");
     assert!(effects(&harness, video)[0].enabled);
+    assert_eq!(
+        node_id(&harness, "effects.toggle.blur"),
+        toggle,
+        "the toggle must keep its widget id when the disabled label leaves"
+    );
 
     let history = harness.state().session.history_len();
     click(&mut harness, "effects.remove.blur2");

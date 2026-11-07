@@ -556,11 +556,15 @@ fn footer_controls(
             } else {
                 "preview.audio_status"
             };
+            // Both states are one control: recover on retry, report offline
+            // otherwise. A stable widget id keeps a press that starts just
+            // before the preview recovers paired with its release; `remember`
+            // still reports the state's own automation id below.
             let r = ui
                 .add_enabled_ui(retry, |ui| {
                     kit::icon_button(
                         ui,
-                        id,
+                        "preview.status",
                         if retry {
                             kit::Icon::ArrowClockwise
                         } else {

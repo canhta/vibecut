@@ -6,7 +6,7 @@
 )]
 use egui_kittest::{
     Harness,
-    kittest::{By, Queryable},
+    kittest::{By, NodeT, Queryable},
 };
 use engine::{ByteBudget, Session};
 use project::{
@@ -101,6 +101,16 @@ fn click(h: &mut Harness<Editor>, id: &str) {
     h.get(By::new().predicate(|node| node.author_id() == Some(id)))
         .click();
     h.run_steps(3);
+}
+
+/// The AccessKit node id egui assigned to the widget behind one automation id.
+fn node_id(h: &Harness<Editor>, id: &str) -> String {
+    format!(
+        "{:?}",
+        h.get(By::new().predicate(|node| node.author_id() == Some(id)))
+            .accesskit_node()
+            .id()
+    )
 }
 
 fn widget(h: &Harness<Editor>, id: &str) -> vibecut::WidgetState {
@@ -206,6 +216,41 @@ fn timecode_round_trips_at_every_supported_rate_and_invalid_text_is_restored() {
         assert!(h.query_by_label("Invalid timecode").is_none(), "{rate:?}");
         assert_eq!(h.state().inspect().unwrap().position, target);
     }
+}
+
+#[test]
+fn preview_status_control_keeps_one_widget_identity_across_the_retry_flip() {
+    // The footer status is one control: it reports the offline state normally
+    // and becomes Retry while a failure is showing. The preview fails
+    // asynchronously, so a press that starts before the state changes must
+    // still resolve to the same widget on release.
+    let dir = tempfile::tempdir().unwrap();
+    let blocked = dir.path().join("blocked");
+    std::fs::create_dir(&blocked).unwrap();
+    let mut h = build(editor(
+        project(FrameRate::FPS_30, 640, 360, false),
+        Preferences::default(),
+    ));
+    h.state_mut().playback.set_device_available(false);
+    h.run_steps(2);
+    let offline = node_id(&h, "preview.audio_status");
+    assert!(h.state().inspect().unwrap().snapshot_error.is_none());
+
+    assert!(h.state_mut().snapshot_picked_file(blocked).is_err());
+    h.run_steps(2);
+    let retry = node_id(&h, "preview.retry");
+    assert_eq!(
+        retry, offline,
+        "the status control must keep its widget id when a failure turns it into Retry"
+    );
+
+    click(&mut h, "preview.retry");
+    assert!(h.state().inspect().unwrap().snapshot_error.is_none());
+    assert_eq!(
+        node_id(&h, "preview.audio_status"),
+        offline,
+        "clearing the failure must return the same widget to the offline state"
+    );
 }
 
 #[test]

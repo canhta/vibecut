@@ -140,6 +140,10 @@ pub(crate) fn dashed_outline(ui: &Ui, rect: Rect, radius: u8, focused: bool) {
 }
 
 /// A dense icon action with keyboard focus, tooltip and a stable automation ID.
+///
+/// The button allocates in one explicit scope so a conditional label drawn
+/// earlier in the same `ui` cannot shift its widget id: egui drops a press and
+/// release pair that resolve to different widgets.
 pub(crate) fn icon_button(
     ui: &mut Ui,
     id: &str,
@@ -147,8 +151,9 @@ pub(crate) fn icon_button(
     label: &str,
     selected: bool,
 ) -> Response {
+    let scope = ui.make_persistent_id(id);
     let response = ui
-        .push_id(id, |ui| {
+        .scope_builder(egui::UiBuilder::new().scope_id(scope), |ui| {
             let (rect, response) =
                 ui.allocate_exact_size(Vec2::splat(size::CONTROL), Sense::click());
             if response.hovered()

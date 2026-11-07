@@ -45,32 +45,48 @@ pub(super) fn section(ui: &mut egui::Ui, state: &mut State, preferences: &mut Pr
     ui.add_space(16.0);
     notices(ui, state, locale, dark);
     if !state.ready {
-        ui.horizontal(|ui| {
-            ui.spinner();
-            ui.label(tr(Text::LoadingProject));
-        });
+        // One explicit scope for the transient loading row: the catalog
+        // arrives asynchronously, so its widget count must not depend on how
+        // many controls the ready grid would allocate in the same position.
+        ui.scope_builder(
+            egui::UiBuilder::new().scope_id(ui.make_persistent_id("projects.loading")),
+            |ui| {
+                ui.horizontal(|ui| {
+                    ui.spinner();
+                    ui.label(tr(Text::LoadingProject));
+                });
+            },
+        );
         return;
     }
 
     let mut actions = Vec::new();
-    if shown.is_empty() {
-        let text = if state.entries.is_empty() {
-            Text::ProjectsEmpty
-        } else {
-            Text::ProjectsNoResults
-        };
-        ui.add_space(24.0);
-        ui.vertical_centered(|ui| {
-            ui.add(kit::tinted(Icon::FilmStrip, 24.0, kit::secondary(dark)));
-            ui.add_space(8.0);
-            ui.label(egui::RichText::new(tr(text)).color(kit::secondary(dark)));
-        });
-    } else {
-        ui.add_enabled_ui(!state.busy(), |ui| match preferences.projects.view {
-            ProjectsView::Grid => grid(ui, state, &shown, locale, &mut actions),
-            ProjectsView::List => list(ui, state, &shown, locale, &mut actions),
-        });
-    }
+    // One explicit scope for the body: a notice row above appears and leaves
+    // asynchronously, and without it every card below would derive a new
+    // widget id and drop a press that straddles the update.
+    ui.scope_builder(
+        egui::UiBuilder::new().scope_id(ui.make_persistent_id("projects.body")),
+        |ui| {
+            if shown.is_empty() {
+                let text = if state.entries.is_empty() {
+                    Text::ProjectsEmpty
+                } else {
+                    Text::ProjectsNoResults
+                };
+                ui.add_space(24.0);
+                ui.vertical_centered(|ui| {
+                    ui.add(kit::tinted(Icon::FilmStrip, 24.0, kit::secondary(dark)));
+                    ui.add_space(8.0);
+                    ui.label(egui::RichText::new(tr(text)).color(kit::secondary(dark)));
+                });
+            } else {
+                ui.add_enabled_ui(!state.busy(), |ui| match preferences.projects.view {
+                    ProjectsView::Grid => grid(ui, state, &shown, locale, &mut actions),
+                    ProjectsView::List => list(ui, state, &shown, locale, &mut actions),
+                });
+            }
+        },
+    );
     ui.add_space(24.0);
     apply(state, actions, &order);
 }
