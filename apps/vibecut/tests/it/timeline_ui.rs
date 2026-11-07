@@ -1068,7 +1068,7 @@ fn item_track(editor: &Editor, item: ItemId) -> TrackId {
 }
 
 #[test]
-fn review_delete_invalidates_preview_and_clamps_playhead() {
+fn delete_invalidates_preview_and_clamps_playhead() {
     let mut session = Session::new(
         Project::empty(ProjectId(123), "Preview".into()).unwrap(),
         20,
@@ -1117,7 +1117,7 @@ fn review_delete_invalidates_preview_and_clamps_playhead() {
 }
 
 #[test]
-fn review_offscreen_drop_closes_gesture() {
+fn offscreen_drop_closes_gesture() {
     let fixture = fixture();
     let id = fixture.video_b;
     let mut harness = harness(fixture.editor);
@@ -1131,7 +1131,7 @@ fn review_offscreen_drop_closes_gesture() {
 }
 
 #[test]
-fn review_group_move_preserves_spacing_at_zero() {
+fn group_move_preserves_spacing_at_timeline_zero() {
     let fixture = fixture();
     let text = text_item_id(&fixture.editor);
     let mut editor = fixture.editor;
@@ -1155,7 +1155,7 @@ fn review_group_move_preserves_spacing_at_zero() {
 }
 
 #[test]
-fn review_move_back_to_origin_restores_position() {
+fn move_back_to_origin_restores_position() {
     for snapping in [true, false] {
         let fixture = fixture();
         let id = fixture.video_b;
@@ -1183,7 +1183,7 @@ fn review_move_back_to_origin_restores_position() {
 }
 
 #[test]
-fn review_trim_release_survives_its_handle_becoming_narrow() {
+fn trim_release_survives_its_handle_becoming_narrow() {
     let fixture = fixture();
     let id = fixture.video_a;
     let mut harness = harness(fixture.editor);
@@ -1208,7 +1208,7 @@ fn review_trim_release_survives_its_handle_becoming_narrow() {
 }
 
 #[test]
-fn review_split_respects_selection_outside_playhead() {
+fn split_respects_selection_outside_playhead() {
     let fixture = fixture();
     let text = text_item_id(&fixture.editor);
     let mut editor = fixture.editor;

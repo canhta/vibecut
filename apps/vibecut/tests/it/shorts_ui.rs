@@ -48,7 +48,7 @@ fn harness(app: Shorts) -> Harness<'static, Shorts> {
         )
 }
 #[test]
-fn review_actions_and_play_order_reach_preview_and_single_step_editor_insertion() {
+fn actions_and_play_order_reach_preview_and_single_step_editor_insertion() {
     let mut h = harness(ready());
     h.run_steps(3);
     open_first(&mut h);

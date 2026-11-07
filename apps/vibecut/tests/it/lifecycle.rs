@@ -284,7 +284,92 @@ fn recovery_prompt_recovers_copy_and_requires_save_as() {
 }
 
 #[test]
-fn create_failure_is_recoverable_and_busy_save_as_retains_the_editor() {
+fn recovered_projects_save_and_leave_in_sequence_without_changing_originals() {
+    use egui_kittest::kittest::{By, Queryable};
+    let root = tempfile::tempdir().unwrap();
+    let mut originals = Vec::new();
+    for id in 1..=2 {
+        let path = root.path().join(format!("original-{id}.vibecut"));
+        project::WriterLease::acquire(&path)
+            .unwrap()
+            .save(
+                &project::Project::empty(project::ProjectId(id), format!("original {id}").into())
+                    .unwrap(),
+            )
+            .unwrap();
+        let bytes = std::fs::read(&path).unwrap();
+        let mut app =
+            Workspace::new(root.path().join("recovery"), Preferences::default(), None).unwrap();
+        idle(&mut app);
+        app.open(path.clone()).unwrap();
+        idle(&mut app);
+        app.focused_editor_mut()
+            .unwrap()
+            .session
+            .execute(
+                "project.rename",
+                serde_json::json!({"name":format!("recovered {id}")}),
+            )
+            .unwrap();
+        app.persist(None, true, false, true).unwrap();
+        idle(&mut app);
+        originals.push((path, bytes));
+    }
+    let mut app =
+        Workspace::new(root.path().join("recovery"), Preferences::default(), None).unwrap();
+    idle(&mut app);
+    let mut h = crate::gpu::builder()
+        .with_size(vibecut::egui::vec2(1440.0, 900.0))
+        .build_ui_state(
+            |ui, a: &mut Workspace| {
+                a.tick();
+                if let Some(id) = a.focused_project() {
+                    a.window_ui(id, ui);
+                } else {
+                    a.ui(ui);
+                }
+            },
+            app,
+        );
+    h.run_steps(3);
+    let mut recovered = std::collections::BTreeSet::new();
+    for copy in 1..=2 {
+        h.get(By::new().predicate(|n| n.author_id() == Some("recovery.recover")))
+            .click();
+        h.run_steps(3);
+        idle(h.state_mut());
+        h.run_steps(3);
+        assert!(h.query_by_label("Recover a copy").is_none());
+        let editor = h.state().focused_editor().unwrap();
+        let id = editor.session.project().data().id;
+        recovered.insert(id);
+        let name = editor.session.project().data().name.clone();
+        let destination = root.path().join(format!("copy-{copy}.vibecut"));
+        h.state_mut()
+            .persist(Some(destination.clone()), true, false, false)
+            .unwrap();
+        idle(h.state_mut());
+        h.run_steps(3);
+        assert!(h.state().error().is_none());
+        assert!(h.state().focused_editor().is_none());
+        let saved = project::load(&destination).unwrap().project;
+        assert_ne!(saved.data().id, id);
+        assert_eq!(saved.data().name, name);
+        for (original, bytes) in &originals {
+            assert_eq!(&std::fs::read(original).unwrap(), bytes);
+        }
+    }
+    assert_eq!(recovered.len(), 2);
+    assert!(
+        engine::recovery::discover(&root.path().join("recovery"))
+            .unwrap()
+            .candidates
+            .is_empty()
+    );
+}
+
+#[test]
+fn failed_create_and_refused_save_as_keep_the_editor_recoverable() {
     let root = tempfile::tempdir().unwrap();
     let mut app = app(root.path());
     let recovery = root.path().join("recovery");
@@ -298,6 +383,15 @@ fn create_failure_is_recoverable_and_busy_save_as_retains_the_editor() {
     app.create().unwrap();
     idle(&mut app);
     assert!(app.error().is_none());
+    // A destination in the reserved metadata namespace is refused before
+    // publication, and a later Save As to a different path still succeeds.
+    let reserved = root.path().join("reserved.meta.json");
+    app.persist(Some(reserved.clone()), false, false, false)
+        .unwrap();
+    idle(&mut app);
+    assert!(app.error().is_some());
+    assert!(!reserved.exists());
+    assert!(app.focused_editor().is_some());
     let path = root.path().join("busy.vibecut");
     let held = project::WriterLease::acquire(&path).unwrap();
     let id = app.focused_editor().unwrap().session.project().data().id;

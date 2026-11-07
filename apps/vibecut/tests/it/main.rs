@@ -15,7 +15,6 @@ mod models_ui;
 mod panels;
 mod preview_ui;
 mod projects_ui;
-mod review_regressions;
 mod scenes_ui;
 mod shorts_ui;
 mod sounds_ui;

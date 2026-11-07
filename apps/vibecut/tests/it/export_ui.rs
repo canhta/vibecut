@@ -857,7 +857,7 @@ fn export_output_panel_persists_scene_range_refuses_empty_and_never_edits_projec
     );
 }
 #[test]
-fn review_reproduction_save_refuses_to_replace_source_media() {
+fn save_refuses_every_source_alias_without_replacing_media() {
     let dir = tempfile::tempdir().unwrap();
     let source_path = dir.path().join("original.mp4");
     std::fs::write(&source_path, b"original source media").unwrap();
