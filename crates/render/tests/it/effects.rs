@@ -140,6 +140,7 @@ fn item_blur_is_isolated_from_track_below_and_uses_animation() {
     data.canvas.width = 256;
     data.canvas.height = 144;
     let item = Item {
+        hidden: false,
         blend_mode: Default::default(),
         retime: Default::default(),
         masks: vec![],
@@ -352,6 +353,7 @@ fn masked_item_grade_applies_only_inside_the_mask() {
     mask.height = 1.0;
     mask.center_x = -0.25;
     let item = |effects: Vec<EffectInstance>| Item {
+        hidden: false,
         blend_mode: Default::default(),
         retime: Default::default(),
         id: ItemId(1),

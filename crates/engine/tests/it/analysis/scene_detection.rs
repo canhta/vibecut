@@ -159,6 +159,7 @@ fn session(asset: SourceAsset, count: i64) -> Session {
         .into_data();
     data.assets.push(asset);
     data.scene_mut().timeline.main.items.push(Item {
+        hidden: false,
         id: ItemId(10),
         source_asset: Some(AssetId(1)),
         source_range: range(count),

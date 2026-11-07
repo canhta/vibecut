@@ -67,6 +67,7 @@ pub(crate) fn overlay_project_color(
         hidden: false,
         locked: false,
         items: vec![project::Item {
+            hidden: false,
             retime: Default::default(),
             blend_mode: Default::default(),
             masks: Vec::new(),

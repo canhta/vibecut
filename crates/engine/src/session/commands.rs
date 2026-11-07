@@ -254,6 +254,8 @@ pub enum Fixture {
     Timeline,
     /// Timeline plus one audible clip, item 5.
     Audio,
+    /// Timeline whose item 5 is a video with an audible source asset.
+    SourceAudio,
     Library,
     History,
     Redo,
@@ -431,6 +433,13 @@ commands! {
     TrimEnd, "trim_end", "Trim end", Edit { item: ItemId, at: Tick } => Timeline, serde_json::json!({"item":1,"at":8467200000_i64}), available = UnlockedItem;
     Delete, "delete", "Delete items", Edit { items: Vec<ItemId> } => Timeline, serde_json::json!({"items":[1]}), available = UnlockedItem;
     RippleDelete, "ripple_delete", "Ripple delete", Edit { item: ItemId } => Timeline, serde_json::json!({"item":1}), available = UnlockedItem;
+    TimelineSplitLeft, "timeline.split_left", "Split items and remove the left part", Edit { items: Vec<ItemId>, at: Tick } => Timeline, serde_json::json!({"items":[5],"at":381024000000_i64}), available = UnlockedItem;
+    TimelineSplitRight, "timeline.split_right", "Split items and remove the right part", Edit { items: Vec<ItemId>, at: Tick } => Timeline, serde_json::json!({"items":[5],"at":381024000000_i64}), available = UnlockedItem;
+    DuplicateItems, "timeline.duplicate", "Duplicate items on new tracks", Edit { items: Vec<ItemId> } => Timeline, serde_json::json!({"items":[5]}), available = UnlockedItem;
+    SetItemsHidden, "timeline.set_hidden", "Hide items", Edit { items: Vec<ItemId>, hidden: bool } => Timeline, serde_json::json!({"items":[1],"hidden":true}), available = UnlockedItem;
+    SetItemsMuted, "timeline.set_muted", "Mute items", Edit { items: Vec<ItemId>, muted: bool } => Timeline, serde_json::json!({"items":[5],"muted":true}), available = UnlockedItem;
+    ExtractAudio, "timeline.extract_audio", "Extract source audio", Edit { items: Vec<ItemId> } => SourceAudio, serde_json::json!({"items":[5]}), available = VideoItem;
+    RecoverAudio, "timeline.recover_audio", "Recover source audio", Edit { items: Vec<ItemId> } => Timeline, serde_json::json!({"items":[5]}), available = VideoItem;
     SetItemParam, "set_item_param", "Set item parameters", Edit { item: ItemId, content: ItemParams } => Timeline, serde_json::json!({"item":1,"content":{"kind":"overlay","params":{"color":[255,255,0,255]}}}), available = UnlockedItem;
     SetItemField, "timeline.set_item_param", "Set item parameter", Edit { item: ItemId, patch: ItemParamPatch } => Timeline, serde_json::json!({"item":1,"patch":{"field":"blendMode","value":"multiply"}}), available = UnlockedItem;
     SetCanvas, "project.set_canvas", "Set canvas size", Edit { width: u32, height: u32, #[serde(default)] preset: Option<project::AspectPreset> } => Timeline, serde_json::json!({"width":1080,"height":1920,"preset":"9:16"});

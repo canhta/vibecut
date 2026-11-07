@@ -43,6 +43,7 @@ fn project(name: &str, width: u32, height: u32, duration: Tick) -> Project {
         hidden: false,
         locked: false,
         items: vec![Item {
+            hidden: false,
             blend_mode: Default::default(),
             retime: Default::default(),
             masks: Vec::new(),

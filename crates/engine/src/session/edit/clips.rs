@@ -1,8 +1,9 @@
 //! Applies clips commands to a candidate project.
 use super::{
     Arc, BTreeMap, BTreeSet, CreatedId, EditError, Item, ItemId, ItemParams, Move, NewItem,
-    Placement, ProjectData, Result, SourceRange, Tick, TrackId, TrimSources, alloc, fades_mut,
-    item, placement_track, ratchet_fps, sub, take_item, track, unlocked,
+    Placement, ProjectData, Result, SourceRange, Tick, Track, TrackId, TrackKind, TrackPlacement,
+    TrimSources, alloc, fades_mut, item, placement_track, ratchet_fps, sub, take_item, track,
+    unlocked,
 };
 
 pub(super) fn move_items(data: &mut ProjectData, moves: Vec<Move>) -> Result<()> {
@@ -148,6 +149,7 @@ pub(super) fn execute_insert_item(
     t.items.insert(
         index,
         Item {
+            hidden: false,
             blend_mode: Default::default(),
             masks: Vec::new(),
             effects: Vec::new(),
@@ -406,6 +408,307 @@ pub(super) fn execute_delete(mut data: ProjectData, items: Vec<ItemId>) -> Resul
             return Err(EditError::Invalid("duplicate delete item"));
         }
         take_item(&mut data, id)?;
+    }
+
+    Ok(data)
+}
+
+/// Split every item at the playhead and keep only the right-hand piece.
+pub(super) fn execute_split_left(
+    mut data: ProjectData,
+    items: Vec<ItemId>,
+    at: Tick,
+    created: &mut Vec<CreatedId>,
+    next: &mut Option<u64>,
+    sources: &mut TrimSources,
+) -> Result<ProjectData> {
+    let mut left = Vec::new();
+    for id in split_targets(&data, items)? {
+        data = execute_split_at(data, id, at, created, next, sources)?;
+        left.push(id);
+    }
+    execute_delete(data, left)
+}
+
+/// Split every item at the playhead and keep only the left-hand piece.
+pub(super) fn execute_split_right(
+    mut data: ProjectData,
+    items: Vec<ItemId>,
+    at: Tick,
+    created: &mut Vec<CreatedId>,
+    next: &mut Option<u64>,
+    sources: &mut TrimSources,
+) -> Result<ProjectData> {
+    let targets = split_targets(&data, items)?;
+    let first_created = created.len();
+    for id in targets {
+        data = execute_split_at(data, id, at, created, next, sources)?;
+    }
+    let right: Vec<ItemId> = created
+        .get(first_created..)
+        .unwrap_or_default()
+        .iter()
+        .filter_map(|id| match id {
+            CreatedId::Item(item) => Some(*item),
+            _ => None,
+        })
+        .collect();
+    // The kept left pieces are the originals; report only tracks created here.
+    created.truncate(first_created);
+    execute_delete(data, right)
+}
+
+fn split_targets(data: &ProjectData, items: Vec<ItemId>) -> Result<Vec<ItemId>> {
+    if items.is_empty() {
+        return Err(EditError::Invalid("empty timeline group"));
+    }
+    let mut seen = BTreeSet::new();
+    for id in &items {
+        if !seen.insert(*id) {
+            return Err(EditError::Invalid("duplicate split item"));
+        }
+        if find_item(data, *id).is_none() {
+            return Err(EditError::NoItem(*id));
+        }
+    }
+    Ok(items)
+}
+
+fn find_item(data: &ProjectData, id: ItemId) -> Option<(&Track, &Item)> {
+    data.scene().timeline.iter().find_map(|track| {
+        track
+            .items
+            .iter()
+            .find(|item| item.id == id)
+            .map(|item| (track, item))
+    })
+}
+
+/// Clone every selected item onto one new track per source track, at the
+/// highest position for that track's group, keeping the original start time.
+pub(super) fn execute_duplicate(
+    mut data: ProjectData,
+    items: Vec<ItemId>,
+    created: &mut Vec<CreatedId>,
+    next: &mut Option<u64>,
+) -> Result<ProjectData> {
+    if items.is_empty() {
+        return Err(EditError::Invalid("empty timeline group"));
+    }
+    let mut selected = BTreeSet::new();
+    for id in items {
+        if !selected.insert(id) {
+            return Err(EditError::Invalid("duplicate item"));
+        }
+        let (source, _) = find_item(&data, id).ok_or(EditError::NoItem(id))?;
+        unlocked(source)?;
+    }
+    let mut groups = Vec::new();
+    for track in data.scene().timeline.iter() {
+        let copies: Vec<Item> = track
+            .items
+            .iter()
+            .filter(|item| selected.contains(&item.id))
+            .cloned()
+            .collect();
+        if copies.is_empty() {
+            continue;
+        }
+        groups.push((
+            format!("{} (copy)", track.name.as_str()).into(),
+            track.kind,
+            copies,
+        ));
+    }
+    for (name, kind, copies) in groups {
+        let target =
+            super::tracks::add_track(&mut data, name, kind, TrackPlacement::Auto, created, next)?;
+        let target = track(&mut data, target)?;
+        for mut copy in copies {
+            copy.id = ItemId(alloc(next)?);
+            created.push(CreatedId::Item(copy.id));
+            target.items.push(copy);
+        }
+    }
+
+    Ok(data)
+}
+
+pub(super) fn execute_set_items_hidden(
+    mut data: ProjectData,
+    items: Vec<ItemId>,
+    hidden: bool,
+) -> Result<ProjectData> {
+    let mut seen = BTreeSet::new();
+    if items.is_empty() {
+        return Err(EditError::Invalid("empty timeline group"));
+    }
+    for id in items {
+        if !seen.insert(id) {
+            return Err(EditError::Invalid("duplicate item"));
+        }
+        let item = item(&mut data, id)?;
+        if item.content.kind() == TrackKind::Audio {
+            return Err(EditError::Invalid("audio item has no video"));
+        }
+        item.hidden = hidden;
+    }
+
+    Ok(data)
+}
+
+pub(super) fn execute_set_items_muted(
+    mut data: ProjectData,
+    items: Vec<ItemId>,
+    muted: bool,
+) -> Result<ProjectData> {
+    let mut seen = BTreeSet::new();
+    if items.is_empty() {
+        return Err(EditError::Invalid("empty timeline group"));
+    }
+    for id in items {
+        if !seen.insert(id) {
+            return Err(EditError::Invalid("duplicate item"));
+        }
+        match &mut item(&mut data, id)?.content {
+            ItemParams::Video(params) => params.muted = muted,
+            ItemParams::Audio(params) => params.muted = muted,
+            _ => return Err(EditError::Invalid("item has no audio")),
+        }
+    }
+
+    Ok(data)
+}
+
+struct Extracted {
+    video: ItemId,
+    start: Tick,
+    duration: Tick,
+    source_range: SourceRange,
+    retime: project::Retime,
+    volume: f32,
+    muted: bool,
+    fades: project::Fades,
+    volume_keys: Option<project::Param>,
+}
+
+/// Disable a video item's source audio and add an equivalent audio item on the
+/// first free audio track (or a new one). The source is never decoded.
+pub(super) fn execute_extract_audio(
+    mut data: ProjectData,
+    items: Vec<ItemId>,
+    created: &mut Vec<CreatedId>,
+    next: &mut Option<u64>,
+) -> Result<ProjectData> {
+    if items.is_empty() {
+        return Err(EditError::Invalid("empty timeline group"));
+    }
+    let mut seen = BTreeSet::new();
+    let mut extracted = Vec::with_capacity(items.len());
+    for id in items {
+        if !seen.insert(id) {
+            return Err(EditError::Invalid("duplicate item"));
+        }
+        let (source, item) = find_item(&data, id).ok_or(EditError::NoItem(id))?;
+        unlocked(source)?;
+        let ItemParams::Video(params) = &item.content else {
+            return Err(EditError::Invalid("item is not video"));
+        };
+        if !params.source_audio_enabled {
+            return Err(EditError::Invalid("source audio is extracted"));
+        }
+        let asset = item
+            .source_asset
+            .and_then(|id| data.assets.iter().find(|asset| asset.id() == id))
+            .ok_or(EditError::Invalid("video has no source asset"))?;
+        if !asset
+            .probe()
+            .streams
+            .iter()
+            .any(|stream| stream.audio.is_some())
+        {
+            return Err(EditError::Invalid("source has no audio"));
+        }
+        let path = project::AnimationPath::new("volume")?;
+        extracted.push(Extracted {
+            video: id,
+            start: item.start,
+            duration: item.duration()?,
+            source_range: item.source_range,
+            retime: item.retime,
+            volume: params.volume,
+            muted: params.muted,
+            fades: params.fades,
+            volume_keys: item.animations.get(&path).cloned(),
+        });
+    }
+    for source in extracted {
+        if let ItemParams::Video(params) = &mut item(&mut data, source.video)?.content {
+            params.source_audio_enabled = false;
+        }
+        let (target, _) = placement_track(
+            &mut data,
+            Placement::Auto,
+            TrackKind::Audio,
+            source.start,
+            source.duration,
+            created,
+            next,
+        )?;
+        let id = ItemId(alloc(next)?);
+        let mut animations = project::Animations::default();
+        if let Some(param) = source.volume_keys {
+            animations.set(project::AnimationPath::new("volume")?, param)?;
+        }
+        let source_asset = find_item(&data, source.video)
+            .ok_or(EditError::NoItem(source.video))?
+            .1
+            .source_asset;
+        track(&mut data, target)?.items.push(Item {
+            hidden: false,
+            blend_mode: Default::default(),
+            masks: Vec::new(),
+            effects: Vec::new(),
+            animations,
+            id,
+            source_asset,
+            source_range: source.source_range,
+            start: source.start,
+            retime: source.retime,
+            content: ItemParams::Audio(project::AudioParams {
+                volume: source.volume,
+                muted: source.muted,
+                source: project::AudioSource::Upload,
+                fades: source.fades,
+            }),
+        });
+        created.push(CreatedId::Item(id));
+    }
+
+    Ok(data)
+}
+
+/// Re-enable a video item's own source audio. The extracted audio item stays,
+/// matching the reference toggle; it becomes an ordinary independent clip.
+pub(super) fn execute_recover_audio(
+    mut data: ProjectData,
+    items: Vec<ItemId>,
+) -> Result<ProjectData> {
+    if items.is_empty() {
+        return Err(EditError::Invalid("empty timeline group"));
+    }
+    let mut seen = BTreeSet::new();
+    for id in items {
+        if !seen.insert(id) {
+            return Err(EditError::Invalid("duplicate item"));
+        }
+        match &mut item(&mut data, id)?.content {
+            ItemParams::Video(params) if !params.source_audio_enabled => {
+                params.source_audio_enabled = true;
+            }
+            ItemParams::Video(_) => return Err(EditError::Invalid("source audio is enabled")),
+            _ => return Err(EditError::Invalid("item is not video")),
+        }
     }
 
     Ok(data)

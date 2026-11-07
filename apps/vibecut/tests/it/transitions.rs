@@ -26,6 +26,7 @@ fn editor(duration: i64) -> Editor {
         .into_data();
     data.scene_mut().timeline.main.items = (0..3)
         .map(|n| Item {
+            hidden: false,
             id: ItemId(n + 1),
             source_asset: None,
             source_range: SourceRange::new(Tick(0), Tick(duration)).unwrap(),

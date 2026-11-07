@@ -39,6 +39,7 @@ pub(crate) fn source(path: PathBuf) -> SourceAsset {
 }
 fn item(id: u64, start: i64) -> Item {
     Item {
+        hidden: false,
         blend_mode: Default::default(),
         masks: vec![Mask::new(
             "glyphs",
@@ -158,6 +159,7 @@ fn populated(path: PathBuf) -> Project {
             hidden: true,
             locked: true,
             items: vec![Item {
+                hidden: false,
                 blend_mode: Default::default(),
                 retime: Default::default(),
                 masks: Vec::new(),

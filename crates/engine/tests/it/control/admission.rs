@@ -160,6 +160,7 @@ fn export_control_admits_typed_settings_refuses_old_range_and_preserves_revision
         hidden: false,
         locked: false,
         items: vec![Item {
+            hidden: false,
             id: ItemId(1),
             start: Tick::ZERO,
             source_asset: None,
@@ -278,6 +279,7 @@ fn seed() -> Session {
             locked: false,
             items: vec![
                 Item {
+                    hidden: false,
                     blend_mode: Default::default(),
                     retime: Default::default(),
                     masks: vec![project::Mask::new("mask1", project::MaskShape::Rectangle)],
@@ -296,6 +298,7 @@ fn seed() -> Session {
                     }),
                 },
                 Item {
+                    hidden: false,
                     blend_mode: Default::default(),
                     retime: Default::default(),
                     masks: Vec::new(),
@@ -331,6 +334,7 @@ fn seed() -> Session {
             hidden: false,
             locked: false,
             items: vec![Item {
+                hidden: false,
                 blend_mode: Default::default(),
                 retime: Default::default(),
                 masks: Vec::new(),
@@ -406,6 +410,7 @@ fn with_audio(seed: &Session) -> Session {
         hidden: false,
         locked: false,
         items: vec![Item {
+            hidden: false,
             retime: Default::default(),
             blend_mode: Default::default(),
             masks: Vec::new(),
@@ -423,6 +428,51 @@ fn with_audio(seed: &Session) -> Session {
             }),
         }],
     });
+    with_fonts(Session::new(Project::new(data).unwrap(), 10).unwrap())
+}
+/// The seed whose item 5 is a video with an audible source asset.
+fn with_source_audio(seed: &Session) -> Session {
+    let mut data = seed.project().data().clone();
+    let duration = Tick(time::TICKS_PER_SECOND);
+    let position = data
+        .assets
+        .iter()
+        .position(|asset| asset.id() == media::AssetId(0))
+        .unwrap();
+    data.assets[position] = testkit::source::asset(
+        0,
+        std::env::temp_dir().join("vibecut-control-caption-source.mp4"),
+    )
+    .format("mp4")
+    .duration(duration)
+    .content_hash(media::ContentHash::from_bytes(b"fixture"))
+    .stream(
+        testkit::source::video()
+            .time_base(media::TimeBase::new(1, 30000).unwrap())
+            .duration(duration)
+            .start(Tick::ZERO)
+            .size(64, 64)
+            .build(),
+    )
+    .stream(
+        testkit::source::audio()
+            .index(1)
+            .codec("aac")
+            .time_base(media::TimeBase::new(1, 48000).unwrap())
+            .duration(duration)
+            .start(Tick::ZERO)
+            .build(),
+    )
+    .build();
+    for track in data.scene_mut().timeline.iter_mut() {
+        for item in &mut track.items {
+            if item.id == ItemId(5)
+                && let ItemParams::Video(params) = &mut item.content
+            {
+                params.source_audio_enabled = true;
+            }
+        }
+    }
     with_fonts(Session::new(Project::new(data).unwrap(), 10).unwrap())
 }
 fn replace_paths(v: &mut Value, root: &std::path::Path) {
@@ -518,6 +568,7 @@ fn registry_examples_validate_and_dispatch_without_an_id_table() {
             Fixture::TransitionCut => s = crate::session::transition_session(false),
             Fixture::Transition => s = crate::session::transition_session(true),
             Fixture::Audio => s = with_audio(&s),
+            Fixture::SourceAudio => s = with_source_audio(&s),
             Fixture::History => {
                 s.apply(Command::RenameProject {
                     name: "History".into(),
@@ -1248,12 +1299,21 @@ fn deterministic_catalog_and_schema_document_receipts() {
                 "ripple_delete",
                 "set_item_param",
                 "split_at",
+                "timeline.duplicate",
                 "timeline.move_items",
+                "timeline.set_hidden",
                 "timeline.set_item_param",
+                "timeline.set_muted",
+                "timeline.split_left",
+                "timeline.split_right",
                 "timeline.trim",
                 "trim_end",
                 "trim_start",
             ],
+        ),
+        (
+            Availability::VideoItem,
+            &["timeline.extract_audio", "timeline.recover_audio"],
         ),
     ] {
         assert_eq!(ids(&|s| s.availability == rule), expected, "{rule:?}");
@@ -1788,6 +1848,7 @@ fn integer_candidates_at_the_safe_limit_refuse_atomically_through_every_entry() 
         hidden: false,
         locked: false,
         items: vec![Item {
+            hidden: false,
             blend_mode: Default::default(),
             retime: Default::default(),
             masks: Vec::new(),
@@ -1914,6 +1975,7 @@ fn integer_candidates_at_the_safe_limit_refuse_atomically_through_every_entry() 
         hidden: false,
         locked: false,
         items: vec![Item {
+            hidden: false,
             blend_mode: Default::default(),
             retime: Default::default(),
             masks: Vec::new(),

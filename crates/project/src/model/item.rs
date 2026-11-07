@@ -287,6 +287,9 @@ pub struct Item {
     pub effects: Vec<crate::EffectInstance>,
     pub animations: crate::Animations,
     pub id: ItemId,
+    /// Visual item hidden in the preview and export while its audio stays audible.
+    #[serde(default)]
+    pub hidden: bool,
     pub source_asset: Option<AssetId>,
     /// Source ticks for media/captions; local content ticks for generated items.
     pub source_range: SourceRange,

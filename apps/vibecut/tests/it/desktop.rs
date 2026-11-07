@@ -906,6 +906,7 @@ fn new_seek_cancels_audio_preroll_and_keeps_the_replacement_epoch_alive() {
         muted: false,
         locked: false,
         items: vec![project::Item {
+            hidden: false,
             id: project::ItemId(1),
             source_asset: Some(media::AssetId(1)),
             source_range: SourceRange::new(Tick::ZERO, duration).unwrap(),

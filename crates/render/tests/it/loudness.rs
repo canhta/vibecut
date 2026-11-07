@@ -97,6 +97,7 @@ fn project_of(
             .iter()
             .enumerate()
             .map(|(n, &(asset, start, seconds))| project::Item {
+                hidden: false,
                 id: project::ItemId(n as u64 + 1),
                 source_asset: Some(media::AssetId(asset)),
                 source_range: TimeRange::new(Tick::ZERO, tick(seconds, 1)).unwrap(),

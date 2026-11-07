@@ -47,6 +47,12 @@ pub(super) struct ItemView {
     pub(super) label: String,
     pub(super) overlay: Option<[u8; 4]>,
     pub(super) source_asset: Option<AssetId>,
+    /// Hidden visual item; still selectable in the timeline but not rendered.
+    pub(super) hidden: bool,
+    /// Video source-audio switch; `None` for items without a source track.
+    pub(super) source_audio_enabled: Option<bool>,
+    /// Whether the item's own audio is muted.
+    pub(super) muted: bool,
     /// Base clip volume in dB for audio items, used when the channel is unkeyed.
     pub(super) volume: Option<f32>,
     /// Main-track item at the timeline origin: its start cannot move left.
@@ -125,6 +131,9 @@ struct RawItem {
     label: String,
     overlay: Option<[u8; 4]>,
     source_asset: Option<AssetId>,
+    hidden: bool,
+    source_audio_enabled: Option<bool>,
+    muted: bool,
     volume: Option<f32>,
     channels: Vec<ChannelLane>,
     /// Main-track item at the timeline origin: its start cannot move left.
@@ -241,6 +250,15 @@ impl State {
                     project::ItemParams::Video(params) => Some(params.volume),
                     _ => None,
                 };
+                let source_audio_enabled = match &item.content {
+                    project::ItemParams::Video(params) => Some(params.source_audio_enabled),
+                    _ => None,
+                };
+                let muted = match &item.content {
+                    project::ItemParams::Video(params) => params.muted,
+                    project::ItemParams::Audio(params) => params.muted,
+                    _ => false,
+                };
                 let channels = if self.expanded.contains(&item.id) {
                     channels(item, track.kind, cx.locale)
                 } else {
@@ -257,6 +275,9 @@ impl State {
                     label,
                     overlay,
                     source_asset: item.source_asset,
+                    hidden: item.hidden,
+                    source_audio_enabled,
+                    muted,
                     volume,
                     channels,
                     pinned: main && item.start == Tick::ZERO,
@@ -330,6 +351,9 @@ impl State {
                 label: raw.label,
                 overlay: raw.overlay,
                 source_asset: raw.source_asset,
+                hidden: raw.hidden,
+                source_audio_enabled: raw.source_audio_enabled,
+                muted: raw.muted,
                 volume: raw.volume,
                 pinned: raw.pinned,
                 lanes,

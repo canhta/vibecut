@@ -359,7 +359,8 @@ impl Renderer<'_> {
             .flatten()
             .chain(track.items.iter().filter(move |i| {
                 transition.is_none() && i.start <= at && i.end().is_ok_and(|end| at < end)
-            })))
+            }))
+            .filter(|i| !i.hidden))
     }
 }
 

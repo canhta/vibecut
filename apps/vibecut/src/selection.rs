@@ -217,6 +217,7 @@ mod tests {
             locked: false,
             items: (0..2)
                 .map(|n| Item {
+                    hidden: false,
                     blend_mode: Default::default(),
                     retime: Default::default(),
                     masks: Vec::new(),

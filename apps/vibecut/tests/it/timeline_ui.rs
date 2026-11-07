@@ -3360,3 +3360,281 @@ fn ripple_toolbar_delete_trim_split_and_cross_track_move_share_the_policy() {
         }
     }
 }
+
+/// The shared timeline fixture with audible source video, so extraction can run.
+fn audible_editor() -> Fixture {
+    let mut fixture = fixture();
+    let mut data = fixture.editor.session.project().data().clone();
+    let position = data
+        .assets
+        .iter()
+        .position(|asset| asset.id() == AssetId(1))
+        .unwrap();
+    data.assets[position] =
+        testkit::source::asset(1, std::env::temp_dir().join("vibecut-timeline-1.mp4"))
+            .format("mov,mp4")
+            .duration(Tick(10 * SECOND))
+            .content_hash(ContentHash::from_bytes(&[1; 8]))
+            .stream(
+                testkit::source::video()
+                    .time_base(media::TimeBase::new(1, 30000).unwrap())
+                    .duration(Tick(10 * SECOND))
+                    .start(Tick::ZERO)
+                    .size(64, 64)
+                    .build(),
+            )
+            .stream(
+                testkit::source::audio()
+                    .index(1)
+                    .time_base(media::TimeBase::new(1, 48000).unwrap())
+                    .duration(Tick(10 * SECOND))
+                    .start(Tick::ZERO)
+                    .build(),
+            )
+            .build();
+    let session = Session::new(Project::new(data).unwrap(), 50).unwrap();
+    let mut playback = Playback::new(
+        &session,
+        ByteBudget::new(64 << 20).unwrap(),
+        Arc::new(Files),
+    )
+    .unwrap();
+    playback.set_device_available(true);
+    fixture.editor = Editor::new(session, playback, Preferences::default());
+    fixture
+}
+
+fn click_item(harness: &mut Harness<'_, Editor>, id: ItemId) {
+    harness
+        .get(By::new().predicate(move |node| {
+            node.author_id() == Some(format!("timeline.item.{}", id.0).as_str())
+        }))
+        .click();
+    harness.run_steps(2);
+}
+
+fn open_item_menu(harness: &mut Harness<'_, Editor>, id: ItemId, suffix: &'static str) {
+    harness
+        .get(By::new().predicate(move |node| {
+            node.author_id() == Some(format!("timeline.item.{}", id.0).as_str())
+        }))
+        .click_secondary();
+    harness.run_steps(2);
+    harness
+        .get(By::new().predicate(move |node| {
+            node.author_id() == Some(format!("timeline.item.{}.{suffix}", id.0).as_str())
+        }))
+        .click();
+    harness.run_steps(3);
+}
+
+#[test]
+fn clip_action_keys_and_context_menu_apply_each_command_with_undo() {
+    let fixture = audible_editor();
+    let video_a = fixture.video_a;
+    let video_b = fixture.video_b;
+    let audio = audio_item(&fixture.editor);
+    let mut h = harness(fixture.editor);
+    h.run_steps(3);
+    h.state_mut()
+        .dispatch("playback.seek", serde_json::json!({"time": 2 * SECOND}))
+        .unwrap();
+    h.run_steps(2);
+    let undo = |h: &mut Harness<'_, Editor>| {
+        h.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::Z);
+        h.run_steps(2);
+    };
+    let redo = |h: &mut Harness<'_, Editor>| {
+        h.key_press_modifiers(
+            egui::Modifiers::COMMAND.plus(egui::Modifiers::SHIFT),
+            egui::Key::Z,
+        );
+        h.run_steps(2);
+    };
+    let seek = |h: &mut Harness<'_, Editor>| {
+        h.state_mut()
+            .dispatch("playback.seek", serde_json::json!({"time": 2 * SECOND}))
+            .unwrap();
+        h.run_steps(1);
+    };
+
+    click_item(&mut h, video_a);
+    h.key_press(egui::Key::S);
+    h.run_steps(2);
+    assert_eq!(count(h.state()), 5, "S splits the selected item");
+    undo(&mut h);
+    assert_eq!(count(h.state()), 4);
+
+    // With an empty selection every unlocked item under the playhead splits.
+    h.state_mut().activate("timeline.deselect_all").unwrap();
+    seek(&mut h);
+    h.key_press(egui::Key::S);
+    h.run_steps(2);
+    assert_eq!(
+        count(h.state()),
+        6,
+        "empty selection splits the video and audio clips under the playhead"
+    );
+    undo(&mut h);
+    assert_eq!(count(h.state()), 4);
+
+    seek(&mut h);
+    click_item(&mut h, video_a);
+    h.key_press(egui::Key::Q);
+    h.run_steps(2);
+    assert_eq!(
+        count(h.state()),
+        4,
+        "Q replaces the left piece with the right"
+    );
+    assert!(
+        !h.state()
+            .session
+            .project()
+            .data()
+            .scene()
+            .timeline
+            .iter()
+            .flat_map(|track| &track.items)
+            .any(|item| item.id == video_a),
+        "split-left removes the left piece"
+    );
+    let kept = h
+        .state()
+        .session
+        .project()
+        .data()
+        .scene()
+        .timeline
+        .iter()
+        .flat_map(|track| &track.items)
+        .find(|item| item.start == Tick(2 * SECOND))
+        .unwrap()
+        .id;
+    assert_eq!(
+        item(h.state(), kept).source_range,
+        SourceRange::new(Tick(2 * SECOND), Tick(6 * SECOND)).unwrap()
+    );
+    undo(&mut h);
+    assert!(item(h.state(), video_a).source_range.start() == Tick::ZERO);
+
+    seek(&mut h);
+    click_item(&mut h, video_a);
+    h.key_press(egui::Key::W);
+    h.run_steps(2);
+    assert_eq!(count(h.state()), 4, "W removes the right piece");
+    assert_eq!(
+        item(h.state(), video_a).source_range,
+        SourceRange::new(Tick::ZERO, Tick(2 * SECOND)).unwrap()
+    );
+    undo(&mut h);
+
+    click_item(&mut h, video_a);
+    h.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::D);
+    h.run_steps(2);
+    let overlays = &h.state().session.project().data().scene().timeline.overlays;
+    assert_eq!(overlays[0].name.as_str(), "Video (copy)");
+    let copy = h.state().inspect().unwrap().selection;
+    assert_eq!(copy.len(), 1);
+    assert_ne!(copy[0], video_a);
+    assert_eq!(item(h.state(), copy[0]).start, Tick::ZERO);
+    undo(&mut h);
+    assert_eq!(
+        h.state()
+            .session
+            .project()
+            .data()
+            .scene()
+            .timeline
+            .overlays
+            .len(),
+        2
+    );
+
+    click_item(&mut h, video_b);
+    h.key_press(egui::Key::Delete);
+    h.run_steps(2);
+    assert!(
+        !h.state()
+            .session
+            .project()
+            .data()
+            .scene()
+            .timeline
+            .iter()
+            .flat_map(|track| &track.items)
+            .any(|item| item.id == video_b),
+        "Delete removes the selected clip"
+    );
+    undo(&mut h);
+
+    click_item(&mut h, video_a);
+    open_item_menu(&mut h, video_a, "hide");
+    assert!(item(h.state(), video_a).hidden, "menu hides the clip");
+    undo(&mut h);
+    assert!(!item(h.state(), video_a).hidden);
+
+    click_item(&mut h, audio);
+    open_item_menu(&mut h, audio, "mute");
+    assert!(
+        matches!(&item(h.state(), audio).content, ItemParams::Audio(params) if params.muted),
+        "menu mutes the audio clip"
+    );
+    undo(&mut h);
+    assert!(matches!(&item(h.state(), audio).content, ItemParams::Audio(params) if !params.muted));
+
+    click_item(&mut h, video_a);
+    open_item_menu(&mut h, video_a, "audio");
+    assert!(
+        matches!(
+            &item(h.state(), video_a).content,
+            ItemParams::Video(params) if !params.source_audio_enabled
+        ),
+        "menu extracts source audio"
+    );
+    let range = item(h.state(), video_a).source_range;
+    let extracted = h
+        .state()
+        .session
+        .project()
+        .data()
+        .scene()
+        .timeline
+        .audio
+        .iter()
+        .flat_map(|track| &track.items)
+        .find(|item| item.id != audio && item.source_range == range)
+        .expect("extracted audio item keeps the source range")
+        .id;
+    undo(&mut h);
+    assert!(matches!(
+        &item(h.state(), video_a).content,
+        ItemParams::Video(params) if params.source_audio_enabled
+    ));
+    redo(&mut h);
+    open_item_menu(&mut h, video_a, "audio");
+    assert!(
+        matches!(
+            &item(h.state(), video_a).content,
+            ItemParams::Video(params) if params.source_audio_enabled
+        ),
+        "menu recovers source audio"
+    );
+    assert!(matches!(
+        item(h.state(), extracted).content,
+        ItemParams::Audio(_)
+    ));
+
+    // Reopen the clip menu for the audit screenshot.
+    h.get(By::new().predicate(move |node| {
+        node.author_id() == Some(format!("timeline.item.{}", video_a.0).as_str())
+    }))
+    .click_secondary();
+    h.run_steps(2);
+    let image = h.render().unwrap();
+    let target =
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target/p1-16-actions.png");
+    std::fs::create_dir_all(target.parent().unwrap()).unwrap();
+    image.save(&target).unwrap();
+    eprintln!("clip actions screenshot: {}", target.display());
+}

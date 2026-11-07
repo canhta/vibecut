@@ -354,6 +354,7 @@ mod tests {
         d.scene_mut().timeline.main.items = [(1, 0), (2, 100)]
             .into_iter()
             .map(|(id, start)| Item {
+                hidden: false,
                 retime: Default::default(),
                 id: ItemId(id),
                 source_asset: None,

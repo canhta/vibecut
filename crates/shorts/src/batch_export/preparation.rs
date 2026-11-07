@@ -153,6 +153,7 @@ fn prepare_clip(
         .map_err(|_| EditError::Limit)?;
     for (range, start) in ranges.iter().zip(&starts) {
         video_items.push(Item {
+            hidden: false,
             blend_mode: Default::default(),
             retime: Default::default(),
             masks: Vec::new(),
@@ -196,6 +197,7 @@ fn prepare_clip(
                 continue;
             }
             caption_items.push(Item {
+                hidden: false,
                 blend_mode: Default::default(),
                 retime: Default::default(),
                 masks: Vec::new(),
