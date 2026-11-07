@@ -1,5 +1,6 @@
 //! Owns the properties area: its presentation state, the whole-panel `show`
 //! interface and the actions the frame routes on its behalf.
+pub mod font_picker;
 mod read;
 mod state;
 mod view;
@@ -39,7 +40,7 @@ pub(super) struct State {
     /// Project the open picker previews against; a different project closes it.
     pub(super) color_base: Option<Arc<project::Project>>,
     /// Font picker popover, its catalog and download.
-    pub(super) font_picker: crate::font_picker::State,
+    pub(super) font_picker: font_picker::State,
     /// Rect of the last drawn panel, where the picker hangs off.
     pub(super) area: Option<Rect>,
     widgets: Vec<Widget>,
@@ -57,7 +58,7 @@ impl Default for State {
             reorder: None,
             picker: None,
             color_base: None,
-            font_picker: crate::font_picker::State::default(),
+            font_picker: font_picker::State::default(),
             area: None,
             widgets: Vec::new(),
         }

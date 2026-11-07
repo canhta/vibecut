@@ -7,13 +7,14 @@ impl Panel<'_, '_> {
         if !self.state.font_picker.open {
             return;
         }
-        let anchor = self.state.font_picker.anchor.unwrap_or_else(|| {
-            self.state.area.map_or_else(
-                || egui::pos2(ctx.content_rect().right() - 360.0, 120.0),
-                |area| egui::pos2(area.left() - 8.0, area.top() + 52.0),
-            )
-        });
-        let event = crate::font_picker::show(
+        // The row stores the field rect; open below its left edge and let the
+        // window's own constraint keep the popover inside the app frame.
+        let anchor = self
+            .state
+            .font_picker
+            .anchor
+            .unwrap_or_else(|| egui::pos2(ctx.content_rect().left() + 24.0, 120.0));
+        let event = crate::editor::properties::font_picker::show(
             &mut self.state.font_picker,
             ctx,
             self.cx.locale,

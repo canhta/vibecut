@@ -99,10 +99,7 @@ impl Panel<'_, '_> {
                 });
                 self.remember("inspector.text_font", &response);
                 if response.clicked() {
-                    let anchor = self.state.area.map_or_else(
-                        || response.rect.left_top(),
-                        |area| egui::pos2(area.left() - theme::space::PANEL_GUTTER, row.top()),
-                    );
+                    let anchor = response.rect.left_bottom() + egui::vec2(0.0, theme::space::XS);
                     self.state.font_picker.open(anchor, current);
                 }
                 self.compatible_count(ui, field.compatible);

@@ -105,7 +105,7 @@ pub(in crate::editor) enum Action {
         recent: Vec<project::Color>,
     },
     /// Font picker commands, preferences and family selection.
-    Font(crate::font_picker::Action),
+    Font(super::font_picker::Action),
     Error(String),
 }
 

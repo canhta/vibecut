@@ -6,7 +6,7 @@ mod frame;
 pub(crate) use frame::Context;
 mod models;
 mod player;
-mod properties;
+pub mod properties;
 mod timeline;
 mod widgets;
 
@@ -99,7 +99,7 @@ impl Editor {
     }
     /// Inject the catalog command adapter. Production opens it lazily; tests
     /// and audits supply a recording fake.
-    pub fn set_font_backend(&mut self, backend: Box<dyn crate::font_picker::Backend>) {
+    pub fn set_font_backend(&mut self, backend: Box<dyn properties::font_picker::Backend>) {
         self.font_backend = Some(backend);
     }
     /// Wire the My fonts tab once font import (80) supplies imported families.

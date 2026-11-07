@@ -192,10 +192,6 @@ name = "color_picker"
 group = "properties"
 
 [[crate.module]]
-name = "font_picker"
-group = "properties"
-
-[[crate.module]]
 name = "snapping"
 group = "timeline"
 

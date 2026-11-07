@@ -98,6 +98,12 @@ pub struct Face {
 }
 
 impl Face {
+    /// Raw face bytes. Read-only and process-lifetime, for a host that renders
+    /// a catalogue preview in its own text stack.
+    pub fn bytes(&self) -> &'static [u8] {
+        self.bytes
+    }
+
     fn font(&self) -> Option<Font> {
         Font::new(self.bytes, self.index)
     }

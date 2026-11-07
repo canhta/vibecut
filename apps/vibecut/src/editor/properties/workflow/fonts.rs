@@ -1,7 +1,7 @@
 //! Applies font picker actions: preferences, catalog commands and selection.
+use super::super::font_picker::{Action, Download};
 use crate::catalog;
 use crate::editor::{Editor, PREFERENCE_COMMAND};
-use crate::font_picker::{Action, Download};
 use crate::{Error, Result};
 use engine::control::FontLoadState;
 use engine::jobs::JobState;
@@ -24,8 +24,8 @@ impl Editor {
 
     fn ensure_font_backend(&mut self) -> Result<()> {
         if self.font_backend.is_none() {
-            let backend: Box<dyn crate::font_picker::Backend> = Box::new(
-                crate::font_picker::EngineBackend::native()
+            let backend: Box<dyn super::super::font_picker::Backend> = Box::new(
+                super::super::font_picker::EngineBackend::native()
                     .map_err(|_| Error::Invalid("font catalog unavailable"))?,
             );
             self.font_backend = Some(backend);
@@ -34,10 +34,10 @@ impl Editor {
     }
 
     fn font_list(&mut self) -> Result<()> {
-        self.properties.font_picker.status = crate::font_picker::Status::Loading;
+        self.properties.font_picker.status = super::super::font_picker::Status::Loading;
         self.properties.font_picker.request_sent = true;
         if self.ensure_font_backend().is_err() {
-            self.properties.font_picker.status = crate::font_picker::Status::Failed;
+            self.properties.font_picker.status = super::super::font_picker::Status::Failed;
             self.properties.font_picker.request_sent = false;
             return Ok(());
         }
@@ -48,10 +48,10 @@ impl Editor {
             Ok(entries) => {
                 self.properties.font_picker.entries = entries;
                 self.properties.font_picker.loaded = true;
-                self.properties.font_picker.status = crate::font_picker::Status::Ready;
+                self.properties.font_picker.status = super::super::font_picker::Status::Ready;
             }
             Err(_) => {
-                self.properties.font_picker.status = crate::font_picker::Status::Failed;
+                self.properties.font_picker.status = super::super::font_picker::Status::Failed;
                 self.properties.font_picker.request_sent = false;
             }
         }
@@ -61,7 +61,7 @@ impl Editor {
     fn font_tab(&mut self, tab: catalog::FontTab) -> Result<()> {
         let mut preferences = self.preferences.font_picker.clone();
         preferences.tab = tab;
-        self.properties.font_picker.category = crate::font_picker::Category::All;
+        self.properties.font_picker.category = super::super::font_picker::Category::All;
         self.dispatch(
             PREFERENCE_COMMAND,
             serde_json::json!({"key": "font_picker", "value": preferences}),
@@ -189,7 +189,7 @@ impl Editor {
                 state.download = None;
                 state.loaded = false;
                 state.request_sent = false;
-                state.status = crate::font_picker::Status::Loading;
+                state.status = super::super::font_picker::Status::Loading;
             }
             JobState::Failed => {
                 active.job = None;

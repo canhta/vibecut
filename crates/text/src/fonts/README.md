@@ -8,7 +8,8 @@ reserved so bundled fallback order never changes, and at most 256 faces, 32 MiB 
 256 MiB in total are accepted (registered bytes are retained). Registered faces join only an
 explicit `fallbacks` chain, never the generic bundled order. `generation()` counts registered
 faces; a caller that caches layouts or rasters includes it in its key (render's text cache
-does). Enumeration, downloads and licences of non-bundled fonts belong to
+does). `face(id).bytes()` exposes the retained bytes read-only for a host that previews a
+catalogue family in its own text stack. Enumeration, downloads and licences of non-bundled fonts belong to
 [engine](../../../engine/src/libraries/font_catalog/README.md#font-catalog).
 
 | Family | Faces | Source |

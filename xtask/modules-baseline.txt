@@ -14,7 +14,7 @@ doc	crates/ai/src/policy.rs	first line is not a //! responsibility line
 doc	crates/ai/src/vision/decisions.rs	first line is not a //! responsibility line
 doc	crates/ai/src/vision/reidentification.rs	first line is not a //! responsibility line
 doc	crates/ai/src/vision/tract.rs	first line is not a //! responsibility line
-folder	apps/vibecut/src	30 direct children (limit 12)
+folder	apps/vibecut/src	29 direct children (limit 12)
 folder	crates/ai/src	19 direct children (limit 12)
 layer	apps/vibecut/src/actions.rs	crate::media_panel is in higher layer features/assets (module actions is foundation/foundation)
 layer	apps/vibecut/src/catalog.rs	crate::export is in higher layer features/export (module catalog is foundation/foundation)

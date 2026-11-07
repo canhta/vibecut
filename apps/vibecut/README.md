@@ -35,6 +35,7 @@ The desktop binary is `vibecut`; the headless CLI is `vibecut-cli`.
 | `editor/models/` | Presents the local model manager. | [Editor models](src/editor/models/README.md) |
 | `editor/player/` | Retains preview-only player state. | [Editor player](src/editor/player/README.md) |
 | `editor/properties/` | Owns the properties area. | [Properties](src/editor/properties/README.md) |
+| `editor/properties/font_picker/` | Presents the font catalog picker. | [Font picker](src/editor/properties/font_picker/README.md) |
 | `editor/properties/view/` | Renders property rows. | [Properties view](src/editor/properties/view/README.md) |
 | `editor/properties/workflow/` | Applies property edits. | [Properties workflow](src/editor/properties/workflow/README.md) |
 | `editor/timeline/` | Owns timeline presentation and workflows. | [Timeline](src/editor/timeline/README.md) |
@@ -45,7 +46,6 @@ The desktop binary is `vibecut`; the headless CLI is `vibecut-cli`.
 | `effects.rs` | Implements the desktop GPU effect adapter. | [GPU effects](src/effects/README.md) |
 | `effect_previews.rs` | Schedules effect tile previews. | [Effect previews](src/effect_previews/README.md) |
 | `export.rs` / `export/` | Presents export and its saved choices. | [Export settings](src/export/README.md) |
-| `font_picker.rs` | Presents the font catalog, favourites and explicit downloads. | [Font picker](src/font_picker/README.md) |
 | `home.rs` / `home/` | Owns the project library window. | [Projects page](src/home/README.md) |
 | `home/view/` | Draws the Home window. | [Home view](src/home/view/README.md) |
 | `import.rs` | Runs background media import. | [Media import](src/import/README.md) |

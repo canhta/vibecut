@@ -10,7 +10,6 @@ mod editor;
 pub mod effect_previews;
 pub mod effects;
 pub mod export;
-pub mod font_picker;
 pub mod home;
 pub mod import;
 mod kit;
@@ -25,6 +24,7 @@ pub mod shorts;
 pub mod snapping;
 pub mod subtitles;
 pub mod workspace;
+pub use editor::properties::font_picker;
 pub use editor::{
     AssetInspection, AssetState, Client, Editor, Inspection, PREFERENCE_COMMAND, ShortcutRow,
     ShortcutTab, ShortcutsInspection, Sounds, SoundsMode, SoundsProblem, SoundsView, WidgetState,

@@ -1635,15 +1635,66 @@ fn font_picker_lists_search_tabs_and_favorites_through_commands() {
         "the opening frame renders the loading state"
     );
     harness.run_steps(1);
-    assert_eq!(font_picker(&harness).status, Status::Ready);
+    // The installed preview faces become usable on the following pass.
+    harness.run_steps(1);
+    let inspection = font_picker(&harness);
+    assert_eq!(inspection.status, Status::Ready);
     assert_eq!(fonts.count("fonts.list"), 1);
     assert!(has_widget(&harness, "inspector.text_font.Inter"));
     assert!(has_widget(&harness, "fonts.download.Lobster"));
+    assert!(
+        inspection
+            .preview_fonts
+            .iter()
+            .any(|family| family == "Inter"),
+        "bundled rows install their preview typeface"
+    );
+    assert!(
+        inspection
+            .preview_fonts
+            .iter()
+            .any(|family| family == "Noto Serif"),
+        "{inspection:?}"
+    );
     assert_eq!(
         harness.state().session.project(),
         &project,
         "listing fonts never mutates the project"
     );
+
+    // Every row shares the star, name and state columns, available or not.
+    let field = widget_rect(&harness, "inspector.text_font");
+    let search = widget_rect(&harness, "fonts.search");
+    assert!(
+        search.top() >= field.bottom(),
+        "the popover opens below the field"
+    );
+    assert!(
+        search.left() >= harness.state().panels["inspector"].left(),
+        "the popover stays inside the properties panel"
+    );
+    let star = widget_rect(&harness, "fonts.favorite.Inter");
+    let star_google = widget_rect(&harness, "fonts.favorite.Lobster");
+    assert_eq!(
+        (star.left(), star.width()),
+        (star_google.left(), star_google.width())
+    );
+    let name = widget_rect(&harness, "inspector.text_font.Inter");
+    let name_google = widget_rect(&harness, "inspector.text_font.Lobster");
+    assert_eq!(
+        (name.left(), name.width()),
+        (name_google.left(), name_google.width())
+    );
+    let state = widget_rect(&harness, "fonts.state.Inter");
+    let state_google = widget_rect(&harness, "fonts.state.Lobster");
+    assert_eq!(
+        state.left(),
+        state_google.left(),
+        "the state column has one fixed left edge"
+    );
+    assert!(name.left() >= star.right());
+    assert!(state.left() >= name.right());
+    assert!(widget_rect(&harness, "fonts.download.Lobster").left() >= state.left());
 
     type_search(&mut harness, "not");
     assert!(has_widget(&harness, "inspector.text_font.Noto Serif"));
@@ -1652,8 +1703,10 @@ fn font_picker_lists_search_tabs_and_favorites_through_commands() {
     assert!(has_widget(&harness, "fonts.empty"));
     type_search(&mut harness, "");
 
-    // My fonts stays hidden until import exists; Custom is visible but disabled.
-    assert!(!has_widget(&harness, "fonts.tab.my_fonts"));
+    // The source tab set always shows all three; My fonts is empty until 80.
+    assert!(has_widget(&harness, "fonts.tab.all"));
+    assert!(has_widget(&harness, "fonts.tab.my_fonts"));
+    assert!(has_widget(&harness, "fonts.tab.favorites"));
     assert!(
         harness
             .get(By::new().predicate(|node| node.author_id() == Some("fonts.upload")))
@@ -1666,11 +1719,12 @@ fn font_picker_lists_search_tabs_and_favorites_through_commands() {
             .accesskit_node()
             .is_disabled()
     );
-    harness.state_mut().set_font_imports_available(true);
-    harness.run_steps(2);
-    assert!(has_widget(&harness, "fonts.tab.my_fonts"));
     click(&mut harness, "fonts.tab.my_fonts");
-    assert!(has_widget(&harness, "fonts.empty"), "no imports exist yet");
+    assert!(
+        has_widget(&harness, "fonts.my_empty"),
+        "no imports exist yet"
+    );
+    click(&mut harness, "fonts.tab.all");
 
     click(&mut harness, "fonts.tab.favorites");
     assert!(has_widget(&harness, "fonts.empty"));
@@ -1770,7 +1824,7 @@ fn font_picker_download_cancel_and_failure_states() {
     let download = font_picker(&harness).download.expect("download started");
     assert_eq!(download.family, "Lobster");
     assert_eq!(fonts.count("fonts.download"), 1);
-    assert!(has_widget(&harness, "fonts.progress"));
+    assert!(has_widget(&harness, "fonts.downloading"));
     assert!(has_widget(&harness, "fonts.cancel"));
     assert_eq!(
         harness.state().session.project(),

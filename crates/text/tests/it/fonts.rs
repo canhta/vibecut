@@ -25,6 +25,11 @@ fn registered_family_resolves_and_never_changes_bundled_resolution() {
     let resolved = resolve("registered sample", "Regular");
     assert_eq!((resolved.face, resolved.missing), (id, false));
     assert_eq!(face(id).family, "Registered Sample");
+    assert_eq!(
+        face(id).bytes(),
+        SERIF,
+        "previews read the registered bytes"
+    );
     let lines = layout(
         "Hello",
         &LayoutOptions {

@@ -773,4 +773,4 @@ mod number_edit;
 
 mod selection;
 
-mod font_picker;
+mod font_dialog;
