@@ -633,7 +633,17 @@ fn consent_denial_provider_change_cancel_and_stale_results_never_apply() {
 fn capabilities_locale_and_choices_persist_without_loading_models() {
     let mut h = harness(editor("vi"), 2.0);
     h.run_steps(3);
+    assert_eq!(Options::default().source, "auto");
     click(&mut h, "subtitles.generate.settings");
+    click(&mut h, "subtitles.source");
+    assert_eq!(
+        h.query_all(By::new().predicate(|n| n.author_id() == Some("subtitles.source.auto")))
+            .count(),
+        1,
+        "the spoken-language list always offers Auto"
+    );
+    click(&mut h, "subtitles.source.auto");
+    assert_eq!(h.state().preferences.subtitles.source, "auto");
     click(&mut h, "subtitles.transcriber");
     click(
         &mut h,
