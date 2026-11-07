@@ -659,6 +659,99 @@ fn overlap_merge_uses_source_samples_and_refuses_different_speech_or_source() {
     .unwrap();
     let merged = assemble(vec![result.clone(), result.clone()], &hooks).unwrap();
     assert_eq!(merged.segments().len(), 2);
+    // Same text at disjoint times stays two events.
+    let mut repeated = Fake::new(scope.provider.clone(), NATIVE);
+    for segment in &mut repeated.result {
+        segment.text = "Yes".into();
+        segment.timing.clear();
+    }
+    let repeated = transcribe(
+        &repeated,
+        audio(&pcm, &scope),
+        &Request {
+            scope: &scope,
+            consent: None,
+        },
+        None,
+        &hooks,
+    )
+    .unwrap();
+    assert_eq!(repeated.segments().len(), 2);
+    assert_eq!(repeated.segments()[1].range.unwrap().end(), 48000);
+    // Distinct IDs and overlapping speech ranges in one response keep both.
+    let mut overlapping = Fake::new(scope.provider.clone(), NATIVE);
+    overlapping.result[0].text = "Yes".into();
+    overlapping.result[0].timing.clear();
+    overlapping.result[0].range = Some(SampleRange::new(16000, 40000).unwrap());
+    overlapping.result[1].text = "Yes".into();
+    overlapping.result[1].timing.clear();
+    overlapping.result[1].range = Some(SampleRange::new(32000, 48000).unwrap());
+    let overlapping = transcribe(
+        &overlapping,
+        audio(&pcm, &scope),
+        &Request {
+            scope: &scope,
+            consent: None,
+        },
+        None,
+        &hooks,
+    );
+    assert!(
+        overlapping.as_ref().is_err() || overlapping.as_ref().unwrap().segments().len() == 2,
+        "distinct IDs and speech ranges must not silently lose a segment"
+    );
+    // Equal text overlap is refused unless the whole event identity and metadata match.
+    let mut single = Fake::new(scope.provider.clone(), NATIVE);
+    single.result.truncate(1);
+    let first = transcribe(
+        &single,
+        audio(&pcm, &scope),
+        &Request {
+            scope: &scope,
+            consent: None,
+        },
+        None,
+        &hooks,
+    )
+    .unwrap();
+    for variant in 0..4 {
+        let mut changed = Fake::new(scope.provider.clone(), NATIVE);
+        changed.result.truncate(1);
+        match variant {
+            0 => changed.result[0].id = "another-event".into(),
+            1 => {
+                changed.result[0].range = Some(SampleRange::new(24000, 40000).unwrap());
+                changed.result[0].timing.clear();
+            }
+            2 => changed.result[0].timing[0].speaker = Some("another-speaker".into()),
+            _ => {
+                changed.result[0].timing[0].confidence =
+                    Some(captions::Confidence::try_from(0.5).unwrap())
+            }
+        }
+        let second = transcribe(
+            &changed,
+            audio(&pcm, &scope),
+            &Request {
+                scope: &scope,
+                consent: None,
+            },
+            None,
+            &hooks,
+        )
+        .unwrap();
+        assert!(matches!(
+            assemble(vec![first.clone(), second], &hooks),
+            Err(Error::Invalid("ambiguous overlapping recognition"))
+        ));
+    }
+    assert_eq!(
+        assemble(vec![first.clone(), first], &hooks)
+            .unwrap()
+            .segments()
+            .len(),
+        1
+    );
     let mut other = Fake::new(scope.provider.clone(), NATIVE);
     other.result[0].text = "Different".into();
     other.result[0].timing.clear();
@@ -876,7 +969,7 @@ fn alignment_preserves_existing_native_unit_layers() {
 }
 
 #[test]
-fn review_mixed_native_and_aligned_chunks_can_assemble() {
+fn mixed_native_and_aligned_chunks_assemble_under_one_fingerprint() {
     let first_scope = scope(config(false), Operation::Transcribe);
     let native = Fake::new(first_scope.provider.clone(), NATIVE);
     let pcm = vec![0.0; 32000];
@@ -973,110 +1066,6 @@ fn review_mixed_native_and_aligned_chunks_can_assemble() {
         assemble(vec![second, conflicting], &hooks),
         Err(Error::Invalid("incompatible alignment fingerprints"))
     ));
-}
-
-#[test]
-fn review_single_response_does_not_discard_distinct_equal_text_speech() {
-    let scope = scope(config(false), Operation::Transcribe);
-    let mut fake = Fake::new(scope.provider.clone(), NATIVE);
-    fake.result[0].text = "Yes".into();
-    fake.result[0].timing.clear();
-    fake.result[0].range = Some(SampleRange::new(16000, 40000).unwrap());
-    fake.result[1].text = "Yes".into();
-    fake.result[1].timing.clear();
-    fake.result[1].range = Some(SampleRange::new(32000, 48000).unwrap());
-    let pcm = vec![0.0; 32000];
-    let result = transcribe(
-        &fake,
-        audio(&pcm, &scope),
-        &Request {
-            scope: &scope,
-            consent: None,
-        },
-        None,
-        &Hooks::new(),
-    );
-    assert!(
-        result.as_ref().is_err() || result.as_ref().unwrap().segments().len() == 2,
-        "distinct IDs and speech ranges must not silently lose a segment"
-    );
-}
-
-#[test]
-fn review_equal_text_overlap_requires_identical_event_identity_and_all_metadata() {
-    let scope = scope(config(false), Operation::Transcribe);
-    let pcm = vec![0.0; 32000];
-    let hooks = Hooks::new();
-    let mut fake = Fake::new(scope.provider.clone(), NATIVE);
-    fake.result.truncate(1);
-    let first = transcribe(
-        &fake,
-        audio(&pcm, &scope),
-        &Request {
-            scope: &scope,
-            consent: None,
-        },
-        None,
-        &hooks,
-    )
-    .unwrap();
-    for variant in 0..4 {
-        let mut changed = Fake::new(scope.provider.clone(), NATIVE);
-        changed.result.truncate(1);
-        match variant {
-            0 => changed.result[0].id = "another-event".into(),
-            1 => {
-                changed.result[0].range = Some(SampleRange::new(24000, 40000).unwrap());
-                changed.result[0].timing.clear();
-            }
-            2 => changed.result[0].timing[0].speaker = Some("another-speaker".into()),
-            _ => {
-                changed.result[0].timing[0].confidence =
-                    Some(captions::Confidence::try_from(0.5).unwrap())
-            }
-        }
-        let second = transcribe(
-            &changed,
-            audio(&pcm, &scope),
-            &Request {
-                scope: &scope,
-                consent: None,
-            },
-            None,
-            &hooks,
-        )
-        .unwrap();
-        assert!(matches!(
-            assemble(vec![first.clone(), second], &hooks),
-            Err(Error::Invalid("ambiguous overlapping recognition"))
-        ));
-    }
-    let identical = assemble(vec![first.clone(), first], &hooks).unwrap();
-    assert_eq!(identical.segments().len(), 1);
-}
-
-#[test]
-fn review_same_text_repetition_at_disjoint_times_keeps_both_events() {
-    let scope = scope(config(false), Operation::Transcribe);
-    let mut fake = Fake::new(scope.provider.clone(), NATIVE);
-    for segment in &mut fake.result {
-        segment.text = "Yes".into();
-        segment.timing.clear();
-    }
-    let pcm = vec![0.0; 32000];
-    let result = transcribe(
-        &fake,
-        audio(&pcm, &scope),
-        &Request {
-            scope: &scope,
-            consent: None,
-        },
-        None,
-        &Hooks::new(),
-    )
-    .unwrap();
-    assert_eq!(result.segments().len(), 2);
-    assert_eq!(result.segments()[1].range.unwrap().end(), 48000);
 }
 
 #[allow(clippy::unwrap_used, reason = "offline raw token fixture")]
@@ -1345,101 +1334,18 @@ fn alignment_preserves_native_token_layer_in_either_transport_representation() {
 }
 
 #[test]
-fn review_requested_token_alignment_fills_missing_token_ranges() {
-    let scope = scope(config(false), Operation::Transcribe);
-    let mut native = Fake::new(scope.provider.clone(), TEXT);
-    native.result = vec![raw_result("ab")];
-    for t in &mut native.result[0].raw_tokens {
-        t.range = None;
-    }
-    let mut align_scope = scope.clone();
-    align_scope.operation = Operation::Align;
-    align_scope.texts = vec!["ab".into()];
-    let mut aligner = Fake::new(align_scope.provider.clone(), TEXT);
-    aligner.result = vec![raw_result("ab")];
-    for t in &mut aligner.result[0].raw_tokens {
-        t.provenance = Provenance::Forced;
-    }
-    let pcm = vec![0.0; 32000];
-    let result = transcribe(
-        &native,
-        audio(&pcm, &scope),
-        &Request {
-            scope: &scope,
-            consent: None,
-        },
-        Some(Alignment {
-            provider: &aligner,
-            request: Request {
-                scope: &align_scope,
-                consent: None,
-            },
-            unit: TimingUnit::Token,
-        }),
-        &Hooks::new(),
-    )
-    .unwrap();
-    assert_eq!(
-        aligner.calls.load(Ordering::Relaxed),
-        1,
-        "explicit token aligner must run for absent token times"
-    );
-    assert!(
-        result.segments()[0]
-            .raw_tokens
-            .iter()
-            .all(|t| t.range.is_some())
-    );
-}
-
-#[test]
-fn review_requested_token_alignment_rejects_untimed_output() {
-    let scope = scope(config(false), Operation::Transcribe);
-    let mut native = Fake::new(scope.provider.clone(), TEXT);
-    native.result = vec![raw_result("ab")];
-    native.result[0].raw_tokens.clear();
-    let mut align_scope = scope.clone();
-    align_scope.operation = Operation::Align;
-    align_scope.texts = vec!["ab".into()];
-    let mut aligner = Fake::new(align_scope.provider.clone(), TEXT);
-    aligner.result = vec![raw_result("ab")];
-    for t in &mut aligner.result[0].raw_tokens {
-        t.provenance = Provenance::Forced;
-        t.range = None;
-    }
-    let pcm = vec![0.0; 32000];
-    let result = transcribe(
-        &native,
-        audio(&pcm, &scope),
-        &Request {
-            scope: &scope,
-            consent: None,
-        },
-        Some(Alignment {
-            provider: &aligner,
-            request: Request {
-                scope: &align_scope,
-                consent: None,
-            },
-            unit: TimingUnit::Token,
-        }),
-        &Hooks::new(),
-    );
-    assert_eq!(aligner.calls.load(Ordering::Relaxed), 1);
-    assert!(
-        result.is_err(),
-        "requested token alignment must not succeed with every token timestamp absent"
-    );
-}
-
-#[test]
 fn token_alignment_reconciles_only_matching_ordinals_and_preserves_native_evidence() {
-    for case in 0..9 {
+    for case in 0..11 {
         let scope = scope(config(false), Operation::Transcribe);
         let mut original = raw_result("abcd");
         if case != 0 {
             original.raw_tokens[1].range = None;
             original.raw_tokens[3].range = None;
+        }
+        if case == 9 || case == 10 {
+            for token in &mut original.raw_tokens {
+                token.range = None;
+            }
         }
         if case == 4 {
             original.raw_tokens[1].bytes = b"bc".to_vec();
@@ -1490,6 +1396,11 @@ fn token_alignment_reconciles_only_matching_ordinals_and_preserves_native_eviden
                 aligned.range = Some(SampleRange::new(16000, 17000).unwrap());
                 aligned.raw_tokens[3].range = Some(SampleRange::new(16400, 16500).unwrap());
             }
+            10 => {
+                for token in &mut aligned.raw_tokens {
+                    token.range = None;
+                }
+            }
             _ => {}
         }
         let mut aligner = Fake::new(align_scope.provider.clone(), TEXT);
@@ -1517,7 +1428,7 @@ fn token_alignment_reconciles_only_matching_ordinals_and_preserves_native_eviden
             usize::from(case != 0),
             "case {case}"
         );
-        if matches!(case, 2..=6 | 8) {
+        if matches!(case, 2..=6 | 8 | 10) {
             assert!(
                 matches!(result, Err(Error::Invalid(_))),
                 "case {case}: {result:?}"

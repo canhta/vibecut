@@ -360,7 +360,7 @@ fn consent_preparation_cannot_rebind_old_source_to_a_new_session_revision() {
 }
 
 #[test]
-fn review_retranslate_during_trim_must_retain_unselected_hidden_cues() {
+fn retranslate_during_trim_retains_unselected_hidden_cues() {
     let mut s = session();
     s.begin_gesture().unwrap();
     s.apply(Command::TrimEnd {

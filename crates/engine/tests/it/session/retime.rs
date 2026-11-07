@@ -430,7 +430,7 @@ fn speed_edits_refuse_atomically_and_ripple_only_on_a_magnetic_main_track() {
 }
 
 #[test]
-fn review_split_inside_retimed_transition_preserves_span() {
+fn split_inside_retimed_transition_preserves_output_span() {
     let mut a = video(1, 0, range(0, 4 * SECOND));
     let mut b = video(2, 2 * SECOND, range(4 * SECOND, 8 * SECOND));
     a.retime.speed = speed(2.0);

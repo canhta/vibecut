@@ -598,7 +598,7 @@ fn overlap_threshold_and_near_duplicate_keep_highest_score() {
 }
 
 #[test]
-fn review_dense_long_local_input() {
+fn dense_long_local_input_returns_one_bounded_clip() {
     let p = HeuristicClipSuggester::new().unwrap();
     let mut w = input("en", 600);
     w.settings.count = 1;

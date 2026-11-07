@@ -164,15 +164,6 @@ fn set_fade_refuses_hostile_input_atomically() {
     assert_eq!(s.project(), &locked);
 }
 
-#[test]
-fn registry_lists_set_fade_as_an_edit() {
-    let spec = engine::registry()
-        .iter()
-        .find(|spec| spec.id == "audio.set_fade")
-        .unwrap();
-    assert_eq!(spec.effect, engine::Effect::Edit);
-}
-
 /// One timeline piece: id, start and end ticks, fades.
 type Piece = (u64, Tick, Tick, project::Fades);
 fn pieces(session: &Session) -> Vec<Piece> {

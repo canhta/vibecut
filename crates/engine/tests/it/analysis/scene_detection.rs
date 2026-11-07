@@ -255,6 +255,29 @@ fn reviewed_subset_is_one_undo_step_and_refusals_are_atomic() {
     );
     s.undo().unwrap();
     assert_eq!(serde_json::to_vec(s.project().data()).unwrap(), retimed);
+    // A reviewed subset larger than one edit batch still undoes in one step.
+    let asset = fixture("marker-overflow-review", 16, 1026, true);
+    let request = DetectionRequest::new(
+        asset.clone(),
+        range(1026),
+        DetectionSettings {
+            min_scene: Tick::ZERO,
+            ..Default::default()
+        },
+    )
+    .unwrap();
+    let result = detect(&request);
+    assert_eq!(result.candidates.len(), 1025);
+    let mut s = session(asset, 1026);
+    let original = serde_json::to_vec(s.project().data()).unwrap();
+    let selected: Vec<_> = (0..result.candidates.len()).collect();
+    apply_reviewed(&mut s, ItemId(10), &result, &selected).unwrap();
+    assert_eq!(s.project().data().scene().timeline.main.items.len(), 1026);
+    assert_eq!(s.history_len(), (1, 0));
+    s.undo().unwrap();
+    assert_eq!(serde_json::to_vec(s.project().data()).unwrap(), original);
+    s.redo().unwrap();
+    assert_eq!(s.project().data().scene().timeline.main.items.len(), 1026);
 }
 #[test]
 fn cancellation_preserves_timeline_and_cache_hits_do_not_decode() {
@@ -437,32 +460,6 @@ fn excessive_changes_fail_instead_of_retaining_unbounded_markers() {
     assert_eq!(wait(&mut runner, &job), JobState::Failed);
     assert!(job.finish(&mut runner, &mut cache).is_err());
     assert!(cache.get(request.cache_key()).unwrap().is_none());
-}
-
-#[test]
-fn review_larger_than_one_batch_still_undoes_once() {
-    let asset = fixture("marker-overflow-review", 16, 1026, true);
-    let request = DetectionRequest::new(
-        asset.clone(),
-        range(1026),
-        DetectionSettings {
-            min_scene: Tick::ZERO,
-            ..Default::default()
-        },
-    )
-    .unwrap();
-    let result = detect(&request);
-    assert_eq!(result.candidates.len(), 1025);
-    let mut s = session(asset, 1026);
-    let original = serde_json::to_vec(s.project().data()).unwrap();
-    let selected: Vec<_> = (0..result.candidates.len()).collect();
-    apply_reviewed(&mut s, ItemId(10), &result, &selected).unwrap();
-    assert_eq!(s.project().data().scene().timeline.main.items.len(), 1026);
-    assert_eq!(s.history_len(), (1, 0));
-    s.undo().unwrap();
-    assert_eq!(serde_json::to_vec(s.project().data()).unwrap(), original);
-    s.redo().unwrap();
-    assert_eq!(s.project().data().scene().timeline.main.items.len(), 1026);
 }
 
 #[test]

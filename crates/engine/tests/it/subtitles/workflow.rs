@@ -766,7 +766,7 @@ fn text_only_providers(
 }
 
 #[test]
-fn review_text_only_asr_reaches_local_aligner() {
+fn text_only_asr_runs_the_local_aligner() {
     let Some(input) = fixture() else {
         return;
     };

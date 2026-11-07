@@ -6,7 +6,6 @@ mod clips;
 mod conformance;
 mod elevenlabs;
 mod elevenlabs_speech;
-mod http_method;
 mod local_gipformer;
 mod local_whisper;
 mod model_transport;

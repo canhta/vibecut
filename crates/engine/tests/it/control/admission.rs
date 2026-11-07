@@ -1755,7 +1755,8 @@ fn assert_integer_candidate_refusal(s: &mut Session, r: &mut JobRunner, id: &str
 }
 
 #[test]
-fn review_integer_generated_id_is_refused_atomically_at_safe_limit() {
+fn integer_candidates_at_the_safe_limit_refuse_atomically_through_every_entry() {
+    // A generated id at the safe limit refuses the next allocation.
     let mut data = session().project().data().clone();
     data.scene_mut().timeline.insert_track(Track {
         id: TrackId(control::MAX_SAFE_INTEGER as u64),
@@ -1766,153 +1767,17 @@ fn review_integer_generated_id_is_refused_atomically_at_safe_limit() {
         locked: false,
         items: vec![],
     });
-    let mut s = Session::new(Project::new(data).unwrap(), 10).unwrap();
+    let mut generated = Session::new(Project::new(data).unwrap(), 10).unwrap();
     let mut r = runner();
-    ok(run(&mut s, &mut r, "inspect", json!({}), "before"));
+    ok(run(&mut generated, &mut r, "inspect", json!({}), "before"));
     assert_integer_candidate_refusal(
-        &mut s,
+        &mut generated,
         &mut r,
         "timeline.add_track",
         json!({"name":"Next","kind":"video"}),
     );
-}
 
-#[test]
-fn review_integer_derived_source_ticks_and_batch_are_refused_atomically() {
-    for batch in [false, true] {
-        let mut data = session().project().data().clone();
-        data.scene_mut().timeline.insert_track(Track {
-            id: TrackId(1),
-            name: "Boundary".into(),
-            kind: TrackKind::Video,
-            muted: false,
-            hidden: false,
-            locked: false,
-            items: vec![Item {
-                blend_mode: Default::default(),
-                retime: Default::default(),
-                masks: Vec::new(),
-                effects: Vec::new(),
-                id: ItemId(1),
-                animations: Default::default(),
-                source_asset: None,
-                source_range: SourceRange::new(
-                    Tick(control::MAX_SAFE_INTEGER - 10),
-                    Tick(control::MAX_SAFE_INTEGER),
-                )
-                .unwrap(),
-                start: Tick::ZERO,
-                content: ItemParams::Overlay(OverlayParams {
-                    color: Color([0, 0, 0, 255]),
-                }),
-            }],
-        });
-        let mut s = Session::new(Project::new(data).unwrap(), 10).unwrap();
-        let mut r = runner();
-        ok(run(&mut s, &mut r, "inspect", json!({}), "before"));
-        if batch {
-            assert_integer_candidate_refusal(
-                &mut s,
-                &mut r,
-                "batch",
-                json!({"commands":[{"command":"project.rename","params":{"name":"Must roll back"}},{"command":"timeline.add_track","params":{"name":"Must not consume ID","kind":"video"}},{"command":"trim_end","params":{"item":1,"at":20}}]}),
-            );
-        } else {
-            assert_integer_candidate_refusal(&mut s, &mut r, "trim_end", json!({"item":1,"at":20}));
-        }
-        if batch {
-            let result = ok(run(
-                &mut s,
-                &mut r,
-                "timeline.add_track",
-                json!({"name":"After refusal","kind":"video"}),
-                "after-batch",
-            ));
-            assert!(
-                matches!(result,ControlResult::Edit{outcome} if outcome.created==vec![engine::CreatedId::Track(TrackId(2))])
-            );
-        }
-    }
-}
-
-#[test]
-fn review_integer_last_safe_created_id_matches_schema_then_next_id_refuses() {
-    let mut data = session().project().data().clone();
-    data.scene_mut().timeline.insert_track(Track {
-        id: TrackId(control::MAX_SAFE_INTEGER as u64 - 1),
-        name: "Boundary".into(),
-        kind: TrackKind::Video,
-        muted: false,
-        hidden: false,
-        locked: false,
-        items: vec![],
-    });
-    let mut s = Session::new(Project::new(data).unwrap(), 10).unwrap();
-    let mut r = runner();
-    let result = ok(run(
-        &mut s,
-        &mut r,
-        "timeline.add_track",
-        json!({"name":"Last safe","kind":"video"}),
-        "last-safe",
-    ));
-    assert!(
-        matches!(&result,ControlResult::Edit{outcome} if outcome.created==vec![engine::CreatedId::Track(TrackId(control::MAX_SAFE_INTEGER as u64))])
-    );
-    let schema = &registry()
-        .iter()
-        .find(|spec| spec.id == "timeline.add_track")
-        .unwrap()
-        .output_schema;
-    assert!(
-        jsonschema::options()
-            .offline()
-            .build(schema)
-            .unwrap()
-            .is_valid(&serde_json::to_value(result).unwrap())
-    );
-    s.take_change();
-    assert_integer_candidate_refusal(
-        &mut s,
-        &mut r,
-        "timeline.add_track",
-        json!({"name":"Unsafe","kind":"video"}),
-    );
-}
-
-#[test]
-fn review_integer_derived_keyframe_ticks_refuse_before_commit() {
-    let mut data = seed().project().data().clone();
-    let path = project::AnimationPath::new("opacity").unwrap();
-    data.scene_mut()
-        .timeline
-        .iter_mut()
-        .flat_map(|track| &mut track.items)
-        .find(|item| item.id == ItemId(1))
-        .unwrap()
-        .animations
-        .get_mut(&path)
-        .unwrap()
-        .channel_mut(None)
-        .unwrap()
-        .put(project::Keyframe::new(
-            Tick(control::MAX_SAFE_INTEGER / 2 + 1),
-            project::ParamValue::Scalar(0.5),
-        ))
-        .unwrap();
-    let mut s = Session::new(Project::new(data).unwrap(), 10).unwrap();
-    let mut r = runner();
-    ok(run(&mut s, &mut r, "inspect", json!({}), "before"));
-    assert_integer_candidate_refusal(
-        &mut s,
-        &mut r,
-        "keyframes.scale_time",
-        json!({"item":1,"numerator":2,"denominator":1}),
-    );
-}
-
-#[test]
-fn review_integer_history_destination_and_legacy_json_share_candidate_validation() {
+    // Derived source ticks refuse through one command and through a batch.
     let mut data = session().project().data().clone();
     data.scene_mut().timeline.insert_track(Track {
         id: TrackId(1),
@@ -1940,26 +1805,153 @@ fn review_integer_history_destination_and_legacy_json_share_candidate_validation
             }),
         }],
     });
-    let mut s = Session::new(Project::new(data).unwrap(), 10).unwrap();
+    for batch in [false, true] {
+        let mut s = Session::new(Project::new(data.clone()).unwrap(), 10).unwrap();
+        let mut r = runner();
+        ok(run(&mut s, &mut r, "inspect", json!({}), "before"));
+        if batch {
+            assert_integer_candidate_refusal(
+                &mut s,
+                &mut r,
+                "batch",
+                json!({"commands":[{"command":"project.rename","params":{"name":"Must roll back"}},{"command":"timeline.add_track","params":{"name":"Must not consume ID","kind":"video"}},{"command":"trim_end","params":{"item":1,"at":20}}]}),
+            );
+            let result = ok(run(
+                &mut s,
+                &mut r,
+                "timeline.add_track",
+                json!({"name":"After refusal","kind":"video"}),
+                "after-batch",
+            ));
+            assert!(
+                matches!(result,ControlResult::Edit{outcome} if outcome.created==vec![engine::CreatedId::Track(TrackId(2))])
+            );
+        } else {
+            assert_integer_candidate_refusal(&mut s, &mut r, "trim_end", json!({"item":1,"at":20}));
+        }
+    }
+
+    // The last safe created id still matches the output schema; the next id refuses.
+    let mut data = session().project().data().clone();
+    data.scene_mut().timeline.insert_track(Track {
+        id: TrackId(control::MAX_SAFE_INTEGER as u64 - 1),
+        name: "Boundary".into(),
+        kind: TrackKind::Video,
+        muted: false,
+        hidden: false,
+        locked: false,
+        items: vec![],
+    });
+    let mut last_safe = Session::new(Project::new(data).unwrap(), 10).unwrap();
     let mut r = runner();
-    let before = s.project().clone();
-    let revision = s.revision();
+    let result = ok(run(
+        &mut last_safe,
+        &mut r,
+        "timeline.add_track",
+        json!({"name":"Last safe","kind":"video"}),
+        "last-safe",
+    ));
+    assert!(
+        matches!(&result,ControlResult::Edit{outcome} if outcome.created==vec![engine::CreatedId::Track(TrackId(control::MAX_SAFE_INTEGER as u64))])
+    );
+    let schema = &registry()
+        .iter()
+        .find(|spec| spec.id == "timeline.add_track")
+        .unwrap()
+        .output_schema;
+    assert!(
+        jsonschema::options()
+            .offline()
+            .build(schema)
+            .unwrap()
+            .is_valid(&serde_json::to_value(result).unwrap())
+    );
+    last_safe.take_change();
+    assert_integer_candidate_refusal(
+        &mut last_safe,
+        &mut r,
+        "timeline.add_track",
+        json!({"name":"Unsafe","kind":"video"}),
+    );
+
+    // Derived keyframe ticks refuse before commit.
+    let mut data = seed().project().data().clone();
+    let path = project::AnimationPath::new("opacity").unwrap();
+    data.scene_mut()
+        .timeline
+        .iter_mut()
+        .flat_map(|track| &mut track.items)
+        .find(|item| item.id == ItemId(1))
+        .unwrap()
+        .animations
+        .get_mut(&path)
+        .unwrap()
+        .channel_mut(None)
+        .unwrap()
+        .put(project::Keyframe::new(
+            Tick(control::MAX_SAFE_INTEGER / 2 + 1),
+            project::ParamValue::Scalar(0.5),
+        ))
+        .unwrap();
+    let mut keyframes = Session::new(Project::new(data).unwrap(), 10).unwrap();
+    let mut r = runner();
+    ok(run(&mut keyframes, &mut r, "inspect", json!({}), "before"));
+    assert_integer_candidate_refusal(
+        &mut keyframes,
+        &mut r,
+        "keyframes.scale_time",
+        json!({"item":1,"numerator":2,"denominator":1}),
+    );
+
+    // History destinations and legacy JSON share the same candidate validation.
+    let mut data = session().project().data().clone();
+    data.scene_mut().timeline.insert_track(Track {
+        id: TrackId(1),
+        name: "Boundary".into(),
+        kind: TrackKind::Video,
+        muted: false,
+        hidden: false,
+        locked: false,
+        items: vec![Item {
+            blend_mode: Default::default(),
+            retime: Default::default(),
+            masks: Vec::new(),
+            effects: Vec::new(),
+            id: ItemId(1),
+            animations: Default::default(),
+            source_asset: None,
+            source_range: SourceRange::new(
+                Tick(control::MAX_SAFE_INTEGER - 10),
+                Tick(control::MAX_SAFE_INTEGER),
+            )
+            .unwrap(),
+            start: Tick::ZERO,
+            content: ItemParams::Overlay(OverlayParams {
+                color: Color([0, 0, 0, 255]),
+            }),
+        }],
+    });
+    let mut history = Session::new(Project::new(data).unwrap(), 10).unwrap();
+    let mut r = runner();
+    let before = history.project().clone();
+    let revision = history.revision();
     assert!(matches!(
-        s.execute("trim_end", json!({"item":1,"at":20})),
+        history.execute("trim_end", json!({"item":1,"at":20})),
         Err(EditError::InvalidParams)
     ));
-    assert_eq!(s.project(), &before);
-    assert_eq!(s.revision(), revision);
-    s.apply(Command::TrimEnd {
-        item: ItemId(1),
-        at: Tick(20),
-    })
-    .unwrap();
-    s.undo().unwrap();
-    s.take_change();
-    assert_eq!(s.project(), &before);
-    assert_eq!(s.history_len(), (0, 1));
-    assert_integer_candidate_refusal(&mut s, &mut r, "redo", json!({}));
+    assert_eq!(history.project(), &before);
+    assert_eq!(history.revision(), revision);
+    history
+        .apply(Command::TrimEnd {
+            item: ItemId(1),
+            at: Tick(20),
+        })
+        .unwrap();
+    history.undo().unwrap();
+    history.take_change();
+    assert_eq!(history.project(), &before);
+    assert_eq!(history.history_len(), (0, 1));
+    assert_integer_candidate_refusal(&mut history, &mut r, "redo", json!({}));
 }
 
 #[test]
