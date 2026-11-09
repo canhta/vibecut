@@ -5,13 +5,14 @@
 
 use crate::{Error, Result};
 use ai::transport::HttpTransport;
+use engine::SoundError;
 use engine::{
     ByteBudget, EditError,
     jobs::{CancelToken, JobId, JobRunner, JobState, RunnerConfig, SystemClock},
 };
 use libraries::sounds::{
-    CachedSound, Error as SoundError, SavedSound, SearchPage, SearchRequest, SearchSource,
-    SoundClient, SoundDownloads, SoundLibrary, SoundPreview, SoundResult, Token,
+    CachedSound, SavedSound, SearchPage, SearchRequest, SearchSource, SoundClient, SoundDownloads,
+    SoundLibrary, SoundPreview, SoundResult, Token,
 };
 use std::{
     collections::BTreeSet,

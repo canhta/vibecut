@@ -1,8 +1,8 @@
 //! App-owned cpal preview sink. Decoding and device lifetime stay on one
 //! worker thread; the engine still owns the play/stop/cancel contract.
 
-use super::SoundError;
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
+use engine::SoundError;
 use libraries::sounds::{PreviewClip, PreviewSink};
 use media::{AudioDecoder, AudioResampler, AudioSampleFormat, PacketReader, StreamKind};
 use std::{

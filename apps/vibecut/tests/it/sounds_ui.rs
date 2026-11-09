@@ -11,10 +11,10 @@ use egui_kittest::{
     Harness,
     kittest::{By, Queryable},
 };
+use engine::SoundError;
 use engine::{ByteBudget, Session};
 use libraries::sounds::{
-    Error as SoundError, PreviewClip, PreviewSink, SoundDownloads, SoundLibrary, SoundPreview,
-    SoundResult, Token,
+    PreviewClip, PreviewSink, SoundDownloads, SoundLibrary, SoundPreview, SoundResult, Token,
 };
 use project::{Project, ProjectId};
 use std::{

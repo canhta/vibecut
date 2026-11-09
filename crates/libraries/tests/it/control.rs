@@ -134,7 +134,7 @@ fn font_commands_return_typed_results_and_refuse_without_a_store_or_acceptance()
     };
     assert_eq!(entries.len(), 1);
     assert_eq!(entries[0].family, "Lobster");
-    assert_eq!(entries[0].state, libraries::fonts::FontState::NotDownloaded);
+    assert_eq!(entries[0].state, engine::control::FontState::NotDownloaded);
     // A null or omitted query lists every family.
     for params in [json!({}), json!({"query":null})] {
         let ControlResult::Fonts { entries } = ok(control(
@@ -159,7 +159,7 @@ fn font_commands_return_typed_results_and_refuse_without_a_store_or_acceptance()
     )) else {
         panic!("fonts.load result");
     };
-    assert_eq!(font.state, libraries::fonts::FontLoadState::NotDownloaded);
+    assert_eq!(font.state, engine::control::FontLoadState::NotDownloaded);
     assert_eq!(font.effective_family, "Inter");
 
     // Download needs the explicit acknowledgement and a catalog family.
@@ -207,7 +207,7 @@ fn font_commands_return_typed_results_and_refuse_without_a_store_or_acceptance()
     )) else {
         panic!("fonts.load result");
     };
-    assert_eq!(font.state, libraries::fonts::FontLoadState::Loaded);
+    assert_eq!(font.state, engine::control::FontLoadState::Loaded);
 
     // A session without a store refuses every font command; none is a project edit.
     let mut bare = session();

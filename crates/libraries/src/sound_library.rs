@@ -39,7 +39,7 @@ const MAX_TEXT: usize = 4096;
 const LIBRARY_FORMAT: &str = "vibecut.sound-library";
 const LIBRARY_VERSION: u32 = 1;
 
-pub use engine::SoundError as Error;
+use engine::SoundError as Error;
 pub type Sound<T> = std::result::Result<T, Error>;
 
 /// User-supplied credential held only for this process. Debug is always redacted.

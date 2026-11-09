@@ -30,8 +30,8 @@ const ADMITTED_BY: &str = "p1-parity-28";
 /// Pin of the curated upstream tree; every URL and hash below belongs to this commit.
 const GOOGLE_FONTS_COMMIT: &str = "eb20e9cf19d97cf579fa3867d729d4222d6c59e1";
 
-pub use engine::FontError;
-pub use engine::control::{FontEntry, FontLoad, FontLoadState, FontOrigin, FontState};
+use engine::FontError;
+use engine::control::{FontEntry, FontLoad, FontLoadState, FontOrigin, FontState};
 
 /// A face found by a scan of installed fonts.
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]

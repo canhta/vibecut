@@ -7,13 +7,14 @@
 //! Font catalog behaviour through the store, the job runner and `text` layout.
 
 use ai::transport::{DownloadTransport, HttpStreamResponse};
+use engine::FontError;
+use engine::control::{FontEntry, FontLoadState, FontOrigin, FontState};
 use engine::{
     ByteBudget, EditError,
     jobs::{Clock, JobId, JobRunner, JobState, RunnerConfig, SystemClock},
 };
 use libraries::fonts::{
-    FontEntry, FontError, FontLoadState, FontOrigin, FontState, FontStore, GoogleFamily,
-    GoogleFile, ScannedFace, curated_google_families, scan_directory,
+    FontStore, GoogleFamily, GoogleFile, ScannedFace, curated_google_families, scan_directory,
 };
 use sha2::{Digest, Sha256};
 use std::{
