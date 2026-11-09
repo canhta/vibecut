@@ -1,9 +1,11 @@
 //! Owns preview presentation state behind the player panel interface.
 mod state;
+mod transform;
 mod view;
 mod workflow;
 
 use crate::{editor::Context, egui};
+use project::ItemId;
 pub(super) use state::State;
 
 /// Requests are applied by the frame after rendering releases its read borrow.
@@ -13,6 +15,17 @@ pub(super) enum Action {
     Retry,
     CommitTimecode,
     Zoom(f32),
+    Select(ItemId),
+    ClearSelection,
+    /// Absolute transform values staged from one gesture origin.
+    TransformPreview {
+        item: ItemId,
+        values: Vec<(project::TransformField, f64)>,
+    },
+    /// Close the staged gesture, publishing one undo step when `commit`.
+    TransformEnd {
+        commit: bool,
+    },
     Remember {
         id: String,
         icon: Option<&'static str>,

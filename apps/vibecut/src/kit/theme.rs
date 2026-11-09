@@ -302,6 +302,15 @@ pub(crate) mod size {
     pub const TOGGLE_WIDTH: f32 = 36.0;
     pub const TOGGLE_HEIGHT: f32 = 16.0;
     pub const EXPORT_WIDTH: f32 = 67.0;
+    /// Selected-item box stroke and handle ring (reference capture 2026-11-06).
+    pub const TRANSFORM_STROKE: f32 = 2.0;
+    /// Corner and side handle face; the reference draws a 10 px circle.
+    pub const TRANSFORM_HANDLE: f32 = 10.0;
+    /// Pointer target around each handle, larger than its face.
+    pub const TRANSFORM_HIT: f32 = 9.0;
+    /// Rotation grip circle and its constant screen gap below the box.
+    pub const TRANSFORM_GRIP: f32 = 18.0;
+    pub const TRANSFORM_GAP: f32 = 12.0;
 }
 /// Measured glyph boxes; larger empty-state glyphs are not editor measurements.
 pub(crate) mod icon {

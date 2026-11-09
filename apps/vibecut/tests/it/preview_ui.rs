@@ -11,6 +11,7 @@ use egui_kittest::{
 use engine::{ByteBudget, Session};
 use project::{
     Item, ItemId, ItemParams, OverlayParams, Project, ProjectId, Track, TrackId, TrackKind,
+    TransformField,
 };
 use std::{
     path::{Path, PathBuf},
@@ -180,6 +181,43 @@ fn middle_drag(h: &mut Harness<Editor>, delta: egui::Vec2) {
 
 fn json(project: &Project) -> Vec<u8> {
     project::encode(project, true).unwrap()
+}
+
+fn select(h: &mut Harness<Editor>, item: ItemId) {
+    h.state_mut().selection.insert(item);
+    h.run_steps(3);
+}
+
+fn history(h: &Harness<Editor>) -> usize {
+    h.state().session.history_len().0
+}
+
+fn value(h: &Harness<Editor>, item: ItemId, field: TransformField) -> f64 {
+    h.state()
+        .session
+        .project()
+        .data()
+        .scene()
+        .timeline
+        .iter()
+        .flat_map(|track| track.items.iter())
+        .find(|candidate| candidate.id == item)
+        .and_then(|candidate| field.value_at(&candidate.animations, Tick::ZERO).ok())
+        .unwrap_or_else(|| panic!("missing item {item:?} field {field:?}"))
+}
+
+fn drag_from(h: &mut Harness<Editor>, start: egui::Pos2, delta: egui::Vec2) {
+    h.hover_at(start);
+    h.run_steps(1);
+    h.drag_at(start);
+    h.run_steps(1);
+    h.hover_at(start + delta);
+    h.run_steps(2);
+}
+
+fn drop_at(h: &mut Harness<Editor>, at: egui::Pos2) {
+    h.drop_at(at);
+    h.run_steps(3);
 }
 
 #[test]
@@ -701,10 +739,249 @@ fn preview_toolbar_render_screenshot() {
     assert!(image.width() > 0 && image.height() > 0);
 }
 
+/// Offscreen evidence for the ticket; wgpu stays out of CI.
+#[test]
+#[ignore = "renders through wgpu; run with --ignored to refresh target/p1-25-preview-edit.png"]
+fn preview_transform_handles_render_screenshot() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let target = std::env::var_os("CARGO_TARGET_DIR")
+        .map(PathBuf::from)
+        .map(|path| {
+            if path.is_absolute() {
+                path
+            } else {
+                root.join(path)
+            }
+        })
+        .unwrap_or_else(|| root.join("target"));
+    let mut h = build(editor(
+        project(FrameRate::FPS_30, 1280, 720, false),
+        Preferences::default(),
+    ));
+    h.state_mut().selection.insert(ItemId(1));
+    h.run_steps(2);
+    let corner = widget(&h, "preview.transform.bottom-right").rect.center();
+    drag_from(&mut h, corner, egui::vec2(-90.0, -52.0));
+    drop_at(&mut h, corner + egui::vec2(-90.0, -52.0));
+    let rotate = widget(&h, "preview.transform.rotate").rect.center();
+    drag_from(&mut h, rotate, egui::vec2(90.0, -24.0));
+    drop_at(&mut h, rotate + egui::vec2(90.0, -24.0));
+    h.run_steps(3);
+    assert!(widget(&h, "preview.transform.rotate").enabled);
+    let image = h.render().expect("offscreen render");
+    std::fs::create_dir_all(&target).unwrap();
+    image.save(target.join("p1-25-preview-edit.png")).unwrap();
+    assert!(image.width() > 0 && image.height() > 0);
+}
+
 #[test]
 fn text_contract_has_the_snapshot_and_zoom_labels() {
     assert_eq!(Text::ProjectEmpty.key(), "project_empty");
     assert_eq!(Text::SnapshotSave.key(), "snapshot_save");
     assert_eq!(Text::Fullscreen.key(), "fullscreen");
     assert_eq!(preview::PRESETS, &[25, 50, 75, 100, 150, 200]);
+}
+
+fn guarded(track_locked: bool) -> Project {
+    let mut data = project(FrameRate::FPS_30, 640, 360, false).into_data();
+    let main = &mut data.scene_mut().timeline.main;
+    main.locked = track_locked;
+    main.hidden = !track_locked;
+    Project::new(data).unwrap()
+}
+
+#[test]
+fn preview_canvas_click_selects_the_item_without_an_edit() {
+    let mut h = build(editor(
+        project(FrameRate::FPS_30, 640, 360, false),
+        Preferences::default(),
+    ));
+    let before = json(h.state().session.project());
+    h.get(By::new().predicate(|node| node.author_id() == Some("preview.canvas")))
+        .click();
+    h.run_steps(3);
+    assert!(h.state().selection.contains(&ItemId(1)));
+    assert_eq!(history(&h), 0);
+    assert_eq!(json(h.state().session.project()), before);
+}
+
+#[test]
+fn preview_scale_handles_publish_each_corner_and_side_as_one_undo_step() {
+    let rows = [
+        (
+            "preview.transform.top-left",
+            egui::vec2(-24.0, -24.0),
+            true,
+            true,
+        ),
+        (
+            "preview.transform.top-right",
+            egui::vec2(24.0, -24.0),
+            true,
+            true,
+        ),
+        (
+            "preview.transform.right",
+            egui::vec2(24.0, 0.0),
+            true,
+            false,
+        ),
+        (
+            "preview.transform.bottom-right",
+            egui::vec2(24.0, 24.0),
+            true,
+            true,
+        ),
+        (
+            "preview.transform.bottom-left",
+            egui::vec2(-24.0, 24.0),
+            true,
+            true,
+        ),
+        (
+            "preview.transform.left",
+            egui::vec2(-24.0, 0.0),
+            true,
+            false,
+        ),
+    ];
+    for (id, delta, across, down) in rows {
+        let mut h = build(editor(
+            project(FrameRate::FPS_30, 640, 360, false),
+            Preferences::default(),
+        ));
+        select(&mut h, ItemId(1));
+        let before = json(h.state().session.project());
+        let start = widget(&h, id).rect.center();
+        drag_from(&mut h, start, delta);
+        assert_eq!(
+            json(h.state().session.project()),
+            before,
+            "{id} must only stage its candidate"
+        );
+        assert_eq!(history(&h), 0, "{id} staged no history");
+        drop_at(&mut h, start + delta);
+        assert_eq!(history(&h), 1, "{id} publishes one undo step");
+        assert_eq!(
+            value(&h, ItemId(1), TransformField::ScaleX) > 1.0,
+            across,
+            "{id} scaleX"
+        );
+        assert_eq!(
+            value(&h, ItemId(1), TransformField::ScaleY) > 1.0,
+            down,
+            "{id} scaleY"
+        );
+        assert_ne!(json(h.state().session.project()), before, "{id}");
+    }
+}
+
+#[test]
+fn preview_move_and_rotate_publish_one_undo_step_without_direct_mutation() {
+    // Move through the canvas body.
+    let mut h = build(editor(
+        project(FrameRate::FPS_30, 640, 360, false),
+        Preferences::default(),
+    ));
+    select(&mut h, ItemId(1));
+    let before = json(h.state().session.project());
+    let centre = widget(&h, "preview.canvas").rect.center();
+    drag_from(&mut h, centre, egui::vec2(40.0, 24.0));
+    assert_eq!(
+        json(h.state().session.project()),
+        before,
+        "a staged move must not touch the committed project"
+    );
+    assert!(h.state().session.gesture_active());
+    assert_eq!(history(&h), 0);
+    drop_at(&mut h, centre + egui::vec2(40.0, 24.0));
+    assert_eq!(history(&h), 1);
+    assert_ne!(value(&h, ItemId(1), TransformField::PositionX), 0.0);
+    assert_ne!(value(&h, ItemId(1), TransformField::PositionY), 0.0);
+
+    // Rotate through the grip below the box.
+    let mut h = build(editor(
+        project(FrameRate::FPS_30, 640, 360, false),
+        Preferences::default(),
+    ));
+    select(&mut h, ItemId(1));
+    let before = json(h.state().session.project());
+    let start = widget(&h, "preview.transform.rotate").rect.center();
+    drag_from(&mut h, start, egui::vec2(60.0, -40.0));
+    assert_eq!(json(h.state().session.project()), before);
+    assert_eq!(history(&h), 0);
+    drop_at(&mut h, start + egui::vec2(60.0, -40.0));
+    assert_eq!(history(&h), 1);
+    assert_ne!(value(&h, ItemId(1), TransformField::Rotate), 0.0);
+}
+
+#[test]
+fn preview_drag_returning_to_its_origin_and_escape_publish_nothing() {
+    // A drag that returns exactly to its origin discards the candidate.
+    let mut h = build(editor(
+        project(FrameRate::FPS_30, 640, 360, false),
+        Preferences::default(),
+    ));
+    select(&mut h, ItemId(1));
+    let before = json(h.state().session.project());
+    let centre = widget(&h, "preview.canvas").rect.center();
+    drag_from(&mut h, centre, egui::vec2(48.0, 0.0));
+    assert!(h.state().session.gesture_active());
+    h.hover_at(centre);
+    h.run_steps(2);
+    drop_at(&mut h, centre);
+    assert_eq!(history(&h), 0);
+    assert_eq!(json(h.state().session.project()), before);
+
+    // Escape during the drag discards the staged candidate.
+    let mut h = build(editor(
+        project(FrameRate::FPS_30, 640, 360, false),
+        Preferences::default(),
+    ));
+    select(&mut h, ItemId(1));
+    let before = json(h.state().session.project());
+    let centre = widget(&h, "preview.canvas").rect.center();
+    drag_from(&mut h, centre, egui::vec2(52.0, 28.0));
+    assert!(h.state().session.gesture_active());
+    h.key_press(egui::Key::Escape);
+    h.run_steps(3);
+    assert!(!h.state().session.gesture_active());
+    drop_at(&mut h, centre + egui::vec2(52.0, 28.0));
+    assert_eq!(history(&h), 0);
+    assert_eq!(json(h.state().session.project()), before);
+}
+
+#[test]
+fn preview_transform_refuses_hidden_and_locked_items_and_clamps_minimum_scale() {
+    for track_locked in [true, false] {
+        let mut h = build(editor(guarded(track_locked), Preferences::default()));
+        let before = json(h.state().session.project());
+        h.get(By::new().predicate(|node| node.author_id() == Some("preview.canvas")))
+            .click();
+        h.run_steps(3);
+        assert!(h.state().selection.is_empty());
+        assert_eq!(history(&h), 0);
+        assert_eq!(json(h.state().session.project()), before);
+        assert!(
+            h.query_all(By::new().predicate(|node| {
+                node.author_id()
+                    .is_some_and(|id| id.starts_with("preview.transform."))
+            }))
+            .next()
+            .is_none(),
+            "a locked or hidden item exposes no handles"
+        );
+    }
+
+    // Crossing the centre clamps to the project minimum instead of flipping.
+    let mut h = build(editor(
+        project(FrameRate::FPS_30, 640, 360, false),
+        Preferences::default(),
+    ));
+    select(&mut h, ItemId(1));
+    let start = widget(&h, "preview.transform.right").rect.center();
+    drag_from(&mut h, start, egui::vec2(-2000.0, 0.0));
+    drop_at(&mut h, start + egui::vec2(-2000.0, 0.0));
+    assert_eq!(history(&h), 1);
+    assert!((value(&h, ItemId(1), TransformField::ScaleX) - 0.01).abs() < 1e-9);
 }

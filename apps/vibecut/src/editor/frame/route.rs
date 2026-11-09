@@ -198,6 +198,61 @@ impl Editor {
         }
     }
 
+    /// Stage absolute transform values for one item through the shared preview contract.
+    pub(in crate::editor) fn preview_transform(
+        &mut self,
+        item: ItemId,
+        values: &[(project::TransformField, f64)],
+    ) {
+        let commands: Vec<serde_json::Value> = values
+            .iter()
+            .map(|(field, value)| {
+                serde_json::json!({
+                    "command":"timeline.set_item_param",
+                    "params":{"item":item,"patch":{"field":field.path(),"value":value}}
+                })
+            })
+            .collect();
+        match self
+            .session
+            .execute("timeline.preview", serde_json::json!({"commands":commands}))
+        {
+            Ok(_) => self.sync_preview(),
+            Err(error) => self.error = Some(error.to_string()),
+        }
+    }
+    /// Close a transform gesture with one undo step, or restore its entry project.
+    pub(in crate::editor) fn end_preview_transform(&mut self, commit: bool) {
+        if !self.session.gesture_active() {
+            return;
+        }
+        let command = if commit {
+            "timeline.commit_preview"
+        } else {
+            "timeline.discard_preview"
+        };
+        match self.session.execute(command, serde_json::json!({})) {
+            Ok(_) => self.sync_preview(),
+            Err(error) => self.error = Some(error.to_string()),
+        }
+    }
+    /// Escape during a preview transform drops the candidate without a history entry.
+    fn cancel_preview_transform(&mut self) -> bool {
+        if !self.player.transform.cancel() {
+            return false;
+        }
+        if self.session.gesture_active() {
+            match self
+                .session
+                .execute("timeline.discard_preview", serde_json::json!({}))
+            {
+                Ok(_) => self.sync_preview(),
+                Err(error) => self.error = Some(error.to_string()),
+            }
+        }
+        true
+    }
+
     fn begin_drag_gesture(&mut self, select: Option<ItemId>) {
         if self.timeline.preview_armed() {
             self.discard_timeline_preview();
@@ -402,6 +457,9 @@ impl Editor {
     }
     /// Escape: abandon the innermost pointer interaction in progress.
     pub(in crate::editor) fn cancel_interaction(&mut self) {
+        if self.cancel_preview_transform() {
+            return;
+        }
         if self.assets.transition_drag.take().is_some() {
             return;
         }

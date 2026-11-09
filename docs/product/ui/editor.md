@@ -44,6 +44,14 @@ Move and resize stage the group move/trim contract candidate: the timeline paint
 - A refused move or trim shows the engine's reason in an 11 px warning pill at the bottom-left of the lanes, 1 px warning outline on the panel fill, above the scrollbar. [proposed]
 - A main-track item at the timeline origin is pinned: a 3 px accent edge marks the pinned start beside the left trim handle, and its tooltip explains the pin. [proposed]
 
+## Preview gestures
+
+Drag and scale stage the engine preview candidate: the player paints `preview_project()` while the committed project stays untouched, and one drop publishes a single undo step. Escape or a return to the gesture origin discards the candidate.
+
+- A selected item shows a 2 px accent box, 10 px corner and side handles and an 18 px rotation grip 12 px beyond the box's bottom midpoint with a 12 px rotate glyph; the pointer target around each handle is 18 px. Four corners and the left/right side midpoints are draggable [observed: 2026-11-06 captures of a selected text item].
+- Corner and side handles show diagonal or axis resize cursors and the grip shows a grab cursor; a drag on the item body moves it. [proposed]
+- Hidden and locked items expose no handles and cannot be grabbed.
+
 ## Local models
 
 The model manager reuses the export modal's 12 px radius, 24 px inner margin and 34 px footer buttons at an 880 px width. A scrollable model list shows each id and its installed/download state; the selected model's detail shows provider, language scope, exact size, licence and source links, per-file SHA-256 and the policy restriction. Only the affirmative footer Download click grants transfer consent; non-permissive licences add an explicit review checkbox first. Progress, Cancel, Resume and typed storage/network/integrity errors stay in the footer. No capture exists; spacing is [proposed].

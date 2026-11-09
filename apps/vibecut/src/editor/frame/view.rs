@@ -253,6 +253,15 @@ impl Editor {
                     }
                 }
                 Action::Command(command) => self.action(&command),
+                Action::Select(item) => self.select_single(item),
+                Action::ClearSelection => {
+                    self.selection.clear();
+                    self.selection_changed();
+                }
+                Action::TransformPreview { item, values } => {
+                    self.preview_transform(item, &values);
+                }
+                Action::TransformEnd { commit } => self.end_preview_transform(commit),
                 Action::CommitTimecode => self.commit_timecode(),
                 Action::Retry => {
                     self.player.timecode_error = None;

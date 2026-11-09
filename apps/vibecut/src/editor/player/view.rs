@@ -662,13 +662,23 @@ fn canvas(
             "preview.fullscreen",
         );
     });
-    remember(cx, actions, "preview.canvas", r);
+    remember(cx, actions, "preview.canvas", r.clone());
     if empty {
         state.texture = None;
         state.texture_key = None;
         state.texture_owner = None;
         return;
     }
+    let scale = state.view.scale(stage.size(), size);
+    state.view.offset = if state.view.fit {
+        Vec2::ZERO
+    } else {
+        preview::clamp_offset(state.view.offset, stage.size(), size, scale)
+    };
+    let displayed = Rect::from_center_size(
+        stage.center() + state.view.offset,
+        egui::vec2(size[0] as f32 * scale, size[1] as f32 * scale),
+    );
     if let Some(frame) = cx.playback.frame() {
         let key = (frame.epoch, frame.at);
         if state.texture_key != Some(key) {
@@ -685,19 +695,9 @@ fn canvas(
             state.texture_owner = Some(frame.clone());
         }
         if let Some(texture) = &state.texture {
-            let scale = state.view.scale(stage.size(), size);
-            state.view.offset = if state.view.fit {
-                Vec2::ZERO
-            } else {
-                preview::clamp_offset(state.view.offset, stage.size(), size, scale)
-            };
-            let rect = Rect::from_center_size(
-                stage.center() + state.view.offset,
-                egui::vec2(size[0] as f32 * scale, size[1] as f32 * scale),
-            );
             ui.painter().with_clip_rect(stage).image(
                 texture.id(),
-                rect,
+                displayed,
                 Rect::from_min_max(egui::Pos2::ZERO, egui::pos2(1.0, 1.0)),
                 kit::image_tint(),
             );
@@ -716,4 +716,13 @@ fn canvas(
             Rect::from_center_size(stage.center(), Vec2::splat(kit::icon::DENSE)),
         );
     }
+    super::transform::show(
+        &mut state.transform,
+        cx,
+        ui,
+        displayed,
+        &r,
+        cx.playhead,
+        actions,
+    );
 }
