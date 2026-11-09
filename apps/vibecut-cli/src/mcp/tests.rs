@@ -294,7 +294,7 @@ fn every_registry_command_has_an_explicit_grant_and_effect() {
         ("keyframes.delete_selection", Effect::Edit, true, true),
         ("keyframes.set_extrapolation", Effect::Edit, true, true),
         ("retranslate", Effect::Edit, true, true),
-        ("add_bookmark", Effect::Edit, true, true),
+        ("bookmark.add", Effect::Edit, true, true),
         ("bookmark.move", Effect::Edit, true, true),
         ("bookmark.toggle", Effect::Edit, true, true),
         ("bookmark.update", Effect::Edit, true, true),

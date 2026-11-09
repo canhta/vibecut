@@ -64,7 +64,7 @@ vibecut-cli project new demo.vibecut
 vibecut-cli exec demo.vibecut timeline.add_track '{"name":"Video","kind":"video"}'
 vibecut-cli exec demo.vibecut batch '{"commands":[
   {"command":"timeline.add_track","params":{"name":"Overlay","kind":"video"}},
-  {"command":"add_bookmark","params":{"start":0,"duration":1,"note":"intro","color":[0,0,0,255]}}
+  {"command":"bookmark.add","params":{"start":0,"duration":1,"note":"intro","color":[0,0,0,255]}}
 ]}'
 vibecut-cli project info demo.vibecut --json
 ```

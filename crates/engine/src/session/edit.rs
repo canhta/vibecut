@@ -471,13 +471,13 @@ pub(crate) fn apply(
         } => {
             data = keyframes::execute_scale_keyframe_time(data, id, numerator, denominator)?;
         }
-        Command::AddBookmark {
+        Command::BookmarkAdd {
             start,
             duration,
             note,
             color,
         } => {
-            data = project_edits::execute_add_bookmark(
+            data = project_edits::execute_bookmark_add(
                 data, start, duration, note, color, created, next,
             )?;
         }

@@ -739,7 +739,7 @@ fn all_commands_share_registry_and_strict_json_dispatch() {
     s.execute("set_item_param", json!({"item":2,"content":content()}))
         .unwrap();
     s.execute(
-        "add_bookmark",
+        "bookmark.add",
         json!({"start":1,"duration":0,"note":"ghi chú","color":[0,0,0,255]}),
     )
     .unwrap();
@@ -1299,7 +1299,7 @@ fn batch_is_atomic_and_uses_one_step_with_eviction_and_branching() {
     s.redo().unwrap();
     assert!(Arc::ptr_eq(&batch, s.project()));
     for n in [1, 2] {
-        s.apply(Command::AddBookmark {
+        s.apply(Command::BookmarkAdd {
             start: Tick(n),
             duration: Tick(0),
             note: "".into(),
@@ -1817,7 +1817,7 @@ fn failed_batch_at_every_position_preserves_redo_and_pending_event() {
         let before = s.project().clone();
         let history = s.history_len();
         let mut commands = vec![
-            Command::AddBookmark {
+            Command::BookmarkAdd {
                 start: Tick(0),
                 duration: Tick(0),
                 note: "".into(),
@@ -1871,7 +1871,7 @@ fn grouped_failure_and_unwind_restore_every_staged_change_without_eviction() {
             ));
             assert!(matches!(group.redo(), Err(EditError::TransactionActive)));
             for _ in 0..10 {
-                group.apply(Command::AddBookmark {
+                group.apply(Command::BookmarkAdd {
                     start: Tick(0),
                     duration: Tick(0),
                     note: "".into(),
@@ -2084,7 +2084,7 @@ fn caption_drag_inward_and_back_preserves_original_content_and_redo() {
         for inward in if start { [1050, 1095] } else { [1050, 1005] } {
             let mut s = Session::new(caption_project(), 10).unwrap();
             let original = s.project().clone();
-            s.apply(Command::AddBookmark {
+            s.apply(Command::BookmarkAdd {
                 start: Tick(0),
                 duration: Tick(0),
                 note: "redo".into(),
@@ -3674,7 +3674,7 @@ fn locked_tracks_refuse_structural_item_edits_but_allow_metadata_and_unlock() {
 fn bookmark_move_is_one_undo_step_and_refuses_missing_or_negative_targets() {
     let mut s = Session::new(Project::empty(ProjectId(35), "Marks".into()).unwrap(), 20).unwrap();
     let CreatedId::Bookmark(bookmark) = *s
-        .apply(Command::AddBookmark {
+        .apply(Command::BookmarkAdd {
             start: Tick(10),
             duration: Tick(5),
             note: "Beat".into(),
@@ -3773,7 +3773,7 @@ fn bookmark_update_and_remove_are_one_undo_step_with_persistence() {
     data.canvas.fps = time::FrameRate::FPS_30;
     let mut s = Session::new(Project::new(data).unwrap(), 20).unwrap();
     let CreatedId::Bookmark(bookmark) = *s
-        .apply(Command::AddBookmark {
+        .apply(Command::BookmarkAdd {
             start: Tick::ZERO,
             duration: Tick::ZERO,
             note: "Beat".into(),
@@ -3849,7 +3849,7 @@ fn bookmark_update_and_remove_are_one_undo_step_with_persistence() {
 
     // A later bookmark clamps to the remaining scene content.
     let CreatedId::Bookmark(tail) = *s
-        .apply(Command::AddBookmark {
+        .apply(Command::BookmarkAdd {
             start: Tick(60),
             duration: Tick::ZERO,
             note: "Tail".into(),
@@ -3873,7 +3873,7 @@ fn bookmark_commands_refuse_hostile_inputs_without_history() {
     data.canvas.fps = time::FrameRate::FPS_30;
     let mut s = Session::new(Project::new(data).unwrap(), 20).unwrap();
     let CreatedId::Bookmark(bookmark) = *s
-        .apply(Command::AddBookmark {
+        .apply(Command::BookmarkAdd {
             start: Tick::ZERO,
             duration: Tick::ZERO,
             note: "Beat".into(),

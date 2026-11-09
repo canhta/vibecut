@@ -978,7 +978,7 @@ fn strict_frame_parser_refuses_duplicate_truncated_hostile_and_unsafe_numbers() 
     let rev = s.revision();
     assert!(
         s.execute(
-            "add_bookmark",
+            "bookmark.add",
             json!({"start":control::MAX_SAFE_INTEGER+1,"duration":0,"note":"x","color":[0,0,0,0]})
         )
         .is_err()

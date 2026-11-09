@@ -105,7 +105,7 @@ pub(super) fn execute_set_background(
     data.canvas.background = color;
     Ok(data)
 }
-pub(super) fn execute_add_bookmark(
+pub(super) fn execute_bookmark_add(
     mut data: ProjectData,
     start: Tick,
     duration: Tick,

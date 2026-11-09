@@ -156,7 +156,7 @@ pub(crate) fn fixture() -> Fixture {
         }),
     );
     session
-        .apply(Command::AddBookmark {
+        .apply(Command::BookmarkAdd {
             start: Tick(8 * SECOND),
             duration: Tick::ZERO,
             note: "Beat".into(),

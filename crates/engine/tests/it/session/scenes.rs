@@ -34,7 +34,7 @@ fn scenes_isolate_content_and_views_and_delete_atomically_with_history() {
         .unwrap();
     assert_eq!(s.history_len(), initial_history);
     assert_eq!(s.metadata().view.zoom, 1.0);
-    s.apply(Command::AddBookmark {
+    s.apply(Command::BookmarkAdd {
         start: Tick(5),
         duration: Tick(0),
         note: "A".into(),
@@ -80,7 +80,7 @@ fn scenes_isolate_content_and_views_and_delete_atomically_with_history() {
     let bytes = project::encode(s.project(), false).unwrap();
     let mut reopened = Session::new(project::decode(&bytes).unwrap().project, 10).unwrap();
     reopened
-        .apply(Command::AddBookmark {
+        .apply(Command::BookmarkAdd {
             start: Tick(0),
             duration: Tick(0),
             note: "B".into(),
