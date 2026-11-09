@@ -144,7 +144,14 @@ fn rotated_handles_and_per_axis_scaling_share_render_geometry() {
             .handle_position(&viewport, Handle::BottomRight)
             .unwrap(),
     );
+    near(
+        geometry
+            .inverse(&viewport, geometry.point(&viewport, [60., 40.]).unwrap())
+            .unwrap(),
+        [60., 40.],
+    );
     assert!(geometry.point(&viewport, [f64::NAN, 0.]).is_err());
+    assert!(geometry.inverse(&viewport, [f64::INFINITY, 0.]).is_err());
     // Right is rotated downwards; crossing the centre must not flip the image.
     near(
         geometry.scale_at(Handle::Right, [90., 55.]).unwrap(),

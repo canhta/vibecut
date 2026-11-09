@@ -10,6 +10,7 @@ use crate::fonts::{self, FaceId};
 use paragraph::{ParagraphContext, append_paragraph, canonical_text, content_bounds};
 use std::ops::Range;
 use unicode_normalization::UnicodeNormalization;
+use unicode_segmentation::UnicodeSegmentation;
 
 /// Horizontal alignment within the requested maximum width.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
@@ -176,6 +177,102 @@ impl Layout {
             bottom: line.baseline + line.descent,
         }
     }
+
+    /// Source character index nearest a point in layout pixels.
+    ///
+    /// The point is clamped to the nearest line box by y, then to the nearest caret
+    /// x (cluster boundary or line end) within that line. It returns a character
+    /// offset in `source`, not a byte offset.
+    pub fn index(&self, source: &str, point: [f32; 2]) -> usize {
+        let Some(line) = self.nearest_line(point[1]) else {
+            return 0;
+        };
+        let glyphs = self.glyphs.get(line.glyphs.clone()).unwrap_or_default();
+        let mut candidates = Vec::new();
+        let mut previous = None;
+        for glyph in glyphs {
+            if previous != Some(glyph.cluster) {
+                candidates.push((glyph.x, glyph.cluster));
+                previous = Some(glyph.cluster);
+            }
+        }
+        candidates.push((line.x + line.width, line.range.end));
+        let mut best = candidates
+            .first()
+            .copied()
+            .unwrap_or((line.x, line.range.start));
+        let mut distance = (point[0] - best.0).abs();
+        for candidate in candidates.into_iter().skip(1) {
+            let next = (point[0] - candidate.0).abs();
+            if next < distance {
+                best = candidate;
+                distance = next;
+            }
+        }
+        source_index(source, best.1)
+    }
+
+    fn nearest_line(&self, y: f32) -> Option<&Line> {
+        if !y.is_finite() {
+            return self.lines.first();
+        }
+        let distance = |line: &Line| {
+            let top = line.baseline - line.ascent;
+            let bottom = line.baseline + line.descent;
+            if y < top {
+                top - y
+            } else if y > bottom {
+                y - bottom
+            } else {
+                0.0
+            }
+        };
+        self.lines
+            .iter()
+            .min_by(|left, right| distance(left).total_cmp(&distance(right)))
+    }
+}
+
+/// Source character index at a normalized byte offset, snapping forward when the
+/// offset falls inside a grapheme cluster.
+fn source_index(source: &str, offset: usize) -> usize {
+    if offset == 0 {
+        return 0;
+    }
+    let mut normalized = 0usize;
+    let mut chars = 0usize;
+    for grapheme in source.graphemes(true) {
+        let len: usize = grapheme.nfc().map(char::len_utf8).sum();
+        let cluster_chars = grapheme.chars().count();
+        if normalized + len > offset {
+            return chars + cluster_chars;
+        }
+        normalized += len;
+        chars += cluster_chars;
+        if normalized == offset {
+            return chars;
+        }
+    }
+    chars
+}
+
+/// Source character range of the word at a character index.
+///
+/// Word boundaries follow Unicode word segmentation; whitespace and punctuation
+/// runs are words too. Indices past the end clamp to the last word, and an empty
+/// source returns an empty range at zero.
+pub fn word_range(source: &str, index: usize) -> Range<usize> {
+    let byte = source
+        .char_indices()
+        .nth(index)
+        .map_or(source.len(), |(byte, _)| byte);
+    for (start, word) in source.split_word_bound_indices() {
+        let end = start + word.len();
+        if (byte >= start && byte < end) || (byte == source.len() && end == byte) {
+            return source[..start].chars().count()..source[..end].chars().count();
+        }
+    }
+    0..0
 }
 
 /// Invalid layout input or a shaping failure.
@@ -622,6 +719,75 @@ mod tests {
         assert_eq!(laid_out.caret(blank, 2).line, 1);
         assert_eq!(laid_out.caret(blank, 3).line, 2);
         assert!((laid_out.caret(blank, 2).x - laid_out.lines[1].x).abs() < 1e-3);
+    }
+
+    #[test]
+    fn inverse_index_clamps_to_lines_and_cluster_boundaries() {
+        let text = "AbC\ndef";
+        let laid_out = layout(text, &options(300.0)).expect("layout");
+        for index in 0..=text.chars().count() {
+            let caret = laid_out.caret(text, index);
+            let y = (caret.top + caret.bottom) / 2.0;
+            assert_eq!(
+                laid_out.index(text, [caret.x, y]),
+                index,
+                "caret {index} at {caret:?}"
+            );
+        }
+
+        let first = &laid_out.lines[0];
+        let end = first.x + first.width + 40.0;
+        let y = (first.baseline - first.ascent + first.baseline + first.descent) / 2.0;
+        assert_eq!(
+            laid_out.index(text, [end, y]),
+            text[..first.range.end].chars().count()
+        );
+        let first_y = first.baseline - first.ascent - 40.0;
+        assert_eq!(laid_out.index(text, [first.x, first_y]), 0);
+        let last = laid_out.lines.last().expect("line");
+        let after = last.baseline + last.descent + 40.0;
+        assert_eq!(
+            laid_out.index(text, [last.x + last.width + 40.0, after]),
+            text.chars().count()
+        );
+
+        for align in [Align::Left, Align::Center, Align::Right] {
+            let laid_out = layout(
+                "AbC\ndef",
+                &LayoutOptions {
+                    align,
+                    ..options(300.0)
+                },
+            )
+            .expect("layout");
+            for index in 0..=text.chars().count() {
+                let caret = laid_out.caret(text, index);
+                let y = (caret.top + caret.bottom) / 2.0;
+                assert_eq!(laid_out.index(text, [caret.x, y]), index, "{align:?}");
+            }
+        }
+
+        let source = "e\u{301}x";
+        let laid_out = layout(source, &options(300.0)).expect("layout");
+        let caret = laid_out.caret(source, 1);
+        let y = (caret.top + caret.bottom) / 2.0;
+        assert_eq!(laid_out.index(source, [caret.x, y]), 2);
+    }
+
+    #[test]
+    fn word_ranges_follow_unicode_boundaries_and_clamp() {
+        let cases = [
+            ("VibeCut", 3, 0..7),
+            ("hello world", 8, 6..11),
+            ("Hi, there", 2, 2..3),
+            ("a\nb", 1, 1..2),
+            ("Tiếng Việt", 2, 0..5),
+            ("", 0, 0..0),
+            ("hello", 99, 0..5),
+        ];
+        for (text, index, expected) in cases {
+            assert_eq!(word_range(text, index), expected, "{text:?} {index}");
+        }
     }
 
     #[test]

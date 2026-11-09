@@ -153,6 +153,13 @@ impl ItemGeometry {
         finite(&canvas)?;
         viewport.canvas_to_screen(self.transform.point(canvas, self.center()))
     }
+    /// Untransformed canvas point for a screen point, the inverse of [`Self::point`].
+    pub fn inverse(&self, viewport: &Viewport, screen: [f64; 2]) -> Result<[f64; 2]> {
+        finite(&screen)?;
+        Ok(self
+            .transform
+            .inverse(viewport.screen_to_canvas(screen)?, self.center()))
+    }
     pub fn handle_position(&self, viewport: &Viewport, handle: Handle) -> Result<[f64; 2]> {
         let center = self.center();
         let [x, y] = handle.direction();

@@ -2,7 +2,9 @@
 //!
 //! [`layout`] normalizes text to NFC, shapes it with bundled fonts (Inter and Noto Serif),
 //! breaks lines at Unicode opportunities without splitting a grapheme cluster, and positions
-//! glyphs; [`Layout::caret`] resolves a source character index to its cluster and line box.
+//! glyphs; [`Layout::caret`] resolves a source character index to its cluster and line box,
+//! [`Layout::index`] maps a layout point back to a source index, and [`word_range`] finds the
+//! word boundaries a double-click selects.
 //! [`render`] turns a layout into a premultiplied RGBA8 image with fill, an outer,
 //! centre or inner outline and an optional background box.
 //!
@@ -25,6 +27,7 @@ pub use fonts::{
 };
 pub use layout::{
     Align, Bounds, Caret, Glyph, Layout, LayoutOptions, Line, LineBreak, TextError, layout,
+    word_range,
 };
 pub use mask::{StrokeKind, coverage_signed_distance};
 pub use render::{Canvas, Decoration, Image, Outline, Paint, Rectangle, RenderError, render};

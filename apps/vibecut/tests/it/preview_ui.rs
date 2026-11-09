@@ -269,8 +269,17 @@ fn item_geometry(
     (geometry, viewport)
 }
 
-/// Caret and selection from the text crate's own layout and render's item geometry.
-fn expected_caret(h: &Harness<Editor>, content: &str) -> vibecut::TextCaret {
+/// Text layout, padding, item geometry and viewport used by both expected geometry
+/// and pointer targets.
+fn text_environment(
+    h: &Harness<Editor>,
+    content: &str,
+) -> (
+    text::Layout,
+    f32,
+    render::viewport::ItemGeometry,
+    render::viewport::Viewport,
+) {
     let params = text_item_params(h);
     let (geometry, viewport) = item_geometry(h);
     let pad = params.background.as_ref().map_or(0.0, |background| {
@@ -307,8 +316,16 @@ fn expected_caret(h: &Harness<Editor>, content: &str) -> vibecut::TextCaret {
         },
     )
     .expect("layout");
+    (layout, pad, geometry, viewport)
+}
+
+/// Caret and selection from the text crate's own layout and render's item geometry.
+fn expected_caret(h: &Harness<Editor>, content: &str) -> vibecut::TextCaret {
+    let (layout, pad, geometry, viewport) = text_environment(h, content);
+    let count = content.chars().count();
     let start = layout.caret(content, 0);
-    let end = layout.caret(content, content.chars().count());
+    let end = layout.caret(content, count);
+    let bounds = geometry.bounds();
     let origin = [bounds.x as f32 + pad, bounds.y as f32 + pad];
     let point = |x: f32, y: f32| -> [f32; 2] {
         let [x, y] = geometry
@@ -340,10 +357,29 @@ fn expected_caret(h: &Harness<Editor>, content: &str) -> vibecut::TextCaret {
         }
     }
     vibecut::TextCaret {
+        index: count,
+        range: 0..count,
         layout: [[end.x, end.top], [end.x, end.bottom]],
         screen: [point(end.x, end.top), point(end.x, end.bottom)],
         selection,
     }
+}
+
+/// Screen point at a source character index, offset by logical pixels.
+fn text_screen(h: &Harness<Editor>, content: &str, index: usize, offset: egui::Vec2) -> egui::Pos2 {
+    let (layout, pad, geometry, viewport) = text_environment(h, content);
+    let caret = layout.caret(content, index);
+    let bounds = geometry.bounds();
+    let [x, y] = geometry
+        .point(
+            &viewport,
+            [
+                f64::from(bounds.x as f32 + pad + caret.x + offset.x),
+                f64::from(bounds.y as f32 + pad + (caret.top + caret.bottom) / 2.0 + offset.y),
+            ],
+        )
+        .expect("text point");
+    egui::pos2(x as f32, y as f32)
 }
 
 fn assert_near(actual: [f32; 2], expected: [f32; 2], label: &str) {
@@ -354,6 +390,7 @@ fn assert_near(actual: [f32; 2], expected: [f32; 2], label: &str) {
 }
 
 fn assert_caret(actual: &vibecut::TextCaret, expected: &vibecut::TextCaret, label: &str) {
+    assert_eq!(actual.index, expected.index, "{label} caret index");
     assert_near(
         actual.layout[0],
         expected.layout[0],
@@ -404,6 +441,69 @@ fn type_buffer(h: &mut Harness<Editor>, text: &str) {
             type_into_edit(h, line);
         }
     }
+}
+
+fn open_text_session(h: &mut Harness<Editor>, text: &str) {
+    let point = text_point(h);
+    double_click(h, point);
+    assert!(text_edit_open(h), "the text session opens");
+    h.key_combination_modifiers(egui::Modifiers::COMMAND, &[egui::Key::A]);
+    h.run_steps(1);
+    if text.is_empty() {
+        h.key_press(egui::Key::Backspace);
+        h.run_steps(2);
+    } else {
+        type_buffer(h, text);
+    }
+    h.run_steps(2);
+}
+
+fn click_at(h: &mut Harness<Editor>, at: egui::Pos2) {
+    h.event(egui::Event::PointerMoved(at));
+    h.run_steps(1);
+    h.event(egui::Event::PointerButton {
+        pos: at,
+        button: egui::PointerButton::Primary,
+        pressed: true,
+        modifiers: egui::Modifiers::default(),
+    });
+    h.run_steps(1);
+    h.event(egui::Event::PointerButton {
+        pos: at,
+        button: egui::PointerButton::Primary,
+        pressed: false,
+        modifiers: egui::Modifiers::default(),
+    });
+    h.run_steps(2);
+}
+
+fn drag_select(h: &mut Harness<Editor>, from: egui::Pos2, to: egui::Pos2) {
+    h.event(egui::Event::PointerMoved(from));
+    h.run_steps(1);
+    h.event(egui::Event::PointerButton {
+        pos: from,
+        button: egui::PointerButton::Primary,
+        pressed: true,
+        modifiers: egui::Modifiers::default(),
+    });
+    h.run_steps(1);
+    h.event(egui::Event::PointerMoved(to));
+    h.run_steps(2);
+    h.event(egui::Event::PointerButton {
+        pos: to,
+        button: egui::PointerButton::Primary,
+        pressed: false,
+        modifiers: egui::Modifiers::default(),
+    });
+    h.run_steps(2);
+}
+
+fn current_caret(h: &Harness<Editor>) -> vibecut::TextCaret {
+    h.state()
+        .inspect()
+        .unwrap()
+        .text_caret
+        .expect("open text session")
 }
 
 fn click(h: &mut Harness<Editor>, id: &str) {
@@ -1547,6 +1647,61 @@ fn preview_inline_text_caret_and_selection_follow_the_rendered_layout() {
         assert_caret(&selected, &expected, label);
         assert_selection(&selected, &expected, label);
     }
+
+    // Pointer input goes through the inverse layout query and render geometry,
+    // not egui's provisional galley.
+    let mut params = TextParams::new("First\nSecond");
+    params.font = "Noto Serif".into();
+    params.font_size = 28.0;
+    let mut h = build_fast(editor(
+        styled_text_project(params, 0.0),
+        Preferences::default(),
+    ));
+    let content = "First\nSecond";
+    open_text_session(&mut h, content);
+    for (label, index) in [("first line", 2usize), ("second line", 9usize)] {
+        let point = text_screen(&h, content, index, egui::vec2(0.0, 0.0));
+        click_at(&mut h, point);
+        let caret = current_caret(&h);
+        assert_eq!(caret.index, index, "{label} click index");
+        assert_eq!(caret.range, index..index, "{label} click range");
+    }
+
+    // A click past the first line's end clamps to that line's end, not the next line.
+    let past_end = text_screen(&h, content, 5, egui::vec2(60.0, 0.0));
+    click_at(&mut h, past_end);
+    let caret = current_caret(&h);
+    assert_eq!(caret.index, 5, "past line end index");
+    assert_eq!(caret.range, 5..5, "past line end range");
+
+    // A drag from the first line extends the selection across the line break.
+    let from = text_screen(&h, content, 2, egui::vec2(0.0, 0.0));
+    let to = text_screen(&h, content, 8, egui::vec2(0.0, 0.0));
+    drag_select(&mut h, from, to);
+    let caret = current_caret(&h);
+    assert_eq!(caret.index, 8, "drag selection primary index");
+    assert_eq!(caret.range, 2..8, "drag selection range");
+
+    // A double click selects the word under the pointer using Unicode boundaries.
+    let word = text_screen(&h, content, 7, egui::vec2(0.0, 0.0));
+    double_click(&mut h, word);
+    let caret = current_caret(&h);
+    assert_eq!(caret.index, 12, "double click word end");
+    assert_eq!(caret.range, 6..12, "double click word range");
+
+    // Rotation is inverted through the same item geometry before layout lookup.
+    let mut params = TextParams::new("Rotate");
+    params.font = "Noto Serif".into();
+    let mut h = build_fast(editor(
+        styled_text_project(params, 30.0),
+        Preferences::default(),
+    ));
+    open_text_session(&mut h, "Rotate");
+    let point = text_screen(&h, "Rotate", 3, egui::vec2(0.0, 0.0));
+    click_at(&mut h, point);
+    let caret = current_caret(&h);
+    assert_eq!(caret.index, 3, "rotated click index");
+    assert_eq!(caret.range, 3..3, "rotated click range");
 }
 
 /// Offscreen evidence for the ticket; wgpu stays out of CI.

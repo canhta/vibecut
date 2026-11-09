@@ -126,8 +126,12 @@ pub struct ShortcutsInspection {
     pub rows: Vec<ShortcutRow>,
 }
 /// Caret and selection geometry of the open inline text session.
-#[derive(Clone, Debug, Default, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct TextCaret {
+    /// Primary caret as a character index in the live buffer.
+    pub index: usize,
+    /// Selected character range; ends are equal when the caret is collapsed.
+    pub range: std::ops::Range<usize>,
     /// Caret endpoints in text-layout pixels, canvas units with y down.
     pub layout: [[f32; 2]; 2],
     /// Caret endpoints in logical screen pixels.

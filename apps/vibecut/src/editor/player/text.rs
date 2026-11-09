@@ -2,7 +2,10 @@
 use super::Action;
 use crate::{
     editor::state::TextCaret,
-    egui::{self, Rect},
+    egui::{
+        self, Rect,
+        text::{CCursor, CCursorRange},
+    },
     kit,
 };
 use project::{ItemId, TextAlign, TextBackground, TextParams};
@@ -24,6 +27,8 @@ pub(super) struct Edit {
     pad: f32,
     focus: bool,
     focused_once: bool,
+    /// Character index where a pointer drag started.
+    drag: Option<usize>,
     caret: Option<TextCaret>,
 }
 
@@ -70,6 +75,7 @@ impl Edit {
             pad: padding(params),
             focus: true,
             focused_once: false,
+            drag: None,
             caret: None,
         }
     }
@@ -106,6 +112,55 @@ impl Edit {
             letter_spacing: self.face.letter_spacing,
             ..Default::default()
         })
+    }
+
+    /// Source character index at a screen point, through the item transform and the
+    /// text crate's inverse layout query.
+    fn pointer_index(&self, viewport: &Viewport, point: egui::Pos2) -> Option<usize> {
+        let geometry = self.geometry.as_ref()?;
+        let canvas = geometry
+            .inverse(viewport, [f64::from(point.x), f64::from(point.y)])
+            .ok()?;
+        let bounds = geometry.bounds();
+        let local = [
+            canvas[0] as f32 - bounds.x as f32 - self.pad,
+            canvas[1] as f32 - bounds.y as f32 - self.pad,
+        ];
+        let layout = text::layout(&self.content, &self.options()?).ok()?;
+        Some(layout.index(&self.content, local))
+    }
+
+    /// Primary index and selected range for this frame's pointer input.
+    fn pointer(
+        &mut self,
+        viewport: &Viewport,
+        point: egui::Pos2,
+        double: bool,
+        pressed: bool,
+        down: bool,
+        released: bool,
+    ) -> Option<(usize, Range<usize>)> {
+        if double {
+            let index = self.pointer_index(viewport, point)?;
+            let word = text::word_range(&self.content, index);
+            self.drag = None;
+            return Some((word.end, word));
+        }
+        if pressed {
+            let index = self.pointer_index(viewport, point)?;
+            self.drag = down.then_some(index);
+            return Some((index, index..index));
+        }
+        let anchor = self.drag?;
+        if !down && !released {
+            self.drag = None;
+            return None;
+        }
+        let index = self.pointer_index(viewport, point)?;
+        if released || !down {
+            self.drag = None;
+        }
+        Some((index, anchor.min(index)..anchor.max(index)))
     }
 
     /// Caret and selection geometry for a character range in the live buffer.
@@ -157,6 +212,8 @@ impl Edit {
             }
         }
         Some(TextCaret {
+            index: primary,
+            range: cursor,
             layout: [[caret.x, caret.top], [caret.x, caret.bottom]],
             screen: [point(caret.x, caret.top)?, point(caret.x, caret.bottom)?],
             selection,
@@ -185,6 +242,38 @@ pub(super) fn show(
     style.visuals.selection.stroke = egui::Stroke::NONE;
     style.visuals.text_cursor.stroke = egui::Stroke::NONE;
     child.set_style(style);
+    let pointer = ui.input(|i| i.pointer.interact_pos());
+    let pressed = ui.input(|i| i.pointer.primary_pressed());
+    let double = ui.input(|i| {
+        i.pointer
+            .button_double_clicked(egui::PointerButton::Primary)
+    });
+    let down = ui.input(|i| i.pointer.primary_down());
+    let released = ui.input(|i| i.pointer.primary_released());
+    let inside = pointer.is_some_and(|point| edit.rect.contains(point));
+    let dragging = edit.drag.is_some();
+    let pointer_cursor = if inside && (pressed || double) {
+        pointer.and_then(|point| edit.pointer(viewport, point, double, pressed, down, released))
+    } else if dragging {
+        pointer.and_then(|point| edit.pointer(viewport, point, false, false, down, released))
+    } else {
+        None
+    };
+    let owns_pointer = (inside && (pressed || double)) || dragging;
+    if owns_pointer {
+        let rect = edit.rect;
+        ui.input_mut(|input| {
+            input.events.retain(|event| match event {
+                egui::Event::PointerMoved(point) => !dragging && !rect.contains(*point),
+                egui::Event::PointerButton {
+                    pos,
+                    button: egui::PointerButton::Primary,
+                    ..
+                } => !(dragging || rect.contains(*pos)),
+                _ => true,
+            });
+        });
+    }
     let previous = edit.content.clone();
     let output = egui::TextEdit::multiline(&mut edit.content)
         .id_salt("preview.text.edit")
@@ -204,25 +293,38 @@ pub(super) fn show(
         ]))
         .desired_width(edit.rect.width())
         .show(&mut child);
+    let id = output.response.id;
     let response = output.response.response;
     if edit.focus {
         response.request_focus();
         edit.focus = false;
     }
+    if inside && (pressed || double) {
+        response.request_focus();
+    }
     if response.has_focus() {
         edit.focused_once = true;
     }
+    let keyboard = output.cursor_range.map(|range| {
+        let primary = usize::from(range.primary.index);
+        let range = range.as_sorted_char_range();
+        (primary, usize::from(range.start)..usize::from(range.end))
+    });
+    let chosen = pointer_cursor.clone().or(keyboard);
+    if let Some((primary, range)) = pointer_cursor {
+        let mut state = output.state;
+        state
+            .cursor
+            .set_char_range(Some(if range.start == range.end {
+                CCursorRange::one(CCursor::new(primary))
+            } else {
+                CCursorRange::two(CCursor::new(range.start), CCursor::new(range.end))
+            }));
+        state.store(ui.ctx(), id);
+    }
     edit.caret = response
         .has_focus()
-        .then(|| {
-            output.cursor_range.and_then(|range| {
-                let primary = usize::from(range.primary.index);
-                let range = range.as_sorted_char_range();
-                let start = usize::from(range.start);
-                let end = usize::from(range.end);
-                edit.sample(primary, start..end, viewport)
-            })
-        })
+        .then(|| chosen.and_then(|(primary, range)| edit.sample(primary, range, viewport)))
         .flatten();
     if let Some(caret) = &edit.caret {
         let painter = child.painter();
