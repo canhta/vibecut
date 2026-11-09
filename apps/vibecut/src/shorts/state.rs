@@ -48,7 +48,7 @@ pub enum Decision {
 #[derive(Clone, Debug)]
 pub struct Review {
     pub segments: Vec<ClipSourceSegment>,
-    pub crop: render::Rect,
+    pub crop: project::Crop,
     pub decision: Decision,
 }
 impl PartialEq for Review {
@@ -747,7 +747,7 @@ impl State {
         self.reset_drafts();
         Ok(())
     }
-    pub fn set_crop(&mut self, crop: render::Rect) -> Result<()> {
+    pub fn set_crop(&mut self, crop: project::Crop) -> Result<()> {
         let mut row = self
             .reviews
             .get(self.selected)

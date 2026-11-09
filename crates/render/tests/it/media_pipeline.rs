@@ -386,7 +386,7 @@ fn portrait_center_and_manual_crop_and_missing_source_admission() {
     s.render.placements.insert(
         project::ItemId(0),
         Placement {
-            crop: Rect {
+            crop: project::Crop {
                 x: 2.0 / 3.0,
                 y: 0.0,
                 width: 1.0 / 3.0,
@@ -1219,16 +1219,16 @@ fn windowed_sources_preserve_full_compositor_pixels_and_blur_reduction_fallbacks
     let project = project::Project::new(data).unwrap();
     let h = Hooks::default();
     for (width, height, fit, blur, crop) in [
-        (113, 327, Fit::Cover, None, Rect::default()),
-        (113, 327, Fit::Cover, Some(3), Rect::default()),
-        (1, 513, Fit::Cover, None, Rect::default()),
-        (30, 10, Fit::Cover, None, Rect::default()),
+        (113, 327, Fit::Cover, None, project::Crop::default()),
+        (113, 327, Fit::Cover, Some(3), project::Crop::default()),
+        (1, 513, Fit::Cover, None, project::Crop::default()),
+        (30, 10, Fit::Cover, None, project::Crop::default()),
         (
             311,
             257,
             Fit::Contain,
             None,
-            Rect {
+            project::Crop {
                 x: 0.127,
                 y: 0.13,
                 width: 0.191,
@@ -1240,7 +1240,7 @@ fn windowed_sources_preserve_full_compositor_pixels_and_blur_reduction_fallbacks
             257,
             Fit::Stretch,
             None,
-            Rect {
+            project::Crop {
                 x: 0.127,
                 y: 0.13,
                 width: 0.00091,
@@ -1252,7 +1252,7 @@ fn windowed_sources_preserve_full_compositor_pixels_and_blur_reduction_fallbacks
             257,
             Fit::Cover,
             None,
-            Rect {
+            project::Crop {
                 x: 0.127,
                 y: 0.13,
                 width: 0.691,

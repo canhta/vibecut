@@ -35,7 +35,7 @@ pub struct ClipShort {
     /// Canonical AI clip pieces in play order. Export reads each piece's range.
     pub segments: Vec<ai::clips::ClipSourceSegment>,
     /// Optional normalized source crop applied to every piece.
-    pub crop: Option<render::Rect>,
+    pub crop: Option<project::Crop>,
 }
 impl ClipShort {
     pub fn new(title: impl Into<NfcText>, segments: Vec<ai::clips::ClipSourceSegment>) -> Self {
@@ -54,7 +54,7 @@ impl ClipShort {
         }
     }
     /// Apply one normalized crop rectangle to every piece in this short.
-    pub fn with_crop(mut self, crop: Option<render::Rect>) -> Self {
+    pub fn with_crop(mut self, crop: Option<project::Crop>) -> Self {
         self.crop = crop;
         self
     }

@@ -1,10 +1,10 @@
 # Clip batch export
 
-`ClipBatch::prepare(source_project, ClipBatchRequest)` owns one export job per accepted short. Desktop and CLI submit this same batch and add no renderer, cue mapper or retry loop. A short is an ordered `ai::clips::ClipSourceSegment` list in play order (`ClipShort::from_suggestion` keeps it), a title and an optional normalized crop. One request names the source asset, the source-timed `CueTrack`, the existing output directory, none or one or two distinct caption languages, sidecar formats (none, SRT, WebVTT or both), overwrite and degraded consent, and a per-artifact byte ceiling.
+`ClipBatch::prepare(source_project, ClipBatchRequest)` owns one export job per accepted short. Desktop and CLI submit this same batch and add no renderer, cue mapper or retry loop. A short is an ordered `ai::clips::ClipSourceSegment` list in play order (`ClipShort::from_suggestion` keeps it), a title and an optional project-owned normalized crop. One request names the source asset, the source-timed `CueTrack`, the existing output directory, none or one or two distinct caption languages, sidecar formats (none, SRT, WebVTT or both), overwrite and degraded consent, and a per-artifact byte ceiling.
 
 ## Preparation
 
-Preparation builds one derived immutable Project per short without touching media. Video items keep each piece's exact source range at cumulative output starts, so source gaps add no output duration. Audio comes from each piece's source audio. The output is 1080x1920 (9:16) with render's Cover fit: center crop by default, or the supplied normalized crop for every piece. Joining forces `ExportMode::Encode`.
+Preparation builds one derived immutable Project per short without touching media. Video items keep each piece's exact source range at cumulative output starts, so source gaps add no output duration. Audio comes from each piece's source audio. The output is 1080x1920 (9:16) with render's Cover fit: center crop by default, or the supplied project-owned crop for every piece. Joining forces `ExportMode::Encode`.
 
 Cues map through captions' `EditMapping` over the ordered `(piece range, cumulative output start)` pairs: fully cut cues drop, partial cues clip at piece edges, gaps remain gaps and play-order gaps never shift text. Each piece's caption item stores the same clipped source-coordinate cues, so burn-in and `subtitle_file` SRT/VTT read one mapping. A requested language missing from any selected cue refuses that short at preparation.
 

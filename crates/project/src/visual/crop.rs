@@ -5,6 +5,7 @@ use serde::{Deserialize, Serialize};
 /// Region of the source frame kept when an item is drawn. `x` and `y` are the
 /// top-left corner, and `width`/`height` the size, as fractions of the source
 /// frame (0..=1); the rectangle is nonempty, finite and contained in the frame.
+/// The default is the full frame.
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct Crop {
@@ -12,6 +13,17 @@ pub struct Crop {
     pub y: f64,
     pub width: f64,
     pub height: f64,
+}
+
+impl Default for Crop {
+    fn default() -> Self {
+        Self {
+            x: 0.0,
+            y: 0.0,
+            width: 1.0,
+            height: 1.0,
+        }
+    }
 }
 
 impl Crop {

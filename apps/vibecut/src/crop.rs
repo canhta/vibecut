@@ -1,9 +1,9 @@
-//! Transient source-normalized crop interaction; render remains the geometry owner.
+//! Transient source-normalized crop interaction; project owns the contract.
 use crate::{Error, Result, egui};
 
 /// Largest source rectangle matching a portrait 9:16 output, initially centered.
 /// The dimensions are source pixels; zero sizes and non-finite input refuse.
-pub fn portrait(width: f64, height: f64) -> Result<render::Rect> {
+pub fn portrait(width: f64, height: f64) -> Result<project::Crop> {
     if !width.is_finite() || !height.is_finite() || width <= 0.0 || height <= 0.0 {
         return Err(Error::Invalid("crop source dimensions"));
     }
@@ -13,13 +13,15 @@ pub fn portrait(width: f64, height: f64) -> Result<render::Rect> {
     } else {
         (1.0, aspect / (9.0 / 16.0))
     };
-    let crop = render::Rect {
+    let crop = project::Crop {
         x: (1.0 - w) / 2.0,
         y: (1.0 - h) / 2.0,
         width: w,
         height: h,
     };
-    crop.validate_crop()?;
+    if !crop.valid() {
+        return Err(Error::Invalid("normalized rectangle"));
+    }
     Ok(crop)
 }
 
@@ -29,11 +31,13 @@ pub fn portrait(width: f64, height: f64) -> Result<render::Rect> {
 pub fn control(
     ui: &mut egui::Ui,
     id: &str,
-    crop: &mut render::Rect,
+    crop: &mut project::Crop,
     aspect: f32,
     label: &str,
 ) -> Result<egui::Response> {
-    crop.validate_crop()?;
+    if !crop.valid() {
+        return Err(Error::Invalid("normalized rectangle"));
+    }
     if !aspect.is_finite() || aspect <= 0.0 {
         return Err(Error::Invalid("crop source aspect"));
     }

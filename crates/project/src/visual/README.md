@@ -14,7 +14,7 @@ Opacity is owned by the scalar `opacity` animation channel. A missing channel me
 
 ## Crop
 
-`Crop` is one rectangle in normalized source coordinates: `x`/`y` are the top-left corner and `width`/`height` the size, as fractions of the source frame. Every field is finite, width and height are positive, and the rectangle stays inside `0..=1`. Video and image items carry `VideoParams.crop`; absent means the full frame. Render owns sampling; the crop is item content and survives trim, retime, split, undo/redo and persistence.
+`Crop` is one rectangle in normalized source coordinates: `x`/`y` are the top-left corner and `width`/`height` the size, as fractions of the source frame. Every field is finite, width and height are positive, and the rectangle stays inside `0..=1`; the default is the full frame. Video and image items carry `VideoParams.crop`; absent means the full frame. Render sampling and the shorts batch path consume this one type, so it survives trim, retime, split, undo/redo and persistence as item content.
 
 ## Masks
 

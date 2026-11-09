@@ -303,7 +303,7 @@ fn joins_play_order_excludes_gaps_and_matches_one_concatenated_mapping() {
 fn applies_one_normalized_crop_to_every_piece() {
     let dir = tempfile::tempdir().unwrap();
     let source = project(asset(1, dir.path().join("missing-source.mp4"), 30));
-    let crop = render::Rect {
+    let crop = project::Crop {
         x: 0.1,
         y: 0.0,
         width: 0.8,
@@ -518,7 +518,7 @@ fn refuses_hostile_batches_at_the_short_or_request_level() {
         prepare(one(vec![segment(0, 1, 0)]), vec![], vec![], 0),
         Err(EditError::Invalid("clip output byte ceiling"))
     ));
-    let bad_crop = ClipShort::new("Crop", vec![segment(0, 1, 0)]).with_crop(Some(render::Rect {
+    let bad_crop = ClipShort::new("Crop", vec![segment(0, 1, 0)]).with_crop(Some(project::Crop {
         x: -0.1,
         ..Default::default()
     }));

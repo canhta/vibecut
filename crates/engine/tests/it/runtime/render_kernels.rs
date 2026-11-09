@@ -300,15 +300,15 @@ fn parallel_draw_matches_sequential_at_chunk_edges_and_half_reductions() {
                 513,
                 257,
                 render::Fit::Cover,
-                render::Rect {
+                project::Crop {
                     x: 0.13,
                     y: 0.21,
                     width: 0.71,
                     height: 0.61,
                 },
             ),
-            (513, 257, render::Fit::Contain, render::Rect::default()),
-            (257, 263, render::Fit::Stretch, render::Rect::default()),
+            (513, 257, render::Fit::Contain, project::Crop::default()),
+            (257, 263, render::Fit::Stretch, project::Crop::default()),
         ] {
             for opacity in [0.73, 1.0] {
                 let mut settings = render::RenderSettings::from_project(&project);

@@ -94,7 +94,7 @@ pub(super) fn job_key(
     project: &Project,
     duration: Tick,
     settings: &render::ExportSettings,
-    crop: Option<render::Rect>,
+    crop: Option<project::Crop>,
     options: &Options<'_>,
 ) -> Result<CacheKey, EditError> {
     let encoded = project::encode(project, false)?;

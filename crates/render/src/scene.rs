@@ -35,12 +35,8 @@ impl Default for Rect {
     }
 }
 impl Rect {
-    /// Validate a nonempty source-normalized crop contained in `[0, 1]².
-    /// Non-finite values and out-of-source rectangles return Invalid.
-    pub fn validate_crop(self) -> Result<()> {
-        self.validate(true)
-    }
-    fn validate(self, crop: bool) -> Result<()> {
+    /// Validate finite, nonempty placement geometry within the compositor's bounds.
+    fn validate(self) -> Result<()> {
         if [self.x, self.y, self.width, self.height]
             .iter()
             .any(|v| !v.is_finite())
@@ -50,11 +46,6 @@ impl Rect {
             || self.height > 16.0
             || self.x.abs() > 16.0
             || self.y.abs() > 16.0
-            || (crop
-                && (self.x < 0.0
-                    || self.y < 0.0
-                    || self.x + self.width > 1.0
-                    || self.y + self.height > 1.0))
         {
             return Err(Error::Invalid("normalized rectangle"));
         }
@@ -71,7 +62,8 @@ pub enum Fit {
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Placement {
     pub destination: Rect,
-    pub crop: Rect,
+    /// Source-normalized region shown before placement fitting; project owns the type.
+    pub crop: project::Crop,
     pub fit: Fit,
     pub opacity: f32,
 }
@@ -79,7 +71,7 @@ impl Default for Placement {
     fn default() -> Self {
         Self {
             destination: Rect::default(),
-            crop: Rect::default(),
+            crop: project::Crop::default(),
             fit: Fit::Cover,
             opacity: 1.0,
         }
@@ -131,8 +123,10 @@ impl RenderSettings {
             return Err(Error::Invalid("render settings limits"));
         }
         for (id, p) in &self.placements {
-            p.destination.validate(false)?;
-            p.crop.validate(true)?;
+            p.destination.validate()?;
+            if !p.crop.valid() {
+                return Err(Error::Invalid("normalized rectangle"));
+            }
             if !p.opacity.is_finite()
                 || !(0.0..=1.0).contains(&p.opacity)
                 || !project

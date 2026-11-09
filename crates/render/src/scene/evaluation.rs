@@ -753,7 +753,7 @@ fn item_crop(item: &Item, mut placement: Placement) -> Placement {
         && let Some(crop) = p.crop
     {
         let base = placement.crop;
-        placement.crop = Rect {
+        placement.crop = project::Crop {
             x: base.x + crop.x * base.width,
             y: base.y + crop.y * base.height,
             width: crop.width * base.width,
