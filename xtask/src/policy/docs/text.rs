@@ -128,7 +128,7 @@ fn word(byte: u8) -> bool {
 }
 
 fn forbidden(root: &Path) -> Result<BTreeSet<String>, String> {
-    let path = crate::checkout::main(root)?.join(".scratch/forbidden-names.txt");
+    let path = root.join(".scratch/forbidden-names.txt");
     if !path.exists() {
         return Ok(BTreeSet::new());
     }

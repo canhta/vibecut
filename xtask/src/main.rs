@@ -1,15 +1,10 @@
 //! Workspace checks and admitted crate scaffolding.
 mod build;
-mod checkout;
-mod cleanup;
 mod distribution;
 mod ffmpeg;
 mod i18n;
 mod measure;
-mod orca;
 mod policy;
-mod reports;
-mod tickets;
 
 use serde_json::Value;
 use std::collections::{BTreeMap, BTreeSet};
@@ -367,7 +362,7 @@ fn assets(root: &Path) -> Result<(), String> {
 }
 
 fn names(root: &Path) -> Result<(), String> {
-    let patterns = checkout::main(root)?.join(".scratch/forbidden-names.txt");
+    let patterns = root.join(".scratch/forbidden-names.txt");
     if !patterns.exists() {
         return Ok(());
     }
@@ -503,13 +498,8 @@ fn run() -> Result<ExitCode, String> {
     {
         ["dist", ..] => distribution::run(root, args.get(1..).unwrap_or(&[])),
         ["media-bench"] => measure::media(root),
-        ["frontier"] => tickets::frontier(root, None),
-        ["frontier", "--blocking"] => tickets::blocking(root),
-        ["frontier", assignee] => tickets::frontier(root, Some(assignee)),
-        ["cleanup", ..] => cleanup::run(root, args.get(1..).unwrap_or(&[])),
-        ["pull-reports", ..] => reports::run(root, args.get(1..).unwrap_or(&[])),
-        ["board"] => tickets::board(root, 8765),
-        ["board", port] => tickets::board(root, port.parse().map_err(|_| "invalid port")?),
+        ["prune"] => build::prune(false),
+        ["prune", "--dry-run"] => build::prune(true),
         ["clip-eval", ..] => measure::clip_eval(root, args.get(1..).unwrap_or(&[])),
         ["ffmpeg"] => ffmpeg::provision(None),
         ["ffmpeg", "--cache-key"] => ffmpeg::cache_key(),
@@ -549,7 +539,7 @@ fn run() -> Result<ExitCode, String> {
         ["ci"] => ci(root, false),
         ["ci", "--require-oracles"] => ci(root, true),
         _ => Err(
-            "usage: cargo xtask <dist COMMAND [OPTIONS]|build -- COMMAND [ARGS...]|frontier [ASSIGNEE]|board [PORT]|ffmpeg [--target PLATFORM|--cache-key]|ui-audit [SCENE...]|ui-compare OURS REFERENCE [--region X,Y,W,H] [--out DIR] [--max-error F] [--max-tile-error F]|sherpa [--arch x86_64|aarch64]|media-bench|clip-eval SET [OPTIONS]|cleanup [--environment NAME] [--dry-run] TARGET...|pull-reports [--environment NAME] [--ssh HOST] [--dry-run] WORKTREE...|ci [--require-oracles]|catalog|checks|clippy|lint|test|docs|i18n|layers|assets|modules|new-crate NAME>"
+            "usage: cargo xtask <dist COMMAND [OPTIONS]|build -- COMMAND [ARGS...]|prune [--dry-run]|ffmpeg [--target PLATFORM|--cache-key]|ui-audit [SCENE...]|ui-compare OURS REFERENCE [--region X,Y,W,H] [--out DIR] [--max-error F] [--max-tile-error F]|sherpa [--arch x86_64|aarch64]|media-bench|clip-eval SET [OPTIONS]|ci [--require-oracles]|catalog|checks|clippy|lint|test|docs|i18n|layers|assets|modules|new-crate NAME>"
                 .into(),
         ),
     }.map(|()| ExitCode::SUCCESS)

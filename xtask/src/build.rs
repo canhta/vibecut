@@ -23,7 +23,10 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, ExitCode};
 use std::time::{Duration, Instant, SystemTime};
 
-pub(super) use cache::prune_cache;
+/// Age and size-prune the shared cache without touching held slots.
+pub fn prune(dry_run: bool) -> Result<(), String> {
+    cache::prune_cache(dry_run)
+}
 
 pub fn run(root: &Path, args: &[OsString]) -> Result<ExitCode, String> {
     let cpus = std::thread::available_parallelism().map_or(1, usize::from);

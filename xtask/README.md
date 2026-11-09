@@ -1,16 +1,13 @@
 # xtask
 
-Workspace checks, native-media provisioning, development build admission and the local ticket board. This binary is tooling, outside the product dependency graph; it never edits tickets or publishes reports.
+Workspace checks, native-media provisioning and development build admission. This binary is tooling, outside the product dependency graph.
 
 Run from a checkout with `cargo xtask <command>`. The Cargo alias builds the launcher in `target/xtask`, independently of a running build's warm target slot. Product compilation on shared macOS and Windows developer machines uses `cargo xtask build -- <command...>`. The wrapper applies `ffmpeg::environment`, so every admitted command finds and loads the provisioned LGPL SDK at build and run time. Hosted CI runners run Cargo directly. Nested xtask commands keep the same native runpath flags and library paths, so direct and aggregate checks share Cargo fingerprints.
 
 | Command | Behaviour |
 |---|---|
 | `build -- COMMAND [ARGS...]` | FIFO admission and command exit status on macOS and Windows; OS-native arguments, inherited standard streams |
-| `frontier [ASSIGNEE]`, `frontier --blocking` | Ready tickets ordered by priority, open transitive dependents and ID, printing the dependent count; `--blocking` ranks every unresolved ticket by unresolved transitive dependents with its status; missing/wontfix blocker diagnostics |
-| `board [PORT]` | Read-only project overview on IPv4 localhost, default port 8765; starts the configured Cloudflare tunnel when present; an occupied port names itself and the command to pick a free one |
-| `cleanup [--environment NAME] [--dry-run] TARGET...` | Release settled worker dispatches or remove worktree targets, prune two-day-old build sessions/slots; `--dry-run` prints the plan |
-| `pull-reports [--environment NAME] [--ssh HOST] [--dry-run] <worktree>...` | Merge a worktree's `.scratch` reports into the main checkout without overwriting newer local files |
+| `prune [--dry-run]` | Age and size-prune the shared build cache; held slots are skipped and `--dry-run` prints the plan |
 | `checks`, `docs`, `layers`, `assets` | Repository policy; `docs` includes the docs index, README module maps and tracker-free Markdown against only-shrinking `xtask/docs-baseline.txt`; `checks` also checks formatting and the integration-test entry point |
 | `modules` | Module structure gate: no `mod.rs`, responsibility docs, banned names (tests included), folder width and intra-crate layer direction from `xtask/modules.toml` (crate and `[[crate.folder]]` tables), with only-shrinking `xtask/modules-baseline.txt` |
 | `catalog` | Regenerate `crates/engine/catalog.digest` and `docs/product/agent-control/commands.md` from the registry (the engine `control_catalog` example) |
@@ -21,7 +18,7 @@ Run from a checkout with `cargo xtask <command>`. The Cargo alias builds the lau
 
 ## Build slots
 
-The per-user cache is `.cache/vibecut` beneath `HOME` (`USERPROFILE` on Windows). A host-derived number of OS-locked slots own warm `target/slot-N` directories. `locks/build-queue` holds numbered, locked waiter files; `locks/admission` serializes enqueue, stale-entry cleanup and slot claims. No process IDs establish liveness: crashed waiters release their locks automatically and the next waiter removes dead queue files. Admission is FIFO and prefers a free slot already owned by the checkout. Shrinking capacity stops new admissions but never releases or kills a running build; slots above a smaller count stay reusable and `cleanup` ages them out.
+The per-user cache is `.cache/vibecut` beneath `HOME` (`USERPROFILE` on Windows). A host-derived number of OS-locked slots own warm `target/slot-N` directories. `locks/build-queue` holds numbered, locked waiter files; `locks/admission` serializes enqueue, stale-entry cleanup and slot claims. No process IDs establish liveness: crashed waiters release their locks automatically and the next waiter removes dead queue files. Admission is FIFO and prefers a free slot already owned by the checkout. Shrinking capacity stops new admissions but never releases or kills a running build; slots above a smaller count stay reusable and `prune` ages them out.
 
 The slot ceiling is computed when the wrapper starts and enforced at each admission: `min(logical CPUs, floor(total_memory * 0.70 / 3 GiB) + 1, 64)`. 3 GiB is the peak reserve each running slot holds after compile (worst measured build 1.5 GiB plus one 1 GiB link and one 0.5 GiB test binary); the extra slot is the first build, which is never memory-gated. The measured 32 GiB host gets 8 slots. `VIBECUT_BUILD_SLOTS=1..=logical CPUs` (capped at 64) overrides the ceiling; zero, out-of-range, non-numeric or non-UTF-8 values are rejected with a typed error before queueing.
 
@@ -60,34 +57,7 @@ On Windows the FFmpeg environment owner projects only DLLs from the verified nat
 
 External `ffmpeg` and `ffprobe` are separately installed tools for oracle admission ([verification](../docs/engineering/verification.md#checks)). Distribution obligations live in [open-source policy](../docs/engineering/open-source.md#ffmpeg-distribution); the [workflows summary](../docs/engineering/workflows.md#ffmpeg-provisioning) routes here.
 
-## Tickets and limits
-
-Ticket commands and the name policy find the main checkout through Git's absolute common directory, so linked worktrees read the same `.scratch` data. The [issue tracker](../docs/agents/issue-tracker.md) owns the ticket format.
-
-The board shows overall delivery, milestone completion (ticket counts, excluding wontfix), priority scope and the dependencies holding up delivery. Milestone, priority, assignee and status filters plus search narrow every panel, and the filtered view travels in the URL. Critical-path and unblock counts include cross-milestone edges. The unblock count is the open tickets transitively blocked by a ticket, shared with `frontier`; `frontier --blocking` counts unresolved transitive dependents for every unresolved ticket. Missing/wontfix blockers prevent readiness; cycles or dependency depth beyond 512 return an error.
-
-The server reloads tickets on each request, loads ticket text on demand, and accepts only GET for `/`, `/data.json` and `/ticket.json`. It never serves filesystem paths or writes ticket data. Request lines are capped at 8 KiB and reads/writes time out after two seconds. `VIBECUT_BOARD_TOKEN` requires `?token=<value>` on every request; the page keeps it for its own requests. Ticket files are trusted local data and there is no multi-user editing.
-
-`tickets/tunnel.rs` owns Cloudflare process startup and cleanup, `tickets.rs` owns the graph and HTTP endpoints, and `tickets/board.html` owns the overview. For a stable public hostname, install `cloudflared`, create a named tunnel and its DNS route, then store this in the ignored `.privates/board-tunnel.json` of the main checkout, with the credentials file in `.privates/` too:
-
-```json
-{
-  "executable": "/absolute/path/to/cloudflared",
-  "tunnel": "tunnel-uuid",
-  "hostname": "board.example.com",
-  "credentials": "/absolute/path/to/tunnel-credentials.json"
-}
-```
-
-`cargo xtask board [PORT]` generates the tunnel ingress for that port and runs the connector alongside the board. Without the file it serves localhost only. Tunnel setup follows the [Cloudflare guide](https://developers.cloudflare.com/tunnel/features/locally-managed-tunnels/create-local-tunnel/).
-
-## Maintenance
-
-`cleanup` resolves the Orca workspaces directory and the main checkout from `orca worktree list` and Git, never from a compiled path. It resolves each `ctx_` dispatch in `orca orchestration worker-list`, releases it, and closes its terminal only after a matching `released` or `already_released` receipt. A settled dispatch with no terminal is reported cleaned without a release call. A `retained` receipt with `reason=ownership_transferred` is cleaned when the follow-up owner is also targeted or already released, and its terminal is left for that owner. Other retained, pending, unknown or malformed receipts leave the terminal open and fail that target. Discovery prefers the local dispatch record; a dispatch found only on the paired runtime is released there. `--environment` selects remote worktrees and terminal handles. Remaining arguments continue after a failure, and any failed step makes the command exit non-zero.
-
-A local worktree drops its ignored `.scratch` before removal. Its branch is deleted locally and on `origin` when it is an ancestor of `origin/main` or `git cherry origin/main` proves no unique patches; unmerged branches are retained. Remote deletion validates the advertised remote tip and uses an exact lease, so a newer unmerged push is retained. The main checkout's `git pull --ff-only` runs before branch cleanup. Build slots held by a live build are skipped. An idle slot first drops incremental sessions and dependency artifacts older than two days; dry runs account for the same reclaimed bytes before reporting whole-slot removal.
-
-`pull-reports` copies a local worktree's reports directly. A remote source requires `--ssh HOST` and uses `scp` into a temporary staging directory, because the paired Orca server has no file-transfer command. The merge replaces only files whose remote timestamp is newer.
+`prune` skips slots held by a live build. An idle slot first drops incremental sessions and dependency artifacts older than two days; dry runs account for the same reclaimed bytes before reporting whole-slot removal.
 
 ## Distribution
 

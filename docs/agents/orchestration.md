@@ -38,8 +38,8 @@ On every wake:
 1. Drain worker mail; read summaries and TL;DRs only.
 2. Check every live worker; nudge stuck ones; return fixes to the worker that holds the context.
 3. Answer one message per `reply`, after reading it whole. Decide technical questions yourself, and product questions by looking at the reference product. Ask the maintainer only what it cannot answer, plus credentials, hardware, assets and outward-facing actions.
-4. Verify finished work (below). A receipt counts only if it ran a non-zero number of named tests. Then `cargo xtask cleanup` the ticket's workers and worktrees.
-5. Dispatch from `cargo xtask frontier`, critical path first, filling spare host capacity. Set `Status: claimed` first. Spec: first line `Agent loop: <assignee> max <n> start: <milestone>/NN` then the paths and ticket-specific notes; shared rules stay in `.scratch/templates/`. `ls` every path the spec names before sending.
+4. Verify finished work (below). A receipt counts only if it ran a non-zero number of named tests. Then clean up the ticket's workers and worktrees with the tracker tooling.
+5. Dispatch from the tracker's ready list, critical path first, filling spare host capacity. Set `Status: claimed` first. Spec: first line `Agent loop: <assignee> max <n> start: <milestone>/NN` then the paths and ticket-specific notes; shared rules stay in `.scratch/templates/`. `ls` every path the spec names before sending.
 
 ## Worker loop
 
