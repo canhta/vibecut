@@ -46,5 +46,6 @@ pub(crate) fn generate(context: &Context, args: Vec<OsString>) -> Result<Output,
 
 fn help_text() -> &'static str {
     "usage: vibecut-cli media waveform <project> --asset <id>\n       \
-     vibecut-cli media thumbnails <project> --item <id> [--start <tick> --end <tick>]"
+     vibecut-cli media thumbnails <project> --item <id> --pixels-per-second <zoom> \
+     [--start <tick> --end <tick>]"
 }

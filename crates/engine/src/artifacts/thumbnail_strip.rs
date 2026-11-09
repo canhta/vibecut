@@ -18,8 +18,8 @@ use time::{SourceRange, TICKS_PER_SECOND, Tick, TimeRange};
 pub const TILE_ASPECT_RATIO: (u32, u32) = (16, 9);
 /// One request or visible range never asks for more than this many tiles.
 pub const MAX_TILES: usize = 128;
-/// Grid a headless generation request warms: one tile per output second.
-pub const GENERATION_INTERVAL: Tick = Tick(TICKS_PER_SECOND);
+/// Measured filmstrip height in logical px: the 39 px strip inside a 74 px clip.
+pub const STRIP_HEIGHT_PX: u32 = 39;
 const MAGIC: &[u8; 8] = b"VTCSTR01";
 const MAX_BYTES: usize = 64 << 20;
 /// One decoded source frame with its RGBA conversion and converter scratch.
@@ -103,16 +103,18 @@ impl ThumbnailStripRequest {
     }
 
     /// Admit the source positions one clip's visible output range needs on the
-    /// same grid `display` reads, mapping trim and retime. `visible` is clamped
-    /// to the clip; a range outside it, a mismatched asset or a hostile tile
-    /// count is `Invalid`.
+    /// same grid `display` reads, mapping trim and retime. `pixels_per_second`
+    /// is the timeline zoom; the interval is one 16:9 tile at
+    /// [`STRIP_HEIGHT_PX`]. `visible` is clamped to the clip; a range outside
+    /// it, a mismatched asset or a hostile tile count is `Invalid`.
     pub fn for_clip(
         asset: SourceAsset,
         item: &project::Item,
         visible: TimeRange,
-        interval: Tick,
+        pixels_per_second: f64,
         max_edge: u32,
     ) -> Result<Self, EditError> {
+        let interval = tile_interval(STRIP_HEIGHT_PX, pixels_per_second)?;
         admit_grid(interval, max_edge)?;
         if item.source_asset != Some(asset.id()) {
             return Err(EditError::Invalid("thumbnail strip display asset"));
@@ -330,17 +332,20 @@ pub enum ThumbnailStripState {
 /// Map one clip's visible output range through trim and retime and look up one
 /// cached frame per 16:9 tile. Reads only the thumbnail cache.
 ///
-/// `visible` is clamped to the clip. A range outside the clip, a mismatched
-/// asset, a non-positive interval or more than [`MAX_TILES`] tiles is `Invalid`;
-/// a missing entry is `Pending`; an undecodable one is `Failed`.
+/// `pixels_per_second` is the timeline zoom; the interval is one 16:9 tile at
+/// [`STRIP_HEIGHT_PX`]. `visible` is clamped to the clip. A range outside the
+/// clip, a mismatched asset, a non-positive or non-finite zoom or more than
+/// [`MAX_TILES`] tiles is `Invalid`; a missing entry is `Pending`; an
+/// undecodable one is `Failed`.
 pub fn display(
     asset: &SourceAsset,
     item: &project::Item,
     visible: TimeRange,
-    interval: Tick,
+    pixels_per_second: f64,
     max_edge: u32,
     cache: &mut ThumbnailCache,
 ) -> Result<ThumbnailStripState, EditError> {
+    let interval = tile_interval(STRIP_HEIGHT_PX, pixels_per_second)?;
     admit_grid(interval, max_edge)?;
     if item.source_asset != Some(asset.id()) {
         return Err(EditError::Invalid("thumbnail strip display asset"));
@@ -549,6 +554,9 @@ mod tests {
         Tick(count * TICKS_PER_SECOND)
     }
 
+    /// Zoom whose one-tile interval is exactly one output second at 39 px.
+    const ONE_SECOND_PPS: f64 = 69.333_333_333_333_33;
+
     fn clip(source: Tick, start: Tick) -> project::Item {
         project::Item {
             hidden: false,
@@ -590,7 +598,7 @@ mod tests {
             asset.clone(),
             &item,
             visible(Tick::ZERO, seconds(2)),
-            second,
+            ONE_SECOND_PPS,
             THUMBNAIL_MAX_EDGE,
         )
         .unwrap();
@@ -599,7 +607,7 @@ mod tests {
             asset.clone(),
             &item,
             visible(second, seconds(3)),
-            second,
+            ONE_SECOND_PPS,
             THUMBNAIL_MAX_EDGE,
         )
         .unwrap();
@@ -611,7 +619,7 @@ mod tests {
                 asset.clone(),
                 &item,
                 visible(seconds(5), seconds(6)),
-                second,
+                ONE_SECOND_PPS,
                 THUMBNAIL_MAX_EDGE
             )
             .is_err()
@@ -623,7 +631,7 @@ mod tests {
                 asset.clone(),
                 &other,
                 visible(Tick::ZERO, second),
-                second,
+                ONE_SECOND_PPS,
                 THUMBNAIL_MAX_EDGE
             )
             .is_err()
@@ -634,7 +642,27 @@ mod tests {
                 asset.clone(),
                 &long,
                 visible(Tick::ZERO, seconds(300)),
-                second,
+                ONE_SECOND_PPS,
+                THUMBNAIL_MAX_EDGE
+            )
+            .is_err()
+        );
+        assert!(
+            ThumbnailStripRequest::for_clip(
+                asset.clone(),
+                &item,
+                visible(Tick::ZERO, seconds(3)),
+                10_000.0,
+                THUMBNAIL_MAX_EDGE
+            )
+            .is_err()
+        );
+        assert!(
+            ThumbnailStripRequest::for_clip(
+                asset.clone(),
+                &item,
+                visible(Tick::ZERO, second),
+                0.0,
                 THUMBNAIL_MAX_EDGE
             )
             .is_err()
@@ -644,7 +672,7 @@ mod tests {
                 asset,
                 &item,
                 visible(Tick::ZERO, second),
-                Tick::ZERO,
+                f64::NAN,
                 THUMBNAIL_MAX_EDGE
             )
             .is_err()

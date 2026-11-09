@@ -1,7 +1,7 @@
 //! Lends the process artifact caches media generation jobs read and publish through.
 use crate::{
     EditError,
-    artifacts::thumbnail_strip::{GENERATION_INTERVAL, ThumbnailStripJob, ThumbnailStripRequest},
+    artifacts::thumbnail_strip::{ThumbnailStripJob, ThumbnailStripRequest},
     artifacts::thumbnails::ThumbnailCache,
     cache::ArtifactCache,
     jobs::{JobId, JobRunner},
@@ -45,21 +45,22 @@ impl MediaAccess {
         Ok(id)
     }
 
-    /// Submit the source frames one clip's visible range needs on the generation
-    /// grid. A warm cache completes without opening the source.
+    /// Submit the source frames one clip's visible range needs at a timeline
+    /// zoom. A warm cache completes without opening the source.
     pub(crate) fn generate_clip_thumbnails(
         &mut self,
         runner: &mut JobRunner,
         asset: SourceAsset,
         item: &Item,
         visible: TimeRange,
+        pixels_per_second: f64,
     ) -> Result<JobId, EditError> {
         self.retain(runner);
         let request = ThumbnailStripRequest::for_clip(
             asset,
             item,
             visible,
-            GENERATION_INTERVAL,
+            pixels_per_second,
             THUMBNAIL_MAX_EDGE,
         )?;
         let job = request.submit(runner, &mut self.thumbnails)?;

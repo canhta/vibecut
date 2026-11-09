@@ -414,7 +414,7 @@ fn batch_stops_after_failure_without_promoting_partial_output() {
     let good = dir.path().join("good.vibecut");
     let broken = dir.path().join("broken.vibecut");
     overlay_project(&good, 64, 64, Tick(time::TICKS_PER_SECOND));
-    generate_av(&source);
+    generate_av(&source, 1);
     media_project(&broken, &source, None);
     fs::remove_file(&source).unwrap();
     let output_dir = dir.path().join("out");
@@ -451,7 +451,7 @@ fn batch_allow_degraded_is_explicit_consent() {
     let dir = tempfile::tempdir().unwrap();
     let source = dir.path().join("source.mp4");
     let project = dir.path().join("degraded.vibecut");
-    generate_av(&source);
+    generate_av(&source, 1);
     media_project(&project, &source, None);
     fs::remove_file(&source).unwrap();
     let output_dir = dir.path().join("out");
@@ -490,7 +490,7 @@ fn batch_refuses_an_output_that_aliases_another_jobs_source() {
     let source = dir.path().join("source.mp4");
     let media = dir.path().join("media.vibecut");
     let overlay = dir.path().join("overlay.vibecut");
-    generate_av(&source);
+    generate_av(&source, 1);
     media_project(&media, &source, None);
     overlay_project(&overlay, 64, 64, Tick(time::TICKS_PER_SECOND));
     let output_dir = dir.path().join("out");
@@ -523,7 +523,7 @@ fn batch_refuses_an_output_hard_linked_to_another_jobs_source() {
     let source = dir.path().join("source.mp4");
     let media = dir.path().join("media.vibecut");
     let overlay = dir.path().join("overlay.vibecut");
-    generate_av(&source);
+    generate_av(&source, 1);
     let source_before = fs::read(&source).unwrap();
     media_project(&media, &source, None);
     overlay_project(&overlay, 64, 64, Tick(time::TICKS_PER_SECOND));

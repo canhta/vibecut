@@ -55,7 +55,7 @@ fn normalize_stores_gains_that_export_applies_without_changing_duration() {
     let video = dir.path().join("video.mp4");
     let audio = dir.path().join("quiet.wav");
     let project = dir.path().join("media.vibecut");
-    generate_av(&video);
+    generate_av(&video, 1);
     ffmpeg(&[
         os("-f"),
         os("lavfi"),

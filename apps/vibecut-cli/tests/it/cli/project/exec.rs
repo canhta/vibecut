@@ -229,7 +229,7 @@ fn cli_pixel_modifiers_execute_and_export_instead_of_copying() {
         let video = dir.path().join("input.mp4");
         let project = dir.path().join("blur.vibecut");
         let output_path = dir.path().join("blur.mp4");
-        generate_av(&video);
+        generate_av(&video, 1);
         media_project(&project, &video, None);
         match case {
             "mask" => {
@@ -771,7 +771,7 @@ fn audio_set_fade_shapes_the_exported_tone_envelope() {
     let audio = dir.path().join("tone.wav");
     let project = dir.path().join("fade.vibecut");
     let out = dir.path().join("fade.mp4");
-    generate_av(&video);
+    generate_av(&video, 1);
     generate_audio(&audio);
     media_project(&project, &video, Some(&audio));
     // 250 ms edges: equal-power in, linear out.
@@ -844,7 +844,7 @@ fn cli_retimes_linked_clips_and_the_export_follows_speed_and_pitch() {
     let audio = dir.path().join("audio.wav");
     let project = dir.path().join("retime.vibecut");
     let output_path = dir.path().join("retime.mp4");
-    generate_av(&video);
+    generate_av(&video, 1);
     generate_audio(&audio);
     media_project(&project, &video, Some(&audio));
     // Video item 0 and audio item 1 are retimed together, keeping 1 s of source at 2x.

@@ -35,6 +35,9 @@ fn window(start: i64, end: i64) -> TimeRange {
     TimeRange::new(t(start), t(end)).unwrap()
 }
 
+/// Zoom whose one-tile interval is exactly one output second at 39 px.
+const ONE_SECOND_PPS: f64 = 69.333_333_333_333_33;
+
 /// 3 s of 10 fps video with a moving pattern.
 fn clip() -> Option<PathBuf> {
     if !testkit::oracle::require("thumbnail strip") {
@@ -276,7 +279,7 @@ fn trim_and_retime_map_to_source_frames() {
             &asset,
             &trimmed,
             window(0, 2),
-            t(1),
+            ONE_SECOND_PPS,
             THUMBNAIL_MAX_EDGE,
             &mut cache,
         )
@@ -295,7 +298,7 @@ fn trim_and_retime_map_to_source_frames() {
             &asset,
             &retimed,
             TimeRange::new(Tick::ZERO, Tick(3 * TICKS_PER_SECOND / 2)).unwrap(),
-            t(1),
+            ONE_SECOND_PPS,
             THUMBNAIL_MAX_EDGE,
             &mut cache,
         )
@@ -312,7 +315,7 @@ fn trim_and_retime_map_to_source_frames() {
             &asset,
             &both,
             window(0, 1),
-            t(1),
+            ONE_SECOND_PPS,
             THUMBNAIL_MAX_EDGE,
             &mut cache,
         )
@@ -328,7 +331,7 @@ fn trim_and_retime_map_to_source_frames() {
             &asset,
             &moved,
             window(5, 7),
-            t(1),
+            ONE_SECOND_PPS,
             THUMBNAIL_MAX_EDGE,
             &mut cache,
         )
@@ -341,7 +344,7 @@ fn trim_and_retime_map_to_source_frames() {
             &asset,
             &moved,
             window(8, 9),
-            t(1),
+            ONE_SECOND_PPS,
             THUMBNAIL_MAX_EDGE,
             &mut cache
         ),
@@ -362,7 +365,7 @@ fn cold_pending_ready_and_hostile_inputs() {
             &asset,
             &clip,
             window(0, 3),
-            t(1),
+            ONE_SECOND_PPS,
             THUMBNAIL_MAX_EDGE,
             &mut cache
         )
@@ -374,12 +377,14 @@ fn cold_pending_ready_and_hostile_inputs() {
             ThumbnailStripRequest::new(asset.clone(), range(0, 3), interval, THUMBNAIL_MAX_EDGE),
             Err(EditError::Invalid("thumbnail strip interval"))
         ));
+    }
+    for pixels_per_second in [0.0, -1.0, f64::NAN, f64::INFINITY] {
         assert!(matches!(
             display(
                 &asset,
                 &clip,
                 window(0, 3),
-                interval,
+                pixels_per_second,
                 THUMBNAIL_MAX_EDGE,
                 &mut cache
             ),
@@ -392,7 +397,14 @@ fn cold_pending_ready_and_hostile_inputs() {
             Err(EditError::Invalid("thumbnail max edge"))
         ));
         assert!(matches!(
-            display(&asset, &clip, window(0, 3), t(1), edge, &mut cache),
+            display(
+                &asset,
+                &clip,
+                window(0, 3),
+                ONE_SECOND_PPS,
+                edge,
+                &mut cache
+            ),
             Err(EditError::Invalid("thumbnail max edge"))
         ));
     }
@@ -406,7 +418,7 @@ fn cold_pending_ready_and_hostile_inputs() {
             &asset,
             &item(&other, range(0, 3), Tick::ZERO, 1.0),
             window(0, 3),
-            t(1),
+            ONE_SECOND_PPS,
             THUMBNAIL_MAX_EDGE,
             &mut cache
         ),
@@ -417,7 +429,7 @@ fn cold_pending_ready_and_hostile_inputs() {
             &asset,
             &clip,
             window(4, 5),
-            t(1),
+            ONE_SECOND_PPS,
             THUMBNAIL_MAX_EDGE,
             &mut cache
         ),
@@ -429,7 +441,7 @@ fn cold_pending_ready_and_hostile_inputs() {
             &asset,
             &long,
             window(0, 300),
-            t(1),
+            ONE_SECOND_PPS,
             THUMBNAIL_MAX_EDGE,
             &mut cache
         ),
@@ -444,7 +456,7 @@ fn cold_pending_ready_and_hostile_inputs() {
             &asset,
             &clip,
             window(0, 3),
-            t(1),
+            ONE_SECOND_PPS,
             THUMBNAIL_MAX_EDGE,
             &mut cache,
         )
@@ -466,7 +478,7 @@ fn cold_pending_ready_and_hostile_inputs() {
             &audio,
             &item(&audio, range(0, 1), Tick::ZERO, 1.0),
             window(0, 1),
-            t(1),
+            ONE_SECOND_PPS,
             THUMBNAIL_MAX_EDGE,
             &mut cache
         )
@@ -492,7 +504,7 @@ fn still_images_repeat_one_cached_frame() {
             &asset,
             &clip,
             window(0, 1),
-            t(1),
+            ONE_SECOND_PPS,
             THUMBNAIL_MAX_EDGE,
             &mut cache,
         )
@@ -531,7 +543,7 @@ fn warm_hit_opens_no_source_and_changed_content_misses() {
             &asset,
             &clip,
             window(0, 3),
-            t(1),
+            ONE_SECOND_PPS,
             THUMBNAIL_MAX_EDGE,
             &mut cache
         )
@@ -551,7 +563,7 @@ fn warm_hit_opens_no_source_and_changed_content_misses() {
             &changed,
             &changed_clip_item,
             window(0, 3),
-            t(1),
+            ONE_SECOND_PPS,
             THUMBNAIL_MAX_EDGE,
             &mut cache
         )
@@ -588,7 +600,7 @@ fn deleted_source_fails_and_keeps_no_frames() {
             &asset,
             &clip,
             window(0, 3),
-            t(1),
+            ONE_SECOND_PPS,
             THUMBNAIL_MAX_EDGE,
             &mut cache
         )
@@ -672,7 +684,7 @@ fn cancelling_a_changed_source_keeps_the_previous_cache() {
             &asset,
             &clip,
             window(0, 3),
-            t(1),
+            ONE_SECOND_PPS,
             THUMBNAIL_MAX_EDGE,
             &mut cache
         )
@@ -685,7 +697,7 @@ fn cancelling_a_changed_source_keeps_the_previous_cache() {
             &changed,
             &changed_clip_item,
             window(0, 3),
-            t(1),
+            ONE_SECOND_PPS,
             THUMBNAIL_MAX_EDGE,
             &mut cache
         )
@@ -721,7 +733,7 @@ fn corrupt_cached_frames_are_failed_and_regenerate() {
             &asset,
             &clip,
             window(0, 3),
-            t(1),
+            ONE_SECOND_PPS,
             THUMBNAIL_MAX_EDGE,
             &mut cache
         )
@@ -737,7 +749,7 @@ fn corrupt_cached_frames_are_failed_and_regenerate() {
             &asset,
             &clip,
             window(0, 3),
-            t(1),
+            ONE_SECOND_PPS,
             THUMBNAIL_MAX_EDGE,
             &mut cache
         )
@@ -863,15 +875,7 @@ fn interview_samples_one_visible_range() {
     assert_eq!(wait(&mut runner, job.id), JobState::Completed);
     let strip = job.finish(&mut runner, &mut cache).unwrap().unwrap();
     let generated = started.elapsed();
-    let state = display(
-        &asset,
-        &clip,
-        visible,
-        interval,
-        THUMBNAIL_MAX_EDGE,
-        &mut cache,
-    )
-    .unwrap();
+    let state = display(&asset, &clip, visible, 71.5, THUMBNAIL_MAX_EDGE, &mut cache).unwrap();
     assert!(matches!(state, ThumbnailStripState::Ready(_)));
     println!(
         "thumbnail strip interview: positions={} interval_ticks={} visible={visible:?} generated={generated:?}",

@@ -49,7 +49,7 @@ fn export_refuses_when_a_source_disappears_mid_job() {
     let input = dir.path().join("midjob.mp4");
     let project = dir.path().join("midjob.vibecut");
     let output = dir.path().join("midjob-out.mp4");
-    media_fixture::generate_av(&input);
+    media_fixture::generate_av(&input, 1);
     media_fixture::media_project(&project, &input, None);
     std::fs::write(&output, b"previous").unwrap();
     let removed = Arc::new(AtomicBool::new(false));

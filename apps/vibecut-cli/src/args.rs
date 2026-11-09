@@ -3,8 +3,8 @@ mod errors;
 mod parsing;
 pub use errors::CliError;
 pub(crate) use parsing::{
-    HELP, number_arg, one_path, one_utf8, parse_i64, parse_selection, parse_u32, parse_u64,
-    seconds_arg, seconds_ticks, translation_required, utf8,
+    HELP, number_arg, one_path, one_utf8, parse_f64, parse_i64, parse_selection, parse_u32,
+    parse_u64, seconds_arg, seconds_ticks, translation_required, utf8,
 };
 #[cfg(test)]
 mod exit_codes {

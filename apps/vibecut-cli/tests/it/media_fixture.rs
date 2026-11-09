@@ -12,16 +12,18 @@ pub use testkit::oracle::ffmpeg;
 pub(super) fn tools() -> bool {
     testkit::oracle::require("CLI oracle")
 }
-pub(super) fn generate_av(path: &Path) {
+pub(super) fn generate_av(path: &Path, seconds: u32) {
+    let video = format!("testsrc2=size=128x96:rate=30:duration={seconds}");
+    let audio = format!("sine=frequency=997:sample_rate=44100:duration={seconds}");
     ffmpeg(&[
         os("-f"),
         os("lavfi"),
         os("-i"),
-        os("testsrc2=size=128x96:rate=30:duration=1"),
+        os(&video),
         os("-f"),
         os("lavfi"),
         os("-i"),
-        os("sine=frequency=997:sample_rate=44100:duration=1"),
+        os(&audio),
         os("-c:v"),
         os("libx264"),
         os("-pix_fmt"),

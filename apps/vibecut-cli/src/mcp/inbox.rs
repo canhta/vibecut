@@ -4,11 +4,12 @@ use crate::args::CliError;
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 use engine::{
     ByteBudget, EditError, Session,
-    control::{self, Caller, ControlResult, ResponseValue},
+    control::{self, Caller, ControlResult, MediaAccess, ResponseValue},
     jobs::{JobRunner, RunnerConfig, SystemClock},
 };
 use serde_json::{Value, json};
 use std::{
+    cell::RefCell,
     sync::Arc,
     time::{Duration, Instant},
 };
@@ -31,6 +32,8 @@ pub struct Inbox {
     pub(super) receive: mpsc::Receiver<Pending>,
     runner: JobRunner,
     grants: Grants,
+    /// The same caches the CLI control session lends to media generation jobs.
+    media: Option<RefCell<MediaAccess>>,
 }
 impl Inbox {
     pub(super) fn new(grants: Grants, budget: ByteBudget) -> Result<(Handler, Self), CliError> {
@@ -47,6 +50,10 @@ impl Inbox {
             budget.clone(),
             Arc::new(SystemClock::default()),
         )?;
+        // Without a usable media cache the generation commands refuse; edits still run.
+        let media = crate::session::media_access(budget.clone())
+            .ok()
+            .map(RefCell::new);
         Ok((
             Handler::new(send),
             Self {
@@ -55,6 +62,7 @@ impl Inbox {
                 receive,
                 runner,
                 grants,
+                media,
             },
         ))
     }
@@ -162,9 +170,15 @@ impl Inbox {
         if !self.projects.contains_key(&id) {
             self.register_project(id, self.budget.child(512 << 20)?)?;
         }
-        let runner = self.projects.get_mut(&id).ok_or(EditError::SessionGone)?;
+        let Self {
+            projects,
+            media,
+            grants,
+            ..
+        } = self;
+        let runner = projects.get_mut(&id).ok_or(EditError::SessionGone)?;
         session.observe_jobs(runner);
-        Self::execute_with(runner, &self.grants, session, value, publish)
+        Self::execute_with(runner, grants, media.as_ref(), session, value, publish)
     }
 
     fn execute(
@@ -173,11 +187,18 @@ impl Inbox {
         value: Value,
         publish: impl FnOnce(&project::Project, &project::Metadata) -> engine::Result<()>,
     ) -> engine::Result<Value> {
-        Self::execute_with(&mut self.runner, &self.grants, session, value, publish)
+        let Self {
+            runner,
+            media,
+            grants,
+            ..
+        } = self;
+        Self::execute_with(runner, grants, media.as_ref(), session, value, publish)
     }
     fn execute_with(
         runner: &mut JobRunner,
         grants: &Grants,
+        media: Option<&RefCell<MediaAccess>>,
         session: &mut Session,
         value: Value,
         publish: impl FnOnce(&project::Project, &project::Metadata) -> engine::Result<()>,
@@ -188,7 +209,7 @@ impl Inbox {
             external: true,
             policy: grants,
             fonts: None,
-            media: None,
+            media,
         };
         let response = session.control_routed(request, caller, runner, publish)?;
         let mut value = serde_json::to_value(&response).map_err(|_| EditError::InvalidParams)?;

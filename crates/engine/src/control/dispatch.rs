@@ -135,7 +135,11 @@ impl Session {
                     paths: Vec::new(),
                 })
             }
-            Command::GenerateClipThumbnails { item, visible } => {
+            Command::GenerateClipThumbnails {
+                item,
+                visible,
+                pixels_per_second,
+            } => {
                 if self.transaction_active() {
                     return Err(EditError::TransactionActive);
                 }
@@ -160,9 +164,13 @@ impl Session {
                 let media = caller
                     .media
                     .ok_or(EditError::Unsupported("media generation cache unavailable"))?;
-                let job = media
-                    .borrow_mut()
-                    .generate_clip_thumbnails(runner, asset, &clip, visible)?;
+                let job = media.borrow_mut().generate_clip_thumbnails(
+                    runner,
+                    asset,
+                    &clip,
+                    visible,
+                    pixels_per_second,
+                )?;
                 Ok(ControlResult::JobAccepted {
                     job,
                     revision: self.revision(),

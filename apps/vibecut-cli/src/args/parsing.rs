@@ -12,7 +12,7 @@ Usage:
   vibecut-cli scenes <file> [--threshold 0.28] [--fade-threshold 0.20] [--min-scene-ticks <ticks>]
   vibecut-cli probe <file>
   vibecut-cli media waveform <project> --asset <id>
-  vibecut-cli media thumbnails <project> --item <id> [--start <tick> --end <tick>]
+  vibecut-cli media thumbnails <project> --item <id> --pixels-per-second <zoom> [--start <tick> --end <tick>]
   vibecut-cli project new <path>
   vibecut-cli project info <path>
   vibecut-cli exec <project> <command_id> <json>
@@ -133,6 +133,17 @@ pub(crate) fn parse_i64(value: Option<OsString>, what: &str) -> Result<i64, CliE
     utf8(&value, what)?
         .parse()
         .map_err(|_| CliError::Usage(format!("{what} must be an integer")))
+}
+pub(crate) fn parse_f64(value: Option<OsString>, what: &str) -> Result<f64, CliError> {
+    let value = value.ok_or_else(|| CliError::Usage(format!("{what} requires a value")))?;
+    let value: f64 = utf8(&value, what)?
+        .parse()
+        .map_err(|_| CliError::Usage(format!("{what} must be a number")))?;
+    if value.is_finite() {
+        Ok(value)
+    } else {
+        Err(CliError::Usage(format!("{what} must be finite")))
+    }
 }
 
 pub(crate) fn one_utf8(args: Vec<OsString>, usage: &str) -> Result<String, CliError> {

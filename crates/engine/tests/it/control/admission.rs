@@ -2565,7 +2565,7 @@ fn media_generation_commands_warm_the_cache_and_refuse_without_it() {
         &mut runner,
         &media,
         "media.generate_clip_thumbnails",
-        json!({"item":6,"visible":{"start":0,"end":254016000000_i64}}),
+        json!({"item":6,"visible":{"start":0,"end":254016000000_i64},"pixels_per_second":71.5}),
         "thumbs-cold",
     );
     finish(&mut runner, thumbs);
@@ -2585,7 +2585,7 @@ fn media_generation_commands_warm_the_cache_and_refuse_without_it() {
         &mut runner,
         &media,
         "media.generate_clip_thumbnails",
-        json!({"item":6,"visible":{"start":0,"end":254016000000_i64}}),
+        json!({"item":6,"visible":{"start":0,"end":254016000000_i64},"pixels_per_second":71.5}),
         "thumbs-warm",
     );
     finish(&mut runner, warm_thumbs);
@@ -2647,7 +2647,7 @@ fn media_generation_commands_warm_the_cache_and_refuse_without_it() {
         (
             "no-media-thumbs",
             "media.generate_clip_thumbnails",
-            json!({"item":6,"visible":{"start":0,"end":254016000000_i64}}),
+            json!({"item":6,"visible":{"start":0,"end":254016000000_i64},"pixels_per_second":71.5}),
         ),
     ] {
         let req = request(&wave_session, id, params, key);
@@ -2678,5 +2678,26 @@ fn media_generation_commands_warm_the_cache_and_refuse_without_it() {
             .unwrap(),
         ErrorCode::Refused,
     );
+    for (key, pixels_per_second) in [("zero-zoom", 0.0), ("negative-zoom", -1.0)] {
+        let req = request(
+            &thumbnail_session,
+            "media.generate_clip_thumbnails",
+            json!({"item":6,"visible":{"start":0,"end":254016000000_i64},"pixels_per_second":pixels_per_second}),
+            key,
+        );
+        let caller = Caller {
+            principal: "test",
+            external: true,
+            policy: &Allow,
+            fonts: None,
+            media: Some(&media),
+        };
+        error(
+            thumbnail_session
+                .control_request(req, caller, &mut runner)
+                .unwrap(),
+            ErrorCode::Refused,
+        );
+    }
     runner.shutdown();
 }

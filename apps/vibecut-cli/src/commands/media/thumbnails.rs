@@ -1,8 +1,8 @@
 //! Warms one clip's visible-range thumbnail strip.
-use crate::args::{CliError, parse_i64, parse_u64, utf8};
+use crate::args::{CliError, parse_f64, parse_i64, parse_u64, utf8};
 use crate::output::{Output, json_path, wait_for_job};
 use crate::session::{Context, cli_runner, thumbnail_cache};
-use engine::thumbnail_strip::{GENERATION_INTERVAL, ThumbnailStripRequest};
+use engine::thumbnail_strip::ThumbnailStripRequest;
 use media::THUMBNAIL_MAX_EDGE;
 use project::{ItemId, WriterLease};
 use serde_json::json;
@@ -10,17 +10,22 @@ use std::ffi::OsString;
 use std::path::PathBuf;
 use time::{Tick, TimeRange};
 
-/// `media thumbnails <project> --item <id> [--start <tick> --end <tick>]`
-/// generates and caches the strip frames the clip's visible range needs.
+/// `media thumbnails <project> --item <id> --pixels-per-second <zoom>
+/// [--start <tick> --end <tick>]` generates and caches the strip frames the
+/// clip's visible range needs at that timeline zoom.
 pub(crate) fn run(context: &Context, args: Vec<OsString>) -> Result<Output, CliError> {
     let mut args = args.into_iter();
     let project_path = args.next().map(PathBuf::from).ok_or_else(usage)?;
     let mut item = None;
+    let mut pixels_per_second = None;
     let mut start = None;
     let mut end = None;
     while let Some(flag) = args.next() {
         match utf8(&flag, "media thumbnails flag")? {
             "--item" => item = Some(ItemId(parse_u64(args.next(), "--item")?)),
+            "--pixels-per-second" => {
+                pixels_per_second = Some(parse_f64(args.next(), "--pixels-per-second")?)
+            }
             "--start" => start = Some(Tick(parse_i64(args.next(), "--start")?)),
             "--end" => end = Some(Tick(parse_i64(args.next(), "--end")?)),
             "--help" | "-h" => return Ok(usage_output()),
@@ -32,6 +37,7 @@ pub(crate) fn run(context: &Context, args: Vec<OsString>) -> Result<Output, CliE
         }
     }
     let item = item.ok_or_else(usage)?;
+    let pixels_per_second = pixels_per_second.ok_or_else(usage)?;
     let visible = match (start, end) {
         (None, None) => None,
         (Some(start), Some(end)) => Some(TimeRange::new(start, end)?),
@@ -66,7 +72,7 @@ pub(crate) fn run(context: &Context, args: Vec<OsString>) -> Result<Output, CliE
         source,
         &clip,
         visible,
-        GENERATION_INTERVAL,
+        pixels_per_second,
         THUMBNAIL_MAX_EDGE,
     )?;
     let budget = context.budget()?;
@@ -84,13 +90,15 @@ pub(crate) fn run(context: &Context, args: Vec<OsString>) -> Result<Output, CliE
         "project": json_path(&project_path)?,
         "item": item.0,
         "asset": asset_id.0,
+        "pixels_per_second": pixels_per_second,
         "positions": positions,
     });
     let human = format!(
-        "item {}: {} thumbnail tile(s) at edge {}",
+        "item {}: {} thumbnail tile(s) at edge {} and {:.3} px/s",
         item.0,
         positions.len(),
-        THUMBNAIL_MAX_EDGE
+        THUMBNAIL_MAX_EDGE,
+        pixels_per_second
     );
     Ok(Output::new(value, human, false, 0))
 }
@@ -101,7 +109,7 @@ fn usage() -> CliError {
 
 fn usage_text() -> &'static str {
     "usage: vibecut-cli media thumbnails <project> --item <id> \
-     [--start <tick> --end <tick>]"
+     --pixels-per-second <zoom> [--start <tick> --end <tick>]"
 }
 
 fn usage_output() -> Output {

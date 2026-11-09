@@ -444,7 +444,7 @@ commands! {
     PauseCandidates, "timeline.pause_candidates", "List pause candidates", JobControl { min_pause_ms: i64, pad_ms: i64, crossfade_ms: i64 } => Timeline, serde_json::json!({"min_pause_ms":500,"pad_ms":20,"crossfade_ms":20}), grant = Agent;
     RemovePauses, "timeline.remove_pauses", "Remove reviewed pauses", Edit { spans: Vec<PauseSpan>, crossfade_ms: i64 } => Timeline, serde_json::json!({"spans":[{"start":63504000000_i64,"end":127008000000_i64}],"crossfade_ms":20});
     GenerateWaveform, "media.generate_waveform", "Generate source waveform", JobControl { asset: AssetId } => Waveform, serde_json::json!({"asset":97}), grant = Agent;
-    GenerateClipThumbnails, "media.generate_clip_thumbnails", "Generate clip thumbnails", JobControl { item: ItemId, visible: TimeRange } => Thumbnails, serde_json::json!({"item":6,"visible":{"start":0,"end":254016000000_i64}}), grant = Agent;
+    GenerateClipThumbnails, "media.generate_clip_thumbnails", "Generate clip thumbnails", JobControl { item: ItemId, visible: TimeRange, pixels_per_second: f64 } => Thumbnails, serde_json::json!({"item":6,"visible":{"start":0,"end":254016000000_i64},"pixels_per_second":71.5}), grant = Agent;
     SplitAt, "split_at", "Split item", Edit { item: ItemId, at: Tick } => Timeline, serde_json::json!({"item":1,"at":8467200000_i64}), available = UnlockedItem;
     TrimStart, "trim_start", "Trim start", Edit { item: ItemId, at: Tick } => Timeline, serde_json::json!({"item":1,"at":8467200000_i64}), available = UnlockedItem;
     TrimEnd, "trim_end", "Trim end", Edit { item: ItemId, at: Tick } => Timeline, serde_json::json!({"item":1,"at":8467200000_i64}), available = UnlockedItem;

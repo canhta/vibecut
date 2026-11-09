@@ -9,7 +9,7 @@ fn probe_reports_decoded_stream_metadata() {
     }
     let dir = tempfile::tempdir().unwrap();
     let video = dir.path().join("probe source.mp4");
-    generate_av(&video);
+    generate_av(&video, 1);
     let output = cli(&[os("probe"), video.as_os_str(), os("--json")]);
     assert_eq!(
         code(&output),

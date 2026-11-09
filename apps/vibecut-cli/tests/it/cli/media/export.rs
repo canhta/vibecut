@@ -349,7 +349,7 @@ fn export_refuses_missing_changed_and_missing_audio_sources() {
     let audio = dir.path().join("audio.wav");
     let project = dir.path().join("media.vibecut");
     let output_path = dir.path().join("media.mp4");
-    generate_av(&video);
+    generate_av(&video, 1);
     generate_audio(&audio);
     media_project(&project, &video, Some(&audio));
     let video_bytes = fs::read(&video).unwrap();
@@ -418,7 +418,7 @@ fn export_allow_degraded_is_explicit_consent() {
     let video = dir.path().join("degraded.mp4");
     let project = dir.path().join("degraded.vibecut");
     let output_path = dir.path().join("degraded-out.mp4");
-    generate_av(&video);
+    generate_av(&video, 1);
     media_project(&project, &video, None);
     fs::remove_file(&video).unwrap();
     let output = cli(&[

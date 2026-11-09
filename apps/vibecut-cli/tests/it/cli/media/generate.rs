@@ -23,7 +23,7 @@ fn media_generation_warms_waveform_and_thumbnail_caches() {
     }
     let dir = tempfile::tempdir().unwrap();
     let media = dir.path().join("clip.mp4");
-    generate_av(&media);
+    generate_av(&media, 3);
     let project = dir.path().join("media.vibecut");
     media_project(&project, &media, None);
 
@@ -58,6 +58,8 @@ fn media_generation_warms_waveform_and_thumbnail_caches() {
             project.as_os_str(),
             os("--item"),
             os("0"),
+            os("--pixels-per-second"),
+            os("71.5"),
             os("--json"),
         ],
     );
@@ -69,6 +71,7 @@ fn media_generation_warms_waveform_and_thumbnail_caches() {
     );
     let strip = stdout_json(&thumbnails);
     assert_eq!(strip["item"], 0);
+    assert_eq!(strip["pixels_per_second"], 71.5);
     assert!(
         !strip["positions"].as_array().unwrap().is_empty(),
         "{strip}"
@@ -91,6 +94,8 @@ fn media_generation_warms_waveform_and_thumbnail_caches() {
             project.as_os_str(),
             os("--item"),
             os("0"),
+            os("--pixels-per-second"),
+            os("71.5"),
             os("--json"),
         ],
     ] {
@@ -116,6 +121,23 @@ fn media_generation_warms_waveform_and_thumbnail_caches() {
         ],
     );
     assert_eq!(code(&missing), 5);
+    let missing_zoom = run(
+        dir.path(),
+        &[
+            os("media"),
+            os("thumbnails"),
+            project.as_os_str(),
+            os("--item"),
+            os("0"),
+            os("--json"),
+        ],
+    );
+    assert_eq!(
+        code(&missing_zoom),
+        2,
+        "{}",
+        String::from_utf8_lossy(&missing_zoom.stderr)
+    );
     let reversed = run(
         dir.path(),
         &[
@@ -124,6 +146,8 @@ fn media_generation_warms_waveform_and_thumbnail_caches() {
             project.as_os_str(),
             os("--item"),
             os("0"),
+            os("--pixels-per-second"),
+            os("71.5"),
             os("--start"),
             os("254016000001"),
             os("--end"),

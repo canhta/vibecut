@@ -6,18 +6,25 @@ use std::{
     path::{Path, PathBuf},
     process::{Child, ChildStdin, Command, Stdio},
     sync::mpsc,
-    time::Duration,
+    time::{Duration, Instant},
 };
 
 struct Client {
     child: Child,
     input: ChildStdin,
     responses: mpsc::Receiver<Value>,
+    _cache: tempfile::TempDir,
 }
 impl Client {
     fn start(args: &[&std::ffi::OsStr]) -> Self {
+        // Every MCP process gets its own cache root, so parallel tests and the
+        // real user cache never share a lock.
+        let cache = tempfile::tempdir().unwrap();
         let mut child = Command::new(env!("CARGO_BIN_EXE_vibecut-cli"))
             .args(args)
+            .env("HOME", cache.path())
+            .env("LOCALAPPDATA", cache.path())
+            .env("XDG_CACHE_HOME", cache.path())
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::null())
@@ -42,6 +49,7 @@ impl Client {
             child,
             input,
             responses,
+            _cache: cache,
         };
         let result = client.rpc(1, "initialize", json!({"protocolVersion":"2025-11-25","capabilities":{},"clientInfo":{"name":"conformance","version":"1"}}));
         assert!(result.get("result").is_some(), "{result}");
@@ -98,6 +106,83 @@ fn fixture(root: &Path, name: &str) -> PathBuf {
     let project = project::Project::empty(project::ProjectId(1), "MCP".into()).unwrap();
     std::fs::write(&path, project::encode(&project, true).unwrap()).unwrap();
     path
+}
+
+fn wait_for_media_job(client: &mut Client, job: &Value) {
+    let deadline = Instant::now() + Duration::from_secs(30);
+    loop {
+        let status = client.call("job_status", json!({"job": job}), None, None);
+        match status
+            .pointer("/value/value/snapshot/state")
+            .and_then(Value::as_str)
+        {
+            Some("completed") => return,
+            Some("failed" | "cancelled") => panic!("media job ended early: {status}"),
+            _ => {}
+        }
+        assert!(
+            Instant::now() < deadline,
+            "media job did not finish: {status}"
+        );
+        std::thread::sleep(Duration::from_millis(25));
+    }
+}
+
+/// An allowed agent call reaches the same media caches the CLI control session
+/// lends; a warm rerun still completes after the source is deleted.
+#[test]
+fn media_generation_runs_through_the_attached_mcp_caches() {
+    if !crate::media_fixture::tools() {
+        return;
+    }
+    let root = tempfile::tempdir().unwrap();
+    let media = root.path().join("clip.mp4");
+    crate::media_fixture::generate_av(&media, 3);
+    let path = root.path().join("media.json");
+    crate::media_fixture::media_project(&path, &media, None);
+    let mut client = Client::start(&["mcp".as_ref(), path.as_os_str(), "--no-save".as_ref()]);
+    let mut rev = client.call("inspect", json!({}), None, None)["rev_after"].clone();
+    for (key, command, params) in [
+        ("waveform", "media.generate_waveform", json!({"asset":1})),
+        (
+            "thumbnails",
+            "media.generate_clip_thumbnails",
+            json!({"item":0,"visible":{"start":0,"end":254016000000_i64},"pixels_per_second":71.5}),
+        ),
+    ] {
+        let accepted = client.call(command, params, Some(&rev), Some(key));
+        assert_eq!(
+            accepted.pointer("/value/status"),
+            Some(&json!("result")),
+            "{accepted}"
+        );
+        let job = accepted.pointer("/value/value/job").unwrap().clone();
+        wait_for_media_job(&mut client, &job);
+        rev = accepted["rev_after"].clone();
+    }
+    std::fs::remove_file(&media).unwrap();
+    for (key, command, params) in [
+        (
+            "waveform-warm",
+            "media.generate_waveform",
+            json!({"asset":1}),
+        ),
+        (
+            "thumbnails-warm",
+            "media.generate_clip_thumbnails",
+            json!({"item":0,"visible":{"start":0,"end":254016000000_i64},"pixels_per_second":71.5}),
+        ),
+    ] {
+        let accepted = client.call(command, params, Some(&rev), Some(key));
+        assert_eq!(
+            accepted.pointer("/value/status"),
+            Some(&json!("result")),
+            "{accepted}"
+        );
+        let job = accepted.pointer("/value/value/job").unwrap().clone();
+        wait_for_media_job(&mut client, &job);
+        rev = accepted["rev_after"].clone();
+    }
 }
 
 #[test]
