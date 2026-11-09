@@ -1,6 +1,6 @@
 # ElevenLabs speech fixtures
 
-Offline fixtures for `ai::elevenlabs_speech`. They exercise the wire seam only, not voice quality or account retention.
+Offline fixtures for `ai::elevenlabs::speech`. They exercise the wire seam only, not voice quality or account retention.
 
 ## Audio
 

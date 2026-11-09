@@ -1,5 +1,6 @@
-//! ElevenLabs Scribe file transcription: consent-gated HTTPS transport, word-level
-//! token spans mapped through captions, and typed failures.
+//! ElevenLabs provider adapters. Scribe transcription lives here; speech synthesis
+//! is in `speech`.
+pub mod speech;
 use crate::contracts::checkpoint;
 use crate::transport::{
     ApiKey, HttpRequest, HttpResponse, HttpTransport, MAX_RESPONSE_BYTES, Multipart, retry_after,

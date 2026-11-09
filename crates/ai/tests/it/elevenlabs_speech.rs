@@ -4,7 +4,7 @@
     clippy::panic,
     clippy::indexing_slicing
 )]
-use ai::elevenlabs_speech::{
+use ai::elevenlabs::speech::{
     BASE_URL, ElevenLabsSpeech, ElevenLabsSpeechSettings, FLASH_MICROS_PER_CHARACTER, FLASH_MODEL,
     LoggingMode, MULTILINGUAL_MICROS_PER_CHARACTER, MULTILINGUAL_MODEL, SAMPLE_RATE, SpeechSpeed,
 };
