@@ -23,8 +23,6 @@
 | Build and provisioning detail | [xtask](../xtask/README.md) | workflows.md beyond its summary and link |
 | Hosts, Orca, relay, tiers' track record, ticket state | `.scratch/` and the private workspace | any tracked file |
 
-Owner docs state current contracts in terse English: change a fact at its owner and
-link to it elsewhere. Length is not a budget; duplication is. Rationale and history
-belong in ADRs.
+Owner docs state current contracts only, in short sentences. Change a fact at its owner and link to it elsewhere. No history, test inventories or restated code; rationale belongs in ADRs.
 
 The root README shows the finished product to users: features with media, install, links. Status, plans and developer mechanics live in `.scratch/` and CONTRIBUTING.

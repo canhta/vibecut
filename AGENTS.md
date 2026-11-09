@@ -2,12 +2,12 @@
 
 Rust desktop video editor for macOS, Windows and Linux.
 
-Read the owner before changing its area; keep each fact in one owner and link elsewhere.
+Read the owner before changing its area. Each fact lives in one owner; link to it elsewhere. Greenfield: no backward-compatibility code.
 
 | When you | Read |
 |---|---|
 | judge scope, priority or acceptance | [requirements](docs/product/requirements.md) |
-| design, build or review UI | [UI design](docs/product/ui/index.md) and the one window file it indexes (editor, Home, shorts); load the `frontend-design` and `impeccable` skills first. Measured reference values in those files win over any skill advice (we match the reference, not a new identity); use the skills for type scale, spacing rhythm, states and anti-generic checks. With `impeccable` use only `critique` and `audit` on screenshots; never run `init`, `document` or its installer in this repo (PRODUCT.md and DESIGN.md would duplicate requirements.md and ui.md) |
+| design, build or review UI | [UI design](docs/product/ui/index.md) and its window file (editor, Home, shorts). Measured reference values win over any skill advice. With the `impeccable` skill use only `critique` and `audit` |
 | change a visual token | [UI tokens](docs/product/ui/tokens.md) |
 | drive or change agent control | [MCP control](docs/product/agent-control/mcp.md) and [CLI](docs/product/agent-control/cli.md) |
 | change a shortcut | [Keyboard](docs/product/agent-control/keyboard.md) |

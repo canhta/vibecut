@@ -12,7 +12,7 @@ Admit a module or crate only for a real responsibility with a consumer; [structu
 
 ## Minimal solutions
 
-Take the first rung that works: not needed now, existing owner, std, platform feature, existing dependency, minimum new code. Guidance, not a gate: keep the ADR-chosen seams for languages, providers and codecs, and keep validation, data-loss handling, security and accessibility on every rung. Mark a deliberate shortcut with `// ponytail: <ceiling>, <upgrade path>`.
+Take the first rung that works: not needed, existing owner, std, platform feature, existing dependency, minimum new code. Keep validation, data-loss handling, security and accessibility on every rung. No backward-compatibility code ([upgrade policy](workflows.md#upgrade-policy)). Mark a deliberate shortcut with `// ponytail: <ceiling>, <upgrade path>`.
 
 ## Quality and speed
 
@@ -36,4 +36,4 @@ Text is NFC; edit, count and split by grapheme cluster. Test Vietnamese combinin
 
 ## Public APIs and crate README
 
-Expose `pub` APIs only to real consumers; constructors validate invariants. Public docs state units, bounds, failures and cancellation. Each crate README states purpose and exclusions, gives the public interface in a few lines and maps its top-level modules to their READMEs; each module README states that module's contract, supported inputs, limits, tests and measured evidence.
+Expose `pub` APIs only to real consumers; constructors validate invariants. Public docs state units, bounds, failures and cancellation. A crate README states purpose and exclusions and maps its top-level modules to their READMEs. A module README states only what the code cannot: its contract, limits and measured values. No history, test inventories, field lists or text owned by another doc.

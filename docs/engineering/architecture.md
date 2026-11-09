@@ -2,7 +2,7 @@
 
 ## Crate map
 
-The core runs headless: editing, tests and the CLI need no window or UI toolkit; only `apps/*` may depend on UI, native window/dialog, audio-device or accessibility crates, including the app-owned wgpu adapter. Apps compose concrete adapters; the desktop app uses egui and wgpu. Admit each crate with its first working ticket. `cargo xtask layers` enforces this table: an edge not listed is forbidden (all dependency kinds count), and outside `apps/*` it denies the app-only UI/GPU, native window/dialog, audio-device and accessibility crates, admitting one to that list only with a named consumer.
+The core runs headless. Only `apps/*` may depend on UI, GPU, native window or dialog, audio-device or accessibility crates. `cargo xtask layers` enforces this table: an unlisted edge is forbidden. Update it in the same change that adds an edge.
 
 | Package | Path | Owns | May depend on |
 |---|---|---|---|
@@ -20,11 +20,11 @@ The core runs headless: editing, tests and the CLI need no window or UI toolkit;
 | vibecut-cli | apps/vibecut-cli | Headless adapter: CLI arguments, typed exit codes, dispatch, control-session lifetime, project lease composition, export admission, bounded batch job files, MCP tools and authenticated local transport | engine, media, project, render, time, shorts, testkit |
 | vibecut | apps/vibecut | Desktop app: UI, playback, model-manager presentation, wgpu compositor, preferences, app controls and inspection; composes the CLI-owned MCP adapter | time, engine, media, project, captions, text, render, ai, vibecut-cli, shorts, testkit |
 
-Only `media` links FFmpeg. Render's CPU compositor is the reference shared by preview and export; the app owns the optional wgpu adapter behind render's interface. Update this table in the same change that adds a responsibility or edge.
+Only `media` links FFmpeg. Render's CPU compositor is the reference for preview and export; the app owns the optional wgpu adapter.
 
 ## Contracts
 
-The [glossary](../../GLOSSARY.md) owns domain definitions; crate READMEs own contract details. This index records the seams:
+Definitions: [glossary](../../GLOSSARY.md). Contract details live in these owners:
 
 | Area | Contract owner |
 |---|---|
@@ -53,18 +53,12 @@ The [glossary](../../GLOSSARY.md) owns domain definitions; crate READMEs own con
 | Translation windows and response validation / selection, retry, edit protection | [ai translation](../../crates/ai/src/translation/README.md) / [engine application](../../crates/engine/src/transcript/README.md#translation-selection-and-application) |
 | SpeechSynthesizer capabilities, requests, consent, PCM validation | [ai speech](../../crates/ai/src/speech/README.md) |
 
-Engine wraps media/render/AI execution, supplying progress and cancellation hooks. Persistent artifacts use content keys; frame/glyph caches stay with data owners and share accounting leases. Engine owns speech provider selection, retry budgets, jobs and placement.
-
-Every project mutation goes through the engine registry; UI/CLI/MCP/plugins translate their transport into it. CLI owns parsing/typed exit codes, MCP tools/transports, app widgets/preferences/transient state. A shared control library needs working CLI and MCP consumers; until then its first adapter owns the code.
-
-Per-project view state stays outside editable content and undo: engine Session exposes its command, project owns the bounded [metadata sidecar](../../crates/project/src/persistence/README.md#optional-project-metadata) under WriterLease. Engine owns [recovery scheduling, session liveness and save acknowledgement](../../crates/engine/src/store/recovery_workflow/README.md#session-recovery-and-save-acknowledgement); project owns snapshot format/writes/rotation, app presents recovery choices.
+Every project mutation goes through the engine command registry; UI, CLI and MCP only translate their transport into it. Engine wraps media, render and AI execution with progress and cancellation. Per-project view state lives in the project's [metadata sidecar](../../crates/project/src/persistence/README.md#optional-project-metadata), outside undo. Recovery: [engine](../../crates/engine/src/store/recovery_workflow/README.md#session-recovery-and-save-acknowledgement).
 
 ## Languages
 
-Languages are BCP 47 data (`vi`, `en`, `zh-Hans`, `zh-Hant`), each with one [captions profile](../../crates/captions/src/language/README.md). Provider adapters declare language capabilities and keep per-language decode settings as profile data. Adding a language adds a profile, fonts and an optional UI catalog; unknown tags use the generic profile.
+Languages are BCP 47 tags (`vi`, `en`, `zh-Hans`, `zh-Hant`), each with one [captions profile](../../crates/captions/src/language/README.md); unknown tags use the generic profile. Adding a language adds a profile, fonts and optionally a UI catalog.
 
 ## Media and time
 
-Runtime codec admission, software fallback, GPU frame lifetime, keyframe seeking, stream copy, probe fields and presentation timestamps follow the [media contract](../../crates/media/src/read/README.md).
-
-Time units follow the [glossary](../../GLOSSARY.md); conversion rules follow [standards](standards.md#time-and-text).
+Codecs, seeking and timestamps: [media](../../crates/media/src/read/README.md). Time rules: [standards](standards.md#time-and-text).
