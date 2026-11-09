@@ -1,109 +1,25 @@
 # Local Whisper
 
-The default `whisper` feature uses safe whisper-rs bindings, with Metal on macOS
-and CPU elsewhere. `whisper-vulkan` enables Vulkan (requires the Vulkan SDK).
-`--no-default-features` retains offline contracts/model policy without native builds.
-The narrowly admitted callback module is documented in
-[ADR 0003](../../../../docs/adr/0003-whisper-callback-boundary.md); other ai modules
-deny unsafe code. `whisper::Whisper::load` verifies the pinned
-model's exact size and SHA-256 with a fixed 64 KiB buffer before native loading;
-callers must keep the cache path immutable during loading/use. Models are never
-bundled. The multilingual default is `whisper-large-v3-turbo`, with admitted
-`vi`, `en`, `zh` capability data. No implicit language/script fallback is applied.
+The default `whisper` feature uses safe whisper-rs bindings, with Metal on macOS and CPU elsewhere. `whisper-vulkan` enables Vulkan (needs the Vulkan SDK). `--no-default-features` keeps offline contracts and model policy without native builds. The one admitted callback module is in [ADR 0003](../../../../docs/adr/0003-whisper-callback-boundary.md); other ai modules deny unsafe code.
 
-`models::catalog` exposes source, licence URL, size and pinned download metadata.
-Composition shows those fields and obtains a user download click before granting
-`models::DownloadConsent`; this is distinct from upload consent. Authorize against
-the complete catalog record before any transfer, including resumption. Other
-weight licences remain opt-in and ineligible as defaults. `models::verify_file`
-rejects truncation, excess bytes and hash mismatches, checks cancellation between
-reads, and never writes/promotes files. `models::storage_error` maps disk-full and
-other storage failures to safe typed categories. `models::cache_dir` resolves macOS
-`~/Library/Caches/VibeCut/models`, Windows `%LOCALAPPDATA%/VibeCut/models` or Linux
-`$XDG_CACHE_HOME/VibeCut/models` (default `~/.cache/VibeCut/models`), without
-creating directories. Engine owns downloads, scheduling, resume/retry/checkpoints,
-cache identity/storage/promotion and model-manager wiring; these are not implemented
-by this crate.
+`whisper::Whisper::load` verifies the pinned model's size and SHA-256 with a fixed 64 KiB buffer before native loading; callers keep the cache path immutable during loading and use. Models are never bundled. The multilingual default is `whisper-large-v3-turbo` with `vi`, `en`, `zh`. No implicit language/script fallback.
 
-The existing `transport::UreqTransport` also implements `DownloadTransport` for
-streaming GET responses, retaining duplicate response headers for strict engine
-validation. It uses the same agent/timeouts; text provider responses keep their
-1 MiB buffer cap. Large media responses opt in through `send_bounded`, which reads
-at most the caller's byte ceiling; the trait default checks an already-buffered
-response for in-memory test transports. `download_redirect` resolves only bounded
-HTTPS URLs without embedded
-credentials or fragments. The engine owns redirect limits and Range/ETag policy.
-Catalog validation admits bounded portable raw filenames, rejects device names,
-case-folded duplicates and unsafe paths, and caps file/aggregate sizes before IO.
-The [engine transfer contract](../../../engine/src/providers/README.md#local-model-transfers) owns
-verified native bundle leases; callers retain a lease while native paths are used.
+`models::catalog` exposes source, licence URL, size and pinned download metadata. Composition shows those fields and obtains a user download click before granting `models::DownloadConsent` (distinct from upload consent), authorizing against the complete catalog record before any transfer, resumption included. Other weight licences are opt-in and never defaults. `models::verify_file` rejects truncation, excess bytes and hash mismatches, checks cancellation between reads and never writes or promotes files. `models::storage_error` maps disk-full and other storage failures to safe typed categories. `models::cache_dir` resolves macOS `~/Library/Caches/VibeCut/models`, Windows `%LOCALAPPDATA%/VibeCut/models` or Linux `$XDG_CACHE_HOME/VibeCut/models` (default `~/.cache/VibeCut/models`) without creating directories. Engine owns downloads, scheduling, resume/retry/checkpoints, cache identity/storage/promotion and model-manager wiring.
 
-Whisper accepts finite mono 16 kHz PCM windows of at most five minutes, with absolute
-source sample offsets. Whisper chooses timestamp-based decode boundaries within
-each call; do not cut
-continuous speech into independent 30 s calls. Engine chooses speech-safe invocation
-boundaries and owns reconciliation for longer recordings. The five-minute bound
-caps input buffering at 19.2 MB of f32 PCM; it is a safety ceiling, not evidence that
-hard cuts at five minutes preserve speech.
-Model loading is synchronous and checked for cancellation before/after loading.
-Inference uses whisper-rs raw abort/progress callbacks backed by call-owned atomic
-state; a scoped observer polls execution hooks every 2 ms, acknowledges cancellation
-through `ExecutionHooks::cancelling` once, then suppresses progress and all results.
-The engine's hook implementation owns the visible Cancelling job state. Native
-work stops at the next abort poll and the observer joins before return. The binding's
-released safe setters are bypassed because their allocation ownership/type cast is
-incorrect; no patched binding or native runtime is vendored.
+`transport::UreqTransport` also implements `DownloadTransport` for streaming GET responses, keeping duplicate response headers for engine validation, with the same agent and timeouts. Text provider responses keep the 1 MiB buffer cap; large media responses use `send_bounded`, which reads at most the caller's ceiling (the trait default checks an already-buffered response). `download_redirect` resolves only bounded HTTPS URLs without credentials or fragments; engine owns redirect limits and Range/ETag policy. Catalog validation admits bounded portable raw filenames, rejects device names, case-folded duplicates and unsafe paths, and caps file and aggregate sizes before IO. The [engine transfer contract](../../../engine/src/providers/README.md#local-model-transfers) owns verified native bundle leases; callers hold a lease while native paths are in use.
 
-The bundled native runtime polls after encoding a window and after decoder work;
-it cannot interrupt an encoder graph in flight. Coordinator-accepted residual
-latency is one encoder window: observed isolated four-thread M1 Pro release runs
-returned 0.36–0.41 s after the cancellation deadline on Metal and 3.0–3.7 s on CPU.
-These are measurements, not universal bounds; contention and other hardware can
-increase the delay. Native regression checks allow 1 s on Metal and 4.5 s on CPU
-after a 1 s deadline, with acknowledgement within 100 ms. Windows/Vulkan latency
-remains unverified. Cancellation never waits for the entire five-minute invocation.
-CPU selection is
-explicit; engine owns fallback instead of silently retrying a failed GPU call.
-The adapter disables native path/text diagnostics process-wide through the
-binding's logging hooks, without enabling its logging backend features.
+Input is finite mono 16 kHz PCM, at most five minutes, with absolute source sample offsets. Whisper picks timestamp-based decode boundaries within a call, so continuous speech is not cut into independent 30 s calls. Engine chooses speech-safe invocation boundaries and reconciles longer recordings. The five-minute bound caps input at 19.2 MB of f32 PCM; it is a safety ceiling, not evidence that hard cuts preserve speech. Model loading is synchronous with cancellation checked before and after.
 
-`ai::transcribe` returns validated native segments and original subword bytes in
-`RecognitionSegment::raw_tokens`, with optional absolute source-sample ranges,
-native provenance and confidence. The adapter advertises segment and token timing;
-individual tokens can still lack timing. Missing, invalid and zero-width timestamps
-stay absent. Tokens may split UTF-8 and are never relabelled as words.
-`Recognition::to_transcript` uses the shared captions span owner to retain token
-ordinals, raw-to-NFC correspondence and missing timing, converting sample boundaries
-once to ticks. There is no separate native token representation or conversion path.
+Inference uses whisper-rs raw abort/progress callbacks backed by call-owned atomic state. A scoped observer polls execution hooks every 2 ms, acknowledges cancellation through `ExecutionHooks::cancelling` once, then suppresses progress and results; engine's hooks own the visible Cancelling state. Native work stops at the next abort poll and the observer joins before return. The binding's safe setters are bypassed because their allocation ownership/type cast is incorrect; no patched binding is vendored.
 
-`LANGUAGES` exposes the adapter's exact vi/en/zh data for offline composition;
-`Whisper::detect_language` performs one bounded language-detection pass on an
-already decoded 16 kHz window and returns a captions `LanguageTag`. Detection is
-an explicit caller action, not an implicit provider fallback: the caller supplies
-the detected tag to the real transcription request and still owns chunking,
-consent and retries. No transcription result or timestamp is produced by detection.
+The native runtime polls after encoding a window and after decoder work and cannot interrupt an encoder in flight, so residual latency is up to one encoder window. Measured on an isolated four-thread M1 Pro release build: 0.36–0.41 s after the cancellation deadline on Metal and 3.0–3.7 s on CPU. These are not universal bounds. Native regression checks allow 1 s on Metal and 4.5 s on CPU after a 1 s deadline, with acknowledgement within 100 ms. Windows/Vulkan latency is unverified. Cancellation never waits for the whole invocation. CPU selection is explicit; engine owns fallback instead of silently retrying a failed GPU call. Native path/text diagnostics are disabled process-wide through the binding's logging hooks.
 
-`cargo run -p ai --example local_whisper -- MODEL MONO-16KHZ-F32LE LANGUAGE [cpu]`
-is an explicit local smoke/benchmark command using an already downloaded model;
-it exercises public execution and transcript conversion on a continuous window.
-It refuses inputs above the invocation ceiling instead of silently cutting speech.
-Its JSON output is recognition data deliberately requested by the caller, not logs.
-Native tests and benchmarks require external weights/audio and are opt-in; ordinary
-unit tests are offline. Windows native runtime and Vulkan remain unverified.
+`ai::transcribe` returns validated native segments and original subword bytes in `RecognitionSegment::raw_tokens`, with optional absolute sample ranges, native provenance and confidence. The adapter advertises segment and token timing; individual tokens can still lack timing. Missing, invalid and zero-width timestamps stay absent. Tokens may split UTF-8 and are never relabelled as words. `Recognition::to_transcript` uses the shared captions span owner and converts sample boundaries once to ticks.
 
-Native decoding policy is language-profile data owned by this provider: English
-uses greedy decoding (best-of 1); the generic profile uses beam search (beam 5),
-including the admitted Vietnamese and Chinese languages. All profiles retain
-continuous timestamp-selected native windows, temperature zero with fallback
-disabled, no prompt, per-call state and flash attention disabled. The provider
-settings fingerprint includes the complete profile table and generic strategy.
-Captions' language registry remains the owner of layout and segmentation profiles.
+`LANGUAGES` exposes the exact vi/en/zh data. `Whisper::detect_language` runs one bounded detection pass on a decoded 16 kHz window and returns a captions `LanguageTag`. Detection is an explicit caller action, not a fallback; the caller passes the tag to the transcription request and owns chunking, consent and retries. It produces no transcript or timestamp.
 
-Observed corpus quality and cancellation evidence is recorded in the local review-fix report. The former independent 30 s policy damaged Vietnamese speech;
-continuous windows recover it. Continuous beam search worsened English noise/music;
-English greedy decoding reduces its aggregate error count and music omissions while
-preserving the established Vietnamese/Chinese settings. Disabling intra-call text
-history worsened English and was rejected. Flash attention remains disabled after
-an observed Vietnamese regression. These corpus observations do not establish
-universal model accuracy or human timing fidelity. Windows/Vulkan and speech-boundary
-reconciliation beyond the invocation ceiling remain unverified.
+`cargo run -p ai --example local_whisper -- MODEL MONO-16KHZ-F32LE LANGUAGE [cpu]` is a local smoke/benchmark command on a downloaded model. It refuses inputs above the invocation ceiling instead of cutting speech, and prints recognition JSON deliberately. Native tests and benchmarks need external weights and audio and are opt-in. Windows native runtime and Vulkan are unverified.
+
+Decoding policy is language-profile data owned by this provider: English uses greedy decoding (best-of 1); the generic profile, which covers Vietnamese and Chinese, uses beam search (beam 5). All profiles use continuous timestamp-selected native windows, temperature zero with fallback disabled, no prompt, per-call state and flash attention disabled. The settings fingerprint includes the full profile table and the generic strategy. Captions' language registry owns layout and segmentation profiles.
+
+Corpus observations behind this policy: independent 30 s calls damaged Vietnamese speech; continuous beam search worsened English noise/music; disabling intra-call text history worsened English; flash attention regressed Vietnamese. They do not establish universal accuracy or human timing fidelity.

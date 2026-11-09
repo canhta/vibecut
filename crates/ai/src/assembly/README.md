@@ -1,70 +1,17 @@
 # Recognition and time
 
-`AudioWindow` borrows finite mono f32 PCM with an exact sample count/rate and
-absolute nonnegative source sample range. Resampling and source offset mapping
-happen before this boundary. Results must use that source coordinate system,
-not chunk-relative samples. `RecognitionSegment`/`TimedText` are adapter transport
-records, not persisted project models. Every stored text uses captions' `NfcText`.
-IDs are unique, timings are contained in the input window and segment, and each
-unit layer is ordered by time and matching source text. Different timing layers
-may describe the same audio; tokens and characters never become fake words.
-`RecognitionSegment::raw_tokens` additionally carries provider-agnostic subword
-bytes with optional absolute sample ranges, provenance and validated confidence.
-Individual tokens may split UTF-8; only their full concatenation is decoded and
-must normalize to the authoritative segment text. Tokens retain their per-segment
-ordinal identity. Empty tokens, malformed/truncated UTF-8, duplicate token layers,
-nonmonotonic/out-of-segment ranges and unadvertised token timing are errors.
-Wholly untimed raw bytes can accompany an untimed segment without a timing
-capability. A token range requires both segment timing and advertised token timing;
-raw text alone does not advertise or establish recognition timing.
-Token byte and record sizes are capped at 16 MiB per segment before assembly.
+`AudioWindow` borrows finite mono f32 PCM with an exact sample count/rate and an absolute, nonnegative source sample range. Resampling and offset mapping happen before it; results use source coordinates, not chunk-relative samples. `RecognitionSegment` and `TimedText` are adapter transport records, not project models. Text is captions' `NfcText`. IDs are unique, timings sit inside the window and segment, and each unit layer is ordered by time and matches source text. Tokens and characters never become fake words.
 
-`transcribe` validates native timings, then calls an explicitly supplied admissible
-aligner for segments missing segment timing or the requested timing unit. Missing
-timing can also be applied later through `align(recognition, provider, ...)`: this
-reuses the same validation/replacement owner, keeps the recognition provider/model
-and payload fingerprint, retains native unit layers and accepts a local aligner's
-empty-text template scope by binding the exact missing segment texts before
-execution. A remote aligner must receive an already text-bound scope and its own
-consent; a template never authorizes an upload. `Recognition::needs_timing(unit)`
-reports whether alignment is required without exposing timing internals. Separate
-alignment rejects audio whose source window or sample rate differs from the
-recognition. Alignment is at segment granularity; providers can omit punctuation spans. Existing native
-unit layers and segment boundaries remain authoritative. The aligner must preserve
-text, IDs and ordering, return every requested segment and declare forced timing.
-Wrong-language/unsupported aligners leave missing timing absent; malformed output,
-consent/auth/quota/payload failures propagate. No timestamp interpolation occurs.
-A raw-token layer satisfies requested token timing only when every token has a
-range; absent or partially timed raw tokens request alignment. Forced token timing
-fills missing native ranges only with identical token counts and bytes at each
-ordinal. Native bytes, confidence and existing ranges remain authoritative; filled
-ranges carry forced provenance. Retokenized output, incomplete requested timing
-and conflicts with retained native boundaries fail with a typed error. Other
-unit layers are available when present; providers may omit punctuation, and
-quality/coverage acceptance for those layers remains adapter-specific.
+`RecognitionSegment::raw_tokens` carries subword bytes with optional absolute sample ranges, provenance and confidence. Single tokens may split UTF-8; their concatenation must decode and normalize to the segment text. Errors: empty tokens, malformed UTF-8, duplicate layers, nonmonotonic or out-of-segment ranges, and timing the adapter does not advertise. Untimed raw bytes may accompany an untimed segment. A token range needs segment timing and advertised token timing. Token bytes and records are capped at 16 MiB per segment.
 
-`Recognition::is_text_only` indicates any missing segment timing. `to_transcript`
-returns captions' existing `Transcript`, or `TimingUnavailable` when any segment
-is untimed. Non-word and raw-token layers become captions-owned `TimingSpans`, preserving
-raw-to-NFC many-to-many correspondence, ordinal IDs, unit identity, provenance,
-confidence, speaker and missing timing. Existing word-only output keeps `Word`
-storage; when spans coexist with words, the complete layers also remain available
-in the span owner. No layer is silently relabelled or dropped. Captions owns
-script grouping and same-language display conversion; no native Whisper wiring
-or language conversion table is introduced by this generic seam. Source samples convert once to ticks using
-floor for both absolute boundaries and checked arithmetic. Native fingerprint and
-optional alignment fingerprint are available separately; engine must include both
-in its job/cache key. The captions conversion preserves the recognizer provider/model and combines the
-recognizer settings and complete aligner fingerprint with length-prefixed fields,
-so changing alignment also changes the derived transcript fingerprint.
+`transcribe` validates native timings, then calls an explicitly supplied aligner for segments missing segment timing or the requested unit. `align(recognition, provider, ...)` applies missing timing later through the same path, keeping the recognition provider/model, payload fingerprint and native unit layers. A local aligner's empty-text template scope is bound to the exact missing segment texts before execution. A remote aligner needs a text-bound scope and its own consent; a template never authorizes upload. `Recognition::needs_timing(unit)` reports whether alignment is required. Alignment rejects audio whose window or rate differs from the recognition.
 
-`assemble` requires matching source content, sample rate, language and recognition
-fingerprints. Native-only chunks can merge with chunks using forced alignment;
-the merged result retains the actual aligner identity. Two different nonempty
-aligner fingerprints are incompatible. Fully timed segments sort by source start;
-only completely identical observations (same segment ID, text, source range,
-timing layers, raw-token bytes/timing/confidence and metadata) deduplicate. Every other overlap, including equal-text
-speech with different IDs or ranges, returns a typed ambiguity error, leaving chunk-boundary
-reconciliation for an explicit retry/user policy. Untimed segments retain chunk
-order and cannot be deduplicated by invented coordinates. There is no fuzzy text
-matching or splitting of words at chunk boundaries.
+Alignment is segment-granular and providers may omit punctuation spans. Native layers and boundaries stay authoritative. The aligner preserves text, IDs and order, returns every requested segment and declares forced timing. Wrong-language or unsupported aligners leave timing absent; malformed output and consent/auth/quota/payload failures propagate. Timestamps are never interpolated.
+
+A raw-token layer satisfies token timing only when every token has a range. Forced token timing fills missing ranges only when token counts and bytes match at every ordinal; native bytes, confidence and ranges stay authoritative and filled ranges carry forced provenance. Retokenized output, incomplete timing and conflicts with native boundaries are typed errors.
+
+`Recognition::is_text_only` is true when any segment is untimed. `to_transcript` returns captions' `Transcript` or `TimingUnavailable`. Non-word and raw-token layers become captions `TimingSpans`, keeping raw-to-NFC correspondence, ordinal IDs, unit identity, provenance, confidence, speaker and missing timing. Word-only output keeps `Word` storage; when spans coexist with words, complete layers also stay in the span owner. Captions owns script grouping and display conversion. Samples convert once to ticks, floor for both boundaries, checked arithmetic.
+
+The native and alignment fingerprints are separate; engine includes both in its job/cache key. The transcript fingerprint combines recognizer settings and the aligner fingerprint with length-prefixed fields, so changing alignment changes it.
+
+`assemble` requires matching source content, sample rate, language and recognition fingerprints. Native-only chunks merge with forced-alignment chunks and keep the aligner identity; two different nonempty aligner fingerprints are incompatible. Timed segments sort by source start. Only fully identical observations (ID, text, range, timing layers, raw-token bytes/timing/confidence, metadata) deduplicate. Any other overlap, including equal text with different IDs or ranges, is a typed ambiguity error left to explicit retry or user policy. Untimed segments keep chunk order and are never deduplicated. No fuzzy matching, no word splitting at chunk boundaries.
