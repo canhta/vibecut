@@ -172,8 +172,7 @@ fn cue_text<'a>(cue: &'a Cue, language: &LanguageTag) -> Option<&'a CueText> {
             let wanted = primary(language.as_str());
             cue.texts
                 .iter()
-                .find(|(tag, _)| primary(tag.as_str()) == wanted)
-                .map(|(tag, text)| (tag, text))?
+                .find(|(tag, _)| primary(tag.as_str()) == wanted)?
         }
     };
     // Word ranges are recognition timing; a translation's text must never be
