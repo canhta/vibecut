@@ -12,6 +12,7 @@ Language for the editor's privacy and execution boundaries.
 - **SourceAsset**: A source-media identity and its location, content fingerprint and probed stream information; timeline items refer to it without copying its media.
 - **Transcript**: Source-language recognition result with stable segments and a provider/model/settings fingerprint.
 - **Cue**: Identified source range with source language and per-language text, independent edit flags and translation references.
+- **Filler candidate**: A whole-word source span of filler speech in one cue's timed words, with a stable ID and the cue's edit flag.
 - **EditMapping**: The correspondence between selected source ranges and their positions in an output timeline; one source span can appear more than once.
 - **LanguageProfile**: Segmentation, reading-speed, punctuation and font-fallback rules for a content language, with a generic fallback for unknown tags.
 - **Subtitle workflow**: The engine composition from source speech through explicit provider choice, checkpointed recognition, optional alignment/translation, cue segmentation and subtitle export/burn.

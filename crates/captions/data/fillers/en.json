@@ -1,0 +1,18 @@
+{
+  "language": "en",
+  "references": {
+    "clark-fox-tree-2002": "Clark, H. H., & Fox Tree, J. E. (2002). Using uh and um in spontaneous speaking. Cognition, 84(1), 73-111. https://doi.org/10.1016/S0010-0277(02)00017-3",
+    "biber-1999": "Biber, D., Johansson, S., Leech, G., Conrad, S., & Finegan, E. (1999). Longman Grammar of Spoken and Written English. Longman. Section on fillers (uh, um, er, erm, mm).",
+    "siegel-2002": "Siegel, M. E. A. (2002). Like: The discourse particle and semantics. Journal of Semantics, 19(1), 35-71. https://doi.org/10.1093/jos/19.1.35",
+    "schiffrin-1987": "Schiffrin, D. (1987). Discourse Markers. Cambridge University Press."
+  },
+  "entries": [
+    { "phrase": "um", "references": ["clark-fox-tree-2002"] },
+    { "phrase": "uh", "references": ["clark-fox-tree-2002"] },
+    { "phrase": "er", "references": ["biber-1999"] },
+    { "phrase": "erm", "references": ["biber-1999"] },
+    { "phrase": "like", "references": ["siegel-2002"] },
+    { "phrase": "you know", "references": ["schiffrin-1987"] },
+    { "phrase": "i mean", "references": ["schiffrin-1987"] }
+  ]
+}

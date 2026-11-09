@@ -1,10 +1,12 @@
 //! Source-timed transcripts, multilingual cues and forgiving subtitle interchange.
+mod filler;
 mod interchange;
 mod language;
 mod mapping;
 mod segment;
 mod span;
 mod timing;
+pub use filler::{FillerCandidate, FillerLexicon, detect_fillers};
 pub use interchange::ass;
 pub use interchange::ass::{AssCue, AssImport, AssWarning, AssWarningKind, parse_ass};
 pub use interchange::{Export, Format, Import, export, parse};
@@ -35,6 +37,10 @@ pub enum Error {
     TooLarge,
     #[error("subtitle time cannot be represented")]
     Time(#[from] time::TimeError),
+    #[error("no filler lexicon for the requested language")]
+    NoFillerLexicon,
+    #[error("malformed filler lexicon: {0}")]
+    MalformedLexicon(&'static str),
 }
 /// Normalized stored text; construction and deserialization always apply NFC.
 #[derive(

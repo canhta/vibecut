@@ -12,6 +12,7 @@ workspace = true
 schemars.workspace = true
 time.workspace = true
 serde = { workspace = true, features = ["derive"] }
+serde_json.workspace = true
 thiserror.workspace = true
 language-tags = "0.3.2"
 unicode-normalization.workspace = true
@@ -20,5 +21,4 @@ unicode-segmentation.workspace = true
 unicode-linebreak.workspace = true
 
 [dev-dependencies]
-serde_json.workspace = true
 proptest.workspace = true

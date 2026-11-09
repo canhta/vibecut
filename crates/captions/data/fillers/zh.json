@@ -1,0 +1,13 @@
+{
+  "language": "zh",
+  "references": {
+    "zhao-jurafsky-2005": "Zhao, Y., & Jurafsky, D. (2005). A preliminary study of Mandarin filled pauses. Proceedings of DiSS'05, 177-180. https://nlp.stanford.edu/pubs/diss05.pdf (Mandarin uses nage 'that' and zhege 'this' as lexical fillers beside the mm filled pause.)",
+    "liu-2009": "Liu, B. (2009). Chinese discourse markers in oral speech of mainland Mandarin speakers. Proceedings of NACCL-21, 2, 358-374. (Nage and zhege serve as verbal fillers while the speaker searches for a word.)",
+    "xiandai-2016": "Institute of Linguistics, Chinese Academy of Social Sciences (Ed.). (2016). 现代汉语词典 (7th ed.). 商务印书馆. Entry 嗯 as an interjection."
+  },
+  "entries": [
+    { "phrase": "嗯", "references": ["zhao-jurafsky-2005", "xiandai-2016"] },
+    { "phrase": "那个", "references": ["zhao-jurafsky-2005", "liu-2009"] },
+    { "phrase": "这个", "references": ["zhao-jurafsky-2005", "liu-2009"] }
+  ]
+}

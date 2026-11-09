@@ -34,7 +34,7 @@ Definitions: [glossary](../../GLOSSARY.md). Contract details live in these owner
 | Video transitions | [project model/invariants](../../crates/project/src/visual/README.md#video-transitions), [engine edits](../../crates/engine/src/session/edit/README.md#video-transitions), [render evaluation](../../crates/render/src/scene/README.md#video-transitions) |
 | Param and keyframes | [project animation](../../crates/project/src/animation/README.md#animated-parameters-and-retime) |
 | SourceRange | [time](../../crates/time/README.md) |
-| Transcript, Cue, CueStyle, EditMapping, LanguageProfile | [captions](../../crates/captions/README.md) |
+| Transcript, Cue, CueStyle, EditMapping, LanguageProfile, FillerCandidate | [captions](../../crates/captions/README.md) |
 | Managed catalog, copied-media publication and catalog history | [engine library](../../crates/engine/src/store/README.md#managed-project-library); project retains metadata/persistence |
 | Session, registry, transactions, gestures, undo/redo | [engine](../../crates/engine/src/session/README.md#transactions-gestures-and-changes) |
 | Control schemas, revisions, receipts, resync events | [engine control](../../crates/engine/src/control/README.md#control-admission-revisions-and-receipts) |
