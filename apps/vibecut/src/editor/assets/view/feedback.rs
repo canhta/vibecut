@@ -15,12 +15,7 @@ impl Editor {
             .get("media")
             .copied()
             .unwrap_or_else(|| Rect::from_min_size(egui::Pos2::ZERO, Vec2::new(320.0, 200.0)));
-        let percent = self
-            .import_completed
-            .saturating_mul(100)
-            .checked_div(self.import_total)
-            .unwrap_or(0)
-            .min(100);
+        let percent = (self.import_fraction() * 100.0).clamp(0.0, 100.0) as u64;
         let width = (rect.width() - 24.0).max(48.0);
         egui::Area::new(Id::unique("import.overlay"))
             .order(egui::Order::Foreground)
@@ -35,7 +30,7 @@ impl Editor {
                     .show(ui, |ui| {
                         ui.set_width((width - 24.0).max(24.0));
                         ui.horizontal(|ui| {
-                            let value = i18n::number(self.preferences.locale, percent as u64);
+                            let value = i18n::number(self.preferences.locale, percent);
                             let status = if width < 240.0 {
                                 format!("{value}%")
                             } else {

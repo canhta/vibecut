@@ -404,7 +404,7 @@ impl ProjectLibrary {
                         return Err(project::Error::Conflict.into());
                     }
                     for asset in &project.data().assets {
-                        if media::ContentHash::read_with_cancel(asset.path(), cancelled)?
+                        if media::ContentHash::read_with_cancel(asset.path(), cancelled, |_, _| {})?
                             != asset.content_hash()
                         {
                             return Err(project::Error::Conflict.into());

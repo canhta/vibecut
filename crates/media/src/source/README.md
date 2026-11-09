@@ -8,7 +8,7 @@ Persistable source identity, the probe description of a container and its stream
 
 `AssetData.ephemeral` is required persisted metadata, false for native imports. `SourceAsset::ephemeral` lets library consumers omit internal sources without removing them from the project or restricting rendering. Relinking preserves it. `is_image` recognizes PNG, JPEG, WebP, BMP and TIFF pipe demuxers plus GIF/APNG by probed format, never filename. Other containers, including one-frame movies, keep video semantics. [Engine import policy](../../../engine/src/session/edit/README.md#import-policy) owns how this affects project FPS.
 
-`availability` checks file presence without hashing; missing media is a relink state, not a malformed project. `relink` accepts a new absolute path only if its full content hash matches, preserving asset identity and probed metadata. Presence alone does not prove unchanged content. `ContentHash::read_with_cancel` checks cancellation throughout full-content hashing. `ContentHash::from_bytes` hashes already bounded content with the same BLAKE3 identity as `ContentHash::read`.
+`availability` checks file presence without hashing; missing media is a relink state, not a malformed project. `relink` accepts a new absolute path only if its full content hash matches, preserving asset identity and probed metadata. Presence alone does not prove unchanged content. `ContentHash::read_with_cancel` checks cancellation throughout full-content hashing and reports bytes hashed and file length so callers can show in-file progress. `ContentHash::from_bytes` hashes already bounded content with the same BLAKE3 identity as `ContentHash::read`.
 
 ## Probe
 
@@ -24,7 +24,7 @@ Persistable source identity, the probe description of a container and its stream
 
 `SourceAsset::import_with_summary` runs the same canonicalize, probe and hash pass and also returns transient `ProbeCapabilities`, which opens (never decodes) every audio and video decoder in this FFmpeg build. Capabilities never enter the persisted asset. `MediaMetadata::from_probe` derives the persistable summary: `MediaKind` (video, image, audio), container duration, video dimensions, `has_audio` and `DisplayFrameRate` (the exact rational plus the nearest integer for compact display, so `24000/1001` shows 24).
 
-Image demuxers may report coded dimensions only after the first frame, so the probe then decodes exactly one frame, records its geometry and rewinds before any packet consumer runs. Recovery keeps the 32 MiB opening read allowance and a 4096-packet ceiling until it completes. `SourceAsset::import_prepared` hashes first and accepts validated content-keyed probe metadata, skipping recovery decode on a warm import. On a cold recovery it returns the bounded thumbnail with the asset for the engine cache. A build without a required decoder returns `UnsupportedReason::DecoderUnavailable`.
+Image demuxers may report coded dimensions only after the first frame, so the probe then decodes exactly one frame, records its geometry and rewinds before any packet consumer runs. Recovery keeps the 32 MiB opening read allowance and a 4096-packet ceiling until it completes. `SourceAsset::import_prepared` hashes first and accepts validated content-keyed probe metadata, skipping recovery decode on a warm import. Its progress callback reports hash bytes and file length. On a cold recovery it returns the bounded thumbnail with the asset for the engine cache. A build without a required decoder returns `UnsupportedReason::DecoderUnavailable`.
 
 ## Sample anchors
 

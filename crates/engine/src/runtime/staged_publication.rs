@@ -72,8 +72,15 @@ impl Publication<'_> {
         // may have changed since then. Conservatively refuse identical copies.
         Ok(self.path.is_file()
             && path.is_file()
-            && media::ContentHash::read_with_cancel(self.path, || self.hooks.cancelled())?
-                == media::ContentHash::read_with_cancel(path, || self.hooks.cancelled())?)
+            && media::ContentHash::read_with_cancel(
+                self.path,
+                || self.hooks.cancelled(),
+                |_, _| {},
+            )? == media::ContentHash::read_with_cancel(
+                path,
+                || self.hooks.cancelled(),
+                |_, _| {},
+            )?)
     }
 }
 

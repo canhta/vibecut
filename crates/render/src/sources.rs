@@ -87,7 +87,7 @@ impl SourceProvider for FileSources {
                 .get(&asset.id())
                 .is_none_or(|s| s.asset != *asset || s.file != signature)
         {
-            if media::ContentHash::read_with_cancel(asset.path(), || hooks.cancelled())?
+            if media::ContentHash::read_with_cancel(asset.path(), || hooks.cancelled(), |_, _| {})?
                 != asset.content_hash()
             {
                 return Ok(Some(UnavailableReason::Changed));

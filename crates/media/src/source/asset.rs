@@ -45,16 +45,25 @@ impl ContentHash {
         Self(*blake3::hash(bytes).as_bytes())
     }
     pub fn read(path: &Path) -> Result<Self> {
-        Self::read_with_cancel(path, || false)
+        Self::read_with_cancel(path, || false, |_, _| {})
     }
     /// Stream the content identity in 64 KiB chunks, checking cancellation before
-    /// every read and before returning the complete digest.
-    pub fn read_with_cancel(path: &Path, cancelled: impl Fn() -> bool) -> Result<Self> {
+    /// every read and before returning the complete digest. `progress` receives
+    /// bytes hashed and the file length, starting at zero and ending at the
+    /// complete length.
+    pub fn read_with_cancel(
+        path: &Path,
+        cancelled: impl Fn() -> bool,
+        mut progress: impl FnMut(u64, u64),
+    ) -> Result<Self> {
         if cancelled() {
             return Err(MediaError::Cancelled);
         }
         let mut hasher = blake3::Hasher::new();
         let mut file = File::open(path)?;
+        let length = file.metadata()?.len();
+        let mut hashed = 0u64;
+        progress(hashed, length);
         let mut bytes = [0u8; 65536];
         loop {
             if cancelled() {
@@ -69,10 +78,13 @@ impl ContentHash {
                     .get(..count)
                     .ok_or(MediaError::Invalid("hash read size"))?,
             );
+            hashed = hashed.saturating_add(count as u64);
+            progress(hashed, length);
         }
         if cancelled() {
             return Err(MediaError::Cancelled);
         }
+        progress(hashed, length);
         Ok(Self(*hasher.finalize().as_bytes()))
     }
 }
@@ -259,23 +271,26 @@ impl SourceAsset {
         path: PathBuf,
         cancelled: Arc<AtomicBool>,
     ) -> Result<super::summary::ImportedSource> {
-        Self::import_prepared(id, path, cancelled, |_| None).map(|(imported, _)| imported)
+        Self::import_prepared(id, path, cancelled, |_| None, |_, _| {})
+            .map(|(imported, _)| imported)
     }
     /// Hash first, then reuse content-keyed probe geometry if available. A cold
     /// geometry recovery returns its thumbnail so callers never decode it twice.
     /// Cached metadata must have been validated by SourceAsset's constructor.
+    /// `progress` receives the hash byte count and file length.
     pub fn import_prepared(
         id: AssetId,
         path: PathBuf,
         cancelled: Arc<AtomicBool>,
         cached: impl FnOnce(ContentHash) -> Option<SourceProbe>,
+        progress: impl FnMut(u64, u64),
     ) -> Result<(crate::ImportedSource, Option<crate::Thumbnail>)> {
         if cancelled.load(Ordering::Relaxed) {
             return Err(MediaError::Cancelled);
         }
         let path = std::fs::canonicalize(path)?;
         let content_hash =
-            ContentHash::read_with_cancel(&path, || cancelled.load(Ordering::Relaxed))?;
+            ContentHash::read_with_cancel(&path, || cancelled.load(Ordering::Relaxed), progress)?;
         let known = cached(content_hash);
         let mut reader =
             crate::PacketReader::open_prepared(&path, cancelled.clone(), u64::MAX, known.as_ref())?;

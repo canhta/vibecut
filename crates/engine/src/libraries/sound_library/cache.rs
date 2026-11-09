@@ -125,7 +125,7 @@ pub(super) fn cached_from_path(path: PathBuf, source: Option<&str>) -> Sound<Cac
     {
         return Err(Error::Invalid("cached audio URL"));
     }
-    let hash = ContentHash::read_with_cancel(&path, || false)?;
+    let hash = ContentHash::read_with_cancel(&path, || false, |_, _| {})?;
     let probe = media::probe(&path)?;
     Ok(CachedSound {
         path,

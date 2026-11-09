@@ -29,6 +29,15 @@ impl Editor {
     pub fn importing(&self) -> bool {
         self.imports.as_ref().is_some_and(ImportQueue::active)
     }
+    /// Batch fraction for the import overlay: the probe job's current file
+    /// fraction while probing, otherwise completed files over the batch.
+    pub(in crate::editor) fn import_fraction(&self) -> f32 {
+        self.imports
+            .as_ref()
+            .and_then(ImportQueue::progress)
+            .unwrap_or_else(|| self.import_completed as f32 / self.import_total.max(1) as f32)
+            .clamp(0.0, 1.0)
+    }
     /// Accept a native drag-drop batch through the same path as the picker.
     pub fn drop_files(&mut self, paths: Vec<PathBuf>) -> Result<()> {
         self.start_import(paths)

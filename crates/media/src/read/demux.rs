@@ -428,6 +428,7 @@ mod import_regressions {
             path.clone(),
             Arc::new(AtomicBool::new(false)),
             |_| None,
+            |_, _| {},
         )
         .unwrap();
         assert_eq!(
@@ -459,6 +460,7 @@ mod import_regressions {
                 assert_eq!(hash, cold.asset.content_hash());
                 Some(cold.asset.probe().clone())
             },
+            |_, _| {},
         )
         .unwrap();
         assert!(image.is_none());

@@ -55,7 +55,7 @@ pub fn validate_output_path(
         }
         #[cfg(not(unix))]
         if path.exists()
-            && media::ContentHash::read_with_cancel(path, || hooks.cancelled())?
+            && media::ContentHash::read_with_cancel(path, || hooks.cancelled(), |_, _| {})?
                 == asset.content_hash()
         {
             return Err(Error::Invalid("output may alias source content"));

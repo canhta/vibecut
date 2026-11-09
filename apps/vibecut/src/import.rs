@@ -60,6 +60,7 @@ pub trait ImportProbe: Send + Sync + 'static {
         path: PathBuf,
         cancelled: Arc<AtomicBool>,
         _cached: &mut dyn FnMut(media::ContentHash) -> Option<media::SourceProbe>,
+        _progress: &mut dyn FnMut(u64, u64),
     ) -> media::Result<(ImportedSource, Option<Thumbnail>)> {
         self.import(id, path, cancelled)
             .map(|imported| (imported, None))
@@ -84,8 +85,9 @@ impl ImportProbe for MediaProbe {
         path: PathBuf,
         cancelled: Arc<AtomicBool>,
         cached: &mut dyn FnMut(media::ContentHash) -> Option<media::SourceProbe>,
+        progress: &mut dyn FnMut(u64, u64),
     ) -> media::Result<(ImportedSource, Option<Thumbnail>)> {
-        SourceAsset::import_prepared(id, path, cancelled, cached)
+        SourceAsset::import_prepared(id, path, cancelled, cached, progress)
     }
 }
 
@@ -424,6 +426,17 @@ impl ImportQueue {
     pub fn total(&self) -> usize {
         self.total
     }
+    /// Probe fraction reported by the job runner while files are hashed and
+    /// probed, or `None` outside the probe phase.
+    pub fn progress(&self) -> Option<f32> {
+        if self.phase != Phase::Probe {
+            return None;
+        }
+        let job = self.job.as_ref()?;
+        self.runner
+            .snapshot(job.id)
+            .map(|snapshot| snapshot.progress)
+    }
     pub fn cancel(&self) {
         if let Some(job) = &self.job {
             job.cancelled.store(true, Ordering::Release);
@@ -484,8 +497,14 @@ impl ImportQueue {
                     if worker_cancel.load(Ordering::Acquire) {
                         return finish(&send, true, None);
                     }
-                    ctx.progress(JobStage::Probe, index as f32 / total.max(1) as f32)
+                    let report = |fraction: f32| {
+                        ctx.progress(
+                            JobStage::Probe,
+                            (index as f32 + fraction) / total.max(1) as f32,
+                        )
                         .ok();
+                    };
+                    report(0.0);
                     if send
                         .send(ImportEvent::Probing {
                             id: AssetId(next),
@@ -496,11 +515,15 @@ impl ImportQueue {
                         return Ok(Vec::new());
                     }
                     let mut cached = |hash| disk.probe(hash);
+                    let mut progress = |hashed: u64, length: u64| {
+                        report(probe_fraction(hashed, length));
+                    };
                     match probe.import_cached(
                         AssetId(next),
                         path.clone(),
                         worker_cancel.clone(),
                         &mut cached,
+                        &mut progress,
                     ) {
                         Ok((imported, recovered)) => {
                             if let Some(image) = recovered {
@@ -779,6 +802,15 @@ fn finish(
         return Err(engine::EditError::Cancelled);
     }
     Ok(Vec::new())
+}
+
+/// One file's hash fraction. A zero-length file is complete before reading and
+/// a file that grew mid-read stays at the end, so the batch never moves back.
+fn probe_fraction(hashed: u64, length: u64) -> f32 {
+    if length == 0 {
+        return 1.0;
+    }
+    (hashed as f64 / length as f64).clamp(0.0, 1.0) as f32
 }
 
 #[cfg(test)]

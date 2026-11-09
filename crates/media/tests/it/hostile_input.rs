@@ -220,3 +220,70 @@ fn source_import_honors_pre_cancelled_token() {
     assert_eq!(asset.id(), AssetId(1));
     assert!(!asset.probe().streams.is_empty());
 }
+
+#[test]
+fn content_hash_progress_reaches_file_length_and_stops_mid_stream() {
+    let path = testkit::fixture::dir("media").join("content-hash-progress.bin");
+    for (name, size, cancel_mid_stream) in [
+        ("zero length", 0usize, false),
+        ("chunked", 200_000usize, false),
+        ("cancel mid-hash", 1 << 20, true),
+    ] {
+        std::fs::write(&path, vec![0x5a; size]).unwrap();
+        let cancel = Arc::new(AtomicBool::new(false));
+        let trigger = cancel.clone();
+        let mut calls = Vec::new();
+        let result = media::ContentHash::read_with_cancel(
+            &path,
+            || cancel.load(Ordering::Relaxed),
+            |hashed, length| {
+                calls.push((hashed, length));
+                if cancel_mid_stream && hashed > 0 {
+                    trigger.store(true, Ordering::Relaxed);
+                }
+            },
+        );
+        if cancel_mid_stream {
+            assert!(matches!(result, Err(MediaError::Cancelled)), "{name}");
+            assert!(
+                calls.iter().all(|(hashed, length)| hashed <= length),
+                "{name}"
+            );
+        } else {
+            let length = size as u64;
+            assert_eq!(
+                result.unwrap(),
+                media::ContentHash::from_bytes(&vec![0x5a; size]),
+                "{name}"
+            );
+            assert_eq!(calls.first(), Some(&(0, length)), "{name}");
+            assert_eq!(calls.last(), Some(&(length, length)), "{name}");
+            assert!(
+                calls.windows(2).all(|pair| pair[0].0 <= pair[1].0),
+                "{name}"
+            );
+        }
+    }
+    std::fs::remove_file(path).unwrap();
+}
+
+#[test]
+fn cancel_mid_hash_publishes_no_asset() {
+    let path = testkit::fixture::dir("media").join("hash-cancel-import.bin");
+    std::fs::write(&path, vec![0x5a; 1 << 20]).unwrap();
+    let cancel = Arc::new(AtomicBool::new(false));
+    let trigger = cancel.clone();
+    let result = SourceAsset::import_prepared(
+        AssetId(9),
+        path.clone(),
+        cancel,
+        |_| None,
+        |hashed, _| {
+            if hashed > 0 {
+                trigger.store(true, Ordering::Relaxed);
+            }
+        },
+    );
+    assert!(matches!(result, Err(MediaError::Cancelled)));
+    std::fs::remove_file(path).unwrap();
+}

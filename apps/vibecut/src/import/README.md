@@ -4,4 +4,4 @@ Import takes one native multi-file picker or a file drop. A batch is capped at 1
 
 The media panel hides media-owned ephemeral assets from rows and selection but they stay in the project for internal commands. Cards show filename and duration; probe type, resolution and audio format show on hover. Multi-selected assets insert through "Add to timeline" in one undo step via engine auto placement; the engine owns track choice and creates secondary tracks on demand. Insert synchronizes playback to the new snapshot.
 
-While a batch runs, an overlay shows completed/total and a 2 px accent bar, disables import and insert, and offers Cancel. Partial failures use short recovery copy and a concise toast; typed probe details stay in diagnostics.
+While a batch runs, an overlay shows completed/total, the probe job's within-file fraction, and a 2 px accent bar; it disables import and insert, and offers Cancel. Partial failures use short recovery copy and a concise toast; typed probe details stay in diagnostics.

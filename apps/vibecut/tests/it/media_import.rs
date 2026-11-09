@@ -19,6 +19,7 @@ use std::{
     sync::{
         Arc, Condvar, Mutex,
         atomic::{AtomicBool, AtomicUsize, Ordering},
+        mpsc,
     },
     time::{Duration, Instant},
 };
@@ -149,6 +150,46 @@ impl ImportProbe for GateProbe {
             Some(Tick(4 * SECOND)),
             path,
         )))
+    }
+}
+
+/// Reports fractions of one file's bytes, then waits for the test to pump the
+/// runner, so observed job progress is deterministic.
+struct FractionProbe {
+    fractions: Vec<f32>,
+    signal: mpsc::Sender<()>,
+    step: Mutex<mpsc::Receiver<()>>,
+}
+impl ImportProbe for FractionProbe {
+    fn import(
+        &self,
+        id: AssetId,
+        path: PathBuf,
+        _cancelled: Arc<AtomicBool>,
+    ) -> media::Result<ImportedSource> {
+        Ok(imported(source_asset(
+            id.0,
+            StreamKind::Audio,
+            Some(Tick(4 * SECOND)),
+            path,
+        )))
+    }
+    fn import_cached(
+        &self,
+        id: AssetId,
+        path: PathBuf,
+        cancelled: Arc<AtomicBool>,
+        _cached: &mut dyn FnMut(ContentHash) -> Option<media::SourceProbe>,
+        progress: &mut dyn FnMut(u64, u64),
+    ) -> media::Result<(ImportedSource, Option<media::Thumbnail>)> {
+        // Let the file's initial job stage settle past the runner interval.
+        std::thread::sleep(Duration::from_millis(30));
+        for fraction in &self.fractions {
+            progress((fraction * 1000.0) as u64, 1000);
+            self.signal.send(()).unwrap();
+            self.step.lock().unwrap().recv().unwrap();
+        }
+        Ok((self.import(id, path, cancelled)?, None))
     }
 }
 
@@ -440,6 +481,76 @@ fn import_batches_are_capped_and_require_shared_budget_admission() {
     ));
     assert_eq!(tiny.snapshot().unwrap().used, 0);
     assert_eq!(tiny.snapshot().unwrap().limit, 1);
+}
+
+#[test]
+fn probe_job_progress_advances_within_each_file() {
+    for (files, expected) in [
+        (1usize, vec![0.5f32, 1.0]),
+        (
+            3,
+            vec![0.5 / 3.0, 1.0 / 3.0, 1.5 / 3.0, 2.0 / 3.0, 2.5 / 3.0, 1.0],
+        ),
+    ] {
+        let budget = ByteBudget::new(512 << 20).unwrap();
+        let mut queue = ImportQueue::new(budget).unwrap();
+        let (signal, signals) = mpsc::channel();
+        let (step, steps) = mpsc::channel();
+        queue.set_probe(Arc::new(FractionProbe {
+            fractions: vec![0.5, 1.0],
+            signal,
+            step: Mutex::new(steps),
+        }));
+        queue
+            .start(
+                (0..files)
+                    .map(|index| path(format!("fraction-{index}.wav")))
+                    .collect(),
+                1,
+            )
+            .unwrap();
+        // Submit admits the probe; the first tick starts it.
+        queue.poll().unwrap();
+        let mut observed = Vec::new();
+        for _ in 0..files * 2 {
+            signals
+                .recv_timeout(Duration::from_secs(5))
+                .expect("probe fraction");
+            std::thread::sleep(Duration::from_millis(30));
+            let events = queue.poll().unwrap();
+            assert!(
+                !events
+                    .iter()
+                    .any(|event| matches!(event, ImportEvent::Done { .. })),
+                "batch ended before its last fraction"
+            );
+            observed.push(queue.progress().expect("probe progress mid-batch"));
+            step.send(()).unwrap();
+        }
+        let deadline = Instant::now() + Duration::from_secs(5);
+        loop {
+            let events = queue.poll().unwrap();
+            if events
+                .iter()
+                .any(|event| matches!(event, ImportEvent::Done { .. }))
+            {
+                break;
+            }
+            assert!(Instant::now() < deadline, "fraction batch did not finish");
+            std::thread::sleep(Duration::from_millis(2));
+        }
+        assert!(
+            observed.windows(2).all(|pair| pair[0] <= pair[1]),
+            "{observed:?}"
+        );
+        for (actual, expected) in observed.iter().zip(&expected) {
+            assert!(
+                (actual - expected).abs() < 1e-3,
+                "{files} files: observed {observed:?}, expected {expected:?}"
+            );
+        }
+        assert!((observed.last().unwrap() - 1.0).abs() < 1e-3);
+    }
 }
 
 #[test]
