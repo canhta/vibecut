@@ -53,7 +53,7 @@ pub(super) fn read_bounded(path: &Path, max: u64) -> Result<Vec<u8>> {
     }
     Ok(bytes)
 }
-pub(super) fn candidate(directory: PathBuf, file: SessionLock) -> Result<Candidate> {
+pub(super) fn candidate(directory: PathBuf, file: SessionLock) -> Result<Option<Candidate>> {
     let bytes = read_bounded(&directory.join(JOURNAL), MAX_META)?;
     #[derive(Deserialize)]
     struct Version {
@@ -61,7 +61,8 @@ pub(super) fn candidate(directory: PathBuf, file: SessionLock) -> Result<Candida
     }
     let header: Version = serde_json::from_slice(&bytes).map_err(|_| EditError::RecoveryCorrupt)?;
     if header.version != JOURNAL_VERSION {
-        return Err(EditError::Unsupported("journal schema"));
+        clear(&directory)?;
+        return Ok(None);
     }
     let journal: Journal =
         serde_json::from_slice(&bytes).map_err(|_| EditError::RecoveryCorrupt)?;
@@ -83,12 +84,12 @@ pub(super) fn candidate(directory: PathBuf, file: SessionLock) -> Result<Candida
     if project.data().id != journal.project_id || project.data().name.as_str() != journal.name {
         return Err(EditError::RecoveryCorrupt);
     }
-    Ok(Candidate {
+    Ok(Some(Candidate {
         directory,
         _lock: file,
         journal,
         project,
-    })
+    }))
 }
 /// Scan the app-provided private recovery root, capped at 10,000 entries. Live
 /// sessions are excluded, including other windows in this process. A candidate
@@ -120,7 +121,7 @@ pub fn discover(root: &Path) -> Result<Discovery> {
             if !directory.join(JOURNAL).try_exists()? {
                 return Ok(None);
             }
-            candidate(directory, file).map(Some)
+            candidate(directory, file)
         })();
         match found {
             Ok(Some(c)) => result.candidates.push(c),

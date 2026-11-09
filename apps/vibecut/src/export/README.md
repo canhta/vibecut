@@ -5,7 +5,7 @@ canvas ratio, custom even dimensions change output only, and explicit frame rate
 target bitrate, compatible codec and H.264 profile feed the same renderer. Range
 is full by default, or frame-snapped in/out markers or the selected clips' bounding
 range. Scene scope is active by default, all, or a named scene. Preferences
-version 6 persists these choices and refuses earlier versions. `Editor::dispatch`
+persist these choices. `Editor::dispatch`
 accepts typed `ExportOptions` for `export.run`; Retry retains the original settings
 and immutable snapshot. The project and its undo history never store export state.
 

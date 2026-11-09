@@ -24,7 +24,7 @@ pub use workflow::LocalWorkflow;
 
 /// Persisted explicit choices. Consent, glossary and private text are never preferences.
 #[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
-#[serde(default, deny_unknown_fields)]
+#[serde(deny_unknown_fields)]
 pub struct Options {
     /// `auto` or one of the spoken languages this app's ASR supports.
     pub source: String,
@@ -35,7 +35,6 @@ pub struct Options {
     pub translation_model: String,
     pub bilingual: bool,
     /// Last spoken-language choice per project; absent means Auto.
-    #[serde(default)]
     pub project_sources: BTreeMap<project::ProjectId, String>,
 }
 impl Default for Options {

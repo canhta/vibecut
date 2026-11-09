@@ -14,7 +14,6 @@ use std::{
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum PreferenceIssue {
     Read,
-    Version,
     Layout,
     Keybindings,
 }
@@ -22,7 +21,6 @@ impl std::fmt::Display for PreferenceIssue {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         formatter.write_str(match self {
             Self::Read => "preferences could not be read",
-            Self::Version => "preferences use an unsupported version",
             Self::Layout => "layout preferences were reset",
             Self::Keybindings => "invalid keybindings were removed",
         })
@@ -50,14 +48,9 @@ impl PreferenceStore {
     pub fn load_with_warning(&self) -> (Preferences, Option<PreferenceIssue>) {
         let mut value = match self.read() {
             Ok(value) => value,
-            Err(Error::Unsupported("preferences version")) => {
-                return (Preferences::system(), Some(PreferenceIssue::Version));
-            }
+            Err(Error::Unsupported("preferences version")) => return (Preferences::system(), None),
             Err(_) => return (Preferences::system(), Some(PreferenceIssue::Read)),
         };
-        if value.version != PREFERENCES_VERSION {
-            return (Preferences::system(), Some(PreferenceIssue::Version));
-        }
         let mut issue = None;
         if value.windows.len() > 64
             || value
@@ -126,9 +119,6 @@ impl PreferenceStore {
     }
     pub fn save(&self, value: &Preferences) -> Result<()> {
         value.validate()?;
-        if matches!(self.read(), Err(Error::Unsupported("preferences version"))) {
-            return Err(Error::Unsupported("preferences version"));
-        }
         if let Some(parent) = self.path.parent() {
             std::fs::create_dir_all(parent)?;
         }
@@ -156,28 +146,6 @@ mod tests {
 
     /// A complete version-6 document as the app wrote it before the i18n/preferences
     /// split (including the font picker section).
-    const BEFORE_SPLIT: &str = r#"{"version":6,"windows":{"home":{"size":[1440.0,900.0],"position":null,"maximized":false}},"export":{"format":"mp4","quality":"high","include_audio":true,"output":{"version":1,"resolution":null,"fps":null,"bit_rate":null,"codec":"automatic","profile":"automatic","range":{"kind":"full"},"scene":{"kind":"active"}}},"export_directory":"C:/out","subtitles":{"source":"vi","target":"en","transcription":"whisper.cpp","transcription_model":"whisper-large-v3-turbo","translation":"openai","translation_model":"gpt-6.1-sol","bilingual":false,"project_sources":{}},"locale":"vi","dark":false,"snapping":false,"ripple":true,"panels":[0.25,0.25,0.5],"sections":{"inspector.canvas":false},"assets_tab":"captions","properties_tabs":{"text":"transform"},"projects":{"view":"list","sort":"duration","ascending":true},"media_view":"list","media_sort":{"key":"size","order":"desc"},"preview_fit":false,"preview_zoom":1.25,"snapshot_directory":"C:/shots","keybindings":{"bindings":{"timeline.snap":["Ctrl+Shift+N"]},"isCustomized":["timeline.snap"]},"recent_colors":[[10,20,30,0]],"timeline_lanes":{"12":[3,4]},"font_picker":{"tab":"favorites","favorites":["Anton","Inter"]}}"#;
-
-    #[test]
-    fn pre_split_document_round_trips_byte_identically() {
-        let value: Preferences = serde_json::from_str(BEFORE_SPLIT).expect("old document");
-        assert_eq!(
-            serde_json::to_string(&value).expect("encode"),
-            BEFORE_SPLIT,
-            "field order and value shape must not change"
-        );
-        let dir = tempfile::tempdir().expect("temporary preferences");
-        let store = PreferenceStore::new(dir.path().join("preferences.json"));
-        std::fs::write(store.path(), BEFORE_SPLIT).expect("write old document");
-        let loaded = store.load().expect("load old document");
-        store.save(&loaded).expect("save loaded document");
-        assert_eq!(
-            std::fs::read(store.path()).expect("read back"),
-            BEFORE_SPLIT.as_bytes(),
-            "a save must write the loaded document back identically"
-        );
-    }
-
     #[test]
     fn default_is_deterministic_and_system_preferences_follow_the_os() {
         assert_eq!(Preferences::default().locale, Locale::En);
@@ -367,11 +335,11 @@ mod tests {
     fn corrupt_layout_falls_back_to_defaults_with_a_warning() {
         let dir = tempfile::tempdir().expect("temporary preferences");
         let store = PreferenceStore::new(dir.path().join("preferences.json"));
-        std::fs::write(
-            store.path(),
-            format!(r#"{{"version":{PREFERENCES_VERSION},"locale":"vi","dark":false,"panels":[0.9,0.9,0.9]}}"#),
-        )
-        .expect("write preferences");
+        let mut document = serde_json::to_value(Preferences::default()).expect("encode");
+        document["locale"] = "vi".into();
+        document["dark"] = false.into();
+        document["panels"] = serde_json::json!([0.9, 0.9, 0.9]);
+        std::fs::write(store.path(), document.to_string()).expect("write preferences");
         let (preferences, issue) = store.load_with_warning();
         assert_eq!(issue, Some(PreferenceIssue::Layout));
         assert_eq!(preferences.panels, DEFAULT_PANELS);
@@ -386,45 +354,27 @@ mod tests {
             br#"{"version":9,"locale":"en","dark":true,"panels":[0.25,0.25,0.5]}"#,
         )
         .expect("write newer preferences");
-        assert_eq!(store.load_with_warning().1, Some(PreferenceIssue::Version));
+        assert_eq!(store.load_with_warning(), (Preferences::system(), None));
     }
 
     #[test]
-    fn same_version_document_without_snapping_keeps_the_default_on() {
-        let dir = tempfile::tempdir().expect("temporary preferences");
-        let store = PreferenceStore::new(dir.path().join("preferences.json"));
-        let original = format!(
-            r#"{{"version":{PREFERENCES_VERSION},"locale":"en","dark":true,"panels":[0.25,0.25,0.5]}}"#
-        ).into_bytes();
-        std::fs::write(store.path(), &original).expect("write preferences");
-        let loaded = store.load().expect("load preferences");
-        assert!(loaded.snapping);
-        assert!(!loaded.ripple);
-        let bytes = std::fs::read(store.path()).expect("read preferences");
-        assert_eq!(
-            bytes, original,
-            "loading an additive default must not rewrite the document"
-        );
-    }
-
-    #[test]
-    fn older_preference_version_is_refused_and_bytes_are_retained() {
+    fn other_preference_version_is_dropped_and_overwritten() {
         let dir = tempfile::tempdir().expect("temporary preferences");
         let store = PreferenceStore::new(dir.path().join("preferences.json"));
         for document in [
             br#"{"version":1,"locale":"vi","dark":false,"panels":[0.25,0.25,0.5]}"#.as_slice(),
             br#"{"version":4,"locale":"en","dark":true,"panels":[0.25,0.25,0.5],"export":{"format":"mp4","quality":"high","include_audio":true}}"#.as_slice(),
             br#"{"version":5,"locale":"en","dark":true,"panels":[0.25,0.25,0.5],"export":{"format":"mp4","quality":"high","include_audio":true}}"#.as_slice(),
+            br#"{"locale":"en","dark":true,"panels":[0.25,0.25,0.4]}"#.as_slice(),
         ] {
             std::fs::write(store.path(), document).expect("write old preferences");
-            let bytes = std::fs::read(store.path()).expect("read old preferences");
             assert!(matches!(
                 store.load(),
                 Err(Error::Unsupported("preferences version"))
             ));
-            assert_eq!(store.load_with_warning().1, Some(PreferenceIssue::Version));
-            assert!(store.save(&Preferences::default()).is_err());
-            assert_eq!(std::fs::read(store.path()).expect("retained bytes"), bytes);
+            assert_eq!(store.load_with_warning(), (Preferences::system(), None));
+            store.save(&Preferences::default()).expect("overwrite old preferences");
+            assert_eq!(store.load().expect("load saved"), Preferences::default());
         }
     }
 

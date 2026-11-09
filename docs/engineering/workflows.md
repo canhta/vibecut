@@ -16,7 +16,7 @@ Copy only needed reference files. First commit: mechanical import with our names
 
 ## Upgrade policy
 
-Use latest stable Rust, crates, Actions, APIs and models. Look up current releases of dependencies added or touched (`cargo info`, crates.io, official releases) and record the lookup; manifests/lockfiles own versions. Replace in place with one version of every path and superseded code removed. Persisted-format changes bump schema and refuse older files with a typed error, retaining user data.
+Use latest stable Rust, crates, Actions, APIs and models. Look up current releases of dependencies added or touched (`cargo info`, crates.io, official releases) and record the lookup; manifests/lockfiles own versions. Replace in place with one version of every path and superseded code removed. Persisted-format changes bump schema; no migration or second reader. Projects of another schema refuse with a typed error; preferences and recovery journals of another version are dropped.
 
 Document accepted third-party limitations. Only an unreleased upstream crash/security fix permits a removable backport, per [ADR 0002](../adr/0002-desktop-media-and-time.md).
 

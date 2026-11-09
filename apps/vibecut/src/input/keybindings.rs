@@ -27,9 +27,8 @@ pub const KEYBINDINGS_RESET_COMMAND: &str = "ui.keybindings.reset";
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct KeybindingPreferences {
-    #[serde(default)]
     pub bindings: BTreeMap<String, Vec<String>>,
-    #[serde(rename = "isCustomized", default)]
+    #[serde(rename = "isCustomized")]
     pub is_customized: BTreeSet<String>,
 }
 

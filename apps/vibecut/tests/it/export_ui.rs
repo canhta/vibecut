@@ -286,23 +286,6 @@ fn export_choices_default_persist_and_empty_timeline_refuses() {
             Err(vibecut::Error::EmptyTimeline)
         ));
     }
-    // Unversioned documents are refused and retained, never silently upgraded.
-    std::fs::write(
-        store.path(),
-        br#"{"locale":"en","dark":true,"panels":[0.25,0.25,0.4]}"#,
-    )
-    .unwrap();
-    let previous = std::fs::read(store.path()).unwrap();
-    assert!(matches!(
-        store.load(),
-        Err(vibecut::Error::Unsupported("preferences version"))
-    ));
-    assert_eq!(
-        store.load_with_warning().1,
-        Some(vibecut::preferences::PreferenceIssue::Version)
-    );
-    assert!(store.save(&Preferences::default()).is_err());
-    assert_eq!(std::fs::read(store.path()).unwrap(), previous);
     for (quality, q, b) in [
         (ExportQuality::Low, 55, 3_000_000),
         (ExportQuality::Medium, 70, 6_000_000),

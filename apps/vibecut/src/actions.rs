@@ -546,7 +546,7 @@ mod tests {
     use super::*;
     use crate::egui;
     use crate::input::valid_action_id;
-    use crate::preferences::{PREFERENCES_VERSION, PreferenceIssue, PreferenceStore, Preferences};
+    use crate::preferences::{PreferenceIssue, PreferenceStore, Preferences};
 
     fn key_event(key: egui::Key, modifiers: egui::Modifiers) -> egui::Event {
         egui::Event::Key {
@@ -704,24 +704,15 @@ mod tests {
     fn damaged_keybindings_are_sanitized_on_startup_without_hiding_unknown_actions() {
         let dir = tempfile::tempdir().unwrap();
         let store = PreferenceStore::new(dir.path().join("preferences.json"));
-        std::fs::write(
-            store.path(),
-            serde_json::to_vec(&serde_json::json!({
-                "version": PREFERENCES_VERSION,
-                "locale": "en",
-                "dark": true,
-                "panels": [0.25, 0.25, 0.5],
-                "keybindings": {
-                    "bindings": {
-                        "timeline.snap": ["Ctrl+Shift+N"],
-                        "bad action": []
-                    },
-                    "isCustomized": ["timeline.snap", "missing.action"]
-                }
-            }))
-            .unwrap(),
-        )
-        .unwrap();
+        let mut document = serde_json::to_value(Preferences::default()).unwrap();
+        document["keybindings"] = serde_json::json!({
+            "bindings": {
+                "timeline.snap": ["Ctrl+Shift+N"],
+                "bad action": []
+            },
+            "isCustomized": ["timeline.snap", "missing.action"]
+        });
+        std::fs::write(store.path(), document.to_string()).unwrap();
         let (preferences, issue) = store.load_with_warning();
         assert_eq!(issue, Some(PreferenceIssue::Keybindings));
         assert_eq!(

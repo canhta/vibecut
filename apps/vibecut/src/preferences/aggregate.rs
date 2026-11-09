@@ -19,11 +19,6 @@ pub const MAX_PREFERENCES_BYTES: u64 = 16384;
 /// Total open-lane entries across every project; keeps the document bounded.
 pub const MAX_TIMELINE_LANES: usize = 4096;
 
-/// Additive preference keys start at their product default when an older
-/// same-version document omits them.
-const fn default_snapping() -> bool {
-    true
-}
 pub const MAX_SECTIONS: usize = 128;
 
 /// Splitter bounds are fractions of the full content rectangle. The two side
@@ -103,74 +98,47 @@ pub fn validate_panels(panels: [f32; 3]) -> Result<[f32; 3]> {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Preferences {
-    /// Missing versions are refused as version zero.
-    #[serde(default)]
     pub version: u32,
-    #[serde(default)]
     pub windows: BTreeMap<String, WindowGeometry>,
-    #[serde(default)]
     pub export: crate::export::ExportOptions,
-    #[serde(default)]
     pub export_directory: Option<PathBuf>,
-    #[serde(default)]
     pub subtitles: crate::subtitles::Options,
     pub locale: Locale,
     pub dark: bool,
     /// Timeline snapping; on by default and persisted across runs.
-    #[serde(default = "default_snapping")]
     pub snapping: bool,
     /// Close vacated same-track tails after timeline edits; off by default.
-    #[serde(default)]
     pub ripple: bool,
     /// Ratios of the full content rectangle; validated when loaded and set.
     pub panels: [f32; 3],
     /// Open/closed state by property-section key.
-    #[serde(default)]
     pub sections: BTreeMap<String, bool>,
     /// Last assets-panel tab. Presentation state, never a project edit.
-    #[serde(default)]
     pub assets_tab: AssetsTab,
     /// Last properties tab by persisted element-kind id. Applying it to a kind
     /// that does not offer that tab falls back to the kind's default.
-    #[serde(default)]
     pub properties_tabs: BTreeMap<String, String>,
     /// Projects page view mode and sort order; presentation only.
-    #[serde(default)]
     pub projects: ProjectsPreferences,
     /// Media library grid/list presentation.
-    #[serde(default)]
     pub media_view: MediaView,
     /// Media library sort key and direction.
-    #[serde(default)]
     pub media_sort: MediaSort,
     /// Preview follows the panel size when true; otherwise `preview_zoom` applies.
-    #[serde(default = "default_preview_fit")]
     pub preview_fit: bool,
     /// Explicit preview scale where 1.0 is 100%; clamped to 0.25–16.
-    #[serde(default = "default_preview_zoom")]
     pub preview_zoom: f64,
     /// Last directory used by the snapshot save dialog.
-    #[serde(default)]
     pub snapshot_directory: Option<PathBuf>,
     /// App-local action overrides. Defaults and action metadata live in
     /// `actions`; this is the only persisted binding map.
-    #[serde(default)]
     pub keybindings: KeybindingPreferences,
-    #[serde(default)]
     pub recent_colors: Vec<project::Color>,
     /// Items whose keyframe lanes stay open, keyed by the project they belong
     /// to: item ids restart in every project.
-    #[serde(default)]
     pub timeline_lanes: BTreeMap<project::ProjectId, BTreeSet<u64>>,
     /// Font picker tab and favourite families; presentation only.
-    #[serde(default)]
     pub font_picker: FontPickerPreferences,
-}
-pub(crate) const fn default_preview_fit() -> bool {
-    true
-}
-pub(crate) const fn default_preview_zoom() -> f64 {
-    1.0
 }
 impl Default for Preferences {
     fn default() -> Self {
@@ -191,8 +159,8 @@ impl Default for Preferences {
             projects: ProjectsPreferences::default(),
             media_view: MediaView::default(),
             media_sort: MediaSort::default(),
-            preview_fit: default_preview_fit(),
-            preview_zoom: default_preview_zoom(),
+            preview_fit: true,
+            preview_zoom: 1.0,
             snapshot_directory: None,
             keybindings: KeybindingPreferences::default(),
             recent_colors: Vec::new(),

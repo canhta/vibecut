@@ -32,9 +32,7 @@ impl FontTab {
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct FontPickerPreferences {
-    #[serde(default)]
     pub tab: FontTab,
-    #[serde(default)]
     pub favorites: Vec<String>,
 }
 const MAX_FONT_FAVORITES: usize = 256;

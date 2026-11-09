@@ -9,8 +9,7 @@ During a slider drag a temporary engine Session supplies only the preview snapsh
 the editable Session, persistence and undo history remain unchanged. Release
 publishes one command/undo step. Escape or closing discards the active draft;
 selection/snapshot changes fence stale drafts. Recent colours are unique,
-newest-first and capped at sixteen since preferences version 4; older preference
-versions refuse and retain their bytes under the existing store policy.
+newest-first and capped at sixteen.
 
 The app-only native screen sampler invokes AppKit `NSColorSampler` through macOS's
 system JXA bridge asynchronously; no browser EyeDropper API, screenshot capture,

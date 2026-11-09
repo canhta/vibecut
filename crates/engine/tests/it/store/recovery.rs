@@ -280,7 +280,7 @@ fn switch_flushes_pending_and_gestures_cannot_cross_a_boundary() {
 }
 
 #[test]
-fn corrupt_truncated_hash_mismatch_and_schema_are_diagnosed_without_deletion() {
+fn corrupt_journals_are_diagnosed_without_deletion_and_other_schemas_are_dropped() {
     for mode in 0..4 {
         let dir = tempfile::tempdir().unwrap();
         let mut a = open(dir.path(), 1, None, Arc::new(TestClock::default()));
@@ -318,8 +318,18 @@ fn corrupt_truncated_hash_mismatch_and_schema_are_diagnosed_without_deletion() {
         let before = fs::read(&meta).unwrap();
         let d = discover(dir.path()).unwrap();
         assert!(d.candidates.is_empty());
-        assert_eq!(d.diagnostics.len(), 1);
-        assert_eq!(fs::read(&meta).unwrap(), before);
+        if mode == 3 {
+            assert!(d.diagnostics.is_empty());
+            assert!(!meta.exists());
+            assert!(
+                project::autosave::list(&directory.join("project"))
+                    .unwrap()
+                    .is_empty()
+            );
+        } else {
+            assert_eq!(d.diagnostics.len(), 1);
+            assert_eq!(fs::read(&meta).unwrap(), before);
+        }
     }
 }
 

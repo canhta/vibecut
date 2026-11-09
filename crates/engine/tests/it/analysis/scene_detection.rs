@@ -527,7 +527,7 @@ fn duration_scaling_bounds_peak_memory() {
     let mut peaks = Vec::new();
     for count in [300, 12000] {
         let asset = fixture(&format!("memory-{count}"), 64, count, false);
-        let output = Command::new("/usr/bin/time")
+        let output = std::process::Command::new("/usr/bin/time")
             .arg("-l")
             .arg(std::env::current_exe().unwrap())
             .args([

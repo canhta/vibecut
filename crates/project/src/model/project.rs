@@ -51,20 +51,6 @@ pub struct ProjectData {
     pub settings: Settings,
 }
 impl ProjectData {
-    /// Round every stored canvas size to even through `CanvasSize::rounded_even`
-    /// (files written before custom sizes rounded may hold odd ones). A size that
-    /// cannot round inside the bounds stays as stored; validation judges it.
-    pub fn round_canvas_even(&mut self) {
-        let even = |size: CanvasSize| size.rounded_even().filter(|s| s.is_valid()).unwrap_or(size);
-        let canvas = even(CanvasSize {
-            width: self.canvas.width,
-            height: self.canvas.height,
-        });
-        self.canvas.width = canvas.width;
-        self.canvas.height = canvas.height;
-        self.canvas.last_custom_size = even(self.canvas.last_custom_size);
-        self.original_canvas_size = self.original_canvas_size.map(even);
-    }
     /// Candidates with an invalid current ID read main; validation still refuses them.
     pub fn scene(&self) -> &Scene {
         self.scenes

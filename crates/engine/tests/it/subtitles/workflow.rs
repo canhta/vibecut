@@ -25,7 +25,7 @@ use std::{
     collections::BTreeSet,
     path::{Path, PathBuf},
     sync::{
-        Arc, Mutex, OnceLock,
+        Arc, OnceLock,
         atomic::{AtomicBool, AtomicUsize, Ordering},
     },
     thread,
@@ -436,139 +436,6 @@ fn second_run_reuses_completed_asr_chunks() {
     )
     .unwrap();
     assert_eq!(second.checkpoints, 1);
-    assert_eq!(calls.load(Ordering::Relaxed), 1, "ASR was not re-executed");
-}
-
-/// Wraps `FakeAsr` and records the sample window each ASR call receives.
-struct RecordingAsr {
-    inner: FakeAsr,
-    windows: Arc<Mutex<Vec<(u64, u64)>>>,
-}
-impl Transcriber for RecordingAsr {
-    fn config(&self) -> &ProviderConfig {
-        self.inner.config()
-    }
-    fn capabilities(&self, scope: &Scope) -> Capabilities {
-        self.inner.capabilities(scope)
-    }
-    fn estimate(&self, scope: &Scope) -> CostEstimate {
-        self.inner.estimate(scope)
-    }
-    fn transcribe(
-        &self,
-        audio: ai::AudioWindow<'_>,
-        request: &Request<'_>,
-        hooks: &dyn ExecutionHooks,
-    ) -> Result<Vec<RecognitionSegment>, Error> {
-        self.windows
-            .lock()
-            .unwrap()
-            .push((audio.range.start(), audio.range.end()));
-        self.inner.transcribe(audio, request, hooks)
-    }
-}
-
-/// The ASR checkpoint key as the code before the transcript move derived it. Kept here so a
-/// change to the real derivation shows up as a cache miss for checkpoints already on disk.
-fn pre_move_asr_key(
-    content_hash: &[u8; 32],
-    window: (u64, u64),
-    language: &str,
-    config: &ProviderConfig,
-) -> engine::cache::CacheKey {
-    let hex = |bytes: &[u8]| -> String { bytes.iter().map(|b| format!("{b:02x}")).collect() };
-    // The fingerprint is the hex of the content hash, and the key hashes the hex of that text.
-    let fingerprint_hex = hex(hex(content_hash).as_bytes());
-    let (start, end) = window;
-    engine::cache::CacheKey::new(engine::cache::KeyInputs {
-        kind: engine::cache::ArtifactKind::AsrChunk,
-        source: *blake3::hash(format!("{fingerprint_hex}:{start}:{end}").as_bytes()).as_bytes(),
-        provider: config.id().as_str(),
-        model: config.model().as_str(),
-        version: config.settings_fingerprint().as_str(),
-        settings: format!("language={language};samples={start}..{end}").as_bytes(),
-        transcript: [0; 32],
-        cues: [0; 32],
-        clip_range: [0; 32],
-        translation: [0; 32],
-    })
-    .unwrap()
-}
-
-#[test]
-fn asr_checkpoint_written_under_the_pre_move_key_is_reused() {
-    let Some(input) = fixture() else {
-        return;
-    };
-    let directory = tempfile::tempdir().unwrap();
-    let windows = Arc::new(Mutex::new(Vec::new()));
-    let calls = Arc::new(AtomicUsize::new(0));
-    let asr = RecordingAsr {
-        inner: FakeAsr::new(calls.clone()),
-        windows: windows.clone(),
-    };
-    let config = asr.config().clone();
-    let providers = Providers::from_parts(
-        TranscriptionProvider::Whisper {
-            model: "fake-asr-model".into(),
-        },
-        Arc::new(asr),
-        None,
-        None,
-        None,
-    )
-    .unwrap();
-    let content_hash = media::SourceAsset::import(media::AssetId(1), input.clone())
-        .unwrap()
-        .content_hash()
-        .0;
-    let (mut runner, budget) = runner();
-    let mut request = request(&input, "vi", "vi", directory.path(), false);
-    request.srt = Some(directory.path().join("first.srt"));
-
-    // The first run stores its window; the entry must sit under the pre-move key.
-    let (mut first_cache, _) =
-        engine::cache::ArtifactCache::open(&directory.path().join("first"), budget.clone(), 16)
-            .unwrap();
-    subtitles::run(
-        &request,
-        &providers,
-        &mut runner,
-        &mut first_cache,
-        &AllowAll,
-        &SilentProgress,
-        &Cancellation::new(),
-    )
-    .unwrap();
-    let window = {
-        let seen = windows.lock().unwrap();
-        assert_eq!(seen.len(), 1, "one speech window in the 2 s fixture");
-        seen[0]
-    };
-    let key = pre_move_asr_key(&content_hash, window, "vi", &config);
-    let stored = first_cache
-        .get(key)
-        .unwrap()
-        .expect("checkpoint stored under the pre-move key")
-        .bytes()
-        .to_vec();
-
-    // A cache holding only that entry satisfies a fresh run without calling the provider.
-    let (mut seeded, _) =
-        engine::cache::ArtifactCache::open(&directory.path().join("seeded"), budget, 16).unwrap();
-    seeded.put(key, &stored).unwrap();
-    request.srt = Some(directory.path().join("second.srt"));
-    let outcome = subtitles::run(
-        &request,
-        &providers,
-        &mut runner,
-        &mut seeded,
-        &AllowAll,
-        &SilentProgress,
-        &Cancellation::new(),
-    )
-    .unwrap();
-    assert_eq!(outcome.checkpoints, 1);
     assert_eq!(calls.load(Ordering::Relaxed), 1, "ASR was not re-executed");
 }
 

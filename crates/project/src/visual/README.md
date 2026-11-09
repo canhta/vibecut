@@ -123,8 +123,7 @@ admits 8–192 kHz. Audio/video source volume and master volume admit -60..20 dB
 `original_canvas_size`. `CanvasSize::rounded_even` gives the nearest even size
 on each odd axis (ties up) so encoders can open the frame: one pixel becomes
 two, and an odd maximum that would overflow or exceed the area bound refuses.
-The first-media capture of `original_canvas_size` and project load apply the same
-rounding (load repairs older odd canvases instead of refusing the file).
+The first-media capture of `original_canvas_size` applies the same rounding.
 `Canvas.last_custom_size` remembers the last committed custom width/height.
 Both fields are schema 20. Preset labels are UI text; the
 stored width/height remain authoritative.

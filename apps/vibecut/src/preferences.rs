@@ -1,7 +1,7 @@
 //! The one versioned preference document and the file that persists it.
 //!
 //! Feature-owned section types keep their own defaults and validation; this
-//! module only composes them in the byte-compatible document the app saves.
+//! module only composes them in the document the app saves.
 mod aggregate;
 mod font_picker;
 mod geometry;

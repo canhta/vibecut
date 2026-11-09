@@ -84,7 +84,7 @@ replacing the project; failure retains the old Session. Active gestures/groups
 refuse these boundaries. Drop joins/cancels existing work and does **not** promise
 a flush. Clean saves/undo-to-saved retire obsolete journals on the worker.
 Candidate::discard removes only its descriptor/canonical snapshots, preserving
-original projects and unrelated files. Recovery is never silently discarded.
+original projects and unrelated files.
 Empty session directories/lock files are retained; applications should archive or
 remove empty private session directories during maintenance before the scan cap.
 

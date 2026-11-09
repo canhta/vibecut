@@ -66,7 +66,7 @@ translation live in `transcript/`, which subtitles and the [shorts crate](../../
 
 Tests in `tests/it/subtitles/workflow.rs` cover all six vi/en/zh translation directions and
 every bilingual pair, SRT plus burned MP4 output, ASR checkpoint reuse on a second
-run (and reuse of a checkpoint stored under the pre-move key), remote consent refusal with zero calls, credential refusal, catalog filtering
+run, remote consent refusal with zero calls, credential refusal, catalog filtering
 and a real generated fixture. They establish composition and failure contracts,
 not model accuracy, live provider quality or Windows behavior.
 

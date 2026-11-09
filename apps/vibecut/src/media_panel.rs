@@ -46,7 +46,7 @@ pub enum MediaSortOrder {
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(default, deny_unknown_fields)]
+#[serde(deny_unknown_fields)]
 pub struct MediaSort {
     pub key: MediaSortKey,
     pub order: MediaSortOrder,

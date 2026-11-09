@@ -16,8 +16,6 @@ A stale revision refuses before any child of a batch. An invalid candidate
 (see [wire integer validation](../session/wire/README.md#wire-contract)) returns InvalidParams without
 consuming IDs, advancing revision or emitting a project change; its refusal receipt
 can be replayed.
-The recovery journal descriptor is version 2 for the same ProjectId encoding;
-older descriptors are refused before model decoding, without deleting their files.
 Session/project lifecycle creation and disk saves retain their existing
 `Session::create`/`Autosave` ownership; direct Session edit/control execution returns
 a typed refusal for those commands. Their registry examples declare those routes.

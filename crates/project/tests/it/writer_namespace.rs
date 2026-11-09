@@ -312,7 +312,7 @@ fn publishing_a_hard_link_alias_keeps_the_original_sidecar_locked() {
     let control = root.path().join(".target.vibecut.lock");
     let alias = root.path().join("hard-link.vibecut");
     fs::hard_link(&control, &alias).unwrap();
-    writer
+    let receipt = writer
         .save_as(&alias, &project("independent destination"))
         .unwrap();
     assert!(matches!(WriterLease::acquire(&target), Err(Error::Busy)));
@@ -322,9 +322,11 @@ fn publishing_a_hard_link_alias_keeps_the_original_sidecar_locked() {
         project::load(&target).unwrap().project,
         project("still held")
     );
+    let mut expected = project("independent destination").into_data();
+    expected.id = receipt.project_id();
     assert_eq!(
         project::load(&alias).unwrap().project,
-        project("independent destination")
+        Project::new(expected).unwrap()
     );
 }
 
