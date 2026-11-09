@@ -700,6 +700,12 @@ impl VideoReader {
     pub(crate) fn remaining_read_budget(&self) -> u64 {
         self.packets.remaining_read_budget()
     }
+    /// Reopens one bounded read window between sampled positions of a thumbnail
+    /// pass; packets already read stay consumed and the next leg gets its own
+    /// allowance.
+    pub(crate) fn start_read_window(&mut self, max_bytes: u64) {
+        self.packets.start_read_window(max_bytes);
+    }
     pub fn seek(&mut self, target: Tick) -> Result<()> {
         self.packets.seek(target)?;
         self.decoder.reset();

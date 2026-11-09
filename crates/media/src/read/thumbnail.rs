@@ -20,6 +20,9 @@ pub const THUMBNAIL_MAX_EDGE: u32 = 320;
 const MAX_THUMBNAIL_EDGE: u32 = 1024;
 /// Native thumbnail/recovery image and scratch ceiling (separate from playback).
 pub(crate) const MAX_SOURCE_PIXELS: u64 = 1 << 21;
+/// Source bytes one sampled frame's decode leg may read: the same allowance a
+/// single [`thumbnail_at`] call gets for one frame.
+const PASS_LEG_BYTES: u64 = 64 << 20;
 const MAGIC: &[u8; 8] = b"VTMB0001";
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -114,6 +117,76 @@ pub fn thumbnail_at(
     thumbnail_at_with_read_bytes(path, at, max_edge, cancelled).map(|(thumbnail, _)| thumbnail)
 }
 
+/// Decode one frame per ascending source position from one sequential pass.
+///
+/// The reader opens and seeks once, then decodes forward; each position
+/// receives the first frame at or after it, the same frame [`thumbnail_at`]
+/// returns for that position. `sample` receives positions in order before the
+/// next frame is decoded. Each leg may read at most the 64 MiB a single
+/// [`thumbnail_at`] call may; a longer leg, a position past the last frame, a
+/// non-ascending or empty list and cancellation are typed errors.
+pub fn thumbnails_at(
+    path: &Path,
+    positions: &[Tick],
+    max_edge: u32,
+    cancelled: Arc<AtomicBool>,
+    mut sample: impl FnMut(Tick, Thumbnail),
+) -> Result<()> {
+    if !(1..=MAX_THUMBNAIL_EDGE).contains(&max_edge) {
+        return Err(MediaError::Invalid("thumbnail max edge"));
+    }
+    if positions.is_empty()
+        || positions
+            .iter()
+            .zip(positions.iter().skip(1))
+            .any(|(before, after)| before >= after)
+    {
+        return Err(MediaError::Invalid("thumbnail positions"));
+    }
+    if cancelled.load(Ordering::Relaxed) {
+        return Err(MediaError::Cancelled);
+    }
+    let Some(first) = positions.first().copied() else {
+        return Err(MediaError::Invalid("thumbnail positions"));
+    };
+    let mut reader = VideoReader::open_thumbnail(path, cancelled.clone())?;
+    if first > Tick::ZERO {
+        reader.seek(first)?;
+    }
+    let mut converter = RgbaConverter::new()?;
+    let mut target = 0;
+    while target < positions.len() {
+        if cancelled.load(Ordering::Relaxed) {
+            return Err(MediaError::Cancelled);
+        }
+        let Some(frame) = reader.next_frame()? else {
+            return Err(MediaError::Unsupported("video has no decodable frame"));
+        };
+        let pts = frame.pts()?.ok_or(MediaError::Unsupported(
+            "video presentation timestamp unavailable",
+        ))?;
+        // The first position is satisfied by the first delivered frame: a seek
+        // withholds earlier frames and position zero means the first frame.
+        // Later positions take the first frame at or after them, so one frame
+        // may satisfy several positions just as one call per position does.
+        while let Some(&at) = positions.get(target) {
+            if target > 0 && pts < at {
+                break;
+            }
+            let image = from_frame_with(&mut converter, &frame, at, max_edge)?;
+            target += 1;
+            sample(at, image);
+            if cancelled.load(Ordering::Relaxed) {
+                return Err(MediaError::Cancelled);
+            }
+        }
+        if target < positions.len() {
+            reader.start_read_window(PASS_LEG_BYTES);
+        }
+    }
+    Ok(())
+}
+
 /// Same as [`thumbnail_at`], also reporting how many source bytes the first
 /// frame needed. Used to prove bounded reads on large files.
 pub fn thumbnail_at_with_read_bytes(
@@ -149,8 +222,18 @@ pub fn thumbnail_at_with_read_bytes(
 }
 
 pub(crate) fn from_frame(frame: &crate::VideoFrame, at: Tick, max_edge: u32) -> Result<Thumbnail> {
+    from_frame_with(&mut RgbaConverter::new()?, frame, at, max_edge)
+}
+
+/// Same conversion with a caller-owned converter, so one sequential pass reuses
+/// one scaler for every sampled frame.
+fn from_frame_with(
+    converter: &mut RgbaConverter,
+    frame: &crate::VideoFrame,
+    at: Tick,
+    max_edge: u32,
+) -> Result<Thumbnail> {
     let (width, height) = fit(frame.width(), frame.height(), max_edge)?;
-    let mut converter = RgbaConverter::new()?;
     let rgba = converter.convert_scaled(frame, width, height)?;
     let stride = rgba.stride(0)?;
     let row_bytes = width as usize * 4;
@@ -224,5 +307,123 @@ mod tests {
         }
         // Pixel changes are still a valid payload; geometry stays authoritative.
         assert!(Thumbnail::decode(&wrong).is_ok());
+    }
+}
+
+/// Manual timing harness for a real interview cut: one thumbnail per tile of a
+/// visible minute, the same tiles from one sequential pass, and where the
+/// per-tile time goes. Peak RSS is sampled externally around this process.
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::panic)]
+mod benchmark {
+    use super::*;
+    use std::time::{Duration, Instant};
+    use time::TICKS_PER_SECOND;
+
+    #[test]
+    #[ignore = "manual: set VIBECUT_INTERVIEW_SAMPLE to interview-30m.mp4"]
+    fn interview_thumbnail_tile_and_pass_timing() {
+        let Some(path) = std::env::var_os("VIBECUT_INTERVIEW_SAMPLE").map(std::path::PathBuf::from)
+        else {
+            eprintln!("skipping: VIBECUT_INTERVIEW_SAMPLE is not set");
+            return;
+        };
+        if !path.is_file() {
+            eprintln!("skipping: {} does not exist", path.display());
+            return;
+        }
+        // 39 px filmstrip at 71.5 px/s: one 16:9 tile every 0.970 s.
+        let interval = (TICKS_PER_SECOND as f64 * 39.0 * 16.0 / (9.0 * 71.5)).round() as i64;
+        let positions: Vec<Tick> = (0..62).map(|index| Tick(interval * index)).collect();
+        let cancelled = Arc::new(AtomicBool::new(false));
+
+        let (mut open, mut seek, mut decode, mut scale) = (
+            Duration::ZERO,
+            Duration::ZERO,
+            Duration::ZERO,
+            Duration::ZERO,
+        );
+        for at in &positions {
+            let mark = Instant::now();
+            let mut reader = VideoReader::open_thumbnail(&path, cancelled.clone()).unwrap();
+            open += mark.elapsed();
+            let mark = Instant::now();
+            if *at > Tick::ZERO {
+                reader.seek(*at).unwrap();
+            }
+            seek += mark.elapsed();
+            let mark = Instant::now();
+            let frame = reader.next_frame().unwrap().expect("first frame");
+            decode += mark.elapsed();
+            let mark = Instant::now();
+            from_frame(&frame, *at, THUMBNAIL_MAX_EDGE).unwrap();
+            scale += mark.elapsed();
+        }
+        eprintln!(
+            "per-tile breakdown: open={:.2?} seek={:.2?} decode={:.2?} scale={:.2?} total={:.2?}",
+            open,
+            seek,
+            decode,
+            scale,
+            open + seek + decode + scale
+        );
+
+        let mark = Instant::now();
+        for at in &positions {
+            thumbnail_at(&path, *at, THUMBNAIL_MAX_EDGE, cancelled.clone()).unwrap();
+        }
+        eprintln!("per-tile public path: {:.2?}", mark.elapsed());
+
+        let mut decode_only = Duration::ZERO;
+        let mut pass_scale = Duration::ZERO;
+        let mark = Instant::now();
+        let mut reader = VideoReader::open_thumbnail(&path, cancelled.clone()).unwrap();
+        if positions[0] > Tick::ZERO {
+            reader.seek(positions[0]).unwrap();
+        }
+        let mut next = 0;
+        let mut frames = 0_u64;
+        while next < positions.len() {
+            let step = Instant::now();
+            let Some(frame) = reader.next_frame().unwrap() else {
+                panic!("sample ended before the range")
+            };
+            decode_only += step.elapsed();
+            frames += 1;
+            let pts = frame.pts().unwrap().expect("frame pts");
+            while next < positions.len() && pts >= positions[next] {
+                let step = Instant::now();
+                from_frame(&frame, positions[next], THUMBNAIL_MAX_EDGE).unwrap();
+                pass_scale += step.elapsed();
+                next += 1;
+            }
+        }
+        eprintln!(
+            "one sequential pass: decode_only={decode_only:.2?} scale={pass_scale:.2?} total={:.2?} frames={frames}",
+            mark.elapsed()
+        );
+
+        let mark = Instant::now();
+        let mut samples = Vec::with_capacity(positions.len());
+        thumbnails_at(
+            &path,
+            &positions,
+            THUMBNAIL_MAX_EDGE,
+            cancelled.clone(),
+            |at, image| samples.push((at, image)),
+        )
+        .unwrap();
+        eprintln!(
+            "thumbnails_at pass: {:.2?} tiles={}",
+            mark.elapsed(),
+            samples.len()
+        );
+        assert_eq!(samples.len(), positions.len());
+        assert!(
+            samples
+                .iter()
+                .map(|(at, _)| *at)
+                .eq(positions.iter().copied())
+        );
     }
 }

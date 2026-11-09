@@ -57,6 +57,41 @@ fn clip() -> Option<PathBuf> {
     )
 }
 
+/// 3 s of 10 fps video with a one-second GOP and B-frames, so tile positions
+/// land on keyframes and inside reordered groups.
+fn reordered_clip() -> Option<PathBuf> {
+    if !testkit::oracle::require("thumbnail strip") {
+        return None;
+    }
+    testkit::oracle::generate(
+        &testkit::fixture::dir("thumbnail-strip"),
+        "thumbnail strip",
+        "reordered.mkv",
+        &[
+            "-f",
+            "lavfi",
+            "-i",
+            "testsrc2=s=96x54:r=10:d=3",
+            "-c:v",
+            "libx264",
+            "-preset",
+            "ultrafast",
+            "-crf",
+            "18",
+            "-g",
+            "10",
+            "-keyint_min",
+            "10",
+            "-sc_threshold",
+            "0",
+            "-bf",
+            "2",
+            "-pix_fmt",
+            "yuv420p",
+        ],
+    )
+}
+
 /// Different content, same duration: a changed source hash.
 fn changed_clip() -> Option<PathBuf> {
     if !testkit::oracle::require("thumbnail strip") {
@@ -745,6 +780,47 @@ fn tile_interval_is_one_sixteen_by_nine_tile() {
     assert!(interval > Tick(TICKS_PER_SECOND / 2));
     assert!(interval < Tick(TICKS_PER_SECOND));
     assert!(tile_interval(39, 71.5).is_ok());
+}
+
+/// The generated strip's cached frames are exactly what one `thumbnail_at`
+/// call per position returns, including inside reordered GOPs.
+#[test]
+fn generated_tiles_match_one_decode_per_position() {
+    let Some(path) = reordered_clip() else {
+        return;
+    };
+    let asset = source_asset(&path, 2);
+    let half = Tick(TICKS_PER_SECOND / 2);
+    let request =
+        ThumbnailStripRequest::new(asset.clone(), range(0, 3), half, THUMBNAIL_MAX_EDGE).unwrap();
+    assert_eq!(
+        request.positions(),
+        &[
+            t(0),
+            half,
+            t(1),
+            Tick(t(1).0 + half.0),
+            t(2),
+            Tick(t(2).0 + half.0)
+        ]
+    );
+    let (strip, _runner, mut cache, _dir) = run(&request);
+    let cancelled = Arc::new(AtomicBool::new(false));
+    for at in strip.positions() {
+        let cached = cache
+            .get(&asset, *at, THUMBNAIL_MAX_EDGE)
+            .unwrap()
+            .expect("published tile");
+        let expected =
+            media::thumbnail_at(&path, *at, THUMBNAIL_MAX_EDGE, cancelled.clone()).unwrap();
+        assert_eq!(cached.frame, expected.frame, "tile at {at:?}");
+        assert_eq!(
+            (cached.width, cached.height),
+            (expected.width, expected.height),
+            "tile at {at:?}"
+        );
+        assert_eq!(cached.pixels, expected.pixels, "tile at {at:?}");
+    }
 }
 
 /// Manual check against a real 30-minute interview. Not part of CI: the sample

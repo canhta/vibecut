@@ -12,4 +12,5 @@ pub use demux::{PacketReader, probe};
 pub(crate) use thumbnail::MAX_SOURCE_PIXELS;
 pub use thumbnail::{
     THUMBNAIL_MAX_EDGE, Thumbnail, thumbnail, thumbnail_at, thumbnail_at_with_read_bytes,
+    thumbnails_at,
 };

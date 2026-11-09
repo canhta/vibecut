@@ -20,7 +20,7 @@ pub const TILE_ASPECT_RATIO: (u32, u32) = (16, 9);
 pub const MAX_TILES: usize = 128;
 const MAGIC: &[u8; 8] = b"VTCSTR01";
 const MAX_BYTES: usize = 64 << 20;
-/// Two decoded source frames with their RGBA conversions and converter scratch.
+/// One decoded source frame with its RGBA conversion and converter scratch.
 const DECODE_BYTES: u64 = 32 << 20;
 
 /// Output ticks between two strip tiles: one 16:9 tile whose height is
@@ -140,17 +140,24 @@ impl ThumbnailStripRequest {
         let (id, cancel) = runner.submit(spec, move |context| {
             context.check_cancelled()?;
             let mut samples = Vec::with_capacity(pending.len());
-            for (index, at) in pending.iter().enumerate() {
-                context.progress(JobStage::Thumbnail, index as f32 / total)?;
-                let image = media::thumbnail(
-                    &request.asset,
-                    *at,
+            if !pending.is_empty() {
+                context.progress(JobStage::Thumbnail, 0.0)?;
+                // One sequential pass: the decoder opens and seeks once, then
+                // takes the first frame at or after each missing position.
+                media::thumbnails_at(
+                    request.asset.path(),
+                    &pending,
                     request.max_edge,
                     context.media_cancel_flag(),
+                    |at, image| {
+                        samples.push((at, image));
+                        context
+                            .progress(JobStage::Thumbnail, samples.len() as f32 / total)
+                            .ok();
+                    },
                 )?;
-                context.check_cancelled()?;
-                samples.push((*at, image));
             }
+            context.check_cancelled()?;
             context.progress(JobStage::Thumbnail, 1.0)?;
             encode(&samples)
         })?;

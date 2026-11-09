@@ -20,7 +20,7 @@ pub use ffmpeg_next::format::Pixel as PixelFormat;
 pub use read::{
     AudioDecoder, AudioFrame, DecodePreference, PacketReader, RgbaConverter, THUMBNAIL_MAX_EDGE,
     Thumbnail, VideoDecoder, VideoFrame, VideoReader, probe, thumbnail, thumbnail_at,
-    thumbnail_at_with_read_bytes,
+    thumbnail_at_with_read_bytes, thumbnails_at,
 };
 pub use source::{
     AssetAvailability, AssetData, AssetId, AudioInfo, CodecParameters, ColorInfo, ContentHash,

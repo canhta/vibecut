@@ -2,10 +2,15 @@
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::indexing_slicing)]
 
 use media::{
-    DecodePreference, MediaError, PacketReader, StreamKind, VideoDecoder, VideoFrame, VideoReader,
+    DecodePreference, MediaError, PacketReader, StreamKind, THUMBNAIL_MAX_EDGE, VideoDecoder,
+    VideoFrame, VideoReader, thumbnail_at, thumbnails_at,
 };
 use std::path::Path;
-use time::{FrameRate, Tick};
+use std::sync::{
+    Arc,
+    atomic::{AtomicBool, Ordering},
+};
+use time::{FrameRate, TICKS_PER_SECOND, Tick};
 
 fn pixels(frame: &VideoFrame) -> Vec<u8> {
     let cpu = frame.download().unwrap();
@@ -157,4 +162,133 @@ fn mpeg4_small_and_unaligned_frames_with_reordering() {
         };
         check_fixture(&path, width, height, 30);
     }
+}
+
+/// Three seconds at 10 fps with a one-second GOP and B-frames, so sampled
+/// positions land on keyframes and inside reordered groups.
+fn reordered_thumbnail_fixture() -> Option<std::path::PathBuf> {
+    testkit::oracle::generate(
+        &testkit::fixture::dir("media"),
+        "thumbnail position pass",
+        "thumbnail-pass.mp4",
+        &[
+            "-f",
+            "lavfi",
+            "-i",
+            "testsrc2=size=96x54:rate=10:duration=3",
+            "-c:v",
+            "libx264",
+            "-preset",
+            "ultrafast",
+            "-crf",
+            "18",
+            "-g",
+            "10",
+            "-keyint_min",
+            "10",
+            "-sc_threshold",
+            "0",
+            "-bf",
+            "2",
+            "-pix_fmt",
+            "yuv420p",
+        ],
+    )
+}
+
+#[test]
+fn thumbnail_pass_matches_one_decode_per_position() {
+    let Some(path) = reordered_thumbnail_fixture() else {
+        return;
+    };
+    let positions: Vec<Tick> = (0..12)
+        .map(|index| Tick(TICKS_PER_SECOND * index / 4))
+        .collect();
+    let cancelled = Arc::new(AtomicBool::new(false));
+    let mut pass = Vec::new();
+    thumbnails_at(
+        &path,
+        &positions,
+        THUMBNAIL_MAX_EDGE,
+        cancelled.clone(),
+        |at, image| pass.push((at, image)),
+    )
+    .unwrap();
+    assert_eq!(pass.len(), positions.len());
+    let mut frames = Vec::new();
+    for (index, at) in positions.iter().enumerate() {
+        let single = thumbnail_at(&path, *at, THUMBNAIL_MAX_EDGE, cancelled.clone()).unwrap();
+        assert_eq!(pass[index].0, *at);
+        assert_eq!(pass[index].1, single, "tile at {at:?}");
+        frames.push(single.frame);
+    }
+    // The fixture moves, so the sampled frames differ across the range.
+    assert!(frames.windows(2).any(|pair| pair[0] != pair[1]));
+}
+
+#[test]
+fn thumbnail_pass_refuses_hostile_positions_and_cancels_between_frames() {
+    let Some(path) = reordered_thumbnail_fixture() else {
+        return;
+    };
+    let available = Arc::new(AtomicBool::new(false));
+    // The cache payload ceiling is 1024 px; zero and above it refuse before I/O.
+    for edge in [0, 1025] {
+        assert!(matches!(
+            thumbnails_at(&path, &[Tick::ZERO], edge, available.clone(), |_, _| {}),
+            Err(MediaError::Invalid("thumbnail max edge"))
+        ));
+    }
+    let hostile: [Vec<Tick>; 3] = [
+        Vec::new(),
+        vec![Tick(TICKS_PER_SECOND), Tick(TICKS_PER_SECOND / 2)],
+        vec![Tick(TICKS_PER_SECOND / 2), Tick(TICKS_PER_SECOND / 2)],
+    ];
+    for positions in hostile {
+        assert!(matches!(
+            thumbnails_at(
+                &path,
+                &positions,
+                THUMBNAIL_MAX_EDGE,
+                available.clone(),
+                |_, _| {}
+            ),
+            Err(MediaError::Invalid("thumbnail positions"))
+        ));
+    }
+    // A position past the last frame refuses exactly like one call per position.
+    let past = Tick(TICKS_PER_SECOND * 10);
+    assert!(matches!(
+        thumbnail_at(&path, past, THUMBNAIL_MAX_EDGE, available.clone()),
+        Err(MediaError::Unsupported("video has no decodable frame"))
+    ));
+    assert!(matches!(
+        thumbnails_at(
+            &path,
+            &[past],
+            THUMBNAIL_MAX_EDGE,
+            available.clone(),
+            |_, _| {}
+        ),
+        Err(MediaError::Unsupported("video has no decodable frame"))
+    ));
+    // A flag set by the first sample stops the pass before the second tile.
+    let cancelled = Arc::new(AtomicBool::new(false));
+    let mut delivered = 0;
+    let result = thumbnails_at(
+        &path,
+        &[
+            Tick::ZERO,
+            Tick(TICKS_PER_SECOND),
+            Tick(TICKS_PER_SECOND * 2),
+        ],
+        THUMBNAIL_MAX_EDGE,
+        cancelled.clone(),
+        |_, _| {
+            delivered += 1;
+            cancelled.store(true, Ordering::Relaxed);
+        },
+    );
+    assert!(matches!(result, Err(MediaError::Cancelled)));
+    assert_eq!(delivered, 1);
 }
