@@ -391,9 +391,14 @@ fn cache_key_binds_content_rate_channel_layout_and_recipe() {
 
 #[test]
 fn warm_hit_opens_no_source_and_changed_content_misses() {
-    let Some(path) = sections() else {
+    let Some(source) = sections() else {
         return;
     };
+    // The hidden-source step below must not borrow the fixture every other test
+    // in this binary opens concurrently.
+    let scratch = tempfile::tempdir().unwrap();
+    let path = scratch.path().join("sections.wav");
+    std::fs::copy(&source, &path).unwrap();
     let asset = source_asset(&path, 1);
     let request = WaveformRequest::new(asset.clone()).unwrap();
     let (first, mut runner, mut cache, _dir) = run(&request);
@@ -540,7 +545,12 @@ fn corrupt_cache_is_failed_and_regenerates() {
         WaveformState::Failed(EditError::CacheCorrupt)
     ));
     let job = request.submit(&mut runner, &mut cache).unwrap();
-    assert_eq!(wait(&mut runner, job.id), JobState::Completed);
+    assert_eq!(
+        wait(&mut runner, job.id),
+        JobState::Completed,
+        "{:?}",
+        runner.snapshot(job.id).and_then(|snapshot| snapshot.error)
+    );
     let again = job.finish(&mut runner, &mut cache).unwrap().unwrap();
     assert_eq!(again, first);
     assert!(matches!(
