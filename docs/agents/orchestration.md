@@ -13,7 +13,7 @@ Rules for the coordinator and workers. Hosts and commands: `.scratch/process/orc
 
 ## Routing
 
-1. The coordinator splits each ticket into slices opencode can finish: one behaviour, its owner module and files, acceptance naming failure paths and boundary inputs, and the exact check commands. A slice that needs a new contract states the contract (types, errors, limits) in the spec.
+1. The coordinator splits each ticket into slices opencode can finish: one behaviour, its owner module and files, acceptance naming failure paths and boundary inputs, and the exact check commands. A slice that would exceed about 1,000 inserted lines (tests included) or two owner modules splits again by behaviour. Every spec repeats the [upgrade policy](../engineering/workflows.md#upgrade-policy) line. A slice that needs a new contract states the contract (types, errors, limits) in the spec.
 2. opencode implements every slice. A slice opencode fails twice goes to Sonnet in the same worktree.
 3. Slices of one ticket that touch the same files run in sequence; `Blocked by` orders them.
 
@@ -53,7 +53,7 @@ On every wake:
 
 1. The coordinator reviews every branch against its slice spec: reads the diff, runs the checks, tries the failure paths.
 2. One round. The coordinator fixes small findings on the branch itself and merges. A design-level finding goes back to the same worker as feedback; the worker fixes and the coordinator merges after checking the fix.
-3. Dual versions, legacy shims, deprecated paths and compatibility code are `changes`.
+3. Dual versions, legacy shims, deprecated paths, migrations and compatibility code are always findings, however small; the coordinator deletes them before merging.
 4. Never skip, mask or loosen a test to get green. A known failure cites its bug ticket.
 5. Merge: rebase on `origin/main`, run [checks](../engineering/verification.md#checks), push fast-forward to `main`. Local checks are the only gate. Whoever breaks `main` fixes or reverts it at once. Every commit on `main` builds.
 6. After merge: write `## Answer` with SHA and evidence, set `Status: resolved`, add one line to the milestone map.

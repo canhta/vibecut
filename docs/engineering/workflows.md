@@ -17,8 +17,8 @@ Copy only the files you need. First commit: the mechanical import, renamed to ou
 ## Upgrade policy
 
 - Use the latest stable Rust, crates, Actions, APIs and models; check current releases (`cargo info`, crates.io) for every dependency you add or touch.
-- One version of everything: replace in place and delete the superseded code.
-- Greenfield: a persisted-format change bumps its version, with no migration and no second reader. Projects of another schema refuse with a typed error; preferences and recovery journals of another version are dropped.
+- One version of everything: change code in place, update every caller in the same commit and delete what it supersedes. Never add a second function, wrapper, alias, feature flag, `_v2`/`old`/`legacy` name, deprecation path or fallback to old behaviour.
+- Greenfield: a persisted-format change bumps its version, with no migration and no second reader. Projects of another schema refuse with a typed error; preferences, caches and recovery journals of another version are dropped. There is no user data to preserve.
 - Backport only an unreleased upstream crash or security fix ([ADR 0002](../adr/0002-desktop-media-and-time.md)).
 
 ## FFmpeg provisioning
