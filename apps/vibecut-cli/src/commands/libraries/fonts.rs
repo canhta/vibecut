@@ -1,11 +1,11 @@
-//! Adapts explicit font requests to the engine owner.
+//! Adapts explicit font requests to the libraries owner.
 use crate::args::CliError;
 use crate::args::{one_utf8, utf8};
 use crate::output::Output;
 use crate::output::wait_for_job;
 use crate::session::Context;
-use engine::fonts::{FontLoadState, FontStore};
 use engine::jobs::{JobRunner, RunnerConfig, SystemClock};
+use libraries::fonts::{FontLoadState, FontStore};
 use serde_json::json;
 use std::ffi::OsString;
 use std::io;
@@ -104,7 +104,7 @@ fn fonts_download(context: &Context, args: Vec<OsString>) -> Result<Output, CliE
         .into_iter()
         .find(|entry| {
             entry.family.eq_ignore_ascii_case(family.trim())
-                && entry.origin == engine::fonts::FontOrigin::Google
+                && entry.origin == libraries::fonts::FontOrigin::Google
         })
         .ok_or(CliError::Rejected("not a downloadable catalog font"))?;
     let _ = writeln!(

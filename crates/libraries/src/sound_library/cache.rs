@@ -139,7 +139,7 @@ impl SoundLibrary {
         source: &str,
         temp: &Path,
         cancelled: &dyn Fn() -> bool,
-        fence: Option<&crate::jobs::JobContext>,
+        fence: Option<&engine::jobs::JobContext>,
     ) -> Sound<CachedSound> {
         if cancelled() {
             return Err(Error::Cancelled);

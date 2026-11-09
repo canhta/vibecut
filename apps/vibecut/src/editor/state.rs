@@ -446,7 +446,7 @@ pub struct Editor {
     pub(super) restoring_asset: Option<AssetId>,
     pub(super) thumbnail_textures: std::cell::RefCell<BTreeMap<AssetId, egui::TextureHandle>>,
     pub(super) thumbnail_root: Option<PathBuf>,
-    pub(super) sound_library: Option<Arc<engine::sounds::SoundLibrary>>,
+    pub(super) sound_library: Option<Arc<libraries::sounds::SoundLibrary>>,
     pub(super) sounds: Option<super::assets::sounds::Sounds>,
     pub(super) sound_media_dir: Option<PathBuf>,
     pub subtitles: Option<crate::subtitles::Subtitles>,

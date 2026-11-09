@@ -1,11 +1,11 @@
 //! Resolves font assets for project rendering.
-use crate::cache::{ArtifactKind, CacheKey, KeyInputs};
-use crate::jobs::ResourceClass;
-use crate::jobs::{
+use ai::transport::DownloadTransport;
+use engine::cache::{ArtifactKind, CacheKey, KeyInputs};
+use engine::jobs::ResourceClass;
+use engine::jobs::{
     CancelToken, JobBytes, JobContext, JobId, JobKind, JobRunner, JobSpec, JobStage,
 };
-use crate::{EditError, Result};
-use ai::transport::DownloadTransport;
+use engine::{EditError, Result};
 use sha2::{Digest, Sha256};
 use std::{
     collections::{BTreeMap, BTreeSet},
@@ -30,9 +30,8 @@ const ADMITTED_BY: &str = "p1-parity-28";
 /// Pin of the curated upstream tree; every URL and hash below belongs to this commit.
 const GOOGLE_FONTS_COMMIT: &str = "eb20e9cf19d97cf579fa3867d729d4222d6c59e1";
 
-pub use crate::session::wire::{FontEntry, FontLoad, FontLoadState, FontOrigin, FontState};
-
-pub use crate::FontError;
+pub use engine::FontError;
+pub use engine::control::{FontEntry, FontLoad, FontLoadState, FontOrigin, FontState};
 
 /// A face found by a scan of installed fonts.
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]

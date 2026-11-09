@@ -2681,8 +2681,8 @@ fn assets_scene(theme: Theme, scale: f32, state: &str) -> Result<AppHarness, Fai
             std::process::id(),
             NEXT_SOUNDS.fetch_add(1, Ordering::Relaxed)
         ));
-        let library = Arc::new(engine::sounds::SoundLibrary::open(&root)?);
-        library.save(&engine::sounds::SoundResult {
+        let library = Arc::new(libraries::sounds::SoundLibrary::open(&root)?);
+        library.save(&libraries::sounds::SoundResult {
             id: 1,
             name: "Night Drive".into(),
             author: "BCD Studio".into(),

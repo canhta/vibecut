@@ -15,10 +15,11 @@ The core runs headless. Only `apps/*` may depend on UI, GPU, native window or di
 | render | crates/render | CPU compositor, caption overlay, audio mix, export execution | time, media, project, captions, text, testkit |
 | ai | crates/ai | Provider interfaces, capabilities, consent and cost, AI adapters | time, media, captions, testkit |
 | engine | crates/engine | Session, commands, history, recovery scheduling, jobs, cache, adapter selection and per-shot analysis | time, media, project, captions, text, render, ai, testkit |
+| libraries | crates/libraries | External project assets: font catalog with verified download cache, licensed sound search, saved library and previews | engine, ai, media, project, text, time |
 | shorts | crates/shorts | Clip suggestion, boundary snapping and accepted-short batch export | time, media, project, captions, render, ai, engine, testkit |
 | clip-eval | crates/clip-eval | Fixed labelled clip-pipeline evaluation harness, metrics and local reports | time, media, captions, ai, engine, shorts |
-| vibecut-cli | apps/vibecut-cli | Headless adapter: CLI arguments, typed exit codes, dispatch, control-session lifetime, project lease composition, export admission, bounded batch job files, MCP tools and authenticated local transport | engine, media, project, render, time, shorts, testkit |
-| vibecut | apps/vibecut | Desktop app: UI, playback, model-manager presentation, wgpu compositor, preferences, app controls and inspection; composes the CLI-owned MCP adapter | time, engine, media, project, captions, text, render, ai, vibecut-cli, shorts, testkit |
+| vibecut-cli | apps/vibecut-cli | Headless adapter: CLI arguments, typed exit codes, dispatch, control-session lifetime, project lease composition, export admission, bounded batch job files, MCP tools and authenticated local transport | engine, media, project, render, time, shorts, libraries, testkit |
+| vibecut | apps/vibecut | Desktop app: UI, playback, model-manager presentation, wgpu compositor, preferences, app controls and inspection; composes the CLI-owned MCP adapter | time, engine, media, project, captions, text, render, ai, vibecut-cli, shorts, libraries, testkit |
 
 Only `media` links FFmpeg. Render's CPU compositor is the reference for preview and export; the app owns the optional wgpu adapter.
 
@@ -38,7 +39,7 @@ Definitions: [glossary](../../GLOSSARY.md). Contract details live in these owner
 | Session, registry, transactions, gestures, undo/redo | [engine](../../crates/engine/src/session/README.md#transactions-gestures-and-changes) |
 | Control schemas, revisions, receipts, resync events | [engine control](../../crates/engine/src/control/README.md#control-admission-revisions-and-receipts) |
 | Job runner, scheduling, retries, checkpoints, aggregate bytes | [engine jobs](../../crates/engine/src/runtime/README.md#background-jobs-and-byte-policy) |
-| Font catalog, system/bundled/Google fonts, download cache, `fonts.*` commands | [engine fonts](../../crates/engine/src/libraries/font_catalog/README.md#font-catalog); resolution and raster in [text](../../crates/text/src/fonts/README.md) |
+| Font catalog, system/bundled/Google fonts, download cache, `fonts.*` commands | [libraries fonts](../../crates/libraries/src/font_catalog/README.md#font-catalog); resolution and raster in [text](../../crates/text/src/fonts/README.md) |
 | Row tasks and native conversion worker allowance | [engine kernel execution](../../crates/engine/src/runtime/README.md#render-kernel-execution) |
 | Export execution | [render](../../crates/render/src/export/README.md#export-and-publication) |
 | Preview screen/canvas conversion, selectable item geometry, rotated handles | [render viewport](../../crates/render/src/scene/README.md#preview-viewport-geometry) |
@@ -49,7 +50,7 @@ Definitions: [glossary](../../GLOSSARY.md). Contract details live in these owner
 | Shot analysis and complete artifact caching | [engine analysis](../../crates/engine/src/analysis/shot_analysis/README.md#per-shot-analysis) |
 | Vision preparation / inference, face embeddings and shape-plan cache | [media](../../crates/media/src/vision_prep/README.md#vision-preparation) / [ai detectors](../../crates/ai/src/vision/README.md) |
 | Provider capabilities, consent, cost / text timing / isolated Gipformer | [ai](../../crates/ai/src/policy/README.md) / [recognition](../../crates/ai/src/assembly/README.md) / [local runner](../../crates/ai/src/gipformer/README.md) |
-| Sound search, saved local sounds, preview cache and attribution | [engine sounds](../../crates/engine/src/libraries/sound_library/README.md#sound-library) |
+| Sound search, saved local sounds, preview cache and attribution | [libraries sounds](../../crates/libraries/src/sound_library/README.md#sound-library) |
 | Translation windows and response validation / selection, retry, edit protection | [ai translation](../../crates/ai/src/translation/README.md) / [engine application](../../crates/engine/src/transcript/README.md#translation-selection-and-application) |
 | SpeechSynthesizer capabilities, requests, consent, PCM validation | [ai speech](../../crates/ai/src/speech/README.md) |
 

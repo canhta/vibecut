@@ -17,7 +17,7 @@ groups = ["substrate"]
 
 [[crate.layer]]
 name = "features"
-groups = ["subtitles", "analysis", "artifacts", "libraries"]
+groups = ["subtitles", "analysis", "artifacts"]
 
 [[crate.layer]]
 name = "control"
@@ -48,10 +48,6 @@ name = "artifacts"
 group = "artifacts"
 
 [[crate.module]]
-name = "libraries"
-group = "libraries"
-
-[[crate.module]]
 name = "providers"
 group = "substrate"
 
@@ -62,6 +58,23 @@ group = "substrate"
 [[crate.module]]
 name = "control"
 group = "control"
+
+# External asset libraries sit above engine; fonts and sounds are independent features.
+[[crate]]
+name = "libraries"
+path = "crates/libraries"
+
+[[crate.layer]]
+name = "features"
+groups = ["font_catalog", "sound_library"]
+
+[[crate.module]]
+name = "font_catalog"
+group = "font_catalog"
+
+[[crate.module]]
+name = "sound_library"
+group = "sound_library"
 
 # Shorts operations are independent; only the suggestion workflow composes them.
 [[crate]]

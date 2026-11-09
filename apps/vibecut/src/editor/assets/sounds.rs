@@ -1,6 +1,6 @@
 //! Owns the Sounds tab's saved library, provider search, cache jobs and preview.
 //!
-//! Provider, cache, persistence and command behaviour stay in `engine::sounds`;
+//! Provider, cache, persistence and command behaviour stay in `libraries::sounds`;
 //! this module only presents them and owns the app's device sink composition.
 
 use crate::{Error, Result};
@@ -8,10 +8,10 @@ use ai::transport::HttpTransport;
 use engine::{
     ByteBudget, EditError,
     jobs::{CancelToken, JobId, JobRunner, JobState, RunnerConfig, SystemClock},
-    sounds::{
-        CachedSound, Error as SoundError, SavedSound, SearchPage, SearchRequest, SearchSource,
-        SoundClient, SoundDownloads, SoundLibrary, SoundPreview, SoundResult, Token,
-    },
+};
+use libraries::sounds::{
+    CachedSound, Error as SoundError, SavedSound, SearchPage, SearchRequest, SearchSource,
+    SoundClient, SoundDownloads, SoundLibrary, SoundPreview, SoundResult, Token,
 };
 use std::{
     collections::BTreeSet,

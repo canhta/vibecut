@@ -9,11 +9,11 @@
 use ai::transport::{DownloadTransport, HttpStreamResponse};
 use engine::{
     ByteBudget, EditError,
-    fonts::{
-        FontEntry, FontError, FontLoadState, FontOrigin, FontState, FontStore, GoogleFamily,
-        GoogleFile, ScannedFace, curated_google_families, scan_directory,
-    },
     jobs::{Clock, JobId, JobRunner, JobState, RunnerConfig, SystemClock},
+};
+use libraries::fonts::{
+    FontEntry, FontError, FontLoadState, FontOrigin, FontState, FontStore, GoogleFamily,
+    GoogleFile, ScannedFace, curated_google_families, scan_directory,
 };
 use sha2::{Digest, Sha256};
 use std::{
@@ -28,8 +28,8 @@ use std::{
     time::Duration,
 };
 
-pub const FIXTURE: &[u8] = include_bytes!("../../fixtures/fonts/VibeCutFixtureSans-Regular.ttf");
-const SERIF: &[u8] = include_bytes!("../../../../../assets/fonts/NotoSerif-Regular.ttf");
+pub const FIXTURE: &[u8] = include_bytes!("../fixtures/fonts/VibeCutFixtureSans-Regular.ttf");
+const SERIF: &[u8] = include_bytes!("../../../../assets/fonts/NotoSerif-Regular.ttf");
 const LICENSE: &[u8] = b"SIL Open Font License 1.1 (test copy)\n";
 
 fn sha(bytes: &[u8]) -> String {

@@ -1,6 +1,7 @@
 //! Applies the Sounds tab's provider, cache and add workflows.
 use crate::editor::{Editor, Result};
-use engine::{CreatedId, sounds::SoundResult};
+use engine::CreatedId;
+use libraries::sounds::SoundResult;
 use std::path::PathBuf;
 use time::Tick;
 
@@ -9,7 +10,7 @@ impl Editor {
     /// project window; each editor owns only its search/preview presentation.
     pub fn set_sound_library(
         &mut self,
-        library: std::sync::Arc<engine::sounds::SoundLibrary>,
+        library: std::sync::Arc<libraries::sounds::SoundLibrary>,
     ) -> Result<()> {
         let sounds =
             super::super::sounds::Sounds::new(library.clone(), self.playback.budget().clone())?;
@@ -129,7 +130,7 @@ impl Editor {
             .ok_or(crate::Error::Invalid("sound cache"))?;
         let media = self.sound_media_path();
         let start = self.playback.position().unwrap_or(Tick::ZERO);
-        let outcome = engine::sounds::add_to_timeline(
+        let outcome = libraries::sounds::add_to_timeline(
             &mut self.session,
             sound,
             &cached,

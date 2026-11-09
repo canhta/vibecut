@@ -3,7 +3,7 @@
 
 use super::SoundError;
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
-use engine::sounds::{PreviewClip, PreviewSink};
+use libraries::sounds::{PreviewClip, PreviewSink};
 use media::{AudioDecoder, AudioResampler, AudioSampleFormat, PacketReader, StreamKind};
 use std::{
     io::Write,

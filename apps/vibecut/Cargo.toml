@@ -18,6 +18,7 @@ workspace = true
 
 [dependencies]
 shorts.workspace = true
+libraries.workspace = true
 vibecut-cli = { path = "../vibecut-cli" }
 pollster = "1.0.1"
 

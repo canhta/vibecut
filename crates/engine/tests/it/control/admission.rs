@@ -31,41 +31,12 @@ impl Policy for Deny {
         Err(EditError::Permission)
     }
 }
-thread_local! {
-    /// The font store lent to requests on this test thread: each seed session gets a fresh one.
-    static FONTS: std::cell::Cell<Option<&'static engine::control::FontAccess<'static>>> =
-        const { std::cell::Cell::new(None) };
-}
-fn with_fonts(session: Session) -> Session {
-    let store: &'static engine::fonts::FontStore =
-        Box::leak(Box::new(crate::libraries::example_store()));
-    let list: &'static dyn Fn(Option<&str>) -> engine::Result<Vec<engine::fonts::FontEntry>> =
-        Box::leak(Box::new(|q: Option<&str>| store.list(q)));
-    let load: &'static dyn Fn(&str) -> engine::Result<engine::fonts::FontLoad> =
-        Box::leak(Box::new(|f: &str| store.load(f)));
-    let download: &'static dyn Fn(
-        &mut JobRunner,
-        &str,
-        bool,
-    ) -> engine::Result<engine::jobs::JobId> = Box::leak(Box::new(
-        |runner: &mut JobRunner, family: &str, accepted: bool| {
-            store
-                .submit_download(runner, family, accepted)
-                .map(|(job, _)| job)
-        },
-    ));
-    let access: &'static engine::control::FontAccess<'static> = Box::leak(Box::new(
-        engine::control::FontAccess::new(list, load, download),
-    ));
-    FONTS.set(Some(access));
-    session
-}
 fn caller(policy: &dyn Policy) -> Caller<'_> {
     Caller {
         principal: "test",
         external: true,
         policy,
-        fonts: FONTS.get(),
+        fonts: None,
     }
 }
 fn runner() -> JobRunner {
@@ -376,7 +347,7 @@ fn seed() -> Session {
         note: "Mark".into(),
         color: Color([255, 255, 0, 255]),
     });
-    with_fonts(Session::new(Project::new(data).unwrap(), 10).unwrap())
+    Session::new(Project::new(data).unwrap(), 10).unwrap()
 }
 /// The seed plus one audible clip (track 5, item 5) for audio registry examples.
 fn with_audio(seed: &Session) -> Session {
@@ -428,7 +399,7 @@ fn with_audio(seed: &Session) -> Session {
             }),
         }],
     });
-    with_fonts(Session::new(Project::new(data).unwrap(), 10).unwrap())
+    Session::new(Project::new(data).unwrap(), 10).unwrap()
 }
 /// The seed whose item 5 is a video with an audible source asset.
 fn with_source_audio(seed: &Session) -> Session {
@@ -473,7 +444,7 @@ fn with_source_audio(seed: &Session) -> Session {
             }
         }
     }
-    with_fonts(Session::new(Project::new(data).unwrap(), 10).unwrap())
+    Session::new(Project::new(data).unwrap(), 10).unwrap()
 }
 fn replace_paths(v: &mut Value, root: &std::path::Path) {
     match v {
@@ -524,6 +495,40 @@ fn submit(r: &mut JobRunner) -> engine::jobs::JobId {
     )
     .unwrap()
     .0
+}
+fn fake_fonts_list(_: Option<&str>) -> engine::Result<Vec<engine::control::FontEntry>> {
+    Ok(vec![engine::control::FontEntry {
+        family: "Inter".into(),
+        origin: engine::control::FontOrigin::Bundled,
+        styles: vec!["Regular".into()],
+        state: engine::control::FontState::Available,
+        license: Some("OFL-1.1".into()),
+        source: None,
+        download_bytes: None,
+    }])
+}
+fn fake_fonts_load(family: &str) -> engine::Result<engine::control::FontLoad> {
+    Ok(engine::control::FontLoad {
+        family: family.into(),
+        state: engine::control::FontLoadState::Loaded,
+        origin: Some(engine::control::FontOrigin::Bundled),
+        effective_family: family.into(),
+        styles: vec!["Regular".into()],
+    })
+}
+fn fake_fonts_download(
+    runner: &mut JobRunner,
+    _: &str,
+    accepted: bool,
+) -> engine::Result<engine::jobs::JobId> {
+    if !accepted {
+        return Err(engine::EditError::ConsentRequired);
+    }
+    Ok(submit(runner))
+}
+/// Synthetic capability for registry dispatch; real-store coverage lives in `libraries`.
+fn font_access() -> engine::control::FontAccess<'static> {
+    engine::control::FontAccess::new(&fake_fonts_list, &fake_fonts_load, &fake_fonts_download)
 }
 fn finish(r: &mut JobRunner, id: engine::jobs::JobId) {
     for _ in 0..10000 {
@@ -631,6 +636,7 @@ fn registry_examples_validate_and_dispatch_without_an_id_table() {
             _ => {}
         }
         let req = request(&s, spec.id, params, "example");
+        let fonts = font_access();
         let result = s
             .control_request(
                 req,
@@ -638,7 +644,7 @@ fn registry_examples_validate_and_dispatch_without_an_id_table() {
                     principal: "ui",
                     external: false,
                     policy: &Allow,
-                    fonts: FONTS.get(),
+                    fonts: Some(&fonts),
                 },
                 &mut r,
             )
@@ -2162,115 +2168,6 @@ fn lifecycle_save_uses_receipts_and_retries_after_publication_failure() {
 }
 
 #[test]
-fn font_commands_return_typed_results_and_refuse_without_a_store_or_acceptance() {
-    let mut s = seed();
-    let mut r = runner();
-    let revision = s.revision();
-    let ControlResult::Fonts { entries } = ok(run(
-        &mut s,
-        &mut r,
-        "fonts.list",
-        json!({"query":"lob"}),
-        "a",
-    )) else {
-        panic!("fonts.list result");
-    };
-    assert_eq!(entries.len(), 1);
-    assert_eq!(entries[0].family, "Lobster");
-    assert_eq!(entries[0].state, engine::fonts::FontState::NotDownloaded);
-    // A null or omitted query lists every family.
-    for params in [json!({}), json!({"query":null})] {
-        let ControlResult::Fonts { entries } = ok(run(&mut s, &mut r, "fonts.list", params, "b"))
-        else {
-            panic!("fonts.list result");
-        };
-        assert!(entries.iter().any(|e| e.family == "Inter"));
-    }
-    let ControlResult::Font { font } = ok(run(
-        &mut s,
-        &mut r,
-        "fonts.load",
-        json!({"family":"Lobster"}),
-        "c",
-    )) else {
-        panic!("fonts.load result");
-    };
-    assert_eq!(font.state, engine::fonts::FontLoadState::NotDownloaded);
-    assert_eq!(font.effective_family, "Inter");
-
-    // Download needs the explicit acknowledgement and a catalog family.
-    error(
-        run(
-            &mut s,
-            &mut r,
-            "fonts.download",
-            json!({"family":"Lobster","accept_license":false}),
-            "d",
-        ),
-        ErrorCode::Permission,
-    );
-    error(
-        run(
-            &mut s,
-            &mut r,
-            "fonts.download",
-            json!({"family":"Inter","accept_license":true}),
-            "e",
-        ),
-        ErrorCode::Refused,
-    );
-    let ControlResult::JobAccepted { job, paths, .. } = ok(run(
-        &mut s,
-        &mut r,
-        "fonts.download",
-        json!({"family":"Lobster","accept_license":true}),
-        "f",
-    )) else {
-        panic!("fonts.download result");
-    };
-    assert!(paths.is_empty());
-    finish(&mut r, job);
-    assert_eq!(r.snapshot(job).unwrap().state, JobState::Completed);
-    let ControlResult::Font { font } = ok(run(
-        &mut s,
-        &mut r,
-        "fonts.load",
-        json!({"family":"lobster"}),
-        "g",
-    )) else {
-        panic!("fonts.load result");
-    };
-    assert_eq!(font.state, engine::fonts::FontLoadState::Loaded);
-
-    // A session without a store refuses every font command; none is a project edit.
-    let mut bare = session();
-    for (id, params) in [
-        ("fonts.list", json!({})),
-        ("fonts.load", json!({"family":"Inter"})),
-        (
-            "fonts.download",
-            json!({"family":"Lobster","accept_license":true}),
-        ),
-    ] {
-        let req = request(&bare, id, params, "h");
-        let no_store = Caller {
-            fonts: None,
-            ..caller(&Allow)
-        };
-        error(
-            bare.control_request(req, no_store, &mut r).unwrap(),
-            ErrorCode::Refused,
-        );
-    }
-    assert_eq!(
-        s.revision(),
-        revision,
-        "font commands are not project edits"
-    );
-    assert!(!s.can_undo());
-}
-
-#[test]
 fn lent_font_operations_run_only_after_admission_and_never_on_replay() {
     use std::cell::Cell;
     let calls = Cell::new(0u32);
@@ -2279,7 +2176,7 @@ fn lent_font_operations_run_only_after_admission_and_never_on_replay() {
         calls.set(calls.get() + 1);
         Ok(Vec::new())
     };
-    let load = |_: &str| -> engine::Result<engine::fonts::FontLoad> {
+    let load = |_: &str| -> engine::Result<engine::control::FontLoad> {
         calls.set(calls.get() + 1);
         Err(engine::FontError::Catalog.into())
     };

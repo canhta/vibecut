@@ -20,7 +20,7 @@ pub enum CliError {
     #[error(transparent)]
     Time(#[from] time::TimeError),
     #[error(transparent)]
-    Sounds(#[from] engine::sounds::Error),
+    Sounds(#[from] libraries::sounds::Error),
     #[error("{0}")]
     Job(Arc<EditError>),
     #[error("{0}")]
@@ -124,22 +124,22 @@ fn edit_code(error: &EditError) -> (&'static str, u8) {
     }
 }
 
-fn sound_code(error: &engine::sounds::Error) -> (&'static str, u8) {
+fn sound_code(error: &libraries::sounds::Error) -> (&'static str, u8) {
     match error {
-        engine::sounds::Error::NoCredentials => ("setup", 4),
-        engine::sounds::Error::Auth => ("auth", 4),
-        engine::sounds::Error::Quota => ("quota", 4),
-        engine::sounds::Error::RateLimit { .. } => ("rate_limit", 4),
-        engine::sounds::Error::Network | engine::sounds::Error::Server => ("network", 7),
-        engine::sounds::Error::NoAudioDevice => ("audio_device", 4),
-        engine::sounds::Error::Cancelled => ("cancelled", 7),
-        engine::sounds::Error::Limit => ("limit", 2),
-        engine::sounds::Error::NotCached
-        | engine::sounds::Error::InvalidResponse
-        | engine::sounds::Error::LibraryCorrupt
-        | engine::sounds::Error::Invalid(_) => ("sounds", 5),
-        engine::sounds::Error::Io(_) | engine::sounds::Error::Project(_) => ("io", 7),
-        engine::sounds::Error::Media(_) => ("media", 6),
+        libraries::sounds::Error::NoCredentials => ("setup", 4),
+        libraries::sounds::Error::Auth => ("auth", 4),
+        libraries::sounds::Error::Quota => ("quota", 4),
+        libraries::sounds::Error::RateLimit { .. } => ("rate_limit", 4),
+        libraries::sounds::Error::Network | libraries::sounds::Error::Server => ("network", 7),
+        libraries::sounds::Error::NoAudioDevice => ("audio_device", 4),
+        libraries::sounds::Error::Cancelled => ("cancelled", 7),
+        libraries::sounds::Error::Limit => ("limit", 2),
+        libraries::sounds::Error::NotCached
+        | libraries::sounds::Error::InvalidResponse
+        | libraries::sounds::Error::LibraryCorrupt
+        | libraries::sounds::Error::Invalid(_) => ("sounds", 5),
+        libraries::sounds::Error::Io(_) | libraries::sounds::Error::Project(_) => ("io", 7),
+        libraries::sounds::Error::Media(_) => ("media", 6),
     }
 }
 

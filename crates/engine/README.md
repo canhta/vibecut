@@ -28,9 +28,6 @@ the output grant authorizes every generated path. Control API version 2 requires
 | `analysis/` | Measures source media. | [Analysis](src/analysis/README.md) |
 | `analysis/shot_analysis/` | Produces conservative source-time shot analysis. | [Per-shot analysis](src/analysis/shot_analysis/README.md) |
 | `artifacts/` | Produces derived project images. | [Artifacts](src/artifacts/README.md) |
-| `libraries/` | Provides external project assets. | [Libraries](src/libraries/README.md) |
-| `libraries/font_catalog/` | Resolves font assets for project rendering. | [Font catalog](src/libraries/font_catalog/README.md) |
-| `libraries/sound_library/` | Provides licensed sound assets for projects. | [Sound library](src/libraries/sound_library/README.md) |
 | `providers/` | Resolves explicit AI provider choices, their consent and the local models. | [Providers](src/providers/README.md) |
 | `control/` | Admits transport-neutral commands; the top layer, the only one that calls every feature. | [Control](src/control/README.md) |
 

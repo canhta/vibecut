@@ -1,10 +1,10 @@
 //! Provides licensed sound assets for projects.
-use crate::cache::{ArtifactKind, CacheKey, KeyInputs};
-use crate::jobs::{
+use ai::transport::{DownloadTransport, HttpRequest, HttpTransport, download_redirect};
+use engine::cache::{ArtifactKind, CacheKey, KeyInputs};
+use engine::jobs::{
     CancelToken, JobBytes, JobId, JobKind, JobRunner, JobSpec, JobStage, ResourceClass,
 };
-use crate::{EditError, Placement, Result, Session};
-use ai::transport::{DownloadTransport, HttpRequest, HttpTransport, download_redirect};
+use engine::{EditError, Placement, Result, Session};
 use media::{AssetData, ContentHash, SourceAsset, SourceProbe};
 use project::LibrarySound;
 use serde::{Deserialize, Serialize};
@@ -39,7 +39,7 @@ const MAX_TEXT: usize = 4096;
 const LIBRARY_FORMAT: &str = "vibecut.sound-library";
 const LIBRARY_VERSION: u32 = 1;
 
-pub use crate::SoundError as Error;
+pub use engine::SoundError as Error;
 pub type Sound<T> = std::result::Result<T, Error>;
 
 /// User-supplied credential held only for this process. Debug is always redacted.

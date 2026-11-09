@@ -40,7 +40,7 @@ impl SoundDownloads {
         &self,
         runner: &mut JobRunner,
         source: &str,
-    ) -> crate::Result<(JobId, CancelToken)> {
+    ) -> engine::Result<(JobId, CancelToken)> {
         if !url(source) {
             return Err(Error::Invalid("sound URL").into());
         }
@@ -104,7 +104,7 @@ impl SoundDownloads {
         &self,
         source: &str,
         cancelled: &dyn Fn() -> bool,
-        fence: Option<&crate::jobs::JobContext>,
+        fence: Option<&engine::jobs::JobContext>,
         progress: &dyn Fn(u64, Option<u64>),
     ) -> Sound<CachedSound> {
         if !url(source) {

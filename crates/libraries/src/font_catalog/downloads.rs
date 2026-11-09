@@ -197,7 +197,7 @@ pub(super) fn fetch(
     total: u64,
 ) -> Result<()> {
     let headers = [("Accept-Encoding".to_owned(), "identity".to_owned())];
-    let reply = crate::transfer::response(http, url, &headers, ctx)?;
+    let reply = engine::transfer::response(http, url, &headers, ctx)?;
     if reply.status != 200 {
         return Err(FontError::Response.into());
     }

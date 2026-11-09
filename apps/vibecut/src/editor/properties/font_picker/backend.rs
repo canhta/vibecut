@@ -23,16 +23,16 @@ pub trait Backend: Send {
 /// Production adapter: the shared engine font store behind the registered
 /// `fonts.list`, `fonts.load`, `fonts.download` and `job_cancel` commands.
 pub struct EngineBackend {
-    store: Arc<engine::fonts::FontStore>,
+    store: Arc<libraries::fonts::FontStore>,
     runner: JobRunner,
     sequence: u64,
 }
 impl EngineBackend {
     pub fn native() -> crate::Result<Self> {
-        let store = Arc::new(engine::fonts::FontStore::native()?);
+        let store = Arc::new(libraries::fonts::FontStore::native()?);
         Self::with_store(store)
     }
-    pub fn with_store(store: Arc<engine::fonts::FontStore>) -> crate::Result<Self> {
+    pub fn with_store(store: Arc<libraries::fonts::FontStore>) -> crate::Result<Self> {
         let runner = JobRunner::new(
             RunnerConfig {
                 concurrency: [1, 1, 1],

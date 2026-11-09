@@ -1,0 +1,25 @@
+[package]
+name = "libraries"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish = false
+
+[lints]
+workspace = true
+
+[dependencies]
+engine.workspace = true
+ai = { workspace = true, default-features = false }
+media.workspace = true
+project.workspace = true
+text.workspace = true
+time.workspace = true
+blake3.workspace = true
+fontdb = { version = "0.24.0", default-features = false, features = ["std", "fs", "fontconfig"] }
+serde = { workspace = true, features = ["derive"] }
+serde_json.workspace = true
+sha2.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true

@@ -13,6 +13,7 @@ repository = "https://github.com/canhta/vibecut"
 ai = { path = "crates/ai" }
 captions = { path = "crates/captions" }
 engine = { path = "crates/engine" }
+libraries = { path = "crates/libraries" }
 media = { path = "crates/media" }
 project = { path = "crates/project" }
 render = { path = "crates/render" }

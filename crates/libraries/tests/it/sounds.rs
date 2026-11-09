@@ -2,11 +2,11 @@
 use ai::transport::{
     DownloadTransport, HttpRequest, HttpResponse, HttpStreamResponse, HttpTransport,
 };
-use engine::sounds::{
+use engine::{Command, EditError, Placement, Session};
+use libraries::sounds::{
     PreviewClip, PreviewSink, SearchRequest, SoundClient, SoundDownloads, SoundLibrary,
     SoundPreview, SoundResult, Token, add_saved,
 };
-use engine::{Command, EditError, Placement, Session};
 use media::ContentHash;
 use project::{AudioSource, ItemParams, Project, ProjectId};
 use std::{
@@ -161,7 +161,7 @@ fn hostile_search_responses_and_provider_errors_are_typed() {
     let client = SoundClient::new(Token::new("k").unwrap(), transport);
     assert!(matches!(
         client.search(&request()),
-        Err(engine::sounds::Error::Limit)
+        Err(libraries::sounds::Error::Limit)
     ));
 
     for (status, headers, expected) in [
@@ -182,15 +182,15 @@ fn hostile_search_responses_and_provider_errors_are_typed() {
         let client = SoundClient::new(Token::new("k").unwrap(), transport);
         let error = client.search(&request()).unwrap_err();
         match expected {
-            "Auth" => assert!(matches!(error, engine::sounds::Error::Auth)),
-            "Quota" => assert!(matches!(error, engine::sounds::Error::Quota)),
+            "Auth" => assert!(matches!(error, libraries::sounds::Error::Auth)),
+            "Quota" => assert!(matches!(error, libraries::sounds::Error::Quota)),
             "RateLimit" => assert!(matches!(
                 error,
-                engine::sounds::Error::RateLimit {
+                libraries::sounds::Error::RateLimit {
                     retry_after_seconds: Some(7)
                 }
             )),
-            "Server" => assert!(matches!(error, engine::sounds::Error::Server)),
+            "Server" => assert!(matches!(error, libraries::sounds::Error::Server)),
             _ => panic!("unexpected error variant"),
         }
     }
@@ -203,14 +203,14 @@ fn malformed_result_urls_and_bad_pages_are_refused() {
     let (bad_client, _) = client(page(vec![raw], false));
     assert!(matches!(
         bad_client.search(&request()),
-        Err(engine::sounds::Error::InvalidResponse)
+        Err(libraries::sounds::Error::InvalidResponse)
     ));
     let (client, _) = client(page(vec![result(1, "Creative Commons 0")], false));
     let mut bad = request();
     bad.page_size = 151;
     assert!(matches!(
         client.search(&bad),
-        Err(engine::sounds::Error::Invalid("search request"))
+        Err(libraries::sounds::Error::Invalid("search request"))
     ));
 }
 
@@ -398,7 +398,7 @@ fn saved_library_round_trips_offline_and_clear_all_removes_cache() {
         let library = SoundLibrary::open(root.path()).unwrap();
         assert!(matches!(
             SoundLibrary::open(root.path()),
-            Err(engine::sounds::Error::Project(project::Error::Busy))
+            Err(libraries::sounds::Error::Project(project::Error::Busy))
         ));
         library.save(&sound).unwrap();
         assert!(library.is_saved(7).unwrap());
@@ -411,7 +411,7 @@ fn saved_library_round_trips_offline_and_clear_all_removes_cache() {
             })
             .unwrap();
         assert_eq!(page.results.len(), 1);
-        assert_eq!(page.source, engine::sounds::SearchSource::Local);
+        assert_eq!(page.source, libraries::sounds::SearchSource::Local);
         assert!(
             !root
                 .path()
@@ -535,7 +535,7 @@ fn download_is_bounded_cancellable_and_publishes_only_complete_audio() {
     let downloads = SoundDownloads::new(library.clone(), Arc::new(too_large));
     assert!(matches!(
         downloads.download("https://cdn.example/big.mp3", &|| false, &|_, _| {}),
-        Err(engine::sounds::Error::Limit)
+        Err(libraries::sounds::Error::Limit)
     ));
 
     for at_eof in [false, true] {
@@ -553,7 +553,7 @@ fn download_is_bounded_cancellable_and_publishes_only_complete_audio() {
                     &|| cancel.load(Ordering::Acquire),
                     &|_, _| {}
                 ),
-                Err(engine::sounds::Error::Cancelled)
+                Err(libraries::sounds::Error::Cancelled)
             ),
             "cancel at EOF: {at_eof}"
         );
@@ -572,7 +572,7 @@ fn download_is_bounded_cancellable_and_publishes_only_complete_audio() {
     let downloads = SoundDownloads::new(library, Arc::new(missing));
     assert!(matches!(
         downloads.download("https://cdn.example/missing.mp3", &|| false, &|_, _| {}),
-        Err(engine::sounds::Error::InvalidResponse)
+        Err(libraries::sounds::Error::InvalidResponse)
     ));
 }
 
@@ -582,9 +582,9 @@ struct Sink {
     device: bool,
 }
 impl PreviewSink for Sink {
-    fn play(&self, clip: PreviewClip<'_>) -> engine::sounds::Sound<()> {
+    fn play(&self, clip: PreviewClip<'_>) -> libraries::sounds::Sound<()> {
         if !self.device {
-            return Err(engine::sounds::Error::NoAudioDevice);
+            return Err(libraries::sounds::Error::NoAudioDevice);
         }
         assert!(!clip.bytes.is_empty());
         assert_eq!(clip.audio_url, "https://cdn.example/preview.mp3");
@@ -592,7 +592,7 @@ impl PreviewSink for Sink {
         self.plays.fetch_add(1, Ordering::Relaxed);
         Ok(())
     }
-    fn stop(&self) -> engine::sounds::Sound<()> {
+    fn stop(&self) -> libraries::sounds::Sound<()> {
         self.stops.fetch_add(1, Ordering::Relaxed);
         Ok(())
     }
@@ -630,11 +630,11 @@ fn preview_play_stop_and_missing_device_are_typed() {
     let preview = SoundPreview::new(downloads, no_device);
     assert!(matches!(
         preview.play(&sound),
-        Err(engine::sounds::Error::NoAudioDevice)
+        Err(libraries::sounds::Error::NoAudioDevice)
     ));
     assert!(matches!(
         preview.play(&sound),
-        Err(engine::sounds::Error::NoAudioDevice)
+        Err(libraries::sounds::Error::NoAudioDevice)
     ));
 }
 #[test]
@@ -782,7 +782,7 @@ fn adding_an_uncached_sound_is_typed_and_changes_nothing() {
             Placement::Auto,
             Tick::ZERO
         ),
-        Err(EditError::Sounds(engine::sounds::Error::NotCached))
+        Err(EditError::Sounds(libraries::sounds::Error::NotCached))
     ));
     assert!(session.project().data().assets.is_empty());
     assert_eq!(session.history_len(), (0, 0));
@@ -794,7 +794,7 @@ fn library_refuses_symlinked_or_oversized_files() {
     std::fs::write(&path, vec![b'x'; (1 << 20) + 1]).unwrap();
     assert!(matches!(
         SoundLibrary::open(root.path()),
-        Err(engine::sounds::Error::LibraryCorrupt)
+        Err(libraries::sounds::Error::LibraryCorrupt)
     ));
 }
 
@@ -803,17 +803,17 @@ struct BlockingSink {
     stopped: AtomicUsize,
 }
 impl PreviewSink for BlockingSink {
-    fn play(&self, clip: PreviewClip<'_>) -> engine::sounds::Sound<()> {
+    fn play(&self, clip: PreviewClip<'_>) -> libraries::sounds::Sound<()> {
         self.started.store(true, Ordering::Release);
         for _ in 0..10_000_000 {
             if (clip.cancelled)() {
-                return Err(engine::sounds::Error::Cancelled);
+                return Err(libraries::sounds::Error::Cancelled);
             }
             std::hint::spin_loop();
         }
-        Err(engine::sounds::Error::Cancelled)
+        Err(libraries::sounds::Error::Cancelled)
     }
-    fn stop(&self) -> engine::sounds::Sound<()> {
+    fn stop(&self) -> libraries::sounds::Sound<()> {
         self.stopped.fetch_add(1, Ordering::Relaxed);
         Ok(())
     }
@@ -845,7 +845,7 @@ fn preview_stop_cancels_playback_already_running_on_the_device() {
     preview.stop().unwrap();
     assert!(matches!(
         thread.join().unwrap(),
-        Err(engine::sounds::Error::Cancelled)
+        Err(libraries::sounds::Error::Cancelled)
     ));
     assert_eq!(sink.stopped.load(Ordering::Relaxed), 1);
 }

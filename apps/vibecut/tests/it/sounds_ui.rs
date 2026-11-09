@@ -11,12 +11,10 @@ use egui_kittest::{
     Harness,
     kittest::{By, Queryable},
 };
-use engine::{
-    ByteBudget, Session,
-    sounds::{
-        Error as SoundError, PreviewClip, PreviewSink, SoundDownloads, SoundLibrary, SoundPreview,
-        SoundResult, Token,
-    },
+use engine::{ByteBudget, Session};
+use libraries::sounds::{
+    Error as SoundError, PreviewClip, PreviewSink, SoundDownloads, SoundLibrary, SoundPreview,
+    SoundResult, Token,
 };
 use project::{Project, ProjectId};
 use std::{
@@ -699,7 +697,7 @@ fn no_token_uses_the_local_library_and_the_saved_tab_works_offline() {
             .is_some_and(|sounds| !sounds.searching && sounds.results.len() == 1)
     });
     let sounds = harness.state().inspect().unwrap().sounds.unwrap();
-    assert_eq!(sounds.source, engine::sounds::SearchSource::Local);
+    assert_eq!(sounds.source, libraries::sounds::SearchSource::Local);
     assert_eq!(sounds.results[0].attribution, sound.attribution);
     assert_eq!(sounds.results[0].licence, sound.licence);
     click(&mut harness, "sounds.tab.saved");

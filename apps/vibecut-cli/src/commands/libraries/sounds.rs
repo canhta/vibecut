@@ -1,4 +1,4 @@
-//! Adapts sound-library requests to the engine owner.
+//! Adapts sound-library requests to the libraries owner.
 use crate::args::CliError;
 use crate::args::{parse_i64, parse_u32, parse_u64, utf8};
 use crate::output::tick_json;
@@ -33,7 +33,7 @@ pub(crate) fn run(_context: &Context, args: Vec<OsString>) -> Result<Output, Cli
     }
 }
 fn sounds_search(args: Vec<OsString>) -> Result<Output, CliError> {
-    use engine::sounds::{SearchRequest, SearchSource, SoundClient, Token};
+    use libraries::sounds::{SearchRequest, SearchSource, SoundClient, Token};
     let mut args = args.into_iter();
     let mut library = None;
     let mut page = 1u32;
@@ -66,7 +66,7 @@ fn sounds_search(args: Vec<OsString>) -> Result<Output, CliError> {
     }
     let library_path =
         library.ok_or_else(|| CliError::Usage("sounds search requires --library <dir>".into()))?;
-    let library = engine::sounds::SoundLibrary::open(&library_path)?;
+    let library = libraries::sounds::SoundLibrary::open(&library_path)?;
     let request = SearchRequest {
         query: query.join(" "),
         page,
@@ -123,7 +123,7 @@ fn sounds_search(args: Vec<OsString>) -> Result<Output, CliError> {
     Ok(Output::new(value, human.trim_end().to_owned(), false, 0))
 }
 fn sounds_save(args: Vec<OsString>) -> Result<Output, CliError> {
-    use engine::sounds::{SoundLibrary, SoundResult};
+    use libraries::sounds::{SoundLibrary, SoundResult};
     let mut args = args.into_iter();
     let library = PathBuf::from(args.next().ok_or_else(|| {
         CliError::Usage("usage: vibecut-cli sounds save <library> <sound-json>".into())
@@ -156,7 +156,7 @@ fn sounds_save(args: Vec<OsString>) -> Result<Output, CliError> {
     ))
 }
 fn sounds_unsave(args: Vec<OsString>) -> Result<Output, CliError> {
-    use engine::sounds::SoundLibrary;
+    use libraries::sounds::SoundLibrary;
     let mut args = args.into_iter();
     let library = PathBuf::from(args.next().ok_or_else(|| {
         CliError::Usage("usage: vibecut-cli sounds unsave <library> <id>".into())
@@ -180,7 +180,7 @@ fn sounds_unsave(args: Vec<OsString>) -> Result<Output, CliError> {
     ))
 }
 fn sounds_add(args: Vec<OsString>) -> Result<Output, CliError> {
-    use engine::sounds::{SoundLibrary, add_saved};
+    use libraries::sounds::{SoundLibrary, add_saved};
     let mut args = args.into_iter();
     let project = PathBuf::from(args.next().ok_or_else(|| {
         CliError::Usage(

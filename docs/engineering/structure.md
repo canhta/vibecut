@@ -27,10 +27,14 @@ Lowest first; imports go down only.
 |---|---|
 | Kernel | `session/`: session, command registry, history, control wire contract; the only mutation path |
 | Substrate | `runtime/` (jobs, budget, cache, publication), `store/` (library, recovery), `providers/` (consent, models), `transcript/` (ASR and cue translation) |
-| Features | `subtitles/`, `analysis/`, `artifacts/`, `libraries/` |
+| Features | `subtitles/`, `analysis/`, `artifacts/` |
 | Control | `control/`: admission and dispatch; may call every feature |
 
 Features register commands through the registry; the kernel never names a feature. The layer table is enforced from `xtask/modules.toml`.
+
+## Libraries (`crates/libraries/src`)
+
+`font_catalog/` and `sound_library/` are independent features exposed as `fonts` and `sounds`; each owns its remote transport, local cache and admission limits. Imports point down to `engine` and the domain crates.
 
 ## Desktop app (`apps/vibecut/src`)
 
@@ -52,7 +56,7 @@ An editor area exposes its `State` and a `show(...)` returning actions; areas ne
 
 ## Modules and crates
 
-Start as a folder; promote to a crate when it gains a second consumer, an independent seam, heavy dependencies or keeps breaking its import direction. Next candidates: `subtitles`, `analysis` and `libraries` above `engine`, and the edit algebra out of `session/edit`. Why: [ADR 0004](../adr/0004-module-structure.md).
+Start as a folder; promote to a crate when it gains a second consumer, an independent seam, heavy dependencies or keeps breaking its import direction. Next candidates: `subtitles` and `analysis` above `engine`, and the edit algebra out of `session/edit`. Why: [ADR 0004](../adr/0004-module-structure.md).
 
 ## Enforcement
 

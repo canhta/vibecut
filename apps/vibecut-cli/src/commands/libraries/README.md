@@ -1,6 +1,6 @@
 # Library commands
 
-`sounds` is an adapter over the [engine sound library](../../../../../crates/engine/src/libraries/sound_library/README.md#sound-library).
+`sounds` is an adapter over the [libraries sound library](../../../../../crates/libraries/src/sound_library/README.md#sound-library).
 
 - `sounds search --library <dir> [--page N] [--page-size N] [--all-licences] [query]` uses `FREESOUND_API_KEY` when present, otherwise searches only saved local sounds. Results carry author, licence, attribution and URLs.
 - `sounds save <library> <sound-json>` and `sounds unsave <library> <id>` manage the durable local library.

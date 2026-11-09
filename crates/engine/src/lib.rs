@@ -36,9 +36,6 @@ pub(crate) use artifacts::control_preview;
 pub use artifacts::effect_thumbnails;
 pub use artifacts::snapshot;
 pub use artifacts::thumbnails;
-mod libraries;
-pub use libraries::fonts;
-pub use libraries::sounds;
 pub mod providers;
 pub use ai::clips::{
     ClipDropReason, ClipProposal, ClipRole, ClipSettings, ClipSource, ClipSourceSegment,

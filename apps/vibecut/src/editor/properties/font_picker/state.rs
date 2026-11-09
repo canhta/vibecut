@@ -101,8 +101,8 @@ impl State {
             .filter(|entry| match tab {
                 FontTab::All => match self.category {
                     Category::All => true,
-                    Category::System => entry.origin == engine::fonts::FontOrigin::System,
-                    Category::Google => entry.origin == engine::fonts::FontOrigin::Google,
+                    Category::System => entry.origin == libraries::fonts::FontOrigin::System,
+                    Category::Google => entry.origin == libraries::fonts::FontOrigin::Google,
                     Category::Custom => false,
                 },
                 FontTab::Favorites => preferences

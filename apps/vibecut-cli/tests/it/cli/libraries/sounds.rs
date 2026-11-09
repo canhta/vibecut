@@ -46,7 +46,7 @@ fn sounds_cli_saves_searches_and_adds_a_cached_sound_offline() {
     let json = sound_json(5, "https://cdn.example/5.mp3");
     let output = cli(&[os("sounds"), os("save"), library.as_os_str(), os(&json)]);
     assert_eq!(output.status.code(), Some(0), "{output:?}");
-    let library_handle = engine::sounds::SoundLibrary::open(&library).unwrap();
+    let library_handle = libraries::sounds::SoundLibrary::open(&library).unwrap();
     library_handle
         .store_cached("https://cdn.example/5.mp3", &wav_fixture())
         .unwrap();

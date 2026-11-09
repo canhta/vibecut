@@ -221,7 +221,7 @@ impl View<'_> {
     fn sound_row(
         &mut self,
         ui: &mut egui::Ui,
-        sound: &engine::sounds::SoundResult,
+        sound: &libraries::sounds::SoundResult,
         view: &SoundsView,
     ) {
         let width = (ui.clip_rect().right() - ui.cursor().min.x).max(48.0);

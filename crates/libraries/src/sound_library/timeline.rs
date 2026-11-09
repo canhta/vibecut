@@ -69,12 +69,12 @@ pub fn add_to_timeline(
     media_dir: &Path,
     placement: Placement,
     start: Tick,
-) -> Result<crate::Outcome> {
+) -> Result<engine::Outcome> {
     validate_result(sound)?;
     let id = next_asset_id(session)?;
     let (imported, created) = import_into_project(cached, media_dir)?;
     let result = imported.asset(id).and_then(|asset| {
-        session.apply(crate::Command::AddLibrarySound {
+        session.apply(engine::Command::AddLibrarySound {
             placement,
             start,
             asset,
@@ -94,7 +94,7 @@ pub fn add_saved(
     media_dir: &Path,
     placement: Placement,
     start: Tick,
-) -> Result<crate::Outcome> {
+) -> Result<engine::Outcome> {
     let sound = library
         .saved()?
         .into_iter()

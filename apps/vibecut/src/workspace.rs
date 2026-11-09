@@ -43,7 +43,7 @@ pub struct Workspace {
     /// lane memory is dropped only on proof the file is gone.
     lane_paths: BTreeMap<project::ProjectId, PathBuf>,
     lane_prune_key: Vec<project::ProjectId>,
-    sounds: Option<Arc<engine::sounds::SoundLibrary>>,
+    sounds: Option<Arc<libraries::sounds::SoundLibrary>>,
 }
 
 impl Workspace {
@@ -61,7 +61,7 @@ impl Workspace {
         let persistence = ByteBudget::new(256 << 20)?;
         // One saved-sound library is shared by every project window; the
         // adjacent writer lease refuses a second in-process owner.
-        let sounds = engine::sounds::SoundLibrary::open(&root.with_file_name("sounds"))
+        let sounds = libraries::sounds::SoundLibrary::open(&root.with_file_name("sounds"))
             .ok()
             .map(Arc::new);
         let runner = std::rc::Rc::new(std::cell::RefCell::new(JobRunner::new(
@@ -694,7 +694,7 @@ pub struct EditorWindow {
     budget: ByteBudget,
     persistence: ByteBudget,
     runner: std::rc::Rc<std::cell::RefCell<JobRunner>>,
-    sounds: Option<Arc<engine::sounds::SoundLibrary>>,
+    sounds: Option<Arc<libraries::sounds::SoundLibrary>>,
     pending: Option<Pending>,
     picker: Option<Picker>,
     candidates: Vec<Candidate>,
@@ -723,7 +723,7 @@ impl EditorWindow {
         budget: ByteBudget,
         persistence: ByteBudget,
         runner: std::rc::Rc<std::cell::RefCell<JobRunner>>,
-        sounds: Option<Arc<engine::sounds::SoundLibrary>>,
+        sounds: Option<Arc<libraries::sounds::SoundLibrary>>,
     ) -> Self {
         static NEXT_WINDOW: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
         Self {
