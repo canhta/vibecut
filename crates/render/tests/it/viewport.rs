@@ -174,7 +174,7 @@ fn rotated_handles_and_per_axis_scaling_share_render_geometry() {
     }
     near(
         geometry.rotation_handle_position(&viewport, 24.).unwrap(),
-        [254., 140.],
+        [126., 140.],
     );
     let zoomed = Viewport::new(screen(), [200, 100], 2., [5., 6.]).unwrap();
     near(
@@ -183,7 +183,7 @@ fn rotated_handles_and_per_axis_scaling_share_render_geometry() {
     );
     near(
         geometry.rotation_handle_position(&zoomed, 24.).unwrap(),
-        [279., 116.],
+        [71., 116.],
     );
     for gap in [-1., f64::NAN, f64::INFINITY] {
         assert!(geometry.rotation_handle_position(&viewport, gap).is_err());

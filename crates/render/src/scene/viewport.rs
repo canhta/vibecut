@@ -154,22 +154,25 @@ impl ItemGeometry {
             center,
         ))
     }
-    /// Rotation grip beyond the top midpoint, with a constant logical-screen gap.
+    /// Rotation grip beyond the bottom midpoint, with a constant logical-screen gap.
     pub fn rotation_handle_position(&self, viewport: &Viewport, gap: f64) -> Result<[f64; 2]> {
         finite(&[gap])?;
         if gap < 0.0 {
             return Err(Error::Invalid("rotation handle gap"));
         }
-        let top = self.handle_position(viewport, Handle::Top)?;
+        let bottom = self.handle_position(viewport, Handle::Bottom)?;
         let center =
             viewport.canvas_to_screen(self.transform.point(self.center(), self.center()))?;
-        let dx = top[0] - center[0];
-        let dy = top[1] - center[1];
+        let dx = bottom[0] - center[0];
+        let dy = bottom[1] - center[1];
         let distance = dx.hypot(dy);
         if distance <= 0.0 {
             return Err(Error::Invalid("rotation handle geometry"));
         }
-        let point = [top[0] + dx / distance * gap, top[1] + dy / distance * gap];
+        let point = [
+            bottom[0] + dx / distance * gap,
+            bottom[1] + dy / distance * gap,
+        ];
         finite(&point)?;
         Ok(point)
     }
