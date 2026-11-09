@@ -8,7 +8,7 @@ Tickets live in git-ignored `.scratch/` in the coordinator's main checkout: plai
 | `<milestone>/map.md` | One line per decision |
 | `<milestone>/issues/NN-slug.md` | Ticket |
 | `<milestone>/reviews/` | Review reports |
-| `agents.md` | Implementer tiers and track record |
+| `agents.md` | opencode track record per work type |
 
 Ticket headers use these exact fields; omit `Blocked by` when empty:
 
