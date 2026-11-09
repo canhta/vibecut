@@ -34,8 +34,4 @@ One file per video. Paths are relative to the label file.
 }
 ```
 
-`segments` are ordered source-segment lists in play order; gaps and reordering
-are allowed and a single range is the one-segment case. `priority` is `must` or
-`nice`. Synthetic fixtures replace `source` with
-`"synthetic": {"duration_seconds": 41.0}`; the harness writes a deterministic
-silence WAV under `target/clip-eval/synthetic/` and still verifies `sha256`.
+`segments` are ordered source-segment lists in play order. Gaps and reordering are allowed. `priority` is `must` or `nice`. Synthetic fixtures replace `source` with `"synthetic": {"duration_seconds": 41.0}`; the harness writes a deterministic silence WAV under `target/clip-eval/synthetic/` and still verifies `sha256`.

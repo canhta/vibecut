@@ -1,3 +1,3 @@
 # Rounding
 
-- `Rounding` selects floor, ceiling or nearest (ties away from zero).
+`Rounding` selects floor, ceiling or nearest (ties away from zero).
