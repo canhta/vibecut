@@ -296,10 +296,12 @@ fn validate(data: &ProjectData) -> Result<()> {
                 if !effect_ids.insert(&effect.id) {
                     return Err(Error::Invalid("duplicate effect id"));
                 }
-                if let Some(param) = item.animations.get(&effect.intensity_path()?)
-                    && !matches!(param.value_at(Tick::ZERO)?, crate::ParamValue::Scalar(_))
-                {
-                    return Err(Error::Invalid("blur animation must be scalar"));
+                for key in effect.params.animated_keys() {
+                    if let Some(param) = item.animations.get(&effect.param_path(key)?)
+                        && !matches!(param.value_at(Tick::ZERO)?, crate::ParamValue::Scalar(_))
+                    {
+                        return Err(Error::Invalid("effect animation must be scalar"));
+                    }
                 }
             }
             if item.masks.len() > 1024 {

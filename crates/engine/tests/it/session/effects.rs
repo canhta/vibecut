@@ -666,3 +666,60 @@ fn chroma_key_controls_clamp_undo_per_gesture_and_persist() {
     s.apply(Command::Redo {}).unwrap();
     assert_eq!(s.project(), &keyed);
 }
+
+#[test]
+fn chroma_key_intensity_and_shadow_keyframes_survive_trim() {
+    let mut s = session();
+    s.execute(
+        "effects.add",
+        json!({"item":2,"effect":{"id":"chroma_key","enabled":true,"params":{"kind":"chroma_key","key_color":[0,255,0,255],"intensity":40.0,"shadow":0.0}}}),
+    )
+    .unwrap();
+    let local = |n: i64| FrameRate::FPS_30.tick_of(n).unwrap();
+    let intensity = AnimationPath::new("effects.chroma_key.params.intensity").unwrap();
+    let shadow = AnimationPath::new("effects.chroma_key.params.shadow").unwrap();
+    for (path, n, value) in [
+        (&intensity, 0, 10.0),
+        (&intensity, 20, 100.0),
+        (&shadow, 0, 0.0),
+        (&shadow, 20, 80.0),
+    ] {
+        s.execute(
+            "keyframes.toggle_at",
+            json!({"item":2,"path":path,"component":null,"time":local(n),"value":{"kind":"scalar","value":value}}),
+        )
+        .unwrap();
+    }
+    let value = |s: &Session, path: &AnimationPath, t: Tick| match item(s)
+        .animations
+        .value_at(path, t)
+        .unwrap()
+    {
+        Some(ParamValue::Scalar(v)) => v,
+        other => panic!("scalar at {path:?}: {other:?}"),
+    };
+    assert_eq!(value(&s, &intensity, local(0)), 10.0);
+    assert_eq!(value(&s, &shadow, local(20)), 80.0);
+    s.execute("trim_start", json!({"item":2,"at":local(10)}))
+        .unwrap();
+    let trimmed = item(&s);
+    for path in [&intensity, &shadow] {
+        let keys = trimmed
+            .animations
+            .get(path)
+            .unwrap()
+            .channel(None)
+            .unwrap()
+            .keys();
+        assert_eq!(keys.len(), 2, "{path:?}");
+        assert_eq!(keys.first().unwrap().time, local(-10));
+        assert_eq!(keys.last().unwrap().time, local(10));
+    }
+    // Content time 20 moved to local 10 and keeps its keyed value.
+    assert_eq!(value(&s, &intensity, local(10)), 100.0);
+    assert_eq!(value(&s, &shadow, local(10)), 80.0);
+    s.apply(Command::Undo {}).unwrap();
+    assert_eq!(value(&s, &intensity, local(20)), 100.0);
+    s.apply(Command::Redo {}).unwrap();
+    assert_eq!(value(&s, &intensity, local(10)), 100.0);
+}

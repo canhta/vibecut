@@ -254,6 +254,21 @@ pub fn chroma_key_pixel(pixel: [f32; 4], weights: &[f32]) -> [f32; 4] {
     }
     [out[0], out[1], out[2], alpha]
 }
+/// One keyframed scalar at item-local time, clamped to the effect control
+/// range; a missing animation keeps the static value.
+fn animated_scalar(
+    item: &Item,
+    effect: &project::EffectInstance,
+    key: &str,
+    fallback: f64,
+    local: Tick,
+) -> Result<f64> {
+    match item.animations.value_at(&effect.param_path(key)?, local)? {
+        Some(ParamValue::Scalar(value)) => Ok(value.clamp(0.0, 100.0)),
+        Some(_) => Err(Error::Invalid("effect animation type")),
+        None => Ok(fallback),
+    }
+}
 pub(crate) fn evaluate(
     item: &Item,
     local: Tick,
@@ -264,11 +279,7 @@ pub(crate) fn evaluate(
     for effect in item.effects.iter().filter(|e| e.enabled) {
         match effect.params {
             EffectParams::Blur { intensity } => {
-                let value = match item.animations.value_at(&effect.intensity_path()?, local)? {
-                    Some(ParamValue::Scalar(value)) => value.clamp(0.0, 100.0),
-                    Some(_) => return Err(Error::Invalid("blur animation type")),
-                    None => intensity,
-                };
+                let value = animated_scalar(item, effect, "intensity", intensity, local)?;
                 passes.extend(blur_passes(value, width, height)?);
             }
             EffectParams::ColorGrade {
@@ -281,7 +292,11 @@ pub(crate) fn evaluate(
                 key_color,
                 intensity,
                 shadow,
-            } => passes.extend(chroma_key_passes(key_color, intensity, shadow)?),
+            } => {
+                let intensity = animated_scalar(item, effect, "intensity", intensity, local)?;
+                let shadow = animated_scalar(item, effect, "shadow", shadow, local)?;
+                passes.extend(chroma_key_passes(key_color, intensity, shadow)?);
+            }
         }
     }
     Ok(passes)

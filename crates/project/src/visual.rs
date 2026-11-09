@@ -15,7 +15,7 @@ pub use crop::Crop;
 pub use effects::{
     CHROMA_KEY_COLOR_DEFAULT, CHROMA_KEY_COLOR_MAX, CHROMA_KEY_INTENSITY_DEFAULT, CHROMA_KEY_MAX,
     CHROMA_KEY_MIN, EffectDefinition, EffectInstance, EffectParamDefinition, EffectParams,
-    GRADE_MAX, GRADE_MIN, chroma_key_color, effect_definitions,
+    EffectPlacement, GRADE_MAX, GRADE_MIN, chroma_key_color, effect_definitions,
 };
 pub use mask::{
     MASK_SCALARS, Mask, MaskMode, MaskPath, MaskShape, MaskStroke, MaskVertex, StrokeAlign,

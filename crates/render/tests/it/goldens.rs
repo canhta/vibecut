@@ -525,6 +525,140 @@ fn transparent_edge_half_opacity_scaled_text_and_color_survive_encoded_decode() 
     }
 }
 
+/// Every decoded RGBA frame of `path`, in display order.
+fn all_frames(path: &std::path::Path, frame_len: usize) -> Vec<Vec<u8>> {
+    let output = tool_command("ffmpeg")
+        .args(["-v", "error", "-i"])
+        .arg(path)
+        .args(["-f", "rawvideo", "-pix_fmt", "rgba", "-"])
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    output
+        .stdout
+        .chunks_exact(frame_len)
+        .map(<[u8]>::to_vec)
+        .collect()
+}
+
+#[test]
+fn chroma_key_intensity_keyframes_interpolate_in_preview_and_export() {
+    if !tools() {
+        return;
+    }
+    let span = tick(1, 10);
+    let path = project::AnimationPath::new("effects.chroma_key.params.intensity").unwrap();
+    let keys = vec![
+        project::Keyframe::new(Tick::ZERO, project::ParamValue::Scalar(0.0)),
+        project::Keyframe::new(span, project::ParamValue::Scalar(100.0)),
+    ];
+    let mut data = project::Project::empty(project::ProjectId(9), "key anim".into())
+        .unwrap()
+        .into_data();
+    data.canvas.width = 128;
+    data.canvas.height = 96;
+    data.canvas.background = project::Color([0, 0, 0, 255]);
+    let mut animations = project::Animations::default();
+    animations
+        .set(
+            path.clone(),
+            project::Param::Value(
+                project::Channel::new(
+                    project::ParamValue::Scalar(0.0),
+                    keys,
+                    project::Extrapolation::Hold,
+                    project::Extrapolation::Hold,
+                )
+                .unwrap(),
+            ),
+        )
+        .unwrap();
+    data.scene_mut().timeline.main.items.push(project::Item {
+        hidden: false,
+        blend_mode: Default::default(),
+        retime: Default::default(),
+        masks: Vec::new(),
+        effects: vec![project::EffectInstance {
+            id: "chroma_key".into(),
+            enabled: true,
+            params: project::EffectParams::ChromaKey {
+                key_color: project::Color([0, 255, 0, 255]),
+                intensity: 0.0,
+                shadow: 0.0,
+            },
+        }],
+        animations,
+        id: project::ItemId(1),
+        source_asset: None,
+        source_range: TimeRange::new(Tick::ZERO, span).unwrap(),
+        start: Tick::ZERO,
+        content: project::ItemParams::Overlay(project::OverlayParams {
+            color: project::Color([120, 204, 102, 255]),
+        }),
+    });
+    let p = project::Project::new(data).unwrap();
+    let h = Hooks::default();
+    let mut settings = ExportSettings::from_project(&p);
+    settings.render.width = 128;
+    settings.render.height = 96;
+    settings.include_audio = false;
+    settings.mode = ExportMode::Encode;
+    settings.quality = 100;
+    settings.overwrite = project::atomic::Overwrite::Replace;
+    let mut renderer = Renderer::new(&p, settings.render.clone()).unwrap();
+    let ticks = [Tick::ZERO, tick(1, 30), tick(2, 30)];
+    let previews: Vec<_> = ticks
+        .iter()
+        .map(|t| renderer.render_frame(*t, &mut Empty, &h).unwrap())
+        .collect();
+    // The interpolated intensity raises keying, so the overlay keeps shrinking.
+    let green: Vec<f32> = previews.iter().map(|image| image.pixels()[0][1]).collect();
+    assert!(
+        green[0] > green[1] && green[1] > green[2],
+        "preview alphas {green:?}"
+    );
+    let mid = path.clone();
+    let animated = p
+        .data()
+        .scene()
+        .timeline
+        .main
+        .items
+        .first()
+        .and_then(|item| item.animations.value_at(&mid, tick(1, 30)).unwrap());
+    assert!(
+        matches!(animated, Some(project::ParamValue::Scalar(v)) if v > 0.0 && v < 100.0),
+        "midpoint intensity {animated:?}"
+    );
+    let output = root().join("chroma-key-anim.mp4");
+    let receipt = export_with_sources(
+        &p,
+        TimeRange::new(Tick::ZERO, span).unwrap(),
+        &settings,
+        &output,
+        &mut Empty,
+        &h,
+    )
+    .unwrap();
+    assert_eq!(receipt.video_frames, 3);
+    let frames = all_frames(&output, 128 * 96 * 4);
+    assert_eq!(frames.len(), previews.len());
+    for (index, (frame, preview)) in frames.iter().zip(&previews).enumerate() {
+        let expected = preview.rgba8(1, &h).unwrap();
+        let mse = frame
+            .iter()
+            .zip(&expected.bytes)
+            .map(|(a, b)| (f64::from(*a) - f64::from(*b)).powi(2))
+            .sum::<f64>()
+            / frame.len() as f64;
+        assert!(mse < 150.0, "frame {index} preview/export MSE {mse}");
+    }
+}
+
 #[test]
 fn blur_background_stays_below_lower_timeline_layers() {
     let mut d = scene().into_data();

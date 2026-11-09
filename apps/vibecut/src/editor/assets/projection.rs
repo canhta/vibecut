@@ -65,11 +65,11 @@ pub(in crate::editor) fn prepare(editor: &mut Editor, ctx: &egui::Context) {
         .collect();
     let mut effects = Vec::new();
     if editor.preferences.assets_tab == AssetsTab::Effects {
-        for definition in project::effect_definitions() {
+        for definition in project::effect_definitions()
+            .iter()
+            .filter(|definition| definition.placement == project::EffectPlacement::Library)
+        {
             let params = effect_preview_params(definition);
-            if params.is_none() {
-                continue;
-            }
             if let (Some(previews), Some(params)) = (&mut editor.effect_previews, params.as_ref()) {
                 previews.ensure(definition.kind, params);
             }

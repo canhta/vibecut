@@ -344,6 +344,28 @@ fn effects_tab_is_available_for_visual_clip_kinds_only() {
 }
 
 #[test]
+fn effects_library_lists_only_library_placements() {
+    let fixture = fixture();
+    let mut harness = build(fixture.editor);
+    harness.run_steps(3);
+    click(&mut harness, "assets.tab.effects");
+    // The library offers library-placement effects only; grade and key live in
+    // clip inspector panels, not the browser.
+    assert!(has_widget(&harness, "effects.tile.blur"));
+    assert!(has_widget(&harness, "effects.add.blur"));
+    for kind in ["color_grade", "chroma_key"] {
+        assert!(
+            !has_widget(&harness, &format!("effects.tile.{kind}")),
+            "{kind}"
+        );
+        assert!(
+            !has_widget(&harness, &format!("effects.add.{kind}")),
+            "{kind}"
+        );
+    }
+}
+
+#[test]
 fn effect_tile_drop_adds_to_a_clip_and_refuses_audio_with_a_reason() {
     let fixture = fixture();
     let video = fixture.video;

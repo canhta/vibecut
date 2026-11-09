@@ -2,11 +2,19 @@
 use crate::{AnimationPath, Color, Error, Result};
 use serde::{Deserialize, Serialize};
 
+/// Where an effect is offered. The effects library lists only `Library`;
+/// `Properties` effects belong to a clip inspector panel.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum EffectPlacement {
+    Library,
+    Properties,
+}
 /// UI/catalog metadata lives beside the typed persisted parameters.
 #[derive(Clone, Copy, Debug)]
 pub struct EffectDefinition {
     pub kind: &'static str,
     pub name: &'static str,
+    pub placement: EffectPlacement,
     pub params: &'static [EffectParamDefinition],
 }
 #[derive(Clone, Copy, Debug)]
@@ -70,7 +78,7 @@ const CHROMA_KEY_PARAMS: [EffectParamDefinition; 3] = [
         min: CHROMA_KEY_MIN,
         max: CHROMA_KEY_MAX,
         default: CHROMA_KEY_INTENSITY_DEFAULT,
-        animatable: false,
+        animatable: true,
     },
     EffectParamDefinition {
         key: "shadow",
@@ -78,7 +86,7 @@ const CHROMA_KEY_PARAMS: [EffectParamDefinition; 3] = [
         min: CHROMA_KEY_MIN,
         max: CHROMA_KEY_MAX,
         default: 0.0,
-        animatable: false,
+        animatable: true,
     },
 ];
 pub fn effect_definitions() -> &'static [EffectDefinition] {
@@ -86,16 +94,19 @@ pub fn effect_definitions() -> &'static [EffectDefinition] {
         EffectDefinition {
             kind: "blur",
             name: "Blur",
+            placement: EffectPlacement::Library,
             params: &[BLUR_INTENSITY],
         },
         EffectDefinition {
             kind: "color_grade",
             name: "Color grade",
+            placement: EffectPlacement::Properties,
             params: &GRADE_PARAMS,
         },
         EffectDefinition {
             kind: "chroma_key",
             name: "Chroma key",
+            placement: EffectPlacement::Properties,
             params: &CHROMA_KEY_PARAMS,
         },
     ]
@@ -143,6 +154,15 @@ impl EffectParams {
             Self::Blur { .. } => "blur",
             Self::ColorGrade { .. } => "color_grade",
             Self::ChromaKey { .. } => "chroma_key",
+        }
+    }
+
+    /// Scalar channels that may carry keyframes; the colour key is static.
+    pub const fn animated_keys(&self) -> &'static [&'static str] {
+        match self {
+            Self::Blur { .. } => &["intensity"],
+            Self::ColorGrade { .. } => &[],
+            Self::ChromaKey { .. } => &["intensity", "shadow"],
         }
     }
 
@@ -253,11 +273,14 @@ pub fn chroma_key_color(value: f64) -> Result<Color> {
     ]))
 }
 impl EffectInstance {
-    pub fn intensity_path(&self) -> Result<AnimationPath> {
-        AnimationPath::new(format!("effects.{}.params.intensity", self.id))
+    /// Animation path of one scalar parameter, mirroring the catalog key.
+    pub fn param_path(&self, key: &str) -> Result<AnimationPath> {
+        AnimationPath::new(format!("effects.{}.params.{key}", self.id))
     }
     pub(crate) fn validate(&self) -> Result<()> {
-        self.intensity_path()?;
+        for key in self.params.animated_keys() {
+            self.param_path(key)?;
+        }
         self.params.validate()
     }
 }
