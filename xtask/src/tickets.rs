@@ -575,8 +575,20 @@ fn serve(root: &Path, stream: &mut TcpStream, token: Option<&str>) -> Result<(),
     write!(stream, "HTTP/1.1 {status}\r\nContent-Type: {kind}\r\nContent-Length: {}\r\nCache-Control: no-store\r\nX-Content-Type-Options: nosniff\r\nConnection: close\r\n\r\n{body}", body.len()).map_err(|e| e.to_string())
 }
 
+fn listen(port: u16) -> Result<TcpListener, String> {
+    TcpListener::bind(("127.0.0.1", port)).map_err(|error| {
+        if error.kind() == std::io::ErrorKind::AddrInUse {
+            format!(
+                "port {port} is already in use; another board may be running (open http://127.0.0.1:{port}/ to check) or run `cargo xtask board <PORT>` to pick a free port"
+            )
+        } else {
+            format!("listen on 127.0.0.1:{port}: {error}")
+        }
+    })
+}
+
 pub fn board(root: &Path, port: u16) -> Result<(), String> {
-    let listener = TcpListener::bind(("127.0.0.1", port)).map_err(|e| e.to_string())?;
+    let listener = listen(port)?;
     let _tunnel = tunnel::start(root, port)?;
     let token = std::env::var("VIBECUT_BOARD_TOKEN")
         .ok()
@@ -604,6 +616,18 @@ pub fn board(root: &Path, port: u16) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn board_names_the_port_that_is_already_in_use() {
+        let held = TcpListener::bind(("127.0.0.1", 0)).unwrap();
+        let port = held.local_addr().unwrap().port();
+        let error = listen(port).unwrap_err();
+        assert!(
+            error.contains(&format!("port {port} is already in use")),
+            "{error}"
+        );
+        assert!(error.contains("cargo xtask board <PORT>"), "{error}");
+    }
 
     #[test]
     fn dependency_graph_preserves_frontier_waves_and_critical_path() {

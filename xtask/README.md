@@ -8,7 +8,7 @@ Run from a checkout with `cargo xtask <command>`. The Cargo alias builds the lau
 |---|---|
 | `build -- COMMAND [ARGS...]` | FIFO admission and command exit status on macOS and Windows; OS-native arguments, inherited standard streams |
 | `frontier [ASSIGNEE]`, `frontier --blocking` | Ready tickets ordered by priority, open transitive dependents and ID, printing the dependent count; `--blocking` ranks every unresolved ticket by unresolved transitive dependents with its status; missing/wontfix blocker diagnostics |
-| `board [PORT]` | Read-only project overview on IPv4 localhost, default port 8765; starts the configured Cloudflare tunnel when present |
+| `board [PORT]` | Read-only project overview on IPv4 localhost, default port 8765; starts the configured Cloudflare tunnel when present; an occupied port names itself and the command to pick a free one |
 | `cleanup [--environment NAME] [--dry-run] TARGET...` | Release settled worker dispatches or remove worktree targets, prune two-day-old build sessions/slots; `--dry-run` prints the plan |
 | `pull-reports [--environment NAME] [--ssh HOST] [--dry-run] <worktree>...` | Merge a worktree's `.scratch` reports into the main checkout without overwriting newer local files |
 | `checks`, `docs`, `layers`, `assets` | Repository policy; `docs` includes the docs index, README module maps and tracker-free Markdown against only-shrinking `xtask/docs-baseline.txt`; `checks` also checks formatting and the integration-test entry point |
