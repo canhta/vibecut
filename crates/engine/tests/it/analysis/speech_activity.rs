@@ -269,9 +269,15 @@ fn steady_noise_floor_and_three_pauses_match_within_one_frame() {
 
 #[test]
 fn warm_cache_reuses_the_spans_without_opening_the_source() {
-    let Some(asset) = fixture() else {
+    let Some(source) = fixture() else {
         return;
     };
+    // The hidden-source step below must not borrow the fixture every other test
+    // in this binary opens concurrently.
+    let scratch = tempfile::tempdir().unwrap();
+    let path = scratch.path().join("known-silences.wav");
+    std::fs::copy(source.path(), &path).unwrap();
+    let asset = SourceAsset::import(AssetId(1), path.clone()).unwrap();
     let request = SpeechActivityRequest::new(
         asset.clone(),
         range(0, 10),
@@ -280,7 +286,6 @@ fn warm_cache_reuses_the_spans_without_opening_the_source() {
     .unwrap();
     let (first, mut runner, mut cache, _dir) = run(&request);
     assert_eq!(cache.len(), 1);
-    let path = asset.path().to_path_buf();
     let hidden = path.with_extension("hidden");
     std::fs::rename(&path, &hidden).unwrap();
     let second = request.submit(&mut runner, &mut cache).unwrap();

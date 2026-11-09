@@ -283,7 +283,13 @@ fn reviewed_subset_is_one_undo_step_and_refusals_are_atomic() {
 }
 #[test]
 fn cancellation_preserves_timeline_and_cache_hits_do_not_decode() {
-    let asset = fixture("cache", 64, 50, true);
+    let source = fixture("cache", 64, 50, true);
+    // The hidden-source step below must not borrow the fixture every other test
+    // in this binary opens concurrently.
+    let scratch = tempfile::tempdir().unwrap();
+    let path = scratch.path().join("cache.mkv");
+    std::fs::copy(source.path(), &path).unwrap();
+    let asset = SourceAsset::import(AssetId(1), path.clone()).unwrap();
     let request = DetectionRequest::new(asset.clone(), range(50), Default::default()).unwrap();
     let s = session(asset.clone(), 50);
     let original = serde_json::to_vec(s.project().data()).unwrap();
@@ -301,7 +307,6 @@ fn cancellation_preserves_timeline_and_cache_hits_do_not_decode() {
     let first = request.submit(&mut runner, &mut cache).unwrap();
     assert_eq!(wait(&mut runner, &first), JobState::Completed);
     let result = first.finish(&mut runner, &mut cache).unwrap().unwrap();
-    let path = asset.path().to_path_buf();
     let hidden = path.with_extension("hidden");
     std::fs::rename(&path, &hidden).unwrap();
     let second = request.submit(&mut runner, &mut cache).unwrap();
