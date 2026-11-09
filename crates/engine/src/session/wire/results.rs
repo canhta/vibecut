@@ -1,7 +1,7 @@
 //! Defines the typed results a control command returns.
 use super::{
-    ErrorCode, FontEntry, FontLoad, JobId, JobKind, JobStage, JobState, PreviewResult, Revision,
-    SnapshotResult,
+    ErrorCode, FontEntry, FontLoad, JobId, JobKind, JobStage, JobState, PauseCandidates,
+    PreviewResult, Revision, SnapshotResult,
 };
 use crate::{CommandSpec, Outcome};
 use serde::Serialize;
@@ -81,4 +81,6 @@ pub struct JobView {
     pub attempts: u8,
     pub error: Option<ErrorCode>,
     pub result: Option<PreviewResult>,
+    /// Pause candidates, present on a completed `analyze_pauses` job.
+    pub pauses: Option<PauseCandidates>,
 }

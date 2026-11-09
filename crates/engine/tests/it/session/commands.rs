@@ -5,7 +5,7 @@ use project::{
     Color, Item, ItemId, ItemParams, OverlayParams, Project, ProjectId, Track, TrackId, TrackKind,
 };
 use proptest::prelude::*;
-use serde_json::json;
+use serde_json::{Value, json};
 use std::sync::Arc;
 use time::{SourceRange, Tick};
 
@@ -4852,4 +4852,344 @@ fn ripple_wire_policy_is_atomic_explicit_and_cannot_nest() {
             assert_eq!(s.history_len(), history);
         }
     }
+}
+
+// Pause removal: reviewed output-time spans cut every track and close their tails.
+
+fn pause_audio_asset() -> SourceAsset {
+    let duration = Tick(12 * time::TICKS_PER_SECOND);
+    testkit::source::asset(1, std::env::temp_dir().join("pause-audio.wav"))
+        .format("wav")
+        .duration(duration)
+        .content_hash(ContentHash::from_bytes(b"pause audio"))
+        .stream(
+            testkit::source::audio()
+                .codec("pcm_f32le")
+                .time_base(media::TimeBase::new(1, 48000).unwrap())
+                .duration(duration)
+                .build(),
+        )
+        .build()
+}
+
+fn pause_video_asset() -> SourceAsset {
+    let duration = Tick(12 * time::TICKS_PER_SECOND);
+    testkit::source::asset(2, std::env::temp_dir().join("pause-video.mp4"))
+        .format("mp4")
+        .duration(duration)
+        .content_hash(ContentHash::from_bytes(b"pause video"))
+        .stream(
+            testkit::source::video()
+                .time_base(media::TimeBase::new(1, 30000).unwrap())
+                .duration(duration)
+                .size(64, 36)
+                .build(),
+        )
+        .build()
+}
+
+fn five_clip_pairs() -> Session {
+    let edge = |seconds: i64| Tick(seconds * time::TICKS_PER_SECOND);
+    let edges = [0, 2, 4, 6, 8, 12];
+    let mut data = project().into_data();
+    data.assets = vec![pause_audio_asset(), pause_video_asset()];
+    data.scene_mut().timeline.overlays.clear();
+    data.scene_mut().timeline.audio.clear();
+    data.scene_mut().timeline.main.items = edges
+        .windows(2)
+        .enumerate()
+        .map(|(index, pair)| {
+            let start = pair.first().copied().unwrap_or_default();
+            let end = pair.last().copied().unwrap_or_default();
+            Item {
+                hidden: false,
+                blend_mode: Default::default(),
+                retime: Default::default(),
+                masks: Vec::new(),
+                effects: Vec::new(),
+                animations: Default::default(),
+                id: ItemId(index as u64 + 1),
+                source_asset: Some(AssetId(2)),
+                source_range: range(edge(start).0, edge(end).0),
+                start: edge(start),
+                content: ItemParams::Video(project::VideoParams {
+                    fades: Default::default(),
+                    source_audio_enabled: false,
+                    volume: 0.0,
+                    muted: false,
+                    crop: None,
+                }),
+            }
+        })
+        .collect();
+    data.scene_mut().timeline.insert_track(Track {
+        id: TrackId(5),
+        name: "Audio".into(),
+        kind: TrackKind::Audio,
+        muted: false,
+        hidden: false,
+        locked: false,
+        items: edges
+            .windows(2)
+            .enumerate()
+            .map(|(index, pair)| {
+                let start = pair.first().copied().unwrap_or_default();
+                let end = pair.last().copied().unwrap_or_default();
+                Item {
+                    hidden: false,
+                    blend_mode: Default::default(),
+                    retime: Default::default(),
+                    masks: Vec::new(),
+                    effects: Vec::new(),
+                    animations: Default::default(),
+                    id: ItemId(index as u64 + 11),
+                    source_asset: Some(AssetId(1)),
+                    source_range: range(edge(start).0, edge(end).0),
+                    start: edge(start),
+                    content: ItemParams::Audio(project::AudioParams {
+                        fades: Default::default(),
+                        volume: 0.0,
+                        muted: false,
+                        source: Default::default(),
+                    }),
+                }
+            })
+            .collect(),
+    });
+    Session::new(Project::new(data).unwrap(), 100).unwrap()
+}
+
+#[test]
+fn remove_pauses_cuts_reviewed_spans_as_one_undo_step() {
+    let mut s = session();
+    let before = project::encode(s.project(), false).unwrap();
+    let revision = s.revision();
+    let outcome = s
+        .execute(
+            "timeline.remove_pauses",
+            json!({"spans":[{"start":20,"end":60}],"crossfade_ms":0}),
+        )
+        .unwrap();
+    assert!(outcome.changed);
+    assert_eq!(s.history_len(), (1, 0));
+    assert_ne!(s.revision(), revision);
+    let edited = project::encode(s.project(), false).unwrap();
+    let track = &s.project().data().scene().timeline.overlays[0];
+    let layout: Vec<(Tick, Tick)> = track
+        .items
+        .iter()
+        .map(|item| (item.start, item.end().unwrap()))
+        .collect();
+    // The cut half-open span [20,60) leaves one left piece and shifts the follower.
+    assert_eq!(layout, vec![(Tick(0), Tick(20)), (Tick(40), Tick(80))]);
+
+    s.undo().unwrap();
+    assert_eq!(project::encode(s.project(), false).unwrap(), before);
+    s.redo().unwrap();
+    assert_eq!(project::encode(s.project(), false).unwrap(), edited);
+    let loaded = project::decode(&edited).unwrap().project;
+    assert_eq!(&loaded, s.project().as_ref());
+
+    // A nested batch child still cuts through the ripple path.
+    let mut batched = session();
+    batched
+        .execute(
+            "batch",
+            json!({"commands":[{"command":"timeline.remove_pauses",
+                "params":{"spans":[{"start":20,"end":60}],"crossfade_ms":0}}]}),
+        )
+        .unwrap();
+    assert_eq!(project::encode(batched.project(), false).unwrap(), edited);
+}
+
+#[test]
+fn remove_pauses_refuses_invalid_reviewed_spans_atomically() {
+    let mut s = session();
+    let before = project::encode(s.project(), false).unwrap();
+    let revision = s.revision();
+    let mut cases = vec![
+        json!([]),
+        json!([{"start":100,"end":60}]),
+        json!([{"start":20,"end":60},{"start":10,"end":15}]),
+        json!([{"start":10,"end":50},{"start":40,"end":60}]),
+        json!([{"start":20,"end":20}]),
+        json!([{"start":-1,"end":10}]),
+        json!([{"start":0,"end":1000}]),
+    ];
+    let many: Vec<Value> = (0..=engine::control::MAX_PAUSE_SPANS)
+        .map(|index| json!({"start":index as i64 * 2,"end":index as i64 * 2 + 1}))
+        .collect();
+    cases.push(Value::Array(many));
+    for spans in cases {
+        assert!(
+            s.execute(
+                "timeline.remove_pauses",
+                json!({"spans":spans,"crossfade_ms":0})
+            )
+            .is_err(),
+            "{spans:?}"
+        );
+        assert_eq!(project::encode(s.project(), false).unwrap(), before);
+        assert_eq!(s.revision(), revision);
+        assert_eq!(s.history_len(), (0, 0));
+    }
+    assert!(
+        s.execute(
+            "timeline.remove_pauses",
+            json!({"spans":[{"start":0,"end":10}],"crossfade_ms":10001})
+        )
+        .is_err()
+    );
+
+    // A caption word forbids any span that crosses it.
+    let mut data = project().into_data();
+    data.assets.push(
+        testkit::source::asset(7, std::env::temp_dir().join("pause-words.mp4"))
+            .format("mp4")
+            .duration(Tick(1000))
+            .content_hash(ContentHash::from_bytes(b"words"))
+            .build(),
+    );
+    data.scene_mut().timeline.insert_track(Track {
+        id: TrackId(9),
+        name: "Captions".into(),
+        kind: TrackKind::Text,
+        muted: false,
+        hidden: false,
+        locked: false,
+        items: vec![Item {
+            hidden: false,
+            blend_mode: Default::default(),
+            retime: Default::default(),
+            masks: Vec::new(),
+            effects: Vec::new(),
+            animations: Default::default(),
+            id: ItemId(90),
+            source_asset: Some(AssetId(7)),
+            source_range: range(0, 1000),
+            start: Tick::ZERO,
+            content: ItemParams::Caption(project::CaptionParams {
+                cues: captions::CueTrack {
+                    cues: vec![captions::Cue {
+                        id: "cue-1".into(),
+                        range: range(0, 1000),
+                        source_lang: captions::LanguageTag::parse("en").unwrap(),
+                        texts: std::collections::BTreeMap::new(),
+                        word_ranges: vec![range(10, 20)],
+                        style: None,
+                    }],
+                },
+            }),
+        }],
+    });
+    let mut words = Session::new(Project::new(data).unwrap(), 10).unwrap();
+    let before = project::encode(words.project(), false).unwrap();
+    assert!(
+        words
+            .execute(
+                "timeline.remove_pauses",
+                json!({"spans":[{"start":5,"end":15}],"crossfade_ms":0})
+            )
+            .is_err()
+    );
+    assert_eq!(project::encode(words.project(), false).unwrap(), before);
+    // A span beside the word is allowed.
+    assert!(
+        words
+            .execute(
+                "timeline.remove_pauses",
+                json!({"spans":[{"start":20,"end":30}],"crossfade_ms":0})
+            )
+            .is_ok()
+    );
+
+    // A locked track refuses the whole edit.
+    let mut locked = session();
+    let track = locked.project().data().scene().timeline.overlays[0].id;
+    locked
+        .apply(Command::SetTrackLocked {
+            track,
+            locked: true,
+        })
+        .unwrap();
+    let before = project::encode(locked.project(), false).unwrap();
+    assert!(matches!(
+        locked.execute(
+            "timeline.remove_pauses",
+            json!({"spans":[{"start":20,"end":60}],"crossfade_ms":0})
+        ),
+        Err(EditError::Locked(_))
+    ));
+    assert_eq!(project::encode(locked.project(), false).unwrap(), before);
+
+    // An empty timeline has no span to remove.
+    let mut empty = Session::new(Project::empty(ProjectId(0), "".into()).unwrap(), 1).unwrap();
+    assert!(
+        empty
+            .execute(
+                "timeline.remove_pauses",
+                json!({"spans":[{"start":0,"end":10}],"crossfade_ms":0})
+            )
+            .is_err()
+    );
+}
+
+#[test]
+fn remove_pauses_keeps_five_clip_audio_video_aligned() {
+    let mut s = five_clip_pairs();
+    let before = project::encode(s.project(), false).unwrap();
+    let spans = |seconds: &[(i64, i64)]| -> Vec<Value> {
+        seconds
+            .iter()
+            .map(|(start, end)| json!({"start":start * time::TICKS_PER_SECOND,"end":end * time::TICKS_PER_SECOND}))
+            .collect()
+    };
+    s.execute(
+        "timeline.remove_pauses",
+        json!({"spans":spans(&[(2, 3), (4, 5), (8, 10)]),"crossfade_ms":20}),
+    )
+    .unwrap();
+    let data = s.project().data().clone();
+    let starts = |kind: TrackKind| -> Vec<Tick> {
+        let mut starts: Vec<Tick> = data
+            .scene()
+            .timeline
+            .iter()
+            .filter(|track| track.kind == kind)
+            .flat_map(|track| track.items.iter().map(|item| item.start))
+            .collect();
+        starts.sort_unstable();
+        starts
+    };
+    assert_eq!(starts(TrackKind::Video), starts(TrackKind::Audio));
+    assert_eq!(starts(TrackKind::Video).len(), 5);
+    let saved = 4 * time::TICKS_PER_SECOND;
+    assert_eq!(
+        data.scene()
+            .timeline
+            .main
+            .items
+            .last()
+            .unwrap()
+            .end()
+            .unwrap(),
+        Tick(12 * time::TICKS_PER_SECOND - saved)
+    );
+    // Three joins per media track each carry one equal-power fade-in and fade-out.
+    let (fade_ins, fade_outs) = data
+        .scene()
+        .timeline
+        .iter()
+        .filter(|track| track.kind == TrackKind::Audio)
+        .flat_map(|track| track.items.iter())
+        .fold((0, 0), |(ins, outs), item| match &item.content {
+            ItemParams::Audio(params) => (
+                ins + usize::from(params.fades.fade_in.window() > Tick::ZERO),
+                outs + usize::from(params.fades.fade_out.window() > Tick::ZERO),
+            ),
+            _ => (ins, outs),
+        });
+    assert_eq!((fade_ins, fade_outs), (3, 3));
+    s.undo().unwrap();
+    assert_eq!(project::encode(s.project(), false).unwrap(), before);
 }

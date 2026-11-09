@@ -21,6 +21,10 @@ pub const MAX_PREVIEW_FRAMES: usize = 4;
 pub const MAX_PREVIEW_EDGE: u32 = 640;
 pub const PREVIEW_QUALITY: u8 = 80;
 pub const MAX_PREVIEW_CLIPS: usize = 16;
+/// Reviewed pause spans in one removal edit.
+pub const MAX_PAUSE_SPANS: usize = 4096;
+/// Every pause setting is a millisecond count no wider than ten seconds.
+pub const MAX_PAUSE_MS: i64 = 10_000;
 
 /// Static admission budgets travel with the catalog and participate in its hash.
 #[derive(Clone, Copy, Debug, Serialize, schemars::JsonSchema)]

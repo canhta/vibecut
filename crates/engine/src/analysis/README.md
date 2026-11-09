@@ -45,3 +45,17 @@ Limits: one day, 288,000 spans (twice the 144,000 default 0.1 s speech + 0.5 s p
 `waveform::display(asset, item, visible, columns, cache)` is the cache-only display query. It clamps the visible output range to the clip, maps each of `columns` output slices through the project item's trim and retime mapping (`project::Item::source_time_at`), reduces the covered 128-sample buckets to one min/max bar per slice and returns `Ready(bars)`, `Pending` when no summary is cached, `Failed` when the cached summary cannot be decoded, or `Unsupported` when the source has no mono or stereo audio. It never decodes media and never blocks on a job. Bars combine all channels; `over` marks a bar whose any sample leaves -1..=1 so the timeline can draw a >0 dBFS tip.
 
 Limits: columns 1..=4096, one 64 MiB summary (about 3.1 h at 48 kHz stereo), and a mismatched asset or an out-of-clip visible range is `Invalid`. The job reserves 16 MiB for decoded frames and 64 MiB for its result. Cancelled generation leaves the previous content's cache entry intact; project JSON is never touched.
+
+## Pause candidates
+
+`pause_candidates::PauseCandidatesRequest::new(project, PauseSettings { min_pause_ms, pad_ms, crossfade_ms })` plans one CPU `AnalyzePauses` job over the active scene's audible items. The job reuses the Speech activity detector and decode; there is no second decode path. Each contiguous audible source interval of an asset is decoded once, every pause is inset by `pad` on its speech sides (a pause clipped by an item edge keeps no pad there), mapped to output time through project's retime owner, merged across tracks and every range covered by a native caption word span (`Item::word_spans`) is subtracted, so a candidate never cuts inside a word. The result is `PauseCandidates { spans, analyzed_sources }` in output time; `timeline.remove_pauses` consumes exactly those spans. Cancellation, typed media/provider failures and progress are the job runner's.
+
+The job holds no artifact cache: an engine Session owns none, so a repeated query decodes again; there is no badge of a warm result. Defaults, each cited:
+
+| Setting | Default | Source |
+|---|---|---|
+| `min_pause_ms` | 500 | FFmpeg `whisper` filter `vad_min_silence_duration` default, the same run length the Speech activity detector uses |
+| `pad_ms` | 20 | one detector frame (`ENERGY_FRAME_SAMPLES` 320 samples at 16 kHz), the boundary resolution of the measured pause |
+| `crossfade_ms` | 20 | equal to the pad so the equal-power fade pair consumes only retained silence; the curve is project's `FadeCurve::EqualPower` default |
+
+`pad_ms` is kept silence on each side of a cut, and `crossfade_ms` must not exceed it, so a join never attenuates a speech frame. Settings admit 0..=10 s; the result is bounded at 4,096 spans and 1 MiB. An inaudible timeline completes with zero spans rather than refusing, so an empty project and a project without audio share one state. Limits: one day and 96 MiB workspace per source window, 40 MiB decode, the same as Speech activity.

@@ -22,6 +22,8 @@ Usage:
   vibecut-cli batch <job-file> [--allow-degraded] [--allow-overwrite]
   vibecut-cli captions import <project> <file.ass> [--language <tag>] [--start <ticks>]
                        [--track <id>] [--name <name>]
+  vibecut-cli cut <project> --remove-pauses [--min-pause-ms 500] [--pad-ms 20]
+                   [--crossfade-ms 20] [--dry-run]
   vibecut-cli subtitle <in> [--from vi|en|zh|auto] --to vi|en|zh [--bilingual]
                    [--srt <out>] [--burn <out.mp4>] [--aspect 9:16]
                    [--provider <id>] [--model <id>] [--translate-provider <id>]

@@ -737,6 +737,144 @@ pub(super) fn execute_ripple_delete(mut data: ProjectData, id: ItemId) -> Result
     Ok(data)
 }
 
+/// Remove reviewed output ranges from every track. Items are split at the span
+/// boundaries inside them, pieces fully inside a span are deleted, and the
+/// session's ripple policy closes the vacated tails on each track. A nonzero
+/// crossfade sets an equal-power fade pair on the surviving edges of each join.
+pub(super) fn remove_output_ranges(
+    mut data: ProjectData,
+    spans: &[crate::session::wire::PauseSpan],
+    crossfade_ms: i64,
+    created: &mut Vec<CreatedId>,
+    next: &mut Option<u64>,
+    sources: &mut TrimSources,
+) -> Result<ProjectData> {
+    if spans.is_empty()
+        || spans.len() > crate::session::wire::MAX_PAUSE_SPANS
+        || !(0..=crate::session::wire::MAX_PAUSE_MS).contains(&crossfade_ms)
+    {
+        return Err(EditError::Invalid("pause removal spans"));
+    }
+    let crossfade = Tick::from_units(crossfade_ms, 1000, time::Rounding::Nearest)?;
+    let mut timeline_end = Tick::ZERO;
+    for track in data.scene().timeline.iter() {
+        for item in &track.items {
+            timeline_end = timeline_end.max(item.end()?);
+        }
+    }
+    if timeline_end == Tick::ZERO {
+        return Err(EditError::Invalid("pause removal needs a timeline"));
+    }
+    let mut previous = Tick::ZERO;
+    for span in spans {
+        if span.start < previous || span.end <= span.start || span.end > timeline_end {
+            return Err(EditError::Invalid("pause removal span"));
+        }
+        previous = span.end;
+    }
+    let mut words = Vec::new();
+    for track in data.scene().timeline.iter() {
+        for item in &track.items {
+            words.extend(item.word_spans()?);
+        }
+    }
+    for span in spans {
+        if words
+            .iter()
+            .any(|word| word.start() < span.end && span.start < word.end())
+        {
+            return Err(EditError::Invalid("pause removal crosses a word"));
+        }
+    }
+
+    let mut targets: Vec<(ItemId, Tick, Tick)> = Vec::new();
+    for track in data.scene().timeline.iter() {
+        for item in &track.items {
+            let end = item.end()?;
+            if spans
+                .iter()
+                .any(|span| item.start < span.end && span.start < end)
+            {
+                targets.push((item.id, item.start, end));
+            }
+        }
+    }
+    for (id, start, end) in targets {
+        let mut bounds = Vec::new();
+        for span in spans {
+            for at in [span.start, span.end] {
+                if at > start && at < end && !bounds.contains(&at) {
+                    bounds.push(at);
+                }
+            }
+        }
+        // Descending keeps the original ID on the piece that still holds earlier bounds.
+        bounds.sort_unstable_by(|a, b| b.cmp(a));
+        for at in bounds {
+            data = execute_split_at(data, id, at, created, next, sources)?;
+        }
+    }
+    let mut removed = Vec::new();
+    for track in data.scene().timeline.iter() {
+        for item in &track.items {
+            let end = item.end()?;
+            if spans
+                .iter()
+                .any(|span| item.start >= span.start && end <= span.end)
+            {
+                removed.push(item.id);
+            }
+        }
+    }
+    data = execute_delete(data, removed)?;
+
+    if crossfade > Tick::ZERO {
+        for span in spans {
+            for track in data.scene_mut().timeline.iter_mut() {
+                let mut left: Option<(Tick, ItemId)> = None;
+                let mut right: Option<(Tick, ItemId)> = None;
+                for item in &track.items {
+                    let end = item.end()?;
+                    if end == span.start {
+                        left = Some((item.start, item.id));
+                    }
+                    if item.start == span.end {
+                        right = Some((end, item.id));
+                    }
+                }
+                if let Some((_, id)) = left
+                    && let Some(item) = track.items.iter_mut().find(|item| item.id == id)
+                {
+                    let clip = item.duration()?;
+                    if let Some(fades) = fades_mut(&mut item.content) {
+                        fades.set(
+                            project::FadeEdge::Out,
+                            crossfade,
+                            project::FadeCurve::EqualPower,
+                            clip,
+                        )?;
+                    }
+                }
+                if let Some((_, id)) = right
+                    && let Some(item) = track.items.iter_mut().find(|item| item.id == id)
+                {
+                    let clip = item.duration()?;
+                    if let Some(fades) = fades_mut(&mut item.content) {
+                        fades.set(
+                            project::FadeEdge::In,
+                            crossfade,
+                            project::FadeCurve::EqualPower,
+                            clip,
+                        )?;
+                    }
+                }
+            }
+        }
+    }
+
+    Ok(data)
+}
+
 /// Close only same-track tails vacated by one complete edit candidate.
 pub(crate) fn close_vacated_tails(
     before: &ProjectData,

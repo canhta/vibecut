@@ -16,6 +16,14 @@ struct Snapshot {
     project: Arc<Project>,
     selection: Arc<BTreeSet<ItemId>>,
 }
+/// A reviewed pause cut needs the ripple pass wherever it is nested.
+fn cuts_pauses(command: &Command) -> bool {
+    match command {
+        Command::RemovePauses { .. } => true,
+        Command::Batch { commands } => commands.iter().any(cuts_pauses),
+        _ => false,
+    }
+}
 #[derive(Clone)]
 struct State {
     project: Arc<Project>,
@@ -526,6 +534,9 @@ impl Session {
             } => return self.add_library_sound(placement, start, asset, sound),
             command => command,
         };
+        // A pause removal always closes its vacated tails; the caller cannot turn
+        // the ripple path off for a reviewed cut, including inside a batch.
+        let ripple = ripple || cuts_pauses(&command);
         // Keep one generation available to close an active preview lifetime even
         // if its final child reaches exhaustion and the group must roll back.
         let closing = matches!(

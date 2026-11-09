@@ -1235,7 +1235,15 @@ fn deterministic_catalog_and_schema_document_receipts() {
         .map(|s| s.id)
         .collect();
     job_control.sort_unstable();
-    assert_eq!(job_control, ["fonts.download", "job_cancel", "preview"]);
+    assert_eq!(
+        job_control,
+        [
+            "fonts.download",
+            "job_cancel",
+            "preview",
+            "timeline.pause_candidates"
+        ]
+    );
     // Each fact rides on its declaration line: a renamed id keeps its rule, and a
     // command without a grant class (or a publisher without a path) fails here.
     use engine::{Availability, GrantClass, Lifecycle};
@@ -2222,4 +2230,103 @@ fn lent_font_operations_run_only_after_admission_and_never_on_replay() {
     let req = request(&s, "fonts.download", params, "once");
     ok(s.control_request(req, lent(&Allow), &mut r).unwrap());
     assert_eq!(calls.get(), 2);
+}
+
+/// Pause candidates are one analysis job whose spans surface through job_status.
+#[test]
+fn pause_candidates_job_reports_reviewed_spans_through_job_status() {
+    if !testkit::oracle::require("pause candidates") {
+        return;
+    }
+    let dir = testkit::fixture::dir("control-pause-candidates");
+    let expression = "(0.25*sin(2*PI*180*t)+0.15*sin(2*PI*320*t)+0.1*sin(2*PI*520*t))*\
+        (between(t\\,0\\,2)+between(t\\,2.8\\,4.6)+between(t\\,5.8\\,7.8)+between(t\\,9.4\\,12))";
+    let input = format!("aevalsrc={expression}:s=16000:d=12");
+    let path = testkit::oracle::generate(
+        &dir,
+        "pause candidates",
+        "control-pauses.wav",
+        &["-f", "lavfi", "-i", input.as_str(), "-c:a", "pcm_s16le"],
+    )
+    .unwrap();
+    let asset = media::SourceAsset::import(media::AssetId(1), path).unwrap();
+    let duration = time::Tick(12 * time::TICKS_PER_SECOND);
+    let mut data = project::Project::empty(project::ProjectId(0), "pauses".into())
+        .unwrap()
+        .into_data();
+    data.assets.push(asset.clone());
+    data.scene_mut().timeline.insert_track(Track {
+        id: TrackId(1),
+        name: "Audio".into(),
+        kind: TrackKind::Audio,
+        muted: false,
+        hidden: false,
+        locked: false,
+        items: vec![Item {
+            hidden: false,
+            blend_mode: Default::default(),
+            retime: Default::default(),
+            masks: Vec::new(),
+            effects: Vec::new(),
+            animations: Default::default(),
+            id: ItemId(1),
+            source_asset: Some(asset.id()),
+            source_range: SourceRange::new(time::Tick::ZERO, duration).unwrap(),
+            start: time::Tick::ZERO,
+            content: ItemParams::Audio(project::AudioParams {
+                fades: Default::default(),
+                volume: 0.0,
+                muted: false,
+                source: Default::default(),
+            }),
+        }],
+    });
+    let mut s = Session::new(project::Project::new(data).unwrap(), 10).unwrap();
+    let mut r = runner();
+    let req = request(
+        &s,
+        "timeline.pause_candidates",
+        json!({"min_pause_ms":500,"pad_ms":20,"crossfade_ms":20}),
+        "pause-candidates",
+    );
+    let response = ok(s.control_request(req, caller(&Allow), &mut r).unwrap());
+    let ControlResult::JobAccepted { job, .. } = response else {
+        panic!("pause candidates must return a job");
+    };
+    finish(&mut r, job);
+    let req = request(&s, "job_status", json!({"job":job.0}), "pause-status");
+    let ControlResult::Job { snapshot } =
+        ok(s.control_request(req, caller(&Allow), &mut r).unwrap())
+    else {
+        panic!("job_status result");
+    };
+    let pauses = snapshot.pauses.unwrap();
+    assert_eq!(pauses.analyzed_sources, 1);
+    assert_eq!(pauses.spans.len(), 3, "{pauses:?}");
+    for span in &pauses.spans {
+        assert!(span.end > span.start);
+    }
+    // Cancelling a second analysis reports the cancelled job without spans.
+    let req = request(
+        &s,
+        "timeline.pause_candidates",
+        json!({"min_pause_ms":500,"pad_ms":20,"crossfade_ms":20}),
+        "pause-cancel",
+    );
+    let ControlResult::JobAccepted { job, .. } =
+        ok(s.control_request(req, caller(&Allow), &mut r).unwrap())
+    else {
+        panic!("pause candidates must return a job");
+    };
+    r.cancel_job(job).unwrap();
+    finish(&mut r, job);
+    let req = request(&s, "job_status", json!({"job":job.0}), "pause-cancelled");
+    let ControlResult::Job { snapshot } =
+        ok(s.control_request(req, caller(&Allow), &mut r).unwrap())
+    else {
+        panic!("job_status result");
+    };
+    assert_eq!(snapshot.state, engine::jobs::JobState::Cancelled);
+    assert!(snapshot.pauses.is_none());
+    r.shutdown();
 }

@@ -42,6 +42,7 @@ pub(crate) fn run(context: &Context, args: Vec<OsString>) -> Result<Output, CliE
         "export" => media::export(context, rest),
         "batch" => media::batch(context, rest),
         "captions" => project::captions(context, rest),
+        "cut" => project::cut(context, rest),
         "subtitle" => ai::subtitle(context, rest),
         "clips" => ai::clips(context, rest),
         "providers" => ai::providers(context, rest),

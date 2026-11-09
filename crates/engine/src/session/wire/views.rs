@@ -103,6 +103,7 @@ pub enum JobKind {
     DetectScenes,
     AnalyzeSpeechActivity,
     GenerateWaveform,
+    AnalyzePauses,
     MeasureLoudness,
     Preview,
     EffectThumbnail,
@@ -184,4 +185,21 @@ impl std::fmt::Debug for PreviewFrame {
             .field("height", &self.height)
             .finish_non_exhaustive()
     }
+}
+
+/// One reviewed output-time span. Pause candidates produce these; removal consumes them.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct PauseSpan {
+    pub start: Tick,
+    pub end: Tick,
+}
+
+/// Output-time pause candidates after padding, word-guard and merge.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct PauseCandidates {
+    pub spans: Vec<PauseSpan>,
+    /// Distinct source ranges the analysis decoded; zero for an inaudible timeline.
+    pub analyzed_sources: u64,
 }

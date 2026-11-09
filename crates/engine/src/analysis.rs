@@ -14,6 +14,7 @@ pub use shot_analysis::{
     SecondAnalysis, ShotAnalysis, SpeakerRef, SpeakerState,
 };
 mod loudness_workflow;
+pub mod pause_candidates;
 pub mod speech_activity;
 pub mod waveform;
 pub mod loudness {

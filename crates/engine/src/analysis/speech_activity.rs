@@ -238,7 +238,18 @@ impl SpeechActivityRequest {
         Ok(result)
     }
 
-    fn analyze(&self, context: &JobContext) -> Result<SpeechActivityResult, EditError> {
+    /// Decode and classify this request inside a job without touching the artifact
+    /// cache. Progress is reported inside `base..=base+span`, so a caller scanning
+    /// several ranges keeps one job progress scale.
+    pub(crate) fn detect(
+        &self,
+        context: &JobContext,
+        base: f32,
+        span: f32,
+    ) -> Result<(Vec<SpeechActivitySpan>, u64), EditError> {
+        if !base.is_finite() || !span.is_finite() || base < 0.0 || span < 0.0 || base + span > 1.0 {
+            return Err(EditError::Invalid("speech activity progress"));
+        }
         let extract = SpeechExtractSettings {
             overlap: Tick::ZERO,
             ..SpeechExtractSettings::default()
@@ -262,7 +273,7 @@ impl SpeechActivityRequest {
                     / self.range.duration().0 as f64)
                     .clamp(0.0, 1.0);
                 context
-                    .progress(JobStage::Analyzing, progress as f32)
+                    .progress(JobStage::Analyzing, base + span * progress as f32)
                     .map_err(|_| media::MediaError::Cancelled)
             },
         );
@@ -271,7 +282,11 @@ impl SpeechActivityRequest {
         }
         decoded?;
         context.check_cancelled()?;
-        let (spans, analyzed_frames) = detector.finish()?;
+        detector.finish()
+    }
+
+    fn analyze(&self, context: &JobContext) -> Result<SpeechActivityResult, EditError> {
+        let (spans, analyzed_frames) = self.detect(context, 0.0, 1.0)?;
         Ok(SpeechActivityResult {
             version: RECIPE.into(),
             key: self.key.bytes(),

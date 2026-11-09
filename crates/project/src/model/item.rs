@@ -307,6 +307,34 @@ impl Item {
             .checked_add(self.duration()?)
             .ok_or(Error::Invalid("item end overflow"))
     }
+
+    /// Native ASR word ranges of a caption item, clamped to its source window and
+    /// mapped to output time. Other item kinds carry no words.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the retained retime mapping or a range is unrepresentable.
+    pub fn word_spans(&self) -> Result<Vec<SourceRange>> {
+        let ItemParams::Caption(params) = &self.content else {
+            return Ok(Vec::new());
+        };
+        let mut spans = Vec::new();
+        for cue in &params.cues.cues {
+            for word in &cue.word_ranges {
+                let start = word.start().max(self.source_range.start());
+                let end = word.end().min(self.source_range.end());
+                if start >= end {
+                    continue;
+                }
+                let start = self.output_time_of(start)?;
+                let end = self.output_time_of(end)?;
+                if start < end {
+                    spans.push(SourceRange::new(start, end)?);
+                }
+            }
+        }
+        Ok(spans)
+    }
 }
 
 /// Clip/master dB range and hundredth-dB editing grid. Curves interpolate continuously.

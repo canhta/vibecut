@@ -295,6 +295,12 @@ pub(crate) fn apply(
         Command::TimelineTrim { items, edge, delta } => {
             data = clips::trim_group(data, items, edge, delta, sources)?;
         }
+        Command::RemovePauses {
+            spans,
+            crossfade_ms,
+        } => {
+            data = clips::remove_output_ranges(data, &spans, crossfade_ms, created, next, sources)?;
+        }
         Command::SplitAt { item: id, at } => {
             data = clips::execute_split_at(data, id, at, created, next, sources)?;
         }
@@ -546,6 +552,7 @@ pub(crate) fn apply(
         | Command::Undo {}
         | Command::Redo {}
         | Command::TimelineSetRipple { .. }
+        | Command::PauseCandidates { .. }
         | Command::TimelinePreview { .. }
         | Command::TimelineCommitPreview {}
         | Command::TimelineDiscardPreview {}

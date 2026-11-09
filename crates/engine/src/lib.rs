@@ -26,6 +26,7 @@ pub mod transcript;
 pub use transcript::translation;
 mod analysis;
 pub use analysis::loudness;
+pub use analysis::pause_candidates;
 pub use analysis::scene_detection;
 pub use analysis::speech_activity;
 pub use analysis::waveform;

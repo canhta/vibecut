@@ -1,5 +1,6 @@
 //! Behaviour coverage for analysis.
 mod loudness;
+mod pause_candidates;
 mod scene_detection;
 mod shot_analysis;
 mod speech_activity;

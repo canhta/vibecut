@@ -93,7 +93,37 @@ impl Session {
                         .transpose()
                         .map_err(|_| EditError::InvalidParams)?;
                 }
+                if snapshot.kind == JobKind::AnalyzePauses && snapshot.state == JobState::Completed
+                {
+                    snapshot.pauses = Some(crate::pause_candidates::decode(
+                        runner.output_bytes(job).ok_or(EditError::JobNotRetained)?,
+                    )?);
+                }
                 Ok(ControlResult::Job { snapshot })
+            }
+            Command::PauseCandidates {
+                min_pause_ms,
+                pad_ms,
+                crossfade_ms,
+            } => {
+                if self.transaction_active() {
+                    return Err(EditError::TransactionActive);
+                }
+                let settings = crate::pause_candidates::PauseSettings {
+                    min_pause_ms,
+                    pad_ms,
+                    crossfade_ms,
+                };
+                let request = crate::pause_candidates::PauseCandidatesRequest::new(
+                    self.project().clone(),
+                    settings,
+                )?;
+                let job = request.submit(runner)?;
+                Ok(ControlResult::JobAccepted {
+                    job: job.id,
+                    revision: self.revision(),
+                    paths: Vec::new(),
+                })
             }
             Command::JobCancel { job } => {
                 runner.cancel_job(job)?;

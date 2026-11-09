@@ -21,5 +21,5 @@ pub use limits::*;
 pub use results::{ControlResult, JobView, ProviderView};
 pub use views::{
     FontEntry, FontLoad, FontLoadState, FontOrigin, FontState, JobId, JobKind, JobStage, JobState,
-    PreviewFrame, PreviewResult, SnapshotResult,
+    PauseCandidates, PauseSpan, PreviewFrame, PreviewResult, SnapshotResult,
 };

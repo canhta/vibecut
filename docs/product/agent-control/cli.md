@@ -19,6 +19,7 @@ Build with `cargo build -p vibecut-cli` through the [build wrapper](../../agents
 | `vibecut-cli batch <job-file>` | Render the validated export jobs in a JSON job file |
 | `vibecut-cli subtitle <in> --to <lang>` | Transcribe, translate and export SRT/burned subtitles |
 | `vibecut-cli captions import <project> <file.ass>` | Import ASS cues and styles as one caption item and print counts |
+| `vibecut-cli cut <project> --remove-pauses [--min-pause-ms N] [--pad-ms N] [--crossfade-ms N] [--dry-run]` | List detected pauses, or remove them as one undoable edit |
 | `vibecut-cli clips <in>` | Suggest ranked shorts from a long video and optionally export them |
 | `vibecut-cli providers` | List transcription/translation/clip providers and capabilities offline |
 | `vibecut-cli model list\|info\|download` | Inspect or install pinned local model files |
@@ -42,6 +43,10 @@ Group timeline edits: `exec <project> timeline.move_items '{"items":[1,2],"delta
 ## Captions
 
 `captions import <project> <file.ass|file.ssa> [--language <tag>] [--start <ticks>] [--track <id>] [--name <name>]` parses the script with `captions::parse_ass`, prints cue/style/skipped counts and line-numbered warnings, and applies `captions.import`. Asset, caption track and caption item are one undo step. `--track` targets an existing text track; `--name` labels a new one (default `Captions`). `--language` is the cue source language (default `en`); `--start` offsets the item in ticks. Input is capped at 16 MiB. Malformed lines warn and skip; an oversized file or a document with no surviving cue fails with a typed error and leaves the project unchanged.
+
+## Pause removal
+
+`cut <project> --remove-pauses [--min-pause-ms 500] [--pad-ms 20] [--crossfade-ms 20] [--dry-run]` runs the engine's local speech-activity job over the active scene's audible items, prints the output-time candidate spans and, without `--dry-run`, applies them through `timeline.remove_pauses` and saves. One invocation is one undoable edit; `--dry-run` writes nothing. Defaults and their sources are in the [analysis contract](../../../crates/engine/src/analysis/README.md#pause-candidates). The job has no artifact cache, so a second run decodes the sources again. Candidates never cut inside a native caption word span, a span is padded by the silence it keeps and the join fades with the equal-power pair the reviewed spans imply.
 
 ## Subtitles
 
