@@ -432,13 +432,9 @@ fn error_detail(error: &dyn std::error::Error) -> String {
     parts.join(": ")
 }
 fn effect_definition(params: &project::EffectParams) -> Option<&'static project::EffectDefinition> {
-    let kind = match params {
-        project::EffectParams::Blur { .. } => "blur",
-        project::EffectParams::ColorGrade { .. } => "color_grade",
-    };
     project::effect_definitions()
         .iter()
-        .find(|definition| definition.kind == kind)
+        .find(|definition| definition.kind == params.kind())
 }
 fn effect_params_from_definition(
     definition: &project::EffectDefinition,
@@ -465,6 +461,20 @@ fn effect_params_from_definition(
                 contrast: value("contrast"),
                 saturation: value("saturation"),
                 hue: value("hue"),
+            })
+        }
+        "chroma_key" => {
+            let value = |key: &str| {
+                definition
+                    .params
+                    .iter()
+                    .find(|parameter| parameter.key == key)
+                    .map_or(0.0, |parameter| parameter.default)
+            };
+            Some(project::EffectParams::ChromaKey {
+                key_color: project::chroma_key_color(value("key_color")).ok()?,
+                intensity: value("intensity"),
+                shadow: value("shadow"),
             })
         }
         _ => None,

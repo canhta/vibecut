@@ -341,7 +341,7 @@ pub(crate) fn color(bytes: [u8; 4]) -> [f32; 4] {
         }
     })
 }
-fn eotf(x: f32, transfer: u32) -> f32 {
+pub(crate) fn eotf(x: f32, transfer: u32) -> f32 {
     match transfer {
         8 => x,
         13 => {

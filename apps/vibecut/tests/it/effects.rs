@@ -120,6 +120,31 @@ fn gpu_matches_cpu_working_pixels_at_both_scales() {
                 .fold(0.0_f32, f32::max);
             assert!(max <= 1e-4, "GPU grade difference {grade:?}: {max}");
         }
+        for (key, intensity, shadow) in [
+            ([0, 255, 0, 255], 40.0, 0.0),
+            ([0, 255, 0, 255], 100.0, 0.0),
+            ([0, 255, 0, 255], 40.0, 100.0),
+            ([30, 60, 200, 255], 75.0, 50.0),
+            ([128, 128, 128, 255], 40.0, 0.0),
+        ] {
+            let passes = chroma_key_passes(project::Color(key), intensity, shadow).unwrap();
+            let inputs = || EffectInputs {
+                coverage: None,
+                below: &image,
+            };
+            let cpu = CpuEffects.apply(&image, &passes, inputs(), &Hooks).unwrap();
+            let actual = gpu.apply(&image, &passes, inputs(), &Hooks).unwrap();
+            let max = cpu
+                .pixels()
+                .iter()
+                .zip(actual.pixels())
+                .flat_map(|(a, b)| a.iter().zip(b).map(|(a, b)| (a - b).abs()))
+                .fold(0.0_f32, f32::max);
+            assert!(
+                max <= 1e-4,
+                "GPU chroma key difference {key:?} {intensity} {shadow}: {max}"
+            );
+        }
         let below = Image::from_working_pixels(
             w,
             h,

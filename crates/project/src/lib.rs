@@ -19,12 +19,13 @@ pub use persistence::{
     ViewState, WriterLease, atomic_write, decode, encode, load, metadata_path, read_metadata,
 };
 pub use visual::{
-    BlendMode, Crop, DEFAULT_WEIGHT, EffectDefinition, EffectInstance, EffectParamDefinition,
-    EffectParams, GRADE_MAX, GRADE_MIN, MASK_SCALARS, MAX_LETTER_SPACING, MAX_LINE_HEIGHT, Mask,
-    MaskMode, MaskPath, MaskShape, MaskStroke, MaskVertex, StrokeAlign, TRANSITION_DEFINITIONS,
-    TransformField, Transition, TransitionAlignment, TransitionDefinition, TransitionId,
-    effect_definitions, transition_definition, valid_letter_spacing, valid_line_height,
-    valid_weight,
+    BlendMode, CHROMA_KEY_COLOR_DEFAULT, CHROMA_KEY_COLOR_MAX, CHROMA_KEY_INTENSITY_DEFAULT,
+    CHROMA_KEY_MAX, CHROMA_KEY_MIN, Crop, DEFAULT_WEIGHT, EffectDefinition, EffectInstance,
+    EffectParamDefinition, EffectParams, GRADE_MAX, GRADE_MIN, MASK_SCALARS, MAX_LETTER_SPACING,
+    MAX_LINE_HEIGHT, Mask, MaskMode, MaskPath, MaskShape, MaskStroke, MaskVertex, StrokeAlign,
+    TRANSITION_DEFINITIONS, TransformField, Transition, TransitionAlignment, TransitionDefinition,
+    TransitionId, chroma_key_color, effect_definitions, transition_definition,
+    valid_letter_spacing, valid_line_height, valid_weight,
 };
 
 #[derive(Debug, thiserror::Error)]

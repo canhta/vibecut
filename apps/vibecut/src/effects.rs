@@ -63,7 +63,7 @@ impl GpuEffects {
             immediate_size: 0,
         });
         let module = device.create_shader_module(wgpu::include_wgsl!("effects.wgsl"));
-        let pipelines = ["gaussian", "blend", "grade"]
+        let pipelines = ["gaussian", "blend", "grade", "chroma_key"]
             .into_iter()
             .map(|entry| {
                 (

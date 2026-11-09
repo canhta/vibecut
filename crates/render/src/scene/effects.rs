@@ -81,6 +81,21 @@ pub fn blur_passes(intensity: f64, width: u32, height: u32) -> Result<Vec<Effect
 }
 /// Linear-light mid grey that contrast pivots around.
 pub const GRADE_PIVOT: f32 = 0.18;
+/// BT.709 luma coefficients, also the key's luma for the shadow stage.
+const KEY_LUMA: [f32; 3] = [0.2126, 0.7152, 0.0722];
+/// BT.709 chroma scaling: 2*(1-Kb) and 2*(1-Kr) from the same coefficients.
+const KEY_CB_SCALE: f32 = 1.8556;
+const KEY_CR_SCALE: f32 = 1.5748;
+/// Chroma-distance tolerance at intensity 0 and its span at intensity 100: the
+/// implementation reference maps its 0..100 tolerance to `0.08 + 0.5*t`.
+/// Intensity 0 emits no pass, matching the observed reference.
+pub const KEY_TOLERANCE_MIN: f32 = 0.08;
+pub const KEY_TOLERANCE_SPAN: f32 = 0.5;
+/// Matte gain spans 1..3 across intensity, like the reference's
+/// `1 + 2*transparency`.
+pub const KEY_GAIN: f32 = 2.0;
+/// The reference's shadow stage doubles the luma gap before adding it to the matte.
+pub const KEY_SHADOW_GAIN: f32 = 2.0;
 /// Grade pass values: `[gain, contrast exponent, saturation, hue radians]`.
 /// Controls are the persisted -50..=50 sliders: brightness is +-1 stop of
 /// linear gain, contrast a power around [`GRADE_PIVOT`] (0.5..1.5), saturation
@@ -144,6 +159,101 @@ pub fn grade_pixel(pixel: [f32; 4], weights: &[f32]) -> [f32; 4] {
     let [r, g, b] = out.map(|v| v.clamp(0.0, 1.0) * alpha);
     [r, g, b, alpha]
 }
+/// Chroma-key pass values: `[key r, key g, key b, intensity, shadow]` with the
+/// key sRGB-encoded and both controls in 0..=1. Intensity scales the
+/// chroma-distance tolerance and 0 emits no pass; shadow restores pixels darker
+/// than the key. Stages follow the implementation reference's matte and spill
+/// stages; the observed UI exposes no spill control, so removal is inherent.
+pub fn chroma_key_passes(
+    key_color: project::Color,
+    intensity: f64,
+    shadow: f64,
+) -> Result<Vec<EffectPass>> {
+    let range = project::CHROMA_KEY_MIN..=project::CHROMA_KEY_MAX;
+    if [intensity, shadow]
+        .iter()
+        .any(|v| !v.is_finite() || !range.contains(v))
+    {
+        return Err(Error::Invalid("chroma key control"));
+    }
+    if intensity == 0.0 {
+        return Ok(Vec::new());
+    }
+    // Project colours are straight sRGB bytes; the pass compares sRGB-encoded
+    // pixels, so the key needs no transfer conversion here.
+    let encoded = |byte: u8| f32::from(byte) / 255.0;
+    Ok(vec![EffectPass {
+        entry_point: "chroma_key",
+        horizontal: false,
+        weights: vec![
+            encoded(key_color.0[0]),
+            encoded(key_color.0[1]),
+            encoded(key_color.0[2]),
+            (intensity / 100.0) as f32,
+            (shadow / 100.0) as f32,
+        ],
+    }])
+}
+fn key_chroma(color: [f32; 3]) -> (f32, f32, f32) {
+    let y = KEY_LUMA[0] * color[0] + KEY_LUMA[1] * color[1] + KEY_LUMA[2] * color[2];
+    (
+        y,
+        (color[2] - y) / KEY_CB_SCALE,
+        (color[0] - y) / KEY_CR_SCALE,
+    )
+}
+fn smoothstep(edge0: f32, edge1: f32, x: f32) -> f32 {
+    let t = ((x - edge0) / (edge1 - edge0)).clamp(0.0, 1.0);
+    t * t * (3.0 - 2.0 * t)
+}
+/// One premultiplied linear pixel through a chroma-key pass; the reference the
+/// GPU shader mirrors. Alpha is multiplied by the matte, and the key's dominant
+/// channel loses any excess over the other two (spill suppression). Colour stays
+/// within `0..=alpha`.
+pub fn chroma_key_pixel(pixel: [f32; 4], weights: &[f32]) -> [f32; 4] {
+    let alpha = pixel[3];
+    if alpha <= 0.0 {
+        return pixel;
+    }
+    let key = [0, 1, 2].map(|i| weights.get(i).copied().unwrap_or(0.0));
+    let intensity = weights.get(3).copied().unwrap_or(0.0).clamp(0.0, 1.0);
+    let shadow = weights.get(4).copied().unwrap_or(0.0).clamp(0.0, 1.0);
+    let mut c = [pixel[0] / alpha, pixel[1] / alpha, pixel[2] / alpha];
+    for v in &mut c {
+        *v = crate::image::oetf(v.clamp(0.0, 1.0), 13);
+    }
+    let (y, cb, cr) = key_chroma(c);
+    let (key_y, key_cb, key_cr) = key_chroma(key);
+    let magnitude_squared = (key_cb * key_cb + key_cr * key_cr).max(1e-6);
+    let projection = (cb * key_cb + cr * key_cr) / magnitude_squared;
+    let distance = ((cb - projection * key_cb).powi(2) + (cr - projection * key_cr).powi(2)).sqrt()
+        / magnitude_squared.sqrt();
+    let tolerance = KEY_TOLERANCE_MIN + KEY_TOLERANCE_SPAN * intensity;
+    let keyness = projection.clamp(0.0, 1.5) * (1.0 - smoothstep(0.0, tolerance, distance));
+    let protected = (key_y - y).max(0.0) * shadow * KEY_SHADOW_GAIN * keyness.min(1.0);
+    let matte = (1.0 - keyness * (1.0 + KEY_GAIN * intensity) + protected).clamp(0.0, 1.0);
+    let dominant = if key[1] >= key[0] && key[1] >= key[2] {
+        1
+    } else if key[2] >= key[0] {
+        2
+    } else {
+        0
+    };
+    let limit = match dominant {
+        0 => c[1].max(c[2]),
+        1 => c[0].max(c[2]),
+        _ => c[0].max(c[1]),
+    };
+    if let Some(channel) = c.get_mut(dominant) {
+        *channel = channel.min(limit);
+    }
+    let alpha = matte * alpha;
+    let mut out = c.map(|v| crate::image::eotf(v.clamp(0.0, 1.0), 13) * alpha);
+    for v in &mut out {
+        *v = v.clamp(0.0, alpha);
+    }
+    [out[0], out[1], out[2], alpha]
+}
 pub(crate) fn evaluate(
     item: &Item,
     local: Tick,
@@ -167,6 +277,11 @@ pub(crate) fn evaluate(
                 saturation,
                 hue,
             } => passes.extend(grade_passes(brightness, contrast, saturation, hue)?),
+            EffectParams::ChromaKey {
+                key_color,
+                intensity,
+                shadow,
+            } => passes.extend(chroma_key_passes(key_color, intensity, shadow)?),
         }
     }
     Ok(passes)
@@ -184,7 +299,7 @@ impl EffectCompositor for CpuEffects {
         let mut b = Image::new(item.width(), item.height(), [0.0; 4], hooks)?;
         for pass in passes {
             validate_pass(pass)?;
-            if pass.entry_point == "grade" {
+            if pass.entry_point == "grade" || pass.entry_point == "chroma_key" {
                 crate::image::row_chunks(&mut b.pixels, a.width as usize, hooks, |start, rows| {
                     check(hooks)?;
                     let source = a
@@ -192,7 +307,10 @@ impl EffectCompositor for CpuEffects {
                         .get(start..start + rows.len())
                         .ok_or(Error::Invalid("effect pixel"))?;
                     for (out, px) in rows.iter_mut().zip(source) {
-                        *out = grade_pixel(*px, &pass.weights);
+                        *out = match pass.entry_point {
+                            "chroma_key" => chroma_key_pixel(*px, &pass.weights),
+                            _ => grade_pixel(*px, &pass.weights),
+                        };
                     }
                     Ok(())
                 })?;
@@ -244,6 +362,23 @@ impl EffectCompositor for CpuEffects {
     }
 }
 pub fn validate_pass(pass: &EffectPass) -> Result<()> {
+    if pass.entry_point == "chroma_key" {
+        return if pass.weights.len() == 5
+            && pass.weights.iter().all(|w| w.is_finite())
+            && pass
+                .weights
+                .get(..3)
+                .is_some_and(|key| key.iter().all(|c| (0.0..=1.0).contains(c)))
+            && pass
+                .weights
+                .get(3..)
+                .is_some_and(|controls| controls.iter().all(|v| (0.0..=1.0).contains(v)))
+        {
+            Ok(())
+        } else {
+            Err(Error::Unsupported("effect pass"))
+        };
+    }
     if pass.entry_point == "grade" {
         return if pass.weights.len() == 4
             && pass.weights.iter().all(|w| w.is_finite())

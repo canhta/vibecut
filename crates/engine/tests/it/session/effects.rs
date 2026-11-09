@@ -574,3 +574,95 @@ fn color_grade_controls_clamp_undo_per_gesture_and_persist() {
     s.apply(Command::Redo {}).unwrap();
     assert_eq!(s.project(), &graded);
 }
+
+#[test]
+fn chroma_key_controls_clamp_undo_per_gesture_and_persist() {
+    let mut s = session();
+    let defaults = json!({"id":"chroma_key","enabled":true,"params":{"kind":"chroma_key","key_color":[0,255,0,255],"intensity":40.0,"shadow":0.0}});
+    s.execute("effects.add", json!({"item":2,"effect":defaults}))
+        .unwrap();
+    let added = s.project().clone();
+    // Both controls accept their limits and refuse one step beyond, atomically.
+    for (key, edge) in [
+        ("intensity", 0.0),
+        ("intensity", 100.0),
+        ("shadow", 1.0),
+        ("shadow", 100.0),
+    ] {
+        s.execute(
+            "effects.update_param",
+            json!({"item":2,"effect":"chroma_key","key":key,"value":edge}),
+        )
+        .unwrap();
+        s.apply(Command::Undo {}).unwrap();
+        assert_eq!(s.project(), &added, "{key} {edge}");
+    }
+    for (key, bad) in [
+        ("intensity", -0.5),
+        ("intensity", 100.5),
+        ("shadow", -0.5),
+        ("shadow", 100.5),
+        ("shadow", f64::NAN),
+    ] {
+        assert!(
+            s.execute(
+                "effects.update_param",
+                json!({"item":2,"effect":"chroma_key","key":key,"value":bad})
+            )
+            .is_err(),
+            "{key} {bad}"
+        );
+        assert_eq!(s.project(), &added);
+    }
+    // The picked colour is one packed sRGB scalar, so a pick is one command.
+    s.execute(
+        "effects.update_param",
+        json!({"item":2,"effect":"chroma_key","key":"key_color","value":0x11_22_33 as f64}),
+    )
+    .unwrap();
+    assert!(matches!(
+        item(&s).effects[0].params,
+        EffectParams::ChromaKey { key_color, .. } if key_color == Color([0x11, 0x22, 0x33, 255])
+    ));
+    s.apply(Command::Undo {}).unwrap();
+    assert_eq!(s.project(), &added);
+    for bad in [-1.0, 16_777_216.0, 1.5, f64::NAN] {
+        assert!(
+            s.execute(
+                "effects.update_param",
+                json!({"item":2,"effect":"chroma_key","key":"key_color","value":bad})
+            )
+            .is_err(),
+            "{bad}"
+        );
+        assert_eq!(s.project(), &added);
+    }
+    assert!(
+        s.execute(
+            "effects.update_param",
+            json!({"item":2,"effect":"chroma_key","key":"contrast","value":1.0})
+        )
+        .is_err()
+    );
+    // A pick-and-drag gesture of many updates is a single undo step.
+    s.begin_gesture().unwrap();
+    for v in [5.0, 20.0, 30.0] {
+        s.execute(
+            "effects.update_param",
+            json!({"item":2,"effect":"chroma_key","key":"intensity","value":v}),
+        )
+        .unwrap();
+    }
+    s.commit_gesture().unwrap();
+    let keyed = s.project().clone();
+    assert!(matches!(
+        item(&s).effects[0].params,
+        EffectParams::ChromaKey { intensity, .. } if intensity == 30.0
+    ));
+    let saved = project::encode(&keyed, false).unwrap();
+    assert_eq!(&project::decode(&saved).unwrap().project, keyed.as_ref());
+    s.apply(Command::Undo {}).unwrap();
+    assert_eq!(s.project(), &added);
+    s.apply(Command::Redo {}).unwrap();
+    assert_eq!(s.project(), &keyed);
+}

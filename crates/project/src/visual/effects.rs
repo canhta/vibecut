@@ -1,5 +1,5 @@
 //! Persisted effect instances; evaluation and devices belong to render/apps.
-use crate::{AnimationPath, Error, Result};
+use crate::{AnimationPath, Color, Error, Result};
 use serde::{Deserialize, Serialize};
 
 /// UI/catalog metadata lives beside the typed persisted parameters.
@@ -46,6 +46,41 @@ const GRADE_PARAMS: [EffectParamDefinition; 4] = [
     grade_param("saturation", "Saturation"),
     grade_param("hue", "Hue"),
 ];
+/// Chroma-key controls: two 0..=100 sliders and one packed key colour.
+/// Measured on the reference: intensity default 40, shadow default 0.
+pub const CHROMA_KEY_MIN: f64 = 0.0;
+pub const CHROMA_KEY_MAX: f64 = 100.0;
+pub const CHROMA_KEY_INTENSITY_DEFAULT: f64 = 40.0;
+/// Silver-green that a key colour picker starts from.
+pub const CHROMA_KEY_COLOR_DEFAULT: f64 = 0x00FF00 as f64;
+/// A packed key colour is exactly one 24-bit sRGB value.
+pub const CHROMA_KEY_COLOR_MAX: f64 = 0xFFFFFF as f64;
+const CHROMA_KEY_PARAMS: [EffectParamDefinition; 3] = [
+    EffectParamDefinition {
+        key: "key_color",
+        name: "Key color",
+        min: 0.0,
+        max: CHROMA_KEY_COLOR_MAX,
+        default: CHROMA_KEY_COLOR_DEFAULT,
+        animatable: false,
+    },
+    EffectParamDefinition {
+        key: "intensity",
+        name: "Intensity",
+        min: CHROMA_KEY_MIN,
+        max: CHROMA_KEY_MAX,
+        default: CHROMA_KEY_INTENSITY_DEFAULT,
+        animatable: false,
+    },
+    EffectParamDefinition {
+        key: "shadow",
+        name: "Shadow",
+        min: CHROMA_KEY_MIN,
+        max: CHROMA_KEY_MAX,
+        default: 0.0,
+        animatable: false,
+    },
+];
 pub fn effect_definitions() -> &'static [EffectDefinition] {
     &[
         EffectDefinition {
@@ -57,6 +92,11 @@ pub fn effect_definitions() -> &'static [EffectDefinition] {
             kind: "color_grade",
             name: "Color grade",
             params: &GRADE_PARAMS,
+        },
+        EffectDefinition {
+            kind: "chroma_key",
+            name: "Chroma key",
+            params: &CHROMA_KEY_PARAMS,
         },
     ]
 }
@@ -82,6 +122,12 @@ pub enum EffectParams {
         saturation: f64,
         hue: f64,
     },
+    /// Removes the picked key colour; intensity 0 keys nothing.
+    ChromaKey {
+        key_color: Color,
+        intensity: f64,
+        shadow: f64,
+    },
 }
 impl Default for EffectParams {
     fn default() -> Self {
@@ -91,10 +137,42 @@ impl Default for EffectParams {
     }
 }
 impl EffectParams {
+    /// Catalog kind, so callers never match over every variant.
+    pub const fn kind(&self) -> &'static str {
+        match self {
+            Self::Blur { .. } => "blur",
+            Self::ColorGrade { .. } => "color_grade",
+            Self::ChromaKey { .. } => "chroma_key",
+        }
+    }
+
     /// Change one registered scalar, refusing unknown keys and invalid values atomically.
+    /// A chroma key colour arrives as one packed 0xRRGGBB scalar so a pick is a
+    /// single effect command.
     pub fn set_scalar(&mut self, key: &str, value: f64) -> Result<()> {
         let candidate = match (&*self, key) {
             (Self::Blur { .. }, "intensity") => Self::Blur { intensity: value },
+            (Self::ChromaKey { .. }, "key_color") => {
+                let packed = chroma_key_color(value)?;
+                let mut next = self.clone();
+                if let Self::ChromaKey { key_color, .. } = &mut next {
+                    *key_color = packed;
+                }
+                next
+            }
+            (Self::ChromaKey { .. }, "intensity" | "shadow") => {
+                let mut next = self.clone();
+                if let Self::ChromaKey {
+                    intensity, shadow, ..
+                } = &mut next
+                {
+                    match key {
+                        "intensity" => *intensity = value,
+                        _ => *shadow = value,
+                    }
+                }
+                next
+            }
             (Self::ColorGrade { .. }, "brightness" | "contrast" | "saturation" | "hue") => {
                 let mut next = self.clone();
                 if let Self::ColorGrade {
@@ -139,14 +217,40 @@ impl EffectParams {
             {
                 Ok(())
             }
+            Self::ChromaKey {
+                intensity, shadow, ..
+            } if [intensity, shadow]
+                .iter()
+                .all(|v| v.is_finite() && (CHROMA_KEY_MIN..=CHROMA_KEY_MAX).contains(*v)) =>
+            {
+                Ok(())
+            }
             Self::ColorGrade { .. } => Err(Error::Invalid(
                 "colour grade controls must be finite and in -50..=50",
+            )),
+            Self::ChromaKey { .. } => Err(Error::Invalid(
+                "chroma key intensity and shadow must be finite and in 0..=100",
             )),
             Self::Blur { .. } => Err(Error::Invalid(
                 "blur intensity must be finite and in 0..=100",
             )),
         }
     }
+}
+
+/// One exact 24-bit sRGB colour packed into a scalar, opaque.
+pub fn chroma_key_color(value: f64) -> Result<Color> {
+    if !value.is_finite() || !(0.0..=CHROMA_KEY_COLOR_MAX).contains(&value) || value.fract() != 0.0
+    {
+        return Err(Error::Invalid("chroma key colour"));
+    }
+    let packed = value as u32;
+    Ok(Color([
+        (packed >> 16) as u8,
+        (packed >> 8) as u8,
+        packed as u8,
+        255,
+    ]))
 }
 impl EffectInstance {
     pub fn intensity_path(&self) -> Result<AnimationPath> {

@@ -44,6 +44,58 @@ fn grade(@builtin(global_invocation_id) id: vec3<u32>) {
     dst[i] = vec4<f32>(clamp(o, vec3<f32>(0.0), vec3<f32>(1.0)) * px.a, px.a);
 }
 
+fn oetf(x: f32) -> f32 {
+    let v = clamp(x, 0.0, 1.0);
+    if v <= 0.0031308 { return 12.92 * v; }
+    return 1.055 * pow(v, 1.0 / 2.4) - 0.055;
+}
+fn eotf(x: f32) -> f32 {
+    let v = clamp(x, 0.0, 1.0);
+    if v <= 0.04045 { return v / 12.92; }
+    return pow((v + 0.055) / 1.055, 2.4);
+}
+fn ramp(edge0: f32, edge1: f32, x: f32) -> f32 {
+    let t = clamp((x - edge0) / (edge1 - edge0), 0.0, 1.0);
+    return t * t * (3.0 - 2.0 * t);
+}
+// Mirrors render::effects::chroma_key_pixel; weights = [key r, key g, key b, intensity, shadow].
+@compute @workgroup_size(8, 8)
+fn chroma_key(@builtin(global_invocation_id) id: vec3<u32>) {
+    if id.x >= p.width || id.y >= p.height { return; }
+    let i = id.y * p.width + id.x;
+    let px = src[i];
+    if px.a <= 0.0 { dst[i] = px; return; }
+    let key = vec3<f32>(weights[0], weights[1], weights[2]);
+    let intensity = clamp(weights[3], 0.0, 1.0);
+    let shadow = clamp(weights[4], 0.0, 1.0);
+    var c = vec3<f32>(oetf(px.r / px.a), oetf(px.g / px.a), oetf(px.b / px.a));
+    let y = dot(c, vec3<f32>(0.2126, 0.7152, 0.0722));
+    let cb = (c.b - y) / 1.8556;
+    let cr = (c.r - y) / 1.5748;
+    let ky = dot(key, vec3<f32>(0.2126, 0.7152, 0.0722));
+    let kcb = (key.b - ky) / 1.8556;
+    let kcr = (key.r - ky) / 1.5748;
+    let mag2 = max(kcb * kcb + kcr * kcr, 1e-6);
+    let proj = (cb * kcb + cr * kcr) / mag2;
+    let dist = sqrt((cb - proj * kcb) * (cb - proj * kcb) + (cr - proj * kcr) * (cr - proj * kcr)) / sqrt(mag2);
+    let tol = 0.08 + 0.5 * intensity;
+    let keyness = clamp(proj, 0.0, 1.5) * (1.0 - ramp(0.0, tol, dist));
+    let protect = max(ky - y, 0.0) * shadow * 2.0 * min(keyness, 1.0);
+    let matte = clamp(1.0 - keyness * (1.0 + 2.0 * intensity) + protect, 0.0, 1.0);
+    var dominant = 0u;
+    if key.g >= key.r && key.g >= key.b { dominant = 1u; }
+    else if key.b >= key.r { dominant = 2u; }
+    var limit = 0.0;
+    if dominant == 0u { limit = max(c.g, c.b); }
+    else if dominant == 1u { limit = max(c.r, c.b); }
+    else { limit = max(c.r, c.g); }
+    let excess = max(c[dominant] - limit, 0.0);
+    c[dominant] = c[dominant] - excess;
+    let a = matte * px.a;
+    let out = vec3<f32>(eotf(c.r), eotf(c.g), eotf(c.b)) * a;
+    dst[i] = vec4<f32>(clamp(out, vec3<f32>(0.0), vec3<f32>(a)), a);
+}
+
 fn channel(mode: u32, b: f32, s: f32) -> f32 {
     switch mode {
         case 1u: { return min(b,s); }

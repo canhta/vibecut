@@ -355,7 +355,7 @@ fn transparent_edge_half_opacity_scaled_text_and_color_survive_encoded_decode() 
     if !tools() {
         return;
     }
-    for case in ["plain", "masked", "graded"] {
+    for case in ["plain", "masked", "graded", "keyed"] {
         let masked = case == "masked";
         let mut data = scene().into_data();
         if case == "graded" {
@@ -375,6 +375,26 @@ fn transparent_edge_half_opacity_scaled_text_and_color_survive_encoded_decode() 
                     contrast: 20.,
                     saturation: -20.,
                     hue: 10.,
+                },
+            });
+        }
+        if case == "keyed" {
+            // Preview and export must agree on a keyed clip: the synthetic source's
+            // right half is opaque green and loses its alpha.
+            let item = data
+                .scene_mut()
+                .timeline
+                .iter_mut()
+                .flat_map(|t| &mut t.items)
+                .find(|i| i.id == project::ItemId(0))
+                .unwrap();
+            item.effects.push(project::EffectInstance {
+                id: "chroma_key".into(),
+                enabled: true,
+                params: project::EffectParams::ChromaKey {
+                    key_color: project::Color([0, 255, 0, 255]),
+                    intensity: 40.,
+                    shadow: 0.,
                 },
             });
         }
@@ -446,6 +466,7 @@ fn transparent_edge_half_opacity_scaled_text_and_color_survive_encoded_decode() 
         let expected_checksum = match case {
             "masked" => 0xba9c55b24c28e586,
             "graded" => 0x16fda543ff7d7fd8,
+            "keyed" => 0x2dba6f3a5e314e17,
             _ => 0x9748c49eea14a2bf,
         };
         assert_eq!(

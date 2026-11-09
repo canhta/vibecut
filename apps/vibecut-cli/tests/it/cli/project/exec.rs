@@ -223,7 +223,7 @@ fn cli_pixel_modifiers_execute_and_export_instead_of_copying() {
     if !tools() {
         return;
     }
-    for case in ["blur", "mask", "grade"] {
+    for case in ["blur", "mask", "grade", "key"] {
         let masked = case == "mask";
         let dir = tempfile::tempdir().unwrap();
         let video = dir.path().join("input.mp4");
@@ -253,6 +253,19 @@ fn cli_pixel_modifiers_execute_and_export_instead_of_copying() {
                         json!({"item":0,"effect":"color_grade","key":key,"value":value}),
                     );
                 }
+            }
+            "key" => {
+                // Picked a green key colour, then raised intensity, as the panel does.
+                exec(
+                    &project,
+                    "effects.add",
+                    json!({"item":0,"effect":{"id":"chroma_key","enabled":true,"params":{"kind":"chroma_key","key_color":[0,255,0,255],"intensity":40.0,"shadow":0.0}}}),
+                );
+                exec(
+                    &project,
+                    "effects.update_param",
+                    json!({"item":0,"effect":"chroma_key","key":"intensity","value":100.0}),
+                );
             }
             _ => {
                 exec(

@@ -338,6 +338,205 @@ fn color_grade_refuses_hostile_values_and_bad_passes() {
     }
 }
 
+/// sRGB-encoded fixture component to the linear working space.
+fn linear(s: f32) -> f32 {
+    if s <= 0.04045 {
+        s / 12.92
+    } else {
+        ((s + 0.055) / 1.055).powf(2.4)
+    }
+}
+fn srgb_pixel(rgb: [f32; 3], alpha: f32) -> [f32; 4] {
+    let l = rgb.map(linear);
+    [l[0] * alpha, l[1] * alpha, l[2] * alpha, alpha]
+}
+fn keyed(key: [u8; 4], intensity: f64, shadow: f64, pixel: [f32; 4]) -> [f32; 4] {
+    let passes = chroma_key_passes(project::Color(key), intensity, shadow).unwrap();
+    passes
+        .first()
+        .map_or(pixel, |pass| chroma_key_pixel(pixel, &pass.weights))
+}
+const GREEN_KEY: [u8; 4] = [0, 255, 0, 255];
+
+#[test]
+fn chroma_key_removes_a_green_screen_at_several_intensities() {
+    // Generated fixture: shaded green screen, skin and grey foreground, a
+    // linear-light edge between them and a half-transparent green patch.
+    let pure = srgb_pixel([0.0, 1.0, 0.0], 1.0);
+    let dark = srgb_pixel([0.0, 0.5, 0.0], 1.0);
+    let skin = srgb_pixel([0.76, 0.55, 0.42], 1.0);
+    let grey = srgb_pixel([0.5, 0.5, 0.5], 1.0);
+    let edge = std::array::from_fn(|i| pure[i] * 0.5 + skin[i] * 0.5);
+    let translucent = srgb_pixel([0.0, 1.0, 0.0], 0.5);
+    for intensity in [0.0, 40.0, 100.0] {
+        for pass in chroma_key_passes(project::Color(GREEN_KEY), intensity, 0.0).unwrap() {
+            validate_pass(&pass).unwrap();
+        }
+    }
+    // Intensity 0 is the reference's no-op and emits no pass.
+    assert!(
+        chroma_key_passes(project::Color(GREEN_KEY), 0.0, 0.0)
+            .unwrap()
+            .is_empty()
+    );
+    let identity = keyed(GREEN_KEY, 0.0, 0.0, pure);
+    assert_eq!(identity, pure);
+    // The exact key colour is fully removed at every keying intensity.
+    for intensity in [20.0, 40.0, 100.0] {
+        assert_eq!(
+            keyed(GREEN_KEY, intensity, 0.0, pure)[3],
+            0.0,
+            "{intensity}"
+        );
+        assert_eq!(keyed(GREEN_KEY, intensity, 0.0, translucent)[3], 0.0);
+    }
+    // A shaded, darker screen keys more as intensity rises but stays soft.
+    let shaded = |intensity| keyed(GREEN_KEY, intensity, 0.0, dark)[3];
+    assert!(shaded(20.0) > shaded(40.0));
+    assert!(shaded(40.0) > shaded(100.0));
+    assert!(shaded(100.0) < 0.01);
+    // Foreground colours far from the key keep full alpha.
+    assert_eq!(keyed(GREEN_KEY, 40.0, 0.0, skin)[3], 1.0);
+    assert_eq!(keyed(GREEN_KEY, 40.0, 0.0, grey)[3], 1.0);
+    // A linear-light half-and-half edge keeps partial alpha (edge softness).
+    let soft = keyed(GREEN_KEY, 40.0, 0.0, edge)[3];
+    assert!(soft > 0.05 && soft < 0.95, "edge alpha {soft}");
+    // A non-matching key colour leaves green alone.
+    assert_eq!(keyed([255, 0, 0, 255], 100.0, 0.0, pure)[3], 1.0);
+}
+
+#[test]
+fn chroma_key_suppresses_spill_without_a_control() {
+    // Light green cast over skin: mostly kept, but the dominant channel loses
+    // its excess over the other two (the reference's spill stage at full strength).
+    let cast = srgb_pixel([0.55, 0.60, 0.5], 1.0);
+    let out = keyed(GREEN_KEY, 40.0, 0.0, cast);
+    assert!(out[3] > 0.8, "cast should stay foreground: {}", out[3]);
+    let encoded = |v: f32| {
+        if v <= 0.0031308 {
+            v * 12.92
+        } else {
+            1.055 * v.powf(1.0 / 2.4) - 0.055
+        }
+    };
+    let green = encoded(out[1] / out[3]);
+    assert!((green - 0.55).abs() < 1e-4, "spill green {green}");
+    assert!((out[1] - out[0]).abs() < 1e-5, "green no longer dominates");
+    // Shadow restores pixels darker than the key, as the reference shows.
+    let dark = srgb_pixel([0.0, 0.35, 0.0], 1.0);
+    let plain = keyed(GREEN_KEY, 40.0, 0.0, dark)[3];
+    let restored = keyed(GREEN_KEY, 40.0, 100.0, dark)[3];
+    assert!(restored > plain, "shadow {restored} vs {plain}");
+}
+
+#[test]
+fn chroma_key_refuses_hostile_values_and_bad_passes() {
+    for bad in [f64::NAN, f64::INFINITY, -0.1, 100.1] {
+        assert!(chroma_key_passes(project::Color(GREEN_KEY), bad, 0.0).is_err());
+        assert!(chroma_key_passes(project::Color(GREEN_KEY), 40.0, bad).is_err());
+    }
+    for weights in [
+        vec![0.0, 1.0, 0.0, 0.4],
+        vec![0.0, 1.0, 0.0, 0.4, 0.0, 0.0],
+        vec![0.0, 1.0, 0.0, f32::NAN, 0.0],
+        vec![0.0, 1.0, 2.0, 0.4, 0.0],
+        vec![0.0, 1.0, 0.0, 0.4, 1.5],
+    ] {
+        assert!(
+            validate_pass(&EffectPass {
+                entry_point: "chroma_key",
+                horizontal: false,
+                weights,
+            })
+            .is_err()
+        );
+    }
+    // A grey key has no chroma direction and leaves every pixel unchanged.
+    let skin = srgb_pixel([0.76, 0.55, 0.42], 1.0);
+    let untouched = keyed([128, 128, 128, 255], 100.0, 100.0, skin);
+    for (a, b) in untouched.iter().zip(skin) {
+        assert!((a - b).abs() < 1e-6, "{untouched:?}");
+    }
+}
+
+#[test]
+fn masked_item_chroma_key_composes_with_track_below() {
+    use project::*;
+    let hooks = Hooks::default();
+    let mut data = Project::empty(ProjectId(1), "key".into())
+        .unwrap()
+        .into_data();
+    data.canvas.width = 40;
+    data.canvas.height = 40;
+    data.canvas.background = Color([0, 0, 255, 255]);
+    let mut mask = Mask::new("m", MaskShape::Rectangle);
+    mask.width = 0.5;
+    mask.height = 1.0;
+    mask.center_x = -0.25;
+    let item = |effects: Vec<EffectInstance>| Item {
+        hidden: false,
+        blend_mode: Default::default(),
+        retime: Default::default(),
+        id: ItemId(1),
+        masks: vec![mask.clone()],
+        effects,
+        animations: Default::default(),
+        source_asset: None,
+        source_range: time::SourceRange::new(
+            time::Tick::ZERO,
+            time::FrameRate::FPS_30.tick_of(30).unwrap(),
+        )
+        .unwrap(),
+        start: time::Tick::ZERO,
+        content: ItemParams::Overlay(OverlayParams {
+            color: Color([0, 255, 0, 255]),
+        }),
+    };
+    let render = |effects| {
+        let mut data = data.clone();
+        data.scene_mut().timeline.main.items.push(item(effects));
+        let project = Project::new(data).unwrap();
+        Renderer::new(&project, RenderSettings::from_project(&project))
+            .unwrap()
+            .render_frame(time::Tick::ZERO, &mut crate::support::Empty, &hooks)
+            .unwrap()
+    };
+    // An exact-keyed item contributes no pixels, so the track below survives.
+    let keyed_out = render(vec![EffectInstance {
+        id: "chroma_key".into(),
+        enabled: true,
+        params: EffectParams::ChromaKey {
+            key_color: Color(GREEN_KEY),
+            intensity: 40.0,
+            shadow: 0.0,
+        },
+    }]);
+    let at = |image: &Image, x: usize| image.pixels()[20 * 40 + x];
+    for x in [5, 35] {
+        assert_eq!(at(&keyed_out, x), [0.0, 0.0, 1.0, 1.0], "x={x}");
+    }
+    // A near key keeps partial alpha: inside the mask it blends, outside it is
+    // fully masked out by the coverage stage after the effect.
+    let partial = render(vec![EffectInstance {
+        id: "chroma_key".into(),
+        enabled: true,
+        params: EffectParams::ChromaKey {
+            key_color: Color([0, 255, 60, 255]),
+            intensity: 40.0,
+            shadow: 0.0,
+        },
+    }]);
+    let inside = at(&partial, 5);
+    let outside = at(&partial, 35);
+    // Inside: the partly keyed green keeps some transparency, so the blue
+    // backdrop shows through; spill leaves no green cast.
+    assert!(
+        inside[0] == 0.0 && inside[2] > 0.2 && inside[2] < 1.0 && inside[3] == 1.0,
+        "inside {inside:?}"
+    );
+    assert_eq!(outside, [0.0, 0.0, 1.0, 1.0], "outside {outside:?}");
+}
+
 #[test]
 fn masked_item_grade_applies_only_inside_the_mask() {
     use project::*;

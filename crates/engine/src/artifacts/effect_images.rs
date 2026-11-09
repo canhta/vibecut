@@ -106,6 +106,11 @@ impl EffectThumbnails {
                         saturation,
                         hue,
                     } => render::effects::grade_passes(brightness, contrast, saturation, hue)?,
+                    EffectParams::ChromaKey {
+                        key_color,
+                        intensity,
+                        shadow,
+                    } => render::effects::chroma_key_passes(key_color, intensity, shadow)?,
                 };
                 let image = cache.adapter.apply(
                     &source,
