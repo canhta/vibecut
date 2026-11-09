@@ -1,0 +1,13 @@
+# Chapter generation
+
+`ChapterInput` takes ordered, nonoverlapping transcript segments (`ChapterSegment::from(&captions::Segment)`), their source language (vi/en/zh/zh-Hans/zh-Hant), a chapter cap of 1..=50 and the timeline duration in ticks. Input is at most 10,000 segments and 96 KiB of canonical JSON. The provider gets the whole transcript in one bounded invocation; there is no windowing, so a transcript above that ceiling refuses with `Payload` before consent. Empty, unsupported, unordered, duplicate-ID and out-of-duration transcripts refuse with a typed `ChapterRefusal`; `Error::Chapters` carries the reason.
+
+`ChapterGenerator` is the blocking single-attempt provider seam. `OpenAiChapterGenerator` admits only `gpt-6-luna`, `OPENAI_SETTINGS`, `store=false` and the official Responses endpoint; `AnthropicChapterGenerator` admits only `claude-sonnet-5-5`, `ANTHROPIC_SETTINGS` and `anthropic::MessagesClient`. Both expose `disclosure` with provider, policy link, endpoint, model, exact payload and a USD upper bound. Requests use the shared strict structured parser; response bodies are bounded and diagnostics redact text. No retry, fallback or provider switch happens inside an adapter.
+
+The provider returns title, description and chapter entries keyed by exact transcript segment ID. `ChapterInput::resolve` rejects unknown IDs, blank or oversized metadata, unsorted/duplicate starts and starts at or beyond the timeline duration as `Schema`. A chapter start is the selected segment's cue start; the model never supplies a timestamp.
+
+`ChapterDocument` is the versioned `.json` sidecar schema (version 1): language, duration, title, description, chapters (start, segment ID, title) and optional translations. Construction and deserialization validate the version, supported language, nonblank bounded text, 1..=50 strictly increasing in-duration chapter starts and at most four non-source translations. `to_json` emits pretty canonical JSON; `to_text` emits title, description and fixed `HH:MM:SS` chapter lines plus translated sections. `from_json` refuses an unsupported version or invalid document.
+
+`translate_chapters` reuses the [translation contract](../translation/README.md): title, description and chapter titles form one 3..=52-segment window; chapter starts and source timing are unchanged. Only that window is sent for consent.
+
+Tests: `cargo test -p ai --test it chapters::`. The ignored `live_chapter_generation` test needs `VIBECUT_LIVE_AI=1`, `OPENAI_API_KEY` and one `gpt-6-luna` request; `VIBECUT_CHAPTERS_SMOKE_INPUT` takes a `ChapterInput` JSON file and `VIBECUT_CHAPTERS_SMOKE_OUTPUT_DIR` writes the resulting document.

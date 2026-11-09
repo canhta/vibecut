@@ -1,4 +1,9 @@
-//! Produces derived project images.
+//! Produces derived project artifacts.
+mod chapters;
+pub mod chapter_sidecars {
+    //! Publishes chapter and description sidecars.
+    pub use super::chapters::{ChapterSidecars, sidecar_paths, write};
+}
 mod frame_thumbnails;
 pub mod thumbnails {
     //! Produces cached source thumbnails.

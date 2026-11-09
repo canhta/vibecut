@@ -1,6 +1,6 @@
 # Artifacts
 
-Interface: `thumbnails`, `thumbnail_strip`, `snapshot`, `effect_thumbnails`.
+Interface: `thumbnails`, `thumbnail_strip`, `snapshot`, `effect_thumbnails`, `chapter_sidecars`.
 
 ## Import jobs and thumbnails
 
@@ -27,6 +27,12 @@ Limits: one request or visible range 1..=128 tiles, a positive interval and max 
 `snapshot::default_name` returns `<project>-<timecode>.png` using time's shared DF/NDF formatter (DF at 29.97/59.94, NDF otherwise), replaces filesystem-reserved characters with `-`, and falls back to `snapshot` when the project name sanitizes empty. `snapshot::image` returns the same PNG bytes without publishing, for the desktop Copy action.
 
 Publication uses the [shared publication owner](../runtime/staged_publication/README.md#completed-export-publication). The desktop and CLI register active project, metadata and recovery paths with `Session::protect_paths`. `snapshot::save` and `save_with_budget` replace the destination for trusted desktop Save confirmation; control requests default to atomic no-clobber unless their trusted `Policy::snapshot_overwrite` grants replacement (the CLI's `--allow-overwrite`).
+
+## Chapter sidecars
+
+`chapter_sidecars::write` takes a sidecar stem, a validated `ai::chapters::ChapterDocument`, the captured project, protected active project/metadata paths, caller hooks and overwrite policy. It derives `<stem>.txt` and `<stem>.json` without touching the extension inside a native name, serializes both formats before admission, preflights both destinations against project sources and protected paths, then publishes each through the [shared publication owner](../runtime/staged_publication/README.md#completed-export-publication). A source or project alias on either file publishes nothing.
+
+Publication is per file: after a failure the previous destination survives and no staging remains; a failure while publishing the second file leaves the first complete file and the prior second file, never a partial file. The project is not mutated. `sidecar_paths` exposes the derived names for preflight presentation.
 
 ## Effect thumbnails
 

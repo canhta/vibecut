@@ -1,3 +1,4 @@
+//! Provider request contracts.
 use crate::{Consent, CostEstimate, Error, ProviderConfig, Scope, authorize};
 use captions::{LanguageTag, NfcText};
 use serde::{Deserialize, Serialize};
@@ -10,6 +11,7 @@ pub enum Operation {
     Align,
     Translate,
     SuggestClips,
+    GenerateChapters,
     Synthesize,
 }
 /// Absolute source-audio sample coordinates, half-open and nonnegative.
@@ -130,6 +132,7 @@ pub enum Stage {
     Align,
     Translate,
     SuggestClips,
+    GenerateChapters,
     Vision,
     Assemble,
 }

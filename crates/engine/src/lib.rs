@@ -35,6 +35,7 @@ pub use analysis::{
     SecondAnalysis, ShotAnalysis, SpeakerRef, SpeakerState,
 };
 mod artifacts;
+pub use artifacts::chapter_sidecars;
 pub(crate) use artifacts::control_preview;
 pub use artifacts::effect_thumbnails;
 pub use artifacts::snapshot;

@@ -2,6 +2,7 @@
 
 mod anthropic;
 mod candle_alignment;
+mod chapters;
 mod clips;
 mod conformance;
 mod elevenlabs;

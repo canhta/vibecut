@@ -31,7 +31,7 @@ impl Publication<'_> {
         Ok(())
     }
 
-    fn admit(&self) -> Result<()> {
+    pub(crate) fn admit(&self) -> Result<()> {
         if self.hooks.cancelled() {
             return Err(EditError::Cancelled);
         }

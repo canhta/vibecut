@@ -3,6 +3,7 @@
 pub mod alignment;
 pub mod anthropic;
 mod assembly;
+pub mod chapters;
 pub mod clips;
 mod contracts;
 pub mod elevenlabs;
@@ -87,6 +88,8 @@ pub enum Error {
     Time(#[from] time::TimeError),
     #[error("invalid caption output")]
     Captions(#[from] captions::Error),
+    #[error("chapter generation refused: {0}")]
+    Chapters(#[from] chapters::ChapterRefusal),
 }
 
 impl Error {

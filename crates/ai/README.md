@@ -11,6 +11,7 @@ Adapters cap response-parser allocation before building transport records; engin
 | `alignment/` | [Local Candle alignment](src/alignment/README.md) |
 | `anthropic.rs` | [Anthropic translator](src/anthropic/README.md) |
 | `assembly.rs` | [Recognition and time](src/assembly/README.md) |
+| `chapters/` | [Chapter generation](src/chapters/README.md) |
 | `clips/` | [Transcript clip suggestions](src/clips/README.md) |
 | `contracts.rs` | [Provider contracts](src/contracts/README.md) |
 | `elevenlabs.rs` | [ElevenLabs Scribe transcription](src/elevenlabs/README.md) |

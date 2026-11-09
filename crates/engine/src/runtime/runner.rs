@@ -201,6 +201,7 @@ impl From<ai::Stage> for JobStage {
             ai::Stage::Align => Self::Align,
             ai::Stage::Translate => Self::Translate,
             ai::Stage::SuggestClips => Self::SuggestClips,
+            ai::Stage::GenerateChapters => Self::Process,
             ai::Stage::Vision => Self::Process,
             ai::Stage::Assemble => Self::Assemble,
         }
