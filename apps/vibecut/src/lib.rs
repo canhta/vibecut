@@ -29,9 +29,9 @@ pub mod subtitles;
 pub mod workspace;
 pub use editor::properties::font_picker;
 pub use editor::{
-    AssetInspection, AssetState, Client, Editor, Inspection, PREFERENCE_COMMAND, ShortcutRow,
-    ShortcutTab, ShortcutsInspection, Sounds, SoundsMode, SoundsProblem, SoundsView, TextCaret,
-    WidgetState,
+    AssetInspection, AssetState, Client, CropAspect, CropInspection, Editor, Inspection,
+    PREFERENCE_COMMAND, ShortcutRow, ShortcutTab, ShortcutsInspection, Sounds, SoundsMode,
+    SoundsProblem, SoundsView, TextCaret, WidgetState,
 };
 pub use eframe::egui;
 

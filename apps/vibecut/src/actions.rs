@@ -71,6 +71,7 @@ pub enum UiAction {
     SubtitleCue,
     Import,
     Export,
+    Crop,
     Save,
     SaveAs,
     FocusHome,

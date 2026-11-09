@@ -862,6 +862,22 @@ catalog! {
     ActionUiPrefsSet { key: "action_ui_prefs_set", en: "Change a setting", vi: "Đổi cài đặt" },
     ActionUiKeybindingsSet { key: "action_ui_keybindings_set", en: "Change a shortcut", vi: "Đổi phím tắt" },
     ActionUiKeybindingsReset { key: "action_ui_keybindings_reset", en: "Restore shortcuts", vi: "Khôi phục phím tắt" },
+    ActionTimelineCrop { key: "action_timeline_crop", en: "Crop", vi: "Cắt" },
+
+    // Crop dialog.
+    CropTitle { key: "crop_title", en: "Crop", vi: "Cắt" },
+    CropAspectRatio { key: "crop_aspect_ratio", en: "Aspect ratio", vi: "Tỷ lệ khung hình" },
+    CropCustom { key: "crop_custom", en: "Custom", vi: "Tùy chỉnh" },
+    CropOriginal { key: "crop_original", en: "Original aspect ratio", vi: "Tỷ lệ gốc" },
+    CropAspect9x16 { key: "crop_aspect_9_16", en: "9:16", vi: "9:16" },
+    CropAspect1x1 { key: "crop_aspect_1_1", en: "1:1", vi: "1:1" },
+    CropAspect3x4 { key: "crop_aspect_3_4", en: "3:4", vi: "3:4" },
+    CropAspect16x9 { key: "crop_aspect_16_9", en: "16:9", vi: "16:9" },
+    CropAspect4x3 { key: "crop_aspect_4_3", en: "4:3", vi: "4:3" },
+    CropAspect2x1 { key: "crop_aspect_2_1", en: "2:1", vi: "2:1" },
+    CropReset { key: "crop_reset", en: "Reset", vi: "Đặt lại" },
+    CropApply { key: "crop_apply", en: "Apply", vi: "Áp dụng" },
+    CropPreview { key: "crop_preview", en: "Crop box", vi: "Vùng cắt" },
 }
 
 /// The message for `key` in `locale`.

@@ -2,8 +2,10 @@
 use crate::i18n;
 mod assets;
 mod captions;
+mod crop;
 mod export;
 mod frame;
+pub use crop::{Aspect as CropAspect, Inspection as CropInspection};
 pub(crate) use frame::Context;
 mod models;
 mod player;
@@ -200,6 +202,7 @@ impl Editor {
             media_reveal: None,
             media_delete_confirm: None,
             export: None,
+            crop: None,
             shortcuts_open: false,
             shortcut_tab: ShortcutTab::Timeline,
             shortcut_recording: None,
@@ -347,6 +350,7 @@ impl Editor {
                 .export
                 .as_ref()
                 .map(crate::export::ExportDialog::inspect),
+            crop: self.crop.as_ref().map(crop::Dialog::inspect),
             subtitles: self.subtitles.as_ref().map(|s| s.inspect(&self.session)),
             models: self
                 .models

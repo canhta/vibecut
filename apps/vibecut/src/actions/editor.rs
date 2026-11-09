@@ -474,6 +474,14 @@ pub(super) const ACTIONS: &[ActionSpec] = &[
         &["M"],
     ),
     ActionSpec::ui(
+        "timeline.crop",
+        Text::ActionTimelineCrop,
+        ActionCategory::Edit,
+        "crop dialog",
+        UiAction::Crop,
+        &[],
+    ),
+    ActionSpec::ui(
         "scene.open",
         Text::ActionSceneOpen,
         ActionCategory::Timeline,

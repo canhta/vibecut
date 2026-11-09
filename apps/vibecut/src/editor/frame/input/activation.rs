@@ -200,6 +200,7 @@ impl Editor {
                         dialog.show(self.session.project());
                     }
                 }
+                UiAction::Crop => crate::editor::crop::open(self)?,
                 UiAction::RunExport => self.run_export(self.preferences.export)?,
                 action @ (UiAction::ExportMarkIn | UiAction::ExportMarkOut) => {
                     let mut options = self.preferences.export;

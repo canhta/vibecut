@@ -200,6 +200,8 @@ pub struct Inspection {
     pub sounds: Option<super::assets::sounds::SoundsView>,
     pub export: Option<crate::export::ExportInspection>,
     pub export_options: crate::export::ExportOptions,
+    /// Working crop while its dialog is open; the project keeps its own copy.
+    pub crop: Option<super::crop::Inspection>,
     pub models: Option<crate::model_manager::ModelInspection>,
     pub subtitles: Option<crate::subtitles::Inspection>,
     /// Unknown actions, invalid chords and conflicts from the persisted map.
@@ -453,6 +455,8 @@ pub struct Editor {
     pub(super) media_reveal: Option<MediaReveal>,
     pub(super) media_delete_confirm: Option<Vec<AssetId>>,
     pub export: Option<crate::export::ExportDialog>,
+    /// Open crop dialog for one video or image clip.
+    pub(super) crop: Option<super::crop::Dialog>,
     pub(super) shortcuts_open: bool,
     pub(super) shortcut_tab: ShortcutTab,
     pub(super) shortcut_recording: Option<&'static str>,

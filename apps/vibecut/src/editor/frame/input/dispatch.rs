@@ -262,6 +262,10 @@ impl Editor {
                 self.preference_history.can_redo()
                     || engine::CommandKind::Redo.enabled(&self.session)
             }
+            ActionTarget::Ui {
+                action: UiAction::Crop,
+                ..
+            } => crate::editor::crop::available(self),
             ActionTarget::Ui { .. } => true,
         }
     }

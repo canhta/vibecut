@@ -45,6 +45,7 @@ impl Editor {
         self.timeline.forget_missing(&self.session);
         if !self.export.as_ref().is_some_and(|d| d.open)
             && !self.subtitles.as_ref().is_some_and(|s| s.modal_open())
+            && self.crop.is_none()
         {
             self.keyboard(ui.ctx());
         }
@@ -173,6 +174,7 @@ impl Editor {
         self.drop_overlay(ui.ctx(), hovering);
         self.toast(ui.ctx());
         super::super::export::show(self, ui.ctx());
+        super::super::crop::show(self, ui.ctx());
         if let Some(subtitles) = &mut self.subtitles {
             let widgets = subtitles.dialogs(
                 ui.ctx(),

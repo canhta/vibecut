@@ -9,7 +9,7 @@ time; there is no runtime network or font request.
 - Author: Phosphor Icons
 - Licence: MIT, see [LICENSE](LICENSE)
 - Added: p0-core/39; extended: p1-parity/06, p1-parity/09, p1-parity/54, p1-parity/117
-- Files: 50 unmodified `assets/regular/*.svg` files.
+- Files: 51 unmodified `assets/regular/*.svg` files.
 
 SHA-256 of each embedded file:
 
@@ -27,6 +27,7 @@ SHA-256 of each embedded file:
 | `circle-half.svg` | `4e5376acc240190bf951be566c4649b69936c928f679eba6793412295bb90736` |
 | `copy.svg` | `5a892fc6a72866e60c67db2088a87653cf44b57b1a5d183b36e950cdc5dd66b3` |
 | `corners-out.svg` | `fd79277404b3662b50b737127fb6bf6f63ae93c9b60d9f2aca9122a950ec08c8` |
+| `crop.svg` | `ebe7c26f3b67a0345ed22254195dc649f52788b403194c2024125f7324e939d1` |
 | `diamond.svg` | `c97299f11d98956233202f1b182b5d94de27b122193ad9d4201288472b02b1cd` |
 | `dots-three.svg` | `ca4e748007101155641ec3041cd129bb03a8030d0eed16e313b9dd75e6beac77` |
 | `export.svg` | `b3323cae86c93d7a4d344e921dc1500f97a73c66e5d9f0e6c46aab64e4a6f616` |
