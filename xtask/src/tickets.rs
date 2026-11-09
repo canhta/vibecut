@@ -617,7 +617,7 @@ mod tests {
             parse(
                 "m",
                 "02-ready.md",
-                "Status: open\nBlocked by: 01\nAssignee: codex".into(),
+                "Status: open\nBlocked by: 01\nAssignee: opencode".into(),
                 2.0,
             ),
             parse(
@@ -750,22 +750,22 @@ mod tests {
         let tickets = vec![
             parse(
                 "m",
-                "01-codex.md",
-                "Status: open\nPriority: P0\nAssignee: codex".into(),
+                "01-opencode.md",
+                "Status: open\nPriority: P0\nAssignee: opencode".into(),
                 0.0,
             ),
             parse(
                 "m",
-                "02-opencode.md",
-                "Status: open\nPriority: P0\nAssignee: opencode".into(),
+                "02-sonnet.md",
+                "Status: open\nPriority: P0\nAssignee: claude-sonnet".into(),
                 0.0,
             ),
         ];
         assert_eq!(frontier_rows(&tickets, None).unwrap().len(), 2);
-        let rows = frontier_rows(&tickets, Some("codex")).unwrap();
+        let rows = frontier_rows(&tickets, Some("opencode")).unwrap();
         assert_eq!(rows.len(), 1);
         assert_eq!(rows[0].id, "m/01");
-        assert_eq!(rows[0].assignee, "codex");
+        assert_eq!(rows[0].assignee, "opencode");
     }
 
     #[test]
