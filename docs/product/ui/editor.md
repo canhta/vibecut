@@ -54,6 +54,7 @@ Drag and scale stage the engine preview candidate: the player paints `preview_pr
 
 - A selected item shows a 2 px accent box, 10 px corner and side handles and an 18 px rotation grip 12 px beyond the box's bottom midpoint with a 12 px rotate glyph; the pointer target around each handle is 18 px. Four corners and the left/right side midpoints are draggable [observed: 2026-11-06 captures of a selected text item].
 - Corner and side handles show diagonal or axis resize cursors and the grip shows a grab cursor; a drag on the item body moves it. [proposed]
+- Move, scale and rotate snap to the canvas centre and edges and to other visible items' box edges, each axis independently, within 5 screen px at the preview scale; rotation snaps to 90° steps within 5°. Shift bypasses snapping for the gesture. A 1 px dashed accent guide marks each active target and disappears on release; a snapped rotation draws the item's own axis through its centre [observed: 2026-11-10 live web editor, where a 5 px offset still snapped and 6 px did not; the rotation pair and guide style follow the implementation reference].
 - Hidden and locked items expose no handles and cannot be grabbed.
 
 ## Local models

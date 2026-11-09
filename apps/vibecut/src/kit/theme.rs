@@ -311,6 +311,11 @@ pub(crate) mod size {
     /// Rotation grip circle and its constant screen gap below the box.
     pub const TRANSFORM_GRIP: f32 = 18.0;
     pub const TRANSFORM_GAP: f32 = 12.0;
+    /// Preview snap guide: dashed accent line across the canvas, measured in the
+    /// reference editor (2026-11-10) at 1 px with 4 px dashes and 3 px gaps.
+    pub const SNAP_GUIDE: f32 = 1.0;
+    pub const SNAP_GUIDE_DASH: f32 = 4.0;
+    pub const SNAP_GUIDE_GAP: f32 = 3.0;
     /// Inline text edit caret width and selection fill opacity. The web editor
     /// capture (2026-11-09) draws a 2 px caret and a ~38 % accent selection.
     pub const TEXT_EDIT_CARET: f32 = 2.0;

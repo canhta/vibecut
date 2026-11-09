@@ -29,6 +29,7 @@ Language for the editor's privacy and execution boundaries.
 - **Selection**: The timeline items chosen as the targets of an editing action.
 - **Viewport**: The screen region displaying a project's canvas, fitted with letterboxing and adjusted by preview zoom and pan.
 - **Handle**: A point on an item's selection box used to change its scale; its displayed position follows the item's rotation.
+- **Snap guide**: A line drawn across the preview canvas while a transform gesture holds a snap to the canvas centre or edge, or to another item's box edge; it disappears on release and never changes the project before the drop.
 - **Selection scope**: The current level of selection: timeline items, keyframes within items, or points within a mask. Clearing a selection acts on the most specific occupied scope first.
 - **Face track**: Observations of one visible face within a single shot; its identifier is local to that shot.
 - **Cross-shot identity**: A confident link from a face track to an earlier face track serving as its anchor. An uncertain link stays Unknown; it is not a claim about a person's name.

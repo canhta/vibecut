@@ -626,6 +626,73 @@ fn value(h: &Harness<Editor>, item: ItemId, field: TransformField) -> f64 {
         .unwrap_or_else(|| panic!("missing item {item:?} field {field:?}"))
 }
 
+/// The staged candidate's value during a preview gesture, or the committed one.
+fn staged(h: &Harness<Editor>, item: ItemId, field: TransformField) -> f64 {
+    let project = h
+        .state()
+        .session
+        .preview_project()
+        .map(|project| project.as_ref())
+        .unwrap_or_else(|| h.state().session.project());
+    project
+        .data()
+        .scene()
+        .timeline
+        .iter()
+        .flat_map(|track| track.items.iter())
+        .find(|candidate| candidate.id == item)
+        .and_then(|candidate| field.value_at(&candidate.animations, Tick::ZERO).ok())
+        .unwrap_or_else(|| panic!("missing staged item {item:?} field {field:?}"))
+}
+
+fn guides(h: &Harness<Editor>) -> Vec<vibecut::PreviewGuide> {
+    h.state().inspect().unwrap().preview_guides
+}
+
+/// Screen point of a canvas-pixel point at the preview's fitted viewport.
+fn screen(viewport: &render::viewport::Viewport, point: [f64; 2]) -> egui::Pos2 {
+    let [x, y] = viewport.canvas_to_screen(point).unwrap();
+    egui::pos2(x as f32, y as f32)
+}
+
+/// The item's box centre and the viewport the player uses for its gestures.
+fn box_centre(h: &Harness<Editor>) -> ([f64; 2], render::Rect, render::viewport::Viewport) {
+    let (geometry, viewport) = item_geometry(h);
+    let bounds = geometry.bounds();
+    (
+        [
+            bounds.x + bounds.width / 2.0,
+            bounds.y + bounds.height / 2.0,
+        ],
+        bounds,
+        viewport,
+    )
+}
+
+/// A canvas centre whose box centre and both edges stay at least twice the snap
+/// threshold away from every canvas target on both axes.
+fn free_spot(bounds: render::Rect, viewport: &render::viewport::Viewport) -> [f64; 2] {
+    let threshold = viewport
+        .canvas_distance(vibecut::snapping::PREVIEW_SNAP_PIXELS)
+        .unwrap();
+    let clear = |value: f64, half: f64, size: f64| {
+        [value - half, value, value + half].iter().all(|edge| {
+            [0.0, size / 2.0, size]
+                .iter()
+                .all(|target| (edge - target).abs() > 2.0 * threshold)
+        })
+    };
+    let x = (0..=640)
+        .map(f64::from)
+        .find(|value| clear(*value, bounds.width / 2.0, 640.0))
+        .expect("a canvas x away from every target");
+    let y = (0..=360)
+        .map(f64::from)
+        .find(|value| clear(*value, bounds.height / 2.0, 360.0))
+        .expect("a canvas y away from every target");
+    [x, y]
+}
+
 fn drag_from(h: &mut Harness<Editor>, start: egui::Pos2, delta: egui::Vec2) {
     h.hover_at(start);
     h.run_steps(1);
@@ -1404,6 +1471,232 @@ fn preview_transform_refuses_hidden_and_locked_items_and_clamps_minimum_scale() 
     drop_at(&mut h, start + egui::vec2(-2000.0, 0.0));
     assert_eq!(history(&h), 1);
     assert!((value(&h, ItemId(1), TransformField::ScaleX) - 0.01).abs() < 1e-9);
+}
+
+#[test]
+fn preview_move_snaps_to_a_canvas_edge_and_shift_bypasses_the_gesture() {
+    let mut h = build(editor(text_project(false, false), Preferences::default()));
+    select(&mut h, ItemId(1));
+    let (centre, bounds, viewport) = box_centre(&h);
+    let snapped = 640.0 - bounds.width / 2.0;
+    let start = screen(&viewport, centre);
+    let raw = screen(&viewport, [snapped + 3.0, centre[1]]);
+    let before = json(h.state().session.project());
+    drag_from(&mut h, start, raw - start);
+    assert_eq!(
+        json(h.state().session.project()),
+        before,
+        "staging a snapped move never mutates the committed project"
+    );
+    assert_eq!(history(&h), 0, "staging publishes no history");
+    assert!(
+        (staged(&h, ItemId(1), TransformField::PositionX) - (snapped - centre[0])).abs() < 1e-6,
+        "the box's right edge lands on the canvas right edge"
+    );
+    assert!(
+        guides(&h).iter().any(|guide| {
+            guide.axis == vibecut::PreviewAxis::Vertical && (guide.position - 640.0).abs() < 1e-6
+        }),
+        "an active snap draws its guide: {:?}",
+        guides(&h)
+    );
+
+    // Shift mid-drag bypasses the snap and removes the guide.
+    h.event(egui::Event::ModifiersChanged(egui::Modifiers::SHIFT));
+    h.run_steps(2);
+    let bypassed = staged(&h, ItemId(1), TransformField::PositionX);
+    assert!(
+        (bypassed - (snapped + 3.0 - centre[0])).abs() < 1e-3,
+        "Shift bypasses the snap for the rest of the gesture: staged {bypassed} expected {}",
+        snapped + 3.0 - centre[0]
+    );
+    assert!(guides(&h).is_empty());
+
+    // Releasing Shift restores the snap, and the drop publishes one undo step.
+    h.event(egui::Event::ModifiersChanged(egui::Modifiers::NONE));
+    h.run_steps(2);
+    assert!(
+        (staged(&h, ItemId(1), TransformField::PositionX) - (snapped - centre[0])).abs() < 1e-6
+    );
+    drop_at(&mut h, raw);
+    assert_eq!(history(&h), 1);
+    assert!((value(&h, ItemId(1), TransformField::PositionX) - (snapped - centre[0])).abs() < 1e-6);
+    assert!(guides(&h).is_empty(), "the guide disappears on release");
+}
+
+#[test]
+fn preview_scale_snaps_the_dragged_edge_per_axis_and_shift_bypasses() {
+    let mut h = build(editor(text_project(false, false), Preferences::default()));
+    select(&mut h, ItemId(1));
+    let (centre, bounds, viewport) = box_centre(&h);
+    let snapped = (640.0 - centre[0]) * 2.0 / bounds.width;
+    let start = widget(&h, "preview.transform.right").rect.center();
+    let end = screen(&viewport, [637.0, centre[1]]);
+    let before = json(h.state().session.project());
+    drag_from(&mut h, start, end - start);
+    assert_eq!(json(h.state().session.project()), before);
+    assert_eq!(history(&h), 0);
+    assert!(
+        (staged(&h, ItemId(1), TransformField::ScaleX) - snapped).abs() < 1e-6,
+        "the dragged right edge lands on the canvas right edge"
+    );
+    assert_eq!(
+        staged(&h, ItemId(1), TransformField::ScaleY),
+        1.0,
+        "a side handle keeps the other axis"
+    );
+    assert!(
+        guides(&h)
+            .iter()
+            .any(|guide| guide.axis == vibecut::PreviewAxis::Vertical),
+        "the scale snap draws a guide"
+    );
+
+    h.event(egui::Event::ModifiersChanged(egui::Modifiers::SHIFT));
+    h.run_steps(2);
+    let raw = (637.0 - centre[0]) * 2.0 / bounds.width;
+    assert!(
+        (staged(&h, ItemId(1), TransformField::ScaleX) - raw).abs() < 1e-3,
+        "Shift bypasses the scale snap"
+    );
+    assert!(guides(&h).is_empty());
+    h.event(egui::Event::ModifiersChanged(egui::Modifiers::NONE));
+    h.run_steps(2);
+    drop_at(&mut h, end);
+    assert_eq!(history(&h), 1);
+    assert!((value(&h, ItemId(1), TransformField::ScaleX) - snapped).abs() < 1e-6);
+    assert_eq!(value(&h, ItemId(1), TransformField::ScaleY), 1.0);
+}
+
+#[test]
+fn preview_rotate_snaps_to_quarter_turns_within_five_degrees_and_shift_bypasses() {
+    let mut h = build(editor(text_project(false, false), Preferences::default()));
+    select(&mut h, ItemId(1));
+    let (centre, _, viewport) = box_centre(&h);
+    let centre_screen = screen(&viewport, centre);
+    let grip = widget(&h, "preview.transform.rotate").rect.center();
+    let radius = grip.distance(centre_screen);
+    let at = |degrees: f32| {
+        let angle = (90.0 + degrees).to_radians();
+        centre_screen + egui::vec2(radius * angle.cos(), radius * angle.sin())
+    };
+    let before = json(h.state().session.project());
+    drag_from(&mut h, grip, at(87.0) - grip);
+    assert_eq!(json(h.state().session.project()), before);
+    assert_eq!(history(&h), 0);
+    assert_eq!(
+        staged(&h, ItemId(1), TransformField::Rotate),
+        90.0,
+        "a quarter turn within five degrees snaps"
+    );
+    assert!(
+        guides(&h).iter().any(|guide| {
+            guide.axis == vibecut::PreviewAxis::Vertical
+                && (guide.position - centre[0]).abs() < 1e-6
+        }),
+        "the rotation snap draws the item's own axis"
+    );
+
+    // Six degrees away is outside the threshold and keeps the raw angle.
+    h.hover_at(at(96.0));
+    h.run_steps(2);
+    let raw = staged(&h, ItemId(1), TransformField::Rotate);
+    assert!((raw - 96.0).abs() < 0.5, "outside the threshold, got {raw}");
+    assert!(guides(&h).is_empty());
+
+    // Shift bypasses a rotation that would otherwise snap.
+    h.hover_at(at(88.0));
+    h.run_steps(2);
+    assert_eq!(staged(&h, ItemId(1), TransformField::Rotate), 90.0);
+    h.event(egui::Event::ModifiersChanged(egui::Modifiers::SHIFT));
+    h.run_steps(2);
+    let bypassed = staged(&h, ItemId(1), TransformField::Rotate);
+    assert!(
+        (bypassed - 88.0).abs() < 0.5,
+        "Shift bypasses rotation snapping, got {bypassed}"
+    );
+    assert!(guides(&h).is_empty());
+
+    h.event(egui::Event::ModifiersChanged(egui::Modifiers::NONE));
+    h.run_steps(2);
+    drop_at(&mut h, at(88.0));
+    assert_eq!(history(&h), 1);
+    assert_eq!(value(&h, ItemId(1), TransformField::Rotate), 90.0);
+}
+
+#[test]
+fn preview_snapping_follows_the_shared_preference_and_shows_no_guide_without_a_candidate() {
+    let preferences = Preferences {
+        snapping: false,
+        ..Default::default()
+    };
+    let mut h = build(editor(text_project(false, false), preferences));
+    select(&mut h, ItemId(1));
+    let (centre, bounds, viewport) = box_centre(&h);
+    let snapped = 640.0 - bounds.width / 2.0;
+    let start = screen(&viewport, centre);
+    let raw = screen(&viewport, [snapped + 3.0, centre[1]]);
+    drag_from(&mut h, start, raw - start);
+    assert!(
+        (staged(&h, ItemId(1), TransformField::PositionX) - (snapped + 3.0 - centre[0])).abs()
+            < 1e-3,
+        "the shared snapping preference turns preview snapping off"
+    );
+    assert!(guides(&h).is_empty());
+    drop_at(&mut h, raw);
+    assert_eq!(history(&h), 1);
+
+    // With the preference on, a drag away from every target keeps the raw value
+    // and shows no guide.
+    let mut h = build(editor(text_project(false, false), Preferences::default()));
+    select(&mut h, ItemId(1));
+    let (centre, bounds, viewport) = box_centre(&h);
+    let free = free_spot(bounds, &viewport);
+    let start = screen(&viewport, centre);
+    let raw = screen(&viewport, free);
+    drag_from(&mut h, start, raw - start);
+    assert!(
+        (staged(&h, ItemId(1), TransformField::PositionX) - (free[0] - centre[0])).abs() < 1e-3,
+        "no candidate inside the threshold leaves the raw position"
+    );
+    assert!(guides(&h).is_empty());
+    drop_at(&mut h, raw);
+    assert_eq!(history(&h), 1);
+}
+
+/// Offscreen evidence for the ticket; wgpu stays out of CI.
+#[test]
+#[ignore = "renders through wgpu; run with --ignored to refresh target/p1-23-preview-snap.png"]
+fn preview_snap_guides_render_screenshot() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let target = std::env::var_os("CARGO_TARGET_DIR")
+        .map(PathBuf::from)
+        .map(|path| {
+            if path.is_absolute() {
+                path
+            } else {
+                root.join(path)
+            }
+        })
+        .unwrap_or_else(|| root.join("target"));
+    let mut h = build(editor(text_project(false, false), Preferences::default()));
+    select(&mut h, ItemId(1));
+    let (centre, _, viewport) = box_centre(&h);
+    let start = screen(&viewport, centre);
+    // Two pixels right and three below the canvas centre: both axes snap.
+    let end = screen(&viewport, [322.0, 183.0]);
+    drag_from(&mut h, start, end - start);
+    assert_eq!(
+        guides(&h).len(),
+        2,
+        "both axes hold a guide: {:?}",
+        guides(&h)
+    );
+    h.run_steps(3);
+    let image = h.render().expect("offscreen render");
+    std::fs::create_dir_all(&target).unwrap();
+    image.save(target.join("p1-23-preview-snap.png")).unwrap();
+    assert!(image.width() > 0 && image.height() > 0);
 }
 
 #[derive(Clone, Copy, Debug)]

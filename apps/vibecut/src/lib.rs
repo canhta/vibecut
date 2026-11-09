@@ -30,8 +30,8 @@ pub mod workspace;
 pub use editor::properties::font_picker;
 pub use editor::{
     AssetInspection, AssetState, Client, CropAspect, CropInspection, Editor, Inspection,
-    PREFERENCE_COMMAND, ShortcutRow, ShortcutTab, ShortcutsInspection, Sounds, SoundsMode,
-    SoundsProblem, SoundsView, TextCaret, WidgetState,
+    PREFERENCE_COMMAND, PreviewAxis, PreviewGuide, ShortcutRow, ShortcutTab, ShortcutsInspection,
+    Sounds, SoundsMode, SoundsProblem, SoundsView, TextCaret, WidgetState,
 };
 pub use eframe::egui;
 

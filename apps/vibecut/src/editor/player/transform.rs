@@ -1,6 +1,7 @@
 //! Direct transform gestures on the preview canvas.
-use super::{Action, Context};
+use super::{Action, Context, snap};
 use crate::{
+    editor::state::{PreviewAxis, PreviewGuide},
     egui::{self, CursorIcon, Pos2, Rect, Sense, Vec2},
     i18n::Text,
     kit,
@@ -31,6 +32,13 @@ impl State {
         self.drag.take().is_some()
     }
 
+    /// Guides of the gesture in progress, in canvas pixels.
+    pub(in crate::editor) fn guides(&self) -> &[PreviewGuide] {
+        self.drag
+            .as_ref()
+            .map_or(&[], |drag| drag.guides.as_slice())
+    }
+
     /// Close an inline text edit; the caller commits when it returns `Some(true)`
     /// and discards when the content returned to its opening value.
     pub(in crate::editor) fn cancel_text(&mut self) -> Option<bool> {
@@ -54,6 +62,12 @@ struct Drag {
     item: ItemId,
     kind: Kind,
     geometry: ItemGeometry,
+    /// Transformed box at the gesture origin, project canvas pixels.
+    extent: render::Rect,
+    /// Canvas lines this gesture may snap to, captured at the origin.
+    targets: snap::Targets,
+    /// Guides held by the latest staged candidate.
+    guides: Vec<PreviewGuide>,
     start: Values,
     /// Gesture origin in project canvas pixels.
     canvas: [f64; 2],
@@ -106,16 +120,32 @@ impl Values {
 impl Drag {
     fn begin(
         project: &project::Project,
+        renderer: &render::Renderer<'_>,
         viewport: &Viewport,
         item: ItemId,
         kind: Kind,
-        geometry: ItemGeometry,
         pointer: [f64; 2],
         at: Tick,
     ) -> Option<Self> {
         let data = find(project, item)?;
         let local = at.checked_sub(data.start)?;
         let start = Values::at(data, local)?;
+        let geometry = renderer.item_geometry(item, at).ok().flatten()?;
+        let extent = snap::extent(&geometry, viewport)?;
+        let targets = snap::Targets::new(
+            [project.data().canvas.width, project.data().canvas.height],
+            project
+                .data()
+                .scene()
+                .timeline
+                .iter()
+                .flat_map(|track| track.items.iter())
+                .filter(|candidate| candidate.id != item)
+                .filter_map(|candidate| {
+                    let geometry = renderer.item_geometry(candidate.id, at).ok().flatten()?;
+                    Some((candidate.id, snap::extent(&geometry, viewport)?))
+                }),
+        );
         let (screen, angle) = match kind {
             Kind::Move => (pointer, 0.0),
             Kind::Scale(handle) => (geometry.handle_position(viewport, handle).ok()?, 0.0),
@@ -133,6 +163,9 @@ impl Drag {
             item,
             kind,
             geometry,
+            extent,
+            targets,
+            guides: Vec::new(),
             start,
             canvas,
             angle,
@@ -141,16 +174,39 @@ impl Drag {
     }
 
     /// Absolute values from the gesture origin, ready for the preview command.
-    fn values(&self, viewport: &Viewport, pointer: Pos2) -> Option<Vec<(TransformField, f64)>> {
+    /// `enabled` is the shared snapping preference; `bypass` is the Shift rule
+    /// the timeline gestures use.
+    fn values(
+        &mut self,
+        viewport: &Viewport,
+        pointer: Pos2,
+        enabled: bool,
+        bypass: bool,
+    ) -> Option<Vec<(TransformField, f64)>> {
         let point = [f64::from(pointer.x), f64::from(pointer.y)];
         let canvas = viewport.screen_to_canvas(point).ok()?;
+        let active = enabled && !bypass;
+        let threshold = snap::threshold(viewport);
+        self.guides.clear();
         Some(match self.kind {
             Kind::Move => {
+                let mut delta = [canvas[0] - self.canvas[0], canvas[1] - self.canvas[1]];
+                if active {
+                    let proposed = render::Rect {
+                        x: self.extent.x + delta[0],
+                        y: self.extent.y + delta[1],
+                        ..self.extent
+                    };
+                    let (adjust, guides) = self.targets.move_by(proposed, threshold);
+                    delta[0] += adjust[0];
+                    delta[1] += adjust[1];
+                    self.guides = guides;
+                }
                 let x = TransformField::PositionX
-                    .clamp(self.start.x + canvas[0] - self.canvas[0])
+                    .clamp(self.start.x + delta[0])
                     .ok()?;
                 let y = TransformField::PositionY
-                    .clamp(self.start.y + canvas[1] - self.canvas[1])
+                    .clamp(self.start.y + delta[1])
                     .ok()?;
                 vec![
                     (TransformField::PositionX, x),
@@ -158,8 +214,14 @@ impl Drag {
                 ]
             }
             Kind::Scale(handle) => {
-                let [sx, sy] = self.geometry.scale_at(handle, canvas).ok()?;
                 let (across, down) = axes(handle);
+                let mut canvas = canvas;
+                if active {
+                    let (snapped, guides) = self.targets.handle(canvas, across, down, threshold);
+                    canvas = snapped;
+                    self.guides = guides;
+                }
+                let [sx, sy] = self.geometry.scale_at(handle, canvas).ok()?;
                 let mut values = Vec::with_capacity(2);
                 if across {
                     values.push((TransformField::ScaleX, sx));
@@ -174,9 +236,19 @@ impl Drag {
                 let angle = (point[1] - centre[1]).atan2(point[0] - centre[0]);
                 let mut delta = (angle - self.angle).to_degrees();
                 delta = (delta + 180.0).rem_euclid(360.0) - 180.0;
-                let rotate = TransformField::Rotate
-                    .clamp(self.start.rotate + delta)
-                    .ok()?;
+                let mut rotate = self.start.rotate + delta;
+                if active && let Some(snapped) = snap::rotation(rotate) {
+                    rotate = snapped;
+                    // Rotation keeps the box centre, so the guide uses its canvas
+                    // position rather than the screen angle origin.
+                    let guide_centre = [
+                        self.extent.x + self.extent.width / 2.0,
+                        self.extent.y + self.extent.height / 2.0,
+                    ];
+                    self.guides
+                        .push(snap::rotation_guide(snapped, guide_centre));
+                }
+                let rotate = TransformField::Rotate.clamp(rotate).ok()?;
                 vec![(TransformField::Rotate, rotate)]
             }
         })
@@ -321,6 +393,7 @@ pub(super) fn show(
     let pointer = ui.input(|i| i.pointer.interact_pos());
     let pressed = ui.input(|i| i.pointer.primary_pressed());
     let down = ui.input(|i| i.pointer.primary_down());
+    let bypass = ui.input(|i| i.modifiers.shift);
     let double = ui.input(|i| {
         i.pointer
             .button_double_clicked(egui::PointerButton::Primary)
@@ -376,7 +449,7 @@ pub(super) fn show(
                 actions.push(Action::TransformEnd { commit });
             }
         } else if let Some(pointer) = pointer {
-            if let Some(values) = drag.values(&viewport, pointer)
+            if let Some(values) = drag.values(&viewport, pointer, cx.preferences.snapping, bypass)
                 && drag.last.as_ref() != Some(&values)
             {
                 drag.last = Some(values.clone());
@@ -397,15 +470,15 @@ pub(super) fn show(
             .iter()
             .find(|(_, _, response)| response.is_pointer_button_down_on())
             .map(|(kind, _, _)| *kind);
-        if let Some((item, geometry, _)) = &visual
+        if let Some((item, _, _)) = &visual
             && let Some(kind) = handle
         {
             state.drag = Drag::begin(
                 project,
+                &renderer,
                 &viewport,
                 *item,
                 kind,
-                *geometry,
                 [f64::from(pointer.x), f64::from(pointer.y)],
                 at,
             );
@@ -416,6 +489,16 @@ pub(super) fn show(
 
     if let Some((_, _, visual)) = &visual {
         visual.paint(ui, cx.dark);
+    }
+    if let Some(drag) = &state.drag {
+        paint_guides(
+            ui,
+            &viewport,
+            [dimensions.width, dimensions.height],
+            &drag.guides,
+            cx.dark,
+            frame,
+        );
     }
 
     // Cursors: a grabbed handle while dragging, otherwise the hovered target.
@@ -497,9 +580,7 @@ fn press(
     let point = [f64::from(pointer.x), f64::from(pointer.y)];
     if let Some(item) = renderer.hit_test(viewport, point, at).ok().flatten() {
         actions.push(Action::Select(item));
-        if let Some(geometry) = renderer.item_geometry(item, at).ok().flatten() {
-            state.drag = Drag::begin(project, viewport, item, Kind::Move, geometry, point, at);
-        }
+        state.drag = Drag::begin(project, renderer, viewport, item, Kind::Move, point, at);
     } else {
         actions.push(Action::ClearSelection);
     }
@@ -510,6 +591,44 @@ fn handle_target(ui: &mut egui::Ui, position: Pos2, id: &str, label: &str) -> eg
     let response = ui.interact(rect, ui.make_persistent_id(id), Sense::click_and_drag());
     response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, label));
     response.on_hover_text(label)
+}
+
+/// Dashed accent lines across the canvas for the snap a gesture holds.
+fn paint_guides(
+    ui: &egui::Ui,
+    viewport: &Viewport,
+    dimensions: [u32; 2],
+    guides: &[PreviewGuide],
+    dark: bool,
+    frame: Rect,
+) {
+    if guides.is_empty() {
+        return;
+    }
+    let painter = ui.painter().with_clip_rect(frame);
+    let stroke = egui::Stroke::new(kit::size::SNAP_GUIDE, kit::accent(dark));
+    let [width, height] = dimensions.map(f64::from);
+    for guide in guides {
+        let (from, to) = match guide.axis {
+            PreviewAxis::Vertical => ([guide.position, 0.0], [guide.position, height]),
+            PreviewAxis::Horizontal => ([0.0, guide.position], [width, guide.position]),
+        };
+        let (Ok(from), Ok(to)) = (
+            viewport.canvas_to_screen(from),
+            viewport.canvas_to_screen(to),
+        ) else {
+            continue;
+        };
+        painter.extend(egui::Shape::dashed_line(
+            &[
+                egui::pos2(from[0] as f32, from[1] as f32),
+                egui::pos2(to[0] as f32, to[1] as f32),
+            ],
+            stroke,
+            kit::size::SNAP_GUIDE_DASH,
+            kit::size::SNAP_GUIDE_GAP,
+        ));
+    }
 }
 
 fn paint_handle(ui: &egui::Ui, position: Pos2, radius: f32, dark: bool) {

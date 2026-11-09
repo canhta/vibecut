@@ -22,8 +22,8 @@ use state::{
     TEXT_SIZE_SCRUB, Toast,
 };
 pub use state::{
-    AssetInspection, AssetState, Editor, Inspection, ShortcutRow, ShortcutTab, ShortcutsInspection,
-    TextCaret, WidgetState,
+    AssetInspection, AssetState, Editor, Inspection, PreviewAxis, PreviewGuide, ShortcutRow,
+    ShortcutTab, ShortcutsInspection, TextCaret, WidgetState,
 };
 
 mod timing;
@@ -251,6 +251,7 @@ impl Editor {
             min_zoom: self.timeline.min_zoom(self.session.project().duration()),
             snapping: self.preferences.snapping,
             snap_indicator: self.timeline.snap_indicator(),
+            preview_guides: self.player.transform.guides().to_vec(),
             bookmark_popover: self.timeline.bookmark_popover(),
             preview: self.timeline.preview_command(),
             timeline_refusal: self.timeline.refusal().map(str::to_owned),

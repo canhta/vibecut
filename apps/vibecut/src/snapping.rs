@@ -1,14 +1,28 @@
-//! Timeline snapping candidate ranking and the 10 screen-pixel threshold.
+//! Snapping candidate ranking and the screen-pixel thresholds.
 //!
 //! The app owns this policy; engine commands receive only the resulting tick
 //! position. Candidates are ranked by the smallest pixel distance, then by the
 //! stable source order below. That order is deliberately independent of scene
 //! iteration order so a tie cannot change between frames or project reloads.
+//! The preview canvas uses the same ranking rule and preference with its own
+//! measured threshold.
 use project::{BookmarkId, ItemId};
 use time::{Rounding, TICKS_PER_SECOND, Tick};
 
-/// The reference threshold in logical screen pixels.
+/// The reference timeline threshold in logical screen pixels.
 pub const SNAP_PIXELS: f32 = 10.0;
+
+/// Preview transform threshold in logical screen pixels, measured in the
+/// reference editor on 2026-11-10 at its 100 % canvas zoom: an item 5 px from a
+/// guide still snapped and 6 px did not.
+pub const PREVIEW_SNAP_PIXELS: f64 = 5.0;
+
+/// Preview rotation snaps to quarter turns within this many degrees. The
+/// implementation reference measures the same 90/5 pair
+/// (`apps/web/src/preview/preview-snap.ts`: `ROTATION_SNAP_STEP_DEGREES`,
+/// `ROTATION_SNAP_THRESHOLD_DEGREES`).
+pub const ROTATE_SNAP_STEP: f64 = 90.0;
+pub const ROTATE_SNAP_DEGREES: f64 = 5.0;
 
 /// Stable identity for a snap target. Variant order is the documented tie-break:
 /// playhead, bookmarks, item edges, then item keyframes; equal variants compare
@@ -132,33 +146,38 @@ pub fn snap_delta(
     }
 }
 
+/// The shared ranking rule: the smallest pixel distance wins and equal
+/// distances break by the stable source order. Callers keep their own
+/// threshold in the coordinate space they measure.
+pub fn closest<T: Copy, S: Copy + Ord>(
+    candidates: impl IntoIterator<Item = (T, S, f64)>,
+) -> Option<(T, S, f64)> {
+    let mut best: Option<(T, S, f64)> = None;
+    for (at, source, pixels) in candidates {
+        let better = best.is_none_or(|(_, best_source, best_pixels)| {
+            pixels < best_pixels || (pixels == best_pixels && source < best_source)
+        });
+        if better {
+            best = Some((at, source, pixels));
+        }
+    }
+    best
+}
+
 fn nearest(raw: Tick, candidates: &[SnapCandidate], zoom: f32) -> Option<SnapMatch> {
     if !zoom.is_finite() || zoom <= 0.0 {
         return None;
     }
     let threshold = threshold_ticks(zoom);
-    let mut best: Option<SnapMatch> = None;
-    for candidate in candidates {
-        let Some(difference) = candidate.at.checked_sub(raw) else {
-            continue;
-        };
+    closest(candidates.iter().filter_map(|candidate| {
+        let difference = candidate.at.checked_sub(raw)?;
         if difference.0.unsigned_abs() > threshold.0.unsigned_abs() {
-            continue;
+            return None;
         }
         let pixels = difference.0.unsigned_abs() as f64 / TICKS_PER_SECOND as f64 * f64::from(zoom);
-        let better = best.is_none_or(|previous| {
-            pixels < previous.pixels
-                || (pixels == previous.pixels && candidate.source < previous.source)
-        });
-        if better {
-            best = Some(SnapMatch {
-                at: candidate.at,
-                source: candidate.source,
-                pixels,
-            });
-        }
-    }
-    best
+        Some((candidate.at, candidate.source, pixels))
+    }))
+    .map(|(at, source, pixels)| SnapMatch { at, source, pixels })
 }
 
 #[cfg(test)]
@@ -254,6 +273,40 @@ mod tests {
         assert_eq!(outcome.target.unwrap().at, Tick(100));
         let edge = Tick(50).checked_add(outcome.at).unwrap();
         assert_eq!(edge, Tick(100), "the selected start edge lands on target");
+    }
+
+    #[test]
+    fn closest_ranks_by_pixel_distance_then_stable_source_order() {
+        // Equal distances pick the lower source; a closer candidate always wins.
+        let outcome = closest([
+            (1_u8, SnapSource::ItemEnd(ItemId(2)), 4.0),
+            (2, SnapSource::ItemEnd(ItemId(1)), 4.0),
+            (3, SnapSource::Playhead, 6.0),
+        ])
+        .unwrap();
+        assert_eq!(outcome, (2, SnapSource::ItemEnd(ItemId(1)), 4.0));
+        let closer = closest([
+            (1_u8, SnapSource::Playhead, 2.5),
+            (2, SnapSource::ItemEnd(ItemId(1)), 4.0),
+        ])
+        .unwrap();
+        assert_eq!(closer, (1, SnapSource::Playhead, 2.5));
+        assert_eq!(closest(std::iter::empty::<(u8, SnapSource, f64)>()), None);
+        // A non-finite distance never wins, so hostile geometry cannot snap.
+        let finite = closest([
+            (1_u8, SnapSource::Playhead, f64::INFINITY),
+            (2, SnapSource::ItemStart(ItemId(3)), 1.0),
+        ])
+        .unwrap();
+        assert_eq!(finite, (2, SnapSource::ItemStart(ItemId(3)), 1.0));
+    }
+
+    #[test]
+    fn preview_thresholds_are_the_measured_pixel_and_degree_values() {
+        assert_eq!(PREVIEW_SNAP_PIXELS, 5.0);
+        assert_eq!(ROTATE_SNAP_STEP, 90.0);
+        assert_eq!(ROTATE_SNAP_DEGREES, 5.0);
+        assert_eq!(SNAP_PIXELS, 10.0, "the timeline threshold is unchanged");
     }
 
     proptest! {

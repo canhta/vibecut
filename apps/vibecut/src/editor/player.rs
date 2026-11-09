@@ -1,4 +1,5 @@
 //! Owns preview presentation state behind the player panel interface.
+mod snap;
 mod state;
 mod text;
 mod transform;

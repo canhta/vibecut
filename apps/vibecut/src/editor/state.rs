@@ -140,6 +140,21 @@ pub struct TextCaret {
     pub selection: Vec<[[f32; 2]; 4]>,
 }
 
+/// Axis of a preview snap guide.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PreviewAxis {
+    Vertical,
+    Horizontal,
+}
+
+/// A guide line the player draws while a preview gesture holds a snap.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct PreviewGuide {
+    pub axis: PreviewAxis,
+    /// Canvas-pixel position: x for a vertical line, y for a horizontal one.
+    pub position: f64,
+}
+
 #[derive(Clone, Debug)]
 pub struct Inspection {
     pub widgets: Vec<WidgetState>,
@@ -159,6 +174,8 @@ pub struct Inspection {
     /// Active snap target tick while a preview gesture holds one; `None` hides
     /// the indicator and proves snapping chose no candidate.
     pub snap_indicator: Option<Tick>,
+    /// Guides of the preview transform gesture in progress, canvas pixels.
+    pub preview_guides: Vec<PreviewGuide>,
     /// Bookmark whose marker editor is open.
     pub bookmark_popover: Option<project::BookmarkId>,
     /// Command id of the candidate staged by the group preview contract.
