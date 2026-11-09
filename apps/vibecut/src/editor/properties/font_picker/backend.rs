@@ -87,6 +87,7 @@ impl EngineBackend {
                 external: false,
                 policy: &Allow,
                 fonts: Some(&access),
+                media: None,
             },
             runner,
         )?;

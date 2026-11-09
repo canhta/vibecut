@@ -15,8 +15,10 @@ pub use crate::session::wire::{
 
 mod admission;
 mod dispatch;
+mod media;
 mod receipts;
 mod resync;
+pub use media::MediaAccess;
 
 /// Supplied by the trusted composition root, never deserialized from client JSON.
 /// Implementations admit source reads, destination writes/overwrite and provider
@@ -62,6 +64,9 @@ pub struct Caller<'a> {
     /// The process font operations behind `fonts.list`, `fonts.load` and `fonts.download`.
     /// Without them those commands are refused with [`crate::FontError::Unavailable`].
     pub fonts: Option<&'a FontAccess<'a>>,
+    /// The process artifact caches behind `media.generate_waveform` and
+    /// `media.generate_clip_thumbnails`. Without them those commands refuse.
+    pub media: Option<&'a std::cell::RefCell<MediaAccess>>,
 }
 
 #[cfg(test)]
@@ -119,6 +124,7 @@ mod tests {
                     external: true,
                     policy: &Allow,
                     fonts: None,
+                    media: None,
                 },
                 &mut runner,
             )

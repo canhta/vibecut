@@ -46,6 +46,8 @@ Limits: one day, 288,000 spans (twice the 144,000 default 0.1 s speech + 0.5 s p
 
 Limits: columns 1..=4096, one 64 MiB summary (about 3.1 h at 48 kHz stereo), and a mismatched asset or an out-of-clip visible range is `Invalid`. The job reserves 16 MiB for decoded frames and 64 MiB for its result. Cancelled generation leaves the previous content's cache entry intact; project JSON is never touched.
 
+`media.generate_waveform {asset}` runs the same request as one control job for a project asset; `job_status` publishes the completed summary through the attached media caches, so a warm request completes without opening the source. A caller without those caches refuses with `Unsupported`.
+
 ## Pause candidates
 
 `pause_candidates::PauseCandidatesRequest::new(project, PauseSettings { min_pause_ms, pad_ms, crossfade_ms })` plans one CPU `AnalyzePauses` job over the active scene's audible items. The job reuses the Speech activity detector and decode; there is no second decode path. Each contiguous audible source interval of an asset is decoded once, every pause is inset by `pad` on its speech sides (a pause clipped by an item edge keeps no pad there), mapped to output time through project's retime owner, merged across tracks and every range covered by a native caption word span (`Item::word_spans`) is subtracted, so a candidate never cuts inside a word. The result is `PauseCandidates { spans, analyzed_sources }` in output time; `timeline.remove_pauses` consumes exactly those spans. Cancellation, typed media/provider failures and progress are the job runner's.

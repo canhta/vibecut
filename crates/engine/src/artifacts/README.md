@@ -20,6 +20,8 @@ The desktop import composer submits `JobKind::Probe` for canonicalize, probe, ha
 
 Limits: one request or visible range 1..=128 tiles, a positive interval and max edge 1..=320. A range outside the clip, a mismatched asset, a negative source range or a hostile tile count is `Invalid`. Cancellation publishes nothing and leaves the previous frames intact; a changed source content hash misses every old entry.
 
+`media.generate_clip_thumbnails {item, visible}` maps the clip's visible output range through trim and retime with the same private grid helper as `display`, then runs `ThumbnailStripRequest::for_clip` on `GENERATION_INTERVAL` (one tile per output second) at the 320 px edge. `job_status` publishes the completed frames through the attached thumbnail cache; a warm request opens no source.
+
 ## Frame snapshots
 
 `preview.snapshot {time, path}` renders one frame at the project canvas size through the production compositor and publishes a PNG without editing the Session or undo history. It is independent of app transport, zoom and transient preview state. A playhead at or past the end clamps to the last frame; negative times refuse. An empty project refuses with the typed `Project is empty` error.

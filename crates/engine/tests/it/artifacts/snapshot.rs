@@ -125,6 +125,7 @@ fn run(
                 external: false,
                 policy: &Allow,
                 fonts: None,
+                media: None,
             },
             runner,
         )

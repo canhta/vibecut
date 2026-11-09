@@ -84,6 +84,10 @@ pub(crate) fn control(
         context.budget()?,
         Arc::new(SystemClock::default()),
     )?;
+    // Without a usable media cache the generation commands refuse; edits still run.
+    let media = crate::session::media_access(context.budget()?)
+        .ok()
+        .map(std::cell::RefCell::new);
     let policy = ControlPolicy { allow_overwrite };
     let stdin = io::stdin();
     let mut input = stdin.lock();
@@ -147,6 +151,7 @@ pub(crate) fn control(
             external: true,
             policy: &policy,
             fonts: fonts.as_ref(),
+            media: media.as_ref(),
         };
         // The engine owns save admission and its receipt; the closure only
         // publishes the bytes through the project owner.

@@ -9,6 +9,8 @@ Build with `cargo build -p vibecut-cli` through the [build wrapper](../../agents
 | Command | Does |
 |---|---|
 | `vibecut-cli scenes <file>` | Detect reviewed-marker candidates without editing a project |
+| `vibecut-cli media waveform <project> --asset <id>` | Generate and cache one asset's waveform peaks |
+| `vibecut-cli media thumbnails <project> --item <id> [--start <tick> --end <tick>]` | Generate and cache one clip's strip frames |
 | `vibecut-cli probe <file>` | Probe a media file and report format, duration and streams |
 | `vibecut-cli project new <path>` | Create an empty project, refusing to replace an existing file |
 | `vibecut-cli project info <path>` | Summary plus optional view metadata under the project writer lease |
@@ -44,6 +46,10 @@ Group timeline edits: `exec <project> timeline.move_items '{"items":[1,2],"delta
 ## Captions
 
 `captions import <project> <file.ass|file.ssa> [--language <tag>] [--start <ticks>] [--track <id>] [--name <name>]` parses the script with `captions::parse_ass`, prints cue/style/skipped counts and line-numbered warnings, and applies `captions.import`. Asset, caption track and caption item are one undo step. `--track` targets an existing text track; `--name` labels a new one (default `Captions`). `--language` is the cue source language (default `en`); `--start` offsets the item in ticks. Input is capped at 16 MiB. Malformed lines warn and skip; an oversized file or a document with no surviving cue fails with a typed error and leaves the project unchanged.
+
+## Media generation
+
+`media waveform <project> --asset <id>` runs the engine's `GenerateWaveform` job for one project asset, waits for it, publishes the validated peak summary into the artifact cache and prints its sample rate, channel count, total samples and bucket count. A warm entry completes without opening the source, so a second run needs the media only while its cache entry survives. `media thumbnails <project> --item <id> [--start <tick> --end <tick>]` warms the clip's visible output range (the whole clip when omitted) on the generation grid of one tile per output second at the 320 px source edge, then prints the cached source positions. Both commands read the project under the writer lease, never edit it and publish into the `waveform` and `thumbnails` directories under the default VibeCut cache root, shared with the control session. The same two jobs are registered as `media.generate_waveform {asset}` and `media.generate_clip_thumbnails {item, visible}`; a control caller without attached media caches gets a typed refusal.
 
 ## Pause removal
 

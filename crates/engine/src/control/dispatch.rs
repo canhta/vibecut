@@ -99,7 +99,75 @@ impl Session {
                         runner.output_bytes(job).ok_or(EditError::JobNotRetained)?,
                     )?);
                 }
+                if matches!(
+                    snapshot.kind,
+                    JobKind::GenerateWaveform | JobKind::GenerateClipThumbnails
+                ) && let Some(media) = caller.media
+                {
+                    let mut media = media.borrow_mut();
+                    match snapshot.state {
+                        JobState::Completed => media.finish(runner, job)?,
+                        JobState::Cancelled | JobState::Failed => media.forget(job),
+                        _ => {}
+                    }
+                }
                 Ok(ControlResult::Job { snapshot })
+            }
+            Command::GenerateWaveform { asset } => {
+                if self.transaction_active() {
+                    return Err(EditError::TransactionActive);
+                }
+                let asset = self
+                    .project()
+                    .data()
+                    .assets
+                    .iter()
+                    .find(|candidate| candidate.id() == asset)
+                    .cloned()
+                    .ok_or(EditError::NoAsset(asset))?;
+                let media = caller
+                    .media
+                    .ok_or(EditError::Unsupported("media generation cache unavailable"))?;
+                let job = media.borrow_mut().generate_waveform(runner, asset)?;
+                Ok(ControlResult::JobAccepted {
+                    job,
+                    revision: self.revision(),
+                    paths: Vec::new(),
+                })
+            }
+            Command::GenerateClipThumbnails { item, visible } => {
+                if self.transaction_active() {
+                    return Err(EditError::TransactionActive);
+                }
+                let data = self.project().data();
+                let clip = data
+                    .scene()
+                    .timeline
+                    .iter()
+                    .flat_map(|track| &track.items)
+                    .find(|candidate| candidate.id == item)
+                    .cloned()
+                    .ok_or(EditError::NoItem(item))?;
+                let asset_id = clip
+                    .source_asset
+                    .ok_or(EditError::Invalid("thumbnail clip has no asset"))?;
+                let asset = data
+                    .assets
+                    .iter()
+                    .find(|candidate| candidate.id() == asset_id)
+                    .cloned()
+                    .ok_or(EditError::NoAsset(asset_id))?;
+                let media = caller
+                    .media
+                    .ok_or(EditError::Unsupported("media generation cache unavailable"))?;
+                let job = media
+                    .borrow_mut()
+                    .generate_clip_thumbnails(runner, asset, &clip, visible)?;
+                Ok(ControlResult::JobAccepted {
+                    job,
+                    revision: self.revision(),
+                    paths: Vec::new(),
+                })
             }
             Command::PauseCandidates {
                 min_pause_ms,

@@ -188,6 +188,7 @@ impl Inbox {
             external: true,
             policy: grants,
             fonts: None,
+            media: None,
         };
         let response = session.control_routed(request, caller, runner, publish)?;
         let mut value = serde_json::to_value(&response).map_err(|_| EditError::InvalidParams)?;

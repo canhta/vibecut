@@ -33,6 +33,7 @@ pub(crate) fn run(context: &Context, args: Vec<OsString>) -> Result<Output, CliE
             0,
         )),
         "probe" => media::probe(context, rest),
+        "media" => media::generate(context, rest),
         "project" => project::project(context, rest),
         "exec" => project::exec(context, rest),
         "normalize" => media::normalize(context, rest),

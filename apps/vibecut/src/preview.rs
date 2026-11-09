@@ -257,6 +257,7 @@ impl SnapshotDialog {
                 external: false,
                 policy: &Allow,
                 fonts: None,
+                media: None,
             },
             runner,
         )?;

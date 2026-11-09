@@ -18,6 +18,8 @@ use time::{SourceRange, TICKS_PER_SECOND, Tick, TimeRange};
 pub const TILE_ASPECT_RATIO: (u32, u32) = (16, 9);
 /// One request or visible range never asks for more than this many tiles.
 pub const MAX_TILES: usize = 128;
+/// Grid a headless generation request warms: one tile per output second.
+pub const GENERATION_INTERVAL: Tick = Tick(TICKS_PER_SECOND);
 const MAGIC: &[u8; 8] = b"VTCSTR01";
 const MAX_BYTES: usize = 64 << 20;
 /// One decoded source frame with its RGBA conversion and converter scratch.
@@ -75,12 +77,7 @@ impl ThumbnailStripRequest {
         interval: Tick,
         max_edge: u32,
     ) -> Result<Self, EditError> {
-        if interval <= Tick::ZERO {
-            return Err(EditError::Invalid("thumbnail strip interval"));
-        }
-        if max_edge == 0 || max_edge > THUMBNAIL_MAX_EDGE {
-            return Err(EditError::Invalid("thumbnail max edge"));
-        }
+        admit_grid(interval, max_edge)?;
         if range.start() < Tick::ZERO {
             return Err(EditError::Invalid("thumbnail strip source range"));
         }
@@ -103,6 +100,58 @@ impl ThumbnailStripRequest {
     /// Source positions this request caches, in ascending order.
     pub fn positions(&self) -> &[Tick] {
         &self.positions
+    }
+
+    /// Admit the source positions one clip's visible output range needs on the
+    /// same grid `display` reads, mapping trim and retime. `visible` is clamped
+    /// to the clip; a range outside it, a mismatched asset or a hostile tile
+    /// count is `Invalid`.
+    pub fn for_clip(
+        asset: SourceAsset,
+        item: &project::Item,
+        visible: TimeRange,
+        interval: Tick,
+        max_edge: u32,
+    ) -> Result<Self, EditError> {
+        admit_grid(interval, max_edge)?;
+        if item.source_asset != Some(asset.id()) {
+            return Err(EditError::Invalid("thumbnail strip display asset"));
+        }
+        if !has_video(&asset) {
+            return Err(EditError::Unsupported("thumbnail strip requires video"));
+        }
+        let clip = TimeRange::new(item.start, item.end()?)?;
+        let span = visible
+            .intersect(clip)
+            .ok_or(EditError::Invalid("thumbnail strip display outside clip"))?;
+        let positions = if asset.is_image() {
+            vec![Tick::ZERO]
+        } else {
+            let count = tile_count(span.duration(), interval)?;
+            let source_end = item
+                .source_range
+                .end()
+                .checked_sub(Tick(1))
+                .ok_or(EditError::Limit)?;
+            let first = clip_position(item, span.start(), source_end, interval)?;
+            let offset = i64::try_from(count - 1)
+                .map_err(|_| EditError::Limit)?
+                .checked_mul(interval.0)
+                .ok_or(EditError::Limit)?;
+            let last = clip_position(
+                item,
+                Tick(span.start().0.checked_add(offset).ok_or(EditError::Limit)?),
+                source_end,
+                interval,
+            )?;
+            let end = last.checked_add(interval).ok_or(EditError::Limit)?;
+            sample_positions(SourceRange::new(first, end)?, interval)?
+        };
+        Ok(Self {
+            asset,
+            positions,
+            max_edge,
+        })
     }
 
     /// Enqueue one CPU job for the positions the cache lacks. A warm cache opens
@@ -292,12 +341,7 @@ pub fn display(
     max_edge: u32,
     cache: &mut ThumbnailCache,
 ) -> Result<ThumbnailStripState, EditError> {
-    if interval <= Tick::ZERO {
-        return Err(EditError::Invalid("thumbnail strip interval"));
-    }
-    if max_edge == 0 || max_edge > THUMBNAIL_MAX_EDGE {
-        return Err(EditError::Invalid("thumbnail max edge"));
-    }
+    admit_grid(interval, max_edge)?;
     if item.source_asset != Some(asset.id()) {
         return Err(EditError::Invalid("thumbnail strip display asset"));
     }
@@ -331,11 +375,7 @@ pub fn display(
         let at = if asset.is_image() {
             Tick::ZERO
         } else {
-            let source = item
-                .source_time_at(start)?
-                .max(item.source_range.start())
-                .min(source_end);
-            floor(source, interval)?
+            clip_position(item, start, source_end, interval)?
         };
         let image = match fetched.get(&at) {
             Some(image) => image.clone(),
@@ -355,12 +395,36 @@ pub fn display(
     Ok(ThumbnailStripState::Ready(ThumbnailStripDisplay { tiles }))
 }
 
+fn admit_grid(interval: Tick, max_edge: u32) -> Result<(), EditError> {
+    if interval <= Tick::ZERO {
+        return Err(EditError::Invalid("thumbnail strip interval"));
+    }
+    if max_edge == 0 || max_edge > THUMBNAIL_MAX_EDGE {
+        return Err(EditError::Invalid("thumbnail max edge"));
+    }
+    Ok(())
+}
+
 fn has_video(asset: &SourceAsset) -> bool {
     asset
         .probe()
         .streams
         .iter()
         .any(|stream| stream.kind == StreamKind::Video)
+}
+
+/// The grid position `display` reads for one output tick of a clip.
+fn clip_position(
+    item: &project::Item,
+    output: Tick,
+    source_end: Tick,
+    interval: Tick,
+) -> Result<Tick, EditError> {
+    let source = item
+        .source_time_at(output)?
+        .max(item.source_range.start())
+        .min(source_end);
+    floor(source, interval)
 }
 
 fn sample_positions(range: SourceRange, interval: Tick) -> Result<Vec<Tick>, EditError> {
@@ -479,6 +543,112 @@ mod tests {
             frame: Tick(at),
             pixels: vec![1, 2, 3, 4, 5, 6, 7, 8],
         }
+    }
+
+    fn seconds(count: i64) -> Tick {
+        Tick(count * TICKS_PER_SECOND)
+    }
+
+    fn clip(source: Tick, start: Tick) -> project::Item {
+        project::Item {
+            hidden: false,
+            blend_mode: Default::default(),
+            retime: Default::default(),
+            masks: Vec::new(),
+            effects: Vec::new(),
+            animations: Default::default(),
+            id: project::ItemId(1),
+            source_asset: Some(media::AssetId(1)),
+            source_range: SourceRange::new(Tick::ZERO, source).unwrap(),
+            start,
+            content: project::ItemParams::Video(project::VideoParams {
+                fades: Default::default(),
+                source_audio_enabled: false,
+                volume: 0.0,
+                muted: false,
+                crop: None,
+            }),
+        }
+    }
+
+    #[test]
+    fn clip_requests_warm_the_positions_the_display_reads() {
+        let asset = testkit::source::asset(1, std::env::temp_dir().join("fixture.mp4"))
+            .format("mov,mp4")
+            .duration(Tick(3 * TICKS_PER_SECOND))
+            .hash([7; 32])
+            .stream(
+                testkit::source::video()
+                    .duration(Tick(3 * TICKS_PER_SECOND))
+                    .build(),
+            )
+            .build();
+        let item = clip(Tick(3 * TICKS_PER_SECOND), Tick::ZERO);
+        let second = Tick(TICKS_PER_SECOND);
+        let visible = |start: Tick, end: Tick| TimeRange::new(start, end).unwrap();
+        let request = ThumbnailStripRequest::for_clip(
+            asset.clone(),
+            &item,
+            visible(Tick::ZERO, seconds(2)),
+            second,
+            THUMBNAIL_MAX_EDGE,
+        )
+        .unwrap();
+        assert_eq!(request.positions(), &[Tick::ZERO, second]);
+        let trimmed = ThumbnailStripRequest::for_clip(
+            asset.clone(),
+            &item,
+            visible(second, seconds(3)),
+            second,
+            THUMBNAIL_MAX_EDGE,
+        )
+        .unwrap();
+        assert_eq!(trimmed.positions(), &[second, seconds(2)]);
+        // Outside the clip, a mismatched asset, a hostile tile count and an
+        // invalid grid refuse.
+        assert!(
+            ThumbnailStripRequest::for_clip(
+                asset.clone(),
+                &item,
+                visible(seconds(5), seconds(6)),
+                second,
+                THUMBNAIL_MAX_EDGE
+            )
+            .is_err()
+        );
+        let mut other = item.clone();
+        other.source_asset = Some(media::AssetId(2));
+        assert!(
+            ThumbnailStripRequest::for_clip(
+                asset.clone(),
+                &other,
+                visible(Tick::ZERO, second),
+                second,
+                THUMBNAIL_MAX_EDGE
+            )
+            .is_err()
+        );
+        let long = clip(Tick(300 * TICKS_PER_SECOND), Tick::ZERO);
+        assert!(
+            ThumbnailStripRequest::for_clip(
+                asset.clone(),
+                &long,
+                visible(Tick::ZERO, seconds(300)),
+                second,
+                THUMBNAIL_MAX_EDGE
+            )
+            .is_err()
+        );
+        assert!(
+            ThumbnailStripRequest::for_clip(
+                asset,
+                &item,
+                visible(Tick::ZERO, second),
+                Tick::ZERO,
+                THUMBNAIL_MAX_EDGE
+            )
+            .is_err()
+        );
     }
 
     #[test]

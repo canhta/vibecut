@@ -6,7 +6,8 @@
     reason = "public-interface conformance assertions"
 )]
 use engine::control::{
-    self, Caller, ControlResult, ErrorCode, Payload, Policy, Request, Response, ResponseValue,
+    self, Caller, ControlResult, ErrorCode, MediaAccess, Payload, Policy, Request, Response,
+    ResponseValue,
 };
 use engine::jobs::{
     JobBytes, JobKind, JobRunner, JobSpec, JobState, ResourceClass, RunnerConfig, SystemClock,
@@ -16,7 +17,7 @@ use project::{
     Color, Item, ItemId, ItemParams, OverlayParams, Project, ProjectId, Track, TrackId, TrackKind,
 };
 use serde_json::{Value, json};
-use std::{sync::Arc, time::Duration};
+use std::{cell::RefCell, path::Path, sync::Arc, time::Duration};
 use time::{FrameRate, SourceRange, Tick};
 
 struct Allow;
@@ -37,6 +38,7 @@ fn caller(policy: &dyn Policy) -> Caller<'_> {
         external: true,
         policy,
         fonts: None,
+        media: None,
     }
 }
 fn runner() -> JobRunner {
@@ -116,6 +118,59 @@ fn add(s: &mut Session, r: &mut JobRunner, key: &str) {
         json!({"name":"Added","kind":"video"}),
         key,
     ));
+}
+
+fn submit_media(
+    s: &mut Session,
+    r: &mut JobRunner,
+    media: &RefCell<MediaAccess>,
+    id: &str,
+    params: Value,
+    key: &str,
+) -> engine::jobs::JobId {
+    let req = request(s, id, params, key);
+    let caller = Caller {
+        principal: "test",
+        external: true,
+        policy: &Allow,
+        fonts: None,
+        media: Some(media),
+    };
+    match ok(s.control_request(req, caller, r).unwrap()) {
+        ControlResult::JobAccepted { job, .. } => job,
+        other => panic!("{other:?}"),
+    }
+}
+
+fn media_status(
+    s: &mut Session,
+    r: &mut JobRunner,
+    media: &RefCell<MediaAccess>,
+    job: engine::jobs::JobId,
+    key: &str,
+) -> engine::control::JobView {
+    let req = request(s, "job_status", json!({"job":job.0}), key);
+    let caller = Caller {
+        principal: "test",
+        external: true,
+        policy: &Allow,
+        fonts: None,
+        media: Some(media),
+    };
+    match ok(s.control_request(req, caller, r).unwrap()) {
+        ControlResult::Job { snapshot } => snapshot,
+        other => panic!("{other:?}"),
+    }
+}
+
+fn media_state(
+    s: &mut Session,
+    r: &mut JobRunner,
+    media: &RefCell<MediaAccess>,
+    job: engine::jobs::JobId,
+    key: &str,
+) -> JobState {
+    media_status(s, r, media, job, key).state
 }
 
 #[test]
@@ -350,6 +405,98 @@ fn seed() -> Session {
     });
     Session::new(Project::new(data).unwrap(), 10).unwrap()
 }
+/// The seed plus one real mono audio asset (id 97) for waveform command examples.
+fn with_waveform(seed: &Session, path: &Path) -> Session {
+    let mut data = seed.project().data().clone();
+    data.assets.push(
+        media::SourceAsset::import(media::AssetId(97), path.to_owned())
+            .expect("fixture wav imports"),
+    );
+    Session::new(Project::new(data).unwrap(), 10).unwrap()
+}
+
+/// The seed plus one real still-image clip (item 6) for thumbnail command examples.
+fn with_thumbnails(seed: &Session, path: &Path) -> Session {
+    let mut data = seed.project().data().clone();
+    data.assets.push(
+        media::SourceAsset::import(media::AssetId(97), path.to_owned())
+            .expect("fixture png imports"),
+    );
+    let duration = Tick(time::TICKS_PER_SECOND);
+    data.scene_mut().timeline.insert_track(Track {
+        id: TrackId(6),
+        name: "Thumbnails".into(),
+        kind: TrackKind::Video,
+        muted: false,
+        hidden: false,
+        locked: false,
+        items: vec![Item {
+            hidden: false,
+            blend_mode: Default::default(),
+            retime: Default::default(),
+            masks: Vec::new(),
+            effects: Vec::new(),
+            animations: Default::default(),
+            id: ItemId(6),
+            source_asset: Some(media::AssetId(97)),
+            source_range: SourceRange::new(Tick::ZERO, duration).unwrap(),
+            start: Tick::ZERO,
+            content: ItemParams::Video(project::VideoParams {
+                fades: Default::default(),
+                source_audio_enabled: false,
+                volume: 0.0,
+                muted: false,
+                crop: None,
+            }),
+        }],
+    });
+    Session::new(Project::new(data).unwrap(), 10).unwrap()
+}
+
+/// One second of 8 kHz mono PCM, written without an external tool.
+fn write_wav(path: &Path, sample_rate: u32) {
+    let samples = sample_rate;
+    let bytes = samples
+        .checked_mul(2)
+        .and_then(|data| data.checked_add(36))
+        .unwrap();
+    let mut wav = Vec::with_capacity(bytes as usize + 8);
+    wav.extend_from_slice(b"RIFF");
+    wav.extend_from_slice(&bytes.to_le_bytes());
+    wav.extend_from_slice(b"WAVEfmt ");
+    wav.extend_from_slice(&16u32.to_le_bytes());
+    wav.extend_from_slice(&1u16.to_le_bytes());
+    wav.extend_from_slice(&1u16.to_le_bytes());
+    wav.extend_from_slice(&sample_rate.to_le_bytes());
+    wav.extend_from_slice(&sample_rate.saturating_mul(2).to_le_bytes());
+    wav.extend_from_slice(&2u16.to_le_bytes());
+    wav.extend_from_slice(&16u16.to_le_bytes());
+    wav.extend_from_slice(b"data");
+    wav.extend_from_slice(&(samples * 2).to_le_bytes());
+    for index in 0..samples {
+        let value = (i16::try_from(index % 50).unwrap_or(0) - 25).saturating_mul(200);
+        wav.extend_from_slice(&value.to_le_bytes());
+    }
+    std::fs::write(path, wav).unwrap();
+}
+
+fn write_png(path: &Path) {
+    image::RgbaImage::from_pixel(64, 64, image::Rgba([20, 40, 60, 255]))
+        .save(path)
+        .unwrap();
+}
+
+fn media_access(root: &Path) -> MediaAccess {
+    let budget = ByteBudget::new(256 << 20).unwrap();
+    let (artifacts, _) =
+        engine::cache::ArtifactCache::open(&root.join("media-waveform"), budget.clone(), 16)
+            .unwrap();
+    let thumbnails =
+        engine::thumbnails::ThumbnailCache::open(&root.join("media-thumbnails"), budget, 16)
+            .unwrap();
+    MediaAccess::new(artifacts, thumbnails)
+}
+
 /// The seed with measured words on its caption cue for transcript edit examples.
 fn with_words(seed: &Session) -> Session {
     let mut data = seed.project().data().clone();
@@ -570,6 +717,11 @@ fn finish(r: &mut JobRunner, id: engine::jobs::JobId) {
 #[test]
 fn registry_examples_validate_and_dispatch_without_an_id_table() {
     let root = tempfile::tempdir().unwrap();
+    let wav = root.path().join("registry-waveform.wav");
+    let png = root.path().join("registry-thumbnails.png");
+    write_wav(&wav, 8_000);
+    write_png(&png);
+    let media = RefCell::new(media_access(root.path()));
     let mut exercised = std::collections::BTreeSet::new();
     for spec in registry() {
         let mut s = seed();
@@ -595,6 +747,8 @@ fn registry_examples_validate_and_dispatch_without_an_id_table() {
             Fixture::Transition => s = crate::session::transition_session(true),
             Fixture::Audio => s = with_audio(&s),
             Fixture::SourceAudio => s = with_source_audio(&s),
+            Fixture::Waveform => s = with_waveform(&s, &wav),
+            Fixture::Thumbnails => s = with_thumbnails(&s, &png),
             Fixture::Words => s = with_words(&s),
             Fixture::History => {
                 s.apply(Command::RenameProject {
@@ -667,6 +821,7 @@ fn registry_examples_validate_and_dispatch_without_an_id_table() {
                     external: false,
                     policy: &Allow,
                     fonts: Some(&fonts),
+                    media: Some(&media),
                 },
                 &mut r,
             )
@@ -799,6 +954,7 @@ fn loss_replay_conflict_principal_and_current_authorization() {
                 external: true,
                 policy: &Allow,
                 fonts: None,
+                media: None,
             },
             &mut r,
         )
@@ -1261,6 +1417,8 @@ fn deterministic_catalog_and_schema_document_receipts() {
         [
             "fonts.download",
             "job_cancel",
+            "media.generate_clip_thumbnails",
+            "media.generate_waveform",
             "preview",
             "timeline.pause_candidates"
         ]
@@ -2354,4 +2512,171 @@ fn pause_candidates_job_reports_reviewed_spans_through_job_status() {
     assert_eq!(snapshot.state, engine::jobs::JobState::Cancelled);
     assert!(snapshot.pauses.is_none());
     r.shutdown();
+}
+
+/// Generation commands warm the cache through an attached media access, cancel
+/// before publication and refuse without the caches.
+#[test]
+fn media_generation_commands_warm_the_cache_and_refuse_without_it() {
+    let dir = tempfile::tempdir().unwrap();
+    let wav = dir.path().join("voice.wav");
+    let changed = dir.path().join("voice-16k.wav");
+    let png = dir.path().join("still.png");
+    write_wav(&wav, 8_000);
+    write_wav(&changed, 16_000);
+    write_png(&png);
+    let mut wave_session = with_waveform(&seed(), &wav);
+    let mut thumbnail_session = with_thumbnails(&seed(), &png);
+    let mut runner = runner();
+    let media = RefCell::new(media_access(dir.path()));
+
+    let wave = submit_media(
+        &mut wave_session,
+        &mut runner,
+        &media,
+        "media.generate_waveform",
+        json!({"asset":97}),
+        "wave-cold",
+    );
+    finish(&mut runner, wave);
+    assert_eq!(
+        media_state(&mut wave_session, &mut runner, &media, wave, "wave"),
+        JobState::Completed
+    );
+
+    // A warm entry completes with the source gone: submission never opens it.
+    std::fs::remove_file(&wav).unwrap();
+    let warm = submit_media(
+        &mut wave_session,
+        &mut runner,
+        &media,
+        "media.generate_waveform",
+        json!({"asset":97}),
+        "wave-warm",
+    );
+    finish(&mut runner, warm);
+    assert_eq!(
+        media_state(&mut wave_session, &mut runner, &media, warm, "wave-warm"),
+        JobState::Completed
+    );
+
+    let thumbs = submit_media(
+        &mut thumbnail_session,
+        &mut runner,
+        &media,
+        "media.generate_clip_thumbnails",
+        json!({"item":6,"visible":{"start":0,"end":254016000000_i64}}),
+        "thumbs-cold",
+    );
+    finish(&mut runner, thumbs);
+    assert_eq!(
+        media_state(
+            &mut thumbnail_session,
+            &mut runner,
+            &media,
+            thumbs,
+            "thumbs"
+        ),
+        JobState::Completed
+    );
+    std::fs::remove_file(&png).unwrap();
+    let warm_thumbs = submit_media(
+        &mut thumbnail_session,
+        &mut runner,
+        &media,
+        "media.generate_clip_thumbnails",
+        json!({"item":6,"visible":{"start":0,"end":254016000000_i64}}),
+        "thumbs-warm",
+    );
+    finish(&mut runner, warm_thumbs);
+    assert_eq!(
+        media_state(
+            &mut thumbnail_session,
+            &mut runner,
+            &media,
+            warm_thumbs,
+            "thumbs-warm"
+        ),
+        JobState::Completed
+    );
+
+    // Different audio layout is a cold key; cancellation publishes nothing.
+    let mut cancel_session = with_waveform(&seed(), &changed);
+    let cancelled = submit_media(
+        &mut cancel_session,
+        &mut runner,
+        &media,
+        "media.generate_waveform",
+        json!({"asset":97}),
+        "wave-cancel",
+    );
+    runner.cancel_job(cancelled).unwrap();
+    finish(&mut runner, cancelled);
+    assert_eq!(
+        media_state(
+            &mut cancel_session,
+            &mut runner,
+            &media,
+            cancelled,
+            "wave-cancelled"
+        ),
+        JobState::Cancelled
+    );
+    // The earlier summary survived the cancellation.
+    let again = submit_media(
+        &mut wave_session,
+        &mut runner,
+        &media,
+        "media.generate_waveform",
+        json!({"asset":97}),
+        "wave-after-cancel",
+    );
+    finish(&mut runner, again);
+    assert_eq!(
+        media_state(&mut wave_session, &mut runner, &media, again, "wave-after"),
+        JobState::Completed
+    );
+
+    // Without attached caches the same commands refuse before submitting.
+    for (key, id, params) in [
+        (
+            "no-media-wave",
+            "media.generate_waveform",
+            json!({"asset":97}),
+        ),
+        (
+            "no-media-thumbs",
+            "media.generate_clip_thumbnails",
+            json!({"item":6,"visible":{"start":0,"end":254016000000_i64}}),
+        ),
+    ] {
+        let req = request(&wave_session, id, params, key);
+        error(
+            wave_session
+                .control_request(req, caller(&Allow), &mut runner)
+                .unwrap(),
+            ErrorCode::Refused,
+        );
+    }
+    // A missing target is a typed refusal with the caches attached.
+    let req = request(
+        &wave_session,
+        "media.generate_waveform",
+        json!({"asset":99}),
+        "missing-asset",
+    );
+    let caller = Caller {
+        principal: "test",
+        external: true,
+        policy: &Allow,
+        fonts: None,
+        media: Some(&media),
+    };
+    error(
+        wave_session
+            .control_request(req, caller, &mut runner)
+            .unwrap(),
+        ErrorCode::Refused,
+    );
+    runner.shutdown();
 }

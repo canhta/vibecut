@@ -250,6 +250,13 @@ fn every_registry_command_has_an_explicit_grant_and_effect() {
         ("timeline.move_items", Effect::Edit, true, true),
         ("timeline.trim", Effect::Edit, true, true),
         ("timeline.pause_candidates", Effect::JobControl, true, true),
+        ("media.generate_waveform", Effect::JobControl, true, true),
+        (
+            "media.generate_clip_thumbnails",
+            Effect::JobControl,
+            true,
+            true,
+        ),
         ("timeline.remove_pauses", Effect::Edit, true, true),
         ("split_at", Effect::Edit, true, true),
         ("trim_start", Effect::Edit, true, true),

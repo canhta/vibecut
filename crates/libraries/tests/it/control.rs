@@ -75,6 +75,7 @@ fn control<'a>(
             external: true,
             policy: &Allow,
             fonts,
+            media: None,
         },
         r,
     )

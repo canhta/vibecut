@@ -6,7 +6,7 @@ use captions::NfcText;
 use media::{AssetId, SourceAsset};
 use project::{BookmarkId, Color, ItemId, ItemParams, TrackId, TrackKind};
 use serde::{Deserialize, Serialize};
-use time::{SourceRange, Tick};
+use time::{SourceRange, Tick, TimeRange};
 
 /// Output edge moved by a group trim; every member receives the same tick delta.
 #[derive(Clone, Copy, Debug, Serialize, Deserialize, schemars::JsonSchema)]
@@ -262,6 +262,10 @@ pub enum Fixture {
     Audio,
     /// Timeline whose item 5 is a video with an audible source asset.
     SourceAudio,
+    /// Timeline plus one mono audio asset, id 97, with a real local file.
+    Waveform,
+    /// Timeline plus one still-image clip, item 6, with a real local file.
+    Thumbnails,
     /// Timeline whose caption cue carries measured source words.
     Words,
     Library,
@@ -439,6 +443,8 @@ commands! {
     TimelineTrim, "timeline.trim", "Trim timeline group", Edit { items: Vec<ItemId>, edge: TrimEdge, delta: Tick } => Timeline, serde_json::json!({"items":[1],"edge":"end","delta":-1}), available = UnlockedItem;
     PauseCandidates, "timeline.pause_candidates", "List pause candidates", JobControl { min_pause_ms: i64, pad_ms: i64, crossfade_ms: i64 } => Timeline, serde_json::json!({"min_pause_ms":500,"pad_ms":20,"crossfade_ms":20}), grant = Agent;
     RemovePauses, "timeline.remove_pauses", "Remove reviewed pauses", Edit { spans: Vec<PauseSpan>, crossfade_ms: i64 } => Timeline, serde_json::json!({"spans":[{"start":63504000000_i64,"end":127008000000_i64}],"crossfade_ms":20});
+    GenerateWaveform, "media.generate_waveform", "Generate source waveform", JobControl { asset: AssetId } => Waveform, serde_json::json!({"asset":97}), grant = Agent;
+    GenerateClipThumbnails, "media.generate_clip_thumbnails", "Generate clip thumbnails", JobControl { item: ItemId, visible: TimeRange } => Thumbnails, serde_json::json!({"item":6,"visible":{"start":0,"end":254016000000_i64}}), grant = Agent;
     SplitAt, "split_at", "Split item", Edit { item: ItemId, at: Tick } => Timeline, serde_json::json!({"item":1,"at":8467200000_i64}), available = UnlockedItem;
     TrimStart, "trim_start", "Trim start", Edit { item: ItemId, at: Tick } => Timeline, serde_json::json!({"item":1,"at":8467200000_i64}), available = UnlockedItem;
     TrimEnd, "trim_end", "Trim end", Edit { item: ItemId, at: Tick } => Timeline, serde_json::json!({"item":1,"at":8467200000_i64}), available = UnlockedItem;

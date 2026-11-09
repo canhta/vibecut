@@ -573,6 +573,8 @@ pub(crate) fn apply(
         | Command::Redo {}
         | Command::TimelineSetRipple { .. }
         | Command::PauseCandidates { .. }
+        | Command::GenerateWaveform { .. }
+        | Command::GenerateClipThumbnails { .. }
         | Command::TimelinePreview { .. }
         | Command::TimelineCommitPreview {}
         | Command::TimelineDiscardPreview {}
