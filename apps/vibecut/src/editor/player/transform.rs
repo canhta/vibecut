@@ -5,7 +5,7 @@ use crate::{
     i18n::Text,
     kit,
 };
-use project::{Item, ItemId, ItemParams, TextAlign, TextParams, TransformField};
+use project::{Item, ItemId, ItemParams, TextParams, TransformField};
 use render::viewport::{Handle, ItemGeometry, Viewport};
 use time::Tick;
 
@@ -22,7 +22,7 @@ const SCALE_HANDLES: [Handle; 6] = [
 #[derive(Default)]
 pub(in crate::editor) struct State {
     drag: Option<Drag>,
-    text: Option<TextEdit>,
+    text: Option<super::text::Edit>,
 }
 
 impl State {
@@ -36,50 +36,10 @@ impl State {
     pub(in crate::editor) fn cancel_text(&mut self) -> Option<bool> {
         self.text.take().map(|edit| edit.changed())
     }
-}
 
-/// One inline text session: the opening content, the live buffer and the box it
-/// was opened over. The box follows the staged text while it grows; an empty
-/// buffer keeps the last box so the caret stays anchored on a blank item.
-struct TextEdit {
-    item: ItemId,
-    start: String,
-    content: String,
-    rect: Rect,
-    font: f32,
-    align: egui::Align,
-    focus: bool,
-    focused_once: bool,
-}
-
-impl TextEdit {
-    fn begin(item: ItemId, params: &TextParams, rect: Rect, font: f32) -> Self {
-        Self {
-            item,
-            start: params.content.as_str().to_owned(),
-            content: params.content.as_str().to_owned(),
-            rect,
-            font,
-            align: match params.align {
-                TextAlign::Left => egui::Align::Min,
-                TextAlign::Center => egui::Align::Center,
-                TextAlign::Right => egui::Align::Max,
-            },
-            focus: true,
-            focused_once: false,
-        }
-    }
-
-    fn changed(&self) -> bool {
-        self.content != self.start
-    }
-
-    /// Track the staged text box; an empty item has no geometry, so the last
-    /// non-empty box stays as the caret anchor.
-    fn follow(&mut self, geometry: &ItemGeometry, viewport: &Viewport) {
-        if let Some(rect) = bounds(geometry, viewport) {
-            self.rect = rect;
-        }
+    /// Caret and selection geometry of the open inline text session.
+    pub(in crate::editor) fn text_caret(&self) -> Option<crate::editor::state::TextCaret> {
+        self.text.as_ref().and_then(super::text::Edit::caret)
     }
 }
 
@@ -371,7 +331,7 @@ pub(super) fn show(
         if let Some(geometry) = renderer.item_geometry(edit.item, at).ok().flatten() {
             edit.follow(&geometry, &viewport);
         }
-        if text_overlay(ui, &mut edit, cx.dark, actions) {
+        if super::text::show(ui, &mut edit, &viewport, cx.dark, actions) {
             state.text = Some(edit);
         }
         if let Some((_, _, visual)) = &visual {
@@ -509,82 +469,12 @@ fn open_text(
     let Some(geometry) = renderer.item_geometry(item, at).ok().flatten() else {
         return false;
     };
-    let Some(rect) = bounds(&geometry, viewport) else {
-        return false;
-    };
-    let Some(font) = font_pixels(project, viewport, item, at, params) else {
+    let Some(rect) = super::text::bounds(&geometry, viewport) else {
         return false;
     };
     state.drag = None;
-    state.text = Some(TextEdit::begin(item, params, rect, font));
+    state.text = Some(super::text::Edit::begin(item, params, rect, geometry));
     actions.push(Action::TextBegin { item });
-    true
-}
-
-/// The live inline editor: transparent glyphs over the rendered text, an accent
-/// caret and a translucent accent selection. Returns whether it stays open.
-fn text_overlay(
-    ui: &mut egui::Ui,
-    edit: &mut TextEdit,
-    dark: bool,
-    actions: &mut Vec<Action>,
-) -> bool {
-    let mut child = ui.new_child(
-        egui::UiBuilder::new()
-            .max_rect(edit.rect)
-            .layout(egui::Layout::top_down(egui::Align::Min)),
-    );
-    child.set_clip_rect(ui.clip_rect().intersect(edit.rect));
-    let accent = kit::accent(dark);
-    let mut style = (**child.style()).clone();
-    style.visuals.selection.bg_fill = accent.gamma_multiply(kit::size::TEXT_EDIT_SELECTION);
-    style.visuals.selection.stroke = egui::Stroke::NONE;
-    style.visuals.text_cursor.stroke = egui::Stroke::new(kit::size::TEXT_EDIT_CARET, accent);
-    child.set_style(style);
-    let previous = edit.content.clone();
-    let output = egui::TextEdit::multiline(&mut edit.content)
-        .id_salt("preview.text.edit")
-        .font(egui::FontId::proportional(edit.font))
-        .text_color(egui::Color32::TRANSPARENT)
-        .frame(egui::Frame::NONE)
-        .margin(egui::Margin::ZERO)
-        .align(egui::Align2([edit.align, egui::Align::Min]))
-        .desired_width(edit.rect.width())
-        .show(&mut child);
-    let response = output.response.response;
-    if edit.focus {
-        response.request_focus();
-        edit.focus = false;
-    }
-    if response.has_focus() {
-        edit.focused_once = true;
-    }
-    if edit.content != previous {
-        actions.push(Action::TextPreview {
-            item: edit.item,
-            content: edit.content.clone(),
-        });
-    }
-    let escape = ui.input(|i| i.key_pressed(egui::Key::Escape));
-    let outside = ui.input(|i| {
-        i.pointer.primary_pressed()
-            && i.pointer
-                .interact_pos()
-                .is_some_and(|pointer| !edit.rect.contains(pointer))
-    });
-    let blur = (edit.focused_once && response.lost_focus()) || outside;
-    actions.push(Action::Remember {
-        id: "preview.text.edit".into(),
-        icon: None,
-        tooltip: None,
-        response,
-    });
-    if escape || blur {
-        actions.push(Action::TextEnd {
-            commit: edit.changed(),
-        });
-        return false;
-    }
     true
 }
 
@@ -593,46 +483,6 @@ fn text_params(item: &Item) -> Option<&TextParams> {
         ItemParams::Text(params) => Some(params),
         _ => None,
     }
-}
-
-/// Axis-aligned screen box around the rotated text box.
-fn bounds(geometry: &ItemGeometry, viewport: &Viewport) -> Option<Rect> {
-    let mut min = egui::pos2(f32::INFINITY, f32::INFINITY);
-    let mut max = egui::pos2(f32::NEG_INFINITY, f32::NEG_INFINITY);
-    for handle in [
-        Handle::TopLeft,
-        Handle::TopRight,
-        Handle::BottomRight,
-        Handle::BottomLeft,
-    ] {
-        let [x, y] = geometry.handle_position(viewport, handle).ok()?;
-        let point = egui::pos2(x as f32, y as f32);
-        min.x = min.x.min(point.x);
-        min.y = min.y.min(point.y);
-        max.x = max.x.max(point.x);
-        max.y = max.y.max(point.y);
-    }
-    Some(Rect::from_min_max(min, max))
-}
-
-/// Font size in screen pixels: the item's canvas size scaled by its transform
-/// and the letterboxed viewport.
-fn font_pixels(
-    project: &project::Project,
-    viewport: &Viewport,
-    item: ItemId,
-    at: Tick,
-    params: &TextParams,
-) -> Option<f32> {
-    let data = find(project, item)?;
-    let local = at.checked_sub(data.start)?;
-    let scale_x = TransformField::ScaleX
-        .value_at(&data.animations, local)
-        .ok()?;
-    let origin = viewport.canvas_to_screen([0.0, 0.0]).ok()?;
-    let unit = viewport.canvas_to_screen([1.0, 0.0]).ok()?;
-    let scale = (unit[0] - origin[0]).hypot(unit[1] - origin[1]);
-    Some(((f64::from(params.font_size) * scale_x * scale) as f32).max(1.0))
 }
 
 fn press(

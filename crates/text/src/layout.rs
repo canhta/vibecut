@@ -9,6 +9,7 @@ mod paragraph;
 use crate::fonts::{self, FaceId};
 use paragraph::{ParagraphContext, append_paragraph, canonical_text, content_bounds};
 use std::ops::Range;
+use unicode_normalization::UnicodeNormalization;
 
 /// Horizontal alignment within the requested maximum width.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
@@ -119,6 +120,62 @@ pub struct Layout {
     pub missing_font: bool,
     /// Lines were dropped because of [`LayoutOptions::max_lines`].
     pub overflow: bool,
+}
+
+/// A caret position in layout pixels with y down.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct Caret {
+    /// Index into [`Layout::lines`].
+    pub line: usize,
+    /// Leading x of the caret.
+    pub x: f32,
+    /// Top of the line box containing the caret.
+    pub top: f32,
+    /// Bottom of the line box containing the caret.
+    pub bottom: f32,
+}
+
+impl Layout {
+    /// Caret at a character index in `source`, the string this layout was built from.
+    ///
+    /// Indices past the end clamp to the text end. A position inside a grapheme moves to
+    /// the next cluster boundary, as a text caret cannot sit inside a cluster. An index at
+    /// a line break stays on the line before it, and one at a line start sits on that line.
+    pub fn caret(&self, source: &str, index: usize) -> Caret {
+        let byte = source
+            .char_indices()
+            .nth(index)
+            .map_or(source.len(), |(byte, _)| byte);
+        let offset = source
+            .get(..byte)
+            .unwrap_or_default()
+            .nfc()
+            .map(char::len_utf8)
+            .sum::<usize>()
+            .min(self.text.len());
+        let Some((line_index, line)) = self
+            .lines
+            .iter()
+            .enumerate()
+            .find(|(_, line)| offset <= line.range.end)
+            .or_else(|| self.lines.iter().enumerate().next_back())
+        else {
+            return Caret::default();
+        };
+        let x = self
+            .glyphs
+            .get(line.glyphs.clone())
+            .unwrap_or_default()
+            .iter()
+            .find(|glyph| glyph.cluster >= offset)
+            .map_or(line.x + line.width, |glyph| glyph.x);
+        Caret {
+            line: line_index,
+            x,
+            top: line.baseline - line.ascent,
+            bottom: line.baseline + line.descent,
+        }
+    }
 }
 
 /// Invalid layout input or a shaping failure.
@@ -532,6 +589,98 @@ mod tests {
             "{:?}",
             started.elapsed()
         );
+    }
+
+    #[test]
+    fn caret_tracks_cluster_edges_lines_and_line_breaks() {
+        let text = "Ab\nCd";
+        let laid_out = layout(text, &options(300.0)).expect("layout");
+        let first = laid_out.caret(text, 0);
+        assert_eq!(first.line, 0);
+        assert!((first.x - laid_out.glyphs[laid_out.lines[0].glyphs.start].x).abs() < 1e-3);
+        assert!((first.top - (laid_out.lines[0].baseline - laid_out.lines[0].ascent)).abs() < 1e-3);
+        assert!(
+            (first.bottom - (laid_out.lines[0].baseline + laid_out.lines[0].descent)).abs() < 1e-3
+        );
+
+        let before_break = laid_out.caret(text, 2);
+        assert_eq!(before_break.line, 0);
+        assert!((before_break.x - (laid_out.lines[0].x + laid_out.lines[0].width)).abs() < 0.011);
+
+        let second_line = laid_out.caret(text, 3);
+        assert_eq!(second_line.line, 1);
+        assert!((second_line.x - laid_out.lines[1].x).abs() < 1e-3);
+
+        let end = laid_out.caret(text, text.chars().count());
+        assert_eq!(end.line, 1);
+        assert!((end.x - (laid_out.lines[1].x + laid_out.lines[1].width)).abs() < 0.011);
+        assert!((end.top - (laid_out.lines[1].baseline - laid_out.lines[1].ascent)).abs() < 1e-3);
+
+        let blank = "A\n\nB";
+        let laid_out = layout(blank, &options(300.0)).expect("layout");
+        assert_eq!(laid_out.lines.len(), 3);
+        assert_eq!(laid_out.caret(blank, 2).line, 1);
+        assert_eq!(laid_out.caret(blank, 3).line, 2);
+        assert!((laid_out.caret(blank, 2).x - laid_out.lines[1].x).abs() < 1e-3);
+    }
+
+    #[test]
+    fn caret_follows_alignment_and_clamps_out_of_range() {
+        for align in [Align::Left, Align::Center, Align::Right] {
+            let laid_out = layout(
+                "AV",
+                &LayoutOptions {
+                    align,
+                    ..options(300.0)
+                },
+            )
+            .expect("layout");
+            let line = &laid_out.lines[0];
+            let end = laid_out.caret("AV", 9);
+            assert_eq!(end, laid_out.caret("AV", 2), "{align:?}");
+            assert!((end.x - (line.x + line.width)).abs() < 0.011, "{align:?}");
+            assert!(line.x >= 0.0 && line.x + line.width <= 300.01, "{align:?}");
+        }
+        let centered = layout(
+            "AV",
+            &LayoutOptions {
+                align: Align::Center,
+                ..options(300.0)
+            },
+        )
+        .expect("layout");
+        let right = layout(
+            "AV",
+            &LayoutOptions {
+                align: Align::Right,
+                ..options(300.0)
+            },
+        )
+        .expect("layout");
+        assert!(right.lines[0].x > centered.lines[0].x);
+    }
+
+    #[test]
+    fn caret_lands_after_a_combined_cluster_and_on_an_empty_line() {
+        let source = "e\u{301}x";
+        let laid_out = layout(source, &options(300.0)).expect("layout");
+        let after_base = laid_out.caret(source, 1);
+        let after_mark = laid_out.caret(source, 2);
+        let x = laid_out
+            .glyphs
+            .iter()
+            .find(|glyph| glyph.cluster >= 2)
+            .map(|glyph| glyph.x)
+            .expect("x glyph");
+        assert!((after_base.x - x).abs() < 0.011);
+        assert!((after_mark.x - x).abs() < 0.011);
+        assert!(after_base.x > laid_out.caret(source, 0).x);
+
+        let empty = layout("", &options(300.0)).expect("layout");
+        let caret = empty.caret("", 0);
+        assert_eq!(caret.line, 0);
+        assert_eq!(caret.x, 0.0);
+        assert!(caret.bottom > caret.top);
     }
 
     #[test]

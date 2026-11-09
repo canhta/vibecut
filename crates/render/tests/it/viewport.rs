@@ -126,6 +126,25 @@ fn rotated_handles_and_per_axis_scaling_share_render_geometry() {
             viewport.canvas_to_screen(point).unwrap(),
         );
     }
+    // The public bounds and point map agree with the transformed handles.
+    let bounds = geometry.bounds();
+    assert_eq!(
+        (bounds.x, bounds.y, bounds.width, bounds.height),
+        (40., 30., 80., 20.)
+    );
+    near(
+        geometry.point(&viewport, [40., 30.]).unwrap(),
+        geometry
+            .handle_position(&viewport, Handle::TopLeft)
+            .unwrap(),
+    );
+    near(
+        geometry.point(&viewport, [120., 50.]).unwrap(),
+        geometry
+            .handle_position(&viewport, Handle::BottomRight)
+            .unwrap(),
+    );
+    assert!(geometry.point(&viewport, [f64::NAN, 0.]).is_err());
     // Right is rotated downwards; crossing the centre must not flip the image.
     near(
         geometry.scale_at(Handle::Right, [90., 55.]).unwrap(),

@@ -10,8 +10,8 @@ use egui_kittest::{
 };
 use engine::{ByteBudget, Session};
 use project::{
-    Item, ItemId, ItemParams, OverlayParams, Project, ProjectId, Track, TrackId, TrackKind,
-    TransformField,
+    Item, ItemId, ItemParams, OverlayParams, Project, ProjectId, TextAlign, TextParams, Track,
+    TrackId, TrackKind, TransformField,
 };
 use std::{
     path::{Path, PathBuf},
@@ -102,6 +102,35 @@ fn text_project(track_locked: bool, track_hidden: bool) -> Project {
     Project::new(data).unwrap()
 }
 
+fn styled_text_project(params: TextParams, rotate: f64) -> Project {
+    let mut data = Project::empty(ProjectId(174), "Caret".into())
+        .unwrap()
+        .into_data();
+    data.canvas.width = 640;
+    data.canvas.height = 360;
+    data.canvas.fps = FrameRate::FPS_30;
+    let mut item = text(1);
+    item.content = ItemParams::Text(params);
+    if rotate != 0.0 {
+        item.animations
+            .set(
+                project::AnimationPath::new(TransformField::Rotate.path()).unwrap(),
+                project::Param::new(project::ParamValue::Scalar(rotate)).unwrap(),
+            )
+            .unwrap();
+    }
+    data.scene_mut().timeline.insert_track(Track {
+        id: TrackId(2),
+        name: "Text".into(),
+        kind: TrackKind::Text,
+        muted: false,
+        hidden: false,
+        locked: false,
+        items: vec![item],
+    });
+    Project::new(data).unwrap()
+}
+
 fn editor(project: Project, preferences: Preferences) -> Editor {
     let session = Session::new(project, 20).unwrap();
     let mut playback = Playback::new(
@@ -133,12 +162,23 @@ fn build_fast(editor: Editor) -> Harness<'static, Editor> {
     h
 }
 
+fn canvas_size(h: &Harness<Editor>) -> egui::Vec2 {
+    let canvas = &h.state().session.project().data().canvas;
+    egui::vec2(canvas.width as f32, canvas.height as f32)
+}
+
+/// The fitted canvas rectangle the player displays.
+fn canvas_frame(h: &Harness<Editor>) -> egui::Rect {
+    let stage = widget(h, "preview.canvas").rect;
+    let canvas = canvas_size(h);
+    let scale = (stage.width() / canvas.x).min(stage.height() / canvas.y);
+    egui::Rect::from_center_size(stage.center(), canvas * scale)
+}
+
 /// Screen point at the text item's default (50 %, 84.5 %) canvas position.
 fn text_point(h: &Harness<Editor>) -> egui::Pos2 {
-    let stage = widget(h, "preview.canvas").rect;
-    let scale = (stage.width() / 640.0).min(stage.height() / 360.0);
-    let frame = egui::Rect::from_center_size(stage.center(), egui::vec2(640.0, 360.0) * scale);
-    frame.center() + egui::vec2(0.0, (0.845 - 0.5) * 360.0 * scale)
+    let frame = canvas_frame(h);
+    frame.center() + egui::vec2(0.0, (0.845 - 0.5) * frame.height())
 }
 
 fn double_click(h: &mut Harness<Editor>, at: egui::Pos2) {
@@ -184,6 +224,186 @@ fn content(project: &Project, item: ItemId) -> String {
             _ => None,
         })
         .unwrap_or_else(|| panic!("missing text item {item:?}"))
+}
+
+fn text_item_params(h: &Harness<Editor>) -> TextParams {
+    h.state()
+        .session
+        .project()
+        .data()
+        .scene()
+        .timeline
+        .iter()
+        .flat_map(|track| track.items.iter())
+        .find(|candidate| candidate.id == ItemId(1))
+        .and_then(|candidate| match &candidate.content {
+            ItemParams::Text(params) => Some(params.clone()),
+            _ => None,
+        })
+        .expect("text item")
+}
+
+fn item_geometry(
+    h: &Harness<Editor>,
+) -> (render::viewport::ItemGeometry, render::viewport::Viewport) {
+    let project = h.state().session.project();
+    let renderer = render::Renderer::new(project, render::RenderSettings::from_project(project))
+        .expect("renderer");
+    let geometry = renderer
+        .item_geometry(ItemId(1), Tick::ZERO)
+        .expect("geometry")
+        .expect("text box");
+    let frame = canvas_frame(h);
+    let viewport = render::viewport::Viewport::new(
+        render::Rect {
+            x: f64::from(frame.min.x),
+            y: f64::from(frame.min.y),
+            width: f64::from(frame.width()),
+            height: f64::from(frame.height()),
+        },
+        [project.data().canvas.width, project.data().canvas.height],
+        1.0,
+        [0.0, 0.0],
+    )
+    .expect("viewport");
+    (geometry, viewport)
+}
+
+/// Caret and selection from the text crate's own layout and render's item geometry.
+fn expected_caret(h: &Harness<Editor>, content: &str) -> vibecut::TextCaret {
+    let params = text_item_params(h);
+    let (geometry, viewport) = item_geometry(h);
+    let pad = params.background.as_ref().map_or(0.0, |background| {
+        let extent = |value: f32| value.clamp(0.0, project::TextBackground::MAX_EXTENT);
+        let offset = |value: f32| {
+            value
+                .clamp(
+                    -project::TextBackground::MAX_OFFSET,
+                    project::TextBackground::MAX_OFFSET,
+                )
+                .abs()
+        };
+        (extent(background.padding_x) + offset(background.offset_x))
+            .max(extent(background.padding_y) + offset(background.offset_y))
+            .ceil()
+    });
+    let style = text::style_name(params.weight, params.italic);
+    let bounds = geometry.bounds();
+    let layout = text::layout(
+        content,
+        &text::LayoutOptions {
+            family: params.font.as_str(),
+            style: &style,
+            size: params.font_size,
+            max_width: bounds.width as f32 - 2.0 * pad,
+            align: match params.align {
+                TextAlign::Left => text::Align::Left,
+                TextAlign::Center => text::Align::Center,
+                TextAlign::Right => text::Align::Right,
+            },
+            line_height: params.line_height,
+            letter_spacing: params.letter_spacing,
+            ..Default::default()
+        },
+    )
+    .expect("layout");
+    let start = layout.caret(content, 0);
+    let end = layout.caret(content, content.chars().count());
+    let origin = [bounds.x as f32 + pad, bounds.y as f32 + pad];
+    let point = |x: f32, y: f32| -> [f32; 2] {
+        let [x, y] = geometry
+            .point(
+                &viewport,
+                [f64::from(origin[0] + x), f64::from(origin[1] + y)],
+            )
+            .expect("point");
+        [x as f32, y as f32]
+    };
+    let mut selection = Vec::new();
+    if !content.is_empty() {
+        for index in start.line..=end.line {
+            let line = &layout.lines[index];
+            let left = if index == start.line { start.x } else { line.x };
+            let right = if index == end.line {
+                end.x
+            } else {
+                line.x + line.width
+            };
+            let top = line.baseline - line.ascent;
+            let bottom = line.baseline + line.descent;
+            selection.push([
+                point(left, top),
+                point(right, top),
+                point(right, bottom),
+                point(left, bottom),
+            ]);
+        }
+    }
+    vibecut::TextCaret {
+        layout: [[end.x, end.top], [end.x, end.bottom]],
+        screen: [point(end.x, end.top), point(end.x, end.bottom)],
+        selection,
+    }
+}
+
+fn assert_near(actual: [f32; 2], expected: [f32; 2], label: &str) {
+    assert!(
+        (actual[0] - expected[0]).abs() <= 1.0 && (actual[1] - expected[1]).abs() <= 1.0,
+        "{label}: {actual:?} is not within 1 px of {expected:?}"
+    );
+}
+
+fn assert_caret(actual: &vibecut::TextCaret, expected: &vibecut::TextCaret, label: &str) {
+    assert_near(
+        actual.layout[0],
+        expected.layout[0],
+        &format!("{label} layout top"),
+    );
+    assert_near(
+        actual.layout[1],
+        expected.layout[1],
+        &format!("{label} layout bottom"),
+    );
+    assert_near(
+        actual.screen[0],
+        expected.screen[0],
+        &format!("{label} screen top"),
+    );
+    assert_near(
+        actual.screen[1],
+        expected.screen[1],
+        &format!("{label} screen bottom"),
+    );
+}
+
+fn assert_selection(actual: &vibecut::TextCaret, expected: &vibecut::TextCaret, label: &str) {
+    assert_eq!(
+        actual.selection.len(),
+        expected.selection.len(),
+        "{label} selection lines"
+    );
+    for (index, (actual, expected)) in actual.selection.iter().zip(&expected.selection).enumerate()
+    {
+        for corner in 0..4 {
+            assert_near(
+                actual[corner],
+                expected[corner],
+                &format!("{label} selection line {index} corner {corner}"),
+            );
+        }
+    }
+}
+
+fn type_buffer(h: &mut Harness<Editor>, text: &str) {
+    for (index, line) in text.split('\n').enumerate() {
+        if index > 0 {
+            h.key_press(egui::Key::Enter);
+            h.run_steps(1);
+        }
+        if !line.is_empty() {
+            type_into_edit(h, line);
+        }
+    }
 }
 
 fn click(h: &mut Harness<Editor>, id: &str) {
@@ -1235,6 +1455,148 @@ fn preview_inline_text_edit_refuses_locked_and_hidden_items() {
         assert_eq!(history(&h), 0);
         assert_eq!(json(h.state().session.project()), before);
     }
+}
+
+#[test]
+fn preview_inline_text_caret_and_selection_follow_the_rendered_layout() {
+    type Row = (&'static str, fn(&mut TextParams), f64, &'static str);
+    let rows: &[Row] = &[
+        (
+            "custom font",
+            |params| params.font = "Noto Serif".into(),
+            0.0,
+            "VibeCut",
+        ),
+        (
+            "letter spacing",
+            |params| params.letter_spacing = 8.0,
+            0.0,
+            "AVAVA",
+        ),
+        ("two lines", |_| {}, 0.0, "First\nSecond"),
+        (
+            "centre align",
+            |params| params.align = TextAlign::Center,
+            0.0,
+            "Centre",
+        ),
+        (
+            "right align",
+            |params| params.align = TextAlign::Right,
+            0.0,
+            "Right",
+        ),
+        (
+            "thirty degree rotation",
+            |params| {
+                params.font = "Noto Serif".into();
+                params.letter_spacing = 3.0;
+            },
+            30.0,
+            "Rotate",
+        ),
+        (
+            "wrapped line",
+            |_| {},
+            0.0,
+            "The quick brown fox jumps over the lazy dog",
+        ),
+        ("empty buffer", |_| {}, 0.0, ""),
+    ];
+    for (label, setup, rotate, typed) in rows {
+        let mut params = TextParams::new("Hello world");
+        setup(&mut params);
+        let mut h = build_fast(editor(
+            styled_text_project(params, *rotate),
+            Preferences::default(),
+        ));
+        let point = text_point(&h);
+        double_click(&mut h, point);
+        assert!(text_edit_open(&h), "{label} opens the overlay");
+        h.key_combination_modifiers(egui::Modifiers::COMMAND, &[egui::Key::A]);
+        h.run_steps(1);
+        if typed.is_empty() {
+            h.key_press(egui::Key::Backspace);
+            h.run_steps(2);
+        } else {
+            type_buffer(&mut h, typed);
+        }
+        // Collapse the whole buffer to its end: arrow keys and paste leave the
+        // caret elsewhere depending on the host input path.
+        h.key_combination_modifiers(egui::Modifiers::COMMAND, &[egui::Key::A]);
+        h.key_press(egui::Key::ArrowRight);
+        h.run_steps(2);
+        let caret = h
+            .state()
+            .inspect()
+            .unwrap()
+            .text_caret
+            .unwrap_or_else(|| panic!("{label} exposes the caret"));
+        assert_caret(&caret, &expected_caret(&h, typed), label);
+
+        // The same layout drives the selection after selecting the whole buffer.
+        h.key_combination_modifiers(egui::Modifiers::COMMAND, &[egui::Key::A]);
+        h.run_steps(2);
+        let selected = h
+            .state()
+            .inspect()
+            .unwrap()
+            .text_caret
+            .unwrap_or_else(|| panic!("{label} exposes the selection"));
+        let expected = expected_caret(&h, typed);
+        assert_caret(&selected, &expected, label);
+        assert_selection(&selected, &expected, label);
+    }
+}
+
+/// Offscreen evidence for the ticket; wgpu stays out of CI.
+#[test]
+#[ignore = "renders through wgpu; run with --ignored to refresh target/p1-174-caret.png"]
+fn preview_inline_text_caret_renders_screenshot() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let target = std::env::var_os("CARGO_TARGET_DIR")
+        .map(PathBuf::from)
+        .map(|path| {
+            if path.is_absolute() {
+                path
+            } else {
+                root.join(path)
+            }
+        })
+        .unwrap_or_else(|| root.join("target"));
+    let mut params = TextParams::new("Rotated caret");
+    params.font = "Noto Serif".into();
+    params.letter_spacing = 3.0;
+    let mut h = build_fast(editor(
+        styled_text_project(params, 30.0),
+        Preferences::default(),
+    ));
+    let point = text_point(&h);
+    double_click(&mut h, point);
+    assert!(text_edit_open(&h));
+    h.key_combination_modifiers(egui::Modifiers::COMMAND, &[egui::Key::A]);
+    type_into_edit(&mut h, "Rotated caret");
+    h.key_combination_modifiers(egui::Modifiers::COMMAND, &[egui::Key::A]);
+    h.run_steps(2);
+    let mut rendered = false;
+    for _ in 0..80 {
+        h.run_steps(1);
+        if h.state().playback.frame().is_some() {
+            rendered = true;
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(25));
+    }
+    assert!(rendered, "the edited preview frame arrives");
+    assert!(
+        h.get(By::new().predicate(|node| node.author_id() == Some("preview.text.edit")))
+            .is_focused(),
+        "the capture keeps the caret and selection visible"
+    );
+    let image = h.render().expect("offscreen render");
+    std::fs::create_dir_all(&target).unwrap();
+    image.save(target.join("p1-174-caret.png")).unwrap();
+    assert!(image.width() > 0 && image.height() > 0);
 }
 
 /// Offscreen evidence for the ticket; wgpu stays out of CI.

@@ -2,7 +2,8 @@
 //!
 //! [`layout`] normalizes text to NFC, shapes it with bundled fonts (Inter and Noto Serif),
 //! breaks lines at Unicode opportunities without splitting a grapheme cluster, and positions
-//! glyphs. [`render`] turns a layout into a premultiplied RGBA8 image with fill, an outer,
+//! glyphs; [`Layout::caret`] resolves a source character index to its cluster and line box.
+//! [`render`] turns a layout into a premultiplied RGBA8 image with fill, an outer,
 //! centre or inner outline and an optional background box.
 //!
 //! The crate is headless and deterministic: it reads no system fonts, uses no GPU and has no
@@ -22,6 +23,8 @@ pub use fonts::{
     MAX_REGISTERED_FACES, Resolved, face, fallback_chain, fallback_for, families, generation,
     is_available, register, resolve, style_name,
 };
-pub use layout::{Align, Bounds, Glyph, Layout, LayoutOptions, Line, LineBreak, TextError, layout};
+pub use layout::{
+    Align, Bounds, Caret, Glyph, Layout, LayoutOptions, Line, LineBreak, TextError, layout,
+};
 pub use mask::{StrokeKind, coverage_signed_distance};
 pub use render::{Canvas, Decoration, Image, Outline, Paint, Rectangle, RenderError, render};

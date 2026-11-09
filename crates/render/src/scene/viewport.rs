@@ -143,6 +143,16 @@ impl ItemGeometry {
             self.bounds.y + self.bounds.height / 2.0,
         ]
     }
+    /// Untransformed item box in project canvas pixels.
+    pub fn bounds(&self) -> Rect {
+        self.bounds
+    }
+    /// Screen point for an untransformed canvas point inside the item box, with the
+    /// same placement transform the compositor applies.
+    pub fn point(&self, viewport: &Viewport, canvas: [f64; 2]) -> Result<[f64; 2]> {
+        finite(&canvas)?;
+        viewport.canvas_to_screen(self.transform.point(canvas, self.center()))
+    }
     pub fn handle_position(&self, viewport: &Viewport, handle: Handle) -> Result<[f64; 2]> {
         let center = self.center();
         let [x, y] = handle.direction();

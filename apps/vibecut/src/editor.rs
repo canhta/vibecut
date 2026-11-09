@@ -21,7 +21,7 @@ use state::{
 };
 pub use state::{
     AssetInspection, AssetState, Editor, Inspection, ShortcutRow, ShortcutTab, ShortcutsInspection,
-    WidgetState,
+    TextCaret, WidgetState,
 };
 
 mod timing;
@@ -359,6 +359,7 @@ impl Editor {
                 .properties
                 .font_picker
                 .inspect(&self.preferences.font_picker),
+            text_caret: self.player.transform.text_caret(),
             shortcuts: self.shortcuts_open.then(|| {
                 let platform = actions::Platform::current();
                 let rows = actions::actions()

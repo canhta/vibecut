@@ -12,9 +12,11 @@ handles and cannot be hit. Handle face, hit target, grip gap and colours come
 from `kit` tokens.
 
 A double click on a visible text item opens one inline session over its rendered
-box: transparent glyphs leave the preview visible, while the caret and selection
-use the app accent at the measured caret width and selection opacity. Each change
-stages the whole buffer as `text_content` inside `timeline.preview`; Escape,
-blur and starting playback commit it as one undo step, Enter inserts a newline,
-and an empty buffer is a valid commit. A locked or hidden item never opens the
-overlay.
+box. Transparent input glyphs leave the preview visible; the caret and selection
+are painted at the text crate's layout positions for the item's own font, size,
+letter spacing, line height and alignment, mapped through the item's placement
+transform so rotation and scale keep them on the rendered glyphs. They use the
+app accent at the measured caret width and selection opacity. Each change stages
+the whole buffer as `text_content` inside `timeline.preview`; Escape, blur and
+starting playback commit it as one undo step, Enter inserts a newline, and an
+empty buffer is a valid commit. A locked or hidden item never opens the overlay.

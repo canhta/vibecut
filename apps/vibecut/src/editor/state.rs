@@ -125,6 +125,17 @@ pub struct ShortcutsInspection {
     pub error: Option<String>,
     pub rows: Vec<ShortcutRow>,
 }
+/// Caret and selection geometry of the open inline text session.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct TextCaret {
+    /// Caret endpoints in text-layout pixels, canvas units with y down.
+    pub layout: [[f32; 2]; 2],
+    /// Caret endpoints in logical screen pixels.
+    pub screen: [[f32; 2]; 2],
+    /// Selected line quads in logical screen pixels, clockwise from top-left.
+    pub selection: Vec<[[f32; 2]; 4]>,
+}
+
 #[derive(Clone, Debug)]
 pub struct Inspection {
     pub widgets: Vec<WidgetState>,
@@ -195,6 +206,8 @@ pub struct Inspection {
     pub shortcuts: Option<ShortcutsInspection>,
     /// Font picker state, tab, favourites and download.
     pub font_picker: super::properties::font_picker::Inspection,
+    /// Present while an inline text session is open.
+    pub text_caret: Option<TextCaret>,
 }
 #[derive(Clone, Debug)]
 pub(super) struct PreferenceCommand {
