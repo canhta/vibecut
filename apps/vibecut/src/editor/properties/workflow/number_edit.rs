@@ -10,7 +10,7 @@ impl Editor {
             if self.session.transaction_active() {
                 self.session.cancel_gesture()?;
             }
-            self.session.set_selection(self.selection.clone())?;
+            self.desk().push_selection()?;
             self.session.begin_gesture()?;
             Ok(())
         })();
@@ -30,13 +30,13 @@ impl Editor {
             self.session.cancel_gesture()
         };
         if changed {
-            self.sync_preview();
+            self.desk().sync();
         }
         result.map(|_| ()).map_err(Into::into)
     }
     pub(in crate::editor) fn finish_scrub(&mut self, commit: bool) {
         let actions = self.properties.end_scrub(commit);
-        apply(self, actions);
+        apply(&mut self.desk(), actions);
     }
 }
 

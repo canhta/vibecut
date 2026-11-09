@@ -236,7 +236,7 @@ impl Editor {
         self.prune_asset_state();
         self.prune_media_selection();
         if !Arc::ptr_eq(&before, self.session.project()) {
-            self.sync_preview();
+            self.desk().sync();
         }
     }
     pub(in crate::editor) fn finish_import(&mut self) {

@@ -492,4 +492,6 @@ pub struct Editor {
     pub subtitles: Option<crate::subtitles::Subtitles>,
     /// Catalog commands for the font picker; opened lazily on first use.
     pub(super) font_backend: Option<Box<dyn super::properties::font_picker::Backend>>,
+    /// Cross-area requests the frame drains after the area that raised them.
+    pub(super) requests: Vec<super::Request>,
 }

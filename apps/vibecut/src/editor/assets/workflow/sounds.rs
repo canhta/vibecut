@@ -30,14 +30,18 @@ impl Editor {
     }
 
     pub(crate) fn tick_sounds(&mut self) {
+        let mut failure = None;
         let ready = if let Some(sounds) = &mut self.sounds {
             if let Err(error) = sounds.tick() {
-                self.error = Some(error.to_string());
+                failure = Some(error.to_string());
             }
             sounds.take_ready_add()
         } else {
             None
         };
+        if let Some(message) = failure {
+            self.desk().fail(message);
+        }
         let Some(sound) = ready else {
             return;
         };
@@ -45,7 +49,7 @@ impl Editor {
             if let Some(sounds) = &mut self.sounds {
                 sounds.add_failed(super::super::sounds::SoundsProblem::from_app(&error));
             }
-            self.error = Some(error.to_string());
+            self.desk().fail(error.to_string());
         }
     }
 
@@ -115,7 +119,7 @@ impl Editor {
                 if let Some(sounds) = &mut self.sounds {
                     sounds.add_failed(super::super::sounds::SoundsProblem::from_app(&error));
                 }
-                self.error = Some(error.to_string());
+                self.desk().fail(error.to_string());
             }
         } else if let Some(sounds) = &mut self.sounds {
             sounds.request_add(sound);
@@ -148,7 +152,7 @@ impl Editor {
             self.selection.insert(item);
             self.selection_scopes = Default::default();
         }
-        self.sync_preview();
+        self.desk().sync();
         let added =
             crate::i18n::text(self.preferences.locale, crate::i18n::Text::SoundsAdded).to_owned();
         self.set_toast(&added, None);

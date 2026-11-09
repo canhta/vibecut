@@ -17,7 +17,7 @@ impl Editor {
                 false
             };
             if flushed {
-                self.sync_preview();
+                self.desk().sync();
             }
             self.preferences
                 .set("assets_tab", serde_json::to_value(tab)?)?;

@@ -1,5 +1,6 @@
 //! Owns editor frame composition.
 mod assets;
+mod desk;
 mod input;
 mod layout;
 mod route;
@@ -7,6 +8,8 @@ mod shortcuts;
 mod topbar;
 mod view;
 mod workflow;
+
+pub(crate) use desk::{Desk, Request};
 
 use crate::{
     egui,

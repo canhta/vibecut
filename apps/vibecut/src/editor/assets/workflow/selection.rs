@@ -182,7 +182,7 @@ impl Editor {
                 self.media_reveal = None;
                 self.prune_media_selection();
                 if !Arc::ptr_eq(&before, self.session.project()) {
-                    self.sync_preview();
+                    self.desk().sync();
                 }
                 let text = i18n::format_count(
                     self.preferences.locale,

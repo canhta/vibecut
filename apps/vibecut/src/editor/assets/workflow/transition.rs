@@ -131,7 +131,7 @@ impl Editor {
                 "duration": TICKS_PER_SECOND / 2, "alignment": "center",
             }),
         ) {
-            Ok(_) => self.sync_preview(),
+            Ok(_) => self.desk().sync(),
             Err(error) => {
                 tracing::warn!(category = "transition_apply", %error, "transition refused");
                 self.set_toast(self.tr(Text::TransitionFailed), None);

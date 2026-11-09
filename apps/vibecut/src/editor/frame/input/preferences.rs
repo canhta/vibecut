@@ -33,11 +33,9 @@ impl Editor {
     pub(in crate::editor) fn record_layout_change(&mut self, before: [f32; 3]) {
         let after = self.preferences.panels;
         self.preferences.panels = before;
-        if let Err(error) = self.dispatch(
+        self.desk().dispatch(
             PREFERENCE_COMMAND,
             serde_json::json!({"key": "panels", "value": after}),
-        ) {
-            self.error = Some(error.to_string());
-        }
+        );
     }
 }

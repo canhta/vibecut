@@ -252,8 +252,8 @@ pub(super) fn show(editor: &mut Editor, ctx: &egui::Context) {
     }
     match output.action {
         Some(Action::Apply) => {
-            if let Err(error) = dialog.apply(editor) {
-                editor.error = Some(error.to_string());
+            if let Err(error) = dialog.apply(&mut editor.desk()) {
+                editor.desk().fail(error.to_string());
                 editor.crop = Some(dialog);
             }
         }
@@ -263,18 +263,17 @@ pub(super) fn show(editor: &mut Editor, ctx: &egui::Context) {
 
 impl Dialog {
     /// One documented crop patch, or no history entry when the box is unchanged.
-    fn apply(&self, editor: &mut Editor) -> Result<()> {
+    fn apply(&self, desk: &mut super::Desk<'_>) -> Result<()> {
         let patch = self.patch();
         if patch == self.original {
             return Ok(());
         }
-        let selection = editor.selection.clone();
-        editor.session.set_selection(selection)?;
-        editor.session.execute(
+        desk.run(
             "timeline.set_item_param",
             serde_json::json!({"item": self.item, "patch": {"field": "crop", "value": patch}}),
+            false,
         )?;
-        editor.sync_preview();
+        desk.sync();
         Ok(())
     }
 

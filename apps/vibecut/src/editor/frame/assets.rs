@@ -13,7 +13,7 @@ impl Editor {
             match action {
                 assets::Action::SelectTab(tab) => {
                     if let Err(error) = self.remember_assets_tab(tab) {
-                        self.error = Some(error.to_string());
+                        self.desk().fail(error.to_string());
                     }
                 }
                 assets::Action::Command(id) => self.action(&id),
@@ -37,6 +37,7 @@ impl Editor {
                 assets::Action::Captions(rect) => {
                     let mut child = ui.new_child(egui::UiBuilder::new().max_rect(rect));
                     captions::show(self, &mut child);
+                    self.drain_requests();
                 }
                 assets::Action::EffectDrag(kind) => self.effect_drag = Some(kind.to_owned()),
                 assets::Action::AddEffect(kind) => self.add_effect_from_selection(kind),

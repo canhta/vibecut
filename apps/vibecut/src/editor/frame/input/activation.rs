@@ -47,7 +47,7 @@ impl Editor {
             false
         };
         if flushed {
-            self.sync_preview();
+            self.desk().sync();
         }
         if let Some(id) = id
             && !self.action_enabled(id)
@@ -55,7 +55,7 @@ impl Editor {
             let (spec, _) = actions::resolve(id).ok_or(Error::Unsupported("widget action"))?;
             return Err(Error::ActionDisabled(spec.id));
         }
-        self.session.set_selection(self.selection.clone())?;
+        self.desk().push_selection()?;
         self.remember_view()?;
         let before = self.session.project().clone();
         let result = execute(self)?;
@@ -65,9 +65,10 @@ impl Editor {
         }
         self.prune_media_selection();
         if !Arc::ptr_eq(&before, self.session.project()) {
-            self.sync_preview();
+            self.desk().sync();
         }
         self.remember_view()?;
+        self.drain_requests();
         Ok(result)
     }
 
@@ -134,14 +135,7 @@ impl Editor {
                             at,
                             id,
                         )?;
-                        let seek = panel.requested_seek.take();
-                        let model = panel.requested_model.take();
-                        if let Some(at) = seek {
-                            self.seek(at)?;
-                        }
-                        if let Some(id) = model {
-                            self.open_model(&id)?;
-                        }
+                        crate::editor::captions::queue_requests(self);
                     }
                     if options != self.preferences.subtitles {
                         self.set_preference("subtitles", serde_json::to_value(options)?)?;
@@ -362,7 +356,7 @@ impl Editor {
                 UiAction::OpenShortcuts => self.open_shortcuts(),
                 UiAction::RetryPreview => {
                     self.playback.clear()?;
-                    self.error = None;
+                    self.desk().clear_error();
                 }
                 UiAction::ProjectInspector => self.properties.details = false,
                 UiAction::DetailsInspector => self.properties.details = true,

@@ -34,9 +34,7 @@ impl Editor {
         self.finish_scrub(false);
         self.selection_scopes = SelectionScopes::default();
         self.properties.clear_drafts();
-        if let Err(e) = self.session.set_selection(self.selection.clone()) {
-            self.error = Some(e.to_string());
-        }
+        self.desk().select();
     }
     pub(in crate::editor) fn prune_selection(&mut self) {
         let existing: BTreeSet<ItemId> = self

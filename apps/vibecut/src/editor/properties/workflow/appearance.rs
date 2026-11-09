@@ -9,7 +9,7 @@ impl Editor {
         let actions = self
             .properties
             .open_picker(self.session.project(), target, None)?;
-        apply(self, actions);
+        apply(&mut self.desk(), actions);
         Ok(())
     }
     /// Inject the native capability boundary for an open picker.
@@ -35,7 +35,7 @@ impl Editor {
             Ok(())
         })();
         if result.is_err() {
-            self.sync_preview();
+            self.desk().sync();
         }
         result
     }
@@ -46,22 +46,19 @@ impl Editor {
         params: serde_json::Value,
         recent: Vec<project::Color>,
     ) -> Result<()> {
-        let result = (|| -> Result<()> {
-            let mut preferences = self.preferences.clone();
-            preferences.set("recent_colors", serde_json::to_value(recent)?)?;
-            self.session.end_merge();
-            self.session.execute(command, params)?;
-            if let Some(picker) = self.properties.picker.as_mut() {
-                picker.original = picker.color;
-            }
-            self.properties.color_base = Some(self.session.project().clone());
-            self.preferences = preferences;
-            self.sync_preview();
-            Ok(())
-        })();
-        if result.is_err() {
-            self.sync_preview();
+        let mut preferences = self.preferences.clone();
+        preferences.set("recent_colors", serde_json::to_value(recent)?)?;
+        self.session.end_merge();
+        if let Err(error) = self.desk().edit_result(command, params) {
+            // The engine refused: show the committed project again.
+            self.desk().sync();
+            return Err(error);
         }
-        result
+        if let Some(picker) = self.properties.picker.as_mut() {
+            picker.original = picker.color;
+        }
+        self.properties.color_base = Some(self.session.project().clone());
+        self.preferences = preferences;
+        Ok(())
     }
 }

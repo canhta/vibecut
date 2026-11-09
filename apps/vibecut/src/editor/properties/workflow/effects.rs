@@ -81,7 +81,7 @@ impl Editor {
             }
         }
         if !Arc::ptr_eq(&before, self.session.project()) {
-            self.sync_preview();
+            self.desk().sync();
         }
     }
     pub(in crate::editor) fn next_effect_id(&self, item: ItemId, kind: &str) -> Option<String> {
@@ -108,30 +108,16 @@ impl Editor {
         })
     }
     pub(in crate::editor) fn remove_effect(&mut self, item: ItemId, effect: &str) {
-        let before = self.session.project().clone();
-        match self.session.execute(
+        self.desk().edit(
             "effects.remove",
             serde_json::json!({"item": item, "effect": effect}),
-        ) {
-            Ok(_) => {}
-            Err(error) => self.error = Some(error.to_string()),
-        }
-        if !Arc::ptr_eq(&before, self.session.project()) {
-            self.sync_preview();
-        }
+        );
     }
     pub(in crate::editor) fn toggle_effect(&mut self, item: ItemId, effect: &str, enabled: bool) {
-        let before = self.session.project().clone();
-        match self.session.execute(
+        self.desk().edit(
             "effects.toggle",
             serde_json::json!({"item": item, "effect": effect, "enabled": enabled}),
-        ) {
-            Ok(_) => {}
-            Err(error) => self.error = Some(error.to_string()),
-        }
-        if !Arc::ptr_eq(&before, self.session.project()) {
-            self.sync_preview();
-        }
+        );
     }
     pub(in crate::editor) fn reorder_effect(
         &mut self,
@@ -172,17 +158,10 @@ impl Editor {
         if order == current {
             return;
         }
-        let before_project = self.session.project().clone();
-        match self.session.execute(
+        self.desk().edit(
             "effects.reorder",
             serde_json::json!({"item": item, "order": order}),
-        ) {
-            Ok(_) => {}
-            Err(error) => self.error = Some(error.to_string()),
-        }
-        if !Arc::ptr_eq(&before_project, self.session.project()) {
-            self.sync_preview();
-        }
+        );
     }
     pub(in crate::editor) fn set_effect_param(
         &mut self,
@@ -191,7 +170,6 @@ impl Editor {
         key: &str,
         value: f64,
     ) -> Result<()> {
-        self.session.set_selection(self.selection.clone())?;
         let present = self
             .session
             .project()
@@ -203,9 +181,10 @@ impl Editor {
             .find(|candidate| candidate.id == item)
             .is_some_and(|candidate| candidate.effects.iter().any(|e| e.id == effect));
         if present {
-            self.session.execute(
+            self.desk().run(
                 "effects.update_param",
                 serde_json::json!({"item": item, "effect": effect, "key": key, "value": value}),
+                false,
             )?;
         } else {
             // First edit on a panel that shows a registered effect at neutral:
@@ -227,12 +206,13 @@ impl Editor {
                 enabled: true,
                 params,
             };
-            self.session.execute(
+            self.desk().run(
                 "effects.add",
                 serde_json::json!({"item": item, "effect": instance}),
+                false,
             )?;
         }
-        self.sync_preview();
+        self.desk().sync();
         Ok(())
     }
 }

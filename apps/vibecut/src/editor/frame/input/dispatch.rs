@@ -133,9 +133,7 @@ impl Editor {
     }
 
     pub(in crate::editor) fn action(&mut self, id: &str) {
-        if let Err(error) = self.activate(id) {
-            self.error = Some(error.to_string());
-        }
+        self.desk().act(id);
     }
     /// App action dispatcher shared by UI and agents. Preference edits use
     /// `ui.prefs.set` with `{"key": ..., "value": ...}` typed params.

@@ -10,35 +10,39 @@ mod speed;
 
 pub(super) use number_edit::transform_scrub;
 
-use super::{Action, Editor, Error};
+use super::Action;
+use crate::Error;
+use crate::editor::Desk;
 
 /// Execute the requests `show` returned, in order. Failures surface through
 /// the editor's error line; later requests still run.
-pub(in crate::editor) fn apply(editor: &mut Editor, actions: Vec<Action>) {
+pub(in crate::editor) fn apply(desk: &mut Desk<'_>, actions: Vec<Action>) {
     for action in actions {
         let result = match action {
             Action::Activate(id) => {
-                editor.action(id);
+                desk.act(id);
                 Ok(())
             }
-            Action::SetField { item, field, value } => editor.set_item_field(item, &field, &value),
-            Action::SetShared { field, value } => editor.set_shared_field(&field, &value),
+            Action::SetField { item, field, value } => {
+                desk.editor().set_item_field(item, &field, &value)
+            }
+            Action::SetShared { field, value } => desk.editor().set_shared_field(&field, &value),
             Action::SetSpeed {
                 item,
                 speed,
                 maintain_pitch,
-            } => editor.set_speed(item, speed, maintain_pitch),
+            } => desk.editor().set_speed(item, speed, maintain_pitch),
             Action::SetCanvas {
                 width,
                 height,
                 preset,
-            } => editor.set_canvas(width, height, preset),
-            Action::SetFps { num, den } => editor.set_canvas_fps(num, den),
-            Action::SetBackground(color) => editor.set_canvas_background(color),
+            } => desk.editor().set_canvas(width, height, preset),
+            Action::SetFps { num, den } => desk.editor().set_canvas_fps(num, den),
+            Action::SetBackground(color) => desk.editor().set_canvas_background(color),
             Action::ResetTransform(item) => {
                 let mut result = Ok(());
                 for field in project::TransformField::ALL {
-                    if let Err(error) = editor.set_item_field(
+                    if let Err(error) = desk.editor().set_item_field(
                         item,
                         field.path(),
                         &field.default_value().to_string(),
@@ -49,40 +53,40 @@ pub(in crate::editor) fn apply(editor: &mut Editor, actions: Vec<Action>) {
                 result
             }
             Action::ToggleKeyframe { item, fields, time } => {
-                editor.toggle_keyframes(item, &fields, time)
+                desk.editor().toggle_keyframes(item, &fields, time)
             }
             Action::SetKeyframeAt {
                 item,
                 field,
                 time,
                 value,
-            } => editor.set_keyframe_at(item, field, time, value),
-            Action::SetSection { key, open } => editor.set_section_open(key, open),
+            } => desk.editor().set_keyframe_at(item, field, time, value),
+            Action::SetSection { key, open } => desk.editor().set_section_open(key, open),
             Action::SetTab { kind, tab } => {
-                let mut next = editor.preferences.properties_tabs.clone();
+                let mut next = desk.editor().preferences.properties_tabs.clone();
                 next.insert(kind.to_owned(), tab.to_owned());
                 serde_json::to_value(next)
                     .map_err(|_| Error::Invalid("tabs"))
-                    .and_then(|value| editor.preferences.set("properties_tabs", value))
+                    .and_then(|value| desk.editor().preferences.set("properties_tabs", value))
             }
-            Action::ScrubBegin => editor.begin_gesture(),
-            Action::ScrubEnd { commit, changed } => editor.end_gesture(commit, changed),
+            Action::ScrubBegin => desk.editor().begin_gesture(),
+            Action::ScrubEnd { commit, changed } => desk.editor().end_gesture(commit, changed),
             Action::SetEffectParam {
                 item,
                 effect,
                 key,
                 value,
-            } => editor.set_effect_param(item, &effect, &key, value),
+            } => desk.editor().set_effect_param(item, &effect, &key, value),
             Action::ToggleEffect {
                 item,
                 effect,
                 enabled,
             } => {
-                editor.toggle_effect(item, &effect, enabled);
+                desk.editor().toggle_effect(item, &effect, enabled);
                 Ok(())
             }
             Action::RemoveEffect { item, effect } => {
-                editor.remove_effect(item, &effect);
+                desk.editor().remove_effect(item, &effect);
                 Ok(())
             }
             Action::ReorderEffect {
@@ -90,28 +94,30 @@ pub(in crate::editor) fn apply(editor: &mut Editor, actions: Vec<Action>) {
                 effect,
                 target,
             } => {
-                editor.reorder_effect(item, &effect, &target);
+                desk.editor().reorder_effect(item, &effect, &target);
                 Ok(())
             }
             Action::SyncPreview => {
-                editor.sync_preview();
+                desk.sync();
                 Ok(())
             }
-            Action::ColorPreview { command, params } => editor.preview_color(command, params),
+            Action::ColorPreview { command, params } => {
+                desk.editor().preview_color(command, params)
+            }
             Action::ColorCommit {
                 command,
                 params,
                 recent,
-            } => editor.commit_color(command, params, recent),
-            Action::Font(action) => editor.font_action(action),
-            Action::Mask(action) => editor.mask_action(action),
+            } => desk.editor().commit_color(command, params, recent),
+            Action::Font(action) => desk.editor().font_action(action),
+            Action::Mask(action) => desk.editor().mask_action(action),
             Action::Error(message) => {
-                editor.error = Some(message);
+                desk.fail(message);
                 Ok(())
             }
         };
         if let Err(error) = result {
-            editor.error = Some(error.to_string());
+            desk.fail(error.to_string());
         }
     }
 }

@@ -29,7 +29,7 @@ impl Editor {
         if self.playback.seek(at, playing, project.clone()).is_err()
             && let Err(error) = self.playback.seek(at, false, project)
         {
-            self.error = Some(error.to_string());
+            self.desk().fail(error.to_string());
         }
     }
     pub(in crate::editor) fn preview_canvas_size(&self) -> [u32; 2] {
@@ -54,7 +54,7 @@ impl Editor {
                 if let Err(error) =
                     self.dispatch("playback.seek", serde_json::json!({"time": at.0}))
                 {
-                    self.error = Some(error.to_string());
+                    self.desk().fail(error.to_string());
                 } else {
                     self.player.timecode_error = None;
                 }
@@ -137,7 +137,7 @@ impl Editor {
                 Ok(())
             }
             Err(error) => {
-                self.error = Some(error.to_string());
+                self.desk().fail(error.to_string());
                 Err(error)
             }
         }
@@ -169,7 +169,7 @@ impl Editor {
                 }
                 _ => engine::control::ErrorCode::Failed,
             });
-            self.error = Some(error.to_string());
+            self.desk().fail(error.to_string());
             return Err(error);
         }
         self.snapshot.error = None;
@@ -220,7 +220,7 @@ impl Editor {
     pub(in crate::editor) fn seek_to(&mut self, at: Tick) {
         let at = at.clamp(Tick::ZERO, self.session.project().duration());
         if let Err(error) = self.seek(at) {
-            self.error = Some(error.to_string());
+            self.desk().fail(error.to_string());
         }
     }
     pub(in crate::editor) fn step_frames(&mut self, frames: i64) -> Result<()> {

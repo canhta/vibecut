@@ -69,13 +69,11 @@ pub(in crate::editor) fn show(editor: &mut Editor, ctx: &egui::Context) {
             Some(saved.to_string_lossy().into_owned()),
         );
     }
-    if options != editor.preferences.export
-        && let Err(error) = editor.dispatch(
+    if options != editor.preferences.export {
+        editor.desk().dispatch(
             PREFERENCE_COMMAND,
             serde_json::json!({"key": "export", "value": options}),
-        )
-    {
-        editor.error = Some(error.to_string());
+        );
     }
     for (id, response) in output.widgets {
         editor.remember(id, &response);

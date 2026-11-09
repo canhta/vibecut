@@ -8,11 +8,9 @@ impl Editor {
             self.session.project(),
             super::super::properties::single(&self.selection),
         );
-        super::super::properties::apply(self, actions);
-        if !self.session.transaction_active()
-            && let Err(e) = self.session.set_selection(self.selection.clone())
-        {
-            self.error = Some(e.to_string());
+        super::super::properties::apply(&mut self.desk(), actions);
+        if !self.session.transaction_active() {
+            self.desk().select();
         }
         if !self.configured {
             Self::fonts(ui.ctx());
@@ -227,7 +225,7 @@ impl Editor {
         if !actions.is_empty() {
             ui.ctx().request_repaint();
         }
-        super::super::properties::apply(self, actions);
+        super::super::properties::apply(&mut self.desk(), actions);
     }
     /// Render the player through its read-only boundary, then route its requests.
     pub(in crate::editor) fn show_player(&mut self, ui: &mut egui::Ui) {
@@ -275,12 +273,12 @@ impl Editor {
                 }
                 Action::Copy => {
                     if let Err(error) = self.copy_snapshot(ui.ctx()) {
-                        self.error = Some(error.to_string());
+                        self.desk().fail(error.to_string());
                     }
                 }
                 Action::Zoom(factor) => {
                     if let Err(error) = self.preview_zoom_by(factor) {
-                        self.error = Some(error.to_string());
+                        self.desk().fail(error.to_string());
                     }
                 }
             }
@@ -315,11 +313,10 @@ impl Editor {
             match action {
                 super::Action::Activate(id) => self.action(id),
                 super::Action::Rename(name) => {
-                    if let Err(error) = self
-                        .session
-                        .execute("project.rename", serde_json::json!({"name":name}))
+                    if !self
+                        .desk()
+                        .edit("project.rename", serde_json::json!({"name":name}))
                     {
-                        self.error = Some(error.to_string());
                         self.frame.rename = Some(name);
                     }
                 }

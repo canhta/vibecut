@@ -6,7 +6,7 @@ mod crop;
 mod export;
 mod frame;
 pub use crop::{Aspect as CropAspect, Inspection as CropInspection};
-pub(crate) use frame::Context;
+pub(crate) use frame::{Context, Desk, Request};
 mod models;
 mod player;
 pub mod properties;
@@ -220,6 +220,7 @@ impl Editor {
             sound_media_dir: None,
             subtitles: None,
             font_backend: None,
+            requests: Vec::new(),
         }
     }
     /// Attach the engine autosave owner without duplicating its Session.

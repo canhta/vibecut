@@ -3,7 +3,7 @@ use crate::editor::{Command, Context, Editor, ItemId, Tick, egui, frame, timelin
 
 impl Editor {
     /// The read-only services every area receives.
-    pub(super) fn context(&self) -> Context<'_> {
+    pub(in crate::editor) fn context(&self) -> Context<'_> {
         Context {
             session: &self.session,
             selection: &self.selection,
@@ -65,7 +65,7 @@ impl Editor {
     pub(super) fn timeline_panel(&mut self, ui: &mut egui::Ui) {
         self.with_timeline(|state, cx| timeline::show(state, cx, ui));
         if let Err(error) = self.remember_view() {
-            self.error = Some(error.to_string());
+            self.desk().fail(error.to_string());
         }
     }
     /// Paint the scene sheet and apply its requests.
@@ -79,11 +79,10 @@ impl Editor {
                 Action::Activate(id) => self.action(&id),
                 Action::Command { id, params } => self.track_command(id, params),
                 Action::RenameScene { scene, name } => {
-                    if let Err(error) = self.session.execute(
+                    if !self.desk().edit(
                         "scene.rename",
                         serde_json::json!({"scene":scene,"name":name}),
                     ) {
-                        self.error = Some(error.to_string());
                         self.timeline.keep_scene_rename(scene, name);
                     }
                 }
@@ -115,7 +114,7 @@ impl Editor {
                 Action::CancelInteraction => self.cancel_interaction(),
                 Action::Fail(message) => {
                     self.timeline.refuse(message.clone());
-                    self.error = Some(message);
+                    self.desk().fail(message);
                 }
             }
         }
@@ -138,9 +137,7 @@ impl Editor {
         self.selection.clear();
         self.selection.insert(keyframe.item);
         self.properties.clear_drafts();
-        if let Err(error) = self.session.set_selection(self.selection.clone()) {
-            self.error = Some(error.to_string());
-        }
+        self.desk().select();
     }
     /// Persist one item's expanded lane choice for the owning project only.
     fn set_lane_open(&mut self, item: ItemId, open: bool) {
@@ -158,12 +155,10 @@ impl Editor {
         } else {
             lanes.insert(project, items);
         }
-        if let Err(error) = self.dispatch(
+        self.desk().dispatch(
             crate::editor::PREFERENCE_COMMAND,
             serde_json::json!({"key":"timeline_lanes","value":lanes}),
-        ) {
-            self.error = Some(error.to_string());
-        }
+        );
     }
     /// Delete every selected keyframe as one undo step.
     pub(in crate::editor) fn delete_keyframes(
@@ -192,9 +187,9 @@ impl Editor {
         match result {
             Ok(()) => {
                 self.selection_scopes.keyframes.clear();
-                self.sync_preview();
+                self.desk().sync();
             }
-            Err(error) => self.error = Some(error.to_string()),
+            Err(error) => self.desk().fail(error.to_string()),
         }
     }
 
@@ -213,13 +208,11 @@ impl Editor {
                 })
             })
             .collect();
-        match self
-            .session
-            .execute("timeline.preview", serde_json::json!({"commands":commands}))
-        {
-            Ok(_) => self.sync_preview(),
-            Err(error) => self.error = Some(error.to_string()),
-        }
+        self.desk().preview(
+            "timeline.preview",
+            serde_json::json!({"commands":commands}),
+            false,
+        );
     }
     /// Close a transform gesture with one undo step, or restore its entry project.
     pub(in crate::editor) fn end_preview_transform(&mut self, commit: bool) {
@@ -231,10 +224,7 @@ impl Editor {
         } else {
             "timeline.discard_preview"
         };
-        match self.session.execute(command, serde_json::json!({})) {
-            Ok(_) => self.sync_preview(),
-            Err(error) => self.error = Some(error.to_string()),
-        }
+        self.desk().preview(command, serde_json::json!({}), false);
     }
     /// Select the text item whose inline session just opened and keep the
     /// timeline's preview contract as the only writer.
@@ -251,13 +241,11 @@ impl Editor {
             "command":"timeline.set_item_param",
             "params":{"item":item,"patch":{"field":"text_content","value":content}}
         })];
-        match self
-            .session
-            .execute("timeline.preview", serde_json::json!({"commands":commands}))
-        {
-            Ok(_) => self.sync_preview(),
-            Err(error) => self.error = Some(error.to_string()),
-        }
+        self.desk().preview(
+            "timeline.preview",
+            serde_json::json!({"commands":commands}),
+            false,
+        );
     }
     /// Commit an open inline edit as one undo step, or discard a net-zero session.
     pub(in crate::editor) fn commit_text_edit(&mut self) -> bool {
@@ -273,13 +261,8 @@ impl Editor {
             return false;
         }
         if self.session.gesture_active() {
-            match self
-                .session
-                .execute("timeline.discard_preview", serde_json::json!({}))
-            {
-                Ok(_) => self.sync_preview(),
-                Err(error) => self.error = Some(error.to_string()),
-            }
+            self.desk()
+                .preview("timeline.discard_preview", serde_json::json!({}), false);
         }
         true
     }
@@ -295,16 +278,16 @@ impl Editor {
         if self.session.transaction_active()
             && let Err(error) = self.session.cancel_gesture()
         {
-            self.error = Some(error.to_string());
+            self.desk().fail(error.to_string());
             self.timeline.abandon_gesture();
             return;
         }
-        if let Err(error) = self
-            .session
-            .set_selection(self.selection.clone())
-            .and_then(|_| self.session.begin_gesture())
-        {
-            self.error = Some(error.to_string());
+        if !self.desk().select() {
+            self.timeline.abandon_gesture();
+            return;
+        }
+        if let Err(error) = self.session.begin_gesture() {
+            self.desk().fail(error.to_string());
             self.timeline.abandon_gesture();
         }
     }
@@ -328,22 +311,19 @@ impl Editor {
             .preview_project()
             .unwrap_or(self.session.project())
             .clone();
-        match self
-            .session
-            .apply_with_ripple(command, self.preferences.ripple)
-        {
-            Ok(_)
-                if previous.as_ref()
-                    != self
-                        .session
-                        .preview_project()
-                        .unwrap_or(self.session.project())
-                        .as_ref() =>
-            {
-                self.sync_preview()
+        let ripple = self.preferences.ripple;
+        let result = self.desk().run_command(command, ripple);
+        match result {
+            Ok(_) => {
+                let current = self
+                    .session
+                    .preview_project()
+                    .unwrap_or(self.session.project());
+                if previous.as_ref() != current.as_ref() {
+                    self.desk().sync();
+                }
             }
-            Ok(_) => {}
-            Err(error) => self.error = Some(error.to_string()),
+            Err(error) => self.desk().fail(error.to_string()),
         }
     }
     /// Arm the group contract: only the selection is applied before the first
@@ -356,12 +336,11 @@ impl Editor {
         if self.session.transaction_active()
             && let Err(error) = self.session.cancel_gesture()
         {
-            self.error = Some(error.to_string());
+            self.desk().fail(error.to_string());
             self.timeline.abandon_gesture();
             return;
         }
-        if let Err(error) = self.session.set_selection(self.selection.clone()) {
-            self.error = Some(error.to_string());
+        if !self.desk().select() {
             self.timeline.abandon_gesture();
             return;
         }
@@ -382,23 +361,20 @@ impl Editor {
             .preview_project()
             .unwrap_or(self.session.project())
             .clone();
-        match self
-            .session
-            .execute_with_ripple("timeline.preview", params, self.preferences.ripple)
-        {
+        let ripple = self.preferences.ripple;
+        let result = self.desk().run("timeline.preview", params, ripple);
+        match result {
             Ok(_) => {
                 // `project()` stays committed; the player follows the staged
                 // candidate (including a reversal back to the entry state) so a
                 // trim shows its frame live.
                 self.timeline.mark_preview(command, gesture.is_noop());
-                if previous.as_ref()
-                    != self
-                        .session
-                        .preview_project()
-                        .unwrap_or(self.session.project())
-                        .as_ref()
-                {
-                    self.sync_preview();
+                let current = self
+                    .session
+                    .preview_project()
+                    .unwrap_or(self.session.project());
+                if previous.as_ref() != current.as_ref() {
+                    self.desk().sync();
                 }
             }
             Err(error) => {
@@ -422,11 +398,11 @@ impl Editor {
                     .session
                     .execute("timeline.commit_preview", serde_json::json!({}))
                 {
-                    Ok(outcome) if outcome.changed => self.sync_preview(),
+                    Ok(outcome) if outcome.changed => self.desk().sync(),
                     Ok(_) => {}
                     Err(error) => {
                         // A refused publication must not leave the gesture open.
-                        self.error = Some(error.to_string());
+                        self.desk().fail(error.to_string());
                         let _ = self
                             .session
                             .execute("timeline.discard_preview", serde_json::json!({}));
@@ -441,14 +417,12 @@ impl Editor {
     }
     /// Restore the entry project without a history entry.
     fn discard_staged_preview(&mut self) {
-        if self.session.gesture_active() {
-            match self
+        if self.session.gesture_active()
+            && let Err(error) = self
                 .session
                 .execute("timeline.discard_preview", serde_json::json!({}))
-            {
-                Ok(_) => {}
-                Err(error) => self.error = Some(error.to_string()),
-            }
+        {
+            self.desk().fail(error.to_string());
         }
         self.timeline.clear_preview();
     }
@@ -461,7 +435,7 @@ impl Editor {
             if self.session.gesture_active()
                 && let Err(error) = self.session.cancel_gesture()
             {
-                self.error = Some(error.to_string());
+                self.desk().fail(error.to_string());
             }
         }
     }
@@ -469,9 +443,9 @@ impl Editor {
     fn end_drag_gesture(&mut self) {
         if self.session.gesture_active() {
             match self.session.commit_gesture() {
-                Ok(outcome) if outcome.changed => self.sync_preview(),
+                Ok(outcome) if outcome.changed => self.desk().sync(),
                 Ok(_) => {}
-                Err(error) => self.error = Some(error.to_string()),
+                Err(error) => self.desk().fail(error.to_string()),
             }
         }
         self.prune_selection();
@@ -481,8 +455,8 @@ impl Editor {
         if self.session.gesture_active() {
             match self.session.cancel_gesture() {
                 // Closing a preview lifetime fences even a net-zero drag.
-                Ok(_) => self.sync_preview(),
-                Err(error) => self.error = Some(error.to_string()),
+                Ok(_) => self.desk().sync(),
+                Err(error) => self.desk().fail(error.to_string()),
             }
         }
     }
@@ -513,12 +487,12 @@ impl Editor {
             if self.session.gesture_active()
                 && let Err(error) = self.session.cancel_gesture()
             {
-                self.error = Some(error.to_string());
+                self.desk().fail(error.to_string());
             }
             self.properties.drafts.remove(&scrub.target.draft_key());
             self.properties.focus = None;
             if changed {
-                self.sync_preview();
+                self.desk().sync();
             }
             return;
         }
@@ -551,9 +525,7 @@ impl Editor {
             self.selection_changed();
         } else {
             self.selection_scopes.clear_specific(&mut self.selection);
-            if let Err(e) = self.session.set_selection(self.selection.clone()) {
-                self.error = Some(e.to_string());
-            }
+            self.desk().select();
             if !self.media_selection.is_empty() {
                 self.media_selection.clear();
                 self.media_anchor = None;
@@ -570,20 +542,16 @@ impl Editor {
     /// Run an engine command on the current selection (track edits).
     pub(in crate::editor) fn track_command(&mut self, command: &str, params: serde_json::Value) {
         let before = self.session.project().clone();
-        match self
-            .session
-            .set_selection(self.selection.clone())
-            .and_then(|_| {
-                self.session
-                    .execute_with_ripple(command, params, self.preferences.ripple)
-            }) {
+        let ripple = self.preferences.ripple;
+        let result = self.desk().run(command, params, ripple);
+        match result {
             Ok(_) => {
                 self.prune_selection();
                 if !std::sync::Arc::ptr_eq(&before, self.session.project()) {
-                    self.sync_preview();
+                    self.desk().sync();
                 }
             }
-            Err(error) => self.error = Some(error.to_string()),
+            Err(error) => self.desk().fail(error.to_string()),
         }
     }
 }

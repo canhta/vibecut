@@ -8,12 +8,11 @@ impl Editor {
     /// The inspector and automation use the same registered atomic field edit.
     pub fn set_shared_field(&mut self, field: &str, value: &str) -> Result<()> {
         let patch = item_patch(field, value)?;
-        self.session.set_selection(self.selection.clone())?;
-        self.session.execute(
+        let items = self.selection.clone();
+        self.desk().edit_result(
             "timeline.set_item_param_many",
-            serde_json::json!({"items":self.selection,"patch":patch}),
+            serde_json::json!({"items":items,"patch":patch}),
         )?;
-        self.sync_preview();
         Ok(())
     }
     /// Toggle one diamond over its fields at the playhead as one undo step: keys
@@ -24,11 +23,10 @@ impl Editor {
         fields: &[(&'static str, f64)],
         time: time::Tick,
     ) -> Result<()> {
-        self.session.set_selection(self.selection.clone())?;
         let all = fields.iter().all(|(field, _)| {
             super::super::read::has_key_at(self.session.project(), item, field, time)
         });
-        self.session.transaction(|session| {
+        self.desk().transaction_result(|session| {
             for (field, value) in fields {
                 let has = super::super::read::has_key_at(session.project(), item, field, time);
                 if has != all {
@@ -52,7 +50,6 @@ impl Editor {
             }
             Ok(())
         })?;
-        self.sync_preview();
         Ok(())
     }
 
@@ -64,20 +61,21 @@ impl Editor {
         time: time::Tick,
         value: f64,
     ) -> Result<()> {
-        self.session.set_selection(self.selection.clone())?;
         let path = if field == "audio_gain" {
             "volume"
         } else {
             field
         };
         let path = project::AnimationPath::new(path)?;
-        self.session.apply(engine::Command::AddKeyframe {
-            item,
-            path,
-            component: None,
-            key: project::Keyframe::new(time, project::ParamValue::Scalar(value)),
-        })?;
-        self.sync_preview();
+        self.desk().apply_result(
+            engine::Command::AddKeyframe {
+                item,
+                path,
+                component: None,
+                key: project::Keyframe::new(time, project::ParamValue::Scalar(value)),
+            },
+            false,
+        )?;
         Ok(())
     }
 
@@ -94,12 +92,10 @@ impl Editor {
             return self.set_speed(item, speed, maintain_pitch);
         }
         let patch = item_patch(field, value)?;
-        self.session.set_selection(self.selection.clone())?;
-        self.session.execute(
+        self.desk().edit_result(
             "timeline.set_item_param",
             serde_json::json!({"item":item,"patch":patch}),
         )?;
-        self.sync_preview();
         Ok(())
     }
 }

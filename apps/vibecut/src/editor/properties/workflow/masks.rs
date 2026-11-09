@@ -12,10 +12,8 @@ impl Editor {
             }
             Action::Choose { item, shape } => self.choose_mask(item, shape),
             Action::Update { item, mask } => {
-                self.session.set_selection(self.selection.clone())?;
-                self.session
-                    .execute("masks.update", serde_json::json!({"item":item,"mask":mask}))?;
-                self.sync_preview();
+                self.desk()
+                    .edit_result("masks.update", serde_json::json!({"item":item,"mask":mask}))?;
                 Ok(())
             }
         }
@@ -30,8 +28,7 @@ impl Editor {
         match (shape, current) {
             (None, None) => return Ok(()),
             (None, Some(mask)) => {
-                self.session.set_selection(self.selection.clone())?;
-                self.session.execute(
+                self.desk().edit_result(
                     "masks.remove",
                     serde_json::json!({"item":item,"mask":mask.id}),
                 )?;
@@ -41,20 +38,17 @@ impl Editor {
                     return Ok(());
                 }
                 mask.shape = shape;
-                self.session.set_selection(self.selection.clone())?;
-                self.session
-                    .execute("masks.update", serde_json::json!({"item":item,"mask":mask}))?;
+                self.desk()
+                    .edit_result("masks.update", serde_json::json!({"item":item,"mask":mask}))?;
             }
             (Some(shape), None) => {
                 let rotation = Choice::of(&shape).map_or(0.0, |choice| choice.default_rotation());
                 let mut mask = project::Mask::new("mask1", shape);
                 mask.rotation = rotation;
-                self.session.set_selection(self.selection.clone())?;
-                self.session
-                    .execute("masks.add", serde_json::json!({"item":item,"mask":mask}))?;
+                self.desk()
+                    .edit_result("masks.add", serde_json::json!({"item":item,"mask":mask}))?;
             }
         }
-        self.sync_preview();
         Ok(())
     }
 }
