@@ -323,6 +323,9 @@ impl Editor {
                 &self.selection,
                 self.preferences.locale,
             )],
+            EngineAction::ToggleBookmark => vec![Command::ToggleBookmark {
+                at: self.playback.position()?,
+            }],
             EngineAction::CreateScene => {
                 let count = self.session.project().data().scenes.iter().count();
                 let number = i18n::number(self.preferences.locale, (count + 1) as u64);
@@ -382,7 +385,8 @@ impl Editor {
             | EngineAction::SetHidden
             | EngineAction::SetMuted
             | EngineAction::ExtractAudio
-            | EngineAction::RecoverAudio => self.prune_selection(),
+            | EngineAction::RecoverAudio
+            | EngineAction::ToggleBookmark => self.prune_selection(),
         }
         if route == EngineAction::SplitLeft
             && self.preferences.ripple

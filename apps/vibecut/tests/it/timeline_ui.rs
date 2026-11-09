@@ -811,6 +811,244 @@ fn bookmark_drag_snaps_shift_bypasses_and_commits_one_undo_step() {
     );
 }
 
+fn bookmark_at(editor: &Editor, start: Tick) -> Option<project::BookmarkId> {
+    editor
+        .session
+        .project()
+        .data()
+        .scene()
+        .bookmarks
+        .iter()
+        .find(|bookmark| bookmark.start == start)
+        .map(|bookmark| bookmark.id)
+}
+
+fn bookmark(editor: &Editor, id: project::BookmarkId) -> project::Bookmark {
+    editor
+        .session
+        .project()
+        .data()
+        .scene()
+        .bookmarks
+        .iter()
+        .find(|bookmark| bookmark.id == id)
+        .unwrap()
+        .clone()
+}
+
+#[test]
+fn bookmark_toggle_and_popover_fields_are_one_undo_step_each() {
+    let mut fixture = fixture();
+    fixture
+        .editor
+        .playback
+        .seek(
+            Tick(3 * SECOND),
+            false,
+            fixture.editor.session.project().clone(),
+        )
+        .unwrap();
+    let mut harness = harness(fixture.editor);
+    harness.run_steps(3);
+    let history = harness.state().session.history_len();
+
+    // The toolbar and the shortcut both run bookmark.toggle at the playhead.
+    harness
+        .get(By::new().predicate(|node| node.author_id() == Some("timeline.bookmark")))
+        .click();
+    harness.run_steps(2);
+    assert!(bookmark_at(harness.state(), Tick(3 * SECOND)).is_some());
+    assert_eq!(harness.state().session.history_len().0, history.0 + 1);
+    harness
+        .get(By::new().predicate(|node| node.author_id() == Some("timeline.bookmark")))
+        .click();
+    harness.run_steps(2);
+    assert!(bookmark_at(harness.state(), Tick(3 * SECOND)).is_none());
+    assert_eq!(harness.state().session.history_len().0, history.0 + 2);
+    harness.key_press(egui::Key::M);
+    harness.run_steps(2);
+    let id = bookmark_at(harness.state(), Tick(3 * SECOND)).expect("M adds a bookmark");
+    assert_eq!(harness.state().session.history_len().0, history.0 + 3);
+
+    // Opening the editor seeks but changes no project byte and no history.
+    let bytes = serde_json::to_vec(harness.state().session.project().data()).unwrap();
+    let marker = widget(&harness, &format!("timeline.bookmark.{}", id.0));
+    click_at(&mut harness, marker.center());
+    assert_eq!(
+        harness.state().inspect().unwrap().bookmark_popover,
+        Some(id),
+        "clicking the marker opens its editor"
+    );
+    assert_eq!(
+        serde_json::to_vec(harness.state().session.project().data()).unwrap(),
+        bytes,
+        "opening the editor must not mutate the project"
+    );
+    assert_eq!(harness.state().session.history_len().0, history.0 + 3);
+
+    // Each edited field is exactly one bookmark.update.
+    let before = harness.state().session.history_len().0;
+    harness
+        .get(By::new().predicate(|node| node.author_id() == Some("timeline.bookmark.note")))
+        .click();
+    harness.run_steps(1);
+    harness.event(egui::Event::Text("Intro".into()));
+    harness.key_press(egui::Key::Enter);
+    harness.run_steps(3);
+    assert_eq!(bookmark(harness.state(), id).note.as_str(), "Intro");
+    assert_eq!(harness.state().session.history_len().0, before + 1);
+
+    let before = harness.state().session.history_len().0;
+    harness
+        .get(By::new().predicate(|node| node.author_id() == Some("timeline.bookmark.duration")))
+        .click();
+    harness.run_steps(1);
+    harness.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::A);
+    harness.event(egui::Event::Text("0.5".into()));
+    harness.key_press(egui::Key::Enter);
+    harness.run_steps(3);
+    assert!((bookmark(harness.state(), id).duration.seconds() - 0.5).abs() < 1e-6);
+    assert_eq!(harness.state().session.history_len().0, before + 1);
+    harness
+        .get(
+            By::new()
+                .predicate(|node| node.author_id() == Some("timeline.bookmark.duration.increase")),
+        )
+        .click();
+    harness.run_steps(2);
+    assert!(
+        (bookmark(harness.state(), id).duration.seconds() - 0.6).abs() < 1e-6,
+        "the stepper commits one 0.1 s step"
+    );
+    assert_eq!(harness.state().session.history_len().0, before + 2);
+
+    // The engine clamps an oversized duration to the scene tail.
+    harness
+        .get(By::new().predicate(|node| node.author_id() == Some("timeline.bookmark.duration")))
+        .click();
+    harness.run_steps(1);
+    harness.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::A);
+    harness.event(egui::Event::Text("999".into()));
+    harness.key_press(egui::Key::Enter);
+    harness.run_steps(3);
+    assert!(
+        (bookmark(harness.state(), id).duration.seconds() - 7.0).abs() < 1e-6,
+        "a 999 s duration clamps to the 7 s left in the scene"
+    );
+    assert_eq!(harness.state().session.history_len().0, before + 3);
+    harness
+        .get(By::new().predicate(|node| node.author_id() == Some("timeline.bookmark.duration")))
+        .click();
+    harness.run_steps(1);
+    harness.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::A);
+    harness.event(egui::Event::Text("0.6".into()));
+    harness.key_press(egui::Key::Enter);
+    harness.run_steps(3);
+
+    let before = harness.state().session.history_len().0;
+    harness
+        .get(By::new().predicate(|node| node.author_id() == Some("timeline.bookmark.color")))
+        .click();
+    harness.run_steps(2);
+    harness
+        .get(By::new().predicate(|node| node.author_id() == Some("color.swatch.0")))
+        .click();
+    harness.run_steps(3);
+    assert_ne!(
+        bookmark(harness.state(), id).color,
+        engine::DEFAULT_BOOKMARK_COLOR
+    );
+    assert_eq!(harness.state().session.history_len().0, before + 1);
+    // Escape closes the colour window before the marker editor.
+    harness.key_press(egui::Key::Escape);
+    harness.run_steps(2);
+    assert_eq!(
+        harness.state().inspect().unwrap().bookmark_popover,
+        Some(id)
+    );
+    assert_eq!(harness.state().session.history_len().0, before + 1);
+    harness
+        .get(By::new().predicate(|node| node.author_id() == Some("timeline.bookmark.color.reset")))
+        .click();
+    harness.run_steps(2);
+    assert_eq!(
+        bookmark(harness.state(), id).color,
+        engine::DEFAULT_BOOKMARK_COLOR
+    );
+    assert_eq!(harness.state().session.history_len().0, before + 2);
+
+    let image = harness.render().unwrap();
+    let target = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../target");
+    std::fs::create_dir_all(&target).unwrap();
+    let path = target.join("p1-49-bookmarks.png");
+    image.save(&path).unwrap();
+    eprintln!("bookmark screenshot: {}", path.display());
+
+    // Delete is one bookmark.remove and closes the editor.
+    let before = harness.state().session.history_len().0;
+    harness
+        .get(By::new().predicate(|node| node.author_id() == Some("timeline.bookmark.delete")))
+        .click();
+    harness.run_steps(2);
+    assert!(bookmark_at(harness.state(), Tick(3 * SECOND)).is_none());
+    assert_eq!(harness.state().inspect().unwrap().bookmark_popover, None);
+    assert_eq!(harness.state().session.history_len().0, before + 1);
+
+    // Escape closes the editor without touching the project.
+    let eight = bookmark_at(harness.state(), Tick(8 * SECOND)).unwrap();
+    let marker = widget(&harness, &format!("timeline.bookmark.{}", eight.0));
+    click_at(&mut harness, marker.center());
+    assert_eq!(
+        harness.state().inspect().unwrap().bookmark_popover,
+        Some(eight)
+    );
+    let bytes = serde_json::to_vec(harness.state().session.project().data()).unwrap();
+    let history = harness.state().session.history_len();
+    harness
+        .get(By::new().predicate(|node| node.author_id() == Some("timeline.bookmark.note")))
+        .click();
+    harness.run_steps(1);
+    harness.event(egui::Event::Text("Draft".into()));
+    harness.key_press(egui::Key::Escape);
+    harness.run_steps(2);
+    assert_eq!(harness.state().inspect().unwrap().bookmark_popover, None);
+    assert_eq!(
+        serde_json::to_vec(harness.state().session.project().data()).unwrap(),
+        bytes,
+        "Escape discards the uncommitted note"
+    );
+    assert_eq!(harness.state().session.history_len(), history);
+
+    // Switching to another marker commits the draft that loses focus.
+    let project = harness.state().session.project().clone();
+    harness
+        .state_mut()
+        .playback
+        .seek(Tick(5 * SECOND), false, project)
+        .unwrap();
+    harness.state_mut().activate("timeline.bookmark").unwrap();
+    harness.run_steps(2);
+    let five = bookmark_at(harness.state(), Tick(5 * SECOND)).unwrap();
+    let marker = widget(&harness, &format!("timeline.bookmark.{}", eight.0));
+    click_at(&mut harness, marker.center());
+    harness
+        .get(By::new().predicate(|node| node.author_id() == Some("timeline.bookmark.note")))
+        .click();
+    harness.run_steps(1);
+    harness.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::A);
+    harness.event(egui::Event::Text("Switch".into()));
+    harness.run_steps(1);
+    let before = harness.state().session.history_len();
+    let marker = widget(&harness, &format!("timeline.bookmark.{}", five.0));
+    click_at(&mut harness, marker.center());
+    assert_eq!(bookmark(harness.state(), eight).note.as_str(), "Switch");
+    assert_eq!(
+        harness.state().inspect().unwrap().bookmark_popover,
+        Some(five)
+    );
+    assert_eq!(harness.state().session.history_len().0, before.0 + 1);
+}
+
 #[test]
 fn drag_preview_keeps_committed_history_and_indicator_until_commit() {
     let fixture = fixture();

@@ -3,9 +3,9 @@ pub mod control;
 mod session;
 pub(crate) use session::transitions;
 pub use session::{
-    Availability, Command, CommandKind, CommandSpec, CreatedId, Effect, Example, Fixture,
-    GrantClass, ItemParamPatch, ItemPlacement, KeyframeRef, Lifecycle, Move, NewItem, Outcome,
-    Placement, TrackPlacement, TrimEdge, lifecycle, registry,
+    Availability, Command, CommandKind, CommandSpec, CreatedId, DEFAULT_BOOKMARK_COLOR, Effect,
+    Example, Fixture, GrantClass, ItemParamPatch, ItemPlacement, KeyframeRef, Lifecycle, Move,
+    NewItem, Outcome, Placement, TrackPlacement, TrimEdge, lifecycle, registry,
 };
 pub use session::{FontError, JobTarget, Session, SoundError};
 mod runtime;

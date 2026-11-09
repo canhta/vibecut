@@ -71,6 +71,9 @@ impl State {
                 );
                 bookmark_hits.push((
                     bookmark.id,
+                    bookmark.start,
+                    bookmark.duration,
+                    bookmark.note.clone(),
                     Rect::from_min_max(
                         egui::pos2(x - 5.0, layout.ruler.bottom() - 11.0),
                         egui::pos2(x + 5.0, layout.ruler.bottom()),
@@ -84,7 +87,8 @@ impl State {
             egui::Sense::click_and_drag(),
         );
         self.remember("timeline.ruler", &response);
-        for (id, hit) in bookmark_hits {
+        let mut marker_clicked = false;
+        for (id, start, duration, note, hit) in bookmark_hits {
             let response = ui.interact(
                 hit,
                 Id::unique(("timeline.bookmark", id.0)),
@@ -94,11 +98,23 @@ impl State {
             if response.drag_started() && self.drag.is_none() && self.bookmark_drag.is_none() {
                 self.begin_bookmark_drag(cx, id, ui);
             }
+            if response.clicked() {
+                marker_clicked = true;
+                self.open_bookmark_popover(
+                    id,
+                    egui::pos2(hit.center().x, hit.bottom() + theme::space::MD),
+                    note,
+                    duration,
+                );
+                self.push(Action::Seek(start));
+            }
         }
-        if self.bookmark_drag.is_none()
+        if !marker_clicked
+            && self.bookmark_drag.is_none()
             && (response.clicked() || response.dragged())
             && let Some(pointer) = response.interact_pointer_pos()
         {
+            self.close_bookmark_popover();
             let at = frame_snap(cx, self.tick_at(pointer.x, layout.ruler.left()));
             self.push(Action::Seek(at));
         }

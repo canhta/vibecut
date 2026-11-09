@@ -96,6 +96,18 @@ impl State {
         if x < layout.body.left() - 6.0 || x > layout.body.right() + 6.0 {
             return;
         }
+        // A marker parked under the playhead keeps its larger hit target so its
+        // editor can still be opened from the ruler.
+        if cx
+            .staged_project()
+            .data()
+            .scene()
+            .bookmarks
+            .iter()
+            .any(|bookmark| (self.x_at(bookmark.start, layout.body.left()) - x).abs() < 6.0)
+        {
+            return;
+        }
         // Keep the playhead draggable from the ruler so item automation IDs stay
         // clickable when the line crosses a clip.
         let rect = Rect::from_min_max(

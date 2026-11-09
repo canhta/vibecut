@@ -7,7 +7,7 @@ use crate::{
     egui::{self, Color32, Id, Vec2},
     i18n::{Locale, Text},
 };
-use project::{Color, ItemId};
+use project::{BookmarkId, Color, ItemId};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum ColorTarget {
@@ -16,6 +16,7 @@ pub enum ColorTarget {
     GraphicFill(ItemId),
     GraphicStroke(ItemId),
     MaskStroke { item: ItemId, mask: String },
+    Bookmark(BookmarkId),
     Canvas,
 }
 impl ColorTarget {
@@ -26,12 +27,22 @@ impl ColorTarget {
             | Self::GraphicFill(id)
             | Self::GraphicStroke(id) => Some(*id),
             Self::MaskStroke { item, .. } => Some(*item),
-            Self::Canvas => None,
+            Self::Bookmark(_) | Self::Canvas => None,
         }
     }
     pub(crate) fn color(&self, project: &project::Project) -> Result<Color> {
         if *self == Self::Canvas {
             return Ok(project.data().canvas.background);
+        }
+        if let Self::Bookmark(bookmark) = self {
+            return project
+                .data()
+                .scene()
+                .bookmarks
+                .iter()
+                .find(|candidate| candidate.id == *bookmark)
+                .map(|candidate| candidate.color)
+                .ok_or(Error::Invalid("bookmark colour target"));
         }
         let item = project
             .data()
@@ -71,6 +82,12 @@ impl ColorTarget {
             return Ok((
                 "project.set_background",
                 serde_json::json!({"color": color}),
+            ));
+        }
+        if let Self::Bookmark(bookmark) = self {
+            return Ok((
+                "bookmark.update",
+                serde_json::json!({"bookmark": bookmark, "color": color}),
             ));
         }
         if let Self::MaskStroke { item, mask } = self {

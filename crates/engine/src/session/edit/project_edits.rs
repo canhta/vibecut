@@ -148,7 +148,7 @@ pub(super) fn execute_move_bookmark(
     Ok(data)
 }
 /// Default marker colour for a bookmark created by a toggle.
-const BOOKMARK_COLOR: project::Color = project::Color([0, 157, 255, 255]);
+pub const DEFAULT_BOOKMARK_COLOR: project::Color = project::Color([0, 157, 255, 255]);
 pub(super) fn execute_toggle_bookmark(
     mut data: ProjectData,
     at: Tick,
@@ -169,7 +169,7 @@ pub(super) fn execute_toggle_bookmark(
             start: at,
             duration: Tick::ZERO,
             note: captions::NfcText::from(""),
-            color: BOOKMARK_COLOR,
+            color: DEFAULT_BOOKMARK_COLOR,
         });
         created.push(CreatedId::Bookmark(id));
     }

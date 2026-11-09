@@ -40,6 +40,12 @@ impl Editor {
             }
             return;
         }
+        if self.timeline.bookmark_popover().is_some() {
+            if consume(ctx, egui::Modifiers::NONE, egui::Key::Escape) {
+                self.timeline.escape_bookmark();
+            }
+            return;
+        }
         if self.timeline.marquee_active() || self.media_marquee.is_some() {
             if consume(ctx, egui::Modifiers::NONE, egui::Key::Escape) {
                 self.cancel_interaction();

@@ -20,6 +20,7 @@ pub(crate) enum Icon {
     ArrowsHorizontal,
     ArrowsInLineHorizontal,
     ArrowsLeftRight,
+    BookmarkSimple,
     CaretDown,
     CaretRight,
     CircleHalf,
@@ -78,6 +79,7 @@ impl Icon {
         Self::ArrowsHorizontal,
         Self::ArrowsInLineHorizontal,
         Self::ArrowsLeftRight,
+        Self::BookmarkSimple,
         Self::CaretDown,
         Self::CaretRight,
         Self::CircleHalf,
@@ -135,6 +137,7 @@ impl Icon {
             Self::ArrowsHorizontal => "arrows-horizontal",
             Self::ArrowsInLineHorizontal => "arrows-in-line-horizontal",
             Self::ArrowsLeftRight => "arrows-left-right",
+            Self::BookmarkSimple => "bookmark-simple",
             Self::CaretDown => "caret-down",
             Self::CaretRight => "caret-right",
             Self::CircleHalf => "circle-half",
@@ -216,6 +219,10 @@ const ICONS: &[(&str, &[u8])] = &[
     (
         "arrows-left-right",
         include_bytes!("../../../../assets/icons/phosphor/regular/arrows-left-right.svg"),
+    ),
+    (
+        "bookmark-simple",
+        include_bytes!("../../../../assets/icons/phosphor/regular/bookmark-simple.svg"),
     ),
     (
         "caret-down",

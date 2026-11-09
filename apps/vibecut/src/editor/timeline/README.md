@@ -4,6 +4,10 @@ Each item has a 16 px chevron opening its keyframe lanes. The open set is presen
 
 A lane is 20 px high, one per nonempty animation channel (audio always offers volume), and shows the channel's diamonds. Click selects, Cmd/Ctrl/Shift toggles, a lane marquee selects, drag retimes with the clips' snapping candidates in one engine gesture, and Delete removes selected diamonds through `keyframes.delete_selection` in one undo step. Right-click offers before/after Hold or Linear through `keyframes.set_extrapolation`. Audio clips draw a draggable volume line using the linear-gain squared map over -60..20 dB; drags commit on a 0.1 dB grid, field and stored edits keep 0.01 dB; volume keyframes show on the line and in the lane.
 
+## Markers
+
+The toolbar bookmark button and the `timeline.bookmark` shortcut toggle a bookmark at the playhead through `bookmark.toggle`, which frame-snaps the time. Clicking a bookmark on the ruler seeks there and opens its editor: a note field, a colour swatch that opens the shared colour window plus a reset to the engine default, a duration field in seconds stepped by 0.1, and delete. Each committed field is one `bookmark.update` or `bookmark.remove` undo step; drafts stay in the panel and the project changes only when the frame runs the command. Escape closes the colour window, then the editor. Dragging a bookmark keeps `bookmark.move` and snapping.
+
 ## Track controls
 
 Header and row geometry follows [UI design](../../../../../docs/product/ui/editor.md#density), with embedded regular SVG kind icons, output toggles and accessibility-only names. Logical row sizes are constant across DPI; vectors are cached at display density. Empty rows have dashed placeholders. Header context menus remove unlocked secondary tracks and rename tracks inline (Enter commits, Escape cancels). Main has a persisted magnet control in its header and the toolbar. All edits are registered engine commands and refresh the shared preview snapshot; paste comes from the clipboard owner.

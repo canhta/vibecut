@@ -17,12 +17,13 @@ const DIVIDER_GAP: f32 = 8.0;
 const DIVIDER_HEIGHT: f32 = 16.0;
 
 /// The registered actions the toolbar can show as unavailable.
-pub(in crate::editor) const TOOLBAR_ACTIONS: [&str; 10] = [
+pub(in crate::editor) const TOOLBAR_ACTIONS: [&str; 11] = [
     "timeline.add_track",
     "edit.undo",
     "edit.redo",
     "timeline.split",
     "timeline.delete",
+    "timeline.bookmark",
     "timeline.snap",
     "timeline.magnet",
     "timeline.ripple",
@@ -94,6 +95,11 @@ impl State {
             ("edit.redo", Icon::ArrowClockwise, Text::Redo),
             ("timeline.split", Icon::Scissors, Text::Split),
             ("timeline.delete", Icon::Trash, Text::Delete),
+            (
+                "timeline.bookmark",
+                Icon::BookmarkSimple,
+                Text::BookmarkToggle,
+            ),
         ] {
             let rect = left.cell(CELL);
             self.toolbar_button(cx, ui, rect, id, icon, label, None);

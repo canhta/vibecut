@@ -248,6 +248,7 @@ impl Editor {
             min_zoom: self.timeline.min_zoom(self.session.project().duration()),
             snapping: self.preferences.snapping,
             snap_indicator: self.timeline.snap_indicator(),
+            bookmark_popover: self.timeline.bookmark_popover(),
             preview: self.timeline.preview_command(),
             timeline_refusal: self.timeline.refusal().map(str::to_owned),
             drop_zone: self.timeline.drop_zone_label(),

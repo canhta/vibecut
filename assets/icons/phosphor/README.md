@@ -9,7 +9,7 @@ time; there is no runtime network or font request.
 - Author: Phosphor Icons
 - Licence: MIT, see [LICENSE](LICENSE)
 - Added: p0-core/39; extended: p1-parity/06, p1-parity/09, p1-parity/54, p1-parity/117
-- Files: 49 unmodified `assets/regular/*.svg` files.
+- Files: 50 unmodified `assets/regular/*.svg` files.
 
 SHA-256 of each embedded file:
 
@@ -21,6 +21,7 @@ SHA-256 of each embedded file:
 | `arrows-horizontal.svg` | `964d441543e0dc71ad40b234424fae92be4dea3e0eff7237dad53c50c88143b4` |
 | `arrows-in-line-horizontal.svg` | `73d0df2946ad58d810e81f1b92a731c21674659135c4d40bb5ac29569a54d924` |
 | `arrows-left-right.svg` | `84c43373542a3ac2e7de3d22ddef0c8eb61ef6ba7a270c6aca5aa493dd40f8b4` |
+| `bookmark-simple.svg` | `c3de1070187d7995c76e2fe5b7c899cb9eddbb9040aa7cfe90babd83b4adcc40` |
 | `caret-down.svg` | `9257147c4510788a10c3065f1d0f6c3c68da5bb265e03892b960f45d3d50d903` |
 | `caret-right.svg` | `da96a0362670cf8fc16b2e94ba4db4862852469570b586c428e897781ecc10a5` |
 | `circle-half.svg` | `4e5376acc240190bf951be566c4649b69936c928f679eba6793412295bb90736` |

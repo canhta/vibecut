@@ -20,4 +20,5 @@ pub(crate) mod transitions {
     //! Maintains video transitions across candidate edits.
     pub(crate) use super::transition_rules::{cuts, find, move_span, revalidate, unlocked};
 }
+pub use edit::DEFAULT_BOOKMARK_COLOR;
 pub(crate) use edit::check_budget;

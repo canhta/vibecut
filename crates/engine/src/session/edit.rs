@@ -593,6 +593,8 @@ mod text;
 mod tracks;
 mod transitions;
 
+pub use project_edits::DEFAULT_BOOKMARK_COLOR;
+
 pub(crate) use clips::close_vacated_tails as ripple;
 
 /// A global ripple pass replaces command-local shifts, including inside batches.

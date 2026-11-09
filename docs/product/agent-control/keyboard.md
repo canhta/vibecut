@@ -64,6 +64,7 @@
 | `timeline.zoom_in` — Zoom in | Timeline | — | — | timeline view |
 | `timeline.zoom_out` — Zoom out | Timeline | — | — | timeline view |
 | `timeline.add_track` — Add track | Timeline | — | `timeline.add_track` | — |
+| `timeline.bookmark` — Toggle bookmark | Timeline | M | `bookmark.toggle` | — |
 | `scene.open` — Open scenes | Timeline | — | — | scene switcher |
 | `scene.close` — Close scenes | Timeline | — | — | scene switcher |
 | `scene.create` — Create scene | Timeline | — | `scene.create` | — |

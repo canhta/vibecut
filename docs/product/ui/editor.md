@@ -44,6 +44,10 @@ Move and resize stage the group move/trim contract candidate: the timeline paint
 - A refused move or trim shows the engine's reason in an 11 px warning pill at the bottom-left of the lanes, 1 px warning outline on the panel fill, above the scrollbar. [proposed]
 - A main-track item at the timeline origin is pinned: a 3 px accent edge marks the pinned start beside the left trim handle, and its tooltip explains the pin. [proposed]
 
+## Marker editor
+
+A 256 px popover opens 8 px below the clicked ruler bookmark, clamped inside the window. It stacks a note field, a colour swatch with a reset to the default marker colour, a duration field in seconds stepped by 0.1, and a full-width delete button, with 12 px between sections. Escape closes the colour window first, then the editor; no project change happens until a field commits as one undo step. [new] — no reference capture exists; width, padding, gap and offset come from the implementation reference (`bookmarks.tsx`: `w-64`, `gap-3`, `p-3`, `sideOffset={8}`), which the web editor copy does not implement.
+
 ## Preview gestures
 
 Drag and scale stage the engine preview candidate: the player paints `preview_project()` while the committed project stays untouched, and one drop publishes a single undo step. Escape or a return to the gesture origin discards the candidate.
@@ -83,7 +87,7 @@ The assets Audio tab uses the 48 px audio row on a 60 px pitch with a 32 px thum
 
 The Transform tab has five scrub rows with an inline reset arrow: position X/Y, independent scale X/Y and rotation. The reset/value-row pattern is in `.spikes/ui-reference/06-properties/notes.md`.
 
-The shared colour window has hex plus labelled HSV/alpha entries and sliders, swatches and recent colours. Sliders preview immediately and publish once on release; Escape/close cancels the draft. It serves text, text background, graphic fill/stroke, mask stroke and canvas background. Layout, the sixteen-colour newest-first recent list and the fixed two-pixel graphic stroke are [proposed] (coordinator-approved). `inspector-transform` and `inspector-color` are the audit scenes. The native sampler's unavailable/pending/failed copy is localized in the same window; unavailable platforms keep all manual entry controls.
+The shared colour window has hex plus labelled HSV/alpha entries and sliders, swatches and recent colours. Sliders preview immediately and publish once on release; Escape/close cancels the draft. It serves text, text background, graphic fill/stroke, mask stroke, marker colour and canvas background. Layout, the sixteen-colour newest-first recent list and the fixed two-pixel graphic stroke are [proposed] (coordinator-approved). `inspector-transform` and `inspector-color` are the audit scenes. The native sampler's unavailable/pending/failed copy is localized in the same window; unavailable platforms keep all manual entry controls.
 
 ## Font picker
 

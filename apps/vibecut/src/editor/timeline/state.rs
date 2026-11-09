@@ -1,5 +1,6 @@
 //! Holds the timeline's own presentation state and viewport arithmetic.
 
+use crate::color_picker::Picker;
 use crate::editor::timeline::{
     Action, BTreeSet, BookmarkId, Context, DEFAULT_ZOOM, ItemId, KeyframeSelection, MAX_ZOOM,
     MIN_ZOOM_FLOOR, Rect, Rounding, SourceRange, Tick, TrackId, egui,
@@ -45,6 +46,21 @@ pub(in crate::editor::timeline) struct BookmarkDrag {
     pub(in crate::editor::timeline) bookmark: BookmarkId,
     pub(in crate::editor::timeline) press_x: f32,
     pub(in crate::editor::timeline) start: Tick,
+}
+
+/// The marker editor opened from a bookmark on the ruler.
+pub(in crate::editor::timeline) struct BookmarkPopover {
+    pub(in crate::editor::timeline) bookmark: BookmarkId,
+    /// Window top-left in screen coordinates.
+    pub(in crate::editor::timeline) anchor: egui::Pos2,
+    /// Typed note not yet committed; `None` reads the project value.
+    pub(in crate::editor::timeline) note: Option<String>,
+    /// Typed duration in seconds not yet committed; `None` reads the project value.
+    pub(in crate::editor::timeline) duration: Option<String>,
+    /// Project values at the last draw; a draft that differs commits on blur.
+    pub(in crate::editor::timeline) note_base: String,
+    pub(in crate::editor::timeline) duration_base: Tick,
+    pub(in crate::editor::timeline) picker: Option<Picker>,
 }
 
 /// One keyframe retime gesture over the pressed key.
@@ -178,6 +194,7 @@ pub(in crate::editor) struct State {
     /// Latest refusal from a staged move/trim, painted until the next gesture.
     pub(in crate::editor::timeline) refusal: Option<String>,
     pub(in crate::editor::timeline) bookmark_drag: Option<BookmarkDrag>,
+    pub(in crate::editor::timeline) bookmark_popover: Option<BookmarkPopover>,
     pub(in crate::editor::timeline) snap_indicator: Option<Tick>,
     pub(in crate::editor::timeline) marquee: Option<(egui::Pos2, BTreeSet<ItemId>, bool)>,
     pub(in crate::editor::timeline) track_rename: Option<(TrackId, String)>,
@@ -216,6 +233,7 @@ impl State {
             preview_armed: false,
             refusal: None,
             bookmark_drag: None,
+            bookmark_popover: None,
             snap_indicator: None,
             marquee: None,
             track_rename: None,
@@ -240,6 +258,52 @@ impl State {
     }
     pub(in crate::editor) fn snap_indicator(&self) -> Option<Tick> {
         self.snap_indicator
+    }
+    /// The bookmark whose editor is open, if any.
+    pub(in crate::editor) fn bookmark_popover(&self) -> Option<BookmarkId> {
+        self.bookmark_popover
+            .as_ref()
+            .map(|popover| popover.bookmark)
+    }
+    /// Close the editor, committing a typed note or duration as one update.
+    pub(in crate::editor) fn close_bookmark_popover(&mut self) {
+        self.commit_bookmark_drafts();
+        self.bookmark_popover = None;
+    }
+    /// Commit the drafts still in the editor; Escape bypasses this to discard.
+    fn commit_bookmark_drafts(&mut self) {
+        let Some(open) = self.bookmark_popover.as_ref() else {
+            return;
+        };
+        let mut params = serde_json::Map::new();
+        params.insert("bookmark".into(), serde_json::json!(open.bookmark));
+        if let Some(note) = &open.note
+            && *note != open.note_base
+        {
+            params.insert("note".into(), note.clone().into());
+        }
+        if let Some(tick) = open.duration.as_deref().and_then(duration_tick)
+            && tick != open.duration_base
+        {
+            params.insert("duration".into(), serde_json::json!(tick));
+        }
+        if params.len() > 1 {
+            self.outbox.push(Action::Command {
+                id: "bookmark.update",
+                params: params.into(),
+            });
+        }
+    }
+    /// Escape closes the colour window before the marker editor.
+    pub(in crate::editor) fn escape_bookmark(&mut self) -> bool {
+        let Some(popover) = self.bookmark_popover.as_mut() else {
+            return false;
+        };
+        if popover.picker.take().is_some() {
+            return true;
+        }
+        self.bookmark_popover = None;
+        true
     }
     pub(in crate::editor) fn item_rects(&self) -> &[(ItemId, Rect)] {
         &self.item_rects
@@ -344,6 +408,15 @@ impl State {
             .flat_map(|track| track.items.iter().map(|item| item.id))
             .collect();
         self.expanded.retain(|id| existing.contains(id));
+        if self.bookmark_popover.as_ref().is_some_and(|popover| {
+            !data
+                .scene()
+                .bookmarks
+                .iter()
+                .any(|bookmark| bookmark.id == popover.bookmark)
+        }) {
+            self.bookmark_popover = None;
+        }
     }
     /// A refused scene rename keeps the typed name open for another try.
     pub(in crate::editor) fn keep_scene_rename(&mut self, scene: project::SceneId, name: String) {
@@ -430,6 +503,25 @@ impl State {
     ) -> Option<BTreeSet<KeyframeSelection>> {
         self.keyframe_marquee.take().map(|marquee| marquee.before)
     }
+    /// Open the marker editor under the clicked bookmark; a previous draft commits.
+    pub(in crate::editor::timeline) fn open_bookmark_popover(
+        &mut self,
+        bookmark: BookmarkId,
+        anchor: egui::Pos2,
+        note_base: String,
+        duration_base: Tick,
+    ) {
+        self.commit_bookmark_drafts();
+        self.bookmark_popover = Some(BookmarkPopover {
+            bookmark,
+            anchor,
+            note: None,
+            duration: None,
+            note_base,
+            duration_base,
+            picker: None,
+        });
+    }
     /// Escape on a bookmark drag; the frame cancels the session gesture.
     pub(in crate::editor) fn cancel_bookmark_drag(&mut self) -> bool {
         let had = self.bookmark_drag.take().is_some();
@@ -504,4 +596,10 @@ impl State {
     pub(in crate::editor::timeline) fn playhead_x(&self, cx: &Context<'_>, left: f32) -> f32 {
         self.x_at(cx.playhead, left)
     }
+}
+
+/// Parse a duration field in seconds, clamped at zero for the engine.
+pub(in crate::editor::timeline) fn duration_tick(text: &str) -> Option<Tick> {
+    let seconds = text.trim().parse::<f64>().ok()?;
+    Tick::from_seconds_f64(seconds.max(0.0), Rounding::Nearest).ok()
 }

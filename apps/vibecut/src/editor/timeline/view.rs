@@ -1,5 +1,6 @@
 //! Renders the timeline panel.
 use crate::i18n;
+mod bookmark;
 mod clips;
 mod lanes;
 mod ruler;
@@ -95,5 +96,6 @@ pub(in crate::editor) fn show(
             Ink::of(cx).secondary(),
         );
     }
+    state.show_bookmark_popover(cx, ui.ctx());
     std::mem::take(&mut state.outbox)
 }

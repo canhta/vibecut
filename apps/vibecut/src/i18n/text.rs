@@ -597,6 +597,13 @@ catalog! {
     ZoomIn { key: "zoom_in", en: "Zoom +", vi: "Phóng to" },
     ZoomOut { key: "zoom_out", en: "Zoom −", vi: "Thu nhỏ" },
     ZoomLevel { key: "zoom_level", en: "Timeline zoom", vi: "Mức thu phóng dòng thời gian" },
+    BookmarkToggle { key: "bookmark_toggle", en: "Bookmark", vi: "Đánh dấu" },
+    BookmarkNote { key: "bookmark_note", en: "Note", vi: "Ghi chú" },
+    BookmarkNoteHint { key: "bookmark_note_hint", en: "Add a note…", vi: "Thêm ghi chú…" },
+    BookmarkColor { key: "bookmark_color", en: "Colour", vi: "Màu" },
+    BookmarkColorReset { key: "bookmark_color_reset", en: "Reset to the default colour", vi: "Đặt lại màu mặc định" },
+    BookmarkDuration { key: "bookmark_duration", en: "Duration (s)", vi: "Thời lượng (giây)" },
+    BookmarkDelete { key: "bookmark_delete", en: "Delete bookmark", vi: "Xoá đánh dấu" },
     ActionShortcut { key: "action_shortcut", en: "{action} ({shortcut})", vi: "{action} ({shortcut})" },
 
     // Shortcuts dialog.
@@ -820,6 +827,7 @@ catalog! {
     ActionTimelineZoomIn { key: "action_timeline_zoom_in", en: "Zoom in", vi: "Phóng to" },
     ActionTimelineZoomOut { key: "action_timeline_zoom_out", en: "Zoom out", vi: "Thu nhỏ" },
     ActionTimelineAddTrack { key: "action_timeline_add_track", en: "Add track", vi: "Thêm rãnh" },
+    ActionTimelineBookmark { key: "action_timeline_bookmark", en: "Toggle bookmark", vi: "Bật/tắt đánh dấu" },
     ActionSceneOpen { key: "action_scene_open", en: "Open scenes", vi: "Mở cảnh" },
     ActionSceneClose { key: "action_scene_close", en: "Close scenes", vi: "Đóng cảnh" },
     ActionSceneCreate { key: "action_scene_create", en: "Create scene", vi: "Tạo cảnh" },

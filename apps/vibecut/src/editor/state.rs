@@ -144,6 +144,8 @@ pub struct Inspection {
     /// Active snap target tick while a preview gesture holds one; `None` hides
     /// the indicator and proves snapping chose no candidate.
     pub snap_indicator: Option<Tick>,
+    /// Bookmark whose marker editor is open.
+    pub bookmark_popover: Option<project::BookmarkId>,
     /// Command id of the candidate staged by the group preview contract.
     pub preview: Option<&'static str>,
     /// Latest move/trim refusal shown in the timeline.

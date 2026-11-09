@@ -466,6 +466,13 @@ pub(super) const ACTIONS: &[ActionSpec] = &[
         EngineAction::AddTrack,
         &[],
     ),
+    ActionSpec::engine(
+        "timeline.bookmark",
+        Text::ActionTimelineBookmark,
+        ActionCategory::Timeline,
+        EngineAction::ToggleBookmark,
+        &["M"],
+    ),
     ActionSpec::ui(
         "scene.open",
         Text::ActionSceneOpen,

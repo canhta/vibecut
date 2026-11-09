@@ -60,10 +60,12 @@ pub(super) struct ItemView {
     pub(super) pinned: bool,
     pub(super) lanes: Vec<ItemLane>,
 }
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Debug)]
 pub(super) struct BookmarkView {
     pub(super) id: BookmarkId,
     pub(super) start: Tick,
+    pub(super) duration: Tick,
+    pub(super) note: String,
 }
 pub(super) struct TimelineViews {
     pub(super) rows: Vec<TrackRow>,
@@ -308,6 +310,8 @@ impl State {
             .map(|bookmark| BookmarkView {
                 id: bookmark.id,
                 start: bookmark.start,
+                duration: bookmark.duration,
+                note: bookmark.note.as_str().to_owned(),
             })
             .collect();
         let content_height = (offset - TRACK_GAP).max(0.0);

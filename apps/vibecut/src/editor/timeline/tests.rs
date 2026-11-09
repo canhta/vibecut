@@ -433,6 +433,18 @@ fn escape_hooks_cancel_only_what_is_in_progress() {
     assert_eq!(state.cancel_marquee(), Some(BTreeSet::from([ItemId(3)])));
     state.abandon_gesture();
     assert_eq!(state.snap_indicator(), None);
+
+    // Escape closes the colour window first, then the marker editor.
+    state.open_bookmark_popover(BookmarkId(7), egui::Pos2::ZERO, String::new(), Tick::ZERO);
+    state.bookmark_popover.as_mut().unwrap().picker = Some(crate::color_picker::Picker::new(
+        crate::color_picker::ColorTarget::Bookmark(BookmarkId(7)),
+        project::Color([1, 2, 3, 255]),
+    ));
+    assert!(state.escape_bookmark());
+    assert_eq!(state.bookmark_popover(), Some(BookmarkId(7)));
+    assert!(state.escape_bookmark());
+    assert_eq!(state.bookmark_popover(), None);
+    assert!(!state.escape_bookmark());
 }
 
 #[test]

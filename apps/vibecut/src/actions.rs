@@ -143,6 +143,7 @@ pub enum EngineAction {
     ExtractAudio,
     RecoverAudio,
     AddTrack,
+    ToggleBookmark,
     CreateScene,
     DeleteScenes,
 }
@@ -163,6 +164,7 @@ impl EngineAction {
             Self::ExtractAudio => K::ExtractAudio,
             Self::RecoverAudio => K::RecoverAudio,
             Self::AddTrack => K::AddTrack,
+            Self::ToggleBookmark => K::ToggleBookmark,
             Self::CreateScene => K::CreateScene,
             Self::DeleteScenes => K::DeleteScenes,
         }
