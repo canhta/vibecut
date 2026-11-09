@@ -484,6 +484,20 @@ pub(crate) fn apply(
         Command::MoveBookmark { bookmark, start } => {
             data = project_edits::execute_move_bookmark(data, bookmark, start)?;
         }
+        Command::ToggleBookmark { at } => {
+            data = project_edits::execute_toggle_bookmark(data, at, created, next)?;
+        }
+        Command::UpdateBookmark {
+            bookmark,
+            note,
+            color,
+            duration,
+        } => {
+            data = project_edits::execute_update_bookmark(data, bookmark, note, color, duration)?;
+        }
+        Command::RemoveBookmark { bookmark } => {
+            data = project_edits::execute_remove_bookmark(data, bookmark)?;
+        }
         Command::Retranslate {
             item: id,
             target_language,

@@ -468,6 +468,9 @@ commands! {
     Retranslate, "retranslate", "Apply selected cue translations", Edit { item: ItemId, target_language: captions::LanguageTag, texts: std::collections::BTreeMap<NfcText, NfcText>, translation_ref: NfcText, force: bool } => Timeline, serde_json::json!({"item":4,"target_language":"vi","texts":{"cue-1":"Xin chào"},"translation_ref":"example","force":true}), available = UnlockedItem;
     AddBookmark, "add_bookmark", "Add bookmark", Edit { start: Tick, duration: Tick, note: NfcText, color: Color } => Timeline, serde_json::json!({"start":0,"duration":0,"note":"Mark","color":[255,255,0,255]});
     MoveBookmark, "bookmark.move", "Move bookmark", Edit { bookmark: BookmarkId, start: Tick } => Timeline, serde_json::json!({"bookmark":1,"start":0});
+    ToggleBookmark, "bookmark.toggle", "Toggle bookmark", Edit { at: Tick } => Timeline, serde_json::json!({"at":0});
+    UpdateBookmark, "bookmark.update", "Update bookmark", Edit { bookmark: BookmarkId, #[serde(default)] note: Option<NfcText>, #[serde(default)] color: Option<Color>, #[serde(default)] duration: Option<Tick> } => Timeline, serde_json::json!({"bookmark":1,"note":"Marked","color":[0,157,255,255],"duration":0});
+    RemoveBookmark, "bookmark.remove", "Remove bookmark", Edit { bookmark: BookmarkId } => Timeline, serde_json::json!({"bookmark":1});
     Batch, "batch", "Batch edit", Edit { commands: Vec<Command> } => Timeline, serde_json::json!({"commands":[{"command":"timeline.add_track","params":{"name":"Batch","kind":"video"}}]}), curated = true;
     BeginGesture, "begin_gesture", "Begin gesture", SessionControl {} => Timeline, serde_json::json!({}), available = NoTransaction, grant = Human;
     TimelineEdit, "timeline.edit", "Edit timeline with ripple policy", Edit { commands: Vec<Command>, ripple: bool } => Timeline, serde_json::json!({"commands":[{"command":"delete","params":{"items":[1]}}],"ripple":true});

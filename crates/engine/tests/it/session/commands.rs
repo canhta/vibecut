@@ -3559,6 +3559,267 @@ fn bookmark_move_is_one_undo_step_and_refuses_missing_or_negative_targets() {
 }
 
 #[test]
+fn bookmark_toggle_snaps_adds_defaults_removes_and_undoes_every_step() {
+    let mut data = project().into_data();
+    data.canvas.fps = time::FrameRate::FPS_30;
+    let mut s = Session::new(Project::new(data).unwrap(), 20).unwrap();
+    let frame = s.project().data().canvas.fps.tick_of(1).unwrap();
+
+    // One off-frame tick snaps to the nearest frame and adds a default bookmark.
+    let at = Tick(frame.0 * 2 + 1);
+    let outcome = s.execute("bookmark.toggle", json!({"at":at})).unwrap();
+    assert!(outcome.changed);
+    let CreatedId::Bookmark(bookmark) = *outcome.created.first().unwrap() else {
+        panic!("bookmark id")
+    };
+    let added = s.project().data().scene().bookmarks[0].clone();
+    assert_eq!(added.id, bookmark);
+    assert_eq!(added.start, Tick(frame.0 * 2));
+    assert_eq!(added.duration, Tick::ZERO);
+    assert_eq!(added.note.as_str(), "");
+    assert_eq!(added.color, Color([0, 157, 255, 255]));
+    assert_eq!(s.history_len(), (1, 0));
+
+    // The same frame toggles it off; undo and redo restore each side exactly.
+    let outcome = s.execute("bookmark.toggle", json!({"at":at})).unwrap();
+    assert!(outcome.changed);
+    assert!(outcome.created.is_empty());
+    assert!(s.project().data().scene().bookmarks.is_empty());
+    assert_eq!(s.history_len(), (2, 0));
+    s.undo().unwrap();
+    assert_eq!(s.project().data().scene().bookmarks[0], added);
+    s.redo().unwrap();
+    assert!(s.project().data().scene().bookmarks.is_empty());
+
+    // Off-frame inputs snap to the nearest frame; an exact tie snaps later.
+    for (index, (input, expected)) in [
+        (frame.0 * 3 + 1, frame.0 * 3),
+        (frame.0 * 4 + frame.0 / 2 + 1, frame.0 * 5),
+        (frame.0 * 6 - 1, frame.0 * 6),
+        (frame.0 * 7 + frame.0 / 2, frame.0 * 8),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let outcome = s.execute("bookmark.toggle", json!({"at":input})).unwrap();
+        let CreatedId::Bookmark(id) = *outcome.created.first().unwrap() else {
+            panic!("bookmark id")
+        };
+        let bookmark = s
+            .project()
+            .data()
+            .scene()
+            .bookmarks
+            .iter()
+            .find(|bookmark| bookmark.id == id)
+            .unwrap();
+        assert_eq!(bookmark.start, Tick(expected), "row {index}");
+        assert_eq!(s.project().data().scene().bookmarks.len(), index + 1);
+    }
+}
+
+#[test]
+fn bookmark_update_and_remove_are_one_undo_step_with_persistence() {
+    let mut data = project().into_data();
+    data.canvas.fps = time::FrameRate::FPS_30;
+    let mut s = Session::new(Project::new(data).unwrap(), 20).unwrap();
+    let CreatedId::Bookmark(bookmark) = *s
+        .apply(Command::AddBookmark {
+            start: Tick::ZERO,
+            duration: Tick::ZERO,
+            note: "Beat".into(),
+            color: Color([1, 2, 3, 255]),
+        })
+        .unwrap()
+        .created
+        .first()
+        .unwrap()
+    else {
+        panic!("bookmark id")
+    };
+    let mut previous = s.project().data().scene().bookmarks[0].clone();
+
+    // Every field updates alone, and every update is one undo step.
+    for (index, (params, note, color, duration)) in [
+        (
+            json!({"bookmark":bookmark,"note":"Intro"}),
+            "Intro",
+            Color([1, 2, 3, 255]),
+            Tick::ZERO,
+        ),
+        (
+            json!({"bookmark":bookmark,"color":[9,8,7,255]}),
+            "Intro",
+            Color([9, 8, 7, 255]),
+            Tick::ZERO,
+        ),
+        (
+            json!({"bookmark":bookmark,"duration":500}),
+            "Intro",
+            Color([9, 8, 7, 255]),
+            Tick(100),
+        ),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        s.execute("bookmark.update", params).unwrap();
+        let current = s.project().data().scene().bookmarks[0].clone();
+        assert_eq!(current.note.as_str(), note, "row {index}");
+        assert_eq!(current.color, color, "row {index}");
+        assert_eq!(current.duration, duration, "row {index}");
+        assert_eq!(s.history_len(), (index + 2, 0), "row {index}");
+        s.undo().unwrap();
+        assert_eq!(s.project().data().scene().bookmarks[0], previous);
+        s.redo().unwrap();
+        assert_eq!(s.project().data().scene().bookmarks[0], current);
+        previous = current;
+    }
+    let saved = project::encode(s.project(), false).unwrap();
+    assert_eq!(
+        project::decode(&saved)
+            .unwrap()
+            .project
+            .data()
+            .scene()
+            .bookmarks,
+        s.project().data().scene().bookmarks
+    );
+
+    // Removal is one undo step and restores the exact bookmark.
+    let before_remove = s.project().clone();
+    let history = s.history_len();
+    s.execute("bookmark.remove", json!({"bookmark":bookmark}))
+        .unwrap();
+    assert!(s.project().data().scene().bookmarks.is_empty());
+    assert_eq!(s.history_len(), (history.0 + 1, 0));
+    s.undo().unwrap();
+    assert_eq!(s.project(), &before_remove);
+    s.redo().unwrap();
+    assert!(s.project().data().scene().bookmarks.is_empty());
+
+    // A later bookmark clamps to the remaining scene content.
+    let CreatedId::Bookmark(tail) = *s
+        .apply(Command::AddBookmark {
+            start: Tick(60),
+            duration: Tick::ZERO,
+            note: "Tail".into(),
+            color: Color([1, 2, 3, 255]),
+        })
+        .unwrap()
+        .created
+        .first()
+        .unwrap()
+    else {
+        panic!("bookmark id")
+    };
+    s.execute("bookmark.update", json!({"bookmark":tail,"duration":500}))
+        .unwrap();
+    assert_eq!(s.project().data().scene().bookmarks[0].duration, Tick(40));
+}
+
+#[test]
+fn bookmark_commands_refuse_hostile_inputs_without_history() {
+    let mut data = project().into_data();
+    data.canvas.fps = time::FrameRate::FPS_30;
+    let mut s = Session::new(Project::new(data).unwrap(), 20).unwrap();
+    let CreatedId::Bookmark(bookmark) = *s
+        .apply(Command::AddBookmark {
+            start: Tick::ZERO,
+            duration: Tick::ZERO,
+            note: "Beat".into(),
+            color: Color([1, 2, 3, 255]),
+        })
+        .unwrap()
+        .created
+        .first()
+        .unwrap()
+    else {
+        panic!("bookmark id")
+    };
+    let before = s.project().clone();
+    let history = s.history_len();
+    for (index, (id, params)) in [
+        ("bookmark.toggle", json!({"at":-1})),
+        ("bookmark.update", json!({"bookmark":999,"note":"x"})),
+        (
+            "bookmark.update",
+            json!({"bookmark":bookmark,"duration":-1}),
+        ),
+        ("bookmark.update", json!({"bookmark":bookmark})),
+        (
+            "bookmark.update",
+            json!({"bookmark":bookmark,"note":"Beat"}),
+        ),
+        (
+            "bookmark.update",
+            json!({"bookmark":bookmark,"color":[256,0,0,255]}),
+        ),
+        (
+            "bookmark.update",
+            json!({"bookmark":bookmark,"color":[-1,0,0,255]}),
+        ),
+        (
+            "bookmark.update",
+            json!({"bookmark":bookmark,"color":[0,0,0,1.5]}),
+        ),
+        ("bookmark.remove", json!({"bookmark":999})),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        assert!(
+            s.execute(id, params.clone()).is_err(),
+            "row {index}: {id} accepted {params}"
+        );
+        assert_eq!(
+            s.project(),
+            &before,
+            "row {index}: {id} changed the project"
+        );
+        assert_eq!(s.history_len(), history, "row {index}: {id} added history");
+    }
+
+    // The project owner's 1 MiB text limit remains the only note bound.
+    let oversized = "n".repeat((1 << 20) + 1);
+    assert!(matches!(
+        s.execute(
+            "bookmark.update",
+            json!({"bookmark":bookmark,"note":oversized})
+        ),
+        Err(EditError::Project(project::Error::TooLarge("text")))
+    ));
+    assert_eq!(s.project(), &before);
+    assert_eq!(s.history_len(), history);
+
+    // A duration beyond the scene end clamps once, then the same request is a no-op.
+    s.execute(
+        "bookmark.update",
+        json!({"bookmark":bookmark,"duration":500}),
+    )
+    .unwrap();
+    assert_eq!(s.project().data().scene().bookmarks[0].duration, Tick(100));
+    let changed = s.project().clone();
+    let changed_history = s.history_len();
+    assert!(matches!(
+        s.execute(
+            "bookmark.update",
+            json!({"bookmark":bookmark,"duration":500})
+        ),
+        Err(EditError::Invalid("bookmark update"))
+    ));
+    assert_eq!(s.project(), &changed);
+    assert_eq!(s.history_len(), changed_history);
+
+    // A locked track cannot hide a scene-owned bookmark: scenes have no lock state.
+    let frame = s.project().data().canvas.fps.tick_of(1).unwrap();
+    s.execute("track.set_locked", json!({"track":0,"locked":true}))
+        .unwrap();
+    s.execute("bookmark.toggle", json!({"at":frame.0})).unwrap();
+    assert_eq!(s.project().data().scene().bookmarks.len(), 2);
+}
+
+#[test]
 fn audio_reorder_is_screen_order_and_main_cannot_move() {
     let mut s = Session::new(Project::empty(ProjectId(33), "Audio".into()).unwrap(), 20).unwrap();
     let CreatedId::Track(a) = *s

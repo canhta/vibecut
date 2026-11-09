@@ -51,6 +51,31 @@ fn exec_moves_and_trims_timeline_groups() {
 }
 
 #[test]
+fn exec_toggles_and_updates_bookmarks_through_save_reload() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("bookmarks.vibecut");
+    new_project(&path);
+    let created = exec(&path, "bookmark.toggle", json!({"at":0}));
+    let bookmark = created["created"][0]["bookmark"].as_u64().unwrap();
+    let loaded = project::load(&path).unwrap().project;
+    let stored = &loaded.data().scene().bookmarks[0];
+    assert_eq!(stored.start, Tick::ZERO);
+    assert_eq!(stored.duration, Tick::ZERO);
+    assert_eq!(stored.note.as_str(), "");
+    assert_eq!(stored.color, project::Color([0, 157, 255, 255]));
+
+    exec(
+        &path,
+        "bookmark.update",
+        json!({"bookmark":bookmark,"note":"Intro","color":[9,8,7,255],"duration":0}),
+    );
+    let loaded = project::load(&path).unwrap().project;
+    let stored = &loaded.data().scene().bookmarks[0];
+    assert_eq!(stored.note.as_str(), "Intro");
+    assert_eq!(stored.color, project::Color([9, 8, 7, 255]));
+}
+
+#[test]
 fn exec_mutates_through_engine_and_reports_created_ids() {
     let dir = tempfile::tempdir().unwrap();
     let project = dir.path().join("exec.vibecut");
