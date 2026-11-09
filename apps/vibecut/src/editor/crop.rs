@@ -69,6 +69,16 @@ impl Aspect {
         })
     }
 
+    /// The shape lock in source pixels for the control; Custom resizes freely
+    /// and Original keeps the whole source frame.
+    fn lock(self, aspect: f64) -> Option<f64> {
+        match self {
+            Self::Custom => None,
+            Self::Original => Some(aspect),
+            _ => self.ratio(),
+        }
+    }
+
     /// Largest centred rectangle of this shape inside a source of `aspect`.
     /// Original keeps the whole frame; Custom leaves the box untouched.
     fn crop(self, aspect: f64) -> Option<project::Crop> {
@@ -93,24 +103,18 @@ impl Aspect {
     }
 
     /// The shape a rectangle already has, so reopening a crop shows its ratio.
+    /// Only the shape matters, not where the box sits.
     fn of(crop: project::Crop, aspect: f64) -> Self {
+        let actual = crop.width / crop.height * aspect;
         Self::ALL
             .into_iter()
             .find(|choice| {
                 choice
-                    .crop(aspect)
-                    .is_some_and(|expected| same_box(expected, crop))
+                    .lock(aspect)
+                    .is_some_and(|lock| (actual - lock).abs() / lock <= 1e-3)
             })
             .unwrap_or(Self::Custom)
     }
-}
-
-fn same_box(a: project::Crop, b: project::Crop) -> bool {
-    const EPSILON: f64 = 1e-3;
-    (a.x - b.x).abs() <= EPSILON
-        && (a.y - b.y).abs() <= EPSILON
-        && (a.width - b.width).abs() <= EPSILON
-        && (a.height - b.height).abs() <= EPSILON
 }
 
 /// Read-only dialog state for automation; the project itself stays untouched
@@ -344,13 +348,11 @@ impl Dialog {
                             "crop.preview",
                             &mut self.crop,
                             source_aspect as f32,
+                            self.aspect.lock(source_aspect),
                             texture,
                             tr(Text::CropPreview),
                         ) {
                             Ok(response) => {
-                                if response.dragged() && self.aspect != Aspect::Custom {
-                                    self.aspect = Aspect::Custom;
-                                }
                                 output.widgets.push(("crop.preview", response));
                             }
                             Err(error) => {

@@ -278,6 +278,7 @@ fn layout(state: &mut State, ui: &mut egui::Ui) {
         "shorts.crop",
         &mut rect,
         aspect,
+        Some(9.0 / 16.0),
         None,
         state.tr(Text::ShortsCrop),
     ) {

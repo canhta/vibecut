@@ -73,15 +73,19 @@ impl Grab {
 
 /// Drag a crop rectangle inside the normalized source bounds. The pointer moves
 /// the whole rectangle from its inside, or resizes it from an edge or corner;
-/// both stay inside the frame and above the minimum size. Caller retains the
-/// gesture-entry rectangle and commits a single undo step on drag stop.
-/// Keyboard arrows move by 1% (Shift: 10%); `texture` paints the source frame
-/// under the box when the caller has one. Render consumes the returned rectangle.
+/// both stay inside the frame and above the minimum size. A `ratio` lock is the
+/// crop's width/height in source pixels (so corners keep their shape anchored at
+/// the opposite corner and edges grow the other axis around its centre); `None`
+/// resizes freely. Caller retains the gesture-entry rectangle and commits a
+/// single undo step on drag stop. Keyboard arrows move by 1% (Shift: 10%);
+/// `texture` paints the source frame under the box when the caller has one.
+/// Render consumes the returned rectangle.
 pub fn control(
     ui: &mut egui::Ui,
     id: &str,
     crop: &mut project::Crop,
     aspect: f32,
+    ratio: Option<f64>,
     texture: Option<&egui::TextureHandle>,
     label: &str,
 ) -> Result<egui::Response> {
@@ -90,6 +94,10 @@ pub fn control(
     }
     if !aspect.is_finite() || aspect <= 0.0 {
         return Err(Error::Invalid("crop source aspect"));
+    }
+    let lock = ratio.map(|ratio| ratio / f64::from(aspect));
+    if lock.is_some_and(|lock| !lock.is_finite() || lock <= 0.0) {
+        return Err(Error::Invalid("crop ratio lock"));
     }
     let size = egui::vec2(ui.available_width(), ui.available_width() / aspect);
     if !size.x.is_finite() || !size.y.is_finite() || size.x <= 0.0 || size.y <= 0.0 {
@@ -146,7 +154,7 @@ pub fn control(
     if delta != egui::Vec2::ZERO {
         let dx = f64::from(delta.x / bounds.width());
         let dy = f64::from(delta.y / bounds.height());
-        resize(crop, grab, dx, dy);
+        resize(crop, grab, dx, dy, lock);
     }
     if response.drag_stopped() {
         ui.ctx().data_mut(|data| data.remove::<Grab>(grab_id));
@@ -272,13 +280,22 @@ fn grab_at(pos: egui::Pos2, rect: egui::Rect) -> Grab {
 }
 
 /// Apply one gesture delta, keeping the rectangle inside the frame and above
-/// the minimum size on every axis.
-fn resize(crop: &mut project::Crop, grab: Grab, dx: f64, dy: f64) {
+/// the minimum size on every axis. `lock` fixes the width/height shape in
+/// normalized source units.
+fn resize(crop: &mut project::Crop, grab: Grab, dx: f64, dy: f64, lock: Option<f64>) {
     if grab == Grab::Move {
         crop.x = (crop.x + dx).clamp(0.0, 1.0 - crop.width);
         crop.y = (crop.y + dy).clamp(0.0, 1.0 - crop.height);
         return;
     }
+    match lock {
+        Some(lock) => resize_locked(crop, grab, dx, dy, lock),
+        None => resize_free(crop, grab, dx, dy),
+    }
+}
+
+/// Free resize: the dragged edge or corner moves on its own axis.
+fn resize_free(crop: &mut project::Crop, grab: Grab, dx: f64, dy: f64) {
     if grab.left() {
         let right = crop.x + crop.width;
         crop.x = (crop.x + dx).clamp(0.0, right - MIN_SIZE);
@@ -293,4 +310,73 @@ fn resize(crop: &mut project::Crop, grab: Grab, dx: f64, dy: f64) {
     } else if grab.bottom() {
         crop.height = (crop.height + dy).clamp(MIN_SIZE, 1.0 - crop.y);
     }
+}
+
+/// Ratio-locked resize. Corners keep the opposite corner anchored; edges move
+/// the dragged edge and grow or shrink the other axis around its centre. The
+/// frame wins over both the pointer and the minimum size.
+fn resize_locked(crop: &mut project::Crop, grab: Grab, dx: f64, dy: f64, lock: f64) {
+    let right = crop.x + crop.width;
+    let bottom = crop.y + crop.height;
+    let middle = (crop.x + crop.width / 2.0, crop.y + crop.height / 2.0);
+    let horizontal = if grab.left() {
+        crop.width - dx
+    } else {
+        crop.width + dx
+    };
+    let vertical = if grab.top() {
+        (crop.height - dy) * lock
+    } else {
+        (crop.height + dy) * lock
+    };
+    let wanted = if (grab.left() || grab.right()) && (grab.top() || grab.bottom()) {
+        // A corner follows whichever axis the pointer moved more.
+        if dx.abs() >= dy.abs() {
+            horizontal
+        } else {
+            vertical
+        }
+    } else if grab.left() || grab.right() {
+        horizontal
+    } else {
+        vertical
+    };
+    let min = MIN_SIZE.max(MIN_SIZE * lock);
+    let max = if grab.left() && grab.top() {
+        right.min(bottom * lock)
+    } else if grab.right() && grab.top() {
+        (1.0 - crop.x).min(bottom * lock)
+    } else if grab.left() && grab.bottom() {
+        right.min((1.0 - crop.y) * lock)
+    } else if grab.right() && grab.bottom() {
+        (1.0 - crop.x).min((1.0 - crop.y) * lock)
+    } else if grab.left() {
+        right.min(lock)
+    } else if grab.right() {
+        (1.0 - crop.x).min(lock)
+    } else if grab.top() {
+        (bottom * lock).min(1.0)
+    } else {
+        ((1.0 - crop.y) * lock).min(1.0)
+    };
+    // An extreme lock can leave less room than the minimum; the frame wins.
+    let width = if max < min {
+        max.max(0.0)
+    } else {
+        wanted.clamp(min, max)
+    };
+    let height = width / lock;
+    let centred = |at: f64, extent: f64| (at - extent / 2.0).clamp(0.0, 1.0 - extent);
+    crop.x = match grab {
+        Grab::TopLeft | Grab::BottomLeft | Grab::Left => right - width,
+        Grab::Top | Grab::Bottom => centred(middle.0, width),
+        _ => crop.x,
+    };
+    crop.y = match grab {
+        Grab::TopLeft | Grab::TopRight | Grab::Top => bottom - height,
+        Grab::Left | Grab::Right => centred(middle.1, height),
+        _ => crop.y,
+    };
+    crop.width = width;
+    crop.height = height;
 }

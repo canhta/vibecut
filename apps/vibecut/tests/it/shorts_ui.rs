@@ -440,6 +440,28 @@ fn crop_gesture_reversal_and_bounds_are_one_review_undo_step() {
     ] {
         assert!(vibecut::crop::portrait(width, height).is_err());
     }
+    // A corner drag keeps the portrait crop's 9:16 source shape.
+    let crop = h.state().reviews()[0].crop;
+    let rect = h.get(by("shorts.crop")).rect();
+    let corner = egui::pos2(
+        rect.left() + rect.width() * (crop.x + crop.width) as f32,
+        rect.top() + rect.height() * (crop.y + crop.height) as f32,
+    );
+    h.hover_at(corner);
+    h.run_steps(1);
+    h.drag_at(corner);
+    h.run_steps(1);
+    h.hover_at(corner - egui::vec2(30.0, 30.0));
+    h.run_steps(2);
+    h.drop_at(corner - egui::vec2(30.0, 30.0));
+    h.run_steps(2);
+    let resized = h.state().reviews()[0].crop;
+    assert!(resized.width < crop.width);
+    assert!(
+        (resized.width / resized.height * (320.0 / 180.0) - 9.0 / 16.0).abs() <= 1e-6,
+        "{resized:?}"
+    );
+    assert!(resized.valid());
 }
 #[test]
 fn accepted_export_is_reachable_and_failed_jobs_can_be_retried_or_cancelled() {

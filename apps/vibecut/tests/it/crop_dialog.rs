@@ -309,6 +309,26 @@ fn same_box(a: project::Crop, b: project::Crop) -> bool {
         && close_to(a.height, b.height)
 }
 
+/// The box's width/height in source pixels.
+fn output_ratio(crop: project::Crop) -> f64 {
+    crop.width / crop.height * SOURCE_ASPECT
+}
+
+fn assert_locked(harness: &Harness<Editor>, expected: f64, aspect: CropAspect) {
+    let inspection = working(harness);
+    assert_eq!(inspection.aspect, aspect);
+    assert!(
+        (output_ratio(inspection.crop) - expected).abs() <= 1e-6,
+        "{:?}",
+        inspection.crop
+    );
+    assert!(
+        inspection.crop.valid(),
+        "{:?} stays inside the frame",
+        inspection.crop
+    );
+}
+
 /// Screen position of a normalized point inside the preview.
 fn point(harness: &Harness<Editor>, crop: project::Crop, x: f64, y: f64) -> egui::Pos2 {
     let bounds = widget_rect(harness, "crop.preview");
@@ -434,30 +454,18 @@ fn crop_ratios_drag_resize_reset_apply_and_discard() {
     assert_eq!(working(&harness).aspect, CropAspect::Custom);
     assert!(same_box(working(&harness).crop, before_custom));
 
-    // Dragging the box moves it without leaving the frame.
+    // Dragging the box moves it without leaving the frame or changing shape.
     choose(&mut harness, "crop.aspect.9x16");
     let portrait = working(&harness).crop;
     let centre = point(&harness, portrait, 0.5, 0.5);
     drag(&mut harness, centre, egui::vec2(60.0, 0.0));
     let moved = working(&harness).crop;
     assert!(moved.x > portrait.x, "pointer drag moved the box");
-    assert_eq!(working(&harness).aspect, CropAspect::Custom);
+    assert_eq!(working(&harness).aspect, CropAspect::NineSixteen);
+    assert!((output_ratio(moved) - 9.0 / 16.0).abs() <= 1e-6);
     assert!(moved.valid());
     assert!(Arc::ptr_eq(&entry, harness.state().session.project()));
     assert_eq!(item_crop(&harness, fixture.video), None);
-
-    // Resizing from the top-left corner clamps to the frame, then to the floor.
-    let corner = point(&harness, moved, 0.0, 0.0);
-    drag(&mut harness, corner, egui::vec2(-10_000.0, -10_000.0));
-    let outside = working(&harness).crop;
-    assert_eq!((outside.x, outside.y), (0.0, 0.0));
-    assert!(outside.valid(), "hostile resize stays inside the frame");
-    let corner = point(&harness, outside, 0.0, 0.0);
-    drag(&mut harness, corner, egui::vec2(10_000.0, 10_000.0));
-    let collapsed = working(&harness).crop;
-    assert!(collapsed.width >= 0.05 && collapsed.height >= 0.05);
-    assert!(collapsed.valid(), "hostile resize keeps a minimum size");
-    assert!(Arc::ptr_eq(&entry, harness.state().session.project()));
 
     // Reset returns the box to the full frame; applying that is a no-op.
     click(&mut harness, "crop.reset");
@@ -519,4 +527,84 @@ fn crop_ratios_drag_resize_reset_apply_and_discard() {
     );
     assert!(Arc::ptr_eq(&committed, harness.state().session.project()));
     assert_eq!(item_crop(&harness, fixture.video), Some(shape(9.0 / 16.0)));
+}
+
+#[test]
+fn crop_locked_resize_keeps_the_selected_shape_and_custom_is_free() {
+    let fixture = fixture();
+    let mut harness = build(fixture.editor);
+    harness.run_steps(3);
+    let entry = harness.state().session.project().clone();
+    open(&mut harness, fixture.video);
+
+    for (option, expected, aspect) in [
+        ("crop.aspect.1x1", 1.0, CropAspect::Square),
+        ("crop.aspect.9x16", 9.0 / 16.0, CropAspect::NineSixteen),
+    ] {
+        choose(&mut harness, option);
+
+        // A corner keeps the opposite corner anchored and the shape.
+        let before = working(&harness).crop;
+        let corner = point(&harness, before, 1.0, 1.0);
+        drag(&mut harness, corner, egui::vec2(-60.0, -60.0));
+        assert_locked(&harness, expected, aspect);
+        let shrunk = working(&harness).crop;
+        assert!(shrunk.width < before.width, "{option} corner shrinks");
+        assert!((shrunk.x - before.x).abs() <= 1e-9, "{option} anchor x");
+        assert!((shrunk.y - before.y).abs() <= 1e-9, "{option} anchor y");
+
+        // Growing past the frame shrinks to fit and never breaks the ratio.
+        let corner = point(&harness, shrunk, 1.0, 1.0);
+        drag(&mut harness, corner, egui::vec2(10_000.0, 10_000.0));
+        assert_locked(&harness, expected, aspect);
+        let grown = working(&harness).crop;
+        assert!(grown.x + grown.width <= 1.0 + 1e-9);
+        assert!(grown.y + grown.height <= 1.0 + 1e-9);
+
+        // An edge moves one dimension and re-centres the other.
+        let centre_y = grown.y + grown.height / 2.0;
+        let edge = point(&harness, grown, 1.0, 0.5);
+        drag(&mut harness, edge, egui::vec2(-40.0, 0.0));
+        assert_locked(&harness, expected, aspect);
+        let edged = working(&harness).crop;
+        assert!(edged.width < grown.width, "{option} edge shrinks");
+        assert!(
+            (edged.y + edged.height / 2.0 - centre_y).abs() <= 1e-6,
+            "{option} edge keeps the other axis centred"
+        );
+
+        // A hostile edge drag floors at the minimum size on both axes.
+        let edge = point(&harness, edged, 1.0, 0.5);
+        drag(&mut harness, edge, egui::vec2(-10_000.0, 0.0));
+        assert_locked(&harness, expected, aspect);
+        let tiny = working(&harness).crop;
+        assert!(tiny.width >= 0.05 - 1e-9 && tiny.height >= 0.05 - 1e-9);
+        assert!(Arc::ptr_eq(&entry, harness.state().session.project()));
+        assert_eq!(item_crop(&harness, fixture.video), None);
+        click(&mut harness, "crop.reset");
+    }
+
+    // Custom frees the shape: the same corner drag changes both axes.
+    choose(&mut harness, "crop.aspect.9x16");
+    choose(&mut harness, "crop.aspect.custom");
+    let free = working(&harness).crop;
+    let corner = point(&harness, free, 1.0, 1.0);
+    drag(&mut harness, corner, egui::vec2(-60.0, -60.0));
+    let changed = working(&harness).crop;
+    assert_eq!(working(&harness).aspect, CropAspect::Custom);
+    assert!(
+        (output_ratio(changed) - output_ratio(free)).abs() > 1e-3,
+        "Custom resizes freely"
+    );
+    assert!(changed.valid());
+    assert!(Arc::ptr_eq(&entry, harness.state().session.project()));
+
+    // The chosen shape survives Apply and reopening.
+    choose(&mut harness, "crop.aspect.1x1");
+    let corner = point(&harness, working(&harness).crop, 1.0, 1.0);
+    drag(&mut harness, corner, egui::vec2(-40.0, -40.0));
+    assert_locked(&harness, 1.0, CropAspect::Square);
+    click(&mut harness, "crop.apply");
+    open(&mut harness, fixture.video);
+    assert_eq!(working(&harness).aspect, CropAspect::Square);
 }
